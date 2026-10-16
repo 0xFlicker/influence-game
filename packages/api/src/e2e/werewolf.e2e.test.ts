@@ -267,10 +267,10 @@ test("owner edits a game-specific strategy, creates Werewolf, and watches both v
       await spectator.goto(lobbyUrl, { waitUntil: "domcontentloaded" });
       await text(spectator, "Arden Vale");
       expect(await spectator.evaluate('Array.from(document.querySelectorAll("button")).some(button => button.textContent === "Start Werewolf")')).toBe(false);
-      await click(page, "Start Werewolf");
-      await text(page, "Fill the village and start?");
+      await click(page, "Fill AI");
+      await text(page, "The village is ready.");
       const started = page.waitForResponse(response => response.url().endsWith(`/api/werewolf/${waiting!.id}/start`) && response.request().method() === "POST");
-      await click(page, "Add 5 House agents and start");
+      await click(page, "Start Werewolf");
       expect((await started).status()).toBe(200);
       await spectator.waitForSelector('a[href$="/replay?audience=mystery"]');
     } finally { await spectatorContext.close(); }

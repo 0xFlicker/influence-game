@@ -91,7 +91,9 @@ Both games render the same `EpisodeCard`, card shell, status labels, footer acti
 metadata, portrait frames, and touch preview. The eyebrow is The House / Influence
 or The House / Werewolf; waiting cards say Casting open and show joined/capacity.
 Primary actions are Join game, Watch live, and Watch replay. Permission-gated
-operator controls appear directly on the card for authorized users. Game-specific
+operator controls use one renderer and appear directly on the card for authorized users.
+Both games expose Start, Fill AI, Stop/End, and Hide when applicable. Fill AI saves
+the remaining cast without starting; Start requires a full roster. Game-specific
 backdrops remain; the separate Werewolf card styles and House icon are removed.
 
 Cast groups of four are ordinary slideshow frames labeled Meet the cast. They

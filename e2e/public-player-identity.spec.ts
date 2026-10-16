@@ -338,6 +338,56 @@ test.describe("local public player identity", () => {
     }
   });
 
+  test("library cards share visible authorized controls and separate Fill AI from Start", async ({ browser }) => {
+    test.setTimeout(120_000);
+    for (const width of [1440, 390]) {
+      const context = await browser.newContext({ viewport: { width, height: 1000 } });
+      await context.addInitScript(token => localStorage.setItem("influence_session", token), fixture.completeJwt);
+      const page = await context.newPage();
+      let permissions: string[] = [];
+      const full = new Set<string>();
+      const actions: string[] = [];
+      const base = { status: "waiting", playerCount: 6, modelLabel: "Standard", visibility: "public", createdAt: new Date().toISOString() };
+      try {
+        await page.route("**/api/auth/me", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), roles: ["gamer"], permissions } }); });
+        await page.route("**/api/free-queue", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), promptEligible: false } }); });
+        await page.route("**/api/games", route => route.fulfill({ json: [{ ...base, id: "card-influence", slug: "card-influence", alivePlayers: full.has("influence") ? 6 : 1 }] }));
+        await page.route("**/api/werewolf", route => route.fulfill({ json: [{ ...base, id: "card-werewolf", slug: "card-werewolf", gameKind: "werewolf", joinedPlayers: full.has("werewolf") ? 6 : 1 }] }));
+        for (const kind of ["influence", "werewolf"]) for (const action of ["fill", "start", "stop", "hide"]) {
+          const root = kind === "werewolf" && action !== "hide" ? "werewolf" : "games";
+          await page.route(`**/api/${root}/card-${kind}/${action}`, route => {
+            actions.push(`${kind}:${action}`);
+            if (action === "fill") full.add(kind);
+            return route.fulfill({ json: { status: "ok" } });
+          });
+        }
+        await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });
+        await expect(page.locator(".episode-management")).toHaveCount(0);
+        permissions = ["start_game", "fill_game", "stop_game", "hide_game"];
+        await page.reload({ waitUntil: "networkidle" });
+        for (const kind of ["werewolf", "influence"]) {
+          const card = page.locator(`.episode-card[data-game-kind="${kind}"]`);
+          await card.scrollIntoViewIfNeeded();
+          await expect(card.locator(".episode-management button")).toHaveText(["Start", "Fill AI", "Stop", "Hide"]);
+          await expect(card.getByRole("button", { name: "Start", exact: true })).toBeDisabled();
+          await card.getByRole("button", { name: "Fill AI", exact: true }).click();
+          await expect(card).toContainText("6/6 joined");
+          await expect(card.getByRole("button", { name: "Fill AI", exact: true })).toHaveCount(0);
+          expect(actions).not.toContain(`${kind}:start`);
+          await card.getByRole("button", { name: "Start", exact: true }).click();
+          await expect.poll(() => actions.includes(`${kind}:start`)).toBe(true);
+          await card.getByRole("button", { name: "Stop", exact: true }).click();
+          await expect.poll(() => actions.includes(`${kind}:stop`)).toBe(true);
+          await card.getByRole("button", { name: "Hide", exact: true }).click();
+          const dialog = page.getByRole("dialog", { name: "Hide game", exact: true });
+          await dialog.getByRole("button", { name: "Hide", exact: true }).click();
+          await expect.poll(() => actions.includes(`${kind}:hide`)).toBe(true);
+        }
+        await page.screenshot({ path: `/tmp/shared-game-controls-${width}.png`, fullPage: true });
+      } finally { await context.close(); }
+    }
+  });
+
   test("both game cards share casting presentation and cycle four-person cast frames without controls", async ({ browser }) => {
     test.setTimeout(120_000);
     const cast = Array.from({ length: 9 }, (_, i) => ({ id: `cast-${i}`, name: `Cast ${i + 1}`, avatarUrl: null, personaKey: "strategic" }));

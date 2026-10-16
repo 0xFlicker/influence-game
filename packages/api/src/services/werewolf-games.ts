@@ -1,3 +1,4 @@
+import type { WerewolfHouseCharacter } from "../db/werewolf-schema.js";
 import { queueEpisodeCopy } from "./episode-presentation.js";
 import { forecastRetrospectiveBudget } from "@influence/engine/retrospective-budget";
 import { ensureWaitingPostgameMediaRow } from "./postgame-media-coordinator.js";
@@ -50,37 +51,43 @@ export function normalizeWerewolfCasting(input: { personaPool?: unknown; fillStr
   return { personaPool: pool as typeof all, fillStrategy };
 }
 
-export async function freezeWerewolfRoster(tx: Tx, seats: Array<{ id: string; agentProfileId: string }>, count: number, casting = normalizeWerewolfCasting({})): Promise<WerewolfPlayer[]> {
+export async function freezeWerewolfRoster(tx: Tx, seats: Array<{ id: string; agentProfileId: string | null; houseCharacter?: WerewolfHouseCharacter | null }>, count: number, casting = normalizeWerewolfCasting({})): Promise<WerewolfPlayer[]> {
   if (seats.length > count) throw new WerewolfGameError("The village exceeds its seat limit.");
   const profiles = seats.length ? await tx.select().from(schema.agentProfiles)
-    .where(inArray(schema.agentProfiles.id, seats.map(seat => seat.agentProfileId))).orderBy(asc(schema.agentProfiles.id)).for("update") : [];
-  if (profiles.length !== seats.length) throw new WerewolfGameError("A cast member is no longer available. Remove them before starting.");
+    .where(inArray(schema.agentProfiles.id, seats.flatMap(seat => seat.agentProfileId ? [seat.agentProfileId] : []))).orderBy(asc(schema.agentProfiles.id)).for("update") : [];
+  if (profiles.length !== seats.filter(seat => seat.agentProfileId).length) throw new WerewolfGameError("A cast member is no longer available. Remove them before starting.");
   const players: WerewolfPlayer[] = [];
-    for (const seat of seats) {
-      const profile = profiles.find((p) => p.id === seat.agentProfileId)!;
-      if (!hasEligibleAgentContent(profile)) throw new WerewolfGameError("A selected character is archived or awaiting review", 409);
-      const [revision] = profile.contentRevisionId ? await tx.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, profile.contentRevisionId)) : [];
-      if (profile.contentRevisionId && !revision) throw new Error("Missing approved character revision");
-      const character = revision ? decodeContentSnapshot(revision.snapshot, profile) : profile;
-      players.push({ id: seat.id, agentProfileId: profile.id, contentRevisionId: profile.contentRevisionId,
-        name: character.name, personality: character.personality, backstory: character.backstory ?? "",
-        strategy: resolveWerewolfStrategy(character.werewolfStrategyStyle, character.personaKey), avatarUrl: character.avatarUrl, personaKey: character.personaKey });
-    }
-    if (new Set(players.map(player => player.name.trim().toLowerCase())).size !== players.length) throw new WerewolfGameError("Two cast members now share a name. Rename or remove one before starting.");
-    const fill = count - players.length;
-    const names = pickAgentNames(fill, players.map((p) => p.name));
-    const archetypes: typeof casting.personaPool = [];
-    let remaining = casting.personaPool.filter(key => !players.some(player => player.personaKey === key));
-    for (let i = 0; i < fill; i++) {
-      if (!remaining.length) remaining = [...casting.personaPool];
-      const pool = casting.fillStrategy === "random" ? casting.personaPool : remaining;
-      const selected = pool[Math.floor(Math.random() * pool.length)]!;
-      archetypes.push(selected); remaining = remaining.filter(key => key !== selected);
-    }
-    for (let i = 0; i < fill; i++) {
-      const identity = getHousePersonaDetails(archetypes[i]!);
-      players.push({ id: randomUUID(), name: names[i]!, personality: identity.personalityBlurb, backstory: "", strategy: resolveWerewolfStrategy(null, archetypes[i]!), avatarUrl: null, personaKey: archetypes[i]! });
-    }
+  for (const seat of seats) {
+    if (seat.houseCharacter) { players.push({ ...seat.houseCharacter, id: seat.id }); continue; }
+    const profile = profiles.find((p) => p.id === seat.agentProfileId)!;
+    if (!hasEligibleAgentContent(profile)) throw new WerewolfGameError("A selected character is archived or awaiting review", 409);
+    const [revision] = profile.contentRevisionId ? await tx.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, profile.contentRevisionId)) : [];
+    if (profile.contentRevisionId && !revision) throw new Error("Missing approved character revision");
+    const character = revision ? decodeContentSnapshot(revision.snapshot, profile) : profile;
+    players.push({ id: seat.id, agentProfileId: profile.id, contentRevisionId: profile.contentRevisionId,
+      name: character.name, personality: character.personality, backstory: character.backstory ?? "",
+      strategy: resolveWerewolfStrategy(character.werewolfStrategyStyle, character.personaKey), avatarUrl: character.avatarUrl, personaKey: character.personaKey });
+  }
+  if (new Set(players.map(player => player.name.trim().toLowerCase())).size !== players.length) throw new WerewolfGameError("Two cast members now share a name. Rename or remove one before starting.");
+  return [...players, ...createWerewolfHousePlayers(players, count - players.length, casting)];
+}
+
+/** Persist these identities during Fill AI; assigning roles remains a Start operation. */
+export function createWerewolfHousePlayers(existing: Array<Pick<WerewolfPlayer, "name" | "personaKey">>, count: number, casting = normalizeWerewolfCasting({})): WerewolfPlayer[] {
+  const players: WerewolfPlayer[] = [];
+  const names = pickAgentNames(count, existing.map((p) => p.name));
+  const archetypes: typeof casting.personaPool = [];
+  let remaining = casting.personaPool.filter(key => !existing.some(player => player.personaKey === key));
+  for (let i = 0; i < count; i++) {
+    if (!remaining.length) remaining = [...casting.personaPool];
+    const pool = casting.fillStrategy === "random" ? casting.personaPool : remaining;
+    const selected = pool[Math.floor(Math.random() * pool.length)]!;
+    archetypes.push(selected); remaining = remaining.filter(key => key !== selected);
+  }
+  for (let i = 0; i < count; i++) {
+    const identity = getHousePersonaDetails(archetypes[i]!);
+    players.push({ id: randomUUID(), name: names[i]!, personality: identity.personalityBlurb, backstory: "", strategy: resolveWerewolfStrategy(null, archetypes[i]!), avatarUrl: null, personaKey: archetypes[i]! });
+  }
   return players;
 }
 

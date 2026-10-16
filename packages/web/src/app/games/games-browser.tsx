@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { enabledGameKinds } from "@influence/engine/game-availability";
 import { collectionLabel, matchesGameCollection, type GameCollection } from "@/lib/game-collections";
-import { listWerewolfGames, type WerewolfGameSummary } from "@/lib/werewolf-api";
+import { listWerewolfGames, fillWerewolfLobby, startWerewolfLobby, stopWerewolf, type WerewolfGameSummary } from "@/lib/werewolf-api";
 import { EpisodeCard } from "./episode-preview";
 import {
   fillGame,
@@ -51,7 +51,7 @@ interface FiltersState {
 }
 
 interface GameCardProps {
-  game: GameSummary;
+  game: GameSummary | WerewolfGameSummary;
   onJoin?: (game: GameSummary) => void;
   canFill: boolean;
   canStart: boolean;
@@ -71,7 +71,8 @@ function GameCard({
 }: GameCardProps) {
   const isJoinable = game.status === "waiting";
   const isLive = game.status === "in_progress";
-  const joinedPlayers = Math.min(game.alivePlayers, game.playerCount);
+  const werewolf = "gameKind" in game && game.gameKind === "werewolf";
+  const joinedPlayers = Math.min("joinedPlayers" in game ? game.joinedPlayers : game.alivePlayers, game.playerCount);
   const isReadyToStart = joinedPlayers >= game.playerCount;
   const canManage = (isJoinable && (canStart || (canFill && !isReadyToStart)))
     || ((isLive || isJoinable) && canStop) || (!isLive && canHide);
@@ -94,7 +95,7 @@ function GameCard({
     setActionError(null);
     setFilling(true);
     try {
-      await fillGame(game.id);
+      await (werewolf ? fillWerewolfLobby(game.id) : fillGame(game.id));
       await onRefresh();
       setFilling(false);
     } catch (err) {
@@ -107,7 +108,7 @@ function GameCard({
     setActionError(null);
     setStarting(true);
     try {
-      await startGame(game.id);
+      await (werewolf ? startWerewolfLobby(game.id) : startGame(game.id));
       await onRefresh();
       setStarting(false);
     } catch (err) {
@@ -120,7 +121,7 @@ function GameCard({
     setActionError(null);
     setStopping(true);
     try {
-      await stopGame(game.id);
+      await (werewolf ? stopWerewolf(game.id) : stopGame(game.id));
       await onRefresh();
       setStopping(false);
     } catch (err) {
@@ -145,8 +146,8 @@ function GameCard({
 
   return (
     <>
-      <EpisodeCard game={game} onJoin={onJoin ? () => onJoin(game) : undefined} management={canManage ? <div>
-          <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
+      <EpisodeCard game={game} onJoin={onJoin && "alivePlayers" in game ? () => onJoin(game) : undefined} management={canManage ? <div>
+          <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
             {isJoinable && canStart && (
               <button
                 onClick={(e) => {
@@ -196,7 +197,7 @@ function GameCard({
               </button>
             )}
           </div>
-        {isLive && <span className="influence-copy-muted text-xs">Round {game.currentRound}/{game.maxRounds} · {phaseLabel(game.currentPhase)} · {game.alivePlayers} alive</span>}
+        {isLive && "currentRound" in game && <span className="influence-copy-muted text-xs">Round {game.currentRound}/{game.maxRounds} · {phaseLabel(game.currentPhase)} · {game.alivePlayers} alive</span>}
         {actionError && <p role="alert" className="text-red-300 text-sm mt-2">{actionError}</p>}
       </div> : undefined} />
 
@@ -394,15 +395,13 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
       ) : (
         <div className={compact ? "episode-compact" : ""}>
           {openGames.length > 0 && <EpisodeShelf name="Open" grid={false}>
-            {openGames.map(item => item.kind === "werewolf"
-              ? <EpisodeCard key={item.game.id} game={item.game} management={canStart || canStop ? <Link href={`/games/${encodeURIComponent(item.game.slug)}`}>Open game management ↗</Link> : undefined} />
-              : <GameCard key={item.game.id} game={item.game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
+            {openGames.map(item => <GameCard key={item.game.id} game={item.game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
           </EpisodeShelf>}
           {seasonGames.length > 0 && activeSeason && <EpisodeShelf name="Active season" grid={false} href={`/games/season/${encodeURIComponent(activeSeason.slug)}`}>
             {seasonGames.map(game => <GameCard key={game.id} game={game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
           </EpisodeShelf>}
           {libraryWerewolf.length > 0 && <EpisodeShelf name="Werewolf" grid={compact || !!filters.search || filters.status !== "all" || kind === "werewolf"} href="/games/type/werewolf">
-            {libraryWerewolf.map(game => <EpisodeCard key={game.id} game={game} management={canStart || canStop ? <Link href={`/games/${encodeURIComponent(game.slug)}`}>Open game management ↗</Link> : undefined} />)}
+            {libraryWerewolf.map(game => <GameCard key={game.id} game={game} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
           </EpisodeShelf>}
           {libraryGames.length > 0 && <EpisodeShelf name={showShelves ? "Influence" : collection ? collectionLabel(collection, games) : "Games"} grid={!showShelves} href={showShelves ? "/games/type/influence" : undefined}>
             {libraryGames.map(game => <GameCard key={game.id} game={game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}

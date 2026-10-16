@@ -19,8 +19,8 @@ export async function readPublishedWerewolfCharacters(db: Pick<DrizzleDB, "selec
 type Profile = typeof schema.agentProfiles.$inferSelect;
 export interface WerewolfCastingPlayer {
   id: string;
-  agentProfileId: string;
-  ownerPublicId: string;
+  agentProfileId: string | null;
+  ownerPublicId: string | null;
   name: string;
   avatarUrl: string | null;
   personaKey: Profile["personaKey"] | null;
@@ -33,19 +33,19 @@ export async function readWerewolfCastingPlayers(db: Pick<DrizzleDB, "select">, 
   if (!gameIds.length) return byGame;
   const rows = await db.select({ seat: schema.werewolfLobbySeats, profile: schema.agentProfiles, ownerPublicId: schema.users.publicId })
     .from(schema.werewolfLobbySeats)
-    .innerJoin(schema.agentProfiles, eq(schema.agentProfiles.id, schema.werewolfLobbySeats.agentProfileId))
-    .innerJoin(schema.users, eq(schema.users.id, schema.agentProfiles.userId))
+    .leftJoin(schema.agentProfiles, eq(schema.agentProfiles.id, schema.werewolfLobbySeats.agentProfileId))
+    .leftJoin(schema.users, eq(schema.users.id, schema.agentProfiles.userId))
     .where(inArray(schema.werewolfLobbySeats.gameId, gameIds))
     .orderBy(asc(schema.werewolfLobbySeats.joinedAt), asc(schema.werewolfLobbySeats.id));
-  const profiles = [...new Map(rows.filter(row => hasEligibleAgentContent(row.profile)).map(row => [row.profile.id, row.profile])).values()];
+  const profiles = [...new Map(rows.filter((row): row is typeof row & { profile: Profile } => row.profile !== null && hasEligibleAgentContent(row.profile)).map(row => [row.profile.id, row.profile])).values()];
   const characters = await readPublishedWerewolfCharacters(db, profiles);
   const byId = new Map(characters.map((character, i) => [profiles[i]!.id, character]));
   for (const row of rows) {
     const identity = { id: row.seat.id, agentProfileId: row.seat.agentProfileId, ownerPublicId: row.ownerPublicId };
-    const character = byId.get(row.profile.id);
+    const character = row.seat.houseCharacter ?? (row.profile ? byId.get(row.profile.id) : undefined);
     const cast = byGame.get(row.seat.gameId) ?? [];
     cast.push(character
-      ? { ...identity, name: character.name, avatarUrl: character.avatarUrl, personaKey: character.personaKey, available: true }
+      ? { ...identity, name: character.name, avatarUrl: character.avatarUrl, personaKey: character.personaKey ?? null, available: true }
       : { ...identity, name: "Unavailable agent", avatarUrl: null, personaKey: null, available: false });
     byGame.set(row.seat.gameId, cast);
   }

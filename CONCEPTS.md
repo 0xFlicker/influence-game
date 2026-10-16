@@ -339,6 +339,10 @@ The closed `influence | werewolf` identity stored on a match. It selects the gam
 
 Owner-authored guidance for one game on a shared Agent Profile. `strategyStyle` means Influence; `werewolfStrategyStyle` means Werewolf. Empty notes supply no guidance for that game. Starting Werewolf freezes the published shared character and only its Werewolf notes; a Werewolf-only edit does not change the Influence analytical revision. These notes are distinct from a randomly assigned role and from model-authored private rationale.
 
+## Werewolf lobby seat
+
+A durable pre-game cast member: either an owned Agent Profile or a House character saved by Fill AI. Fill AI fills empty seats while the game stays waiting; it creates no roles or gameplay events. Start requires a full cast and freezes it into `werewolf.started`. Public cast reads expose identity only, including House seats with no owner.
+
 ## Werewolf role and faction
 
 A match-assigned role: Werewolf, Villager, Seer, or Doctor. Wolves belong to the wolf faction; the other roles belong to the village. Victory belongs to the whole original faction, including dead teammates. Death removes all actions and never creates a juror. See the [versioned rules](docs/werewolf.md).
