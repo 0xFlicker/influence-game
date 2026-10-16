@@ -342,7 +342,7 @@ test.describe("local public player identity", () => {
     test.setTimeout(120_000);
     const cast = Array.from({ length: 9 }, (_, i) => ({ id: `cast-${i}`, name: `Cast ${i + 1}`, avatarUrl: null, personaKey: "strategic" }));
     const episode = { title: "Open Influence", description: "Meet everyone", episodeNumber: null, cast, coverUrl: null, status: "ready", locked: false, revision: 1, frameOrder: [] };
-    const influence = { id: "open-influence", slug: "open-influence", status: "waiting", playerCount: 10, alivePlayers: 9, modelLabel: "Standard", createdAt: new Date().toISOString(), episode };
+    const influence = { id: "open-influence", slug: "open-influence", visibility: "public", status: "waiting", playerCount: 10, alivePlayers: 9, modelLabel: "Standard", createdAt: new Date().toISOString(), episode };
     const werewolf = { id: "open-werewolf", slug: "open-werewolf", gameKind: "werewolf", status: "waiting", playerCount: 10, joinedPlayers: 9, modelLabel: "Standard", createdAt: new Date().toISOString(), episode: { ...episode, title: "Open Werewolf" } };
     for (const touch of [false, true]) {
       const context = await browser.newContext({ viewport: touch ? { width: 390, height: 844 } : { width: 1440, height: 1000 }, hasTouch: touch, isMobile: touch, reducedMotion: "reduce" });
@@ -480,6 +480,10 @@ test.describe("local public player identity", () => {
         await route.fulfill({ json: { ...await response.json(), isAdmin: true, roles: ["admin", "producer"], permissions: ["view_admin", "manage_postgame_media"] } });
       });
       await page.route("**/api/games", route => route.fulfill({ json: games }));
+      await page.route("**/api/seasons", route => route.fulfill({ json: { schemaVersion: 1, seasons: [{
+        id: "s0", name: "Season 0", slug: "season-0", status: "active", ratedPool: "free",
+        admissionStartsAt: null, admissionClosesAt: null, finalizedAt: null,
+      }] } }));
       await page.route("**/api/admin/games", route => route.fulfill({ json: games }));
       await page.route(/\/api\/admin\/production\/library(?:\?.*)?$/, route => {
         const query = new URL(route.request().url()).searchParams;
@@ -503,7 +507,9 @@ test.describe("local public player identity", () => {
       await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });
       await expect(page.getByRole("button", { name: "Backfill missing titles" })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Edit episode", exact: true })).toHaveCount(0);
-      await expect(page.getByRole("region", { name: "Season 0", exact: true }).getByRole("link", { name: "View all" })).toHaveAttribute("href", "/games/season/season-0");
+      await expect(page.getByRole("region", { name: "Active season", exact: true }).getByRole("link", { name: "View all" })).toHaveAttribute("href", "/games/season/season-0");
+      await expect(page.getByTestId("episode-card")).toHaveCount(59);
+      await expect(page.getByRole("heading", { name: "Episode 2", exact: true })).toHaveCount(0);
       for (const [path, expected] of [["season/season-0", "Episode 0"]]) {
         await page.goto(`${servers.webUrl}/games/${path}`, { waitUntil: "networkidle" });
         await expect(page.getByTestId("episode-card")).toHaveCount(1);

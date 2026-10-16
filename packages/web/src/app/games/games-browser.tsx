@@ -316,7 +316,7 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
   };
 
   const searchQuery = filters.search.toLowerCase();
-  const scopedGames = games.filter(game => kind !== "werewolf" && (!collection || matchesGameCollection(game, collection)));
+  const scopedGames = games.filter(game => game.visibility === "public" && kind !== "werewolf" && (!collection || matchesGameCollection(game, collection)));
   const filtered = scopedGames
     .filter((g) => {
       if (filters.status !== "all" && g.status !== filters.status) return false;
