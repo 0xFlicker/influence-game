@@ -444,7 +444,4 @@
 .episode-card .episode-desktop-actions > button { padding: 10px 14px; border-radius: 8px; font-size: 13px; }
 .episode-season { display: block; margin-top: 8px; }
 .episode-management { flex-basis: 100%; font-size: 12px; color: #afb8ab; }
-.episode-management summary { cursor: pointer; width: fit-content; padding: 8px 0; }
-.episode-management summary:focus-visible { outline: 2px solid #ddbf87; outline-offset: 3px; }
-.episode-management-content { padding-top: 8px; }
-.episode-management-content a { text-decoration: underline; text-underline-offset: 3px; }
+.episode-management a { text-decoration: underline; text-underline-offset: 3px; }

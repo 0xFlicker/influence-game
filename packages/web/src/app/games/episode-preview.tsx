@@ -133,7 +133,7 @@ export function EpisodeCard({ game, management, onJoin }: { game: LibraryGame; m
   const actions = <>
     {waiting ? onJoin ? <button type="button" className="influence-button-primary" onClick={onJoin}>Join game</button> : <Link className="influence-button-primary" href={gameHref(game.slug)}>Join game</Link>
       : live || game.status === "completed" ? links : <Link className="influence-button-primary" href={gameHref(game.slug)}>Open game</Link>}
-    {management && <details className="episode-management"><summary>Manage game</summary><div className="episode-management-content">{management}</div></details>}
+    {management && <div className="episode-management">{management}</div>}
   </>;
   return <>
     <GameCard ref={card} data-testid="episode-card" data-game-kind={werewolf ? "werewolf" : "influence"} title={title} href={gameHref(game.slug)} status={game.status} statusLabel={label} eyebrow={subtitle}
