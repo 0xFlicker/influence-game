@@ -336,6 +336,14 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
     && `werewolf ${game.slug} ${game.modelLabel} ${game.episode?.title ?? ""} ${game.episode?.description ?? ""} ${(game.episode?.cast ?? []).map(player => player.name).join(" ")}`.toLowerCase().includes(searchQuery))
     .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || Date.parse(b.createdAt) - Date.parse(a.createdAt));
 
+  const showOpenShelf = !compact && !collection;
+  const openGames = showOpenShelf ? [
+    ...filtered.filter(game => game.status === "waiting").map(game => ({ kind: "influence" as const, game })),
+    ...filteredWerewolf.filter(game => game.status === "waiting").map(game => ({ kind: "werewolf" as const, game })),
+  ].sort((a, b) => Date.parse(b.game.createdAt) - Date.parse(a.game.createdAt)) : [];
+  const libraryGames = showOpenShelf ? filtered.filter(game => game.status !== "waiting") : filtered;
+  const libraryWerewolf = showOpenShelf ? filteredWerewolf.filter(game => game.status !== "waiting") : filteredWerewolf;
+
   const statusOptions: { value: StatusFilter; label: string }[] = [
     { value: "all", label: "All" },
     { value: "waiting", label: "Open" },
@@ -390,10 +398,15 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
         </div>
       ) : (
         <div className={compact ? "episode-compact" : ""}>
-          {filteredWerewolf.length > 0 && <EpisodeShelf name="Werewolf" grid={compact || !!filters.search || filters.status !== "all" || kind === "werewolf"} href="/games/type/werewolf">
-            {filteredWerewolf.map(game => <WerewolfLibraryCard key={game.id} game={game} />)}
+          {openGames.length > 0 && <EpisodeShelf name="Open Games" grid={false}>
+            {openGames.map(item => item.kind === "werewolf"
+              ? <WerewolfLibraryCard key={item.game.id} game={item.game} />
+              : <GameCard key={item.game.id} game={item.game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
           </EpisodeShelf>}
-          {(compact || filters.search || filters.status !== "all" || filters.category !== "all" || collection ? [[collection ? collectionLabel(collection, games) : "Games", filtered] as const] : Array.from(filtered.reduce((map, game) => { const name = shelfName(game); map.set(name, [...(map.get(name) ?? []), game]); return map; }, new Map<string, GameSummary[]>())).sort(([a], [b]) => shelfRank(a) - shelfRank(b))).filter(([, items]) => items.length > 0).map(([name, items]) => <EpisodeShelf key={name} name={name} grid={compact || Boolean(filters.search) || filters.status !== "all" || filters.category !== "all" || !!collection} href={items[0] ? gameCollectionHref(items[0]) : "/games"}>
+          {libraryWerewolf.length > 0 && <EpisodeShelf name="Werewolf" grid={compact || !!filters.search || filters.status !== "all" || kind === "werewolf"} href="/games/type/werewolf">
+            {libraryWerewolf.map(game => <WerewolfLibraryCard key={game.id} game={game} />)}
+          </EpisodeShelf>}
+          {(compact || filters.search || filters.status !== "all" || filters.category !== "all" || collection ? [[collection ? collectionLabel(collection, games) : "Games", libraryGames] as const] : Array.from(libraryGames.reduce((map, game) => { const name = shelfName(game); map.set(name, [...(map.get(name) ?? []), game]); return map; }, new Map<string, GameSummary[]>())).sort(([a], [b]) => shelfRank(a) - shelfRank(b))).filter(([, items]) => items.length > 0).map(([name, items]) => <EpisodeShelf key={name} name={name} grid={compact || Boolean(filters.search) || filters.status !== "all" || filters.category !== "all" || !!collection} href={items[0] ? gameCollectionHref(items[0]) : "/games"}>
             {items.map(game => <GameCard key={game.id} game={game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
           </EpisodeShelf>)}
         </div>
@@ -404,7 +417,7 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
 
 function shelfRank(name: string) { return name === "Public games" ? 1 : 0; }
 function shelfName(game: GameSummary) { return game.season?.name ?? "Public games"; }
-function EpisodeShelf({ name, grid, href, children }: { name: string; grid: boolean; href: string; children: React.ReactNode }) {
+function EpisodeShelf({ name, grid, href, children }: { name: string; grid: boolean; href?: string; children: React.ReactNode }) {
   const rail = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ left: false, right: false });
   useEffect(() => {
@@ -417,5 +430,5 @@ function EpisodeShelf({ name, grid, href, children }: { name: string; grid: bool
     update();
     return () => { observer.disconnect(); element.removeEventListener("scroll", update); };
   }, [grid, children]);
-  return <section className="episode-shelf" aria-label={name}><div className="episode-shelf-heading"><h2>{name}</h2>{!grid && <div className="flex gap-2"><Link href={href} className="rounded border border-white/20 px-3 py-2 text-sm">View all</Link><button disabled={!edges.left} aria-label={`Previous ${name} games`} onClick={() => rail.current?.scrollBy({ left: -rail.current.clientWidth, behavior: "smooth" })}>←</button><button disabled={!edges.right} aria-label={`Next ${name} games`} onClick={() => rail.current?.scrollBy({ left: rail.current.clientWidth, behavior: "smooth" })}>→</button></div>}</div><div ref={rail} className={grid ? "episode-grid" : `episode-rail ${edges.left ? "has-before" : ""} ${edges.right ? "has-after" : ""}`}>{children}</div></section>;
+  return <section className="episode-shelf" aria-label={name}><div className="episode-shelf-heading"><h2>{name}</h2>{!grid && <div className="flex gap-2">{href && <Link href={href} className="rounded border border-white/20 px-3 py-2 text-sm">View all</Link>}<button disabled={!edges.left} aria-label={`Previous ${name} games`} onClick={() => rail.current?.scrollBy({ left: -rail.current.clientWidth, behavior: "smooth" })}>←</button><button disabled={!edges.right} aria-label={`Next ${name} games`} onClick={() => rail.current?.scrollBy({ left: rail.current.clientWidth, behavior: "smooth" })}>→</button></div>}</div><div ref={rail} className={grid ? "episode-grid" : `episode-rail ${edges.left ? "has-before" : ""} ${edges.right ? "has-after" : ""}`}>{children}</div></section>;
 }

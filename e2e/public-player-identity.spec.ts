@@ -291,6 +291,61 @@ test.describe("local public player identity", () => {
     }
   });
 
+  test("games prioritize open seats and page both public casts four at a time", async ({ browser }) => {
+    test.setTimeout(120_000);
+    const cast = Array.from({ length: 9 }, (_, i) => ({ id: `cast-${i}`, name: `Cast ${i + 1}`, avatarUrl: null, personaKey: "strategic" }));
+    const episode = { title: "Open Influence", description: "Meet everyone", episodeNumber: null, cast, coverUrl: null, status: "ready", locked: false, revision: 1, frameOrder: [] };
+    const influence = { id: "open-influence", slug: "open-influence", status: "waiting", playerCount: 10, alivePlayers: 9, modelLabel: "Standard", createdAt: new Date().toISOString(), episode };
+    const werewolf = { id: "open-werewolf", slug: "open-werewolf", gameKind: "werewolf", status: "waiting", playerCount: 10, joinedPlayers: 9, modelLabel: "Standard", createdAt: new Date().toISOString(), episode: { ...episode, title: "Open Werewolf" } };
+    for (const touch of [false, true]) {
+      const context = await browser.newContext({ viewport: touch ? { width: 390, height: 844 } : { width: 1440, height: 1000 }, hasTouch: touch, isMobile: touch, reducedMotion: "reduce" });
+      const page = await context.newPage();
+      let open = true;
+      try {
+        await page.route("**/api/games", route => route.fulfill({ json: [{ ...influence, status: open ? "waiting" : "completed" }] }));
+        await page.route("**/api/werewolf", route => route.fulfill({ json: [{ ...werewolf, status: open ? "waiting" : "completed" }] }));
+        await page.route("**/api/games/open-influence/episode", route => route.fulfill({ json: {
+          episode, media: { status: "not_requested" }, frames: [
+            { id: "scene", kind: "scene", label: "Inside the House" },
+            ...[0, 4, 8].map(offset => ({ id: `cast:${offset}`, kind: "cast", label: "Meet the cast", players: cast.slice(offset, offset + 4) })),
+          ],
+        } }));
+        await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });
+        const shelf = page.getByRole("region", { name: "Open Games", exact: true });
+        await expect(shelf).toBeVisible();
+        await expect(page.locator(".episode-shelf").first()).toHaveAttribute("aria-label", "Open Games");
+        await expect(page.locator(".episode-card")).toHaveCount(2);
+        await page.screenshot({ path: `/tmp/games-cast-${touch ? "mobile" : "desktop"}.png`, fullPage: true });
+        for (const title of ["Open Influence", "Open Werewolf"]) {
+          const card = shelf.locator("article").filter({ has: page.getByRole("heading", { name: title, exact: true }) });
+          await card.scrollIntoViewIfNeeded();
+          await expect(card.getByLabel("Cast page 1 of 3", { exact: true })).toBeVisible();
+          await expect(card.locator(".episode-cast:visible > div")).toHaveCount(4);
+          await card.getByRole("button", { name: "Next cast page" }).click();
+          await expect(card.getByLabel("Cast page 2 of 3", { exact: true })).toContainText("Cast 5");
+          await expect(card.locator(".episode-cast:visible > div")).toHaveCount(4);
+          await card.getByRole("button", { name: "Next cast page" }).click();
+          await expect(card.getByLabel("Cast page 3 of 3", { exact: true })).toContainText("Cast 9");
+          await expect(card.locator(".episode-cast:visible > div")).toHaveCount(1);
+          await card.getByRole("button", { name: "Next cast page" }).click();
+          await expect(card.getByLabel("Cast page 1 of 3", { exact: true })).toBeVisible();
+          await card.getByRole("button", { name: "Previous cast page" }).focus();
+          await page.keyboard.press("Enter");
+          await expect(card.getByLabel("Cast page 3 of 3", { exact: true })).toBeVisible();
+          await expect(page).toHaveURL(`${servers.webUrl}/games`);
+        }
+        await page.getByLabel("Game type", { exact: true }).selectOption("werewolf");
+        await expect(shelf.locator("article")).toHaveCount(1);
+        await page.getByLabel("Search games").fill("absent-cast");
+        await expect(shelf).toHaveCount(0);
+        open = false;
+        await page.reload({ waitUntil: "networkidle" });
+        await expect(page.getByRole("region", { name: "Open Games", exact: true })).toHaveCount(0);
+        await expect(page.locator(".episode-card")).toHaveCount(2);
+      } finally { await context.close(); }
+    }
+  });
+
   test("episode cards use desktop destinations and a fullscreen touch trailer", async ({ browser }) => {
     test.setTimeout(90_000);
     const game = { id: "episode-fixture", slug: "quiet-sage-room", status: "completed", playerCount: 4, players: [], currentRound: 5, maxRounds: 5, currentPhase: "DONE", alivePlayers: 1, eliminatedPlayers: 3, phaseTimeRemaining: null, modelLabel: "Standard", visibility: "public", createdAt: new Date().toISOString(), season: { id: "s0", name: "Season 0", slug: "season-0" }, episode: { title: "Good Company", description: "Four strangers. Four different ideas about trust.", episodeNumber: 42, cast: [{ id: "mira", name: "Mira", avatarUrl: null, personaKey: "strategic" }], coverUrl: null, status: "ready", locked: false, revision: 1, frameOrder: [] } };
