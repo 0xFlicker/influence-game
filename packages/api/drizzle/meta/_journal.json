@@ -820,6 +820,13 @@
       "when": 1791676800003,
       "tag": "0116_retrospective_recovery_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1792191933901,
+      "tag": "0117_werewolf_lobby_house_seats",
+      "breakpoints": true
     }
   ]
 }

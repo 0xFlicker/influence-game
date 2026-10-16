@@ -7,7 +7,7 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { setupTestDB } from "./test-utils.js";
 import { claimWerewolfGame, readWerewolfEvents } from "../services/werewolf-games.js";
-import { createWerewolfLobby, joinWerewolfLobby, leaveWerewolfLobby, readWerewolfLobby, startWerewolfLobby } from "../services/werewolf-lobbies.js";
+import { createWerewolfLobby, fillWerewolfLobby, joinWerewolfLobby, leaveWerewolfLobby, readWerewolfLobby, startWerewolfLobby } from "../services/werewolf-lobbies.js";
 import { createOwnedAgentProfile, updateOwnedAgentProfile } from "../services/agent-profile-management.js";
 import { createWerewolfRoutes } from "../routes/werewolf.js";
 
@@ -30,6 +30,11 @@ test("a saved lobby has durable public seats but no roles, game events, or worke
   expect(await joinWerewolfLobby(db, game.id, "owner", "agent")).toEqual(first);
   const lobby = await readWerewolfLobby(db, game.slug);
   expect(lobby).toMatchObject({ status: "waiting", started: false, playerCount: 6, players: [{ id: first.playerId, name: "agent" }] });
+  expect(lobby.episode.cast).toEqual([{ id: first.playerId, name: "agent", avatarUrl: null, personaKey: "observer" }]);
+  const listed = await (await createWerewolfRoutes(db).request("/api/werewolf")).json();
+  expect(listed).toMatchObject([{ joinedPlayers: 1, episode: { cast: lobby.episode.cast } }]);
+  expect(JSON.stringify(listed)).not.toContain("PRIVATE_");
+  expect(JSON.stringify(listed)).not.toContain("INFLUENCE_ONLY");
   expect(JSON.stringify(lobby)).not.toContain("PRIVATE_");
   expect(JSON.stringify(lobby)).not.toContain("INFLUENCE_ONLY");
   expect(lobby.players[0]!.ownerPublicId).not.toBe("owner");
@@ -64,11 +69,29 @@ test("concurrent joins serialize the last seat without overfilling", async () =>
   expect((await readWerewolfLobby(db, game.id)).players).toHaveLength(6);
 });
 
-test("start freezes the latest approved strategy for every owner, assigns roles once, and fills the House seats", async () => {
+test("waiting discovery uses approved joined identities, follows removal, and never exposes draft content", async () => {
+  const game = await create();
+  const { profile: agent } = await createOwnedAgentProfile(db, { userId: "guest" }, {
+    name: "Arden", personality: "PRIVATE_PERSONALITY", gender: "non-binary", personaKey: "observer",
+    strategyStyle: "INFLUENCE_ONLY", werewolfStrategyStyle: "PRIVATE_WEREWOLF_STRATEGY",
+  });
+  const seat = await joinWerewolfLobby(db, game.id, "guest", agent.id);
+  await db.update(schema.agentProfiles).set({ name: "Unapproved draft name", avatarUrl: "/unapproved-draft.png" }).where(eq(schema.agentProfiles.id, agent.id));
+  const response = await (await createWerewolfRoutes(db).request("/api/werewolf")).json();
+  expect(response).toMatchObject([{ joinedPlayers: 1, episode: { cast: [{ id: seat.playerId, name: "Arden" }] } }]);
+  for (const secret of ["Unapproved draft", "unapproved-draft.png", "PRIVATE_", "INFLUENCE_ONLY", "roles", "ownerPublicId", "agentProfileId"]) {
+    expect(JSON.stringify(response)).not.toContain(secret);
+  }
+  await leaveWerewolfLobby(db, game.id, "guest", seat.playerId);
+  expect((await readWerewolfLobby(db, game.id)).episode.cast).toEqual([]);
+});
+
+test("start freezes the latest approved strategy for every owner, assigns roles once, and preserves the filled House seats", async () => {
   const game = await create();
   const { profile: agent } = await createOwnedAgentProfile(db, { userId: "guest" }, { name: "Arden", personality: "Calm", gender: "non-binary", personaKey: "observer", strategyStyle: "INFLUENCE_ONLY", werewolfStrategyStyle: "BEFORE_EDIT" });
   const seat = await joinWerewolfLobby(db, game.id, "guest", agent.id);
   await updateOwnedAgentProfile(db, { userId: "guest" }, agent.id, { werewolfStrategyStyle: "LATEST_STRATEGY", submissionId: randomUUID(), expectedContentRevisionId: agent.contentRevisionId });
+  await fillWerewolfLobby(db, game.id);
   const starts = await Promise.allSettled([startWerewolfLobby(db, game.id), startWerewolfLobby(db, game.id)]);
   expect(starts.filter(result => result.status === "fulfilled")).toHaveLength(1);
   expect(await db.select().from(schema.gameEpisodePresentations)).toMatchObject([{ gameId: game.id, status: "queued" }]);
@@ -78,7 +101,11 @@ test("start freezes the latest approved strategy for every owner, assigns roles 
   expect(state.players).toHaveLength(6);
   expect(state.players.find(player => player.id === seat.playerId)).toMatchObject({ agentProfileId: agent.id, strategy: "LATEST_STRATEGY" });
   expect(JSON.stringify(events)).not.toContain("INFLUENCE_ONLY");
-  expect((await readWerewolfLobby(db, game.id)).status).toBe("in_progress");
+  const started = await readWerewolfLobby(db, game.id);
+  expect(started.status).toBe("in_progress");
+  expect(started.episode.cast.map(player => player.name)).toEqual(state.players.map(player => player.name));
+  await db.update(schema.agentProfiles).set({ name: "Changed after start", avatarUrl: "/later.png" }).where(eq(schema.agentProfiles.id, agent.id));
+  expect((await readWerewolfLobby(db, game.id)).episode.cast).toEqual(started.episode.cast);
   await expect(leaveWerewolfLobby(db, game.id, "guest", seat.playerId)).rejects.toThrow("no longer");
   await expect(joinWerewolfLobby(db, game.id, "guest", agent.id)).rejects.toThrow("no longer");
 });
@@ -86,12 +113,16 @@ test("start freezes the latest approved strategy for every owner, assigns roles 
 test("withdrawn profiles fail start atomically and are redacted until removed", async () => {
   const game = await create(); await profile("withdrawn");
   const seat = await joinWerewolfLobby(db, game.id, "owner", "withdrawn");
+  await fillWerewolfLobby(db, game.id);
   await db.update(schema.agentProfiles).set({ archivedAt: new Date().toISOString() }).where(eq(schema.agentProfiles.id, "withdrawn"));
-  expect((await readWerewolfLobby(db, game.id)).players[0]).toMatchObject({ name: "Unavailable agent", available: false });
+  const unavailable = await readWerewolfLobby(db, game.id);
+  expect(unavailable.players[0]).toMatchObject({ name: "Unavailable agent", available: false });
+  expect(unavailable.episode.cast[0]).toMatchObject({ name: "Unavailable agent", avatarUrl: null, personaKey: null });
   await expect(startWerewolfLobby(db, game.id)).rejects.toThrow("archived");
   expect(await readWerewolfEvents(db, game.id)).toEqual([]);
   expect((await readWerewolfLobby(db, game.id)).status).toBe("waiting");
   await leaveWerewolfLobby(db, game.id, "owner", seat.playerId);
+  await fillWerewolfLobby(db, game.id);
   await startWerewolfLobby(db, game.id);
   expect(replayWerewolf(await readWerewolfEvents(db, game.id)).players).toHaveLength(6);
 });
@@ -132,6 +163,7 @@ test("custom setup, provider policy, casting and visuals survive lobby start", a
   const setup = {playerCount:7 as const,wolves:2 as const,seer:false,doctor:true};
   const g = await createWerewolfLobby(db,"owner",{preset:"two_wolves",setup,visualMode:true,personaPool:["observer","aggressive"],fillStrategy:"balanced",providerManifest:[{catalogId:DEFAULT_MODEL_CATALOG_ID,reasoningPolicy:"low"}]});
   expect((await readWerewolfLobby(db,g.id)).playerCount).toBe(7);
+  await fillWerewolfLobby(db,g.id);
   await startWerewolfLobby(db,g.id);
   const state = replayWerewolf(await readWerewolfEvents(db,g.id));
   expect(state.config.setup).toEqual(setup);
@@ -162,6 +194,7 @@ test.each(["gamer", "admin", "sysop", "player", "producer"])("only operator role
   await grantTestAuthority(db, "owner", ["start_game", "create_game"], role);
   const token = await createSessionToken("owner", { roles: ["sysop"], permissions: ["start_game", "create_game"] });
   const game = await create();
+  await fillWerewolfLobby(db, game.id);
   const app = createWerewolfRoutes(db);
   const response = await app.request(`/api/werewolf/${game.id}/start`, { method: "POST", headers: { authorization: `Bearer ${token}` } });
   const allowed = ["gamer", "admin", "sysop"].includes(role);
@@ -182,4 +215,51 @@ test("revoking the operator role invalidates an existing start token", async () 
   const response = await createWerewolfRoutes(db).request(`/api/werewolf/${game.id}/start`, { method: "POST", headers: { authorization: `Bearer ${token}` } });
   expect(response.status).toBe(403);
   expect(await readWerewolfEvents(db, game.id)).toEqual([]);
+});
+
+
+test("Fill AI persists a complete cast without starting, is idempotent, and Start requires full seats", async () => {
+  const game = await create();
+  await profile("joined");
+  await joinWerewolfLobby(db, game.id, "owner", "joined");
+  await expect(startWerewolfLobby(db, game.id)).rejects.toThrow("Fill all seats");
+  const results = await Promise.all([fillWerewolfLobby(db, game.id), fillWerewolfLobby(db, game.id)]);
+  expect(results.map(result => result.filled).sort()).toEqual([0, 5]);
+  const filled = await readWerewolfLobby(db, game.id);
+  expect(filled.status).toBe("waiting");
+  expect(filled.started).toBe(false);
+  expect(filled.players).toHaveLength(6);
+  expect(filled.players.filter(player => player.agentProfileId === null)).toHaveLength(5);
+  expect(new Set(filled.players.map(player => player.name)).size).toBe(6);
+  expect(await readWerewolfEvents(db, game.id)).toEqual([]);
+  expect((await claimWerewolfGame(db, game.id)).ok).toBe(false);
+  expect(JSON.stringify(filled)).not.toContain("personality");
+  expect(JSON.stringify(filled)).not.toContain("strategy");
+  const listed = await (await createWerewolfRoutes(db).request("/api/werewolf")).json();
+  expect(listed).toMatchObject([{ joinedPlayers: 6, episode: { cast: filled.episode.cast } }]);
+  const house = filled.players.find(player => player.agentProfileId === null)!;
+  await expect(leaveWerewolfLobby(db, game.id, "guest", house.id)).rejects.toThrow("only remove");
+  const { grantTestAuthority } = await import("./rbac-fixtures.js");
+  await grantTestAuthority(db, "owner", [], "sysop");
+  await leaveWerewolfLobby(db, game.id, "owner", house.id);
+  await expect(startWerewolfLobby(db, game.id)).rejects.toThrow("Fill all seats");
+  await fillWerewolfLobby(db, game.id);
+  const final = await readWerewolfLobby(db, game.id);
+  await startWerewolfLobby(db, game.id);
+  const state = replayWerewolf(await readWerewolfEvents(db, game.id));
+  expect(state.players.map(player => ({ id: player.id, name: player.name }))).toEqual(final.players.map(player => ({ id: player.id, name: player.name })));
+  await expect(fillWerewolfLobby(db, game.id)).rejects.toThrow("no longer");
+});
+
+test("Fill AI checks current fill permission independently of start permission", async () => {
+  const { grantTestAuthority } = await import("./rbac-fixtures.js");
+  await grantTestAuthority(db, "owner", ["fill_game"], "filler");
+  const token = await createSessionToken("owner", { roles: ["filler"], permissions: ["fill_game"] });
+  const app = createWerewolfRoutes(db), game = await create();
+  const headers = { authorization: `Bearer ${token}` };
+  expect((await app.request(`/api/werewolf/${game.id}/fill`, { method: "POST" })).status).toBe(401);
+  expect((await app.request(`/api/werewolf/${game.id}/fill`, { method: "POST", headers })).status).toBe(200);
+  expect((await app.request(`/api/werewolf/${game.id}/start`, { method: "POST", headers })).status).toBe(403);
+  await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, "owner"));
+  expect((await app.request(`/api/werewolf/${game.id}/fill`, { method: "POST", headers })).status).toBe(403);
 });

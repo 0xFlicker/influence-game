@@ -10,7 +10,7 @@ import { createWerewolfGame, readWerewolfEvents, readWerewolfLiveView, readWerew
 import { readWerewolfPresentation, readWerewolfCharacter, readWerewolfWatch } from "../services/werewolf-presentation.js";
 import { readWerewolfDecisions } from "../services/werewolf-decisions.js";
 import { readWerewolfThinking } from "../services/werewolf-thinking.js";
-import { createWerewolfLobby, joinWerewolfLobby, leaveWerewolfLobby, readWerewolfLobby, startWerewolfLobby } from "../services/werewolf-lobbies.js";
+import { createWerewolfLobby, fillWerewolfLobby, joinWerewolfLobby, leaveWerewolfLobby, readWerewolfLobby, startWerewolfLobby } from "../services/werewolf-lobbies.js";
 import { modelLabelFromConfig } from "../lib/model-label.js";
 import { abortWerewolf } from "../services/werewolf-runtime.js";
 
@@ -63,6 +63,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
     await leaveWerewolfLobby(db, c.req.param("id"), c.get("user").id, c.req.param("playerId"));
     return c.json({ removed: true });
   });
+  app.post("/api/werewolf/:id/fill", requireAuth(db), requirePermission("fill_game"), async c => c.json(await fillWerewolfLobby(db, c.req.param("id"))));
   app.post("/api/werewolf/:id/start", requireAuth(db), requirePermission("start_game"), requireRole("gamer", "admin", "sysop"), async c => c.json(await startWerewolfLobby(db, c.req.param("id"))));
   app.get("/api/werewolf", async (c) => {
     if (!enabledGameKinds().includes("werewolf")) return c.json([]);

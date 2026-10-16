@@ -63,7 +63,7 @@ export async function houseOwnedGameIds(
   const owned = new Set(profiles.map((p) => p.id));
   const seats = await db.select().from(schema.werewolfLobbySeats);
   for (const seat of seats)
-    if (owned.has(seat.agentProfileId)) gameIds.add(seat.gameId);
+    if (seat.agentProfileId && owned.has(seat.agentProfileId)) gameIds.add(seat.gameId);
   const starts = await db
     .select()
     .from(schema.werewolfEvents)

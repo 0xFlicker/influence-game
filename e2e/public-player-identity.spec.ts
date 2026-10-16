@@ -338,16 +338,67 @@ test.describe("local public player identity", () => {
     }
   });
 
-  test("games prioritize open seats and page both public casts four at a time", async ({ browser }) => {
+  test("library cards share visible authorized controls and separate Fill AI from Start", async ({ browser }) => {
+    test.setTimeout(120_000);
+    for (const width of [1440, 390]) {
+      const context = await browser.newContext({ viewport: { width, height: 1000 } });
+      await context.addInitScript(token => localStorage.setItem("influence_session", token), fixture.completeJwt);
+      const page = await context.newPage();
+      let permissions: string[] = [];
+      const full = new Set<string>();
+      const actions: string[] = [];
+      const base = { status: "waiting", playerCount: 6, modelLabel: "Standard", visibility: "public", createdAt: new Date().toISOString() };
+      try {
+        await page.route("**/api/auth/me", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), roles: ["gamer"], permissions } }); });
+        await page.route("**/api/free-queue", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), promptEligible: false } }); });
+        await page.route("**/api/games", route => route.fulfill({ json: [{ ...base, id: "card-influence", slug: "card-influence", alivePlayers: full.has("influence") ? 6 : 1 }] }));
+        await page.route("**/api/werewolf", route => route.fulfill({ json: [{ ...base, id: "card-werewolf", slug: "card-werewolf", gameKind: "werewolf", joinedPlayers: full.has("werewolf") ? 6 : 1 }] }));
+        for (const kind of ["influence", "werewolf"]) for (const action of ["fill", "start", "stop", "hide"]) {
+          const root = kind === "werewolf" && action !== "hide" ? "werewolf" : "games";
+          await page.route(`**/api/${root}/card-${kind}/${action}`, route => {
+            actions.push(`${kind}:${action}`);
+            if (action === "fill") full.add(kind);
+            return route.fulfill({ json: { status: "ok" } });
+          });
+        }
+        await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });
+        await expect(page.locator(".episode-management")).toHaveCount(0);
+        permissions = ["start_game", "fill_game", "stop_game", "hide_game"];
+        await page.reload({ waitUntil: "networkidle" });
+        for (const kind of ["werewolf", "influence"]) {
+          const card = page.locator(`.episode-card[data-game-kind="${kind}"]`);
+          await card.scrollIntoViewIfNeeded();
+          await expect(card.locator(".episode-management button")).toHaveText(["Start", "Fill AI", "Stop", "Hide"]);
+          await expect(card.getByRole("button", { name: "Start", exact: true })).toBeDisabled();
+          await card.getByRole("button", { name: "Fill AI", exact: true }).click();
+          await expect(card).toContainText("6/6 joined");
+          await expect(card.getByRole("button", { name: "Fill AI", exact: true })).toHaveCount(0);
+          expect(actions).not.toContain(`${kind}:start`);
+          await card.getByRole("button", { name: "Start", exact: true }).click();
+          await expect.poll(() => actions.includes(`${kind}:start`)).toBe(true);
+          await card.getByRole("button", { name: "Stop", exact: true }).click();
+          await expect.poll(() => actions.includes(`${kind}:stop`)).toBe(true);
+          await card.getByRole("button", { name: "Hide", exact: true }).click();
+          const dialog = page.getByRole("dialog", { name: "Hide game", exact: true });
+          await dialog.getByRole("button", { name: "Hide", exact: true }).click();
+          await expect.poll(() => actions.includes(`${kind}:hide`)).toBe(true);
+        }
+        await page.screenshot({ path: `/tmp/shared-game-controls-${width}.png`, fullPage: true });
+      } finally { await context.close(); }
+    }
+  });
+
+  test("both game cards share casting presentation and cycle four-person cast frames without controls", async ({ browser }) => {
     test.setTimeout(120_000);
     const cast = Array.from({ length: 9 }, (_, i) => ({ id: `cast-${i}`, name: `Cast ${i + 1}`, avatarUrl: null, personaKey: "strategic" }));
     const episode = { title: "Open Influence", description: "Meet everyone", episodeNumber: null, cast, coverUrl: null, status: "ready", locked: false, revision: 1, frameOrder: [] };
     const influence = { id: "open-influence", slug: "open-influence", visibility: "public", status: "waiting", playerCount: 10, alivePlayers: 9, modelLabel: "Standard", createdAt: new Date().toISOString(), episode };
     const werewolf = { id: "open-werewolf", slug: "open-werewolf", gameKind: "werewolf", status: "waiting", playerCount: 10, joinedPlayers: 9, modelLabel: "Standard", createdAt: new Date().toISOString(), episode: { ...episode, title: "Open Werewolf" } };
     for (const touch of [false, true]) {
-      const context = await browser.newContext({ viewport: touch ? { width: 390, height: 844 } : { width: 1440, height: 1000 }, hasTouch: touch, isMobile: touch, reducedMotion: "reduce" });
+      const context = await browser.newContext({ viewport: touch ? { width: 390, height: 844 } : { width: 1440, height: 1000 }, hasTouch: touch, isMobile: touch, reducedMotion: "no-preference" });
       const page = await context.newPage();
       let open = true;
+      await page.clock.install();
       try {
         await page.route("**/api/games", route => route.fulfill({ json: [{ ...influence, status: open ? "waiting" : "completed" }] }));
         await page.route("**/api/werewolf", route => route.fulfill({ json: [{ ...werewolf, status: open ? "waiting" : "completed" }] }));
@@ -362,25 +413,45 @@ test.describe("local public player identity", () => {
         await expect(shelf).toBeVisible();
         await expect(page.locator(".episode-shelf").first()).toHaveAttribute("aria-label", "Open");
         await expect(page.locator(".episode-card")).toHaveCount(2);
-        await page.screenshot({ path: `/tmp/games-cast-${touch ? "mobile" : "desktop"}.png`, fullPage: true });
         for (const title of ["Open Influence", "Open Werewolf"]) {
           const card = shelf.locator("article").filter({ has: page.getByRole("heading", { name: title, exact: true }) });
           await card.scrollIntoViewIfNeeded();
-          await expect(card.getByLabel("Cast page 1 of 3", { exact: true })).toBeVisible();
-          await expect(card.locator(".episode-cast:visible > div")).toHaveCount(4);
-          await card.getByRole("button", { name: "Next cast page" }).click();
-          await expect(card.getByLabel("Cast page 2 of 3", { exact: true })).toContainText("Cast 5");
-          await expect(card.locator(".episode-cast:visible > div")).toHaveCount(4);
-          await card.getByRole("button", { name: "Next cast page" }).click();
-          await expect(card.getByLabel("Cast page 3 of 3", { exact: true })).toContainText("Cast 9");
-          await expect(card.locator(".episode-cast:visible > div")).toHaveCount(1);
-          await card.getByRole("button", { name: "Next cast page" }).click();
-          await expect(card.getByLabel("Cast page 1 of 3", { exact: true })).toBeVisible();
-          await card.getByRole("button", { name: "Previous cast page" }).focus();
-          await page.keyboard.press("Enter");
-          await expect(card.getByLabel("Cast page 3 of 3", { exact: true })).toBeVisible();
+          const visible = card.locator(".episode-frame.is-visible");
+          await expect(card.locator(".episode-artwork")).toHaveClass(/is-playing/);
+          await expect(visible).toContainText("Meet the cast");
+          await expect(visible).toContainText("Cast 1");
+          await expect(visible.locator(".episode-cast > div")).toHaveCount(4);
+          await expect(card.getByText("Casting open", { exact: true })).toBeVisible();
+          await expect(card.locator(".episode-eyebrow")).toHaveText(`The House / ${title === "Open Influence" ? "Influence" : "Werewolf"}`);
+          await expect(card.locator(".episode-meta")).toContainText("9/10 joined");
+          await expect(card.getByRole("link", { name: "Join game", exact: true })).toBeVisible();
+          const scene = visible.locator(".episode-scene");
+          await expect.poll(() => scene.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+          await expect(card.getByRole("button")).toHaveCount(0);
+          await expect(card.locator('img[src="/logo.png"]')).toHaveCount(0);
+          await page.clock.runFor(4300);
+          await expect(visible).toContainText("Cast 5");
+          await expect(visible.locator(".episode-cast > div")).toHaveCount(4);
+          await page.clock.runFor(4200);
+          await expect(visible).toContainText("Cast 9");
+          await expect(visible.locator(".episode-cast > div")).toHaveCount(1);
+          await page.clock.runFor(4200);
+          await expect(visible).toContainText("Cast 1");
+          const join = card.getByRole("link", { name: "Join game", exact: true });
+          await join.focus();
+          await expect(card.locator(".episode-artwork")).not.toHaveClass(/is-playing/);
+          await page.clock.runFor(12600);
+          await expect(visible).toContainText("Cast 1");
+          await join.evaluate(link => (link as HTMLElement).blur());
           await expect(page).toHaveURL(`${servers.webUrl}/games`);
         }
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await expect.poll(() => page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+        await page.clock.runFor(100);
+        const currentFrame = await shelf.locator(".episode-frame.is-visible").last().getAttribute("data-frame-id");
+        await page.clock.runFor(12600);
+        await expect(shelf.locator(".episode-frame.is-visible").last()).toHaveAttribute("data-frame-id", currentFrame!);
+        await page.screenshot({ path: `/tmp/shared-game-cards-${touch ? "mobile" : "desktop"}.png`, fullPage: true });
         await page.getByLabel("Game type", { exact: true }).selectOption("werewolf");
         await expect(shelf.locator("article")).toHaveCount(1);
         await page.getByLabel("Search games").fill("absent-cast");
@@ -416,7 +487,7 @@ test.describe("local public player identity", () => {
         const card = page.getByTestId("episode-card");
         await expect(card.getByRole("heading", { name: "Good Company" })).toBeVisible();
         if (touch) {
-          await expect(card.getByRole("link", { name: "Details", exact: true })).not.toBeVisible();
+          await expect(card.getByRole("link", { name: "Details", exact: true })).toBeVisible();
           await card.getByRole("link", { name: "Open Good Company", exact: true }).tap();
           const modal = page.getByRole("dialog", { name: "Good Company", exact: true });
           await expect(modal).toBeVisible();
@@ -434,13 +505,13 @@ test.describe("local public player identity", () => {
           await expect(modal.getByRole("button", { name: "Replay trailer", exact: true })).toBeVisible();
           await modal.getByRole("button", { name: "Replay trailer", exact: true }).click();
           await expect(modal.getByRole("button", { name: "Sound off", exact: true })).toBeVisible();
-          await expect(modal.getByRole("link", { name: /Watch Replay/ })).toBeVisible();
+          await expect(modal.getByRole("link", { name: /Watch replay/ })).toBeVisible();
           await modal.getByRole("button", { name: "Close ×" }).click();
           await expect(modal).toHaveCount(0);
           await expect(page).toHaveURL(`${servers.webUrl}/games`);
         } else {
           await expect(card.getByRole("link", { name: "Details", exact: true })).toHaveAttribute("href", "/games/quiet-sage-room/results");
-          await expect(card.getByRole("link", { name: /Watch Replay/ })).toHaveAttribute("href", "/games/quiet-sage-room/replay");
+          await expect(card.getByRole("link", { name: /Watch replay/ })).toHaveAttribute("href", "/games/quiet-sage-room/replay");
           await card.getByRole("link", { name: "Open Good Company", exact: true }).click();
           // The isolated Next dev server compiles this route on its first visit.
           // CI can exceed the default 5s while the navigation request is pending.

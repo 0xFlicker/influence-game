@@ -43,6 +43,7 @@ beforeAll(async () => {
       await database.db.insert(schema.werewolfEvents).values((status === "completed" ? events : events.slice(0,1)).map(event=>({gameId:slug,sequence:event.sequence,event})));
     }
   }
+  await database.db.insert(schema.werewolfLobbySeats).values({ id: "casting-seat", gameId: "new-village-casting", agentProfileId: "history-agent" });
   await database.db.insert(schema.gameEpisodePresentations).values({gameId:"old-lantern-village",title:"Lanterns and Lies",description:"Six contrasting voices gather around the village table.",status:"ready",locked:true});
   servers = await startTestServers({databaseUrl:database.databaseUrl,jwtSecret:"w7b-fixture-secret",logDirectory:"/tmp/w7b-browser"});
   browser = await launchBrowser();
@@ -68,6 +69,7 @@ test("old/new House cards, title search, stable links and responsive art",async(
     for(const width of [1440,390]) {
       await page.setViewport({width,height:1000});
       await page.goto(`${servers.webUrl}/games`,{waitUntil:"domcontentloaded"});
+      await page.waitForFunction(`Array.from(document.querySelectorAll('.episode-card[data-game-kind="werewolf"]')).some(card => card.innerText.includes('new-village-casting') && card.innerText.includes('1/6 joined') && card.querySelector('.episode-cast')?.innerText.includes('Current Name'))`);
       const viewAll = 'section[aria-label="Werewolf"] a[href="/games/type/werewolf"]';
       await page.waitForSelector(viewAll);
       await page.click(viewAll);
@@ -80,13 +82,13 @@ test("old/new House cards, title search, stable links and responsive art",async(
       await page.click(viewAll);
       await text(page,"Werewolf games");
       await text(page,"Lanterns and Lies");
-      await page.waitForFunction(`Array.from(document.querySelectorAll('.werewolf-artwork img.episode-scene')).length === 4 && Array.from(document.querySelectorAll('.werewolf-artwork img.episode-scene')).every(img=>img.complete && img.naturalWidth > 0)`);
+      await page.waitForFunction(`Array.from(document.querySelectorAll('.episode-card[data-game-kind="werewolf"] .episode-frame.is-visible img.episode-scene')).length === 4 && Array.from(document.querySelectorAll('.episode-card[data-game-kind="werewolf"] .episode-frame.is-visible img.episode-scene')).every(img=>img.complete && img.naturalWidth > 0)`);
       expect(await page.evaluate(`document.documentElement.scrollWidth <= innerWidth`)).toBe(true);
       expect(await page.evaluate(`document.body.innerText.includes('secret-village-link') || document.body.innerText.includes('hidden-village')`)).toBe(false);
       await page.screenshot({path:`/tmp/w7b-cards-${width}.png`,fullPage:true});
     }
     await page.type('input[aria-label="Search games"]','Lanterns and Lies');
-    await page.waitForFunction(`document.querySelectorAll('.werewolf-library-card').length === 1`);
+    await page.waitForFunction(`document.querySelectorAll('.episode-card[data-game-kind="werewolf"]').length === 1`);
     await page.click('a[aria-label="Open Lanterns and Lies"]');
     await text(page,"Watch Mystery");
     expect(new URL(page.url()).pathname).toBe('/games/old-lantern-village');

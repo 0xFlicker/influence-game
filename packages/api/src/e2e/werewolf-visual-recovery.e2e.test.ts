@@ -75,14 +75,11 @@ test("W7A create, visible pause, discover, repair, publish and explicitly resume
     const slug = new URL(page.url()).pathname.split('/')[2]!;
     const db = database.db, [game] = await db.select().from(schema.games).where(eq(schema.games.slug, slug));
     expect(JSON.parse(game!.config).visualFailurePolicy).toBe("require_visuals");
-    await click(page, "Start Werewolf");
-    await text(page, "Fill the village and start?");
-    await click(page, "Cancel");
+    await click(page, "Fill AI");
+    await text(page, "The village is ready.");
     expect((await db.select().from(schema.games).where(eq(schema.games.id, game!.id)))[0]?.status).toBe("waiting");
-    await click(page, "Start Werewolf");
-    await page.waitForSelector('dialog[open]');
     const started = page.waitForResponse(response => response.url().endsWith(`/api/werewolf/${game!.id}/start`) && response.request().method() === "POST");
-    await page.evaluate("document.querySelector('dialog[open] button:last-child').click()");
+    await click(page, "Start Werewolf");
     expect((await started).status()).toBe(200);
     const claim = await claimWerewolfGame(db, game!.id);
     if (!claim.ok)

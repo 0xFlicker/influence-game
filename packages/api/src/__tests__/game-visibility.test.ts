@@ -6,7 +6,7 @@ import { setupTestDB } from "./test-utils.js";
 import { publicGameFilter, isViewerGame } from "../services/game-visibility.js";
 import { createWerewolfRoutes } from "../routes/werewolf.js";
 import { createGameRoutes } from "../routes/games.js";
-import { createWerewolfLobby, joinWerewolfLobby, startWerewolfLobby } from "../services/werewolf-lobbies.js";
+import { createWerewolfLobby, fillWerewolfLobby, joinWerewolfLobby, startWerewolfLobby } from "../services/werewolf-lobbies.js";
 import { createWerewolfGame } from "../services/werewolf-games.js";
 import { setServer, broadcastGamePublication, handleOpen, handleClose } from "../services/ws-manager.js";
 import { viewerGameAvailable } from "../services/game-visibility.js";
@@ -43,6 +43,7 @@ test("Werewolf unlisted lobby accepts owned agents and retains visibility on sta
   const game=await createWerewolfLobby(db,"owner",{preset:"one_wolf",visibility:"unlisted"});
   await db.insert(schema.agentProfiles).values({id:"agent",userId:"owner",name:"Player",personality:"Calm",strategyStyle:"Observe"});
   await joinWerewolfLobby(db,game.slug,"owner","agent");
+  await fillWerewolfLobby(db,game.id);
   await startWerewolfLobby(db,game.id);
   const [row]=await db.select().from(schema.games).where(eq(schema.games.id,game.id));
   expect(JSON.parse(row!.config).visibility).toBe("unlisted");

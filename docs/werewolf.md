@@ -264,7 +264,9 @@ At `/games/new`, **Create Werewolf Game** requires `create_game` and saves a wai
 
 Authenticated players can enter one owned, eligible agent. Current admins, sysops and producers can enter multiple owned agents and remove cast members; ordinary players may remove only their own. Duplicate joins are idempotent while waiting, and all admission/removal/start operations lock the game row to serialize capacity and the start boundary. The lobby shows only approved public identity, never private personality/strategy or roles. Archived or withheld members are redacted and must be removed before starting.
 
-**Start Werewolf** separately requires `start_game`, respects deployment admission, fills remaining seats with House agents, freezes each member's current approved identity and Werewolf strategy, assigns roles, and atomically commits `werewolf.started` with `in_progress`. No roles or gameplay events exist before that point. Blank Werewolf strategy uses the archetype default; Influence strategy is never substituted. The waiting page refreshes into the viewing-mode choice when the game starts. Cancelled unstarted games have no replay. The CLI's existing immediate-create-and-start API remains its explicit simulation path.
+**Fill AI** requires `fill_game` and saves House character seats while the lobby stays waiting. It is idempotent, serialized with joins/removals/start, and assigns no roles or events. House seats have no owner or saved-agent profile; Admin, Sysop, and Producer roles may remove them.
+
+**Start Werewolf** separately requires `start_game`, requires every seat to be filled, respects deployment admission, freezes each member's current approved identity and Werewolf strategy, assigns roles, and atomically commits `werewolf.started` with `in_progress`. No roles or gameplay events exist before that point. Blank Werewolf strategy uses the archetype default; Influence strategy is never substituted. The waiting page refreshes into the viewing-mode choice when the game starts. Cancelled unstarted games have no replay. The CLI's existing immediate-create-and-start API remains its explicit simulation path.
 
 Migration `0107_werewolf_lobbies.sql` adds the admission table; it does not change historical game events. The House hall, icon, casting hero and agent selector are shared; Werewolf owns its admission state and rules. Waiting games in the admin list link to their casting lobby rather than attempting to render gameplay or production before any events exist.
 
@@ -296,7 +298,7 @@ Private game visibility has been removed. Hidden is a separate moderation contro
 
 ### Starting and replacing rejected scene art
 
-Starting requires a current Game Operator (`gamer`), Admin, or Sysop role plus `start_game`; lobby ownership alone is insufficient. Starting an unfilled village asks for confirmation with the number of House AI seats to add. A full village starts directly.
+Starting requires a current Game Operator (`gamer`), Admin, or Sysop role plus `start_game`; lobby ownership alone is insufficient. Start is disabled until every seat is filled; the API rejects an incomplete roster. Fill AI is a separate action on both library cards and the casting lobby. Both games use the same library control renderer for Start, Fill AI, Stop/End, and Hide.
 
 Use **Regenerate scene**, or **Correct images → Reject and regenerate**, to replace bad art without marking heads or saving/publishing the unwanted version. If a scene request has an uncertain charge, confirm another paid render in the same dialog. Its exact attempt IDs are retained in the accepted request, and the original accounting remains unresolved until real receipt evidence arrives. Active work still blocks regeneration. Review and publish the new version, then explicitly resume a game paused for required visuals. Wolf-form uncertainty retains its separate recovery policy.
 
