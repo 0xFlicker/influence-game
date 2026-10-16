@@ -77,10 +77,15 @@ The main games browser merges discovery at the UI boundary: Werewolf gets its ow
 
 ## Library cast discovery
 
-The top-level `/games` library leads with an **Open Games** shelf combining
-waiting Influence and Werewolf games, newest first. It follows the current
-search, type, status, and category filters, disappears when empty, and removes
-those cards from the lower shelves. Collection pages retain their own full list.
+The top-level `/games` library uses **Open**, **Active season**, **Werewolf**,
+then **Influence** shelves. Open combines waiting games, newest first. Active
+season uses the explicit `active` status from `/api/seasons`, excluding closing
+and final seasons. Cards appear only in their first matching shelf; older-season
+games appear under Influence. Shelves follow search, type, status, and category
+filters and disappear when empty. Both list APIs enforce Public-only discovery;
+Unlisted games never enter these shelves. Collection pages retain their full list.
+The active-season shelf links to that season, and game shelves link to their
+corresponding type collection.
 
 Both games use `CastPreview` for public original-cast portraits, four per page,
 with wrapping Previous/Next controls and a page count. Werewolf retains its
