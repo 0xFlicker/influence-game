@@ -30,6 +30,11 @@ test("a saved lobby has durable public seats but no roles, game events, or worke
   expect(await joinWerewolfLobby(db, game.id, "owner", "agent")).toEqual(first);
   const lobby = await readWerewolfLobby(db, game.slug);
   expect(lobby).toMatchObject({ status: "waiting", started: false, playerCount: 6, players: [{ id: first.playerId, name: "agent" }] });
+  expect(lobby.episode.cast).toEqual([{ id: first.playerId, name: "agent", avatarUrl: null, personaKey: "observer" }]);
+  const listed = await (await createWerewolfRoutes(db).request("/api/werewolf")).json();
+  expect(listed).toMatchObject([{ joinedPlayers: 1, episode: { cast: lobby.episode.cast } }]);
+  expect(JSON.stringify(listed)).not.toContain("PRIVATE_");
+  expect(JSON.stringify(listed)).not.toContain("INFLUENCE_ONLY");
   expect(JSON.stringify(lobby)).not.toContain("PRIVATE_");
   expect(JSON.stringify(lobby)).not.toContain("INFLUENCE_ONLY");
   expect(lobby.players[0]!.ownerPublicId).not.toBe("owner");
@@ -64,6 +69,23 @@ test("concurrent joins serialize the last seat without overfilling", async () =>
   expect((await readWerewolfLobby(db, game.id)).players).toHaveLength(6);
 });
 
+test("waiting discovery uses approved joined identities, follows removal, and never exposes draft content", async () => {
+  const game = await create();
+  const { profile: agent } = await createOwnedAgentProfile(db, { userId: "guest" }, {
+    name: "Arden", personality: "PRIVATE_PERSONALITY", gender: "non-binary", personaKey: "observer",
+    strategyStyle: "INFLUENCE_ONLY", werewolfStrategyStyle: "PRIVATE_WEREWOLF_STRATEGY",
+  });
+  const seat = await joinWerewolfLobby(db, game.id, "guest", agent.id);
+  await db.update(schema.agentProfiles).set({ name: "Unapproved draft name", avatarUrl: "/unapproved-draft.png" }).where(eq(schema.agentProfiles.id, agent.id));
+  const response = await (await createWerewolfRoutes(db).request("/api/werewolf")).json();
+  expect(response).toMatchObject([{ joinedPlayers: 1, episode: { cast: [{ id: seat.playerId, name: "Arden" }] } }]);
+  for (const secret of ["Unapproved draft", "unapproved-draft.png", "PRIVATE_", "INFLUENCE_ONLY", "roles", "ownerPublicId", "agentProfileId"]) {
+    expect(JSON.stringify(response)).not.toContain(secret);
+  }
+  await leaveWerewolfLobby(db, game.id, "guest", seat.playerId);
+  expect((await readWerewolfLobby(db, game.id)).episode.cast).toEqual([]);
+});
+
 test("start freezes the latest approved strategy for every owner, assigns roles once, and fills the House seats", async () => {
   const game = await create();
   const { profile: agent } = await createOwnedAgentProfile(db, { userId: "guest" }, { name: "Arden", personality: "Calm", gender: "non-binary", personaKey: "observer", strategyStyle: "INFLUENCE_ONLY", werewolfStrategyStyle: "BEFORE_EDIT" });
@@ -78,7 +100,11 @@ test("start freezes the latest approved strategy for every owner, assigns roles 
   expect(state.players).toHaveLength(6);
   expect(state.players.find(player => player.id === seat.playerId)).toMatchObject({ agentProfileId: agent.id, strategy: "LATEST_STRATEGY" });
   expect(JSON.stringify(events)).not.toContain("INFLUENCE_ONLY");
-  expect((await readWerewolfLobby(db, game.id)).status).toBe("in_progress");
+  const started = await readWerewolfLobby(db, game.id);
+  expect(started.status).toBe("in_progress");
+  expect(started.episode.cast.map(player => player.name)).toEqual(state.players.map(player => player.name));
+  await db.update(schema.agentProfiles).set({ name: "Changed after start", avatarUrl: "/later.png" }).where(eq(schema.agentProfiles.id, agent.id));
+  expect((await readWerewolfLobby(db, game.id)).episode.cast).toEqual(started.episode.cast);
   await expect(leaveWerewolfLobby(db, game.id, "guest", seat.playerId)).rejects.toThrow("no longer");
   await expect(joinWerewolfLobby(db, game.id, "guest", agent.id)).rejects.toThrow("no longer");
 });
@@ -87,7 +113,9 @@ test("withdrawn profiles fail start atomically and are redacted until removed", 
   const game = await create(); await profile("withdrawn");
   const seat = await joinWerewolfLobby(db, game.id, "owner", "withdrawn");
   await db.update(schema.agentProfiles).set({ archivedAt: new Date().toISOString() }).where(eq(schema.agentProfiles.id, "withdrawn"));
-  expect((await readWerewolfLobby(db, game.id)).players[0]).toMatchObject({ name: "Unavailable agent", available: false });
+  const unavailable = await readWerewolfLobby(db, game.id);
+  expect(unavailable.players[0]).toMatchObject({ name: "Unavailable agent", available: false });
+  expect(unavailable.episode.cast[0]).toMatchObject({ name: "Unavailable agent", avatarUrl: null, personaKey: null });
   await expect(startWerewolfLobby(db, game.id)).rejects.toThrow("archived");
   expect(await readWerewolfEvents(db, game.id)).toEqual([]);
   expect((await readWerewolfLobby(db, game.id)).status).toBe("waiting");

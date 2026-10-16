@@ -390,9 +390,6 @@
   }
 }
 @media(hover:none),(pointer:coarse) {
-  .episode-desktop-actions {
-    display:none
-  }
   .episode-card .episode-copy {
     padding-bottom:23px
   }
@@ -436,24 +433,18 @@
 .episode-rail.has-before.has-after { mask-image: linear-gradient(90deg, transparent, #000 2%, #000 98%, transparent); }
 .episode-shelf-heading button:disabled { opacity: .3; }
 
-.episode-card-media { position: relative; }
-.episode-artwork-link { position: absolute; inset: 0; z-index: 1; }
-.episode-artwork-link:focus-visible { outline: 3px solid #bfd6af; outline-offset: -4px; }
-.episode-cast-pagination {
-  position: absolute;
-  right: 16px;
-  bottom: 12px;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #f4f3ea;
-  background: #101610e8;
-  border: 1px solid #ffffff40;
-  border-radius: 8px;
-  pointer-events: auto;
-  font-size: 12px;
-}
-.episode-cast-pagination button { min-width: 44px; min-height: 44px; border-radius: 6px; }
-.episode-cast-pagination button:hover { background: #ffffff20; }
-.episode-cast-pagination button:focus-visible { outline: 2px solid #ddbf87; outline-offset: -3px; }
+
+.episode-card { display: flex; flex-direction: column; border-color: #b79a6440; }
+.episode-card-link { flex: 1; }
+.episode-card .episode-eyebrow { color: #ddbf87; }
+.episode-card .episode-status { background: #211a12e8; color: #f5e4c2; border-color: #c5a56966; }
+.episode-card .influence-button-primary, .episode-modal-actions > .influence-button-primary { background: #d9b979; color: #21180c; }
+.episode-card .influence-button-primary:hover { background: #e5c98d; }
+.episode-card .episode-desktop-actions { margin-top: auto; align-items: flex-start; }
+.episode-card .episode-desktop-actions > button { padding: 10px 14px; border-radius: 8px; font-size: 13px; }
+.episode-season { display: block; margin-top: 8px; }
+.episode-management { flex-basis: 100%; font-size: 12px; color: #afb8ab; }
+.episode-management summary { cursor: pointer; width: fit-content; padding: 8px 0; }
+.episode-management summary:focus-visible { outline: 2px solid #ddbf87; outline-offset: 3px; }
+.episode-management-content { padding-top: 8px; }
+.episode-management-content a { text-decoration: underline; text-underline-offset: 3px; }

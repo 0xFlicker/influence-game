@@ -3,44 +3,63 @@
 import { GameCard } from "@/components/games/game-card";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CastPreview } from "@/components/games/cast-preview";
 import { getEpisodePreview, resolveApiUrl, type EpisodeFrame, type EpisodePreview, type GameSummary } from "@/lib/api";
+import type { WerewolfGameSummary } from "@/lib/werewolf-api";
+import { WEREWOLF_CARD_ART } from "@/lib/game-art";
 import { gameHref, gameReplayHref, gameResultsHref } from "@/lib/game-links";
 import { gameDisplayName } from "@/lib/game-identity";
 import { episodeSoundEnabled, playEpisodeVideo, rememberEpisodeSound, requestEpisodePlayback } from "@/lib/episode-media";
 import "./episodes.css";
 
-export function episodeFallbackFrames(game: Pick<GameSummary, "episode">): EpisodeFrame[] {
-  const frames: EpisodeFrame[] = [];
-  if (game.episode?.coverUrl) frames.push({ id: "cover", kind: "scene", label: "Inside the House", imageUrl: game.episode.coverUrl });
+type LibraryGame = GameSummary | WerewolfGameSummary;
+const INFLUENCE_CARD_ART = "/house-highlights/generated/alliance-formation.jpg";
+
+/** Cast pages are ordinary slideshow frames, including large public alliance groups. */
+export function castSlideshowFrames(frames: EpisodeFrame[]): EpisodeFrame[] {
+  return frames.flatMap(frame => {
+    if (frame.kind !== "cast" || !frame.players || frame.players.length <= 4) return [frame];
+    const pages: EpisodeFrame[] = [];
+    for (let i = 0; i < frame.players.length; i += 4) pages.push({ ...frame, id: `${frame.id}:page:${i}`, players: frame.players.slice(i, i + 4) });
+    return pages;
+  });
+}
+
+export function episodeFallbackFrames(game: { episode?: Pick<NonNullable<GameSummary["episode"]>, "cast" | "coverUrl"> }): EpisodeFrame[] {
+  const imageUrl = game.episode?.coverUrl ?? undefined;
   const cast = game.episode?.cast ?? [];
-  if (cast.length) frames.push({ id: "cast:0", kind: "cast", label: "Meet the cast", players: cast });
-  frames.push({ id: "house", kind: "house", label: "The House presents", text: game.episode?.description ?? "A new room. A new game of Influence." });
+  const frames: EpisodeFrame[] = [];
+  for (let i = 0; i < cast.length; i += 4) frames.push({ id: `cast:${i}`, kind: "cast", label: "Meet the cast", players: cast.slice(i, i + 4), imageUrl });
+  if (!frames.length) frames.push({ id: "cover", kind: "scene", label: "The House presents", imageUrl });
   return frames;
 }
-export function EpisodeArtwork({ frames, active, title }: { frames: EpisodeFrame[]; active: boolean; title: string }) {
+
+export function EpisodeArtwork({ frames, active, title, backgroundUrl = INFLUENCE_CARD_ART }: { frames: EpisodeFrame[]; active: boolean; title: string; backgroundUrl?: string }) {
   const [frameId, setFrameId] = useState(() => frames.find(frame => frame.id.startsWith("cast:"))?.id ?? frames[0]?.id);
   const index = Math.max(0, frames.findIndex(frame => frame.id === frameId));
-  const [paging, setPaging] = useState(false);
   useEffect(() => {
-    if (!active || paging || frames.length < 2 || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (!active || frames.length < 2) return;
+    const motion = matchMedia("(prefers-reduced-motion: reduce)");
     let timer: ReturnType<typeof setInterval> | undefined;
     const update = () => {
       clearInterval(timer);
-      if (!document.hidden) timer = setInterval(() => setFrameId(id => frames[(frames.findIndex(frame => frame.id === id) + 1) % frames.length]?.id), 4200);
+      if (!document.hidden && !motion.matches) timer = setInterval(() => {
+        if (!document.hidden && !motion.matches) setFrameId(id => frames[(frames.findIndex(frame => frame.id === id) + 1) % frames.length]?.id);
+      }, 4200);
     };
     update();
     document.addEventListener("visibilitychange", update);
-    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", update); };
-  }, [active, paging, frames]);
-  return <div className={`episode-artwork ${active ? "is-playing" : ""}`} aria-label={`${title} preview`} onPointerDown={() => setPaging(true)} onFocusCapture={() => setPaging(true)}>
-    {frames.map((frame, i) => <div key={frame.id} className={`episode-frame ${i === index % frames.length ? "is-visible" : ""}`} aria-hidden={i !== index % frames.length} inert={i !== index % frames.length}>
-      <Image src={frame.imageUrl ? resolveApiUrl(frame.imageUrl) : "/house-highlights/generated/alliance-formation.jpg"} alt="" fill sizes="(max-width: 1023px) 100vw, 700px" className="episode-scene" unoptimized />
+    motion.addEventListener("change", update);
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", update); motion.removeEventListener("change", update); };
+  }, [active, frames]);
+  return <div className={`episode-artwork ${active ? "is-playing" : ""}`} aria-label={`${title} preview`}>
+    {frames.map((frame, i) => <div key={frame.id} data-frame-id={frame.id} className={`episode-frame ${i === index ? "is-visible" : ""}`} aria-hidden={i !== index} inert={i !== index}>
+      <Image src={frame.imageUrl ? resolveApiUrl(frame.imageUrl) : backgroundUrl} alt="" fill sizes="(max-width: 1023px) 100vw, 700px" className="episode-scene" unoptimized />
       <div className="episode-vignette" />
-      {frame.kind === "cast" && <CastPreview cast={frame.players ?? []} label={frame.label} />}
+      {frame.kind === "cast" && <CastPreview cast={frame.players ?? []} />}
       {frame.kind === "house" && <div className="episode-house"><span>A WORD FROM THE HOUSE</span><p>{frame.text}</p></div>}
-      {frame.kind !== "cast" && <span className="episode-frame-label">{frame.label}</span>}
+      <span className="episode-frame-label">{frame.label}</span>
     </div>)}
   </div>;
 }
@@ -70,8 +89,9 @@ export function EpisodeTrailer({ preview, autoplay, onEnded }: { preview: Episod
   </div>;
 }
 
-export function EpisodeCard({ game, actions }: { game: GameSummary; actions: ReactNode }) {
+export function EpisodeCard({ game, management, onJoin }: { game: LibraryGame; management?: ReactNode; onJoin?: () => void }) {
   const [active, setActive] = useState(false);
+  const [focused, setFocused] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [preview, setPreview] = useState<EpisodePreview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -85,13 +105,12 @@ export function EpisodeCard({ game, actions }: { game: GameSummary; actions: Rea
     request.current = getEpisodePreview(game.id).then(p => { setPreview(p); setError(null); }).catch(() => setError("Trailer unavailable. You can still open the game.")).finally(() => { request.current = null; });
   };
   useEffect(() => {
-    const listener = (e: Event) => { if ((e as CustomEvent).detail !== game.id) setActive(false); };
-    window.addEventListener("episode:preview", listener);
-    const visibility = () => { if (document.hidden) setActive(false); };
-    document.addEventListener("visibilitychange", visibility);
-    const observer = new IntersectionObserver(([entry]) => { if (!entry?.isIntersecting) setActive(false); });
+    let visible = false;
+    const update = () => setActive(visible && !document.hidden);
+    const observer = new IntersectionObserver(([entry]) => { visible = !!entry?.isIntersecting; update(); });
     if (card.current) observer.observe(card.current);
-    return () => { observer.disconnect(); document.removeEventListener("visibilitychange", visibility); window.removeEventListener("episode:preview", listener); };
+    document.addEventListener("visibilitychange", update);
+    return () => { observer.disconnect(); document.removeEventListener("visibilitychange", update); };
   }, [game.id]);
   useEffect(() => {
     if (!expanded) return;
@@ -100,24 +119,37 @@ export function EpisodeCard({ game, actions }: { game: GameSummary; actions: Rea
     d.showModal();
     return () => { d.close(); document.body.style.overflow = overflow; prior?.focus(); };
   }, [expanded]);
-  const frames = preview?.frames.length ? preview.frames.filter(frame => !frame.id.startsWith("cast:") || frame.id === "cast:0").map(frame =>
-    frame.id === "cast:0" ? { ...frame, players: preview.episode.cast } : frame,
-  ) : episodeFallbackFrames(game);
-  const label = game.status === "in_progress" ? "Live" : game.status === "waiting" ? "Open seats" : game.status === "completed" ? "Completed" : game.visualPaused ? "Paused" : game.status === "cancelled" ? "Cancelled" : "Failed";
-  const subtitle = game.season ? `${game.season.name}${game.episode?.episodeNumber ? ` · Episode ${game.episode.episodeNumber}` : ""}` : game.visibility === "unlisted" ? "Unlisted game" : "Public game";
-  const links = <><Link className="influence-button-primary" href={gameReplayHref(game.slug)}>{game.status === "in_progress" ? "Watch live" : "Watch Replay"} ↗</Link><Link className="influence-button-secondary" href={gameResultsHref(game.slug)}>Details</Link></>;
+  const werewolf = "gameKind" in game && game.gameKind === "werewolf";
+  const waiting = game.status === "waiting";
+  const live = game.status === "in_progress";
+  const season = "season" in game ? game.season : undefined;
+  const joined = "joinedPlayers" in game ? game.joinedPlayers : game.alivePlayers;
+  const backgroundUrl = game.episode?.coverUrl ? resolveApiUrl(game.episode.coverUrl) : werewolf ? WEREWOLF_CARD_ART : INFLUENCE_CARD_ART;
+  const frames = useMemo(() => preview?.frames.length ? castSlideshowFrames(preview.frames) : episodeFallbackFrames(game), [game, preview]);
+  const label = waiting ? "Casting open" : live ? "Live" : game.status === "completed" ? "Completed" : "visualPaused" in game && game.visualPaused ? "Paused" : game.status === "cancelled" ? "Cancelled" : "Failed";
+  const subtitle = `The House / ${werewolf ? "Werewolf" : "Influence"}`;
+  const replayHref = gameReplayHref(game.slug, undefined, werewolf ? "mystery" : undefined);
+  const links = <><Link className="influence-button-primary" href={replayHref}>{live ? "Watch live" : "Watch replay"} ↗</Link><Link className="influence-button-secondary" href={gameResultsHref(game.slug)}>Details</Link></>;
+  const actions = <>
+    {waiting ? onJoin ? <button type="button" className="influence-button-primary" onClick={onJoin}>Join game</button> : <Link className="influence-button-primary" href={gameHref(game.slug)}>Join game</Link>
+      : live || game.status === "completed" ? links : <Link className="influence-button-primary" href={gameHref(game.slug)}>Open game</Link>}
+    {management && <details className="episode-management"><summary>Manage game</summary><div className="episode-management-content">{management}</div></details>}
+  </>;
   return <>
-    <GameCard ref={card} data-testid="episode-card" title={title} href={gameHref(game.slug)} status={game.status} statusLabel={label} eyebrow={subtitle}
-      description={game.episode?.description ?? "Meet the cast. Step inside the House."} meta={<>{game.playerCount} Agents · {game.modelLabel}</>}
-      artwork={<EpisodeArtwork frames={frames} active={active} title={title} />}
-      actions={<>{game.status !== "waiting" ? links : <Link className="influence-button-primary" href={gameHref(game.slug)}>Join game</Link>}{actions}</>}
-      onMouseEnter={() => { if (matchMedia("(hover: hover) and (pointer: fine)").matches) { window.dispatchEvent(new CustomEvent("episode:preview", {detail:game.id}));setActive(true);load(); } }} onMouseLeave={() => setActive(false)}
-      onOpen={e => {if(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)return;if(matchMedia("(hover: none), (pointer: coarse)").matches){e.preventDefault();load();setEnded(false);setExpanded(true);}else requestEpisodePlayback(game.slug);}} />
+    <GameCard ref={card} data-testid="episode-card" data-game-kind={werewolf ? "werewolf" : "influence"} title={title} href={gameHref(game.slug)} status={game.status} statusLabel={label} eyebrow={subtitle}
+      description={game.episode?.description ?? (werewolf ? "A village of agents. A pack hiding in plain sight." : "Meet the cast. Step inside the House.")}
+      meta={<>{waiting ? `${Math.min(joined, game.playerCount)}/${game.playerCount} joined` : `${game.playerCount} Agents`} · {game.modelLabel}
+        {season && <span className="episode-season">{season.name}{game.episode?.episodeNumber ? ` · Episode ${game.episode.episodeNumber}` : ""}</span>}</>}
+      artwork={<EpisodeArtwork frames={frames} active={active && !focused && !expanded} title={title} backgroundUrl={backgroundUrl} />}
+      actions={actions}
+      onFocusCapture={() => setFocused(true)} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}
+      onMouseEnter={() => { if (!waiting && matchMedia("(hover: hover) and (pointer: fine)").matches) load(); }}
+      onOpen={e => {if(waiting || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)return;if(matchMedia("(hover: none), (pointer: coarse)").matches){e.preventDefault();load();setEnded(false);setExpanded(true);}else if(!werewolf) requestEpisodePlayback(game.slug);}} />
     {expanded && <dialog ref={dialog} className="episode-modal" aria-label={title} onCancel={() => setExpanded(false)} onClose={() => setExpanded(false)}>
       <header><span className="episode-eyebrow">{subtitle}</span><button autoFocus type="button" onClick={() => setExpanded(false)}>Close ×</button></header>
-      <div className="episode-modal-media">{preview?.media.status === "ready" && !ended ? <EpisodeTrailer preview={preview} autoplay onEnded={() => setEnded(true)} /> : <EpisodeArtwork frames={frames} active title={title} />}</div>
+      <div className="episode-modal-media">{preview?.media.status === "ready" && !ended ? <EpisodeTrailer preview={preview} autoplay onEnded={() => setEnded(true)} /> : <EpisodeArtwork frames={frames} active title={title} backgroundUrl={backgroundUrl} />}</div>
       <div className="episode-copy"><h2>{title}</h2><p>{game.episode?.description}</p>{error && <p role="status">{error}</p>}
-      <div className="episode-modal-actions"><Link className="influence-button-secondary" href={gameHref(game.slug)}>Open game</Link>{game.status !== "waiting" && links}{actions}
+      <div className="episode-modal-actions"><Link className="influence-button-secondary" href={gameHref(game.slug)}>Open game</Link>{actions}
       {ended && preview?.media.status === "ready" && <button onClick={() => setEnded(false)}>Replay trailer</button>}</div></div>
     </dialog>}
   </>;

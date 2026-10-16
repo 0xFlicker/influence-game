@@ -5,6 +5,7 @@ import { resolveOpenAIBudgetGenerationLlm } from "../lib/openai-budget-generatio
 import { getPublicPostgameMedia } from "./postgame-media.js";
 import { readViewerMedia } from "./visual-media-viewer.js";
 import { getPersistedGameEvents } from "./game-event-read-model.js";
+import { readWerewolfCastingPlayers } from "./werewolf-cast.js";
 import { isImportedSyntheticPlayer } from "./public-player-identity.js";
 
 export interface EpisodeCopy { title: string; description: string }
@@ -19,22 +20,30 @@ export interface EpisodePresentation extends EpisodeCopy {
   revision: number;
   frameOrder: string[];
 }
-type EpisodeGame = Pick<typeof schema.games.$inferSelect, "id" | "slug" | "seasonId" | "gameKind">;
+type EpisodeGame = Pick<typeof schema.games.$inferSelect, "id" | "slug" | "seasonId" | "gameKind" | "status">;
 const table = schema.gameEpisodePresentations;
 
-/** Frozen public identity only; do not copy roles, strategy or later events into packaging. */
-async function readWerewolfEpisodeCast(db: Pick<DrizzleDB, "select">, gameIds: string[]) {
+/** Approved waiting identities or the frozen opening cast; never roles, strategy or later events. */
+async function readWerewolfEpisodeCast(db: Pick<DrizzleDB, "select">, games: EpisodeGame[]) {
+  const gameIds = games.map(game => game.id);
+  const waitingIds = games.filter(game => game.status === "waiting").map(game => game.id);
   if (!gameIds.length) return new Map<string, EpisodeCast[]>();
-  const rows = await db.select().from(schema.werewolfEvents)
-    .where(and(inArray(schema.werewolfEvents.gameId, gameIds), eq(schema.werewolfEvents.sequence, 1)));
-  return new Map(rows.map(({ gameId, event }) => {
+  const [rows, casting] = await Promise.all([
+    db.select().from(schema.werewolfEvents).where(and(inArray(schema.werewolfEvents.gameId, gameIds), eq(schema.werewolfEvents.sequence, 1))),
+    readWerewolfCastingPlayers(db, waitingIds),
+  ]);
+  const castByGame = new Map<string, EpisodeCast[]>([...casting].map(([id, players]) => [id, players.map(player => ({
+    id: player.id, name: player.name, avatarUrl: player.avatarUrl, personaKey: player.personaKey,
+  }))]));
+  for (const [id, cast] of rows.map(({ gameId, event }) => {
     if (event.type !== "werewolf.started" || event.gameId !== gameId || event.sequence !== 1) throw new Error("Invalid frozen Werewolf cast");
     return [gameId, event.payload.players.map(player => ({
       id: player.id, name: player.name,
       avatarUrl: player.avatarUrl ? `/api/werewolf/${encodeURIComponent(gameId)}/characters/${encodeURIComponent(player.id)}?audience=mystery&cursor=1` : null,
       personaKey: player.personaKey ?? null,
-    }))];
-  }));
+    }))] as const;
+  })) castByGame.set(id, cast);
+  return castByGame;
 }
 const now = () => new Date().toISOString();
 export function decodeEpisodeCopy(raw: string): EpisodeCopy {
@@ -56,7 +65,7 @@ export async function generateEpisodeCopy(cast: Array<{ name: string; personalit
   return decodeEpisodeCopy(choice.message.content);
 }
 
-/** Frozen cast identity and portraits; missing portraits use public profile artwork. */
+/** Public lobby/original cast identity and portraits; missing Influence portraits use public profile artwork. */
 export async function readEpisodePresentations(db: Pick<DrizzleDB, "select" | "selectDistinctOn">, games: EpisodeGame[]): Promise<Map<string, EpisodePresentation>> {
   if (!games.length) return new Map();
   const ids = games.map(g => g.id);
@@ -77,7 +86,7 @@ export async function readEpisodePresentations(db: Pick<DrizzleDB, "select" | "s
       .innerJoin(schema.visualMediaVersions, eq(schema.visualMediaVersions.id, schema.visualMediaPublications.versionId))
       .where(inArray(schema.visualMediaPublications.gameId, influenceIds))
       .orderBy(asc(schema.visualMediaPublications.sceneId), desc(schema.visualMediaPublications.revision)),
-    readWerewolfEpisodeCast(db, games.filter(game => game.gameKind === "werewolf").map(game => game.id)),
+    readWerewolfEpisodeCast(db, games.filter(game => game.gameKind === "werewolf")),
   ]);
   const published = new Map(publications.map(p => [p.sceneId, p]));
   const selectedCovers = covers.map(c => { const p = published.get(c.id); return p ? { ...c, artifact: p.artifact, plan: p.plan } : c; });

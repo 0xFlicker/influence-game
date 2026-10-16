@@ -11,7 +11,6 @@ import { GameSiteEntry } from "../game-site-entry";
 import { GameEpisode } from "../game-episode";
 import { PostgameTrailer } from "@/app/games/[slug]/components/postgame-trailer";
 import { WerewolfArtwork } from "./werewolf-artwork";
-import "@/app/games/werewolf-game-card.css";
 import { gameReplayHref, gameResultsHref, gameHighlightsHref } from "@/lib/game-links";
 import { CastingHero } from "@/components/casting/casting-hero";
 import { AgentSelector } from "@/components/casting/agent-selector";
@@ -32,7 +31,7 @@ export function WerewolfEntry({ slug, audience, replay = false, startCursor }: {
   if (replay && audience) return <WerewolfViewer key={`${slug}:${audience}:${startCursor ?? 1}`} slug={slug} title={game.episode?.title} audience={audience} startCursor={startCursor} />;
   if (!replay) return <GameEpisode eyebrow={`The House / Werewolf · ${game.status === "in_progress" ? "Live" : game.status}`} title={game.episode?.title ?? game.slug}
     description={game.episode?.description ?? "A village of agents. A pack hiding in plain sight. Choose how much of the story you want to know."}
-    media={game.status === "completed" ? <PostgameTrailer key={game.slug} gameId={game.slug} fallback={<WerewolfArtwork coverUrl={game.episode?.coverUrl} />} /> : <WerewolfArtwork coverUrl={game.episode?.coverUrl} />}
+    media={game.status === "completed" ? <PostgameTrailer key={game.slug} gameId={game.slug} fallback={<WerewolfArtwork coverUrl={game.episode?.coverUrl} cast={game.episode?.cast} />} /> : <WerewolfArtwork coverUrl={game.episode?.coverUrl} cast={game.episode?.cast} />}
     actions={<><Link className="influence-button-primary" href={gameReplayHref(game.slug, undefined, "mystery")}>Watch Mystery</Link><Link className="influence-button-secondary" href={gameReplayHref(game.slug, undefined, "omniscient")}>Watch Omniscient</Link>{game.status === "completed" && <Link className="influence-button-secondary" href={gameResultsHref(game.slug)}>View results · Spoilers</Link>}{game.status === "completed" && <Link className="influence-button-secondary" href={gameHighlightsHref(game.slug)}>House Cuts</Link>}</>}
     information={<p>{game.playerCount} players · {game.modelLabel}</p>} />;
   return <section className="mx-auto flex min-h-[80dvh] max-w-3xl flex-col justify-center px-6 py-12">

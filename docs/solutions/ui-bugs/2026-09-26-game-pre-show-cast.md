@@ -87,13 +87,30 @@ Unlisted games never enter these shelves. Collection pages retain their full lis
 The active-season shelf links to that season, and game shelves link to their
 corresponding type collection.
 
-Both games use `CastPreview` for public original-cast portraits, four per page,
-with wrapping Previous/Next controls and a page count. Werewolf retains its
-village cover and House mark. Influence begins on its cast frame, combines the
-preview's cast batches into one paginated frame, and keeps “Meet the cast” visible
-while paging. Paging or focusing its controls stops automatic frame rotation.
-Hidden preview frames are inert. Artwork navigation and pagination are sibling
-controls, so paging never follows the game link or opens the touch trailer.
-The deterministic public-identity browser lane covers both game kinds on desktop
-and touch, partial last pages, wraparound, keyboard operation, filtering,
-empty-shelf removal, and existing card/trailer navigation.
+Both games render the same `EpisodeCard`, card shell, status labels, footer actions,
+metadata, portrait frames, and touch preview. The eyebrow is The House / Influence
+or The House / Werewolf; waiting cards say Casting open and show joined/capacity.
+Primary actions are Join game, Watch live, and Watch replay. Permission-gated
+operator controls live under a collapsed Manage game disclosure. Game-specific
+backdrops remain; the separate Werewolf card styles and House icon are removed.
+
+Cast groups of four are ordinary slideshow frames labeled Meet the cast. They
+cycle every 4.2 seconds while visible, with no pagination controls. Public alliance
+frames retain their labels and order, and oversized alliance groups also split
+into four-person frames. Hidden/offscreen cards and keyboard-focused cards pause; reduced motion disables
+automatic progression. Every card starts with the joined/original public cast.
+
+Werewolf waiting cast comes from saved seats and approved character revisions,
+using the same batched public identity reader as its lobby and producer inspection.
+It never reads draft personality, strategy, or roles into packaging. After start,
+only the original werewolf.started identities supply card cast; profile edits and
+later deaths never replace that frozen roster. Removed seats disappear on refresh;
+unavailable profiles use the existing redacted lobby identity. Reads never generate
+copy, start a game, or publish media.
+
+Provider-free coverage checks shared presentation and frame batching. PostgreSQL
+coverage verifies real waiting discovery, approved-versus-draft identity, removed
+and unavailable seats, and frozen post-start identities. Deterministic browser
+coverage checks both games on desktop/touch, natural cast cycling and wraparound,
+consistent labels/actions, no icon or cast controls, shelf filtering, scoped
+collections, and existing card/trailer navigation.

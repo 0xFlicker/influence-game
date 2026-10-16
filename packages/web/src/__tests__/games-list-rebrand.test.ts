@@ -37,10 +37,11 @@ describe("games list House/Influence rebrand", () => {
     expect(gamesBrowserSource).not.toContain("Any tier");
   });
 
-  it("includes Werewolf discovery while retaining game-specific cards and creation", () => {
+  it("includes Werewolf discovery through the shared card and retains game creation", () => {
     expect(gamesPageSource).toContain('href="/games/new"');
     expect(gamesPageSource).toContain("includeWerewolf");
-    expect(gamesBrowserSource).toContain("WerewolfLibraryCard");
+    expect(gamesBrowserSource).not.toContain("WerewolfLibraryCard");
+    expect(gamesBrowserSource).toContain("EpisodeCard");
     expect(gamesBrowserSource).toContain('aria-label="Game type"');
     expect(combinedSource).not.toContain("Mafia");
     expect(combinedSource).not.toContain("Salem");
