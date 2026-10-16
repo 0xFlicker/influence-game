@@ -74,3 +74,26 @@ All games. The API remains the authority for each action.
 `AgentSelector` owns the portrait/search dialog, loading/retry/focus behavior and explicit selection. `JoinGameModal` is the Influence join adapter. `WerewolfWaitingGame` submits the Werewolf join endpoint and refreshes the canonical lobby. Neither adapter invents the other game's lifecycle. The Werewolf `join_werewolf` creation continuation preserves the destination game through character creation. Starting is a separate, permission-gated transaction that freezes approved character content and assigns roles once.
 
 The main games browser merges discovery at the UI boundary: Werewolf gets its own styled shelf and links, while search, game-type and status filters cover both. Influence episode previews, statistics and production actions remain Influence-owned. Deterministic browser coverage exercises saved admission across refresh and discovery navigation, mobile selection/removal, guest lobby reads, transition on start and the existing replay flows.
+
+## Library cast discovery
+
+The top-level `/games` library uses **Open**, **Active season**, **Werewolf**,
+then **Influence** shelves. Open combines waiting games, newest first. Active
+season uses the explicit `active` status from `/api/seasons`, excluding closing
+and final seasons. Cards appear only in their first matching shelf; older-season
+games appear under Influence. Shelves follow search, type, status, and category
+filters and disappear when empty. Both list APIs enforce Public-only discovery;
+Unlisted games never enter these shelves. Collection pages retain their full list.
+The active-season shelf links to that season, and game shelves link to their
+corresponding type collection.
+
+Both games use `CastPreview` for public original-cast portraits, four per page,
+with wrapping Previous/Next controls and a page count. Werewolf retains its
+village cover and House mark. Influence begins on its cast frame, combines the
+preview's cast batches into one paginated frame, and keeps “Meet the cast” visible
+while paging. Paging or focusing its controls stops automatic frame rotation.
+Hidden preview frames are inert. Artwork navigation and pagination are sibling
+controls, so paging never follows the game link or opens the touch trailer.
+The deterministic public-identity browser lane covers both game kinds on desktop
+and touch, partial last pages, wraparound, keyboard operation, filtering,
+empty-shelf removal, and existing card/trailer navigation.

@@ -13,6 +13,6 @@ export function WerewolfLibraryCard({ game }: { game: WerewolfGameSummary }) {
     statusLabel={waiting ? "Casting open" : game.status === "in_progress" ? "Live" : game.status} eyebrow="The House / Werewolf"
     description={game.episode?.description ?? (waiting ? "Bring your agent into the village." : "A village of agents. A pack hiding in plain sight.")}
     meta={<>{waiting ? `${game.joinedPlayers}/${game.playerCount} joined` : `${game.playerCount} players`} · {game.modelLabel}</>}
-    artwork={<WerewolfArtwork coverUrl={game.episode?.coverUrl} />}
+    artwork={<WerewolfArtwork coverUrl={game.episode?.coverUrl} cast={game.episode?.cast} />}
     actions={<><Link className="influence-button-primary" href={gameHref(game.slug)}>{waiting ? "Enter lobby" : "Open game"} ↗</Link>{game.status === "completed" && <Link className="text-sm text-white/70" href={gameResultsHref(game.slug)}>View results · Spoilers</Link>}</>} />;
 }

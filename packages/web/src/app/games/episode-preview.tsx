@@ -4,7 +4,7 @@ import { GameCard } from "@/components/games/game-card";
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { AgentAvatar } from "@/components/agent-avatar";
+import { CastPreview } from "@/components/games/cast-preview";
 import { getEpisodePreview, resolveApiUrl, type EpisodeFrame, type EpisodePreview, type GameSummary } from "@/lib/api";
 import { gameHref, gameReplayHref, gameResultsHref } from "@/lib/game-links";
 import { gameDisplayName } from "@/lib/game-identity";
@@ -15,30 +15,32 @@ export function episodeFallbackFrames(game: Pick<GameSummary, "episode">): Episo
   const frames: EpisodeFrame[] = [];
   if (game.episode?.coverUrl) frames.push({ id: "cover", kind: "scene", label: "Inside the House", imageUrl: game.episode.coverUrl });
   const cast = game.episode?.cast ?? [];
-  for (let i = 0; i < cast.length; i += 4) frames.push({ id: `cast:${i}`, kind: "cast", label: "Meet the cast", players: cast.slice(i, i + 4) });
+  if (cast.length) frames.push({ id: "cast:0", kind: "cast", label: "Meet the cast", players: cast });
   frames.push({ id: "house", kind: "house", label: "The House presents", text: game.episode?.description ?? "A new room. A new game of Influence." });
   return frames;
 }
 export function EpisodeArtwork({ frames, active, title }: { frames: EpisodeFrame[]; active: boolean; title: string }) {
-  const [index, setIndex] = useState(0);
+  const [frameId, setFrameId] = useState(() => frames.find(frame => frame.id.startsWith("cast:"))?.id ?? frames[0]?.id);
+  const index = Math.max(0, frames.findIndex(frame => frame.id === frameId));
+  const [paging, setPaging] = useState(false);
   useEffect(() => {
-    if (!active || frames.length < 2 || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (!active || paging || frames.length < 2 || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     let timer: ReturnType<typeof setInterval> | undefined;
     const update = () => {
       clearInterval(timer);
-      if (!document.hidden) timer = setInterval(() => setIndex(i => (i + 1) % frames.length), 4200);
+      if (!document.hidden) timer = setInterval(() => setFrameId(id => frames[(frames.findIndex(frame => frame.id === id) + 1) % frames.length]?.id), 4200);
     };
     update();
     document.addEventListener("visibilitychange", update);
     return () => { clearInterval(timer); document.removeEventListener("visibilitychange", update); };
-  }, [active, frames.length]);
-  return <div className={`episode-artwork ${active ? "is-playing" : ""}`} aria-label={`${title} preview`}>
-    {frames.map((frame, i) => <div key={frame.id} className={`episode-frame ${i === index % frames.length ? "is-visible" : ""}`} aria-hidden={i !== index % frames.length}>
+  }, [active, paging, frames]);
+  return <div className={`episode-artwork ${active ? "is-playing" : ""}`} aria-label={`${title} preview`} onPointerDown={() => setPaging(true)} onFocusCapture={() => setPaging(true)}>
+    {frames.map((frame, i) => <div key={frame.id} className={`episode-frame ${i === index % frames.length ? "is-visible" : ""}`} aria-hidden={i !== index % frames.length} inert={i !== index % frames.length}>
       <Image src={frame.imageUrl ? resolveApiUrl(frame.imageUrl) : "/house-highlights/generated/alliance-formation.jpg"} alt="" fill sizes="(max-width: 1023px) 100vw, 700px" className="episode-scene" unoptimized />
       <div className="episode-vignette" />
-      {frame.kind === "cast" && <div className="episode-cast">{frame.players?.map(p => <div key={p.id}><AgentAvatar name={p.name} persona={p.personaKey ?? ""} personaKey={p.personaKey} avatarUrl={p.avatarUrl} size="32" /><span>{p.name}</span></div>)}</div>}
+      {frame.kind === "cast" && <CastPreview cast={frame.players ?? []} label={frame.label} />}
       {frame.kind === "house" && <div className="episode-house"><span>A WORD FROM THE HOUSE</span><p>{frame.text}</p></div>}
-      <span className="episode-frame-label">{frame.label}</span>
+      {frame.kind !== "cast" && <span className="episode-frame-label">{frame.label}</span>}
     </div>)}
   </div>;
 }
@@ -98,7 +100,9 @@ export function EpisodeCard({ game, actions }: { game: GameSummary; actions: Rea
     d.showModal();
     return () => { d.close(); document.body.style.overflow = overflow; prior?.focus(); };
   }, [expanded]);
-  const frames = preview?.frames.length ? preview.frames : episodeFallbackFrames(game);
+  const frames = preview?.frames.length ? preview.frames.filter(frame => !frame.id.startsWith("cast:") || frame.id === "cast:0").map(frame =>
+    frame.id === "cast:0" ? { ...frame, players: preview.episode.cast } : frame,
+  ) : episodeFallbackFrames(game);
   const label = game.status === "in_progress" ? "Live" : game.status === "waiting" ? "Open seats" : game.status === "completed" ? "Completed" : game.visualPaused ? "Paused" : game.status === "cancelled" ? "Cancelled" : "Failed";
   const subtitle = game.season ? `${game.season.name}${game.episode?.episodeNumber ? ` · Episode ${game.episode.episodeNumber}` : ""}` : game.visibility === "unlisted" ? "Unlisted game" : "Public game";
   const links = <><Link className="influence-button-primary" href={gameReplayHref(game.slug)}>{game.status === "in_progress" ? "Watch live" : "Watch Replay"} ↗</Link><Link className="influence-button-secondary" href={gameResultsHref(game.slug)}>Details</Link></>;

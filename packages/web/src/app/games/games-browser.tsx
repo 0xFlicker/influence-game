@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { enabledGameKinds } from "@influence/engine/game-availability";
-import { collectionLabel, gameCollectionHref, matchesGameCollection, type GameCollection } from "@/lib/game-collections";
+import { collectionLabel, matchesGameCollection, type GameCollection } from "@/lib/game-collections";
 import { listWerewolfGames, type WerewolfGameSummary } from "@/lib/werewolf-api";
 import { WerewolfLibraryCard } from "@/components/games/werewolf/werewolf-library-card";
 import { EpisodeCard } from "./episode-preview";
@@ -11,6 +11,8 @@ import {
   fillGame,
   hideGame,
   listGames,
+  listSeasons,
+  type SeasonIdentity,
   startGame,
   stopGame,
   type GameStatus,
@@ -248,6 +250,8 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
   const { hasPermission, roles } = usePermissions();
   const [filters, setFilters] = useState<FiltersState>({ status: "all", category: "all", search: "" });
   const [games, setGames] = useState<GameSummary[]>([]);
+  const showShelves = !compact && !collection;
+  const [seasons, setSeasons] = useState<SeasonIdentity[]>([]);
   const [werewolfGames, setWerewolfGames] = useState<WerewolfGameSummary[]>([]);
   const [selectedKind, setKind] = useState<string>("all");
   const kind = collection?.kind === "game" ? collection.game : selectedKind;
@@ -256,24 +260,24 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
 
   const refreshGames = useCallback(async () => {
     try {
-      const [data, wolves] = await Promise.all([listGames(), includeWerewolf && enabledGameKinds().includes("werewolf") ? listWerewolfGames() : Promise.resolve([])]);
-      setGames(data); setWerewolfGames(wolves);
+      const [data, wolves, seasonList] = await Promise.all([listGames(), includeWerewolf && enabledGameKinds().includes("werewolf") ? listWerewolfGames() : Promise.resolve([]), showShelves ? listSeasons() : Promise.resolve([])]);
+      setGames(data); setWerewolfGames(wolves); setSeasons(seasonList);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load games.");
     } finally {
       setLoading(false);
     }
-  }, [includeWerewolf]);
+  }, [includeWerewolf, showShelves]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function fetchGames() {
       try {
-        const [data, wolves] = await Promise.all([listGames(), includeWerewolf && enabledGameKinds().includes("werewolf") ? listWerewolfGames() : Promise.resolve([])]);
+        const [data, wolves, seasonList] = await Promise.all([listGames(), includeWerewolf && enabledGameKinds().includes("werewolf") ? listWerewolfGames() : Promise.resolve([]), showShelves ? listSeasons() : Promise.resolve([])]);
         if (!cancelled) {
-          setGames(data); setWerewolfGames(wolves);
+          setGames(data); setWerewolfGames(wolves); setSeasons(seasonList);
           setError(null);
         }
       } catch (err) {
@@ -296,7 +300,7 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
       cancelled = true;
       clearInterval(interval);
     };
-  }, [includeWerewolf]);
+  }, [includeWerewolf, showShelves]);
 
   const canFill = hasPermission("fill_game");
   const canStart = hasPermission("start_game") && roles.some(role => ["gamer", "admin", "sysop"].includes(role));
@@ -312,7 +316,7 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
   };
 
   const searchQuery = filters.search.toLowerCase();
-  const scopedGames = games.filter(game => kind !== "werewolf" && (!collection || matchesGameCollection(game, collection)));
+  const scopedGames = games.filter(game => game.visibility === "public" && kind !== "werewolf" && (!collection || matchesGameCollection(game, collection)));
   const filtered = scopedGames
     .filter((g) => {
       if (filters.status !== "all" && g.status !== filters.status) return false;
@@ -335,6 +339,17 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
     && (!collection || collection.kind === "public" || (collection.kind === "game" && collection.game === "werewolf"))
     && `werewolf ${game.slug} ${game.modelLabel} ${game.episode?.title ?? ""} ${game.episode?.description ?? ""} ${(game.episode?.cast ?? []).map(player => player.name).join(" ")}`.toLowerCase().includes(searchQuery))
     .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || Date.parse(b.createdAt) - Date.parse(a.createdAt));
+
+  const activeSeason = seasons.find(season => season.status === "active");
+  const openGames = showShelves ? [
+    ...filtered.filter(game => game.status === "waiting").map(game => ({ kind: "influence" as const, game })),
+    ...filteredWerewolf.filter(game => game.status === "waiting").map(game => ({ kind: "werewolf" as const, game })),
+  ].sort((a, b) => Date.parse(b.game.createdAt) - Date.parse(a.game.createdAt)) : [];
+  const seasonGames = showShelves && activeSeason
+    ? filtered.filter(game => game.status !== "waiting" && game.season?.id === activeSeason.id)
+    : [];
+  const libraryGames = showShelves ? filtered.filter(game => game.status !== "waiting" && (!activeSeason || game.season?.id !== activeSeason.id)) : filtered;
+  const libraryWerewolf = showShelves ? filteredWerewolf.filter(game => game.status !== "waiting") : filteredWerewolf;
 
   const statusOptions: { value: StatusFilter; label: string }[] = [
     { value: "all", label: "All" },
@@ -390,21 +405,27 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
         </div>
       ) : (
         <div className={compact ? "episode-compact" : ""}>
-          {filteredWerewolf.length > 0 && <EpisodeShelf name="Werewolf" grid={compact || !!filters.search || filters.status !== "all" || kind === "werewolf"} href="/games/type/werewolf">
-            {filteredWerewolf.map(game => <WerewolfLibraryCard key={game.id} game={game} />)}
+          {openGames.length > 0 && <EpisodeShelf name="Open" grid={false}>
+            {openGames.map(item => item.kind === "werewolf"
+              ? <WerewolfLibraryCard key={item.game.id} game={item.game} />
+              : <GameCard key={item.game.id} game={item.game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
           </EpisodeShelf>}
-          {(compact || filters.search || filters.status !== "all" || filters.category !== "all" || collection ? [[collection ? collectionLabel(collection, games) : "Games", filtered] as const] : Array.from(filtered.reduce((map, game) => { const name = shelfName(game); map.set(name, [...(map.get(name) ?? []), game]); return map; }, new Map<string, GameSummary[]>())).sort(([a], [b]) => shelfRank(a) - shelfRank(b))).filter(([, items]) => items.length > 0).map(([name, items]) => <EpisodeShelf key={name} name={name} grid={compact || Boolean(filters.search) || filters.status !== "all" || filters.category !== "all" || !!collection} href={items[0] ? gameCollectionHref(items[0]) : "/games"}>
-            {items.map(game => <GameCard key={game.id} game={game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
-          </EpisodeShelf>)}
+          {seasonGames.length > 0 && activeSeason && <EpisodeShelf name="Active season" grid={false} href={`/games/season/${encodeURIComponent(activeSeason.slug)}`}>
+            {seasonGames.map(game => <GameCard key={game.id} game={game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
+          </EpisodeShelf>}
+          {libraryWerewolf.length > 0 && <EpisodeShelf name="Werewolf" grid={compact || !!filters.search || filters.status !== "all" || kind === "werewolf"} href="/games/type/werewolf">
+            {libraryWerewolf.map(game => <WerewolfLibraryCard key={game.id} game={game} />)}
+          </EpisodeShelf>}
+          {libraryGames.length > 0 && <EpisodeShelf name={showShelves ? "Influence" : collection ? collectionLabel(collection, games) : "Games"} grid={!showShelves} href={showShelves ? "/games/type/influence" : undefined}>
+            {libraryGames.map(game => <GameCard key={game.id} game={game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
+          </EpisodeShelf>}
         </div>
       )}
     </div>
   );
 }
 
-function shelfRank(name: string) { return name === "Public games" ? 1 : 0; }
-function shelfName(game: GameSummary) { return game.season?.name ?? "Public games"; }
-function EpisodeShelf({ name, grid, href, children }: { name: string; grid: boolean; href: string; children: React.ReactNode }) {
+function EpisodeShelf({ name, grid, href, children }: { name: string; grid: boolean; href?: string; children: React.ReactNode }) {
   const rail = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ left: false, right: false });
   useEffect(() => {
@@ -417,5 +438,5 @@ function EpisodeShelf({ name, grid, href, children }: { name: string; grid: bool
     update();
     return () => { observer.disconnect(); element.removeEventListener("scroll", update); };
   }, [grid, children]);
-  return <section className="episode-shelf" aria-label={name}><div className="episode-shelf-heading"><h2>{name}</h2>{!grid && <div className="flex gap-2"><Link href={href} className="rounded border border-white/20 px-3 py-2 text-sm">View all</Link><button disabled={!edges.left} aria-label={`Previous ${name} games`} onClick={() => rail.current?.scrollBy({ left: -rail.current.clientWidth, behavior: "smooth" })}>←</button><button disabled={!edges.right} aria-label={`Next ${name} games`} onClick={() => rail.current?.scrollBy({ left: rail.current.clientWidth, behavior: "smooth" })}>→</button></div>}</div><div ref={rail} className={grid ? "episode-grid" : `episode-rail ${edges.left ? "has-before" : ""} ${edges.right ? "has-after" : ""}`}>{children}</div></section>;
+  return <section className="episode-shelf" aria-label={name}><div className="episode-shelf-heading"><h2>{name}</h2>{!grid && <div className="flex gap-2">{href && <Link href={href} className="rounded border border-white/20 px-3 py-2 text-sm">View all</Link>}<button disabled={!edges.left} aria-label={`Previous ${name} games`} onClick={() => rail.current?.scrollBy({ left: -rail.current.clientWidth, behavior: "smooth" })}>←</button><button disabled={!edges.right} aria-label={`Next ${name} games`} onClick={() => rail.current?.scrollBy({ left: rail.current.clientWidth, behavior: "smooth" })}>→</button></div>}</div><div ref={rail} className={grid ? "episode-grid" : `episode-rail ${edges.left ? "has-before" : ""} ${edges.right ? "has-after" : ""}`}>{children}</div></section>;
 }

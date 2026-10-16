@@ -291,6 +291,108 @@ test.describe("local public player identity", () => {
     }
   });
 
+  test("library shelves follow Open, active season, Werewolf, Influence order", async ({ browser }) => {
+    test.setTimeout(120_000);
+    const activeSeason = { id: "active-season", slug: "current-season", name: "Current Season", status: "active", ratedPool: "free", admissionStartsAt: null, admissionClosesAt: null, finalizedAt: null };
+    const oldSeason = { ...activeSeason, id: "old-season", slug: "old-season", name: "Old Season", status: "final" };
+    const closingSeason = { ...activeSeason, id: "closing-season", slug: "closing-season", name: "Closing Season", status: "closing" };
+    const base = { status: "completed", playerCount: 8, alivePlayers: 1, modelLabel: "Standard", visibility: "public", createdAt: new Date().toISOString() };
+    const games = [
+      { ...base, id: "open", slug: "open", status: "waiting", season: activeSeason },
+      { ...base, id: "season", slug: "season", season: activeSeason },
+      { ...base, id: "old", slug: "old", season: oldSeason },
+      { ...base, id: "closing", slug: "closing", season: closingSeason },
+      { ...base, id: "public", slug: "public" },
+    ];
+    const wolves = [
+      { ...base, id: "wolf-open", slug: "wolf-open", status: "waiting", gameKind: "werewolf", joinedPlayers: 1 },
+      { ...base, id: "wolf", slug: "wolf", gameKind: "werewolf", joinedPlayers: 8 },
+    ];
+    for (const width of [1440, 390]) {
+      const context = await browser.newContext({ viewport: { width, height: 1000 } });
+      const page = await context.newPage();
+      let active = true;
+      try {
+        await page.route("**/api/games", route => route.fulfill({ json: games }));
+        await page.route("**/api/werewolf", route => route.fulfill({ json: wolves }));
+        await page.route("**/api/seasons", route => route.fulfill({ json: { schemaVersion: 1, seasons: [oldSeason, closingSeason, { ...activeSeason, status: active ? "active" : "final" }] } }));
+        await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });
+        await expect(page.locator(".episode-shelf-heading h2")).toHaveText(["Open", "Active season", "Werewolf", "Influence"]);
+        await expect(page.locator(".episode-card")).toHaveCount(7);
+        const season = page.getByRole("region", { name: "Active season", exact: true });
+        await expect(season.locator("article")).toHaveCount(1);
+        await expect(season.getByRole("link", { name: "View all" })).toHaveAttribute("href", "/games/season/current-season");
+        await expect(page.getByRole("region", { name: "Influence", exact: true }).locator("article")).toHaveCount(3);
+        await page.getByLabel("Game type", { exact: true }).selectOption("werewolf");
+        await expect(page.locator(".episode-shelf-heading h2")).toHaveText(["Open", "Werewolf"]);
+        await page.getByLabel("Game type", { exact: true }).selectOption("influence");
+        await expect(page.locator(".episode-shelf-heading h2")).toHaveText(["Open", "Active season", "Influence"]);
+        active = false;
+        await page.reload({ waitUntil: "networkidle" });
+        await expect(page.locator(".episode-shelf-heading h2")).toHaveText(["Open", "Werewolf", "Influence"]);
+        await expect(page.getByRole("region", { name: "Influence", exact: true }).locator("article")).toHaveCount(4);
+        await page.goto(`${servers.webUrl}/games/type/influence`, { waitUntil: "networkidle" });
+        await expect(page.locator(".episode-shelf-heading h2")).toHaveText(["Influence"]);
+        await expect(page.locator(".episode-card")).toHaveCount(5);
+      } finally { await context.close(); }
+    }
+  });
+
+  test("games prioritize open seats and page both public casts four at a time", async ({ browser }) => {
+    test.setTimeout(120_000);
+    const cast = Array.from({ length: 9 }, (_, i) => ({ id: `cast-${i}`, name: `Cast ${i + 1}`, avatarUrl: null, personaKey: "strategic" }));
+    const episode = { title: "Open Influence", description: "Meet everyone", episodeNumber: null, cast, coverUrl: null, status: "ready", locked: false, revision: 1, frameOrder: [] };
+    const influence = { id: "open-influence", slug: "open-influence", visibility: "public", status: "waiting", playerCount: 10, alivePlayers: 9, modelLabel: "Standard", createdAt: new Date().toISOString(), episode };
+    const werewolf = { id: "open-werewolf", slug: "open-werewolf", gameKind: "werewolf", status: "waiting", playerCount: 10, joinedPlayers: 9, modelLabel: "Standard", createdAt: new Date().toISOString(), episode: { ...episode, title: "Open Werewolf" } };
+    for (const touch of [false, true]) {
+      const context = await browser.newContext({ viewport: touch ? { width: 390, height: 844 } : { width: 1440, height: 1000 }, hasTouch: touch, isMobile: touch, reducedMotion: "reduce" });
+      const page = await context.newPage();
+      let open = true;
+      try {
+        await page.route("**/api/games", route => route.fulfill({ json: [{ ...influence, status: open ? "waiting" : "completed" }] }));
+        await page.route("**/api/werewolf", route => route.fulfill({ json: [{ ...werewolf, status: open ? "waiting" : "completed" }] }));
+        await page.route("**/api/games/open-influence/episode", route => route.fulfill({ json: {
+          episode, media: { status: "not_requested" }, frames: [
+            { id: "scene", kind: "scene", label: "Inside the House" },
+            ...[0, 4, 8].map(offset => ({ id: `cast:${offset}`, kind: "cast", label: "Meet the cast", players: cast.slice(offset, offset + 4) })),
+          ],
+        } }));
+        await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });
+        const shelf = page.getByRole("region", { name: "Open", exact: true });
+        await expect(shelf).toBeVisible();
+        await expect(page.locator(".episode-shelf").first()).toHaveAttribute("aria-label", "Open");
+        await expect(page.locator(".episode-card")).toHaveCount(2);
+        await page.screenshot({ path: `/tmp/games-cast-${touch ? "mobile" : "desktop"}.png`, fullPage: true });
+        for (const title of ["Open Influence", "Open Werewolf"]) {
+          const card = shelf.locator("article").filter({ has: page.getByRole("heading", { name: title, exact: true }) });
+          await card.scrollIntoViewIfNeeded();
+          await expect(card.getByLabel("Cast page 1 of 3", { exact: true })).toBeVisible();
+          await expect(card.locator(".episode-cast:visible > div")).toHaveCount(4);
+          await card.getByRole("button", { name: "Next cast page" }).click();
+          await expect(card.getByLabel("Cast page 2 of 3", { exact: true })).toContainText("Cast 5");
+          await expect(card.locator(".episode-cast:visible > div")).toHaveCount(4);
+          await card.getByRole("button", { name: "Next cast page" }).click();
+          await expect(card.getByLabel("Cast page 3 of 3", { exact: true })).toContainText("Cast 9");
+          await expect(card.locator(".episode-cast:visible > div")).toHaveCount(1);
+          await card.getByRole("button", { name: "Next cast page" }).click();
+          await expect(card.getByLabel("Cast page 1 of 3", { exact: true })).toBeVisible();
+          await card.getByRole("button", { name: "Previous cast page" }).focus();
+          await page.keyboard.press("Enter");
+          await expect(card.getByLabel("Cast page 3 of 3", { exact: true })).toBeVisible();
+          await expect(page).toHaveURL(`${servers.webUrl}/games`);
+        }
+        await page.getByLabel("Game type", { exact: true }).selectOption("werewolf");
+        await expect(shelf.locator("article")).toHaveCount(1);
+        await page.getByLabel("Search games").fill("absent-cast");
+        await expect(shelf).toHaveCount(0);
+        open = false;
+        await page.reload({ waitUntil: "networkidle" });
+        await expect(page.getByRole("region", { name: "Open", exact: true })).toHaveCount(0);
+        await expect(page.locator(".episode-card")).toHaveCount(2);
+      } finally { await context.close(); }
+    }
+  });
+
   test("episode cards use desktop destinations and a fullscreen touch trailer", async ({ browser }) => {
     test.setTimeout(90_000);
     const game = { id: "episode-fixture", slug: "quiet-sage-room", status: "completed", playerCount: 4, players: [], currentRound: 5, maxRounds: 5, currentPhase: "DONE", alivePlayers: 1, eliminatedPlayers: 3, phaseTimeRemaining: null, modelLabel: "Standard", visibility: "public", createdAt: new Date().toISOString(), season: { id: "s0", name: "Season 0", slug: "season-0" }, episode: { title: "Good Company", description: "Four strangers. Four different ideas about trust.", episodeNumber: 42, cast: [{ id: "mira", name: "Mira", avatarUrl: null, personaKey: "strategic" }], coverUrl: null, status: "ready", locked: false, revision: 1, frameOrder: [] } };
@@ -378,6 +480,10 @@ test.describe("local public player identity", () => {
         await route.fulfill({ json: { ...await response.json(), isAdmin: true, roles: ["admin", "producer"], permissions: ["view_admin", "manage_postgame_media"] } });
       });
       await page.route("**/api/games", route => route.fulfill({ json: games }));
+      await page.route("**/api/seasons", route => route.fulfill({ json: { schemaVersion: 1, seasons: [{
+        id: "s0", name: "Season 0", slug: "season-0", status: "active", ratedPool: "free",
+        admissionStartsAt: null, admissionClosesAt: null, finalizedAt: null,
+      }] } }));
       await page.route("**/api/admin/games", route => route.fulfill({ json: games }));
       await page.route(/\/api\/admin\/production\/library(?:\?.*)?$/, route => {
         const query = new URL(route.request().url()).searchParams;
@@ -401,7 +507,9 @@ test.describe("local public player identity", () => {
       await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });
       await expect(page.getByRole("button", { name: "Backfill missing titles" })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Edit episode", exact: true })).toHaveCount(0);
-      await expect(page.getByRole("region", { name: "Season 0", exact: true }).getByRole("link", { name: "View all" })).toHaveAttribute("href", "/games/season/season-0");
+      await expect(page.getByRole("region", { name: "Active season", exact: true }).getByRole("link", { name: "View all" })).toHaveAttribute("href", "/games/season/season-0");
+      await expect(page.getByTestId("episode-card")).toHaveCount(59);
+      await expect(page.getByRole("heading", { name: "Episode 2", exact: true })).toHaveCount(0);
       for (const [path, expected] of [["season/season-0", "Episode 0"]]) {
         await page.goto(`${servers.webUrl}/games/${path}`, { waitUntil: "networkidle" });
         await expect(page.getByTestId("episode-card")).toHaveCount(1);
