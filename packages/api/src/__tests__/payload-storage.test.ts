@@ -1,9 +1,14 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { testPayloadStore } from "./payload-test-store.js";
 import { decodePayloadReference, loadPayloads, payloadHash, readJson, readPayload, storeBinary, storeFields, storeJson, storeText } from "../services/payload-storage.js";
 
 describe("private payload storage", () => {
   beforeEach(() => testPayloadStore.objects.clear());
+  test("acknowledged uploads commit references without a download", async () => {
+    const get = spyOn(testPayloadStore, "get");
+    try { await storeJson({ acknowledged: true }); expect(get).not.toHaveBeenCalled(); }
+    finally { get.mockRestore(); }
+  });
   test("preserves exact binary bytes, deduplicates, and rejects corruption and missing objects", async () => {
     const bytes = Buffer.from([0, 255, 80, 78, 71, 0, 13, 10]);
     const ref = await storeBinary(bytes);

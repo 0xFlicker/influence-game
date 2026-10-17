@@ -18,7 +18,7 @@ export interface StoredPayload<T = unknown> {
 }
 
 export interface PayloadObjectStore {
-  putIfAbsent(key: string, bytes: Uint8Array): Promise<void>;
+  putIfAbsent(key: string, bytes: Uint8Array): Promise<void | boolean>;
   get(key: string): Promise<Uint8Array>;
 }
 
@@ -34,16 +34,18 @@ class S3PayloadObjectStore implements PayloadObjectStore {
     }) };
     return this.cached;
   }
-  async putIfAbsent(key: string, bytes: Uint8Array): Promise<void> {
+  async putIfAbsent(key: string, bytes: Uint8Array): Promise<boolean> {
     const { bucket, client } = this.connection();
     try {
       await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: bytes,
         ContentType: "application/octet-stream", IfNoneMatch: "*" }), { abortSignal: AbortSignal.timeout(60_000) });
+          return true;
     } catch (error) {
       const status = error && typeof error === "object" && "$metadata" in error
         ? (error.$metadata as { httpStatusCode?: number }).httpStatusCode : undefined;
       if (status !== 412) throw new Error("Private payload upload failed", { cause: error });
-      // The caller verifies existing bytes as well as newly uploaded bytes.
+      // Only a collision without a receipt needs the existing encoding.
+      return false;
     }
   }
   async get(key: string): Promise<Uint8Array> {
@@ -81,19 +83,22 @@ export function assertStoredPayload(value: unknown): asserts value is StoredPayl
   }
 }
 
-/** Upload and read back before any relational reference can be committed. */
+/** An acknowledged upload is durable; read only an existing object whose encoding is unknown. */
 export async function storePayload<T>(bytes: Uint8Array, codec: StoredPayload["codec"]): Promise<StoredPayload<T>> {
   const compressed = codec === "binary" ? bytes : gzipSync(bytes);
   const sha256 = payloadHash(bytes);
   const ref: StoredPayload<T> = { storage: "private-payload-v1", key: `payloads/v1/${codec}/${sha256}`,
     codec, sha256, byteLength: bytes.byteLength, storedSha256: payloadHash(compressed), storedByteLength: compressed.byteLength };
-  await store.putIfAbsent(ref.key, compressed);
-  const actual = await store.get(ref.key);
-  const decoded = codec === "binary" ? actual : gunzipSync(actual);
-  if (decoded.byteLength !== bytes.byteLength || payloadHash(decoded) !== sha256) throw new Error("Uploaded payload integrity mismatch");
-  // An existing immutable gzip object may have been written by another zlib version.
-  ref.storedSha256 = payloadHash(actual);
-  ref.storedByteLength = actual.byteLength;
+  const created = await store.putIfAbsent(ref.key, compressed);
+  if (created === false) {
+    // Legacy gzip objects can use a different encoding. Never overwrite them:
+    // previously committed references include the stored-byte digest.
+    const actual = await store.get(ref.key);
+    const decoded = codec === "binary" ? actual : gunzipSync(actual);
+    if (decoded.byteLength !== bytes.byteLength || payloadHash(decoded) !== sha256) throw new Error("Uploaded payload integrity mismatch");
+    ref.storedSha256 = payloadHash(actual);
+    ref.storedByteLength = actual.byteLength;
+  }
   decodedReferences.add(ref);
   return ref;
 }

@@ -3,7 +3,9 @@ import { setPayloadObjectStoreForTests, type PayloadObjectStore } from "../servi
 export class MemoryPayloadStore implements PayloadObjectStore {
   readonly objects = new Map<string, Uint8Array>();
   async putIfAbsent(key: string, bytes: Uint8Array) {
-    if (!this.objects.has(key)) this.objects.set(key, Uint8Array.from(bytes));
+    if (this.objects.has(key)) return false;
+    this.objects.set(key, Uint8Array.from(bytes));
+    return true;
   }
   async get(key: string) {
     const bytes = this.objects.get(key);

@@ -1,10 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import postgres from "postgres";
 import { setupTestDB } from "./test-utils.js";
 import { testPayloadStore } from "./payload-test-store.js";
 import { STORAGE_PAYLOAD_COLUMNS } from "../services/storage-payload-inventory.js";
-import { copyPayloads, inventoryPayloads, verifyPayloads } from "../services/storage-payload-migration.js";
+import { auditEmbeddedBinaries, copyPayloads, inventoryPayloads, verifyPayloads } from "../services/storage-payload-migration.js";
 import { payloadHash, readPayload } from "../services/payload-storage.js";
 
 const client = postgres(process.env.TEST_DATABASE_URL ?? "postgresql://influence:influence@127.0.0.1:54320/influence_test", { max: 1, onnotice: () => {} });
@@ -52,12 +52,17 @@ describe("existing payload migration", () => {
     const [before] = await client`SELECT encode(sha256(convert_to(input::text,'UTF8')),'hex') AS hash FROM game_retrospective_inputs`;
     await copyPayloads(client);
     const first = await verifyPayloads(client);
-    expect(first.verified).toBe(29);
-    await copyPayloads(client);
-    expect((await verifyPayloads(client)).verified).toBe(29);
+    expect(first.covered).toBe(29);
+    const uploads = spyOn(testPayloadStore, "putIfAbsent"), downloads = spyOn(testPayloadStore, "get");
+    try {
+      await copyPayloads(client);
+      expect((await verifyPayloads(client)).covered).toBe(29);
+      expect(uploads).not.toHaveBeenCalled();
+      expect(downloads).not.toHaveBeenCalled();
+    } finally { uploads.mockRestore(); downloads.mockRestore(); }
     await cutover();
     expect((await inventoryPayloads(client)).every(row => row.state === "cut_over")).toBe(true);
-    expect((await verifyPayloads(client)).verified).toBe(29);
+    expect((await verifyPayloads(client)).covered).toBe(29);
     const [metadata] = await client`SELECT scene_id,action,acknowledged_attempt_ids FROM visual_media_requests`;
     expect(metadata).toEqual({ scene_id: "scene", action: "regenerate", acknowledged_attempt_ids: ["attempt"] });
     expect((await client`SELECT failed_before_dispatch FROM account_text_operations`)[0]!.failed_before_dispatch).toBe(true);
@@ -70,7 +75,7 @@ describe("existing payload migration", () => {
     expect(await client`SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND data_type='bytea'`).toHaveLength(0);
     // A rerun cannot rewrite already-cut-over rows.
     await copyPayloads(client);
-    expect((await verifyPayloads(client)).verified).toBe(29);
+    expect((await verifyPayloads(client)).covered).toBe(29);
     await client`SAVEPOINT invalid_body`;
     await expect(Promise.resolve(client`UPDATE visual_artifacts SET image_object='{"body":"embedded"}'::jsonb`)).rejects.toThrow();
     await client`ROLLBACK TO SAVEPOINT invalid_body`;
@@ -81,20 +86,29 @@ describe("existing payload migration", () => {
     await client`ROLLBACK TO SAVEPOINT cutover_attempt`;
     expect((await client`SELECT count(*)::int AS n FROM visual_artifacts WHERE image IS NOT NULL`)[0]!.n).toBe(19);
   }));
-  test("rejects changed sources and corrupt objects, then resumes after recopy", async () => fixture(async () => {
+  test("transaction rejects stale sources; recopy processes only changed rows", async () => fixture(async () => {
     await copyPayloads(client);
     await client`UPDATE visual_artifacts SET image=${Buffer.from("changed")} WHERE id='00'`;
-    await expect(verifyPayloads(client)).rejects.toThrow("changed payloads");
+    // Coverage intentionally does not hash source bodies. SQL conversion owns that check.
+    expect((await verifyPayloads(client)).covered).toBe(29);
     await client`SAVEPOINT stale_cutover`;
     await expect(cutover()).rejects.toThrow("Unverified or changed storage payload");
     await client`ROLLBACK TO SAVEPOINT stale_cutover`;
     await copyPayloads(client);
-    const [receipt] = await client`SELECT object_reference FROM storage_payload_migration_receipts WHERE source_table='visual_artifacts' AND row_key='{"id":"00"}'::jsonb`;
-    const key = receipt!.object_reference.key, bytes = testPayloadStore.objects.get(key)!;
-    testPayloadStore.objects.set(key, Buffer.from("corruption"));
-    await expect(verifyPayloads(client)).rejects.toThrow("integrity mismatch");
-    testPayloadStore.objects.set(key, bytes);
-    expect((await verifyPayloads(client)).verified).toBe(29);
+    expect((await verifyPayloads(client)).covered).toBe(29);
+  }));
+  test("failed uploads leave no receipt and resume only unfinished rows", async () => fixture(async () => {
+    const upload = spyOn(testPayloadStore, "putIfAbsent").mockRejectedValue(new Error("upload unavailable"));
+    try { await expect(copyPayloads(client)).rejects.toThrow("upload unavailable"); }
+    finally { upload.mockRestore(); }
+    expect((await client`SELECT count(*)::int AS n FROM storage_payload_migration_receipts`)[0]!.n).toBe(0);
+    await copyPayloads(client);
+    await client`DELETE FROM storage_payload_migration_receipts WHERE source_table='visual_artifacts' AND row_key='{"id":"00"}'`;
+    await expect(verifyPayloads(client)).rejects.toThrow("Missing or mismatched");
+    const retry = spyOn(testPayloadStore, "putIfAbsent");
+    try { await copyPayloads(client); expect(retry).toHaveBeenCalledTimes(1); }
+    finally { retry.mockRestore(); }
+    expect((await verifyPayloads(client)).covered).toBe(29);
   }));
   test("ordinary startup cannot cut over populated data even with complete receipts", async () => fixture(async () => {
     await copyPayloads(client);
@@ -107,7 +121,7 @@ describe("existing payload migration", () => {
   test("preflight catches embedded images outside registered body columns", async () => fixture(async () => {
     await client`CREATE TABLE forgotten_document(id text, document jsonb)`;
     await client`INSERT INTO forgotten_document VALUES ('id',${client.json({ image: `data:image/png;base64,${"A".repeat(256)}` })})`;
-    await expect(copyPayloads(client)).rejects.toThrow("Unclassified embedded binary");
+    await expect(auditEmbeddedBinaries(client)).rejects.toThrow("Unclassified embedded binary");
   }));
   test("refuses an unclassified binary column", async () => fixture(async () => {
     await client`CREATE TABLE forgotten_binary(id text, content bytea)`;
