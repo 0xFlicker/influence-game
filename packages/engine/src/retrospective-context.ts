@@ -23,9 +23,8 @@ export interface FrozenRetrospectiveGame {
   speakers: RetrospectiveSpeaker[];
 }
 
-/** Provider-owned admissible context ceiling AFTER system/tool/output reservations.
- * Supply every effective primary/fallback model; no catalog window is guessed here.
- * A byte ceiling is a conservative admission policy, not a claimed tokenizer count.
+/** Advisory context budget for size observability, never admission or suspension.
+ * Supply every effective primary/fallback model; no tokenizer count is claimed.
  */
 export interface RetrospectiveModelCapacity {
   modelId: string;
@@ -176,9 +175,7 @@ export function preflightRetrospectiveContext(
     const requiredBytes = new TextEncoder().encode(serializeRetrospectiveContext(context)).byteLength
       + ordinal * RETROSPECTIVE_MAX_SPEECH_CHARACTERS * 6;
     for (const capacity of capacities) {
-      if (requiredBytes > capacity.maxContextBytes) {
-        throw new RetrospectiveContextCapacityError("context_capacity_exceeded", capacity.modelId, actorId, requiredBytes, capacity.maxContextBytes);
-      }
+      // Size is observability only. An estimated budget must never suspend play.
       receipts.push({ modelId: capacity.modelId, actorId, requiredBytes, availableBytes: capacity.maxContextBytes });
     }
   }

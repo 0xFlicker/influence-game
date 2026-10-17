@@ -100,7 +100,6 @@ export const gameRetrospectiveInputs = pgTable("game_retrospective_inputs", {
     AND (${table.input}->'outcome'->>'eventSequence') IS NOT DISTINCT FROM ${table.outcomeEventSequence}::text
     AND (${table.input}->'outcome'->>'eventHash') IS NOT DISTINCT FROM ${table.outcomeEventHash}
   `),
-  check("game_retrospective_inputs_size_check", sql`octet_length(${table.input}::text) <= 262144`),
 ]);
 
 /** Sparse editorial metadata; canonical history and cut projects do not live here. */

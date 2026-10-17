@@ -11,7 +11,7 @@ import { werewolfResultsFixture, type WerewolfResultScenario } from "../fixtures
 import { replayWerewolf } from "../werewolf/rules";
 import { applyRetrospectiveRecord, assertRetrospectiveInput, prepareRetrospectiveRequest,
   type RetrospectiveStateV1 } from "../retrospective";
-import { materializeRetrospectiveContext, preflightRetrospectiveContext, RetrospectiveContextCapacityError,
+import { materializeRetrospectiveContext, preflightRetrospectiveContext,
   serializeRetrospectiveContext, type FrozenRetrospectiveGame } from "../retrospective-context";
 
 const capacities = { effectiveModelIds: ["fixture-primary", "fixture-fallback"], models: [
@@ -199,26 +199,25 @@ test("preflight reserves worst-case JSON speech bytes for all speakers and fallb
   let state = started(frozen);
   for (let i = 0; i < 3; i++) state = accept(state, "\u0000".repeat(2000));
   expect(new TextEncoder().encode(serializeRetrospectiveContext(materializeRetrospectiveContext(frozen, state))).byteLength).toBeLessThanOrEqual(worst.requiredBytes);
-  try {
-    preflightRetrospectiveContext(frozen, { effectiveModelIds: ["fixture-primary", "limited-fallback"],
-      models: [capacities.models[0]!, { modelId: "limited-fallback", maxContextBytes: worst.requiredBytes - 1 }] });
-    throw new Error("Expected a capacity failure");
-  } catch (error) {
-    expect(error).toBeInstanceOf(RetrospectiveContextCapacityError);
-    expect((error as RetrospectiveContextCapacityError).modelId).toBe("limited-fallback");
-    expect((error as RetrospectiveContextCapacityError).actorId).toBe("rex");
-  }
+  const constrained = preflightRetrospectiveContext(frozen, { effectiveModelIds: ["fixture-primary", "limited-fallback"],
+    models: [capacities.models[0]!, { modelId: "limited-fallback", maxContextBytes: worst.requiredBytes - 1 }] });
+  expect(constrained.find(receipt => receipt.modelId === "limited-fallback" && receipt.actorId === "rex"))
+    .toMatchObject({ requiredBytes: worst.requiredBytes, availableBytes: worst.requiredBytes - 1 });
   expect(() => preflightRetrospectiveContext(frozen, { ...capacities, models: [] })).toThrow("admitted input budget");
   expect(() => preflightRetrospectiveContext(frozen, { ...capacities, models: [capacities.models[0]!] })).toThrow("admitted input budget");
   expect(() => preflightRetrospectiveContext(frozen, { effectiveModelIds: ["unknown"], models: [{ modelId: "unknown", maxContextBytes: Number.NaN }] })).toThrow("admitted input budget");
 });
 
-test("long games retain their complete social account or fail visibly without truncation", async () => {
+test("long games retain their complete social account despite storage and estimated context sizes", async () => {
   const events = await werewolfResultsFixture("saved", "rt02-long", 4), frozen = freezeWerewolfRetrospective({ events, capacities });
   expect(frozen.input.sections.some(section => section.phase === "day:4/vote")).toBe(true);
   expect(frozen.input.dialogue.length).toBeGreaterThan(8);
-  expect(() => freezeWerewolfRetrospective({ events, capacities: { effectiveModelIds: ["too-small"], models: [{ modelId: "too-small", maxContextBytes: 500 }] } })).toThrow(RetrospectiveContextCapacityError);
+  expect(freezeWerewolfRetrospective({ events, capacities: { effectiveModelIds: ["too-small"], models: [{ modelId: "too-small", maxContextBytes: 500 }] } }).input).toEqual(frozen.input);
   expect(freezeWerewolfRetrospective({ events, capacities }).input).toEqual(frozen.input);
   const fixture = classicFixture();
-  expect(() => freezeInfluenceRetrospective({ ...fixture, transcript: fixture.transcript.map(entry => ({ ...entry, text: "界".repeat(90_000) })) })).toThrow("storage byte limit");
+  const text = "界".repeat(120_000);
+  const large = freezeInfluenceRetrospective({ ...fixture, transcript: fixture.transcript.map(entry => ({ ...entry, text })) });
+  expect(new TextEncoder().encode(JSON.stringify(large.input)).byteLength).toBeGreaterThan(256 * 1024);
+  expect(large.input.dialogue.some(entry => entry.text === text)).toBeTrue();
+  expect(() => assertRetrospectiveInput(large.input)).not.toThrow();
 });

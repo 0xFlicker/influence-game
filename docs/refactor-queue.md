@@ -1,5 +1,25 @@
 # Influence Refactor Queue
 
+## HIGHEST PRIORITY — operator-mandated storage migration — 2026-10-16
+
+- Status: `ready`; **highest priority, ahead of every other backlog item**. Explicit operator requirement after production `mild-amber-node` suspended before retrospective initialization on an arbitrary 256 KiB input ceiling.
+- Immediate repair: remove the retrospective input ceiling so the preserved game can resume. This does not close the storage work. Existing JSONB retrospective inputs are an explicitly scoped temporary exception, not the target architecture.
+- First migration: move **all existing retrospective input documents** to private bucket storage, starting with a rehearsal on local development and staging retrospectives. Inventory production too; do not assume it has none. Preserve exact serialized content/semantic hashes, outcome binding, accepted speeches, permissions and resume behavior. Verify reads and recovery before removing database payloads.
+- Immediately afterward: migrate **ALL existing binaries out of PostgreSQL into bucket storage**, not only future writes. Cover `visual_artifacts.image`, `visual_render_attempts.image`, `visual_room_library.image`, `agent_content_assets.bytes`, and discover any other BYTEA/base64/data-URL/binary payloads. Existing visual assets can be duplicated across render attempts, room libraries, per-game frozen portraits/references and annotations; use content-addressed immutable objects where appropriate without changing accepted references.
+- Move large immutable documents and raw evidence too: learning-review request/response bodies, learning game evidence, cognitive artifact bodies, House Cuts source/journal artifacts, and frozen render/export inputs. Audit provider failure outboxes and retention so temporary database staging cannot become permanent blob storage. Review snapshots, transcripts and accepted provider values for actual query/transaction needs rather than mechanically moving all JSON.
+- PostgreSQL retains relational authority, small operational state, object keys, hashes, byte lengths, versions, access controls and migration receipts. Reuse existing private/public bucket infrastructure. Upload and verify before reference commit; handle orphan objects and deletion/retention without exposing private content.
+- Required migration proof: inventory counts and bytes in every environment; resumable and idempotent copy; verified hashes/lengths; interrupted-upload and interrupted-cutover recovery; authenticated read parity; retrospective resume and replay/export parity; no dangling references; zero remaining binary bodies in PostgreSQL after cutover. Reclaim database space through an explicitly planned operational step. Do not mark complete until existing data, not just schemas/writers, has migrated.
+- Evidence: `packages/api/src/db/schema.ts`, `services/visual-scene-store.ts`, `services/visual-render-journal.ts`, `services/visual-game-assets.ts`, `services/owner-learning-worker.ts`, `services/house-cut-worker.ts`, and `services/game-retrospective-inputs.ts`. The initial audit is source evidence, not measured production table/TOAST sizes.
+
+## HIGHEST PRIORITY — eliminate context-size game failures — 2026-10-16
+
+- Status: `ready`; second operator-mandated entry, alongside the storage migration. **A game must NEVER fail or suspend solely because its context input is too large.**
+- Remove ALL application-side context input byte/token checks that directly fail, suspend, cancel or require repair of Influence or Werewolf games. Audit initialization, every decision phase, retrospectives, provider adapters/coordinator, fallback traversal and recovery. Include genuine provider context-overflow handling: adapt/summarize context and retry a valid request rather than exhausting identical oversized calls into suspension.
+- Replace every test asserting size-only failure with coverage proving continuation for large valid context, including Unicode, JSON escaping, long games, full rosters, growing prior statements and restart/resume. Preserve canonical outcome, accepted decisions, identity/privacy, required strategic information and stable accepted provider replay. Summaries are model context, never canonical state.
+- Immediate retrospective slice removes the engine/writer/database 256 KiB guards and size-only preflight rejection. The broader provider overflow/context adaptation audit remains open; do not claim this slice solves every provider window.
+- Do not weaken exact output contracts, corruption checks, permissions, upload limits or bounded inspection pages under this requirement. Those are not context-input game-size gates.
+
+
 ## Shared presentation-time scrubber — 2026-10-07
 
 - Status: `ready`; explicit product follow-up.

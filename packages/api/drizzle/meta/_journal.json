@@ -827,6 +827,13 @@
       "when": 1792191933901,
       "tag": "0117_werewolf_lobby_house_seats",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1792191933902,
+      "tag": "0118_retrospective_input_size",
+      "breakpoints": true
     }
   ]
 }
