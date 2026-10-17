@@ -1,6 +1,6 @@
 import type postgres from "postgres";
 import { STORAGE_PAYLOAD_COLUMNS, type StoragePayloadColumn } from "./storage-payload-inventory.js";
-import { decodePayloadReference, payloadHash, readJson, storePayload, type StoredPayload } from "./payload-storage.js";
+import { decodePayloadReference, payloadHash, readJson, readPayload, storePayload, type StoredPayload } from "./payload-storage.js";
 
 export const STORAGE_RECEIPTS_DDL = `CREATE TABLE IF NOT EXISTS storage_payload_migration_receipts (
   source_table text NOT NULL, source_column text NOT NULL, row_key jsonb NOT NULL,
@@ -177,4 +177,49 @@ export async function verifyPayloads(client: postgres.Sql) {
     covered += coverage!.required;
   }
   return { covered, verification: "database-receipt-coverage", inventory };
+}
+
+/** After SQL has rolled back, make only its rejected legacy row eligible for retry.
+ * This is the diagnostic contract of the pinned 0119/0120 SQL, not a payload scan.
+ * Preserve the original receipt and object; copy will replace it after upload.
+ */
+export async function retryRejectedLegacyReceipt(client: postgres.Sql, error: unknown): Promise<boolean> {
+  // Drizzle wraps driver errors with the failed query; use its original cause.
+  if (error instanceof Error && "cause" in error && !("code" in error)) {
+    return retryRejectedLegacyReceipt(client, error.cause);
+  }
+  if (!(error instanceof Error) || !("code" in error) || error.code !== "P0001") return false;
+  const match = /^Unverified or changed storage payload (\w+)\.(\w+) \((\{.*\})\)$/.exec(error.message);
+  if (!match) return false;
+  const entry = STORAGE_PAYLOAD_COLUMNS.find(column => column.table === match[1] && column.column === match[2]);
+  if (!entry) return false;
+  let key: unknown;
+  try { key = JSON.parse(match[3]!); } catch { return false; }
+  if (!key || typeof key !== "object" || Array.isArray(key)
+    || Object.keys(key).sort().join() !== [...entry.primaryKey].sort().join()
+    || Object.values(key).some(value => typeof value !== "string" && typeof value !== "number")) return false;
+  const updated = await client`UPDATE storage_payload_migration_receipts SET source_version='retry-rejected'
+    WHERE source_table=${entry.table} AND source_column=${entry.column}
+      AND row_key=${client.json(key as Record<string, string | number>)} AND source_version IS NULL
+    RETURNING row_key`;
+  return updated.length === 1;
+}
+
+/** Exercise the candidate's actual document reader on two converted rows at most. */
+export async function smokePayloadDocuments(client: postgres.Sql) {
+  const samples: Array<{ table: string; column: string; codec: string }> = [];
+  for (const entry of STORAGE_PAYLOAD_COLUMNS) {
+    if (entry.kind === "binary") continue;
+    const column = quote(`${entry.column}_object`);
+    const rows = await client.unsafe(`SELECT ${column} AS reference FROM ${quote(entry.table)}
+      WHERE ${column} IS NOT NULL ORDER BY ${entry.primaryKey.map(quote).join(",")} LIMIT 1`);
+    for (const row of rows) {
+      const reference = decodePayloadReference(row.reference);
+      if (reference.codec === "json-gzip") await readJson(reference);
+      else await readPayload(reference);
+      samples.push({ table: entry.table, column: entry.column, codec: reference.codec });
+    }
+    if (samples.length === 2) break;
+  }
+  return { readExistingDocuments: samples.length, samples };
 }

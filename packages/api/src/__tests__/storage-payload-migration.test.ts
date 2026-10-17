@@ -4,7 +4,7 @@ import postgres from "postgres";
 import { setupTestDB } from "./test-utils.js";
 import { testPayloadStore } from "./payload-test-store.js";
 import { STORAGE_PAYLOAD_COLUMNS } from "../services/storage-payload-inventory.js";
-import { auditEmbeddedBinaries, copyPayloads, inventoryPayloads, verifyPayloads } from "../services/storage-payload-migration.js";
+import { auditEmbeddedBinaries, copyPayloads, inventoryPayloads, retryRejectedLegacyReceipt, smokePayloadDocuments, verifyPayloads } from "../services/storage-payload-migration.js";
 import { payloadHash, readPayload } from "../services/payload-storage.js";
 
 const client = postgres(process.env.TEST_DATABASE_URL ?? "postgresql://influence:influence@127.0.0.1:54320/influence_test", { max: 1, onnotice: () => {} });
@@ -109,6 +109,66 @@ describe("existing payload migration", () => {
     try { await copyPayloads(client); expect(retry).toHaveBeenCalledTimes(1); }
     finally { retry.mockRestore(); }
     expect((await verifyPayloads(client)).covered).toBe(29);
+  }));
+  test("bounded batches retain successful siblings when one upload fails", async () => fixture(async () => {
+    const original = testPayloadStore.putIfAbsent.bind(testPayloadStore);
+    const failedKey = `payloads/v1/binary/${payloadHash(Buffer.from([0, 255, 0, 13, 10]))}`;
+    let active = 0, peak = 0;
+    const upload = spyOn(testPayloadStore, "putIfAbsent").mockImplementation(async (key, bytes) => {
+      active++; peak = Math.max(peak, active);
+      try {
+        await Bun.sleep(10);
+        if (key === failedKey) throw new Error("one destination unavailable");
+        return await original(key, bytes);
+      } finally { active--; }
+    });
+    try {
+      await expect(copyPayloads(client)).rejects.toThrow("one destination unavailable");
+      expect(active).toBe(0);
+      expect(peak).toBeGreaterThan(1);
+      expect(peak).toBeLessThanOrEqual(16);
+      expect((await client`SELECT count(*)::int AS n FROM storage_payload_migration_receipts WHERE source_table='visual_artifacts'`)[0]!.n).toBe(10);
+    } finally { upload.mockRestore(); }
+    await copyPayloads(client);
+    expect((await verifyPayloads(client)).covered).toBe(29);
+  }));
+  test("a SQL-rejected legacy receipt resumes only that row, without rescanning completed objects", async () => fixture(async () => {
+    await copyPayloads(client);
+    await client`UPDATE storage_payload_migration_receipts SET source_version=NULL`;
+    await client`UPDATE visual_artifacts SET image=${Buffer.from("legacy changed")} WHERE id='00'`;
+    await copyPayloads(client); // Legacy receipts are preserved until SQL identifies a stale source.
+    await client`SAVEPOINT legacy_cutover`;
+    let rejected: unknown;
+    try { await cutover(); } catch (error) { rejected = error; }
+    expect(rejected).toBeInstanceOf(Error);
+    await client`ROLLBACK TO SAVEPOINT legacy_cutover`;
+    expect(await retryRejectedLegacyReceipt(client, new Error("Drizzle query failed", { cause: rejected }))).toBe(true);
+    expect((await client`SELECT count(*)::int AS n FROM storage_payload_migration_receipts WHERE source_version='retry-rejected'`)[0]!.n).toBe(1);
+    const upload = spyOn(testPayloadStore, "putIfAbsent"), download = spyOn(testPayloadStore, "get");
+    try {
+      await copyPayloads(client);
+      expect(upload).toHaveBeenCalledTimes(1);
+      expect(download).not.toHaveBeenCalled();
+      await cutover();
+      expect((await verifyPayloads(client)).covered).toBe(29);
+    } finally { upload.mockRestore(); download.mockRestore(); }
+  }));
+  test("unrelated database errors do not mark receipts for retry", async () => fixture(async () => {
+    await copyPayloads(client);
+    await client`UPDATE storage_payload_migration_receipts SET source_version=NULL`;
+    expect(await retryRejectedLegacyReceipt(client, new Error("connection lost"))).toBe(false);
+    expect((await client`SELECT count(*)::int AS n FROM storage_payload_migration_receipts WHERE source_version IS NOT NULL`)[0]!.n).toBe(0);
+  }));
+  test("document smoke reads at most two actual migrated documents and propagates read errors", async () => fixture(async () => {
+    await copyPayloads(client);
+    await cutover();
+    const read = spyOn(testPayloadStore, "get");
+    try {
+      expect((await smokePayloadDocuments(client)).readExistingDocuments).toBe(2);
+      expect(read).toHaveBeenCalledTimes(2);
+      read.mockRejectedValue(new Error("bucket unavailable"));
+      await expect(smokePayloadDocuments(client)).rejects.toThrow("bucket unavailable");
+    } finally { read.mockRestore(); }
   }));
   test("ordinary startup cannot cut over populated data even with complete receipts", async () => fixture(async () => {
     await copyPayloads(client);

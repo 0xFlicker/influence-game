@@ -32,7 +32,7 @@ Preflight rejects any unclassified BYTEA column. It also scans other text/JSON c
 
 Upload uses immutable conditional creation and accepts the successful bucket acknowledgement before a reference can commit. Only an object-key collision without a usable receipt reads the existing encoding, because legacy gzip versions can differ. Identical bodies reuse objects. Authorization remains on the owning database row; clients receive the existing authorized payload/API response, not raw private storage references. Reference-looking user JSON is treated as document content and cannot cause another object to be read.
 
-Copy uses primary-key keyset pages with at most 16 concurrent uploads and writes receipts only after successful uploads. Retries skip completed row versions using PostgreSQL xmin/ctid metadata; failed batches settle before exiting. Legacy receipts without version metadata are preserved and remain subject to the transactional source check. Verification checks database reference/receipt coverage without bucket reads, decompression, or body hashes. Cutover locks all affected tables and rechecks the original body hash against its receipt inside the schema transaction. Changes during pre-copy, absent receipts or invalid reference metadata abort the transaction. Existing IDs, foreign keys, canonical hashes, accepted outcomes and timestamps remain unchanged. A session setting supplied only by `storage:cutover` prevents ordinary startup from migrating populated bodies, even if copy receipts already exist.
+Copy uses primary-key keyset pages with at most 16 concurrent uploads and writes receipts only after successful uploads. Retries skip completed row versions using PostgreSQL xmin/ctid metadata; failed batches settle before exiting. Legacy receipts without version metadata are preserved and remain subject to the transactional source check. If SQL rejects a changed legacy row, after rollback only that receipt is marked unfinished; the next run recopies that row while retaining the other receipts and objects. Other database errors fail unchanged. Verification checks database reference/receipt coverage without bucket reads, decompression, or body hashes. Cutover locks all affected tables and rechecks the original body hash against its receipt inside the schema transaction. Changes during pre-copy, absent receipts or invalid reference metadata abort the transaction. Existing IDs, foreign keys, canonical hashes, accepted outcomes and timestamps remain unchanged. A session setting supplied only by `storage:cutover` prevents ordinary startup from migrating populated bodies, even if copy receipts already exist.
 
 An object outage/corrupt object is an explicit storage error. There is no database-body fallback, silent empty value, lossy migration or historical regeneration. Compression imposes no context-size ceiling. Existing game/provider journal fences remain in place; a storage error must never authorize repeating an uncertain paid dispatch.
 
@@ -56,6 +56,8 @@ The release API image packages the same command, with `DRIZZLE_MIGRATIONS_DIR=/a
 bun /app/dist/migrate-storage-payloads.js inventory
 bun /app/dist/migrate-storage-payloads.js copy
 bun /app/dist/migrate-storage-payloads.js verify
+# After conversion: two existing documents through the actual candidate payload reader.
+bun /app/dist/migrate-storage-payloads.js smoke
 bun /app/dist/migrate-storage-payloads.js cutover --writers-stopped
 ```
 

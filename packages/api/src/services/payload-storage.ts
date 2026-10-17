@@ -39,7 +39,7 @@ class S3PayloadObjectStore implements PayloadObjectStore {
     try {
       await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: bytes,
         ContentType: "application/octet-stream", IfNoneMatch: "*" }), { abortSignal: AbortSignal.timeout(60_000) });
-          return true;
+      return true;
     } catch (error) {
       const status = error && typeof error === "object" && "$metadata" in error
         ? (error.$metadata as { httpStatusCode?: number }).httpStatusCode : undefined;
