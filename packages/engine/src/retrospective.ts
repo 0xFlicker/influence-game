@@ -10,7 +10,6 @@ import {
 
 export const RETROSPECTIVE_CONTRACT_VERSION = 1 as const;
 export const RETROSPECTIVE_PROMPT_VERSION = "retrospective.v1" as const;
-export const RETROSPECTIVE_MAX_INPUT_BYTES = 256 * 1024;
 
 /** Exact canonical outcome event, distinct from the eventual final event head. */
 export interface RetrospectiveOutcomeSource {
@@ -159,9 +158,6 @@ function assertShape<T>(schema: Readonly<Record<string, unknown>>, value: unknow
 
 export function assertRetrospectiveInput(value: unknown): asserts value is RetrospectiveInputV1 {
   assertShape<RetrospectiveInputV1>(inputSchema, value, "Retrospective input");
-  if (new TextEncoder().encode(JSON.stringify(value)).byteLength > RETROSPECTIVE_MAX_INPUT_BYTES) {
-    throw new RetrospectiveContractError("Retrospective input exceeds the storage byte limit");
-  }
   let next = 1;
   for (const section of value.sections) {
     if (section.fromEventSequence !== next || section.throughEventSequence < next) {

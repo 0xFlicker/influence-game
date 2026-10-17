@@ -5,6 +5,7 @@ import { createRetrospectiveDefinition, assertRetrospectiveInputBinding, freezeI
 import { schema } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { insertGame } from "./durable-run-test-utils.js";
+import { insertRetrospectiveInput } from "../services/game-retrospective-inputs.js";
 
 function input(gameId: string): RetrospectiveInputV1 {
   return { version: 1, outcome: { gameId, gameKind: "influence", eventSequence: 10, eventHash: `sha256:${"a".repeat(64)}` },
@@ -17,6 +18,28 @@ function row(gameId: string) {
 }
 
 describe("immutable retrospective input storage", () => {
+  test("size migration preserves existing input bytes while permitting larger new inputs", async () => {
+    const db = await setupTestDB();
+    const migration = await Bun.file(new URL("../../drizzle/0118_retrospective_input_size.sql", import.meta.url)).text();
+    await db.transaction(async tx => {
+      // pg_temp shadows the public table only on this transaction's connection.
+      await tx.execute(sql`CREATE TEMP TABLE game_retrospective_inputs (
+        input jsonb NOT NULL,
+        CONSTRAINT game_retrospective_inputs_size_check CHECK (octet_length(input::text) <= 262144)
+      ) ON COMMIT DROP`);
+      const existing = input("existing-frozen-input");
+      await tx.execute(sql`INSERT INTO pg_temp.game_retrospective_inputs VALUES (${JSON.stringify(existing)}::jsonb)`);
+      const before = await tx.execute(sql`SELECT input::text AS body FROM pg_temp.game_retrospective_inputs`);
+      await tx.execute(sql.raw(migration));
+      expect(await tx.execute(sql`SELECT input::text AS body FROM pg_temp.game_retrospective_inputs`)).toEqual(before);
+      const large = { ...existing, sections: [{ ...existing.sections[0]!, summary: "界".repeat(120_000) }] };
+      await tx.execute(sql`INSERT INTO pg_temp.game_retrospective_inputs VALUES (${JSON.stringify(large)}::jsonb)`);
+      const rows = await tx.execute(sql`SELECT input FROM pg_temp.game_retrospective_inputs`);
+      expect(rows).toHaveLength(2);
+      expect(rows.map(row => row.input)).toContainEqual(large);
+    });
+  });
+
   test("compiled context round-trips through private JSONB with exact source references and no cognition", async () => {
     const db = await setupTestDB(), gameId = await insertGame(db, { id: "retrospective-compiled-input" });
     const seats = ["atlas", "echo"].map(id => ({ id, name: id, personality: "Original character", backstory: "Original story", influenceStrategy: `${id}-PRIVATE_STRATEGY` }));
@@ -58,14 +81,26 @@ describe("immutable retrospective input storage", () => {
     expect(await db.select().from(schema.gameRetrospectiveInputs)).toHaveLength(0);
   });
 
-  test("database rejects foreign/missing sources, unsupported versions, malformed hashes and oversized input", async () => {
+  test("large Unicode input survives the production writer, JSONB formatting and hash verification intact", async () => {
+    const db = await setupTestDB(), gameId = await insertGame(db, { id: "retrospective-large-input" });
+    const dossier = input(gameId);
+    dossier.sections[0]!.summary = '界"\\\n'.repeat(120_000);
+    const definition = createRetrospectiveDefinition(dossier, ["atlas", "echo"]);
+    expect(Buffer.byteLength(JSON.stringify(dossier))).toBeGreaterThan(256 * 1024);
+    await db.transaction(tx => insertRetrospectiveInput(tx, dossier, definition));
+    const [stored] = await db.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, gameId));
+    expect(stored?.input).toEqual(dossier);
+    expect(() => assertRetrospectiveInputBinding(stored?.input, definition)).not.toThrow();
+    await expect(db.update(schema.gameRetrospectiveInputs).set({ input: input(gameId) }).where(eq(schema.gameRetrospectiveInputs.gameId, gameId)).execute()).rejects.toThrow();
+  });
+
+  test("database rejects foreign/missing sources, unsupported versions and malformed hashes", async () => {
     const db = await setupTestDB(), gameId = await insertGame(db, { id: "retrospective-invalid" });
     const values = row(gameId);
     for (const change of [
       { outcomeEventSequence: 0 }, { outcomeEventHash: "bad" }, { inputHash: "bad" }, { contractVersion: 2 },
       { input: { ...values.input, outcome: { ...values.input.outcome, gameId: "foreign" } } },
       { input: { ...values.input, outcome: { ...values.input.outcome, eventSequence: 11 } } },
-      { input: { ...values.input, sections: [{ ...values.input.sections[0]!, summary: "x".repeat(262144) }] } },
     ]) await expect(db.insert(schema.gameRetrospectiveInputs).values({ ...values, ...change }).execute()).rejects.toThrow();
     // PostgreSQL CHECK accepts unknown; a JSON null game kind must fail explicitly.
     for (const outcome of [

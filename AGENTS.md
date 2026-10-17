@@ -1,5 +1,17 @@
 # Agent Guide
 
+## HIGHEST PRIORITY — STORAGE AND GAME CONTINUITY GUARDRAILS
+
+**Use databases as databases. Use object storage as storage. These are mandatory design and review rules.**
+
+- PostgreSQL owns relational records, indexed metadata, permissions, transactions, ownership, canonical coordinates, and small operational state. Buckets own binaries and large immutable documents: images, source assets, generated media, raw provider evidence, frozen context inputs, and derived export/render documents. Store object keys, hashes, lengths, versions and access metadata in PostgreSQL; do not embed these bodies in BYTEA, JSONB, TEXT, base64, or data URLs.
+- Reuse the existing private/public bucket clients and access boundaries. Verify durable object upload and content hash before committing a reference. Preserve atomic game acceptance, immutable evidence, privacy and recovery; handle orphan objects explicitly. Do not replace a real storage design with a guessed payload-size ceiling.
+- Every storage refactor MUST migrate **all existing binaries** and the affected existing document payloads, including local development, staging and production. A new-writes-only change is incomplete. Inventory, resumable copy, hash/length verification, reference cutover, read/recovery proof and removal of database bodies are required. Preserve accepted game history and hashes; never regenerate historical content to move it.
+- **NEVER fail, suspend, cancel or mark a game repair-required solely because context input is large or exceeds an estimated byte/token budget.** Adapt context using supported summarization/compaction or provider routing while preserving canonical authority and durable continuity. Genuine provider context-limit responses also need context adaptation, not an endless retry of the same oversized request.
+- Tests must prove large valid contexts continue and retain their required meaning. Tests asserting size-only game failure are defects to replace, not requirements to preserve. This does not permit accepting malformed model output, corrupt hashes, invalid identities, or fabricated game facts. Output schemas and authorization/upload/read-page limits remain distinct from game-context limits.
+- The explicitly requested immediate retrospective repair removes the old storage ceiling while existing JSONB inputs remain in place. This is the sole scoped exception for that repair, not permission to add further database blobs. The required bucket migration starts with retrospectives, rehearsed on existing local/staging inputs, followed immediately by every other binary/document path in [the highest-priority queue](docs/refactor-queue.md).
+
+
 ## Current Operating Context
 
 - This repo is maintained with Codex-oriented workflows. Paperclip references in older docs are historical and should not be treated as active process requirements.

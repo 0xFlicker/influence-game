@@ -4,7 +4,7 @@ import {
   applyRetrospectiveRecord, assertRetrospectiveDefinition, assertRetrospectiveInput,
   assertRetrospectiveInputBinding, assertRetrospectiveRequest, createRetrospectiveDefinition,
   prepareRetrospectiveRequest, retrospectiveCompletionProof, retrospectiveSpeechArtifact,
-  RETROSPECTIVE_MAX_INPUT_BYTES, RETROSPECTIVE_MAX_SPEECH_CHARACTERS,
+  RETROSPECTIVE_MAX_SPEECH_CHARACTERS,
   type RetrospectiveInputV1, type RetrospectiveStateV1, type RetrospectiveStatementV1,
 } from "../retrospective";
 import { exactStructuredOutputRegistry } from "../structured-output";
@@ -61,7 +61,9 @@ describe("retrospective contracts", () => {
     expect(() => assertRetrospectiveInput({ ...original, sections: original.sections.slice(1) })).toThrow("contiguous");
     expect(() => assertRetrospectiveInput({ ...original, sections: original.sections.slice(0, 1) })).toThrow("exactly");
     expect(() => assertRetrospectiveInput({ ...original, dialogue: [{ ...original.dialogue[0]!, eventSequence: 5 }] })).toThrow("original outcome");
-    expect(() => assertRetrospectiveInput({ ...original, sections: [{ ...original.sections[0]!, throughEventSequence: 4, summary: "界".repeat(RETROSPECTIVE_MAX_INPUT_BYTES / 3) }] })).toThrow("byte limit");
+    const large = { ...original, sections: [{ ...original.sections[0]!, throughEventSequence: 4, summary: "界".repeat(120_000) }] };
+    expect(new TextEncoder().encode(JSON.stringify(large)).byteLength).toBeGreaterThan(256 * 1024);
+    expect(() => assertRetrospectiveInputBinding(large, createRetrospectiveDefinition(large, rosterIds))).not.toThrow();
     expect(() => assertRetrospectiveDefinition({ ...definition, inputHash: outcome.eventHash })).toThrow("hash");
     expect(() => assertRetrospectiveDefinition({ ...definition, speakerIds: [...rosterIds].reverse() })).toThrow("hash");
     expect(() => assertRetrospectiveInput({ ...original, version: 2 })).toThrow("shape");

@@ -24,6 +24,50 @@ async function authorizedDB() {
   return db;
 }
 
+test("an existing initialization suspension resumes a large account into a complete retrospective", async () => {
+  const db = await authorizedDB(), gameId = await insertGame(db, { status: "in_progress" });
+  await db.update(schema.games).set({ transcriptCaptureVersion: 1, formalSpeechCaptureVersion: 1 }).where(eq(schema.games.id, gameId));
+  await db.insert(schema.gameTranscriptStates).values(initialGameTranscriptStateValues(gameId));
+  const ownerEpoch = await insertOwner(db, gameId, { expiresAt: "2099-01-01T00:00:00.000Z" });
+  const largeText = "A remembered conversation. 界\n".repeat(12_000);
+  let reproduceOldFailure = true;
+  const agents = () => ["Atlas", "Echo", "Nova"].map((name, i) => {
+    const agent = new ApiTestMockAgent(`large-${i}`, name);
+    const introduction = agent.getIntroduction.bind(agent), setup = agent.prepareRetrospectiveSetup.bind(agent);
+    agent.getIntroduction = async () => ({ ...await introduction(), message: largeText });
+    agent.prepareRetrospectiveSetup = async (...args) => {
+      // Reproduce the already-persisted production failure, not a size policy.
+      if (reproduceOldFailure) throw new RetrospectiveExecutionError("initialize", "invalid_context", new Error("historical size guard"));
+      return setup(...args);
+    };
+    return agent;
+  });
+  const config = { ...DEFAULT_CONFIG, maxDiaryFollowUps: 0, diaryRoomAfterPhases: [], formatManifest: ["save_or_eliminate" as const], mingleSessionsPerRound: 1 };
+  const store = createDurableGameRunnerStore(db, { gameId, ownerEpoch });
+  let failure: RetrospectiveExecutionError | null = null;
+  try { await new GameRunner(agents(), config, undefined, { gameId, durableTurnStore: store }).run(); }
+  catch (error) { if (!(error instanceof RetrospectiveExecutionError)) throw error; failure = error; }
+  expect(failure).toMatchObject({ stage: "initialize", code: "invalid_context" });
+  const before = (await store.load(gameId))!, outcome = replayCanonicalEvents(before.canonicalEvents).retrospectiveOutcomeSource;
+  expect(await pauseRetrospectiveExecution(db, gameId, ownerEpoch, failure!)).toBeTrue();
+  const [game] = await db.select().from(schema.games).where(eq(schema.games.id, gameId));
+  const suspended = JSON.parse(game!.config).retrospectiveFailure;
+  expect(await resumeGameRetrospective(db, { gameId, expectedHead: suspended.head, expectedFailureId: suspended.id,
+    idempotencyKey: "resume-large-input" }, "rt08-recovery-admin")).toMatchObject({ alreadyResumed: false });
+  reproduceOldFailure = false;
+  const replacement = await adoptDurableGameRunOwner(db, gameId);
+  if (!replacement.ok) throw Error(replacement.error);
+  const resumed = createDurableGameRunnerStore(db, { gameId, ownerEpoch: replacement.claim.ownerEpoch });
+  await new GameRunner(agents(), config, undefined, { gameId, durableTurnStore: resumed }).run();
+  const after = (await resumed.load(gameId))!, state = replayCanonicalEvents(after.canonicalEvents);
+  expect(state.retrospectiveOutcomeSource).toEqual(outcome);
+  expect(state.retrospective!.statements).toHaveLength(3);
+  expect(after.execution.status).toBe("terminal");
+  const saved = (await resumed.readRetrospectiveSource(gameId)).input!;
+  expect(Buffer.byteLength(JSON.stringify(saved))).toBeGreaterThan(256 * 1024);
+  expect(saved.dialogue.some(entry => entry.text === largeText)).toBeTrue();
+}, 30_000);
+
 test.each(["malformed_output", "budget_exhausted", "circuit_open"] as const)("Influence %s suspends the exact slot until explicit fenced recovery", async code => {
   const db = await authorizedDB(), gameId = await insertGame(db, { status: "in_progress" });
   await db.update(schema.games).set({ transcriptCaptureVersion: 1, formalSpeechCaptureVersion: 1 }).where(eq(schema.games.id, gameId));
