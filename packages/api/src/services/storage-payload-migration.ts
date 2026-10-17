@@ -32,7 +32,7 @@ function keyset(entry: StoragePayloadColumn, cursor: Record<string, string | num
   };
 }
 
-export async function inventoryPayloads(client: postgres.Sql) {
+export async function inventoryPayloads(client: postgres.Sql, includeSizes = true) {
   const inventory = [];
   for (const entry of STORAGE_PAYLOAD_COLUMNS) {
     const present = await client`SELECT column_name FROM information_schema.columns
@@ -45,7 +45,7 @@ export async function inventoryPayloads(client: postgres.Sql) {
       continue;
     }
     const [sizes] = await client.unsafe(`SELECT count(*)::text AS rows,
-      coalesce(sum(octet_length(${payloadSourceBytes(entry)})),0)::text AS bytes
+      ${includeSizes ? `coalesce(sum(octet_length(${payloadSourceBytes(entry)})),0)::text` : "NULL::text"} AS bytes
       FROM ${quote(entry.table)} WHERE ${quote(entry.column)} IS NOT NULL`);
     inventory.push({ table: entry.table, column: entry.column, state: "database", ...sizes });
   }
@@ -77,10 +77,10 @@ export async function auditEmbeddedBinaries(client: postgres.Sql) {
 
 /** Copy only. Database bodies and application behavior remain unchanged. Safe to rerun. */
 export async function copyPayloads(client: postgres.Sql, progress: (message: string) => void = () => {}) {
-  await inventoryPayloads(client);
-  await auditEmbeddedBinaries(client);
+  await inventoryPayloads(client, false);
   await client.unsafe(STORAGE_RECEIPTS_DDL);
   await client`ALTER TABLE storage_payload_migration_receipts ADD COLUMN IF NOT EXISTS query_metadata jsonb`;
+  await client`ALTER TABLE storage_payload_migration_receipts ADD COLUMN IF NOT EXISTS source_version text`;
   for (const entry of STORAGE_PAYLOAD_COLUMNS) {
     const present = await client`SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
       AND table_name=${entry.table} AND column_name=${entry.column}`;
@@ -89,33 +89,37 @@ export async function copyPayloads(client: postgres.Sql, progress: (message: str
     let count = 0;
     while (true) {
       const page = keyset(entry, cursor);
-      const rows: { row_key: Record<string, string | number>; body: string }[] = await client.unsafe(`SELECT ${payloadRowKey(entry)} AS row_key,
-        encode(${payloadSourceBytes(entry)}, 'base64') AS body
-        FROM ${quote(entry.table)} WHERE ${quote(entry.column)} IS NOT NULL
-        AND ${page.condition} ORDER BY ${page.order} LIMIT 8`, page.parameters);
+      const rows: { row_key: Record<string, string | number>; body: string; source_version: string }[] = await client.unsafe(`SELECT ${payloadRowKey(entry)} AS row_key,
+        encode(${payloadSourceBytes(entry)}, 'base64') AS body, xmin::text || ':' || ctid::text AS source_version
+        FROM ${quote(entry.table)} t WHERE ${quote(entry.column)} IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM storage_payload_migration_receipts r
+          WHERE r.source_table='${entry.table}' AND r.source_column='${entry.column}'
+          AND r.row_key=${payloadRowKey(entry)} AND (r.source_version IS NULL OR r.source_version=t.xmin::text || ':' || t.ctid::text))
+        AND ${page.condition} ORDER BY ${page.order} LIMIT 16`, page.parameters);
       if (!rows.length) break;
-      await Promise.all(rows.map(async row => {
+      const results = await Promise.allSettled(rows.map(async row => {
         const bytes = Buffer.from(row.body, "base64"), sourceHash = payloadHash(bytes);
         const [prior] = await client`SELECT source_sha256,object_reference FROM storage_payload_migration_receipts
           WHERE source_table=${entry.table} AND source_column=${entry.column} AND row_key=${client.json(row.row_key)}`;
         let ref: StoredPayload;
         if (prior?.source_sha256 === sourceHash) {
           ref = prior.object_reference;
-          await readPayload(ref); // a receipt alone is never proof that the object still exists
         } else {
           ref = await storePayload(bytes, entry.kind === "binary" ? "binary" : entry.kind === "text" ? "text-gzip" : "json-gzip");
         }
-        await client`INSERT INTO storage_payload_migration_receipts (source_table,source_column,row_key,source_sha256,object_reference)
-          VALUES (${entry.table},${entry.column},${client.json(row.row_key)},${sourceHash},${client.json({
+        await client`INSERT INTO storage_payload_migration_receipts (source_table,source_column,row_key,source_sha256,source_version,object_reference)
+          VALUES (${entry.table},${entry.column},${client.json(row.row_key)},${sourceHash},${row.source_version},${client.json({
             storage: ref.storage, key: ref.key, codec: ref.codec, sha256: ref.sha256, byteLength: ref.byteLength,
             storedSha256: ref.storedSha256, storedByteLength: ref.storedByteLength,
           })})
           ON CONFLICT (source_table,source_column,row_key) DO UPDATE SET
-          source_sha256=excluded.source_sha256,object_reference=excluded.object_reference,verified_at=now()`;
+          source_sha256=excluded.source_sha256,source_version=excluded.source_version,object_reference=excluded.object_reference,query_metadata=NULL,verified_at=now()`;
       }));
+      const failure = results.find(result => result.status === "rejected");
+      if (failure?.status === "rejected") throw failure.reason;
       cursor = rows.at(-1)!.row_key;
       count += rows.length;
-      progress(`${entry.table}.${entry.column}: ${count} verified`);
+      progress(`${entry.table}.${entry.column}: ${count} uploaded or reused`);
     }
   }
   // Also supports resuming after the body-column transaction has already committed.
@@ -137,7 +141,10 @@ export async function copyPayloads(client: postgres.Sql, progress: (message: str
     const bodyColumn = quote(oldColumn ? projection.column : `${projection.column}_object`);
     while (true) {
       const rows: Array<{ id: string; document: unknown }> = await client.unsafe(`SELECT id, ${bodyColumn} AS document
-        FROM ${quote(projection.table)} WHERE ${bodyColumn} IS NOT NULL AND ($1::text IS NULL OR id > $1) ORDER BY id LIMIT 32`, [after]);
+        FROM ${quote(projection.table)} WHERE ${bodyColumn} IS NOT NULL
+        AND EXISTS (SELECT 1 FROM storage_payload_migration_receipts r WHERE r.source_table='${projection.table}'
+          AND r.source_column='${projection.column}' AND r.row_key=jsonb_build_object('id',${quote(projection.table)}.id) AND r.query_metadata IS NULL)
+        AND ($1::text IS NULL OR id > $1) ORDER BY id LIMIT 32`, [after]);
       if (!rows.length) break;
       for (const row of rows) {
         const body = oldColumn ? row.document : await readJson(decodePayloadReference(row.document));
@@ -151,34 +158,68 @@ export async function copyPayloads(client: postgres.Sql, progress: (message: str
   }
 }
 
-/** Re-read every object; also rejects missing/stale receipts while original columns exist. */
+/** Coverage is relational. The conversion transaction alone checks source hashes.
+ * Legacy receipts remain usable; no retry downloads or rehashes completed objects.
+ */
 export async function verifyPayloads(client: postgres.Sql) {
-  const inventory = await inventoryPayloads(client);
-  let verified = 0;
+  const inventory = await inventoryPayloads(client, false);
+  let covered = 0;
   for (const entry of STORAGE_PAYLOAD_COLUMNS) {
     const sourceExists = inventory.some(row => row.table === entry.table && row.column === entry.column && row.state === "database");
-    if (sourceExists) {
-      const [missing] = await client.unsafe(`SELECT count(*)::int AS count FROM ${quote(entry.table)} t
-        LEFT JOIN storage_payload_migration_receipts r ON r.source_table=$1 AND r.source_column=$2
-          AND r.row_key=${payloadRowKey(entry)}
-          AND r.source_sha256=encode(sha256(${payloadSourceBytes(entry)}),'hex')
-        WHERE ${quote(entry.column)} IS NOT NULL AND r.row_key IS NULL`, [entry.table, entry.column]);
-      if (missing?.count) throw new Error(`Uncopied or changed payloads: ${entry.table}.${entry.column}: ${missing.count}`);
-    }
-    let cursor: Record<string, string | number> | null = null;
-    while (true) {
-      const column = quote(`${entry.column}_object`);
-      const page = keyset(entry, cursor);
-      const rows: { row_key: Record<string, string | number>; object_reference: StoredPayload }[] = sourceExists
-        ? await client`SELECT row_key, object_reference FROM storage_payload_migration_receipts WHERE source_table=${entry.table}
-          AND source_column=${entry.column} AND (${cursor ? client.json(cursor) : null}::jsonb IS NULL OR row_key > ${cursor ? client.json(cursor) : null}::jsonb)
-          ORDER BY row_key LIMIT 32`
-        : await client.unsafe(`SELECT ${payloadRowKey(entry)} AS row_key, ${column} AS object_reference
-          FROM ${quote(entry.table)} WHERE ${column} IS NOT NULL
-          AND ${page.condition} ORDER BY ${page.order} LIMIT 32`, page.parameters);
-      if (!rows.length) break;
-      for (const row of rows) { await readPayload(row.object_reference); cursor = row.row_key; verified++; }
-    }
+    const column = quote(sourceExists ? entry.column : `${entry.column}_object`);
+    const [coverage] = await client.unsafe(`SELECT count(*)::int AS required,
+      count(*) FILTER (WHERE r.row_key IS NULL OR r.object_reference->>'sha256' IS DISTINCT FROM r.source_sha256
+        ${sourceExists ? "" : `OR r.object_reference IS DISTINCT FROM t.${column}`})::int AS missing
+      FROM ${quote(entry.table)} t LEFT JOIN storage_payload_migration_receipts r
+        ON r.source_table=$1 AND r.source_column=$2 AND r.row_key=${payloadRowKey(entry)}
+      WHERE t.${column} IS NOT NULL`, [entry.table, entry.column]);
+    if (coverage?.missing) throw new Error(`Missing or mismatched payload receipts: ${entry.table}.${entry.column}: ${coverage.missing}`);
+    covered += coverage!.required;
   }
-  return { verified, inventory };
+  return { covered, verification: "database-receipt-coverage", inventory };
+}
+
+/** After SQL has rolled back, make only its rejected legacy row eligible for retry.
+ * This is the diagnostic contract of the pinned 0119/0120 SQL, not a payload scan.
+ * Preserve the original receipt and object; copy will replace it after upload.
+ */
+export async function retryRejectedLegacyReceipt(client: postgres.Sql, error: unknown): Promise<boolean> {
+  // Drizzle wraps driver errors with the failed query; use its original cause.
+  if (error instanceof Error && "cause" in error && !("code" in error)) {
+    return retryRejectedLegacyReceipt(client, error.cause);
+  }
+  if (!(error instanceof Error) || !("code" in error) || error.code !== "P0001") return false;
+  const match = /^Unverified or changed storage payload (\w+)\.(\w+) \((\{.*\})\)$/.exec(error.message);
+  if (!match) return false;
+  const entry = STORAGE_PAYLOAD_COLUMNS.find(column => column.table === match[1] && column.column === match[2]);
+  if (!entry) return false;
+  let key: unknown;
+  try { key = JSON.parse(match[3]!); } catch { return false; }
+  if (!key || typeof key !== "object" || Array.isArray(key)
+    || Object.keys(key).sort().join() !== [...entry.primaryKey].sort().join()
+    || Object.values(key).some(value => typeof value !== "string" && typeof value !== "number")) return false;
+  const updated = await client`UPDATE storage_payload_migration_receipts SET source_version='retry-rejected'
+    WHERE source_table=${entry.table} AND source_column=${entry.column}
+      AND row_key=${client.json(key as Record<string, string | number>)} AND source_version IS NULL
+    RETURNING row_key`;
+  return updated.length === 1;
+}
+
+/** Exercise the candidate's actual document reader on two converted rows at most. */
+export async function smokePayloadDocuments(client: postgres.Sql) {
+  const samples: Array<{ table: string; column: string; codec: string }> = [];
+  for (const entry of STORAGE_PAYLOAD_COLUMNS) {
+    if (entry.kind === "binary") continue;
+    const column = quote(`${entry.column}_object`);
+    const rows = await client.unsafe(`SELECT ${column} AS reference FROM ${quote(entry.table)}
+      WHERE ${column} IS NOT NULL ORDER BY ${entry.primaryKey.map(quote).join(",")} LIMIT 1`);
+    for (const row of rows) {
+      const reference = decodePayloadReference(row.reference);
+      if (reference.codec === "json-gzip") await readJson(reference);
+      else await readPayload(reference);
+      samples.push({ table: entry.table, column: entry.column, codec: reference.codec });
+    }
+    if (samples.length === 2) break;
+  }
+  return { readExistingDocuments: samples.length, samples };
 }
