@@ -1,3 +1,4 @@
+import { Hydrated } from "../services/payload-storage.js";
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@influence/engine";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
@@ -51,14 +52,14 @@ async function at(f: Awaited<ReturnType<typeof fixture>>, action: "pack_talk" | 
   }
   throw Error(`Never reached ${action}`);
 }
-const noForms: NonNullable<Parameters<typeof createWerewolfVisualPreparation>[5]> = async (_db, _id, plan) => plan;
+const noForms: NonNullable<Parameters<Hydrated<typeof createWerewolfVisualPreparation>>[5]> = async (_db, _id, plan) => plan;
 async function fail(f: Awaited<ReturnType<typeof fixture>>, action: "pack_talk" | "attack" = "pack_talk", beforeScene = false) {
   const pending = await at(f, action);
   const prepare = createWerewolfVisualPreparation(db, f.game.id, f.epoch, new AbortController().signal, async () => null, beforeScene ? async () => { throw Error("Form unavailable"); } : noForms);
   await expect(prepare(pending.state, pending.request)).rejects.toBeInstanceOf(WerewolfVisualBlocked);
   return pending;
 }
-async function resolveForms(...[database, gameId, plan, options]: Parameters<NonNullable<Parameters<typeof createWerewolfVisualPreparation>[5]>>) {
+async function resolveForms(...[database, gameId, plan, options]: Parameters<NonNullable<Parameters<Hydrated<typeof createWerewolfVisualPreparation>>[5]>>) {
   const bytes = await sharp({ create: { width: 64, height: 96, channels: 3, background: "#334455" } }).png().toBuffer();
   const artifactId = await storeVisualArtifact(database, gameId, bytes);
   const cast = [];

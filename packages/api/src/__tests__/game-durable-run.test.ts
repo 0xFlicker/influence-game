@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "crypto";
 import { asc, eq } from "drizzle-orm";
@@ -343,9 +344,9 @@ describe("durable run inspection read model", () => {
       const execution = (await db.select()
         .from(schema.gameExecutionStates)
         .where(eq(schema.gameExecutionStates.gameId, gameId)))[0];
-      const turns = await db.select()
+      const turns = await loadPayloads(db.select()
         .from(schema.gameTurns)
-        .where(eq(schema.gameTurns.gameId, gameId));
+        .where(eq(schema.gameTurns.gameId, gameId)));
       const publications = await db.select()
         .from(schema.gamePublications)
         .where(eq(schema.gamePublications.gameId, gameId))
@@ -435,10 +436,10 @@ describe("durable run inspection read model", () => {
     const events = await db.select()
       .from(schema.gameEvents)
       .where(eq(schema.gameEvents.gameId, gameId));
-    const turns = await db.select()
+    const turns = await loadPayloads(db.select()
       .from(schema.gameTurns)
       .where(eq(schema.gameTurns.gameId, gameId))
-      .orderBy(asc(schema.gameTurns.turnSequence));
+      .orderBy(asc(schema.gameTurns.turnSequence)));
     expect(events.filter((event) => event.eventType === "game.roster_initialized")).toHaveLength(1);
     expect(turns.map((turn) => turn.turnSequence)).toEqual(
       turns.map((_, index) => index + 1),

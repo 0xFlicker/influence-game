@@ -1,3 +1,4 @@
+import { storeFields } from "../services/payload-storage.js";
 import { beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { completedWerewolfResultsFixture as werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
@@ -66,7 +67,7 @@ test("source pin survives mutable copy and later publications, while fixed versi
   const moment = projectWerewolfProductionWatch(f.events, "mystery").moments.find(moment => moment.staging.roomId && moment.staging.purpose === "village")!;
   const members = moment.staging.participantIds.map(id => ({ id, name: id, referenceArtifactId: "old-art", performanceInstructions: "PRIVATE_RENDER_INSTRUCTIONS" }));
   const plan = { ...planVisualScene({ roomId: moment.staging.roomId!, backgroundArtifactId: null, cast: members }), direction: { purpose: "werewolf-village" as const, revision: "fixture", style: "", roomName: "Village", roomDirection: "" } };
-  for (const id of ["old-art", "new-art"]) await db.insert(schema.visualArtifacts).values({ id, gameId: f.id, contentHash: id, image: Buffer.from(id), width: 1, height: 1 });
+  for (const id of ["old-art", "new-art"]) await db.insert(schema.visualArtifacts).values(await storeFields({ id, gameId: f.id, contentHash: id, image: Buffer.from(id), width: 1, height: 1 }, {"image":"binary"}));
   await db.insert(schema.visualScenes).values({ id: "scene", gameId: f.id, roomId: plan.roomId, boundarySequence: moment.staging.boundary, plan, planHash: sha256StableJson(plan) });
   const publish = async (version: number, at: string, operatorId: string) => {
     const artifact = version === 1 ? "old-art" : "new-art";
@@ -143,8 +144,8 @@ test("snapshot decoder is exact and restored missing frozen character assets req
   const player = started.payload.players[0]!;
   player.agentProfileId = "frozen-profile"; player.contentRevisionId = "frozen-revision";
   await db.insert(schema.users).values({ id: "owner" });
-  await db.insert(schema.agentContentRevisions).values({ id: "frozen-revision", agentProfileId: "frozen-profile", userId: "owner", fingerprint: "fixture", snapshot: { avatarUrl: "frozen-portrait", fullBodyReferenceUrl: "frozen-body", assets: { "frozen-portrait": "portrait-hash", "frozen-body": "body-hash" } } });
-  await db.insert(schema.agentContentAssets).values({ hash: "portrait-hash", bytes: Buffer.from("portrait") });
+  await db.insert(schema.agentContentRevisions).values(await storeFields({ id: "frozen-revision", agentProfileId: "frozen-profile", userId: "owner", fingerprint: "fixture", snapshot: { avatarUrl: "frozen-portrait", fullBodyReferenceUrl: "frozen-body", assets: { "frozen-portrait": "portrait-hash", "frozen-body": "body-hash" } } }, {"snapshot":"json-gzip"}));
+  await db.insert(schema.agentContentAssets).values(await storeFields({ hash: "portrait-hash", bytes: Buffer.from("portrait") }, {"bytes":"binary"}));
   await db.insert(schema.games).values({ id, slug: id, gameKind: "werewolf", status: "completed", startedAt: "2026-09-01T00:00:00.000Z", config: "{}" });
   await db.insert(schema.werewolfEvents).values(events.map(event => ({ gameId: id, sequence: event.sequence, event })));
   const pinned = await readWerewolfProductionSource(db, id, { audience: "mystery", thinking: false });
@@ -152,7 +153,7 @@ test("snapshot decoder is exact and restored missing frozen character assets req
   expect(pinned.snapshot.availableCharacterAssets).toEqual(["portrait-hash"]);
   expect(pinned.window.players[0]!.fullBodyReferenceUrl).toBeNull();
   for (const value of [null, [], { ...pinned.snapshot, extra: true }, { ...pinned.snapshot, thinking: "false" }, { ...pinned.snapshot, throughCursor: "1" }, { ...pinned.snapshot, availableCharacterAssets: ["portrait-hash", "portrait-hash"] }]) expect(() => decodeWerewolfProductionSnapshot(value)).toThrow("snapshot");
-  await db.insert(schema.agentContentAssets).values({ hash: "body-hash", bytes: Buffer.from("body") });
+  await db.insert(schema.agentContentAssets).values(await storeFields({ hash: "body-hash", bytes: Buffer.from("body") }, {"bytes":"binary"}));
   const reread = await readWerewolfProductionSource(db, id, { audience: "mystery", thinking: false, snapshot: pinned.snapshot });
   expect(reread.snapshot).toEqual(pinned.snapshot);
   expect(reread.window.players[0]!.fullBodyReferenceUrl).toBeNull();

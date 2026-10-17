@@ -1,3 +1,4 @@
+import { storeFields } from "./payload-storage.js";
 import { eq } from "drizzle-orm";
 import { assertRetrospectiveInputBinding,
   type RetrospectiveDefinitionV1, type RetrospectiveInputV1 } from "@influence/engine";
@@ -12,9 +13,9 @@ export async function insertRetrospectiveInput(tx: Transaction, input: Retrospec
   const game = (await tx.select({ kind: schema.games.gameKind }).from(schema.games)
     .where(eq(schema.games.id, input.outcome.gameId)).limit(1))[0];
   if (!game || game.kind !== input.outcome.gameKind) throw new Error("Retrospective input belongs to a different game kind");
-  await tx.insert(schema.gameRetrospectiveInputs).values({
+  await tx.insert(schema.gameRetrospectiveInputs).values(await storeFields({
     gameId: input.outcome.gameId, contractVersion: 1,
     outcomeEventSequence: input.outcome.eventSequence, outcomeEventHash: input.outcome.eventHash,
     inputHash: definition.inputHash, input: structuredClone(input),
-  });
+  }, {"input":"json-gzip"}));
 }

@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
@@ -201,8 +202,8 @@ describe("queue enrollment service", () => {
 
     const profile = (await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, "agent-open")))[0]!;
-    const revision = (await db.select().from(schema.agentRevisions)
-      .where(eq(schema.agentRevisions.id, players[0]!.agentRevisionId!)))[0]!;
+    const revision = (await loadPayloads(db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.id, players[0]!.agentRevisionId!))))[0]!;
     const persistedConfig = JSON.parse(players[0]!.agentConfig) as { model: string; temperature: number };
     expect(JSON.parse(players[0]!.persona)).toEqual({
       name: profile.name,
@@ -368,8 +369,8 @@ describe("queue enrollment service", () => {
       .where(eq(schema.gamePlayers.gameId, "open-race")))[0]!;
     const persona = JSON.parse(seat.persona) as { personality: string };
     const config = JSON.parse(seat.agentConfig) as { model: string; temperature: number };
-    const revision = (await db.select().from(schema.agentRevisions)
-      .where(eq(schema.agentRevisions.id, seat.agentRevisionId!)))[0]!;
+    const revision = (await loadPayloads(db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.id, seat.agentRevisionId!))))[0]!;
     const snapshot = revision.effectiveRuntimeSnapshot as {
       personality: string;
       model: string;

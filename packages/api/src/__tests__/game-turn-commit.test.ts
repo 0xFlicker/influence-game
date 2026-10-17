@@ -1,3 +1,4 @@
+import { storeFields } from "../services/payload-storage.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
@@ -365,7 +366,7 @@ async function insertAcceptedProviderCall(
   gameId: string,
   logicalCallId: string,
 ): Promise<void> {
-  await db.insert(schema.providerLogicalCalls).values({
+  await db.insert(schema.providerLogicalCalls).values(await storeFields({
     id: logicalCallId,
     gameId,
     actorId: "atlas",
@@ -381,5 +382,5 @@ async function insertAcceptedProviderCall(
     acceptedValue: { message: "Hello" },
     acceptedValueSha256: `sha256:${"1".repeat(64)}`,
     acceptedAt: "2026-08-27T11:59:00.000Z",
-  });
+  }, {"acceptedValue":"json-gzip"}));
 }

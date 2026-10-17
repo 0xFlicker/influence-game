@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "./payload-storage.js";
 import {
   CopyObjectCommand,
   DeleteObjectCommand,
@@ -333,7 +334,7 @@ async function countAvatarStorageReferences(
 async function countAllLegacyAvatarStorageReferences(
   db: RotationDatabase,
 ): Promise<Map<string, AvatarStorageReferenceCounts>> {
-  const [profiles, generations, changes, media] = await Promise.all([
+  const [profiles, generations, changes, media] = await loadPayloads(Promise.all([
     db.select({ avatarUrl: schema.agentProfiles.avatarUrl }).from(schema.agentProfiles),
     db.select({ safeMetadata: schema.avatarGenerationRequests.safeMetadata })
       .from(schema.avatarGenerationRequests),
@@ -344,7 +345,7 @@ async function countAllLegacyAvatarStorageReferences(
     }).from(schema.avatarChangeEvents),
     db.select({ renderInputSnapshot: schema.gamePostgameMedia.renderInputSnapshot })
       .from(schema.gamePostgameMedia),
-  ]);
+  ]));
   const counts = new Map<string, AvatarStorageReferenceCounts>();
   for (const row of profiles) {
     countLegacyAvatarStorageReferencesInValue(counts, "agentProfiles", row.avatarUrl);
@@ -538,19 +539,19 @@ async function repointPostgameMediaSnapshots(
   tx: RotationTransaction,
   mapping: AvatarStorageReferenceMapping,
 ): Promise<void> {
-  const rows = await tx.select({
+  const rows = await loadPayloads(tx.select({
     gameId: schema.gamePostgameMedia.gameId,
     mediaType: schema.gamePostgameMedia.mediaType,
     renderInputSnapshot: schema.gamePostgameMedia.renderInputSnapshot,
-  }).from(schema.gamePostgameMedia);
+  }).from(schema.gamePostgameMedia));
   for (const row of rows) {
     const replaced = replaceAvatarStorageReferencesInValue(row.renderInputSnapshot, mapping);
     if (!replaced.changed) continue;
     const snapshot = replaced.value as HouseHighlightsTrailerManifest;
-    await tx.update(schema.gamePostgameMedia).set({
+    await tx.update(schema.gamePostgameMedia).set(await storeFields({
       renderInputSnapshot: snapshot,
       renderInputSnapshotHash: hashHouseHighlightsTrailerManifest(snapshot),
-    }).where(and(
+    }, {"renderInputSnapshot":"json-gzip"})).where(and(
       eq(schema.gamePostgameMedia.gameId, row.gameId),
       eq(schema.gamePostgameMedia.mediaType, row.mediaType),
     ));

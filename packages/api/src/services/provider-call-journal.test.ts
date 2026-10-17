@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "./payload-storage.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { and, eq, sql } from "drizzle-orm";
 import {
@@ -208,7 +209,7 @@ async function insertPlannedDurableTurn(
       contractId: "agent-vote-v1",
     }],
   };
-  await db.insert(schema.gameTurns).values({
+  await db.insert(schema.gameTurns).values(await storeFields({
     id: turnId,
     gameId: input.gameId,
     turnSequence: 1,
@@ -218,7 +219,7 @@ async function insertPlannedDurableTurn(
     basePublicationSequence: 0,
     intent,
     intentHash: sha256StableJson(intent),
-  });
+  }, {"intent":"json-gzip","commitResult":"json-gzip"}));
   return { turnId, subcallSlot: 1 };
 }
 
@@ -265,7 +266,7 @@ describe("provider call journal", () => {
       "already reserved",
     );
 
-    const logicalCalls = await db.select().from(schema.providerLogicalCalls);
+    const logicalCalls = await loadPayloads(db.select().from(schema.providerLogicalCalls));
     const attempts = await db.select().from(schema.providerCallAttempts);
     expect(logicalCalls).toHaveLength(1);
     expect(logicalCalls[0]).toMatchObject({
@@ -305,7 +306,7 @@ describe("provider call journal", () => {
 
     await allocateAndReserve(hooks, intent);
 
-    expect((await db.select().from(schema.providerLogicalCalls))[0])
+    expect((await loadPayloads(db.select().from(schema.providerLogicalCalls)))[0])
       .toMatchObject({
         semanticCoordinate: {
           version: 1,
@@ -325,7 +326,7 @@ describe("provider call journal", () => {
     const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
 
     expect(await hooks.onAllocateAttemptOrdinal?.(intent.coordinate)).toBe(1);
-    expect((await db.select().from(schema.providerLogicalCalls))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.providerLogicalCalls)))[0]).toMatchObject({
       id: durableProviderLogicalCallId({ gameId, turnId: durableTurn.turnId, subcallSlot: 1 }),
       gameId,
       actorId: "atlas-id",
@@ -366,7 +367,7 @@ describe("provider call journal", () => {
         /was not planned|does not match its planned intent/,
       );
     }
-    expect(await db.select().from(schema.providerLogicalCalls)).toHaveLength(0);
+    expect(await loadPayloads(db.select().from(schema.providerLogicalCalls))).toHaveLength(0);
 
     expect(await hooks.onAllocateAttemptOrdinal?.(intent.coordinate)).toBe(1);
     await expect(hooks.onReserve?.({
@@ -697,7 +698,7 @@ describe("provider call journal", () => {
     const secondIntent = makeIntent(gameId, secondOwnerEpoch, 2);
     await allocateAndReserve(secondHooks, secondIntent);
 
-    const logicalCalls = await db.select().from(schema.providerLogicalCalls);
+    const logicalCalls = await loadPayloads(db.select().from(schema.providerLogicalCalls));
     let attempts = await db.select().from(schema.providerCallAttempts)
       .orderBy(schema.providerCallAttempts.attemptOrdinal);
     expect(logicalCalls).toHaveLength(1);
@@ -811,7 +812,7 @@ describe("provider call journal", () => {
       ownerEpoch: firstOwnerEpoch,
       events: committedEvents,
     });
-    expect((await db.select().from(schema.providerLogicalCalls))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.providerLogicalCalls)))[0]).toMatchObject({
       canonicalEventSequence: linkedSequence,
     });
 
@@ -890,7 +891,7 @@ describe("provider call journal", () => {
     });
 
     await appendGameEvents(db, { gameId, ownerEpoch, events });
-    expect((await db.select().from(schema.providerLogicalCalls))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.providerLogicalCalls)))[0]).toMatchObject({
       acceptedAttemptId: receipt!.acceptedAttemptId,
       canonicalEventSequence: linkedSequence,
       canonicalCommittedAt: events[linkedSequence - 1]!.timestamp,
@@ -1109,7 +1110,7 @@ describe("provider call journal", () => {
 
     await expect(hooks.onTerminal?.(makeRecord(intent))).resolves.toBeUndefined();
     expect(storage.puts).toHaveLength(0);
-    expect(await db.select().from(schema.providerAttemptEvidenceOutbox)).toHaveLength(1);
+    expect(await loadPayloads(db.select().from(schema.providerAttemptEvidenceOutbox))).toHaveLength(1);
     expect((await db.select().from(schema.providerCallAttempts))[0]).toMatchObject({
       status: "terminal",
       evidenceState: "pending",
@@ -1125,7 +1126,7 @@ describe("provider call journal", () => {
       evidenceStorage: storage,
     })).toEqual({ attempted: 1, stored: 1, failed: 0 });
     expect(storage.puts).toHaveLength(1);
-    expect(await db.select().from(schema.providerAttemptEvidenceOutbox)).toHaveLength(0);
+    expect(await loadPayloads(db.select().from(schema.providerAttemptEvidenceOutbox))).toHaveLength(0);
   });
 
   test("manifest failure is nonfatal and leaves the exact handoff retryable", async () => {
@@ -1153,7 +1154,7 @@ describe("provider call journal", () => {
     })).toEqual({ attempted: 1, stored: 0, failed: 1 });
     expect(storage.puts).toHaveLength(1);
     expect(await db.select().from(schema.gameEvidenceManifests)).toHaveLength(0);
-    expect(await db.select().from(schema.providerAttemptEvidenceOutbox)).toHaveLength(1);
+    expect(await loadPayloads(db.select().from(schema.providerAttemptEvidenceOutbox))).toHaveLength(1);
     expect((await db.select().from(schema.providerCallAttempts))[0]).toMatchObject({
       evidenceState: "degraded",
       evidenceError: "manifest unavailable",
@@ -1165,7 +1166,7 @@ describe("provider call journal", () => {
     expect(storage.puts).toHaveLength(2);
     expect(new Set(storage.puts.map((put) => put.key)).size).toBe(1);
     expect(await db.select().from(schema.gameEvidenceManifests)).toHaveLength(1);
-    expect(await db.select().from(schema.providerAttemptEvidenceOutbox)).toHaveLength(0);
+    expect(await loadPayloads(db.select().from(schema.providerAttemptEvidenceOutbox))).toHaveLength(0);
   });
 
   test("state-finalization failure reuses the manifest and object on reconciliation", async () => {
@@ -1193,13 +1194,13 @@ describe("provider call journal", () => {
     })).toEqual({ attempted: 1, stored: 0, failed: 1 });
     expect(storage.puts).toHaveLength(1);
     expect(await db.select().from(schema.gameEvidenceManifests)).toHaveLength(1);
-    expect(await db.select().from(schema.providerAttemptEvidenceOutbox)).toHaveLength(1);
+    expect(await loadPayloads(db.select().from(schema.providerAttemptEvidenceOutbox))).toHaveLength(1);
 
     expect(await reconcileProviderAttemptEvidence(db, {
       evidenceStorage: storage,
     })).toEqual({ attempted: 1, stored: 1, failed: 0 });
     expect(storage.puts).toHaveLength(1);
-    expect(await db.select().from(schema.providerAttemptEvidenceOutbox)).toHaveLength(0);
+    expect(await loadPayloads(db.select().from(schema.providerAttemptEvidenceOutbox))).toHaveLength(0);
     expect((await db.select().from(schema.providerCallAttempts))[0]!.evidenceState)
       .toBe("stored");
   });
@@ -1276,7 +1277,7 @@ describe("provider call journal", () => {
       },
     }));
 
-    const call = (await db.select().from(schema.providerLogicalCalls))[0]!;
+    const call = (await loadPayloads(db.select().from(schema.providerLogicalCalls)))[0]!;
     expect(call).toMatchObject({
       rateLimitCount: 1,
       rateLimitOutcome: "recovered",
@@ -1298,10 +1299,10 @@ describe("provider call journal", () => {
       disposition: "exhausted",
       rawResponse: { status: 429, body: { error: "rate limit exhausted" } },
     }));
-    const exhaustedCall = (await db
+    const exhaustedCall = (await loadPayloads(db
       .select()
       .from(schema.providerLogicalCalls)
-      .where(eq(schema.providerLogicalCalls.gameId, exhaustedGameId)))[0]!;
+      .where(eq(schema.providerLogicalCalls.gameId, exhaustedGameId))))[0]!;
     expect(exhaustedCall).toMatchObject({
       rateLimitCount: 1,
       rateLimitOutcome: "exhausted",
@@ -1331,7 +1332,7 @@ describe("provider call journal", () => {
       rawResponse: { status: 503, body: { error: "unavailable" } },
     }));
 
-    expect((await db.select().from(schema.providerLogicalCalls))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.providerLogicalCalls)))[0]).toMatchObject({
       rateLimitCount: 1,
       rateLimitOutcome: "pending",
       rateLimitTerminalReason: null,
@@ -1344,7 +1345,7 @@ describe("provider call journal", () => {
       rawResponse: { status: 400, body: { error: "invalid prompt" } },
     }));
 
-    expect((await db.select().from(schema.providerLogicalCalls))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.providerLogicalCalls)))[0]).toMatchObject({
       rateLimitCount: 1,
       rateLimitOutcome: "exhausted",
       rateLimitTerminalReason: "invalid prompt",
@@ -1367,7 +1368,7 @@ describe("provider call journal", () => {
       hooks.onTerminal?.(record),
       hooks.onTerminal?.(record),
     ])).resolves.toEqual([undefined, undefined]);
-    expect((await db.select().from(schema.providerLogicalCalls))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.providerLogicalCalls)))[0]).toMatchObject({
       rateLimitCount: 1,
       rateLimitOutcome: "exhausted",
     });
@@ -1430,7 +1431,7 @@ describe("provider call journal", () => {
       evidenceState: "stored",
       evidenceError: null,
     });
-    expect(await db.select().from(schema.providerAttemptEvidenceOutbox)).toHaveLength(0);
+    expect(await loadPayloads(db.select().from(schema.providerAttemptEvidenceOutbox))).toHaveLength(0);
   });
 
   test("rejects corrupt evidence metadata before storage and backs the row off", async () => {
@@ -1449,7 +1450,7 @@ describe("provider call journal", () => {
       evidenceStorage: storage,
     })).toEqual({ attempted: 1, stored: 0, failed: 1 });
     expect(storage.puts).toHaveLength(0);
-    const outbox = (await db.select().from(schema.providerAttemptEvidenceOutbox))[0]!;
+    const outbox = (await loadPayloads(db.select().from(schema.providerAttemptEvidenceOutbox)))[0]!;
     expect(outbox).toMatchObject({
       reconciliationAttemptCount: 1,
       claimToken: null,
@@ -1516,7 +1517,7 @@ describe("provider call journal", () => {
     expect(await reconcileProviderAttemptEvidence(db, {
       evidenceStorage: new FakeProviderEvidenceStorage(),
     })).toEqual({ attempted: 1, stored: 1, failed: 0 });
-    expect(await db.select().from(schema.providerAttemptEvidenceOutbox)).toHaveLength(0);
+    expect(await loadPayloads(db.select().from(schema.providerAttemptEvidenceOutbox))).toHaveLength(0);
   });
 
   test("runtime startup does not wait for stalled evidence storage", async () => {
@@ -1546,7 +1547,7 @@ describe("provider call journal", () => {
       expect((await runtime.runOnce()).evidence).toEqual({
         attempted: 1, stored: 0, failed: 1,
       });
-      const outbox = (await db.select().from(schema.providerAttemptEvidenceOutbox))[0];
+      const outbox = (await loadPayloads(db.select().from(schema.providerAttemptEvidenceOutbox)))[0];
       expect(outbox?.claimToken).toBeNull();
     } finally {
       await runtime.stop();

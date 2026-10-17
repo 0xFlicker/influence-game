@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { DEFAULT_CONFIG, GameRunner, Phase, replayCanonicalEvents, assertRetrospectiveInputBinding } from "@influence/engine";
@@ -30,7 +31,7 @@ describe("Influence retrospective durable runtime", () => {
       },
     } });
     await expect(runner.run()).rejects.toThrow("phase choreography");
-    expect(await db.select().from(schema.gameRetrospectiveInputs)).toHaveLength(0);
+    expect(await loadPayloads(db.select().from(schema.gameRetrospectiveInputs))).toHaveLength(0);
     const before = await store.load(gameId);
     expect(before!.execution.cursor).toEqual({ version: 1, kind: "retrospective", stage: "initialize" });
     const outcome = replayCanonicalEvents(before!.canonicalEvents).retrospectiveOutcomeSource!;
@@ -55,7 +56,7 @@ describe("Influence retrospective durable runtime", () => {
     expect(() => assertRetrospectiveInputBinding(saved.input, state.retrospective!.definition)).not.toThrow();
     expect(saved.transcriptThroughSequence).toBe(source.transcriptThroughSequence);
     expect(saved.dialogueAnchors).toEqual(source.dialogueAnchors);
-    expect((await db.select().from(schema.gameRetrospectiveInputs))).toHaveLength(1);
+    expect((await loadPayloads(db.select().from(schema.gameRetrospectiveInputs)))).toHaveLength(1);
     // Engine completion does not perform API settlement, seal the transcript or close its owner.
     expect((await db.select().from(schema.games).where(eq(schema.games.id, gameId)))[0]?.status).toBe("in_progress");
     expect((await db.select().from(schema.gameRunOwners).where(eq(schema.gameRunOwners.gameId, gameId)))[0]?.status).toBe("active");

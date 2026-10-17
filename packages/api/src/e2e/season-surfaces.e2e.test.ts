@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { Browser, Page } from "puppeteer";
@@ -69,7 +70,7 @@ beforeAll(async () => {
     strategyStyle: "Build trust early, then convert information into decisive votes.",
   })).profile;
   agentId = profile.id;
-  const revision = (await testDb.db.select().from(schema.agentRevisions))
+  const revision = (await loadPayloads(testDb.db.select().from(schema.agentRevisions)))
     .find((candidate) => candidate.agentProfileId === profile.id)!;
 
   const season = await createSeason(testDb.db, {

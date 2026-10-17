@@ -1,3 +1,4 @@
+import { storeFields } from "./payload-storage.js";
 import { randomUUID } from "crypto";
 import { and, asc, eq, sql } from "drizzle-orm";
 import {
@@ -460,13 +461,13 @@ export async function completeProviderHealthProbe(
       : null;
     if (input.evidence) {
       assertProbeEvidence(input.evidence, input);
-      await tx.insert(schema.providerHealthProbeEvidence).values({
+      await tx.insert(schema.providerHealthProbeEvidence).values(await storeFields({
         id: evidenceId!,
         scopeKey: input.scopeKey,
         leaseRevision: input.revision,
         recordSha256: sha256StableJson(input.evidence),
         record: input.evidence,
-      }).onConflictDoNothing({
+      }, {"record":"json-gzip"})).onConflictDoNothing({
         target: [
           schema.providerHealthProbeEvidence.scopeKey,
           schema.providerHealthProbeEvidence.leaseRevision,

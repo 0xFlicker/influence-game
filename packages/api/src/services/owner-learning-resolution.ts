@@ -1,3 +1,4 @@
+import { Hydrated, loadPayloads, storeFields } from "./payload-storage.js";
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
@@ -7,7 +8,7 @@ import { createOwnerLearningEvent } from "./owner-learning-events.js";
 import { abortActiveOwnerLearningReview } from "./owner-learning-worker.js";
 
 export type OwnerLearningResolutionTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
-export type LockedOwnerLearningReview = typeof schema.agentLearningReviews.$inferSelect;
+export type LockedOwnerLearningReview = Hydrated<typeof schema.agentLearningReviews.$inferSelect>;
 
 export type OwnerLearningResolutionErrorCode =
   | "review_not_found"
@@ -34,10 +35,10 @@ export async function lockOwnedOwnerLearningReview(
     WHERE id = ${input.reviewId}
     FOR UPDATE
   `);
-  const review = (await tx.select().from(schema.agentLearningReviews).where(and(
+  const review = (await loadPayloads(tx.select().from(schema.agentLearningReviews).where(and(
     eq(schema.agentLearningReviews.id, input.reviewId),
     eq(schema.agentLearningReviews.ownerUserId, input.ownerUserId),
-  )).limit(1))[0];
+  )).limit(1)))[0];
   if (!review) throw new OwnerLearningResolutionError("review_not_found", 404);
   return review;
 }
@@ -85,8 +86,8 @@ export async function lockOwnerLearningReviewForProfileMutation(
     WHERE id = ${candidate.id}
     FOR UPDATE
   `);
-  return (await tx.select().from(schema.agentLearningReviews)
-    .where(eq(schema.agentLearningReviews.id, candidate.id)).limit(1))[0] ?? null;
+  return (await loadPayloads(tx.select().from(schema.agentLearningReviews)
+    .where(eq(schema.agentLearningReviews.id, candidate.id)).limit(1)))[0] ?? null;
 }
 
 export async function resolveOwnerLearningReviewForProfileMutation(
@@ -142,7 +143,7 @@ export async function persistOwnerLearningResolution(
     idFactory?: () => string;
   },
 ): Promise<void> {
-  const updated = await tx.update(schema.agentLearningReviews).set({
+  const updated = await tx.update(schema.agentLearningReviews).set(await storeFields({
     resolution: input.resolution,
     resolvedAt: input.nowIso,
     ...(input.review.analysisStatus === "running"
@@ -153,7 +154,7 @@ export async function persistOwnerLearningResolution(
         }),
     capacitySubstatus: null,
     updatedAt: input.nowIso,
-  }).where(and(
+  }, {"checkpoint":"json-gzip","result":"json-gzip"})).where(and(
     eq(schema.agentLearningReviews.id, input.review.id),
     sql`${schema.agentLearningReviews.resolvedAt} IS NULL`,
   )).returning({ id: schema.agentLearningReviews.id });

@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { contentImageFixture } from "./content-image-fixture.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
@@ -40,8 +41,8 @@ describe("agent revision update loop", () => {
     await admit(profile.id, "lillith-waiting");
 
     const standingBefore = await db.select().from(schema.freeGameQueue);
-    const revisionsBefore = await db.select().from(schema.agentRevisions)
-      .where(eq(schema.agentRevisions.agentProfileId, profile.id));
+    const revisionsBefore = await loadPayloads(db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.agentProfileId, profile.id)));
 
     const result = await updateOwnedAgentProfile(db, { userId: OWNER_ID }, profile.id, {
       personality: "Patiently maps every promise, then strikes when the coalition is committed.",
@@ -54,8 +55,8 @@ describe("agent revision update loop", () => {
     const seat = (await db.select().from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.gameId, "lillith-waiting")))[0]!;
     const persona = JSON.parse(seat.persona) as { personality: string; strategyHints: string };
-    const revisionsAfter = await db.select().from(schema.agentRevisions)
-      .where(eq(schema.agentRevisions.agentProfileId, profile.id));
+    const revisionsAfter = await loadPayloads(db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.agentProfileId, profile.id)));
 
     expect(persisted.id).toBe(profile.id);
     expect(persisted.gamesPlayed).toBe(8);
@@ -116,7 +117,7 @@ describe("agent revision update loop", () => {
     const profileBefore = (await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, foreign.profile.id)))[0]!;
     const seatBefore = (await db.select().from(schema.gamePlayers))[0]!;
-    const revisionsBefore = await db.select().from(schema.agentRevisions);
+    const revisionsBefore = await loadPayloads(db.select().from(schema.agentRevisions));
 
     const gameLocked = deferred<void>();
     const releaseGame = deferred<void>();
@@ -154,7 +155,7 @@ describe("agent revision update loop", () => {
     expect((await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, foreign.profile.id)))[0]).toEqual(profileBefore);
     expect((await db.select().from(schema.gamePlayers))[0]).toEqual(seatBefore);
-    expect(await db.select().from(schema.agentRevisions)).toEqual(revisionsBefore);
+    expect(await loadPayloads(db.select().from(schema.agentRevisions))).toEqual(revisionsBefore);
   });
 
   test("presentation-only edits preserve the active revision and refresh waiting visual assets", async () => {
@@ -209,8 +210,8 @@ describe("agent revision update loop", () => {
     const frozenBefore = await db.select().from(schema.gamePlayers)
       .where(sql`${schema.gamePlayers.gameId} IN ('rename-active', 'rename-suspended')`)
       .orderBy(schema.gamePlayers.gameId);
-    const revisionsBefore = await db.select().from(schema.agentRevisions)
-      .where(eq(schema.agentRevisions.agentProfileId, profile.id));
+    const revisionsBefore = await loadPayloads(db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.agentProfileId, profile.id)));
     const ratingsBefore = await db.select().from(schema.agentCompetitionRatings)
       .where(eq(schema.agentCompetitionRatings.agentProfileId, profile.id));
     const ratingEventsBefore = await db.select().from(schema.competitionRatingEvents)
@@ -234,8 +235,8 @@ describe("agent revision update loop", () => {
     expect(JSON.parse(waitingAfter.persona).name).toBe("Roster Name After");
     expect(waitingAfter.agentRevisionId).toBe(waitingBefore.agentRevisionId);
     expect(frozenAfter).toEqual(frozenBefore);
-    expect(await db.select().from(schema.agentRevisions)
-      .where(eq(schema.agentRevisions.agentProfileId, profile.id))).toEqual(revisionsBefore);
+    expect(await loadPayloads(db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.agentProfileId, profile.id)))).toEqual(revisionsBefore);
     expect(await db.select().from(schema.agentCompetitionRatings)
       .where(eq(schema.agentCompetitionRatings.agentProfileId, profile.id))).toEqual(ratingsBefore);
     expect(await db.select().from(schema.competitionRatingEvents)
@@ -353,7 +354,7 @@ describe("agent revision update loop", () => {
       .where(eq(schema.agentProfiles.id, profile.id)))[0]!;
     const seatBefore = (await db.select().from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.agentProfileId, profile.id)))[0]!;
-    const revisionsBefore = await db.select().from(schema.agentRevisions);
+    const revisionsBefore = await loadPayloads(db.select().from(schema.agentRevisions));
 
     await expect(updateOwnedAgentProfile(db, {
       userId: OWNER_ID,
@@ -371,7 +372,7 @@ describe("agent revision update loop", () => {
       .where(eq(schema.agentProfiles.id, profile.id)))[0]).toEqual(profileBefore);
     expect((await db.select().from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.agentProfileId, profile.id)))[0]).toEqual(seatBefore);
-    expect(await db.select().from(schema.agentRevisions)).toEqual(revisionsBefore);
+    expect(await loadPayloads(db.select().from(schema.agentRevisions))).toEqual(revisionsBefore);
     expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
   });
 
@@ -383,7 +384,7 @@ describe("agent revision update loop", () => {
       .where(eq(schema.gamePlayers.gameId, "broken-follower"));
     const profileBefore = (await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, profile.id)))[0]!;
-    const revisionsBefore = await db.select().from(schema.agentRevisions);
+    const revisionsBefore = await loadPayloads(db.select().from(schema.agentRevisions));
 
     await expect(updateOwnedAgentProfile(db, { userId: OWNER_ID }, profile.id, {
       personality: "Must not become active without the follower.",
@@ -394,7 +395,7 @@ describe("agent revision update loop", () => {
 
     expect((await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, profile.id)))[0]).toEqual(profileBefore);
-    expect(await db.select().from(schema.agentRevisions)).toEqual(revisionsBefore);
+    expect(await loadPayloads(db.select().from(schema.agentRevisions))).toEqual(revisionsBefore);
   });
 
   test("rolls the complete update back when the local avatar audit cannot be written", async () => {
@@ -404,7 +405,7 @@ describe("agent revision update loop", () => {
     const profileBefore = (await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, profile.id)))[0]!;
     const seatBefore = (await db.select().from(schema.gamePlayers))[0]!;
-    const revisionsBefore = await db.select().from(schema.agentRevisions);
+    const revisionsBefore = await loadPayloads(db.select().from(schema.agentRevisions));
 
     await expect(updateOwnedAgentProfile(db, {
       userId: OWNER_ID,
@@ -418,7 +419,7 @@ describe("agent revision update loop", () => {
     expect((await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, profile.id)))[0]).toEqual(profileBefore);
     expect((await db.select().from(schema.gamePlayers))[0]).toEqual(seatBefore);
-    expect(await db.select().from(schema.agentRevisions)).toEqual(revisionsBefore);
+    expect(await loadPayloads(db.select().from(schema.agentRevisions))).toEqual(revisionsBefore);
     expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
   });
 

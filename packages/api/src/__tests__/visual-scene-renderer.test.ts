@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { createVisualTurnContextReader } from "../services/visual-turn-context.js";
 import { eq } from "drizzle-orm";
 import { GameState, Phase, type DurableGameTurnSnapshotV1 } from "@influence/engine";
@@ -181,7 +182,7 @@ test("an aborted scene cannot reserve a paid request", async () => {
   controller.abort(new Error("Preparation cancelled"));
   await expect(renderPlannedVisualScene(db, planned, controller.signal)).rejects.toThrow("Preparation cancelled");
   expect([imageCalls, visionCalls]).toEqual([0, 0]);
-  expect(await db.select().from(schema.visualRenderAttempts)).toHaveLength(0);
+  expect(await loadPayloads(db.select().from(schema.visualRenderAttempts))).toHaveLength(0);
 });
 
 test("asset preparation freezes portraits, generates references and all eight backgrounds once", async () => {
@@ -338,7 +339,7 @@ test("rejects a duplicated harmonized cast without losing original panels", asyn
   expect(ready.shots?.mode).toBe("groups");
   expect(ready.shots?.overview).toBeNull();
   expect(ready.shots?.groups.flatMap(shot => shot.visibleParticipantIds)).toHaveLength(6);
-  expect((await db.select().from(schema.visualOperationEvents)).some(event => event.event.message === "Harmonized image rejected; retaining verified original panels")).toBe(true);
+  expect((await loadPayloads(db.select().from(schema.visualOperationEvents))).some(event => event.event.message === "Harmonized image rejected; retaining verified original panels")).toBe(true);
 });
 
 test("harmonization strictly verifies all identities even under best effort", async () => {
@@ -373,5 +374,5 @@ test("optional harmonization provider failure retains verified panels and its re
   expect(ready.shots?.mode).toBe("groups");
   expect(ready.shots?.groups.flatMap(shot=>shot.visibleParticipantIds)).toHaveLength(6);
   expect(imageCalls).toBe(groups + 1);
-  expect((await db.select().from(schema.visualRenderAttempts)).some(attempt=>attempt.receipt?.status===400)).toBe(true);
+  expect((await loadPayloads(db.select().from(schema.visualRenderAttempts))).some(attempt=>attempt.receipt?.status===400)).toBe(true);
 });

@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { playedWerewolfReview } from "./owner-learning-werewolf-test-utils.js";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { describe, expect, test } from "bun:test";
@@ -49,13 +50,13 @@ describe("production MCP owner-learning parity", () => {
     expect(JSON.stringify(preflight)).not.toContain("PRIVATE_PACK");
     const started = await callTool(server, auth, "start_or_resume_learning_review", { ...args, idempotencyKey: "wolf-mcp" });
     expectMatchesJsonSchema(started, START_OR_RESUME_LEARNING_REVIEW_OUTPUT_SCHEMA);
-    const rows = await db.select().from(schema.agentLearningReviews);
+    const rows = await loadPayloads(db.select().from(schema.agentLearningReviews));
     const reviewId = rows[0]!.id;
     const resumed = await callTool(server, auth, "start_or_resume_learning_review", { ...args, idempotencyKey: "wolf-mcp" });
     expect(resumed).toMatchObject({ status: "resumed" });
     const proposal = { field: "werewolfStrategyStyle" as const, before: "", after: "Compare a public claim with the next ballot before committing your vote." };
     const proposalFingerprint = fingerprintOwnerLearningValue({ reviewId, proposal });
-    await db.update(schema.agentLearningReviews).set({ analysisStatus: "ready", stage: "complete", proposalFingerprint, result: { diagnosis: "Synthetic MCP review", analysisTrack: "evidence_rich", recommendations: [{ id: "rec-wolf-mcp", title: "Compare evidence", disposition: "change", confidence: "medium", rationale: "Workflow test", evidenceRefs: [] }], proposal } }).where(eq(schema.agentLearningReviews.id, reviewId));
+    await db.update(schema.agentLearningReviews).set(await storeFields({ analysisStatus: "ready", stage: "complete", proposalFingerprint, result: { diagnosis: "Synthetic MCP review", analysisTrack: "evidence_rich", recommendations: [{ id: "rec-wolf-mcp", title: "Compare evidence", disposition: "change", confidence: "medium", rationale: "Workflow test", evidenceRefs: [] }], proposal } }, {"checkpoint":"json-gzip","result":"json-gzip"})).where(eq(schema.agentLearningReviews.id, reviewId));
     const read = await callTool(server, auth, "read_learning_review", { reviewId });
     expectMatchesJsonSchema(read, READ_LEARNING_REVIEW_OUTPUT_SCHEMA);
     expect(read).toMatchObject({ review: { gameKind: "werewolf", result: { proposal: { field: "werewolfStrategyStyle" } } } });
@@ -70,7 +71,7 @@ describe("production MCP owner-learning parity", () => {
   test("keeps disabled admission deterministic, then resumes one owner-wide review across surfaces", async () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);
-    const evidenceBeforeRejectedStarts = await db.select().from(schema.agentLearningGameEvidence);
+    const evidenceBeforeRejectedStarts = await loadPayloads(db.select().from(schema.agentLearningGameEvidence));
     const auth = ownerAuth(fixture.ownerUserId);
     const projector = fixtureProjector(fixture);
     const disabled = createProductionGameMcpServer(db, {
@@ -105,9 +106,9 @@ describe("production MCP owner-learning parity", () => {
       },
     });
     expectMatchesJsonSchema(disabledPreflight, PREFLIGHT_LEARNING_REVIEW_OUTPUT_SCHEMA);
-    expect(await db.select().from(schema.agentLearningReviews)).toEqual([]);
+    expect(await loadPayloads(db.select().from(schema.agentLearningReviews))).toEqual([]);
     expect(await db.select().from(schema.agentLearningReviewEntitlements)).toEqual([]);
-    expect(await db.select().from(schema.agentLearningGameEvidence))
+    expect(await loadPayloads(db.select().from(schema.agentLearningGameEvidence)))
       .toEqual(evidenceBeforeRejectedStarts);
 
     await db.insert(schema.agentLearningReviewEntitlements).values({
@@ -140,7 +141,7 @@ describe("production MCP owner-learning parity", () => {
       review: null,
     });
     expectMatchesJsonSchema(cooldownStart, START_OR_RESUME_LEARNING_REVIEW_OUTPUT_SCHEMA);
-    expect(await db.select().from(schema.agentLearningGameEvidence))
+    expect(await loadPayloads(db.select().from(schema.agentLearningGameEvidence)))
       .toEqual(evidenceBeforeRejectedStarts);
     await db.delete(schema.agentLearningReviewEntitlements)
       .where(eq(schema.agentLearningReviewEntitlements.ownerUserId, fixture.ownerUserId));
@@ -153,8 +154,8 @@ describe("production MCP owner-learning parity", () => {
       });
       expect(invalid.error?.message).toContain("idempotency key");
     }
-    expect(await db.select().from(schema.agentLearningReviews)).toEqual([]);
-    expect(await db.select().from(schema.agentLearningGameEvidence))
+    expect(await loadPayloads(db.select().from(schema.agentLearningReviews))).toEqual([]);
+    expect(await loadPayloads(db.select().from(schema.agentLearningGameEvidence)))
       .toEqual(evidenceBeforeRejectedStarts);
 
     const awaiting = createProductionGameMcpServer(db, {
@@ -183,7 +184,7 @@ describe("production MCP owner-learning parity", () => {
       awaitingEvidence,
       START_OR_RESUME_LEARNING_REVIEW_OUTPUT_SCHEMA,
     );
-    expect(await db.select().from(schema.agentLearningReviews)).toEqual([]);
+    expect(await loadPayloads(db.select().from(schema.agentLearningReviews))).toEqual([]);
 
     const awaitingPreflight = await callTool(
       awaiting,
@@ -199,7 +200,7 @@ describe("production MCP owner-learning parity", () => {
       preflight: { status: "awaiting_evidence" },
     });
     expectMatchesJsonSchema(awaitingPreflight, PREFLIGHT_LEARNING_REVIEW_OUTPUT_SCHEMA);
-    expect(await db.select().from(schema.agentLearningReviews)).toEqual([]);
+    expect(await loadPayloads(db.select().from(schema.agentLearningReviews))).toEqual([]);
 
     const unavailable = await callTool(disabled, auth, "start_or_resume_learning_review", {
       agentProfileId: fixture.agentProfileId,
@@ -215,9 +216,9 @@ describe("production MCP owner-learning parity", () => {
       preflight: { status: "generation_unavailable" },
     });
     expectMatchesJsonSchema(unavailable, START_OR_RESUME_LEARNING_REVIEW_OUTPUT_SCHEMA);
-    expect(await db.select().from(schema.agentLearningReviews)).toEqual([]);
+    expect(await loadPayloads(db.select().from(schema.agentLearningReviews))).toEqual([]);
     expect(await db.select().from(schema.agentLearningReviewEntitlements)).toEqual([]);
-    expect(await db.select().from(schema.agentLearningGameEvidence))
+    expect(await loadPayloads(db.select().from(schema.agentLearningGameEvidence)))
       .toEqual(evidenceBeforeRejectedStarts);
 
     const enabled = createProductionGameMcpServer(db, {
@@ -327,7 +328,7 @@ describe("production MCP owner-learning parity", () => {
       after: "Test reciprocity before committing the vote.",
     };
     const proposalFingerprint = fingerprintOwnerLearningValue({ reviewId, proposal });
-    await db.update(schema.agentLearningReviews).set({
+    await db.update(schema.agentLearningReviews).set(await storeFields({
       analysisStatus: "ready",
       stage: "complete",
       result: {
@@ -358,7 +359,7 @@ describe("production MCP owner-learning parity", () => {
         proposal,
       },
       proposalFingerprint,
-    }).where(eq(schema.agentLearningReviews.id, reviewId));
+    }, {"checkpoint":"json-gzip","result":"json-gzip"})).where(eq(schema.agentLearningReviews.id, reviewId));
 
     const server = createProductionGameMcpServer(db, { generationEnabled: true });
     const auth = ownerAuth(fixture.ownerUserId);
@@ -465,16 +466,16 @@ describe("production MCP owner-learning parity", () => {
     expect((await db.select({ strategyStyle: schema.agentProfiles.strategyStyle })
       .from(schema.agentProfiles).where(eq(schema.agentProfiles.id, otherProfile.agentProfileId)))[0]
       ?.strategyStyle).toBe(otherStrategyBefore);
-    expect((await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, manualReviewId)))[0]?.resolvedAt).toBeNull();
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, manualReviewId))))[0]?.resolvedAt).toBeNull();
 
     await callTool(server, manualAuth, "update_agent", {
       agentId: manual.agentProfileId,
       strategyStyle: "Verify reciprocity before declaring a voting bloc.",
       sourceReviewId: manualReviewId,
     });
-    expect((await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, manualReviewId)))[0]?.resolution)
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, manualReviewId))))[0]?.resolution)
       .toBe("manual_update");
     expect(await db.select().from(schema.agentLearningReviewApplications)).toEqual([]);
 
@@ -485,8 +486,8 @@ describe("production MCP owner-learning parity", () => {
       agentId: superseded.agentProfileId,
       strategyStyle: "Unlinked owner edit supersedes the old review.",
     });
-    expect((await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, supersededReviewId)))[0]?.resolution)
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, supersededReviewId))))[0]?.resolution)
       .toBe("superseded");
 
     const declined = await insertPlayedOwnerLearningAgent(db);
@@ -498,8 +499,8 @@ describe("production MCP owner-learning parity", () => {
       resolution: "cancelled",
     });
     expect(cancelled.error?.message).toBe("resolution must be declined or failed");
-    expect((await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, declinedReviewId)))[0]?.resolvedAt).toBeNull();
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, declinedReviewId))))[0]?.resolvedAt).toBeNull();
     const firstDecline = await callTool(server, declinedAuth, "resolve_learning_review", {
       reviewId: declinedReviewId,
       resolution: "declined",
@@ -811,7 +812,7 @@ async function markSimpleReady(db: DrizzleDB, reviewId: string): Promise<void> {
     before: "Build trust before committing.",
     after: "Test commitments before locking a vote.",
   };
-  await db.update(schema.agentLearningReviews).set({
+  await db.update(schema.agentLearningReviews).set(await storeFields({
     analysisStatus: "ready",
     stage: "complete",
     result: {
@@ -828,7 +829,7 @@ async function markSimpleReady(db: DrizzleDB, reviewId: string): Promise<void> {
       proposal,
     },
     proposalFingerprint: fingerprintOwnerLearningValue({ reviewId, proposal }),
-  }).where(eq(schema.agentLearningReviews.id, reviewId));
+  }, {"checkpoint":"json-gzip","result":"json-gzip"})).where(eq(schema.agentLearningReviews.id, reviewId));
 }
 
 function successfulStubServer(): ProductionGameMcpJsonRpcServer {

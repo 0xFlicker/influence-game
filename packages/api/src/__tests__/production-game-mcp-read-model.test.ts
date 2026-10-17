@@ -1,3 +1,4 @@
+import { storeFields } from "../services/payload-storage.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { createHash, randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
@@ -486,7 +487,7 @@ describe("ProductionGameMcpReadModel", () => {
     if (!owner) throw new Error("expected edge-smoke-dusk owner epoch");
 
     const cognitiveIds = Array.from({ length: 52 }, () => randomUUID());
-    await db.insert(schema.gameCognitiveArtifacts).values(cognitiveIds.map((id, index) => ({
+    await db.insert(schema.gameCognitiveArtifacts).values(await storeFields(cognitiveIds.map((id, index) => ({
       id,
       gameId: EDGE_SMOKE_DUSK_GAME_ID,
       artifactType: index % 2 === 0 ? "thinking" as const : "strategy" as const,
@@ -497,7 +498,7 @@ describe("ProductionGameMcpReadModel", () => {
       payloadByteLength: 2,
       payload: {},
       createdAt: "2026-08-19T12:00:00.000Z",
-    })));
+    })), {"payload":"json-gzip"}));
     const traceIds = Array.from({ length: 53 }, () => randomUUID());
     await db.insert(schema.gameEvidenceManifests).values(traceIds.map((id) => ({
       id,
@@ -3569,7 +3570,7 @@ async function insertCognitionArtifact(
     visibilityStatus?: "active" | "capture_degraded";
   },
 ): Promise<void> {
-  await db.insert(schema.gameCognitiveArtifacts).values({
+  await db.insert(schema.gameCognitiveArtifacts).values(await storeFields({
     id: params.id,
     gameId: params.gameId,
     artifactType: params.artifactType,
@@ -3583,7 +3584,7 @@ async function insertCognitionArtifact(
     payload: params.payload,
     visibilityStatus: params.visibilityStatus ?? "active",
     ...(params.createdAt && { createdAt: params.createdAt }),
-  });
+  }, {"payload":"json-gzip"}));
 }
 
 async function seedModernOwnerGame(

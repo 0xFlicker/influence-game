@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import { and, asc, desc, eq, isNotNull, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -724,14 +725,14 @@ async function getDurableExecutionSummary(
   }).from(schema.gameExecutionStates)
     .where(eq(schema.gameExecutionStates.gameId, gameId))
     .limit(1))[0] ?? null;
-  const plannedTurn = (await db.select({
+  const plannedTurn = (await loadPayloads(db.select({
     turnSequence: schema.gameTurns.turnSequence,
     intent: schema.gameTurns.intent,
     plannedAt: schema.gameTurns.plannedAt,
   }).from(schema.gameTurns).where(and(
     eq(schema.gameTurns.gameId, gameId),
     eq(schema.gameTurns.status, "planned"),
-  )).limit(1))[0] ?? null;
+  )).limit(1)))[0] ?? null;
   const publicationCounts = (await db.select({
     totalCount: sql<number>`count(*)::int`,
     dueCount: sql<number>`count(*) filter (
@@ -828,7 +829,7 @@ export async function getDurableRunInspection(
       .orderBy(desc(schema.gameRunOwners.acquiredAt), desc(schema.gameRunOwners.createdAt))
       .limit(1)
     )[0] ?? null;
-    const checkpointRows = await tx
+    const checkpointRows = await loadPayloads(tx
       .select({
         lastEventSequence: schema.gameCheckpoints.lastEventSequence,
         checkpointKind: schema.gameCheckpoints.checkpointKind,
@@ -848,7 +849,7 @@ export async function getDurableRunInspection(
       .orderBy(
         asc(schema.gameCheckpoints.lastEventSequence),
         asc(schema.gameCheckpoints.createdAt),
-      );
+      ));
     const evidence = await getEvidenceSummary(tx, game.id);
     const acceptedActionCorrelation = await getAcceptedActionCorrelationSummary(
       tx,

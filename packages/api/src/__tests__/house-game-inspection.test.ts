@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { beforeEach, expect, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import { completedWerewolfResultsFixture as werewolfResultsFixture, werewolfResultsFixture as werewolfOutcomeFixture } from "@influence/engine/fixtures/werewolf-results";
@@ -711,5 +712,5 @@ test("read_game includes bounded trailer state without unpublished assets or wri
     expect(page.trailer).toEqual({schemaVersion:1,mediaType:"house_highlights_trailer",status,shareHref:"/games/wolf-slug"});
     houseContent("read_game",page);
   }
-  expect(await db.select().from(schema.houseCutJobs)).toHaveLength(0);
+  expect(await loadPayloads(db.select().from(schema.houseCutJobs))).toHaveLength(0);
 });

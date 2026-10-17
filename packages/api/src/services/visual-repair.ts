@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import { and, eq, like, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { recordVisualOperationEvent } from "./visual-diagnostics.js";
@@ -15,9 +16,9 @@ export async function prepareVisualRepair(db: DrizzleDB, input: {
     if (!scene || scene.renderRevision !== input.expectedRevision || scene.status === "preparing") throw new Error("Scene revision changed or repair is already pending");
     const latest = await tx.select({ id: schema.visualScenes.id }).from(schema.visualScenes).where(and(eq(schema.visualScenes.gameId, input.gameId), eq(schema.visualScenes.roomId, scene.roomId))).orderBy(sql`${schema.visualScenes.boundarySequence} DESC`).limit(1);
     if (latest[0]?.id !== scene.id) throw new Error("Only the current room arrangement can be repaired");
-    const attempts = await tx.select({ attempt: schema.visualRenderAttempts }).from(schema.visualRenderAttempts)
+    const attempts = await loadPayloads(tx.select({ attempt: schema.visualRenderAttempts }).from(schema.visualRenderAttempts)
       .innerJoin(schema.visualRenderOperations, eq(schema.visualRenderOperations.id, schema.visualRenderAttempts.operationId))
-      .where(and(eq(schema.visualRenderOperations.gameId, input.gameId), like(schema.visualRenderOperations.operationKey, `${scene.id}:%`)));
+      .where(and(eq(schema.visualRenderOperations.gameId, input.gameId), like(schema.visualRenderOperations.operationKey, `${scene.id}:%`))));
     if (attempts.some(({ attempt }) => !attempt.reconciliation && (!attempt.receipt || attempt.receipt.chargeUncertain))) throw new Error("Reconcile uncertain paid attempts before authorizing another request");
     const candidateArtifactId = scene.candidateArtifactId ?? scene.imageArtifactId;
     if (input.mode === "rebuild") {
@@ -42,9 +43,9 @@ export async function prepareVisualAssetRepair(db: DrizzleDB, gameId: string, op
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('influence.game-turn'), hashtext(${gameId}))`);
     const [game] = await tx.select().from(schema.games).where(eq(schema.games.id, gameId)).for("update");
     if (!game || game.status !== "suspended" || !JSON.parse(game.config).visualPause) throw new Error("Game is not paused for visual repair");
-    const operations = await tx.select().from(schema.visualRenderOperations).where(and(eq(schema.visualRenderOperations.gameId, gameId), sql`(${schema.visualRenderOperations.operationKey} LIKE 'profile:%' OR ${schema.visualRenderOperations.operationKey} LIKE 'background:%')`)).for("update");
+    const operations = await loadPayloads(tx.select().from(schema.visualRenderOperations).where(and(eq(schema.visualRenderOperations.gameId, gameId), sql`(${schema.visualRenderOperations.operationKey} LIKE 'profile:%' OR ${schema.visualRenderOperations.operationKey} LIKE 'background:%')`)).for("update"));
     for (const operation of operations) {
-      const attempts = await tx.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.operationId, operation.id));
+      const attempts = await loadPayloads(tx.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.operationId, operation.id)));
       if (attempts.some((attempt) => !attempt.reconciliation && (!attempt.receipt || attempt.receipt.chargeUncertain))) throw new Error("Reconcile uncertain asset attempts before repair");
       if (attempts.some((attempt) => attempt.image)) continue;
       await tx.update(schema.visualRenderOperations).set({ generation: operation.generation + 1, budgetStartGeneration: operation.generation + 1 }).where(eq(schema.visualRenderOperations.id, operation.id));

@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -109,7 +110,7 @@ export async function getSupportedRecovery(
     return { ok: false, gameId, reason: "explicit_retrospective_recovery_required" };
   }
 
-  const checkpoints = await db
+  const checkpoints = await loadPayloads(db
     .select({
       ownerEpoch: schema.gameCheckpoints.ownerEpoch,
       lastEventSequence: schema.gameCheckpoints.lastEventSequence,
@@ -124,7 +125,7 @@ export async function getSupportedRecovery(
       eq(schema.gameCheckpoints.gameId, gameId),
       eq(schema.gameCheckpoints.checkpointKind, "phase_boundary"),
     ))
-    .orderBy(desc(schema.gameCheckpoints.lastEventSequence), desc(schema.gameCheckpoints.createdAt));
+    .orderBy(desc(schema.gameCheckpoints.lastEventSequence), desc(schema.gameCheckpoints.createdAt)));
 
   if (checkpoints.length === 0) {
     return { ok: false, gameId, reason: "missing_checkpoint" };

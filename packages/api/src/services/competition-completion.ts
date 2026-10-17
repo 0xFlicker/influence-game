@@ -1,3 +1,4 @@
+import { loadPayloads, Hydrated } from "./payload-storage.js";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { buildCompletedGameResults } from "@influence/engine";
@@ -156,9 +157,9 @@ export async function completeCompetitionGameInTransaction(
   ));
   const revisions = seatRevisionIds.length === 0
     ? []
-    : await tx.select().from(schema.agentRevisions)
-      .where(inArray(schema.agentRevisions.id, seatRevisionIds));
-  const revisionById = new Map<string, typeof schema.agentRevisions.$inferSelect>();
+    : await loadPayloads(tx.select().from(schema.agentRevisions)
+      .where(inArray(schema.agentRevisions.id, seatRevisionIds)));
+  const revisionById = new Map<string, Hydrated<typeof schema.agentRevisions.$inferSelect>>();
   for (const revision of revisions) {
     revisionById.set(revision.id, revision);
   }

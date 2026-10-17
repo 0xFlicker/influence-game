@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { renderExecutionConfig } from "@influence/engine/render-execution-config";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
@@ -73,8 +74,8 @@ describe("postgame media worker routes and leases", () => {
     });
     expect(denied.status).toBe(401);
 
-    const [row] = await db.select().from(schema.gamePostgameMedia)
-      .where(eq(schema.gamePostgameMedia.gameId, gameId));
+    const [row] = await loadPayloads(db.select().from(schema.gamePostgameMedia)
+      .where(eq(schema.gamePostgameMedia.gameId, gameId)));
     expect(row?.workerIdHash).toMatch(/^sha256:/);
     expect(row?.leaseTokenHash).toMatch(/^sha256:/);
     const combined = JSON.stringify([
@@ -101,13 +102,13 @@ describe("postgame media worker routes and leases", () => {
     await insertGame(db, { id: gameId, slug: "reconcile", status: "completed", config: { maxRounds: 8 } });
     expect((await reconcilePostgameMediaForGame(db, gameId)).outcome).toBe("waiting_inputs");
     expect((await reconcilePostgameMediaForGame(db, gameId)).outcome).toBe("waiting_inputs");
-    const rows = await db.select().from(schema.gamePostgameMedia)
-      .where(eq(schema.gamePostgameMedia.gameId, gameId));
+    const rows = await loadPayloads(db.select().from(schema.gamePostgameMedia)
+      .where(eq(schema.gamePostgameMedia.gameId, gameId)));
     expect(rows).toHaveLength(1);
     expect(rows[0]?.status).toBe("waiting_inputs");
 
     const manifest = manifestFixture(gameId);
-    await db.update(schema.gamePostgameMedia).set({
+    await db.update(schema.gamePostgameMedia).set(await storeFields({
       status: "failed",
       artifactVersion: "rv_retryable-enqueue",
       renderInputSnapshot: manifest,
@@ -118,10 +119,10 @@ describe("postgame media worker routes and leases", () => {
       musicAssetId: "golden-verdict-max",
       failureCategory: "enqueue",
       failureMessage: "temporary enqueue failure",
-    }).where(eq(schema.gamePostgameMedia.gameId, gameId));
+    }, {"renderInputSnapshot":"json-gzip"})).where(eq(schema.gamePostgameMedia.gameId, gameId));
     expect((await reconcilePostgameMediaForGame(db, gameId)).outcome).toBe("waiting_inputs");
-    const [repaired] = await db.select().from(schema.gamePostgameMedia)
-      .where(eq(schema.gamePostgameMedia.gameId, gameId));
+    const [repaired] = await loadPayloads(db.select().from(schema.gamePostgameMedia)
+      .where(eq(schema.gamePostgameMedia.gameId, gameId)));
     expect(repaired).toMatchObject({
       status: "waiting_inputs",
       renderInputSnapshot: null,
@@ -134,8 +135,8 @@ describe("postgame media worker routes and leases", () => {
     const { gameId } = await insertOwnedCompletedMediaGame(db);
 
     expect((await reconcilePostgameMediaForGame(db, gameId)).outcome).toBe("queued");
-    const [row] = await db.select().from(schema.gamePostgameMedia)
-      .where(eq(schema.gamePostgameMedia.gameId, gameId));
+    const [row] = await loadPayloads(db.select().from(schema.gamePostgameMedia)
+      .where(eq(schema.gamePostgameMedia.gameId, gameId)));
     expect(row).toMatchObject({
       status: "queued",
     });
@@ -211,8 +212,8 @@ describe("postgame media worker routes and leases", () => {
       previousRenderVersion: 1,
       currentRenderVersion: 2,
     });
-    const [row] = await db.select().from(schema.gamePostgameMedia)
-      .where(eq(schema.gamePostgameMedia.gameId, gameId));
+    const [row] = await loadPayloads(db.select().from(schema.gamePostgameMedia)
+      .where(eq(schema.gamePostgameMedia.gameId, gameId)));
     expect(row).toMatchObject({
       status: "queued",
       renderVersion: 2,
@@ -250,8 +251,8 @@ describe("postgame media worker routes and leases", () => {
     });
 
     expect(result.outcome).toBe("queued");
-    const [row] = await db.select().from(schema.gamePostgameMedia)
-      .where(eq(schema.gamePostgameMedia.gameId, gameId));
+    const [row] = await loadPayloads(db.select().from(schema.gamePostgameMedia)
+      .where(eq(schema.gamePostgameMedia.gameId, gameId)));
     expect(row).toMatchObject({
       status: "queued",
       renderVersion: 2,
@@ -521,7 +522,7 @@ async function insertQueuedMedia(db: DrizzleDB, suffix: string): Promise<string>
   const gameId = `postgame-media-${suffix}`;
   await insertGame(db, { id: gameId, slug: suffix, status: "completed", config: { maxRounds: 8 } });
   const manifest = manifestFixture(gameId);
-  await db.insert(schema.gamePostgameMedia).values({
+  await db.insert(schema.gamePostgameMedia).values(await storeFields({
     gameId,
     mediaType: "house_highlights_trailer",
     status: "queued",
@@ -534,7 +535,7 @@ async function insertQueuedMedia(db: DrizzleDB, suffix: string): Promise<string>
     rendererVersion: "remotion-v1",
     timingContractVersion: manifest.timingContractVersion,
     musicAssetId: "golden-verdict-max",
-  });
+  }, {"renderInputSnapshot":"json-gzip"}));
   return gameId;
 }
 

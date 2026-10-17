@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -123,8 +124,8 @@ describe("season admission and state", () => {
       const profile = player.agentProfileId === profileA.id ? profileA : profileB;
       const persona = JSON.parse(player.persona) as Record<string, unknown>;
       const config = JSON.parse(player.agentConfig) as Record<string, unknown>;
-      const revision = (await db.select().from(schema.agentRevisions)
-        .where(eq(schema.agentRevisions.id, player.agentRevisionId!)))[0]!;
+      const revision = (await loadPayloads(db.select().from(schema.agentRevisions)
+        .where(eq(schema.agentRevisions.id, player.agentRevisionId!))))[0]!;
       expect(persona).toMatchObject({
         name: profile.name,
         personality: profile.personality,

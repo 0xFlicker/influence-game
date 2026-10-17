@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { readEpisodePresentations } from "../services/episode-presentation.js";
 import { isViewerGame, publicGameFilter } from "../services/game-visibility.js";
 import { enabledGameKinds } from "@influence/engine/game-availability";
@@ -89,8 +90,8 @@ export function createWerewolfRoutes(db: DrizzleDB) {
       const asset = c.req.param("asset"), player = c.req.param("player");
       if (asset) {
         if (!permitted.has(asset)) return c.json({ error: "Image not available at this replay position" }, 404);
-        const [image] = await db.select({ bytes: schema.visualArtifacts.image }).from(schema.visualArtifacts)
-          .where(and(eq(schema.visualArtifacts.id, asset), eq(schema.visualArtifacts.gameId, presentation.view.gameId)));
+        const [image] = await loadPayloads(db.select({ bytes: schema.visualArtifacts.image }).from(schema.visualArtifacts)
+          .where(and(eq(schema.visualArtifacts.id, asset), eq(schema.visualArtifacts.gameId, presentation.view.gameId))));
         if (!image) return c.json({ error: "Image not found" }, 404);
         c.header("Content-Type", "image/png"); return c.body(new Uint8Array(image.bytes));
       }

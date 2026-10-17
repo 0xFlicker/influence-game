@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@influence/engine";
 import { completeCompetitionGame } from "../services/competition-completion.js";
 import { readHouseParticipation } from "../services/house-participation.js";
@@ -289,7 +290,7 @@ describe("Werewolf House integration", () => {
       expect(visible.entries.at(-1)?.thinking).toBe("PRIVATE_SPEECH_THINKING");
       const input={gameIdOrSlug:game.id,audience:"omniscient" as const,position:[visible.cursor]};
       expect(JSON.stringify(await readHouseGameThinking(db,input))).toContain("PRIVATE_SPEECH_THINKING");
-      const recorded=(await db.select().from(schema.providerLogicalCalls)).find(call=>call.actorId===step.request.actorId && call.action===`werewolf.${step.request.action}` && call.acceptedAttemptId)!;
+      const recorded=(await loadPayloads(db.select().from(schema.providerLogicalCalls))).find(call=>call.actorId===step.request.actorId && call.action===`werewolf.${step.request.action}` && call.acceptedAttemptId)!;
       expect(recorded).toBeDefined();
       await db.update(schema.providerLogicalCalls).set({acceptedValueSha256:"sha256:invalid"}).where(eq(schema.providerLogicalCalls.id,recorded.id));
       await expect(readHouseGameThinking(db,input)).rejects.toMatchObject({code:"unavailable"});

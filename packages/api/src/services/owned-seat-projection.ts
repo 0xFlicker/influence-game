@@ -1,3 +1,4 @@
+import { Hydrated } from "./payload-storage.js";
 import { randomUUID } from "node:crypto";
 import {
   resolveProviderManifestFromGameConfig,
@@ -50,7 +51,7 @@ export interface OwnedSeatOverrides {
 
 export interface OwnedSeatProjection {
   profile: ProfileRow;
-  revision: typeof schema.agentRevisions.$inferSelect;
+  revision: Hydrated<typeof schema.agentRevisions.$inferSelect>;
   persona: string;
   agentConfig: string;
 }

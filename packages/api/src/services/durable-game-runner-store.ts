@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import { and, asc, eq } from "drizzle-orm";
 import {
   Phase,
@@ -85,9 +86,9 @@ export function createDurableGameRunnerStore(
       const projection = replayCanonicalEvents(snapshot.canonicalEvents);
       const outcome = projection.retrospectiveOutcomeSource;
       if (!outcome) throw new DurableGameRunnerStoreIntegrityError("Retrospective requires a canonical outcome");
-      const turns = await db.select({ result: schema.gameTurns.commitResult }).from(schema.gameTurns)
+      const turns = await loadPayloads(db.select({ result: schema.gameTurns.commitResult }).from(schema.gameTurns)
         .where(and(eq(schema.gameTurns.gameId, gameId), eq(schema.gameTurns.status, "committed")))
-        .orderBy(asc(schema.gameTurns.turnSequence));
+        .orderBy(asc(schema.gameTurns.turnSequence)));
       const outcomeTurn = turns.find(turn => turn.result && turn.result.state.heads.eventSequence >= outcome.eventSequence)?.result;
       if (!outcomeTurn) throw new DurableGameRunnerStoreIntegrityError("Outcome has no committed owning turn");
       const transcriptThroughSequence = outcomeTurn.state.heads.dialogueSequence;
@@ -95,8 +96,8 @@ export function createDurableGameRunnerStore(
         .from(schema.transcripts).where(eq(schema.transcripts.gameId, gameId));
       const dialogueAnchors = rows.flatMap(row => row.sequence !== null && row.sequence <= transcriptThroughSequence
         ? [{ entrySequence: row.sequence, eventSequence: Math.min(row.anchor ?? 0, outcome.eventSequence) }] : []);
-      const stored = (await db.select().from(schema.gameRetrospectiveInputs)
-        .where(eq(schema.gameRetrospectiveInputs.gameId, gameId)).limit(1))[0];
+      const stored = (await loadPayloads(db.select().from(schema.gameRetrospectiveInputs)
+        .where(eq(schema.gameRetrospectiveInputs.gameId, gameId)).limit(1)))[0];
       if (projection.retrospective) {
         if (!stored) throw new DurableGameRunnerStoreIntegrityError("Canonical retrospective has no private input");
         assertRetrospectiveInputBinding(stored.input, projection.retrospective.definition);
@@ -142,14 +143,14 @@ export function createDurableGameRunnerStore(
         return { version: 1, status: "execute", intent: structuredClone(intent) };
       }
 
-      const turn = (await db.select({
+      const turn = (await loadPayloads(db.select({
         status: schema.gameTurns.status,
         intentHash: schema.gameTurns.intentHash,
         commitResult: schema.gameTurns.commitResult,
       }).from(schema.gameTurns).where(and(
         eq(schema.gameTurns.gameId, authority.gameId),
         eq(schema.gameTurns.id, intent.turnId),
-      )).limit(1))[0];
+      )).limit(1)))[0];
       if (!turn || turn.intentHash !== planned.intentHash) {
         throw new DurableGameRunnerStoreIntegrityError(
           `Planned turn ${intent.turnId} changed before runner dispatch`,

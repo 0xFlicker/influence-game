@@ -1,3 +1,4 @@
+import { storeFields, Hydrated, loadPayloads } from "../services/payload-storage.js";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -60,7 +61,7 @@ export async function insertPlayedOwnerLearningAgent(
   };
   await db.insert(schema.agentProfiles).values(profile);
   const effectiveRuntimeSnapshot = resolveFreeTrackEffectiveRuntimeSnapshot(profile);
-  await db.insert(schema.agentRevisions).values({
+  await db.insert(schema.agentRevisions).values(await storeFields({
     id: revisionId,
     agentProfileId,
     ordinal: 1,
@@ -76,7 +77,7 @@ export async function insertPlayedOwnerLearningAgent(
     },
     effectiveRuntimeSnapshot: effectiveRuntimeSnapshot as unknown as Record<string, unknown>,
     revisionPolicyVersion: REVISION_POLICY_VERSION,
-  });
+  }, {"behaviorSnapshot":"json-gzip","effectiveRuntimeSnapshot":"json-gzip"}));
   await db.update(schema.agentProfiles).set({ currentRevisionId: revisionId })
     .where(eq(schema.agentProfiles.id, agentProfileId));
   await db.insert(schema.games).values({
@@ -105,7 +106,7 @@ export async function insertPlayedOwnerLearningAgent(
     tokenUsage: "{}",
     finishedAt: completedAt,
   });
-  await db.insert(schema.agentLearningGameEvidence).values({
+  await db.insert(schema.agentLearningGameEvidence).values(await storeFields({
     id: gameEvidenceId,
     ownerUserId,
     agentProfileId,
@@ -118,7 +119,7 @@ export async function insertPlayedOwnerLearningAgent(
     candidateMoments: [],
     sourceCaptureVersion: "postgame-v2:transcript-v0:cognition-v0",
     sourceHash: `sha256:${gameId}`,
-  });
+  }, {"canonicalSnapshot":"json-gzip","candidateMoments":"json-gzip"}));
   return { ownerUserId, agentProfileId, revisionId, gameId, playerId, gameEvidenceId };
 }
 
@@ -218,7 +219,7 @@ export async function failFixtureOwnerLearningReview(
     retryable: boolean;
     phase?: OwnerLearningExecutionPhase;
     now?: Date;
-    reviewUpdates?: Partial<typeof schema.agentLearningReviews.$inferInsert>;
+    reviewUpdates?: Partial<Hydrated<typeof schema.agentLearningReviews.$inferInsert>>;
     call?: { id: string; ordinal: number; attemptOrdinal: number };
     diagnosticId?: string;
     error?: Error;
@@ -253,18 +254,18 @@ export async function failFixtureOwnerLearningReview(
   });
 
   await db.transaction(async (tx) => {
-    const review = (await tx.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, input.reviewId)).limit(1))[0];
+    const review = (await loadPayloads(tx.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, input.reviewId)).limit(1)))[0];
     if (!review) throw new Error("Owner learning fixture review not found");
     if (input.call && responseObservedAt) {
-      await tx.update(schema.agentLearningReviewCalls).set({
+      await tx.update(schema.agentLearningReviewCalls).set(await storeFields({
         providerResponseId: `fixture-response-${prepared.diagnostic.id}`,
         providerResponseObservedAt: responseObservedAt,
         providerResponseSha256: prepared.providerResponseSha256,
         responseEvidenceBody: prepared.body,
         responseEvidenceBodySha256: prepared.bodySha256,
         responseEvidenceByteLength: prepared.byteLength,
-      }).where(eq(schema.agentLearningReviewCalls.id, input.call.id));
+      }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"})).where(eq(schema.agentLearningReviewCalls.id, input.call.id));
     }
     await enqueueOwnerLearningFailureEvidence(tx, {
       reviewId: input.reviewId,
@@ -308,14 +309,14 @@ export async function failFixtureOwnerLearningReview(
       payload: event.payload,
       occurredAt: event.occurredAt,
     });
-    await tx.update(schema.agentLearningReviews).set({
+    await tx.update(schema.agentLearningReviews).set(await storeFields({
       ...input.reviewUpdates,
       analysisStatus: "failed",
       safeFailureCode: input.failureCode,
       retryable: input.retryable,
       executionPhase: phase,
       updatedAt: nowIso,
-    }).where(eq(schema.agentLearningReviews.id, input.reviewId));
+    }, {"checkpoint":"json-gzip","result":"json-gzip"})).where(eq(schema.agentLearningReviews.id, input.reviewId));
   });
   return prepared.diagnostic.id;
 }

@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "./payload-storage.js";
 import { randomUUID } from "crypto";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
@@ -228,14 +229,14 @@ describe("owner learning failure evidence", () => {
       validation: { code: "proposal_contract" },
       now: new Date("2026-08-27T22:00:01.000Z"),
     });
-    await db.update(schema.agentLearningReviewCalls).set({
+    await db.update(schema.agentLearningReviewCalls).set(await storeFields({
       providerResponseId: "resp-raw-receipt",
       providerResponseObservedAt: "2026-08-27T21:59:59.000Z",
       providerResponseSha256: "sha256:raw-provider-response",
       responseEvidenceBody: prepared.body,
       responseEvidenceBodySha256: prepared.bodySha256,
       responseEvidenceByteLength: prepared.byteLength,
-    }).where(eq(schema.agentLearningReviewCalls.id, callId));
+    }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"})).where(eq(schema.agentLearningReviewCalls.id, callId));
 
     await persistOwnerLearningFailureEvidence(db, {
       reviewId,
@@ -249,12 +250,12 @@ describe("owner learning failure evidence", () => {
       state: "pending",
       storageKey: null,
     });
-    expect((await db.select().from(schema.agentLearningReviewFailureEvidenceOutbox))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewFailureEvidenceOutbox)))[0]).toMatchObject({
       diagnosticId: prepared.diagnostic.id,
       body: prepared.body,
     });
-    expect((await db.select().from(schema.agentLearningReviewCalls)
-      .where(eq(schema.agentLearningReviewCalls.id, callId)))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewCalls)
+      .where(eq(schema.agentLearningReviewCalls.id, callId))))[0]).toMatchObject({
       evidenceState: "pending",
       failureDiagnosticId: prepared.diagnostic.id,
       providerResponseId: "resp-raw-receipt",
@@ -269,15 +270,15 @@ describe("owner learning failure evidence", () => {
       bucket: "owner-learning-private",
     })).toEqual({ attempted: 1, stored: 1, failed: 0 });
 
-    expect(await db.select().from(schema.agentLearningReviewFailureEvidenceOutbox)).toHaveLength(0);
+    expect(await loadPayloads(db.select().from(schema.agentLearningReviewFailureEvidenceOutbox))).toHaveLength(0);
     expect((await db.select().from(schema.agentLearningReviewFailureManifests))[0]).toMatchObject({
       state: "stored",
       storageProvider: "linode_object_storage",
       storageBucket: "owner-learning-private",
       storageKey: prepared.storageKey,
     });
-    expect((await db.select().from(schema.agentLearningReviewCalls)
-      .where(eq(schema.agentLearningReviewCalls.id, callId)))[0]?.evidenceState).toBe("stored");
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewCalls)
+      .where(eq(schema.agentLearningReviewCalls.id, callId))))[0]?.evidenceState).toBe("stored");
 
     const denied = await readOwnerLearningFailureEvidence(db, {
       reviewId,
@@ -395,7 +396,7 @@ describe("owner learning failure evidence", () => {
       bucket: "owner-learning-private",
     })).toEqual({ attempted: 1, stored: 0, failed: 1 });
 
-    const outbox = (await db.select().from(schema.agentLearningReviewFailureEvidenceOutbox))[0];
+    const outbox = (await loadPayloads(db.select().from(schema.agentLearningReviewFailureEvidenceOutbox)))[0];
     expect(outbox?.body).toBe(prepared.body);
     expect(outbox?.body).toContain("DURABLE_OUTBOX_SENTINEL");
     expect(outbox?.reconciliationAttemptCount).toBe(1);
@@ -407,8 +408,8 @@ describe("owner learning failure evidence", () => {
     });
     expect((await db.select().from(schema.agentLearningReviewFailureManifests))[0]?.lastStorageError)
       .not.toContain("STORAGE_SECRET_SENTINEL");
-    expect((await db.select().from(schema.agentLearningReviewCalls)
-      .where(eq(schema.agentLearningReviewCalls.id, callId)))[0]?.evidenceState).toBe("degraded");
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewCalls)
+      .where(eq(schema.agentLearningReviewCalls.id, callId))))[0]?.evidenceState).toBe("degraded");
 
     const storageEnvNames = [
       "LINODE_PRIVATE_CONTENT_ENDPOINT",
@@ -451,15 +452,15 @@ describe("owner learning failure evidence", () => {
       bucket: "owner-learning-private",
     })).toEqual({ attempted: 1, stored: 1, failed: 0 });
 
-    expect(await db.select().from(schema.agentLearningReviewFailureEvidenceOutbox)).toHaveLength(0);
+    expect(await loadPayloads(db.select().from(schema.agentLearningReviewFailureEvidenceOutbox))).toHaveLength(0);
     expect((await db.select().from(schema.agentLearningReviewFailureManifests))[0]).toMatchObject({
       state: "stored",
       storageKey: prepared.storageKey,
       bodySha256: prepared.bodySha256,
       byteLength: prepared.byteLength,
     });
-    expect((await db.select().from(schema.agentLearningReviewCalls)
-      .where(eq(schema.agentLearningReviewCalls.id, callId)))[0]?.evidenceState).toBe("stored");
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewCalls)
+      .where(eq(schema.agentLearningReviewCalls.id, callId))))[0]?.evidenceState).toBe("stored");
     expect(recoveredStorage.objects.get(`owner-learning-private/${prepared.storageKey}`)?.body)
       .toBe(prepared.body);
   });
@@ -482,7 +483,7 @@ describe("owner learning failure evidence", () => {
       bucket: "owner-learning-private",
     })).toEqual({ attempted: 1, stored: 0, failed: 1 });
 
-    expect((await db.select().from(schema.agentLearningReviewFailureEvidenceOutbox))[0])
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewFailureEvidenceOutbox)))[0])
       .toMatchObject({ diagnosticId: prepared.diagnostic.id, body: prepared.body });
     expect((await db.select().from(schema.agentLearningReviewFailureManifests))[0])
       .toMatchObject({
@@ -604,7 +605,7 @@ describe("owner learning failure evidence", () => {
       completion: null,
     };
     const firstId = randomUUID();
-    await db.insert(schema.agentLearningReviewCalls).values({
+    await db.insert(schema.agentLearningReviewCalls).values(await storeFields({
       id: firstId,
       reviewId,
       ordinal: 4,
@@ -613,10 +614,10 @@ describe("owner learning failure evidence", () => {
       stage: "drafting_recommendations",
       inputPolicyHash: "sha256:first",
       validatedCheckpoint: checkpoint,
-    });
+    }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"}));
     let rejected = false;
     try {
-      await db.insert(schema.agentLearningReviewCalls).values({
+      await db.insert(schema.agentLearningReviewCalls).values(await storeFields({
         id: randomUUID(),
         reviewId,
         ordinal: 4,
@@ -626,7 +627,7 @@ describe("owner learning failure evidence", () => {
         stage: "drafting_recommendations",
         inputPolicyHash: "sha256:second",
         validatedCheckpoint: checkpoint,
-      });
+      }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"}));
     } catch {
       rejected = true;
     }

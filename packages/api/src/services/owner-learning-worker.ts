@@ -1,3 +1,4 @@
+import { Hydrated, loadPayloads, storeFields } from "./payload-storage.js";
 import { currentReviewIdentity } from "./owner-learning-game.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type {
@@ -301,23 +302,23 @@ export async function reserveOwnerLearningCall(
   const reservation = await db.transaction(async (tx): Promise<OwnerLearningCallReservation | null> => {
     await lockReview(tx, input.reviewId);
     const review = await requireActiveLease(tx, input.reviewId, input.leaseToken, nowIso);
-    const latest = (await tx.select().from(schema.agentLearningReviewCalls)
+    const latest = (await loadPayloads(tx.select().from(schema.agentLearningReviewCalls)
       .where(eq(schema.agentLearningReviewCalls.reviewId, input.reviewId))
       .orderBy(
         desc(schema.agentLearningReviewCalls.ordinal),
         desc(schema.agentLearningReviewCalls.attemptOrdinal),
-      ).limit(1))[0] ?? null;
+      ).limit(1)))[0] ?? null;
     const resumable = resumableReservation(latest, input.inputPolicyHash, input.stage, now);
     if (resumable) {
       if (latest?.requestEvidenceSha256 && latest.requestEvidenceSha256 !== preparedRequest.bodySha256) {
         throw new OwnerLearningWorkerError("call_state_conflict");
       }
       if (latest && latest.requestEvidenceBody == null) {
-        await tx.update(schema.agentLearningReviewCalls).set({
+        await tx.update(schema.agentLearningReviewCalls).set(await storeFields({
           requestEvidenceBody: preparedRequest.body,
           requestEvidenceSha256: preparedRequest.bodySha256,
           requestEvidenceByteLength: preparedRequest.byteLength,
-        }).where(eq(schema.agentLearningReviewCalls.id, latest.id));
+        }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"})).where(eq(schema.agentLearningReviewCalls.id, latest.id));
       }
       return resumable;
     }
@@ -394,7 +395,7 @@ export async function reserveOwnerLearningCall(
       ) {
         throw new OwnerLearningWorkerError("call_state_conflict");
       }
-      await tx.insert(schema.agentLearningReviewCalls).values({
+      await tx.insert(schema.agentLearningReviewCalls).values(await storeFields({
         id: callId,
         reviewId: input.reviewId,
         ordinal: retryTarget.ordinal,
@@ -420,7 +421,7 @@ export async function reserveOwnerLearningCall(
           effectiveTier: persistableEffectiveTier(stagedRetryResponse.effectiveTier),
         }),
         reservedAt: nowIso,
-      });
+      }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"}));
       await tx.update(schema.agentLearningReviews).set({
         stage: input.stage,
         capacitySubstatus: null,
@@ -459,7 +460,7 @@ export async function reserveOwnerLearningCall(
 
     const ordinal = review.logicalCallCount + 1;
     const callId = input.idFactory?.() ?? randomUUID();
-    await tx.insert(schema.agentLearningReviewCalls).values({
+    await tx.insert(schema.agentLearningReviewCalls).values(await storeFields({
       id: callId,
       reviewId: input.reviewId,
       ordinal,
@@ -474,7 +475,7 @@ export async function reserveOwnerLearningCall(
       requestEvidenceSha256: preparedRequest.bodySha256,
       requestEvidenceByteLength: preparedRequest.byteLength,
       reservedAt: nowIso,
-    });
+    }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"}));
     await tx.update(schema.agentLearningReviews).set({
       logicalCallCount: ordinal,
       diveCount: input.isDive ? review.diveCount + 1 : review.diveCount,
@@ -631,7 +632,7 @@ export async function persistOwnerLearningProviderResponse(
     const receipt = recoveredOutcome?.kind === "response"
       ? recoveredOutcome.response
       : recoveredOutcome?.kind === "error" ? recoveredOutcome.error : null;
-    const updated = await tx.update(schema.agentLearningReviewCalls).set({
+    const updated = await tx.update(schema.agentLearningReviewCalls).set(await storeFields({
       ...(!terminalCall && { state: "dispatched" as const }),
       dispatchedAt: call.dispatchedAt ?? nowIso,
       providerResponseId,
@@ -652,15 +653,15 @@ export async function persistOwnerLearningProviderResponse(
         rateCardVersion: receipt.costReceipt.rateCardVersion ?? null,
         pricedAt: receipt.costReceipt.pricedAt ?? null,
       }),
-    }).where(and(
+    }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"})).where(and(
       eq(schema.agentLearningReviewCalls.id, input.callId),
       eq(schema.agentLearningReviewCalls.reviewId, input.reviewId),
       eq(schema.agentLearningReviewCalls.state, call.state),
     )).returning({ id: schema.agentLearningReviewCalls.id });
     if (updated.length !== 1) throw new OwnerLearningWorkerError("call_state_conflict");
     if (terminalCall && newObservation) {
-      const review = (await tx.select().from(schema.agentLearningReviews)
-        .where(eq(schema.agentLearningReviews.id, input.reviewId)).limit(1))[0];
+      const review = (await loadPayloads(tx.select().from(schema.agentLearningReviews)
+        .where(eq(schema.agentLearningReviews.id, input.reviewId)).limit(1)))[0];
       if (!review) throw new OwnerLearningWorkerError("call_state_conflict");
       const updatedCall = await requireCall(tx, input.reviewId, input.callId);
       const recoveredProviderError = recoveredOutcome?.kind === "error"
@@ -764,18 +765,18 @@ export async function persistOwnerLearningProviderResponse(
         && review.retryTargetAttemptId === call.id
         && terminalRetryDisposition
       ) {
-        const retryAttempt = (await tx.select().from(schema.agentLearningReviewCalls).where(and(
+        const retryAttempt = (await loadPayloads(tx.select().from(schema.agentLearningReviewCalls).where(and(
           eq(schema.agentLearningReviewCalls.reviewId, review.id),
           eq(schema.agentLearningReviewCalls.retryOfAttemptId, call.id),
-        )).orderBy(desc(schema.agentLearningReviewCalls.attemptOrdinal)).limit(1))[0] ?? null;
+        )).orderBy(desc(schema.agentLearningReviewCalls.attemptOrdinal)).limit(1)))[0] ?? null;
         if (retryAttempt?.state === "succeeded") return ledger.providerResponse;
         if (retryAttempt) {
-          await tx.update(schema.agentLearningReviewCalls).set({
+          await tx.update(schema.agentLearningReviewCalls).set(await storeFields({
             state: "failed",
             validatedCheckpoint: null,
             safeFailureCode: failureCode,
             completedAt: nowIso,
-          }).where(and(
+          }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"})).where(and(
             eq(schema.agentLearningReviewCalls.id, retryAttempt.id),
             eq(schema.agentLearningReviewCalls.reviewId, review.id),
             inArray(schema.agentLearningReviewCalls.state, ["reserved", "dispatched"]),
@@ -868,7 +869,7 @@ async function persistDispatchIntent(
       attemptedTier: event.attemptedTier,
     });
     const fallback = event.attemptedTier === "auto";
-    await tx.update(schema.agentLearningReviewCalls).set({
+    await tx.update(schema.agentLearningReviewCalls).set(await storeFields({
       state: "dispatched",
       transportReceipts: receipts,
       dispatchedAt: call.dispatchedAt ?? nowIso,
@@ -878,7 +879,7 @@ async function persistDispatchIntent(
             capacityPath: "standard_fallback" as const,
           }
         : {}),
-    }).where(eq(schema.agentLearningReviewCalls.id, call.id));
+    }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"})).where(eq(schema.agentLearningReviewCalls.id, call.id));
     await tx.update(schema.agentLearningReviews).set({
       capacitySubstatus: fallback ? "using_standard_capacity" : review.capacitySubstatus,
       updatedAt: nowIso,
@@ -911,8 +912,8 @@ async function persistTerminalOutcome(
   const nowIso = new Date(event.completedAtMs).toISOString();
   await db.transaction(async (tx) => {
     await lockReview(tx, input.reviewId);
-    const review = (await tx.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, input.reviewId)).limit(1))[0];
+    const review = (await loadPayloads(tx.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, input.reviewId)).limit(1)))[0];
     if (!review) throw new OwnerLearningWorkerError("call_state_conflict");
     const call = await requireCall(tx, input.reviewId, input.callId);
     const receipts = [...call.transportReceipts];
@@ -1094,7 +1095,7 @@ export async function completeOwnerLearningCall(
         providerRequestId: call.finalProviderRequestId,
         providerResponseId: input.providerResponse?.providerResponseId,
       });
-      const failed = await tx.update(schema.agentLearningReviewCalls).set({
+      const failed = await tx.update(schema.agentLearningReviewCalls).set(await storeFields({
         state: "failed",
         effectiveTier: persistableEffectiveTier(input.effectiveTier),
         ...(!locallyRecoveredAttempt && {
@@ -1111,7 +1112,7 @@ export async function completeOwnerLearningCall(
         safeFailureCode: "tier_mismatch",
         ...persistedProviderResponseReceipt(input.providerResponse),
         completedAt: nowIso,
-      }).where(and(
+      }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"})).where(and(
         eq(schema.agentLearningReviewCalls.id, call.id),
         eq(schema.agentLearningReviewCalls.reviewId, input.reviewId),
         inArray(schema.agentLearningReviewCalls.state, ["reserved", "dispatched"]),
@@ -1127,7 +1128,7 @@ export async function completeOwnerLearningCall(
       });
       return false;
     }
-    const succeeded = await tx.update(schema.agentLearningReviewCalls).set({
+    const succeeded = await tx.update(schema.agentLearningReviewCalls).set(await storeFields({
       state: "succeeded",
       validatedCheckpoint: input.validatedCheckpoint,
       effectiveTier: input.effectiveTier,
@@ -1144,7 +1145,7 @@ export async function completeOwnerLearningCall(
       }),
       ...persistedProviderResponseReceipt(input.providerResponse),
       completedAt: nowIso,
-    }).where(and(
+    }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"})).where(and(
       eq(schema.agentLearningReviewCalls.id, call.id),
       eq(schema.agentLearningReviewCalls.reviewId, input.reviewId),
       inArray(schema.agentLearningReviewCalls.state, ["reserved", "dispatched"]),
@@ -1201,12 +1202,12 @@ export async function failOwnerLearningReview(
     if (input.callId) {
       const demoteValidatedAttempt = input.failureCode === "internal_error"
         && input.diagnostic?.phase === "checkpoint_persistence";
-      await tx.update(schema.agentLearningReviewCalls).set({
+      await tx.update(schema.agentLearningReviewCalls).set(await storeFields({
         state: "failed",
         ...(demoteValidatedAttempt && { validatedCheckpoint: null }),
         safeFailureCode: input.failureCode,
         completedAt: nowIso,
-      }).where(and(
+      }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"})).where(and(
         eq(schema.agentLearningReviewCalls.id, input.callId),
         eq(schema.agentLearningReviewCalls.reviewId, input.reviewId),
         inArray(
@@ -1230,7 +1231,7 @@ export async function failOwnerLearningReview(
           ...(input.preservedProviderObservation.redactionCredentialValues ?? []),
           ...(response.redactionCredentialValues ?? []),
         ]);
-        await tx.update(schema.agentLearningReviewCalls).set({
+        await tx.update(schema.agentLearningReviewCalls).set(await storeFields({
           providerResponseId: response.providerResponseId
             ?? input.preservedProviderObservation.providerResponseId,
           providerResponseObservedAt: response.responseObservedAt
@@ -1240,7 +1241,7 @@ export async function failOwnerLearningReview(
           responseEvidenceBody: prepared.body,
           responseEvidenceBodySha256: prepared.bodySha256,
           responseEvidenceByteLength: prepared.byteLength,
-        }).where(and(
+        }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"})).where(and(
           eq(schema.agentLearningReviewCalls.id, evidenceCall.id),
           eq(schema.agentLearningReviewCalls.reviewId, input.reviewId),
           inArray(schema.agentLearningReviewCalls.state, ["reserved", "dispatched", "failed"]),
@@ -1250,7 +1251,7 @@ export async function failOwnerLearningReview(
         (total, receipt) => total + (receipt.latencyMs ?? 0),
         0,
       );
-      await tx.update(schema.agentLearningReviewCalls).set({
+      await tx.update(schema.agentLearningReviewCalls).set(await storeFields({
         effectiveTier: persistableEffectiveTier(response.effectiveTier),
         capacityPath: evidenceCall.flex429Count === 3 ? "standard_fallback" : "flex",
         tokenReceipt: response.tokenReceipt,
@@ -1262,7 +1263,7 @@ export async function failOwnerLearningReview(
         rateCardVersion: response.costReceipt.rateCardVersion ?? null,
         pricedAt: response.costReceipt.pricedAt ?? null,
         ...persistedProviderResponseReceipt(response),
-      }).where(and(
+      }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"})).where(and(
         eq(schema.agentLearningReviewCalls.id, evidenceCall.id),
         eq(schema.agentLearningReviewCalls.reviewId, input.reviewId),
         inArray(schema.agentLearningReviewCalls.state, ["reserved", "dispatched", "failed"]),
@@ -1332,7 +1333,7 @@ async function failOwnerLearningOutputCall(
           providerRequestId: call.finalProviderRequestId,
           providerResponseId: input.response.providerResponseId,
         });
-    const failed = await tx.update(schema.agentLearningReviewCalls).set({
+    const failed = await tx.update(schema.agentLearningReviewCalls).set(await storeFields({
       state: "failed",
       effectiveTier: persistableEffectiveTier(input.response.effectiveTier),
       ...(!locallyRecoveredAttempt && {
@@ -1349,7 +1350,7 @@ async function failOwnerLearningOutputCall(
       safeFailureCode: effectiveTierValid ? input.failureCode : "tier_mismatch",
       ...persistedProviderResponseReceipt(input.response),
       completedAt: nowIso,
-    }).where(and(
+    }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"})).where(and(
       eq(schema.agentLearningReviewCalls.id, input.callId),
       eq(schema.agentLearningReviewCalls.reviewId, input.reviewId),
       inArray(schema.agentLearningReviewCalls.state, ["reserved", "dispatched"]),
@@ -1402,12 +1403,12 @@ export async function persistOwnerLearningCheckpoint(
     if (review.checkpointHash !== input.expectedCheckpointHash) {
       throw new OwnerLearningWorkerError("call_state_conflict");
     }
-    const updated = await tx.update(schema.agentLearningReviews).set({
+    const updated = await tx.update(schema.agentLearningReviews).set(await storeFields({
       checkpoint: input.checkpoint,
       checkpointHash,
       stage: input.checkpoint.lastCompletedStage,
       updatedAt: nowIso,
-    }).where(and(
+    }, {"checkpoint":"json-gzip","result":"json-gzip"})).where(and(
       activeLeaseWhere(input.reviewId, input.leaseToken, nowIso),
       input.expectedCheckpointHash == null
         ? sql`${schema.agentLearningReviews.checkpointHash} IS NULL`
@@ -1453,8 +1454,8 @@ export async function finalizeOwnerLearningReview(
   return db.transaction(async (tx) => {
     await lockReview(tx, input.reviewId);
     const noChange = input.result.noChange != null;
-    const review = (await tx.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, input.reviewId)).limit(1))[0];
+    const review = (await loadPayloads(tx.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, input.reviewId)).limit(1)))[0];
     if (!review) throw new OwnerLearningWorkerError("stale_or_invalid_lease");
     if (review.analysisStatus === (noChange ? "no_change" : "ready")) {
       return review.checkpointHash === input.expectedCheckpointHash
@@ -1470,7 +1471,7 @@ export async function finalizeOwnerLearningReview(
     ) {
       throw new OwnerLearningWorkerError("stale_or_invalid_lease");
     }
-    const updated = await tx.update(schema.agentLearningReviews).set({
+    const updated = await tx.update(schema.agentLearningReviews).set(await storeFields({
       analysisStatus: noChange ? "no_change" : "ready",
       stage: "complete",
       result: input.result,
@@ -1484,7 +1485,7 @@ export async function finalizeOwnerLearningReview(
       safeFailureCode: null,
       retryable: false,
       updatedAt: nowIso,
-    }).where(and(
+    }, {"checkpoint":"json-gzip","result":"json-gzip"})).where(and(
       activeLeaseWhere(input.reviewId, input.leaseToken, nowIso),
       eq(schema.agentLearningReviews.checkpointHash, input.expectedCheckpointHash),
     )).returning({ id: schema.agentLearningReviews.id });
@@ -1525,10 +1526,10 @@ export async function retryOwnerLearningReview(
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT id FROM agent_profiles WHERE id = ${identity.agentProfileId} FOR UPDATE`);
     await lockReview(tx, input.reviewId);
-    const review = (await tx.select().from(schema.agentLearningReviews).where(and(
+    const review = (await loadPayloads(tx.select().from(schema.agentLearningReviews).where(and(
       eq(schema.agentLearningReviews.id, input.reviewId),
       eq(schema.agentLearningReviews.ownerUserId, input.ownerUserId),
-    )).limit(1))[0];
+    )).limit(1)))[0];
     const currentProfile = review && review.agentProfileId === identity.agentProfileId
       ? (await tx.select()
         .from(schema.agentProfiles)
@@ -1536,12 +1537,12 @@ export async function retryOwnerLearningReview(
         .limit(1))[0]
       : null;
     const latestAttempt = review
-      ? (await tx.select().from(schema.agentLearningReviewCalls)
+      ? (await loadPayloads(tx.select().from(schema.agentLearningReviewCalls)
         .where(eq(schema.agentLearningReviewCalls.reviewId, review.id))
         .orderBy(
           desc(schema.agentLearningReviewCalls.ordinal),
           desc(schema.agentLearningReviewCalls.attemptOrdinal),
-        ).limit(1))[0] ?? null
+        ).limit(1)))[0] ?? null
       : null;
     const stagedRetryOutcome = latestAttempt == null
       ? null
@@ -1760,7 +1761,7 @@ export async function runClaimedOwnerLearningReview(
       });
     }, leaseMonitorIntervalMs);
   };
-  const review = (await db.select({
+  const review = (await loadPayloads(db.select({
     id: schema.agentLearningReviews.id,
     ownerUserId: schema.agentLearningReviews.ownerUserId,
     agentProfileId: schema.agentLearningReviews.agentProfileId,
@@ -1785,7 +1786,7 @@ export async function runClaimedOwnerLearningReview(
   }).from(schema.agentLearningReviews)
     .innerJoin(schema.agentProfiles, eq(schema.agentLearningReviews.agentProfileId, schema.agentProfiles.id))
     .leftJoin(schema.agentRevisions, eq(schema.agentLearningReviews.reviewedRevisionId, schema.agentRevisions.id))
-    .where(eq(schema.agentLearningReviews.id, claim.reviewId)).limit(1))[0];
+    .where(eq(schema.agentLearningReviews.id, claim.reviewId)).limit(1)))[0];
   if (!review) {
     options.signal?.removeEventListener("abort", abortFromCaller);
     return false;
@@ -1898,11 +1899,11 @@ export async function runClaimedOwnerLearningReview(
       diveCount: harnessCounters.diveCount,
       async resumeValidatedTurn(turn) {
         const inputPolicyHash = ownerLearningInputPolicyHash(turn);
-        const call = (await db.select().from(schema.agentLearningReviewCalls).where(and(
+        const call = (await loadPayloads(db.select().from(schema.agentLearningReviewCalls).where(and(
           eq(schema.agentLearningReviewCalls.reviewId, review.id),
           eq(schema.agentLearningReviewCalls.ordinal, turn.ordinal),
           eq(schema.agentLearningReviewCalls.state, "succeeded"),
-        )).limit(1))[0] ?? null;
+        )).limit(1)))[0] ?? null;
         if (!call || call.state !== "succeeded") return null;
         if (
           call.stage !== turn.stage
@@ -2582,7 +2583,7 @@ async function failProviderCall(
       providerRequestId: terminalOutcome?.providerRequestId ?? call.finalProviderRequestId,
       providerResponseId: input.error.capture?.providerResponseId,
     });
-    await tx.update(schema.agentLearningReviewCalls).set({
+    await tx.update(schema.agentLearningReviewCalls).set(await storeFields({
       state: "failed",
       ...(recoveredCall && {
         transportReceipts: call.transportReceipts,
@@ -2600,7 +2601,7 @@ async function failProviderCall(
       safeFailureCode: input.error.code,
       ...persistedProviderResponseReceipt(input.error.capture),
       completedAt: nowIso,
-    }).where(and(
+    }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"})).where(and(
       eq(schema.agentLearningReviewCalls.id, input.callId),
       eq(schema.agentLearningReviewCalls.reviewId, input.reviewId),
       inArray(schema.agentLearningReviewCalls.state, ["reserved", "dispatched"]),
@@ -2665,8 +2666,8 @@ async function releaseResolvedOwnerLearningLease(
 }
 
 type ReviewTx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
-type ReviewRow = typeof schema.agentLearningReviews.$inferSelect;
-type CallRow = typeof schema.agentLearningReviewCalls.$inferSelect;
+type ReviewRow = Hydrated<typeof schema.agentLearningReviews.$inferSelect>;
+type CallRow = Hydrated<typeof schema.agentLearningReviewCalls.$inferSelect>;
 
 function withCapturedTerminalOutcome(
   call: CallRow,
@@ -2730,13 +2731,13 @@ async function failOwnerLearningEvidenceDriftUnderLease(
   nowIso: string,
   input: { phase?: OwnerLearningExecutionPhase; message?: string; error?: unknown } = {},
 ): Promise<void> {
-  const call = (await tx.select().from(schema.agentLearningReviewCalls)
+  const call = (await loadPayloads(tx.select().from(schema.agentLearningReviewCalls)
     .where(eq(schema.agentLearningReviewCalls.reviewId, review.id))
     .orderBy(
       desc(schema.agentLearningReviewCalls.ordinal),
       desc(schema.agentLearningReviewCalls.attemptOrdinal),
     )
-    .limit(1))[0] ?? null;
+    .limit(1)))[0] ?? null;
   if (call && (call.state === "reserved" || call.state === "dispatched")) {
     await tx.update(schema.agentLearningReviewCalls).set({
       state: "failed",
@@ -2851,12 +2852,12 @@ async function ownerLearningHarnessStartCounters(
     "id" | "logicalCallCount" | "diveCount" | "checkpoint" | "retryTargetAttemptId"
   >,
 ): Promise<{ logicalCallCount: number; diveCount: number }> {
-  const latest = (await db.select().from(schema.agentLearningReviewCalls)
+  const latest = (await loadPayloads(db.select().from(schema.agentLearningReviewCalls)
     .where(eq(schema.agentLearningReviewCalls.reviewId, review.id))
     .orderBy(
       desc(schema.agentLearningReviewCalls.ordinal),
       desc(schema.agentLearningReviewCalls.attemptOrdinal),
-    ).limit(1))[0] ?? null;
+    ).limit(1)))[0] ?? null;
   const checkpointCounters = review.checkpoint
     ? {
         logicalCallCount: review.checkpoint.logicalCallCount,
@@ -2905,12 +2906,12 @@ async function reconcileExpiredCall(
   reviewId: string,
   nowIso: string,
 ): Promise<"resumable" | "failed"> {
-  const latest = (await tx.select().from(schema.agentLearningReviewCalls)
+  const latest = (await loadPayloads(tx.select().from(schema.agentLearningReviewCalls)
     .where(eq(schema.agentLearningReviewCalls.reviewId, reviewId))
     .orderBy(
       desc(schema.agentLearningReviewCalls.ordinal),
       desc(schema.agentLearningReviewCalls.attemptOrdinal),
-    ).limit(1))[0] ?? null;
+    ).limit(1)))[0] ?? null;
   const lastReceipt = latest?.transportReceipts.at(-1);
   if (
     latest?.state === "dispatched"
@@ -2925,7 +2926,7 @@ async function reconcileExpiredCall(
   if (recoveredOutcome?.kind === "response") return "resumable";
   if (latest && recoveredOutcome?.kind === "error") {
     const error = recoveredOutcome.error;
-    await tx.update(schema.agentLearningReviewCalls).set({
+    await tx.update(schema.agentLearningReviewCalls).set(await storeFields({
       state: "failed",
       effectiveTier: persistableEffectiveTier(error.effectiveTier),
       tokenReceipt: error.tokenReceipt ?? null,
@@ -2938,12 +2939,12 @@ async function reconcileExpiredCall(
       safeFailureCode: error.code,
       ...persistedProviderResponseReceipt(error.capture),
       completedAt: nowIso,
-    }).where(and(
+    }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"})).where(and(
       eq(schema.agentLearningReviewCalls.id, latest.id),
       inArray(schema.agentLearningReviewCalls.state, ["reserved", "dispatched"]),
     ));
-    const review = (await tx.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)).limit(1))[0];
+    const review = (await loadPayloads(tx.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId)).limit(1)))[0];
     if (review) {
       const diagnostic = createOwnerLearningFailureDiagnostic({
         phase: "provider_invocation",
@@ -2985,8 +2986,8 @@ async function reconcileExpiredCall(
     safeFailureCode: failureCode,
     completedAt: nowIso,
   }).where(eq(schema.agentLearningReviewCalls.id, latest.id));
-  const review = (await tx.select().from(schema.agentLearningReviews)
-    .where(eq(schema.agentLearningReviews.id, reviewId)).limit(1))[0];
+  const review = (await loadPayloads(tx.select().from(schema.agentLearningReviews)
+    .where(eq(schema.agentLearningReviews.id, reviewId)).limit(1)))[0];
   if (review) {
     const diagnostic = createOwnerLearningFailureDiagnostic({
       phase: review.executionPhase ?? "provider_invocation",
@@ -3112,10 +3113,10 @@ async function loadStagedProviderOutcome(
   call: CallRow;
   outcome: ReturnType<typeof stagedProviderOutcome>;
 } | null> {
-  const call = (await db.select().from(schema.agentLearningReviewCalls).where(and(
+  const call = (await loadPayloads(db.select().from(schema.agentLearningReviewCalls).where(and(
     eq(schema.agentLearningReviewCalls.id, callId),
     eq(schema.agentLearningReviewCalls.reviewId, reviewId),
-  )).limit(1))[0] ?? null;
+  )).limit(1)))[0] ?? null;
   if (!call) return null;
   const outcome = stagedProviderOutcome(call);
   return { call, outcome };
@@ -3178,10 +3179,10 @@ async function requireCall(
   reviewId: string,
   callId: string,
 ): Promise<CallRow> {
-  const call = (await db.select().from(schema.agentLearningReviewCalls).where(and(
+  const call = (await loadPayloads(db.select().from(schema.agentLearningReviewCalls).where(and(
     eq(schema.agentLearningReviewCalls.id, callId),
     eq(schema.agentLearningReviewCalls.reviewId, reviewId),
-  )).limit(1))[0];
+  )).limit(1)))[0];
   if (!call) throw new OwnerLearningWorkerError("call_state_conflict");
   return call;
 }
@@ -3192,8 +3193,8 @@ async function requireActiveLease(
   leaseToken: string,
   nowIso: string,
 ): Promise<ReviewRow> {
-  const review = (await db.select().from(schema.agentLearningReviews)
-    .where(activeLeaseWhere(reviewId, leaseToken, nowIso)).limit(1))[0];
+  const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+    .where(activeLeaseWhere(reviewId, leaseToken, nowIso)).limit(1)))[0];
   if (!review) throw new OwnerLearningWorkerError("stale_or_invalid_lease");
   return review;
 }

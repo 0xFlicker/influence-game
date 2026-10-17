@@ -1,3 +1,4 @@
+import { Hydrated, loadPayloads } from "./payload-storage.js";
 import {
   and,
   desc,
@@ -23,7 +24,7 @@ import { getPersistedGameProjection } from "./game-projection-read-model.js";
 import { getGameWatchState } from "./game-watch-state.js";
 
 type PublicWatchIntelligenceDB = Pick<DrizzleDB, "select">;
-type ArtifactRow = typeof schema.gameCognitiveArtifacts.$inferSelect;
+type ArtifactRow = Hydrated<typeof schema.gameCognitiveArtifacts.$inferSelect>;
 type TranscriptRow = typeof schema.transcripts.$inferSelect;
 
 export type PublicWatchIntelligenceSectionStatus =
@@ -288,7 +289,7 @@ async function loadArtifactCards(
     throughTranscriptSequence?: number;
   },
 ): Promise<PublicWatchIntelligenceCard[]> {
-  const rows = await db
+  const rows = await loadPayloads(db
     .select()
     .from(schema.gameCognitiveArtifacts)
     .where(and(
@@ -320,7 +321,7 @@ async function loadArtifactCards(
       or(isNull(schema.gameCognitiveArtifacts.round), lte(schema.gameCognitiveArtifacts.round, params.round)),
     ))
     .orderBy(desc(schema.gameCognitiveArtifacts.eventSequence), desc(schema.gameCognitiveArtifacts.createdAt))
-    .limit(cardScanLimit(params.limit));
+    .limit(cardScanLimit(params.limit)));
 
   return rows
     .filter((row) => isAtOrBeforeReplayContext(row.round, row.phase, params.round, params.phase))

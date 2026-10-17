@@ -1,3 +1,4 @@
+import { storeFields } from "../services/payload-storage.js";
 import { beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import {drizzle} from "drizzle-orm/postgres-js";
@@ -15,7 +16,7 @@ beforeEach(async () => { db = await setupTestDB(); });
 test("game recovery receipts are bounded and omit scene evidence, image bytes and request prompts",async () => {
   const gameId=await fixture();
   for(const [id,sceneId] of [["a",null],["b",null],["scene-attempt","scene-0"]] as const) {
-    await db.insert(schema.visualRenderOperations).values({id:`operation-${id}`,gameId,sceneId,operationKey:`wolf-form:${id}`,inputHash:"PRIVATE_HASH",request:{prompt:"SECRET_PROVIDER_PROMPT"}});
+    await db.insert(schema.visualRenderOperations).values(await storeFields({id:`operation-${id}`,gameId,sceneId,operationKey:`wolf-form:${id}`,inputHash:"PRIVATE_HASH",request:{prompt:"SECRET_PROVIDER_PROMPT"}}, {"request":"json-gzip"}));
     await db.insert(schema.visualRenderAttempts).values({id,operationId:`operation-${id}`,generation:1,provider:"openai",model:"fixture",requestHash:"PRIVATE_REQUEST_HASH"});
   }
   const first=await readProductionRecovery(db,gameId,0,1);
@@ -32,7 +33,7 @@ test("game recovery receipts are bounded and omit scene evidence, image bytes an
 async function fixture() {
   const gameId = "scene-metadata";
   await db.insert(schema.games).values({ id: gameId, slug: gameId, status: "completed", config: "{}" });
-  await db.insert(schema.visualArtifacts).values({ id: "artifact", gameId, contentHash: "fixture", image: Buffer.from("PRIVATE_IMAGE_BYTES"), width: 1, height: 1 });
+  await db.insert(schema.visualArtifacts).values(await storeFields({ id: "artifact", gameId, contentHash: "fixture", image: Buffer.from("PRIVATE_IMAGE_BYTES"), width: 1, height: 1 }, {"image":"binary"}));
   for (const [index, roomId] of ["lobby", "mingle-1"].entries()) {
     if (roomId !== "lobby" && roomId !== "mingle-1") throw new Error("Invalid fixture room");
     const plan = planVisualScene({ roomId, backgroundArtifactId: null, cast: [{ id: "player", name: "Fixture", referenceArtifactId: "artifact", performanceInstructions: "SECRET_RENDER_PROMPT" }] });
@@ -65,7 +66,7 @@ test("bounded scene receipts retain the complete exact uncertain-attempt acknowl
   const gameId = await fixture();
   const index = await readProductionScenes(db, gameId);
   for (const id of ["old-uncertain", "new-uncertain"]) {
-    await db.insert(schema.visualRenderOperations).values({ id: `${id}-operation`, gameId, sceneId: "scene-0", operationKey: `scene-0:render:${id}`, inputHash: "PRIVATE_HASH", request: { prompt: "SECRET_PROVIDER_PROMPT", references: ["BASE64_PRIVATE_CAST"] } });
+    await db.insert(schema.visualRenderOperations).values(await storeFields({ id: `${id}-operation`, gameId, sceneId: "scene-0", operationKey: `scene-0:render:${id}`, inputHash: "PRIVATE_HASH", request: { prompt: "SECRET_PROVIDER_PROMPT", references: ["BASE64_PRIVATE_CAST"] } }, {"request":"json-gzip"}));
     await db.insert(schema.visualRenderAttempts).values({ id, operationId: `${id}-operation`, generation: 1, provider: "openai", model: "fixture", requestHash: "PRIVATE_REQUEST_HASH" });
   }
   const detail = await readProductionScene(db, gameId, index.items[0]!.key, { limit: 1 });
@@ -73,7 +74,7 @@ test("bounded scene receipts retain the complete exact uncertain-attempt acknowl
   expect(new Set(detail.uncertainAttemptIds)).toEqual(new Set(["old-uncertain", "new-uncertain"]));
   expect(detail.pages.nextAttemptOffset).toBe(1);
   expect(JSON.stringify(detail)).not.toMatch(/SECRET_|BASE64_PRIVATE_CAST|PRIVATE_REQUEST_HASH|PRIVATE_HASH|"request"|"usage"/);
-  await db.insert(schema.visualMediaRequests).values({ id: "ack", gameId, operatorId: "operator", requestId: "ack-request", inputHash: "hash", input: { action: "regenerate", sceneId: "scene-0", acknowledgeUncertainAttempts: ["old-uncertain"], private: "SECRET_REQUEST_EXTRA" }, receipt: { accepted: true, code: "queued", message: "Fixture accepted" }, createdAt: "2026-09-01T00:00:00.000Z" });
+  await db.insert(schema.visualMediaRequests).values(await storeFields({ id: "ack", gameId, operatorId: "operator", requestId: "ack-request", inputHash: "hash", sceneId:"scene-0",action:"regenerate",acknowledgedAttemptIds:["old-uncertain"], input: { action: "regenerate", sceneId: "scene-0", acknowledgeUncertainAttempts: ["old-uncertain"], private: "SECRET_REQUEST_EXTRA" }, receipt: { accepted: true, code: "queued", message: "Fixture accepted" }, createdAt: "2026-09-01T00:00:00.000Z" }, {"input":"json-gzip"}));
   const acknowledged = await readProductionScene(db, gameId, index.items[0]!.key, { limit: 1 });
   expect(acknowledged.uncertainAttemptIds).toEqual(["new-uncertain"]);
   expect(acknowledged.media.requests[0]!.input.acknowledgeUncertainAttempts).toEqual(["old-uncertain"]);
@@ -97,8 +98,8 @@ test("Mystery scene discovery and handcrafted scene keys reject canonical pack a
 
 test("more than 100 uncertain requests preserves bounded receipt pages for reconciliation",async () => {
   const gameId=await fixture(),operationId="many-uncertain-operation";
-  await db.insert(schema.visualRenderOperations).values({id:operationId,gameId,sceneId:"scene-0",operationKey:"scene-0:render:many",inputHash:"PRIVATE_HASH",request:{prompt:"SECRET_PROMPT"}});
-  await db.insert(schema.visualRenderAttempts).values(Array.from({length:101},(_,index)=>({id:`uncertain-${String(index).padStart(3,"0")}`,operationId,generation:index+1,provider:"openai" as const,model:"fixture",requestHash:"PRIVATE_HASH"})));
+  await db.insert(schema.visualRenderOperations).values(await storeFields({id:operationId,gameId,sceneId:"scene-0",operationKey:"scene-0:render:many",inputHash:"PRIVATE_HASH",request:{prompt:"SECRET_PROMPT"}}, {"request":"json-gzip"}));
+  await db.insert(schema.visualRenderAttempts).values(await storeFields(Array.from({length:101},(_,index)=>({id:`uncertain-${String(index).padStart(3,"0")}`,operationId,generation:index+1,provider:"openai" as const,model:"fixture",requestHash:"PRIVATE_HASH"})), {"image":"binary"}));
   const scene=(await readProductionScenes(db,gameId)).items[0]!,detail=await readProductionScene(db,gameId,scene.key,{offset:50,limit:2});
   expect(detail.requiresReconciliation).toBe(true);expect(detail.uncertainAttemptIds).toHaveLength(100);
   expect(detail.uncertainAttemptIds[0]).toBe("uncertain-000");expect(detail.uncertainAttemptIds.at(-1)).toBe("uncertain-099");
@@ -109,12 +110,12 @@ test("more than 100 uncertain requests preserves bounded receipt pages for recon
 test("scene SQL reads scope and page metadata while exact selected and current publication versions remain inspectable",async () => {
   const gameId=await fixture(),plan=(await db.select().from(schema.visualScenes).where(eq(schema.visualScenes.id,"scene-0")))[0]!.plan;
   for (const sceneId of ["scene-0","scene-1"]) {
-    await db.insert(schema.visualRepairJobs).values(Array.from({length:60},(_,index)=>({id:`${sceneId}-job-${index+1}`,gameId,sceneId,version:index+1,operatorId:"operator",mode:"review" as const,plan,
-      renderContext:{style:"SECRET_STYLE",roomName:"Fixture",roomDirection:"SECRET_DIRECTION"},status:"ready" as const,createdAt:"2026-09-01T00:00:00.000Z"})));
+    await db.insert(schema.visualRepairJobs).values(await storeFields(Array.from({length:60},(_,index)=>({id:`${sceneId}-job-${index+1}`,gameId,sceneId,version:index+1,operatorId:"operator",mode:"review" as const,plan,
+      renderContext:{style:"SECRET_STYLE",roomName:"Fixture",roomDirection:"SECRET_DIRECTION"},status:"ready" as const,createdAt:"2026-09-01T00:00:00.000Z"})), {"renderContext":"json-gzip"}));
     await db.insert(schema.visualMediaVersions).values(Array.from({length:60},(_,index)=>({id:`${sceneId}-version-${index+1}`,gameId,sceneId,jobId:`${sceneId}-job-${index+1}`,version:index+1,plan,
       imageArtifactId:"artifact",annotatedArtifactId:"artifact",localization:{count:1,verifiedParticipantIds:["player"],anchors:[]},verificationVersion:"fixture",createdAt:"2026-09-01T00:00:00.000Z"})));
-    await db.insert(schema.visualMediaRequests).values(Array.from({length:60},(_,index)=>({id:`${sceneId}-request-${index+1}`,gameId,operatorId:"operator",requestId:`${sceneId}-${index+1}`,inputHash:"PRIVATE_HASH",
-      input:{sceneId,action:"review",review:{images:"BASE64_PRIVATE_CAST",private:"SECRET_REQUEST"}},receipt:{accepted:true,code:"reviewed",message:"Fixture"},createdAt:"2026-09-01T00:00:00.000Z"})));
+    await db.insert(schema.visualMediaRequests).values(await storeFields(Array.from({length:60},(_,index)=>({id:`${sceneId}-request-${index+1}`,gameId,operatorId:"operator",requestId:`${sceneId}-${index+1}`,inputHash:"PRIVATE_HASH",sceneId,action:"regenerate",
+      input:{sceneId,action:"review",review:{images:"BASE64_PRIVATE_CAST",private:"SECRET_REQUEST"}},receipt:{accepted:true,code:"reviewed",message:"Fixture"},createdAt:"2026-09-01T00:00:00.000Z"})), {"input":"json-gzip"}));
   }
   await db.insert(schema.visualMediaPublications).values([
     {id:"public-old",gameId,sceneId:"scene-0",versionId:"scene-0-version-1",revision:1,audience:"public",operatorId:"operator",createdAt:"2026-09-01T00:00:00.000Z"},
@@ -149,19 +150,19 @@ test("scene SQL reads scope and page metadata while exact selected and current p
 
 test("scene uncertainty SQL includes historical job bindings outside the page and excludes live/acknowledged/foreign attempts",async () => {
   const gameId=await fixture(),plan=(await db.select().from(schema.visualScenes).where(eq(schema.visualScenes.id,"scene-0")))[0]!.plan;
-  await db.insert(schema.visualRepairJobs).values([
+  await db.insert(schema.visualRepairJobs).values(await storeFields([
     {id:"old-job",gameId,sceneId:"scene-0",version:1,operatorId:"operator",mode:"regenerate",plan,renderContext:{style:"Fixture",roomName:"Fixture",roomDirection:"Fixture"},status:"failed",createdAt:"2026-09-01T00:00:00.000Z"},
     {id:"running-job",gameId,sceneId:"scene-0",version:2,operatorId:"operator",mode:"regenerate",plan,renderContext:{style:"Fixture",roomName:"Fixture",roomDirection:"Fixture"},status:"rendering",leaseUntil:"2999-01-01T00:00:00.000Z",createdAt:"2026-09-01T00:00:00.000Z"},
-  ]);
+  ], {"renderContext":"json-gzip"}));
   for (const [id,sceneId,repairJobId,operationKey] of [
     ["old-prefix",null,null,"media:old-job:render"],["old-job-binding",null,"old-job","historical-binding"],
     ["live",null,"running-job","pending-binding"],["foreign","scene-1",null,"scene-1:render:1"],
     ["acknowledged","scene-0",null,"scene-0:render:ack"],
   ] as const) {
-    await db.insert(schema.visualRenderOperations).values({id:`operation-${id}`,gameId,sceneId,repairJobId,operationKey,inputHash:"PRIVATE_HASH",request:{prompt:"SECRET_PROMPT"}});
+    await db.insert(schema.visualRenderOperations).values(await storeFields({id:`operation-${id}`,gameId,sceneId,repairJobId,operationKey,inputHash:"PRIVATE_HASH",request:{prompt:"SECRET_PROMPT"}}, {"request":"json-gzip"}));
     await db.insert(schema.visualRenderAttempts).values({id,operationId:`operation-${id}`,generation:1,provider:"openai",model:"fixture",requestHash:"PRIVATE_REQUEST_HASH"});
   }
-  await db.insert(schema.visualMediaRequests).values({id:"old-ack",gameId,operatorId:"operator",requestId:"old-ack",inputHash:"hash",input:{sceneId:"scene-0",action:"regenerate",acknowledgeUncertainAttempts:["acknowledged"]},receipt:{accepted:true,code:"queued",message:"Fixture"},createdAt:"2026-09-01T00:00:00.000Z"});
+  await db.insert(schema.visualMediaRequests).values(await storeFields({id:"old-ack",gameId,operatorId:"operator",requestId:"old-ack",inputHash:"hash",sceneId:"scene-0",action:"regenerate",acknowledgedAttemptIds:["acknowledged"],input:{sceneId:"scene-0",action:"regenerate",acknowledgeUncertainAttempts:["acknowledged"]},receipt:{accepted:true,code:"queued",message:"Fixture"},createdAt:"2026-09-01T00:00:00.000Z"}, {"input":"json-gzip"}));
   const index=await readProductionScenes(db,gameId),detail=await readProductionScene(db,gameId,index.items[0]!.key,{offset:2,limit:1});
   expect(detail.attempts).toHaveLength(1);expect(detail.pages.nextAttemptOffset).toBe(3);
   expect(new Set(detail.uncertainAttemptIds)).toEqual(new Set(["old-prefix","old-job-binding"]));

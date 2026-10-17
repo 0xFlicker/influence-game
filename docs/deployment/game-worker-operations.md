@@ -29,6 +29,10 @@ receipts. An unknown nonterminal paid dispatch remains failed for inspection;
 shutdown never authorizes an automatic paid redispatch or a premature cast-only
 trailer for safely resumable editorial work.
 
+## Storage cutover release
+
+The `0119`–`0122` storage release requires [one coordinated maintenance cutover](private-payload-storage-cutover.md) with every writer stopped. Ordinary startup cannot migrate populated bodies. Use its packaged migration CLI before starting matching gateways and workers; the normal rolling handoff is not suitable for this schema change.
+
 ## Ephemeral PR previews
 
 Ephemeral previews need the same gateway/worker separation. Their IaC deployment

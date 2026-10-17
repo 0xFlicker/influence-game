@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -159,10 +160,10 @@ async function seedCase(db: DrizzleDB): Promise<SeededCase> {
   };
   const checkpointResult = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
   expect(checkpointResult.ok).toBeTrue();
-  const checkpointRow = (await db
+  const checkpointRow = (await loadPayloads(db
     .select()
     .from(schema.gameCheckpoints)
-    .where(eq(schema.gameCheckpoints.gameId, gameId)))[0]!;
+    .where(eq(schema.gameCheckpoints.gameId, gameId))))[0]!;
 
   await db.insert(schema.transcripts).values([1, 2].map((beat) => ({
     gameId,
@@ -316,7 +317,7 @@ describe("prompt-thread case materializer", () => {
       games: await db.select().from(schema.games),
       events: await db.select().from(schema.gameEvents),
       transcripts: await db.select().from(schema.transcripts),
-      checkpoints: await db.select().from(schema.gameCheckpoints),
+      checkpoints: await loadPayloads(db.select().from(schema.gameCheckpoints)),
       manifests: await db.select().from(schema.gameEvidenceManifests),
       reads: await db.select().from(schema.gameEvidenceManifestReads),
       spend: await db.select().from(schema.gameProviderSpendEntries),
@@ -385,7 +386,7 @@ describe("prompt-thread case materializer", () => {
     expect(await db.select().from(schema.games)).toEqual(before.games);
     expect(await db.select().from(schema.gameEvents)).toEqual(before.events);
     expect(await db.select().from(schema.transcripts)).toEqual(before.transcripts);
-    expect(await db.select().from(schema.gameCheckpoints)).toEqual(before.checkpoints);
+    expect(await loadPayloads(db.select().from(schema.gameCheckpoints))).toEqual(before.checkpoints);
     expect(await db.select().from(schema.gameEvidenceManifests)).toEqual(before.manifests);
     expect(await db.select().from(schema.gameEvidenceManifestReads)).toEqual(before.reads);
     expect(await db.select().from(schema.gameProviderSpendEntries)).toEqual(before.spend);

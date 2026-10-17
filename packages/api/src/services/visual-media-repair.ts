@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "./payload-storage.js";
 import { decodeVisualShotReview, saveReviewedShots, type VisualShotReview } from "./visual-shot-review.js";
 import { assertVisualShot, VISUAL_HOUSE_STYLE, VISUAL_ROOMS } from "@influence/engine/visual-mode";
 import { randomUUID } from "node:crypto";
@@ -42,7 +43,7 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
   let regeneratedPlan: import("@influence/engine/visual-scene-plan").VisualScenePlan | undefined;
   if (input.action === "regenerate") {
     const [game] = await db.select({ kind: schema.games.gameKind }).from(schema.games).where(eq(schema.games.id, gameId));
-    const [prior] = await db.select().from(schema.visualMediaRequests).where(and(eq(schema.visualMediaRequests.gameId, gameId), eq(schema.visualMediaRequests.operatorId, operatorId), eq(schema.visualMediaRequests.requestId, input.requestId)));
+    const [prior] = await loadPayloads(db.select().from(schema.visualMediaRequests).where(and(eq(schema.visualMediaRequests.gameId, gameId), eq(schema.visualMediaRequests.operatorId, operatorId), eq(schema.visualMediaRequests.requestId, input.requestId))));
     if (!prior && game?.kind === "werewolf") {
       const [scene] = await db.select().from(schema.visualScenes).where(and(eq(schema.visualScenes.gameId, gameId), eq(schema.visualScenes.id, input.sceneId)));
       if (scene) {
@@ -58,7 +59,7 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
     const [execution] = await tx.select().from(schema.games).where(eq(schema.games.id,gameId)).for("update");
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('visual-media'), hashtext(${gameId}))`);
     const hash = sha256StableJson(input);
-    const [prior] = await tx.select().from(schema.visualMediaRequests).where(and(eq(schema.visualMediaRequests.gameId, gameId), eq(schema.visualMediaRequests.operatorId, operatorId), eq(schema.visualMediaRequests.requestId, input.requestId)));
+    const [prior] = await loadPayloads(tx.select().from(schema.visualMediaRequests).where(and(eq(schema.visualMediaRequests.gameId, gameId), eq(schema.visualMediaRequests.operatorId, operatorId), eq(schema.visualMediaRequests.requestId, input.requestId))));
     if (prior) {
       if (prior.inputHash === hash) return prior.receipt;
       const receipt = { accepted: false, code: "request_conflict", message: "Request ID was already used with different inputs" };
@@ -81,7 +82,7 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
       if (input.action === "regenerate" && input.regenerateForms && !regeneratedPlan?.cast.some(member => member.variant))
         return reject("wolf_forms_not_supported", "This scene has no wolf forms to regenerate");
       await captureOriginalMediaVersion(tx, scene);
-      const history = await tx.select().from(jobs).where(eq(jobs.sceneId, scene.id)).orderBy(desc(jobs.version));
+      const history = await loadPayloads(tx.select().from(jobs).where(eq(jobs.sceneId, scene.id)).orderBy(desc(jobs.version)));
       if ((history[0]?.version ?? 0) !== input.expectedVersion) return reject("stale_version", "Scene versions changed; refresh before trying again");
       if (input.action === "publish") {
         const [version] = await tx.select().from(versions).where(and(eq(versions.id, input.versionId), eq(versions.sceneId, scene.id)));
@@ -113,9 +114,9 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
         if (plans.some(source => sha256StableJson({ cast: source.cast, direction: source.direction }) !== sha256StableJson({ cast: plan.cast, direction: plan.direction })))
           return reject("mixed_references", "Choose pictures using the same character forms and location before saving this review");
         const id = randomUUID(), version = input.expectedVersion + 1, createdAt = new Date().toISOString();
-        await tx.insert(jobs).values({ id, gameId, sceneId: scene.id, version, operatorId, mode: "review", plan,
+        await tx.insert(jobs).values(await storeFields({ id, gameId, sceneId: scene.id, version, operatorId, mode: "review", plan,
           renderContext: plan.direction ?? { style: VISUAL_HOUSE_STYLE, roomName: VISUAL_ROOMS[scene.roomId].name, roomDirection: VISUAL_ROOMS[scene.roomId].direction },
-          status: "ready", step: "producer reviewed", createdAt, finishedAt: createdAt });
+          status: "ready", step: "producer reviewed", createdAt, finishedAt: createdAt }, {"renderContext":"json-gzip"}));
         const visible = [...new Set([...shots.groups, ...(shots.overview ? [shots.overview] : [])].flatMap(s => s.visibleParticipantIds))];
         await tx.insert(versions).values({ id, gameId, sceneId: scene.id, jobId: id, version, plan, imageArtifactId,
           annotatedArtifactId: image?.annotatedArtifactId ?? imageArtifactId, shots,
@@ -141,9 +142,9 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
           if (input.action !== "regenerate") return reject("needs_reconciliation", "Reconcile uncertain requests before continuing the old repair");
           if (scene.status === "preparing" && execution?.status === "in_progress")
             return reject("already_pending", "The original scene is still rendering. Wait before regenerating.");
-          const acknowledgements = await tx.select({input: schema.visualMediaRequests.input, receipt: schema.visualMediaRequests.receipt})
+          const acknowledgements = await loadPayloads(tx.select({input: schema.visualMediaRequests.input, receipt: schema.visualMediaRequests.receipt})
             .from(schema.visualMediaRequests).where(and(eq(schema.visualMediaRequests.gameId, gameId),
-              sql`${schema.visualMediaRequests.input}->>'sceneId' = ${scene.id} AND ${schema.visualMediaRequests.input}->>'action' = 'regenerate'`));
+              sql`${schema.visualMediaRequests.sceneId} = ${scene.id} AND ${schema.visualMediaRequests.action} = 'regenerate'`)));
           const authorized = new Set(acknowledgements.filter(row => row.receipt.accepted)
             .flatMap(row => Array.isArray(row.input.acknowledgeUncertainAttempts) ? row.input.acknowledgeUncertainAttempts as string[] : []));
           const remaining = uncertain.filter(attempt => !authorized.has(attempt.id));
@@ -181,14 +182,14 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
         }
         if (plan.direction) renderContext = plan.direction;
         const id = randomUUID(), version = input.expectedVersion + 1;
-        await tx.insert(jobs).values({ id, gameId, sceneId: scene.id, version, operatorId, mode: input.action, plan, renderContext, sourceImageId, sourceVersionId, reusePrefix, status: "queued", createdAt: new Date().toISOString() });
+        await tx.insert(jobs).values(await storeFields({ id, gameId, sceneId: scene.id, version, operatorId, mode: input.action, plan, renderContext, sourceImageId, sourceVersionId, reusePrefix, status: "queued", createdAt: new Date().toISOString() }, {"renderContext":"json-gzip"}));
         receipt = { accepted: true, code: "queued", message: sourceVersionId ? `Version ${version} queued to harmonize saved panels. Review and publish when ready.` : `Version ${version} queued for rendering`, jobId: id, versionId: id, version };
       }
     } catch (error) {
       if (!(error instanceof Rejected)) throw error;
       receipt = { accepted: false, code: error.code, message: error.message };
     }
-    await tx.insert(schema.visualMediaRequests).values({ id: randomUUID(), gameId, operatorId, requestId: input.requestId, inputHash: hash, input, receipt, createdAt: new Date().toISOString() });
+    await tx.insert(schema.visualMediaRequests).values(await storeFields({ id: randomUUID(), gameId, operatorId, requestId: input.requestId, inputHash: hash, sceneId: input.sceneId, action: input.action, acknowledgedAttemptIds: "acknowledgeUncertainAttempts" in input && Array.isArray(input.acknowledgeUncertainAttempts) ? input.acknowledgeUncertainAttempts.filter((id): id is string => typeof id === "string") : [], input, receipt, createdAt: new Date().toISOString() }, {"input":"json-gzip"}));
     return receipt;
   });
 }
@@ -208,13 +209,13 @@ function originalVersion(scene: typeof schema.visualScenes.$inferSelect) {
 }
 
 export async function readVisualMedia(db: DrizzleDB, gameId: string) {
-  const [jobRows, versionRows, publicationRows, requests, originals] = await Promise.all([
+  const [jobRows, versionRows, publicationRows, requests, originals] = await loadPayloads(Promise.all([
     db.select().from(jobs).where(eq(jobs.gameId, gameId)).orderBy(desc(jobs.version)),
     db.select().from(versions).where(eq(versions.gameId, gameId)).orderBy(desc(versions.version)),
     db.select().from(publications).where(eq(publications.gameId, gameId)).orderBy(desc(publications.revision)),
     db.select().from(schema.visualMediaRequests).where(eq(schema.visualMediaRequests.gameId, gameId)).orderBy(desc(schema.visualMediaRequests.createdAt)),
     db.select().from(schema.visualScenes).where(and(eq(schema.visualScenes.gameId, gameId), eq(schema.visualScenes.status, "ready"))),
-  ]);
+  ]));
   return { jobs: jobRows, versions: [...versionRows, ...originals.filter(s => s.imageArtifactId && s.annotatedArtifactId && !versionRows.some(v => v.sceneId === s.id && v.version === 0)).map(originalVersion)], publications: publicationRows, requests };
 }
 
@@ -269,8 +270,8 @@ export async function readVisualSceneMedia(db:DrizzleDB,gameId:string,sceneId:st
     db.select(versionMetadataColumns).from(versions).where(scope).orderBy(desc(versions.version),desc(versions.id)).limit(limit+1).offset(offset),
     db.select(jobMetadataColumns).from(jobs).where(and(eq(jobs.gameId,gameId),eq(jobs.sceneId,sceneId))).orderBy(desc(jobs.version),desc(jobs.id)).limit(limit+1).offset(offset),
     db.select(publicationMetadataColumns).from(publications).where(and(eq(publications.gameId,gameId),eq(publications.sceneId,sceneId))).orderBy(desc(publications.revision),desc(publications.id)).limit(limit+1).offset(offset),
-    db.select({id:requests.id,createdAt:requests.createdAt,receipt:requests.receipt,input:sql<{sceneId?:string;action?:string;acknowledgeUncertainAttempts?:unknown[]}>`jsonb_strip_nulls(jsonb_build_object('sceneId', ${requests.input}->'sceneId', 'action', ${requests.input}->'action', 'acknowledgeUncertainAttempts', ${requests.input}->'acknowledgeUncertainAttempts'))`})
-      .from(requests).where(and(eq(requests.gameId,gameId),sql`${requests.input}->>'sceneId' = ${sceneId}`)).orderBy(desc(requests.createdAt),desc(requests.id)).limit(limit+1).offset(offset),
+    db.select({id:requests.id,createdAt:requests.createdAt,receipt:requests.receipt,input:{sceneId:requests.sceneId,action:requests.action,acknowledgeUncertainAttempts:requests.acknowledgedAttemptIds}})
+      .from(requests).where(and(eq(requests.gameId,gameId),eq(requests.sceneId,sceneId))).orderBy(desc(requests.createdAt),desc(requests.id)).limit(limit+1).offset(offset),
     db.selectDistinctOn([publications.audience],publicationMetadataColumns).from(publications).where(and(eq(publications.gameId,gameId),eq(publications.sceneId,sceneId)))
       .orderBy(asc(publications.audience),desc(publications.revision),desc(publications.id)).limit(2),
     db.select(versionMetadataColumns).from(versions).where(and(scope,versionId ? eq(versions.id,versionId) : undefined)).orderBy(desc(versions.version),desc(versions.id)).limit(1),

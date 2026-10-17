@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import { readWerewolfVisualPause } from "./werewolf-visual-policy.js";
 import { visualFailurePolicy } from "./visual-policy.js";
 import { werewolfSceneInventory } from "@influence/engine/werewolf/visual-scenes";
@@ -21,8 +22,8 @@ export class WerewolfReferenceError extends Error {}
 export async function werewolfReferenceMetadata(db: Pick<DrizzleDB, "select">, gameId: string, players?: readonly WerewolfPlayer[], options: { availableHashes?: readonly string[] } = {}) {
   const cast = players ?? (await readWerewolfEvents(db, gameId)).find(event => event.type === "werewolf.started")?.payload.players ?? [];
   const revisionIds = cast.flatMap(player => player.contentRevisionId ? [player.contentRevisionId] : []);
-  const revisions = revisionIds.length ? await db.select().from(schema.agentContentRevisions)
-    .where(inArray(schema.agentContentRevisions.id, revisionIds)) : [];
+  const revisions = revisionIds.length ? await loadPayloads(db.select().from(schema.agentContentRevisions)
+    .where(inArray(schema.agentContentRevisions.id, revisionIds))) : [];
   const members = cast.map(player => {
     const snapshot = revisions.find(revision => revision.id === player.contentRevisionId && revision.agentProfileId === player.agentProfileId)?.snapshot;
     const assets = snapshot?.assets;
@@ -58,7 +59,7 @@ export async function werewolfReferenceMetadata(db: Pick<DrizzleDB, "select">, g
 export async function werewolfReferences(db: DrizzleDB, gameId: string) {
   const refs = await werewolfReferenceMetadata(db, gameId);
   const hashes = refs.flatMap(ref => [ref.bodyHash, ref.portraitHash].filter((hash): hash is string => hash !== null));
-  const assets = hashes.length ? await db.select().from(schema.agentContentAssets).where(inArray(schema.agentContentAssets.hash, hashes)) : [];
+  const assets = hashes.length ? await loadPayloads(db.select().from(schema.agentContentAssets).where(inArray(schema.agentContentAssets.hash, hashes))) : [];
   const bytes = (hash: string | null) => assets.find(asset => asset.hash === hash)?.bytes ?? null;
   return refs.map(ref => ({ ...ref, bytes: bytes(ref.bodyHash ?? ref.portraitHash), portraitBytes: bytes(ref.portraitHash) }));
 }
@@ -115,11 +116,11 @@ export async function readWerewolfProductionSceneCatalog(db:DrizzleDB,gameId:str
 
 /** Production-only projection. Public and pack membership comes from the exact canonical prefix. */
 export async function readWerewolfProduction(db: DrizzleDB, gameId: string, slug: string) {
-  const [events, stored, media, accounting, refs] = await Promise.all([
+  const [events, stored, media, accounting, refs] = await loadPayloads(Promise.all([
     readWerewolfEvents(db, gameId),
     db.select().from(schema.visualScenes).where(eq(schema.visualScenes.gameId, gameId)).orderBy(asc(schema.visualScenes.boundarySequence)),
     readVisualMedia(db, gameId), readVisualRenderAccounting(db, gameId), werewolfReferenceMetadata(db, gameId),
-  ]);
+  ]));
   const state = replayWerewolf(events),pause = await readWerewolfVisualPause(db,gameId);
   const [game] = await db.select({config:schema.games.config}).from(schema.games).where(eq(schema.games.id,gameId));
   const scenes = canonicalWerewolfScenes(gameId,events,stored,pause).map(data => {

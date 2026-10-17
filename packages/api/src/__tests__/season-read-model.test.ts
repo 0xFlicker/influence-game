@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -444,7 +445,7 @@ async function createAgent(db: DrizzleDB, ownerId: string, name: string) {
     name,
     personality: `${name} personality`,
   })).profile;
-  const revision = (await db.select().from(schema.agentRevisions))
+  const revision = (await loadPayloads(db.select().from(schema.agentRevisions)))
     .find((candidate) => candidate.agentProfileId === profile.id)!;
   return { ownerId, profile, revisionId: revision.id };
 }

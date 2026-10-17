@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
@@ -37,7 +38,7 @@ describe("Anonymous preview pool", () => {
     expect(await readAnonymousAllowance(db, visitors[loser]!.visitorHash)).toEqual({ used: false });
     await reopenMinute();
     await runAnonymousText(db, visitors[loser]!, async () => turn);
-    expect(await db.select().from(schema.anonymousTextOperations)).toHaveLength(2);
+    expect(await loadPayloads(db.select().from(schema.anonymousTextOperations))).toHaveLength(2);
   });
 
   test("response-loss replay is free; a second request requires signup even after the minute", async () => {
@@ -49,7 +50,7 @@ describe("Anonymous preview pool", () => {
     await expect(runAnonymousText(db, { ...value, payload: { idea: "changed" } }, run)).rejects.toMatchObject({ code: "request_conflict" });
     await reopenMinute();
     await expect(runAnonymousText(db, { ...value, requestKey: randomUUID() }, run)).rejects.toMatchObject({ code: "anonymous_signup_required", status: 403 });
-    const [operation] = await db.select().from(schema.anonymousTextOperations);
+    const [operation] = await loadPayloads(db.select().from(schema.anonymousTextOperations));
     expect(operation).toMatchObject({ state: "succeeded", promptTokens: 20, completionTokens: 10, providerRequestId: response.id });
     expect(operation!.estimatedCostMicrousd).not.toBeNull();
   });
@@ -60,7 +61,7 @@ describe("Anonymous preview pool", () => {
       await record(response); return decodeAnonymousCreationTurn("{}");
     })).rejects.toThrow("Invalid House preview fields");
     expect(await readAnonymousAllowance(db, value.visitorHash)).toEqual({ used: false });
-    const [operation] = await db.select().from(schema.anonymousTextOperations);
+    const [operation] = await loadPayloads(db.select().from(schema.anonymousTextOperations));
     expect(operation).toMatchObject({ state: "failed", result: null, promptTokens: 20 });
     await reopenMinute();
     expect(await runAnonymousText(db, { ...value, requestKey: randomUUID() }, async () => turn)).toEqual(turn);
@@ -72,7 +73,7 @@ describe("Anonymous preview pool", () => {
     expect(await readAnonymousAllowance(db, value.visitorHash)).toEqual({ used: true });
     await reopenMinute();
     await expect(runAnonymousText(db, { ...value, requestKey: randomUUID() }, async () => turn)).rejects.toMatchObject({ code: "anonymous_signup_required" });
-    expect((await db.select().from(schema.anonymousTextOperations))[0]!.state).toBe("uncertain");
+    expect((await loadPayloads(db.select().from(schema.anonymousTextOperations)))[0]!.state).toBe("uncertain");
   });
 
   test("public session, cookie replay and admission errors work without a user row; private writes remain gated", async () => {
@@ -107,7 +108,7 @@ describe("Anonymous preview pool", () => {
       { message: "hello", creationTraitIds: [], fullBodyReferenceUrl: "https://example.test" }]) {
       expect((await app.request("/api/agent-profiles/anonymous", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": randomUUID() }, body: JSON.stringify(body) })).status).toBe(400);
     }
-    expect(await db.select().from(schema.anonymousTextOperations)).toHaveLength(0);
+    expect(await loadPayloads(db.select().from(schema.anonymousTextOperations))).toHaveLength(0);
   });
 });
 

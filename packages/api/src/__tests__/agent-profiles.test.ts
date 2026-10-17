@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
 /**
@@ -201,7 +202,7 @@ describe("Agent Profile API", () => {
     const response = await app.request("/api/agent-profiles", jsonReq({ name: "Draft Arden", personality: "Careful", avatarGenerationRequestId: "pending-request" }, tokenA));
     expect(response.status).toBe(400);
     expect(await db.select().from(schema.agentProfiles)).toHaveLength(0);
-    expect(await db.select().from(schema.agentContentRevisions)).toHaveLength(0);
+    expect(await loadPayloads(db.select().from(schema.agentContentRevisions))).toHaveLength(0);
   });
 
   test("submits selected assets and returns durable review IDs with response-loss replay", async () => {
@@ -302,7 +303,7 @@ describe("Agent Profile API", () => {
       expect(conflict.status).toBe(409);
       expect(await conflict.json()).toMatchObject({ code: "agent_creation_request_conflict" });
       expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
-      expect(await db.select().from(schema.agentRevisions)).toHaveLength(1);
+      expect(await loadPayloads(db.select().from(schema.agentRevisions))).toHaveLength(1);
       expect(await db.select().from(schema.avatarGenerationRequests)).toHaveLength(0);
     });
 
@@ -388,7 +389,7 @@ describe("Agent Profile API", () => {
       }
 
       expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
-      expect(await db.select().from(schema.agentRevisions)).toHaveLength(1);
+      expect(await loadPayloads(db.select().from(schema.agentRevisions))).toHaveLength(1);
     });
 
     test("rejects missing name", async () => {
@@ -1017,8 +1018,8 @@ describe("Agent Profile API", () => {
         jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
       const { id } = await createRes.json() as { id: string };
-      const revision = (await db.select().from(schema.agentRevisions)
-        .where(eq(schema.agentRevisions.agentProfileId, id)))[0]!;
+      const revision = (await loadPayloads(db.select().from(schema.agentRevisions)
+        .where(eq(schema.agentRevisions.agentProfileId, id))))[0]!;
       await db.insert(schema.agentCompetitionRatings).values({
         agentProfileId: id,
         effectiveRevisionId: revision.id,
@@ -1041,8 +1042,8 @@ describe("Agent Profile API", () => {
         jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
       const { id } = await createRes.json() as { id: string };
-      const revision = (await db.select().from(schema.agentRevisions)
-        .where(eq(schema.agentRevisions.agentProfileId, id)))[0]!;
+      const revision = (await loadPayloads(db.select().from(schema.agentRevisions)
+        .where(eq(schema.agentRevisions.agentProfileId, id))))[0]!;
       const seasonId = randomUUID();
       const gameId = randomUUID();
       await db.insert(schema.seasons).values({
