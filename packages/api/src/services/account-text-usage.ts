@@ -59,7 +59,7 @@ export async function runAccountText<T>(db: DrizzleDB, input: {
     const state = responseObserved || !dispatched || error instanceof GenerationAdmissionError || (error instanceof APIError && error.status !== undefined) ? 'failed' : 'uncertain';
     await db.transaction(async tx => {
       await settleInference(tx,`text:${id}`,input.userId,state);
-      await tx.update(table).set(await storeFields({state,result:{failure:{beforeDispatch:!dispatched || error instanceof GenerationAdmissionError}},completedAt:state==='failed'?new Date().toISOString():null}, {"result":"json-gzip"})).where(eq(table.id,id));
+      await tx.update(table).set(await storeFields({state,failedBeforeDispatch:!dispatched || error instanceof GenerationAdmissionError,result:{failure:{beforeDispatch:!dispatched || error instanceof GenerationAdmissionError}},completedAt:state==='failed'?new Date().toISOString():null}, {"result":"json-gzip"})).where(eq(table.id,id));
     });
     throw error;
   }

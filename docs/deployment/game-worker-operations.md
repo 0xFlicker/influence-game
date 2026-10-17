@@ -31,7 +31,7 @@ trailer for safely resumable editorial work.
 
 ## Storage cutover release
 
-The `0119`–`0121` storage release requires [one coordinated maintenance cutover](private-payload-storage-cutover.md) with every writer stopped. Ordinary startup cannot migrate populated bodies. Use its packaged migration CLI before starting matching gateways and workers; the normal rolling handoff is not suitable for this schema change.
+The `0119`–`0122` storage release requires [one coordinated maintenance cutover](private-payload-storage-cutover.md) with every writer stopped. Ordinary startup cannot migrate populated bodies. Use its packaged migration CLI before starting matching gateways and workers; the normal rolling handoff is not suitable for this schema change.
 
 ## Ephemeral PR previews
 

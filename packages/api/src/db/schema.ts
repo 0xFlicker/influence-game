@@ -3771,6 +3771,7 @@ export const accountTextOperations = pgTable("account_text_operations", {
   requestKey: text("request_key").notNull(), inputHash: text("input_hash").notNull(),
   kind: text("kind").notNull(), model: text("model").notNull(),
   state: text("state").notNull().default("reserved").$type<"reserved" | "dispatched" | "succeeded" | "failed" | "uncertain">(),
+  failedBeforeDispatch: boolean("failed_before_dispatch").notNull().default(false),
   result: payloadColumn("result_object", "json-gzip").$type<StoredPayload<unknown>>(), promptTokens: integer("prompt_tokens"), completionTokens: integer("completion_tokens"),
   estimatedCostMicrousd: bigint("estimated_cost_microusd", { mode: "number" }), pricingSource: text("pricing_source"),
   providerRequestId: text("provider_request_id"),

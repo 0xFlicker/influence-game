@@ -855,6 +855,13 @@
       "when": 1792191933905,
       "tag": "0121_visual_request_query_metadata",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1792191933906,
+      "tag": "0122_text_operation_query_metadata",
+      "breakpoints": true
     }
   ]
 }

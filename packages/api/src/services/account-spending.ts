@@ -14,7 +14,7 @@ const sources = sql`WITH usage AS (
  SELECT 'text:' || id AS id, 'text:' || id AS operation_id, user_id, kind, model, state,
  created_at, estimated_cost_microusd AS estimated, NULL::bigint AS actual,
  prompt_tokens, completion_tokens, pricing_source,
- CASE WHEN state = 'reserved' OR result->'failure'->>'beforeDispatch' = 'true' THEN 0 ELSE 1 END AS attempts
+ CASE WHEN state = 'reserved' OR failed_before_dispatch THEN 0 ELSE 1 END AS attempts
  FROM account_text_operations
  UNION ALL
  SELECT 'avatar:' || id, 'avatar:' || id, user_id, 'portrait', model, status, created_at::timestamptz,

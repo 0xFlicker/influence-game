@@ -120,23 +120,33 @@ export async function copyPayloads(client: postgres.Sql, progress: (message: str
   }
   // Also supports resuming after the body-column transaction has already committed.
   // No original document is ever copied back into PostgreSQL.
-  const [queryColumns] = await client`SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
-    AND table_name='visual_media_requests' AND column_name='scene_id'`;
-  if (queryColumns) return;
-  const [oldColumn] = await client`SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
-    AND table_name='visual_media_requests' AND column_name='input'`;
-  let after: string | null = null;
-  while (true) {
-    const rows: Array<{ id: string; document: unknown }> = await client.unsafe(`SELECT id, ${oldColumn ? "input" : "input_object"} AS document
-      FROM visual_media_requests WHERE ($1::text IS NULL OR id > $1) ORDER BY id LIMIT 32`, [after]);
-    if (!rows.length) break;
-    for (const row of rows) {
-      const body = oldColumn ? row.document : await readJson(decodePayloadReference(row.document));
-      const updated = await client`UPDATE storage_payload_migration_receipts SET query_metadata=${client.json(visualRequestQueryMetadata(body))}
-        WHERE source_table='visual_media_requests' AND source_column='input' AND row_key=${client.json({ id: row.id })}
-        RETURNING source_sha256`;
-      if (updated.length !== 1) throw new Error(`Missing visual request copy receipt: ${row.id}`);
-      after = row.id;
+  for (const projection of [
+    { table: "visual_media_requests", column: "input", queryColumn: "scene_id", metadata: visualRequestQueryMetadata },
+    { table: "account_text_operations", column: "result", queryColumn: "failed_before_dispatch", metadata: (body: unknown) => {
+      const failure = body && typeof body === "object" && "failure" in body ? body.failure : null;
+      const before = failure && typeof failure === "object" && "beforeDispatch" in failure ? failure.beforeDispatch : false;
+      return { failedBeforeDispatch: before === true || before === "true" };
+    } },
+  ]) {
+    const [queryColumn] = await client`SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
+      AND table_name=${projection.table} AND column_name=${projection.queryColumn}`;
+    if (queryColumn) continue;
+    const [oldColumn] = await client`SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
+      AND table_name=${projection.table} AND column_name=${projection.column}`;
+    let after: string | null = null;
+    const bodyColumn = quote(oldColumn ? projection.column : `${projection.column}_object`);
+    while (true) {
+      const rows: Array<{ id: string; document: unknown }> = await client.unsafe(`SELECT id, ${bodyColumn} AS document
+        FROM ${quote(projection.table)} WHERE ${bodyColumn} IS NOT NULL AND ($1::text IS NULL OR id > $1) ORDER BY id LIMIT 32`, [after]);
+      if (!rows.length) break;
+      for (const row of rows) {
+        const body = oldColumn ? row.document : await readJson(decodePayloadReference(row.document));
+        const updated = await client`UPDATE storage_payload_migration_receipts SET query_metadata=${client.json(projection.metadata(body))}
+          WHERE source_table=${projection.table} AND source_column=${projection.column} AND row_key=${client.json({ id: row.id })}
+          RETURNING source_sha256`;
+        if (updated.length !== 1) throw new Error(`Missing query metadata copy receipt: ${projection.table}.${row.id}`);
+        after = row.id;
+      }
     }
   }
 }

@@ -262,3 +262,10 @@ test("only the exact reviewed maintenance cutover SQL bypasses rolling-schema ru
     expect(inspectReleaseMigrationSql(name, body.replace("writers-stopped", "unchecked"))).not.toEqual([]);
   }
 });
+
+
+test("query metadata materialization remains additive", () => {
+  for (const name of ["0121_visual_request_query_metadata.sql", "0122_text_operation_query_metadata.sql"]) {
+    expect(inspectReleaseMigrationFiles([path.resolve(import.meta.dir, "../../drizzle", name)])).toEqual([]);
+  }
+});

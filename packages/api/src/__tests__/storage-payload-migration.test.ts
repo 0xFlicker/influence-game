@@ -8,7 +8,7 @@ import { copyPayloads, inventoryPayloads, verifyPayloads } from "../services/sto
 import { payloadHash, readPayload } from "../services/payload-storage.js";
 
 const client = postgres(process.env.TEST_DATABASE_URL ?? "postgresql://influence:influence@127.0.0.1:54320/influence_test", { max: 1, onnotice: () => {} });
-const migration = ["0119_private_payload_storage.sql", "0120_private_auxiliary_documents.sql", "0121_visual_request_query_metadata.sql"].map(file => readFileSync(new URL(`../../drizzle/${file}`, import.meta.url), "utf8")).join("\n--> statement-breakpoint\n");
+const migration = ["0119_private_payload_storage.sql", "0120_private_auxiliary_documents.sql", "0121_visual_request_query_metadata.sql", "0122_text_operation_query_metadata.sql"].map(file => readFileSync(new URL(`../../drizzle/${file}`, import.meta.url), "utf8")).join("\n--> statement-breakpoint\n");
 const quote = (s: string) => `"${s}"`;
 beforeAll(async () => { await setupTestDB(); });
 afterAll(async () => { await client.end(); });
@@ -38,7 +38,7 @@ async function fixture(run: () => Promise<void>) {
     await client`INSERT INTO provider_attempt_evidence_outbox(attempt_id,body) VALUES ('attempt',${"raw\r\nUnicode 雪"})`;
     await client`INSERT INTO game_checkpoints(id,snapshot) VALUES ('nullable',NULL)`;
     await client`INSERT INTO agent_revisions(id,behavior_snapshot,effective_runtime_snapshot) VALUES ('revision','{"strategy":"preserved"}','{"model":"preserved"}')`;
-    await client`INSERT INTO account_text_operations(id,result) VALUES ('account','{"text":"draft"}')`;
+    await client`INSERT INTO account_text_operations(id,result) VALUES ('account','{"failure":{"beforeDispatch":true}}')`;
     await client`INSERT INTO anonymous_text_operations(id,result) VALUES ('anonymous','{"text":"draft"}')`;
     await client`INSERT INTO visual_media_requests(id,input) VALUES ('request','{"command":"saved","sceneId":"scene","action":"regenerate","acknowledgeUncertainAttempts":["attempt"]}')`;
     await client`INSERT INTO provider_health_probe_evidence(id,record) VALUES ('probe','{"request":"saved"}')`;
@@ -60,6 +60,7 @@ describe("existing payload migration", () => {
     expect((await verifyPayloads(client)).verified).toBe(29);
     const [metadata] = await client`SELECT scene_id,action,acknowledged_attempt_ids FROM visual_media_requests`;
     expect(metadata).toEqual({ scene_id: "scene", action: "regenerate", acknowledged_attempt_ids: ["attempt"] });
+    expect((await client`SELECT failed_before_dispatch FROM account_text_operations`)[0]!.failed_before_dispatch).toBe(true);
     const [retro] = await client`SELECT input_object FROM game_retrospective_inputs`;
     expect(payloadHash(await readPayload(retro!.input_object))).toBe(before!.hash);
     const images = await client`SELECT id,image_object FROM visual_artifacts ORDER BY id`;

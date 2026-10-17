@@ -16,7 +16,7 @@ Use `payloadColumn` for schema references, `storeFields`/`storeJson` for writes,
 
 Audit raw SQL and PL/pgSQL functions separately from TypeScript. Column renames do not rewrite field names embedded in trigger function bodies. The learning failure-evidence trigger and immutable visual-repair trigger both require updates. Bounded primary-key pagination is preferable to sorting large body tables by constructed JSON keys.
 
-The migration must be run with every writer stopped, including development watchers and automatic restarts. Populated-data startup is guarded even after pre-copy. All three schema migrations execute in one maintenance transaction; a missing copy aborts the whole transaction. Never infer a successful migration from an uploaded object or a copied receipt alone. Verify all objects after commit, compare non-body state fingerprints, and measure reclaimed table/TOAST space.
+The migration must be run with every writer stopped, including development watchers and automatic restarts. Populated-data startup is guarded even after pre-copy. All four schema migrations execute in one maintenance transaction; a missing copy aborts the whole transaction. Never infer a successful migration from an uploaded object or a copied receipt alone. Verify all objects after commit, compare non-body state fingerprints, and measure reclaimed table/TOAST space.
 
 Test adapters belong only in tests. Browser fixtures and the API child process need a shared isolated object store; an in-memory parent-only adapter cannot prove child reads. The browser harness explicitly preloads its filesystem object store, while normal application startup always uses the configured private bucket.
 
