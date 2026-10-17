@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import { and, desc, eq } from "drizzle-orm";
 import { assertRetrospectiveInput, durableProviderLogicalCallId, prepareRetrospectiveRequest, providerLogicalCallId, replayCanonicalEvents,
   type RetrospectiveExecutionError, type RetrospectiveFailureCode, type RetrospectiveFailureStage, type RetrospectiveOutcomeSource } from "@influence/engine";
@@ -120,7 +121,7 @@ export async function resumeGameRetrospective(db: DrizzleDB, input: ResumeRetros
       throw new RetrospectiveRecoveryError("conflict", "Recovery frontier changed");
     }
     if (frontier.inputHash !== null) {
-      const [stored] = await tx.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, game.id));
+      const [stored] = await loadPayloads(tx.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, game.id)));
       if (!stored) throw new RetrospectiveRecoveryError("unavailable", "Frozen retrospective input is unavailable");
       assertRetrospectiveInput(stored.input);
       if (stored.inputHash !== frontier.inputHash || sha256StableJson(stored.input) !== frontier.inputHash

@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { DEFAULT_CONFIG, GameRunner, replayCanonicalEvents } from "@influence/engine";
@@ -27,7 +28,7 @@ test("outcome cannot settle; a restart after the final epilogue seals and publis
   await expect(settleDurableTerminalGame(db, { gameId, ownerEpoch })).rejects.toMatchObject({ code: "execution_not_terminal" });
   expect(await db.select().from(schema.gameCompletionSettlements)).toHaveLength(0);
   expect(await db.select().from(schema.gameResults)).toHaveLength(0);
-  expect(await db.select().from(schema.houseCutJobs)).toHaveLength(0);
+  expect(await loadPayloads(db.select().from(schema.houseCutJobs))).toHaveLength(0);
   await new GameRunner(agents(), config, undefined, { gameId, durableTurnStore: store }).run();
   const terminal = await store.load(gameId);
   expect(replayCanonicalEvents(terminal!.canonicalEvents).retrospectiveOutcomeSource).toEqual(outcome);
@@ -53,7 +54,7 @@ test("outcome cannot settle; a restart after the final epilogue seals and publis
   const again = await settleCapturedGameCompletion(db, gameId, { source: "runner", adoptedOwnerEpoch: finalOwner });
   expect(again.outcome).toBe("already_completed");
   expect(await db.select().from(schema.gameResults)).toHaveLength(1);
-  expect(await db.select().from(schema.houseCutJobs)).toHaveLength(1);
-  expect(await db.select().from(schema.gamePostgameMedia)).toHaveLength(1);
+  expect(await loadPayloads(db.select().from(schema.houseCutJobs))).toHaveLength(1);
+  expect(await loadPayloads(db.select().from(schema.gamePostgameMedia))).toHaveLength(1);
   expect((await db.select().from(schema.gameRunOwners)).filter(owner => owner.status === "closed")).toHaveLength(1);
 }, 30_000);

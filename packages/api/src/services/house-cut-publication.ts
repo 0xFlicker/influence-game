@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import { and, eq, or } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { isViewerGame } from "./game-visibility.js";
@@ -10,8 +11,8 @@ export async function readHouseCuts(db: DrizzleDB, idOrSlug: string, audience?: 
   if (!game || !isViewerGame(game)) return null;
   const chosen = audience ?? (game.gameKind === "werewolf" ? "mystery" : "public");
   if (game.gameKind === "werewolf" ? chosen !== "mystery" && chosen !== "omniscient" : chosen !== "public") return null;
-  const [job] = await db.select({ status: schema.houseCutJobs.status, publication: schema.houseCutJobs.publication }).from(schema.houseCutJobs)
-    .where(and(eq(schema.houseCutJobs.gameId, game.id), eq(schema.houseCutJobs.audience, chosen as CutSource["audience"])));
+  const [job] = await loadPayloads(db.select({ status: schema.houseCutJobs.status, publication: schema.houseCutJobs.publication }).from(schema.houseCutJobs)
+    .where(and(eq(schema.houseCutJobs.gameId, game.id), eq(schema.houseCutJobs.audience, chosen as CutSource["audience"]))));
   return { game: { id: game.id, slug: game.slug, kind: game.gameKind as "werewolf" | "influence" },
     audience: chosen as CutSource["audience"], status: job?.publication ? "ready" : job?.status === "failed" ? "failed" : job ? "pending" : "not_prepared",
     publication: job?.publication ?? null };

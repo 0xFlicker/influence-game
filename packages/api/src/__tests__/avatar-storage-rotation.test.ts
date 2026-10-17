@@ -1,3 +1,4 @@
+import { storeFields, loadPayloads } from "../services/payload-storage.js";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   hashHouseHighlightsTrailerManifest,
@@ -98,7 +99,7 @@ describe("private avatar storage rotation", () => {
       status: "completed",
     });
     const snapshot = manifestFixture();
-    await db.insert(schema.gamePostgameMedia).values({
+    await db.insert(schema.gamePostgameMedia).values(await storeFields({
       gameId: "rotation-game",
       mediaType: "house_highlights_trailer",
       status: "queued",
@@ -111,7 +112,7 @@ describe("private avatar storage rotation", () => {
       rendererVersion: "test-renderer",
       timingContractVersion: "test-v1",
       musicAssetId: "test-music",
-    });
+    }, {"renderInputSnapshot":"json-gzip"}));
   });
 
   afterEach(() => {
@@ -161,7 +162,7 @@ describe("private avatar storage rotation", () => {
       .where(eq(schema.agentProfiles.id, "rotation-agent"));
     const [generation] = await db.select().from(schema.avatarGenerationRequests);
     const [change] = await db.select().from(schema.avatarChangeEvents);
-    const [media] = await db.select().from(schema.gamePostgameMedia);
+    const [media] = await loadPayloads(db.select().from(schema.gamePostgameMedia));
     expect(profile!.avatarUrl).toBe(referenced.newPublicUrl);
     expect(generation!.safeMetadata).toEqual({
       storageKey: referenced.newKey,

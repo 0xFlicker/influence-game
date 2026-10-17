@@ -1,3 +1,4 @@
+import { storeFields, loadPayloads } from "./payload-storage.js";
 import type { VisualBoundaryGuard, VisualTransaction } from "./visual-execution-boundary.js";
 import { createHash, randomUUID } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
@@ -17,14 +18,14 @@ export async function storeVisualArtifact(db: DrizzleDB | VisualTransaction, gam
   const normalized = await sharp(image, { limitInputPixels: 4096 * 4096 }).rotate().png().toBuffer({ resolveWithObject: true });
   const contentHash = createHash("sha256").update(normalized.data).digest("hex");
   const id = randomUUID();
-  await db.insert(artifacts).values({ id, gameId, contentHash, image: normalized.data, width: normalized.info.width, height: normalized.info.height }).onConflictDoNothing();
+  await db.insert(artifacts).values(await storeFields({ id, gameId, contentHash, image: normalized.data, width: normalized.info.width, height: normalized.info.height }, {"image":"binary"})).onConflictDoNothing();
   const [stored] = await db.select({ id: artifacts.id }).from(artifacts).where(and(eq(artifacts.gameId, gameId), eq(artifacts.contentHash, contentHash)));
   if (!stored) throw new Error("Visual artifact was not stored");
   return stored.id;
 }
 
 export async function readVisualArtifact(db: DrizzleDB | VisualTransaction, gameId: string, artifactId: string): Promise<Buffer> {
-  const [artifact] = await db.select({ image: artifacts.image }).from(artifacts).where(and(eq(artifacts.id, artifactId), eq(artifacts.gameId, gameId)));
+  const [artifact] = await loadPayloads(db.select({ image: artifacts.image }).from(artifacts).where(and(eq(artifacts.id, artifactId), eq(artifacts.gameId, gameId))));
   if (!artifact) throw new Error("Visual artifact is unavailable for this game");
   return artifact.image;
 }

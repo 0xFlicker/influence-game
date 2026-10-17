@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
@@ -165,7 +166,7 @@ async function seedRouteFixture() {
     name: "Aster Routes",
     personality: "Steady",
   })).profile;
-  const revision = (await db.select().from(schema.agentRevisions))[0]!;
+  const revision = (await loadPayloads(db.select().from(schema.agentRevisions)))[0]!;
   const season = await createSeason(db, {
     slug: `routes-${randomUUID()}`,
     name: "Routes Season",

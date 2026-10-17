@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import { LEGACY_FORMAT_MANIFEST, Phase, replayCanonicalEvents, resolveFormatManifest, resolveGameKernel } from "@influence/engine";
 import { validHeadRectangle, type CharacterHeadPosition, type HeadRectangle } from "@influence/engine/character-portrait";
 import { assembleProductionCatalog, type ProductionCatalog } from "@influence/engine/production-moments";
@@ -125,7 +126,7 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
     throw new InfluenceProductionSourceError("Production preview requires a completed game or a validated visual pause");
   if (supplied && supplied.gameId !== game.id) throw new InfluenceProductionSourceError("Production snapshot belongs to another game");
   const config = record(JSON.parse(game.config));
-  const [history, execution, seats, rows, committedTurns] = await Promise.all([
+  const [history, execution, seats, rows, committedTurns] = await loadPayloads(Promise.all([
     getPersistedGameEvents(db, game.id), readGameExecutionState(db, game.id),
     db.select({ id: schema.gamePlayers.id, persona: schema.gamePlayers.persona }).from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.gameId, game.id)).orderBy(asc(schema.gamePlayers.joinedAt), asc(schema.gamePlayers.id)),
@@ -133,7 +134,7 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
       .orderBy(asc(schema.transcripts.timestamp), asc(schema.transcripts.id)),
     db.select({ id: schema.gameTurns.id, sequence: schema.gameTurns.turnSequence, result: schema.gameTurns.commitResult })
       .from(schema.gameTurns).where(and(eq(schema.gameTurns.gameId, game.id), eq(schema.gameTurns.status, "committed"))),
-  ]);
+  ]));
   if (history.status === "invalid") throw new InfluenceProductionSourceError("Influence accepted history is invalid");
   if (execution && execution.heads.eventSequence !== history.lastTrustedSequence)
     throw new InfluenceProductionSourceError("Influence accepted event head changed");
@@ -217,7 +218,7 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
       toPlayerIds: stringArray(row.toPlayerIds), ...(row.roomId !== null && { roomId: row.roomId }),
       ...(row.roomMetadata !== null && { roomMetadata: roomMetadata(row.roomMetadata) }), text: row.text, thinking: row.thinking, timestamp: row.timestamp };
   });
-  const [cognition, assets, publications, sceneRows, episode] = await Promise.all([
+  const [cognition, assets, publications, sceneRows, episode] = await loadPayloads(Promise.all([
     db.select({ eventSequence: schema.gameCognitiveArtifacts.eventSequence, actorId: schema.gameCognitiveArtifacts.actorPlayerId,
       decisionId: schema.gameCognitiveArtifacts.decisionId, payload: schema.gameCognitiveArtifacts.payload }).from(schema.gameCognitiveArtifacts).where(and(
       eq(schema.gameCognitiveArtifacts.gameId, game.id), eq(schema.gameCognitiveArtifacts.artifactType, "thinking"),
@@ -234,7 +235,7 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
     db.select({ id: schema.visualScenes.id, boundarySequence: schema.visualScenes.boundarySequence, afterDialogueSequence: schema.visualScenes.afterDialogueSequence })
       .from(schema.visualScenes).where(and(eq(schema.visualScenes.gameId, game.id), sql`${schema.visualScenes.createdAt}::timestamptz <= ${publicationCutoff}::timestamptz`)),
     db.select({ title: schema.gameEpisodePresentations.title }).from(schema.gameEpisodePresentations).where(eq(schema.gameEpisodePresentations.gameId, game.id)),
-  ]);
+  ]));
   const thoughts: InfluenceProductionThought[] = [];
   const thoughtKeys = new Set<string>();
   for (const row of cognition) {

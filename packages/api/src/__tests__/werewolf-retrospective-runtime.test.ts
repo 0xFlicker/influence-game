@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { expect, test } from "bun:test";
 import OpenAI from "openai";
 import { eq } from "drizzle-orm";
@@ -29,16 +30,16 @@ test.each(["first", "final"] as const)("%s retrospective response survives owner
   const outcome = structuredClone(state.outcome);
   expect((await db.select().from(schema.games))[0]!.status).toBe("in_progress");
   expect((await db.select().from(schema.gameRunOwners))[0]!.status).toBe("active");
-  expect(await db.select().from(schema.gameRetrospectiveInputs)).toHaveLength(0);
+  expect(await loadPayloads(db.select().from(schema.gameRetrospectiveInputs))).toHaveLength(0);
   await expect(advanceWerewolf({ ...store, async append(event, input) {
     if (event.type === "werewolf.retrospective_started") return store.append({ ...event, payload: { ...event.payload, inputHash: "sha256:invalid" } }, input);
     return store.append(event, input);
   } }, scripted)).rejects.toThrow();
-  expect(await db.select().from(schema.gameRetrospectiveInputs)).toHaveLength(0);
+  expect(await loadPayloads(db.select().from(schema.gameRetrospectiveInputs))).toHaveLength(0);
   state = await advanceWerewolf(store, scripted);
   if (slot === "final") while (state.retrospective!.statements.length < state.players.length - 1) state = await advanceWerewolf(store, scripted);
   const ordinal = state.retrospective!.statements.length;
-  const frozen = (await db.select().from(schema.gameRetrospectiveInputs))[0]!.input;
+  const frozen = (await loadPayloads(db.select().from(schema.gameRetrospectiveInputs)))[0]!.input;
   let generations = 0;
   const client = new OpenAI({ apiKey: "fixture", baseURL: "https://api.openai.com/v1", maxRetries: 0, fetch: async (url, init) => {
     generations++;
@@ -75,7 +76,7 @@ test.each(["first", "final"] as const)("%s retrospective response survives owner
   const resumed = await advanceWerewolf(nextStore, makeAgent(replacement.claim.ownerEpoch));
   expect(resumed.retrospective!.statements[ordinal]!.speech).toBe("  I now understand the whole game. 😀\n ");
   expect(generations).toBe(1);
-  const call = (await db.select().from(schema.providerLogicalCalls))[0]!;
+  const call = (await loadPayloads(db.select().from(schema.providerLogicalCalls)))[0]!;
   expect(resumed.retrospective!.statements[ordinal]!.providerLogicalCallId).toBe(call.id);
   expect(await db.select().from(schema.providerCallAttempts)).toHaveLength(1);
   const cost = await getAdminGameCostDetail(db, game.id);
@@ -86,7 +87,7 @@ test.each(["first", "final"] as const)("%s retrospective response survives owner
   expect(final.outcome).toEqual(outcome); expect(final.retrospective!.statements).toHaveLength(final.players.length);
   expect((await db.select().from(schema.games))[0]!.status).toBe("completed");
   expect((await db.select().from(schema.gameRunOwners)).filter(owner => owner.status === "closed")).toHaveLength(1);
-  expect(await db.select().from(schema.gameRetrospectiveInputs)).toHaveLength(1);
+  expect(await loadPayloads(db.select().from(schema.gameRetrospectiveInputs))).toHaveLength(1);
 }, 30_000);
 
 test("input insertion rolls back when the same start transaction cannot append its canonical event", async () => {
@@ -112,11 +113,11 @@ test("input insertion rolls back when the same start transaction cannot append i
     } }))) ;
   } });
   await expect(advanceWerewolf(createWerewolfStore(faultingDb, game.id, claim.claim.ownerEpoch), scripted)).rejects.toThrow("after frozen input");
-  expect(await db.select().from(schema.gameRetrospectiveInputs)).toHaveLength(0);
+  expect(await loadPayloads(db.select().from(schema.gameRetrospectiveInputs))).toHaveLength(0);
   expect(replayWerewolf(await store.read())).toEqual(state);
   const restarted = await advanceWerewolf(store, scripted);
   expect(restarted.retrospective!.statements).toHaveLength(0);
-  expect(await db.select().from(schema.gameRetrospectiveInputs)).toHaveLength(1);
+  expect(await loadPayloads(db.select().from(schema.gameRetrospectiveInputs))).toHaveLength(1);
 }, 30_000);
 
 test("a crash after exhausted native retries cannot spend again before explicit recovery", async () => {

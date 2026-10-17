@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import { currentReviewIdentity, reviewStrategyField } from "./owner-learning-game.js";
 import { parseCharacterHeadPosition } from "@influence/engine/character-portrait";
 import { confirmProfileHead } from "./character-head-position.js";
@@ -627,10 +628,10 @@ async function findIdempotentCreatedAgent(
     );
   }
   if (!profile?.currentRevisionId) return null;
-  const revision = (await db.select().from(schema.agentRevisions).where(and(
+  const revision = (await loadPayloads(db.select().from(schema.agentRevisions).where(and(
     eq(schema.agentRevisions.id, profile.currentRevisionId),
     eq(schema.agentRevisions.agentProfileId, profile.id),
-  )).limit(1))[0];
+  )).limit(1)))[0];
   if (!revision) throw new Error("Idempotent Agent creation is missing its active revision.");
   const ensured: EnsuredAgentRevision = { revision, created: false, ratingRecalibrated: false };
   const [submission] = await db.select().from(schema.agentContentSubmissions).where(eq(schema.agentContentSubmissions.id, creationRequestId));
@@ -819,7 +820,7 @@ export async function updateOwnedAgentProfileInLockedTransaction(
   updates.headPosition = await confirmProfileHead({ ...draft, ...updates }, draft, input.context.userId, input.context.contentAssets);
   if (existing.moderationRequired) {
     // A correction is intake evidence, not a profile/rating/roster mutation.
-    const [current] = await tx.select().from(schema.agentRevisions).where(eq(schema.agentRevisions.id, existing.currentRevisionId!));
+    const [current] = await loadPayloads(tx.select().from(schema.agentRevisions).where(eq(schema.agentRevisions.id, existing.currentRevisionId!)));
     if (!current) throw new AgentProfileManagementError("agent_update_conflict", "The character's current revision is unavailable.", 409);
     const revision = { revision: current, created: false, ratingRecalibrated: false };
     const receipt = emptyMutationReceipt(existing.id, revision, "updated");

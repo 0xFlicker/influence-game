@@ -1,3 +1,4 @@
+import { storeFields, loadPayloads } from "../services/payload-storage.js";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -281,10 +282,10 @@ describe("owner learning evidence", () => {
       .toBe(game.candidateMoments.length);
     expect(JSON.stringify(projection.reviewInput)).toContain("REVIEWED_PROFILE_COGNITION_SENTINEL");
     expect(JSON.stringify(projection.reviewInput)).not.toContain("OPPONENT_COGNITION_SENTINEL");
-    expect(await db.select().from(schema.agentLearningGameEvidence)).toEqual([]);
+    expect(await loadPayloads(db.select().from(schema.agentLearningGameEvidence))).toEqual([]);
 
     await materializeOwnerLearningEvidenceProjection(db, selection, projection);
-    const stored = (await db.select().from(schema.agentLearningGameEvidence))[0]!;
+    const stored = (await loadPayloads(db.select().from(schema.agentLearningGameEvidence)))[0]!;
     expect(stored).toMatchObject({
       ownerUserId: fixture.ownerUserId,
       agentProfileId: fixture.agentProfileId,
@@ -308,7 +309,7 @@ describe("owner learning evidence", () => {
       changedProjection,
     );
     expect(changed.games[0]!.gameEvidenceId).not.toBe(stored.id);
-    expect(await db.select().from(schema.agentLearningGameEvidence)).toHaveLength(2);
+    expect(await loadPayloads(db.select().from(schema.agentLearningGameEvidence))).toHaveLength(2);
   });
 
   test("keeps production MCP preflight read-only with the real evidence projector", async () => {
@@ -368,10 +369,10 @@ describe("owner learning evidence", () => {
 async function durableOwnerLearningState(db: DrizzleDB) {
   return {
     entitlements: await db.select().from(schema.agentLearningReviewEntitlements),
-    gameEvidence: await db.select().from(schema.agentLearningGameEvidence),
-    reviews: await db.select().from(schema.agentLearningReviews),
+    gameEvidence: await loadPayloads(db.select().from(schema.agentLearningGameEvidence)),
+    reviews: await loadPayloads(db.select().from(schema.agentLearningReviews)),
     reviewGames: await db.select().from(schema.agentLearningReviewGames),
-    reviewCalls: await db.select().from(schema.agentLearningReviewCalls),
+    reviewCalls: await loadPayloads(db.select().from(schema.agentLearningReviewCalls)),
     momentEvidence: await db.select().from(schema.agentLearningMomentEvidence),
     applications: await db.select().from(schema.agentLearningReviewApplications),
     events: await db.select().from(schema.agentLearningEvents),
@@ -504,7 +505,7 @@ async function insertProjectionFixture(db: DrizzleDB): Promise<{
       personality: "Unrelated owned cognition.",
     },
   ]);
-  await db.insert(schema.agentRevisions).values({
+  await db.insert(schema.agentRevisions).values(await storeFields({
     id: revisionId,
     agentProfileId,
     ordinal: 1,
@@ -514,7 +515,7 @@ async function insertProjectionFixture(db: DrizzleDB): Promise<{
     behaviorSnapshot: { strategyStyle: "Build trust before committing." },
     effectiveRuntimeSnapshot: {},
     revisionPolicyVersion: "agent-revision-v2",
-  });
+  }, {"behaviorSnapshot":"json-gzip","effectiveRuntimeSnapshot":"json-gzip"}));
   await db.update(schema.agentProfiles).set({ currentRevisionId: revisionId })
     .where(eq(schema.agentProfiles.id, agentProfileId));
   await db.insert(schema.games).values({
@@ -580,7 +581,7 @@ async function insertProjectionFixture(db: DrizzleDB): Promise<{
     dialogueKind: "public_speech" as const,
     safeContext: { version: 1 as const },
   })));
-  await db.insert(schema.gameCognitiveArtifacts).values([
+  await db.insert(schema.gameCognitiveArtifacts).values(await storeFields([
     cognitionRow({
       id: "reviewed-cognition",
       playerId: EDGE_SMOKE_DUSK_PLAYERS.lilith.id,
@@ -600,7 +601,7 @@ async function insertProjectionFixture(db: DrizzleDB): Promise<{
       playerId: EDGE_SMOKE_DUSK_PLAYERS.ember.id,
       thinking: "OPPONENT_COGNITION_SENTINEL",
     }),
-  ]);
+  ], {"payload":"json-gzip"}));
   return { ownerUserId, agentProfileId, revisionId, completionAt };
 }
 

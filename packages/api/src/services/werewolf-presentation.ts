@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import { werewolfVisualPause } from "./werewolf-visual-policy.js";
 import { isViewerGame } from "./game-visibility.js";
 import { inArray, and, desc, eq, isNull, lte, or } from "drizzle-orm";
@@ -33,7 +34,7 @@ export async function readWerewolfCharacter(db: Pick<DrizzleDB, "select">, gameI
   if (!ref) return null;
   const hash = image === "body" ? (ref.kind === "full_body" ? ref.bodyHash : null) : ref.portraitHash;
   if (hash) {
-    const [asset] = await db.select({ bytes: schema.agentContentAssets.bytes }).from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, hash));
+    const [asset] = await loadPayloads(db.select({ bytes: schema.agentContentAssets.bytes }).from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, hash)));
     return asset?.bytes ?? null;
   }
   return image === "portrait" && ref.bundled ? readVisualProfileImage(null, ref.profile) : null;

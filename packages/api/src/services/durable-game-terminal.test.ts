@@ -1,3 +1,4 @@
+import { storeFields } from "./payload-storage.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -356,7 +357,7 @@ async function createTerminalFixture(
     }],
     alreadyCommitted: false,
   };
-  await db.insert(schema.gameTurns).values({
+  await db.insert(schema.gameTurns).values(await storeFields({
     id: turnId,
     gameId,
     contractVersion: 1,
@@ -373,7 +374,7 @@ async function createTerminalFixture(
     commitResult,
     plannedAt: committedAt,
     committedAt,
-  });
+  }, {"intent":"json-gzip","commitResult":"json-gzip"}));
   await db.insert(schema.transcripts).values({
     ...serializeTranscriptEntry(gameId, {
       round: 4,

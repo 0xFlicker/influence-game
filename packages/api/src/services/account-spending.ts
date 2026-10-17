@@ -25,7 +25,7 @@ const sources = sql`WITH usage AS (
  SELECT 'visual:' || a.id, 'visual:' || o.id, o.user_id,
  CASE WHEN o.operation_key LIKE 'full-body:%' THEN 'full_body' ELSE 'image_localization' END,
  a.model, CASE WHEN a.finished_at IS NULL OR coalesce((a.receipt->>'chargeUncertain')::boolean,false) THEN 'uncertain'
- WHEN a.image IS NOT NULL OR a.localization IS NOT NULL THEN 'succeeded' ELSE 'failed' END,
+ WHEN a.image_object IS NOT NULL OR a.localization IS NOT NULL THEN 'succeeded' ELSE 'failed' END,
  a.created_at::timestamptz, a.cost_microusd, NULL::bigint, NULL::integer, NULL::integer, 'visual_pricing:2026-09-21', 1
  FROM visual_render_attempts a JOIN visual_render_operations o ON o.id = a.operation_id WHERE o.user_id IS NOT NULL
  UNION ALL

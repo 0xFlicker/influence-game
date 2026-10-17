@@ -1,3 +1,4 @@
+import { storeFields } from "../services/payload-storage.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
@@ -764,7 +765,7 @@ describe("CognitiveArtifactReadModel", () => {
     diagnostics?: Record<string, unknown>;
     createdAt?: string;
   }): Promise<void> {
-    await db.insert(schema.gameCognitiveArtifacts).values({
+    await db.insert(schema.gameCognitiveArtifacts).values(await storeFields({
       id: params.id,
       gameId: params.gameId,
       artifactType: params.artifactType,
@@ -778,6 +779,6 @@ describe("CognitiveArtifactReadModel", () => {
       visibilityStatus: params.visibilityStatus ?? "active",
       diagnostics: params.diagnostics,
       ...(params.createdAt && { createdAt: params.createdAt }),
-    });
+    }, {"payload":"json-gzip"}));
   }
 });

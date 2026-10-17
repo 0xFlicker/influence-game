@@ -1,3 +1,4 @@
+import { installE2ePayloadStore, removeE2ePayloadStore } from "./payload-store.js";
 /**
  * E2E Test Database Lifecycle
  *
@@ -53,6 +54,7 @@ export async function createIsolatedTestDb(
 
   try {
     if (options.signal?.aborted) throw new Error("Isolated database startup aborted");
+    await installE2ePayloadStore(databaseUrl);
     await runMigrations(databaseUrl);
     if (options.signal?.aborted) throw new Error("Isolated database startup aborted");
     const db = createDB(databaseUrl);
@@ -80,6 +82,7 @@ export async function destroyIsolatedTestDb(databaseUrl: string): Promise<void> 
     throw new Error(`Refusing to drop non-isolated test database: ${databaseName}`);
   }
   await cleanupE2eResources([
+    ["isolated object store", () => removeE2ePayloadStore(databaseUrl)],
     ["cached database connection", () => withTimeout(
       closeDB(databaseUrl),
       5_000,

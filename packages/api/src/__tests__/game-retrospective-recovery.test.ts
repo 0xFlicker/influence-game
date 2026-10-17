@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { DEFAULT_CONFIG, GameRunner, ProviderUnavailableError, RetrospectiveExecutionError, RetrospectiveContextCapacityError, durableProviderLogicalCallId, fixtureRetrospectiveCapacity, fixtureWerewolfRetrospective, replayCanonicalEvents } from "@influence/engine";
@@ -139,7 +140,7 @@ test("Werewolf failure preserves its prepared request, frozen input and accepted
   let error: RetrospectiveExecutionError | null = null;
   try { await runWerewolf(store, agent); } catch (cause) { if (!(cause instanceof RetrospectiveExecutionError)) throw cause; error = cause; }
   expect(error).toMatchObject({ stage: "statement", code: "malformed_output" });
-  const events = await store.read(), state = replayWerewolf(events), frozen = (await db.select().from(schema.gameRetrospectiveInputs))[0]!;
+  const events = await store.read(), state = replayWerewolf(events), frozen = (await loadPayloads(db.select().from(schema.gameRetrospectiveInputs)))[0]!;
   const [row] = await db.select().from(schema.games).where(eq(schema.games.id, game.id));
   const frontier = await readRetrospectiveFrontier(db, row!);
   expect(await pauseRetrospectiveExecution(db, game.id, claim.claim.ownerEpoch, error!)).toBeTrue();
@@ -155,7 +156,7 @@ test("Werewolf failure preserves its prepared request, frozen input and accepted
   expect(final.outcome).toEqual(state.outcome);
   expect(final.retrospective!.statements[0]).toEqual(state.retrospective!.statements[0]);
   expect(final.retrospective!.statements).toHaveLength(final.players.length);
-  expect((await db.select().from(schema.gameRetrospectiveInputs))[0]).toEqual(frozen);
+  expect((await loadPayloads(db.select().from(schema.gameRetrospectiveInputs)))[0]).toEqual(frozen);
   expect(calls).toBe(final.players.length + 1);
 }, 30_000);
 

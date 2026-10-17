@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { beforeEach, expect, test } from "bun:test";
 import { eq, gt } from "drizzle-orm";
 import { completedWerewolfResultsFixture, werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
@@ -84,6 +85,6 @@ test("multibyte speeches page as whole entries below the exact wire budget witho
   expect(first.statements.every(statement => statement.speech === "😀".repeat(2000))).toBeTrue();
   const rest = await readHouseGameRetrospective(db, { gameIdOrSlug: "rt09-big", cursor: first.nextCursor! });
   expect(first.statements.length + rest.statements.length).toBe(8);
-  expect(await db.select().from(schema.gameRetrospectiveInputs)).toHaveLength(0);
-  expect(await db.select().from(schema.providerLogicalCalls)).toHaveLength(0);
+  expect(await loadPayloads(db.select().from(schema.gameRetrospectiveInputs))).toHaveLength(0);
+  expect(await loadPayloads(db.select().from(schema.providerLogicalCalls))).toHaveLength(0);
 });

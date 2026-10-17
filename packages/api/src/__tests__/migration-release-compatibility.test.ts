@@ -252,3 +252,13 @@ describe("expand-contract release migration policy", () => {
     ).toEqual([]);
   });
 });
+
+test("only the exact reviewed maintenance cutover SQL bypasses rolling-schema rules", () => {
+  for (const name of ["0119_private_payload_storage.sql", "0120_private_auxiliary_documents.sql"]) {
+    const body = readFileSync(path.resolve(import.meta.dir, "../../drizzle", name), "utf8");
+    expect(inspectReleaseMigrationSql(name, body)).toEqual([]);
+    expect(inspectReleaseMigrationSql(name, `${body}\nALTER TABLE games DROP COLUMN config;`)).not.toEqual([]);
+    expect(inspectReleaseMigrationSql("unreviewed.sql", body)).not.toEqual([]);
+    expect(inspectReleaseMigrationSql(name, body.replace("writers-stopped", "unchecked"))).not.toEqual([]);
+  }
+});

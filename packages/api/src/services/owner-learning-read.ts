@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import { currentReviewIdentity } from "./owner-learning-game.js";
 import { and, asc, eq, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
@@ -23,7 +24,7 @@ export async function getOwnedOwnerLearningReview(
     agentProfileId?: string;
   },
 ): Promise<OwnerLearningReviewDTO> {
-  const row = (await db.select({
+  const row = (await loadPayloads(db.select({
     review: schema.agentLearningReviews,
     profile: schema.agentProfiles,
   }).from(schema.agentLearningReviews)
@@ -37,10 +38,10 @@ export async function getOwnedOwnerLearningReview(
       ...(input.agentProfileId
         ? [eq(schema.agentLearningReviews.agentProfileId, input.agentProfileId)]
         : []),
-    )).limit(1))[0];
+    )).limit(1)))[0];
   if (!row) throw new OwnerLearningReadError();
 
-  const [evidenceRows, applicationRows] = await Promise.all([
+  const [evidenceRows, applicationRows] = await loadPayloads(Promise.all([
     db.select({
       gameId: schema.agentLearningReviewGames.gameId,
       position: schema.agentLearningReviewGames.position,
@@ -61,7 +62,7 @@ export async function getOwnedOwnerLearningReview(
       .orderBy(asc(schema.agentLearningReviewGames.position)),
     db.select().from(schema.agentLearningReviewApplications)
       .where(eq(schema.agentLearningReviewApplications.reviewId, row.review.id)).limit(1),
-  ]);
+  ]));
   const application = applicationRows[0] ?? null;
   return {
     id: row.review.id,
@@ -125,7 +126,7 @@ export async function getOwnedOwnerLearningReviewStatus(
     agentProfileId?: string;
   },
 ): Promise<OwnerLearningReviewStatusDTO> {
-  const row = (await db.select({
+  const row = (await loadPayloads(db.select({
     analysisStatus: schema.agentLearningReviews.analysisStatus,
     stage: schema.agentLearningReviews.stage,
     capacitySubstatus: schema.agentLearningReviews.capacitySubstatus,
@@ -159,7 +160,7 @@ export async function getOwnedOwnerLearningReviewStatus(
       ...(input.agentProfileId
         ? [eq(schema.agentLearningReviews.agentProfileId, input.agentProfileId)]
         : []),
-    )).limit(1))[0];
+    )).limit(1)))[0];
   if (!row) throw new OwnerLearningReadError();
 
   return {

@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { contentImageFixture } from "./content-image-fixture.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "crypto";
@@ -241,7 +242,7 @@ describe("agent profile management service", () => {
     } satisfies Partial<AgentProfileManagementError>);
 
     expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
-    expect(await db.select().from(schema.agentRevisions)).toHaveLength(1);
+    expect(await loadPayloads(db.select().from(schema.agentRevisions))).toHaveLength(1);
     expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
   });
 
@@ -274,7 +275,7 @@ describe("agent profile management service", () => {
       },
     });
     expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
-    expect(await db.select().from(schema.agentRevisions)).toHaveLength(1);
+    expect(await loadPayloads(db.select().from(schema.agentRevisions))).toHaveLength(1);
     expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(1);
     expect(await db.select().from(schema.freeGameQueue)).toHaveLength(0);
   });
@@ -294,7 +295,7 @@ describe("agent profile management service", () => {
       publicBiography: null,
       strategyStyle: null,
     });
-    const revisionsBefore = await db.select().from(schema.agentRevisions);
+    const revisionsBefore = await loadPayloads(db.select().from(schema.agentRevisions));
 
     await expect(updateOwnedAgent(db, { userId: USER_A_ID }, {
       agentId: ownerA.agent.id,
@@ -310,7 +311,7 @@ describe("agent profile management service", () => {
       .where(eq(schema.agentProfiles.id, ownerA.agent.id));
     expect(persisted?.name).toBe("Quiet Meridian");
     expect(persisted?.avatarUrl).toBeNull();
-    expect(await db.select().from(schema.agentRevisions)).toHaveLength(revisionsBefore.length);
+    expect(await loadPayloads(db.select().from(schema.agentRevisions))).toHaveLength(revisionsBefore.length);
     expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
   });
 

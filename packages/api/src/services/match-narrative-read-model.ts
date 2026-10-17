@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 /**
  * Dual-surface match narrative read model (U3).
  *
@@ -1383,7 +1384,7 @@ async function loadCognitionRows(
     conditions.push(sql`${schema.gameCognitiveArtifacts.createdAt} <= ${toIso}`);
   }
 
-  const rawRows = await db
+  const rawRows = await loadPayloads(db
     .select({
       id: schema.gameCognitiveArtifacts.id,
       artifactType: schema.gameCognitiveArtifacts.artifactType,
@@ -1401,7 +1402,7 @@ async function loadCognitionRows(
     .orderBy(
       asc(schema.gameCognitiveArtifacts.createdAt),
       asc(schema.gameCognitiveArtifacts.id),
-    );
+    ));
 
   return rawRows
     .filter((row) => row.artifactType === "thinking" || row.artifactType === "strategy")

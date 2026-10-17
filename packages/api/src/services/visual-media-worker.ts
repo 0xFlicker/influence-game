@@ -1,3 +1,4 @@
+import { Hydrated, loadPayloads } from "./payload-storage.js";
 import { resolveCharacterVariants } from "./visual-character-variants.js";
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
@@ -11,22 +12,22 @@ import type { VisualBoundaryGuard } from "./visual-execution-boundary.js";
 const jobs = schema.visualRepairJobs;
 const now = () => new Date().toISOString();
 const expiry = () => new Date(Date.now() + 60_000).toISOString();
-type Job = typeof jobs.$inferSelect;
+type Job = Hydrated<typeof jobs.$inferSelect>;
 
 export async function claimVisualMediaJob(db: DrizzleDB, owner: string): Promise<Job | null> {
   return db.transaction(async tx => {
     // One media render globally, independent of the game's execution owner.
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('visual-media-worker'))`);
-    const [live] = await tx.select().from(jobs).where(sql`${jobs.status} IN ('rendering','verifying') AND ${jobs.leaseUntil}::timestamptz > now()`).limit(1);
+    const [live] = await loadPayloads(tx.select().from(jobs).where(sql`${jobs.status} IN ('rendering','verifying') AND ${jobs.leaseUntil}::timestamptz > now()`).limit(1));
     if (live) return null;
-    const [job] = await tx.select().from(jobs).where(sql`${jobs.status} = 'queued' OR (${jobs.status} IN ('rendering','verifying') AND ${jobs.leaseUntil}::timestamptz <= now())`).orderBy(jobs.createdAt).limit(1).for("update", { skipLocked: true });
+    const [job] = await loadPayloads(tx.select().from(jobs).where(sql`${jobs.status} = 'queued' OR (${jobs.status} IN ('rendering','verifying') AND ${jobs.leaseUntil}::timestamptz <= now())`).orderBy(jobs.createdAt).limit(1).for("update", { skipLocked: true }));
     if (!job) return null;
-    const [claimed] = await tx.update(jobs).set({ owner, leaseUntil: expiry(), status: "rendering", startedAt: job.startedAt ?? now() }).where(eq(jobs.id, job.id)).returning();
+    const [claimed] = await loadPayloads(tx.update(jobs).set({ owner, leaseUntil: expiry(), status: "rendering", startedAt: job.startedAt ?? now() }).where(eq(jobs.id, job.id)).returning());
     return claimed!;
   });
 }
 
-export async function executeVisualMediaJob(db: DrizzleDB, job: Job, signal: AbortSignal, render: (...args: Parameters<typeof renderVisualCandidate>) => Promise<{ imageArtifactId: string; localization: import("@influence/engine/visual-localization").VisualLocalization; shots?: import("@influence/engine/visual-mode").VisualShotPresentation<import("@influence/engine/visual-mode").StoredVisualShot> }> = renderVisualCandidate, resolveVariants: typeof resolveCharacterVariants = resolveCharacterVariants) {
+export async function executeVisualMediaJob(db: DrizzleDB, job: Job, signal: AbortSignal, render: (...args: Parameters<typeof renderVisualCandidate>) => Promise<{ imageArtifactId: string; localization: import("@influence/engine/visual-localization").VisualLocalization; shots?: import("@influence/engine/visual-mode").VisualShotPresentation<import("@influence/engine/visual-mode").StoredVisualShot> }> = renderVisualCandidate, resolveVariants: Hydrated<typeof resolveCharacterVariants> = resolveCharacterVariants) {
   const guard: VisualBoundaryGuard = async tx => {
     signal.throwIfAborted();
     const query = (tx ?? db).select().from(jobs).where(and(eq(jobs.id, job.id), eq(jobs.owner, job.owner!), sql`${jobs.leaseUntil}::timestamptz > now() AND ${jobs.status} IN ('rendering','verifying')`));

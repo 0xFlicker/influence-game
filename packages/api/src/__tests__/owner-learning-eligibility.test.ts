@@ -1,3 +1,4 @@
+import { storeFields } from "../services/payload-storage.js";
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -162,7 +163,7 @@ async function insertEligibilityFixture(db: DrizzleDB): Promise<{
     personality: "Observant",
     strategyStyle: "Build trust.",
   });
-  await db.insert(schema.agentRevisions).values([
+  await db.insert(schema.agentRevisions).values(await storeFields([
     {
       id: oldRevisionId,
       agentProfileId,
@@ -198,7 +199,7 @@ async function insertEligibilityFixture(db: DrizzleDB): Promise<{
       effectiveRuntimeSnapshot: {},
       revisionPolicyVersion: "agent-revision-v2",
     },
-  ]);
+  ], {"behaviorSnapshot":"json-gzip","effectiveRuntimeSnapshot":"json-gzip"}));
   await db.update(schema.agentProfiles).set({ currentRevisionId })
     .where(eq(schema.agentProfiles.id, agentProfileId));
 
@@ -232,7 +233,7 @@ async function insertEligibilityFixture(db: DrizzleDB): Promise<{
   });
 
   const evidenceId = randomUUID();
-  await db.insert(schema.agentLearningGameEvidence).values({
+  await db.insert(schema.agentLearningGameEvidence).values(await storeFields({
     id: evidenceId,
     ownerUserId,
     agentProfileId,
@@ -245,9 +246,9 @@ async function insertEligibilityFixture(db: DrizzleDB): Promise<{
     candidateMoments: [],
     sourceCaptureVersion: "postgame-v2:transcript-v0:cognition-v0",
     sourceHash: "sha256:evidence",
-  });
+  }, {"canonicalSnapshot":"json-gzip","candidateMoments":"json-gzip"}));
   const reviewId = randomUUID();
-  await db.insert(schema.agentLearningReviews).values({
+  await db.insert(schema.agentLearningReviews).values(await storeFields({
     id: reviewId,
     ownerUserId,
     agentProfileId,
@@ -272,7 +273,7 @@ async function insertEligibilityFixture(db: DrizzleDB): Promise<{
     },
     resolution: "no_change",
     resolvedAt: "2026-08-05T05:00:00.000Z",
-  });
+  }, {"checkpoint":"json-gzip","result":"json-gzip"}));
   await db.insert(schema.agentLearningReviewGames).values({
     reviewId,
     gameEvidenceId: evidenceId,

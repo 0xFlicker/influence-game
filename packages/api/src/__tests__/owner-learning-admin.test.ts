@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { testUserIdForWallet, grantTestAuthority } from "./rbac-fixtures.js";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
@@ -40,10 +41,10 @@ describe("owner learning admin ledger", () => {
       gameIds: [fixture.game.id], idempotencyKey: "admin-werewolf",
     });
     const reviewId = started.reviewId!;
-    const [stored] = await db.select().from(schema.agentLearningReviews).where(eq(schema.agentLearningReviews.id, reviewId));
+    const [stored] = await loadPayloads(db.select().from(schema.agentLearningReviews).where(eq(schema.agentLearningReviews.id, reviewId)));
     expect(stored!.reviewedRevisionId).toStartWith("werewolf-review-v1:");
-    expect(await db.select().from(schema.agentRevisions).where(eq(schema.agentRevisions.id, stored!.reviewedRevisionId))).toHaveLength(0);
-    await db.insert(schema.agentLearningReviewCalls).values({
+    expect(await loadPayloads(db.select().from(schema.agentRevisions).where(eq(schema.agentRevisions.id, stored!.reviewedRevisionId)))).toHaveLength(0);
+    await db.insert(schema.agentLearningReviewCalls).values(await storeFields({
       id: randomUUID(), reviewId, ordinal: 1, state: "succeeded", stage: "scanning_narratives",
       inputPolicyHash: "admin-werewolf-call",
       validatedCheckpoint: {
@@ -53,16 +54,16 @@ describe("owner learning admin ledger", () => {
         schemaHash: "sha256:schema", completion: null,
       },
       costSource: "estimated", estimatedCostMicrousd: 725,
-    });
+    }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"}));
     for (const analysisStatus of ["running", "no_change"] as const) {
-      await db.update(schema.agentLearningReviews).set({ analysisStatus,
+      await db.update(schema.agentLearningReviews).set(await storeFields({ analysisStatus,
         stage: analysisStatus === "running" ? "scanning_narratives" : "complete",
         completedAt: analysisStatus === "running" ? null : new Date().toISOString(),
         result: analysisStatus === "running" ? null : {
           diagnosis: "No demonstrated strategy defect.", analysisTrack: "evidence_rich",
           recommendations: [], noChange: { rationale: "Gather more evidence." },
         },
-      }).where(eq(schema.agentLearningReviews.id, reviewId));
+      }, {"checkpoint":"json-gzip","result":"json-gzip"})).where(eq(schema.agentLearningReviews.id, reviewId));
       const detail = await getAdminOwnerLearningReview(db, reviewId);
       expect(detail).toMatchObject({ gameKind: "werewolf", reviewedRevision: { id: stored!.reviewedRevisionId, ordinal: null }, lifecycle: { status: analysisStatus } });
       expect(detail!.calls).toHaveLength(1);
@@ -85,7 +86,7 @@ describe("owner learning admin ledger", () => {
     const ready = await markReady(db, reviewId);
     const failedAttemptId = randomUUID();
 
-    await db.insert(schema.agentLearningReviewCalls).values([
+    await db.insert(schema.agentLearningReviewCalls).values(await storeFields([
       {
         id: failedAttemptId,
         reviewId,
@@ -175,8 +176,8 @@ describe("owner learning admin ledger", () => {
         costSource: "unavailable",
         completedAt: "2026-08-04T03:02:02.000Z",
       },
-    ]);
-    await db.update(schema.agentLearningReviews).set({
+    ], {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"}));
+    await db.update(schema.agentLearningReviews).set(await storeFields({
       logicalCallCount: 2,
       checkpoint: {
         version: 1,
@@ -194,7 +195,7 @@ describe("owner learning admin ledger", () => {
           proposalFingerprint: ready.proposalFingerprint,
         },
       },
-    }).where(eq(schema.agentLearningReviews.id, reviewId));
+    }, {"checkpoint":"json-gzip","result":"json-gzip"})).where(eq(schema.agentLearningReviews.id, reviewId));
 
     await applyOwnedOwnerLearningReview(db, {
       ownerUserId: fixture.ownerUserId,
@@ -429,7 +430,7 @@ async function markReady(
     proposal,
   };
   const proposalFingerprint = fingerprintOwnerLearningValue({ reviewId, proposal });
-  await db.update(schema.agentLearningReviews).set({
+  await db.update(schema.agentLearningReviews).set(await storeFields({
     analysisStatus: "ready",
     stage: "complete",
     result,
@@ -437,6 +438,6 @@ async function markReady(
     startedAt: "2026-08-04T03:01:00.000Z",
     completedAt: "2026-08-04T03:03:00.000Z",
     updatedAt: "2026-08-04T03:03:00.000Z",
-  }).where(eq(schema.agentLearningReviews.id, reviewId));
+  }, {"checkpoint":"json-gzip","result":"json-gzip"})).where(eq(schema.agentLearningReviews.id, reviewId));
   return { proposalFingerprint, result };
 }

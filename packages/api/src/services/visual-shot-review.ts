@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import Ajv from "ajv";
 import { and, eq } from "drizzle-orm";
 import { assertVisualShot, type StoredVisualShot, type VisualShotContent, type VisualShotPresentation } from "@influence/engine/visual-mode";
@@ -44,13 +45,13 @@ export function decodeVisualShotReview(value: unknown): VisualShotReview {
 
 /** All returned sources belong to this exact scene, including rejected paid pixels. */
 export async function readVisualReviewSources(db: DrizzleDB | VisualTransaction, scene: StoredVisualScene): Promise<ReviewSource[]> {
-  const [attempts, versions, jobs] = await Promise.all([
+  const [attempts, versions, jobs] = await loadPayloads(Promise.all([
     db.select({ id: schema.visualRenderAttempts.id, key: schema.visualRenderOperations.operationKey, hash: schema.visualRenderAttempts.imageHash })
       .from(schema.visualRenderAttempts).innerJoin(schema.visualRenderOperations, eq(schema.visualRenderAttempts.operationId, schema.visualRenderOperations.id))
       .where(and(eq(schema.visualRenderOperations.gameId, scene.gameId), eq(schema.visualRenderOperations.sceneId, scene.id))),
     db.select().from(schema.visualMediaVersions).where(eq(schema.visualMediaVersions.sceneId, scene.id)),
     db.select().from(schema.visualRepairJobs).where(eq(schema.visualRepairJobs.sceneId, scene.id)),
-  ]);
+  ]));
   const sources = new Map<string, ReviewSource>();
   const ids = scene.plan.cast.map(m => m.id);
   const addArtifact = (id: string | null, label: string, shot?: StoredVisualShot) => {
@@ -89,7 +90,7 @@ export async function saveReviewedShots(db: DrizzleDB | VisualTransaction, scene
     let image: Buffer;
     if (source.kind === "artifact") image = await readVisualArtifact(db, scene.gameId, source.imageId);
     else {
-      const [attempt] = await db.select({ image: schema.visualRenderAttempts.image }).from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.id, source.imageId));
+      const [attempt] = await loadPayloads(db.select({ image: schema.visualRenderAttempts.image }).from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.id, source.imageId)));
       if (!attempt?.image) throw new Error("Saved image is unavailable");
       image = attempt.image;
     }

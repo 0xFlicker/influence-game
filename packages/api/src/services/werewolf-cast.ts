@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import { asc, eq, inArray } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { decodeContentSnapshot } from "./agent-content-submissions.js";
@@ -6,7 +7,7 @@ import { hasEligibleAgentContent } from "./agent-content-eligibility.js";
 /** Resolve approved character revisions in one batch for both admission and public casting. */
 export async function readPublishedWerewolfCharacters(db: Pick<DrizzleDB, "select">, profiles: Array<typeof schema.agentProfiles.$inferSelect>) {
   const ids = [...new Set(profiles.flatMap(profile => profile.contentRevisionId ? [profile.contentRevisionId] : []))];
-  const revisions = ids.length ? await db.select().from(schema.agentContentRevisions).where(inArray(schema.agentContentRevisions.id, ids)) : [];
+  const revisions = ids.length ? await loadPayloads(db.select().from(schema.agentContentRevisions).where(inArray(schema.agentContentRevisions.id, ids))) : [];
   const byId = new Map(revisions.map(revision => [revision.id, revision]));
   return profiles.map(profile => {
     if (!hasEligibleAgentContent(profile)) throw new Error("This agent is archived or awaiting review. Remove them from the cast before starting.");

@@ -1,3 +1,4 @@
+import { storeFields } from "../services/payload-storage.js";
 import { insertPlayedOwnerLearningAgent } from "./owner-learning-test-utils.js";
 import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
@@ -85,7 +86,7 @@ describe("Werewolf House owner learning", () => {
     const reviewId = started.reviewId!; expect(reviewId).toBeDefined();
     const proposal = { field: "werewolfStrategyStyle" as const, before: "", after: "Ask what evidence changed a vote. Adapt this test to your faction and role." };
     const proposalFingerprint = fingerprintOwnerLearningValue({ reviewId, proposal });
-    await db.update(schema.agentLearningReviews).set({ analysisStatus: "ready", stage: "complete", proposalFingerprint, result: { diagnosis: "Test recommendation", analysisTrack: "evidence_rich", recommendations: [{ id: "rec-wolf", title: "Use an evidence test", disposition: "change", confidence: "medium", rationale: "Test recommendation", evidenceRefs: [] }], proposal } }).where(eq(schema.agentLearningReviews.id, reviewId));
+    await db.update(schema.agentLearningReviews).set(await storeFields({ analysisStatus: "ready", stage: "complete", proposalFingerprint, result: { diagnosis: "Test recommendation", analysisTrack: "evidence_rich", recommendations: [{ id: "rec-wolf", title: "Use an evidence test", disposition: "change", confidence: "medium", rationale: "Test recommendation", evidenceRefs: [] }], proposal } }, {"checkpoint":"json-gzip","result":"json-gzip"})).where(eq(schema.agentLearningReviews.id, reviewId));
     await db.update(schema.agentProfiles).set({ moderationRequired: true }).where(eq(schema.agentProfiles.id, agentProfileId));
     expect((await getOwnedOwnerLearningReview(db, { ownerUserId: f.ownerUserId, reviewId })).applyDisposition).toBe("unavailable");
     await expect(applyOwnedOwnerLearningReview(db, { ownerUserId: f.ownerUserId, reviewId, proposalFingerprint })).rejects.toThrow("review_revision_conflict");
@@ -104,7 +105,7 @@ describe("Werewolf House owner learning", () => {
     const reviewId = started.reviewId!;
     const proposal = { field: "werewolfStrategyStyle" as const, before: "", after: "Proposed Werewolf change" };
     const proposalFingerprint = fingerprintOwnerLearningValue({ reviewId, proposal });
-    await db.update(schema.agentLearningReviews).set({ analysisStatus: "ready", stage: "complete", proposalFingerprint, result: { diagnosis: "Test", analysisTrack: "evidence_rich", recommendations: [], proposal } }).where(eq(schema.agentLearningReviews.id, reviewId));
+    await db.update(schema.agentLearningReviews).set(await storeFields({ analysisStatus: "ready", stage: "complete", proposalFingerprint, result: { diagnosis: "Test", analysisTrack: "evidence_rich", recommendations: [], proposal } }, {"checkpoint":"json-gzip","result":"json-gzip"})).where(eq(schema.agentLearningReviews.id, reviewId));
     await expect(updateOwnedAgentProfile(db, { userId: f.ownerUserId }, agentProfileId, { strategyStyle: "Wrong game field", sourceReviewId: reviewId })).rejects.toMatchObject({ code: "source_review_conflict" });
     await updateOwnedAgentProfile(db, { userId: f.ownerUserId }, agentProfileId, { werewolfStrategyStyle: "My own role-sensitive revision", sourceReviewId: reviewId });
     expect((await getOwnedOwnerLearningReview(db, { ownerUserId: f.ownerUserId, reviewId })).resolution).toBe("manual_update");

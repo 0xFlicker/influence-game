@@ -1,3 +1,4 @@
+import { storeFields, loadPayloads } from "../services/payload-storage.js";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
 import {runAccountText} from "../services/account-text-usage.js";
 import {beforeEach,describe,expect,test} from 'bun:test';
@@ -43,7 +44,7 @@ describe('account inference allowances',()=>{
   await expect(changeInferenceAccount(db,owner,{actionId:randomUUID(),reason:'no',userId:owner,kind:'grant',category:'text',amount:5})).rejects.toMatchObject({status:403});
  });
  test('spending totals preserve unknown costs and exclude game spend',async()=>{
-  await db.insert(schema.accountTextOperations).values([{id:randomUUID(),userId:owner,requestKey:'one',inputHash:'x',kind:'profile_creation',model:'test',state:'succeeded',estimatedCostMicrousd:2500},{id:randomUUID(),userId:owner,requestKey:'two',inputHash:'x',kind:'profile_creation',model:'test',state:'uncertain'}]);
+  await db.insert(schema.accountTextOperations).values(await storeFields([{id:randomUUID(),userId:owner,requestKey:'one',inputHash:'x',kind:'profile_creation',model:'test',state:'succeeded',estimatedCostMicrousd:2500},{id:randomUUID(),userId:owner,requestKey:'two',inputHash:'x',kind:'profile_creation',model:'test',state:'uncertain'}], {"result":"json-gzip"}));
   const report=await readAccountSpending(db,admin,{userId:owner,window:'all'});
   expect('summary' in report&&report.summary).toMatchObject({text_requests:2,estimated_microusd:2500,unpriced:1,attempts:2});
   const list=await readAccountSpending(db,admin,{window:'all'});expect('accounts' in list&&list.accounts?.[0]).toMatchObject({id:owner});
@@ -115,7 +116,7 @@ describe('account inference allowances',()=>{
     throw new Error('Invalid structured output');
   })).rejects.toThrow('Invalid structured output');
   expect((await readInferenceAccount(db,admin,owner)).account.textBalance).toBe(100);
-  expect((await db.select().from(schema.accountTextOperations))[0]!.promptTokens).toBe(20);
+  expect((await loadPayloads(db.select().from(schema.accountTextOperations)))[0]!.promptTokens).toBe(20);
   await expect(runAccountText(db,{userId:owner,requestKey:randomUUID(),kind:'profile_creation',model:'test',payload:{}},async()=>{throw new TypeError('Network disconnected');})).rejects.toThrow('Network disconnected');
   const detail=await readInferenceAccount(db,admin,owner);expect(detail.account.textBalance).toBe(99);expect(detail.pending[0]!.state).toBe('uncertain');
  });

@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import {
   CANONICALIZER_ID,
   CANONICALIZER_VERSION,
@@ -450,7 +451,7 @@ async function readMaterializedSource(
     }
     const game = games[0]!;
 
-    const checkpointRows = await tx
+    const checkpointRows = await loadPayloads(tx
       .select()
       .from(schema.gameCheckpoints)
       .where(and(
@@ -459,7 +460,7 @@ async function readMaterializedSource(
         eq(schema.gameCheckpoints.lastEventSequence, selection.boundarySequence),
         eq(schema.gameCheckpoints.checkpointKind, selection.checkpointKind),
         eq(schema.gameCheckpoints.actorCoordinate, selection.actorCoordinate),
-      ));
+      )));
     if (checkpointRows.length !== 1) {
       throw new Error(`Expected exactly one selected checkpoint tuple; found ${checkpointRows.length}`);
     }

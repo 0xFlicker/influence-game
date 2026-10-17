@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { isViewerGame } from "../services/game-visibility.js";
 import { readVisualReviewSources } from "../services/visual-shot-review.js";
 import { validHeadRectangle, type CharacterHeadPosition, type HeadRectangle } from "@influence/engine/character-portrait";
@@ -82,7 +83,7 @@ export function createVisualRoutes(db: DrizzleDB) {
     ]);
     const allowedShot = [...shotScenes, ...shotVersions].some(({ shots }) => shots && [...shots.groups, ...(shots.overview ? [shots.overview] : [])].some(shot => shot.imageArtifactId === artifactId));
     if (!allowedShot && !scenes.length && !published.length && !Object.values(assets[0]?.portraits ?? {}).includes(artifactId) && !assets[0]?.cast.some(member => !member.portraitFallback && member.referenceArtifactId === artifactId)) return c.json({ error: "Visual artifact not found" }, 404);
-    const [artifact] = await db.select({ image: schema.visualArtifacts.image }).from(schema.visualArtifacts).where(and(eq(schema.visualArtifacts.id, artifactId), eq(schema.visualArtifacts.gameId, gameId)));
+    const [artifact] = await loadPayloads(db.select({ image: schema.visualArtifacts.image }).from(schema.visualArtifacts).where(and(eq(schema.visualArtifacts.id, artifactId), eq(schema.visualArtifacts.gameId, gameId))));
     if (!artifact) return c.json({ error: "Visual artifact not found" }, 404);
     return c.body(new Uint8Array(artifact.image), 200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff" });
   });
@@ -145,10 +146,10 @@ export function createVisualRoutes(db: DrizzleDB) {
     const gameId = c.req.param("id"), id = c.req.param("artifact");
     let image: Buffer | null = null;
     if (c.req.param("kind") === "attempt") {
-      const [row] = await db.select({ image: schema.visualRenderAttempts.image }).from(schema.visualRenderAttempts).innerJoin(schema.visualRenderOperations, eq(schema.visualRenderOperations.id, schema.visualRenderAttempts.operationId)).where(and(eq(schema.visualRenderAttempts.id, id), eq(schema.visualRenderOperations.gameId, gameId)));
+      const [row] = await loadPayloads(db.select({ image: schema.visualRenderAttempts.image }).from(schema.visualRenderAttempts).innerJoin(schema.visualRenderOperations, eq(schema.visualRenderOperations.id, schema.visualRenderAttempts.operationId)).where(and(eq(schema.visualRenderAttempts.id, id), eq(schema.visualRenderOperations.gameId, gameId))));
       image = row?.image ?? null;
     } else if (c.req.param("kind") === "artifact") {
-      const [row] = await db.select({ image: schema.visualArtifacts.image }).from(schema.visualArtifacts).where(and(eq(schema.visualArtifacts.id, id), eq(schema.visualArtifacts.gameId, gameId)));
+      const [row] = await loadPayloads(db.select({ image: schema.visualArtifacts.image }).from(schema.visualArtifacts).where(and(eq(schema.visualArtifacts.id, id), eq(schema.visualArtifacts.gameId, gameId))));
       image = row?.image ?? null;
     }
     if (!image) return c.json({ error: "Evidence image not found" }, 404);

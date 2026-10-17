@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { contentImageFixture } from "./content-image-fixture.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
@@ -81,8 +82,8 @@ describe("agent revision persistence", () => {
     });
     expect(avatar.profileRevision.outcome).toBe("preserved");
     expect(identical.profileRevision.outcome).toBe("preserved");
-    const revisions = await db.select().from(schema.agentRevisions)
-      .where(eq(schema.agentRevisions.agentProfileId, profile.id));
+    const revisions = await loadPayloads(db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.agentProfileId, profile.id)));
     expect(revisions).toHaveLength(1);
   });
 
@@ -92,10 +93,10 @@ describe("agent revision persistence", () => {
       personality: "Patient and exact.",
       personaKey: "observer",
     });
-    await db.update(schema.agentRevisions).set({
+    await db.update(schema.agentRevisions).set(await storeFields({
       fingerprint: `sha256:${"0".repeat(64)}`,
       revisionPolicyVersion: "agent-revision-v1",
-    }).where(eq(schema.agentRevisions.id, profileRevision.revisionId));
+    }, {"behaviorSnapshot":"json-gzip","effectiveRuntimeSnapshot":"json-gzip"})).where(eq(schema.agentRevisions.id, profileRevision.revisionId));
     await db.insert(schema.agentCompetitionRatings).values({
       agentProfileId: profile.id,
       effectiveRevisionId: profileRevision.revisionId,
@@ -116,8 +117,8 @@ describe("agent revision persistence", () => {
       active: true,
       ratingRecalibrated: false,
     });
-    expect(await db.select().from(schema.agentRevisions)
-      .where(eq(schema.agentRevisions.agentProfileId, profile.id))).toHaveLength(1);
+    expect(await loadPayloads(db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.agentProfileId, profile.id)))).toHaveLength(1);
     expect((await db.select().from(schema.agentCompetitionRatings)
       .where(eq(schema.agentCompetitionRatings.agentProfileId, profile.id)))[0]).toMatchObject({
       effectiveRevisionId: profileRevision.revisionId,
@@ -153,8 +154,8 @@ describe("agent revision persistence", () => {
       outcome: "created",
       ratingRecalibrated: true,
     });
-    const revisions = await db.select().from(schema.agentRevisions)
-      .where(eq(schema.agentRevisions.agentProfileId, profile.id));
+    const revisions = await loadPayloads(db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.agentProfileId, profile.id)));
     expect(revisions).toHaveLength(2);
     expect(revisions.find((revision) => revision.id === changed.profileRevision.revisionId))
       .toMatchObject({ magnitude: "small", priorRevisionId: profileRevision.revisionId });
@@ -188,8 +189,8 @@ describe("agent revision persistence", () => {
     });
     expect(changed.profile).toMatchObject({ gamesPlayed: 8, gamesWon: 3 });
 
-    const revisions = await db.select().from(schema.agentRevisions)
-      .where(eq(schema.agentRevisions.agentProfileId, profile.id));
+    const revisions = await loadPayloads(db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.agentProfileId, profile.id)));
     expect(revisions.map((revision) => revision.ordinal).sort()).toEqual([1, 2]);
     expect(revisions.find((revision) => revision.ordinal === 2)).toMatchObject({
       priorRevisionId: revisions.find((revision) => revision.ordinal === 1)?.id,
@@ -219,8 +220,8 @@ describe("agent revision persistence", () => {
     expect(reverted.profileRevision).toMatchObject({ ordinal: 3, outcome: "created", active: true });
     expect(reverted.profileRevision.revisionId).not.toBe(initial.revisionId);
 
-    const revisions = await db.select().from(schema.agentRevisions)
-      .where(eq(schema.agentRevisions.agentProfileId, profile.id));
+    const revisions = await loadPayloads(db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.agentProfileId, profile.id)));
     const initialRevision = revisions.find((revision) => revision.id === initial.revisionId)!;
     const revertedRevision = revisions.find(
       (revision) => revision.id === reverted.profileRevision.revisionId,
@@ -344,8 +345,8 @@ describe("agent revision persistence", () => {
       ratingRecalibrated: false,
       revision: { ordinal: 3, priorRevisionId: initialRevision.id },
     });
-    expect(await db.select().from(schema.agentRevisions)
-      .where(eq(schema.agentRevisions.agentProfileId, profile.id))).toHaveLength(3);
+    expect(await loadPayloads(db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.agentProfileId, profile.id)))).toHaveLength(3);
     expect((await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, profile.id)))[0]?.currentRevisionId).toBe(initialRevision.id);
 
@@ -390,8 +391,8 @@ describe("agent revision persistence", () => {
       profile,
       effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile),
     })).rejects.toThrow(`Agent profile ${profile.id} has no active revision`);
-    expect(await db.select().from(schema.agentRevisions)
-      .where(eq(schema.agentRevisions.agentProfileId, profile.id))).toHaveLength(0);
+    expect(await loadPayloads(db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.agentProfileId, profile.id)))).toHaveLength(0);
   });
 
   test("does not infer active behavior from revision chronology when the pointer is absent", async () => {
@@ -406,8 +407,8 @@ describe("agent revision persistence", () => {
       profile,
       effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile),
     })).rejects.toThrow(`Agent profile ${profile.id} has no active revision`);
-    expect((await db.select().from(schema.agentRevisions)
-      .where(eq(schema.agentRevisions.agentProfileId, profile.id)))[0]?.id)
+    expect((await loadPayloads(db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.agentProfileId, profile.id))))[0]?.id)
       .toBe(profileRevision.revisionId);
     expect((await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, profile.id)))[0]?.currentRevisionId).toBeNull();

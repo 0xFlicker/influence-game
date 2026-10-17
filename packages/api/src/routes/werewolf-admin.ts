@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { werewolfVisualPause } from "../services/werewolf-visual-policy.js";
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
@@ -31,7 +32,7 @@ export function createWerewolfAdminRoutes(db: DrizzleDB) {
   app.get(root, async c => {
     const games = await db.select().from(schema.games).where(eq(schema.games.gameKind, "werewolf")).orderBy(desc(schema.games.createdAt)).limit(100);
     const ids = games.map(g => g.id);
-    const [costs, jobs] = await Promise.all([getGameCostSummaryMap(db, ids), ids.length ? db.select().from(schema.visualRepairJobs).where(inArray(schema.visualRepairJobs.gameId, ids)) : []]);
+    const [costs, jobs] = await loadPayloads(Promise.all([getGameCostSummaryMap(db, ids), ids.length ? db.select().from(schema.visualRepairJobs).where(inArray(schema.visualRepairJobs.gameId, ids)) : []]));
     const rows = await Promise.all(games.map(async game => {
       let progress: { day: number; phase: string } | null = null;
       let error: string | null = null;

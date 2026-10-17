@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 /**
  * Owner-authorized match cognition timeline (U5).
  *
@@ -868,7 +869,7 @@ async function selectOwnedCognitionPage(
   }
 
   const limitPlus = params.limit + 1;
-  const rawRows = await db
+  const rawRows = await loadPayloads(db
     .select({
       id: schema.gameCognitiveArtifacts.id,
       artifactType: schema.gameCognitiveArtifacts.artifactType,
@@ -891,7 +892,7 @@ async function selectOwnedCognitionPage(
       desc(schema.gameCognitiveArtifacts.createdAt),
       desc(schema.gameCognitiveArtifacts.id),
     )
-    .limit(limitPlus);
+    .limit(limitPlus));
 
   // Drop unavailable rows without counting them toward hidden diagnostics.
   // Ownership already applied in SQL; redaction/expiry/degraded filtered here

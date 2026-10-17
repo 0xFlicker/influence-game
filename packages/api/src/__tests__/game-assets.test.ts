@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
@@ -68,7 +69,7 @@ describe("editorial game assets", () => {
     const bytes = await read(path + "/content"); expect(bytes.headers.get("cache-control")).toBe("private, no-store"); expect(bytes.headers.get("vary")).toBe("Authorization"); expect(bytes.headers.get("x-content-type-options")).toBe("nosniff");
     expect(new Uint8Array(await bytes.arrayBuffer())).toEqual(await png());
     expect((await payload(await read(`/api/games/${gameId}/assets`))).assets).toHaveLength(1);
-    expect(await db.select().from(schema.gameEvents)).toHaveLength(0); expect(await db.select().from(schema.visualArtifacts)).toHaveLength(0);
+    expect(await db.select().from(schema.gameEvents)).toHaveLength(0); expect(await loadPayloads(db.select().from(schema.visualArtifacts))).toHaveLength(0);
   });
   test("producer and sysop can write; admin alone and forged JWT permission cannot", async () => {
     const admin = await user("admin"), sysop = await user("sysop");

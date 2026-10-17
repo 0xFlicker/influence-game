@@ -1,3 +1,4 @@
+import { Hydrated, loadPayloads } from "./payload-storage.js";
 import { publicGameFilter, isViewerGame } from "./game-visibility.js";
 import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
@@ -400,7 +401,7 @@ export async function getProducerSeasonDiagnostics(
   ratingEvents: Array<typeof schema.competitionRatingEvents.$inferSelect>;
   ratingSnapshots: Array<typeof schema.competitionRatingSnapshots.$inferSelect>;
   receiptEvidence: Array<typeof schema.competitionReceiptEvidence.$inferSelect>;
-  revisions: Array<typeof schema.agentRevisions.$inferSelect>;
+  revisions: Array<Hydrated<typeof schema.agentRevisions.$inferSelect>>;
 }> {
   const season = await resolveSeason(db, seasonIdOrSlug);
   if (!season) return null;
@@ -433,9 +434,9 @@ export async function getProducerSeasonDiagnostics(
   const receiptEvidence = receiptIds.length === 0 ? [] : await db.select()
     .from(schema.competitionReceiptEvidence)
     .where(inArray(schema.competitionReceiptEvidence.receiptId, receiptIds));
-  const revisions = agentIds.length === 0 ? [] : await db.select().from(schema.agentRevisions)
+  const revisions = agentIds.length === 0 ? [] : await loadPayloads(db.select().from(schema.agentRevisions)
     .where(inArray(schema.agentRevisions.agentProfileId, agentIds))
-    .orderBy(asc(schema.agentRevisions.agentProfileId), asc(schema.agentRevisions.ordinal));
+    .orderBy(asc(schema.agentRevisions.agentProfileId), asc(schema.agentRevisions.ordinal)));
   const games = await db.select({ id: schema.games.id, status: schema.games.status })
     .from(schema.games).where(eq(schema.games.seasonId, season.id));
   const gameIds = games.map((game) => game.id);

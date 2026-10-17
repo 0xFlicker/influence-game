@@ -117,10 +117,11 @@ export async function startTestServers(
   };
 
   const apiProcess = Bun.spawn(
-    ["bun", "run", "src/index.ts"],
+    ["bun", "run", "--preload", "./src/e2e/payload-store-preload.ts", "src/index.ts"],
     {
       cwd: path.join(WORKSPACE_ROOT, "packages/api"),
       env: apiEnv,
+      detached: true,
       stdout: "pipe",
       stderr: "pipe",
     },
@@ -165,6 +166,7 @@ export async function startTestServers(
       {
         cwd: path.join(WORKSPACE_ROOT, "packages/web"),
         env: webEnv,
+        detached: true,
         stdout: "pipe",
         stderr: "pipe",
       },
@@ -252,10 +254,15 @@ async function startupError(
 }
 
 async function terminateProcess(proc: Subprocess, name: string): Promise<void> {
-  if (proc.exitCode !== null) return;
-  proc.kill("SIGTERM");
-  if (await waitForProcessExit(proc, 5_000)) return;
-  proc.kill("SIGKILL");
+  // Bun/Next launch descendants which inherit the captured pipes. Terminating
+  // only the launcher can leave those children alive and log collection hanging.
+  const signalGroup = (signal: NodeJS.Signals) => {
+    try { process.kill(-proc.pid, signal); }
+    catch (error) { if (!error || typeof error !== "object" || !("code" in error) || error.code !== "ESRCH") throw error; }
+  };
+  signalGroup("SIGTERM");
+  if (await waitForProcessExit(proc, 5_000)) { signalGroup("SIGKILL"); return; }
+  signalGroup("SIGKILL");
   if (!await waitForProcessExit(proc, 5_000)) {
     throw new Error(`${name} did not exit after SIGKILL`);
   }

@@ -1,3 +1,4 @@
+import { Hydrated, loadPayloads } from "./payload-storage.js";
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
@@ -205,7 +206,7 @@ async function recordOwnedReviewEvent(
     agentProfileId: string;
     occurredAt: string;
   }) => OwnerLearningEvent<"recommendations_viewed" | "manual_editor_opened" | "mcp_offer_viewed">,
-  assertAvailable: (review: typeof schema.agentLearningReviews.$inferSelect) => void,
+  assertAvailable: (review: Hydrated<typeof schema.agentLearningReviews.$inferSelect>) => void,
 ): Promise<{ recorded: boolean }> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`
@@ -214,10 +215,10 @@ async function recordOwnedReviewEvent(
       WHERE id = ${input.reviewId}
       FOR UPDATE
     `);
-    const review = (await tx.select().from(schema.agentLearningReviews).where(and(
+    const review = (await loadPayloads(tx.select().from(schema.agentLearningReviews).where(and(
       eq(schema.agentLearningReviews.id, input.reviewId),
       eq(schema.agentLearningReviews.ownerUserId, input.ownerUserId),
-    )).limit(1))[0];
+    )).limit(1)))[0];
     if (!review) throw new OwnerLearningAnalyticsError("review_unavailable");
     assertAvailable(review);
     const event = createEvent({

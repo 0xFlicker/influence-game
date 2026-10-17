@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "./payload-storage.js";
 import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { AccumulatorEntryV1, CheckpointBoundaryIdentityV1, GameCheckpointCapsule, RuntimeSnapshotV1 } from "@influence/engine";
@@ -288,7 +289,7 @@ export async function writeGameCheckpoint(
         productEvidence,
       );
 
-      const existing = (await tx
+      const existing = (await loadPayloads(tx
         .select({
           id: schema.gameCheckpoints.id,
           ownerEpoch: schema.gameCheckpoints.ownerEpoch,
@@ -304,7 +305,7 @@ export async function writeGameCheckpoint(
           eq(schema.gameCheckpoints.lastEventSequence, params.checkpoint.lastEventSequence),
           eq(schema.gameCheckpoints.checkpointKind, params.checkpoint.checkpointKind),
           eq(schema.gameCheckpoints.actorCoordinate, actorCoordinate),
-        )))[0];
+        ))))[0];
 
       if (existing) {
         if (existing.projectionHash !== projectionHash) {
@@ -341,14 +342,14 @@ export async function writeGameCheckpoint(
           // Replace the whole checkpoint evidence atomically so the released summary,
           // notebook, transcript watermark, runtime capsule, and token cursor agree.
           await tx.update(schema.gameCheckpoints)
-            .set({
+            .set(await storeFields({
               ownerEpoch: params.ownerEpoch,
               eventHeadHash: eventHead.eventHash,
               projectionHash,
               snapshot: snapshotPayload,
               transcriptCursor,
               tokenCostCursor: tokenCostCursor as Record<string, unknown> | null | undefined,
-            })
+            }, {"snapshot":"json-gzip"}))
             .where(eq(schema.gameCheckpoints.id, existing.id));
         }
         return;
@@ -356,7 +357,7 @@ export async function writeGameCheckpoint(
 
       // productDialogueProjection is transient write input only — never stored as a player-facing field.
       await tx.insert(schema.gameCheckpoints)
-        .values({
+        .values(await storeFields({
           id: randomUUID(),
           gameId: params.gameId,
           ownerEpoch: params.ownerEpoch,
@@ -370,7 +371,7 @@ export async function writeGameCheckpoint(
           snapshot: snapshotPayload,
           transcriptCursor,
           tokenCostCursor: tokenCostCursor as Record<string, unknown> | null | undefined,
-        });
+        }, {"snapshot":"json-gzip"}));
     });
 
     return { ok: true };

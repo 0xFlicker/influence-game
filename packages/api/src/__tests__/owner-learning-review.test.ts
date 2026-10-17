@@ -1,3 +1,4 @@
+import { storeFields, loadPayloads } from "../services/payload-storage.js";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
@@ -106,8 +107,8 @@ describe("owner learning review start", () => {
       gameIds,
     }, { projector });
     expect(preflight.evidence.games).toHaveLength(3);
-    expect(await db.select().from(schema.agentLearningGameEvidence)).toEqual([]);
-    expect(await db.select().from(schema.agentLearningReviews)).toHaveLength(0);
+    expect(await loadPayloads(db.select().from(schema.agentLearningGameEvidence))).toEqual([]);
+    expect(await loadPayloads(db.select().from(schema.agentLearningReviews))).toHaveLength(0);
     expect(await db.select().from(schema.agentLearningReviewEntitlements)).toHaveLength(0);
 
     const started = await startOwnerLearningReview(db, {
@@ -117,9 +118,9 @@ describe("owner learning review start", () => {
       idempotencyKey: "three-full-games",
     }, { projector, now: new Date("2026-08-04T03:00:00.000Z") });
     expect(started.status).toBe("started");
-    expect(await db.select().from(schema.agentLearningGameEvidence)).toHaveLength(3);
+    expect(await loadPayloads(db.select().from(schema.agentLearningGameEvidence))).toHaveLength(3);
     expect(await db.select().from(schema.agentLearningReviewGames)).toHaveLength(3);
-    expect(await db.select().from(schema.agentLearningReviews)).toHaveLength(1);
+    expect(await loadPayloads(db.select().from(schema.agentLearningReviews))).toHaveLength(1);
   });
 
   test("atomically buys one owner-wide singleton and advances the latest completion watermark", async () => {
@@ -159,7 +160,7 @@ describe("owner learning review start", () => {
       "started",
     ]);
     expect(left.reviewId).toBe(right.reviewId);
-    expect(await db.select().from(schema.agentLearningReviews)).toHaveLength(1);
+    expect(await loadPayloads(db.select().from(schema.agentLearningReviews))).toHaveLength(1);
     const entitlement = (await db.select().from(schema.agentLearningReviewEntitlements))[0]!;
     expect(entitlement.consumedCompletionAt).toBe("2026-08-04T02:00:00.000Z");
     expect(entitlement.consumedGameId).toBe(second.gameId);
@@ -172,14 +173,14 @@ describe("owner learning review start", () => {
       idempotencyKey: "web-start",
     }, { projector, now });
     expect(replay.reviewId).toBe(left.reviewId);
-    expect(await db.select().from(schema.agentLearningReviews)).toHaveLength(1);
+    expect(await loadPayloads(db.select().from(schema.agentLearningReviews))).toHaveLength(1);
   });
 
   test("awaiting evidence and generation-disabled preflight spend nothing", async () => {
     for (const mode of ["awaiting", "disabled"] as const) {
       const db = await setupTestDB();
       const fixture = await insertPlayedOwnerLearningAgent(db);
-      const evidenceBefore = await db.select().from(schema.agentLearningGameEvidence);
+      const evidenceBefore = await loadPayloads(db.select().from(schema.agentLearningGameEvidence));
       const projector: OwnerLearningEvidenceProjector = async (_db, selection) =>
         fakeOwnerLearningProjection(
           selection,
@@ -198,8 +199,8 @@ describe("owner learning review start", () => {
       });
 
       expect(result.status).toBe(mode === "awaiting" ? "awaiting_evidence" : "generation_unavailable");
-      expect(await db.select().from(schema.agentLearningGameEvidence)).toEqual(evidenceBefore);
-      expect(await db.select().from(schema.agentLearningReviews)).toHaveLength(0);
+      expect(await loadPayloads(db.select().from(schema.agentLearningGameEvidence))).toEqual(evidenceBefore);
+      expect(await loadPayloads(db.select().from(schema.agentLearningReviews))).toHaveLength(0);
       expect(await db.select().from(schema.agentLearningReviewEntitlements)).toHaveLength(0);
     }
   });
@@ -211,7 +212,7 @@ describe("owner learning review start", () => {
       ownerUserId: fixture.ownerUserId,
       lastPaidReviewStartedAt: "2026-08-04T02:00:00.000Z",
     });
-    const evidenceBefore = await db.select().from(schema.agentLearningGameEvidence);
+    const evidenceBefore = await loadPayloads(db.select().from(schema.agentLearningGameEvidence));
     const projector: OwnerLearningEvidenceProjector = async (_db, selection) => {
       const projection = fakeOwnerLearningProjection(
         selection,
@@ -237,15 +238,15 @@ describe("owner learning review start", () => {
     });
 
     expect(result.status).toBe("rolling_limited");
-    expect(await db.select().from(schema.agentLearningGameEvidence)).toEqual(evidenceBefore);
-    expect(await db.select().from(schema.agentLearningReviews)).toEqual([]);
+    expect(await loadPayloads(db.select().from(schema.agentLearningGameEvidence))).toEqual(evidenceBefore);
+    expect(await loadPayloads(db.select().from(schema.agentLearningReviews))).toEqual([]);
     expect(await db.select().from(schema.agentLearningReviewGames)).toEqual([]);
   });
 
   test("versions a changed durable source without overwriting the earlier snapshot", async () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);
-    const evidenceBefore = await db.select().from(schema.agentLearningGameEvidence);
+    const evidenceBefore = await loadPayloads(db.select().from(schema.agentLearningGameEvidence));
     const projector: OwnerLearningEvidenceProjector = async (_db, selection) => {
       const projection = fakeOwnerLearningProjection(
         selection,
@@ -271,14 +272,14 @@ describe("owner learning review start", () => {
     });
 
     expect(result.status).toBe("started");
-    const evidenceAfter = await db.select().from(schema.agentLearningGameEvidence);
+    const evidenceAfter = await loadPayloads(db.select().from(schema.agentLearningGameEvidence));
     expect(evidenceAfter).toHaveLength(evidenceBefore.length + 1);
     expect(evidenceAfter.find((row) => row.id === fixture.gameEvidenceId)?.sourceHash)
       .toBe(evidenceBefore[0]!.sourceHash);
     expect(evidenceAfter.some((row) => row.sourceHash === `sha256:changed:${fixture.gameId}`))
       .toBe(true);
     expect(await db.select().from(schema.agentLearningReviewEntitlements)).toHaveLength(1);
-    expect(await db.select().from(schema.agentLearningReviews)).toHaveLength(1);
+    expect(await loadPayloads(db.select().from(schema.agentLearningReviews))).toHaveLength(1);
     expect(await db.select().from(schema.agentLearningReviewGames)).toHaveLength(1);
   });
 
@@ -313,9 +314,9 @@ describe("owner learning review start", () => {
     })).rejects.toThrow("Owner learning evidence changed after preflight");
 
     expect(projectionCount).toBe(2);
-    expect(await db.select().from(schema.agentLearningGameEvidence)).toEqual([]);
+    expect(await loadPayloads(db.select().from(schema.agentLearningGameEvidence))).toEqual([]);
     expect(await db.select().from(schema.agentLearningReviewEntitlements)).toEqual([]);
-    expect(await db.select().from(schema.agentLearningReviews)).toEqual([]);
+    expect(await loadPayloads(db.select().from(schema.agentLearningReviews))).toEqual([]);
     expect(await db.select().from(schema.agentLearningReviewGames)).toEqual([]);
   });
 
@@ -323,7 +324,7 @@ describe("owner learning review start", () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);
     const runtimeRevisionId = randomUUID();
-    await db.insert(schema.agentRevisions).values({
+    await db.insert(schema.agentRevisions).values(await storeFields({
       id: runtimeRevisionId,
       agentProfileId: fixture.agentProfileId,
       ordinal: 2,
@@ -334,7 +335,7 @@ describe("owner learning review start", () => {
       behaviorSnapshot: {},
       effectiveRuntimeSnapshot: {},
       revisionPolicyVersion: "agent-revision-v2",
-    });
+    }, {"behaviorSnapshot":"json-gzip","effectiveRuntimeSnapshot":"json-gzip"}));
     await db.update(schema.gamePlayers).set({ agentRevisionId: runtimeRevisionId })
       .where(eq(schema.gamePlayers.id, fixture.playerId));
     await db.update(schema.agentLearningGameEvidence).set({ analyticalRevisionId: runtimeRevisionId })
@@ -352,7 +353,7 @@ describe("owner learning review start", () => {
     expect(result.status).toBe("started");
     expect(result.preflight?.selection.currentRevisionId).toBe(fixture.revisionId);
     expect(result.preflight?.selection.games[0]!.analyticalRevisionId).toBe(runtimeRevisionId);
-    const review = (await db.select().from(schema.agentLearningReviews))[0]!;
+    const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)))[0]!;
     expect(review.reviewedRevisionId).toBe(fixture.revisionId);
   });
 
@@ -434,7 +435,7 @@ async function insertAdditionalPlayedGame(
     tokenUsage: "{}",
     finishedAt: completedAt,
   });
-  await db.insert(schema.agentLearningGameEvidence).values({
+  await db.insert(schema.agentLearningGameEvidence).values(await storeFields({
     id: gameEvidenceId,
     ownerUserId: fixture.ownerUserId,
     agentProfileId: fixture.agentProfileId,
@@ -447,7 +448,7 @@ async function insertAdditionalPlayedGame(
     candidateMoments: [],
     sourceCaptureVersion: "postgame-v2:transcript-v1:cognition-v1",
     sourceHash: `sha256:${gameId}`,
-  });
+  }, {"canonicalSnapshot":"json-gzip","candidateMoments":"json-gzip"}));
   return { gameId, gameEvidenceId };
 }
 

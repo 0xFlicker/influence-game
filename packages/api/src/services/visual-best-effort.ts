@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import { recordVisualOperationEvent, visualFailureEvidence } from "./visual-diagnostics.js";
 import { and, eq, like } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -13,9 +14,9 @@ export async function renderVisualSceneBestEffort(db: DrizzleDB, initial: Stored
   if (scene.status === "ready") return scene;
   for (;;) {
     if (scene.status === "failed") {
-      const records = await db.select({ attempt: schema.visualRenderAttempts }).from(schema.visualRenderAttempts)
+      const records = await loadPayloads(db.select({ attempt: schema.visualRenderAttempts }).from(schema.visualRenderAttempts)
         .innerJoin(schema.visualRenderOperations, eq(schema.visualRenderAttempts.operationId, schema.visualRenderOperations.id))
-        .where(and(eq(schema.visualRenderOperations.gameId, scene.gameId), like(schema.visualRenderOperations.operationKey, `${scene.id}:%`)));
+        .where(and(eq(schema.visualRenderOperations.gameId, scene.gameId), like(schema.visualRenderOperations.operationKey, `${scene.id}:%`))));
       // A fallback consumes the repair allowance. Interrupted/uncertain paid calls are never repeated.
       const [current] = await db.select().from(schema.visualScenes).where(eq(schema.visualScenes.id, scene.id));
       if (scene.renderRevision >= 1 || current?.repairBudgetUsed || records.some(({ attempt }) => attempt.provider === "xai" || !attempt.receipt || attempt.receipt.chargeUncertain)) return null;

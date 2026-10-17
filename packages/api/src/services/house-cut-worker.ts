@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "./payload-storage.js";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -11,15 +12,15 @@ type Generate = typeof runAutomaticCutTrial;
 
 /** Serial, fenced jobs. Expired jobs resume accepted calls; unknown dispatches fail closed. */
 export async function runHouseCutJob(db: DrizzleDB, generate: Generate = runAutomaticCutTrial, signal?: AbortSignal) {
-  const job = await db.transaction(async tx => {
+  const job = await loadPayloads(db.transaction(async tx => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('house-cuts-worker'))`);
     const [active] = await tx.select({ id: table.id }).from(table).where(sql`${table.status} = 'running' AND ${table.leaseUntil} > now()`).limit(1);
     if (active) return null;
-    const [next] = await tx.select().from(table).where(sql`${table.status} = 'queued' OR (${table.status} = 'running' AND ${table.leaseUntil} < now())`).orderBy(asc(table.createdAt)).limit(1);
+    const [next] = await loadPayloads(tx.select().from(table).where(sql`${table.status} = 'queued' OR (${table.status} = 'running' AND ${table.leaseUntil} < now())`).orderBy(asc(table.createdAt)).limit(1));
     if (!next) return null;
-    const [claimed] = await tx.update(table).set({ status: "running", leaseToken: randomUUID(), leaseUntil: new Date(Date.now() + 300_000), updatedAt: new Date() }).where(eq(table.id, next.id)).returning();
+    const [claimed] = await loadPayloads(tx.update(table).set({ status: "running", leaseToken: randomUUID(), leaseUntil: new Date(Date.now() + 300_000), updatedAt: new Date() }).where(eq(table.id, next.id)).returning());
     return claimed!;
-  });
+  }));
   if (!job) return false;
   const guard = and(eq(table.id, job.id), eq(table.leaseToken, job.leaseToken!), eq(table.status, "running"));
   try {
@@ -29,7 +30,7 @@ export async function runHouseCutJob(db: DrizzleDB, generate: Generate = runAuto
     if (journal.attempts.some(a => !a.terminal)) throw new Error("Prior paid dispatch has an unknown outcome; inspect before retrying");
     if (journal.budgetUsd > 1) throw new Error("House Cuts audience budget exceeds authorization");
     const save = async (value: CutTrialJournal) => {
-      const rows = await db.update(table).set({ source, journal: structuredClone(value), leaseUntil: new Date(Date.now() + 300_000), updatedAt: new Date() }).where(guard).returning({ id: table.id });
+      const rows = await db.update(table).set(await storeFields({ source, journal: structuredClone(value), leaseUntil: new Date(Date.now() + 300_000), updatedAt: new Date() }, {"source":"json-gzip","journal":"json-gzip","publication":"json-gzip"})).where(guard).returning({ id: table.id });
       if (!rows.length) throw new Error("House Cuts lease lost");
     };
     await save(journal);
@@ -40,14 +41,14 @@ export async function runHouseCutJob(db: DrizzleDB, generate: Generate = runAuto
     await db.transaction(async tx => {
       const [game] = await tx.select().from(schema.games).where(eq(schema.games.id, job.gameId)).for("update");
       if (!game || !isViewerGame(game) || game.status !== "completed") throw new Error("Game no longer available for publication");
-      const rows = await tx.update(table).set({ publication, status: "ready", failure: null, leaseToken: null, leaseUntil: null, updatedAt: new Date() }).where(guard).returning({ id: table.id });
+      const rows = await tx.update(table).set(await storeFields({ publication, status: "ready", failure: null, leaseToken: null, leaseUntil: null, updatedAt: new Date() }, {"source":"json-gzip","journal":"json-gzip","publication":"json-gzip"})).where(guard).returning({ id: table.id });
       if (!rows.length) throw new Error("House Cuts lease lost before publication");
     });
   } catch (error) {
     // Only persisted terminal attempts are safe to replay. Never redispatch an unknown paid call.
     if (signal?.aborted) {
       const requeued = await db.transaction(async tx => {
-        const [current] = await tx.select({ journal: table.journal }).from(table).where(guard).for("update");
+        const [current] = await loadPayloads(tx.select({ journal: table.journal }).from(table).where(guard).for("update"));
         if (!current || current.journal?.attempts.some(attempt => !attempt.terminal)) return false;
         await tx.update(table).set({ status: "queued", failure: null, leaseToken: null, leaseUntil: null, updatedAt: new Date() }).where(guard);
         return true;

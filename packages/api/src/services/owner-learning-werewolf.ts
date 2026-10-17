@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { applyWerewolfEvent, observeWerewolf, projectWerewolfView, werewolfDecisionArtifact, werewolfGameplayDecision, werewolfExecutionFinished,
   type WerewolfEvent, type WerewolfObservation, type WerewolfState } from "@influence/engine/werewolf";
@@ -48,13 +49,13 @@ export const WEREWOLF_REVIEW_INSTRUCTIONS = [
 export async function projectWerewolfReviewEvidence(db: DrizzleDB, selection: OwnerLearningValidatedSelection): Promise<OwnerLearningEvidenceProjection> {
   const games: OwnerLearningProjectedGameEvidence[] = [];
   for (const selected of selection.games) {
-    const [events, turns, calls, gameRows] = await Promise.all([
+    const [events, turns, calls, gameRows] = await loadPayloads(Promise.all([
       readWerewolfEvents(db, selected.gameId),
       db.select().from(schema.werewolfTurns).where(eq(schema.werewolfTurns.gameId, selected.gameId)),
       db.select().from(schema.providerLogicalCalls).where(and(eq(schema.providerLogicalCalls.gameId, selected.gameId),
         eq(schema.providerLogicalCalls.actorId, selected.playerId), isNotNull(schema.providerLogicalCalls.acceptedAttemptId))),
       db.select({ config: schema.games.config }).from(schema.games).where(eq(schema.games.id, selected.gameId)),
-    ]);
+    ]));
     const config = JSON.parse(gameRows[0]!.config) as Record<string, unknown>;
     const planned = new Map(turns.map(turn => [turn.sequence, turn]));
     let state: WerewolfState | null = null;

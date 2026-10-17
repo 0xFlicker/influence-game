@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { contentImageFixture } from "./content-image-fixture.js";
 import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
@@ -70,15 +71,15 @@ describe("owner learning apply and resolution", () => {
       .where(eq(schema.gamePlayers.gameId, "learning-waiting")))[0]!;
     // The waiting game keeps its sealed 5.6 model while the profile uses the new default.
     expect(waitingSeat.agentRevisionId).not.toBe(applied.resultingRevisionId);
-    const waitingRevision = (await db.select().from(schema.agentRevisions)
-      .where(eq(schema.agentRevisions.id, waitingSeat.agentRevisionId!)))[0]!;
+    const waitingRevision = (await loadPayloads(db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.id, waitingSeat.agentRevisionId!))))[0]!;
     expect(waitingRevision.effectiveRuntimeSnapshot).toMatchObject({
       model: "gpt-5.6-luna",
       strategyInstructions: ready.after,
     });
     expect(JSON.parse(waitingSeat.persona).strategyHints).toBe(ready.after);
-    const review = (await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
     expect(review.resolution).toBe("applied");
 
     const replayed = await applyOwnedOwnerLearningReview(db, {
@@ -94,17 +95,17 @@ describe("owner learning apply and resolution", () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);
     const reviewedStrategy = "Build trust before committing. \n";
-    const revision = (await db.select().from(schema.agentRevisions)
-      .where(eq(schema.agentRevisions.id, fixture.revisionId)))[0]!;
+    const revision = (await loadPayloads(db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.id, fixture.revisionId))))[0]!;
     await db.update(schema.agentProfiles).set({
       strategyStyle: reviewedStrategy,
     }).where(eq(schema.agentProfiles.id, fixture.agentProfileId));
-    await db.update(schema.agentRevisions).set({
+    await db.update(schema.agentRevisions).set(await storeFields({
       behaviorSnapshot: {
         ...revision.behaviorSnapshot,
         strategyInstructions: reviewedStrategy,
       },
-    }).where(eq(schema.agentRevisions.id, fixture.revisionId));
+    }, {"behaviorSnapshot":"json-gzip","effectiveRuntimeSnapshot":"json-gzip"})).where(eq(schema.agentRevisions.id, fixture.revisionId));
     const reviewId = await startFixtureOwnerLearningReview(db, fixture);
     const result = parseOwnerLearningReviewResult({
       diagnosis: "Trust did not become a testable voting commitment.",
@@ -130,14 +131,14 @@ describe("owner learning apply and resolution", () => {
       },
     });
     const proposalFingerprint = fingerprintOwnerLearningValue({ reviewId, proposal: result.proposal });
-    await db.update(schema.agentLearningReviews).set({
+    await db.update(schema.agentLearningReviews).set(await storeFields({
       analysisStatus: "ready",
       stage: "complete",
       result,
       proposalFingerprint,
       completedAt: "2026-08-04T03:30:00.000Z",
       updatedAt: "2026-08-04T03:30:00.000Z",
-    }).where(eq(schema.agentLearningReviews.id, reviewId));
+    }, {"checkpoint":"json-gzip","result":"json-gzip"})).where(eq(schema.agentLearningReviews.id, reviewId));
 
     const applied = await applyOwnedOwnerLearningReview(db, {
       ownerUserId: fixture.ownerUserId,
@@ -208,8 +209,8 @@ describe("owner learning apply and resolution", () => {
       sourceReviewId: reviewId,
     });
     expect(mutation.profile.strategyStyle).toBe("Manually test commitments before declaring a bloc.");
-    const review = (await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
     expect(review.resolution).toBe("manual_update");
     expect(await db.select().from(schema.agentLearningReviewApplications)).toEqual([]);
   });
@@ -274,8 +275,8 @@ describe("owner learning apply and resolution", () => {
     )).rejects.toMatchObject({ code: "source_review_conflict" });
     expect((await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, fixture.agentProfileId)))[0]).toEqual(before);
-    const review = (await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
     expect(review.resolution).toBeNull();
     expect(review.resolvedAt).toBeNull();
   });
@@ -290,15 +291,15 @@ describe("owner learning apply and resolution", () => {
       avatarUrl: await contentImageFixture("pfp/learning-avatar.png"),
     });
     expect(presentation.profileRevision.outcome).toBe("preserved");
-    expect((await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!.resolvedAt).toBeNull();
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!.resolvedAt).toBeNull();
 
     const analytical = await updateOwnedAgentProfile(db, { userId: fixture.ownerUserId }, fixture.agentProfileId, {
       personality: "Make every coalition promise explicit and testable.",
     });
     expect(analytical.profileRevision.outcome).toBe("created");
-    const review = (await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
     expect(review.resolution).toBe("superseded");
   });
 
@@ -321,8 +322,8 @@ describe("owner learning apply and resolution", () => {
     ]);
 
     expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
-    const review = (await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
     const applications = await db.select().from(schema.agentLearningReviewApplications);
     const profile = (await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, fixture.agentProfileId)))[0]!;
@@ -349,8 +350,8 @@ describe("owner learning apply and resolution", () => {
       resolution: "declined",
       now: new Date("2026-08-04T04:00:00.000Z"),
     });
-    expect((await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, readyReviewId)))[0]!.resolution).toBe("declined");
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, readyReviewId))))[0]!.resolution).toBe("declined");
     expect((await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, readyFixture.agentProfileId)))[0]).toEqual(readyProfile);
 
@@ -368,8 +369,8 @@ describe("owner learning apply and resolution", () => {
       reviewId: failedReviewId,
       resolution: "failed",
     });
-    expect((await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, failedReviewId)))[0]!.resolution).toBe("failed");
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, failedReviewId))))[0]!.resolution).toBe("failed");
     expect((await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, failedFixture.agentProfileId)))[0]).toEqual(failedProfile);
   });
@@ -391,7 +392,7 @@ async function markReviewReady(
     after,
   };
   const proposalFingerprint = fingerprintOwnerLearningValue({ reviewId, proposal });
-  await db.update(schema.agentLearningReviews).set({
+  await db.update(schema.agentLearningReviews).set(await storeFields({
     analysisStatus: "ready",
     stage: "complete",
     result: {
@@ -410,6 +411,6 @@ async function markReviewReady(
     proposalFingerprint,
     completedAt: "2026-08-04T03:30:00.000Z",
     updatedAt: "2026-08-04T03:30:00.000Z",
-  }).where(eq(schema.agentLearningReviews.id, reviewId));
+  }, {"checkpoint":"json-gzip","result":"json-gzip"})).where(eq(schema.agentLearningReviews.id, reviewId));
   return { proposalFingerprint, recommendationIds, after };
 }

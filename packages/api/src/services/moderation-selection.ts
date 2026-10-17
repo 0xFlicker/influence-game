@@ -1,6 +1,7 @@
+import { Hydrated } from "./payload-storage.js";
 import type { schema } from "../db/index.js";
 
-type Revision = typeof schema.agentContentRevisions.$inferSelect;
+type Revision = Hydrated<typeof schema.agentContentRevisions.$inferSelect>;
 type Review = typeof schema.agentModerationReviews.$inferSelect;
 export interface ModerationRevisionState { revision: Revision; review: Review }
 

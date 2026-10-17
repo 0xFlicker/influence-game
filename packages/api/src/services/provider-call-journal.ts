@@ -1,3 +1,4 @@
+import { storeJson, Hydrated, loadPayloads, storeFields } from "./payload-storage.js";
 import { assertWerewolfProviderTurn } from "./werewolf-games.js";
 import { ProviderJournalEntryExhaustedError, retrospectiveAttemptsPerModel } from "@influence/engine";
 import { and, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
@@ -40,8 +41,8 @@ import {
 } from "./provider-health.js";
 
 type AttemptRow = typeof schema.providerCallAttempts.$inferSelect;
-type LogicalCallRow = typeof schema.providerLogicalCalls.$inferSelect;
-type EvidenceOutboxRow = typeof schema.providerAttemptEvidenceOutbox.$inferSelect;
+type LogicalCallRow = Hydrated<typeof schema.providerLogicalCalls.$inferSelect>;
+type EvidenceOutboxRow = Hydrated<typeof schema.providerAttemptEvidenceOutbox.$inferSelect>;
 
 export interface ProviderEvidenceReconciliationDependencies {
   load?: (
@@ -218,7 +219,7 @@ async function assertDurableTurnSubcall(
   await assertWerewolfProviderTurn(tx, options.gameId, coordinate);
   const binding = coordinate.durableTurn;
   if (!binding) return;
-  const turn = (await tx.select({
+  const turn = (await loadPayloads(tx.select({
     gameId: schema.gameTurns.gameId,
     turnSequence: schema.gameTurns.turnSequence,
     status: schema.gameTurns.status,
@@ -228,7 +229,7 @@ async function assertDurableTurnSubcall(
   }).from(schema.gameTurns).where(and(
     eq(schema.gameTurns.id, binding.turnId),
     eq(schema.gameTurns.gameId, options.gameId),
-  )).for("update"))[0];
+  )).for("update")))[0];
   if (!turn) throw new Error("Provider durable turn was not planned");
   assertGameTurnIntentV1(turn.intent);
   if (
@@ -381,8 +382,8 @@ async function allocateAttemptOrdinal(
       updatedAt: now,
     }).onConflictDoNothing({ target: schema.providerLogicalCalls.id });
 
-    const existing = (await tx.select().from(schema.providerLogicalCalls)
-      .where(eq(schema.providerLogicalCalls.id, callId)))[0];
+    const existing = (await loadPayloads(tx.select().from(schema.providerLogicalCalls)
+      .where(eq(schema.providerLogicalCalls.id, callId))))[0];
     if (!existing || stableJson(logicalCallIdentityFromRow(existing))
       !== stableJson(logicalCallIdentity(coordinate, options.gameId))) {
       throw new Error("Provider logical call id has conflicting immutable identity");
@@ -439,8 +440,8 @@ async function reserveAttempt(
       }
     }
     await assertProviderDispatchPolicy(tx, options, intent);
-    const existingCall = (await tx.select().from(schema.providerLogicalCalls)
-      .where(eq(schema.providerLogicalCalls.id, callId)))[0];
+    const existingCall = (await loadPayloads(tx.select().from(schema.providerLogicalCalls)
+      .where(eq(schema.providerLogicalCalls.id, callId))))[0];
     if (!existingCall) {
       throw new Error("Provider attempt ordinal was not allocated");
     }
@@ -489,8 +490,8 @@ async function readAcceptedResult(
   return db.transaction(async (tx) => {
     await assertActiveOwner(tx, options);
     await assertDurableTurnSubcall(tx, options, coordinate, "replay");
-    const call = (await tx.select().from(schema.providerLogicalCalls)
-      .where(eq(schema.providerLogicalCalls.id, callId)))[0];
+    const call = (await loadPayloads(tx.select().from(schema.providerLogicalCalls)
+      .where(eq(schema.providerLogicalCalls.id, callId))))[0];
     if (!call?.acceptedAttemptId) return undefined;
     if (
       call.acceptedCatalogId == null
@@ -573,13 +574,13 @@ async function terminalizeAttempt(
       WHERE id = ${attemptId}
       FOR UPDATE
     `);
-    const existing = (await tx.select({
+    const existing = (await loadPayloads(tx.select({
       attempt: schema.providerCallAttempts,
       logicalCall: schema.providerLogicalCalls,
     }).from(schema.providerCallAttempts).innerJoin(
       schema.providerLogicalCalls,
       eq(schema.providerCallAttempts.logicalCallId, schema.providerLogicalCalls.id),
-    ).where(eq(schema.providerCallAttempts.id, attemptId)))[0];
+    ).where(eq(schema.providerCallAttempts.id, attemptId))))[0];
     if (!existing) throw new Error("Provider attempt was not reserved");
     if (existing.attempt.ownerEpoch !== options.ownerEpoch) {
       throw new Error("Provider attempt belongs to a stale owner epoch");
@@ -634,7 +635,7 @@ async function terminalizeAttempt(
     }
 
     if (preparedEvidence) {
-      await tx.insert(schema.providerAttemptEvidenceOutbox).values({
+      await tx.insert(schema.providerAttemptEvidenceOutbox).values(await storeFields({
         attemptId,
         logicalCallId: callId,
         gameId: options.gameId,
@@ -646,16 +647,16 @@ async function terminalizeAttempt(
         manifestId: preparedEvidence.manifestId,
         manifestMetadata: preparedEvidence.metadata as unknown as Record<string, unknown>,
         updatedAt: record.completedAt,
-      });
+      }, {"body":"text-gzip"}));
     }
 
     if (record.outcome.kind === "usable") {
       const acceptedCatalogId = record.preparedRequest.catalogId
         ?? `${record.preparedRequest.providerProfileId}:${record.preparedRequest.model}`;
-      const accepted = await tx.update(schema.providerLogicalCalls).set({
+      const accepted = await loadPayloads(tx.update(schema.providerLogicalCalls).set({
         acceptedAttemptId: attemptId,
         acceptedCatalogId,
-        acceptedValue: record.acceptedValue,
+        acceptedValue: await storeJson(record.acceptedValue),
         acceptedValueSha256: sha256StableJson(record.acceptedValue),
         acceptedAt: record.completedAt,
         rateLimitOutcome: sql`CASE
@@ -668,7 +669,7 @@ async function terminalizeAttempt(
       }).where(and(
         eq(schema.providerLogicalCalls.id, callId),
         sql`(${schema.providerLogicalCalls.acceptedAttemptId} IS NULL OR ${schema.providerLogicalCalls.acceptedAttemptId} = ${attemptId})`,
-      )).returning();
+      )).returning());
       if (accepted.length === 0) {
         throw new Error("Provider logical call acceptance fence rejected the attempt");
       }
@@ -698,8 +699,8 @@ async function terminalizeAttempt(
         updatedAt: record.completedAt,
       }).where(eq(schema.providerLogicalCalls.id, callId));
     }
-    const logicalCall = (await tx.select().from(schema.providerLogicalCalls)
-      .where(eq(schema.providerLogicalCalls.id, callId)))[0];
+    const logicalCall = (await loadPayloads(tx.select().from(schema.providerLogicalCalls)
+      .where(eq(schema.providerLogicalCalls.id, callId))))[0];
     if (!logicalCall) throw new Error("Provider logical call disappeared during terminalization");
     const health = await recordProviderHealthOutcomeInTransaction(tx, {
       attemptId,
@@ -802,7 +803,7 @@ async function loadEvidenceOutboxRows(
   db: DrizzleDB,
   input: { attemptId?: string; limit: number },
 ): Promise<EvidenceOutboxRow[]> {
-  return db.transaction(async (tx) => {
+  return loadPayloads(db.transaction(async (tx) => {
     const now = new Date();
     const claimToken = randomUUID();
     const claimExpiresAt = new Date(now.getTime() + 30_000).toISOString();
@@ -836,7 +837,7 @@ async function loadEvidenceOutboxRows(
         lte(schema.providerAttemptEvidenceOutbox.claimExpiresAt, now.toISOString()),
       ),
     )).returning();
-  });
+  }));
 }
 
 function claimedOutboxCondition(row: EvidenceOutboxRow) {
@@ -1305,7 +1306,7 @@ export async function reconcileProviderAttemptSpend(
   limit = 100,
   dependencies: ProviderSpendReconciliationDependencies = {},
 ): Promise<ProviderSpendReconciliationResult> {
-  const rows = await db.select({
+  const rows = await loadPayloads(db.select({
     attempt: schema.providerCallAttempts,
     logicalCall: schema.providerLogicalCalls,
   }).from(schema.providerCallAttempts)
@@ -1317,7 +1318,7 @@ export async function reconcileProviderAttemptSpend(
       inArray(schema.providerCallAttempts.status, ["indeterminate", "terminal"]),
       inArray(schema.providerCallAttempts.spendProjectionState, ["pending", "failed"]),
     ))
-    .limit(Math.max(1, Math.min(1_000, Math.floor(limit))));
+    .limit(Math.max(1, Math.min(1_000, Math.floor(limit)))));
 
   let projected = 0;
   for (const row of rows) {

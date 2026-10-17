@@ -1,3 +1,4 @@
+import { Hydrated, storeFields } from "../services/payload-storage.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "crypto";
@@ -164,11 +165,11 @@ describe("cognitive artifact API routes", () => {
         agentConfig: "{}",
       },
     ]);
-    await db.insert(schema.gameCognitiveArtifacts).values([
+    await db.insert(schema.gameCognitiveArtifacts).values(await storeFields([
       artifactRow(reasoningId, gameId, ownerPlayerId, "reasoning", { reasoningContext: "owner reasoning" }),
       artifactRow(thinkingId, gameId, ownerPlayerId, "thinking", { thinking: "participant thinking" }),
       artifactRow(strategyId, gameId, ownerPlayerId, "strategy", { decisionLog: "participant strategy" }),
-    ]);
+    ], {"payload":"json-gzip"}));
     return { gameId, ownerPlayerId, reasoningId, thinkingId, strategyId };
   }
 });
@@ -187,7 +188,7 @@ function artifactRow(
   actorPlayerId: string,
   artifactType: "reasoning" | "thinking" | "strategy",
   payload: Record<string, unknown>,
-): typeof schema.gameCognitiveArtifacts.$inferInsert {
+): Hydrated<typeof schema.gameCognitiveArtifacts.$inferInsert> {
   return {
     id,
     gameId,

@@ -1,3 +1,4 @@
+import { Hydrated } from "../services/payload-storage.js";
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@influence/engine";
 import { beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
@@ -10,7 +11,7 @@ import { readWerewolfProduction, WEREWOLF_AUTO_PUBLISHER } from "../services/wer
 import { createWerewolfVisualPreparation as createPreparation } from "../services/werewolf-visual-runtime.js";
 import { acceptVisualScene, storeVisualArtifact } from "../services/visual-scene-store.js";
 import { readWerewolfWatch, readWerewolfPresentation } from "../services/werewolf-presentation.js";
-const createWerewolfVisualPreparation = (...[db, gameId, owner, signal, render]: Parameters<typeof createPreparation>) => createPreparation(db, gameId, owner, signal, render, async (_db, _game, plan) => plan);
+const createWerewolfVisualPreparation = (...[db, gameId, owner, signal, render]: Parameters<Hydrated<typeof createPreparation>>) => createPreparation(db, gameId, owner, signal, render, async (_db, _game, plan) => plan);
 let db: DrizzleDB;
 beforeEach(async()=>{db=await setupTestDB();await db.insert(schema.users).values({id:"owner"});});
 async function fixture(preset: "one_wolf" | "two_wolves" = "two_wolves") {
@@ -31,8 +32,8 @@ test("automatic scenes publish once, recover without another render, and respect
   const f=await fixture();let renders=0;
   const form = await storeVisualArtifact(db,f.game.id,await sharp({create:{width:80,height:120,channels:3,background:"#cc8855"}}).png().toBuffer());
   const unpublishedForm = await storeVisualArtifact(db,f.game.id,await sharp({create:{width:80,height:120,channels:3,background:"#557799"}}).png().toBuffer());
-  const resolveForms: NonNullable<Parameters<typeof createPreparation>[5]> = async (_db,_game,plan) => ({...plan,cast:plan.cast.map(member=>member.variant?.kind === "werewolf" ? {...member,referenceArtifactId:form,variant:{...member.variant,resolved:true}} : member)});
-  const render:NonNullable<Parameters<typeof createWerewolfVisualPreparation>[4]>=async(db,scene,guard)=>{
+  const resolveForms: NonNullable<Parameters<Hydrated<typeof createPreparation>>[5]> = async (_db,_game,plan) => ({...plan,cast:plan.cast.map(member=>member.variant?.kind === "werewolf" ? {...member,referenceArtifactId:form,variant:{...member.variant,resolved:true}} : member)});
+  const render:NonNullable<Parameters<Hydrated<typeof createWerewolfVisualPreparation>>[4]>=async(db,scene,guard)=>{
     if(scene.status==="ready")return scene;
     renders++;
     const image=await sharp({create:{width:160,height:90,channels:3,background:scene.roomId === "lobby" ? "#445566" : "#665544"}}).png().toBuffer();

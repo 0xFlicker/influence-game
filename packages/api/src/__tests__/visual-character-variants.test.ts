@@ -1,3 +1,4 @@
+import { Hydrated, loadPayloads, storeFields } from "../services/payload-storage.js";
 import { beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
@@ -12,7 +13,7 @@ import { reserveVisualRender, visualImageJournal } from "../services/visual-rend
 let db: DrizzleDB, original: string, generated: Buffer, renders: number;
 const head = { x: .3, y: .1, width: .2, height: .2 };
 const receipt = { provider: "openai" as const, model: "gpt-image-2", requestHash: "fixture", requestId: "fixture", status: 200, elapsedMs: 1, usage: null, chargeUncertain: false };
-const providers: NonNullable<Parameters<typeof resolveCharacterVariants>[4]> = {
+const providers: NonNullable<Parameters<Hydrated<typeof resolveCharacterVariants>>[4]> = {
   render: async (_db, input) => { renders++; expect(input.allowFallback).toBe(false); expect(input.request.prompt).toContain("Preserve the source rendering style"); return { image: generated, receipt }; },
   localize: async (_db, input) => { expect(input.transformation).toBe("werewolf"); return { count: 1, verifiedParticipantIds: ["wolf"], anchors: [{ playerId: "wolf", label: 1, confidence: "clear", head }] }; },
 };
@@ -60,14 +61,14 @@ test("new generation cannot bypass a wolf-form request with unknown charge", asy
 test("worker stores resolved references on candidate, never mutates its immutable queued intent", async () => {
   const intent = plan();
   const scene = await prepareVisualScene(db, { gameId: "variants", boundarySequence: 2, plan: intent });
-  await db.insert(schema.visualRepairJobs).values({ id: "job", gameId: "variants", sceneId: scene.id, version: 1, operatorId: "producer", mode: "regenerate", plan: intent,
-    renderContext: { style: "fixture", roomName: "cellar", roomDirection: "fixture" }, status: "queued", createdAt: new Date().toISOString() });
+  await db.insert(schema.visualRepairJobs).values(await storeFields({ id: "job", gameId: "variants", sceneId: scene.id, version: 1, operatorId: "producer", mode: "regenerate", plan: intent,
+    renderContext: { style: "fixture", roomName: "cellar", roomDirection: "fixture" }, status: "queued", createdAt: new Date().toISOString() }, {"renderContext":"json-gzip"}));
   const job = (await claimVisualMediaJob(db, "worker"))!;
   await executeVisualMediaJob(db, job, new AbortController().signal, async (_db, resolvedScene) => {
     expect(resolvedScene.plan.cast[0]!.variant?.resolved).toBe(true);
     return { imageArtifactId: resolvedScene.plan.cast[0]!.referenceArtifactId, localization: { count: 1, verifiedParticipantIds: ["wolf"], anchors: [{ playerId: "wolf", label: 1, confidence: "clear", head }] } };
   }, (db, game, intent, options) => resolveCharacterVariants(db, game, intent, options, providers));
-  const [finished] = await db.select().from(schema.visualRepairJobs).where(eq(schema.visualRepairJobs.id, job.id));
+  const [finished] = await loadPayloads(db.select().from(schema.visualRepairJobs).where(eq(schema.visualRepairJobs.id, job.id)));
   expect(finished!.status).toBe("ready");
   expect(finished!.plan).toEqual(intent);
   const [candidate] = await db.select().from(schema.visualMediaVersions);

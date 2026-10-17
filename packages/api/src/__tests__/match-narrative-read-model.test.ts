@@ -1,3 +1,4 @@
+import { storeFields } from "../services/payload-storage.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { Phase, type CanonicalGameEvent } from "@influence/engine";
@@ -1390,7 +1391,7 @@ async function insertCognition(
     round?: number;
   },
 ): Promise<void> {
-  await db.insert(schema.gameCognitiveArtifacts).values({
+  await db.insert(schema.gameCognitiveArtifacts).values(await storeFields({
     id: params.id,
     gameId: params.gameId,
     artifactType: params.artifactType,
@@ -1406,7 +1407,7 @@ async function insertCognition(
     payload: params.payload,
     visibilityStatus: "active",
     createdAt: params.createdAt,
-  });
+  }, {"payload":"json-gzip"}));
 }
 
 function strategyPayload(
@@ -1432,7 +1433,7 @@ async function insertOwnedProfile(
     name: `${name} ${agentProfileId.slice(0, 8)}`,
     personality: "careful",
   });
-  await db.insert(schema.agentRevisions).values({
+  await db.insert(schema.agentRevisions).values(await storeFields({
     id: revisionId,
     agentProfileId,
     ordinal: 1,
@@ -1442,7 +1443,7 @@ async function insertOwnedProfile(
     behaviorSnapshot: {},
     effectiveRuntimeSnapshot: {},
     revisionPolicyVersion: "agent-revision-v2",
-  });
+  }, {"behaviorSnapshot":"json-gzip","effectiveRuntimeSnapshot":"json-gzip"}));
   await db.update(schema.agentProfiles).set({ currentRevisionId: revisionId })
     .where(eq(schema.agentProfiles.id, agentProfileId));
   return { agentProfileId, revisionId };

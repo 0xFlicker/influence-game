@@ -1,3 +1,4 @@
+import { storeFields } from "./payload-storage.js";
 import { createHash, randomUUID } from "crypto";
 import { and, eq } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
@@ -627,7 +628,7 @@ export async function enqueueOwnerLearningFailureEvidence(
     }],
     metadata: prepared.metadata,
   });
-  await tx.insert(schema.agentLearningReviewFailureEvidenceOutbox).values({
+  await tx.insert(schema.agentLearningReviewFailureEvidenceOutbox).values(await storeFields({
     diagnosticId: prepared.diagnostic.id,
     reviewId: input.reviewId,
     manifestId: prepared.manifestId,
@@ -636,7 +637,7 @@ export async function enqueueOwnerLearningFailureEvidence(
     byteLength: prepared.byteLength,
     storageKey: prepared.storageKey,
     manifestMetadata: prepared.metadata,
-  });
+  }, {"body":"text-gzip"}));
   if (call && input.linkCall !== false) {
     const updated = await tx.update(schema.agentLearningReviewCalls).set({
       failureDiagnosticId: prepared.diagnostic.id,

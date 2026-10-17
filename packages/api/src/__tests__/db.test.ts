@@ -1,3 +1,4 @@
+import { storeFields, loadPayloads } from "../services/payload-storage.js";
 /**
  * Database schema and operations tests.
  *
@@ -801,7 +802,7 @@ describe("Database Schema", () => {
 
       const checkpointId = randomUUID();
       await db.insert(schema.gameCheckpoints)
-        .values({
+        .values(await storeFields({
           id: checkpointId,
           gameId,
           ownerEpoch,
@@ -809,7 +810,7 @@ describe("Database Schema", () => {
           eventHeadHash: "sha256:head-1",
           projectionHash: "sha256:projection-1",
           snapshot: { phase: "INTRODUCTION", players: [] },
-        });
+        }, {"snapshot":"json-gzip"}));
 
       const manifestId = randomUUID();
       const decisionId = randomUUID();
@@ -839,10 +840,10 @@ describe("Database Schema", () => {
           outcome: "allowed",
         });
 
-      const checkpoints = await db
+      const checkpoints = await loadPayloads(db
         .select()
         .from(schema.gameCheckpoints)
-        .where(eq(schema.gameCheckpoints.gameId, gameId));
+        .where(eq(schema.gameCheckpoints.gameId, gameId)));
       const manifests = await db
         .select()
         .from(schema.gameEvidenceManifests)
@@ -903,7 +904,7 @@ describe("Database Schema", () => {
         });
 
       await db.insert(schema.gameCognitiveArtifacts)
-        .values({
+        .values(await storeFields({
           id: artifactId,
           gameId,
           eventSequence: 1,
@@ -918,7 +919,7 @@ describe("Database Schema", () => {
           payload: {
             decisionLog: [{ target: "player-2", reason: "coalition risk" }],
           },
-        });
+        }, {"payload":"json-gzip"}));
 
       await db.insert(schema.gameCognitiveArtifactReads)
         .values({
@@ -932,10 +933,10 @@ describe("Database Schema", () => {
           outcome: "allowed",
         });
 
-      const artifacts = await db
+      const artifacts = await loadPayloads(db
         .select()
         .from(schema.gameCognitiveArtifacts)
-        .where(eq(schema.gameCognitiveArtifacts.id, artifactId));
+        .where(eq(schema.gameCognitiveArtifacts.id, artifactId)));
       const reads = await db
         .select()
         .from(schema.gameCognitiveArtifactReads)

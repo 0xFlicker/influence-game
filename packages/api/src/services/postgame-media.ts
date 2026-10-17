@@ -1,3 +1,4 @@
+import { Hydrated, loadPayloads } from "./payload-storage.js";
 import { and, eq } from "drizzle-orm";
 import type {
   PostgameMediaArtifactMetadata,
@@ -180,13 +181,13 @@ export async function getAdminPostgameMedia(
 }
 
 async function loadPostgameMedia(db: Pick<DrizzleDB, "select">, gameId: string) {
-  const [row] = await db.select()
+  const [row] = await loadPayloads(db.select()
     .from(schema.gamePostgameMedia)
     .where(and(
       eq(schema.gamePostgameMedia.gameId, gameId),
       eq(schema.gamePostgameMedia.mediaType, MEDIA_TYPE),
     ))
-    .limit(1);
+    .limit(1));
   return row;
 }
 
@@ -195,8 +196,8 @@ function publicState(status: Exclude<PublicPostgameMediaStatus, "ready">): Publi
 }
 
 function hasSnapshotProvenance(
-  row: typeof schema.gamePostgameMedia.$inferSelect,
-): row is typeof schema.gamePostgameMedia.$inferSelect & {
+  row: Hydrated<typeof schema.gamePostgameMedia.$inferSelect>,
+): row is Hydrated<typeof schema.gamePostgameMedia.$inferSelect> & {
   renderInputSnapshotHash: string;
   renderInputSnapshotVersion: number;
   rendererVersion: string;
@@ -227,7 +228,7 @@ function publicStatusFor(status: PostgameMediaStatus): Exclude<PublicPostgameMed
 }
 
 function publicCurrentReady(
-  row: typeof schema.gamePostgameMedia.$inferSelect,
+  row: Hydrated<typeof schema.gamePostgameMedia.$inferSelect>,
 ): Extract<PublicPostgameMediaRead, { status: "ready" }> | null {
   if (
     row.currentReadyRenderVersion === null
@@ -272,7 +273,7 @@ function publicCurrentReady(
 }
 
 function adminCurrentReady(
-  row: typeof schema.gamePostgameMedia.$inferSelect,
+  row: Hydrated<typeof schema.gamePostgameMedia.$inferSelect>,
 ): Extract<AdminPostgameMediaRead, { status: PostgameMediaStatus }>["currentReady"] {
   if (
     row.currentReadyRenderVersion === null

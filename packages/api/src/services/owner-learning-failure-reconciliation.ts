@@ -1,3 +1,4 @@
+import { Hydrated, loadPayloads } from "./payload-storage.js";
 import { createHash, randomUUID } from "crypto";
 import {
   and,
@@ -25,7 +26,7 @@ import {
 const DEFAULT_WRITE_TIMEOUT_MS = 15_000;
 const CLAIM_LEASE_MS = 30_000;
 
-type OutboxRow = typeof schema.agentLearningReviewFailureEvidenceOutbox.$inferSelect;
+type OutboxRow = Hydrated<typeof schema.agentLearningReviewFailureEvidenceOutbox.$inferSelect>;
 
 export interface OwnerLearningFailureReconciliationResult {
   attempted: number;
@@ -54,7 +55,7 @@ async function claimRows(
   db: DrizzleDB,
   input: { diagnosticId?: string; limit: number },
 ): Promise<OutboxRow[]> {
-  return db.transaction(async (tx) => {
+  return loadPayloads(db.transaction(async (tx) => {
     const now = new Date();
     const claimToken = randomUUID();
     const claimExpiresAt = new Date(now.getTime() + CLAIM_LEASE_MS).toISOString();
@@ -88,7 +89,7 @@ async function claimRows(
         lte(schema.agentLearningReviewFailureEvidenceOutbox.claimExpiresAt, now.toISOString()),
       ),
     )).returning();
-  });
+  }));
 }
 
 function assertOutboxIntegrity(row: OutboxRow): void {

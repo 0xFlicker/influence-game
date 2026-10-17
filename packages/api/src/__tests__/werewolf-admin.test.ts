@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@influence/engine";
 import { werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import type { ProductionCatalog } from "@influence/engine/production-moments";
@@ -92,7 +93,7 @@ test("v7 completed games retain admin and Studio editing access without changing
   expect(await readWerewolfEvents(db, id)).toEqual(events);
   const [saved] = await db.select().from(schema.games).where(eq(schema.games.id, id));
   expect(saved).toMatchObject({ config, status: "completed", endedAt: "2026-10-01T01:00:00.000Z" });
-  expect(await db.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, id))).toEqual([]);
+  expect(await loadPayloads(db.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, id)))).toEqual([]);
 });
 
 test("admin discovery is Werewolf-only, includes hidden games, enforces current permissions and exposes canonical activity", async () => {
@@ -205,10 +206,10 @@ test("production reads captured revision bytes, never a later character edit", a
   const bytes = await sharp({ create: { width: 32, height: 48, channels: 3, background: "#113355" } }).png().toBuffer();
   const hash = "sha256:frozen-reference";
   const portraitBytes = await sharp({ create: { width: 20, height: 20, channels: 3, background: "#556677" } }).png().toBuffer();
-  await db.insert(schema.agentContentAssets).values({ hash: "portrait-hash", bytes: portraitBytes });
+  await db.insert(schema.agentContentAssets).values(await storeFields({ hash: "portrait-hash", bytes: portraitBytes }, {"bytes":"binary"}));
   const [profile] = await db.insert(schema.agentProfiles).values({ id: "custom", userId: "owner", name: "Arden Vale", personality: "Quiet", avatarUrl: "/old.png", fullBodyReferenceUrl: "/old-full.png" }).returning();
-  await db.insert(schema.agentContentAssets).values({ hash, bytes });
-  await db.insert(schema.agentContentRevisions).values({ id: "original-content", agentProfileId: "custom", userId: "owner", ancestryKnown: true, fingerprint: "original-content", snapshot: { ...contentSnapshot(profile!), assets: { "/old-full.png": hash, "/old.png": "portrait-hash" } } });
+  await db.insert(schema.agentContentAssets).values(await storeFields({ hash, bytes }, {"bytes":"binary"}));
+  await db.insert(schema.agentContentRevisions).values(await storeFields({ id: "original-content", agentProfileId: "custom", userId: "owner", ancestryKnown: true, fingerprint: "original-content", snapshot: { ...contentSnapshot(profile!), assets: { "/old-full.png": hash, "/old.png": "portrait-hash" } } }, {"snapshot":"json-gzip"}));
   await db.update(schema.agentProfiles).set({ contentRevisionId: "original-content" }).where(eq(schema.agentProfiles.id, "custom"));
   const g = await createWerewolfGame(db, "owner", { preset: "one_wolf", agentProfileIds: ["custom"], maxDays: 1 });
   await db.update(schema.agentProfiles).set({ name: "Edited Arden Vale", fullBodyReferenceUrl: "/new-full.png" }).where(eq(schema.agentProfiles.id, "custom"));
@@ -233,7 +234,7 @@ test("production reads captured revision bytes, never a later character edit", a
   expect(identity.avatarUrl).not.toContain("image=body");
   expect(saved.kind).toBe("full_body"); expect(saved.bytes).toEqual(bytes); expect(JSON.stringify(refs)).not.toContain("new-full");
   const [portraitProfile] = await db.insert(schema.agentProfiles).values({ id: "portrait-only", userId: "owner", name: "Rowan Finch", personality: "Quiet", avatarUrl: "/old.png", fullBodyReferenceUrl: "/uncaptured-full.png" }).returning();
-  await db.insert(schema.agentContentRevisions).values({ id: "portrait-content", agentProfileId: "portrait-only", userId: "owner", ancestryKnown: true, fingerprint: "portrait-content", snapshot: { ...contentSnapshot(portraitProfile!), assets: { "/old.png": "portrait-hash" } } });
+  await db.insert(schema.agentContentRevisions).values(await storeFields({ id: "portrait-content", agentProfileId: "portrait-only", userId: "owner", ancestryKnown: true, fingerprint: "portrait-content", snapshot: { ...contentSnapshot(portraitProfile!), assets: { "/old.png": "portrait-hash" } } }, {"snapshot":"json-gzip"}));
   await db.update(schema.agentProfiles).set({ contentRevisionId: "portrait-content" }).where(eq(schema.agentProfiles.id, "portrait-only"));
   const portraitGame = await createWerewolfGame(db, "owner", { preset: "one_wolf", agentProfileIds: ["portrait-only"], maxDays: 1 });
   const portrait = (await werewolfReferences(db, portraitGame.id)).find(r => r.profile.name === "Rowan Finch")!;
@@ -331,7 +332,7 @@ test("Werewolf regeneration replans approved locations and wolf forms without ch
   await db.update(schema.visualRepairJobs).set({ status: "failed", owner: null, leaseUntil: null }).where(eq(schema.visualRepairJobs.id, job.id));
   const result = await controlVisualMedia(db, g.id, "producer", { action: "regenerate", regenerateForms: true, sceneId: job.sceneId!, expectedVersion: 1, requestId: "new-forms" });
   expect(result.accepted).toBe(true);
-  const [replacement] = await db.select().from(schema.visualRepairJobs).where(eq(schema.visualRepairJobs.id, result.jobId!));
+  const [replacement] = await loadPayloads(db.select().from(schema.visualRepairJobs).where(eq(schema.visualRepairJobs.id, result.jobId!)));
   expect(replacement!.plan.cast.every(member => member.variant?.generation === "new-forms")).toBe(true);
   expect((await readVisualMedia(db, g.id)).publications).toHaveLength(0);
   expect(await readWerewolfEvents(db, g.id)).toEqual(originalEvents);

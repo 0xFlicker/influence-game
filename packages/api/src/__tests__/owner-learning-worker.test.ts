@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { describe, expect, test } from "bun:test";
 import { asc, eq, sql } from "drizzle-orm";
 import { schema } from "../db/index.js";
@@ -162,8 +163,8 @@ describe("owner learning worker durability", () => {
         },
       })).toBe(false);
 
-      const review = (await db.select().from(schema.agentLearningReviews)
-        .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+      const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+        .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
       expect(review).toMatchObject({
         analysisStatus: "failed",
         safeFailureCode: "internal_error",
@@ -175,7 +176,7 @@ describe("owner learning worker durability", () => {
         phase,
         safeFailureCode: "internal_error",
       });
-      expect((await db.select().from(schema.agentLearningReviewFailureEvidenceOutbox))).toHaveLength(1);
+      expect((await loadPayloads(db.select().from(schema.agentLearningReviewFailureEvidenceOutbox)))).toHaveLength(1);
     }
   });
 
@@ -211,15 +212,15 @@ describe("owner learning worker durability", () => {
         },
       })).rejects.toThrow();
 
-      expect((await db.select().from(schema.agentLearningReviews)
-        .where(eq(schema.agentLearningReviews.id, reviewId)))[0]).toMatchObject({
+      expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
+        .where(eq(schema.agentLearningReviews.id, reviewId))))[0]).toMatchObject({
         analysisStatus: "running",
         executionPhase: "selection",
         safeFailureCode: null,
       });
       expect(await db.select().from(schema.agentLearningReviewFailureDiagnostics)).toHaveLength(0);
       expect(await db.select().from(schema.agentLearningReviewFailureManifests)).toHaveLength(0);
-      expect(await db.select().from(schema.agentLearningReviewFailureEvidenceOutbox)).toHaveLength(0);
+      expect(await loadPayloads(db.select().from(schema.agentLearningReviewFailureEvidenceOutbox))).toHaveLength(0);
       expect((await db.select().from(schema.agentLearningEvents))
         .filter((event) => event.kind === "review_failed")).toHaveLength(0);
     } finally {
@@ -274,7 +275,7 @@ describe("owner learning worker durability", () => {
     const reviewFailedEvent = (await db.select().from(schema.agentLearningEvents))
       .find((event) => event.kind === "review_failed");
     const diagnostic = (await db.select().from(schema.agentLearningReviewFailureDiagnostics))[0]!;
-    const outbox = (await db.select().from(schema.agentLearningReviewFailureEvidenceOutbox))[0]!;
+    const outbox = (await loadPayloads(db.select().from(schema.agentLearningReviewFailureEvidenceOutbox)))[0]!;
     for (const serialized of [
       JSON.stringify(reviewFailedEvent?.payload),
       JSON.stringify(diagnostic),
@@ -342,15 +343,15 @@ describe("owner learning worker durability", () => {
     })).toBe(true);
     expect(invocations).toBe(2);
     expect(outputs).toEqual(before);
-    const review = (await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
     expect(review.analysisStatus).toBe("no_change");
     expect(review.result).toMatchObject({
       diagnosis: "The guidance explicitly discusses null and undefined.",
       noChange: { rationale: "No repeated strategic defect appears." },
     });
-    const calls = await db.select().from(schema.agentLearningReviewCalls)
-      .where(eq(schema.agentLearningReviewCalls.reviewId, reviewId)).orderBy(asc(schema.agentLearningReviewCalls.ordinal));
+    const calls = await loadPayloads(db.select().from(schema.agentLearningReviewCalls)
+      .where(eq(schema.agentLearningReviewCalls.reviewId, reviewId)).orderBy(asc(schema.agentLearningReviewCalls.ordinal)));
     expect(calls.map((call) => call.state)).toEqual(["succeeded", "succeeded"]);
     for (const [index, call] of calls.entries()) {
       const ledger = JSON.parse(call.responseEvidenceBody!) as {
@@ -416,8 +417,8 @@ describe("owner learning worker durability", () => {
       },
     })).toBe(false);
 
-    const failed = (await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    const failed = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
     expect(failed).toMatchObject({
       analysisStatus: "failed",
       safeFailureCode: "internal_error",
@@ -425,8 +426,8 @@ describe("owner learning worker durability", () => {
       logicalCallCount: 1,
     });
     expect(failed.checkpoint?.completion).not.toBeNull();
-    expect((await db.select().from(schema.agentLearningReviewCalls))).toHaveLength(1);
-    expect((await db.select().from(schema.agentLearningReviewCalls))[0]?.state).toBe("succeeded");
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))).toHaveLength(1);
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0]?.state).toBe("succeeded");
 
     expect(await retryOwnerLearningReview(db, {
       ownerUserId: fixture.ownerUserId,
@@ -447,9 +448,9 @@ describe("owner learning worker durability", () => {
     })).toBe(true);
 
     expect(providerInvocations).toBe(1);
-    expect((await db.select().from(schema.agentLearningReviewCalls))).toHaveLength(1);
-    expect((await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))).toHaveLength(1);
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]).toMatchObject({
       analysisStatus: "no_change",
       logicalCallCount: 1,
       ownerRetryCount: 1,
@@ -535,7 +536,7 @@ describe("owner learning worker durability", () => {
       },
     })).rejects.toThrow("simulated process stop after response receipt");
 
-    const stagedCall = (await db.select().from(schema.agentLearningReviewCalls))[0]!;
+    const stagedCall = (await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0]!;
     expect(stagedCall).toMatchObject({
       state: "dispatched",
       providerResponseId: "resp-response-staged",
@@ -574,9 +575,9 @@ describe("owner learning worker durability", () => {
     })).toBe(true);
 
     expect(providerInvocations).toBe(1);
-    expect(await db.select().from(schema.agentLearningReviewCalls)).toHaveLength(1);
-    expect((await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]).toMatchObject({
+    expect(await loadPayloads(db.select().from(schema.agentLearningReviewCalls))).toHaveLength(1);
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]).toMatchObject({
       analysisStatus: "no_change",
       logicalCallCount: 1,
       ownerRetryCount: 0,
@@ -663,7 +664,7 @@ describe("owner learning worker durability", () => {
       },
     })).toBe(false);
 
-    expect((await db.select().from(schema.agentLearningReviewCalls))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0]).toMatchObject({
       state: "failed",
       providerResponseId: "resp-receipt-persistence",
       tokenReceipt: { inputTokens: 1_000, totalOutputTokens: 300 },
@@ -702,7 +703,7 @@ describe("owner learning worker durability", () => {
     })).toBe(true);
 
     expect(providerInvocations).toBe(2);
-    const calls = await db.select().from(schema.agentLearningReviewCalls);
+    const calls = await loadPayloads(db.select().from(schema.agentLearningReviewCalls));
     expect(calls).toHaveLength(2);
     expect(calls.find((call) => call.attemptOrdinal === 1)).toMatchObject({
       state: "failed",
@@ -714,8 +715,8 @@ describe("owner learning worker durability", () => {
       tokenReceipt: { inputTokens: 1_000, totalOutputTokens: 300 },
       costSource: "estimated",
     });
-    expect((await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]).toMatchObject({
       analysisStatus: "no_change",
       ownerRetryCount: 1,
     });
@@ -796,14 +797,14 @@ describe("owner learning worker durability", () => {
       now: () => new Date("2026-08-04T03:01:02.000Z"),
     })).toBe(false);
 
-    expect((await db.select().from(schema.agentLearningReviewCalls))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0]).toMatchObject({
       state: "failed",
       providerResponseId: "resp-terminal-observer-recovery",
       tokenReceipt: { inputTokens: 900, totalOutputTokens: 250 },
       costSource: "estimated",
       estimatedCostMicrousd: expect.any(Number),
     });
-    expect((await db.select().from(schema.agentLearningReviews))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)))[0]).toMatchObject({
       analysisStatus: "failed",
       safeFailureCode: "internal_error",
       retryable: true,
@@ -840,7 +841,7 @@ describe("owner learning worker durability", () => {
     })).toBe(true);
 
     expect(providerInvocations).toBe(2);
-    const calls = await db.select().from(schema.agentLearningReviewCalls);
+    const calls = await loadPayloads(db.select().from(schema.agentLearningReviewCalls));
     expect(calls).toHaveLength(2);
     expect(calls.find((call) => call.attemptOrdinal === 1)?.state).toBe("failed");
     expect(calls.find((call) => call.attemptOrdinal === 2)).toMatchObject({
@@ -915,7 +916,7 @@ describe("owner learning worker durability", () => {
       now: () => new Date("2026-08-04T03:01:02.000Z"),
     })).toBe(false);
 
-    expect((await db.select().from(schema.agentLearningReviewCalls))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0]).toMatchObject({
       state: "failed",
       providerResponseId: "resp-observation-write-recovery",
       responseEvidenceBody: expect.stringContaining("No repeated strategy defect appears."),
@@ -923,7 +924,7 @@ describe("owner learning worker durability", () => {
       costSource: "estimated",
       estimatedCostMicrousd: expect.any(Number),
     });
-    expect((await db.select().from(schema.agentLearningReviewFailureEvidenceOutbox))[0]?.body)
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewFailureEvidenceOutbox)))[0]?.body)
       .toContain("raw response staging transaction failed");
 
     expect(await retryOwnerLearningReview(db, {
@@ -957,7 +958,7 @@ describe("owner learning worker durability", () => {
       now: () => new Date("2026-08-04T03:02:02.000Z"),
     })).toBe(true);
     expect(providerInvocations).toBe(2);
-    const calls = await db.select().from(schema.agentLearningReviewCalls);
+    const calls = await loadPayloads(db.select().from(schema.agentLearningReviewCalls));
     expect(calls).toHaveLength(2);
     expect(calls.find((call) => call.attemptOrdinal === 1)?.state).toBe("failed");
     expect(calls.find((call) => call.attemptOrdinal === 2)).toMatchObject({
@@ -1022,12 +1023,12 @@ describe("owner learning worker durability", () => {
       now: () => new Date("2026-08-04T03:01:02.000Z"),
     })).toBe(false);
 
-    expect((await db.select().from(schema.agentLearningReviews))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)))[0]).toMatchObject({
       analysisStatus: "failed",
       safeFailureCode: "provider_error",
       retryable: true,
     });
-    expect((await db.select().from(schema.agentLearningReviewCalls))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0]).toMatchObject({
       state: "failed",
       safeFailureCode: "provider_error",
       finalProviderRequestId: "req-terminal-db-failure",
@@ -1043,8 +1044,8 @@ describe("owner learning worker durability", () => {
         errorCode: "provider_http_500",
         providerRequestId: "req-terminal-db-failure",
       });
-    const evidence = (await db.select()
-      .from(schema.agentLearningReviewFailureEvidenceOutbox))[0]!.body;
+    const evidence = (await loadPayloads(db.select()
+      .from(schema.agentLearningReviewFailureEvidenceOutbox)))[0]!.body;
     expect(evidence).toContain("RAW_500_TERMINAL_SENTINEL");
     expect(evidence).toContain("TERMINAL_RECEIPT_DATABASE_CAUSE");
     expect(evidence).toContain("OwnerLearningProviderPersistenceFailure");
@@ -1107,18 +1108,18 @@ describe("owner learning worker durability", () => {
       now: () => new Date("2026-08-04T03:01:02.000Z"),
     })).toBe(false);
 
-    expect((await db.select().from(schema.agentLearningReviews))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)))[0]).toMatchObject({
       analysisStatus: "failed",
       safeFailureCode: "internal_error",
       retryable: true,
     });
-    expect((await db.select().from(schema.agentLearningReviewCalls))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0]).toMatchObject({
       state: "failed",
       safeFailureCode: "internal_error",
       transportReceipts: [{ terminalHttpStatus: 429, backoffMs: 1_000 }],
     });
-    const evidence = (await db.select()
-      .from(schema.agentLearningReviewFailureEvidenceOutbox))[0]!.body;
+    const evidence = (await loadPayloads(db.select()
+      .from(schema.agentLearningReviewFailureEvidenceOutbox)))[0]!.body;
     expect(evidence).toContain("terminal Flex receipt database unavailable");
     expect(evidence).toContain("FLEX_CAPACITY_SENTINEL");
   });
@@ -1181,7 +1182,7 @@ describe("owner learning worker durability", () => {
       },
     })).toBe(false);
 
-    const failedAttempt = (await db.select().from(schema.agentLearningReviewCalls))[0]!;
+    const failedAttempt = (await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0]!;
     expect(failedAttempt).toMatchObject({
       state: "failed",
       safeFailureCode: "internal_error",
@@ -1207,8 +1208,8 @@ describe("owner learning worker durability", () => {
     })).toBe(true);
 
     expect(providerInvocations).toBe(1);
-    const attempts = await db.select().from(schema.agentLearningReviewCalls)
-      .orderBy(asc(schema.agentLearningReviewCalls.attemptOrdinal));
+    const attempts = await loadPayloads(db.select().from(schema.agentLearningReviewCalls)
+      .orderBy(asc(schema.agentLearningReviewCalls.attemptOrdinal)));
     expect(attempts).toHaveLength(2);
     expect(attempts[0]).toMatchObject({
       id: failedAttempt.id,
@@ -1226,8 +1227,8 @@ describe("owner learning worker durability", () => {
       tokenReceipt: null,
       transportReceipts: [],
     });
-    expect((await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]).toMatchObject({
       analysisStatus: "no_change",
       logicalCallCount: 1,
       ownerRetryCount: 1,
@@ -1316,15 +1317,15 @@ describe("owner learning worker durability", () => {
     expect(await claimOwnerLearningReview(db, {
       now: new Date("2026-08-04T03:02:00.000Z"),
     })).toBeNull();
-    const originalCall = (await db.select().from(schema.agentLearningReviewCalls))[0]!;
+    const originalCall = (await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0]!;
     const originalDiagnosticId = originalCall.failureDiagnosticId;
     expect(originalCall.state).toBe("ambiguous");
 
     releaseResponse();
     expect(await firstRun).toBe(false);
 
-    expect((await db.select().from(schema.agentLearningReviewCalls)
-      .where(eq(schema.agentLearningReviewCalls.id, originalCall.id)))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewCalls)
+      .where(eq(schema.agentLearningReviewCalls.id, originalCall.id))))[0]).toMatchObject({
       state: "ambiguous",
       failureDiagnosticId: originalDiagnosticId,
       providerResponseId: "resp-late",
@@ -1376,7 +1377,7 @@ describe("owner learning worker durability", () => {
     })).toBe(true);
 
     expect(providerInvocations).toBe(2);
-    const calls = await db.select().from(schema.agentLearningReviewCalls);
+    const calls = await loadPayloads(db.select().from(schema.agentLearningReviewCalls));
     expect(calls).toHaveLength(2);
     expect(calls.find((call) => call.attemptOrdinal === 1)).toMatchObject({
       id: originalCall.id,
@@ -1389,7 +1390,7 @@ describe("owner learning worker durability", () => {
       tokenReceipt: { inputTokens: 1_000, totalOutputTokens: 300 },
       costSource: "estimated",
     });
-    expect((await db.select().from(schema.agentLearningReviews))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)))[0]).toMatchObject({
       analysisStatus: "no_change",
       logicalCallCount: 1,
       ownerRetryCount: 1,
@@ -1425,7 +1426,7 @@ describe("owner learning worker durability", () => {
     expect(await claimOwnerLearningReview(db, {
       now: new Date("2026-08-04T03:02:00.000Z"),
     })).toBeNull();
-    const originalCall = (await db.select().from(schema.agentLearningReviewCalls))[0]!;
+    const originalCall = (await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0]!;
     const originalDiagnosticId = originalCall.failureDiagnosticId;
 
     await persistOwnerLearningProviderResponse(db, {
@@ -1445,13 +1446,13 @@ describe("owner learning worker durability", () => {
       now: new Date("2026-08-04T03:02:01.000Z"),
     });
 
-    expect((await db.select().from(schema.agentLearningReviews))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)))[0]).toMatchObject({
       analysisStatus: "failed",
       safeFailureCode: "worker_interrupted",
       retryable: false,
       ownerRetryCount: 0,
     });
-    expect((await db.select().from(schema.agentLearningReviewCalls))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0]).toMatchObject({
       state: "ambiguous",
       failureDiagnosticId: originalDiagnosticId,
       responseEvidenceBody: expect.stringContaining("LATE_401_RESPONSE_SENTINEL"),
@@ -1468,7 +1469,7 @@ describe("owner learning worker durability", () => {
       reviewId,
       now: new Date("2026-08-04T03:03:00.000Z"),
     })).toBe(false);
-    expect((await db.select().from(schema.agentLearningReviews))[0]?.ownerRetryCount).toBe(0);
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)))[0]?.ownerRetryCount).toBe(0);
   });
 
   test("cancels a claimed retry when a late response proves the failure terminal", async () => {
@@ -1500,7 +1501,7 @@ describe("owner learning worker durability", () => {
     expect(await claimOwnerLearningReview(db, {
       now: new Date("2026-08-04T03:02:00.000Z"),
     })).toBeNull();
-    const originalDiagnosticId = (await db.select().from(schema.agentLearningReviewCalls))[0]!
+    const originalDiagnosticId = (await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0]!
       .failureDiagnosticId;
     expect(await retryOwnerLearningReview(db, {
       ownerUserId: fixture.ownerUserId,
@@ -1529,7 +1530,7 @@ describe("owner learning worker durability", () => {
       now: new Date("2026-08-04T03:02:01.000Z"),
     });
 
-    expect((await db.select().from(schema.agentLearningReviews))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)))[0]).toMatchObject({
       analysisStatus: "failed",
       safeFailureCode: "provider_error",
       retryable: false,
@@ -1546,7 +1547,7 @@ describe("owner learning worker durability", () => {
       stage: "scanning_narratives",
       now: new Date("2026-08-04T03:02:02.100Z"),
     })).rejects.toMatchObject({ code: "stale_or_invalid_lease" });
-    const calls = await db.select().from(schema.agentLearningReviewCalls);
+    const calls = await loadPayloads(db.select().from(schema.agentLearningReviewCalls));
     expect(calls).toHaveLength(1);
     expect(calls[0]?.failureDiagnosticId).toBe(originalDiagnosticId);
     expect((await db.select().from(schema.agentLearningEvents))
@@ -1597,14 +1598,14 @@ describe("owner learning worker durability", () => {
     expect(await claimOwnerLearningReview(db, {
       now: new Date("2026-08-04T03:01:02.000Z"),
     })).toBeNull();
-    expect((await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]).toMatchObject({
       analysisStatus: "failed",
       safeFailureCode: "output_budget_exhausted",
       retryable: true,
     });
-    expect((await db.select().from(schema.agentLearningReviewCalls)
-      .where(eq(schema.agentLearningReviewCalls.id, reservation.callId)))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewCalls)
+      .where(eq(schema.agentLearningReviewCalls.id, reservation.callId))))[0]).toMatchObject({
       state: "failed",
       safeFailureCode: "output_budget_exhausted",
       providerResponseId: "resp-output-budget-recovery",
@@ -1612,7 +1613,7 @@ describe("owner learning worker durability", () => {
       costSource: "estimated",
       estimatedCostMicrousd: expect.any(Number),
     });
-    expect((await db.select().from(schema.agentLearningReviewFailureEvidenceOutbox))[0]?.body)
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewFailureEvidenceOutbox)))[0]?.body)
       .toContain("resp-output-budget-recovery");
   });
 
@@ -1690,17 +1691,17 @@ describe("owner learning worker durability", () => {
       expect(await claimOwnerLearningReview(db, {
         now: new Date("2026-08-04T03:02:00.000Z"),
       }), fixtureCase.label).toBeNull();
-      expect((await db.select().from(schema.agentLearningReviews))[0], fixtureCase.label)
+      expect((await loadPayloads(db.select().from(schema.agentLearningReviews)))[0], fixtureCase.label)
         .toMatchObject({
           analysisStatus: "failed",
           safeFailureCode: "provider_error",
           retryable: fixtureCase.retryable,
         });
-      expect((await db.select().from(schema.agentLearningReviewCalls))[0], fixtureCase.label)
+      expect((await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0], fixtureCase.label)
         .toMatchObject({ state: "failed", safeFailureCode: "provider_error" });
       expect((await db.select().from(schema.agentLearningReviewFailureDiagnostics))[0], fixtureCase.label)
         .toMatchObject({ errorCode: fixtureCase.errorCode });
-      expect((await db.select().from(schema.agentLearningReviewFailureEvidenceOutbox))[0]?.body)
+      expect((await loadPayloads(db.select().from(schema.agentLearningReviewFailureEvidenceOutbox)))[0]?.body)
         .toContain(fixtureCase.sentinel);
     }
   });
@@ -1805,8 +1806,8 @@ describe("owner learning worker durability", () => {
       reviewId,
       now: new Date("2026-08-04T03:02:00.000Z"),
     })).toBe(false);
-    expect((await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]).toMatchObject({
       analysisStatus: "failed",
       ownerRetryCount: 0,
     });
@@ -1828,8 +1829,8 @@ describe("owner learning worker durability", () => {
       reviewId,
       now: new Date("2026-08-04T03:02:00.000Z"),
     })).toBe(false);
-    expect((await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]).toMatchObject({
       analysisStatus: "failed",
       ownerRetryCount: 0,
       promptVersion: "owner-learning-prompt-v1",
@@ -1857,14 +1858,14 @@ describe("owner learning worker durability", () => {
       let call: { id: string; ordinal: number; attemptOrdinal: number } | undefined;
       if (failureCode === "invalid_structured_output") {
         call = { id: `invalid-fixture-${reviewId}`, ordinal: 1, attemptOrdinal: 1 };
-        await db.insert(schema.agentLearningReviewCalls).values({
+        await db.insert(schema.agentLearningReviewCalls).values(await storeFields({
           ...call,
           reviewId,
           state: "failed",
           stage: "scanning_narratives",
           inputPolicyHash: `sha256:${reviewId}`,
           safeFailureCode: "invalid_result_contract",
-        });
+        }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"}));
       }
       await failFixtureOwnerLearningReview(db, {
         reviewId,
@@ -1881,8 +1882,8 @@ describe("owner learning worker durability", () => {
         now: new Date("2026-08-04T03:02:00.000Z"),
       })).toBe(expectedRetry);
 
-      const review = (await db.select().from(schema.agentLearningReviews)
-        .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+      const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+        .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
       expect(review.analysisStatus).toBe(expectedRetry ? "retry_queued" : "failed");
       expect(review.ownerRetryCount).toBe(expectedRetry ? 1 : 0);
       const events = await db.select().from(schema.agentLearningEvents);
@@ -1948,7 +1949,7 @@ describe("owner learning worker durability", () => {
       projector,
       now: () => new Date("2026-08-04T03:01:04.000Z"),
     })).toBe(false);
-    expect((await db.select().from(schema.agentLearningReviews))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)))[0]).toMatchObject({
       analysisStatus: "failed",
       safeFailureCode: "invalid_structured_output",
       retryable: true,
@@ -1969,7 +1970,7 @@ describe("owner learning worker durability", () => {
     })).toBe(true);
 
     expect(providerInvocations).toBe(2);
-    const calls = await db.select().from(schema.agentLearningReviewCalls);
+    const calls = await loadPayloads(db.select().from(schema.agentLearningReviewCalls));
     expect(calls).toHaveLength(2);
     expect(calls.find((call) => call.attemptOrdinal === 1)).toMatchObject({
       state: "failed",
@@ -2002,7 +2003,7 @@ describe("owner learning worker durability", () => {
       completion: null,
     };
     for (const ordinal of [1, 2, 3]) {
-      await db.insert(schema.agentLearningReviewCalls).values({
+      await db.insert(schema.agentLearningReviewCalls).values(await storeFields({
         id: `successful-attempt-${ordinal}`,
         reviewId,
         ordinal,
@@ -2012,7 +2013,7 @@ describe("owner learning worker durability", () => {
         inputPolicyHash: `sha256:successful-${ordinal}`,
         providerTurnProtocol: "owner-learning-harness-v2",
         validatedCheckpoint: { ...checkpoint, logicalCallCount: ordinal },
-      });
+      }, {"validatedCheckpoint":"json-gzip","requestEvidenceBody":"text-gzip","responseEvidenceBody":"text-gzip"}));
     }
     const failedAttemptId = "failed-fourth-attempt-one";
     await db.insert(schema.agentLearningReviewCalls).values({
@@ -2060,8 +2061,8 @@ describe("owner learning worker durability", () => {
     expect((await db.select({ id: schema.agentLearningReviews.id })
       .from(schema.agentLearningReviews)
       .where(eq(schema.agentLearningReviews.analysisStatus, "queued")))).toHaveLength(0);
-    expect((await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]).toMatchObject({
       analysisStatus: "retry_queued",
       ownerRetryCount: 1,
     });
@@ -2121,8 +2122,8 @@ describe("owner learning worker durability", () => {
       now: () => new Date("2026-08-04T03:01:03.000Z"),
     })).toBe(true);
 
-    const attempts = await db.select().from(schema.agentLearningReviewCalls)
-      .orderBy(schema.agentLearningReviewCalls.ordinal, schema.agentLearningReviewCalls.attemptOrdinal);
+    const attempts = await loadPayloads(db.select().from(schema.agentLearningReviewCalls)
+      .orderBy(schema.agentLearningReviewCalls.ordinal, schema.agentLearningReviewCalls.attemptOrdinal));
     expect(attempts).toHaveLength(5);
     expect(attempts.at(-1)).toMatchObject({
       ordinal: 4,
@@ -2136,8 +2137,8 @@ describe("owner learning worker durability", () => {
     expect((await db.select().from(schema.agentLearningReviewFailureDiagnostics)
       .where(eq(schema.agentLearningReviewFailureDiagnostics.id, originalDiagnosticId))))
       .toHaveLength(1);
-    const finalReview = (await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    const finalReview = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
     expect(finalReview).toMatchObject({
       analysisStatus: "no_change",
       logicalCallCount: 4,
@@ -2226,8 +2227,8 @@ describe("owner learning worker durability", () => {
       now: () => new Date("2026-08-04T03:02:02.000Z"),
     })).toBe(true);
 
-    const attempts = await db.select().from(schema.agentLearningReviewCalls)
-      .orderBy(schema.agentLearningReviewCalls.attemptOrdinal);
+    const attempts = await loadPayloads(db.select().from(schema.agentLearningReviewCalls)
+      .orderBy(schema.agentLearningReviewCalls.attemptOrdinal));
     expect(attempts).toHaveLength(2);
     expect(attempts[1]).toMatchObject({
       ordinal: 1,
@@ -2236,8 +2237,8 @@ describe("owner learning worker durability", () => {
       stage: "scanning_narratives",
       state: "succeeded",
     });
-    expect((await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]?.logicalCallCount).toBe(1);
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]?.logicalCallCount).toBe(1);
   });
 
   test("retries an ambiguous interrupted invocation as the same logical call", async () => {
@@ -2286,8 +2287,8 @@ describe("owner learning worker durability", () => {
     });
 
     expect(retry).toMatchObject({ ordinal: 1, attemptOrdinal: 2, reused: false });
-    expect((await db.select().from(schema.agentLearningReviewCalls)
-      .where(eq(schema.agentLearningReviewCalls.id, retry.callId)))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewCalls)
+      .where(eq(schema.agentLearningReviewCalls.id, retry.callId))))[0]).toMatchObject({
       retryOfAttemptId: ambiguousAttemptId,
       retryOfExecutionFingerprint: "sha256:ambiguous-first-attempt",
     });
@@ -2317,8 +2318,8 @@ describe("owner learning worker durability", () => {
         now: new Date("2026-08-04T03:01:00.001Z"),
       }),
     ]);
-    const finalReview = (await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    const finalReview = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
 
     if (retry.status === "fulfilled" && retry.value) {
       expect(resolve.status).toBe("rejected");
@@ -2401,8 +2402,8 @@ describe("owner learning worker durability", () => {
     expect(projectorInvocations).toBe(0);
     expect(providerInvocations).toBe(0);
 
-    const review = (await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
     expect(review).toMatchObject({
       analysisStatus: "failed",
       safeFailureCode: "evidence_unavailable",
@@ -2418,17 +2419,17 @@ describe("owner learning worker durability", () => {
     const claim = (await claimOwnerLearningReview(db, {
       now: new Date("2026-08-04T03:01:00.000Z"),
     }))!;
-    const originalRevision = (await db.select().from(schema.agentRevisions)
-      .where(eq(schema.agentRevisions.id, fixture.revisionId)))[0]!;
+    const originalRevision = (await loadPayloads(db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.id, fixture.revisionId))))[0]!;
     const currentRevisionId = "new-current-revision";
-    await db.insert(schema.agentRevisions).values({
+    await db.insert(schema.agentRevisions).values(await storeFields({
       ...originalRevision,
       id: currentRevisionId,
       ordinal: originalRevision.ordinal + 1,
       priorRevisionId: originalRevision.id,
       fingerprint: "sha256:new-current-revision",
       createdAt: "2026-08-04T03:01:00.500Z",
-    });
+    }, {"behaviorSnapshot":"json-gzip","effectiveRuntimeSnapshot":"json-gzip"}));
     await db.update(schema.agentProfiles).set({
       currentRevisionId,
     }).where(eq(schema.agentProfiles.id, fixture.agentProfileId));
@@ -2444,8 +2445,8 @@ describe("owner learning worker durability", () => {
       now: () => new Date("2026-08-04T03:01:01.000Z"),
     })).toBe(false);
     expect(providerInvocations).toBe(0);
-    expect((await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]).toMatchObject({
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]).toMatchObject({
       analysisStatus: "failed",
       safeFailureCode: "evidence_unavailable",
       retryable: false,
@@ -2491,8 +2492,8 @@ describe("owner learning worker durability", () => {
 
     expect(secondReservation.callId).toBe(firstReservation.callId);
     expect(secondReservation.ordinal).toBe(1);
-    expect((await db.select().from(schema.agentLearningReviewCalls))).toHaveLength(1);
-    expect((await db.select().from(schema.agentLearningReviews))[0]!.logicalCallCount).toBe(1);
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))).toHaveLength(1);
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)))[0]!.logicalCallCount).toBe(1);
   });
 
   test("does not reclaim a lease that was renewed while the candidate waited for its row lock", async () => {
@@ -2526,8 +2527,8 @@ describe("owner learning worker durability", () => {
     await renewal;
 
     expect(await competingClaim).toBeNull();
-    expect((await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]?.leaseExpiresAt)
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]?.leaseExpiresAt)
       .toBe("2026-08-04T03:03:00.000Z");
   });
 
@@ -2571,7 +2572,7 @@ describe("owner learning worker durability", () => {
       now: () => new Date("2026-08-04T03:02:01.000Z"),
     })).toBe(false);
     expect(providerInvocations).toBe(0);
-    const calls = await db.select().from(schema.agentLearningReviewCalls);
+    const calls = await loadPayloads(db.select().from(schema.agentLearningReviewCalls));
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({
       id: firstCall.callId,
@@ -2579,8 +2580,8 @@ describe("owner learning worker durability", () => {
       state: "failed",
       safeFailureCode: "worker_interrupted",
     });
-    const review = (await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
     expect(review).toMatchObject({
       analysisStatus: "failed",
       safeFailureCode: "worker_interrupted",
@@ -2659,7 +2660,7 @@ describe("owner learning worker durability", () => {
       now: new Date("2026-08-04T03:01:05.200Z"),
     })).toBe(true);
 
-    const storedCall = (await db.select().from(schema.agentLearningReviewCalls))[0]!;
+    const storedCall = (await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0]!;
     expect(storedCall.state).toBe("succeeded");
     expect(storedCall.flex429Count).toBe(3);
     expect(storedCall.capacityPath).toBe("standard_fallback");
@@ -2723,7 +2724,7 @@ describe("owner learning worker durability", () => {
       now: new Date("2026-08-04T03:01:02.175Z"),
     })).toBe(false);
 
-    const storedCall = (await db.select().from(schema.agentLearningReviewCalls))[0]!;
+    const storedCall = (await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0]!;
     expect(storedCall).toMatchObject({
       state: "failed",
       safeFailureCode: "tier_mismatch",
@@ -2795,7 +2796,7 @@ describe("owner learning worker durability", () => {
         nextTier: "auto",
       },
     });
-    expect(await db.select().from(schema.agentLearningReviewCalls)).toHaveLength(1);
+    expect(await loadPayloads(db.select().from(schema.agentLearningReviewCalls))).toHaveLength(1);
   });
 
   test("replays an interrupted fourth harness call with its original ordinal and standard fallback", async () => {
@@ -2896,7 +2897,7 @@ describe("owner learning worker durability", () => {
       projector,
       now: () => new Date(firstClockMs += 10),
     })).toBe(false);
-    const callsAfterInterruption = await db.select().from(schema.agentLearningReviewCalls);
+    const callsAfterInterruption = await loadPayloads(db.select().from(schema.agentLearningReviewCalls));
     expect(callsAfterInterruption).toHaveLength(4);
     const interruptedCall = callsAfterInterruption.find((call) => call.ordinal === 4)!;
     interruptedCallId = interruptedCall.id;
@@ -2960,7 +2961,7 @@ describe("owner learning worker durability", () => {
       remainingAfterThisCall: 0,
       finalResultRequired: true,
     });
-    const recoveredCalls = await db.select().from(schema.agentLearningReviewCalls);
+    const recoveredCalls = await loadPayloads(db.select().from(schema.agentLearningReviewCalls));
     expect(recoveredCalls).toHaveLength(4);
     expect(recoveredCalls.find((call) => call.ordinal === 4)).toMatchObject({
       id: interruptedCallId,
@@ -3076,13 +3077,13 @@ describe("owner learning worker durability", () => {
       })).rejects.toThrow(`simulated crash after ${crashPoint}`);
       expect(firstProviderInvocations).toBe(4);
 
-      const callsAtCrash = await db.select().from(schema.agentLearningReviewCalls)
-        .where(eq(schema.agentLearningReviewCalls.reviewId, reviewId));
+      const callsAtCrash = await loadPayloads(db.select().from(schema.agentLearningReviewCalls)
+        .where(eq(schema.agentLearningReviewCalls.reviewId, reviewId)));
       const finalCallAtCrash = callsAtCrash.find((call) => call.ordinal === 4)!;
       expect(finalCallAtCrash.state).toBe("succeeded");
       expect(finalCallAtCrash.validatedCheckpoint?.completion?.result).toEqual(finalResult);
-      const reviewAtCrash = (await db.select().from(schema.agentLearningReviews)
-        .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+      const reviewAtCrash = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+        .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
       expect(reviewAtCrash.result).toBeNull();
       expect(reviewAtCrash.checkpoint?.logicalCallCount).toBe(
         crashPoint === "validated_call" ? 3 : 4,
@@ -3109,13 +3110,13 @@ describe("owner learning worker durability", () => {
       })).toBe(true);
       expect(recoveryProviderInvocations).toBe(0);
 
-      const recovered = (await db.select().from(schema.agentLearningReviews)
-        .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+      const recovered = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+        .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
       expect(recovered.analysisStatus).toBe("no_change");
       expect(recovered.result).toEqual(finalResult);
       expect(finalCallAtCrash.validatedCheckpoint?.completion?.result ?? null).toEqual(recovered.result);
-      expect(await db.select().from(schema.agentLearningReviewCalls)
-        .where(eq(schema.agentLearningReviewCalls.reviewId, reviewId))).toHaveLength(4);
+      expect(await loadPayloads(db.select().from(schema.agentLearningReviewCalls)
+        .where(eq(schema.agentLearningReviewCalls.reviewId, reviewId)))).toHaveLength(4);
       expect(await finalizeOwnerLearningReview(db, {
         reviewId,
         leaseToken: reclaimed.leaseToken,
@@ -3162,8 +3163,8 @@ describe("owner learning worker durability", () => {
     expect(await claimOwnerLearningReview(db, {
       now: new Date("2026-08-04T03:02:00.000Z"),
     })).toBeNull();
-    expect((await db.select().from(schema.agentLearningReviewCalls))[0]!.state).toBe("ambiguous");
-    const review = (await db.select().from(schema.agentLearningReviews))[0]!;
+    expect((await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0]!.state).toBe("ambiguous");
+    const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)))[0]!;
     expect(review.analysisStatus).toBe("failed");
     expect(review.safeFailureCode).toBe("worker_interrupted");
   });
@@ -3256,7 +3257,7 @@ describe("owner learning worker durability", () => {
       validatedCheckpoint: validatedCheckpoint(),
       now: new Date("2026-08-04T03:02:00.100Z"),
     })).toBe(true);
-    await db.update(schema.agentLearningReviews).set({
+    await db.update(schema.agentLearningReviews).set(await storeFields({
       analysisStatus: "no_change",
       stage: "complete",
       resolution: "no_change",
@@ -3271,7 +3272,7 @@ describe("owner learning worker durability", () => {
       leaseTokenHash: null,
       leaseExpiresAt: null,
       updatedAt: "2026-08-04T03:02:00.150Z",
-    }).where(eq(schema.agentLearningReviews.id, reviewId));
+    }, {"checkpoint":"json-gzip","result":"json-gzip"})).where(eq(schema.agentLearningReviews.id, reviewId));
 
     await observer.onTerminalOutcome({
       transportOrdinal: 1,
@@ -3282,7 +3283,7 @@ describe("owner learning worker durability", () => {
       completedAtMs: Date.parse("2026-08-04T03:02:00.250Z"),
     });
 
-    const storedCall = (await db.select().from(schema.agentLearningReviewCalls))[0]!;
+    const storedCall = (await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0]!;
     expect(storedCall).toMatchObject({
       state: "succeeded",
       failureDiagnosticId: null,
@@ -3345,7 +3346,7 @@ describe("owner learning worker durability", () => {
     expect(await claimOwnerLearningReview(db, {
       now: new Date("2026-08-04T03:02:00.000Z"),
     })).toBeNull();
-    const failedCall = (await db.select().from(schema.agentLearningReviewCalls))[0]!;
+    const failedCall = (await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0]!;
     const originalDiagnosticId = failedCall.failureDiagnosticId;
     expect(originalDiagnosticId).not.toBeNull();
 
@@ -3358,7 +3359,7 @@ describe("owner learning worker durability", () => {
       completedAtMs: Date.parse("2026-08-04T03:02:00.375Z"),
     });
 
-    const storedCall = (await db.select().from(schema.agentLearningReviewCalls))[0]!;
+    const storedCall = (await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0]!;
     expect(storedCall.failureDiagnosticId).toBe(originalDiagnosticId);
     expect(storedCall.transportReceipts[0]).toMatchObject({
       terminalHttpStatus: 401,
@@ -3375,8 +3376,8 @@ describe("owner learning worker durability", () => {
       callId: call.callId,
       providerRequestId: "req-late-terminal-supplement",
     });
-    const supplementalOutbox = (await db.select()
-      .from(schema.agentLearningReviewFailureEvidenceOutbox))
+    const supplementalOutbox = (await loadPayloads(db.select()
+      .from(schema.agentLearningReviewFailureEvidenceOutbox)))
       .find((row) => row.diagnosticId === supplemental?.id);
     expect(supplementalOutbox?.body).toContain("req-late-terminal-supplement");
     expect(supplementalOutbox?.body).toContain("LATE_TERMINAL_401_BODY");
@@ -3450,14 +3451,14 @@ describe("owner learning worker durability", () => {
       now: () => new Date(clockMs += 100),
     })).toBe(true);
 
-    const review = (await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
     expect(review.analysisStatus).toBe("no_change");
     expect(review.resolution).toBe("no_change");
     expect(review.stage).toBe("complete");
     expect(review.checkpoint?.lastCompletedStage).toBe("complete");
     expect(review.leaseTokenHash).toBeNull();
-    const calls = await db.select().from(schema.agentLearningReviewCalls);
+    const calls = await loadPayloads(db.select().from(schema.agentLearningReviewCalls));
     expect(calls).toHaveLength(1);
     expect(calls[0]!.state).toBe("succeeded");
   });
@@ -3530,8 +3531,8 @@ describe("owner learning worker durability", () => {
     })).toBe(true);
     expect(providerInvocations).toBe(1);
 
-    const evidenceRows = await db.select().from(schema.agentLearningGameEvidence)
-      .where(eq(schema.agentLearningGameEvidence.gameId, fixture.gameId));
+    const evidenceRows = await loadPayloads(db.select().from(schema.agentLearningGameEvidence)
+      .where(eq(schema.agentLearningGameEvidence.gameId, fixture.gameId)));
     expect(evidenceRows).toHaveLength(2);
     const changedEvidence = evidenceRows.find((row) => row.sourceHash === changedSourceHash);
     expect(changedEvidence).toBeDefined();
@@ -3635,8 +3636,8 @@ describe("owner learning worker durability", () => {
     })).toBe(false);
     expect(providerInvocations).toBe(0);
 
-    const review = (await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
     expect(review).toMatchObject({
       analysisStatus: "failed",
       safeFailureCode: "evidence_unavailable",
@@ -3689,15 +3690,15 @@ describe("owner learning worker durability", () => {
       now: () => new Date("2026-08-04T03:02:01.000Z"),
     })).toBe(false);
     expect(providerInvocations).toBe(0);
-    const call = (await db.select().from(schema.agentLearningReviewCalls)
-      .where(eq(schema.agentLearningReviewCalls.id, reserved.callId)))[0]!;
+    const call = (await loadPayloads(db.select().from(schema.agentLearningReviewCalls)
+      .where(eq(schema.agentLearningReviewCalls.id, reserved.callId))))[0]!;
     expect(call).toMatchObject({
       state: "failed",
       safeFailureCode: "evidence_unavailable",
     });
     expect(call.completedAt).not.toBeNull();
-    const review = (await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
     expect(review).toMatchObject({
       analysisStatus: "failed",
       safeFailureCode: "evidence_unavailable",
@@ -3758,15 +3759,15 @@ describe("owner learning worker durability", () => {
     })).toBe(false);
     expect(providerInvocations).toBe(0);
 
-    const call = (await db.select().from(schema.agentLearningReviewCalls)
-      .where(eq(schema.agentLearningReviewCalls.id, reserved.callId)))[0]!;
+    const call = (await loadPayloads(db.select().from(schema.agentLearningReviewCalls)
+      .where(eq(schema.agentLearningReviewCalls.id, reserved.callId))))[0]!;
     expect(call).toMatchObject({
       state: "failed",
       safeFailureCode: "evidence_unavailable",
     });
     expect(call.completedAt).not.toBeNull();
-    const review = (await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
     expect(review).toMatchObject({
       analysisStatus: "failed",
       safeFailureCode: "evidence_unavailable",
@@ -3840,12 +3841,12 @@ describe("owner learning worker durability", () => {
       onOutputFailure: (diagnostic) => diagnostics.push(diagnostic),
     })).toBe(false);
 
-    const review = (await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
     expect(review.analysisStatus).toBe("failed");
     expect(review.safeFailureCode).toBe("invalid_structured_output");
     expect(review.retryable).toBe(true);
-    const call = (await db.select().from(schema.agentLearningReviewCalls))[0]!;
+    const call = (await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0]!;
     expect(call.state).toBe("failed");
     expect(call.safeFailureCode).toBe("unknown_moment_handle");
     expect(call.estimatedCostMicrousd).toBe(500);
@@ -3857,8 +3858,8 @@ describe("owner learning worker durability", () => {
       code: "unknown_moment_handle",
     }]);
     expect(JSON.stringify(diagnostics)).not.toContain("PRIVATE_GENERATED_OUTPUT_SENTINEL");
-    const evidenceOutbox = (await db.select()
-      .from(schema.agentLearningReviewFailureEvidenceOutbox))[0]!;
+    const evidenceOutbox = (await loadPayloads(db.select()
+      .from(schema.agentLearningReviewFailureEvidenceOutbox)))[0]!;
     expect(evidenceOutbox.body).toContain("PRIVATE_GENERATED_OUTPUT_SENTINEL");
   });
 
@@ -3943,15 +3944,15 @@ describe("owner learning worker durability", () => {
         now: () => new Date(clockMs += 100),
       })).toBe(false);
 
-      const review = (await db.select().from(schema.agentLearningReviews)
-        .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+      const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+        .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
       expect(review).toMatchObject({
         analysisStatus: "failed",
         safeFailureCode: "invalid_structured_output",
         retryable: true,
       });
-      const call = (await db.select().from(schema.agentLearningReviewCalls)
-        .where(eq(schema.agentLearningReviewCalls.reviewId, reviewId)))[0]!;
+      const call = (await loadPayloads(db.select().from(schema.agentLearningReviewCalls)
+        .where(eq(schema.agentLearningReviewCalls.reviewId, reviewId))))[0]!;
       expect(call).toMatchObject({
         state: "failed",
         safeFailureCode: failure.label === "empty_object" || failure.label === "extra_field"
@@ -3961,8 +3962,8 @@ describe("owner learning worker durability", () => {
         estimatedCostMicrousd: 25,
       });
       expect(call.tokenReceipt?.inputTokens).toBe(100);
-      const outbox = (await db.select().from(schema.agentLearningReviewFailureEvidenceOutbox)
-        .where(eq(schema.agentLearningReviewFailureEvidenceOutbox.reviewId, reviewId)))[0]!;
+      const outbox = (await loadPayloads(db.select().from(schema.agentLearningReviewFailureEvidenceOutbox)
+        .where(eq(schema.agentLearningReviewFailureEvidenceOutbox.reviewId, reviewId))))[0]!;
       expect(outbox.body).toContain(failure.rawEnvelope);
       expect(outbox.body).toContain(`resp-${failure.label}`);
       expect(outbox.body).toContain(
@@ -4074,7 +4075,7 @@ describe("owner learning worker durability", () => {
       now: () => new Date("2026-08-04T03:01:05.000Z"),
     })).toBe(false);
 
-    const outbox = (await db.select().from(schema.agentLearningReviewFailureEvidenceOutbox))[0]!;
+    const outbox = (await loadPayloads(db.select().from(schema.agentLearningReviewFailureEvidenceOutbox)))[0]!;
     for (const marker of [
       "RAW_FLEX_429_1_SENTINEL",
       "RAW_FLEX_429_2_SENTINEL",
@@ -4126,7 +4127,7 @@ describe("owner learning worker durability", () => {
       now: () => new Date("2026-08-04T03:01:02.000Z"),
     })).toBe(false);
 
-    const call = (await db.select().from(schema.agentLearningReviewCalls))[0]!;
+    const call = (await loadPayloads(db.select().from(schema.agentLearningReviewCalls)))[0]!;
     expect(call).toMatchObject({
       state: "failed",
       effectiveTier: null,
@@ -4137,8 +4138,8 @@ describe("owner learning worker durability", () => {
       providerResponseSha256: null,
     });
     expect(call.tokenReceipt?.totalOutputTokens).toBe(25);
-    const review = (await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
     expect(review.analysisStatus).toBe("failed");
   });
 
@@ -4183,7 +4184,7 @@ describe("owner learning worker durability", () => {
 
     expect(await run).toBe(false);
     expect(providerObservedAbort).toBe(true);
-    const calls = await db.select().from(schema.agentLearningReviewCalls);
+    const calls = await loadPayloads(db.select().from(schema.agentLearningReviewCalls));
     expect(calls).toHaveLength(1);
     expect(calls[0]!.state).toBe("reserved");
     expect(calls[0]!.transportReceipts).toEqual([]);
@@ -4250,8 +4251,8 @@ describe("owner learning worker durability", () => {
       })).toBe("superseded");
     });
 
-    const fenced = (await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, activeReviewId)))[0]!;
+    const fenced = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, activeReviewId))))[0]!;
     expect(fenced.resolution).toBe("superseded");
     expect(fenced.leaseTokenHash).not.toBeNull();
     expect(await claimOwnerLearningReview(db, {
@@ -4260,8 +4261,8 @@ describe("owner learning worker durability", () => {
 
     expect(await run).toBe(false);
     expect(providerObservedAbort).toBe(true);
-    const superseded = (await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, activeReviewId)))[0]!;
+    const superseded = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, activeReviewId))))[0]!;
     expect(superseded).toMatchObject({
       resolution: "superseded",
       resolvedAt: "2026-08-04T03:01:02.000Z",
@@ -4317,8 +4318,8 @@ describe("owner learning worker durability", () => {
 
     expect(await run).toBe(false);
     expect(providerObservedAbort).toBe(true);
-    const review = (await db.select().from(schema.agentLearningReviews)
-      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    const review = (await loadPayloads(db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId))))[0]!;
     expect(review.resolution).toBe("superseded");
     expect(review.leaseTokenHash).toBeNull();
   });

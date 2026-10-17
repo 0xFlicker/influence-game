@@ -1,3 +1,4 @@
+import { loadPayloads, Hydrated } from "./payload-storage.js";
 import { isViewerGame } from "./game-visibility.js";
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { werewolfDecisionArtifact, werewolfGameplayDecision } from "@influence/engine/werewolf";
@@ -31,11 +32,11 @@ export async function readWerewolfProductionThinking(db: Pick<DrizzleDB, "select
   const events = options.throughEventSequence === undefined ? allEvents : allEvents.filter(event => event.sequence <= options.throughEventSequence!);
   const frame = projectWerewolfPresentation(events, "omniscient", cursor);
   const actions = werewolfThinkingActions(events, frame.view.cursor);
-  const calls = await db.select({ actorId: schema.providerLogicalCalls.actorId, action: schema.providerLogicalCalls.action,
+  const calls = await loadPayloads(db.select({ actorId: schema.providerLogicalCalls.actorId, action: schema.providerLogicalCalls.action,
     semantic: schema.providerLogicalCalls.semanticCoordinate, value: schema.providerLogicalCalls.acceptedValue,
     hash: schema.providerLogicalCalls.acceptedValueSha256 }).from(schema.providerLogicalCalls)
-    .where(and(eq(schema.providerLogicalCalls.gameId, game.id), isNotNull(schema.providerLogicalCalls.acceptedAttemptId)));
-  const bySequence = new Map<number, typeof calls[number]>();
+    .where(and(eq(schema.providerLogicalCalls.gameId, game.id), isNotNull(schema.providerLogicalCalls.acceptedAttemptId))));
+  const bySequence = new Map<number, Hydrated<typeof calls>[number]>();
   const eligibleSequences = new Set(actions.map(action => action.event.sequence));
   for (const call of calls) {
     const semantic = call.semantic;

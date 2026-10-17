@@ -1,3 +1,4 @@
+import { storeFields } from "../services/payload-storage.js";
 import { beforeEach, expect, test } from "bun:test";
 import { Phase, type GameTurnIntentV1 } from "@influence/engine";
 import { planVisualScene } from "@influence/engine/visual-scene-plan";
@@ -96,8 +97,8 @@ test("late transcript/evidence and copy edits cannot advance or invalidate the p
   await db.insert(schema.gameEpisodePresentations).values({ gameId, title: "Original copy", status: "ready" });
   const first = await readInfluenceProductionSource(db, gameId);
   await dialogue(gameId, 2, { text: "LATE_SPEECH" });
-  await db.insert(schema.gameCognitiveArtifacts).values({ id: "late", gameId, eventSequence: events[0]!.sequence, actorRole: "player", actorPlayerId: "atlas",
-    artifactType: "thinking", action: "intro", payload: { thinking: "LATE_THOUGHT" }, payloadByteLength: 32, createdAt: new Date(Date.parse(first.snapshot.acceptedCutoff) + 1).toISOString() });
+  await db.insert(schema.gameCognitiveArtifacts).values(await storeFields({ id: "late", gameId, eventSequence: events[0]!.sequence, actorRole: "player", actorPlayerId: "atlas",
+    artifactType: "thinking", action: "intro", payload: { thinking: "LATE_THOUGHT" }, payloadByteLength: 32, createdAt: new Date(Date.parse(first.snapshot.acceptedCutoff) + 1).toISOString() }, {"payload":"json-gzip"}));
   await db.update(schema.gameEpisodePresentations).set({ title: "Updated copy" }).where(eq(schema.gameEpisodePresentations.gameId, gameId));
   const pinned = await readInfluenceProductionSource(db, gameId, { snapshot: first.snapshot });
   expect(pinned.snapshot).toEqual(first.snapshot); expect(pinned.title).toBe("Updated copy");
@@ -114,15 +115,15 @@ test("source allowlists accepted thinking and omits raw reasoning, scratch trans
   const execution = createInitialGameExecutionStateV1({ gameId, ownerEpoch, xstateSnapshot: { value: "lobby" }, cursor: { version: 1, kind: "phase_enter", actor: "lobby" } });
   const intent: GameTurnIntentV1 = { version: 1, gameId, turnId: "uncommitted", turnSequence: 1, seed: "fixture", baseHeads: execution.heads,
     branch: { version: 1, kind: "engine", action: "round_start" }, actorIds: [], targetIds: [], handles: [], participantIds: [], providerSubcalls: [] };
-  await db.insert(schema.gameTurns).values({ id: intent.turnId, gameId, turnSequence: 1, plannedOwnerEpoch: ownerEpoch,
-    baseEventSequence: 0, baseDialogueSequence: 0, basePublicationSequence: 0, intent, intentHash: `sha256:${"a".repeat(64)}`, status: "planned" });
+  await db.insert(schema.gameTurns).values(await storeFields({ id: intent.turnId, gameId, turnSequence: 1, plannedOwnerEpoch: ownerEpoch,
+    baseEventSequence: 0, baseDialogueSequence: 0, basePublicationSequence: 0, intent, intentHash: `sha256:${"a".repeat(64)}`, status: "planned" }, {"intent":"json-gzip","commitResult":"json-gzip"}));
   await dialogue(gameId, 2, { gameTurnId: "uncommitted", gameTurnTranscriptOrdinal: 1, text: "SCRATCH_SPEECH" });
-  await db.insert(schema.gameCognitiveArtifacts).values([
+  await db.insert(schema.gameCognitiveArtifacts).values(await storeFields([
     { id: "accepted", gameId, eventSequence: events[0]!.sequence, actorRole: "player", actorPlayerId: "atlas", artifactType: "thinking", action: "intro",
       payload: { thinking: "Accepted extra thought", reasoningContext: "NATIVE_CONTEXT", providerRequest: "RAW_REQUEST" }, payloadByteLength: 100, createdAt: "2026-01-01T00:00:00.000Z" },
     { id: "pending", gameId, eventSequence: null, actorRole: "player", actorPlayerId: "atlas", artifactType: "thinking", action: "pending", payload: { thinking: "PENDING_THOUGHT" }, payloadByteLength: 50 },
     { id: "native", gameId, eventSequence: events[0]!.sequence, actorRole: "player", actorPlayerId: "atlas", artifactType: "reasoning", action: "intro", payload: { reasoningContext: "RAW_REASONING" }, payloadByteLength: 50 },
-  ]);
+  ], {"payload":"json-gzip"}));
   const source = await readInfluenceProductionSource(db, gameId);
   expect(source.acceptedThoughts.map(thought => thought.thinking)).toEqual(["Accepted extra thought"]);
   expect(source.catalog.moments.some(moment => moment.source.kind === "influence-event" && moment.kind === "thinking" && moment.defaultIncluded === false)).toBe(true);
@@ -134,8 +135,8 @@ test("exact decision provenance attaches accepted thinking to a speech sibling w
   const { gameId, events } = await fixture();
   const row = await dialogue(gameId, 1, { thinking: null, entrySequence: 1, speakerPlayerId: "atlas", audiencePlayerIds: [], captureVersion: 1,
     firstDurableEventSequence: events[0]!.sequence, safeContext: { version: 1, decisionId: "accepted-response" } });
-  await db.insert(schema.gameCognitiveArtifacts).values({ id: "accepted-response-thought", gameId, eventSequence: events[0]!.sequence, decisionId: "accepted-response",
-    actorRole: "player", actorPlayerId: "atlas", artifactType: "thinking", action: "intro", payload: { thinking: "Exactly accepted" }, payloadByteLength: 50, createdAt: "2026-01-01T00:00:00.000Z" });
+  await db.insert(schema.gameCognitiveArtifacts).values(await storeFields({ id: "accepted-response-thought", gameId, eventSequence: events[0]!.sequence, decisionId: "accepted-response",
+    actorRole: "player", actorPlayerId: "atlas", artifactType: "thinking", action: "intro", payload: { thinking: "Exactly accepted" }, payloadByteLength: 50, createdAt: "2026-01-01T00:00:00.000Z" }, {"payload":"json-gzip"}));
   const source = await readInfluenceProductionSource(db, gameId);
   expect(source.messages[0]!.thinking).toBe("Exactly accepted"); expect(source.acceptedThoughts).toEqual([]);
   expect(source.catalog.moments.filter(moment => moment.source.kind === "influence-transcript" && moment.source.transcriptId === String(row.id)).map(moment => moment.kind)).toEqual(["thinking", "speech"]);
@@ -146,8 +147,8 @@ test("exact decision provenance attaches accepted thinking to a speech sibling w
 test("unrevealed accepted sealed-ballot thinking never enters source pages", async () => {
   const { gameId, events } = await fixture("sealed-influence", false);
   const vote = events.find(event => event.type === "vote.cast")!;
-  await db.insert(schema.gameCognitiveArtifacts).values({ id: "sealed-thought", gameId, eventSequence: vote.sequence, actorRole: "player", actorPlayerId: "atlas",
-    artifactType: "thinking", action: "vote", payload: { thinking: "SEALED_THOUGHT" }, payloadByteLength: 30, createdAt: "2026-01-01T00:00:00.000Z" });
+  await db.insert(schema.gameCognitiveArtifacts).values(await storeFields({ id: "sealed-thought", gameId, eventSequence: vote.sequence, actorRole: "player", actorPlayerId: "atlas",
+    artifactType: "thinking", action: "vote", payload: { thinking: "SEALED_THOUGHT" }, payloadByteLength: 30, createdAt: "2026-01-01T00:00:00.000Z" }, {"payload":"json-gzip"}));
   const source = await readInfluenceProductionSource(db, gameId);
   expect(source.acceptedThoughts).toEqual([]); expect(JSON.stringify(source)).not.toContain("SEALED_THOUGHT");
 });

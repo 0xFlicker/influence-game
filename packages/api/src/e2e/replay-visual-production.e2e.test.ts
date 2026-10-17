@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { tmpdir } from "node:os";
@@ -72,9 +73,9 @@ beforeAll(async () => {
     const turnId = `browser-turn-${i}`, turnSequence = i + 1, hash = `sha256:${"a".repeat(64)}`, date = new Date().toISOString();
     const intent: GameTurnIntentV1 = { version: 1, gameId, turnId, turnSequence, seed: "browser", baseHeads: execution.heads,
       branch: { version: 1, kind: "engine", action: "round_start" }, actorIds: [], targetIds: [], handles: [], participantIds: [], providerSubcalls: [] };
-    await database.db.insert(schema.gameTurns).values({ id: turnId, gameId, turnSequence, plannedOwnerEpoch: ownerEpoch, committedOwnerEpoch: ownerEpoch,
+    await database.db.insert(schema.gameTurns).values(await storeFields({ id: turnId, gameId, turnSequence, plannedOwnerEpoch: ownerEpoch, committedOwnerEpoch: ownerEpoch,
       baseEventSequence: state.getCanonicalEvents().length, baseDialogueSequence: i, basePublicationSequence: 0, intent, intentHash: hash, effectHash: hash, status: "committed", committedAt: date,
-      commitResult: { version: 1, gameId, turnId, turnSequence, intentHash: hash, effectHash: hash, committedAt: date, state: execution, canonicalEvents: [], dialogueSequences: [], publications: [], alreadyCommitted: false } });
+      commitResult: { version: 1, gameId, turnId, turnSequence, intentHash: hash, effectHash: hash, committedAt: date, state: execution, canonicalEvents: [], dialogueSequences: [], publications: [], alreadyCommitted: false } }, {"intent":"json-gzip","commitResult":"json-gzip"}));
     await database.db.insert(schema.transcripts).values({ gameId, gameTurnId: turnId, gameTurnTranscriptOrdinal: 1, entrySequence: i + 1,
       round: 1, phase, scope: "public", speakerPlayerId: "arden", audiencePlayerIds: phase === Phase.LOBBY ? [] : ["mira"], safeContext: { version: 1, ...(phase === Phase.FORMAT_MINGLE && { roomId: 1 }) }, text: "Let's keep our promises.", timestamp: 1 });
   }
@@ -1373,7 +1374,7 @@ test("Sysop opens game recovery from the bounded studio library without generati
     await page.waitForFunction("document.body.innerText.includes('No generated scenes')");
     expect(await page.$('[aria-label="Replay image production"]')).toBeNull();
     expect((await database.db.select().from(schema.visualScenes)).filter(scene => scene.gameId === gameId)).toHaveLength(0);
-    expect(await database.db.select().from(schema.visualRepairJobs)).toHaveLength(0);
+    expect(await loadPayloads(database.db.select().from(schema.visualRepairJobs))).toHaveLength(0);
   } finally { await page.close(); }
 }, 60_000);
 
@@ -1403,10 +1404,10 @@ test("Producer preserves exact lost-request controls, reviews and explicitly pub
     await clickButton(page, "Render missing image", '[aria-label="Scene inspector"]');
     await clickButton(page, "Confirm render for this scene", '[aria-label="Scene inspector"]');
     await page.waitForFunction("document.body.innerText.includes('Check exact render request')");
-    expect(await database.db.select().from(schema.visualRepairJobs)).toHaveLength(0);
+    expect(await loadPayloads(database.db.select().from(schema.visualRepairJobs))).toHaveLength(0);
     await clickButton(page, "Check exact render request", '[aria-label="Scene inspector"]');
     await page.waitForFunction("document.body.innerText.includes('Version 1 queued for rendering')");
-    expect(await database.db.select().from(schema.visualRepairJobs)).toHaveLength(1);
+    expect(await loadPayloads(database.db.select().from(schema.visualRepairJobs))).toHaveLength(1);
     expect(await page.$('[aria-label="Scene repair"]')).not.toBeNull();
     const job = (await claimVisualMediaJob(database.db, "browser-test"))!;
     const imageArtifactId = await storeVisualArtifact(database.db, gameId, await sharp({ create: { width: 640, height: 360, channels: 3, background: "#352448" } }).png().toBuffer());

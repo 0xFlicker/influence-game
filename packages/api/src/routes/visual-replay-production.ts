@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { readWerewolfVisualPause, queueWerewolfFormRepair } from "../services/werewolf-visual-policy.js";
 import { setVisualFailurePolicy, resumeVisualGame } from "../services/visual-policy.js";
 import { requirePermission } from "../middleware/auth.js";
@@ -97,22 +98,22 @@ export function createVisualReplayProductionRoutes(db: DrizzleDB) {
     return c.json({ expectedRevision: scene.renderRevision, planHash: scene.planHash, players: scene.plan.cast.map(m => ({ id: m.id, name: m.name })), sources: await readVisualReviewSources(db, scene) });
   });
   app.get(`${root}/games/:id/visual/evidence/attempt/:attempt`, async c => {
-    const [attempt] = await db.select({ image: schema.visualRenderAttempts.image }).from(schema.visualRenderAttempts)
+    const [attempt] = await loadPayloads(db.select({ image: schema.visualRenderAttempts.image }).from(schema.visualRenderAttempts)
       .innerJoin(schema.visualRenderOperations, eq(schema.visualRenderOperations.id, schema.visualRenderAttempts.operationId))
-      .where(and(eq(schema.visualRenderOperations.gameId, c.req.param("id")), eq(schema.visualRenderAttempts.id, c.req.param("attempt"))));
+      .where(and(eq(schema.visualRenderOperations.gameId, c.req.param("id")), eq(schema.visualRenderAttempts.id, c.req.param("attempt")))));
     if (!attempt?.image) return c.json({ error: "Image not found" }, 404);
     c.header("Cache-Control", "private, no-store");
     return c.json({ imageUrl: `data:image/png;base64,${attempt.image.toString("base64")}` });
   });
   app.get(`${root}/games/:id/visual/evidence/artifact/:artifact`, async c => {
-    const [artifact] = await db.select({ image: schema.visualArtifacts.image }).from(schema.visualArtifacts)
-      .where(and(eq(schema.visualArtifacts.gameId, c.req.param("id")), eq(schema.visualArtifacts.id, c.req.param("artifact"))));
+    const [artifact] = await loadPayloads(db.select({ image: schema.visualArtifacts.image }).from(schema.visualArtifacts)
+      .where(and(eq(schema.visualArtifacts.gameId, c.req.param("id")), eq(schema.visualArtifacts.id, c.req.param("artifact")))));
     if (!artifact) return c.json({ error: "Image not found" }, 404);
     return c.json({ imageUrl: `data:image/png;base64,${Buffer.from(artifact.image).toString("base64")}` });
   });
   app.get(`${root}/games/:id/visual/artifacts/:artifact`, async c => {
-    const [artifact] = await db.select({image:schema.visualArtifacts.image}).from(schema.visualArtifacts)
-      .where(and(eq(schema.visualArtifacts.gameId,c.req.param("id")),eq(schema.visualArtifacts.id,c.req.param("artifact"))));
+    const [artifact] = await loadPayloads(db.select({image:schema.visualArtifacts.image}).from(schema.visualArtifacts)
+      .where(and(eq(schema.visualArtifacts.gameId,c.req.param("id")),eq(schema.visualArtifacts.id,c.req.param("artifact")))));
     if (!artifact) return c.json({error:"Image not found"},404);
     c.header("Cache-Control","private, no-store");
     c.header("Content-Type","image/png");

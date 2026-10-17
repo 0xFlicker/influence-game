@@ -53,7 +53,11 @@
     "render-worker:smoke": "cd packages/web && bun run render-worker:smoke",
     "render-worker:health": "cd packages/web && bun run render-worker:health",
     "game-assets": "bun run scripts/game-assets.ts",
-    "replay:export": "REPLAY_EXPORT_CWD=\"$PWD\" bun run --cwd packages/web replay:export"
+    "replay:export": "REPLAY_EXPORT_CWD=\"$PWD\" bun run --cwd packages/web replay:export",
+    "storage:inventory": "bun run packages/api/src/scripts/migrate-storage-payloads.ts inventory",
+    "storage:copy": "bun run packages/api/src/scripts/migrate-storage-payloads.ts copy",
+    "storage:verify": "bun run packages/api/src/scripts/migrate-storage-payloads.ts verify",
+    "storage:cutover": "bun run packages/api/src/scripts/migrate-storage-payloads.ts cutover"
   },
   "devDependencies": {
     "@clerk/backend": "3.11.7",

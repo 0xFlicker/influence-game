@@ -1,3 +1,5 @@
+import { payloadColumn, payloadChecks } from "./payload-column.js";
+import type { StoredPayload } from "../services/payload-storage.js";
 /**
  * Influence Game — Database Schema
  *
@@ -11,7 +13,6 @@ import {
   bigint,
   boolean,
   check,
-  customType,
   doublePrecision,
   foreignKey,
   index,
@@ -79,27 +80,13 @@ export const gameRetrospectiveInputs = pgTable("game_retrospective_inputs", {
   outcomeEventSequence: integer("outcome_event_sequence").notNull(),
   outcomeEventHash: text("outcome_event_hash").notNull(),
   inputHash: text("input_hash").notNull(),
-  input: jsonb("input").notNull().$type<RetrospectiveInputV1>(),
+  input: payloadColumn("input_object", "json-gzip").notNull().$type<StoredPayload<RetrospectiveInputV1>>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, table => [
+  ...payloadChecks("game_retrospective_inputs", { input: [table.input, "json-gzip"] }),
   check("game_retrospective_inputs_version_check", sql`${table.contractVersion} = 1`),
   check("game_retrospective_inputs_source_check", sql`${table.outcomeEventSequence} > 0 AND ${table.outcomeEventHash} ~ '^sha256:[0-9a-f]{64}$' AND ${table.inputHash} ~ '^sha256:[0-9a-f]{64}$'`),
-  check("game_retrospective_inputs_shape_check", sql`
-    jsonb_typeof(${table.input}) = 'object'
-    AND ${table.input} ?& ARRAY['version', 'outcome', 'sections', 'dialogue']
-    AND (${table.input} - 'version' - 'outcome' - 'sections' - 'dialogue') = '{}'::jsonb
-    AND (${table.input}->'version') IS NOT DISTINCT FROM '1'::jsonb
-    AND jsonb_typeof(${table.input}->'sections') = 'array'
-    AND jsonb_typeof(${table.input}->'dialogue') = 'array'
-    AND jsonb_typeof(${table.input}->'outcome') = 'object'
-    AND (${table.input}->'outcome') ?& ARRAY['gameId', 'gameKind', 'eventSequence', 'eventHash']
-    AND ((${table.input}->'outcome') - 'gameId' - 'gameKind' - 'eventSequence' - 'eventHash') = '{}'::jsonb
-    AND jsonb_typeof(${table.input}->'outcome'->'eventSequence') = 'number'
-    AND (${table.input}->'outcome'->>'gameId') IS NOT DISTINCT FROM ${table.gameId}
-    AND (${table.input}->'outcome'->>'gameKind') IN ('influence', 'werewolf')
-    AND (${table.input}->'outcome'->>'eventSequence') IS NOT DISTINCT FROM ${table.outcomeEventSequence}::text
-    AND (${table.input}->'outcome'->>'eventHash') IS NOT DISTINCT FROM ${table.outcomeEventHash}
-  `),
+
 ]);
 
 /** Sparse editorial metadata; canonical history and cut projects do not live here. */
@@ -518,11 +505,12 @@ export const agentRevisions = pgTable("agent_revisions", {
   trigger: text("trigger").notNull().$type<AgentRevisionTrigger>(),
   magnitude: text("magnitude").notNull().$type<AgentRevisionMagnitude>(),
   fingerprint: text("fingerprint").notNull(),
-  behaviorSnapshot: jsonb("behavior_snapshot").notNull().$type<Record<string, unknown>>(),
-  effectiveRuntimeSnapshot: jsonb("effective_runtime_snapshot").notNull().$type<Record<string, unknown>>(),
+  behaviorSnapshot: payloadColumn("behavior_snapshot_object", "json-gzip").notNull().$type<StoredPayload<Record<string, unknown>>>(),
+  effectiveRuntimeSnapshot: payloadColumn("effective_runtime_snapshot_object", "json-gzip").notNull().$type<StoredPayload<Record<string, unknown>>>(),
   revisionPolicyVersion: text("revision_policy_version").notNull(),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
 }, (table) => [
+  ...payloadChecks("agent_revisions", { behaviorSnapshot: [table.behaviorSnapshot, "json-gzip"], effectiveRuntimeSnapshot: [table.effectiveRuntimeSnapshot, "json-gzip"] }),
   uniqueIndex("agent_revisions_profile_ordinal_unique").on(table.agentProfileId, table.ordinal),
   index("agent_revisions_profile_fingerprint_idx").on(table.agentProfileId, table.fingerprint),
   index("agent_revisions_profile_created_idx").on(table.agentProfileId, table.createdAt),
@@ -1255,13 +1243,14 @@ export const gameTurns = pgTable("game_turns", {
   baseEventSequence: integer("base_event_sequence").notNull(),
   baseDialogueSequence: integer("base_dialogue_sequence").notNull(),
   basePublicationSequence: integer("base_publication_sequence").notNull(),
-  intent: jsonb("intent").notNull().$type<GameTurnIntentV1>(),
+  intent: payloadColumn("intent_object", "json-gzip").notNull().$type<StoredPayload<GameTurnIntentV1>>(),
   intentHash: text("intent_hash").notNull(),
   effectHash: text("effect_hash"),
-  commitResult: jsonb("commit_result").$type<GameTurnCommitResultV1>(),
+  commitResult: payloadColumn("commit_result_object", "json-gzip").$type<StoredPayload<GameTurnCommitResultV1>>(),
   plannedAt: text("planned_at").notNull().default(sql`now()::text`),
   committedAt: text("committed_at"),
 }, (table) => [
+  ...payloadChecks("game_turns", { intent: [table.intent, "json-gzip"], commitResult: [table.commitResult, "json-gzip"] }),
   unique("game_turns_game_id_id_unique").on(table.gameId, table.id),
   uniqueIndex("game_turns_game_sequence_unique").on(table.gameId, table.turnSequence),
   uniqueIndex("game_turns_one_planned_per_game")
@@ -1645,13 +1634,14 @@ export const gameCheckpoints = pgTable("game_checkpoints", {
   round: integer("round"),
   eventHeadHash: text("event_head_hash").notNull(),
   projectionHash: text("projection_hash").notNull(),
-  snapshot: jsonb("snapshot").notNull().$type<Record<string, unknown>>(),
+  snapshot: payloadColumn("snapshot_object", "json-gzip").notNull().$type<StoredPayload<Record<string, unknown>>>(),
   transcriptCursor: jsonb("transcript_cursor").$type<Record<string, unknown>>(),
   tokenCostCursor: jsonb("token_cost_cursor").$type<Record<string, unknown>>(),
   createdAt: text("created_at")
     .notNull()
     .default(sql`now()::text`),
 }, (table) => [
+  ...payloadChecks("game_checkpoints", { snapshot: [table.snapshot, "json-gzip"] }),
   uniqueIndex("game_checkpoints_boundary_unique").on(
     table.gameId,
     table.lastEventSequence,
@@ -1810,7 +1800,7 @@ export const providerLogicalCalls = pgTable("provider_logical_calls", {
   evidenceFailureCount: integer("evidence_failure_count").notNull().default(0),
   acceptedAttemptId: text("accepted_attempt_id"),
   acceptedCatalogId: text("accepted_catalog_id"),
-  acceptedValue: jsonb("accepted_value").$type<unknown>(),
+  acceptedValue: payloadColumn("accepted_value_object", "json-gzip").$type<StoredPayload<unknown>>(),
   acceptedValueSha256: text("accepted_value_sha256"),
   acceptedAt: text("accepted_at"),
   canonicalEventSequence: integer("canonical_event_sequence"),
@@ -1821,6 +1811,7 @@ export const providerLogicalCalls = pgTable("provider_logical_calls", {
   createdAt: text("created_at").notNull().default(sql`now()::text`),
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 }, (table) => [
+  ...payloadChecks("provider_logical_calls", { acceptedValue: [table.acceptedValue, "json-gzip"] }),
   uniqueIndex("provider_logical_calls_id_game_unique").on(table.id, table.gameId),
   index("provider_logical_calls_game_idx").on(table.gameId, table.createdAt),
   uniqueIndex("provider_logical_calls_turn_slot_unique")
@@ -2033,7 +2024,7 @@ export const providerAttemptEvidenceOutbox = pgTable("provider_attempt_evidence_
   logicalCallId: text("logical_call_id").notNull(),
   gameId: text("game_id").notNull(),
   ownerEpoch: text("owner_epoch").notNull(),
-  body: text("body").notNull(),
+  body: payloadColumn("body_object", "text-gzip").notNull().$type<StoredPayload<string>>(),
   bodySha256: text("body_sha256").notNull(),
   byteLength: integer("byte_length").notNull(),
   storageKey: text("storage_key").notNull(),
@@ -2048,6 +2039,7 @@ export const providerAttemptEvidenceOutbox = pgTable("provider_attempt_evidence_
   createdAt: text("created_at").notNull().default(sql`now()::text`),
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 }, (table) => [
+  ...payloadChecks("provider_attempt_evidence_outbox", { body: [table.body, "text-gzip"] }),
   index("provider_attempt_evidence_outbox_ready_idx")
     .on(table.nextReconciliationAt, table.claimExpiresAt, table.createdAt),
   foreignKey({
@@ -2143,9 +2135,10 @@ export const providerHealthProbeEvidence = pgTable("provider_health_probe_eviden
     .references(() => providerHealthStates.scopeKey),
   leaseRevision: integer("lease_revision").notNull(),
   recordSha256: text("record_sha256").notNull(),
-  record: jsonb("record").notNull().$type<ProviderAttemptRecord>(),
+  record: payloadColumn("record_object", "json-gzip").notNull().$type<StoredPayload<ProviderAttemptRecord>>(),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
 }, (table) => [
+  ...payloadChecks("provider_health_probe_evidence", { record: [table.record, "json-gzip"] }),
   uniqueIndex("provider_health_probe_evidence_scope_revision_idx")
     .on(table.scopeKey, table.leaseRevision),
   check("provider_health_probe_evidence_revision_check", sql`${table.leaseRevision} > 0`),
@@ -2451,8 +2444,8 @@ export const gamePostgameMedia = pgTable("game_postgame_media", {
   failureCategory: text("failure_category"),
   failureMessage: text("failure_message"),
   renderDurationMs: integer("render_duration_ms"),
-  renderInputSnapshot: jsonb("render_input_snapshot")
-    .$type<unknown>(),
+  renderInputSnapshot: payloadColumn("render_input_snapshot_object", "json-gzip")
+    .$type<StoredPayload<unknown>>(),
   renderInputSnapshotHash: text("render_input_snapshot_hash"),
   renderInputSnapshotVersion: integer("render_input_snapshot_version"),
   rendererVersion: text("renderer_version"),
@@ -2475,6 +2468,7 @@ export const gamePostgameMedia = pgTable("game_postgame_media", {
     .notNull()
     .default(sql`now()::text`),
 }, (table) => [
+  ...payloadChecks("game_postgame_media", { renderInputSnapshot: [table.renderInputSnapshot, "json-gzip"] }),
   primaryKey({ columns: [table.gameId, table.mediaType] }),
   index("game_postgame_media_status_idx").on(table.status, table.updatedAt),
   check("game_postgame_media_type_check", sql`${table.mediaType} IN ('house_highlights_trailer')`),
@@ -2558,7 +2552,7 @@ export const gameCognitiveArtifacts = pgTable("game_cognitive_artifacts", {
   round: integer("round"),
   visibilityStatus: text("visibility_status").notNull().$type<CognitiveArtifactVisibilityStatus>().default("active"),
   payloadByteLength: integer("payload_byte_length").notNull(),
-  payload: jsonb("payload").notNull().$type<Record<string, unknown>>(),
+  payload: payloadColumn("payload_object", "json-gzip").notNull().$type<StoredPayload<Record<string, unknown>>>(),
   diagnostics: jsonb("diagnostics").$type<Record<string, unknown>>(),
   retentionClass: text("retention_class").notNull().default("debug"),
   redactionStatus: text("redaction_status").notNull().$type<EvidenceRedactionStatus>().default("active"),
@@ -2568,6 +2562,7 @@ export const gameCognitiveArtifacts = pgTable("game_cognitive_artifacts", {
     .notNull()
     .default(sql`now()::text`),
 }, (table) => [
+  ...payloadChecks("game_cognitive_artifacts", { payload: [table.payload, "json-gzip"] }),
   index("game_cognitive_artifacts_game_type_actor_idx").on(table.gameId, table.artifactType, table.actorPlayerId),
   index("game_cognitive_artifacts_game_phase_round_idx").on(table.gameId, table.phase, table.round),
   index("game_cognitive_artifacts_game_action_idx").on(table.gameId, table.action),
@@ -2960,12 +2955,13 @@ export const agentLearningGameEvidence = pgTable("agent_learning_game_evidence",
   evidenceVersion: text("evidence_version").notNull(),
   eligibilityPolicyVersion: text("eligibility_policy_version").notNull(),
   completionAt: text("completion_at").notNull(),
-  canonicalSnapshot: jsonb("canonical_snapshot").notNull().$type<Record<string, unknown>>(),
-  candidateMoments: jsonb("candidate_moments").notNull().$type<Array<Record<string, unknown>>>(),
+  canonicalSnapshot: payloadColumn("canonical_snapshot_object", "json-gzip").notNull().$type<StoredPayload<Record<string, unknown>>>(),
+  candidateMoments: payloadColumn("candidate_moments_object", "json-gzip").notNull().$type<StoredPayload<Array<Record<string, unknown>>>>(),
   sourceCaptureVersion: text("source_capture_version").notNull(),
   sourceHash: text("source_hash").notNull(),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
 }, (table) => [
+  ...payloadChecks("agent_learning_game_evidence", { canonicalSnapshot: [table.canonicalSnapshot, "json-gzip"], candidateMoments: [table.candidateMoments, "json-gzip"] }),
   check("agent_learning_game_evidence_game_kind_check", sql`${table.gameKind} IN ('influence', 'werewolf')`),
   uniqueIndex("agent_learning_game_evidence_identity_unique").on(
     table.ownerUserId,
@@ -3020,15 +3016,16 @@ export const agentLearningReviews = pgTable("agent_learning_reviews", {
   ownerRetryCount: integer("owner_retry_count").notNull().default(0),
   retryTargetAttemptId: text("retry_target_attempt_id")
     .references((): AnyPgColumn => agentLearningReviewCalls.id, { onDelete: "restrict" }),
-  checkpoint: jsonb("checkpoint").$type<OwnerLearningCheckpoint>(),
+  checkpoint: payloadColumn("checkpoint_object", "json-gzip").$type<StoredPayload<OwnerLearningCheckpoint>>(),
   checkpointHash: text("checkpoint_hash"),
-  result: jsonb("result").$type<OwnerLearningReviewResult>(),
+  result: payloadColumn("result_object", "json-gzip").$type<StoredPayload<OwnerLearningReviewResult>>(),
   proposalFingerprint: text("proposal_fingerprint"),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
   startedAt: text("started_at"),
   completedAt: text("completed_at"),
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 }, (table) => [
+  ...payloadChecks("agent_learning_reviews", { checkpoint: [table.checkpoint, "json-gzip"], result: [table.result, "json-gzip"] }),
   check("agent_learning_reviews_game_kind_check", sql`${table.gameKind} IN ('influence', 'werewolf')`),
   uniqueIndex("agent_learning_reviews_owner_idempotency_unique").on(
     table.ownerUserId,
@@ -3126,15 +3123,15 @@ export const agentLearningReviewCalls = pgTable("agent_learning_review_calls", {
   inputPolicyHash: text("input_policy_hash").notNull(),
   providerTurnProtocol: text("provider_turn_protocol").notNull().default("owner-learning-harness-v2"),
   retryOfExecutionFingerprint: text("retry_of_execution_fingerprint"),
-  validatedCheckpoint: jsonb("validated_checkpoint").$type<OwnerLearningCheckpoint>(),
+  validatedCheckpoint: payloadColumn("validated_checkpoint_object", "json-gzip").$type<StoredPayload<OwnerLearningCheckpoint>>(),
   finalProviderRequestId: text("final_provider_request_id"),
   providerResponseId: text("provider_response_id"),
   providerResponseObservedAt: text("provider_response_observed_at"),
   providerResponseSha256: text("provider_response_sha256"),
-  requestEvidenceBody: text("request_evidence_body"),
+  requestEvidenceBody: payloadColumn("request_evidence_body_object", "text-gzip").$type<StoredPayload<string>>(),
   requestEvidenceSha256: text("request_evidence_sha256"),
   requestEvidenceByteLength: integer("request_evidence_byte_length"),
-  responseEvidenceBody: text("response_evidence_body"),
+  responseEvidenceBody: payloadColumn("response_evidence_body_object", "text-gzip").$type<StoredPayload<string>>(),
   responseEvidenceBodySha256: text("response_evidence_body_sha256"),
   responseEvidenceByteLength: integer("response_evidence_byte_length"),
   evidenceState: text("evidence_state")
@@ -3163,6 +3160,7 @@ export const agentLearningReviewCalls = pgTable("agent_learning_review_calls", {
   dispatchedAt: text("dispatched_at"),
   completedAt: text("completed_at"),
 }, (table) => [
+  ...payloadChecks("agent_learning_review_calls", { validatedCheckpoint: [table.validatedCheckpoint, "json-gzip"], requestEvidenceBody: [table.requestEvidenceBody, "text-gzip"], responseEvidenceBody: [table.responseEvidenceBody, "text-gzip"] }),
   uniqueIndex("agent_learning_review_calls_ordinal_unique")
     .on(table.reviewId, table.ordinal, table.attemptOrdinal),
   uniqueIndex("agent_learning_review_calls_succeeded_unique")
@@ -3370,7 +3368,7 @@ export const agentLearningReviewFailureEvidenceOutbox = pgTable("agent_learning_
   manifestId: text("manifest_id")
     .notNull()
     .references(() => agentLearningReviewFailureManifests.id, { onDelete: "restrict" }),
-  body: text("body").notNull(),
+  body: payloadColumn("body_object", "text-gzip").notNull().$type<StoredPayload<string>>(),
   bodySha256: text("body_sha256").notNull(),
   byteLength: integer("byte_length").notNull(),
   storageKey: text("storage_key").notNull(),
@@ -3382,6 +3380,7 @@ export const agentLearningReviewFailureEvidenceOutbox = pgTable("agent_learning_
   createdAt: text("created_at").notNull().default(sql`now()::text`),
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 }, (table) => [
+  ...payloadChecks("agent_learning_review_failure_evidence_outbox", { body: [table.body, "text-gzip"] }),
   uniqueIndex("agent_learning_review_failure_evidence_outbox_manifest_unique")
     .on(table.manifestId),
   index("agent_learning_review_failure_evidence_outbox_ready_idx")
@@ -3514,15 +3513,15 @@ export const agentLearningEvents = pgTable("agent_learning_events", {
 
 // Paid visual requests retain their pixels and receipts atomically. These are
 // source artifacts; public scene publication is a separate verified operation.
-const visualBytes = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 export const visualOperationEvents = pgTable("visual_operation_events", {
   id: text("id").primaryKey(),
   gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
   eventKey: text("event_key").notNull(),
   event: jsonb("event").notNull().$type<import("@influence/engine/visual-mode").VisualOperationEvent>(),
-  evidence: jsonb("evidence").$type<import("../services/visual-diagnostics").VisualFailureEvidence>(),
+  evidence: payloadColumn("evidence_object", "json-gzip").$type<StoredPayload<import("../services/visual-diagnostics").VisualFailureEvidence>>(),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
-}, (table) => [unique("visual_operation_events_key_unique").on(table.gameId, table.eventKey)]);
+}, (table) => [
+  ...payloadChecks("visual_operation_events", { evidence: [table.evidence, "json-gzip"] }),unique("visual_operation_events_key_unique").on(table.gameId, table.eventKey)]);
 
 export const visualRenderOperations = pgTable("visual_render_operations", {
   id: text("id").primaryKey(),
@@ -3532,11 +3531,12 @@ export const visualRenderOperations = pgTable("visual_render_operations", {
   repairJobId: text("repair_job_id"),
   sceneId: text("scene_id").references(() => visualScenes.id),
   inputHash: text("input_hash").notNull(),
-  request: jsonb("request").$type<Record<string, unknown>>(),
+  request: payloadColumn("request_object", "json-gzip").$type<StoredPayload<Record<string, unknown>>>(),
   budgetStartGeneration: integer("budget_start_generation").notNull().default(1),
   generation: integer("generation").notNull().default(1),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
 }, (table) => [
+  ...payloadChecks("visual_render_operations", { request: [table.request, "json-gzip"] }),
   unique("visual_render_operations_key_unique").on(table.gameId, table.operationKey),
   uniqueIndex("visual_render_operations_user_key_unique").on(table.userId, table.operationKey),
   check("visual_render_operations_owner_check", sql`(${table.gameId} IS NOT NULL) <> (${table.userId} IS NOT NULL)`),
@@ -3550,7 +3550,7 @@ export const visualRenderAttempts = pgTable("visual_render_attempts", {
   model: text("model").notNull(),
   requestHash: text("request_hash").notNull(),
   receipt: jsonb("receipt").$type<import("../services/visual-image-provider.js").VisualImageReceipt>(),
-  image: visualBytes("image"),
+  image: payloadColumn("image_object", "binary").$type<StoredPayload<Buffer>>(),
   imageHash: text("image_hash"),
   localization: jsonb("localization").$type<import("@influence/engine/visual-localization").VisualLocalization>(),
   /** Null means not yet priced; it must never be reported as zero spend. */
@@ -3559,6 +3559,7 @@ export const visualRenderAttempts = pgTable("visual_render_attempts", {
   createdAt: text("created_at").notNull().default(sql`now()::text`),
   finishedAt: text("finished_at"),
 }, (table) => [
+  ...payloadChecks("visual_render_attempts", { image: [table.image, "binary"] }),
   unique("visual_render_attempts_dispatch_unique").on(table.operationId, table.generation, table.provider),
   check("visual_render_attempts_generation_check", sql`${table.generation} > 0`),
   check("visual_render_attempts_provider_check", sql`${table.provider} IN ('openai', 'xai')`),
@@ -3570,11 +3571,12 @@ export const visualArtifacts = pgTable("visual_artifacts", {
   id: text("id").primaryKey(),
   gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
   contentHash: text("content_hash").notNull(),
-  image: visualBytes("image").notNull(),
+  image: payloadColumn("image_object", "binary").notNull().$type<StoredPayload<Buffer>>(),
   width: integer("width").notNull(),
   height: integer("height").notNull(),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
-}, (table) => [unique("visual_artifacts_content_unique").on(table.gameId, table.contentHash)]);
+}, (table) => [
+  ...payloadChecks("visual_artifacts", { image: [table.image, "binary"] }),unique("visual_artifacts_content_unique").on(table.gameId, table.contentHash)]);
 
 /** Verified character derivatives. Original match-frozen cast is never overwritten. */
 export const visualCharacterVariants = pgTable("visual_character_variants", {
@@ -3627,8 +3629,9 @@ export const visualGameAssets = pgTable("visual_game_assets", {
 export const visualRoomLibrary = pgTable("visual_room_library", {
   roomId: text("room_id").notNull().$type<import("@influence/engine/visual-mode").VisualRoomId>(),
   version: integer("version").notNull(),
-  image: visualBytes("image").notNull(),
-}, (table) => [primaryKey({ columns: [table.roomId, table.version] })]);
+  image: payloadColumn("image_object", "binary").notNull().$type<StoredPayload<Buffer>>(),
+}, (table) => [
+  ...payloadChecks("visual_room_library", { image: [table.image, "binary"] }),primaryKey({ columns: [table.roomId, table.version] })]);
 
 /** Complete saved character content, separate from competitive rating revisions. */
 export const agentContentRevisions = pgTable("agent_content_revisions", {
@@ -3639,13 +3642,16 @@ export const agentContentRevisions = pgTable("agent_content_revisions", {
   parentRevisionId: text("parent_revision_id").references((): AnyPgColumn => agentContentRevisions.id, { onDelete: "restrict" }),
   ancestryKnown: boolean("ancestry_known").notNull().default(true),
   fingerprint: text("fingerprint").notNull(),
-  snapshot: jsonb("snapshot").notNull().$type<Record<string, unknown>>(),
+  snapshot: payloadColumn("snapshot_object", "json-gzip").notNull().$type<StoredPayload<Record<string, unknown>>>(),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
-}, (table) => [index("agent_content_revisions_profile_idx").on(table.agentProfileId, table.createdAt)]);
+}, (table) => [
+  ...payloadChecks("agent_content_revisions", { snapshot: [table.snapshot, "json-gzip"] }),index("agent_content_revisions_profile_idx").on(table.agentProfileId, table.createdAt)]);
 export const agentContentAssets = pgTable("agent_content_assets", {
   hash: text("hash").primaryKey(),
-  bytes: visualBytes("bytes").notNull(),
-});
+  bytes: payloadColumn("bytes_object", "binary").notNull().$type<StoredPayload<Buffer>>(),
+}, table => [
+  ...payloadChecks("agent_content_assets", { bytes: [table.bytes, "binary"] }),
+]);
 export const agentModerationReviews = pgTable("agent_moderation_reviews", {
   id: text("id").primaryKey(),
   contentRevisionId: text("content_revision_id").notNull().references(() => agentContentRevisions.id),
@@ -3717,7 +3723,7 @@ export const visualRepairJobs = pgTable("visual_repair_jobs", {
   sceneId: text("scene_id").references(() => visualScenes.id), version: integer("version").notNull(),
   operatorId: text("operator_id").notNull(), mode: text("mode").notNull().$type<"regenerate" | "harmonize" | "verify" | "continue" | "review" | "forms">(),
   plan: jsonb("plan").notNull().$type<import("@influence/engine/visual-scene-plan").VisualScenePlan>(),
-  renderContext: jsonb("render_context").notNull().$type<{ style: string; roomName: string; roomDirection: string }>(),
+  renderContext: payloadColumn("render_context_object", "json-gzip").notNull().$type<StoredPayload<{ style: string; roomName: string; roomDirection: string }>>(),
   candidateArtifactId: text("candidate_artifact_id"),
   sourceImageId: text("source_image_id"), reusePrefix: text("reuse_prefix"),
   sourceVersionId: text("source_version_id").references((): AnyPgColumn => visualMediaVersions.id),
@@ -3725,7 +3731,8 @@ export const visualRepairJobs = pgTable("visual_repair_jobs", {
   step: text("step").notNull().default("queued"), failure: text("failure"),
   owner: text("owner"), leaseUntil: text("lease_until"), fallbackUsed: boolean("fallback_used").notNull().default(false),
   createdAt: text("created_at").notNull(), startedAt: text("started_at"), finishedAt: text("finished_at"),
-}, (t) => [check("visual_repair_jobs_mode_check",sql`${t.mode} IN ('regenerate','verify','continue','review','forms')`), check("visual_repair_job_target", sql`(${t.mode} = 'forms' AND ${t.sceneId} IS NULL) OR (${t.mode} <> 'forms' AND ${t.sceneId} IS NOT NULL)`), unique("visual_repair_version_unique").on(t.sceneId, t.version),
+}, (t) => [
+  ...payloadChecks("visual_repair_jobs", { renderContext: [t.renderContext, "json-gzip"] }),check("visual_repair_jobs_mode_check",sql`${t.mode} IN ('regenerate','verify','continue','review','forms')`), check("visual_repair_job_target", sql`(${t.mode} = 'forms' AND ${t.sceneId} IS NULL) OR (${t.mode} <> 'forms' AND ${t.sceneId} IS NOT NULL)`), unique("visual_repair_version_unique").on(t.sceneId, t.version),
   uniqueIndex("visual_repair_active_unique").on(t.sceneId).where(sql`${t.status} IN ('queued','rendering','verifying')`)]);
 
 export const visualMediaVersions = pgTable("visual_media_versions", {
@@ -3749,10 +3756,14 @@ export const visualMediaPublications = pgTable("visual_media_publications", {
 export const visualMediaRequests = pgTable("visual_media_requests", {
   id: text("id").primaryKey(), gameId: text("game_id").notNull().references(() => games.id),
   operatorId: text("operator_id").notNull(), requestId: text("request_id").notNull(), inputHash: text("input_hash").notNull(),
-  input: jsonb("input").notNull().$type<Record<string, unknown>>(),
+  sceneId: text("scene_id"),
+  action: text("action"),
+  acknowledgedAttemptIds: jsonb("acknowledged_attempt_ids").notNull().default(sql`'[]'::jsonb`).$type<string[]>(),
+  input: payloadColumn("input_object", "json-gzip").notNull().$type<StoredPayload<Record<string, unknown>>>(),
   receipt: jsonb("receipt").notNull().$type<{ accepted: boolean; code: string; message: string; jobId?: string; versionId?: string; version?: number; publicationId?: string }>(),
   createdAt: text("created_at").notNull(),
-}, (t) => [unique("visual_media_request_unique").on(t.gameId,t.operatorId,t.requestId)]);
+}, (t) => [
+  ...payloadChecks("visual_media_requests", { input: [t.input, "json-gzip"] }),unique("visual_media_request_unique").on(t.gameId,t.operatorId,t.requestId)]);
 
 /** Durable character text operations. Retried reads never initiate another provider call. */
 export const accountTextOperations = pgTable("account_text_operations", {
@@ -3760,12 +3771,13 @@ export const accountTextOperations = pgTable("account_text_operations", {
   requestKey: text("request_key").notNull(), inputHash: text("input_hash").notNull(),
   kind: text("kind").notNull(), model: text("model").notNull(),
   state: text("state").notNull().default("reserved").$type<"reserved" | "dispatched" | "succeeded" | "failed" | "uncertain">(),
-  result: jsonb("result").$type<unknown>(), promptTokens: integer("prompt_tokens"), completionTokens: integer("completion_tokens"),
+  result: payloadColumn("result_object", "json-gzip").$type<StoredPayload<unknown>>(), promptTokens: integer("prompt_tokens"), completionTokens: integer("completion_tokens"),
   estimatedCostMicrousd: bigint("estimated_cost_microusd", { mode: "number" }), pricingSource: text("pricing_source"),
   providerRequestId: text("provider_request_id"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true, mode: "string" }),
-}, table => [unique("account_text_operations_user_key").on(table.userId, table.requestKey)]);
+}, table => [
+  ...payloadChecks("account_text_operations", { result: [table.result, "json-gzip"] }),unique("account_text_operations_user_key").on(table.userId, table.requestKey)]);
 
 export interface InferencePolicy {
  text: number; image: number; renewal: "none" | "monthly";
@@ -3801,12 +3813,13 @@ export const anonymousTextOperations = pgTable("anonymous_text_operations", {
   requestKey: text("request_key").notNull(), inputHash: text("input_hash").notNull(),
   model: text("model").notNull(),
   state: text("state").notNull().$type<"dispatched" | "succeeded" | "failed" | "uncertain">(),
-  result: jsonb("result").$type<unknown>(), promptTokens: integer("prompt_tokens"), completionTokens: integer("completion_tokens"),
+  result: payloadColumn("result_object", "json-gzip").$type<StoredPayload<unknown>>(), promptTokens: integer("prompt_tokens"), completionTokens: integer("completion_tokens"),
   estimatedCostMicrousd: bigint("estimated_cost_microusd", { mode: "number" }), pricingSource: text("pricing_source"),
   providerRequestId: text("provider_request_id"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true, mode: "string" }),
-}, table => [unique("anonymous_text_operations_visitor_key").on(table.visitorHash, table.requestKey)]);
+}, table => [
+  ...payloadChecks("anonymous_text_operations", { result: [table.result, "json-gzip"] }),unique("anonymous_text_operations_visitor_key").on(table.visitorHash, table.requestKey)]);
 
 // Editorial images are independent of gameplay visuals and canonical events.
 export const gameAssets = pgTable("game_assets", {
@@ -3905,13 +3918,14 @@ export const houseCutJobs = pgTable("house_cut_jobs", {
   gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
   audience: text("audience").$type<"public" | "mystery" | "omniscient">().notNull(),
   status: text("status").$type<"queued" | "running" | "ready" | "failed">().notNull().default("queued"),
-  source: jsonb("source").$type<import("@influence/engine/house-cuts/source").CutSource>(),
-  journal: jsonb("journal").$type<import("@influence/engine/house-cuts/trial").CutTrialJournal>(),
-  publication: jsonb("publication").$type<import("@influence/engine/house-cuts/publication").HouseCutsPublication>(),
+  source: payloadColumn("source_object", "json-gzip").$type<StoredPayload<import("@influence/engine/house-cuts/source").CutSource>>(),
+  journal: payloadColumn("journal_object", "json-gzip").$type<StoredPayload<import("@influence/engine/house-cuts/trial").CutTrialJournal>>(),
+  publication: payloadColumn("publication_object", "json-gzip").$type<StoredPayload<import("@influence/engine/house-cuts/publication").HouseCutsPublication>>(),
   leaseToken: uuid("lease_token"), leaseUntil: timestamp("lease_until", { withTimezone: true }),
   failure: text("failure"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-}, t => [unique("house_cut_game_audience").on(t.gameId, t.audience),
+}, t => [
+  ...payloadChecks("house_cut_jobs", { source: [t.source, "json-gzip"], journal: [t.journal, "json-gzip"], publication: [t.publication, "json-gzip"] }),unique("house_cut_game_audience").on(t.gameId, t.audience),
   check("house_cut_audience", sql`${t.audience} IN ('public','mystery','omniscient')`),
   check("house_cut_status", sql`${t.status} IN ('queued','running','ready','failed')`)]);
