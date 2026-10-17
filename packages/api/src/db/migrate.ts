@@ -128,6 +128,13 @@ export function inspectReleaseMigrationSql(
     ["0120_private_auxiliary_documents.sql", "f1a1bcd03edf1a99814c569703306d0e86e33fd2096b4aaee706a4914230889d"],
   ]);
   const reviewedCutover = coordinatedCutovers.get(path.basename(file)) === createHash("sha256").update(sql).digest("hex");
+  // These exact cutover files materialize required query fields from verified
+  // receipts under exclusive locks, then replace the expressions with defaults.
+  const materializedCutovers = new Map([
+    ["0121_visual_request_query_metadata.sql", "06accda12274dd3f6f7b972b2f4e36792aa94d7c2f080e1d73585296c47352d8"],
+    ["0122_text_operation_query_metadata.sql", "08c7280108a922f68950fbdeeac1056b49fb1c689453f296ed43ea5e7fc08332"],
+  ]);
+  const reviewedMaterialization = materializedCutovers.get(path.basename(file)) === createHash("sha256").update(sql).digest("hex");
   const policyInput = stripSqlCommentsAndStrings(sql);
   const replacementCheckConstraints = new Set(
     [
@@ -215,7 +222,7 @@ export function inspectReleaseMigrationSql(
     const match = statement.match(
       /\bALTER\s+TABLE\b[\s\S]*?\bADD\s+(?:COLUMN\s+)?(?:"[^"]+"|[a-z_][a-z0-9_]*)[\s\S]*?\bNOT\s+NULL\b/i,
     );
-    if (!match || /\bDEFAULT\b/i.test(statement)) continue;
+    if (!match || /\bDEFAULT\b/i.test(statement) || reviewedMaterialization) continue;
     violations.push({
       file,
       rule: "add-not-null-without-default",
