@@ -67,7 +67,7 @@ test("old/new House cards, title search, stable links and responsive art",async(
   const page=await browser.newPage();
   try {
     for(const width of [1440,390]) {
-      await page.setViewport({width,height:1000});
+      await page.setViewport({width,height:1000,isMobile:width===390,hasTouch:width===390});
       await page.goto(`${servers.webUrl}/games`,{waitUntil:"domcontentloaded"});
       await page.waitForFunction(`Array.from(document.querySelectorAll('.episode-card[data-game-kind="werewolf"]')).some(card => card.innerText.includes('new-village-casting') && card.innerText.includes('1/6 joined') && card.querySelector('.episode-cast')?.innerText.includes('Current Name'))`);
       const viewAll = 'section[aria-label="Werewolf"] a[href="/games/type/werewolf"]';
@@ -89,7 +89,13 @@ test("old/new House cards, title search, stable links and responsive art",async(
     }
     await page.type('input[aria-label="Search games"]','Lanterns and Lies');
     await page.waitForFunction(`document.querySelectorAll('.episode-card[data-game-kind="werewolf"]').length === 1`);
+    const opensTouchPreview = await page.evaluate('matchMedia("(hover: none), (pointer: coarse)").matches');
     await page.click('a[aria-label="Open Lanterns and Lies"]');
+    if (opensTouchPreview) {
+      const openGame = '.episode-modal-actions a[href="/games/old-lantern-village"]';
+      await page.waitForSelector(openGame);
+      await page.click(openGame);
+    }
     await text(page,"Watch Mystery");
     expect(new URL(page.url()).pathname).toBe('/games/old-lantern-village');
     expect(await page.title()).toContain('Lanterns and Lies');
