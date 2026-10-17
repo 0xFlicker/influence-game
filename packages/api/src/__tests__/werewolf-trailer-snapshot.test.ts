@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { beforeEach, expect, test } from "bun:test";
 import { asc, eq } from "drizzle-orm";
 import { completedWerewolfResultsFixture as werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
@@ -11,7 +12,7 @@ async function fixture() {
   const events=await werewolfResultsFixture("saved",id);
   await db.insert(schema.games).values({id,slug,gameKind:"werewolf",status:"completed",config:'{"visibility":"public"}'});
   await db.insert(schema.werewolfEvents).values(events.map(event=>({gameId:id,sequence:event.sequence,event})));
-  await db.insert(schema.houseCutJobs).values({gameId:id,audience:"mystery",status:"ready",publication:{version:"v1",audience:"mystery",cuts:[]}});
+  await db.insert(schema.houseCutJobs).values(await storeFields({gameId:id,audience:"mystery",status:"ready",publication:{version:"v1",audience:"mystery",cuts:[]}}, {"source":"json-gzip","journal":"json-gzip","publication":"json-gzip"}));
   return {id,slug,events};
 }
 test("snapshot supports Public/Unlisted, freezes source, and cannot queue jobs or export private state",async()=>{
@@ -26,14 +27,14 @@ test("snapshot supports Public/Unlisted, freezes source, and cannot queue jobs o
     expect(m.game.slug).toBe(f.slug);
     expect(JSON.stringify(m)).not.toMatch(/SECRET_|roles|protectedId|attackTargetId|winnerIds/);
   }
-  expect(await db.select().from(schema.gamePostgameMedia)).toHaveLength(0);
+  expect(await loadPayloads(db.select().from(schema.gamePostgameMedia))).toHaveLength(0);
   expect((await db.select().from(schema.werewolfEvents).orderBy(asc(schema.werewolfEvents.sequence))).map(r=>r.event)).toEqual(f.events);
   await db.update(schema.games).set({hiddenAt:new Date().toISOString()}).where(eq(schema.games.id,f.id));
   await expect(loadWerewolfTrailerSnapshot(db,f.slug)).rejects.toThrow("unavailable");
 });
 test("snapshot distinguishes pending/failed Cuts and refuses active games or corrupt history",async()=>{
   const f=await fixture();
-  await db.update(schema.houseCutJobs).set({status:"running",publication:null}).where(eq(schema.houseCutJobs.gameId,f.id));
+  await db.update(schema.houseCutJobs).set(await storeFields({status:"running",publication:null}, {"source":"json-gzip","journal":"json-gzip","publication":"json-gzip"})).where(eq(schema.houseCutJobs.gameId,f.id));
   await expect(loadWerewolfTrailerSnapshot(db,f.id)).rejects.toThrow("waiting");
   await db.update(schema.houseCutJobs).set({status:"failed"}).where(eq(schema.houseCutJobs.gameId,f.id));
   expect((await loadWerewolfTrailerSnapshot(db,f.id)).story.editorialStatus).toBe("failed");
@@ -69,7 +70,7 @@ test("settled Werewolf Cuts queue exactly once across simultaneous automatic and
 
 test("completion recovery waits for Cuts and queues failed/empty editorial results without a quota", async () => {
   const { id } = await fixture();
-  await db.update(schema.houseCutJobs).set({ status: "queued", publication: null }).where(eq(schema.houseCutJobs.gameId, id));
+  await db.update(schema.houseCutJobs).set(await storeFields({ status: "queued", publication: null }, {"source":"json-gzip","journal":"json-gzip","publication":"json-gzip"})).where(eq(schema.houseCutJobs.gameId, id));
   expect((await reconcileCompletedPostgameMedia(db)).waitingInputs).toBe(1);
   expect(await claimPostgameMedia(db, "local-test")).toBeNull();
   await db.update(schema.houseCutJobs).set({ status: "failed" }).where(eq(schema.houseCutJobs.gameId, id));
@@ -105,9 +106,9 @@ test("hidden games cannot queue, claim or publish; stale manifests fail with an 
   expect((await reconcilePostgameMediaForGame(db, id)).outcome).toBe("not_completed");
   await db.update(schema.games).set({ hiddenAt: null }).where(eq(schema.games.id, id));
   await reconcilePostgameMediaForGame(db, id);
-  await db.update(schema.gamePostgameMedia).set({ renderInputSnapshot: { schemaVersion: 1 } }).where(eq(schema.gamePostgameMedia.gameId, id));
+  await db.update(schema.gamePostgameMedia).set(await storeFields({ renderInputSnapshot: { schemaVersion: 1 } }, {"renderInputSnapshot":"json-gzip"})).where(eq(schema.gamePostgameMedia.gameId, id));
   expect(await claimPostgameMedia(db, "local-test")).toBeNull();
-  const [failed] = await db.select().from(schema.gamePostgameMedia);
+  const [failed] = await loadPayloads(db.select().from(schema.gamePostgameMedia));
   expect(failed?.failureCategory).toBe("render_input");
   expect(failed?.failureMessage).toContain("fresh trailer render");
   await seedOperator(); await repair(id);

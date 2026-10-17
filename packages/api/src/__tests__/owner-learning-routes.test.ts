@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
@@ -104,7 +105,7 @@ describe("owner learning REST routes", () => {
     }));
     expect(invalid.status).toBe(400);
     expect(await invalid.json()).toMatchObject({ code: "invalid_idempotency_key" });
-    expect(await db.select().from(schema.agentLearningReviews)).toHaveLength(0);
+    expect(await loadPayloads(db.select().from(schema.agentLearningReviews))).toHaveLength(0);
     expect(await db.select().from(schema.agentLearningReviewEntitlements)).toHaveLength(0);
   });
 
@@ -197,7 +198,7 @@ describe("owner learning REST routes", () => {
     expect(await firstMcpOffer.json()).toEqual({ recorded: true });
     expect(await secondMcpOffer.json()).toEqual({ recorded: false });
 
-    await db.update(schema.agentLearningReviews).set({
+    await db.update(schema.agentLearningReviews).set(await storeFields({
       analysisStatus: "ready",
       stage: "complete",
       result: {
@@ -224,7 +225,7 @@ describe("owner learning REST routes", () => {
         },
       },
       proposalFingerprint: "sha256:proposal",
-    }).where(eq(schema.agentLearningReviews.id, startedBody.reviewId));
+    }, {"checkpoint":"json-gzip","result":"json-gzip"})).where(eq(schema.agentLearningReviews.id, startedBody.reviewId));
 
     const firstViewed = await app.request(
       `/api/agent-learning/reviews/${startedBody.reviewId}/viewed`,

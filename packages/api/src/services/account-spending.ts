@@ -14,7 +14,7 @@ const sources = sql`WITH usage AS (
  SELECT 'text:' || id AS id, 'text:' || id AS operation_id, user_id, kind, model, state,
  created_at, estimated_cost_microusd AS estimated, NULL::bigint AS actual,
  prompt_tokens, completion_tokens, pricing_source,
- CASE WHEN state = 'reserved' OR result->'failure'->>'beforeDispatch' = 'true' THEN 0 ELSE 1 END AS attempts
+ CASE WHEN state = 'reserved' OR failed_before_dispatch THEN 0 ELSE 1 END AS attempts
  FROM account_text_operations
  UNION ALL
  SELECT 'avatar:' || id, 'avatar:' || id, user_id, 'portrait', model, status, created_at::timestamptz,
@@ -25,7 +25,7 @@ const sources = sql`WITH usage AS (
  SELECT 'visual:' || a.id, 'visual:' || o.id, o.user_id,
  CASE WHEN o.operation_key LIKE 'full-body:%' THEN 'full_body' ELSE 'image_localization' END,
  a.model, CASE WHEN a.finished_at IS NULL OR coalesce((a.receipt->>'chargeUncertain')::boolean,false) THEN 'uncertain'
- WHEN a.image IS NOT NULL OR a.localization IS NOT NULL THEN 'succeeded' ELSE 'failed' END,
+ WHEN a.image_object IS NOT NULL OR a.localization IS NOT NULL THEN 'succeeded' ELSE 'failed' END,
  a.created_at::timestamptz, a.cost_microusd, NULL::bigint, NULL::integer, NULL::integer, 'visual_pricing:2026-09-21', 1
  FROM visual_render_attempts a JOIN visual_render_operations o ON o.id = a.operation_id WHERE o.user_id IS NOT NULL
  UNION ALL

@@ -1,3 +1,4 @@
+import { Hydrated, loadPayloads } from "./payload-storage.js";
 import { and, eq, inArray, isNull, like, sql } from "drizzle-orm";
 import {
   acceptedActionSourcePointerMatches,
@@ -63,7 +64,7 @@ export type NonfatalAcceptedActionCorrelationResult =
 
 interface CorrelationRows {
   manifests: Array<typeof schema.gameEvidenceManifests.$inferSelect>;
-  cognition: Array<typeof schema.gameCognitiveArtifacts.$inferSelect>;
+  cognition: Array<Hydrated<typeof schema.gameCognitiveArtifacts.$inferSelect>>;
   promptReuseSources: Array<typeof schema.gamePromptReuseAppliedSources.$inferSelect>;
 }
 
@@ -157,7 +158,7 @@ async function loadCorrelationRowsByRef(
   if (refs.length === 0) return new Map();
   const gameIds = [...new Set(refs.map((ref) => ref.gameId))];
   const decisionIds = [...new Set(refs.map((ref) => ref.decisionId))];
-  const [manifests, cognition, promptReuseSources] = await Promise.all([
+  const [manifests, cognition, promptReuseSources] = await loadPayloads(Promise.all([
     db.select()
       .from(schema.gameEvidenceManifests)
       .where(and(
@@ -177,7 +178,7 @@ async function loadCorrelationRowsByRef(
         inArray(schema.gamePromptReuseAppliedSources.gameId, gameIds),
         inArray(schema.gamePromptReuseAppliedSources.decisionId, decisionIds),
       )),
-  ]);
+  ]));
 
   const manifestsByRef = new Map<string, typeof manifests>();
   const cognitionByRef = new Map<string, typeof cognition>();

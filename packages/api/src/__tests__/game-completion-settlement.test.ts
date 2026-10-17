@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, gt } from "drizzle-orm";
@@ -505,8 +506,8 @@ describe("game completion settlement capture", () => {
     expect((await db.select().from(schema.gameRunOwners)
       .where(eq(schema.gameRunOwners.ownerEpoch, fixture.ownerEpoch)))[0])
       .toMatchObject({ status: "closed", closedAt: FINISHED_AT });
-    expect(await db.select().from(schema.gamePostgameMedia)
-      .where(eq(schema.gamePostgameMedia.gameId, fixture.gameId))).toHaveLength(1);
+    expect(await loadPayloads(db.select().from(schema.gamePostgameMedia)
+      .where(eq(schema.gamePostgameMedia.gameId, fixture.gameId)))).toHaveLength(1);
     expect((await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, profileId)))[0])
       .toMatchObject({ gamesPlayed: 1, gamesWon: 1, updatedAt: FINISHED_AT });
@@ -565,8 +566,8 @@ describe("game completion settlement capture", () => {
       .where(eq(schema.gameResults.gameId, fixture.gameId))).toHaveLength(1);
     expect(await db.select().from(schema.transcripts)
       .where(eq(schema.transcripts.gameId, fixture.gameId))).toHaveLength(1);
-    expect(await db.select().from(schema.gamePostgameMedia)
-      .where(eq(schema.gamePostgameMedia.gameId, fixture.gameId))).toHaveLength(1);
+    expect(await loadPayloads(db.select().from(schema.gamePostgameMedia)
+      .where(eq(schema.gamePostgameMedia.gameId, fixture.gameId)))).toHaveLength(1);
     expect((await db.select().from(schema.gameCompletionSettlements)
       .where(eq(schema.gameCompletionSettlements.gameId, fixture.gameId)))[0])
       .toMatchObject({ state: "completed", attemptCount: 3 });

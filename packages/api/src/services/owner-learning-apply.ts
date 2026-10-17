@@ -1,3 +1,4 @@
+import { Hydrated } from "./payload-storage.js";
 import { readSavedContentAssets } from "./agent-content-submissions.js";
 import { currentReviewIdentity, reviewStrategyField } from "./owner-learning-game.js";
 import { randomUUID } from "node:crypto";
@@ -199,7 +200,7 @@ function assertApplyIdentity(
 }
 
 function changeRecommendationIds(
-  recommendations: NonNullable<typeof schema.agentLearningReviews.$inferSelect.result>["recommendations"],
+  recommendations: NonNullable<Hydrated<typeof schema.agentLearningReviews.$inferSelect.result>>["recommendations"],
 ): string[] {
   const ids = recommendations
     .filter((recommendation) => recommendation.disposition === "change")

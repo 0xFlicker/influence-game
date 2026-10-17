@@ -1,3 +1,4 @@
+import { storeFields, loadPayloads } from "../services/payload-storage.js";
 /**
  * Game lifecycle integration tests.
  *
@@ -79,7 +80,7 @@ describe("game run failure classification", () => {
       accessScope: "producer_admin",
       metadata: { action: "vote" },
     });
-    await db.insert(schema.gameCognitiveArtifacts).values({
+    await db.insert(schema.gameCognitiveArtifacts).values(await storeFields({
       id: randomUUID(),
       gameId,
       decisionId,
@@ -91,7 +92,7 @@ describe("game run failure classification", () => {
       round: 1,
       payloadByteLength: 2,
       payload: {},
-    });
+    }, {"payload":"json-gzip"}));
     await db.insert(schema.gamePromptReuseAppliedSources).values({
       id: randomUUID(),
       gameId,
@@ -147,8 +148,8 @@ describe("game run failure classification", () => {
 
     const manifest = (await db.select().from(schema.gameEvidenceManifests)
       .where(eq(schema.gameEvidenceManifests.decisionId, decisionId)))[0]!;
-    const cognition = (await db.select().from(schema.gameCognitiveArtifacts)
-      .where(eq(schema.gameCognitiveArtifacts.decisionId, decisionId)))[0]!;
+    const cognition = (await loadPayloads(db.select().from(schema.gameCognitiveArtifacts)
+      .where(eq(schema.gameCognitiveArtifacts.decisionId, decisionId))))[0]!;
     const promptSource = (await db.select().from(schema.gamePromptReuseAppliedSources)
       .where(eq(schema.gamePromptReuseAppliedSources.decisionId, decisionId)))[0]!;
     const rollup = (await db.select().from(schema.gamePromptReuseRollups)

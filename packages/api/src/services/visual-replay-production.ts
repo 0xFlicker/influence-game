@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import { readWerewolfVisualPause } from "./werewolf-visual-policy.js";
 import { planWerewolfProduction } from "./werewolf-production-plan.js";
 import { freezeWerewolfReferences, readWerewolfProduction, readWerewolfProductionSceneCatalog, WerewolfReferenceError } from "./werewolf-production.js";
@@ -161,7 +162,7 @@ async function freezeReplayReferences(db: DrizzleDB, gameId: string, participant
 }
 
 export async function renderMissingReplayScene(db: DrizzleDB, gameId: string, operatorId: string, input: { key: string; previewHash: string; requestId: string }) {
-  const [prior] = await db.select().from(schema.visualMediaRequests).where(and(eq(schema.visualMediaRequests.gameId, gameId), eq(schema.visualMediaRequests.operatorId, operatorId), eq(schema.visualMediaRequests.requestId, input.requestId)));
+  const [prior] = await loadPayloads(db.select().from(schema.visualMediaRequests).where(and(eq(schema.visualMediaRequests.gameId, gameId), eq(schema.visualMediaRequests.operatorId, operatorId), eq(schema.visualMediaRequests.requestId, input.requestId))));
   if (prior) {
     if (prior.input.previewKey !== input.key || prior.input.previewHash !== input.previewHash) throw new ReplayVisualError("Request ID belongs to another scene preview", "request_conflict");
     return prior.receipt;

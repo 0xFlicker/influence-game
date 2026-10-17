@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -54,7 +55,7 @@ describe("complete character image drafts", () => {
     expect(await generateVisualProfileReference(db, userId, args, "http://localhost")).toEqual(result);
     expect(calls).toHaveLength(2);
     expect(await db.select().from(schema.agentProfiles)).toHaveLength(0);
-    expect(await db.select().from(schema.visualRenderAttempts)).toHaveLength(2);
+    expect(await loadPayloads(db.select().from(schema.visualRenderAttempts))).toHaveLength(2);
     const manual = await exportCharacterPortrait({ sourceUrl: result.fullBodyReferenceUrl, x: 0.25, y: 0, width: 0.5, height: 1 / 3 }, "http://localhost");
     expect(manual.portraitCrop).not.toEqual(result.portraitCrop);
     expect(manual.avatarUrl).toBeTruthy();
@@ -85,7 +86,7 @@ describe("complete character image drafts", () => {
     await expect(generateVisualProfileReference(db, userId, args)).rejects.toThrow();
     await expect(generateVisualProfileReference(db, userId, args)).rejects.toThrow("reconciliation");
     expect(calls).toHaveLength(1);
-    const [attempt] = await db.select().from(schema.visualRenderAttempts);
+    const [attempt] = await loadPayloads(db.select().from(schema.visualRenderAttempts));
     expect(attempt!.receipt?.chargeUncertain).toBe(true);
   });
   test("uncertain head localization preserves the full-body draft and requires manual crop without another paid call", async () => {

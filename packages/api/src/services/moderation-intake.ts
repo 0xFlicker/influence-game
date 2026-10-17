@@ -1,3 +1,4 @@
+import { Hydrated, loadPayloads } from "./payload-storage.js";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, exists, gt, lte, not, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -93,7 +94,7 @@ export async function previewModerationDecision(db: DrizzleDB, userId: string, i
   return db.transaction(tx => readDecisionPreview(tx, userId, input), { isolationLevel: "repeatable read", accessMode: "read only" });
 }
 
-async function resolveModerationEffect(tx: Reader, profile: Profile, states: Parameters<typeof planModerationSelection>[0]["states"], selection: ReturnType<typeof planModerationSelection>) {
+async function resolveModerationEffect(tx: Reader, profile: Profile, states: Parameters<Hydrated<typeof planModerationSelection>>[0]["states"], selection: ReturnType<Hydrated<typeof planModerationSelection>>) {
     let recovery: string | null = selection.unknownAncestry ? "Unknown historical ancestry; dependent snapshots require individual review." : null;
     let effectiveId = selection.effectiveId;
     let content: ReturnType<typeof contentSnapshot> | null = null;
@@ -113,14 +114,14 @@ async function resolveModerationEffect(tx: Reader, profile: Profile, states: Par
 
 async function readDecisionPreview(tx: Reader, userId: string, input: { reviewId: string; action: "accept" | "reject" }) {
     const authority = await moderationAuthority(tx, userId);
-    const [target] = await tx.select({ review: reviews, revision: revisions }).from(reviews)
-      .innerJoin(revisions, eq(revisions.id, reviews.contentRevisionId)).where(eq(reviews.id, input.reviewId));
+    const [target] = await loadPayloads(tx.select({ review: reviews, revision: revisions }).from(reviews)
+      .innerJoin(revisions, eq(revisions.id, reviews.contentRevisionId)).where(eq(reviews.id, input.reviewId)));
     if (!target) throw new ModerationError("review_not_found", "Review not found.", 404);
     checkRoute(target.review.route, authority);
     const [profile] = await tx.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, target.revision.agentProfileId));
     if (!profile) throw new ModerationError("profile_unavailable", "The character is unavailable. Pass this review to an admin.");
-    const states = await tx.select({ revision: revisions, review: reviews }).from(revisions)
-      .innerJoin(reviews, eq(reviews.contentRevisionId, revisions.id)).where(eq(revisions.agentProfileId, profile.id));
+    const states = await loadPayloads(tx.select({ revision: revisions, review: reviews }).from(revisions)
+      .innerJoin(reviews, eq(reviews.contentRevisionId, revisions.id)).where(eq(revisions.agentProfileId, profile.id)));
     // Siblings in escalation must never be disclosed through an ordinary item.
     const disposition = input.action === "accept" ? target.review.disposition
       : target.review.disposition === "allowed" ? "rejected" : "allowed";
@@ -178,17 +179,17 @@ export async function listModerationQueue(db: DrizzleDB, userId: string, options
     filter === "flagged" ? eq(reviews.flagged, true) : undefined,
     filter === "available" ? not(exists(live)) : undefined,
     filter === "mine" ? exists(db.select({ id: claims.reviewId }).from(claims).where(and(eq(claims.reviewId, reviews.id), eq(claims.reviewerId, userId), gt(claims.expiresAt, now)))) : undefined);
-  const rows = await db.select({ id: reviews.id, version: reviews.version, cycle: reviews.cycle, flagged: reviews.flagged,
+  const rows = await loadPayloads(db.select({ id: reviews.id, version: reviews.version, cycle: reviews.cycle, flagged: reviews.flagged,
     disposition: reviews.disposition, route: reviews.route, createdAt: reviews.createdAt,
-    agentProfileId: revisions.agentProfileId, name: sql<string>`coalesce(${revisions.snapshot}->>'name', 'Agent')`,
+    agentProfileId: revisions.agentProfileId, snapshot: revisions.snapshot,
     ownSubmission: sql<boolean>`${revisions.userId} = ${userId}`,
     claimedBy: claims.reviewerId, expiresAt: claims.expiresAt,
   }).from(reviews).innerJoin(revisions, eq(revisions.id, reviews.contentRevisionId))
     .leftJoin(claims, and(eq(claims.reviewId, reviews.id), gt(claims.expiresAt, now)))
-    .where(where).orderBy(asc(reviews.createdAt), asc(reviews.id)).limit(26).offset(offset);
+    .where(where).orderBy(asc(reviews.createdAt), asc(reviews.id)).limit(26).offset(offset));
   const [activeClaim] = await db.select({ reviewId: claims.reviewId, expiresAt: claims.expiresAt, route: reviews.route }).from(claims)
     .innerJoin(reviews, eq(reviews.id, claims.reviewId)).where(and(eq(claims.reviewerId, userId), gt(claims.expiresAt, now), authority.canEscalateReview ? undefined : eq(reviews.route, "ordinary")));
-  return { activeClaim: activeClaim ?? null, items: rows.slice(0, 25), nextOffset: rows.length > 25 ? offset + 25 : null, serverTime: now, ...authority };
+  return { activeClaim: activeClaim ?? null, items: rows.slice(0, 25).map(({ snapshot, ...row }) => ({ ...row, name: typeof snapshot.name === "string" ? snapshot.name : "Agent" })), nextOffset: rows.length > 25 ? offset + 25 : null, serverTime: now, ...authority };
 }
 
 export async function readModerationReview(db: DrizzleDB, userId: string, reviewId: string) {
@@ -196,9 +197,9 @@ export async function readModerationReview(db: DrizzleDB, userId: string, review
   const [review] = await db.select().from(reviews).where(eq(reviews.id, reviewId));
   if (!review) throw new ModerationError("review_not_found", "Review not found.", 404);
   checkRoute(review.route, authority);
-  const [revision] = await db.select().from(revisions).where(eq(revisions.id, review.contentRevisionId));
-  const [parentRow] = revision?.parentRevisionId ? await db.select({ revision: revisions, review: reviews }).from(revisions)
-    .innerJoin(reviews, eq(reviews.contentRevisionId, revisions.id)).where(eq(revisions.id, revision.parentRevisionId)) : [];
+  const [revision] = await loadPayloads(db.select().from(revisions).where(eq(revisions.id, review.contentRevisionId)));
+  const [parentRow] = revision?.parentRevisionId ? await loadPayloads(db.select({ revision: revisions, review: reviews }).from(revisions)
+    .innerJoin(reviews, eq(reviews.contentRevisionId, revisions.id)).where(eq(revisions.id, revision.parentRevisionId))) : [];
   const parent = parentRow && (parentRow.review.route === "ordinary" || authority.canEscalateReview) ? parentRow.revision : null;
   const now = await databaseTime(db);
   const [claim] = await db.select().from(claims).where(and(eq(claims.reviewId, review.id), gt(claims.expiresAt, now)));
@@ -221,7 +222,7 @@ export async function readModerationEvidence(db: DrizzleDB, userId: string, revi
     return assets && typeof assets === "object" && !Array.isArray(assets) && Object.values(assets).includes(hash);
   });
   if (!referenced) throw new ModerationError("evidence_not_found", "Evidence not found.", 404);
-  const [asset] = await db.select().from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, hash));
+  const [asset] = await loadPayloads(db.select().from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, hash)));
   if (!asset) throw new ModerationError("evidence_unavailable", "Retained evidence is unavailable.");
   return asset.bytes;
 }
@@ -328,8 +329,8 @@ export async function decideModerationReview(db: DrizzleDB, userId: string, inpu
   return write(db, userId, async (tx, _now, authority) => {
     const prior = await replay(tx, userId, input.actionId, hash);
     if (prior) return prior;
-    const [target] = await tx.select({ review: reviews, revision: revisions }).from(reviews)
-      .innerJoin(revisions, eq(revisions.id, reviews.contentRevisionId)).where(eq(reviews.id, input.reviewId));
+    const [target] = await loadPayloads(tx.select({ review: reviews, revision: revisions }).from(reviews)
+      .innerJoin(revisions, eq(revisions.id, reviews.contentRevisionId)).where(eq(reviews.id, input.reviewId)));
     if (!target) throw new ModerationError("review_not_found", "Review not found.", 404);
     checkRoute(target.review.route, authority);
     if (target.revision.userId === userId) throw new ModerationError("self_review", "You cannot review your own submission.", 403);
@@ -360,8 +361,8 @@ export async function decideModerationReview(db: DrizzleDB, userId: string, inpu
       throw new ModerationError("review_conflict", "The review or character changed. Refresh the preview before deciding.");
     }
     await requireRetainedEvidence(tx, target.revision.snapshot);
-    const states = await tx.select({ revision: revisions, review: reviews }).from(revisions)
-      .innerJoin(reviews, eq(reviews.contentRevisionId, revisions.id)).where(eq(revisions.agentProfileId, profile.id));
+    const states = await loadPayloads(tx.select({ revision: revisions, review: reviews }).from(revisions)
+      .innerJoin(reviews, eq(reviews.contentRevisionId, revisions.id)).where(eq(revisions.agentProfileId, profile.id)));
     const selection = planModerationSelection({ states, targetId: target.revision.id, disposition: input.disposition,
       latestId: profile.latestContentRevisionId, effectiveId: profile.contentRevisionId });
     const { recovery, effectiveId, content } = await resolveModerationEffect(tx, profile, states, selection);
@@ -411,8 +412,8 @@ export async function reopenModerationReview(db: DrizzleDB, userId: string, inpu
     if (!authority.canUndo) throw new ModerationError("moderation_forbidden", "Admin recovery access is required.", 403);
     const prior = await replay(tx, userId, input.actionId, hash);
     if (prior) return prior;
-    const [target] = await tx.select({ review: reviews, revision: revisions }).from(reviews)
-      .innerJoin(revisions, eq(revisions.id, reviews.contentRevisionId)).where(eq(reviews.id, input.reviewId));
+    const [target] = await loadPayloads(tx.select({ review: reviews, revision: revisions }).from(reviews)
+      .innerJoin(revisions, eq(revisions.id, reviews.contentRevisionId)).where(eq(reviews.id, input.reviewId)));
     if (!target) throw new ModerationError("review_not_found", "Review not found.", 404);
     if (target.review.version !== input.version || target.review.status !== "resolved") throw new ModerationError("review_conflict", "Only unchanged resolved work can be reopened.");
     await tx.execute(sql`SELECT id FROM agent_profiles WHERE id = ${target.revision.agentProfileId} FOR UPDATE`);
@@ -442,14 +443,14 @@ export async function readModerationReceipt(db: DrizzleDB, userId: string, actio
 export async function listModerationRecovery(db: DrizzleDB, userId: string, offset = 0) {
   if (!(await moderationAuthority(db, userId)).canUndo) throw new ModerationError("moderation_forbidden", "Admin recovery access is required.", 403);
   if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1_000_000) throw new ModerationError("invalid_input", "Invalid offset.", 400);
-  const resolved = await db.select({ id: reviews.id, version: reviews.version, disposition: reviews.disposition,
-    name: sql<string>`coalesce(${revisions.snapshot}->>'name', 'Agent')`, profileId: revisions.agentProfileId })
+  const resolved = await loadPayloads(db.select({ id: reviews.id, version: reviews.version, disposition: reviews.disposition,
+    snapshot: revisions.snapshot, profileId: revisions.agentProfileId })
     .from(reviews).innerJoin(revisions, eq(revisions.id, reviews.contentRevisionId)).where(eq(reviews.status, "resolved"))
-    .orderBy(asc(reviews.createdAt), asc(reviews.id)).limit(26).offset(offset);
+    .orderBy(asc(reviews.createdAt), asc(reviews.id)).limit(26).offset(offset));
   const archived = await db.select({ id: schema.agentProfiles.id, name: schema.agentProfiles.name, version: schema.agentProfiles.moderationVersion,
     archivedAt: schema.agentProfiles.archivedAt }).from(schema.agentProfiles).where(sql`${schema.agentProfiles.archivedAt} IS NOT NULL`)
     .orderBy(asc(schema.agentProfiles.archivedAt), asc(schema.agentProfiles.id)).limit(26).offset(offset);
-  return { resolved: resolved.slice(0, 25), archived: archived.slice(0, 25), nextOffset: resolved.length > 25 || archived.length > 25 ? offset + 25 : null };
+  return { resolved: resolved.slice(0, 25).map(({ snapshot, ...row }) => ({ ...row, name: typeof snapshot.name === "string" ? snapshot.name : "Agent" })), archived: archived.slice(0, 25), nextOffset: resolved.length > 25 || archived.length > 25 ? offset + 25 : null };
 }
 
 export async function hasModerationAccess(db: Reader, userId: string): Promise<boolean> {

@@ -1,3 +1,4 @@
+import { storeFields, Hydrated, loadPayloads } from "./payload-storage.js";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, sql } from "drizzle-orm";
 import {
@@ -43,7 +44,7 @@ export interface ResolveGameEffectiveAgentRevisionInput {
 }
 
 export interface EnsuredAgentRevision {
-  revision: typeof schema.agentRevisions.$inferSelect;
+  revision: Hydrated<typeof schema.agentRevisions.$inferSelect>;
   created: boolean;
   ratingRecalibrated: boolean;
 }
@@ -197,7 +198,7 @@ export async function resolveGameEffectiveAgentRevisionInTransaction(
     return { revision: current, created: false, ratingRecalibrated: false };
   }
 
-  const matching = (await tx.select().from(schema.agentRevisions)
+  const matching = (await loadPayloads(tx.select().from(schema.agentRevisions)
     .where(and(
       eq(schema.agentRevisions.agentProfileId, input.profile.id),
       eq(schema.agentRevisions.fingerprint, nextFingerprint),
@@ -205,7 +206,7 @@ export async function resolveGameEffectiveAgentRevisionInTransaction(
       eq(schema.agentRevisions.priorRevisionId, current.id),
     ))
     .orderBy(desc(schema.agentRevisions.ordinal))
-    .limit(1))[0];
+    .limit(1)))[0];
   if (matching) {
     return { revision: matching, created: false, ratingRecalibrated: false };
   }
@@ -223,12 +224,12 @@ export async function resolveGameEffectiveAgentRevisionInTransaction(
 export async function getLatestAgentRevision(
   db: DrizzleDB,
   agentProfileId: string,
-): Promise<typeof schema.agentRevisions.$inferSelect | null> {
-  return (await db.select()
+): Promise<Hydrated<typeof schema.agentRevisions.$inferSelect> | null> {
+  return (await loadPayloads(db.select()
     .from(schema.agentRevisions)
     .where(eq(schema.agentRevisions.agentProfileId, agentProfileId))
     .orderBy(desc(schema.agentRevisions.ordinal))
-    .limit(1))[0] ?? null;
+    .limit(1)))[0] ?? null;
 }
 
 async function lockAndLoadRevisionState(
@@ -236,8 +237,8 @@ async function lockAndLoadRevisionState(
   agentProfileId: string,
 ): Promise<{
   profileState: Pick<typeof schema.agentProfiles.$inferSelect, "currentRevisionId">;
-  pointedCurrent: typeof schema.agentRevisions.$inferSelect | undefined;
-  latest: typeof schema.agentRevisions.$inferSelect | undefined;
+  pointedCurrent: Hydrated<typeof schema.agentRevisions.$inferSelect> | undefined;
+  latest: Hydrated<typeof schema.agentRevisions.$inferSelect> | undefined;
 }> {
   await tx.execute(sql`
     SELECT id
@@ -251,17 +252,17 @@ async function lockAndLoadRevisionState(
     .where(eq(schema.agentProfiles.id, agentProfileId))
     .limit(1))[0];
   if (!profileState) throw new Error(`Agent profile ${agentProfileId} not found`);
-  const latest = (await tx.select().from(schema.agentRevisions)
+  const latest = (await loadPayloads(tx.select().from(schema.agentRevisions)
     .where(eq(schema.agentRevisions.agentProfileId, agentProfileId))
     .orderBy(desc(schema.agentRevisions.ordinal))
-    .limit(1))[0];
+    .limit(1)))[0];
   const pointedCurrent = profileState.currentRevisionId
-    ? (await tx.select().from(schema.agentRevisions)
+    ? (await loadPayloads(tx.select().from(schema.agentRevisions)
       .where(and(
         eq(schema.agentRevisions.id, profileState.currentRevisionId),
         eq(schema.agentRevisions.agentProfileId, agentProfileId),
       ))
-      .limit(1))[0]
+      .limit(1)))[0]
     : undefined;
   if (profileState.currentRevisionId && !pointedCurrent) {
     throw new Error(`Agent profile ${agentProfileId} has an invalid active revision`);
@@ -276,10 +277,10 @@ async function insertRevision(
     effectiveRuntimeSnapshot: EffectiveAgentRuntimeSnapshot;
     trigger: typeof schema.agentRevisions.$inferInsert.trigger;
     ordinal: number;
-    priorRevision: typeof schema.agentRevisions.$inferSelect | null;
+    priorRevision: Hydrated<typeof schema.agentRevisions.$inferSelect> | null;
   },
 ): Promise<{
-  revision: typeof schema.agentRevisions.$inferSelect;
+  revision: Hydrated<typeof schema.agentRevisions.$inferSelect>;
   classification: ReturnType<typeof classifyRevision>;
 }> {
   const previousSnapshot = input.priorRevision
@@ -287,7 +288,7 @@ async function insertRevision(
     : null;
   const classification = classifyRevision(previousSnapshot, input.effectiveRuntimeSnapshot);
   const magnitude = classification.magnitude === "none" ? "small" : classification.magnitude;
-  const revision = (await tx.insert(schema.agentRevisions).values({
+  const revision = (await loadPayloads(tx.insert(schema.agentRevisions).values(await storeFields({
     id: randomUUID(),
     agentProfileId: input.profileId,
     ordinal: input.ordinal,
@@ -305,7 +306,7 @@ async function insertRevision(
     },
     effectiveRuntimeSnapshot: Object.fromEntries(Object.entries(input.effectiveRuntimeSnapshot)),
     revisionPolicyVersion: REVISION_POLICY_VERSION,
-  }).returning())[0];
+  }, {"behaviorSnapshot":"json-gzip","effectiveRuntimeSnapshot":"json-gzip"})).returning()))[0];
   if (!revision) throw new Error(`Failed to create revision for agent ${input.profileId}`);
   return { revision, classification };
 }
@@ -337,7 +338,7 @@ function parseEffectiveRuntimeSnapshot(value: Record<string, unknown>): Effectiv
 }
 
 function revisionMatchesCurrentPolicy(
-  revision: typeof schema.agentRevisions.$inferSelect,
+  revision: Hydrated<typeof schema.agentRevisions.$inferSelect>,
   next: EffectiveAgentRuntimeSnapshot,
   nextFingerprint: string,
 ): boolean {

@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -175,9 +176,9 @@ describe("competition completion", () => {
     const fixture = await createRatedFixture();
     const atlasProfile = (await fixture.db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, fixture.atlasProfileId)))[0]!;
-    const active = (await fixture.db.select().from(schema.agentRevisions)
-      .where(eq(schema.agentRevisions.id, atlasProfile.currentRevisionId!)))[0]!;
-    await fixture.db.insert(schema.agentRevisions).values({
+    const active = (await loadPayloads(fixture.db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.id, atlasProfile.currentRevisionId!))))[0]!;
+    await fixture.db.insert(schema.agentRevisions).values(await storeFields({
       ...active,
       id: randomUUID(),
       ordinal: active.ordinal + 1,
@@ -186,7 +187,7 @@ describe("competition completion", () => {
       magnitude: "execution",
       fingerprint: `${active.fingerprint}:newer-non-active`,
       createdAt: "2026-07-10T19:30:00.000Z",
-    });
+    }, {"behaviorSnapshot":"json-gzip","effectiveRuntimeSnapshot":"json-gzip"}));
     await fixture.db.update(schema.gamePlayers).set({ agentRevisionId: null })
       .where(eq(schema.gamePlayers.id, "atlas"));
 
@@ -337,7 +338,7 @@ async function createRatedFixture(options: {
     name: "Maris Crown",
     personality: "Mira personality",
   })).profile;
-  const revisions = await db.select().from(schema.agentRevisions);
+  const revisions = await loadPayloads(db.select().from(schema.agentRevisions));
   const atlasRevision = revisions.find((revision) => revision.agentProfileId === atlas.id)!;
   const miraRevision = revisions.find((revision) => revision.agentProfileId === mira.id)!;
   const season = await createSeason(db, {

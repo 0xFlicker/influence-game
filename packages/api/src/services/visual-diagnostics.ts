@@ -1,3 +1,4 @@
+import { storeFields, loadPayloads } from "./payload-storage.js";
 import { randomUUID } from "node:crypto";
 import { asc, eq } from "drizzle-orm";
 import type { VisualOperationEvent } from "@influence/engine/visual-mode";
@@ -37,12 +38,12 @@ type Writer = Pick<DrizzleDB, "insert">;
 /** Can join the attempt transaction; evidence is durable before gameplay selects a fallback. */
 export async function recordVisualOperationEvent(db: Writer, gameId: string, eventKey: string, input: EventInput, evidence?: VisualFailureEvidence): Promise<void> {
   const id = randomUUID();
-  await db.insert(schema.visualOperationEvents).values({ id, gameId, eventKey, evidence,
+  await db.insert(schema.visualOperationEvents).values(await storeFields({ id, gameId, eventKey, evidence,
     event: { id, occurredAt: new Date().toISOString(), boundarySequence: null, sceneId: null, operationId: null, ...input },
-  }).onConflictDoNothing();
+  }, {"evidence":"json-gzip"})).onConflictDoNothing();
 }
 
 export async function readVisualOperationEvents(db: DrizzleDB, gameId: string) {
-  return db.select().from(schema.visualOperationEvents).where(eq(schema.visualOperationEvents.gameId, gameId))
-    .orderBy(asc(schema.visualOperationEvents.createdAt), asc(schema.visualOperationEvents.id));
+  return loadPayloads(db.select().from(schema.visualOperationEvents).where(eq(schema.visualOperationEvents.gameId, gameId))
+    .orderBy(asc(schema.visualOperationEvents.createdAt), asc(schema.visualOperationEvents.id)));
 }

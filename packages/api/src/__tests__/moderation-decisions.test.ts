@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
@@ -54,10 +55,10 @@ describe("whole-revision moderation decisions", () => {
     const snapshot: Record<string, unknown> = contentSnapshot(current);
     delete snapshot.headPosition;
     const revisionId = randomUUID();
-    await db.insert(schema.agentContentRevisions).values({
+    await db.insert(schema.agentContentRevisions).values(await storeFields({
       id: revisionId, agentProfileId: current.id, userId: owner,
       fingerprint: randomUUID(), snapshot,
-    });
+    }, {"snapshot":"json-gzip"}));
     await db.update(schema.agentProfiles).set({ latestContentRevisionId: revisionId }).where(eq(schema.agentProfiles.id, current.id));
     const loaded = await readOwnerContent(db, await profile(current.id));
     expect(loaded.submitted?.content).toMatchObject({ name: current.name, headPosition: null });
@@ -91,7 +92,7 @@ describe("whole-revision moderation decisions", () => {
     const restored = await decideModerationReview(db, admin, undo);
     expect(await decideModerationReview(db, admin, undo)).toEqual(restored);
     expect(await profile(r1.profile.id)).toMatchObject({ personality: "Corrected complete snapshot", contentRevisionId: r4.receipt.contentRevisionId });
-    expect((await db.select().from(schema.agentContentRevisions))).toHaveLength(4);
+    expect((await loadPayloads(db.select().from(schema.agentContentRevisions)))).toHaveLength(4);
     expect((await db.select().from(schema.moderationActions)).filter(a => a.kind === "undo")).toHaveLength(1);
   });
   test("archived moderation keeps the competitive revision synchronized through restore", async () => {
@@ -108,7 +109,7 @@ describe("whole-revision moderation decisions", () => {
     expect(archived.archivedAt).not.toBeNull();
     expect(archived.personality).toBe("Second personality");
     expect(archived.currentRevisionId).not.toBe(before.currentRevisionId);
-    const [revision] = await db.select().from(schema.agentRevisions).where(eq(schema.agentRevisions.id, archived.currentRevisionId!));
+    const [revision] = await loadPayloads(db.select().from(schema.agentRevisions).where(eq(schema.agentRevisions.id, archived.currentRevisionId!)));
     expect(revision!.trigger).toBe("moderation");
     expect(revision!.effectiveRuntimeSnapshot).toEqual({ ...resolveFreeTrackEffectiveRuntimeSnapshot(archived) });
     await restoreArchivedAgentProfile(db, admin, { profileId: archived.id, version: archived.moderationVersion, reason: "Restore reviewed character" });
@@ -133,7 +134,7 @@ describe("whole-revision moderation decisions", () => {
     await expect(restoreArchivedAgentProfile(db, admin, { profileId: archived.id, version: archived.moderationVersion, reason: "Owner requested recovery" })).resolves.toMatchObject({ archived: false });
     expect(await profile(first.profile.id)).toMatchObject({ archivedAt: null, contentRevisionId: null, moderationRequired: true });
     expect(await db.select().from(schema.agentProfileLifecycleActions)).toHaveLength(2);
-    expect(await db.select().from(schema.agentContentRevisions)).toHaveLength(1);
+    expect(await loadPayloads(db.select().from(schema.agentContentRevisions))).toHaveLength(1);
     await expect(Promise.resolve(db.execute(sql`DELETE FROM agent_profile_lifecycle_actions`))).rejects.toThrow();
   });
   test("owner recovery and partial corrections retain the latest submitted fields without publishing them", async () => {
@@ -156,7 +157,7 @@ describe("whole-revision moderation decisions", () => {
     const same = await edit(first.profile.id, "Initial");
     expect(same.receipt).toMatchObject({ publication: "held", contentRevisionId: first.receipt.contentRevisionId });
     expect(await profile(first.profile.id)).toMatchObject({ contentRevisionId: null });
-    expect(await db.select().from(schema.agentContentRevisions)).toHaveLength(1);
+    expect(await loadPayloads(db.select().from(schema.agentContentRevisions))).toHaveLength(1);
   });
   test("owner changes invalidate a preview and a failed decision preserves the lease", async () => {
     const first = await create();
@@ -194,7 +195,7 @@ describe("whole-revision moderation decisions", () => {
   });
   test("unknown ancestry withholds rather than inferring a chronology", async () => {
     const first = await create();
-    const [revision] = await db.select().from(schema.agentContentRevisions);
+    const [revision] = await loadPayloads(db.select().from(schema.agentContentRevisions));
     const [review] = await db.select().from(schema.agentModerationReviews);
     const legacy = { ...revision!, id: "legacy", ancestryKnown: false, parentRevisionId: null };
     const result = planModerationSelection({ states: [{ revision: legacy, review: { ...review!, contentRevisionId: legacy.id } },
@@ -260,7 +261,7 @@ describe("whole-revision moderation decisions", () => {
     try {
       await expect(decideModerationReview(db, moderator, cmd)).rejects.toThrow();
       expect(await profile(first.profile.id)).toMatchObject({ contentRevisionId: second.profile.contentRevisionId, currentRevisionId: second.profile.currentRevisionId, moderationRequired: false });
-      expect(await db.select().from(schema.agentRevisions)).toHaveLength(2);
+      expect(await loadPayloads(db.select().from(schema.agentRevisions))).toHaveLength(2);
       expect(await db.select().from(schema.moderationClaims)).toHaveLength(1);
     } finally {
       await db.execute(sql`DROP TRIGGER reject_test_decision ON moderation_actions`);

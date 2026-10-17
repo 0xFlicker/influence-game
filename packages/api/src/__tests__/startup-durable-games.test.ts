@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -234,8 +235,8 @@ describe("durable game startup adoption", () => {
       eventHeadSequence: events.length,
       publicationHeadSequence: 0,
     });
-    expect(await db.select().from(schema.gameTurns)
-      .where(eq(schema.gameTurns.gameId, gameId))).toHaveLength(1);
+    expect(await loadPayloads(db.select().from(schema.gameTurns)
+      .where(eq(schema.gameTurns.gameId, gameId)))).toHaveLength(1);
   });
 
   test("leaves historical and repair-required rows for their own authorities", async () => {

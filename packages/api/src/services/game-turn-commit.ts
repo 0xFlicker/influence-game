@@ -1,3 +1,4 @@
+import { storeFields, loadPayloads } from "./payload-storage.js";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   assertCanonicalGameEvent,
@@ -298,7 +299,7 @@ export async function upgradeGameExecutionAuthority(
       publications: [],
       alreadyCommitted: false,
     };
-    await tx.insert(schema.gameTurns).values({
+    await tx.insert(schema.gameTurns).values(await storeFields({
       id: upgradeTurnId,
       gameId: input.state.gameId,
       turnSequence: 1,
@@ -314,7 +315,7 @@ export async function upgradeGameExecutionAuthority(
       commitResult: result,
       plannedAt: committedAt,
       committedAt,
-    });
+    }, {"intent":"json-gzip","commitResult":"json-gzip"}));
 
     for (let index = 0; index < input.transcriptEntries.length; index += 1) {
       const entry = input.transcriptEntries[index]!;
@@ -437,7 +438,7 @@ export async function planGameTurn(
         `Game already has planned turn ${anotherPlanned.id}`,
       );
     }
-    await tx.insert(schema.gameTurns).values({
+    await tx.insert(schema.gameTurns).values(await storeFields({
       id: params.intent.turnId,
       gameId: params.intent.gameId,
       turnSequence: params.intent.turnSequence,
@@ -447,7 +448,7 @@ export async function planGameTurn(
       basePublicationSequence: params.intent.baseHeads.publicationSequence,
       intent: params.intent,
       intentHash,
-    });
+    }, {"intent":"json-gzip","commitResult":"json-gzip"}));
     return { intentHash, alreadyPlanned: false };
   });
 }
@@ -716,13 +717,13 @@ export async function commitGameTurn(
       alreadyCommitted: false,
     };
 
-    const committedTurn = await tx.update(schema.gameTurns).set({
+    const committedTurn = await tx.update(schema.gameTurns).set(await storeFields({
       status: "committed",
       committedOwnerEpoch: params.ownerEpoch,
       effectHash,
       commitResult: result,
       committedAt,
-    }).where(and(
+    }, {"intent":"json-gzip","commitResult":"json-gzip"})).where(and(
       eq(schema.gameTurns.id, params.draft.turnId),
       eq(schema.gameTurns.gameId, params.draft.gameId),
       eq(schema.gameTurns.status, "planned"),
@@ -799,10 +800,10 @@ async function requireExecutionState(tx: GameTurnTx, gameId: string) {
 }
 
 async function lockGameTurn(tx: GameTurnTx, gameId: string, turnId: string) {
-  return (await tx.select().from(schema.gameTurns).where(and(
+  return (await loadPayloads(tx.select().from(schema.gameTurns).where(and(
     eq(schema.gameTurns.gameId, gameId),
     eq(schema.gameTurns.id, turnId),
-  )).for("update").limit(1))[0] ?? null;
+  )).for("update").limit(1)))[0] ?? null;
 }
 
 async function lockAcceptedProviderCalls(

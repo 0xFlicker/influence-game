@@ -1,3 +1,4 @@
+import { storeFields } from "./payload-storage.js";
 import { projectWerewolfReviewEvidence, type WerewolfReviewFacts } from "./owner-learning-werewolf.js";
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
@@ -494,7 +495,7 @@ async function materializeOwnerLearningGameEvidence(
   const analyticalRevisionId = input.selection.games.find((game) => game.gameId === input.game.gameId)
     ?.analyticalRevisionId;
   if (!analyticalRevisionId) throw new Error("Owner learning selection is missing the projected game");
-  await db.insert(schema.agentLearningGameEvidence).values({
+  await db.insert(schema.agentLearningGameEvidence).values(await storeFields({
     id: randomUUID(),
     gameKind: input.selection.gameKind,
     ownerUserId: input.selection.ownerUserId,
@@ -508,7 +509,7 @@ async function materializeOwnerLearningGameEvidence(
     candidateMoments: input.game.candidateMoments as unknown as Array<Record<string, unknown>>,
     sourceCaptureVersion: input.game.sourceCaptureVersion,
     sourceHash: input.game.sourceHash,
-  }).onConflictDoNothing();
+  }, {"canonicalSnapshot":"json-gzip","candidateMoments":"json-gzip"})).onConflictDoNothing();
   const row = (await db.select({
     id: schema.agentLearningGameEvidence.id,
     sourceCaptureVersion: schema.agentLearningGameEvidence.sourceCaptureVersion,

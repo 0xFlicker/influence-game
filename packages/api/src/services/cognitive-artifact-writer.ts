@@ -1,3 +1,4 @@
+import { storeFields } from "./payload-storage.js";
 import { randomUUID } from "crypto";
 import { and, eq } from "drizzle-orm";
 import type { PrivateDecisionTrace } from "@influence/engine";
@@ -198,7 +199,7 @@ export async function writeCognitiveArtifactsForTrace(
       const visibilityStatus: CognitiveArtifactVisibilityStatus = oversized ? "capture_degraded" : "active";
 
       await db.insert(schema.gameCognitiveArtifacts)
-        .values({
+        .values(await storeFields({
           id: artifactId,
           gameId: input.gameId,
           captureVersion: input.captureVersion,
@@ -216,7 +217,7 @@ export async function writeCognitiveArtifactsForTrace(
           ...(oversized && {
             diagnostics: degradedPayloadDiagnostics("payload_too_large", payloadByteLength),
           }),
-        });
+        }, {"payload":"json-gzip"}));
 
       if (oversized) {
         degradedArtifactIds.push(artifactId);

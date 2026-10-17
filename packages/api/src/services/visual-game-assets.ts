@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "./payload-storage.js";
 import { createHash } from "node:crypto";
 import { validHeadRectangle } from "@influence/engine/character-portrait";
 import type { VisualBoundaryGuard, VisualTransaction } from "./visual-execution-boundary.js";
@@ -57,7 +58,7 @@ export async function prepareVisualGameAssets(db: DrizzleDB, gameId: string, ass
       return { id: player.id, name: string("name") ?? player.id, personaKey: string("personaKey") ?? "",
         headPosition: persona.headPosition as FrozenVisualProfile["headPosition"], avatarUrl: string("avatarUrl"), fullBodyReferenceUrl: string("fullBodyReferenceUrl"), performanceInstructions: string("performanceInstructions") ?? "" };
     });
-    await write((tx) => tx.insert(schema.visualGameAssets).values({ gameId, profiles }).onConflictDoNothing());
+    await write(async (tx) => tx.insert(schema.visualGameAssets).values({ gameId, profiles }).onConflictDoNothing());
     [assets] = await db.select().from(schema.visualGameAssets).where(eq(schema.visualGameAssets.gameId, gameId));
   }
   if (!assets) throw new Error("Visual profiles were not frozen");
@@ -87,13 +88,13 @@ export async function prepareVisualGameAssets(db: DrizzleDB, gameId: string, ass
     }
     for (const room of Object.values(VISUAL_ROOMS)) {
       if (assets.backgrounds[room.id]) continue;
-      const [saved] = await db.select().from(schema.visualRoomLibrary).where(and(eq(schema.visualRoomLibrary.roomId, room.id), eq(schema.visualRoomLibrary.version, room.version)));
+      const [saved] = await loadPayloads(db.select().from(schema.visualRoomLibrary).where(and(eq(schema.visualRoomLibrary.roomId, room.id), eq(schema.visualRoomLibrary.version, room.version))));
       const image = saved?.image ?? (await renderVisualAssetBestEffort(db, { gameId, operationKey: `background:${room.id}:v${room.version}`, beforeDispatch: assertBoundary,
         request: { width: 1536, height: 864, references: [], prompt: `${VISUAL_HOUSE_STYLE}. Empty setting: ${room.name}. ${room.direction}. Wide room view, no people, no text. Preserve uncluttered conversational furniture sections with generous headroom: ${JSON.stringify(room.sections)}. This is a lived-in social strategy game house, not a clinical studio.` } }))?.image;
       if (!image) continue;
       await assertBoundary();
-      await write((tx) => tx.insert(schema.visualRoomLibrary).values({ roomId: room.id, version: room.version, image: Buffer.from(image) }).onConflictDoNothing());
-      const [accepted] = await db.select().from(schema.visualRoomLibrary).where(and(eq(schema.visualRoomLibrary.roomId, room.id), eq(schema.visualRoomLibrary.version, room.version)));
+      await write(async (tx) => tx.insert(schema.visualRoomLibrary).values(await storeFields({ roomId: room.id, version: room.version, image: Buffer.from(image) }, {"image":"binary"})).onConflictDoNothing());
+      const [accepted] = await loadPayloads(db.select().from(schema.visualRoomLibrary).where(and(eq(schema.visualRoomLibrary.roomId, room.id), eq(schema.visualRoomLibrary.version, room.version))));
       assets.backgrounds[room.id] = await storeVisualArtifact(db, gameId, accepted!.image);
       await save();
     }

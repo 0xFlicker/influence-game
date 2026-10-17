@@ -1,3 +1,4 @@
+import { storeFields } from "../services/payload-storage.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { DrizzleDB } from "../db/index.js";
@@ -579,7 +580,7 @@ async function insertArtifact(
   },
 ): Promise<void> {
   const payloadByteLength = Buffer.byteLength(JSON.stringify(params.payload), "utf8");
-  await db.insert(schema.gameCognitiveArtifacts).values({
+  await db.insert(schema.gameCognitiveArtifacts).values(await storeFields({
     id: params.id ?? randomUUID(),
     gameId: params.gameId,
     captureVersion: 1,
@@ -595,5 +596,5 @@ async function insertArtifact(
     payload: params.payload,
     retentionClass: "debug",
     redactionStatus: "active",
-  });
+  }, {"payload":"json-gzip"}));
 }

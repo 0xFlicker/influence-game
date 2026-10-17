@@ -1,7 +1,7 @@
 {
   "name": "@influence/api",
   "version": "0.8.1",
-  "description": "Influence game HTTP API — Bun + Hono server",
+  "description": "Influence game HTTP API \u2014 Bun + Hono server",
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
@@ -20,7 +20,11 @@
     "auth:bootstrap-operator": "bun run src/scripts/bootstrap-initial-operator.ts",
     "auth:identity-inventory": "bun run src/scripts/preflight-auth-identities.ts",
     "prompt-thread:lab": "bun run src/scripts/prompt-thread-lab.ts",
-    "mcp:trace": "bun run src/trace-mcp/server.ts"
+    "mcp:trace": "bun run src/trace-mcp/server.ts",
+    "storage:inventory": "bun run src/scripts/migrate-storage-payloads.ts inventory",
+    "storage:copy": "bun run src/scripts/migrate-storage-payloads.ts copy",
+    "storage:verify": "bun run src/scripts/migrate-storage-payloads.ts verify",
+    "storage:cutover": "bun run src/scripts/migrate-storage-payloads.ts cutover"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1078.0",

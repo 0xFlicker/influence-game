@@ -1,3 +1,4 @@
+import { storeJson, readJson } from "./payload-storage.js";
 /** Provider-free, single-fixture render proof. Never imports the application runtime. */
 import { createHash, randomUUID } from "node:crypto";
 import postgres from "postgres";
@@ -81,7 +82,7 @@ export async function exportProofFixture(source: ProofSQL, gameId: string): Prom
     if (!row) throw new Error("Select one completed, ready staging fixture");
     return validateFixture({ schemaVersion: 1,
       game: { id: row.id, slug: row.slug, gameKind: row.game_kind, config: row.config },
-      media: { snapshot: row.render_input_snapshot, snapshotHash: row.render_input_snapshot_hash,
+      media: { snapshot: await readJson(row.render_input_snapshot_object), snapshotHash: row.render_input_snapshot_hash,
         snapshotVersion: row.render_input_snapshot_version, rendererVersion: row.renderer_version,
         timingContractVersion: row.timing_contract_version, musicAssetId: row.music_asset_id, renderVersion: row.render_version } });
   });
@@ -118,14 +119,16 @@ export async function prepareProofDatabase(adminUrl: string, fixture: RenderProo
   const owner = postgres(url.toString(), { max: 1, onnotice: () => {} });
   const identity: RenderProofIdentity = { ...input, database, principal, fixtureDigest: fixtureDigest(fixture), gameId: fixture.game.id,
     migrationSet: calculateMigrationSet(), leaseId: randomUUID(), fencingToken: 1 };
+  const fixtureObject = await storeJson(fixture);
+  const snapshotObject = await storeJson(fixture.media.snapshot);
   try {
     await owner.begin(async transaction => {
     const tx = transaction as unknown as ProofSQL;
-      await tx`CREATE TABLE render_proof_guard (id integer PRIMARY KEY CHECK(id=1), identity jsonb NOT NULL, fixture jsonb NOT NULL)`;
-      await tx`INSERT INTO render_proof_guard VALUES (1,${tx.json(JSON.parse(JSON.stringify(identity)))},${tx.json(JSON.parse(JSON.stringify(fixture)))})`;
+      await tx`CREATE TABLE render_proof_guard (id integer PRIMARY KEY CHECK(id=1), identity jsonb NOT NULL, fixture_object jsonb NOT NULL)`;
+      await tx`INSERT INTO render_proof_guard VALUES (1,${tx.json(JSON.parse(JSON.stringify(identity)))},${tx.json(JSON.parse(JSON.stringify(fixtureObject)))})`;
       await tx`INSERT INTO games (id,slug,game_kind,config,status,track_type) VALUES (${fixture.game.id},${fixture.game.slug},${fixture.game.gameKind},${fixture.game.config},'completed','custom')`;
-      await tx`INSERT INTO game_postgame_media (game_id,media_type,status,render_version,attempt_number,artifact_version,render_input_snapshot,render_input_snapshot_hash,render_input_snapshot_version,renderer_version,timing_contract_version,music_asset_id)
-        VALUES (${fixture.game.id},'house_highlights_trailer','waiting_inputs',${fixture.media.renderVersion},1,${randomUUID()},${tx.json(JSON.parse(JSON.stringify(fixture.media.snapshot)))},${fixture.media.snapshotHash},${fixture.media.snapshotVersion},${fixture.media.rendererVersion},${fixture.media.timingContractVersion},${fixture.media.musicAssetId})`;
+      await tx`INSERT INTO game_postgame_media (game_id,media_type,status,render_version,attempt_number,artifact_version,render_input_snapshot_object,render_input_snapshot_hash,render_input_snapshot_version,renderer_version,timing_contract_version,music_asset_id)
+        VALUES (${fixture.game.id},'house_highlights_trailer','waiting_inputs',${fixture.media.renderVersion},1,${randomUUID()},${tx.json(JSON.parse(JSON.stringify(snapshotObject)))},${fixture.media.snapshotHash},${fixture.media.snapshotVersion},${fixture.media.rendererVersion},${fixture.media.timingContractVersion},${fixture.media.musicAssetId})`;
       await tx`INSERT INTO postgame_media_render_release(id,mode,draining) VALUES(1,'local',false)`;
       // Existing admission fence, non-expiring switching phase, only inside this fresh DB.
       await tx`INSERT INTO deployment_admission_leases(id,fencing_token,candidate_sha,source_repository,workflow_run_id,workflow_run_attempt,actor,phase,status,expires_at,absolute_deadline_at)
@@ -148,7 +151,8 @@ export async function assertProofDatabase(sql: ProofSQL, runId: string): Promise
   const [role] = await sql`SELECT rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls FROM pg_roles WHERE rolname=current_user`;
   const memberships = await sql`SELECT 1 FROM pg_auth_members WHERE member=(SELECT oid FROM pg_roles WHERE rolname=current_user)`;
   if (!role || Object.values(role).some(Boolean) || memberships.length) throw new Error("Proof principal has excess authority");
-  const [guard] = await sql`SELECT identity,fixture FROM render_proof_guard WHERE id=1`;
+  const [guard] = await sql`SELECT identity,fixture_object AS fixture FROM render_proof_guard WHERE id=1`;
+  if (guard) guard.fixture = await readJson(guard.fixture);
   const identity = guard?.identity as RenderProofIdentity | undefined;
   if (!guard || !identity || identity.runId !== runId || identity.database !== database || identity.principal !== who.principal
     || identity.fixtureDigest !== fixtureDigest(validateFixture(guard.fixture)) || identity.migrationSet !== calculateMigrationSet()) throw new Error("Proof guard or release migrations differ");
@@ -182,9 +186,9 @@ export async function assertProofDatabase(sql: ProofSQL, runId: string): Promise
   if (games.length !== 1 || games[0]?.id !== identity.gameId || games[0]?.status !== "completed" || games[0]?.hidden_at
     || games[0]?.slug !== fixture.game.slug || games[0]?.game_kind !== fixture.game.gameKind
     || proofDigest(JSON.parse(games[0]?.config)) !== proofDigest(JSON.parse(fixture.game.config))) throw new Error("Proof game inventory differs");
-  const media = await sql`SELECT game_id,render_input_snapshot,render_input_snapshot_hash FROM game_postgame_media`;
+  const media = await sql`SELECT game_id,render_input_snapshot_object,render_input_snapshot_hash FROM game_postgame_media`;
   if (media.length !== 1 || media[0]?.game_id !== identity.gameId || media[0]?.render_input_snapshot_hash !== fixture.media.snapshotHash
-    || hashHouseHighlightsTrailerManifest(parseHouseHighlightsTrailerManifest(media[0]?.render_input_snapshot)) !== fixture.media.snapshotHash) throw new Error("Proof frozen input changed");
+    || hashHouseHighlightsTrailerManifest(parseHouseHighlightsTrailerManifest(await readJson(media[0]?.render_input_snapshot_object))) !== fixture.media.snapshotHash) throw new Error("Proof frozen input changed");
   const holds = await sql`SELECT id,fencing_token,status,phase FROM deployment_admission_leases WHERE status='active'`;
   if (holds.length !== 1 || holds[0]?.id !== identity.leaseId || Number(holds[0]?.fencing_token) !== identity.fencingToken || holds[0]?.phase !== "switching") throw new Error("Proof admission hold differs");
   return identity;
@@ -194,9 +198,9 @@ export async function queueProofFixture(sql: ProofSQL, runId: string) {
   const identity = await assertProofDatabase(sql, runId);
   return sql.begin(async transaction => {
     const tx = transaction as unknown as ProofSQL;
-    const [guard] = await tx`SELECT fixture FROM render_proof_guard WHERE id=1`;
+    const [guard] = await tx`SELECT fixture_object AS fixture FROM render_proof_guard WHERE id=1`;
     if (!guard) throw new Error("Proof guard absent");
-    const fixture = validateFixture(guard.fixture);
+    const fixture = validateFixture(await readJson(guard.fixture));
     const [release] = await tx`SELECT mode,draining,generation FROM postgame_media_render_release WHERE id=1 FOR UPDATE`;
     if (release?.mode !== "remote" || release.draining || !release.generation) throw new Error("Remote renderer is not admitted");
     // Admission creates a wake for the ordinary dispatcher. In this fresh DB,

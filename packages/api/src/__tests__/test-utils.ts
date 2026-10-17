@@ -6,6 +6,7 @@
  */
 
 import { getTableName, is, sql } from "drizzle-orm";
+import "./payload-test-store.js";
 import { PgTable } from "drizzle-orm/pg-core";
 import postgres from "postgres";
 import { createDB, schema, type DrizzleDB } from "../db/index.js";
@@ -82,6 +83,15 @@ async function createTestDatabaseProcessLock(): Promise<TestDbLockLease> {
 export async function setupTestDB(): Promise<DrizzleDB> {
   await acquireTestDatabaseProcessLock();
   if (!migrated) {
+    // This explicitly disposable test database may contain old-version fixtures.
+    // Empty existing application tables before a data-preserving cutover migration;
+    // real development/staging/production bodies must instead be copied and verified.
+    const cleanup = postgres(TEST_DATABASE_URL, { max: 1, onnotice: () => {} });
+    try {
+      const tables = await cleanup`SELECT tablename FROM pg_tables WHERE schemaname='public'`;
+      const known = tables.map(row => String(row.tablename)).filter(name => INFLUENCE_TABLES.some(known => known === name));
+      if (known.length) await cleanup.unsafe(`TRUNCATE TABLE ${known.map(name => `"${name.replaceAll('"', '""')}"`).join(",")} CASCADE`);
+    } finally { await cleanup.end(); }
     await runMigrations(TEST_DATABASE_URL);
     migrated = true;
   }

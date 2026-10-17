@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "./payload-storage.js";
 import { and, eq, gt, inArray, lte, or } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import {
@@ -69,7 +70,7 @@ export async function claimPostgameMedia(
   now = new Date(),
 ): Promise<PostgameMediaClaim | null> {
   const nowIso = now.toISOString();
-  const candidates = await db.select().from(schema.gamePostgameMedia)
+  const candidates = await loadPayloads(db.select().from(schema.gamePostgameMedia)
     .where(or(
       eq(schema.gamePostgameMedia.status, "queued"),
       and(
@@ -77,7 +78,7 @@ export async function claimPostgameMedia(
         lte(schema.gamePostgameMedia.leaseExpiresAt, nowIso),
       ),
     ))
-    .limit(20);
+    .limit(20));
 
   for (const candidate of candidates) {
     const candidateWhere = and(eq(schema.gamePostgameMedia.gameId, candidate.gameId),
@@ -188,7 +189,7 @@ export async function reportPostgameMediaProgress(
   if (!authorization) return false;
   const waitingForMusic = request.status === "waiting_music";
   const updated = await db.update(schema.gamePostgameMedia)
-    .set({
+    .set(await storeFields({
       status: request.status,
       diagnostics: request.diagnostics ? sanitizeRecord(request.diagnostics) : null,
       ...(waitingForMusic
@@ -200,7 +201,7 @@ export async function reportPostgameMediaProgress(
           }
         : {}),
       updatedAt: now.toISOString(),
-    })
+    }, {"renderInputSnapshot":"json-gzip"}))
     .where(activeLeaseWhere(request, authorization.leaseTokenHash, now.toISOString()))
     .returning({ gameId: schema.gamePostgameMedia.gameId });
   return updated.length === 1;
@@ -302,12 +303,12 @@ export async function authorizeActivePostgameMediaLease(
 ): Promise<ActiveLeaseAuthorization | null> {
   const [game] = await db.select().from(schema.games).where(eq(schema.games.id, request.gameId));
   if (!isViewerGame(game) || game?.status !== "completed") return null;
-  const row = (await db.select().from(schema.gamePostgameMedia)
+  const row = (await loadPayloads(db.select().from(schema.gamePostgameMedia)
     .where(and(
       eq(schema.gamePostgameMedia.gameId, request.gameId),
       eq(schema.gamePostgameMedia.mediaType, MEDIA_TYPE),
     ))
-    .limit(1))[0];
+    .limit(1)))[0];
   if (!row || !row.artifactVersion || !row.leaseTokenHash || !row.leaseExpiresAt || !row.renderInputSnapshotHash
     || !row.renderInputSnapshotVersion || !row.rendererVersion || !row.timingContractVersion || !row.musicAssetId
     || row.attemptNumber !== request.attemptNumber || !MUTABLE_STATUSES.includes(row.status as typeof MUTABLE_STATUSES[number])

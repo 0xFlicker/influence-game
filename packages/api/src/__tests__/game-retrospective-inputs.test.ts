@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { describe, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { createRetrospectiveDefinition, assertRetrospectiveInputBinding, freezeInfluenceRetrospective,
@@ -40,7 +41,7 @@ describe("immutable retrospective input storage", () => {
     });
   });
 
-  test("compiled context round-trips through private JSONB with exact source references and no cognition", async () => {
+  test("compiled context round-trips through private object storage with exact source references and no cognition", async () => {
     const db = await setupTestDB(), gameId = await insertGame(db, { id: "retrospective-compiled-input" });
     const seats = ["atlas", "echo"].map(id => ({ id, name: id, personality: "Original character", backstory: "Original story", influenceStrategy: `${id}-PRIVATE_STRATEGY` }));
     const game = new GameState(seats, { gameId });
@@ -52,9 +53,9 @@ describe("immutable retrospective input storage", () => {
         scope: "public", text: "  My exact words. 😀  ", thinking: "PRIVATE_THINKING", reasoningContext: "PRIVATE_REASONING" }],
       transcriptThroughSequence: 1, dialogueAnchors: [{ entrySequence: 1, eventSequence: anchor }],
       capacities: { effectiveModelIds: ["fixture"], models: [{ modelId: "fixture", maxContextBytes: 100_000 }] } });
-    await db.insert(schema.gameRetrospectiveInputs).values({ gameId, outcomeEventSequence: frozen.input.outcome.eventSequence,
-      outcomeEventHash: frozen.input.outcome.eventHash, inputHash: frozen.definition.inputHash, input: frozen.input });
-    const [stored] = await db.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, gameId));
+    await db.insert(schema.gameRetrospectiveInputs).values(await storeFields({ gameId, outcomeEventSequence: frozen.input.outcome.eventSequence,
+      outcomeEventHash: frozen.input.outcome.eventHash, inputHash: frozen.definition.inputHash, input: frozen.input }, {"input":"json-gzip"}));
+    const [stored] = await loadPayloads(db.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, gameId)));
     expect(stored?.input).toEqual(frozen.input);
     expect(() => assertRetrospectiveInputBinding(stored?.input, frozen.definition)).not.toThrow();
     expect(stored?.input.dialogue[0]?.source).toEqual({ kind: "transcript_entry", sequence: 1 });
@@ -65,53 +66,49 @@ describe("immutable retrospective input storage", () => {
   test("preserves existing games and stores one immutable private input without creating speech rows", async () => {
     const db = await setupTestDB(), gameId = await insertGame(db, { id: "retrospective-storage", status: "in_progress" });
     const values = row(gameId);
-    await db.insert(schema.gameRetrospectiveInputs).values(values);
-    const [stored] = await db.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, gameId));
+    await db.insert(schema.gameRetrospectiveInputs).values(await storeFields(values, {"input":"json-gzip"}));
+    const [stored] = await loadPayloads(db.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, gameId)));
     const definition = createRetrospectiveDefinition(values.input, ["atlas", "echo"]);
     expect(() => assertRetrospectiveInputBinding(stored?.input, definition)).not.toThrow();
-    await expect(db.insert(schema.gameRetrospectiveInputs).values(values).execute()).rejects.toThrow();
+    await expect(db.insert(schema.gameRetrospectiveInputs).values(await storeFields(values, {"input":"json-gzip"})).execute()).rejects.toThrow();
     await expect(db.update(schema.gameRetrospectiveInputs).set({ inputHash: `sha256:${"b".repeat(64)}` }).where(eq(schema.gameRetrospectiveInputs.gameId, gameId)).execute()).rejects.toThrow();
-    const [unchanged] = await db.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, gameId));
+    const [unchanged] = await loadPayloads(db.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, gameId)));
     expect(unchanged?.inputHash).toBe(values.inputHash);
     const [game] = await db.select().from(schema.games).where(eq(schema.games.id, gameId));
     expect(game?.status).toBe("in_progress");
     expect(await db.select().from(schema.gameEvents).where(eq(schema.gameEvents.gameId, gameId))).toHaveLength(0);
     // Normal game erasure removes its private context through the existing cascade.
     await db.delete(schema.games).where(eq(schema.games.id, gameId));
-    expect(await db.select().from(schema.gameRetrospectiveInputs)).toHaveLength(0);
+    expect(await loadPayloads(db.select().from(schema.gameRetrospectiveInputs))).toHaveLength(0);
   });
 
-  test("large Unicode input survives the production writer, JSONB formatting and hash verification intact", async () => {
+  test("large Unicode input survives the production writer, compression and hash verification intact", async () => {
     const db = await setupTestDB(), gameId = await insertGame(db, { id: "retrospective-large-input" });
     const dossier = input(gameId);
     dossier.sections[0]!.summary = '界"\\\n'.repeat(120_000);
     const definition = createRetrospectiveDefinition(dossier, ["atlas", "echo"]);
     expect(Buffer.byteLength(JSON.stringify(dossier))).toBeGreaterThan(256 * 1024);
     await db.transaction(tx => insertRetrospectiveInput(tx, dossier, definition));
-    const [stored] = await db.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, gameId));
+    const [stored] = await loadPayloads(db.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, gameId)));
     expect(stored?.input).toEqual(dossier);
     expect(() => assertRetrospectiveInputBinding(stored?.input, definition)).not.toThrow();
-    await expect(db.update(schema.gameRetrospectiveInputs).set({ input: input(gameId) }).where(eq(schema.gameRetrospectiveInputs.gameId, gameId)).execute()).rejects.toThrow();
+    await expect(db.update(schema.gameRetrospectiveInputs).set(await storeFields({ input: input(gameId) }, {"input":"json-gzip"})).where(eq(schema.gameRetrospectiveInputs.gameId, gameId)).execute()).rejects.toThrow();
   });
 
-  test("database rejects foreign/missing sources, unsupported versions and malformed hashes", async () => {
+  test("metadata constraints and the writer reject invalid source bindings", async () => {
     const db = await setupTestDB(), gameId = await insertGame(db, { id: "retrospective-invalid" });
     const values = row(gameId);
     for (const change of [
       { outcomeEventSequence: 0 }, { outcomeEventHash: "bad" }, { inputHash: "bad" }, { contractVersion: 2 },
-      { input: { ...values.input, outcome: { ...values.input.outcome, gameId: "foreign" } } },
-      { input: { ...values.input, outcome: { ...values.input.outcome, eventSequence: 11 } } },
-    ]) await expect(db.insert(schema.gameRetrospectiveInputs).values({ ...values, ...change }).execute()).rejects.toThrow();
-    // PostgreSQL CHECK accepts unknown; a JSON null game kind must fail explicitly.
+    ]) await expect(db.insert(schema.gameRetrospectiveInputs).values(await storeFields({ ...values, ...change }, { input: "json-gzip" })).execute()).rejects.toThrow();
+    const definition = createRetrospectiveDefinition(values.input, ["atlas", "echo"]);
     for (const outcome of [
-      { gameId, eventSequence: 10, eventHash: values.outcomeEventHash },
-      { ...values.input.outcome, gameKind: null },
-      { ...values.input.outcome, gameKind: "foreign" },
-    ]) {
-      const malformedInput = JSON.stringify({ ...values.input, outcome });
-      await expect(Promise.resolve(db.execute(sql`INSERT INTO game_retrospective_inputs (game_id, outcome_event_sequence, outcome_event_hash, input_hash, input)
-        VALUES (${gameId}, 10, ${values.outcomeEventHash}, ${values.inputHash}, ${malformedInput}::jsonb)`))).rejects.toThrow();
-    }
-    expect(await db.select().from(schema.gameRetrospectiveInputs)).toHaveLength(0);
+      { ...values.input.outcome, gameId: "foreign" },
+      { ...values.input.outcome, eventSequence: 11 },
+    ]) await expect(db.transaction(tx => insertRetrospectiveInput(tx, { ...values.input, outcome }, definition))).rejects.toThrow();
+    // A reference column rejects embedded bodies, even through raw SQL.
+    await expect(Promise.resolve(db.execute(sql`INSERT INTO game_retrospective_inputs (game_id, outcome_event_sequence, outcome_event_hash, input_hash, input_object)
+      VALUES (${gameId}, 10, ${values.outcomeEventHash}, ${values.inputHash}, ${JSON.stringify(values.input)}::jsonb)`))).rejects.toThrow();
+    expect(await loadPayloads(db.select().from(schema.gameRetrospectiveInputs))).toHaveLength(0);
   });
 });

@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import { and, eq, inArray, or } from "drizzle-orm";
 import { replayWerewolf, werewolfExecutionFinished } from "@influence/engine/werewolf";
 import type { WerewolfAudience } from "@influence/engine/werewolf/observation";
@@ -136,7 +137,7 @@ export async function readWerewolfProductionMedia(db: DrizzleDB, id: string, ass
     const snapshot = options.snapshot;
     const source = await buildWerewolfProductionSourceSnapshot(tx, id, { audience: snapshot?.audience, thinking: snapshot?.thinking, snapshot });
     if (!source.permittedMedia.has(assetId)) throw new WerewolfGameError("Image is not available in this production source", 404);
-    const [image] = await tx.select({ bytes: schema.visualArtifacts.image }).from(schema.visualArtifacts).where(and(eq(schema.visualArtifacts.id, assetId), eq(schema.visualArtifacts.gameId, source.snapshot.gameId)));
+    const [image] = await loadPayloads(tx.select({ bytes: schema.visualArtifacts.image }).from(schema.visualArtifacts).where(and(eq(schema.visualArtifacts.id, assetId), eq(schema.visualArtifacts.gameId, source.snapshot.gameId))));
     if (!image) throw new WerewolfGameError("Image not found", 404);
     return { bytes: new Uint8Array(image.bytes), contentType: "image/png" };
   }, { isolationLevel: "repeatable read", accessMode: "read only" });

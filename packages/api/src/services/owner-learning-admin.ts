@@ -1,3 +1,4 @@
+import { Hydrated, loadPayloads } from "./payload-storage.js";
 import { and, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -241,7 +242,7 @@ export function parseAdminOwnerLearningReviewFilters(
   };
 }
 
-type BaseReviewRow = Awaited<ReturnType<typeof loadBaseReviews>>[number];
+type BaseReviewRow = Awaited<ReturnType<Hydrated<typeof loadBaseReviews>>>[number];
 type CallRow = Awaited<ReturnType<typeof loadCalls>>[number];
 type DiagnosticRow = Awaited<ReturnType<typeof loadDiagnostics>>[number];
 type ApplicationRow = Awaited<ReturnType<typeof loadApplications>>[number];
@@ -379,10 +380,10 @@ async function loadBaseReviews(
       schema.agentLearningReviewApplications,
       eq(schema.agentLearningReviewApplications.reviewId, schema.agentLearningReviews.id),
     );
-  if (reviewId) return query.where(eq(schema.agentLearningReviews.id, reviewId));
+  if (reviewId) return loadPayloads(query.where(eq(schema.agentLearningReviews.id, reviewId)));
   const filtered = query.where(and(...adminReviewFilterConditions(filters)))
     .orderBy(desc(schema.agentLearningReviews.createdAt), desc(schema.agentLearningReviews.id));
-  return limit === undefined ? filtered : filtered.limit(limit);
+  return loadPayloads(limit === undefined ? filtered : filtered.limit(limit));
 }
 
 function adminReviewFilterConditions(filters: AdminOwnerLearningReviewFilters): SQL[] {
@@ -394,13 +395,13 @@ function adminReviewFilterConditions(filters: AdminOwnerLearningReviewFilters): 
       OR (
         ${review.resolution} IS NULL
         AND ${review.analysisStatus} IN ('ready', 'no_change')
-        AND ${review.result} -> 'proposal' IS NULL
+        AND ${review.proposalFingerprint} IS NULL
       ) THEN 'not_applicable'
     WHEN ${review.resolution} IS NULL AND (
       ${review.analysisStatus} IN ('queued', 'retry_queued', 'running')
       OR (
         ${review.analysisStatus} IN ('ready', 'no_change')
-        AND ${review.result} -> 'proposal' IS NOT NULL
+        AND ${review.proposalFingerprint} IS NOT NULL
       )
     ) THEN 'pending'
     ELSE 'not_accepted'

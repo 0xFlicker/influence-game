@@ -1,3 +1,4 @@
+import { Hydrated, loadPayloads } from "./payload-storage.js";
 import { and, count, desc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -29,7 +30,7 @@ const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 100;
 const USER_LIST_SCAN_LIMIT = 500;
 
-type CognitiveArtifactRow = typeof schema.gameCognitiveArtifacts.$inferSelect;
+type CognitiveArtifactRow = Hydrated<typeof schema.gameCognitiveArtifacts.$inferSelect>;
 type CognitiveArtifactIndexRow = Pick<
   CognitiveArtifactRow,
   | "id"
@@ -439,11 +440,11 @@ export class CognitiveArtifactReadModel {
       rowConditions.push(eq(schema.gameCognitiveArtifacts.actorPlayerId, params.actorPlayerId!));
     }
 
-    const row = (await this.db
+    const row = (await loadPayloads(this.db
       .select()
       .from(schema.gameCognitiveArtifacts)
       .where(and(...rowConditions))
-      .limit(1))[0];
+      .limit(1)))[0];
 
     if (!row) {
       await this.audit({

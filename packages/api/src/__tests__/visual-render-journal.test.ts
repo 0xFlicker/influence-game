@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -74,7 +75,7 @@ describe("durable visual render journal", () => {
     await expect(retryVisualRender(db, operation.id, 1)).rejects.toThrow("generation changed");
     await expect(journal.finish(receipt, Buffer.from("late image"))).rejects.toThrow("Conflicting");
     await visualImageJournal(db, next).begin(reservation);
-    expect(await db.select().from(schema.visualRenderAttempts)).toHaveLength(2);
+    expect(await loadPayloads(db.select().from(schema.visualRenderAttempts))).toHaveLength(2);
   });
 
   test("requires reconciliation before retrying an interrupted dispatch and retains its cost", async () => {
@@ -82,11 +83,11 @@ describe("durable visual render journal", () => {
     const journal = visualImageJournal(db, operation);
     await journal.begin(reservation);
     await expect(retryVisualRender(db, operation.id, 1)).rejects.toThrow("Reconcile");
-    const [attempt] = await db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.operationId, operation.id));
+    const [attempt] = await loadPayloads(db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.operationId, operation.id)));
     await reconcileVisualAttempt(db, { attemptId: attempt!.id, operatorId: "operator-1", note: "Provider confirmed completed charge; pixels unavailable", costMicrousd: 123_000 });
     const next = await retryVisualRender(db, operation.id, 1);
     await journal.finish(receipt, Buffer.from("late image"));
-    const [retained] = await db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.id, attempt!.id));
+    const [retained] = await loadPayloads(db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.id, attempt!.id)));
     expect(retained?.image?.toString()).toBe("late image");
     expect(retained?.generation).toBe(1);
     expect(next.generation).toBe(2);
@@ -112,7 +113,7 @@ test("portrait model migration preserves accepted evidence and blocks uncertain 
   const input = { userId: "portrait-owner", requestId: "portrait-model-test", scene, apiKey: "test" };
   const result = await localizeOwnedVisualReference(db, input);
   expect(result.anchors).toEqual(accepted.anchors);
-  const [attempt] = await db.select().from(schema.visualRenderAttempts);
+  const [attempt] = await loadPayloads(db.select().from(schema.visualRenderAttempts));
   expect(attempt?.model).toBe("gpt-6-sol");
   // Simulate previously accepted GPT-5.6 evidence at this immutable boundary.
   await db.update(schema.visualRenderAttempts).set({ model: "gpt-5.6-sol", receipt: { ...attempt!.receipt!, model: "gpt-5.6-sol" } }).where(eq(schema.visualRenderAttempts.id, attempt!.id));

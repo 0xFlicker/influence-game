@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -63,7 +64,7 @@ describe("Dual Crown schema", () => {
     expect(first).toMatchObject({ profilesScanned: 1, revisionsCreated: 1, revisionsReused: 0 });
     expect(second).toMatchObject({ profilesScanned: 1, revisionsCreated: 0, revisionsReused: 1 });
 
-    const revisions = await db.select().from(schema.agentRevisions);
+    const revisions = await loadPayloads(db.select().from(schema.agentRevisions));
     expect(revisions).toHaveLength(1);
     expect(revisions[0]).toMatchObject({
       agentProfileId: profileId,
@@ -95,7 +96,7 @@ describe("Dual Crown schema", () => {
       personality: "Careful",
     });
     await backfillAgentRevisions(db);
-    const revision = (await db.select().from(schema.agentRevisions))[0]!;
+    const revision = (await loadPayloads(db.select().from(schema.agentRevisions)))[0]!;
     const gameId = randomUUID();
     await db.insert(schema.games).values({
       id: gameId,
@@ -165,7 +166,7 @@ describe("Dual Crown schema", () => {
       personality: "Bold",
     });
     await backfillAgentRevisions(db);
-    const revision = (await db.select().from(schema.agentRevisions))[0]!;
+    const revision = (await loadPayloads(db.select().from(schema.agentRevisions)))[0]!;
     const gameId = randomUUID();
     await db.insert(schema.games).values({
       id: gameId,

@@ -1,3 +1,4 @@
+import { storeFields } from "../services/payload-storage.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { DrizzleDB } from "../db/index.js";
@@ -39,7 +40,7 @@ describe("watch intelligence API", () => {
       persona: JSON.stringify({ name: "Atlas", personality: "careful" }),
       agentConfig: JSON.stringify({ model: "test-model", temperature: 0 }),
     });
-    await db.insert(schema.gameCognitiveArtifacts).values({
+    await db.insert(schema.gameCognitiveArtifacts).values(await storeFields({
       id: "route-thinking",
       gameId,
       captureVersion: 1,
@@ -57,7 +58,7 @@ describe("watch intelligence API", () => {
       },
       retentionClass: "debug",
       redactionStatus: "active",
-    });
+    }, {"payload":"json-gzip"}));
 
     const response = await app.request(
       "/api/games/watch-intelligence-route/watch-intelligence?actorPlayerId=atlas&round=1&phase=LOBBY",

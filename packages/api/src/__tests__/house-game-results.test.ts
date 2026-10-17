@@ -1,3 +1,4 @@
+import { storeFields } from "../services/payload-storage.js";
 import {beforeEach,expect,test} from "bun:test";
 import {eq, gt} from "drizzle-orm";
 import {completedWerewolfResultsFixture as werewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
@@ -102,7 +103,7 @@ test("rules-v7 Werewolf without retrospectives retains results, Studio and trail
  expect(page.progress).toMatchObject({status:"unavailable",requiredStatements:0});
  expect(page.statements).toEqual([]);
  expect((await readWerewolfProductionSource(db,id,{audience:"mystery",thinking:false})).catalog.moments.length).toBeGreaterThan(0);
- await db.insert(schema.houseCutJobs).values({gameId:id,audience:"mystery",status:"ready",publication:{version:"v1",audience:"mystery",cuts:[]}});
+ await db.insert(schema.houseCutJobs).values(await storeFields({gameId:id,audience:"mystery",status:"ready",publication:{version:"v1",audience:"mystery",cuts:[]}}, {"source":"json-gzip","journal":"json-gzip","publication":"json-gzip"}));
  expect(await loadWerewolfTrailerSnapshot(db,id)).toBeDefined();
 });
 

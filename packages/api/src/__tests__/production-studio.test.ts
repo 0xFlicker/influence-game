@@ -1,3 +1,4 @@
+import { storeFields, loadPayloads } from "../services/payload-storage.js";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -88,11 +89,11 @@ test("missing frozen character art uses presentation fallback while available bo
   await db.insert(schema.agentProfiles).values([legacy,bodyOnly,lostPortrait].map(player => ({
     id:player.agentProfileId!,userId:"operator",name:`Today's ${player.name}`,personality:"Changed",avatarUrl:"/api/uploads/local?key=unsubmitted-current.png",
   })));
-  await db.insert(schema.agentContentRevisions).values([
+  await db.insert(schema.agentContentRevisions).values(await storeFields([
     {id:bodyOnly.contentRevisionId,agentProfileId:bodyOnly.agentProfileId,userId:"operator",fingerprint:"body-only",snapshot:{fullBodyReferenceUrl:"/original-body.png",assets:{"/original-body.png":bodyHash}}},
     {id:lostPortrait.contentRevisionId,agentProfileId:lostPortrait.agentProfileId,userId:"operator",fingerprint:"lost-portrait",snapshot:{avatarUrl:"/original-portrait.png",assets:{"/original-portrait.png":portraitHash}}},
-  ]);
-  await db.insert(schema.agentContentAssets).values({hash:bodyHash,bytes:bodyBytes});
+  ], {"snapshot":"json-gzip"}));
+  await db.insert(schema.agentContentAssets).values(await storeFields({hash:bodyHash,bytes:bodyBytes}, {"bytes":"binary"}));
   await db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"completed",startedAt:"2026-09-01T00:00:00.000Z",config:"{}"});
   await db.insert(schema.werewolfEvents).values(events.map(event => ({gameId:id,sequence:event.sequence,event})));
   const source = await readWerewolfProductionSource(db,id,{audience:"omniscient",thinking:true});
@@ -118,7 +119,7 @@ test("missing frozen character art uses presentation fallback while available bo
   const frozenResponse = await request(`${root(id)}/selection`,{snapshot:source.snapshot,audience:"omniscient",thinking:true,
     selection:{mode:"ids",thinking:true,ids:[thought.id]},expectedMomentIds:[thought.id],settings,copy:{}});
   expect(frozenResponse.status).toBe(200); const frozen = await frozenResponse.json() as ProductionExportDescriptor;
-  await db.insert(schema.agentContentAssets).values({hash:portraitHash,bytes:portraitBytes});
+  await db.insert(schema.agentContentAssets).values(await storeFields({hash:portraitHash,bytes:portraitBytes}, {"bytes":"binary"}));
   const pinned = await readWerewolfProductionSource(db,id,{audience:"omniscient",thinking:true,snapshot:source.snapshot});
   expect(pinned.snapshot).toEqual(source.snapshot);
   expect(pinned.window.players.find(player=>player.id===lostPortrait.id)?.avatarUrl).toBeNull();
@@ -150,7 +151,7 @@ test.each([true, false])("Influence without a retrospective remains editable in 
   }
   expect(await db.select().from(schema.games).where(eq(schema.games.id, f.gameId))).toEqual(beforeGame);
   expect(await db.select().from(schema.gameEvents).where(eq(schema.gameEvents.gameId, f.gameId))).toEqual(beforeEvents);
-  expect(await db.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, f.gameId))).toEqual([]);
+  expect(await loadPayloads(db.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, f.gameId)))).toEqual([]);
 });
 
 test("metadata grants never acquire editorial source, even with privileged JWT claims", async () => {

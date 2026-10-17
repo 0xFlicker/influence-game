@@ -1,3 +1,4 @@
+import { Hydrated, loadPayloads, storeFields } from "./payload-storage.js";
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import {
@@ -80,7 +81,7 @@ async function reconcileLocked(db: MediaDB, gameId: string): Promise<PostgameMed
       await ensureWaitingPostgameMediaRow(db, game.id);
     } else if (row.status === "waiting_inputs" || isRetryableEnqueueFailure(row)) {
       await db.update(schema.gamePostgameMedia)
-        .set({
+        .set(await storeFields({
           status: "waiting_inputs",
           workerIdHash: null,
           leaseTokenHash: null,
@@ -96,23 +97,23 @@ async function reconcileLocked(db: MediaDB, gameId: string): Promise<PostgameMed
           musicAssetId: null,
           uploadTargetMetadata: null,
           updatedAt: new Date().toISOString(),
-        })
+        }, {"renderInputSnapshot":"json-gzip"}))
         .where(mediaWhere(game.id));
     }
     return resultFor("waiting_inputs", game.id, row);
   }
 
   if (!row) {
-    await db.insert(schema.gamePostgameMedia).values(queuedValues(game.id, 1, 1, snapshot, newArtifactVersion()));
+    await db.insert(schema.gamePostgameMedia).values(await storeFields(queuedValues(game.id, 1, 1, snapshot, newArtifactVersion()), {"renderInputSnapshot":"json-gzip"}));
     return { outcome: "queued", gameId: game.id, previousRenderVersion: null, currentRenderVersion: 1 };
   }
 
   if (row.status !== "waiting_inputs" && !isRetryableEnqueueFailure(row)) return resultFor("suppressed", game.id, row);
   await db.update(schema.gamePostgameMedia)
-    .set({
+    .set(await storeFields({
       ...queuedValues(game.id, row.renderVersion, row.attemptNumber, snapshot, row.artifactVersion ?? newArtifactVersion()),
       updatedAt: new Date().toISOString(),
-    })
+    }, {"renderInputSnapshot":"json-gzip"}))
     .where(mediaWhere(game.id));
   return resultFor("queued", game.id, row, row.renderVersion);
 }
@@ -159,10 +160,10 @@ async function requestLocked(db: MediaDB, params: Parameters<typeof requestPostg
       const nextRenderVersion = row.renderVersion + 1;
       const nextAttemptNumber = row.attemptNumber + 1;
       await db.update(schema.gamePostgameMedia)
-        .set({
+        .set(await storeFields({
           ...queuedValues(game.id, nextRenderVersion, nextAttemptNumber, storedSnapshot, newArtifactVersion()),
           updatedAt: new Date().toISOString(),
-        })
+        }, {"renderInputSnapshot":"json-gzip"}))
         .where(mediaWhere(game.id));
       const result: PostgameMediaCoordinatorResult = {
         outcome: "queued",
@@ -180,7 +181,7 @@ async function requestLocked(db: MediaDB, params: Parameters<typeof requestPostg
     if (!row) await ensureWaitingPostgameMediaRow(db, game.id);
     if (row?.status === "waiting_inputs" || (row !== null && isRetryableEnqueueFailure(row))) {
       await db.update(schema.gamePostgameMedia)
-        .set({
+        .set(await storeFields({
           status: "waiting_inputs",
           workerIdHash: null,
           leaseTokenHash: null,
@@ -196,7 +197,7 @@ async function requestLocked(db: MediaDB, params: Parameters<typeof requestPostg
           musicAssetId: null,
           uploadTargetMetadata: null,
           updatedAt: new Date().toISOString(),
-        })
+        }, {"renderInputSnapshot":"json-gzip"}))
         .where(mediaWhere(game.id));
     }
     const result = resultFor("waiting_inputs", game.id, row);
@@ -209,10 +210,10 @@ async function requestLocked(db: MediaDB, params: Parameters<typeof requestPostg
   const nextAttemptNumber = !row || isInitialWaitingRow ? row?.attemptNumber ?? 1 : row.attemptNumber + 1;
   const values = queuedValues(game.id, nextRenderVersion, nextAttemptNumber, snapshot, isInitialWaitingRow ? row?.artifactVersion ?? newArtifactVersion() : newArtifactVersion());
   if (!row) {
-    await db.insert(schema.gamePostgameMedia).values(values);
+    await db.insert(schema.gamePostgameMedia).values(await storeFields(values, {"renderInputSnapshot":"json-gzip"}));
   } else {
     await db.update(schema.gamePostgameMedia)
-      .set({ ...values, updatedAt: new Date().toISOString() })
+      .set(await storeFields({ ...values, updatedAt: new Date().toISOString() }, {"renderInputSnapshot":"json-gzip"}))
       .where(mediaWhere(game.id));
   }
 
@@ -269,7 +270,7 @@ async function loadCompletedGame(db: MediaDB, idOrSlug: string) {
 }
 
 async function loadMediaRow(db: MediaDB, gameId: string) {
-  return (await db.select().from(schema.gamePostgameMedia).where(mediaWhere(gameId)).limit(1))[0] ?? null;
+  return (await loadPayloads(db.select().from(schema.gamePostgameMedia).where(mediaWhere(gameId)).limit(1)))[0] ?? null;
 }
 
 function mediaWhere(gameId: string) {
@@ -283,7 +284,7 @@ function isActive(status: string): boolean {
   return (ACTIVE_STATUSES as readonly string[]).includes(status);
 }
 
-function isRetryableEnqueueFailure(row: typeof schema.gamePostgameMedia.$inferSelect): boolean {
+function isRetryableEnqueueFailure(row: Hydrated<typeof schema.gamePostgameMedia.$inferSelect>): boolean {
   return row.status === "failed"
     && (row.failureCategory === "enqueue" || row.failureCategory === "snapshot_inputs");
 }
@@ -303,7 +304,7 @@ function emptyResult(outcome: PostgameMediaCoordinatorOutcome, gameId: string): 
 function resultFor(
   outcome: PostgameMediaCoordinatorOutcome,
   gameId: string,
-  row: typeof schema.gamePostgameMedia.$inferSelect | null,
+  row: Hydrated<typeof schema.gamePostgameMedia.$inferSelect> | null,
   currentRenderVersion = row?.renderVersion ?? null,
 ): PostgameMediaCoordinatorResult {
   return {

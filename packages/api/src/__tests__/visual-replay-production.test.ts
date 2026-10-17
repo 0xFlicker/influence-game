@@ -1,3 +1,4 @@
+import { Hydrated, loadPayloads, storeFields } from "../services/payload-storage.js";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
@@ -47,14 +48,14 @@ async function beat(phase: Phase, audience: string[] = [], roomId?: number, scop
   const turnId = `beat-${turnSequence}`, hash = `sha256:${"a".repeat(64)}`, date = new Date().toISOString();
   const intent: GameTurnIntentV1 = { version: 1, gameId, turnId, turnSequence, seed: "test", baseHeads: execution.heads,
     branch: { version: 1, kind: "engine", action: "round_start" }, actorIds: [], targetIds: [], handles: [], participantIds: [], providerSubcalls: [] };
-  await db.insert(schema.gameTurns).values({ id: turnId, gameId, turnSequence, plannedOwnerEpoch: ownerEpoch, committedOwnerEpoch: ownerEpoch,
+  await db.insert(schema.gameTurns).values(await storeFields({ id: turnId, gameId, turnSequence, plannedOwnerEpoch: ownerEpoch, committedOwnerEpoch: ownerEpoch,
     baseEventSequence: savedEvents, baseDialogueSequence: dialogueSequence - 1, basePublicationSequence: 0, intent, intentHash: hash, effectHash: hash, status: "committed", committedAt: date,
-    commitResult: { version: 1, gameId, turnId, turnSequence, intentHash: hash, effectHash: hash, committedAt: date, state: execution, canonicalEvents: [], dialogueSequences: [], publications: [], alreadyCommitted: false } });
+    commitResult: { version: 1, gameId, turnId, turnSequence, intentHash: hash, effectHash: hash, committedAt: date, state: execution, canonicalEvents: [], dialogueSequences: [], publications: [], alreadyCommitted: false } }, {"intent":"json-gzip","commitResult":"json-gzip"}));
   await db.insert(schema.transcripts).values({ gameId, gameTurnId: turnId, gameTurnTranscriptOrdinal: 1, entrySequence: scope === "diary" ? null : dialogueSequence,
     round: state.round, phase, scope, text: "Prose falsely claims Player 5 is here and everyone moved to another room.", timestamp: 1,
     speakerPlayerId: speaker, audiencePlayerIds: scope === "diary" ? null : audience, safeContext: scope === "diary" ? null : { version: 1, ...(roomId !== undefined && { roomId }) } });
 }
-const render = (scene: Awaited<ReturnType<typeof readReplayVisualProduction>>["scenes"][number], requestId: string = crypto.randomUUID()) =>
+const render = (scene: Awaited<ReturnType<Hydrated<typeof readReplayVisualProduction>>>["scenes"][number], requestId: string = crypto.randomUUID()) =>
   renderMissingReplayScene(db, gameId, "operator", { key: scene.key, previewHash: scene.previewHash, requestId });
 async function complete() {
   const job = (await claimVisualMediaJob(db, "test-worker"))!; expect(job).not.toBeNull();
@@ -81,7 +82,7 @@ test("discovery is read-only and plans from canonical rosters and exact private 
   ]);
   expect(await db.select().from(schema.visualScenes)).toHaveLength(0);
   expect(await db.select().from(schema.visualGameAssets)).toHaveLength(0);
-  expect(await db.select().from(schema.visualArtifacts)).toHaveLength(0);
+  expect(await loadPayloads(db.select().from(schema.visualArtifacts))).toHaveLength(0);
   expect(await acceptedRecords()).toEqual(before); expect(calls).toBe(0);
 });
 
@@ -171,7 +172,7 @@ test.each(["producer", "sysop"])("Production endpoints authorize current %s role
   expect((await app.request(`${root}/missing`, { method: "POST", headers, body: "{" })).status).toBe(400);
   expect((await app.request(`${root}/media`, { method: "POST", headers, body: "{" })).status).toBe(400);
   expect((await app.request(`${root}/missing`, { method: "POST", headers, body: JSON.stringify({ key: preview.key, previewHash: preview.previewHash, requestId: "authorized" }) })).status).toBe(200);
-  const [artifact] = await db.select().from(schema.visualArtifacts);
+  const [artifact] = await loadPayloads(db.select().from(schema.visualArtifacts));
   expect((await app.request(`${root}/evidence/artifact/${artifact!.id}`, { headers })).status).toBe(200);
   await db.delete(schema.userRoles).where(eq(schema.userRoles.roleId, role));
   for (const path of [root, "/api/admin/production/library", `${root}/evidence/artifact/${artifact!.id}`]) expect((await app.request(path, { headers })).status).toBe(403);

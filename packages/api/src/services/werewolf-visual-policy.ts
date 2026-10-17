@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "./payload-storage.js";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { replayWerewolf, werewolfActionPlans } from "@influence/engine/werewolf";
@@ -117,7 +118,7 @@ export async function resumeWerewolfVisualGame(db: DrizzleDB, gameId: string, op
           throw new Error("Repair the required wolf form before resuming");
       }
     }
-    const [active] = await tx.select().from(schema.visualRepairJobs).where(and(eq(schema.visualRepairJobs.gameId, gameId), sql`${schema.visualRepairJobs.status} IN ('queued','rendering','verifying')`));
+    const [active] = await loadPayloads(tx.select().from(schema.visualRepairJobs).where(and(eq(schema.visualRepairJobs.gameId, gameId), sql`${schema.visualRepairJobs.status} IN ('queued','rendering','verifying')`)));
     if (active)
       throw new Error("Wait for the active repair before resuming");
     const { visualPause: _pause, ...next } = config;
@@ -139,16 +140,16 @@ export async function queueWerewolfFormRepair(db: DrizzleDB, gameId: string, ope
     const current = await readWerewolfVisualPause(tx, gameId);
     if (current?.id !== pause.id)
       throw new Error("Wolf-form repair is no longer current");
-    const [prior] = await tx.select().from(schema.visualRepairJobs).where(eq(schema.visualRepairJobs.id, requestId));
+    const [prior] = await loadPayloads(tx.select().from(schema.visualRepairJobs).where(eq(schema.visualRepairJobs.id, requestId)));
     if (prior) {
       if (prior.gameId !== gameId || prior.reusePrefix !== pause.id || prior.operatorId !== operatorId)
         throw new Error("Request ID belongs to another repair");
       return { jobId: prior.id, status: prior.status };
     }
-    const [active] = await tx.select().from(schema.visualRepairJobs).where(and(eq(schema.visualRepairJobs.gameId, gameId), sql`${schema.visualRepairJobs.status} IN ('queued','rendering','verifying')`));
+    const [active] = await loadPayloads(tx.select().from(schema.visualRepairJobs).where(and(eq(schema.visualRepairJobs.gameId, gameId), sql`${schema.visualRepairJobs.status} IN ('queued','rendering','verifying')`)));
     if (active)
       throw new Error("A repair is already running for this game");
-    await tx.insert(schema.visualRepairJobs).values({ id: requestId, gameId, sceneId: null, reusePrefix: pause.id, version: 1, operatorId, mode: "forms", plan, renderContext: { style: "", roomName: "Wolf form", roomDirection: "" }, status: "queued", createdAt: new Date().toISOString() });
+    await tx.insert(schema.visualRepairJobs).values(await storeFields({ id: requestId, gameId, sceneId: null, reusePrefix: pause.id, version: 1, operatorId, mode: "forms", plan, renderContext: { style: "", roomName: "Wolf form", roomDirection: "" }, status: "queued", createdAt: new Date().toISOString() }, {"renderContext":"json-gzip"}));
     return { jobId: requestId, status: "queued" };
   });
 }

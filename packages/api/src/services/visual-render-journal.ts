@@ -1,3 +1,4 @@
+import { Hydrated, loadPayloads, storeFields } from "./payload-storage.js";
 import { reserveInference, dispatchInference, settleInference, checkInferenceDispatch } from "./inference-allowances.js";
 import { recordVisualOperationEvent, visualFailureEvidence } from "./visual-diagnostics.js";
 import { VisualIdentityFailure } from "@influence/engine/visual-localization";
@@ -12,8 +13,8 @@ import { generateVisualImage, type VisualImageJournal, type VisualImageReceipt, 
 
 const operations = schema.visualRenderOperations;
 const attempts = schema.visualRenderAttempts;
-type Operation = typeof operations.$inferSelect;
-type Attempt = typeof attempts.$inferSelect;
+type Operation = Hydrated<typeof operations.$inferSelect>;
+type Attempt = Hydrated<typeof attempts.$inferSelect>;
 type VisualAttemptStatus = "pending" | "finished" | "needs_reconciliation" | "reconciled";
 function visualAttemptStatus(attempt:Pick<Attempt,"reconciliation"|"generation"> & {receipt:Pick<VisualImageReceipt,"chargeUncertain">|null},generation:number,running:boolean):VisualAttemptStatus {
   return attempt.reconciliation ? "reconciled" : attempt.receipt ? attempt.receipt.chargeUncertain ? "needs_reconciliation" : "finished"
@@ -58,8 +59,8 @@ export async function reserveVisualRender(db: DrizzleDB, gameId: string, operati
 
 async function reserveVisualOperation(db: Pick<DrizzleDB, "select" | "insert">, gameId: string | null, operationKey: string, inputHash: string, userId?: string, request?: Record<string, unknown>, sceneId?: string, repairJobId?: string): Promise<Operation> {
   if (!operationKey.trim()) throw new Error("A visual operation needs a stable operation key");
-  await db.insert(operations).values({ id: randomUUID(), gameId, userId, operationKey, inputHash, request, sceneId, repairJobId }).onConflictDoNothing();
-  const [operation] = await db.select().from(operations).where(and(gameId ? eq(operations.gameId, gameId) : eq(operations.userId, userId!), eq(operations.operationKey, operationKey)));
+  await db.insert(operations).values(await storeFields({ id: randomUUID(), gameId, userId, operationKey, inputHash, request, sceneId, repairJobId }, {"request":"json-gzip"})).onConflictDoNothing();
+  const [operation] = await loadPayloads(db.select().from(operations).where(and(gameId ? eq(operations.gameId, gameId) : eq(operations.userId, userId!), eq(operations.operationKey, operationKey))));
   if (!operation || operation.inputHash !== inputHash) throw new Error("Visual operation inputs changed at an existing boundary");
   return operation;
 }
@@ -72,7 +73,7 @@ export async function renderDurableVisualImage(db: DrizzleDB, input: {
   const operation = await reserveVisualRender(db, input.gameId, input.operationKey, input.request, input.sceneId, input.repairJobId);
   const reused = await reusableVisualAttempt(db, input.gameId, input.reuseOperationKey, operation.inputHash);
   if (reused?.image && reused.receipt) return { image: reused.image, receipt: reused.receipt };
-  const prior = await db.select().from(attempts).where(and(eq(attempts.operationId, operation.id), eq(attempts.generation, operation.generation)));
+  const prior = await loadPayloads(db.select().from(attempts).where(and(eq(attempts.operationId, operation.id), eq(attempts.generation, operation.generation))));
   const completed = prior.find((entry) => entry.image !== null && entry.receipt !== null);
   if (completed?.image && completed.receipt) return { image: completed.image, receipt: completed.receipt };
   if (prior.length) throw new VisualRenderRecoveryRequired(operation.id, "Visual rendering needs recovery before another paid request");
@@ -91,7 +92,7 @@ export function visualImageJournal(db: DrizzleDB, operation: Operation, beforeDi
           else await checkInferenceDispatch(tx,operation.userId);
         }
         if (operation.repairJobId && input.provider === "xai") {
-          const [job] = await tx.select().from(schema.visualRepairJobs).where(eq(schema.visualRepairJobs.id, operation.repairJobId)).for("update");
+          const [job] = await loadPayloads(tx.select().from(schema.visualRepairJobs).where(eq(schema.visualRepairJobs.id, operation.repairJobId)).for("update"));
           if (!job || job.fallbackUsed) throw new VisualRenderRecoveryRequired(operation.id, "Repair fallback budget consumed");
           await tx.update(schema.visualRepairJobs).set({ fallbackUsed: true }).where(eq(schema.visualRepairJobs.id, job.id));
         } else if (operation.sceneId && input.provider === "xai") {
@@ -99,9 +100,9 @@ export function visualImageJournal(db: DrizzleDB, operation: Operation, beforeDi
           if (!scene || scene.status !== "preparing" || scene.repairBudgetUsed) throw new VisualRenderRecoveryRequired(operation.id, "Scene repair budget already consumed");
           await tx.update(schema.visualScenes).set({ repairBudgetUsed: true }).where(eq(schema.visualScenes.id, scene.id));
         }
-        const [current] = await tx.select().from(operations).where(eq(operations.id, operation.id)).for("update");
+        const [current] = await loadPayloads(tx.select().from(operations).where(eq(operations.id, operation.id)).for("update"));
         if (!current || current.generation !== operation.generation) throw new Error("Stale visual render generation");
-        const prior = await tx.select().from(attempts).where(and(eq(attempts.operationId, operation.id), eq(attempts.generation, operation.generation)));
+        const prior = await loadPayloads(tx.select().from(attempts).where(and(eq(attempts.operationId, operation.id), eq(attempts.generation, operation.generation))));
         // xAI is allowed only after a recorded OpenAI availability failure.
         const primary = prior.find((entry) => entry.provider === "openai");
         if (prior.some((entry) => entry.provider === input.provider || entry.image !== null || entry.localization !== null)
@@ -109,7 +110,7 @@ export function visualImageJournal(db: DrizzleDB, operation: Operation, beforeDi
           || (input.provider === "xai" && (!primary?.receipt || !isAvailabilityFailure(primary.receipt)))) {
           throw new VisualRenderRecoveryRequired(operation.id, "Visual request already dispatched or fallback is not permitted");
         }
-        await tx.insert(attempts).values({ id: randomUUID(), operationId: operation.id, generation: operation.generation, ...input });
+        await tx.insert(attempts).values(await storeFields({ id: randomUUID(), operationId: operation.id, generation: operation.generation, ...input }, {"image":"binary"}));
         if (operation.gameId) await recordVisualOperationEvent(tx, operation.gameId, `${operation.id}:${operation.generation}:${input.provider}:started`, {
           operationId: operation.id, sceneId: operation.sceneId, kind: "attempt_started", outcome: "pending", message: `${input.provider} ${input.model}: ${operation.operationKey}`,
         });
@@ -119,9 +120,9 @@ export function visualImageJournal(db: DrizzleDB, operation: Operation, beforeDi
       if (image && localization) throw new Error("A visual attempt cannot contain two output types");
       const imageHash = image ? hash(image) : null;
       await db.transaction(async (tx) => {
-        const [current] = await tx.select().from(operations).where(eq(operations.id, operation.id)).for("update");
+        const [current] = await loadPayloads(tx.select().from(operations).where(eq(operations.id, operation.id)).for("update"));
         if (!current) throw new Error("Visual render operation disappeared before completion");
-        const [entry] = await tx.select().from(attempts).where(and(eq(attempts.operationId, operation.id), eq(attempts.generation, operation.generation), eq(attempts.provider, receipt.provider)));
+        const [entry] = await loadPayloads(tx.select().from(attempts).where(and(eq(attempts.operationId, operation.id), eq(attempts.generation, operation.generation), eq(attempts.provider, receipt.provider))));
         if (!entry || entry.requestHash !== receipt.requestHash || entry.model !== receipt.model) throw new Error("Visual receipt does not match its reservation");
         if ((image || localization) && (receipt.chargeUncertain || receipt.status === null || receipt.status < 200 || receipt.status >= 300)) throw new Error("An unsuccessful receipt cannot carry accepted visual output");
         if (entry.finishedAt) {
@@ -129,7 +130,7 @@ export function visualImageJournal(db: DrizzleDB, operation: Operation, beforeDi
             && stableJson(entry.localization) === stableJson(localization ?? null)) return;
           throw new Error("Conflicting visual render completion");
         }
-        await tx.update(attempts).set({ receipt, costMicrousd: entry.reconciliation ? entry.costMicrousd : visualReceiptCostMicrousd(receipt), image: image ? Buffer.from(image) : null, imageHash, localization: localization ?? null, finishedAt: new Date().toISOString() }).where(eq(attempts.id, entry.id));
+        await tx.update(attempts).set(await storeFields({ receipt, costMicrousd: entry.reconciliation ? entry.costMicrousd : visualReceiptCostMicrousd(receipt), image: image ? Buffer.from(image) : null, imageHash, localization: localization ?? null, finishedAt: new Date().toISOString() }, {"image":"binary"})).where(eq(attempts.id, entry.id));
         if (operation.gameId) await recordVisualOperationEvent(tx, operation.gameId, `${entry.id}:finished`, {
           operationId: operation.id, sceneId: operation.sceneId, kind: "attempt_finished", outcome: receipt.chargeUncertain ? "uncertain" : receipt.failure ? "failed" : image || localization ? "success" : "failed",
           message: `${current.generation !== operation.generation || entry.reconciliation ? "Late completion retained for accounting; no scene publication. " : ""}${receipt.failure?.message ?? `${receipt.provider} HTTP ${receipt.status ?? "unknown"}`}`,
@@ -149,13 +150,13 @@ function unresolved(entry: Pick<Attempt, "receipt" | "reconciliation">): boolean
 /** Explicit operator recovery, never an automatic timeout retry. Historical attempts remain intact. */
 export async function retryVisualRender(db: DrizzleDB, operationId: string, expectedGeneration: number): Promise<Operation> {
   return db.transaction(async (tx) => {
-    const [operation] = await tx.select().from(operations).where(eq(operations.id, operationId)).for("update");
+    const [operation] = await loadPayloads(tx.select().from(operations).where(eq(operations.id, operationId)).for("update"));
     if (!operation || operation.generation !== expectedGeneration) throw new Error("Visual retry generation changed");
-    const prior = await tx.select().from(attempts).where(eq(attempts.operationId, operationId));
+    const prior = await loadPayloads(tx.select().from(attempts).where(eq(attempts.operationId, operationId)));
     if (prior.some(unresolved)) throw new VisualRenderRecoveryRequired(operationId, "Reconcile uncertain paid attempts before retrying");
     const current = prior.filter((entry) => entry.generation === expectedGeneration);
     if (!current.length || current.some((entry) => entry.image !== null || entry.localization !== null)) throw new Error("Only a failed visual render can be retried");
-    const [next] = await tx.update(operations).set({ generation: expectedGeneration + 1 }).where(eq(operations.id, operationId)).returning();
+    const [next] = await loadPayloads(tx.update(operations).set({ generation: expectedGeneration + 1 }).where(eq(operations.id, operationId)).returning());
     return next!;
   });
 }
@@ -166,13 +167,13 @@ export async function reconcileVisualAttempt(db: DrizzleDB, input: {
 }): Promise<void> {
   if (!input.operatorId.trim() || !input.note.trim() || !Number.isSafeInteger(input.costMicrousd) || input.costMicrousd < 0) throw new Error("Visual reconciliation requires an operator, evidence and a nonnegative cost");
   await db.transaction(async (tx) => {
-    const [entry] = await tx.select().from(attempts).where(eq(attempts.id, input.attemptId));
+    const [entry] = await loadPayloads(tx.select().from(attempts).where(eq(attempts.id, input.attemptId)));
     if (!entry) throw new Error("Visual attempt not found");
     // Lock order matches begin/finish/retry so concurrent completion cannot be overwritten.
-    await tx.select().from(operations).where(eq(operations.id, entry.operationId)).for("update");
-    const [current] = await tx.select().from(attempts).where(eq(attempts.id, entry.id));
+    await loadPayloads(tx.select().from(operations).where(eq(operations.id, entry.operationId)).for("update"));
+    const [current] = await loadPayloads(tx.select().from(attempts).where(eq(attempts.id, entry.id)));
     if (!current || current.reconciliation) throw new Error("Visual attempt already reconciled");
-    const [operation] = await tx.select().from(operations).where(eq(operations.id, entry.operationId));
+    const [operation] = await loadPayloads(tx.select().from(operations).where(eq(operations.id, entry.operationId)));
     if (!current.receipt && current.generation === operation?.generation && operation.repairJobId) {
       const [running] = await tx.select({ id: schema.visualRepairJobs.id }).from(schema.visualRepairJobs)
         .where(and(eq(schema.visualRepairJobs.id, operation.repairJobId), sql`${schema.visualRepairJobs.status} IN ('rendering','verifying') AND ${schema.visualRepairJobs.leaseUntil}::timestamptz > now()`));
@@ -212,8 +213,8 @@ export async function readVisualSceneAttempts(db:DrizzleDB,gameId:string,sceneId
   const requests=schema.visualMediaRequests,running=visualAttemptRunning(),scope=visualSceneOperationScope(gameId,sceneId);
   const uncertain=sql<boolean>`${visualUncertainAttemptScope()}
     AND NOT EXISTS (SELECT 1 FROM ${requests} WHERE ${requests.gameId} = ${gameId}
-      AND ${requests.input}->>'sceneId' = ${sceneId} AND ${requests.input}->>'action' = 'regenerate'
-      AND ${requests.receipt}->>'accepted' = 'true' AND COALESCE(${requests.input}->'acknowledgeUncertainAttempts','[]'::jsonb) ? ${attempts.id})`;
+      AND ${requests.sceneId} = ${sceneId} AND ${requests.action} = 'regenerate'
+      AND ${requests.receipt}->>'accepted' = 'true' AND ${requests.acknowledgedAttemptIds} ? ${attempts.id})`;
   type ReceiptMetadata=Pick<VisualImageReceipt,"provider"|"model"|"requestId"|"status"|"elapsedMs"|"chargeUncertain"> & {failure?:Pick<NonNullable<VisualImageReceipt["failure"]>,"kind"|"message">};
   const [page,unresolved] = await Promise.all([
     db.select({id:attempts.id,generation:attempts.generation,provider:attempts.provider,model:attempts.model,costMicrousd:attempts.costMicrousd,
@@ -270,7 +271,7 @@ async function runDurableLocalization(db: DrizzleDB, input: {
     sceneHash: hash(input.scene), candidates: input.candidateAnchors ?? null,
     references: input.references.map((reference) => ({ imageHash: hash(reference.image), players: reference.players })),
   }, input.sceneId, input.repairJobId);
-  const prior = await db.select().from(attempts).where(and(eq(attempts.operationId, operation.id), eq(attempts.generation, operation.generation)));
+  const prior = await loadPayloads(db.select().from(attempts).where(and(eq(attempts.operationId, operation.id), eq(attempts.generation, operation.generation))));
   const reused = await reusableVisualAttempt(db, input.gameId, input.reuseOperationKey, inputHash);
   if (reused?.localization && reused.receipt) return reused.localization;
   const completed = prior.find((entry) => entry.localization !== null && entry.receipt !== null);
@@ -285,15 +286,15 @@ export async function renderOwnedVisualReference(db: DrizzleDB, input: {
   userId: string; requestId: string; request: VisualImageRequest;
 }) {
   const inputHash = hash(stableJson({ ...input.request, references: input.request.references.map(hash) }));
-  const operation = await db.transaction(async (tx) => {
+  const operation = await loadPayloads(db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${input.userId}))`);
-    const [existing] = await tx.select().from(operations).where(and(eq(operations.userId, input.userId), eq(operations.operationKey, `full-body:${input.requestId}`)));
+    const [existing] = await loadPayloads(tx.select().from(operations).where(and(eq(operations.userId, input.userId), eq(operations.operationKey, `full-body:${input.requestId}`))));
     const operation = existing ?? await reserveVisualOperation(tx, null, `full-body:${input.requestId}`, inputHash, input.userId);
     if(operation.inputHash !== inputHash) throw new Error('Visual operation input changed');
     await reserveInference(tx,{id:`visual:${operation.id}`,userId:input.userId,category:'image',inputHash});
     return operation;
-  });
-  const prior = await db.select().from(attempts).where(and(eq(attempts.operationId, operation.id), eq(attempts.generation, operation.generation)));
+  }));
+  const prior = await loadPayloads(db.select().from(attempts).where(and(eq(attempts.operationId, operation.id), eq(attempts.generation, operation.generation))));
   const completed = prior.find((entry) => entry.image !== null && entry.receipt !== null);
   if (completed?.image) {
     await db.transaction(tx=>settleInference(tx,`visual:${operation.id}`,input.userId,'succeeded'));
@@ -305,7 +306,7 @@ export async function renderOwnedVisualReference(db: DrizzleDB, input: {
     await db.transaction(tx=>settleInference(tx,`visual:${operation.id}`,input.userId,'succeeded'));
     return { operationId: operation.id, image: result.image };
   } catch(error) {
-    const entries=await db.select().from(attempts).where(eq(attempts.operationId,operation.id));
+    const entries=await loadPayloads(db.select().from(attempts).where(eq(attempts.operationId,operation.id)));
     const uncertain=entries.some(a=>!a.receipt || a.receipt.chargeUncertain);
     await db.transaction(tx=>settleInference(tx,`visual:${operation.id}`,input.userId,uncertain?'uncertain':'failed'));
     throw error;
@@ -313,9 +314,9 @@ export async function renderOwnedVisualReference(db: DrizzleDB, input: {
 }
 
 /** Best-effort shared asset generation, with a durable two-dispatch ceiling. */
-export async function renderVisualAssetBestEffort(db: DrizzleDB, input: Parameters<typeof renderDurableVisualImage>[1]) {
+export async function renderVisualAssetBestEffort(db: DrizzleDB, input: Parameters<Hydrated<typeof renderDurableVisualImage>>[1]) {
   const operation = await reserveVisualRender(db, input.gameId, input.operationKey, input.request, input.sceneId);
-  const prior = await db.select().from(attempts).where(eq(attempts.operationId, operation.id));
+  const prior = await loadPayloads(db.select().from(attempts).where(eq(attempts.operationId, operation.id)));
   const completed = prior.find((entry) => entry.image !== null && entry.receipt !== null);
   if (completed?.image && completed.receipt) return { image: completed.image, receipt: completed.receipt };
   const budgetAttempts = prior.filter((entry) => entry.generation >= operation.budgetStartGeneration);
@@ -325,7 +326,7 @@ export async function renderVisualAssetBestEffort(db: DrizzleDB, input: Paramete
     return await renderDurableVisualImage(db, { ...input, allowFallback: budgetAttempts.length === 0 });
   } catch (error) {
     await recordVisualOperationEvent(db, input.gameId, `${operation.id}:${operation.generation}:asset-failure`, { operationId: operation.id, kind: "failure", outcome: "failed", message: "Asset generation failed" }, visualFailureEvidence(error, "internal"));
-    const after = await db.select().from(attempts).where(eq(attempts.operationId, operation.id));
+    const after = await loadPayloads(db.select().from(attempts).where(eq(attempts.operationId, operation.id)));
     if (after.filter((entry) => entry.generation >= operation.budgetStartGeneration).length === 1 && !after.some(unresolved)) {
       await retryVisualRender(db, operation.id, operation.generation);
       try { return await renderDurableVisualImage(db, { ...input, allowFallback: false }); }
@@ -348,12 +349,12 @@ async function reusableVisualAttempt(db: DrizzleDB, gameId: string | null, key: 
   const visited = new Set<string>();
   while (key && !visited.has(key)) {
     visited.add(key);
-    const [operation] = await db.select().from(operations).where(and(eq(operations.gameId, gameId), eq(operations.operationKey, key)));
+    const [operation] = await loadPayloads(db.select().from(operations).where(and(eq(operations.gameId, gameId), eq(operations.operationKey, key))));
     if (operation && operation.inputHash !== inputHash) return null;
-    const rows = operation ? await db.select().from(attempts).where(and(eq(attempts.operationId, operation.id), eq(attempts.generation, operation.generation))) : [];
+    const rows = operation ? await loadPayloads(db.select().from(attempts).where(and(eq(attempts.operationId, operation.id), eq(attempts.generation, operation.generation)))) : [];
     if (rows.length) return rows.find(a => a.receipt && !a.receipt.failure && !a.receipt.chargeUncertain && !a.reconciliation && (a.image || a.localization)) ?? null;
     // Continued jobs may themselves have reused a saved step. Follow their immutable source chain.
-    const [job] = await db.select().from(schema.visualRepairJobs).where(and(eq(schema.visualRepairJobs.gameId, gameId), sql`${key} LIKE 'media:' || ${schema.visualRepairJobs.id} || ':%'`));
+    const [job]: Hydrated<typeof schema.visualRepairJobs.$inferSelect>[] = await loadPayloads(db.select().from(schema.visualRepairJobs).where(and(eq(schema.visualRepairJobs.gameId, gameId), sql`${key} LIKE 'media:' || ${schema.visualRepairJobs.id} || ':%'`)));
     key = job?.reusePrefix ? job.reusePrefix + key.slice(`media:${job.id}`.length) : undefined;
   }
   return null;

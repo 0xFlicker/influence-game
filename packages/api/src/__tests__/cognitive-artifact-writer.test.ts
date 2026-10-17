@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { describe, expect, test, beforeEach } from "bun:test";
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
@@ -146,10 +147,10 @@ describe("cognitive artifact writer", () => {
     expect(result.ok).toBe(true);
     expect(result.artifactIds).toHaveLength(3);
 
-    const rows = await db
+    const rows = await loadPayloads(db
       .select()
       .from(schema.gameCognitiveArtifacts)
-      .where(eq(schema.gameCognitiveArtifacts.gameId, gameId));
+      .where(eq(schema.gameCognitiveArtifacts.gameId, gameId)));
     expect(rows).toHaveLength(3);
     expect(rows.every((row) => row.actorPlayerId === playerId)).toBe(true);
     expect(rows.every((row) => row.actorUserId === userId)).toBe(true);
@@ -194,10 +195,10 @@ describe("cognitive artifact writer", () => {
     if (!result.ok) throw new Error(result.error);
     expect(result.skippedReason).toBe("capture_disabled");
 
-    const rows = await db
+    const rows = await loadPayloads(db
       .select()
       .from(schema.gameCognitiveArtifacts)
-      .where(eq(schema.gameCognitiveArtifacts.gameId, gameId));
+      .where(eq(schema.gameCognitiveArtifacts.gameId, gameId)));
     expect(rows).toHaveLength(0);
   });
 
@@ -225,10 +226,10 @@ describe("cognitive artifact writer", () => {
     expect(result.ok).toBe(true);
     expect(result.artifactIds).toHaveLength(1);
 
-    const rows = await db
+    const rows = await loadPayloads(db
       .select()
       .from(schema.gameCognitiveArtifacts)
-      .where(eq(schema.gameCognitiveArtifacts.gameId, gameId));
+      .where(eq(schema.gameCognitiveArtifacts.gameId, gameId)));
 
     expect(rows).toHaveLength(1);
     expect(rows[0]!.artifactType).toBe("reasoning");
@@ -261,10 +262,10 @@ describe("cognitive artifact writer", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(result.error);
 
-    const rows = await db
+    const rows = await loadPayloads(db
       .select()
       .from(schema.gameCognitiveArtifacts)
-      .where(eq(schema.gameCognitiveArtifacts.gameId, gameId));
+      .where(eq(schema.gameCognitiveArtifacts.gameId, gameId)));
 
     expect(rows).toHaveLength(1);
     expect(rows[0]!.action).toBe("introduction");
@@ -292,10 +293,10 @@ describe("cognitive artifact writer", () => {
     expect(result.artifactIds).toHaveLength(0);
     expect(result.degradedArtifactIds).toHaveLength(1);
 
-    const rows = await db
+    const rows = await loadPayloads(db
       .select()
       .from(schema.gameCognitiveArtifacts)
-      .where(eq(schema.gameCognitiveArtifacts.gameId, gameId));
+      .where(eq(schema.gameCognitiveArtifacts.gameId, gameId)));
 
     expect(rows).toHaveLength(1);
     expect(rows[0]!.visibilityStatus).toBe("capture_degraded");

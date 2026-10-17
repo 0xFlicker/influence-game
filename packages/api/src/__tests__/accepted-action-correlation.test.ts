@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "crypto";
 import { and, eq } from "drizzle-orm";
@@ -69,7 +70,7 @@ async function seedSidecars(
     accessScope: "producer_admin",
     metadata: { action },
   });
-  await db.insert(schema.gameCognitiveArtifacts).values({
+  await db.insert(schema.gameCognitiveArtifacts).values(await storeFields({
     id: randomUUID(),
     gameId: params.gameId,
     decisionId: params.decisionId,
@@ -82,7 +83,7 @@ async function seedSidecars(
     round: 1,
     payloadByteLength: 2,
     payload: {},
-  });
+  }, {"payload":"json-gzip"}));
   await db.insert(schema.gamePromptReuseAppliedSources).values({
     id: randomUUID(),
     gameId: params.gameId,
@@ -392,8 +393,8 @@ describe("accepted action correlation", () => {
       updatedCognitiveArtifactCount: 0,
       updatedPromptReuseSourceCount: 0,
     });
-    const cognition = (await db.select().from(schema.gameCognitiveArtifacts)
-      .where(eq(schema.gameCognitiveArtifacts.decisionId, decisionId)))[0]!;
+    const cognition = (await loadPayloads(db.select().from(schema.gameCognitiveArtifacts)
+      .where(eq(schema.gameCognitiveArtifacts.decisionId, decisionId))))[0]!;
     const promptSource = (await db.select()
       .from(schema.gamePromptReuseAppliedSources)
       .where(eq(schema.gamePromptReuseAppliedSources.decisionId, decisionId)))[0]!;

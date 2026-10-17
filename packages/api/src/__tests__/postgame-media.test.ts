@@ -1,3 +1,4 @@
+import { Hydrated, storeFields } from "../services/payload-storage.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import {
   hashHouseHighlightsTrailerManifest,
@@ -286,10 +287,10 @@ async function insertCompletedGame(db: DrizzleDB, slug: string): Promise<string>
 async function insertMediaJob(
   db: DrizzleDB,
   gameId: string,
-  overrides: Partial<typeof schema.gamePostgameMedia.$inferInsert> = {},
+  overrides: Partial<Hydrated<typeof schema.gamePostgameMedia.$inferInsert>> = {},
 ): Promise<void> {
   const manifest = manifestFixture(gameId);
-  await db.insert(schema.gamePostgameMedia).values({
+  await db.insert(schema.gamePostgameMedia).values(await storeFields({
     gameId,
     mediaType: "house_highlights_trailer",
     status: "queued",
@@ -303,7 +304,7 @@ async function insertMediaJob(
     timingContractVersion: manifest.timingContractVersion,
     musicAssetId: "golden-verdict-max",
     ...overrides,
-  });
+  }, {"renderInputSnapshot":"json-gzip"}));
 }
 
 function artifactFixture(version: string): PostgameMediaArtifactMetadata {

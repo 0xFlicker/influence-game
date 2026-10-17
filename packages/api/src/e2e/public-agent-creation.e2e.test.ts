@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { tmpdir } from "node:os";
@@ -141,7 +142,7 @@ test("public hall → one tracked preview → image signup → free account mess
     await page.click('button[aria-label="Send"]');
     await page.waitForFunction("document.querySelector('button[aria-label=\"Read Name\"]')?.textContent?.includes('Mira Vale')");
     expect(await page.$('[role="dialog"]')).toBeNull();
-    expect((await database.db.select().from(schema.anonymousTextOperations))).toHaveLength(1);
+    expect((await loadPayloads(database.db.select().from(schema.anonymousTextOperations)))).toHaveLength(1);
     expect((await database.db.select().from(schema.users))).toHaveLength(0);
     await page.evaluate("Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Yes, that feels right')?.click()");
     await page.type('textarea[aria-label="Message the character assistant"]', "A blue coat and gold rings");
@@ -172,7 +173,7 @@ test("public hall → one tracked preview → image signup → free account mess
     expect(owner).toBeDefined();
     const [allowance] = await database.db.select().from(schema.inferenceAccounts).where(eq(schema.inferenceAccounts.userId, owner!.id));
     expect(allowance).toMatchObject({ textBalance: 99, imageBalance: 25, planId: "free" });
-    expect(await database.db.select().from(schema.anonymousTextOperations)).toHaveLength(1);
+    expect(await loadPayloads(database.db.select().from(schema.anonymousTextOperations))).toHaveLength(1);
     await page.screenshot({ path: temporaryPath("public-creator-after-signup-mobile.png") });
     await page.click(".agent-creation-header button:first-child");
     await page.waitForSelector('#agent-name');

@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import {
   Phase,
@@ -76,7 +77,7 @@ describe("provider health probes", () => {
       probeLeaseOwner: null,
       lastProbeEvidenceId: expect.stringMatching(/^sha256:/),
     });
-    const evidence = (await db.select().from(schema.providerHealthProbeEvidence))[0]!;
+    const evidence = (await loadPayloads(db.select().from(schema.providerHealthProbeEvidence)))[0]!;
     expect(evidence).toMatchObject({
       id: result.status.lastProbeEvidenceId,
       scopeKey: "provider:openai",
@@ -167,7 +168,7 @@ describe("provider health probes", () => {
       probeLeaseOwner: null,
       lastProbeEvidenceId: expect.stringMatching(/^sha256:/),
     });
-    const evidence = (await db.select().from(schema.providerHealthProbeEvidence))[0]!;
+    const evidence = (await loadPayloads(db.select().from(schema.providerHealthProbeEvidence)))[0]!;
     expect(evidence.record).toMatchObject({
       requestId: "probe-request-id",
       preparedRequest: { transport: "openai.responses" },

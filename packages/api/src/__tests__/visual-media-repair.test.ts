@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
@@ -94,7 +95,7 @@ test("double clicks deduplicate; authorized rejections do not allocate versions"
   expect(await send({ expectedVersion: 1 })).toMatchObject({ code: "already_pending" });
   expect(await send({ requestId, expectedVersion: 7 })).toMatchObject({ code: "request_conflict" });
   const media = await readVisualMedia(db, "media"); expect(media.jobs).toHaveLength(1); expect(media.requests).toHaveLength(3);
-  expect((await db.select().from(schema.visualOperationEvents)).some(row => row.evidence?.name === "request_conflict")).toBe(true);
+  expect((await loadPayloads(db.select().from(schema.visualOperationEvents))).some(row => row.evidence?.name === "request_conflict")).toBe(true);
   expect(await send({ action: "publish", expectedVersion: 1, expectedPublication: 0, versionId: receipts[0]!.jobId! })).toMatchObject({ code: "unverified" });
 });
 
@@ -104,9 +105,9 @@ test("canonical bindings recover fallback dialogue, follow Mingle movement, and 
   const intent: GameTurnIntentV1 = { version: 1, gameId: "media", turnId: "dialogue", turnSequence: 10, seed: "fixture", baseHeads: state.heads,
     branch: { version: 1, kind: "engine", action: "round_start" }, actorIds: [], targetIds: [], handles: [], participantIds: [], providerSubcalls: [] };
   const hash = `sha256:${"a".repeat(64)}`, date = new Date().toISOString();
-  await db.insert(schema.gameTurns).values({ id: intent.turnId, gameId: "media", turnSequence: 10, plannedOwnerEpoch: ownerEpoch, committedOwnerEpoch: ownerEpoch,
+  await db.insert(schema.gameTurns).values(await storeFields({ id: intent.turnId, gameId: "media", turnSequence: 10, plannedOwnerEpoch: ownerEpoch, committedOwnerEpoch: ownerEpoch,
     baseEventSequence: 1, baseDialogueSequence: 0, basePublicationSequence: 0, intent, intentHash: hash, effectHash: hash, status: "committed", committedAt: date,
-    commitResult: { version: 1, gameId: "media", turnId: intent.turnId, turnSequence: 10, intentHash: hash, effectHash: hash, committedAt: date, state, canonicalEvents: [], dialogueSequences: [], publications: [], alreadyCommitted: false } });
+    commitResult: { version: 1, gameId: "media", turnId: intent.turnId, turnSequence: 10, intentHash: hash, effectHash: hash, committedAt: date, state, canonicalEvents: [], dialogueSequences: [], publications: [], alreadyCommitted: false } }, {"intent":"json-gzip","commitResult":"json-gzip"}));
   const room = await prepareVisualScene(db, { gameId: "media", boundarySequence: 4, plan: planVisualScene({ roomId: "mingle-1", backgroundArtifactId: imageId, cast: scene.plan.cast.slice(0, 2) }) });
   const moved = await prepareVisualScene(db, { gameId: "media", boundarySequence: 6, plan: planVisualScene({ roomId: "mingle-2", backgroundArtifactId: imageId, cast: scene.plan.cast.slice(0, 2) }) });
   const finals = await prepareVisualScene(db, { gameId: "media", boundarySequence: 8, plan: planVisualScene({ roomId: "finals", backgroundArtifactId: imageId, cast: scene.plan.cast.slice(0, 2) }) });
@@ -174,7 +175,7 @@ test("restart reuses saved steps and blocks a dispatched attempt with no receipt
   expect(await send({ expectedVersion: 1, action: "continue", sourceJobId: job.id })).toMatchObject({ code: "needs_reconciliation" });
   await journal.finish({ provider: "openai", model: "gpt-image-2", requestHash: "test", requestId: "late", status: 200, elapsedMs: 10, usage: null, chargeUncertain: false }, png);
   expect((await readVisualMedia(db, "media")).versions).toHaveLength(0);
-  expect((await db.select().from(schema.visualRenderAttempts))[0]?.image).not.toBeNull();
+  expect((await loadPayloads(db.select().from(schema.visualRenderAttempts)))[0]?.image).not.toBeNull();
 });
 
 test("an in-flight provider call is pending; an expired lease needs reconciliation until its receipt arrives", async () => {
@@ -393,7 +394,7 @@ test("identity rejection retains the saved panels without another render", async
   expect(media.versions.find(v => v.id === job.id)!.shots).toEqual({ mode: "groups", overview: null, groups: source.groups });
   expect(calls.filter(c => c === "image")).toHaveLength(1);
   expect(media.publications).toEqual([]);
-  expect((await db.select().from(schema.visualOperationEvents)).some(row => row.event.message === "Harmonized image rejected; retaining verified original panels")).toBe(true);
+  expect((await loadPayloads(db.select().from(schema.visualOperationEvents))).some(row => row.event.message === "Harmonized image rejected; retaining verified original panels")).toBe(true);
 });
 
 test("harmonization rejects unavailable or ineligible sources before queueing", async () => {
@@ -452,7 +453,7 @@ test("explicit fresh regeneration bypasses uncertain billing without settling it
   await db.update(schema.visualScenes).set({ status: "failed" }).where(eq(schema.visualScenes.id, scene.id));
   const op = await reserveVisualRender(db, "media", `${scene.id}:render:0:composition`, { prompt: "old render", width: 512, height: 864, references: [] }, scene.id);
   await visualImageJournal(db, op).begin({ provider: "openai", model: "gpt-image-2", requestHash: "old" });
-  const [attempt] = await db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.operationId, op.id));
+  const [attempt] = await loadPayloads(db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.operationId, op.id)));
   expect(await send()).toMatchObject({ accepted: false, code: "needs_reconciliation" });
   expect(await send({ acknowledgeUncertainAttempts: ["another-scene-attempt"] })).toMatchObject({ code: "invalid_attempt_acknowledgement" });
   const request = { requestId: "confirmed-fresh-render", acknowledgeUncertainAttempts: [attempt!.id] };
@@ -461,7 +462,7 @@ test("explicit fresh regeneration bypasses uncertain billing without settling it
   expect(await send(request)).toEqual(result);
   expect(await send({ expectedVersion: 1, acknowledgeUncertainAttempts: [attempt!.id] })).toMatchObject({ code: "already_pending" });
   expect(calls).toHaveLength(0);
-  const [saved] = await db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.id, attempt!.id));
+  const [saved] = await loadPayloads(db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.id, attempt!.id)));
   expect(saved).toEqual(attempt); // Acknowledgement is not billing reconciliation.
   let media = await readVisualMedia(db, "media");
   expect(media.jobs).toHaveLength(1);
@@ -480,7 +481,7 @@ test("uncertain request acknowledgement cannot bypass an original render still i
   await db.update(schema.games).set({ status: "in_progress" }).where(eq(schema.games.id, "media"));
   const op = await reserveVisualRender(db, "media", `${scene.id}:render:0:composition`, { prompt: "in flight", width: 512, height: 864, references: [] }, scene.id);
   await visualImageJournal(db, op).begin({ provider: "openai", model: "gpt-image-2", requestHash: "in-flight" });
-  const [attempt] = await db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.operationId, op.id));
+  const [attempt] = await loadPayloads(db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.operationId, op.id)));
   expect(await send({ acknowledgeUncertainAttempts: [attempt!.id] })).toMatchObject({ code: "already_pending" });
   expect((await readVisualMedia(db, "media")).jobs).toHaveLength(0);
 });
@@ -489,8 +490,8 @@ test("scene receipt acknowledgement accepts historical bindings and rejects conf
   await db.update(schema.visualScenes).set({status:"failed"}).where(eq(schema.visualScenes.id,scene.id));
   const other=await prepareVisualScene(db,{gameId:"media",boundarySequence:3,plan:planVisualScene({roomId:"mingle-1",backgroundArtifactId:imageId,cast:scene.plan.cast})});
   await db.insert(schema.games).values({id:"foreign-game",slug:"foreign-game",status:"completed",config:"{}"});
-  await db.insert(schema.visualRepairJobs).values({id:"historical-job",gameId:"media",sceneId:scene.id,version:1,operatorId:"admin",mode:"regenerate",plan:scene.plan,
-    renderContext:{style:"Fixture",roomName:"Fixture",roomDirection:"Fixture"},status:"failed",createdAt:new Date().toISOString()});
+  await db.insert(schema.visualRepairJobs).values(await storeFields({id:"historical-job",gameId:"media",sceneId:scene.id,version:1,operatorId:"admin",mode:"regenerate",plan:scene.plan,
+    renderContext:{style:"Fixture",roomName:"Fixture",roomDirection:"Fixture"},status:"failed",createdAt:new Date().toISOString()}, {"renderContext":"json-gzip"}));
   for (const [id,gameId,sceneId,repairJobId,operationKey] of [
     ["scene-prefix","media",null,null,`${scene.id}:render:historical`],
     ["job-binding","media",null,"historical-job","historical-job-binding"],
@@ -498,7 +499,7 @@ test("scene receipt acknowledgement accepts historical bindings and rejects conf
     ["foreign-scene","media",other.id,"historical-job","media:historical-job:conflicting-scene"],
     ["foreign-game","foreign-game",null,"historical-job","media:historical-job:foreign-game"],
   ] as const) {
-    await db.insert(schema.visualRenderOperations).values({id:`operation-${id}`,gameId,sceneId,repairJobId,operationKey,inputHash:"fixture-hash",request:{prompt:"Private fixture"}});
+    await db.insert(schema.visualRenderOperations).values(await storeFields({id:`operation-${id}`,gameId,sceneId,repairJobId,operationKey,inputHash:"fixture-hash",request:{prompt:"Private fixture"}}, {"request":"json-gzip"}));
     await db.insert(schema.visualRenderAttempts).values({id,operationId:`operation-${id}`,generation:1,provider:"openai",model:"fixture",requestHash:"fixture-hash"});
   }
   const receipt=await readVisualSceneAttempts(db,"media",scene.id,0,1),ids=receipt.uncertainAttemptIds;
@@ -509,7 +510,7 @@ test("scene receipt acknowledgement accepts historical bindings and rejects conf
   const result=await send({expectedVersion:1,requestId:"historical-bindings-ack",acknowledgeUncertainAttempts:ids});
   expect(result).toMatchObject({accepted:true,code:"queued",version:2});expect(calls).toEqual([]);
   expect((await readVisualSceneAttempts(db,"media",scene.id,0,1)).uncertainAttemptIds).toEqual([]);
-  const saved=await db.select().from(schema.visualRenderAttempts);
+  const saved=await loadPayloads(db.select().from(schema.visualRenderAttempts));
   expect(saved.every(attempt=>attempt.receipt===null && attempt.reconciliation===null)).toBe(true);
 });
 

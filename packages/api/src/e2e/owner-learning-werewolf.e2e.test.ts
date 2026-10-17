@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import type { Browser, Page } from "puppeteer";
@@ -51,7 +52,7 @@ test("owner inspects Werewolf facts and deliberately applies only Werewolf strat
     await page.waitForSelector('[data-testid="owner-learning-activation"] a[href*="game=werewolf"]');
     await page.goto(`${servers.webUrl}/dashboard/agents/${id}/review?game=werewolf`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector('[aria-label="Werewolf game evidence"]');
-    expect(await database.db.select().from(schema.agentLearningReviews)).toHaveLength(0);
+    expect(await loadPayloads(database.db.select().from(schema.agentLearningReviews))).toHaveLength(0);
     expect(await page.evaluate("document.body.innerText")).not.toContain("PRIVATE_PACK");
     await page.click('[aria-label="Werewolf game evidence"] details summary');
     await page.click('[aria-label="Werewolf game evidence"] details details summary');
@@ -65,7 +66,7 @@ test("owner inspects Werewolf facts and deliberately applies only Werewolf strat
     const reviewId = started.reviewId!;
     const proposal = { field: "werewolfStrategyStyle" as const, before: "", after: strategy };
     const proposalFingerprint = fingerprintOwnerLearningValue({ reviewId, proposal });
-    await database.db.update(schema.agentLearningReviews).set({ analysisStatus: "ready", stage: "complete", proposalFingerprint, result: { diagnosis: "Synthetic browser review", analysisTrack: "evidence_rich", recommendations: [{ id: "rec-browser", title: "Test the evidence", disposition: "change", confidence: "medium", rationale: "Synthetic workflow proof, not calibrated coaching.", evidenceRefs: [] }], proposal } }).where(eq(schema.agentLearningReviews.id, reviewId));
+    await database.db.update(schema.agentLearningReviews).set(await storeFields({ analysisStatus: "ready", stage: "complete", proposalFingerprint, result: { diagnosis: "Synthetic browser review", analysisTrack: "evidence_rich", recommendations: [{ id: "rec-browser", title: "Test the evidence", disposition: "change", confidence: "medium", rationale: "Synthetic workflow proof, not calibrated coaching.", evidenceRefs: [] }], proposal } }, {"checkpoint":"json-gzip","result":"json-gzip"})).where(eq(schema.agentLearningReviews.id, reviewId));
     await page.goto(`${servers.webUrl}/dashboard/agents/${id}/review/${reviewId}`, { waitUntil: "domcontentloaded" });
     await hasText(page, "Werewolf strategy · Before");
     await hasText(page, "No override saved; using the archetype default.");

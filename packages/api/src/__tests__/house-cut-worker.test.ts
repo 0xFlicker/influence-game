@@ -1,5 +1,6 @@
+import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { beforeEach, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { completedWerewolfResultsFixture as werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { cutInfluenceFixture } from "@influence/engine/house-cuts/fixtures";
 import { insertGame, insertOwner, insertCanonicalEventRows } from "./durable-run-test-utils";
@@ -29,9 +30,9 @@ test("completion enqueue is idempotent; direct reads and MCP never queue paid wo
   expect(data?.status).toBe("not_prepared");
   houseContent("read_game_cuts", data);
   validateHouseInput("read_game_cuts", { gameIdOrSlug: slug, audience: "mystery" });
-  expect((await db.select().from(schema.houseCutJobs))).toHaveLength(0);
+  expect((await loadPayloads(db.select().from(schema.houseCutJobs)))).toHaveLength(0);
   await queueHouseCuts(db, id); await queueHouseCuts(db, id);
-  expect((await db.select().from(schema.houseCutJobs)).map(r => r.audience).sort()).toEqual(["mystery", "omniscient"]);
+  expect((await loadPayloads(db.select().from(schema.houseCutJobs))).map(r => r.audience).sort()).toEqual(["mystery", "omniscient"]);
 });
 test("workers claim serially and publish only after validation, keeping audiences isolated", async () => {
   const { id, slug } = await fixture(); await queueHouseCuts(db, id);
@@ -49,7 +50,7 @@ test("workers claim serially and publish only after validation, keeping audience
     expect(JSON.stringify(result)).not.toMatch(/journal|leaseToken|sourceHash|PRIVATE_|failure/);
   }
   expect(await runHouseCutJob(db, generate)).toBe(false);
-  const [media] = await db.select().from(schema.gamePostgameMedia).where(eq(schema.gamePostgameMedia.gameId, id));
+  const [media] = await loadPayloads(db.select().from(schema.gamePostgameMedia).where(eq(schema.gamePostgameMedia.gameId, id)));
   expect(media?.status).toBe("queued");
   expect(media?.musicAssetId).toBe("werewolf-suno-trailer-v1");
 });
@@ -63,7 +64,7 @@ test("hidden and cross-audience reads fail; linked Unlisted works without genera
   await db.update(schema.games).set({ hiddenAt: new Date().toISOString() }).where(eq(schema.games.id, id));
   expect((await app.request(`/api/games/${slug}/cuts`)).status).toBe(404);
   await queueHouseCuts(db, id);
-  expect(await db.select().from(schema.houseCutJobs)).toHaveLength(0);
+  expect(await loadPayloads(db.select().from(schema.houseCutJobs))).toHaveLength(0);
 });
 test("hide during generation prevents publication ", async () => {
   const { id } = await fixture(); await queueHouseCuts(db, id);
@@ -71,30 +72,35 @@ test("hide during generation prevents publication ", async () => {
     await db.update(schema.games).set({ hiddenAt: new Date().toISOString() }).where(eq(schema.games.id, id));
     return generate(options);
   });
-  const jobs = await db.select().from(schema.houseCutJobs);
+  const jobs = await loadPayloads(db.select().from(schema.houseCutJobs));
   expect(jobs.some(j => j.status === "failed")).toBe(true);
   expect(jobs.every(j => j.publication === null)).toBe(true);
 });
 test("completion rollback leaves no job, Influence queues only one public job", async () => {
   const { id } = await fixture();
   await expect(db.transaction(async tx => { await queueHouseCuts(tx, id); throw Error("rollback"); })).rejects.toThrow();
-  expect(await db.select().from(schema.houseCutJobs)).toHaveLength(0);
+  expect(await loadPayloads(db.select().from(schema.houseCutJobs))).toHaveLength(0);
   await db.update(schema.games).set({ gameKind: "influence" }).where(eq(schema.games.id, id));
   await queueHouseCuts(db, id);
-  expect((await db.select().from(schema.houseCutJobs)).map(j => j.audience)).toEqual(["public"]);
+  expect((await loadPayloads(db.select().from(schema.houseCutJobs))).map(j => j.audience)).toEqual(["public"]);
 });
 
 test("expired jobs resume saved work; unknown dispatches stop without calling a provider", async () => {
   const { id } = await fixture(); await queueHouseCuts(db, id);
   await runHouseCutJob(db, generate);
-  const [ready] = await db.select().from(schema.houseCutJobs).where(eq(schema.houseCutJobs.status, "ready"));
+  const [ready] = await loadPayloads(db.select().from(schema.houseCutJobs).where(eq(schema.houseCutJobs.status, "ready")));
   await db.update(schema.houseCutJobs).set({status:"running",leaseUntil:new Date(0),createdAt:new Date(0)}).where(eq(schema.houseCutJobs.id,ready!.id));
   expect(await runHouseCutJob(db, generate)).toBe(true);
-  await db.execute(sql`UPDATE house_cut_jobs SET status = 'running', lease_until = '2000-01-01', journal = jsonb_set(journal, '{attempts}', '[{"windowId":"selection","reservedUsd":0.2}]') WHERE id = ${ready!.id}`);
+  await db.update(schema.houseCutJobs).set(await storeFields({ status: "running", leaseUntil: new Date("2000-01-01"),
+    journal: { ...ready!.journal!, attempts: [{ windowId: "selection", reservedUsd: 0.2, intent: {
+      coordinate: { actor: { name: "House", role: "house" }, action: "cut", semantic: { version: 1, kind: "durable_turn", turnId: "cut", subcallSlot: 0 } },
+      attemptOrdinal: 1, attemptId: "interrupted", startedAt: "2000-01-01T00:00:00.000Z",
+      preparedRequest: { transport: "fixture", providerProfileId: "openai", model: "gpt-6-luna", body: {} },
+    } }] } }, { journal: "json-gzip" })).where(eq(schema.houseCutJobs.id, ready!.id));
   let invoked = false;
   await runHouseCutJob(db, async options => { invoked = true; return generate(options); });
   expect(invoked).toBe(false);
-  const [failed] = await db.select().from(schema.houseCutJobs).where(eq(schema.houseCutJobs.id,ready!.id));
+  const [failed] = await loadPayloads(db.select().from(schema.houseCutJobs).where(eq(schema.houseCutJobs.id,ready!.id)));
   expect(failed!.status).toBe("failed");
   expect(failed!.publication).toEqual(ready!.publication);
   expect(failed!.failure).toContain("unknown outcome");
@@ -110,7 +116,7 @@ test("MCP advertises and reads published Cuts without extra scopes or side effec
   const result = await server.handle({jsonrpc:"2.0",id:2,method:"tools/call",params:{name:"read_game_cuts",arguments:{gameIdOrSlug:slug,audience:"mystery"}}}, {...auth,scopes:[...auth.scopes]});
   expect(result?.error).toBeUndefined();
   expect(JSON.stringify(result)).toContain('"status":"not_prepared"');
-  expect(await db.select().from(schema.houseCutJobs)).toHaveLength(0);
+  expect(await loadPayloads(db.select().from(schema.houseCutJobs))).toHaveLength(0);
 });
 
 
@@ -146,7 +152,7 @@ for (const phase of ["before-dispatch", "accepted", "unknown"] as const) test(`s
   const controller = new AbortController();
   let jobId = "";
   await runHouseCutJob(db, async options => {
-    const [running] = await db.select().from(schema.houseCutJobs).where(eq(schema.houseCutJobs.status, "running"));
+    const [running] = await loadPayloads(db.select().from(schema.houseCutJobs).where(eq(schema.houseCutJobs.status, "running")));
     jobId = running!.id;
     if (phase !== "before-dispatch") {
       const intent: import("@influence/engine").ProviderAttemptIntent = {
@@ -160,7 +166,7 @@ for (const phase of ["before-dispatch", "accepted", "unknown"] as const) test(`s
     controller.abort(); controller.signal.throwIfAborted();
     return generate(options);
   }, controller.signal);
-  const [stopped] = await db.select().from(schema.houseCutJobs).where(eq(schema.houseCutJobs.id, jobId));
+  const [stopped] = await loadPayloads(db.select().from(schema.houseCutJobs).where(eq(schema.houseCutJobs.id, jobId)));
   expect(stopped!.status).toBe(phase === "unknown" ? "failed" : "queued");
   expect(stopped!.leaseToken).toBeNull();
   expect(stopped!.publication).toBeNull();
@@ -169,7 +175,7 @@ for (const phase of ["before-dispatch", "accepted", "unknown"] as const) test(`s
       expect(options.journal).toEqual(stopped!.journal!);
       return generate(options);
     });
-    const [resumed] = await db.select().from(schema.houseCutJobs).where(eq(schema.houseCutJobs.id, jobId));
+    const [resumed] = await loadPayloads(db.select().from(schema.houseCutJobs).where(eq(schema.houseCutJobs.id, jobId)));
     expect(resumed!.status).toBe("ready");
   }
 });

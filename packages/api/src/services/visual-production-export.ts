@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import { readVisualMedia } from "./visual-media-repair.js";
 import { readViewerMedia } from "./visual-media-viewer.js";
 import { readVisualOperationEvents } from "./visual-diagnostics.js";
@@ -11,13 +12,13 @@ import { previewFinalsRebuild } from "./visual-rebuild-preview.js";
 export async function readVisualProductionExport(db: DrizzleDB, gameIdOrSlug: string) {
   const [game] = await db.select({ id: schema.games.id, config: schema.games.config, status: schema.games.status }).from(schema.games).where(or(eq(schema.games.id, gameIdOrSlug), eq(schema.games.slug, gameIdOrSlug)));
   if (!game) throw new Error("Game not found");
-  const [assets, scenes, accounting, cues, events] = await Promise.all([
+  const [assets, scenes, accounting, cues, events] = await loadPayloads(Promise.all([
     db.select().from(schema.visualGameAssets).where(eq(schema.visualGameAssets.gameId, game.id)),
     db.select().from(schema.visualScenes).where(eq(schema.visualScenes.gameId, game.id)).orderBy(asc(schema.visualScenes.boundarySequence)),
     readVisualRenderAccounting(db, game.id),
     db.select({ sequence: schema.gameEvents.sequence, envelope: schema.gameEvents.envelope }).from(schema.gameEvents).where(and(eq(schema.gameEvents.gameId, game.id), eq(schema.gameEvents.eventType, "visual.cue_recorded"))).orderBy(asc(schema.gameEvents.sequence)),
     readVisualOperationEvents(db, game.id),
-  ]);
+  ]));
   const config = JSON.parse(game.config) as Record<string, unknown>;
   const metrics = ["openai", "xai"].map((provider) => {
     const attempts = accounting.attempts.filter((attempt) => attempt.provider === provider);

@@ -1,3 +1,4 @@
+import { loadPayloads } from "./payload-storage.js";
 import type { WerewolfHouseCharacter } from "../db/werewolf-schema.js";
 import { queueEpisodeCopy } from "./episode-presentation.js";
 import { forecastRetrospectiveBudget } from "@influence/engine/retrospective-budget";
@@ -61,7 +62,7 @@ export async function freezeWerewolfRoster(tx: Tx, seats: Array<{ id: string; ag
     if (seat.houseCharacter) { players.push({ ...seat.houseCharacter, id: seat.id }); continue; }
     const profile = profiles.find((p) => p.id === seat.agentProfileId)!;
     if (!hasEligibleAgentContent(profile)) throw new WerewolfGameError("A selected character is archived or awaiting review", 409);
-    const [revision] = profile.contentRevisionId ? await tx.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, profile.contentRevisionId)) : [];
+    const [revision] = profile.contentRevisionId ? await loadPayloads(tx.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, profile.contentRevisionId))) : [];
     if (profile.contentRevisionId && !revision) throw new Error("Missing approved character revision");
     const character = revision ? decodeContentSnapshot(revision.snapshot, profile) : profile;
     players.push({ id: seat.id, agentProfileId: profile.id, contentRevisionId: profile.contentRevisionId,
@@ -163,8 +164,8 @@ export async function lockWerewolfOwner(tx: Tx, gameId: string, ownerEpoch: stri
 export function createWerewolfStore(db: DrizzleDB, gameId: string, ownerEpoch: string): WerewolfStore {
   return {
     read: () => readWerewolfEvents(db, gameId),
-    readRetrospectiveInput: async () => (await db.select().from(schema.gameRetrospectiveInputs)
-      .where(eq(schema.gameRetrospectiveInputs.gameId, gameId)))[0]?.input ?? null,
+    readRetrospectiveInput: async () => (await loadPayloads(db.select().from(schema.gameRetrospectiveInputs)
+      .where(eq(schema.gameRetrospectiveInputs.gameId, gameId))))[0]?.input ?? null,
     prepareRetrospective: (state, context) => db.transaction(async tx => {
       await lockWerewolfOwner(tx, gameId, ownerEpoch);
       const committed = replayWerewolf(await readWerewolfEvents(tx, gameId));
@@ -228,7 +229,7 @@ export function createWerewolfStore(db: DrizzleDB, gameId: string, ownerEpoch: s
 async function readWerewolfRetrospectiveContext(db: Pick<DrizzleDB, "select">, gameId: string, state: ReturnType<typeof replayWerewolf>) {
   if (!state.retrospective || werewolfExecutionFinished(state)) throw new Error("Werewolf retrospective is not accepting statements");
   const source = compileWerewolfRetrospective(await readWerewolfEvents(db, gameId));
-  const [row] = await db.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, gameId));
+  const [row] = await loadPayloads(db.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, gameId)));
   if (!row) throw new Error("Werewolf retrospective has no frozen input");
   assertRetrospectiveInputBinding(source.input, state.retrospective.definition);
   assertRetrospectiveInputBinding(row.input, state.retrospective.definition);

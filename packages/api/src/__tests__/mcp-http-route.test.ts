@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import {completedWerewolfResultsFixture as werewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
 import { readHouseGameRetrospective } from "../services/house-game-retrospective.js";
 import { insertOwner } from "./durable-run-test-utils.js";
@@ -780,7 +781,7 @@ describe("/mcp Streamable HTTP route", () => {
         expect((await rpc(issued.accessToken, "tools/call", { name: "resume_game_retrospective", arguments: arguments_ })).body.result!.structuredContent).toMatchObject({ status: "not_accessible" });
         await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, issued.userId));
         expect((await rpc(issued.accessToken, "tools/list")).status).toBe(401);
-        expect(await db.select().from(schema.providerLogicalCalls)).toHaveLength(0);
+        expect(await loadPayloads(db.select().from(schema.providerLogicalCalls))).toHaveLength(0);
       } finally { server.stop(true); }
     });
 

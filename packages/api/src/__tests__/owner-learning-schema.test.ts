@@ -1,3 +1,4 @@
+import { storeFields, loadPayloads } from "../services/payload-storage.js";
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
@@ -19,7 +20,7 @@ describe("owner learning schema", () => {
     });
 
     const secondProfile = await insertProfileRevision(db, fixture.ownerUserId, "Second learner");
-    await expectDatabaseRejection(() => insertReview(db, {
+    await expectDatabaseRejection(async () => insertReview(db, {
       id: randomUUID(),
       ownerUserId: fixture.ownerUserId,
       agentProfileId: secondProfile.agentProfileId,
@@ -45,7 +46,7 @@ describe("owner learning schema", () => {
       reviewedRevisionId: secondProfile.revisionId,
       idempotencyKey: "start-2",
     });
-    expect(await db.select().from(schema.agentLearningReviews)).toHaveLength(2);
+    expect(await loadPayloads(db.select().from(schema.agentLearningReviews))).toHaveLength(2);
   });
 
   test("binds one to three evidence rows to immutable review positions", async () => {
@@ -66,13 +67,13 @@ describe("owner learning schema", () => {
       gameId: fixture.gameId,
       position: 1,
     });
-    await expectDatabaseRejection(() => db.insert(schema.agentLearningReviewGames).values({
+    await expectDatabaseRejection(async () => db.insert(schema.agentLearningReviewGames).values({
       reviewId,
       gameEvidenceId: fixture.gameEvidenceId,
       gameId: fixture.gameId,
       position: 2,
     }));
-    await expectDatabaseRejection(() => db.insert(schema.agentLearningReviewGames).values({
+    await expectDatabaseRejection(async () => db.insert(schema.agentLearningReviewGames).values({
       reviewId,
       gameEvidenceId: fixture.gameEvidenceId,
       gameId: fixture.gameId,
@@ -101,7 +102,7 @@ describe("owner learning schema", () => {
       costSource: "estimated",
       estimatedCostMicrousd: 125,
     });
-    await expectDatabaseRejection(() => db.insert(schema.agentLearningReviewCalls).values({
+    await expectDatabaseRejection(async () => db.insert(schema.agentLearningReviewCalls).values({
       id: randomUUID(),
       reviewId,
       ordinal: 2,
@@ -109,7 +110,7 @@ describe("owner learning schema", () => {
       stage: "investigating_moments",
       inputPolicyHash: "sha256:missing-validated-checkpoint",
     }));
-    await expectDatabaseRejection(() => db.insert(schema.agentLearningReviewCalls).values({
+    await expectDatabaseRejection(async () => db.insert(schema.agentLearningReviewCalls).values({
       id: randomUUID(),
       reviewId,
       ordinal: 2,
@@ -117,7 +118,7 @@ describe("owner learning schema", () => {
       inputPolicyHash: "sha256:request-2",
       costSource: "actual",
     }));
-    await expectDatabaseRejection(() => db.insert(schema.agentLearningReviewCalls).values({
+    await expectDatabaseRejection(async () => db.insert(schema.agentLearningReviewCalls).values({
       id: randomUUID(),
       reviewId,
       ordinal: 5,
@@ -177,7 +178,7 @@ async function insertFixture(db: DrizzleDB): Promise<{
     maxPlayers: 4,
   });
   const gameEvidenceId = randomUUID();
-  await db.insert(schema.agentLearningGameEvidence).values({
+  await db.insert(schema.agentLearningGameEvidence).values(await storeFields({
     id: gameEvidenceId,
     ownerUserId,
     agentProfileId: profile.agentProfileId,
@@ -190,7 +191,7 @@ async function insertFixture(db: DrizzleDB): Promise<{
     candidateMoments: [],
     sourceCaptureVersion: "capture-v1",
     sourceHash: "sha256:evidence",
-  });
+  }, {"canonicalSnapshot":"json-gzip","candidateMoments":"json-gzip"}));
   return { ownerUserId, ...profile, gameId, gameEvidenceId };
 }
 
@@ -208,7 +209,7 @@ async function insertProfileRevision(
     strategyStyle: "Build trust.",
   });
   const revisionId = randomUUID();
-  await db.insert(schema.agentRevisions).values({
+  await db.insert(schema.agentRevisions).values(await storeFields({
     id: revisionId,
     agentProfileId,
     ordinal: 1,
@@ -218,7 +219,7 @@ async function insertProfileRevision(
     behaviorSnapshot: { strategyStyle: "Build trust." },
     effectiveRuntimeSnapshot: { model: "openai:gpt-5.6-luna" },
     revisionPolicyVersion: "agent-revision-v2",
-  });
+  }, {"behaviorSnapshot":"json-gzip","effectiveRuntimeSnapshot":"json-gzip"}));
   await db.update(schema.agentProfiles).set({ currentRevisionId: revisionId })
     .where(eq(schema.agentProfiles.id, agentProfileId));
   return { agentProfileId, revisionId };

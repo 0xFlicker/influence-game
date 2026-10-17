@@ -1,3 +1,4 @@
+import { storeFields } from "../services/payload-storage.js";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
@@ -26,7 +27,7 @@ describe("moderation intake", () => {
   async function submission(userId = owner, route: "ordinary" | "escalated" = "ordinary") {
     const contentRevisionId = randomUUID();
     const id = randomUUID();
-    await db.insert(schema.agentContentRevisions).values({ id: contentRevisionId, userId, agentProfileId: randomUUID(), fingerprint: randomUUID(), snapshot: { name: "Original character", assets: {} } });
+    await db.insert(schema.agentContentRevisions).values(await storeFields({ id: contentRevisionId, userId, agentProfileId: randomUUID(), fingerprint: randomUUID(), snapshot: { name: "Original character", assets: {} } }, {"snapshot":"json-gzip"}));
     await db.insert(schema.agentModerationReviews).values({ id, contentRevisionId, route });
     return id;
   }
@@ -145,9 +146,9 @@ describe("moderation intake", () => {
 
   test("evidence reads require an authorized review reference and actions are immutable", async () => {
     const hash = "a".repeat(64);
-    await db.insert(schema.agentContentAssets).values({ hash, bytes: Buffer.from("retained image") });
+    await db.insert(schema.agentContentAssets).values(await storeFields({ hash, bytes: Buffer.from("retained image") }, {"bytes":"binary"}));
     const revisionId = randomUUID();
-    await db.insert(schema.agentContentRevisions).values({ id: revisionId, userId: owner, agentProfileId: randomUUID(), fingerprint: "test", snapshot: { name: "Image", assets: { "/image.png": hash } } });
+    await db.insert(schema.agentContentRevisions).values(await storeFields({ id: revisionId, userId: owner, agentProfileId: randomUUID(), fingerprint: "test", snapshot: { name: "Image", assets: { "/image.png": hash } } }, {"snapshot":"json-gzip"}));
     const id = randomUUID();
     await db.insert(schema.agentModerationReviews).values({ id, contentRevisionId: revisionId });
     expect((await readModerationEvidence(db, moderator, id, hash)).toString()).toBe("retained image");
@@ -160,9 +161,9 @@ describe("moderation intake", () => {
   test("ordinary child does not disclose escalated parent-only evidence", async () => {
     const parentId = randomUUID(), childId = randomUUID(), profileId = randomUUID();
     const parentHash = "b".repeat(64), childHash = "c".repeat(64);
-    await db.insert(schema.agentContentAssets).values([{ hash: parentHash, bytes: Buffer.from("parent") }, { hash: childHash, bytes: Buffer.from("child") }]);
-    await db.insert(schema.agentContentRevisions).values({ id: parentId, userId: owner, agentProfileId: profileId, fingerprint: parentId, snapshot: { assets: { parent: parentHash } } });
-    await db.insert(schema.agentContentRevisions).values({ id: childId, parentRevisionId: parentId, userId: owner, agentProfileId: profileId, fingerprint: childId, snapshot: { assets: { child: childHash } } });
+    await db.insert(schema.agentContentAssets).values(await storeFields([{ hash: parentHash, bytes: Buffer.from("parent") }, { hash: childHash, bytes: Buffer.from("child") }], {"bytes":"binary"}));
+    await db.insert(schema.agentContentRevisions).values(await storeFields({ id: parentId, userId: owner, agentProfileId: profileId, fingerprint: parentId, snapshot: { assets: { parent: parentHash } } }, {"snapshot":"json-gzip"}));
+    await db.insert(schema.agentContentRevisions).values(await storeFields({ id: childId, parentRevisionId: parentId, userId: owner, agentProfileId: profileId, fingerprint: childId, snapshot: { assets: { child: childHash } } }, {"snapshot":"json-gzip"}));
     const parentReview = randomUUID(), childReview = randomUUID();
     await db.insert(schema.agentModerationReviews).values([{ id: parentReview, contentRevisionId: parentId, route: "escalated" }, { id: childReview, contentRevisionId: childId }]);
     expect((await readModerationReview(db, moderator, childReview)).parent).toBeNull();
@@ -178,6 +179,8 @@ describe("moderation intake", () => {
     const first = await listModerationQueue(db, moderator);
     const second = await listModerationQueue(db, moderator, { offset: first.nextOffset! });
     expect(first.items).toHaveLength(25);
+    expect(first.items.every(row => row.name === "Original character")).toBe(true);
+    expect(JSON.stringify(first)).not.toContain("snapshot");
     expect(second.items).toHaveLength(2);
     expect(new Set([...first.items, ...second.items].map(r => r.id)).size).toBe(27);
     expect(JSON.stringify(first)).not.toContain(held.claim!.token);

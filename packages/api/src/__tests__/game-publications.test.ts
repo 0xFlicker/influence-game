@@ -1,3 +1,4 @@
+import { storeJson } from "../services/payload-storage.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
@@ -283,12 +284,12 @@ async function createPublicationFixture(db: DrizzleDB): Promise<{
     INSERT INTO game_turns (
       id, game_id, turn_sequence, status, planned_owner_epoch,
       committed_owner_epoch, base_event_sequence, base_dialogue_sequence,
-      base_publication_sequence, intent, intent_hash, effect_hash,
-      commit_result, committed_at
+      base_publication_sequence, intent_object, intent_hash, effect_hash,
+      commit_result_object, committed_at
     ) VALUES (
       ${turnId}, ${gameId}, 1, 'committed', ${ownerEpoch},
-      ${ownerEpoch}, 0, 0, 0, '{}'::jsonb, ${SHA}, ${SHA},
-      '{}'::jsonb, ${NOW}
+      ${ownerEpoch}, 0, 0, 0, ${JSON.stringify(await storeJson({}))}::jsonb, ${SHA}, ${SHA},
+      ${JSON.stringify(await storeJson({}))}::jsonb, ${NOW}
     )
   `);
   return { gameId, ownerEpoch, turnId };

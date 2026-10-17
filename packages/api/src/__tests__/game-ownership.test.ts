@@ -1,3 +1,4 @@
+import { loadPayloads } from "../services/payload-storage.js";
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
@@ -153,8 +154,8 @@ describe("atomic game owner claim and roster freeze", () => {
 
       const seat = await ownedSeatFor(fixture.db, fixture.gameId, fixture.profileA.id);
       expect(JSON.parse(seat.agentConfig).toolChoiceMode).toBe("required");
-      const revision = (await fixture.db.select().from(schema.agentRevisions)
-        .where(eq(schema.agentRevisions.id, seat.agentRevisionId!)))[0]!;
+      const revision = (await loadPayloads(fixture.db.select().from(schema.agentRevisions)
+        .where(eq(schema.agentRevisions.id, seat.agentRevisionId!))))[0]!;
       expect(revision.effectiveRuntimeSnapshot.toolChoiceMode).toBe("required");
     } finally {
       if (savedToolChoice === undefined) delete process.env.INFLUENCE_LLM_TOOL_CHOICE_MODE;
@@ -863,8 +864,8 @@ async function expectCoherentFrozenSeat(
   seat: typeof schema.gamePlayers.$inferSelect,
 ): Promise<void> {
   expect(seat.agentRevisionId).toBeTruthy();
-  const revision = (await db.select().from(schema.agentRevisions)
-    .where(eq(schema.agentRevisions.id, seat.agentRevisionId!)))[0]!;
+  const revision = (await loadPayloads(db.select().from(schema.agentRevisions)
+    .where(eq(schema.agentRevisions.id, seat.agentRevisionId!))))[0]!;
   const snapshot = (await db.select().from(schema.competitionRatingSnapshots)
     .where(eq(schema.competitionRatingSnapshots.gameId, gameId)))
     .find((candidate) => candidate.agentProfileId === seat.agentProfileId)!;

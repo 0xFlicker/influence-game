@@ -1,3 +1,4 @@
+import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { testUserIdForWallet, grantTestAuthority } from "./rbac-fixtures.js";
 /**
  * Game REST API endpoint tests.
@@ -1667,7 +1668,7 @@ describe("Game REST API", () => {
       await markGameCompleted(db, id);
       const owner = await insertOwner(db, id);
       await insertCanonicalEventRows(db, id, owner, createCompletedCanonicalEventFixture(id));
-      await db.insert(schema.gameCognitiveArtifacts).values({
+      await db.insert(schema.gameCognitiveArtifacts).values(await storeFields({
         id: randomUUID(),
         gameId: id,
         artifactType: "strategy",
@@ -1685,7 +1686,7 @@ describe("Game REST API", () => {
           rawProviderResponse: "provider payload",
         },
         redactionStatus: "active",
-      });
+      }, {"payload":"json-gzip"}));
 
       const res = await app.request(`/api/games/${id}/results`);
       expect(res.status).toBe(200);
@@ -1754,7 +1755,7 @@ describe("Game REST API", () => {
         const { id } = await createTestGame(app, adminToken);
         const first = await joinTestPlayer(db, app, id, "First Competitor", userToken);
         const secondAgentId = await createAdditionalTestAgent(db, "Second Competitor");
-        const revisionsBefore = await db.select().from(schema.agentRevisions);
+        const revisionsBefore = await loadPayloads(db.select().from(schema.agentRevisions));
 
         const rejected = await app.request(`/api/games/${id}/join`, json({
           agentProfileId: secondAgentId,
@@ -1768,7 +1769,7 @@ describe("Game REST API", () => {
         });
         expect(await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, id)))
           .toMatchObject([{ id: first.playerId, agentProfileId: first.agentProfileId }]);
-        expect(await db.select().from(schema.agentRevisions)).toEqual(revisionsBefore);
+        expect(await loadPayloads(db.select().from(schema.agentRevisions))).toEqual(revisionsBefore);
 
         const replay = await app.request(`/api/games/${id}/join`, json({
           agentProfileId: first.agentProfileId,

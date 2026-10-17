@@ -1,3 +1,4 @@
+import "./payload-test-store.js";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
