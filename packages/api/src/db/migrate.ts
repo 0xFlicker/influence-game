@@ -70,12 +70,13 @@ const RELEASE_SAFE_BIGINT_WIDENING = new RegExp(
   "i",
 );
 
-// This reviewed migration removes only Influence-specific review revision FKs;
-// Werewolf review identities are not Influence rating revisions. Existing rows,
-// columns and rating constraints remain intact. Pin the entire SQL file so any
-// edit or additional constraint removal requires a fresh policy review.
+// Pin each reviewed removal's entire SQL file so any edit or additional
+// constraint removal requires a fresh policy review. 0108 removes only
+// Influence-specific review revision FKs; 0118 removes only the retrospective
+// input size gate. Both preserve existing rows and columns.
 const REVIEWED_CONSTRAINT_REMOVAL_MIGRATIONS = new Map([
   ["0108_house_owner_learning.sql", "518ef175bb2cd547d7a5ca5c5b282025d578cd8e404439f54cbcd5f95b543ae6"],
+  ["0118_retrospective_input_size.sql", "442eadf1385878d9526e7b3d7dcc059da36f4a4fdea232ec04a0cc9efd9fe13a"],
 ]);
 
 export function resolveMigrationsFolder(

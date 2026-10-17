@@ -94,6 +94,21 @@ describe("release migration identity", () => {
 });
 
 describe("expand-contract release migration policy", () => {
+  test("allows only the exact reviewed retrospective size-gate removal", () => {
+    const migration = path.resolve(import.meta.dir, "../../drizzle/0118_retrospective_input_size.sql");
+    const sql = readFileSync(migration, "utf8");
+    expect(inspectReleaseMigrationFiles([migration])).toEqual([]);
+    for (const [file, content] of [
+      ["unreviewed.sql", sql],
+      [migration, sql.replace("game_retrospective_inputs_size_check", "game_retrospective_inputs_source_check")],
+      [migration, `${sql}\nALTER TABLE games DROP CONSTRAINT games_game_kind_check;`],
+    ] as const) {
+      expect(inspectReleaseMigrationSql(file, content)).toContainEqual(
+        expect.objectContaining({ rule: "drop-constraint" }),
+      );
+    }
+  });
+
   test("allows only the exact reviewed House owner-learning constraint removals", () => {
     const migration = path.resolve(import.meta.dir, "../../drizzle/0108_house_owner_learning.sql");
     const sql = readFileSync(migration, "utf8");
