@@ -18,7 +18,7 @@ The executable inventory is `packages/api/src/services/storage-payload-inventory
 | Editorial, rendering and repair documents | `house_cut_jobs.source`, `.journal`, `.publication`, `game_postgame_media.render_input_snapshot`, `visual_operation_events.evidence`, `visual_render_operations.request`, `visual_repair_jobs.render_context`, `visual_media_requests.input` |
 | Immutable character revisions and editor responses | `agent_content_revisions.snapshot`, `agent_revisions.behavior_snapshot`, `.effective_runtime_snapshot`, `account_text_operations.result`, `anonymous_text_operations.result` |
 
-Each SQL column becomes `<old_name>_object`; application property names stay stable. The database checks allow only the seven reference fields, never an embedded body. The private bucket is the existing `PRIVATE_TRACE_STORAGE_*` configuration; it must differ from the public asset bucket. New objects live under `payloads/v1/{codec}/{sha256}`. Images are byte-exact. JSON/text uses gzip. Both stored and uncompressed SHA-256 and byte lengths are verified on reads.
+Each SQL column becomes `<old_name>_object`; application property names stay stable. The database checks allow only the seven reference fields, never an embedded body. The private bucket uses the existing `LINODE_PRIVATE_CONTENT_ENDPOINT`, `LINODE_PRIVATE_CONTENT_ACCESS_KEY`, `LINODE_PRIVATE_CONTENT_SECRET_KEY`, and `LINODE_PRIVATE_CONTENT_BUCKET` configuration; it must differ from the public asset bucket. New objects live under `payloads/v1/{codec}/{sha256}`. Images are byte-exact. JSON/text uses gzip. Both stored and uncompressed SHA-256 and byte lengths are verified on reads.
 
 Already-bucket-backed avatars, editorial game assets, private traces and rendered media stay in their existing stores. The isolated staging-render proof fixture also stores its frozen document as an object reference; its disposable proof database is recreated from the exported fixture, not upgraded in place.
 
@@ -67,6 +67,38 @@ bun /app/dist/migrate-storage-payloads.js cutover --writers-stopped
 6. Measure actual database/TOAST sizes after the table rewrite. The migration replaces inline bodies rather than leaving dead body columns. Normal vacuum/analyze can refresh statistics; schedule any additional database compaction based on measured remaining space, not a claim that an object upload alone freed disk.
 
 Staging and production each repeat this procedure against their own existing data. Local proof does not certify either live environment. An ordinary automated deployment is expected to fail safely on populated pre-cutover rows; it must not bypass the guard or fabricate migration receipts.
+
+### Staging execution prerequisites and order
+
+**The stock `linode-iac/scripts/staging-deploy.sh` does not implement this cutover.** It stops the old API and then calls `systemctl restart influence.service`; that starts API, web and render services together. The matching workflow wraps that command in a 20-minute timeout. Neither behavior is suitable for an offline bulk migration. This application PR supplies the migration CLI, not the missing infrastructure orchestration.
+
+Before merging this application release, prepare and test a maintenance-aware staging execution path in `linode-iac`. Keep image building and release-manifest generation enabled, but hold `Deploy Staging` before it gains host access, using the staging environment's approval gate. As inspected on 2026-10-17, that environment had no protection rules: a manual hold is a prerequisite, not an existing safeguard. Do not disable the image build or deliberately make the release-manifest workflow fail to prevent deployment.
+
+The maintenance execution path must perform this sequence against **staging only**:
+
+1. Resolve the successful main build's exact candidate SHA, API/web/render digests, migration-set hash and manifest provenance. Preserve the previous release files and images. Verify `/opt/influence/.env` selects the staging database and a private bucket distinct from production and public assets. Read the installed units, Compose projects and helper versions; repository source is not proof of live host state. Confirm database/WAL capacity as well as host backup capacity.
+2. Inventory and pre-copy with the candidate CLI while the old application is available. Take and restore-test a preliminary full backup. Uploads do not change application readers or constitute a second deployment.
+3. Acquire the real workflow's authenticated admission lease. Wait for each old game worker to acknowledge the exact fence and zero owned games, then drain/stop it through the existing handoff helper. Drain the render worker and wait for its process to exit. Do not kill an in-flight game or fabricate a drained acknowledgement.
+4. Close ingress and stop every remaining API/background writer and all application containers. Prevent systemd, Docker restart policies and another workflow from restarting old code. Keep a persistent maintenance record with the target image identities and completed phase. Take the final stopped-writer backup and fingerprints. Confirm zero other database connections. **The admission lease expires after 120 seconds without heartbeats; with the API stopped, it is not the maintenance barrier.** Ingress isolation and stopped writers must survive a lost SSH/CI session and host restart.
+5. Run the candidate CLI's `cutover --writers-stopped` in a host-owned, resumable operation, with the environment mounted read-only. Do not run it under the stock deployment's 20-minute kill timeout. It finishes copying, verifies every object, applies 0119–0122 transactionally, and verifies again. Keep services stopped on any error; never automatically restore old code against the converted schema.
+6. Start only the candidate gateway in `INFLUENCE_API_STARTUP_MODE=validation` and candidate web, privately, with ingress still closed and workers stopped. Check exact release identity, existing images/documents, retrospective/recovery bindings, replay/Studio reads, counts, hashes and unchanged relational fingerprints. Validation mode disables background dispatch; it does not replace network isolation or authorization. Reacquire and heartbeat a fresh admission lease if the old lease expired; do not reuse its stale fence.
+7. After proof succeeds, start the same verified gateway release in active mode, verify it, then start and verify the exact candidate game/render workers under closed admission. Restore ingress, release admission, record the genuine staging receipt, and run the existing exact-release staging E2E workflow. Restore normal deployment controls only after the maintenance operation is complete. This is still **one application cutover in one maintenance window**; validation and activation use the same pinned release.
+
+The migration invocation within that prepared host operation is:
+
+```bash
+# API_IMAGE_REF must come from the verified candidate release manifest.
+# /opt/influence/.env is the root-only staging Doppler file. Never source it
+# as shell code or print it. Bun, not Docker, parses its dotenv quoting.
+docker run --rm --network host --read-only --cap-drop ALL \
+  --security-opt no-new-privileges \
+  --mount type=bind,src=/opt/influence/.env,dst=/run/storage-cutover.env,readonly \
+  --entrypoint bun "$API_IMAGE_REF" \
+  --env-file=/run/storage-cutover.env \
+  /app/dist/migrate-storage-payloads.js cutover --writers-stopped
+```
+
+Use the same invocation with `inventory`, `copy` or `verify` in place of `cutover --writers-stopped` for the corresponding phase. This command alone does **not** drain services, establish maintenance isolation, take a backup, select a candidate or produce a trusted deployment receipt. Those are prerequisites and responsibilities of the maintenance execution path above. No staging cutover was performed while preparing this procedure; direct host inspection was unavailable because SSH rejected the local key.
 
 ## Interruption and rollback
 
