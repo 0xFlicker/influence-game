@@ -46,7 +46,7 @@ Daily Free acceptance is queue entry, not proof of seating in a match.
 
 The director is sampled every 250 ms. Only visible, playing, advancing samples
 count. Pauses, loading waits, seek jumps and browser-sleep gaps are excluded.
-`watch_progress` flushes deltas every 15 seconds and on visibility/page exit.
+`watch_progress` flushes deltas every 30 seconds and on visibility/page exit.
 `active_seconds` measures wall time; `new_content_seconds` measures the union of
 viewed content intervals per cue in this mounted watch session. Rewatching an
 interval adds active time but not new coverage. Playback speed therefore affects

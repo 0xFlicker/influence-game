@@ -37,7 +37,7 @@ export function useWatchAnalytics<C extends WatchCue>(director: PresentationDire
     };
     captureProductEvent("watch_opened", properties);
     const sampleTimer = setInterval(sample, 250);
-    const flushTimer = setInterval(flush, 15000);
+    const flushTimer = setInterval(flush, 30000);
     document.addEventListener("visibilitychange", flush);
     window.addEventListener("pagehide", flush);
     return () => {
