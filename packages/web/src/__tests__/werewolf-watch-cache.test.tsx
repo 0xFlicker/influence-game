@@ -54,7 +54,7 @@ function fixture(speeches: number[], latestCursor = 128, status = "cancelled") {
       publicationCutoff: "2026-10-06T00:00:00.000Z", latestCursor,
       fromCursor: start, throughCursor: moments.at(-1)?.cursor ?? latestCursor,
       players: players.map(p => ({ ...p, personality: "", backstory: "" })),
-      moments, navigation: [], playback: [...speechAt].map(cursor => ({ cursor, steps: 1 })), media: {},
+      moments, navigation: [], playback: [...speechAt].map(cursor => ({ cursor, steps: 1, durationsMs: [4450], keys: [`g:mystery:${cursor}`] })), media: {},
     });
   };
   globalThis.fetch = Object.assign(fetcher, { preconnect: originalFetch.preconnect }) as typeof fetch;
@@ -107,11 +107,11 @@ test("ordinary entry plays the opening; its stops seek, pause, restart and hand 
   expect(view.result.current.openingCue?.opening.shot).toBe("house");
   expect(view.result.current.scrubCount).toBe(6);
   await act(async () => view.result.current.toggle());
-  await act(async () => {await view.result.current.seekStop(2);});
+  await act(async () => {await view.result.current.seekOpening(1);});
   expect(view.result.current.openingCue?.opening.title).toBe("Actual episode");
   expect(view.result.current.scrubPosition).toBe(1);
   expect(view.result.current.snapshot.isPlaying).toBe(false);
-  await act(async () => {await view.result.current.seekStop(4);view.result.current.director.manualAdvance();});
+  await act(async () => {await view.result.current.seekOpening(3);view.result.current.director.manualAdvance();});
   expect(view.result.current.openingCue).toBeNull();
   expect(view.result.current.active?.cursor).toBe(1);
   await act(async () => view.result.current.previous());
@@ -136,4 +136,18 @@ test("restarting from a distant moment restores opening navigation before the fi
   expect(view.result.current.openingCue?.opening.shot).toBe("house");
   await act(async () => { await view.result.current.seek(1, false); view.result.current.previous(); });
   expect(view.result.current.openingCue?.opening.shot).toBe("door");
+});
+
+test("frame seek loads a distant window at its exact local offset and keeps a paused viewer paused", async () => {
+  const requests = fixture([1, 40, 65, 97]);
+  const view = renderHook(useFixtureWatch);
+  await waitFor(() => expect(view.result.current.preparing).toBe(false));
+  await act(async () => { await view.result.current.seek(1, false); });
+  await act(async () => { await view.result.current.seekTiming("g:mystery:97", 1233.333333); });
+  expect(requests).toContain(97);
+  expect(view.result.current.director.getActiveCue()?.key).toBe("g:mystery:97");
+  expect(view.result.current.director.getTimelineElapsedBaseMs()).toBeCloseTo(1233.333333);
+  expect(view.result.current.snapshot.isPlaying).toBe(false);
+  await act(async () => { await view.result.current.seekTiming("g:mystery:97", 2000); });
+  expect(view.result.current.director.getTimelineElapsedBaseMs()).toBe(2000);
 });

@@ -1,4 +1,5 @@
 "use client";
+import {useWatchTimeline} from "@/components/watch/use-watch-timeline";
 import {isFormatSocialTranscriptMessage, buildClassicPresentationCues, buildReplayPlayersForCue, comparePresentationCues, findCueForAdjacentScene, formatCueScene, formatSnapshotForPresentationCursor, mergeFormatAndSocialCues} from "./influence-replay-cues";
 export {isFormatSocialTranscriptMessage, buildClassicPresentationCues, buildReplayPlayersForCue, comparePresentationCues, findCueForAdjacentScene, formatSnapshotForPresentationCursor} from "./influence-replay-cues";
 
@@ -160,6 +161,7 @@ function DramaticReplayTheater({
   useWatchAnalytics(director, game.id, "influence", live ? "live" : "replay");
   const { fullscreen, button: fullscreenButton, error: fullscreenError, toggle: toggleFullscreen } = usePlayerFullscreen(animationScope);
   const {thinking:showThinking, setThinking:setShowThinking} = preferences;
+  const timeline = useWatchTimeline(director, presentationCues, showThinking);
   const controlsRef = useRef<HTMLDivElement>(null);
   const controlsHovered = useRef(false);
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -264,11 +266,9 @@ function DramaticReplayTheater({
       director.play();
       return;
     }
-    if (live) {
-      director.append(presentationCues);
-    } else {
-      director.load(presentationCues);
-    }
+    // Late visual/timing metadata must retain the selected source and local time,
+    // including on completed replays.
+    director.append(presentationCues);
   }, [
     director,
     directorSnapshot.cueKeys.length,
@@ -692,7 +692,7 @@ function DramaticReplayTheater({
         <WatchTransport shareHref={activeCue?.canonicalSequence != null ? gameReplaySequenceHref(game.slug,activeCue.canonicalSequence) : undefined} fullscreen={fullscreen} fullscreenButton={fullscreenButton} toggleFullscreen={toggleFullscreen} fullscreenError={fullscreenError}
           header={activeFormatIdForSocialScene ? <div className="mb-3 flex justify-center"><ActiveFormatLabel formatId={activeFormatIdForSocialScene} /></div> : null}
           isPlaying={isPlaying} togglePlay={() => { if (isPlaying) pausePresentation(); else director.play(); }} speed={speed} onSpeed={value => director.setSpeed(value)}
-          goToBeginning={goToBeginning} goToPrevScene={goToPrevScene} onSeek={position => director.seek(position - 1)} goToNextScene={goToNextScene} goToEnd={goToEnd}
+          goToBeginning={goToBeginning} goToPrevScene={goToPrevScene} onSeek={frame => {const target = timeline.target(frame); if (target) {director.setFollowTail(false); director.seekTimeline(target.index, target.elapsedMs);}}} frame={timeline.frame} frameCount={timeline.frameCount} fps={timeline.fps} goToNextScene={goToNextScene} goToEnd={goToEnd}
           live={live} cursor={directorSnapshot.cursor} count={presentationCues.length}
           thinking={{enabled:showThinking,onChange:setShowThinking}} />
       </div>

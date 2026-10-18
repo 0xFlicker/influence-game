@@ -1,3 +1,5 @@
+import {werewolfStepDurations} from "./watch-timing";
+import {WOLF_TRANSFORM_MS, WOLF_STAGGER_MS} from "../visual-speech";
 import { werewolfVisualStaging } from "./visual-staging";
 import { applyWerewolfEvent } from "./rules";
 import { projectWerewolfEntry, projectWerewolfSnapshot, type WerewolfAudience } from "./observation";
@@ -6,23 +8,23 @@ import {isWerewolfPlayable, type WerewolfNightAction, type WerewolfWatchIdentity
 
 /** Server-only staging coordinates never appear in the browser DTO. */
 export type WerewolfWatchStaging = ReturnType<typeof werewolfVisualStaging>;
-export function projectWerewolfWatch(events: readonly WerewolfEvent[], audience: WerewolfAudience, fromCursor = 1, limit = 32) {
+export function projectWerewolfWatch(events: readonly WerewolfEvent[], audience: WerewolfAudience, fromCursor = 1, limit = 32, hasWolfForms?: (staging: WerewolfWatchStaging, cursor: number, ids: string[]) => boolean) {
   if (!["mystery", "omniscient"].includes(audience) || !Number.isSafeInteger(fromCursor) || fromCursor < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 64) throw new Error("Invalid watch window");
-  return projectWatchHistory(events, audience, fromCursor, limit);
+  return projectWatchHistory(events, audience, fromCursor, limit, hasWolfForms);
 }
 
 /** Producer-only complete projection of an already bounded canonical prefix.
  * The caller materializes permitted media and paginates before serialization. */
-export function projectWerewolfProductionWatch(events: readonly WerewolfEvent[], audience: WerewolfAudience) {
+export function projectWerewolfProductionWatch(events: readonly WerewolfEvent[], audience: WerewolfAudience, hasWolfForms?: (staging: WerewolfWatchStaging, cursor: number, ids: string[]) => boolean) {
   if (audience !== "mystery" && audience !== "omniscient") throw new Error("Invalid Werewolf audience");
-  return projectWatchHistory(events, audience, 1, Number.MAX_SAFE_INTEGER);
+  return projectWatchHistory(events, audience, 1, Number.MAX_SAFE_INTEGER, hasWolfForms);
 }
 
-function projectWatchHistory(events: readonly WerewolfEvent[], audience: WerewolfAudience, fromCursor: number, limit: number) {
+function projectWatchHistory(events: readonly WerewolfEvent[], audience: WerewolfAudience, fromCursor: number, limit: number, hasWolfForms?: (staging: WerewolfWatchStaging, cursor: number, ids: string[]) => boolean) {
   let state: WerewolfState | null = null, cursor = 0;
   const moments: Array<WerewolfWatchMoment & { staging: WerewolfWatchStaging }> = [];
   const navigation: WerewolfWatchIndex[] = [];
-  const playback: Array<{cursor: number; steps: number}> = [];
+  const playback: Array<{cursor: number; steps: number; durationsMs: number[]; keys: string[]}> = [];
   const introducedWolves = new Set<string>();
   let sceneId = "introduction", chapterId = "introduction", packAttempt = 1;
   for (const frame of walkWerewolfHistory(events, audience)) {
@@ -51,14 +53,26 @@ function projectWatchHistory(events: readonly WerewolfEvent[], audience: Werewol
         }
         navigation.push({ cursor, step: nightActions.length, chapterId, sceneId, label });
       }
-      if (isWerewolfPlayable(entry)) playback.push({cursor, steps: entry.kind === "vote" && entry.result.ballots.length > 0 ? entry.result.ballots.length + 2 : 1 + nightActions.length});
       const firstPackSpeech = entry.kind === "speech" && entry.audience === "pack" && isWerewolfPlayable(entry);
       const hunt = nightActions.find(action => action.kind === "hunt");
       const appearingWolves = audience === "omniscient" ? firstPackSpeech ? staging.aliveIds.filter(id => staging.roles[id] === "werewolf") : hunt?.wolfIds ?? [] : [];
       const transformWolfIds = appearingWolves.filter(id => !introducedWolves.has(id));
       for (const id of transformWolfIds) introducedWolves.add(id);
-      if (cursor < fromCursor || cursor >= fromCursor + limit) continue;
       const visualStaging = werewolfVisualStaging(staging, event, entry);
+      if (isWerewolfPlayable(entry)) {
+        const durationsMs = werewolfStepDurations(entry, state.players, nightActions);
+        if (transformWolfIds.length && hasWolfForms?.(visualStaging, cursor, transformWolfIds)) {
+          const step = nightActions.length ? nightActions.findIndex(action => action.kind === "hunt") : 0;
+          if (step >= 0) durationsMs[step]! += WOLF_TRANSFORM_MS + (transformWolfIds.length - 1) * WOLF_STAGGER_MS;
+        }
+        const key = `${state.gameId}:${audience}:${cursor}`;
+        const rank = (ballot: {targetId: string | null; unavailable: boolean}) => ballot.targetId ? 0 : ballot.unavailable ? 1 : 2;
+        const keys = entry.kind === "vote" && entry.result.ballots.length
+          ? [...[...entry.result.ballots].sort((a, b) => rank(a) - rank(b)).map(ballot => `${key}:ballot:${ballot.voterId}`), `${key}:tally`, key]
+          : [...nightActions.map(action => `${key}:${action.kind}`), key];
+        playback.push({cursor, steps: durationsMs.length, durationsMs, keys});
+      }
+      if (cursor < fromCursor || cursor >= fromCursor + limit) continue;
       moments.push({ cursor, entry, ...(transformWolfIds.length ? { transformWolfIds } : {}), snapshot: projectWerewolfSnapshot(state, audience, cursor), chapterId, sceneId, mediaKey: null,
         ...(nightActions.length ? { night: { actions: nightActions, before: projectWerewolfSnapshot(staging, audience, cursor) } } : {}), staging: visualStaging });
     }

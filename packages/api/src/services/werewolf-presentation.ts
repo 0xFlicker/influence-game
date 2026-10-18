@@ -102,8 +102,11 @@ export async function readWerewolfWatch(db: DrizzleDB, id: string, audience: Wer
   if (!game || !isViewerGame(game)) throw new WerewolfGameError("Game not found", 404);
   if (!game.startedAt) throw new WerewolfGameError("This game has not started. Open its casting lobby.");
   const events = await readWerewolfEvents(db, game.id);
-  const projection = projectWerewolfWatch(events, audience, fromCursor, limit);
   const rows = await publishedWerewolfScenes(db, game.id, publicationCutoff);
+  const projection = projectWerewolfWatch(events, audience, fromCursor, limit, (staging, cursor, ids) => {
+    const {wolfForms} = bindWerewolfScene(rows, game.id, audience, cursor, publicationCutoff, staging);
+    return ids.some(id => Boolean(wolfForms[id]));
+  });
   const references = await werewolfReferenceMetadata(db, game.id, events.find(event => event.type === "werewolf.started")?.payload.players);
   return materializeWerewolfWatch(projection, { id: game.id, slug: game.slug, status: game.status, visualPaused: game.status === "suspended" && Boolean(werewolfVisualPause(JSON.parse(game.config))) }, audience, publicationCutoff, rows, references);
 }

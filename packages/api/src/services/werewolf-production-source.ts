@@ -77,11 +77,14 @@ export async function buildWerewolfProductionSourceSnapshot(tx: DrizzleDB | Visu
   const throughEventSequence = options.snapshot?.throughEventSequence ?? accepted.sequence;
   if (!allEvents.some(event => event.sequence === throughEventSequence)) throw new WerewolfGameError("Production source prefix is unavailable");
   const events = allEvents.filter(event => event.sequence <= throughEventSequence);
-  const projection = projectWerewolfProductionWatch(events, options.audience);
-  if (options.snapshot && options.snapshot.throughCursor !== projection.latestCursor) throw new WerewolfGameError("Production source cursor changed", 409);
   const publicationCutoff = options.refreshVisuals ? new Date().toISOString() : options.snapshot?.publicationCutoff ?? new Date().toISOString();
   const rows = (await publishedWerewolfScenes(tx, game.id, publicationCutoff, true)).filter(row => row.scene.boundarySequence <= throughEventSequence);
   rows.sort((a, b) => b.scene.boundarySequence - a.scene.boundarySequence || b.publication.revision - a.publication.revision || a.scene.id.localeCompare(b.scene.id) || a.publication.id.localeCompare(b.publication.id));
+  const projection = projectWerewolfProductionWatch(events, options.audience, (staging, cursor, ids) => {
+    const {wolfForms} = bindWerewolfScene(rows, game.id, options.audience, cursor, publicationCutoff, staging);
+    return ids.some(id => Boolean(wolfForms[id]));
+  });
+  if (options.snapshot && options.snapshot.throughCursor !== projection.latestCursor) throw new WerewolfGameError("Production source cursor changed", 409);
   const references = await werewolfReferenceMetadata(tx, game.id, events.find(event => event.type === "werewolf.started")?.payload.players,
     { availableHashes: options.refreshVisuals ? undefined : options.snapshot?.availableCharacterAssets });
   const availableCharacterAssets = [...new Set(references.flatMap(ref => [ref.bodyHash, ref.portraitHash].filter((hash): hash is string => hash !== null)))].sort();

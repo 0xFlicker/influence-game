@@ -1,3 +1,4 @@
+import {sceneSpeechDurationMs, SOLO_READ_START_MS, SCENE_READ_START_MS} from "@influence/engine/visual-speech";
 import {expect} from "bun:test";
 import type {Page} from "puppeteer";
 import type {WerewolfPresentation} from "@influence/engine/werewolf/presentation";
@@ -9,17 +10,26 @@ async function watchStops(page: Page) {
  const response = await fetch(watchUrl);
  if (!response.ok) throw new Error(`Watch window failed: ${response.status}`);
  const window = await response.json() as import("@influence/engine/werewolf/watch-contract").WerewolfWatchWindow;
- const stops = window.playback.flatMap(entry => Array.from({length: entry.steps}, (_, step) => ({cursor: entry.cursor, step})));
+ let timeMs = 5000 + 3000 + window.players.length * 2500 + 5300;
+ const stops = window.playback.flatMap(entry => entry.durationsMs.map((duration, step) => {const stop = {cursor:entry.cursor,step,startMs:timeMs,key:entry.keys[step]!};timeMs += duration;return stop;}));
  // A later-moment deep link has no opening until the first window is loaded.
  const openingCount = urls.some(url => Number(new URL(url).searchParams.get("fromCursor") ?? 1) === 1) ? window.players.length + 3 : 0;
- await page.waitForFunction(`Number(document.querySelector('input[aria-label="Replay position"]')?.max) === ${openingCount + stops.length}`);
- return {stops, openingCount};
+ await page.waitForSelector('input[aria-label="Replay position"]:not([disabled])');
+ return {stops, openingCount, watchUrl};
 }
 export async function seekWatch(page:Page,cursor:number,step=0){
- const {stops, openingCount} = await watchStops(page);
+ const {stops, watchUrl} = await watchStops(page);
  const index = stops.findIndex(stop=>stop.cursor>=cursor && (stop.cursor!==cursor || stop.step===step));
  if(index<0)throw new Error(`No playback stop for ${cursor}:${step}`);
- const position = openingCount + index + 1;
+ const stop = stops[index]!;
+ const targetUrl = new URL(watchUrl);targetUrl.searchParams.set("fromCursor",String(Math.floor((cursor-1)/32)*32+1));
+ const targetWindow = await (await fetch(targetUrl)).json() as import("@influence/engine/werewolf/watch-contract").WerewolfWatchWindow;
+ const moment = targetWindow.moments.find(moment=>moment.cursor===stop.cursor)!;
+ const entry = moment.entry;
+ const speech = entry.kind === "speech" ? entry.text : entry.kind === "discussion" ? entry.contribution.text : null;
+ const row = targetWindow.playback.find(row=>row.cursor===stop.cursor)!;
+ const offset = stop.key.includes(":ballot:") ? SOLO_READ_START_MS : speech ? entry.kind === "speech" && entry.purpose === "retrospective" ? SOLO_READ_START_MS : SCENE_READ_START_MS + row.durationsMs[step]! - sceneSpeechDurationMs(speech) : 0;
+ const position = Math.ceil((stop.startMs + offset) * 30 / 1000);
  await page.evaluate(`(() => {const input=document.querySelector('input[aria-label="Replay position"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(String(position))});input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));})()`);
  await page.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')) >= ${cursor} && document.querySelector('input[aria-label="Replay position"]')?.value === "${position}" && !Array.from(document.querySelectorAll('[role="status"]')).some(node => node.textContent === "Preparing…")`);
 }

@@ -2,8 +2,8 @@
 import {useRef, useState} from "react";
 
 /** A drag previews locally; only its final position may load another replay window. */
-export function ReplayScrubber({cursor, count, onSeek, onScrubStart, onScrubEnd}: {
-  cursor: number; count: number;
+export function ReplayScrubber({frame, frameCount, fps, onSeek, onScrubStart, onScrubEnd}: {
+  frame: number; frameCount: number; fps: number;
   onSeek: (position: number) => void | Promise<void>;
   onScrubStart?: () => void; onScrubEnd?: () => void;
 }) {
@@ -24,8 +24,8 @@ export function ReplayScrubber({cursor, count, onSeek, onScrubStart, onScrubEnd}
     else setPreview(null);
     onScrubEnd?.();
   };
-  return <input aria-label="Replay position" type="range" min={1} max={Math.max(1,count)}
-    value={Math.min(Math.max(1,preview ?? cursor + 1),Math.max(1,count))} disabled={count === 0}
+  return <input aria-label="Replay position" type="range" min={0} max={Math.max(0,frameCount - 1)} step={1} aria-valuetext={`${((preview ?? frame) / fps).toFixed(2)} seconds`}
+    value={Math.min(Math.max(0,preview ?? frame),Math.max(0,frameCount - 1))} disabled={frameCount === 0}
     onPointerDown={event => {
       if (event.button !== 0) return;
       revision.current++;

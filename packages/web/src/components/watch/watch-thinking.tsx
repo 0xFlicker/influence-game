@@ -23,8 +23,9 @@ export function WatchThinking<C extends WatchCue>({director, cueKey, enabled, sp
   const [error, setError] = useState<{key:string | null; message:string} | null>(null);
   const errorKey = cueKey;
   useEffect(() => {
+    director.setThinkingEnabled(enabled);
     if (!cueKey) return;
-    if (!enabled) { director.setThinking(cueKey, null); return; }
+    if (!enabled) return;
     const controller = new AbortController();
     director.setThinkingPending(cueKey, true);
     void load(AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]))

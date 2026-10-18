@@ -1,29 +1,31 @@
 # Influence Refactor Queue
 
-## HIGHEST PRIORITY — operator-mandated storage migration — 2026-10-16
+## Completed — operator-mandated storage migration — 2026-10-16
 
-- Status: `implemented; local development migrated and verified; staging/production pending`; **highest priority, ahead of every other backlog item**. Explicit operator requirement after production `mild-amber-node` suspended before retrospective initialization on an arbitrary 256 KiB input ceiling.
-- Immediate repair: remove the retrospective input ceiling so the preserved game can resume. This does not close the storage work. Existing JSONB retrospective inputs are an explicitly scoped temporary exception, not the target architecture.
+- Status: `closed` (rollout verified 2026-10-18). Local development, staging and production cutovers are complete. Staging converted all 33 columns and accounted for 105,651 references; production [workflow 39075295753](https://github.com/0xFlicker/linode-iac/actions/runs/39075295753) accepted release `9d50818a108465f0f76bf1333345c58464631be8` and passed canonical smoke. Historical pending-rollout wording in the runbooks is superseded by this deployment evidence.
+- The retrospective input ceiling was removed. Existing payloads now use the coordinated object-storage design; the temporary inline-storage exception is closed.
 - Operator correction: migrate the **whole storage surface in one coordinated cutover per environment**. Do not split retrospectives and images across separate deploys. The implementation covers all four binary columns and 29 document/evidence columns, including existing rows, accepted provider values, checkpoints, character revisions and pending evidence outboxes. See [inventory, commands, rollback and retention](deployment/private-payload-storage-cutover.md).
 - PostgreSQL retains relational authority, small operational state, object keys, hashes, byte lengths, versions, access controls and migration receipts. Reuse existing private/public bucket infrastructure. Upload and verify before reference commit; handle orphan objects and deletion/retention without exposing private content.
-- Required migration proof: inventory counts and bytes in every environment; resumable and idempotent copy; verified hashes/lengths; interrupted-upload and interrupted-cutover recovery; authenticated read parity; retrospective resume and replay/export parity; no dangling references; zero remaining binary bodies in PostgreSQL after cutover. Reclaim database space through an explicitly planned operational step. Do not mark complete until existing data, not just schemas/writers, has migrated.
+- Required migration proof: inventory counts and bytes in every environment; resumable and idempotent copy; verified hashes/lengths; interrupted-upload and interrupted-cutover recovery; authenticated read parity; retrospective resume and replay/export parity; no dangling references; zero remaining binary bodies in PostgreSQL after cutover. Reclaim database space through an explicitly planned operational step. Closure includes existing-data migration, not just schemas/writers.
 - Evidence: `packages/api/src/db/schema.ts`, `services/visual-scene-store.ts`, `services/visual-render-journal.ts`, `services/visual-game-assets.ts`, `services/owner-learning-worker.ts`, `services/house-cut-worker.ts`, and `services/game-retrospective-inputs.ts`. The initial audit is source evidence, not measured production table/TOAST sizes.
 
 ## HIGHEST PRIORITY — eliminate context-size game failures — 2026-10-16
 
-- Status: `ready`; second operator-mandated entry, alongside the storage migration. **A game must NEVER fail or suspend solely because its context input is too large.**
-- Remove ALL application-side context input byte/token checks that directly fail, suspend, cancel or require repair of Influence or Werewolf games. Audit initialization, every decision phase, retrospectives, provider adapters/coordinator, fallback traversal and recovery. Include genuine provider context-overflow handling: adapt/summarize context and retry a valid request rather than exhausting identical oversized calls into suspension.
+- Status: `ready`; highest remaining continuity priority: provider context-overflow adaptation. **A game must NEVER fail or suspend solely because its context input is too large.**
+- Focused source audit (2026-10-18): no additional active gameplay input-size gate was found. `provider-execution.ts` still classifies unrecognized HTTP 400 failures as generic `request_error`; `retrospective-invocation.ts` submits the full frozen account. Plan dedicated overflow classification plus semantics-preserving compaction/adaptation and retry. Larger-model fallback alone is not a guarantee. Owner Learning, House Cuts and cognitive-artifact capture limits are separate; the cognitive-artifact 256 KiB cap degrades evidence rather than suspending gameplay.
+- Preserve the rule against ALL application-side context input byte/token checks that directly fail, suspend, cancel or require repair of Influence or Werewolf games. Audit initialization, every decision phase, retrospectives, provider adapters/coordinator, fallback traversal and recovery. Include genuine provider context-overflow handling: adapt/summarize context and retry a valid request rather than exhausting identical oversized calls into suspension.
 - Replace every test asserting size-only failure with coverage proving continuation for large valid context, including Unicode, JSON escaping, long games, full rosters, growing prior statements and restart/resume. Preserve canonical outcome, accepted decisions, identity/privacy, required strategic information and stable accepted provider replay. Summaries are model context, never canonical state.
-- Immediate retrospective slice removes the engine/writer/database 256 KiB guards and size-only preflight rejection. The broader provider overflow/context adaptation audit remains open; do not claim this slice solves every provider window.
+- Completed retrospective slice removed the engine/writer/database 256 KiB guards and size-only preflight rejection. The broader provider overflow/context adaptation audit remains open; do not claim this slice solves every provider window.
 - Do not weaken exact output contracts, corruption checks, permissions, upload limits or bounded inspection pages under this requirement. Those are not context-input game-size gates.
 
 
 ## Shared presentation-time scrubber — 2026-10-07
 
-- Status: `ready`; explicit product follow-up.
+- Status: `implemented; PR validation complete, deployment pending` (2026-10-18). Both watch players now seek a 30 fps elapsed-time timeline compiled with Studio’s shared timing compiler; Previous/Next retain cue semantics. Werewolf supplies full-history per-step durations and keys while fetching only the selected replay window. See [watch timeline contract](watch-timeline.md).
 - Use the replay exporter's shared presentation timing compiler for the Influence and Werewolf browser scrubber. Represent elapsed presentation time instead of equally spaced cue ordinals, including precise positions inside speech, thinking, camera moves, transformations and vote holds.
 - Preserve Previous/Next as meaningful cue stops on the same timeline, including every ballot and the completed tally. Canonical events remain game authority; shared links retain stable source/cue anchors rather than depending on mutable elapsed time.
 - When thinking preferences or timing change, rebuild timing while preserving the active cue and local position. For windowed Werewolf playback, supply a lightweight complete timing index without loading all scene assets; live games append available history without moving a paused viewer.
+- Current limits: dragging commits on release; optional thinking expands the duration when fetched. Explicit seeks retain immediate camera cuts. Six deterministic browser cases passed; full audio/export sampling parity remains outside this change.
 - Pictures and future recorded speech should seek from the same sampled position. Keep the current ambient-music seek policy explicit until browser audio transport is integrated; do not imply that replacing the slider alone synchronizes audio.
 - Validate both games with Visual Mode on and off, Mystery/Omniscient privacy, thinking on/off, paused/playing seeks, cross-window jumps, final tallies, live-tail growth, and frame/audio agreement with export sampling.
 - Seams: shared `watch-transport.tsx` and `watch-director.ts`, `use-werewolf-watch.ts`, `dramatic-replay-viewer.tsx`, and the local replay export timing compiler.
@@ -215,10 +217,9 @@ Near-term order: R34 nullable-field policy. R23 is closed with occasional repeti
 - Status: `ready`
 - Priority: **medium**
 - Sources: `packages/web/src/app/games/[slug]/components/match-watch-shell.tsx`, `packages/web/src/app/games/[slug]/components/dramatic-replay-viewer.tsx`, `packages/web/src/app/games/[slug]/components/replay-controls.tsx`, and the format-aware game-viewer planning review on 2026-07-26.
-- Signal: the watch shell has useful structural accessibility—semantic regions, real buttons and links, focus-visible styles, cast-selection labels, pressed states, and inspector tab roles—but no coherent accessibility contract for changing theater content. It has no game-event live region or watch-specific status surface; replay navigation uses unlabeled icon-only buttons; and inspector tabs declare tab semantics without standard keyboard navigation.
-- Concrete seam: watch-shell landmarks and status regions, replay controls, inspector tabs, dynamic phase/result announcements, focus behavior, and shared component accessibility tests.
-- Validation path: keyboard-only navigation, screen-reader-oriented role/name/state assertions, one live-event announcement story, replay-control accessible-name coverage, tab arrow-key behavior, and focus retention through responsive reflow.
-- Suggested slice: audit and repair the shared watch shell as one accessibility pass before adding format-specific announcements. Establish accessible control names, correct tab keyboard behavior, a single canonical event/status announcement policy, and focused component/browser coverage without changing game authority or presentation pacing.
+- Confirmed gap (2026-10-18): `packages/web/src/components/watch/watch-inspector.tsx` declares tabs but lacks arrow-key navigation, roving focus and tab/panel associations. Shared playback controls already have accessible names; the frame scrubber has a named range, frame keyboard steps and elapsed-time value text.
+- Concrete slice: implement the inspector tab keyboard pattern and linked tab/panel roles, with focused keyboard and role/state tests.
+- Separate audit questions: canonical live-event announcements and focus retention through responsive reflow. Verify these before treating them as defects or expanding the implementation scope.
 
 ### R19. Extract a lightweight simulation package above the engine
 
@@ -566,6 +567,8 @@ Near-term order: R34 nullable-field policy. R23 is closed with occasional repeti
 ## PR 163 follow-ups — 2026-10-06
 
 ### Align the visual repair mode schema with deployed SQL
+
+- Status: `ready`; small standalone source/schema correction, reconfirmed 2026-10-18.
 
 `packages/api/src/db/schema.ts` still omits `harmonize` from `visual_repair_jobs_mode_check`, although main migration `0104_visual_panel_harmonization` and Werewolf migration `0112_werewolf_visual_recovery` permit it. Align the Drizzle source and verify a generated schema diff does not remove saved-panel harmonization. The current SQL migration chain is authoritative; do not rewrite applied migrations. Deferred explicitly by the operator during PR 163 cleanup.
 

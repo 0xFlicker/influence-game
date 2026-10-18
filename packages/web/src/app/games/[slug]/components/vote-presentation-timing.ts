@@ -1,7 +1,7 @@
 import { sceneCameraProgress } from "./visual-scene-layout";
 import { SOLO_EXIT_MS, SOLO_SPEECH_FADE_MS, SOLO_SPEECH_START_MS } from "./solo-presentation-timing";
 
-export const SILENT_BALLOT_DURATION_MS = 2200;
+export {SILENT_BALLOT_DURATION_MS} from "@influence/engine/visual-speech";
 
 /** Receipts appear with the spoken reveal; collection starts after its speech fades. */
 export function votePresentationTiming(elapsedMs: number, durationMs: number, reducedMotion = false) {
