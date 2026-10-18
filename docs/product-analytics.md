@@ -26,6 +26,11 @@ All events have `channel=web` and `environment=production`.
 
 - `$pageview`: sanitized current URL, SDK referrer/device/session attribution,
   allowlisted `utm_source`, `utm_medium`, `utm_campaign`.
+- `$pageleave`: SDK-managed browser exit event with previous-page duration and
+  scroll metadata. In-app navigation carries that metadata on the next pageview;
+  no duplicate manual leave event is sent for each route change.
+- `$web_vitals`: controlled by the PostHog project's Web Vitals setting. The SDK
+  configuration leaves performance capture unset to honor that setting.
 - `agent_creation_opened`: entry into public creation, with `flow`.
 - `join_opened`, `join_agent_selected`: saved-agent selector opened/submitted.
   An open selector emits its opening once capture becomes active; selectors
@@ -84,7 +89,7 @@ Use ordered funnels, production/web filters, and raw counts alongside percentage
 ## Privacy and reliability
 
 No request/response bodies, raw errors, agent text, wallet addresses or emails are
-captured. Automatic clicks, exception capture, network performance and surveys
+captured. Automatic clicks, exception capture and surveys
 are disabled. SDK-generated URLs, including nested acquisition properties, lose
 queries/fragments; referrers retain origin only. The recorder's URL masking hook
 also strips credentials, queries and fragments from rrweb metadata and SPA URLs.
@@ -105,7 +110,11 @@ link. Confirm one entry in PostHog Activity, anonymous-to-account continuity,
 creation/join requested and confirmed outcomes, and watch increments. Pause and
 hide the replay to confirm time stops; seek forward and verify coverage does not
 jump. Use existing saved agents where possible; do not spend on generation merely
-to test analytics. Verify the opt-out stops events. Dashboard empty/sample states
+to test analytics. Navigate between public pages, then leave the site and confirm
+the final `$pageleave` and previous-page duration. With Web Vitals enabled in the
+project, confirm `$web_vitals` arrives. Both SDK events must carry production/web
+properties and obey the same exclusions, URL sanitization and opt-out as custom
+events. Verify the opt-out stops events. Dashboard empty/sample states
 before production collection are not traffic evidence.
 
 ## Regional consent (reviewed October 17, 2026)

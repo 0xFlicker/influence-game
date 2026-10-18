@@ -45,6 +45,21 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
       analytics.setAnalyticsIdentity(null, false);
       analytics.captureProductEvent("allowed");
       assert.deepEqual(events, ["allowed"]);
+      assert.equal(sdkConfig.capture_pageleave, true);
+      assert.equal(sdkConfig.capture_performance, undefined);
+      // SDK-originated exit/performance events share our filtering and privacy
+      // boundary even though they don't call captureProductEvent.
+      const automaticEvent = event => ({ event, properties: {
+        $current_url: "https://thehouse.game/games?private=secret#token",
+        $prev_pageview_duration: 12,
+      } });
+      for (const eventName of ["$pageleave", "$web_vitals"]) {
+        const captured = sdkConfig.before_send(automaticEvent(eventName));
+        assert.equal(captured.properties.$current_url, "https://thehouse.game/games");
+        assert.equal(captured.properties.$prev_pageview_duration, 12);
+        assert.equal(captured.properties.channel, "web");
+        assert.equal(captured.properties.environment, "production");
+      }
       // The SDK invokes this same callback for rrweb Meta.href and SPA URLs.
       const maskReplayUrl = sdkConfig.session_recording.maskCapturedNetworkRequestFn;
       for (const name of [
@@ -59,10 +74,12 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
       // persistent opt-out flag, which every other tab reads on capture.
       const optOutsBeforeRouteChange = optedOut;
       analytics.suspendAnalytics();
+      assert.equal(sdkConfig.before_send(automaticEvent("$pageleave")), null);
       analytics.captureProductEvent("private-page");
       assert.equal(analytics.analyticsActive(), false);
       assert.equal(optedOut, optOutsBeforeRouteChange);
       analytics.setAnalyticsIdentity(null, true);
+      assert.equal(sdkConfig.before_send(automaticEvent("$web_vitals")), null);
       assert.equal(optedOut, optOutsBeforeRouteChange);
       analytics.setAnalyticsIdentity(null, false);
       assert.equal(analytics.analyticsActive(), true);
@@ -71,6 +88,8 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
       values.set("house:analytics-consent", JSON.stringify({ version: 1, analytics: false }));
       const event = new Event("storage"); Object.defineProperty(event, "key", { value: "house:analytics-consent" });
       window.dispatchEvent(event);
+      assert.equal(sdkConfig.before_send(automaticEvent("$pageleave")), null);
+      assert.equal(sdkConfig.before_send(automaticEvent("$web_vitals")), null);
       analytics.captureProductEvent("after-rejection");
       assert.equal(analytics.analyticsActive(), false);
       assert.deepEqual(events, ["allowed"]);
