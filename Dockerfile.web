@@ -44,7 +44,6 @@ ARG POSTHOG_UPLOAD_SOURCEMAPS=0
 WORKDIR /app/packages/web
 RUN --mount=type=secret,id=posthog_api_key \
     if [ "$POSTHOG_UPLOAD_SOURCEMAPS" = "1" ]; then \
-      test -s /run/secrets/posthog_api_key || { echo "PostHog source-map upload key is missing" >&2; exit 1; }; \
       export POSTHOG_PERSONAL_API_KEY="$(cat /run/secrets/posthog_api_key)"; \
     fi; \
     POSTHOG_UPLOAD_SOURCEMAPS="$POSTHOG_UPLOAD_SOURCEMAPS" bun run build

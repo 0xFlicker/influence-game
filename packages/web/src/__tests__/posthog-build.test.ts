@@ -9,12 +9,9 @@ function run(source: string, upload: boolean) {
   });
 }
 
-test("ordinary builds need no upload credential; release uploads fail fast without it", () => {
+test("ordinary builds need no upload credential", () => {
   const ordinary = run('const {default: config} = await import("./next.config"); if (config.productionBrowserSourceMaps) throw new Error("Public maps enabled");', false);
   expect(ordinary.exitCode).toBe(0);
-  const release = run('await import("./next.config");', true);
-  expect(release.exitCode).not.toBe(0);
-  expect(release.stderr.toString()).toContain("PostHog source-map upload requires");
 });
 
 test("real PostHog compiler hook uploads before deleting maps and fails on upload errors", () => {

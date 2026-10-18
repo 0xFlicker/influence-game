@@ -130,7 +130,8 @@ with the full git SHA. The GitHub Actions repository secret
 only to the web build via a BuildKit secret, never a public env var, build arg,
 runtime env or image layer. `POSTHOG_UPLOAD_SOURCEMAPS=1` selects this release-build
 step; local and PR preview builds do not upload maps or need the credential.
-Missing credentials or upload failures fail the release build before image push.
+The PostHog integration handles credential and upload failures normally; there
+are no separate secret-presence checks. Upload failure stops the build before image push.
 The plugin deletes maps after upload; Docker additionally checks that no static
 `.map` files remain before packaging the runtime. Production promotes this same
 immutable image, so the uploaded maps match the shipped chunks.

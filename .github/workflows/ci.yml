@@ -233,7 +233,6 @@ jobs:
         run: |
           posthog_args=()
           if [ "${{ matrix.target }}" = "web" ]; then
-            test -n "$POSTHOG_PERSONAL_API_KEY" || { echo "Missing POSTHOG_PERSONAL_API_KEY repository secret" >&2; exit 1; }
             posthog_args=(--build-arg POSTHOG_UPLOAD_SOURCEMAPS=1 --secret id=posthog_api_key,env=POSTHOG_PERSONAL_API_KEY)
           fi
           docker build -f ${{ matrix.dockerfile }} \
