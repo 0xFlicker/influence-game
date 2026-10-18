@@ -18,7 +18,7 @@ Validation covers absolute frame rounding, unequal cue durations, thinking inser
 
 - `bun run check`: typecheck and lint passed.
 - `bun run test:postgres`: 2,070 passed; final focused watch/admin/Studio source checks: 18 passed.
-- `bun run test` outside the network sandbox: 2,646 passed, 5 skipped, one unrelated existing privacy-page assertion failed (expects October 17 while the page says October 18). The first sandbox attempt also could not bind local callback ports.
+- Final `bun run test` after rebasing onto `origin/main`, outside the network sandbox: 2,644 passed, 5 skipped, zero failures. The unrelated privacy-date failure belonged to the removed PostHog branch commits.
 - Six deterministic browser cases passed: Werewolf live-window races, openings, ballots/tally, private night-action steps; Influence individual frames/native drag and thinking seeks. Focused director, timing-index parity, cache and readiness tests also passed after the final changes.
 
-No staging or production deployment was performed.
+Final typecheck, lint and provider-free tests passed on the rebased branch. PostgreSQL and browser results above were obtained before removing two unrelated inherited PostHog commits; the scrubber implementation rebased without conflicts. No staging or production deployment was performed.
