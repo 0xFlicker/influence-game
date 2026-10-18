@@ -46,9 +46,11 @@ export async function initializeAnalytics(key: string, host: string): Promise<vo
       defaults: "2026-05-30",
       autocapture: false,
       capture_pageview: false,
-      capture_pageleave: false,
+      // SPA pageviews already carry previous-page duration; capture the final
+      // page on browser exit through the SDK's pagehide/beacon handling.
+      capture_pageleave: true,
       capture_exceptions: false,
-      capture_performance: false,
+      // Leave capture_performance unset so Web Vitals follows project settings.
       disable_surveys: true,
       respect_dnt: true,
       disable_session_recording: true,
@@ -72,6 +74,9 @@ export async function initializeAnalytics(key: string, host: string): Promise<vo
       },
       before_send: event => {
         if (!event || excluded || !getAnalyticsConsent().analytics) return null;
+        // SDK-generated events must use the same dashboard filters as ours.
+        event.properties.channel = "web";
+        event.properties.environment = "production";
         // SDK defaults can contain full URLs; never send query strings, fragments,
         // OAuth codes, private editor text or request bodies.
         sanitizeAnalyticsProperties(event.properties);
