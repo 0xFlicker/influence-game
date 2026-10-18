@@ -381,7 +381,7 @@ export default function PrivacyPage() {
           </P>
         </Section>
 
-        <Section title="Product Analytics">
+        <Section id="analytics" title="Product Analytics">
           <P>
             We use PostHog, hosted in the United States, to understand entry pages,
             campaign sources, navigation, agent creation, match entry, and game
@@ -392,9 +392,14 @@ export default function PrivacyPage() {
           <P>
             On onboarding and dashboard pages we may record browser interactions
             with text, inputs, images, video, and canvas content masked or blocked.
-            These recordings help us investigate navigation problems. Optional
-            analytics uses browser storage, respects Do Not Track, and can be
-            disabled on this browser below.
+            These recordings start only when you accept analytics and help us investigate
+            navigation problems. We estimate country from your IP through Cloudflare
+            to choose the applicable analytics setting; this is not precise location.
+            Ordinary analytics starts by default for visitors detected in the United
+            States or Australia, with an opt-out. Elsewhere, or when country is
+            unavailable, it waits for your permission. Do Not Track and Global
+            Privacy Control disable optional tracking. Change or withdraw your
+            choice below at any time; essential site functions remain available.
           </P>
           <AnalyticsPreference />
         </Section>

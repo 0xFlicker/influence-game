@@ -1,31 +1,43 @@
 "use client";
 
 import { sanitizeAnalyticsProperties } from "./analytics-privacy";
+import { getAnalyticsConsent, subscribeAnalyticsConsent } from "./analytics-consent";
 import type { PostHog } from "posthog-js";
 let posthog: PostHog;
 let initializing: Promise<void> | null = null;
-const pending: { event: string; properties: Properties }[] = [];
 
 type Properties = Record<string, string | number | boolean | null>;
 let initialized = false;
 let excluded = true;
 let identity: string | null = null;
-const preferenceKey = "house:analytics-disabled";
-
-export function analyticsDisabled(): boolean {
-  try { return localStorage.getItem(preferenceKey) === "true"; }
-  catch { return true; }
+const activityListeners = new Set<() => void>();
+export function analyticsActive() { return initialized && !excluded && getAnalyticsConsent().analytics; }
+export function subscribeAnalyticsActivity(listener: () => void) {
+  activityListeners.add(listener);
+  return () => { activityListeners.delete(listener); };
+}
+function notifyActivity() { activityListeners.forEach(listener => listener()); }
+export function suspendAnalytics() {
+  excluded = true;
+  identity = null;
+  if (initialized) {
+    posthog.stopSessionRecording();
+    posthog.opt_out_capturing();
+  }
+  notifyActivity();
 }
 
-export function setAnalyticsDisabled(disabled: boolean): void {
-  localStorage.setItem(preferenceKey, String(disabled));
-  window.location.reload();
-}
+// Stop immediately on local or cross-tab rejection, before React's next effect.
+subscribeAnalyticsConsent(() => {
+  if (!getAnalyticsConsent().analytics) suspendAnalytics();
+  else if (!getAnalyticsConsent().recordings && initialized) posthog.stopSessionRecording();
+});
 
 export async function initializeAnalytics(key: string, host: string): Promise<void> {
-  if (initialized || !key || analyticsDisabled() || navigator.doNotTrack === "1") return;
+  if (initialized || !key || !getAnalyticsConsent().analytics) return;
   if (initializing) return initializing;
   initializing = import("posthog-js").then(module => {
+    if (!getAnalyticsConsent().analytics) return;
     posthog = module.default;
     posthog.init(key, {
       api_host: host,
@@ -36,6 +48,7 @@ export async function initializeAnalytics(key: string, host: string): Promise<vo
       capture_exceptions: false,
       capture_performance: false,
       disable_surveys: true,
+      respect_dnt: true,
       disable_session_recording: true,
       enable_recording_console_log: false,
       person_profiles: "identified_only",
@@ -47,7 +60,7 @@ export async function initializeAnalytics(key: string, host: string): Promise<vo
         recordBody: false,
       },
       before_send: event => {
-        if (!event || excluded) return null;
+        if (!event || excluded || !getAnalyticsConsent().analytics) return null;
         // SDK defaults can contain full URLs; never send query strings, fragments,
         // OAuth codes, private editor text or request bodies.
         sanitizeAnalyticsProperties(event.properties);
@@ -62,19 +75,17 @@ export async function initializeAnalytics(key: string, host: string): Promise<vo
 export function setAnalyticsIdentity(publicId: string | null, internal: boolean): void {
   excluded = internal;
   if (!initialized) return;
-  if (internal) { pending.length = 0; posthog.stopSessionRecording(); return; }
-  if ((identity && identity !== publicId) || (!publicId && posthog.get_property("$user_id"))) posthog.reset();
+  if (internal || !getAnalyticsConsent().analytics) { suspendAnalytics(); return; }
+  posthog.opt_in_capturing({ captureEventName: false });
+  const previousId = identity ?? posthog.get_property("$user_id");
+  if (previousId && previousId !== publicId) posthog.reset();
   if (publicId && identity !== publicId) posthog.identify(publicId);
   identity = publicId;
-  for (const item of pending.splice(0)) captureProductEvent(item.event, item.properties);
+  notifyActivity();
 }
 
 export function captureProductEvent(event: string, properties: Properties = {}): void {
-  if (!initialized) {
-    if (typeof window !== "undefined" && pending.length < 100) pending.push({ event, properties });
-    return;
-  }
-  if (excluded) return;
+  if (!analyticsActive()) return;
   try { posthog.capture(event, { ...properties, channel: "web", environment: "production" }); }
   catch { console.warn("[Analytics] Event capture unavailable"); }
 }
@@ -94,7 +105,7 @@ export function capturePage(pathname: string): void {
 
 export function recordBrowserSession(enabled: boolean): void {
   if (!initialized) return;
-  if (enabled && !excluded) posthog.startSessionRecording();
+  if (enabled && analyticsActive() && getAnalyticsConsent().recordings) posthog.startSessionRecording();
   else posthog.stopSessionRecording();
 }
 

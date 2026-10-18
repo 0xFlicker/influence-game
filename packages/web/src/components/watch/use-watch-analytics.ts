@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect } from "react";
-import { captureProductEvent } from "@/lib/product-analytics";
+import { useEffect, useSyncExternalStore } from "react";
+import { captureProductEvent, analyticsActive, subscribeAnalyticsActivity } from "@/lib/product-analytics";
 import { WatchAnalytics } from "@/lib/watch-analytics";
 import type { PresentationDirector, WatchCue } from "./watch-director";
 
 export function useWatchAnalytics<C extends WatchCue>(director: PresentationDirector<C>, gameId: string, gameKind: "influence" | "werewolf", mode: "live" | "replay" | null) {
+  const enabled = useSyncExternalStore(subscribeAnalyticsActivity, analyticsActive, () => false);
   useEffect(() => {
-    if (mode === null) return;
+    if (mode === null || !enabled) return;
     const tracker = new WatchAnalytics();
     const watchId = crypto.randomUUID();
     const properties = { game_id: gameId, game_kind: gameKind, watch_mode: mode, watch_id: watchId };
@@ -45,5 +46,5 @@ export function useWatchAnalytics<C extends WatchCue>(director: PresentationDire
       document.removeEventListener("visibilitychange", flush);
       window.removeEventListener("pagehide", flush);
     };
-  }, [director, gameId, gameKind, mode]);
+  }, [director, gameId, gameKind, mode, enabled]);
 }

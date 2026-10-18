@@ -17,7 +17,8 @@ pollute the production project. Browser SDK loading happens after auth hydration
 Admin, sysop and producer accounts and admin/auth routes are excluded. Signed-out
 visits cannot be classified as staff. Identify uses only the public account UUID;
 logout/account switching resets the analytics identity. Do Not Track and the
-privacy-page browser opt-out disable collection.
+Global Privacy Control and privacy-page browser opt-out disable collection.
+Regional consent gates SDK initialization as described below.
 
 ## Event contract
 
@@ -102,3 +103,58 @@ hide the replay to confirm time stops; seek forward and verify coverage does not
 jump. Use existing saved agents where possible; do not spend on generation merely
 to test analytics. Verify the opt-out stops events. Dashboard empty/sample states
 before production collection are not traffic evidence.
+
+## Regional consent (reviewed October 17, 2026)
+
+The banner has one analytics category and equally accessible Accept/Reject
+buttons. Acceptance includes clearly disclosed masked session recordings; there
+is no separate recording prompt. Ordinary events and recordings have different
+start conditions:
+
+| Detected location | Before a saved choice | After Accept | After Reject |
+| --- | --- | --- | --- |
+| United States, Australia | Ordinary analytics on; recordings off | Both on | Both off |
+| All other countries or unknown | Both off | Both on | Both off |
+
+This is an explicit reviewed allowlist, not a claim that all other countries
+require opt-in. US rules generally distinguish notice/opt-out from sensitive
+data, minors, sale, advertising, and other restricted purposes. Australia permits
+ordinary reasonably necessary collection with notice, with consent requirements
+for sensitive information. Our scope is adult-facing, non-sensitive product
+analytics, with PostHog as a service provider, not sale or cross-site advertising.
+Reassess before adding sensitive properties, advertising, or serving children.
+
+Sources and limits:
+- California AG: https://oag.ca.gov/privacy/ccpa
+- Colorado AG: https://coag.gov/resources/colorado-privacy-act/
+- Australia APP 3: https://www.oaic.gov.au/privacy/australian-privacy-principles/australian-privacy-principles-guidelines/chapter-3-app-3-collection-of-solicited-personal-information
+- UK statistical exemption excludes tracking individual visitors; our identified
+  funnels do not rely on it: https://ico.org.uk/for-organisations/direct-marketing-and-privacy-and-electronic-communications/guidance-on-the-use-of-storage-and-access-technologies/what-are-the-exceptions/
+- France's narrow audience-measurement exemption is not assumed:
+  https://www.cnil.fr/fr/node/677
+- Canada and other jurisdictions have not been cleared for default-on collection
+  in this implementation. They use consent, not a guessed global exemption.
+
+`/analytics-region` reads Cloudflare's `CF-IPCountry` on requests carrying
+`CF-Ray`, and returns only country and policy mode. Both browser and CDN caching
+are disabled; this endpoint must never be put behind a cache-everything rule.
+Cloudflare proxying and its IP Geolocation setting were verified enabled in the
+production dashboard. Actual origin header delivery still needs post-deployment
+verification. No IP lookup vendor or browser location permission is used. The
+application does not store the IP or country for consent decisions. Cloudflare's
+country estimate is not residence and can be affected by VPNs. Missing, malformed,
+Tor and unknown values require consent. Direct-origin clients can forge headers;
+this is a preference hint, never an authorization or residency proof.
+
+The versioned browser preference persists until changed or browser storage is
+cleared. DNT and Global Privacy Control override acceptance. Blocked storage
+fails closed. Rejection stops capture/recording and clears SDK persistence;
+other tabs receive the storage event. No page reload interrupts unsaved forms.
+No pre-consent event queue is retained. Watch measurement starts only when SDK
+capture is active, so accepting cannot backfill earlier viewing. Acquisition and
+funnel steps before consent may be missing; report that limitation alongside
+conversion rates. The Privacy page always offers the same controls.
+
+Verify US/AU, EU/UK, missing country, explicit rejection, acceptance, GPC/DNT,
+cross-tab rejection, and reload persistence. Test location policy using request
+headers locally; production requests must use Cloudflare's actual header.
