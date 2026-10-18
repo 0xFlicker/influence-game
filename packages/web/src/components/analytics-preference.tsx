@@ -16,9 +16,10 @@ export function AnalyticsPreference({ banner = false }: { banner?: boolean }) {
     <h2 className="text-lg font-semibold">Help improve The House</h2>
     <p className="mt-2 text-sm leading-relaxed">
       {consent.blocked ? "Your browser privacy signal or storage settings disable optional analytics."
-        : consent.analytics ? "Analytics is on. We use PostHog cookies and browser storage to measure visits, agent creation, match entry, and game watch time."
-          : "With your permission, we use PostHog cookies and browser storage to measure visits, agent creation, match entry, and game watch time."}
-      {" "}Accepting also allows masked session recordings on dashboard and agent-creation pages. Recordings are currently {consent.recordings ? "on" : "off"}. You can change these choices anytime on our <a className="underline underline-offset-4" href="/privacy#analytics">Privacy page</a>.
+        : consent.analytics ? "Analytics is on. We use PostHog cookies and browser storage to measure visits, agent creation, match entry, and game watch time, and diagnose navigation problems."
+          : "With your permission, we use PostHog cookies and browser storage to measure visits, agent creation, match entry, and game watch time, and diagnose navigation problems."}
+      {!banner && <> Accepting also allows masked session recordings on dashboard and agent-creation pages. Recordings are currently {consent.recordings ? "on" : "off"}.</>}
+      {" "}Learn how analytics works and change your choices anytime in our <a className="underline underline-offset-4" href="/privacy#analytics">Privacy policy</a>.
     </p>
     {!consent.blocked && <div className="mt-4 flex flex-wrap gap-2">
       <button type="button" className={button} onClick={() => choose({ analytics: true })}>

@@ -107,8 +107,10 @@ before production collection are not traffic evidence.
 ## Regional consent (reviewed October 17, 2026)
 
 The banner has one analytics category and equally accessible Accept/Reject
-buttons. Acceptance includes clearly disclosed masked session recordings; there
-is no separate recording prompt. Ordinary events and recordings have different
+buttons. The banner explains measurement and navigation-diagnosis purposes and
+links directly to the analytics section of the Privacy policy, which describes
+masked session recordings and shows their status. There is no separate recording
+prompt. Ordinary events and recordings have different
 start conditions:
 
 | Detected location | Before a saved choice | After Accept | After Reject |
