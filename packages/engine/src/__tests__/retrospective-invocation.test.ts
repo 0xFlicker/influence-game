@@ -105,6 +105,16 @@ describe("dedicated retrospective invocation", () => {
     expect(result).toEqual({ speech }); expect(context).toEqual(before);
     expect(records[0]?.outcome.kind).toBe("context_overflow");
     expect(records.some(record => record.coordinate.semantic.kind === "context_compaction")).toBe(true);
+    const summary = p.requests.find(request => request.body.text?.format?.name === "context_summary")!;
+    const orientation = JSON.parse(summary.body.input).orientation;
+    expect(orientation.actor).toMatchObject({ id: context.self.id, name: context.self.name, role: "player" });
+    expect(orientation.characterContext).toEqual({ personality: context.self.personality, backstory: context.self.backstory, strategy: context.self.strategy });
+    expect(orientation.pendingAction.action).toBe("retrospective-statement");
+    const pending = JSON.parse(orientation.pendingAction.messages[1].content);
+    expect(pending.request).toEqual(context.request);
+    expect(pending.game.outcome).toEqual(context.game.outcome);
+    expect(pending.self).toEqual(context.self);
+    for (const forbidden of ["CURRENT_PERSONA_MUST_NOT_ENTER", "CURRENT_BACKSTORY_MUST_NOT_ENTER", "CURRENT_STRATEGY_MUST_NOT_ENTER", "atlas ORIGINAL_STRATEGY"]) expect(JSON.stringify(orientation)).not.toContain(forbidden);
     const final = JSON.parse(p.requests.at(-1)!.body.input) as RetrospectiveSpeakerContext;
     expect(final.request).toEqual(context.request); expect(final.game.outcome).toEqual(context.game.outcome); expect(final.self).toEqual(context.self);
     expect(p.requests.at(-1)!.body.input).toContain("Echo promised Atlas a vote");

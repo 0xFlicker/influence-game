@@ -503,3 +503,5 @@ Ordinary Mingle turns contain conversation, optional movement, and private reaso
 ## Context-overflow adaptation
 
 Recognized provider context overflow now triggers bounded, strict structured context summaries before retrying the same decision. API summaries are separately journaled private child calls; they never become agent speech, thinking or canonical facts. Influence/House traces show the adapted request, and local token reports include newly generated `context-summary` calls. See [policy, caller inventory and recovery](context-adaptation.md). `--chatty` remains a way to inspect accepted decisions, not proof of summary fidelity; compare original and adapted private evidence in an opt-in evaluation. Keep exact types without `as any` and call House methods directly.
+
+When inspecting compaction quality, check the summary request's `orientation` as well as its source chunk: the actor, character strategy and pending action must match the original invocation. House orientation must describe the actual interview/narration/scheduling task and its audience, not a contestant objective.

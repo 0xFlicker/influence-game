@@ -31,6 +31,13 @@ function provider(decision: unknown) {
     modelCapabilities: model.capabilities, reasoningPolicy: "low", toolChoiceMode: "named", position: 0, role: "primary" };
   return { runtime, requests, adapter };
 }
+function summaryOrientation(requests: ModelInvocation[]) {
+  const summary = requests.find(r => r.result.kind === "structured" && r.result.artifact.name === "context_summary")!;
+  expect(summary.messages[0]!.content).toContain("For House");
+  const payload = JSON.parse(summary.messages[1]!.content!);
+  expect(JSON.stringify(payload.orientation)).not.toContain(history);
+  return payload.orientation;
+}
 function phase(): PhaseContext {
   return { gameId: "context-game", selfId: "atlas", selfName: "Atlas", phase: Phase.VOTE, round: 1,
     alivePlayers: [{ id: "atlas", name: "Atlas" }, { id: "mira", name: "Mira" }], publicMessages: [{ from: "Mira", text: history, round: 1, phase: Phase.MINGLE_I }], mingleMessages: [] };
@@ -38,7 +45,7 @@ function phase(): PhaseContext {
 
 test("Influence vote compacts rendered recall without changing current legal action or strategy state", async () => {
   const p = provider({ thinking: "Empower Mira.", empower: "Mira", strategyDelta: null });
-  const agent = new InfluenceAgent("atlas", "Atlas", "strategic", p.adapter, p.runtime.modelId, undefined, undefined, { providerManifest: [p.runtime] });
+  const agent = new InfluenceAgent("atlas", "Atlas", "strategic", p.adapter, p.runtime.modelId, "Former teacher", undefined, { providerManifest: [p.runtime], personalityPrompt: "Patient and observant", strategyInstructions: "Protect Mira" });
   const context = phase(); agent.onGameStart(context.gameId!, context.alivePlayers);
   const before = agent.getCompactStrategyState();
   const result = await agent.getVotes(context);
@@ -49,6 +56,12 @@ test("Influence vote compacts rendered recall without changing current legal act
   expect(JSON.stringify(final.messages)).toContain("Current Board Contract");
   expect(JSON.stringify(final.messages)).toContain("Mira promised protection");
   expect(final.result).toEqual(p.requests[0]!.result);
+  const orientation = summaryOrientation(p.requests);
+  expect(orientation.actor).toMatchObject({ id: "atlas", name: "Atlas", role: "player" });
+  expect(orientation.characterContext).toMatchObject({ personality: "Patient and observant", backstory: "Former teacher", strategy: "Protect Mira" });
+  expect(JSON.parse(orientation.characterContext.currentStrategy)).toEqual(before);
+  expect(JSON.stringify(orientation.pendingAction.messages)).toContain("Current Board Contract");
+  expect(orientation.pendingAction.outputContract.schema).toEqual(final.result.kind === "text" ? undefined : final.result.artifact.schema);
 });
 
 test("Werewolf compacts actor-visible history while retaining verified role knowledge and request", async () => {
@@ -64,6 +77,14 @@ test("Werewolf compacts actor-visible history while retaining verified role know
   const context = JSON.parse(p.requests.at(-1)!.messages[1]!.content!);
   expect(context.request).toEqual(request); expect(context.observation.self).toEqual(before.self);
   expect(context.observation.investigations).toEqual(before.investigations); expect(context.observation.packIds).toEqual([]);
+  const orientation = summaryOrientation(p.requests);
+  expect(orientation.actor.id).toBe(actorId);
+  expect(orientation.characterContext).toEqual({ personality: before.self.personality, backstory: before.self.backstory, strategy: before.self.strategy });
+  expect(orientation.pendingAction.action).toBe("werewolf.vote");
+  const pending = JSON.parse(orientation.pendingAction.messages[1].content);
+  expect(pending.request).toEqual(request);
+  expect(pending.observation.self).toEqual(before.self);
+  expect(pending.observation.packIds).toEqual([]);
   expect(observation).toEqual(before); expect(context.observation.board.entries).toHaveProperty("derivedContextMemory");
 });
 
@@ -77,4 +98,10 @@ test("House interview compacts only the subject's provided history and preserves
   expect(JSON.stringify(final.messages)).toContain("derivedContextMemory");
   expect(JSON.stringify(final.messages)).toContain("complete information boundary");
   expect(final.messages[0]).toEqual(p.requests[0]!.messages[0]);
+  const orientation = summaryOrientation(p.requests);
+  expect(orientation.actor.role).toBe("house");
+  expect(orientation.characterContext).toBeNull();
+  expect(orientation.pendingAction.messages[0]).toEqual(p.requests[0]!.messages[0]);
+  expect(JSON.stringify(orientation.pendingAction.messages)).toContain("Atlas");
+  expect(JSON.stringify(orientation.pendingAction.messages)).toContain("complete information boundary");
 });

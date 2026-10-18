@@ -7,6 +7,7 @@ Normal requests retain their original content. Builders mark literal spans of th
 ## Runtime behavior
 
 - Recognize explicit context-limit codes and narrowly matched provider error messages. An unrelated HTTP 400 stays `request_error`; output truncation stays a structured-output failure. Context overflow does not open provider-health circuits.
+- Each summary receives an `orientation` alongside its source chunk and character budget: actor identity; the acting character's personality, backstory and game-specific strategy (plus current Influence strategy memory); and the pending action, phase/round, original instructions/current situation and output contract. Historical spans are replaced by explicit markers in the orientation, not repeated wholesale. Werewolf retains only actor-authorized role knowledge; retrospectives use the original frozen self, never the current Profile. House receives its own instructions and authorized subject/audience context, with no contestant character or invented strategy. The compactor summarizes for the pending task; it does not perform it.
 - Record the original attempt with its source hash and revision. After overflow, request strict `context_summary` results from the sealed runtime manifest. Never infer successful summarization from fenced JSON, extra fields or prose around JSON.
 - Use at most three adapted revisions. Chunk sizes start at 16,384 Unicode code points, then 8,192 and 4,096. Summary targets are one quarter, one eighth and one twelfth of each chunk respectively. Spans shorter than 512 UTF-16 code units are retained; they are poor targets for useful compression. A rejected summary chunk splits in half down to the retry floor. Each revision permits at most 128 chunk operations, and each chunk gets two attempts per allowed model. These are bounded work policies, not model context capacities.
 - Summary dispatches consume the same per-game fallback caps as action dispatches. Local Influence/House token reports include newly generated summaries under `context-summary`; API accounting comes from every reserved journal attempt. No summary or adaptation resets an authorized spend cap.
@@ -17,7 +18,7 @@ The default work limits are conservative implementation defaults, not a claim of
 
 ## Journal and recovery
 
-`context_source_hash` and `context_revision` are small attempt metadata added by migration `0123_context_adaptation`. Existing rows remain unchanged with null metadata. The hash binds original messages, marked spans, output schema and adaptation-policy version.
+`context_source_hash` and `context_revision` are small attempt metadata added by migration `0123_context_adaptation`. Existing rows remain unchanged with null metadata. The hash binds original messages, marked spans, character context, output schema and adaptation-policy version. Policy version 2 includes the actor/task-aware summary prompt.
 
 Summary calls have `context_compaction` semantic coordinates containing the parent's action coordinate, a content hash, revision and chunk ordinal. They inherit the parent actor, action, owner and planned-turn authorization, but have separate logical-call IDs. They cannot occupy a planned action's acceptance slot or appear as a Werewolf ballot. They never emit canonical events, speech, thinking or strategy changes.
 

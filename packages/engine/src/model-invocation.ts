@@ -59,6 +59,8 @@ export interface ModelInvocation<TStructuredValue = unknown> {
   messages: readonly ModelInvocationMessage[];
   /** Exact renderer-owned spans allowed to be replaced by derived memory. */
   contextSpans?: readonly { text: string; format: "text" | "json" }[];
+  /** The acting character only; House identity/instructions stay in its messages. */
+  compactionCharacter?: { personality: string; backstory: string; strategy: string; currentStrategy?: string };
   result: ModelInvocationResult<TStructuredValue>;
   outputTokenLimit: number;
   reasoning?: {

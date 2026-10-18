@@ -1,4 +1,4 @@
-import { compactInvocation, contextSourceHash, contextSummaryArtifact, CONTEXT_SUMMARY_INSTRUCTIONS, CONTEXT_MAX_REVISIONS } from "./context-adaptation";
+import { compactionOrientation, compactInvocation, contextSourceHash, contextSummaryArtifact, CONTEXT_SUMMARY_INSTRUCTIONS, CONTEXT_MAX_REVISIONS } from "./context-adaptation";
 import type OpenAI from "openai";
 import type {
   ChatCompletion,
@@ -84,6 +84,7 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
   // Capture renderer-owned spans before the first await; House/agents may prepare another call concurrently.
   const initialInvocation = typeof options.invocation === "function" ? options.invocation() : options.invocation;
   const contextSpans = initialInvocation.contextSpans?.map(span => ({ ...span }));
+  const compactionCharacter = initialInvocation.compactionCharacter && { ...initialInvocation.compactionCharacter };
   const compiledByAttempt = new Map<string, {
     invocation: ModelInvocation<TStructuredValue>;
     request: ProviderNativeRequest;
@@ -98,7 +99,7 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
     ...(options.beforeDispatch && { beforeDispatch: options.beforeDispatch }),
     entries: options.runtimes.map((runtime) => {
       const adapterRuntime = runtime as AdapterBackedRuntime;
-      const invocation = () => ({ ...(typeof options.invocation === "function" ? options.invocation() : options.invocation), contextSpans });
+      const invocation = () => ({ ...(typeof options.invocation === "function" ? options.invocation() : options.invocation), contextSpans, compactionCharacter });
       let current: ModelInvocation<TStructuredValue> | undefined;
       let context: import("./provider-execution").ProviderContextIdentity | undefined;
       const prepare = async () => {
@@ -119,13 +120,14 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
         if (revision > CONTEXT_MAX_REVISIONS) throw new ProviderUnavailableError("Context adaptation exhausted", "context_overflow");
         context = { sourceHash, revision, maxAttempts: Math.max(1, Math.floor(options.maxAttempts)) };
         if (!revision) return;
+        const orientation = compactionOrientation(original, options.call);
         current = await compactInvocation({ invocation: original, call: options.call, sourceHash, revision,
           summarize: async (call, text, maxCharacters) => {
             const artifact = contextSummaryArtifact(maxCharacters);
             const result = await executeModelInvocation({ call, runtimes: options.runtimes, maxAttempts: 2,
               cancellationSignal: options.cancellationSignal, requestSignalFactory: options.requestSignalFactory,
               invocation: { messages: [{ role: "system", content: CONTEXT_SUMMARY_INSTRUCTIONS },
-                { role: "user", content: JSON.stringify({ source: text, maxCharacters }) }],
+                { role: "user", content: JSON.stringify({ orientation, source: text, maxCharacters }) }],
                 result: { kind: "structured", artifact }, outputTokenLimit: 2048, reasoning: { effort: "low" } },
               validate: (_outcome, value) => value ? { status: "usable", value } : { status: "unusable", kind: "malformed_output", message: "Missing context summary" },
             });

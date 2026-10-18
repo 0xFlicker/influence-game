@@ -6587,6 +6587,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     return {
       messages: this.buildInvocationMessages(messages, options),
       contextSpans: this.contextSpans.snapshot(),
+      compactionCharacter: { personality: this.personalityPrompt ?? PERSONALITY_PROMPTS[this.personality], backstory: this.backstory ?? "", strategy: this.strategyInstructions ?? "", currentStrategy: JSON.stringify(this.getCompactStrategyState()) },
       result,
       outputTokenLimit: effectiveMaxTokens,
       ...(effort || summary ? {

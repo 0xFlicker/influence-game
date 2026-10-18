@@ -133,6 +133,7 @@ export class WerewolfModelAgent implements WerewolfAgent {
       call, runtimes: this.runtimes, maxAttempts: 3, cancellationSignal: input.signal,
       requestSignalFactory: () => AbortSignal.timeout(120_000),
       invocation: {
+        compactionCharacter: { personality: observation.self.personality, backstory: observation.self.backstory, strategy: observation.self.strategy },
         contextSpans: [observation.board.entries, observation.packDiscussion].filter(value => value.length > 0)
           .map(value => ({ text: JSON.stringify(value), format: "json" as const })).filter(span => span.text.length >= 128),
         messages: [

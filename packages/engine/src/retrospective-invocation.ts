@@ -40,7 +40,7 @@ export function prepareRetrospectiveInvocation(
   const frozen = structuredClone(context);
   assertRetrospectiveSpeakerContext(frozen);
   const content = serializeRetrospectiveContext(frozen);
-  return { invocation: { ...invocation(content), contextSpans: [frozen.game.sections, frozen.game.dialogue, frozen.priorStatements]
+  return { invocation: { ...invocation(content), compactionCharacter: { personality: frozen.self.personality, backstory: frozen.self.backstory, strategy: frozen.self.strategy }, contextSpans: [frozen.game.sections, frozen.game.dialogue, frozen.priorStatements]
     .map(value => ({ text: canonicalJson(value), format: "json" as const })).filter(span => span.text.length >= 128) }, runtimes: [...runtimes], async beforeDispatch() {
     signal?.throwIfAborted();
   } };

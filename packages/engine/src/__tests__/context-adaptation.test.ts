@@ -75,6 +75,13 @@ describe("context adaptation", () => {
     const f = fixture({ crashAfterSummary: true }); await expect(f.run()).rejects.toThrow();
     await expect(f.run({ ...invocation, messages: [{ role: "user", content: "different" }] })).rejects.toThrow("Context source changed");
   });
+  test("changed character context cannot reuse summaries under the same logical call", async () => {
+    const f = fixture({ crashAfterSummary: true });
+    const request = { ...invocation, compactionCharacter: { personality: "Careful", backstory: "A teacher", strategy: "Protect Bea" } };
+    await expect(f.run(request)).rejects.toThrow("crash after summary acceptance");
+    await expect(f.run({ ...request, compactionCharacter: { ...request.compactionCharacter, strategy: "Eliminate Bea" } }))
+      .rejects.toThrow("Context source changed");
+  });
   test("persistent overflow reaches existing typed exhaustion after three revisions", async () => {
     const f = fixture({ alwaysOverflow: true }); await expect(f.run()).rejects.toMatchObject({ outcome: { kind: "context_overflow" } });
     expect(f.requests.filter(r => !r.summary)).toHaveLength(4);
