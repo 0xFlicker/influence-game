@@ -109,8 +109,6 @@ function speech(
         noReply: false,
         gotoRoomId,
         gotoPlayerName,
-        coordinationFact: null,
-        noProposal: true,
         strategyDelta: null,
         thinking: `Thinking ${id}`,
       },
@@ -517,8 +515,6 @@ function generatedResponse(turn: number): Record<string, unknown> {
     noReply: false,
     gotoRoomId: null,
     gotoPlayerName: null,
-    coordinationFact: null,
-    noProposal: true,
     strategyDelta: null,
   });
   return {

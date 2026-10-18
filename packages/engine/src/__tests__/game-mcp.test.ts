@@ -171,6 +171,37 @@ describe("game MCP corpus read model", () => {
     ]);
   });
 
+  it("reads historical Mingle receipts through MCP without rewriting artifacts", async () => {
+    const corpusDir = makeTempCorpus();
+    const sessionId = "batch-historical-mingle";
+    const sessionDir = makeSession(corpusDir, sessionId);
+    const receipt = {
+      id: "old-receipt", round: 1, phase: Phase.MINGLE,
+      actorId: "atlas", audiencePlayerIds: ["atlas", "vera"], roomId: 1,
+      factKind: "commitment" as const, actionKind: "empower_vote" as const,
+      targetPlayerId: "vera", noProposal: false, createdAt: "2026-07-25T00:00:00.000Z",
+    };
+    const events = canonicalEvents([event({
+      sequence: 4, round: 1, phase: Phase.MINGLE,
+      type: "mingle.coordination_receipt_recorded", visibility: "producer",
+      payload: { receipt },
+    })]);
+    const raw = `${events.map((canonicalEvent) => JSON.stringify({ canonicalEvent })).join("\n")}\n`;
+    const path = join(sessionDir, "game-1-events.jsonl");
+    writeFileSync(path, raw);
+    const readModel = new GameMcpReadModel(corpusDir);
+    expect(readModel.readProjection(sessionId, 1).mingleCoordinationReceipts[receipt.id]).toEqual(receipt);
+    expect(readModel.readEventRecords(sessionId, 1).at(-1)?.event.payload).toEqual({ receipt });
+    expect(readModel.searchLogs({ query: "old-receipt", sessionId, gameNumber: 1, sources: ["events"] })).toHaveLength(1);
+    const server = createGameMcpServer(corpusDir);
+    const result = await server.handle({
+      jsonrpc: "2.0", id: "historical-mingle", method: "resources/read",
+      params: { uri: `influence-game://sessions/${sessionId}/games/1/events` },
+    });
+    expect(JSON.stringify(result)).toContain("old-receipt");
+    expect(readFileSync(path, "utf8")).toBe(raw);
+  });
+
   it("projects historical canonical format IDs on derived reads without rewriting raw artifacts", async () => {
     const corpusDir = makeTempCorpus();
     const sessionDir = makeSession(corpusDir, "batch-format-vocabulary");

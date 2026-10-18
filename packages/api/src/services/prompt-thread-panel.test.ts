@@ -1094,8 +1094,6 @@ function generatedSpeechOutput(message: string) {
     noReply: false,
     gotoRoomId: null,
     gotoPlayerName: null,
-    coordinationFact: null,
-    noProposal: true,
     strategyDelta: `Recorded ${message}`,
     thinking: `Thinking about ${message}`,
   };
