@@ -20,6 +20,13 @@ test("only known product operations are instrumented", () => {
   expect(analyticsOperation("/api/admin/anything", "POST")).toBeNull();
 });
 
+test("SDK acquisition defaults cannot bypass the campaign allowlist", () => {
+  const properties = { utm_source: "discord", utm_content: "private", gclid: "tracking-id",
+    $set_once: { $initial_utm_term: "private", $initial_utm_source: "private@example.com", $initial_current_url: "data:text/plain,private" } };
+  sanitizeAnalyticsProperties(properties);
+  expect(properties).toEqual({ utm_source: "discord", $set_once: {} });
+});
+
 test("measurement preserves API values and errors without retrying mutations", async () => {
   const result = { saved: true };
   expect(await measureProductRequest("agent_save", async () => result)).toBe(result);
