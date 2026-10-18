@@ -39,9 +39,17 @@ ARG PRIVY_APP_ID
 ENV PRIVY_APP_ID=${PRIVY_APP_ID}
 ARG GIT_SHA=unknown
 ENV NEXT_PUBLIC_GIT_SHA=${GIT_SHA}
+ARG POSTHOG_UPLOAD_SOURCEMAPS=0
 
 WORKDIR /app/packages/web
-RUN bun run build
+RUN --mount=type=secret,id=posthog_api_key \
+    if [ "$POSTHOG_UPLOAD_SOURCEMAPS" = "1" ]; then \
+      test -s /run/secrets/posthog_api_key || { echo "PostHog source-map upload key is missing" >&2; exit 1; }; \
+      export POSTHOG_PERSONAL_API_KEY="$(cat /run/secrets/posthog_api_key)"; \
+    fi; \
+    POSTHOG_UPLOAD_SOURCEMAPS="$POSTHOG_UPLOAD_SOURCEMAPS" bun run build
+# Defense in depth: no browser source maps are served from the final image.
+RUN test -z "$(find .next/static -name '*.map' -print -quit)"
 
 # Runtime — use standalone output
 FROM base AS runtime

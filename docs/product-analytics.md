@@ -31,6 +31,9 @@ All events have `channel=web` and `environment=production`.
   no duplicate manual leave event is sent for each route change.
 - `$web_vitals`: controlled by the PostHog project's Web Vitals setting. The SDK
   configuration leaves performance capture unset to honor that setting.
+- `$exception`: browser unhandled errors/rejections and currently displayed
+  React route-boundary errors. Console errors are not captured. Collection starts
+  only after analytics/auth initialization and follows the same privacy controls.
 - `agent_creation_opened`: entry into public creation, with `flow`.
 - `join_opened`, `join_agent_selected`: saved-agent selector opened/submitted.
   An open selector emits its opening once capture becomes active; selectors
@@ -89,7 +92,7 @@ Use ordered funnels, production/web filters, and raw counts alongside percentage
 ## Privacy and reliability
 
 No request/response bodies, raw errors, agent text, wallet addresses or emails are
-captured. Automatic clicks, exception capture and surveys
+captured. Automatic clicks and surveys
 are disabled. SDK-generated URLs, including nested acquisition properties, lose
 queries/fragments; referrers retain origin only. The recorder's URL masking hook
 also strips credentials, queries and fragments from rrweb metadata and SPA URLs.
@@ -102,6 +105,42 @@ with a controlled account before relying on recordings for diagnosis.
 Analytics failure never retries or blocks a product mutation. Tests cover private
 URL stripping, operation allowlisting, unchanged API outcomes, speed, seeks,
 repeat coverage, pauses, stalled clocks and browser sleep.
+
+## Error reports and source maps
+
+Error messages can contain prompts, responses and credentials, so they are
+replaced entirely, rather than relying on a list of secret patterns. Only
+standard error types, handled/synthetic flags, exception relationships and
+same-origin `/_next/static/*.js` frame coordinates survive. Function names,
+locals, source snippets, breadcrumbs, custom exception types and derived raw
+exception values/fingerprints are removed. Queries and fragments are removed
+from frame URLs. Valid chunk/release IDs are retained for source-map resolution.
+This trades message detail for privacy; diagnosis uses the original source and
+line/column. Error types without app frames may group broadly.
+
+The scope is browser failures, including the app and profile route boundaries.
+This does not instrument API/worker/server exceptions or failures before SDK
+initialization. Production Next.js server-render errors expose only their generic
+browser representation; private server stack traces are not collected here.
+
+Main CI web-image builds use `@posthog/nextjs-config` to generate native Turbopack
+debug IDs, upload maps to US project 671431, and attach release `the-house-web`
+with the full git SHA. The GitHub Actions repository secret
+`POSTHOG_PERSONAL_API_KEY` needs PostHog error-tracking write access. It is passed
+only to the web build via a BuildKit secret, never a public env var, build arg,
+runtime env or image layer. `POSTHOG_UPLOAD_SOURCEMAPS=1` selects this release-build
+step; local and PR preview builds do not upload maps or need the credential.
+Missing credentials or upload failures fail the release build before image push.
+The plugin deletes maps after upload; Docker additionally checks that no static
+`.map` files remain before packaging the runtime. Production promotes this same
+immutable image, so the uploaded maps match the shipped chunks.
+
+Tests exercise the installed plugin's compiler hook with a fake upload transport:
+release IDs and native debug IDs, upload-before-delete, and failing the build on
+upload errors. They do not prove production PostHog permissions or symbolication.
+After deployment, verify a controlled non-sensitive error from a non-staff account
+appears with redacted text and an original-source stack frame, and confirm a
+browser request for the corresponding `.map` is not served.
 
 ## Release verification
 
