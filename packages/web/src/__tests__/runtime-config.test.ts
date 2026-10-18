@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { getPublicRuntimeConfig } from "@/lib/server-runtime-config";
 
 const managedAuthEnvKeys = [
+  "NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN",
   "MANAGED_AUTH_MODE",
   "CLERK_PUBLISHABLE_KEY",
   "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
@@ -30,6 +31,13 @@ afterEach(() => {
 });
 
 describe("managed authentication public runtime config", () => {
+  it("reads the public analytics token from the current runtime environment", () => {
+    process.env.MANAGED_AUTH_MODE = "disabled";
+    process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN = "phc_first";
+    expect(getPublicRuntimeConfig().POSTHOG_PROJECT_TOKEN).toBe("phc_first");
+    process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN = "phc_second";
+    expect(getPublicRuntimeConfig().POSTHOG_PROJECT_TOKEN).toBe("phc_second");
+  });
   it("defaults to disabled without requiring or exposing Clerk credentials", () => {
     for (const key of managedAuthEnvKeys) delete process.env[key];
 

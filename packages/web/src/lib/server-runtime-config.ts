@@ -20,6 +20,9 @@ function getManagedAuthMode(): ManagedAuthMode {
 }
 
 export function getPublicRuntimeConfig(): PublicRuntimeConfig {
+  // Read from the deployed process, without Next.js build-time substitution of
+  // NEXT_PUBLIC_* references. The release allowlists this public variable.
+  const runtimeEnvironment = process.env;
   const managedAuthMode = getManagedAuthMode();
   const clerkPublishableKey = (
     process.env.CLERK_PUBLISHABLE_KEY ??
@@ -34,7 +37,7 @@ export function getPublicRuntimeConfig(): PublicRuntimeConfig {
   }
 
   return {
-    POSTHOG_PROJECT_TOKEN: process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN ?? "",
+    POSTHOG_PROJECT_TOKEN: runtimeEnvironment.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN ?? "",
     PRIVY_APP_ID:
       process.env.PRIVY_APP_ID ??
       process.env.NEXT_PUBLIC_PRIVY_APP_ID ??
