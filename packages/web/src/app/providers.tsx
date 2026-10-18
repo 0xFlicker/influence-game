@@ -1,5 +1,6 @@
 "use client";
 
+import { ProductAnalytics } from "@/components/product-analytics";
 import {
   createContext,
   useCallback,
@@ -325,7 +326,7 @@ function ClerkInfluenceAuth({
   }, [clerk]);
   return (
     <InfluenceAuthProvider clerkLogout={clerkLogout} managedAuthEnabled>
-      <AuthExperience>{children}</AuthExperience>
+      <><ProductAnalytics /><AuthExperience>{children}</AuthExperience></>
       <AuthenticationWrapper managedAuthMode={managedAuthMode} />
     </InfluenceAuthProvider>
   );
@@ -343,7 +344,7 @@ function InfluenceAuthLayer({
   if (isLayeredAuthE2EAdapterEnabled()) {
     return (
       <InfluenceAuthProvider managedAuthEnabled>
-        <AuthExperience>{children}</AuthExperience>
+        <><ProductAnalytics /><AuthExperience>{children}</AuthExperience></>
         <AuthenticationWrapper managedAuthMode={managedAuthMode} />
       </InfluenceAuthProvider>
     );
@@ -351,7 +352,7 @@ function InfluenceAuthLayer({
   if (managedAuthMode === "disabled") {
     return (
       <InfluenceAuthProvider managedAuthEnabled>
-        <AuthExperience>{children}</AuthExperience>
+        <><ProductAnalytics /><AuthExperience>{children}</AuthExperience></>
         <AuthenticationWrapper managedAuthMode="disabled" />
       </InfluenceAuthProvider>
     );

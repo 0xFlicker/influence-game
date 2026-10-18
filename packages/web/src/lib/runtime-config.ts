@@ -17,6 +17,7 @@ import { setWsBase } from "@/app/games/[slug]/components/use-game-websocket";
 export type ManagedAuthMode = "disabled" | "existing-only" | "full";
 
 export interface RuntimeConfig {
+  POSTHOG_PROJECT_TOKEN?: string;
   PRIVY_APP_ID: string;
   CLERK_PUBLISHABLE_KEY: string;
   MANAGED_AUTH_MODE: ManagedAuthMode;

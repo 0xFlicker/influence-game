@@ -1,4 +1,5 @@
 "use client";
+import {useWatchAnalytics} from "@/components/watch/use-watch-analytics";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import type {WerewolfAudience} from "@influence/engine/werewolf/observation";
 import type {WerewolfWatchWindow} from "@influence/engine/werewolf/watch-contract";
@@ -21,6 +22,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
   const momentOf = (cue: WerewolfPlaybackCue | null) => cue && !isOpeningCue(cue) ? cue.moment : null;
   const windows = useRef(new Map<number, WerewolfWatchWindow>());
   const [data, setData] = useState<WerewolfWatchWindow | null>(null);
+  useWatchAnalytics(director, slug, "werewolf", !data ? null : ["in_progress", "suspended"].includes(data.status) ? "live" : "replay");
   const [error, setError] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(true);
   const [tail, setTail] = useState<WerewolfWatchWindow["moments"][number] | null>(null);

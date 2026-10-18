@@ -1,3 +1,4 @@
+import { AnalyticsPreference } from "@/components/analytics-preference";
 import type { Metadata } from "next";
 import { Nav } from "@/components/nav";
 import {
@@ -36,7 +37,7 @@ export default function PrivacyPage() {
       <main className="flex-1 px-6 py-16 max-w-3xl mx-auto w-full">
         <section className="mb-14">
           <p className="influence-table-header mb-3 text-xs font-semibold uppercase tracking-wider">
-            Last Updated: October 13, 2026
+            Last Updated: October 17, 2026
           </p>
           <h1 className="influence-phase-title mb-5 text-4xl font-bold tracking-tight">
             Privacy Policy
@@ -378,6 +379,31 @@ export default function PrivacyPage() {
             The House uses cookies and similar technologies necessary for
             authentication, security, preferences, and basic site functionality.
           </P>
+        </Section>
+
+        <Section id="analytics" title="Product Analytics">
+          <P>
+            We use PostHog, hosted in the United States, to understand entry pages,
+            campaign sources, navigation, agent creation, match entry, and game
+            viewing. Analytics may link anonymous visits to your public account ID
+            after sign-in. We do not send your email, wallet address, agent prompts,
+            private strategy, or form contents in analytics events.
+          </P>
+          <P>
+            On onboarding and dashboard pages we may record browser interactions
+            with text, inputs, images, video, and canvas content masked or blocked.
+            These recordings help us investigate
+            navigation problems. We estimate country from your IP through Cloudflare
+            to choose the applicable analytics setting; this is not precise location.
+            Analytics and masked recordings start by default for visitors detected in
+            the United States, with an opt-out. The US notice is shown once per
+            browser storage lifetime and dismissed on navigation; this does not
+            record consent. Elsewhere, or when country is
+            unavailable, it waits for your permission. Do Not Track and Global
+            Privacy Control disable optional tracking. Change or withdraw your
+            choice below at any time; essential site functions remain available.
+          </P>
+          <AnalyticsPreference />
         </Section>
 
         <Section title="International Users">
