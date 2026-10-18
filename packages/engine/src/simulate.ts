@@ -5,6 +5,8 @@
  * Influence Game — Batch Simulation Runner
  *
  * Runs multiple game simulations and outputs structured analysis.
+ * Ordinary Mingle authors conversation and movement, without typed coordination
+ * receipts. Alliance huddle facts and historical receipt exports remain supported.
  * Retrospective RT-01/02/03 supplies contracts, frozen context/order and strict
  * speech-only agent methods with verified capacity and accepted journal replay.
  * Influence and Werewolf runners now include the retrospective after a canonical outcome.

@@ -940,7 +940,7 @@ export interface MingleTurnAction extends StrategicDecisionMetadata {
   gotoPlayerName?: string | null;
   /** Model-side reasoning evidence for debug surfaces. */
   reasoningContext?: string;
-  /** Private receipt for a concrete proposal made in a decision-relevant allied room. */
+  /** Historical receipt retained for stored-turn replay; new Mingle agents do not author it. */
   coordinationReceipt?: {
     factKind: "proposal" | "commitment" | null;
     actionKind: import("./types").AllianceHuddleActionKind | null;

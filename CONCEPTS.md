@@ -868,3 +868,5 @@ Influence history uses its completed-results projection for placement and eligib
 ## Private payload reference
 
 A private payload reference is integrity metadata for an immutable bucket object: its key, codec, original/stored SHA-256 and original/stored byte lengths. It is not game authority or an authorization capability. The owning relational row retains those responsibilities. Images retain exact bytes; document bodies use lossless gzip. Reads verify integrity before use. See the [whole-storage cutover](docs/deployment/private-payload-storage-cutover.md) for existing-data migration and retention.
+
+Ordinary Mingle coordination happens through conversation, without structured proposal/commitment receipts or `noProposal` bookkeeping. Formal alliance huddles retain their typed facts. Historical ordinary-Mingle receipts remain private audit evidence, readable without affecting ballots or contestant context.

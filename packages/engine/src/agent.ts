@@ -952,22 +952,19 @@ const TOOL_SEND_ROOM_MESSAGE: ChatCompletionTool = {
   },
 };
 
-function mingleTurnTool(input: {
-  legalActionKinds: readonly AllianceHuddleActionKind[];
-  legalTargetPlayerIds: readonly UUID[];
-}): ChatCompletionTool {
+function mingleTurnTool(): ChatCompletionTool {
   return {
     type: "function",
     function: {
       name: "mingle_turn",
-      description: "Take one Mingle turn: talk or no-reply, optionally move, and optionally author one typed self-attributed coordination fact.",
+      description: "Take one Mingle turn: talk or no-reply, and optionally move.",
       parameters: {
         type: "object",
         properties: {
           thinking: { type: "string", description: "Your internal reasoning for this turn (hidden from other players)" },
           message: {
             type: ["string", "null"],
-            description: "TALK message for current room occupants, or null for NO_REPLY. Dialogue never creates a coordination fact.",
+            description: "TALK message for current room occupants, or null for NO_REPLY.",
           },
           noReply: {
             type: "boolean",
@@ -981,29 +978,9 @@ function mingleTurnTool(input: {
             type: ["string", "null"],
           description: "Optional remaining non-self contestant name to follow, or null. Do not set this together with gotoRoomId.",
           },
-          coordinationFact: {
-            anyOf: [
-              { type: "null" },
-              {
-                type: "object",
-                properties: {
-                  kind: { type: "string", enum: ["proposal", "commitment"] },
-                  actionKind: { type: "string", enum: [...input.legalActionKinds] },
-                  targetPlayerId: { type: "string", enum: [...input.legalTargetPlayerIds] },
-                },
-                required: ["kind", "actionKind", "targetPlayerId"],
-                additionalProperties: false,
-              },
-            ],
-            description: "One closed proposal or self-commitment, or null. The public/private message is separate presentation.",
-          },
-          noProposal: {
-            type: "boolean",
-            description: "True only when intentionally recording that this turn contributed no typed coordination fact.",
-          },
           ...STRATEGIC_DECISION_TOOL_PROPERTIES,
         },
-        required: ["thinking", "message", "noReply", "gotoRoomId", "gotoPlayerName", "coordinationFact", "noProposal", ...STRATEGIC_DECISION_REQUIRED],
+        required: ["thinking", "message", "noReply", "gotoRoomId", "gotoPlayerName", ...STRATEGIC_DECISION_REQUIRED],
         additionalProperties: false,
       },
       strict: true,
@@ -1472,18 +1449,6 @@ function requireTalkOrPass(
 
 function firstSemanticIssue(...issues: Array<string | null>): string | null {
   return issues.find((issue): issue is string => issue !== null) ?? null;
-}
-
-function officialAlliesInRoom(ctx: PhaseContext, roomMates: readonly string[]): string[] {
-  const activeAlliances = ctx.allianceContext?.activeAlliances ?? [];
-  return roomMates.filter((roomMate) => activeAlliances.some((alliance) =>
-    alliance.memberNames.some((member) => normalizeName(member) === normalizeName(ctx.selfName)) &&
-    alliance.memberNames.some((member) => normalizeName(member) === normalizeName(roomMate)),
-  ));
-}
-
-function hasPendingMingleDecision(ctx: PhaseContext): boolean {
-  return ctx.phase === Phase.MINGLE || ctx.phase === Phase.POST_VOTE_MINGLE || ctx.phase === Phase.FORMAT_MINGLE;
 }
 
 function formatEliminationVoteDisclosure(disclosure: EliminationVoteDisclosure): string {
@@ -3555,10 +3520,6 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
 
   async takeMingleTurn(ctx: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<MingleTurnAction> {
     const otherRoomMates = roomMates.filter((name) => name !== this.name);
-    const officialAllies = officialAlliesInRoom(ctx, otherRoomMates);
-    const trustedRoomMates = otherRoomMates.filter((name) => this.memory.allies.has(name));
-    const coordinationPartners = [...new Set([...officialAllies, ...trustedRoomMates])];
-    const requiresCoordinationReceipt = coordinationPartners.length > 0 && hasPendingMingleDecision(ctx);
     const history = conversationHistory ?? [];
     const historyText = history.length > 0
       ? `\n## Conversation This Turn\n${history.map((m) => `${m.from}: "${m.text}"`).join("\n")}\n`
@@ -3570,16 +3531,6 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
       : "";
     const currentRoom = ctx.currentRoomId != null ? `Room ${ctx.currentRoomId}` : "your current room";
     const availableRooms = Array.from({ length: ctx.roomCount ?? 0 }, (_, index) => index + 1);
-    const legalCoordinationActionKinds: AllianceHuddleActionKind[] = ctx.phase === Phase.FORMAT_MINGLE
-      ? ctx.formatPressure?.selectedFormat === "safety_bounce"
-        ? ["format_pointer"]
-        : ["format_ballot"]
-      : ctx.phase === Phase.POST_VOTE_MINGLE
-        ? ["council_vote"]
-        : ["empower_vote"];
-    const legalCoordinationTargetIds = ctx.alivePlayers
-      .filter((player) => player.id !== this.id)
-      .map((player) => player.id);
     const intent = ctx.mingleIntent;
     const intentText = intent
       ? `
@@ -3624,10 +3575,6 @@ ${intentText}
 ${socialOpportunity}
 ${mingleProgress}
 Nobody outside your current room can hear this turn. You only know exact identities in your current room; other rooms are visible as counts only.
-${requiresCoordinationReceipt ? `
-## Allied Decision Room
-You are with trusted or official alliance member(s) ${coordinationPartners.join(", ")} while a decision is pending. This is not a consensus mandate: author one typed proposal or self-commitment, OR set noProposal=true. Dialogue is presentation and never creates the coordination fact.
-` : ""}
 
 Choose exactly one of:
 - TALK: send a private message to the other occupants in your current room.
@@ -3656,18 +3603,15 @@ Use the mingle_turn tool.`;
         noReply: boolean;
         gotoRoomId: number | null;
         gotoPlayerName: string | null;
-        coordinationFact: {
-          kind: "proposal" | "commitment";
-          actionKind: AllianceHuddleActionKind;
-          targetPlayerId: UUID;
-        } | null;
-        noProposal: boolean;
         strategy?: unknown;
         strategyDelta?: unknown;
         reasoningContext?: string;
       };
       type MingleTurnDomainValue = Omit<MingleTurnProviderValue, "gotoPlayerName"> & {
         gotoPlayerId: UUID | null;
+        /** Accepted historical journal values only; absent from new provider requests. */
+        coordinationFact?: { kind: "proposal" | "commitment"; actionKind: AllianceHuddleActionKind; targetPlayerId: UUID } | null;
+        noProposal?: boolean;
       };
       const eligibleGotoPlayers = ctx.alivePlayers.filter((player) => player.id !== this.id);
       const decodeMingleTurn = (
@@ -3690,12 +3634,6 @@ Use the mingle_turn tool.`;
         ) {
           return { status: "invalid", message: "gotoPlayerName must be null or one remaining non-self contestant." };
         }
-        if (value.coordinationFact && value.noProposal) {
-          return { status: "invalid", message: "A typed coordinationFact requires noProposal=false." };
-        }
-        if (!value.coordinationFact && requiresCoordinationReceipt && !value.noProposal) {
-          return { status: "invalid", message: "An allied decision room requires a typed coordinationFact or noProposal=true." };
-        }
         const { gotoPlayerName, ...rest } = value;
         return {
           status: "valid",
@@ -3709,10 +3647,7 @@ Use the mingle_turn tool.`;
       };
       const result = await this.callTool<MingleTurnProviderValue, MingleTurnDomainValue>(
         prompt,
-        mingleTurnTool({
-          legalActionKinds: legalCoordinationActionKinds,
-          legalTargetPlayerIds: legalCoordinationTargetIds,
-        }),
+        mingleTurnTool(),
         mappedAgentToolSemanticDecoder(
           "mingle-turn",
           decodeMingleTurn,
@@ -3724,6 +3659,27 @@ Use the mingle_turn tool.`;
               ...properties.gotoPlayerId,
               enum: [null, ...eligibleGotoPlayers.map((player) => player.id)],
             };
+            // Preserve already accepted turns without exposing retired bookkeeping
+            // to new model calls. Validate both historical fields as one exact contract.
+            if (value && typeof value === "object" && ("coordinationFact" in value || "noProposal" in value)) {
+              properties.coordinationFact = { anyOf: [
+                { type: "null" },
+                { type: "object", additionalProperties: false,
+                  properties: {
+                    kind: { type: "string", enum: ["proposal", "commitment"] },
+                    actionKind: { type: "string", enum: ctx.phase === Phase.FORMAT_MINGLE
+                      ? [ctx.formatPressure?.selectedFormat === "safety_bounce" ? "format_pointer" : "format_ballot"]
+                      : [ctx.phase === Phase.POST_VOTE_MINGLE ? "council_vote" : "empower_vote"] },
+                    targetPlayerId: { type: "string", enum: eligibleGotoPlayers.map((player) => player.id) },
+                  }, required: ["kind", "actionKind", "targetPlayerId"] },
+              ] };
+              properties.noProposal = { type: "boolean" };
+              (domainSchema.required as string[]).push("coordinationFact", "noProposal");
+              const historical = value as MingleTurnDomainValue;
+              if (historical.coordinationFact && historical.noProposal) {
+                return { status: "invalid", message: "Historical coordination fact conflicts with noProposal." };
+              }
+            }
             const exact = validateExactStructuredValue(domainSchema, value, "Accepted agent tool mingle-turn");
             if (exact.status === "invalid") return exact;
             const domain = value as MingleTurnDomainValue;
@@ -3752,12 +3708,6 @@ Use the mingle_turn tool.`;
       );
       const msg = result.noReply ? null : (result.message?.trim() || null);
       const metadata = this.strategicDecisionMetadata(result, "mingle-turn");
-      const coordinationReceipt = {
-        factKind: result.coordinationFact?.kind ?? null,
-        actionKind: result.coordinationFact?.actionKind ?? null,
-        targetPlayerId: result.coordinationFact?.targetPlayerId ?? null,
-        noProposal: result.noProposal,
-      };
       return {
         thinking: result.thinking ?? "",
         message: msg,
@@ -3766,7 +3716,14 @@ Use the mingle_turn tool.`;
         gotoPlayerName: result.gotoPlayerId === null
           ? null
           : eligibleGotoPlayers.find((player) => player.id === result.gotoPlayerId)!.name,
-        coordinationReceipt,
+        ...(result.noProposal !== undefined && {
+          coordinationReceipt: {
+            factKind: result.coordinationFact?.kind ?? null,
+            actionKind: result.coordinationFact?.actionKind ?? null,
+            targetPlayerId: result.coordinationFact?.targetPlayerId ?? null,
+            noProposal: result.noProposal,
+          },
+        }),
         reasoningContext: result.reasoningContext,
         ...metadata,
       };

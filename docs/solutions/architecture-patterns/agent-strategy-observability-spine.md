@@ -139,7 +139,9 @@ Use `game-N-events.jsonl` for accepted facts and `game-N-turns.jsonl` / private 
 - `strategyResult`
 - `strategy`, `strategyDelta`, and resulting revision
 - alliance `requestedAction`, `result`, and `repairNotes`
-- movement and coordination receipts
+- movement receipts; historical runs may also include ordinary Mingle coordination receipts
+
+Ordinary Mingle no longer asks agents for `coordinationFact` or `noProposal`. Keep historical receipt events and accepted-journal replay readable, but never add those fields to new provider schemas. Formal alliance huddle facts remain unchanged.
 
 The accepted deterministic strategy scenario is `packages/engine/src/__tests__/fixtures/prompt-scenarios/sage-round-2.ts`. It freezes the human-accepted twelve-player `gpt-5.6-luna` chain through prior elimination, Lyra's Round 2 eviction, Sage's full diary replacement, optional refinement, immediate Round 3 lobby, and nine-choice empower vote. The fake-provider runner proves contract behavior without additional spend.
 

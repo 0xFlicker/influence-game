@@ -2318,8 +2318,6 @@ describe("InfluenceAgent structured output mode", () => {
             noReply: false,
             gotoRoomId: null,
             gotoPlayerName: null,
-            coordinationFact: null,
-            noProposal: true,
             strategyDelta: null,
           },
         })),
@@ -2407,12 +2405,6 @@ describe("InfluenceAgent structured output mode", () => {
             noReply: false,
             gotoRoomId: null,
             gotoPlayerName: null,
-            coordinationFact: {
-              kind: "commitment",
-              actionKind: "format_ballot",
-              targetPlayerId: "mira-id",
-            },
-            noProposal: false,
             strategyDelta: null,
           },
         },
@@ -4298,8 +4290,6 @@ describe("InfluenceAgent structured output mode", () => {
           noReply: true,
           gotoRoomId: null,
           gotoPlayerName,
-          coordinationFact: null,
-          noProposal: true,
           strategyDelta: null,
         },
         "Hidden local reasoning for the Mingle turn.",
@@ -4340,12 +4330,6 @@ describe("InfluenceAgent structured output mode", () => {
       gotoPlayerName: null,
       reasoningContext: "Hidden local reasoning for the Mingle turn.",
       strategyDelta: null,
-      coordinationReceipt: {
-        factKind: null,
-        actionKind: null,
-        targetPlayerId: null,
-        noProposal: true,
-      },
     });
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.at(-1)!.content;
@@ -4390,8 +4374,6 @@ describe("InfluenceAgent structured output mode", () => {
         noReply: true,
         gotoRoomId: 2,
         gotoPlayerName: "Mira",
-        coordinationFact: null,
-        noProposal: true,
         strategyDelta: null,
       }),
       "gpt-5-nano",
@@ -4418,7 +4400,39 @@ describe("InfluenceAgent structured output mode", () => {
     expect(traces).toEqual([]);
   });
 
-  it("requires and preserves a concrete receipt in an allied Mingle decision room", async () => {
+  it.each([false, true])("replays historical Mingle bookkeeping without a provider call (noProposal=%s)", async (noProposal) => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id", "Atlas", "strategic", makeOpenAIStub(requests), "gpt-5-nano",
+      undefined, undefined, {
+        providerExecutionHooks: {
+          onReadAccepted: () => ({
+            attemptId: "historical-mingle", attemptOrdinal: 1, catalogId: "openai:gpt-5-nano",
+            value: {
+              thinking: "Compare plans with Mira.", message: "Mira, let's compare plans.",
+              noReply: false, gotoRoomId: null, gotoPlayerId: null, strategyDelta: null,
+              coordinationFact: noProposal ? null : {
+                kind: "commitment", actionKind: "empower_vote", targetPlayerId: "mira-id",
+              },
+              noProposal,
+            },
+          }),
+        },
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    const turn = await agent.takeMingleTurn(makeContext(Phase.MINGLE), ["Atlas", "Mira"], []);
+    expect(turn.message).toBe("Mira, let's compare plans.");
+    expect(turn.coordinationReceipt).toEqual({
+      factKind: noProposal ? null : "commitment",
+      actionKind: noProposal ? null : "empower_vote",
+      targetPlayerId: noProposal ? null : "mira-id",
+      noProposal,
+    });
+    expect(requests).toEqual([]);
+  });
+
+  it("keeps allied Mingle conversation free of coordination bookkeeping", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -4430,12 +4444,6 @@ describe("InfluenceAgent structured output mode", () => {
         noReply: false,
         gotoRoomId: null,
         gotoPlayerName: null,
-        coordinationFact: {
-          kind: "proposal",
-          actionKind: "empower_vote",
-          targetPlayerId: "mira-id",
-        },
-        noProposal: false,
         strategyDelta: null,
       }),
       "google/gemma-4-26b-a4b-qat",
@@ -4454,15 +4462,14 @@ describe("InfluenceAgent structured output mode", () => {
       },
     }, ["Atlas", "Mira"], []);
 
-    expect(turn.coordinationReceipt).toEqual({
-      factKind: "proposal",
-      actionKind: "empower_vote",
-      targetPlayerId: "mira-id",
-      noProposal: false,
-    });
+    expect(turn.coordinationReceipt).toBeUndefined();
+    expect(turn.message).toContain("I propose we empower you");
+    const schema = JSON.stringify(requests[0]?.tools);
+    expect(schema).not.toContain("coordinationFact");
+    expect(schema).not.toContain("noProposal");
     const prompt = ((requests[0]?.messages as Array<{ content: string }>).at(-1)?.content) ?? "";
-    expect(prompt).toContain("## Allied Decision Room");
-    expect(prompt).toContain("not a consensus mandate");
+    expect(prompt).not.toContain("## Allied Decision Room");
+    expect(prompt).not.toContain("typed proposal");
   });
 
   it("rejects a self-authored huddle fact with a self-forbidden target", async () => {
@@ -4725,12 +4732,6 @@ describe("InfluenceAgent structured output mode", () => {
           noReply: false,
           gotoRoomId: 2,
           gotoPlayerName: null,
-          coordinationFact: {
-            kind: "proposal",
-            actionKind: "empower_vote",
-            targetPlayerId: "vera-id",
-          },
-          noProposal: false,
           strategyDelta: null,
         },
       ),
@@ -4779,12 +4780,6 @@ describe("InfluenceAgent structured output mode", () => {
           noReply: false,
           gotoRoomId: null,
           gotoPlayerName: null,
-          coordinationFact: {
-            kind: "proposal",
-            actionKind: "empower_vote",
-            targetPlayerId: "vera-id",
-          },
-          noProposal: false,
           strategyDelta: null,
         },
       ),
@@ -5032,12 +5027,6 @@ describe("InfluenceAgent structured output mode", () => {
           noReply: false,
           gotoRoomId: null,
           gotoPlayerName: null,
-          coordinationFact: {
-            kind: "proposal",
-            actionKind: "empower_vote",
-            targetPlayerId: "vera-id",
-          },
-          noProposal: false,
           strategyDelta: null,
         },
       ),
@@ -6992,7 +6981,7 @@ describe("The Short List coordination guidance", () => {
     for (const player of players) {
       const requests: Array<Record<string, unknown>> = [];
       const agent = new InfluenceAgent(player.id, player.name, "strategic", makeToolSequenceOpenAIStub(requests, [
-        { toolName: "mingle_turn", args: { thinking: "Coordinate.", message: null, noReply: true, gotoRoomId: null, gotoPlayerName: null, coordinationFact: null, noProposal: true, strategyDelta: null } },
+        { toolName: "mingle_turn", args: { thinking: "Coordinate.", message: null, noReply: true, gotoRoomId: null, gotoPlayerName: null, strategyDelta: null } },
         { toolName: "take_alliance_action", args: { thinking: "Wait for a commitment.", decision: { action: "pass" }, strategyDelta: null } },
         { toolName: "alliance_huddle_turn", args: { thinking: "Discuss placements.", message: "Let's compare our planned votes.", noReply: false, factAtoms: [], strategyDelta: null } },
         { toolName: "short_list_ballot", args: { thinking: "Place my ballot.", target: players.find((other) => other.id !== player.id)!.name, strategyDelta: null } },
@@ -7069,7 +7058,7 @@ describe("Two Names canonical prompt board", () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(ctx.selfId, ctx.selfName, "strategic", makeToolOpenAIStub(requests, "mingle_turn", {
       thinking: "Consider the board.", message: null, noReply: true, gotoRoomId: null,
-      gotoPlayerName: null, coordinationFact: null, noProposal: true, strategyDelta: null,
+      gotoPlayerName: null, strategyDelta: null,
     }), "gpt-5-nano");
     agent.onGameStart(ctx.gameId, players);
     await agent.takeMingleTurn(ctx, players.map((p) => p.name), []);
@@ -7220,7 +7209,7 @@ describe("Two Names canonical prompt board", () => {
 describe("final conversational dialogue driver", () => {
   const heading = "# CONSTITUTION.md";
   const speech = { thinking: "Keep the pitch direct.", message: "Mira, back my vote and I'll back yours.", strategyDelta: null };
-  const mingle = { ...speech, noReply: false, gotoRoomId: null, gotoPlayerName: null, coordinationFact: null, noProposal: true };
+  const mingle = { ...speech, noReply: false, gotoRoomId: null, gotoPlayerName: null };
   const huddle = {
     sessionId: "session", allianceId: "glass", allianceName: "Glass Table",
     memberIds: ["atlas-id", "mira-id"], memberNames: ["Atlas", "Mira"],

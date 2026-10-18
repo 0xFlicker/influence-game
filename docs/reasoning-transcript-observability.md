@@ -617,7 +617,7 @@ Useful validation queries:
 - `search_logs` over `sources: ["turns"]` for `alliance-proposer-selection`, `alliance-action`, `alliance-huddle-schedule`, `alliance-huddle-turn`, or `alliance-huddle-outcome`
 - `filter_events` for `alliance.proposed`, `alliance.activated`, `alliance.closed`, `alliance.huddle_scheduled`, `alliance.huddle_completed`, or `alliance.huddle_outcome_recorded`
 - `search_logs` over `sources: ["turns"]` for `strategyCandidate`, `strategyResult`, `strategyDelta`, or `strategy`
-- `search_logs` over `sources: ["turns"]` for `gotoPlayerName`, `gotoStatus`, or `coordinationReceipt`
+- `search_logs` over `sources: ["turns"]` for `gotoPlayerName` or `gotoStatus` (historical runs may also contain `coordinationReceipt`)
 - `search_logs` over `sources: ["turns"]` for `format-pick`, `format-ballot`, `bounce-pointer`, `format-tiebreak`, `decisionSource`, or `fallbackReason`
 - For a legacy/classic batch only, `search_logs` over `sources: ["turns"]` for `candidate-selection`, `power-action`, `shieldPullUp`, or `selectedCandidates`
 - `search_logs` over `sources: ["turns", "transcript"]` for `house-mc-summary` or legacy `[House MC]`
@@ -729,3 +729,5 @@ Influence `--chatty` prints the retrospective source/input hash, actor/ordinal, 
 Fresh local sessions have a closed `session.json` identity (`house.simulation-session`, version 1, explicit `gameKind`). Werewolf `--out` is a dedicated directory holding `game-1.json`, `game-1-events.jsonl`, provider receipts and stats. Its event envelopes use `werewolfEvent`; Influence uses `canonicalEvent`. Local MCP dispatches by that identity and each owning reducer. `read_game_retrospective` supports both games; `read_werewolf_history` requires an explicit Mystery/Omniscient audience. A missing or invalid identity cannot enter a canonical adapter. Existing artifacts are not rewritten. Local raw resources remain trusted producer inspection.
 
 The API reporter continues polling through result-to-epilogue growth and stops at operational completion, not the first outcome. Readback generates nothing. Keep exact types without `as any` and direct House calls. See [runtime/recovery](game-retrospective-runtime.md) for operator suspension and journal retry rules.
+
+Ordinary Mingle turns contain conversation, optional movement, and private reasoning/strategy updates; agents no longer author `coordinationFact` or `noProposal`. Evaluate their negotiation from dialogue and subsequent canonical decisions. Formal alliance huddles retain structured facts and participant memory. Historical Mingle receipts remain readable in stored events, turn exports, producer reviews, and MCP artifacts; they are not deleted or reinterpreted.
