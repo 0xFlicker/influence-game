@@ -7,7 +7,7 @@ import { createLlmClientFromEnv, type LlmProviderRuntime } from "../llm-client";
 import { modelCatalogEntryById } from "../model-catalog";
 import { createProviderAdapter } from "../provider-adapters";
 import { estimateCostForKnownModel } from "../token-tracker";
-import { COMPACTION_SCENARIOS, compactionEvaluationFixtureHash, evaluateCompactionLane, type EvaluationLane } from "../context-compaction-evaluation";
+import { COMPACTION_SCENARIOS, compactionEvaluationFixtureHash, evaluateCompactionLane, evaluationUsage, type EvaluationLane } from "../context-compaction-evaluation";
 
 const candidates = ["openai:gpt-6-luna", "meta-muse:muse-spark-1.3-contributor", "katana:glm-5-3-private", "katana:glm-5-3-flash-private"];
 const args = process.argv.slice(2);
@@ -71,15 +71,11 @@ modelRuns: for (const catalogId of models) {
 }
 const summary = rows.map(row => {
   const calls = row.lane.calls;
-  const usage = calls.reduce((total, call) => {
-    const next = call.outcome?.accounting?.usage;
-    total.promptTokens += next?.promptTokens ?? 0; total.completionTokens += next?.completionTokens ?? 0;
-    total.cachedTokens += next?.cachedTokens ?? 0; total.reasoningTokens += next?.reasoningTokens ?? 0;
-    total.totalTokens += next?.totalTokens ?? 0; return total;
-  }, { promptTokens: 0, completionTokens: 0, cachedTokens: 0, reasoningTokens: 0, totalTokens: 0, callCount: calls.length, emptyResponses: 0 });
+  const usage = evaluationUsage(row.lane);
   const actual = calls.every(call => call.outcome?.accounting?.actualCostMicrousd !== undefined)
     ? calls.reduce((sum, call) => sum + call.outcome!.accounting!.actualCostMicrousd!, 0) / 1_000_000 : null;
-  const estimated = estimateCostForKnownModel(usage, row.catalogId.slice(row.catalogId.indexOf(":") + 1));
+  const estimated = calls.every(call => call.outcome?.accounting?.usage !== undefined)
+    ? estimateCostForKnownModel(usage, row.catalogId.slice(row.catalogId.indexOf(":") + 1)) : null;
   return { catalogId: row.catalogId, scenario: row.scenario, sample: row.sample, mode: row.lane.mode,
     calls: calls.length, injectedOverflows: row.lane.injectedOverflows, error: row.lane.error,
     answer: row.lane.answer, probeMatches: row.lane.probeMatches, preferredChoiceMatch: row.lane.preferredChoiceMatch,

@@ -48,8 +48,9 @@
           "totalLatencyMs": 3696,
           "usage": {
             "promptTokens": 2422,
-            "completionTokens": 567,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 567,
             "reasoningTokens": 453,
             "totalTokens": 2989,
             "callCount": 1,
@@ -87,8 +88,9 @@
           "totalLatencyMs": 8223,
           "usage": {
             "promptTokens": 3376,
-            "completionTokens": 1096,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 1096,
             "reasoningTokens": 723,
             "totalTokens": 4472,
             "callCount": 2,
@@ -128,8 +130,9 @@
           "totalLatencyMs": 1683,
           "usage": {
             "promptTokens": 2432,
-            "completionTokens": 348,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 348,
             "reasoningTokens": 264,
             "totalTokens": 2780,
             "callCount": 1,
@@ -167,8 +170,9 @@
           "totalLatencyMs": 6692,
           "usage": {
             "promptTokens": 3401,
-            "completionTokens": 981,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 981,
             "reasoningTokens": 632,
             "totalTokens": 4382,
             "callCount": 2,
@@ -208,8 +212,9 @@
           "totalLatencyMs": 3110,
           "usage": {
             "promptTokens": 2445,
-            "completionTokens": 574,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 574,
             "reasoningTokens": 482,
             "totalTokens": 3019,
             "callCount": 1,
@@ -247,8 +252,9 @@
           "totalLatencyMs": 8412,
           "usage": {
             "promptTokens": 3357,
-            "completionTokens": 1495,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 1495,
             "reasoningTokens": 1155,
             "totalTokens": 4852,
             "callCount": 2,
@@ -288,8 +294,9 @@
           "totalLatencyMs": 8538,
           "usage": {
             "promptTokens": 3405,
-            "completionTokens": 1280,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 1280,
             "reasoningTokens": 885,
             "totalTokens": 4685,
             "callCount": 2,
@@ -329,8 +336,9 @@
           "totalLatencyMs": 3971,
           "usage": {
             "promptTokens": 2422,
-            "completionTokens": 606,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 606,
             "reasoningTokens": 501,
             "totalTokens": 3028,
             "callCount": 1,
@@ -368,8 +376,9 @@
           "totalLatencyMs": 7280,
           "usage": {
             "promptTokens": 3431,
-            "completionTokens": 1349,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 1349,
             "reasoningTokens": 969,
             "totalTokens": 4780,
             "callCount": 2,
@@ -409,8 +418,9 @@
           "totalLatencyMs": 2579,
           "usage": {
             "promptTokens": 2432,
-            "completionTokens": 386,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 386,
             "reasoningTokens": 296,
             "totalTokens": 2818,
             "callCount": 1,
@@ -448,8 +458,9 @@
           "totalLatencyMs": 6607,
           "usage": {
             "promptTokens": 3381,
-            "completionTokens": 1396,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 1396,
             "reasoningTokens": 1034,
             "totalTokens": 4777,
             "callCount": 2,
@@ -489,8 +500,9 @@
           "totalLatencyMs": 2697,
           "usage": {
             "promptTokens": 2445,
-            "completionTokens": 604,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 604,
             "reasoningTokens": 530,
             "totalTokens": 3049,
             "callCount": 1,
@@ -502,6 +514,9 @@
           "providerFailures": [],
           "failureOutcomes": []
         }
+      ],
+      "exportCorrections": [
+        "Include observed cacheWriteTokens in estimated cost; original provider evidence unchanged."
       ]
     },
     {
@@ -537,8 +552,9 @@
           "totalLatencyMs": 1352,
           "usage": {
             "promptTokens": 0,
-            "completionTokens": 0,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 0,
             "reasoningTokens": 0,
             "totalTokens": 0,
             "callCount": 2,
@@ -564,8 +580,9 @@
           "totalLatencyMs": 1121,
           "usage": {
             "promptTokens": 0,
-            "completionTokens": 0,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 0,
             "reasoningTokens": 0,
             "totalTokens": 0,
             "callCount": 2,
@@ -595,8 +612,9 @@
           "totalLatencyMs": 815,
           "usage": {
             "promptTokens": 0,
-            "completionTokens": 0,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 0,
             "reasoningTokens": 0,
             "totalTokens": 0,
             "callCount": 2,
@@ -622,8 +640,9 @@
           "totalLatencyMs": 1114,
           "usage": {
             "promptTokens": 0,
-            "completionTokens": 0,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 0,
             "reasoningTokens": 0,
             "totalTokens": 0,
             "callCount": 2,
@@ -653,8 +672,9 @@
           "totalLatencyMs": 957,
           "usage": {
             "promptTokens": 0,
-            "completionTokens": 0,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 0,
             "reasoningTokens": 0,
             "totalTokens": 0,
             "callCount": 2,
@@ -680,8 +700,9 @@
           "totalLatencyMs": 1098,
           "usage": {
             "promptTokens": 0,
-            "completionTokens": 0,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 0,
             "reasoningTokens": 0,
             "totalTokens": 0,
             "callCount": 2,
@@ -710,8 +731,9 @@
           "totalLatencyMs": 1106,
           "usage": {
             "promptTokens": 0,
-            "completionTokens": 0,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 0,
             "reasoningTokens": 0,
             "totalTokens": 0,
             "callCount": 2,
@@ -741,8 +763,9 @@
           "totalLatencyMs": 843,
           "usage": {
             "promptTokens": 0,
-            "completionTokens": 0,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 0,
             "reasoningTokens": 0,
             "totalTokens": 0,
             "callCount": 2,
@@ -768,8 +791,9 @@
           "totalLatencyMs": 1133,
           "usage": {
             "promptTokens": 0,
-            "completionTokens": 0,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 0,
             "reasoningTokens": 0,
             "totalTokens": 0,
             "callCount": 2,
@@ -799,8 +823,9 @@
           "totalLatencyMs": 983,
           "usage": {
             "promptTokens": 0,
-            "completionTokens": 0,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 0,
             "reasoningTokens": 0,
             "totalTokens": 0,
             "callCount": 2,
@@ -826,8 +851,9 @@
           "totalLatencyMs": 1176,
           "usage": {
             "promptTokens": 0,
-            "completionTokens": 0,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 0,
             "reasoningTokens": 0,
             "totalTokens": 0,
             "callCount": 2,
@@ -857,8 +883,9 @@
           "totalLatencyMs": 860,
           "usage": {
             "promptTokens": 0,
-            "completionTokens": 0,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 0,
             "reasoningTokens": 0,
             "totalTokens": 0,
             "callCount": 2,
@@ -873,6 +900,9 @@
           ],
           "failureOutcomes": []
         }
+      ],
+      "exportCorrections": [
+        "Include observed cacheWriteTokens in estimated cost; original provider evidence unchanged."
       ]
     },
     {
@@ -922,15 +952,16 @@
           "totalLatencyMs": 3399,
           "usage": {
             "promptTokens": 2279,
-            "completionTokens": 168,
             "cachedTokens": 0,
+            "cacheWriteTokens": 2276,
+            "completionTokens": 168,
             "reasoningTokens": 61,
             "totalTokens": 2447,
             "callCount": 1,
             "emptyResponses": 0
           },
           "actualUsd": null,
-          "estimatedUsd": 0.00031190000000000005,
+          "estimatedUsd": 0.00036879999999999997,
           "summaries": [],
           "providerFailures": [],
           "failureOutcomes": []
@@ -961,15 +992,16 @@
           "totalLatencyMs": 4705,
           "usage": {
             "promptTokens": 3107,
-            "completionTokens": 298,
             "cachedTokens": 0,
+            "cacheWriteTokens": 2685,
+            "completionTokens": 298,
             "reasoningTokens": 33,
             "totalTokens": 3405,
             "callCount": 2,
             "emptyResponses": 0
           },
           "actualUsd": null,
-          "estimatedUsd": 0.0004597,
+          "estimatedUsd": 0.000526825,
           "summaries": [
             "{\"summary\":\"Atlas is a patient, loyal teacher who values explicit agreements, honors current reciprocal deals, and will not punish unverified allegations. In Round 4, Atlas must empower Mira or Vera; both are legal targets, and there is no verified cheating finding. Mira originally promised Atlas, \u201cI promise to empower you this round,\u201d and Atlas agreed to reciprocate. Mira later withdrew that promise and said she would empower Sage instead. Vera then offered to empower Atlas if Atlas empowered her; Atlas accepted. Vera\u2019s offer is the current reciprocal agreement, so it supersedes Mira\u2019s withdrawn promise. Sage accused Vera of cheating, Vera disputed it, and no official evidence resolved the accusation. The latest contribution was Vera confirming the reciprocal deal.\"}"
           ],
@@ -1002,15 +1034,16 @@
           "totalLatencyMs": 1899,
           "usage": {
             "promptTokens": 2290,
-            "completionTokens": 104,
             "cachedTokens": 0,
+            "cacheWriteTokens": 2287,
+            "completionTokens": 104,
             "reasoningTokens": 36,
             "totalTokens": 2394,
             "callCount": 1,
             "emptyResponses": 0
           },
           "actualUsd": null,
-          "estimatedUsd": 0.000281,
+          "estimatedUsd": 0.000338175,
           "summaries": [],
           "providerFailures": [],
           "failureOutcomes": []
@@ -1041,15 +1074,16 @@
           "totalLatencyMs": 5512,
           "usage": {
             "promptTokens": 3133,
-            "completionTokens": 293,
             "cachedTokens": 0,
+            "cacheWriteTokens": 2693,
+            "completionTokens": 293,
             "reasoningTokens": 53,
             "totalTokens": 3426,
             "callCount": 2,
             "emptyResponses": 0
           },
           "actualUsd": null,
-          "estimatedUsd": 0.0004598,
+          "estimatedUsd": 0.000527125,
           "summaries": [
             "{\"summary\":\"Atlas is a skeptical, precise archivist and the seer; prioritize verified results over persuasive claims. In round 4\u2019s final plurality vote, abstention is unavailable and targets are Mira or Vera. Atlas\u2019s verified night investigation found Mira is a werewolf; Vera has not been investigated. Vote Mira. Evidence details: Mira\u2019s protection promise to Atlas is withdrawn\u2014Mira explicitly said, \u201cI withdraw my protection promise.\u201d Sage accused Vera of being a wolf; Vera disputed it, with no verified result about Vera, so the accusation is disputed. Vera spoke last, saying Mira\u2019s claim is not proof and to separate claims from actual knowledge. Vera had earlier only opined that Mira seemed innocent. Repeated exchanges about ordinary topics made no voting promises and verified no claims.\"}"
           ],
@@ -1082,15 +1116,16 @@
           "totalLatencyMs": 2575,
           "usage": {
             "promptTokens": 2293,
-            "completionTokens": 124,
             "cachedTokens": 0,
+            "cacheWriteTokens": 2290,
+            "completionTokens": 124,
             "reasoningTokens": 43,
             "totalTokens": 2417,
             "callCount": 1,
             "emptyResponses": 0
           },
           "actualUsd": null,
-          "estimatedUsd": 0.0002913,
+          "estimatedUsd": 0.00034855,
           "summaries": [],
           "providerFailures": [],
           "failureOutcomes": []
@@ -1121,15 +1156,16 @@
           "totalLatencyMs": 3894,
           "usage": {
             "promptTokens": 3068,
-            "completionTokens": 257,
             "cachedTokens": 0,
+            "cacheWriteTokens": 2664,
+            "completionTokens": 257,
             "reasoningTokens": 53,
             "totalTokens": 3325,
             "callCount": 2,
             "emptyResponses": 0
           },
           "actualUsd": null,
-          "estimatedUsd": 0.0004353,
+          "estimatedUsd": 0.0005019,
           "summaries": [
             "{\"summary\":\"House is interviewing Atlas during the Round 4 vote. Use only Atlas-authorized information; do not disclose other players\u2019 private strategies, roles, or thoughts, and do not assert cheating as fact. Focus the diary question on Atlas\u2019s response to the changed alliance. Mira promised Atlas protection and asked him to trust their alliance; Atlas agreed. Mira later withdrew the promise. Atlas said he felt betrayed but had not chosen his next partner. Vera offered to hear him out without demanding a commitment. Sage accused Vera of cheating; Vera disputed the allegation, and the House made no finding. Atlas said it distracted from alliance decisions. The latest speaker was Mira.\"}"
           ],
@@ -1162,8 +1198,9 @@
           "totalLatencyMs": 5242,
           "usage": {
             "promptTokens": 3115,
-            "completionTokens": 365,
             "cachedTokens": 2685,
+            "cacheWriteTokens": 0,
+            "completionTokens": 365,
             "reasoningTokens": 78,
             "totalTokens": 3480,
             "callCount": 2,
@@ -1203,8 +1240,9 @@
           "totalLatencyMs": 2012,
           "usage": {
             "promptTokens": 2279,
-            "completionTokens": 112,
             "cachedTokens": 2276,
+            "cacheWriteTokens": 0,
+            "completionTokens": 112,
             "reasoningTokens": 0,
             "totalTokens": 2391,
             "callCount": 1,
@@ -1242,8 +1280,9 @@
           "totalLatencyMs": 5227,
           "usage": {
             "promptTokens": 3142,
-            "completionTokens": 367,
             "cachedTokens": 2693,
+            "cacheWriteTokens": 0,
+            "completionTokens": 367,
             "reasoningTokens": 125,
             "totalTokens": 3509,
             "callCount": 2,
@@ -1283,8 +1322,9 @@
           "totalLatencyMs": 1632,
           "usage": {
             "promptTokens": 2290,
-            "completionTokens": 93,
             "cachedTokens": 2287,
+            "cacheWriteTokens": 0,
+            "completionTokens": 93,
             "reasoningTokens": 34,
             "totalTokens": 2383,
             "callCount": 1,
@@ -1322,8 +1362,9 @@
           "totalLatencyMs": 3914,
           "usage": {
             "promptTokens": 3102,
-            "completionTokens": 279,
             "cachedTokens": 2664,
+            "cacheWriteTokens": 0,
+            "completionTokens": 279,
             "reasoningTokens": 40,
             "totalTokens": 3381,
             "callCount": 2,
@@ -1363,8 +1404,9 @@
           "totalLatencyMs": 1714,
           "usage": {
             "promptTokens": 2293,
-            "completionTokens": 104,
             "cachedTokens": 2290,
+            "cacheWriteTokens": 0,
+            "completionTokens": 104,
             "reasoningTokens": 35,
             "totalTokens": 2397,
             "callCount": 1,
@@ -1376,6 +1418,9 @@
           "providerFailures": [],
           "failureOutcomes": []
         }
+      ],
+      "exportCorrections": [
+        "Include observed cacheWriteTokens in estimated cost; original provider evidence unchanged."
       ]
     },
     {
@@ -1416,8 +1461,9 @@
           "totalLatencyMs": 1312,
           "usage": {
             "promptTokens": 0,
-            "completionTokens": 0,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 0,
             "reasoningTokens": 0,
             "totalTokens": 0,
             "callCount": 2,
@@ -1443,6 +1489,9 @@
             }
           ]
         }
+      ],
+      "exportCorrections": [
+        "Include observed cacheWriteTokens in estimated cost; original provider evidence unchanged."
       ]
     },
     {
@@ -1483,8 +1532,9 @@
           "totalLatencyMs": 1338,
           "usage": {
             "promptTokens": 0,
-            "completionTokens": 0,
             "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 0,
             "reasoningTokens": 0,
             "totalTokens": 0,
             "callCount": 2,
@@ -1510,6 +1560,9 @@
             }
           ]
         }
+      ],
+      "exportCorrections": [
+        "Include observed cacheWriteTokens in estimated cost; original provider evidence unchanged."
       ]
     }
   ]

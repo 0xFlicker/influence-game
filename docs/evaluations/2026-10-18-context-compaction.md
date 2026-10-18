@@ -20,14 +20,14 @@ Fixture identity: `sha256:ec40d3f1c25dc919c3ae85313de1a2c8657507ec532a9f97084353
 
 | Model | Successful full / compacted lanes | Explicit probes, full / compacted | Preferred choices, full / compacted | Final request character reduction | Full / compacted total tokens | Estimated USD, full / compacted |
 | --- | --- | --- | --- | --- | --- | --- |
-| `openai:gpt-6-luna` | 6 / 6 | 18/18 / 18/18 | 6/6 / 6/6 | 84.1% | 14,429 / 20,526 | $0.001108 / $0.002072 |
+| `openai:gpt-6-luna` | 6 / 6 | 18/18 / 18/18 | 6/6 / 6/6 | 84.1% | 14,429 / 20,526 | $0.001279 / $0.002273 |
 | `meta-muse:muse-spark-1.3-contributor` | 6 / 6 | 18/18 / 18/18 | 6/6 / 6/6 | 79.7% | 17,683 / 27,948 | $0.002077 / $0.003555 |
 | `katana:glm-5-3-private` | 0 / 0 | Not evaluated | Not evaluated | — | Usage unavailable | Unknown |
 | `katana:glm-5-3-flash-private` | 0 / 0 | Not evaluated | Not evaluated | — | Usage unavailable | Unknown |
 
 Each successful model used 18 real calls: six full-context actions, six summaries, six compacted actions. All paired choices and probe answers agreed. Character reduction compares final action messages, not the aggregate work of generating memory. Total tokens **increased** by 42.3% for Luna and 58.1% for Muse because this one-use evaluation also pays for compaction. Summed provider latency averaged 2.21s full versus 4.75s compacted for Luna, and 2.96s versus 7.63s for Muse; local processing and injected rejection are excluded.
 
-The two successful runs total approximately **$0.008812** at the repository's model rate estimates, including observed cache usage. Recorded service tiers were OpenAI `default` and Muse `auto`. Rates per million tokens were Luna $0.10 input / $0.01 cached / $0.50 output and Muse Contributor $0.10 / $0.002 / $0.20. These are estimates, not provider billing receipts. Failed Katana requests returned no usage/billing evidence, so their cost is unknown rather than asserted zero.
+The two successful runs total approximately **$0.009184** at the repository's model rate estimates, including observed cache-hit and cache-write usage. Recorded service tiers were OpenAI `default` and Muse `auto`. Rates per million tokens were Luna $0.10 input / $0.01 cached / $0.125 cache-write / $0.50 output and Muse Contributor $0.10 / $0.002 / $0.20. These are estimates, not provider billing receipts. Failed Katana requests returned no usage/billing evidence, so their cost is unknown rather than asserted zero.
 
 Katana listed both GLM 5.3 IDs. The initial standard-model run made 24 dispatches across 12 failed lanes, all classified `service_error`. A subsequent bounded diagnostic made two dispatches and captured `502 status code (no body)` for both. Flash also returned that HTTP 502 error on its first two dispatches and the harness stopped. There is no GLM compaction-quality result. GLM uses the existing Katana GLM transport capability template only for evaluation; this PR does not add it to the production catalog or declare it qualified.
 
@@ -58,4 +58,6 @@ doppler run --project social-strategy-agent --config dev -- \
 bun test packages/engine/src/__tests__/context-compaction-evaluation.test.ts
 ```
 
-The harness writes `private-run.json` after each lane, plus `summary.json` and an allowlisted `review.json`. A failed lane/model yields a nonzero exit code while preserving completed evidence. The first successful runs predate failure-handling/export-only improvements; their recorded source hashes identify the exact evaluated files. Production compaction behavior and fixtures were unchanged by those harness improvements.
+The harness writes `private-run.json` after each lane, plus `summary.json` and an allowlisted `review.json`. A failed lane/model yields a nonzero exit code while preserving completed evidence. The first successful runs predate failure-handling/export/accounting improvements; their recorded source hashes identify the exact evaluated files. Production compaction behavior and fixtures were unchanged by those harness improvements.
+
+The review export recalculates cost from the immutable captured usage, including explicit cache-write tokens omitted by the initial exporter. Decision outputs and raw provider evidence are unchanged.

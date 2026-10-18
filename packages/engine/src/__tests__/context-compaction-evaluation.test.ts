@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { COMPACTION_SCENARIOS, compactionEvaluationFixtureHash, evaluateCompactionLane, scenarioInvocation } from "../context-compaction-evaluation";
+import { COMPACTION_SCENARIOS, compactionEvaluationFixtureHash, evaluateCompactionLane, evaluationUsage, scenarioInvocation } from "../context-compaction-evaluation";
 import type { LlmProviderRuntime } from "../llm-client";
 import type { ModelInvocation } from "../model-invocation";
 import { classifyProviderError } from "../provider-execution";
@@ -45,4 +45,14 @@ test("synthetic fixture identity is deterministic and includes both actor kinds"
   expect(compactionEvaluationFixtureHash()).toMatch(/^sha256:[a-f0-9]{64}$/);
   expect(compactionEvaluationFixtureHash()).toBe(compactionEvaluationFixtureHash());
   expect(COMPACTION_SCENARIOS.map(scenario => scenario.actor.role)).toEqual(["player", "player", "house"]);
+});
+
+test("evaluation accounting retains separate cache-write usage", () => {
+  const usage = evaluationUsage({ mode: "full", injectedOverflows: 0, attempts: [], calls: [
+    { kind: "action", messages: [], characters: 0, latencyMs: 1,
+      outcome: { toolCalls: [], accounting: { usage: { promptTokens: 1000, cachedTokens: 200, cacheWriteTokens: 700, completionTokens: 30, totalTokens: 1030 } } } },
+    { kind: "summary", messages: [], characters: 0, latencyMs: 1,
+      outcome: { toolCalls: [], accounting: { usage: { promptTokens: 200, cachedTokens: 100, cacheWriteTokens: 50, completionTokens: 20, totalTokens: 220 } } } },
+  ] });
+  expect(usage).toMatchObject({ promptTokens: 1200, cachedTokens: 300, cacheWriteTokens: 750, completionTokens: 50, totalTokens: 1250, callCount: 2 });
 });

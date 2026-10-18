@@ -5,6 +5,7 @@ import type { LlmProviderAdapter, ModelInvocation, ProviderModelOutcome, Provide
 import { executeModelInvocation } from "./provider-adapters";
 import { ProviderExecutionCoordinator, ProviderUnavailableError, classifyProviderError, type ProviderAttemptRecord, type ProviderLogicalCallCoordinate } from "./provider-execution";
 import { createExactStructuredOutputArtifact } from "./structured-output";
+import type { TokenUsage } from "./token-tracker";
 import { Phase } from "./types";
 
 export interface EvaluationAnswer { choice: string; reason: string; evidence: { commitment: string; accusation: string; latestSpeaker: string }; }
@@ -133,3 +134,18 @@ export async function evaluateCompactionLane(input: {
 }
 
 export const compactionEvaluationFixtureHash = () => hashCanonicalJson(COMPACTION_SCENARIOS);
+
+/** Preserve each billed token category; cache writes may have a distinct rate. */
+export function evaluationUsage(lane: EvaluationLane): TokenUsage {
+  return lane.calls.reduce((total, call) => {
+    const usage = call.outcome?.accounting?.usage;
+    total.promptTokens += usage?.promptTokens ?? 0;
+    total.cachedTokens += usage?.cachedTokens ?? 0;
+    total.cacheWriteTokens = (total.cacheWriteTokens ?? 0) + (usage?.cacheWriteTokens ?? 0);
+    total.completionTokens += usage?.completionTokens ?? 0;
+    total.reasoningTokens += usage?.reasoningTokens ?? 0;
+    total.totalTokens += usage?.totalTokens ?? 0;
+    return total;
+  }, { promptTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, completionTokens: 0,
+    reasoningTokens: 0, totalTokens: 0, callCount: lane.calls.length, emptyResponses: 0 });
+}
