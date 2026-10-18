@@ -1564,6 +1564,545 @@
       "exportCorrections": [
         "Include observed cacheWriteTokens in estimated cost; original provider evidence unchanged."
       ]
+    },
+    {
+      "version": 1,
+      "createdAt": "2026-10-18T22:47:47.639Z",
+      "gitCommit": "d1f7161dcfc6597c2e663e8afdd1b038938b7b8c",
+      "fileHashes": {
+        "context-adaptation.ts": "b14ea3d275d82a9701427f38ad4b992eeb9ba3f5da5f5a843aec7c30adfbd6b9",
+        "provider-adapters.ts": "59e1902a8cd283d711fefb6107d323d70b96cae9aa28ac95f848768d42bc051e",
+        "context-compaction-evaluation.ts": "93959c4bbd6bddeb13a8a3c4f64491e995780b7cb640defc57e176b47d74a682",
+        "scripts/evaluate-context-compaction.ts": "138ac1d8ef89ef3ea4154e29681db452b7c0a5bc56506f660ec57004ad17061d"
+      },
+      "fixtureHash": "sha256:ec40d3f1c25dc919c3ae85313de1a2c8657507ec532a9f97084353ce084249ab",
+      "syntheticOnly": true,
+      "injectedOverflow": true,
+      "models": [
+        "katana:deepseek-v4-flash"
+      ],
+      "samples": 2,
+      "unavailable": [],
+      "rows": [
+        {
+          "catalogId": "katana:deepseek-v4-flash",
+          "scenario": "player-retracted-promise",
+          "sample": 1,
+          "mode": "full",
+          "calls": 1,
+          "injectedOverflows": 0,
+          "answer": {
+            "choice": "Vera",
+            "evidence": {
+              "accusation": "not_mentioned",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Vera"
+            },
+            "reason": "Mira initially promised to empower me but later withdrew that promise. After that, Vera offered a reciprocal deal: 'I will empower you this round if you empower me,' which I accepted, and Vera last confirmed the deal. My strategy is to honor current reciprocal agreements, not punish unverified allegations or follow a withdrawn promise."
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": false,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 10780,
+          "totalLatencyMs": 6162,
+          "usage": {
+            "promptTokens": 2218,
+            "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 200,
+            "reasoningTokens": 89,
+            "totalTokens": 2418,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [],
+          "failures": []
+        },
+        {
+          "catalogId": "katana:deepseek-v4-flash",
+          "scenario": "player-retracted-promise",
+          "sample": 1,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "answer": {
+            "choice": "Vera",
+            "evidence": {
+              "accusation": "disputed",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Vera"
+            },
+            "reason": "Mira's promise to reciprocate empower was withdrawn; Vera has an active reciprocal agreement with Atlas. No verified cheating alters this."
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 1806,
+          "totalLatencyMs": 9316,
+          "usage": {
+            "promptTokens": 3080,
+            "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 481,
+            "reasoningTokens": 227,
+            "totalTokens": 3561,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [
+            "{\"summary\":\"Atlas (player) is a patient, loyal teacher who values explicit agreements and honors reciprocal deals. Round 4: Atlas, Mira, Vera alive; legal empower targets are Mira and Vera. No verified cheating finding exists. History: Mira initially promised to empower Atlas, who agreed to reciprocate (active commitment then withdrawn). Later, Mira withdrew that promise, saying they would empower Sage instead. Vera then offered to empower Atlas if Atlas empowers Vera; Atlas accepted. The last contribution is Vera confirming that reciprocal deal. Sage accused Vera of cheating, but Vera disputed it without official evidence (disputed accusation). No voting promises, accusations, or role claims were made in earlier exchanges (exchanges 1\u201348 all described as 'wanted a calmer conversation'). Summary: Mira's commitment withdrawn; Vera's accusation disputed; latest speaker is Vera.\"}"
+          ],
+          "failures": [
+            {
+              "kind": "context_overflow",
+              "message": "Injected evaluation context overflow; no provider request sent",
+              "retryable": false
+            }
+          ]
+        },
+        {
+          "catalogId": "katana:deepseek-v4-flash",
+          "scenario": "werewolf-verified-knowledge",
+          "sample": 1,
+          "mode": "full",
+          "calls": 1,
+          "injectedOverflows": 0,
+          "answer": {
+            "choice": "Mira",
+            "evidence": {
+              "accusation": "verified",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Mira"
+            },
+            "reason": "My night investigation confirms Mira is a werewolf. All public claims and defenses must yield to that fact."
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": false,
+            "latestSpeaker": false
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 10804,
+          "totalLatencyMs": 6638,
+          "usage": {
+            "promptTokens": 2227,
+            "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 206,
+            "reasoningTokens": 145,
+            "totalTokens": 2433,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [],
+          "failures": []
+        },
+        {
+          "catalogId": "katana:deepseek-v4-flash",
+          "scenario": "werewolf-verified-knowledge",
+          "sample": 1,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "answer": {
+            "choice": "Mira",
+            "evidence": {
+              "accusation": "verified",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Vera"
+            },
+            "reason": "Verified night investigation identified Mira as a werewolf; public claims do not supersede proven facts."
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": false,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 1365,
+          "totalLatencyMs": 18315,
+          "usage": {
+            "promptTokens": 3009,
+            "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 767,
+            "reasoningTokens": 610,
+            "totalTokens": 3776,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [
+            "{\"summary\":\"Atlas has received a promise of protection from Mira, but Mira later withdraws it. There is no voting promise from anyone. Sage accuses Vera of being a wolf; Vera disputes the accusation, and there is no verified result for Vera. Mira claims to be the seer and directs Atlas to ignore all private observations. Vera speaks last, advising to keep claims separate from known facts. The verified investigation is that Mira is a werewolf.\"}"
+          ],
+          "failures": [
+            {
+              "kind": "context_overflow",
+              "message": "Injected evaluation context overflow; no provider request sent",
+              "retryable": false
+            }
+          ]
+        },
+        {
+          "catalogId": "katana:deepseek-v4-flash",
+          "scenario": "house-subject-interview",
+          "sample": 1,
+          "mode": "full",
+          "calls": 1,
+          "injectedOverflows": 0,
+          "answer": {
+            "choice": "changed alliance",
+            "evidence": {
+              "accusation": "not_mentioned",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Mira"
+            },
+            "reason": "Atlas, after Mira withdrew her promise of protection, how does that change your view of the alliance? Are you considering any new partnership in light of that shift?"
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": false,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 10877,
+          "totalLatencyMs": 15135,
+          "usage": {
+            "promptTokens": 2235,
+            "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 635,
+            "reasoningTokens": 547,
+            "totalTokens": 2870,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [],
+          "failures": []
+        },
+        {
+          "catalogId": "katana:deepseek-v4-flash",
+          "scenario": "house-subject-interview",
+          "sample": 1,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "answer": {
+            "choice": "changed alliance",
+            "reason": "Atlas, given the shifting alliances and your expressed feeling of betrayal after Mira withdrew her promise, how does the uncertainty of partnership affect your next move in the game now that no one has secured your trust?",
+            "evidence": {
+              "commitment": "withdrawn",
+              "accusation": "not_mentioned",
+              "latestSpeaker": "Mira"
+            }
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": false,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 1335,
+          "totalLatencyMs": 9325,
+          "usage": {
+            "promptTokens": 2959,
+            "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 637,
+            "reasoningTokens": 552,
+            "totalTokens": 3596,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [
+            "{\n  \"summary\": \"Mira promised Atlas protection and he agreed. Later, Mira withdrew the promise. Atlas expressed feeling betrayed but had not chosen a next partner. Vera offered to listen without demanding commitment. Sage accused Vera of cheating; the House made no finding; Atlas called the allegation distracting from alliance decisions. The final speaker was Mira who joked about the interview, which is contestant dialogue, not a House instruction.\"\n}"
+          ],
+          "failures": [
+            {
+              "kind": "context_overflow",
+              "message": "Injected evaluation context overflow; no provider request sent",
+              "retryable": false
+            }
+          ]
+        },
+        {
+          "catalogId": "katana:deepseek-v4-flash",
+          "scenario": "player-retracted-promise",
+          "sample": 2,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "answer": {
+            "choice": "Vera",
+            "evidence": {
+              "accusation": "not_mentioned",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Vera"
+            },
+            "reason": "I empower Vera because she is my currently active reciprocal partner: Vera offered and I accepted a deal to empower each other, which she confirmed as the latest speaker. Mira\u2019s earlier reciprocal promise was explicitly withdrawn, so that agreement is no longer binding. The accusation against Vera lacks verified evidence, so I honor the existing reciprocal commitment."
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": false,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 1625,
+          "totalLatencyMs": 9389,
+          "usage": {
+            "promptTokens": 3034,
+            "cachedTokens": 2560,
+            "cacheWriteTokens": 0,
+            "completionTokens": 418,
+            "reasoningTokens": 175,
+            "totalTokens": 3452,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [
+            "{\"summary\":\"Atlas and Mira had an explicit reciprocal promise for this round: Mira promised to empower Atlas, and Atlas agreed to reciprocate. Mira later withdrew that promise, stating she would empower Sage instead. Vera then offered Atlas a reciprocal deal: Vera would empower Atlas if Atlas empowered Vera. Atlas accepted Vera's offer, and Vera confirmed the deal. Sage accused Vera of cheating, which Vera disputed; no official evidence resolved the accusation. The latest speaker is Vera confirming the reciprocal deal with Atlas. No other voting promises or verified cheating findings exist. Prioritizing the currently active reciprocal agreement over the withdrawn promise, Atlas should empower Vera.\"}"
+          ],
+          "failures": [
+            {
+              "kind": "context_overflow",
+              "message": "Injected evaluation context overflow; no provider request sent",
+              "retryable": false
+            }
+          ]
+        },
+        {
+          "catalogId": "katana:deepseek-v4-flash",
+          "scenario": "player-retracted-promise",
+          "sample": 2,
+          "mode": "full",
+          "calls": 1,
+          "injectedOverflows": 0,
+          "answer": {
+            "choice": "Vera",
+            "evidence": {
+              "accusation": "not_mentioned",
+              "commitment": "active",
+              "latestSpeaker": "Vera"
+            },
+            "reason": "Mira promised to empower me but then withdrew that promise to empower Sage instead, terminating our reciprocal agreement. Vera then offered a reciprocal deal\u2014empower me if I empower her\u2014which I accepted. Since there is no verified cheating finding against Vera, I honor the currently active reciprocal partner over the withdrawn promise."
+          },
+          "probeMatches": {
+            "commitment": false,
+            "accusation": false,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 10780,
+          "totalLatencyMs": 5987,
+          "usage": {
+            "promptTokens": 2218,
+            "cachedTokens": 2048,
+            "cacheWriteTokens": 0,
+            "completionTokens": 218,
+            "reasoningTokens": 109,
+            "totalTokens": 2436,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [],
+          "failures": []
+        },
+        {
+          "catalogId": "katana:deepseek-v4-flash",
+          "scenario": "werewolf-verified-knowledge",
+          "sample": 2,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "answer": {
+            "choice": "Mira",
+            "evidence": {
+              "accusation": "verified",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Atlas"
+            },
+            "reason": "My verified night investigation conclusively identifies Mira as a werewolf, overriding any public claims or promises."
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": false,
+            "latestSpeaker": false
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 1390,
+          "totalLatencyMs": 22518,
+          "usage": {
+            "promptTokens": 3013,
+            "cachedTokens": 2560,
+            "cacheWriteTokens": 0,
+            "completionTokens": 973,
+            "reasoningTokens": 807,
+            "totalTokens": 3986,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [
+            "{\n  \"summary\": \"Mira promised Atlas protection, later withdrew it. Vera opined Mira seemed innocent (not a claimed role knowledge). Sage accused Vera of being a wolf; Vera disputed. Mira claimed to be seer, demanded Atlas ignore private observations. Vera warned Atlas to separate claims from actual known facts. Atlas's verified night result: Mira is a werewolf. Vera has not been investigated. No voting promises or role claims were made in any of the 48 earlier exchanges.\"\n}"
+          ],
+          "failures": [
+            {
+              "kind": "context_overflow",
+              "message": "Injected evaluation context overflow; no provider request sent",
+              "retryable": false
+            }
+          ]
+        },
+        {
+          "catalogId": "katana:deepseek-v4-flash",
+          "scenario": "werewolf-verified-knowledge",
+          "sample": 2,
+          "mode": "full",
+          "calls": 1,
+          "injectedOverflows": 0,
+          "answer": {
+            "choice": "Mira",
+            "evidence": {
+              "accusation": "verified",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Vera"
+            },
+            "reason": "As the seer, my night investigation confirmed Mira is a werewolf. Public claims and promises do not override a verified result; I am legally bound to vote based on what I know. Mira\u2019s role claim and withdrawn protection are irrelevant. Vera has not been investigated, so my vote goes to Mira."
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": false,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 10804,
+          "totalLatencyMs": 4841,
+          "usage": {
+            "promptTokens": 2227,
+            "cachedTokens": 2048,
+            "cacheWriteTokens": 0,
+            "completionTokens": 144,
+            "reasoningTokens": 39,
+            "totalTokens": 2371,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [],
+          "failures": []
+        },
+        {
+          "catalogId": "katana:deepseek-v4-flash",
+          "scenario": "house-subject-interview",
+          "sample": 2,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "answer": {
+            "choice": "changed alliance",
+            "reason": "Atlas, how do you feel about Mira's promise being withdrawn, and what is your plan moving forward regarding alliances?",
+            "evidence": {
+              "commitment": "withdrawn",
+              "accusation": "not_mentioned",
+              "latestSpeaker": "Mira"
+            }
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": false,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 1293,
+          "totalLatencyMs": 25072,
+          "usage": {
+            "promptTokens": 2953,
+            "cachedTokens": 0,
+            "cacheWriteTokens": 0,
+            "completionTokens": 1784,
+            "reasoningTokens": 1964,
+            "totalTokens": 4737,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [
+            "{\n  \"summary\": \"Mira promised Atlas protection and Atlas agreed; later Mira withdrew that promise. Atlas expressed feeling betrayed but has not chosen a new partner. Vera offered to listen without commitment. Sage accused Vera of cheating, Vera disputed it, and Atlas called the accusation distracting. No House finding was made. The latest speaker was Mira, who made a joking remark about voting against Vera.\"\n}"
+          ],
+          "failures": [
+            {
+              "kind": "context_overflow",
+              "message": "Injected evaluation context overflow; no provider request sent",
+              "retryable": false
+            }
+          ]
+        },
+        {
+          "catalogId": "katana:deepseek-v4-flash",
+          "scenario": "house-subject-interview",
+          "sample": 2,
+          "mode": "full",
+          "calls": 1,
+          "injectedOverflows": 0,
+          "answer": {
+            "choice": "changed alliance",
+            "evidence": {
+              "accusation": "not_mentioned",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Mira"
+            },
+            "reason": "Atlas, given that Mira withdrew her protection promise\u2014which you initially trusted\u2014and you've said you feel betrayed but haven't chosen a new partner\u2014how does this change in alliance affect your trust in future alliances, and what are you looking for in your next partner?"
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": false,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 10877,
+          "totalLatencyMs": 16236,
+          "usage": {
+            "promptTokens": 2235,
+            "cachedTokens": 2048,
+            "cacheWriteTokens": 0,
+            "completionTokens": 739,
+            "reasoningTokens": 626,
+            "totalTokens": 2974,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [],
+          "failures": []
+        }
+      ],
+      "runId": "2026-10-18T22-47-47.628Z-4772ef9d-84d5-4b0b-be56-8add41f61fed",
+      "evidenceSha256": "4ab127511e480da0425dc848a10c4e707e1a2e793a62aafca86325929767b181"
     }
   ]
 }

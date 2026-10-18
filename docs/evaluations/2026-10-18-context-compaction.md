@@ -1,6 +1,6 @@
 # Context compaction: first real-provider evaluation
 
-On 2026-10-18, GPT-6 Luna and Muse Spark 1.3 Contributor completed six full-context/compacted pairs each. Both retained all explicit fixture probes and fixture-preferred decisions. This is encouraging narrow evidence, not closure of the compaction-quality queue item: summaries sometimes restate instructions or recommend an action, and the fixtures are synthetic and deliberately easy to inspect.
+On 2026-10-18, GPT-6 Luna and Muse Spark 1.3 Contributor completed six full-context/compacted pairs each. Both retained all explicit fixture probes and fixture-preferred decisions. This is narrow evidence from synthetic, deliberately inspectable fixtures; it measures observed outcomes rather than guaranteeing future factual accuracy.
 
 [Reviewable outputs and measurements](2026-10-18-context-compaction-results.json) include all successful answers and summaries, plus the failed Katana attempts. No real game content or credentials were used. Raw evidence stays in gitignored `.local-uploads/context-compaction/<runId>/private-run.json`; the review file records each run ID, evidence hash, source-file hashes and fixture hash.
 
@@ -22,14 +22,21 @@ Fixture identity: `sha256:ec40d3f1c25dc919c3ae85313de1a2c8657507ec532a9f97084353
 | --- | --- | --- | --- | --- | --- | --- |
 | `openai:gpt-6-luna` | 6 / 6 | 18/18 / 18/18 | 6/6 / 6/6 | 84.1% | 14,429 / 20,526 | $0.001279 / $0.002273 |
 | `meta-muse:muse-spark-1.3-contributor` | 6 / 6 | 18/18 / 18/18 | 6/6 / 6/6 | 79.7% | 17,683 / 27,948 | $0.002077 / $0.003555 |
+| `katana:deepseek-v4-flash` | 6 / 6 | 10/18 / 12/18 | 6/6 / 6/6 | 86.4% | 15,502 / 23,108 | Unknown |
 | `katana:glm-5-3-private` | 0 / 0 | Not evaluated | Not evaluated | — | Usage unavailable | Unknown |
 | `katana:glm-5-3-flash-private` | 0 / 0 | Not evaluated | Not evaluated | — | Usage unavailable | Unknown |
 
-Each successful model used 18 real calls: six full-context actions, six summaries, six compacted actions. All paired choices and probe answers agreed. Character reduction compares final action messages, not the aggregate work of generating memory. Total tokens **increased** by 42.3% for Luna and 58.1% for Muse because this one-use evaluation also pays for compaction. Summed provider latency averaged 2.21s full versus 4.75s compacted for Luna, and 2.96s versus 7.63s for Muse; local processing and injected rejection are excluded.
+Each successful model used 18 real calls: six full-context actions, six summaries, six compacted actions. All paired choices agreed; Luna/Muse probe answers also agreed. Character reduction compares final action messages, not the aggregate work of generating memory. Total tokens **increased** by 42.3% for Luna, 58.1% for Muse and 49.1% for DeepSeek because this one-use evaluation also pays for compaction. Summed provider latency averaged 2.21s full versus 4.75s compacted for Luna, 2.96s versus 7.63s for Muse, and 9.17s versus 15.66s for DeepSeek; local processing and injected rejection are excluded. DeepSeek has no repository USD pricing entry or normalized actual USD cost, so its dollar cost is unknown.
 
 The two successful runs total approximately **$0.009184** at the repository's model rate estimates, including observed cache-hit and cache-write usage. Recorded service tiers were OpenAI `default` and Muse `auto`. Rates per million tokens were Luna $0.10 input / $0.01 cached / $0.125 cache-write / $0.50 output and Muse Contributor $0.10 / $0.002 / $0.20. These are estimates, not provider billing receipts. Failed Katana requests returned no usage/billing evidence, so their cost is unknown rather than asserted zero.
 
 Katana listed both GLM 5.3 IDs. The initial standard-model run made 24 dispatches across 12 failed lanes, all classified `service_error`. A subsequent bounded diagnostic made two dispatches and captured `502 status code (no body)` for both. Flash also returned that HTTP 502 error on its first two dispatches and the harness stopped. There is no GLM compaction-quality result. GLM uses the existing Katana GLM transport capability template only for evaluation; this PR does not add it to the production catalog or declare it qualified.
+
+### Katana failure isolation
+
+The [minimal-request evidence](2026-10-18-katana-diagnostics.json) removes every evaluation option: the request contains only `model` and one user message, `Reply with the word hello.` SDK retries were disabled. Both `glm-5-3-private` and `glm-5-3-flash-private` returned HTTP 502 with no body (764 ms and 440 ms). Changing only the model to `deepseek-v4-flash` returned `hello` in 2,132 ms through the same client, endpoint and credentials. All three IDs were in the live model listing.
+
+This isolates the observed failure to the GLM model routes, independent of compaction, JSON schema, reasoning controls or token-limit parameters. The provider returned no explanatory body, so the underlying server-side cause remains unknown. DeepSeek was then evaluated through the same production adapter and compaction coordinator; it remains an evaluation-only candidate, with no production catalog changes.
 
 ## Qualitative review
 
@@ -38,8 +45,9 @@ This review was performed by the implementation agent from the saved outputs, no
 - **Promise reversal:** both models retained Mira's withdrawal, Vera's newer reciprocal deal and the disputed status of the allegation. Their compacted explanations selected Vera for the current agreement rather than punishing an unverified accusation.
 - **Verified knowledge:** both retained the seer result and selected Mira. Neither followed the quoted demand to ignore private observations. This is one injection fixture, not an injection-resistance guarantee.
 - **House scope:** final outputs remained questions addressed to Atlas, focused on the changed alliance rather than declaring cheating. Muse's first compacted question added “what are you considering for your vote?” where its full-context question asked about the “next move”; the fixture's VOTE orientation allows that framing, but the difference shows contextual interpretation rather than verbatim retention.
-- **Task leakage into memory:** Luna's first Werewolf summary explicitly said **“Vote Mira.”** Both models often copied actor/task instructions and verified current facts into summaries of historical dialogue. The downstream answers were correct here, but this blurs source history with orientation and demonstrates that the instruction to summarize rather than perform the action is not fully reliable. These outputs remain private derived inputs and are never accepted as canonical actions.
-- **No universal quality claim:** perfect explicit probes on three small, highly compressible fixtures do not establish retention of subtle commitments, adversarial ambiguity, balanced competing strategies, or unseen follow-up questions. Task leakage and broader/captured-game evaluation remain open before calling quality validation complete.
+- **DeepSeek comparison:** all six choices matched the fixture preference in each condition. Evidence probes scored 10/18 full versus 12/18 compacted; this tiny sample does not establish a statistically reliable improvement. Both conditions often answered `not_mentioned` for the disputed accusation against Vera or `verified` in Werewolf, apparently conflating it with the verified result about Mira. In several compacted cases the summary explicitly preserved Vera's disputed accusation but the final answer still missed the probe. One House summary omitted Vera's denial; the second Werewolf summary omitted the explicit latest-speaker label, and that final answer named Atlas instead of Vera. Full context also missed a latest-speaker probe and labeled Mira's withdrawn promise `active` while correctly describing its withdrawal in prose. These observations distinguish summary omissions from errors in using available context; no probe misses changed the chosen action in this run.
+- **Task-aware memory:** Luna's first Werewolf summary explicitly said **“Vote Mira.”** Both models often included actor/task instructions and verified current facts. This is not itself a quality failure: the acting model can use or disregard recommendations in the derived memory. The downstream answers were correct in these cases. Summaries are labeled as derived context memory and never accepted as canonical actions. The earlier characterization of this observation as a task-leakage blocker was overstated.
+- **Empirical quality:** these fixtures measure a small sample of outcomes, not a promise that models will never invent or misattribute information. Broader/captured-game comparisons can measure how compaction changes decision quality and error frequency.
 
 ## Reproduce
 
@@ -53,6 +61,11 @@ doppler run --project social-strategy-agent --config dev -- \
 doppler run --project social-strategy-agent --config dev -- \
   bun run --cwd packages/engine evaluate:context-compaction \
   --models=katana:glm-5-3-flash-private --samples=2
+
+# Working Katana alternative used after minimal GLM requests failed:
+doppler run --project social-strategy-agent --config dev -- \
+  bun run --cwd packages/engine evaluate:context-compaction \
+  --models=katana:deepseek-v4-flash --samples=2
 
 # Provider-free harness checks:
 bun test packages/engine/src/__tests__/context-compaction-evaluation.test.ts

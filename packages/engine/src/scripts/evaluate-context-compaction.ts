@@ -9,7 +9,7 @@ import { createProviderAdapter } from "../provider-adapters";
 import { estimateCostForKnownModel } from "../token-tracker";
 import { COMPACTION_SCENARIOS, compactionEvaluationFixtureHash, evaluateCompactionLane, evaluationUsage, type EvaluationLane } from "../context-compaction-evaluation";
 
-const candidates = ["openai:gpt-6-luna", "meta-muse:muse-spark-1.3-contributor", "katana:glm-5-3-private", "katana:glm-5-3-flash-private"];
+const candidates = ["openai:gpt-6-luna", "meta-muse:muse-spark-1.3-contributor", "katana:glm-5-3-private", "katana:glm-5-3-flash-private", "katana:deepseek-v4-flash"];
 const args = process.argv.slice(2);
 let samples = 2, models = candidates.slice(0, 3);
 for (const argument of args) {
@@ -39,8 +39,8 @@ async function save() {
 await save();
 console.log(JSON.stringify({ outputDir, samples, models, maxProviderCallsPerModel: 32 }));
 modelRuns: for (const catalogId of models) {
-  // The discovered GLM 5.3 candidate is evaluation-only; test the existing Katana GLM transport contract.
-  const template = modelCatalogEntryById(catalogId.startsWith("katana:glm-5-3") ? "katana:glm-5-2" : catalogId)!;
+  // Discovered Katana candidates are evaluation-only; exercise the existing general chat contract.
+  const template = modelCatalogEntryById(catalogId.startsWith("katana:") ? "katana:glm-5-2" : catalogId)!;
   const modelId = catalogId.slice(catalogId.indexOf(":") + 1);
   const config = createLlmClientFromEnv(process.env, { providerProfileId: template.providerProfileId, maxRetries: 0, timeout: 90_000, flexProcessing: false });
   if (!config) { unavailable.push({ catalogId, reason: "credentials unavailable" }); await save(); continue; }
