@@ -152,3 +152,21 @@ for (const scenario of ["saved", "disagreement", "wolves", "village"] as const) 
     }
   }
 });
+
+test("complete timing index matches windowed speech, every ballot, tally and private night cue", async () => {
+ const {completedWerewolfResultsFixture} = await import("../../../engine/src/fixtures/werewolf-results");
+ const events = await completedWerewolfResultsFixture("saved", "frame-index");
+ for (const audience of ["mystery", "omniscient"] as const) {
+   const index = projectWerewolfWatch(events, audience, 1, 32, () => true).playback;
+   for (const row of index) {
+     const moment = projectWerewolfWatch(events, audience, row.cursor, 1).moments[0]!;
+     moment.wolfForms = Object.fromEntries((moment.transformWolfIds ?? []).map(id => [id, "verified-form"]));
+     const cues = werewolfMomentCues(moment);
+     expect(row.keys).toEqual(cues.map(cue => cue.key));
+     expect(row.durationsMs).toEqual(cues.map(cue => cue.baseDurationMs));
+     expect(row.steps).toBe(cues.length);
+   }
+   expect(JSON.stringify(index)).not.toContain("thinking");
+   if (audience === "mystery") expect(index.flatMap(row => row.keys).some(key => /:(hunt|protect|investigate)$/.test(key))).toBe(false);
+ }
+});

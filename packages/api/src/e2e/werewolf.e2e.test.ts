@@ -579,9 +579,16 @@ test("shared House replay handles failed portraits and reduced motion", async ()
   } finally {await page.close();}
 },90_000);
 
+async function frameReplayFixture(id: string) {
+  const events = await completedWerewolfResultsFixture("village", id);
+  const [game] = await database.db.insert(schema.games).values({id, slug:id, gameKind:"werewolf", status:"completed", maxPlayers:6,
+    startedAt:new Date().toISOString(), endedAt:new Date().toISOString(), config:JSON.stringify({visibility:"unlisted",preset:"one_wolf",providerManifest:[{catalogId:"openai:gpt-6-luna"}]})}).returning();
+  await database.db.insert(schema.werewolfEvents).values(events.map(event=>({gameId:id,sequence:event.sequence,event})));
+  return game!;
+}
+
 test("shared replay fences delayed seeks and crosses silent live windows without moving a paused viewer", async () => {
-  const [game] = await database.db.select().from(schema.games).where(eq(schema.games.gameKind, "werewolf"));
-  if (!game) throw new Error("Missing replay fixture");
+  const game = await frameReplayFixture("frame-live-seeks");
   const base = await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/watch?audience=mystery`)).json() as import("@influence/engine/werewolf/watch-contract").WerewolfWatchWindow;
   const source = base.moments.find(moment => moment.entry.kind === "speech" && moment.entry.text);
   if (!source || source.entry.kind !== "speech") throw new Error("Missing introduction speech");
@@ -603,7 +610,7 @@ test("shared replay fences delayed seeks and crosses silent live windows without
       const cursor = from + index;
       return {...source, cursor, mediaKey: null, snapshot: {...source.snapshot, cursor}, entry: {...speech, text: cursor === 1 ? "Opening contribution." : cursor === 33 ? "Middle contribution." : cursor === 96 ? "Latest contribution." : cursor === 97 ? "Frontier contribution." : null}};
     });
-    const reply = () => request.respond({status: 200, contentType: "application/json", headers: {"Access-Control-Allow-Origin": "*"}, body: JSON.stringify({...base, status: "in_progress", latestCursor: head, fromCursor: from, throughCursor: moments.at(-1)?.cursor ?? head, moments, playback: [1,33,96,97].filter(cursor=>cursor<=head).map(cursor=>({cursor,steps:1})), media: {}})});
+    const reply = () => request.respond({status: 200, contentType: "application/json", headers: {"Access-Control-Allow-Origin": "*"}, body: JSON.stringify({...base, status: "in_progress", latestCursor: head, fromCursor: from, throughCursor: moments.at(-1)?.cursor ?? head, moments, playback: [1,33,96,97].filter(cursor=>cursor<=head).map(cursor=>({cursor,steps:1,durationsMs:[4450],keys:[`${base.gameId}:${base.audience}:${cursor}`]})), media: {}})});
     if (from === 33 && delayMiddle) {
       const timer = setTimeout(() => { pending.delete(timer); void reply(); }, 600);
       pending.add(timer);
@@ -614,25 +621,25 @@ test("shared replay fences delayed seeks and crosses silent live windows without
     await skipWerewolfOpening(page);
     await pauseWerewolf(page);
     const stage = await page.$('[data-werewolf-stage]');
-    const openingCount = base.players.length + 3;
+    const openingFrames = (13300 + base.players.length * 2500) * 30 / 1000;
     // Rapid B then C: B is delayed. The old picture stays during preparation.
-    await page.evaluate(`(() => { const input=document.querySelector('input[aria-label="Replay position"]'); const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set; for(const value of [${openingCount + 2},${openingCount + 3}]) {set.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));} })()`);
-    await page.waitForFunction(`document.querySelector('input[aria-label="Replay position"]').value === "${openingCount + 3}"`);
+    await page.evaluate(`(() => { const input=document.querySelector('input[aria-label="Replay position"]'); const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set; for(const value of [${Math.ceil(openingFrames + 133.5)},${openingFrames + 267}]) {set.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));} })()`);
+    await page.waitForFunction(`document.querySelector('input[aria-label="Replay position"]').value === "${openingFrames + 267}"`);
     expect(await stage!.evaluate(node => node.isConnected)).toBe(true);
     expect(await page.$$('[data-watch-context]')).toHaveLength(1);
     await page.waitForSelector('[data-werewolf-stage][data-cursor="96"]');
     delayMiddle = false;
     head = 97;
     // Let an actual poll arrive. The new head can update the scrub range but not the paused position.
-    await page.waitForFunction(`document.querySelector('input[aria-label="Replay position"]').max === "${openingCount + 4}"`, {timeout: 10_000});
-    expect(await page.$eval('input[aria-label="Replay position"]', input => input.getAttribute('value'))).toBe(String(openingCount + 3));
+    await page.waitForFunction(`document.querySelector('input[aria-label="Replay position"]').max === "${openingFrames + 534 - 1}"`, {timeout: 10_000});
+    expect(await page.$eval('input[aria-label="Replay position"]', input => input.getAttribute('value'))).toBe(String(openingFrames + 267));
     await page.evaluate("document.activeElement?.blur()");
     await page.keyboard.press("Space");
     await page.waitForSelector('[data-werewolf-stage][data-cursor="97"]');
     await watchText(page, "Frontier contribution.");
     // A playing seek across silent history still exposes Pause while fetching the next line.
     delayMiddle = true;
-    await page.evaluate(`(() => {const input=document.querySelector('input[aria-label="Replay position"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${openingCount + 2});input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await page.evaluate(`(() => {const input=document.querySelector('input[aria-label="Replay position"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${Math.ceil(openingFrames + 133.5)});input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
     await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(e=>e.getAttribute('aria-label')==='Pause replay')");
     await page.evaluate("document.activeElement?.blur()");
     await page.keyboard.press("Space");
@@ -640,7 +647,7 @@ test("shared replay fences delayed seeks and crosses silent live windows without
     await page.waitForSelector('[data-werewolf-stage][data-cursor="33"]');
     await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(e=>e.getAttribute('aria-label')==='Play replay')");
     await page.keyboard.press("Space");
-    await page.evaluate(`(() => {const input=document.querySelector('input[aria-label="Replay position"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${openingCount + 1});input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await page.evaluate(`(() => {const input=document.querySelector('input[aria-label="Replay position"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${openingFrames});input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
     await page.waitForSelector('[data-werewolf-stage][data-cursor="1"]');
     // Seeking retains play intent through three windows of passes. They never produce a Pass card.
     await page.evaluate("document.activeElement?.blur()");
@@ -675,8 +682,7 @@ test("Werewolf thinking isolates the speaker before speech on desktop and mobile
 },60_000);
 
 test("opening stops stay distinct from recorded cursors in both audiences", async () => {
-  const [game] = await database.db.select().from(schema.games).where(eq(schema.games.gameKind, "werewolf"));
-  if (!game) throw new Error("Missing replay fixture");
+  const game = await frameReplayFixture("frame-openings");
   const page = await browser.newPage();
   try {
     for (const audience of ["mystery", "omniscient"] as const) {
@@ -685,10 +691,9 @@ test("opening stops stay distinct from recorded cursors in both audiences", asyn
       await page.waitForSelector('[data-werewolf-opening="house"]');
       expect(await page.$('[data-werewolf-stage]')).toBeNull();
       const view = await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/watch?audience=${audience}`)).json() as import("@influence/engine/werewolf/watch-contract").WerewolfWatchWindow;
-      const openingCount = view.players.length + 3;
-      const count = openingCount + view.playback.reduce((sum, entry) => sum + entry.steps, 0);
+      const count = Math.ceil((13300 + view.players.length * 2500 + view.playback.reduce((sum, entry) => sum + entry.durationsMs.reduce((a,b)=>a+b,0), 0) + (view.status === "completed" && view.navigation.at(-1)?.chapterId === "retrospective" ? 4200 : 0)) * 30 / 1000) - 1;
       expect(await page.$eval('input[aria-label="Replay position"]', node => node.getAttribute("max"))).toBe(String(count));
-      for (const [position, shot] of [[2, "title"], [3, "cast"], [openingCount, "door"]] as const) {
+      for (const [position, shot] of [[150, "title"], [240, "cast"], [(8000 + view.players.length * 2500) * 30 / 1000, "door"]] as const) {
         await page.evaluate(`(() => {const input=document.querySelector('input[aria-label="Replay position"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${position});input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
         await page.waitForSelector(`[data-werewolf-opening="${shot}"]`);
         expect(await page.$('button[aria-label="Play replay"]')).not.toBeNull();
@@ -705,7 +710,7 @@ test("opening stops stay distinct from recorded cursors in both audiences", asyn
       await skipWerewolfOpening(page);
       expect(await page.$('button[aria-label="Play replay"]')).not.toBeNull();
       await seekWatch(page, view.playback[0]!.cursor);
-      expect(await page.$eval('input[aria-label="Replay position"]', node => node.getAttribute("value"))).toBe(String(openingCount + 1));
+      expect(Number(await page.$eval('input[aria-label="Replay position"]', node => node.getAttribute("value")))).toBeGreaterThanOrEqual((13300 + view.players.length * 2500) * 30 / 1000);
       await page.evaluate("document.activeElement?.blur()");
       await page.keyboard.press("ArrowLeft");
       await page.waitForSelector('[data-werewolf-opening="door"]');

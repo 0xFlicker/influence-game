@@ -11,9 +11,10 @@ interface WatchTransportProps {
  onScrubStart?: () => void; onScrubEnd?: () => void;
  shareHref?: string; header?: ReactNode; settings?: ReactNode; isPlaying: boolean; togglePlay: () => void; speed: number; onSpeed: (speed: number) => void;
  goToBeginning: () => void; goToPrevScene: () => void; onSeek: (position: number) => void | Promise<void>; goToNextScene: () => void; goToEnd: () => void;
+ frame: number; frameCount: number; fps: number;
  thinking?: {enabled: boolean; onChange: (enabled: boolean) => void}; live: boolean; cursor: number; count: number;
 }
-export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, fullscreenError, header, isPlaying, togglePlay, speed, onSpeed, goToBeginning, goToPrevScene, onSeek, goToNextScene, goToEnd, live, cursor, count, thinking, settings, shareHref, music, onScrubStart, onScrubEnd}: WatchTransportProps) {
+export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, fullscreenError, header, isPlaying, togglePlay, speed, onSpeed, goToBeginning, goToPrevScene, onSeek, goToNextScene, goToEnd, live, cursor, count, frame, frameCount, fps, thinking, settings, shareHref, music, onScrubStart, onScrubEnd}: WatchTransportProps) {
  const transport = useRef<HTMLDivElement>(null);
  const [width, setWidth] = useState(0);
  const available = width - (music ? 140 : 0);
@@ -53,7 +54,7 @@ export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, 
     <button type="button" aria-label="Next scene" title="Next (])" disabled={cursor >= count - 1} onClick={goToNextScene} className={button}>
       <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17 4h3v16h-3zM4 4v16l12-8z" /></svg><span className={width >= 520 ? "text-xs" : "hidden"}>Next</span>
     </button>
-    <span className={width >= 360 ? "min-w-0 truncate px-1 text-[10px] tabular-nums text-white/50" : "sr-only"} aria-label="Replay position count">{count ? cursor + 1 : 0}/{count}</span>
+    <span className={width >= 360 ? "min-w-0 truncate px-1 text-[10px] tabular-nums text-white/50" : "sr-only"} aria-label="Playback time">{formatTime(frame / fps)} / {formatTime(frameCount / fps)}</span>
     <div className="min-w-0 flex-1" />
     {capacity >= 1 && <div className="mr-3 shrink-0">{speedControl}</div>}
     {capacity >= 2 && <div className="mr-3 shrink-0">{thinkingControl}</div>}
@@ -71,7 +72,7 @@ export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, 
       <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square"><path d={fullscreen ? "M9 3v6H3m12-6v6h6M3 15h6v6m12-6h-6v6" : "M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6"} /></svg>
     </button>
   </div>
-  <ReplayScrubber cursor={cursor} count={count} onSeek={onSeek} onScrubStart={onScrubStart} onScrubEnd={onScrubEnd} />
+  <ReplayScrubber frame={frame} frameCount={frameCount} fps={fps} onSeek={onSeek} onScrubStart={onScrubStart} onScrubEnd={onScrubEnd} />
   {fullscreenError && <p role="alert" className="text-xs text-amber-200">{fullscreenError}</p>}
   {open && <FloatingPortal root={portalRoot}>
     <FloatingFocusManager context={context} modal={false} returnFocus={settingsButton}>
@@ -88,9 +89,11 @@ export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, 
         </div>
         <div className="mt-4 flex gap-2 border-t border-white/10 pt-4"><button type="button" onClick={() => {goToBeginning();setOpen(false);}} className="rounded-lg border border-white/20 px-3 py-2">Restart replay</button><button type="button" onClick={() => {goToEnd();setOpen(false);}} className="rounded-lg border border-white/20 px-3 py-2">{live ? "Go live" : "Go to end"}</button></div>
         <h3 className="mb-3 mt-4 font-semibold">Keyboard shortcuts</h3>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 text-white/80"><dt>Space</dt><dd>Play / pause</dd><dt>Click, Enter, →</dt><dd>Show / hide speech, then advance</dd><dt>←</dt><dd>Previous contribution</dd><dt>[ / ]</dt><dd>Previous / next group</dd><dt>1 / 2 / 3 / 4</dt><dd>0.5× / 1× / 2× / 4×</dd><dt>Escape</dt><dd>Close settings or fullscreen</dd></dl>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 text-white/80"><dt>Space</dt><dd>Play / pause</dd><dt>Click, Enter, →</dt><dd>Show / hide speech, then advance</dd><dt>←</dt><dd>Previous contribution</dd><dt>Slider ← / →</dt><dd>One frame while the scrubber is focused</dd><dt>[ / ]</dt><dd>Previous / next group</dd><dt>1 / 2 / 3 / 4</dt><dd>0.5× / 1× / 2× / 4×</dd><dt>Escape</dt><dd>Close settings or fullscreen</dd></dl>
       </div>
     </FloatingFocusManager>
   </FloatingPortal>}
  </>;
 }
+
+function formatTime(seconds: number) { const whole = Math.floor(seconds); return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`; }

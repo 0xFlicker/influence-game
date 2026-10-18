@@ -25,7 +25,7 @@ export interface WerewolfWatchWindow {
   publicationCutoff: string; latestCursor: number; fromCursor: number; throughCursor: number;
   players: WerewolfWatchIdentity[]; moments: WerewolfWatchMoment[]; navigation: WerewolfWatchIndex[];
   /** Compact audience-local scrub index; steps expand ballots and permitted night actions before their outcomes. */
-  playback: Array<{cursor: number; steps: number}>;
+  playback: Array<{cursor: number; steps: number; durationsMs: number[]; keys: string[]}>;
   media: Record<string, AcceptedVisualScene>;
 }
 export function isWerewolfPlayable(entry: WerewolfPublicEntry): boolean {

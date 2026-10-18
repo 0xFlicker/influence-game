@@ -131,11 +131,46 @@ test.describe("format-aware game viewer", () => {
     if (harnessProcess) await stopLocalFormatViewerHarness(harnessProcess);
   });
 
+  test("Influence scrubber seeks individual frames and native drags preserve pause", async ({page}) => {
+    const slug = "frame-scrubber-fixture";
+    await installDeterministicFormatGame(page, {slug, scenarioId:"save_or_eliminate_clear", status:"completed"});
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    const consent = page.getByRole("button", {name:"Reject optional tracking",exact:true});
+    await expect(consent).toBeVisible();
+    await consent.click();
+    await expect(consent).toHaveCount(0);
+    await pauseAutoplay(page, "Pause replay");
+    await expect(page.getByRole("button", {name:"Play replay",exact:true})).toBeVisible();
+    const slider = page.getByRole("slider", {name:"Replay position", exact:true});
+    await expect(slider).toHaveAttribute("step", "1");
+    const count = Number(await slider.getAttribute("max"));
+    expect(count).toBeGreaterThan(1000);
+    await slider.fill("150");
+    await expect(slider).toHaveValue("150");
+    await slider.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(slider).toHaveValue("151");
+    await page.keyboard.press("ArrowLeft");
+    await expect(slider).toHaveValue("150");
+    const box = (await slider.boundingBox())!;
+    await page.mouse.move(box.x + box.width * .2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * .7, box.y + box.height / 2, {steps:10});
+    await page.mouse.up();
+    await expect(page.getByRole("button", {name:"Play replay",exact:true})).toBeVisible();
+    const frame = await slider.inputValue();
+    expect(Number(frame)).toBeGreaterThan(count * .6);
+    await page.waitForTimeout(100);
+    await expect(slider).toHaveValue(frame);
+    await page.screenshot({path:"/tmp/influence-frame-scrubber.png"});
+  });
+
   test("captured thinking isolates the speaker before speech on the shared clock", async ({page}) => {
     const slug = "thinking-presentation-fixture";
     const scenario = createFormatKernelViewerScenario("two_names_declined");
     const fixture = await installDeterministicFormatGame(page, {slug, scenarioId:"two_names_declined", status:"in_progress", initialDecisionCount:0});
     await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await page.getByRole("button", {name:"Reject optional tracking",exact:true}).click();
     await expect.poll(() => fixture.sockets.length).toBe(1);
     fixture.sockets[0]!.send(JSON.stringify({type:"message", entry:{
       entrySequence:1, round:0, phase:"INTRODUCTION", from:scenario.roster[0]!.id,
@@ -147,9 +182,14 @@ test.describe("format-aware game viewer", () => {
     await page.getByRole("button", {name:"Player settings", exact:true}).click();
     const settings = page.getByRole("dialog", {name:"Player settings"});
     await expect(settings.getByText("Keyboard shortcuts")).toBeVisible();
+    const slider = page.getByRole("slider", {name:"Replay position",exact:true});
+    const withoutThought = Number(await slider.getAttribute("max"));
     await page.getByLabel("Show thinking", { exact: true }).check();
+    await expect.poll(async () => Number(await slider.getAttribute("max"))).toBeGreaterThan(withoutThought);
     await expect(page.getByLabel("Thinking order", {exact:true})).toHaveCount(0);
     await page.getByRole("button",{name:"Close settings",exact:true}).click();
+    // Enabling thinking preserves speech position. Seek back into the newly available thought.
+    await slider.fill(String(Math.max(0, Number(await slider.inputValue()) - (Number(await slider.getAttribute("max")) - withoutThought))));
     await playbackKey(page,"ArrowRight");
     const thought = page.locator('[data-in-scene-thinking]');
     await expect(thought).toHaveCSS("opacity","1");
