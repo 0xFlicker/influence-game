@@ -28,6 +28,8 @@ All events have `channel=web` and `environment=production`.
   allowlisted `utm_source`, `utm_medium`, `utm_campaign`.
 - `agent_creation_opened`: entry into public creation, with `flow`.
 - `join_opened`, `join_agent_selected`: saved-agent selector opened/submitted.
+  An open selector emits its opening once capture becomes active; selectors
+  closed before readiness are never backfilled.
 - Operations `agent_creation_turn`, `agent_generation`, `agent_portrait`,
   `agent_save`, `influence_join`, `werewolf_join`, `daily_entry` each emit
   `_requested`, `_succeeded`, `_failed`. Attempts share `attempt_id`. Outcomes
@@ -84,7 +86,9 @@ Use ordered funnels, production/web filters, and raw counts alongside percentage
 No request/response bodies, raw errors, agent text, wallet addresses or emails are
 captured. Automatic clicks, exception capture, network performance and surveys
 are disabled. SDK-generated URLs, including nested acquisition properties, lose
-queries/fragments; referrers retain origin only. DOM session recording on `/agents/create` and `/dashboard` masks all text/inputs
+queries/fragments; referrers retain origin only. The recorder's URL masking hook
+also strips credentials, queries and fragments from rrweb metadata and SPA URLs.
+DOM session recording on `/agents/create` and `/dashboard` masks all text/inputs
 and blocks whole forms, dialogs, iframes, images, video and canvas. Agent editor
 and review routes are not recorded. Playback
 itself uses explicit events instead of recording media. Review actual masking
@@ -155,6 +159,8 @@ The versioned browser preference persists until changed or browser storage is
 cleared. DNT and Global Privacy Control override acceptance. Blocked storage
 fails closed. Rejection stops capture/recording and clears SDK persistence;
 other tabs receive the storage event. No page reload interrupts unsaved forms.
+Temporary route and staff exclusions stop recording and capture in that tab
+without writing a shared SDK opt-out preference that would affect other tabs.
 No pre-consent event queue is retained. Watch measurement starts only when SDK
 capture is active, so accepting cannot backfill earlier viewing. Acquisition and
 funnel steps before consent may be missing; report that limitation alongside

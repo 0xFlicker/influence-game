@@ -22,7 +22,9 @@ export function suspendAnalytics() {
   identity = null;
   if (initialized) {
     posthog.stopSessionRecording();
-    posthog.opt_out_capturing();
+    // Route/staff exclusions are tab-local. Only a privacy preference may write
+    // the SDK's shared opt-out marker and clear its persistence.
+    if (!getAnalyticsConsent().analytics) posthog.opt_out_capturing();
   }
   notifyActivity();
 }
@@ -58,6 +60,15 @@ export async function initializeAnalytics(key: string, host: string): Promise<vo
         blockSelector: '[data-analytics-private], form, input, textarea, video, canvas, img, iframe, [role="dialog"]',
         recordHeaders: false,
         recordBody: false,
+        maskCapturedNetworkRequestFn: request => {
+          // The recorder also uses this hook for rrweb Meta.href and SPA URLs;
+          // these aren't ordinary analytics properties passed to our sanitizer.
+          try {
+            const url = new URL(request.name);
+            if (!["https:", "http:"].includes(url.protocol)) return undefined;
+            return { ...request, name: `${url.origin}${url.pathname}` };
+          } catch { return undefined; }
+        },
       },
       before_send: event => {
         if (!event || excluded || !getAnalyticsConsent().analytics) return null;

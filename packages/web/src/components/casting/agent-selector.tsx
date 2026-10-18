@@ -1,8 +1,8 @@
 "use client";
 
-import { captureProductEvent } from "@/lib/product-analytics";
+import { analyticsActive, captureProductEvent, subscribeAnalyticsActivity } from "@/lib/product-analytics";
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { getAuthToken, listAgents, type SavedAgent } from "@/lib/api";
 import { resolveAgentAvatarUrl } from "@/components/agent-avatar";
@@ -22,7 +22,13 @@ interface AgentSelectorProps {
 
 export function AgentSelector({ description, createHref, onClose, onSelect, excludedIds = [], gameKind = "influence", submitLabel, pendingLabel }: AgentSelectorProps) {
   const router = useRouter();
-  useEffect(() => { captureProductEvent("join_opened", { game_kind: gameKind }); }, [gameKind]);
+  const analyticsEnabled = useSyncExternalStore(subscribeAnalyticsActivity, analyticsActive, () => false);
+  const capturedOpening = useRef<string | null>(null);
+  useEffect(() => {
+    if (!analyticsEnabled || capturedOpening.current === gameKind) return;
+    captureProductEvent("join_opened", { game_kind: gameKind });
+    capturedOpening.current = gameKind;
+  }, [analyticsEnabled, gameKind]);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const submitPending = useRef(false);
   const [agents, setAgents] = useState<SavedAgent[]>([]);
