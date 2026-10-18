@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 // SDK mocks stay in a child process so they cannot poison other web tests.
 test("consent gates SDK, drops earlier activity, and revokes across tabs", () => {
-  for (const country of ["US", "DE"]) {
+  for (const country of ["US", "AU", "DE"]) {
     const result = Bun.spawnSync([process.execPath, "-e", `
       import { mock } from "bun:test";
       import { strict as assert } from "node:assert";
@@ -12,12 +12,12 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
       globalThis.window = new EventTarget();
       Object.defineProperty(globalThis, "navigator", { value: { doNotTrack: "0", globalPrivacyControl: false }, configurable: true });
       globalThis.fetch = async () => Response.json({ country: ${JSON.stringify(country)} });
-      let initialized = 0, stopped = 0, optedOut = 0;
+      let initialized = 0, stopped = 0, optedOut = 0, optedIn = 0;
       const events = [];
       mock.module("posthog-js", () => ({ default: {
         init: () => initialized++, capture: name => events.push(name),
         identify: () => {}, reset: () => {}, get_property: () => null,
-        opt_in_capturing: () => {}, opt_out_capturing: () => optedOut++,
+        opt_in_capturing: () => optedIn++, opt_out_capturing: () => optedOut++, clear_opt_in_out_capturing: () => {},
         stopSessionRecording: () => stopped++, startSessionRecording: () => {},
       } }));
       const consent = await import("./src/lib/analytics-consent");
@@ -28,6 +28,17 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
       await consent.loadAnalyticsConsent();
       await analytics.initializeAnalytics("test", "https://invalid.example");
       assert.equal(initialized, ${country === "US" ? 1 : 0});
+      if (consent.getAnalyticsConsent().country === "US") {
+        assert.equal(consent.getAnalyticsConsent().recordings, true);
+        consent.showAnalyticsNotice("/");
+        consent.showAnalyticsNotice("/games");
+        assert.equal(consent.getAnalyticsConsent().notice.path, null);
+        assert.equal(consent.getAnalyticsConsent().choice, null);
+        assert.equal(values.has("house:analytics-consent"), false);
+        assert.equal(values.get("house:analytics-us-notice-shown"), "true");
+        analytics.setAnalyticsIdentity(null, false);
+        assert.equal(optedIn, 0);
+      }
       consent.saveAnalyticsChoice({ analytics: true });
       await analytics.initializeAnalytics("test", "https://invalid.example");
       analytics.setAnalyticsIdentity(null, false);

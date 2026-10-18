@@ -76,7 +76,12 @@ export function setAnalyticsIdentity(publicId: string | null, internal: boolean)
   excluded = internal;
   if (!initialized) return;
   if (internal || !getAnalyticsConsent().analytics) { suspendAnalytics(); return; }
-  posthog.opt_in_capturing({ captureEventName: false });
+  if (getAnalyticsConsent().choice?.analytics === true) {
+    posthog.opt_in_capturing({ captureEventName: false });
+  } else {
+    // Default-on US collection is not an affirmative consent grant.
+    posthog.clear_opt_in_out_capturing();
+  }
   const previousId = identity ?? posthog.get_property("$user_id");
   if (previousId && previousId !== publicId) posthog.reset();
   if (publicId && identity !== publicId) posthog.identify(publicId);

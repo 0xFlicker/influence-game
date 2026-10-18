@@ -392,11 +392,13 @@ export default function PrivacyPage() {
           <P>
             On onboarding and dashboard pages we may record browser interactions
             with text, inputs, images, video, and canvas content masked or blocked.
-            These recordings start only when you accept analytics and help us investigate
+            These recordings help us investigate
             navigation problems. We estimate country from your IP through Cloudflare
             to choose the applicable analytics setting; this is not precise location.
-            Ordinary analytics starts by default for visitors detected in the United
-            States or Australia, with an opt-out. Elsewhere, or when country is
+            Analytics and masked recordings start by default for visitors detected in
+            the United States, with an opt-out. The US notice is shown once per
+            browser storage lifetime and dismissed on navigation; this does not
+            record consent. Elsewhere, or when country is
             unavailable, it waits for your permission. Do Not Track and Global
             Privacy Control disable optional tracking. Change or withdraw your
             choice below at any time; essential site functions remain available.

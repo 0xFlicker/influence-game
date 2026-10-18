@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useRuntimeConfig } from "@/lib/runtime-config";
 import { capturePage, initializeAnalytics, recordBrowserSession, setAnalyticsIdentity, suspendAnalytics } from "@/lib/product-analytics";
-import { loadAnalyticsConsent, useAnalyticsConsent } from "@/lib/analytics-consent";
+import { dismissAnalyticsNotice, loadAnalyticsConsent, useAnalyticsConsent } from "@/lib/analytics-consent";
 import { AnalyticsPreference } from "./analytics-preference";
 
 export function ProductAnalytics() {
@@ -16,6 +16,9 @@ export function ProductAnalytics() {
   const internal = Boolean(account?.isAdmin || account?.roles.some(role => ["admin", "sysop", "producer"].includes(role)));
   const privateRoute = /^\/(admin|oauth|sign-in|sign-up|callback)(\/|$)/.test(pathname);
   useEffect(() => { void loadAnalyticsConsent(); }, []);
+  useEffect(() => {
+    if (consent.notice.path !== null && consent.notice.path !== pathname) dismissAnalyticsNotice();
+  }, [pathname, consent.notice.path]);
   useEffect(() => {
     if (!ready || !config.ready || !config.POSTHOG_PROJECT_TOKEN || location.hostname !== "thehouse.game" || !consent.ready || !consent.analytics || internal || privateRoute) {
       suspendAnalytics();

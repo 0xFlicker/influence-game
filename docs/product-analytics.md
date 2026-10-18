@@ -107,22 +107,25 @@ before production collection are not traffic evidence.
 ## Regional consent (reviewed October 17, 2026)
 
 The banner has one analytics category and equally accessible Accept/Reject
-buttons. The banner explains measurement and navigation-diagnosis purposes and
+buttons outside the US. The US notice offers Got it and Reject optional tracking;
+it is shown once per browser storage lifetime and dismissed on navigation. Its
+separate notice-shown marker never grants consent or changes the analytics choice.
+The banner explains measurement and navigation-diagnosis purposes and
 links directly to the analytics section of the Privacy policy, which describes
 masked session recordings and shows their status. There is no separate recording
-prompt. Ordinary events and recordings have different
-start conditions:
+prompt. Ordinary events and recordings share these start conditions:
 
 | Detected location | Before a saved choice | After Accept | After Reject |
 | --- | --- | --- | --- |
-| United States, Australia | Ordinary analytics on; recordings off | Both on | Both off |
+| United States | Both on | Both on | Both off |
 | All other countries or unknown | Both off | Both on | Both off |
 
 This is an explicit reviewed allowlist, not a claim that all other countries
 require opt-in. US rules generally distinguish notice/opt-out from sensitive
-data, minors, sale, advertising, and other restricted purposes. Australia permits
-ordinary reasonably necessary collection with notice, with consent requirements
-for sensitive information. Our scope is adult-facing, non-sensitive product
+data, minors, sale, advertising, and other restricted purposes. The US default-on policy includes masked session replay at the owner’s request.
+This is a product choice, not a conclusion that every US state exempts session
+replay from consent; state interception laws and the actual data captured matter.
+Our scope is adult-facing, non-sensitive product
 analytics, with PostHog as a service provider, not sale or cross-site advertising.
 Reassess before adding sensitive properties, advertising, or serving children.
 
@@ -134,7 +137,7 @@ Sources and limits:
   funnels do not rely on it: https://ico.org.uk/for-organisations/direct-marketing-and-privacy-and-electronic-communications/guidance-on-the-use-of-storage-and-access-technologies/what-are-the-exceptions/
 - France's narrow audience-measurement exemption is not assumed:
   https://www.cnil.fr/fr/node/677
-- Canada and other jurisdictions have not been cleared for default-on collection
+- Australia, Canada and other jurisdictions have not been cleared for default-on collection
   in this implementation. They use consent, not a guessed global exemption.
 
 `/analytics-region` reads Cloudflare's `CF-IPCountry` on requests carrying
@@ -157,6 +160,6 @@ capture is active, so accepting cannot backfill earlier viewing. Acquisition and
 funnel steps before consent may be missing; report that limitation alongside
 conversion rates. The Privacy page always offers the same controls.
 
-Verify US/AU, EU/UK, missing country, explicit rejection, acceptance, GPC/DNT,
+Verify US, Australia/EU/UK, missing country, explicit rejection, acceptance, GPC/DNT,
 cross-tab rejection, and reload persistence. Test location policy using request
 headers locally; production requests must use Cloudflare's actual header.

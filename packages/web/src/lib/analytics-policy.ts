@@ -1,6 +1,6 @@
-/** Reviewed for ordinary, non-sensitive product analytics; see docs/product-analytics.md. */
+/** Regional product policy; see docs/product-analytics.md for scope and limitations. */
 export function analyticsMode(country: string | null): "opt-out" | "opt-in" {
-  return country === "US" || country === "AU" ? "opt-out" : "opt-in";
+  return country === "US" ? "opt-out" : "opt-in";
 }
 
 export type AnalyticsChoice = { analytics: boolean };
@@ -16,7 +16,14 @@ export function parseAnalyticsChoice(raw: string | null): AnalyticsChoice | null
 
 export function analyticsPermission(country: string | null, choice: AnalyticsChoice | null, blocked: boolean) {
   const analytics = !blocked && (choice?.analytics ?? analyticsMode(country) === "opt-out");
-  return { analytics, recordings: analytics && choice?.analytics === true };
+  return { analytics, recordings: analytics };
+}
+
+export type AnalyticsNotice = { seen: boolean; path: string | null };
+export function visitAnalyticsNotice(notice: AnalyticsNotice, pathname: string): AnalyticsNotice {
+  if (!notice.seen) return { seen: true, path: pathname };
+  if (notice.path !== null && notice.path !== pathname) return { seen: true, path: null };
+  return notice;
 }
 
 export function countryFromCloudflare(headers: Headers): string | null {

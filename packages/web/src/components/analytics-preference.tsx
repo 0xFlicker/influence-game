@@ -1,13 +1,19 @@
 "use client";
 import { useEffect, useState } from "react";
-import { loadAnalyticsConsent, saveAnalyticsChoice, useAnalyticsConsent } from "@/lib/analytics-consent";
+import { usePathname } from "next/navigation";
+import { dismissAnalyticsNotice, loadAnalyticsConsent, saveAnalyticsChoice, showAnalyticsNotice, useAnalyticsConsent } from "@/lib/analytics-consent";
 import { type AnalyticsChoice } from "@/lib/analytics-policy";
 
 export function AnalyticsPreference({ banner = false }: { banner?: boolean }) {
   const consent = useAnalyticsConsent();
+  const pathname = usePathname();
   const [error, setError] = useState(false);
   useEffect(() => { void loadAnalyticsConsent(); }, []);
+  useEffect(() => {
+    if (banner && consent.ready && consent.country === "US" && !consent.choice && !consent.blocked) showAnalyticsNotice(pathname);
+  }, [banner, consent.ready, consent.country, consent.choice, consent.blocked, pathname]);
   if (!consent.ready || (banner && ((consent.choice && !error) || consent.blocked))) return null;
+  if (banner && consent.country === "US" && consent.notice.seen && consent.notice.path !== pathname) return null;
   const choose = (choice: AnalyticsChoice) => setError(!saveAnalyticsChoice(choice));
   const button = "influence-button-secondary min-h-11 rounded-lg px-4 py-2 text-sm";
   return <section aria-label="Analytics preferences" data-analytics-private className={banner
@@ -18,12 +24,12 @@ export function AnalyticsPreference({ banner = false }: { banner?: boolean }) {
       {consent.blocked ? "Your browser privacy signal or storage settings disable optional analytics."
         : consent.analytics ? "Analytics is on. We use PostHog cookies and browser storage to measure visits, agent creation, match entry, and game watch time, and diagnose navigation problems."
           : "With your permission, we use PostHog cookies and browser storage to measure visits, agent creation, match entry, and game watch time, and diagnose navigation problems."}
-      {!banner && <> Accepting also allows masked session recordings on dashboard and agent-creation pages. Recordings are currently {consent.recordings ? "on" : "off"}.</>}
+      {!banner && <> Analytics includes masked session recordings on dashboard and agent-creation pages. Recordings are currently {consent.recordings ? "on" : "off"}.</>}
       {" "}Learn how analytics works and change your choices anytime in our <a className="underline underline-offset-4" href="/privacy#analytics">Privacy policy</a>.
     </p>
     {!consent.blocked && <div className="mt-4 flex flex-wrap gap-2">
-      <button type="button" className={button} onClick={() => choose({ analytics: true })}>
-        Accept analytics
+      <button type="button" className={button} onClick={() => banner && consent.country === "US" ? dismissAnalyticsNotice() : choose({ analytics: true })}>
+        {banner && consent.country === "US" ? "Got it" : "Accept analytics"}
       </button>
       <button type="button" className={button} onClick={() => choose({ analytics: false })}>Reject optional tracking</button>
     </div>}

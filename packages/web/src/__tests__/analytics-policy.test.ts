@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
-import { analyticsMode, analyticsPermission, countryFromCloudflare, parseAnalyticsChoice } from "../lib/analytics-policy";
+import { analyticsMode, analyticsPermission, countryFromCloudflare, parseAnalyticsChoice, visitAnalyticsNotice } from "../lib/analytics-policy";
 import { GET } from "../app/analytics-region/route";
 
-test("only reviewed countries get default analytics; recordings always need acceptance", () => {
-  for (const country of ["US", "AU"]) {
+test("US analytics and recordings default on; every other region requires acceptance", () => {
+  for (const country of ["US"]) {
     expect(analyticsMode(country)).toBe("opt-out");
-    expect(analyticsPermission(country, null, false)).toEqual({ analytics: true, recordings: false });
+    expect(analyticsPermission(country, null, false)).toEqual({ analytics: true, recordings: true });
   }
-  for (const country of [null, "XX", "T1", "GB", "DE", "FR", "CA", "NZ", "us", "invalid"]) {
+  for (const country of [null, "AU", "XX", "T1", "GB", "DE", "FR", "CA", "NZ", "us", "invalid"]) {
     expect(analyticsPermission(country, null, false)).toEqual({ analytics: false, recordings: false });
   }
 });
@@ -37,4 +37,16 @@ test("country lookup fails closed and cannot be shared by caches", async () => {
   expect(response.headers.get("cache-control")).toContain("private, no-store");
   expect(response.headers.get("cdn-cache-control")).toBe("no-store");
   expect(await GET(new Request("https://thehouse.game/analytics-region?country=US")).json()).toEqual({ country: null, mode: "opt-in" });
+});
+
+
+test("US notice is shown once and navigation never creates an analytics choice", () => {
+  const first = visitAnalyticsNotice({ seen: false, path: null }, "/");
+  expect(first).toEqual({ seen: true, path: "/" });
+  expect(visitAnalyticsNotice(first, "/")).toBe(first);
+  const next = visitAnalyticsNotice(first, "/games");
+  expect(next).toEqual({ seen: true, path: null });
+  expect(visitAnalyticsNotice(next, "/")).toBe(next);
+  expect(visitAnalyticsNotice({ seen: true, path: null }, "/")).toEqual({ seen: true, path: null });
+  expect(analyticsPermission("DE", null, false).analytics).toBe(false);
 });
