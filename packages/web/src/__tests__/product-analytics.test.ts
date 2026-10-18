@@ -21,7 +21,7 @@ test("only known product operations are instrumented", () => {
 });
 
 test("SDK acquisition defaults cannot bypass the campaign allowlist", () => {
-  const properties = { utm_source: "discord", utm_content: "private", gclid: "tracking-id",
+  const properties: Record<string, unknown> = { utm_source: "discord", utm_content: "private", gclid: "tracking-id",
     $set_once: { $initial_utm_term: "private", $initial_utm_source: "private@example.com", $initial_current_url: "data:text/plain,private" } };
   sanitizeAnalyticsProperties(properties);
   expect(properties).toEqual({ utm_source: "discord", $set_once: {} });
