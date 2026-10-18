@@ -815,3 +815,10 @@ Use `bun run replay:export -- <slug> --output ./exports/game.mp4` to render a co
 ## Retrospective contracts
 
 The [RT-01 contract](docs/game-retrospective-contract.md), migration `0115_game_retrospective_inputs`, [RT-02 context compilers](docs/game-retrospective-context.md) and [RT-03 strict invocations](docs/game-retrospective-invocation.md) establish retrospective records, complete frozen context, speaker ordering and mandatory final-statement methods. [RT-04](docs/game-retrospective-runtime.md) connects Influence to durable initialization, one committed speech per turn and final completion. RT-05 connects Werewolf through its own validated post-outcome slots. MCP inspection/recovery, replay, Studio/export and local simulation artifacts also include the retrospective. Run the provider-free suite, PostgreSQL suite and `bun run check`; keep model/provider trials opt-in. Focused proof: `bun test packages/engine/src/__tests__/retrospective-context.test.ts packages/engine/src/__tests__/retrospective-invocation.test.ts`. Invocation tests mock native count/generation HTTP, preserve exact priors and verify replay without transport. Whole-roster initialization must use verified capacity for every sealed model. Use `setupTestDB()` for DB fixtures, preserve exact types without `as any`, and call House methods directly when adding future orchestration.
+
+## Product analytics
+
+The House uses PostHog for browser acquisition, agent creation and match-entry
+funnels, and shared-player watch time. See [the analytics event contract and
+release verification](docs/product-analytics.md). Local and staging traffic do
+not enter the production project.

@@ -49,6 +49,7 @@ import {
   formatPresentationDecisionsFromFrames,
   formatPresentationEligibilityFromFrames,
 } from "./format-presentation-model";
+import { useWatchAnalytics } from "@/components/watch/use-watch-analytics";
 import { usePresentationDirector } from "./influence-presentation-director";
 import { FormatPresentation } from "./format-presentation";
 import { ActiveFormatLabel } from "./active-format-label";
@@ -156,6 +157,7 @@ function DramaticReplayTheater({
     scope: animationScope,
     reducedMotion,
   } = usePresentationDirector({ followTail: live });
+  useWatchAnalytics(director, game.id, "influence", live ? "live" : "replay");
   const { fullscreen, button: fullscreenButton, error: fullscreenError, toggle: toggleFullscreen } = usePlayerFullscreen(animationScope);
   const {thinking:showThinking, setThinking:setShowThinking} = preferences;
   const controlsRef = useRef<HTMLDivElement>(null);

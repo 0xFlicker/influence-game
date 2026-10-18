@@ -1,3 +1,4 @@
+import { analyticsOperation, measureProductRequest } from "@/lib/product-analytics";
 import type { HouseParticipation } from "@influence/engine/house-participation";
 import type { AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
 /**
@@ -98,7 +99,11 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiFetch<T>(
+export function apiFetch<T>(path: string, options?: RequestInit, decode?: (response: Response) => Promise<T>): Promise<T> {
+  return measureProductRequest(analyticsOperation(path, options?.method ?? "GET"), () => unmeasuredApiFetch(path, options, decode));
+}
+
+async function unmeasuredApiFetch<T>(
   path: string,
   options?: RequestInit,
   decode?: (response:Response) => Promise<T>,

@@ -34,6 +34,7 @@ export function getPublicRuntimeConfig(): PublicRuntimeConfig {
   }
 
   return {
+    POSTHOG_PROJECT_TOKEN: process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN ?? "",
     PRIVY_APP_ID:
       process.env.PRIVY_APP_ID ??
       process.env.NEXT_PUBLIC_PRIVY_APP_ID ??
