@@ -10,6 +10,7 @@ import {
   createProviderEvidenceFetch,
   durableProviderLogicalCallId,
   providerAcceptedDecisionId,
+  providerLogicalCallId,
   type GameTurnIntentV1,
   type ProviderAttemptIntent,
   type ProviderAttemptRecord,
@@ -253,6 +254,84 @@ describe("provider call journal", () => {
   beforeEach(async () => {
     process.env.LINODE_PRIVATE_CONTENT_BUCKET = "private-content-bucket";
     db = await setupTestDB();
+  });
+
+  test("context overflow survives restart, fences the rejected revision, and permits an adapted request", async () => {
+    const gameId = await insertGame(db), ownerEpoch = await insertOwner(db, gameId);
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    const intent = { ...makeIntent(gameId, ownerEpoch), context: { sourceHash: sha256StableJson({ frozen: true }), revision: 0, maxAttempts: 2 } };
+    await allocateAndReserve(hooks, intent);
+    await hooks.onTerminal?.(makeRecord(intent, { outcome: { kind: "context_overflow", message: "context window exceeded", retryable: false }, disposition: "retry_scheduled" }));
+    const recovered = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    expect(await recovered.onReadContextAttempts?.(intent.coordinate)).toEqual([{ catalogId: "katana:glm-5-2", sourceHash: intent.context.sourceHash, revision: 0, outcome: "context_overflow" }]);
+    const retry = { ...makeIntent(gameId, ownerEpoch, 2), context: intent.context };
+    expect(await recovered.onAllocateAttemptOrdinal?.(retry.coordinate)).toBe(2);
+    await expect(recovered.onReserve?.(retry)).rejects.toThrow("exhausted");
+    const adapted = { ...makeIntent(gameId, ownerEpoch, 3), context: { ...intent.context, revision: 1 } };
+    await allocateAndReserve(recovered, adapted);
+    await recovered.onTerminal?.(makeRecord(adapted, { outcome: { kind: "usable" }, disposition: "accepted", acceptedValue: { target: "Bea" } }));
+    expect(await recovered.onReadAccepted?.(intent.coordinate)).toMatchObject({ value: { target: "Bea" } });
+    const [row] = await db.select().from(schema.providerLogicalCalls);
+    expect(row!.acceptedValue).toHaveProperty("key");
+  });
+
+  test("explicit retrospective recovery reopens the latest context revision and its failed summaries", async () => {
+    const gameId = await insertGame(db), ownerEpoch = await insertOwner(db, gameId);
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    const original = makeIntent(gameId, ownerEpoch);
+    const parent = { ...original, coordinate: { ...original.coordinate, action: "retrospective-statement" },
+      context: { sourceHash: sha256StableJson({ frozen: true }), revision: 3, maxAttempts: 2 } };
+    await allocateAndReserve(hooks, parent);
+    await hooks.onTerminal?.(makeRecord(parent, { outcome: { kind: "context_overflow", message: "too long", retryable: false } }));
+    const child = new ProviderExecutionCoordinator({ hooks }).startCall(parent.coordinate).startContextCall(parent.context.sourceHash, 3, 1);
+    const summary = { ...original, coordinate: child.coordinate, attemptId: "summary" };
+    await allocateAndReserve(hooks, summary);
+    await hooks.onTerminal?.(makeRecord(summary, { outcome: { kind: "context_overflow", message: "chunk too long", retryable: false } }));
+    const parentId = providerLogicalCallId(gameId, parent.coordinate);
+    await db.update(schema.games).set({ config: JSON.stringify({ retrospectiveResume: {
+      logicalCallId: parentId, resumedAt: "2026-08-23T00:00:02.000Z",
+    } }) }).where(eq(schema.games.id, gameId));
+    expect(await hooks.onReadContextAttempts?.(parent.coordinate)).toMatchObject([{ revision: 3, outcome: null }]);
+    expect(await hooks.onReadContextAttempts?.(child.coordinate)).toMatchObject([{ revision: 3, outcome: null }]);
+    await allocateAndReserve(hooks, { ...parent, attemptOrdinal: 2, attemptId: "resumed-parent", startedAt: "2026-08-23T00:00:03.000Z" });
+    await allocateAndReserve(hooks, { ...summary, attemptOrdinal: 2, attemptId: "resumed-summary", startedAt: "2026-08-23T00:00:03.000Z" });
+  });
+
+  test("summary child acceptance uses object storage without accepting or occupying the planned parent slot", async () => {
+    const gameId = await insertGame(db), ownerEpoch = await insertOwner(db, gameId);
+    const binding = await insertPlannedDurableTurn(db, { gameId, ownerEpoch });
+    const parent = bindDurableTurn(makeIntent(gameId, ownerEpoch), binding);
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    const call = new ProviderExecutionCoordinator({ hooks }).startCall(parent.coordinate);
+    const child = call.startContextCall(sha256StableJson({ frozen: true }), 1, 0);
+    const intent = { ...makeIntent(gameId, ownerEpoch), coordinate: child.coordinate };
+    await allocateAndReserve(hooks, intent);
+    await hooks.onTerminal?.(makeRecord(intent, { outcome: { kind: "usable" }, disposition: "accepted", acceptedValue: { summary: "Ada promised protection." } }));
+    expect(await hooks.onReadAccepted?.(parent.coordinate)).toBeUndefined();
+    expect(await hooks.onReadAccepted?.(child.coordinate)).toMatchObject({ value: { summary: "Ada promised protection." } });
+    const [row] = await db.select().from(schema.providerLogicalCalls);
+    expect(row!.gameTurnId).toBeNull();
+    expect(row!.acceptedValue).toHaveProperty("key");
+    await allocateAndReserve(hooks, { ...parent, attemptId: "parent-dispatch" });
+    expect(await db.select().from(schema.providerLogicalCalls)).toHaveLength(2);
+    await db.update(schema.gameRunOwners).set({ status: "revoked" }).where(eq(schema.gameRunOwners.ownerEpoch, ownerEpoch));
+    await expect(hooks.onReadAccepted?.(child.coordinate)).rejects.toThrow("revoked");
+  });
+
+  test("summary failures keep a durable attempt budget and inherit parent intent authorization", async () => {
+    const gameId = await insertGame(db), ownerEpoch = await insertOwner(db, gameId);
+    const binding = await insertPlannedDurableTurn(db, { gameId, ownerEpoch });
+    const parent = bindDurableTurn(makeIntent(gameId, ownerEpoch), binding);
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    const child = new ProviderExecutionCoordinator({ hooks }).startCall(parent.coordinate).startContextCall(sha256StableJson({ frozen: true }), 1, 0);
+    for (let ordinal = 1; ordinal <= 2; ordinal++) {
+      const intent = { ...makeIntent(gameId, ownerEpoch, ordinal), coordinate: child.coordinate };
+      await allocateAndReserve(hooks, intent); await hooks.onTerminal?.(makeRecord(intent));
+    }
+    const retry = { ...makeIntent(gameId, ownerEpoch, 3), coordinate: child.coordinate };
+    expect(await hooks.onAllocateAttemptOrdinal?.(retry.coordinate)).toBe(3);
+    await expect(hooks.onReserve?.(retry)).rejects.toThrow("exhausted");
+    await expect(hooks.onAllocateAttemptOrdinal?.({ ...child.coordinate, action: "different-action" })).rejects.toThrow("planned intent");
   });
 
   test("reserves one authoritative row for a logical call and attempt", async () => {

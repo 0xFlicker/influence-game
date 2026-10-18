@@ -1892,6 +1892,8 @@ export const providerCallAttempts = pgTable("provider_call_attempts", {
   ownerEpoch: text("owner_epoch").notNull(),
   attemptOrdinal: integer("attempt_ordinal").notNull(),
   transportAttemptId: text("transport_attempt_id").notNull(),
+  contextSourceHash: text("context_source_hash"),
+  contextRevision: integer("context_revision"),
   reservationHash: text("reservation_hash").notNull(),
   terminalHash: text("terminal_hash"),
   status: text("status").notNull().$type<ProviderCallAttemptStatus>().default("reserved"),
@@ -1947,6 +1949,7 @@ export const providerCallAttempts = pgTable("provider_call_attempts", {
     columns: [table.gameId, table.ownerEpoch],
     foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
   }),
+  check("provider_call_attempts_context_check", sql`(${table.contextSourceHash} IS NULL AND ${table.contextRevision} IS NULL) OR (${table.contextSourceHash} IS NOT NULL AND ${table.contextRevision} IS NOT NULL AND ${table.contextSourceHash} ~ '^sha256:[a-f0-9]{64}$' AND ${table.contextRevision} BETWEEN 0 AND 3)`),
   check(
     "provider_call_attempts_ordinal_check",
     sql`${table.attemptOrdinal} > 0`,
@@ -1968,7 +1971,7 @@ export const providerCallAttempts = pgTable("provider_call_attempts", {
     sql`${table.outcomeKind} IS NULL OR ${table.outcomeKind} IN (
       'usable', 'refusal', 'rate_limit', 'service_error',
       'transport_timeout', 'transport_error', 'authentication',
-      'configuration', 'request_error', 'cancellation', 'empty_output', 'malformed_output',
+      'configuration', 'request_error', 'context_overflow', 'cancellation', 'empty_output', 'malformed_output',
       'wrong_tool', 'undecodable_structured_output'
     )`,
   ),

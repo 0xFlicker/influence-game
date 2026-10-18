@@ -25,13 +25,14 @@ export type ProviderAttemptFailureKind =
   | "authentication"
   | "configuration"
   | "request_error"
+  | "context_overflow"
   | "cancellation"
   | "empty_output"
   | "malformed_output"
   | "wrong_tool"
   | "undecodable_structured_output";
 
-export type ProviderSemanticCoordinateV1 =
+export type ProviderActionCoordinateV1 =
   | { version: 1; kind: "house_cut_discovery"; sourceHash: string; windowId: string; editorialVersion: string; }
   | { version: 1; kind: "werewolf_action"; eventSequence: number; }
   | {
@@ -68,6 +69,25 @@ export type ProviderSemanticCoordinateV1 =
       revision: number;
     };
 
+export type ProviderSemanticCoordinateV1 = ProviderActionCoordinateV1 | {
+  version: 1; kind: "context_compaction"; parent: ProviderActionCoordinateV1;
+  sourceHash: string; revision: number; chunk: number;
+};
+
+/** Child summaries inherit the parent's authorization, never its acceptance slot. */
+export function providerActionCoordinate(coordinate: ProviderLogicalCallCoordinate): ProviderLogicalCallCoordinate {
+  if (coordinate.semantic.kind !== "context_compaction") return coordinate;
+  const semantic = coordinate.semantic.parent;
+  return { ...coordinate, semantic, ...(semantic.kind === "durable_turn" ? {
+    durableTurn: { turnId: semantic.turnId, subcallSlot: semantic.subcallSlot },
+  } : {}) };
+}
+
+export interface ProviderContextAttempt {
+  catalogId: string; sourceHash: string; revision: number; outcome: string | null;
+}
+export interface ProviderContextIdentity { sourceHash: string; revision: number; maxAttempts: number; }
+
 export interface ProviderLogicalCallCoordinate {
   gameId?: UUID;
   ownerEpoch?: string;
@@ -93,6 +113,10 @@ export function canonicalProviderSemanticCoordinate(
 ): string {
   assertProviderSemanticCoordinate(coordinate);
   switch (coordinate.kind) {
+    case "context_compaction":
+      return JSON.stringify({ version: 1, kind: coordinate.kind,
+        parent: JSON.parse(canonicalProviderSemanticCoordinate(coordinate.parent)),
+        sourceHash: coordinate.sourceHash, revision: coordinate.revision, chunk: coordinate.chunk });
     case "house_cut_discovery":
       return JSON.stringify({ version: 1, kind: coordinate.kind, sourceHash: coordinate.sourceHash, windowId: coordinate.windowId, editorialVersion: coordinate.editorialVersion });
     case "werewolf_action":
@@ -212,6 +236,14 @@ export function assertProviderSemanticCoordinate(
     throw new Error("Provider semantic coordinate version must be 1");
   }
   switch (coordinate.kind) {
+    case "context_compaction":
+      exactFields(["version", "kind", "parent", "sourceHash", "revision", "chunk"]);
+      if ((coordinate.parent as ProviderSemanticCoordinateV1)?.kind === "context_compaction") throw new Error("Nested context coordinates are invalid");
+      assertProviderSemanticCoordinate(coordinate.parent);
+      if (!/^sha256:[a-f0-9]{64}$/.test(coordinate.sourceHash)) throw new Error("Invalid context source hash");
+      positiveInteger(coordinate.revision, "revision");
+      nonNegativeInteger(coordinate.chunk, "chunk");
+      return;
     case "house_cut_discovery":
       exactFields(["version", "kind", "sourceHash", "windowId", "editorialVersion"]);
       nonBlank(coordinate.sourceHash, "sourceHash");
@@ -326,6 +358,7 @@ export interface ProviderAttemptAccountingFacts {
 }
 
 export interface ProviderAttemptIntent {
+  context?: ProviderContextIdentity;
   coordinate: ProviderLogicalCallCoordinate;
   attemptOrdinal: number;
   attemptId: string;
@@ -364,6 +397,7 @@ export interface ProviderTerminalReceipt {
 }
 
 export interface ProviderExecutionHooks {
+  onReadContextAttempts?(coordinate: ProviderLogicalCallCoordinate): Promise<ProviderContextAttempt[]>;
   /** Return the previously accepted value for this stable logical call. */
   onReadAccepted?(
     coordinate: ProviderLogicalCallCoordinate,
@@ -403,6 +437,10 @@ export interface ProviderDispatchRequestOptions {
 }
 
 export interface ExecuteProviderCallOptions<TResponse, TValue> {
+  beforeAttempt?(): Promise<void>;
+  contextIdentity?(): ProviderContextIdentity | undefined;
+  /** Only callers with a concrete adaptation path may retry overflow. */
+  adaptContext?: boolean;
   preparedRequest:
     | ProviderPreparedRequest
     | ((attemptOrdinal: number) => ProviderPreparedRequest);
@@ -616,6 +654,8 @@ export class ProviderExecutionCoordinator {
 export class ProviderLogicalCallExecution {
   private nextAttemptOrdinal = 1;
   private acceptedResult?: ProviderAcceptedResult;
+  private contextAttempts: ProviderContextAttempt[] = [];
+  private readonly contextCalls = new Map<string, ProviderLogicalCallExecution>();
 
   constructor(
     readonly coordinate: ProviderLogicalCallCoordinate,
@@ -626,6 +666,23 @@ export class ProviderLogicalCallExecution {
     ) => Promise<void>,
     private readonly now: () => number,
   ) {}
+
+  async readContextAttempts(): Promise<ProviderContextAttempt[]> {
+    return this.hooks?.onReadContextAttempts ? this.hooks.onReadContextAttempts(this.coordinate) : [...this.contextAttempts];
+  }
+
+  startContextCall(sourceHash: string, revision: number, chunk: number): ProviderLogicalCallExecution {
+    if (this.coordinate.semantic.kind === "context_compaction") throw new Error("Compaction cannot recursively adapt itself");
+    const { durableTurn: _binding, ...parent } = this.coordinate;
+    const key = `${sourceHash}:${revision}:${chunk}`;
+    let call = this.contextCalls.get(key);
+    if (!call) {
+      call = new ProviderLogicalCallExecution({ ...parent, semantic: { version: 1, kind: "context_compaction",
+        parent: this.coordinate.semantic, sourceHash, revision, chunk } }, this.hooks, this.wait, this.now);
+      this.contextCalls.set(key, call);
+    }
+    return call;
+  }
 
   /**
    * Traverse one game's sealed provider manifest. Each entry owns its bounded
@@ -660,7 +717,7 @@ export class ProviderLogicalCallExecution {
 
     options.cancellationSignal?.throwIfAborted();
     await options.beforeDispatch?.();
-    let lastAttemptError: ProviderAttemptError | undefined;
+    let lastAttemptError: ProviderUnavailableError | undefined;
     let lastBudgetError: ProviderCallBudgetExhaustedError | undefined;
     let lastCircuitError: ProviderCircuitOpenError | undefined;
     let lastCompatibilityError: ProviderEntryIncompatibleError | undefined;
@@ -711,6 +768,7 @@ export class ProviderLogicalCallExecution {
           lastCircuitError = error;
           continue;
         }
+        if (error instanceof ProviderUnavailableError) { lastAttemptError = error; continue; }
         throw error;
       }
     }
@@ -734,7 +792,7 @@ export class ProviderLogicalCallExecution {
   private async readAccepted<TValue>(
     validateAcceptedValue?: (value: unknown) => ProviderAcceptedValueValidation<TValue>,
   ): Promise<ProviderAcceptedResult<TValue> | undefined> {
-    const accepted = await this.hooks?.onReadAccepted?.(this.coordinate);
+    const accepted = this.hooks?.onReadAccepted ? await this.hooks.onReadAccepted(this.coordinate) : this.acceptedResult;
     if (!accepted) return undefined;
     const validation = validateAcceptedValue?.(accepted.value);
     if (validation?.status === "invalid") {
@@ -761,6 +819,7 @@ export class ProviderLogicalCallExecution {
     let lastError: ProviderAttemptError | null = null;
 
     for (let localAttempt = 1; localAttempt <= maxAttempts; localAttempt++) {
+      await options.beforeAttempt?.();
       const localAttemptOrdinal = this.nextAttemptOrdinal++;
       const attemptOrdinal = await this.hooks?.onAllocateAttemptOrdinal?.(
         this.coordinate,
@@ -783,6 +842,7 @@ export class ProviderLogicalCallExecution {
       };
       const intent: ProviderAttemptIntent = {
         coordinate: this.coordinate,
+        ...(options.contextIdentity?.() && { context: options.contextIdentity!() }),
         attemptOrdinal,
         attemptId,
         preparedRequest: sanitizePreparedRequest(preparedRequest),
@@ -923,7 +983,9 @@ export class ProviderLogicalCallExecution {
         capturedRecord = dispatchResult.record;
       }
 
-      const willRetry =
+      const contextRetry = capturedRecord.outcome.kind === "context_overflow"
+        && options.adaptContext === true && (capturedRecord.context?.revision ?? 0) < 3;
+      const willRetry = contextRetry ||
         capturedRecord.outcome.kind !== "usable" &&
         capturedRecord.outcome.retryable &&
         localAttempt < maxAttempts;
@@ -956,6 +1018,9 @@ export class ProviderLogicalCallExecution {
       };
 
       const terminalReceipt = await this.hooks?.onTerminal?.(record);
+      const contextIdentity = record.context ?? (record.coordinate.semantic.kind === "context_compaction" ? record.coordinate.semantic : undefined);
+      if (contextIdentity) this.contextAttempts.push({ catalogId: record.preparedRequest.catalogId!,
+        sourceHash: contextIdentity.sourceHash, revision: contextIdentity.revision, outcome: record.outcome.kind });
       if (usableResult) {
         this.acceptedResult = {
           ...(terminalReceipt?.acceptedAttemptId && {
@@ -978,6 +1043,7 @@ export class ProviderLogicalCallExecution {
       if (!willRetry) {
         throw lastError;
       }
+      if (contextRetry) { localAttempt = 0; continue; }
       await options.onRetry?.(record);
       await this.wait(localAttempt * 1_000, options.cancellationSignal);
     }
@@ -1472,6 +1538,11 @@ function classifyProviderFailureDetails(input: {
 }): ProviderAttemptFailureOutcome {
   const code = input.code?.toLowerCase() ?? "";
   const lowerMessage = input.message.toLowerCase();
+  if (["context_length_exceeded", "context_window_exceeded", "prompt_too_long", "input_too_long"].includes(code)
+    || ((input.status === 400 || input.status === 413) && (
+      /maximum context length|exceeds? (?:the )?(?:model.s? )?context (?:window|length)|prompt is too long|input tokens exceed/.test(lowerMessage)
+    ))) return { kind: "context_overflow", message: input.message, retryable: false };
+
   if (
     code.includes("invalid_prompt") ||
     code.includes("content_filter") ||

@@ -720,6 +720,7 @@ export {
   canonicalProviderSemanticCoordinate,
   durableProviderLogicalCallId,
   providerLogicalCallId,
+  providerActionCoordinate,
   providerSemanticCoordinateHash,
 } from "./provider-execution";
 export {

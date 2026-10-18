@@ -203,7 +203,7 @@ test("the existing Werewolf runtime checkpoints failed initialization and releas
   const game = await createWerewolfGame(db, "rt08-init-owner", { preset: "one_wolf", agentProfileIds: [], maxDays: 1 });
   const claim = await claimWerewolfGame(db, game.id);
   if (!claim.ok) throw Error(claim.error);
-  const agent: WerewolfAgent = { async prepareRetrospectiveCapacity() { throw new RetrospectiveContextCapacityError("capacity_unavailable", "unknown-model", null, null, null); },
+  const agent: WerewolfAgent = { async prepareRetrospectiveCapacity() { throw new RetrospectiveContextCapacityError(); },
     async getRetrospectiveStatement() { throw Error("No speech can be dispatched without admitted initialization"); }, async decide({ request }) {
       if (request.action === "open_thread") return { kind: "opening", text: null, cue: null, recipientIds: [] };
       return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Fixture" } : { kind: "speech", text: null, cue: null };

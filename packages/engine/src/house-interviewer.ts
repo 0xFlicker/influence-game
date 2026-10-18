@@ -1,3 +1,4 @@
+import { ContextSpans } from "./context-adaptation";
 /**
  * Influence Game - House Interviewer
  *
@@ -936,6 +937,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     onRetry?: (record: ProviderAttemptRecord) => void;
   }): Promise<T> {
     return executeModelInvocation({
+      onContextSummary: (outcome, runtime) => { this.responseProviderRuntime.set(outcome, runtime); this.recordUsage("House/context-summary", outcome); },
       call: params.call,
       runtimes: this.providerManifest,
       invocation: params.invocation,
@@ -1217,7 +1219,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       ? configuredEffort
       : undefined;
     const requestedReasoningEffort = requestReasoningEffort;
-    const privateTraceMessages = LLMHouseInterviewer.privateTraceMessages(params.messages);
+    const privateTraceMessages = LLMHouseInterviewer.privateTraceMessages(params.response.invocationMessages ?? params.messages);
     const promptReuse = this.promptReuseCollector.observe(privateTraceMessages, {
       lane: params.context.actor.id ?? "house",
       requestShape: params.response.transport,
@@ -1324,6 +1326,8 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     });
   }
 
+  private readonly contextSpans = new ContextSpans();
+
   private houseInvocation<TStructuredValue = unknown>(
     messages: readonly ChatCompletionMessageParam[],
     result: ModelInvocationResult<TStructuredValue>,
@@ -1333,6 +1337,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     const effort = this.requestedReasoningEffort();
     return {
       messages: LLMHouseInterviewer.modelMessages(messages),
+      contextSpans: this.contextSpans.snapshot(),
       result,
       outputTokenLimit,
       ...(effort && { reasoning: { effort } }),
@@ -1428,6 +1433,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   }
 
   async assignMingleRooms(context: HouseMingleAssignmentContext): Promise<HouseMingleAssignmentResult> {
+    this.contextSpans.clear();
     if (!Number.isInteger(context.roomCount) || context.roomCount < 1) {
       throw new Error("House Mingle assignment requires a positive integer room count.");
     }
@@ -1544,6 +1550,7 @@ Respond with JSON only:
   async selectAllianceProposers(
     context: HouseAllianceProposerSelectionContext,
   ): Promise<HouseAllianceProposerSelectionResult> {
+    this.contextSpans.clear();
     if (
       !Number.isInteger(context.budget)
       || context.budget < 0
@@ -1648,6 +1655,7 @@ Respond with JSON only.`;
   }
 
   async planAllianceHuddles(context: HouseAllianceHuddleScheduleContext): Promise<HouseAllianceHuddleScheduleResult> {
+    this.contextSpans.clear();
     if (
       !Number.isInteger(context.budget)
       || context.budget < 0
@@ -1662,7 +1670,7 @@ Respond with JSON only.`;
       .map((candidate, index) => [
         `${index + 1}. ${candidate.name} (${candidate.allianceId})`,
         `members=${candidate.memberNames.join(", ")}`,
-        `purpose=${candidate.purpose}`,
+        `purpose=${this.contextSpans.add(candidate.purpose)}`,
         `timebox=${candidate.timebox ?? "open-ended"}`,
         `priorOutcomes=${candidate.priorOutcomeCount}`,
       ].join("; "))
@@ -1781,6 +1789,7 @@ Respond with JSON only.`;
   }
 
   async summarizeAllianceHuddle(context: HouseAllianceHuddleOutcomeContext): Promise<HouseAllianceHuddleOutcomeResult> {
+    this.contextSpans.clear();
     const transcript = context.transcript.length > 0
       ? context.transcript.map((entry) => `${entry.from}: "${entry.text}"`).join("\n")
       : "(no member messages recorded)";
@@ -1795,7 +1804,7 @@ Purpose: ${context.alliance.purpose}
 Timebox: ${context.alliance.timebox ?? "open-ended"}
 
 Huddle transcript:
-${transcript}
+${this.contextSpans.add(transcript)}
 
 Authoritative structured member facts:
 ${JSON.stringify(context.facts)}
@@ -1877,6 +1886,7 @@ Respond with JSON only.`;
   }
 
   async generateHouseSummary(context: HouseNarrativeTurnContext): Promise<HouseSummaryAttemptResult> {
+    this.contextSpans.clear();
     const narration = context.narrationContext;
     const limits = HOUSE_SUMMARY_LIMITS[narration.boundary.beatClass];
     const deadline = Date.now() + (this.houseSummaryTimeoutMs ?? limits.wallClockMs);
@@ -1894,13 +1904,13 @@ Respond with JSON only.`;
               phase: narration.boundary.phase,
               beatClass: narration.boundary.beatClass,
             },
-            canonicalEvents: narration.canonicalEvents,
+            canonicalEvents: this.contextSpans.json(narration.canonicalEvents),
             projection: narration.projection,
-            acceptedPublicDialogue: narration.publicDialogue,
+            acceptedPublicDialogue: this.contextSpans.json(narration.publicDialogue),
             ...(narration.boundary.beatClass === "milestone" && {
               omniscientPrivateContext: {
-                acceptedPrivateDialogueAndDecisions: narration.privateDialogueAndDecisions,
-                acceptedDiaryEntries: narration.diaryEntries,
+                acceptedPrivateDialogueAndDecisions: this.contextSpans.json(narration.privateDialogueAndDecisions),
+                acceptedDiaryEntries: this.contextSpans.json(narration.diaryEntries),
               },
             }),
           },
@@ -1910,7 +1920,7 @@ Respond with JSON only.`;
               boundaryId: beat.boundary.id,
               publicSummary: beat.publicSummary,
             })),
-            privateNarrativeNotebook: context.continuity.privateNarrativeNotebook,
+            privateNarrativeNotebook: this.contextSpans.json(context.continuity.privateNarrativeNotebook),
           },
           outputBounds: {
             publicSummaryCharacters: limits.maxProseCharacters,
@@ -2053,6 +2063,7 @@ Respond with JSON only.`;
   async generateLongFormGameplaySummary(
     context: HouseGameplaySummaryContext,
   ): Promise<HouseGameplaySummaryResult | null> {
+    this.contextSpans.clear();
     const prompt = JSON.stringify({
       task: "Write a long-form private producer catch-up in the House's own voice.",
       boundary: {
@@ -2061,9 +2072,9 @@ Respond with JSON only.`;
         kind: context.kind,
         coveredWindow: context.coveredWindow,
       },
-      gameInformation: context.narrationContext,
-      recentPublicBeats: context.recentPublicBeats,
-      privateNarrativeNotebook: context.privateNarrativeNotebook,
+      gameInformation: this.contextSpans.json(context.narrationContext),
+      recentPublicBeats: this.contextSpans.json(context.recentPublicBeats),
+      privateNarrativeNotebook: this.contextSpans.json(context.privateNarrativeNotebook),
       instruction: "Synthesize the season's developing arcs, strategy, reversals, private threads, and next narrative pressure. This prose is producer presentation only and will never be parsed into game state.",
     });
     try {
@@ -2106,6 +2117,7 @@ Respond with JSON only.`;
   }
 
   async generateQuestion(context: DiaryRoomContext): Promise<string> {
+    this.contextSpans.clear();
     const gameStatePrompt = this.buildGameStatePrompt(context);
     const messages = [
       {
@@ -2148,6 +2160,7 @@ Respond with JSON only.`;
     context: DiaryRoomContext,
     conversationSoFar: Array<{ question: string; answer: string }>,
   ): Promise<FollowUpResult> {
+    this.contextSpans.clear();
     const gameStatePrompt = this.buildGameStatePrompt(context);
     const exchangeCount = conversationSoFar.length;
 
@@ -2158,7 +2171,7 @@ Respond with JSON only.`;
     const followUpPrompt = `${gameStatePrompt}
 
 ## This Session's Conversation So Far (${exchangeCount} exchanges)
-${convoText}
+${this.contextSpans.add(convoText)}
 
 ## Your Decision
 You have asked ${exchangeCount} question(s) so far this session. You may ask up to 4 total.
@@ -2253,16 +2266,16 @@ Return the decision and text through the required structured response:
         endgameStage: playerKnowledge.endgameStage ?? null,
         finalists: playerKnowledge.finalists ?? null,
       },
-      publicCanonicalRecord: playerKnowledge.gameEventRecord ?? [],
-      publicTranscript,
-      subjectPrivateConversation: privateConversation,
-      subjectRecentDecisions: playerKnowledge.recentDecisions ?? [],
+      publicCanonicalRecord: this.contextSpans.json(playerKnowledge.gameEventRecord ?? [], 2),
+      publicTranscript: this.contextSpans.json(publicTranscript, 2),
+      subjectPrivateConversation: this.contextSpans.json(privateConversation, 2),
+      subjectRecentDecisions: this.contextSpans.json(playerKnowledge.recentDecisions ?? [], 2),
       subjectAllianceContext: playerKnowledge.allianceContext ?? {
         activeAlliances: [],
         openProposals: [],
         proposalHistory: [],
       },
-      subjectPriorDiary: (previousDiaryEntries ?? []).slice(-6),
+      subjectPriorDiary: this.contextSpans.json((previousDiaryEntries ?? []).slice(-6), 2),
     };
 
     return `Generate one diary-room interview question for ${agentName} after ${precedingPhase}.

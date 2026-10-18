@@ -1,3 +1,4 @@
+import { compactInvocation, contextSourceHash, contextSummaryArtifact, CONTEXT_SUMMARY_INSTRUCTIONS, CONTEXT_MAX_REVISIONS } from "./context-adaptation";
 import type OpenAI from "openai";
 import type {
   ChatCompletion,
@@ -32,6 +33,7 @@ import {
   type ExactStructuredOutputResult,
 } from "./structured-output";
 import {
+  ProviderUnavailableError,
   classifyChatCompletionTerminalOutcome,
   classifyProviderError,
   classifyResponsesTerminalOutcome,
@@ -62,6 +64,7 @@ export interface ExecuteModelInvocationOptions<TValue, TStructuredValue = unknow
     structuredValue: TStructuredValue | undefined,
   ): ProviderCandidateValidation<TValue>;
   onRetry?(record: ProviderAttemptRecord): Promise<void> | void;
+  onContextSummary?(outcome: ProviderModelOutcome, runtime: LlmProviderRuntime): void;
 }
 
 export interface ModelInvocationExecutionResult<TValue>
@@ -78,6 +81,9 @@ export interface ModelInvocationExecutionResult<TValue>
 export async function executeModelInvocation<TValue, TStructuredValue = unknown>(
   options: ExecuteModelInvocationOptions<TValue, TStructuredValue>,
 ): Promise<ModelInvocationExecutionResult<TValue>> {
+  // Capture renderer-owned spans before the first await; House/agents may prepare another call concurrently.
+  const initialInvocation = typeof options.invocation === "function" ? options.invocation() : options.invocation;
+  const contextSpans = initialInvocation.contextSpans?.map(span => ({ ...span }));
   const compiledByAttempt = new Map<string, {
     invocation: ModelInvocation<TStructuredValue>;
     request: ProviderNativeRequest;
@@ -92,12 +98,44 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
     ...(options.beforeDispatch && { beforeDispatch: options.beforeDispatch }),
     entries: options.runtimes.map((runtime) => {
       const adapterRuntime = runtime as AdapterBackedRuntime;
-      const invocation = () =>
-        typeof options.invocation === "function"
-          ? options.invocation()
-          : options.invocation;
+      const invocation = () => ({ ...(typeof options.invocation === "function" ? options.invocation() : options.invocation), contextSpans });
+      let current: ModelInvocation<TStructuredValue> | undefined;
+      let context: import("./provider-execution").ProviderContextIdentity | undefined;
+      const prepare = async () => {
+        const original = invocation();
+        current = original;
+        if (options.call.coordinate.semantic.kind === "context_compaction") {
+          const attempts = await options.call.readContextAttempts();
+          if (attempts.some(attempt => attempt.catalogId === runtime.catalogId && attempt.outcome === "context_overflow")) {
+            throw new ProviderUnavailableError("Summary chunk previously exceeded this model's context", "context_overflow");
+          }
+          return;
+        }
+        if (!original.contextSpans?.length) return;
+        const sourceHash = contextSourceHash(original);
+        const attempts = await options.call.readContextAttempts();
+        if (attempts.some(attempt => attempt.sourceHash !== sourceHash)) throw new Error("Context source changed under the same logical call");
+        const revision = attempts.reduce((value, attempt) => Math.max(value, attempt.revision + (attempt.catalogId === runtime.catalogId && attempt.outcome === "context_overflow" ? 1 : 0)), 0);
+        if (revision > CONTEXT_MAX_REVISIONS) throw new ProviderUnavailableError("Context adaptation exhausted", "context_overflow");
+        context = { sourceHash, revision, maxAttempts: Math.max(1, Math.floor(options.maxAttempts)) };
+        if (!revision) return;
+        current = await compactInvocation({ invocation: original, call: options.call, sourceHash, revision,
+          summarize: async (call, text, maxCharacters) => {
+            const artifact = contextSummaryArtifact(maxCharacters);
+            const result = await executeModelInvocation({ call, runtimes: options.runtimes, maxAttempts: 2,
+              cancellationSignal: options.cancellationSignal, requestSignalFactory: options.requestSignalFactory,
+              invocation: { messages: [{ role: "system", content: CONTEXT_SUMMARY_INSTRUCTIONS },
+                { role: "user", content: JSON.stringify({ source: text, maxCharacters }) }],
+                result: { kind: "structured", artifact }, outputTokenLimit: 2048, reasoning: { effort: "low" } },
+              validate: (_outcome, value) => value ? { status: "usable", value } : { status: "unusable", kind: "malformed_output", message: "Missing context summary" },
+            });
+            if (result.liveOutcome) options.onContextSummary?.(result.liveOutcome, options.runtimes[result.manifestPosition]!);
+            return result.value.summary;
+          },
+        });
+      };
       const compile = (attemptOrdinal: number): ProviderNativeRequest => {
-        const semanticCall = invocation();
+        const semanticCall = current ?? invocation();
         const prepared = adapterRuntime.adapter.compile(
           semanticCall,
           adapterRuntime,
@@ -110,6 +148,9 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
       };
       return {
         catalogId: runtime.catalogId,
+        beforeAttempt: prepare,
+        contextIdentity: () => context,
+        adaptContext: options.call.coordinate.semantic.kind !== "context_compaction" && Boolean(invocation().contextSpans?.length),
         compatibility: () =>
           adapterRuntime.adapter.validate(invocation(), adapterRuntime),
         preparedRequest: (attemptOrdinal) => {
@@ -141,6 +182,7 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
                 : requestOptions.signal ?? requestSignal,
             }),
           });
+          if (context?.revision) outcome.invocationMessages = semanticCall.messages;
           invocationByOutcome.set(outcome, {
             invocation: semanticCall,
             toolUsesJsonSchema:

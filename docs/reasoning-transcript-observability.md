@@ -731,3 +731,8 @@ Fresh local sessions have a closed `session.json` identity (`house.simulation-se
 The API reporter continues polling through result-to-epilogue growth and stops at operational completion, not the first outcome. Readback generates nothing. Keep exact types without `as any` and direct House calls. See [runtime/recovery](game-retrospective-runtime.md) for operator suspension and journal retry rules.
 
 Ordinary Mingle turns contain conversation, optional movement, and private reasoning/strategy updates; agents no longer author `coordinationFact` or `noProposal`. Evaluate their negotiation from dialogue and subsequent canonical decisions. Formal alliance huddles retain structured facts and participant memory. Historical Mingle receipts remain readable in stored events, turn exports, producer reviews, and MCP artifacts; they are not deleted or reinterpreted.
+
+
+## Context-overflow adaptation
+
+Recognized provider context overflow now triggers bounded, strict structured context summaries before retrying the same decision. API summaries are separately journaled private child calls; they never become agent speech, thinking or canonical facts. Influence/House traces show the adapted request, and local token reports include newly generated `context-summary` calls. See [policy, caller inventory and recovery](context-adaptation.md). `--chatty` remains a way to inspect accepted decisions, not proof of summary fidelity; compare original and adapted private evidence in an opt-in evaluation. Keep exact types without `as any` and call House methods directly.

@@ -14,6 +14,9 @@
  * Current prompt guidance targets candid 40–75 word final statements; the strict
  * speech artifact retains its 2,000-code-point ceiling. See
  * docs/game-retrospective-runtime.md; native HTTP is mocked in focused tests.
+ * Provider context overflow now compacts marked context and retries the same decision.
+ * Local token reports include context-summary calls; summaries are private derived memory,
+ * never canonical facts or chatty speech. See docs/context-adaptation.md for limits.
  * Keep exact types without `as any` and call House methods directly when wiring turns.
  * This runner is Influence-only. Werewolf uses src/werewolf/simulate.ts:
  *   bun run simulate:werewolf --preset two_wolves --seed sample-1 --chatty

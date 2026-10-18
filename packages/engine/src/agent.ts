@@ -1,3 +1,4 @@
+import { ContextSpans } from "./context-adaptation";
 /**
  * Influence Game - AI Agent
  *
@@ -2141,6 +2142,7 @@ export class InfluenceAgent implements IAgent {
     onRetry?: (record: ProviderAttemptRecord) => void;
   }): Promise<T> {
     return executeModelInvocation({
+      onContextSummary: (outcome, runtime) => { this.rememberProviderMetadata(outcome, runtime); this.recordTokenUsage(outcome, `${this.name}/context-summary`); },
       call: params.call,
       runtimes: this.providerManifest,
       invocation: params.invocation,
@@ -2541,7 +2543,7 @@ export class InfluenceAgent implements IAgent {
       params.options,
     );
     const privateTraceMessages = InfluenceAgent.privateTraceMessages(
-      this.buildInvocationMessages(params.messages, params.options),
+      response.invocationMessages ?? this.buildInvocationMessages(params.messages, params.options),
     );
     const promptReuse = this.promptReuseCollector.observe(privateTraceMessages, {
       lane: traceContext.actor.id ?? traceContext.actor.role,
@@ -2637,6 +2639,7 @@ export class InfluenceAgent implements IAgent {
       },
     } });
     const result = await executeModelInvocation({
+      onContextSummary: (outcome, runtime) => { this.rememberProviderMetadata(outcome, runtime); this.recordTokenUsage(outcome, `${this.name}/context-summary`); },
       call, runtimes: prepared.runtimes, invocation: prepared.invocation, beforeDispatch: prepared.beforeDispatch, maxAttempts: this.structuredCallMaxAttempts ?? retrospectiveAttemptsPerModel("influence"),
       cancellationSignal: options?.signal, requestSignalFactory: () => AbortSignal.timeout(120_000),
       validate: (_outcome, value) => value ? { status: "usable", value }
@@ -6192,7 +6195,10 @@ ${open.length > 0 ? `\nOpen proposals:\n${open.join("\n")}` : "\nOpen proposals:
 ${history.length > 0 ? `\nProposal history:\n${history.join("\n")}` : ""}`;
   }
 
+  private readonly contextSpans = new ContextSpans();
+
   private buildUserPrompt(ctx: PhaseContext): string {
+    this.contextSpans.clear();
     const eliminated = this.allPlayers
       .filter((p) => !ctx.alivePlayers.some((ap) => ap.id === p.id))
       .map((p) => p.name);
@@ -6265,6 +6271,10 @@ ${history.length > 0 ? `\nProposal history:\n${history.join("\n")}` : ""}`;
         endgameInfo += `\n- Finalists: ${f1Name} vs ${f2Name}`;
       }
     }
+
+    for (const text of [visibleTranscriptSection, historicalEvidenceSection, hotRoomSection,
+      planHuddleSection, memoryNotes, voteHistorySection, recentDecisionsSection,
+      compactStrategySection, revealedVoteLedgerSection, allianceContextSection]) this.contextSpans.add(text);
 
     if (isEndgame) {
       const endgameRulesSection = this.buildEndgameRulesSection(ctx);
@@ -6571,10 +6581,12 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     options?: LlmCallOptions,
     temperature = this.temperature,
   ): ModelInvocation<TStructuredValue> {
+    for (const text of [this.backstory, this.personalityPrompt, this.strategyInstructions]) if (text) this.contextSpans.add(text);
     const effort = options?.reasoningEffort;
     const summary = this.resolvedReasoningSummaryMode(options);
     return {
       messages: this.buildInvocationMessages(messages, options),
+      contextSpans: this.contextSpans.snapshot(),
       result,
       outputTokenLimit: effectiveMaxTokens,
       ...(effort || summary ? {
