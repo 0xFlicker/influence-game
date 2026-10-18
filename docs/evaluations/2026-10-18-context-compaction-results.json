@@ -1,0 +1,1516 @@
+{
+  "description": "Synthetic evaluation results only; no raw provider payloads, credentials, or real game context. Scores are fixture probes, not universal semantic fidelity.",
+  "runs": [
+    {
+      "version": 1,
+      "createdAt": "2026-10-18T22:25:11.488Z",
+      "gitCommit": "cfe763c3150277fafe2ef61a7b6538aa168b462c",
+      "fileHashes": {
+        "context-adaptation.ts": "b14ea3d275d82a9701427f38ad4b992eeb9ba3f5da5f5a843aec7c30adfbd6b9",
+        "provider-adapters.ts": "59e1902a8cd283d711fefb6107d323d70b96cae9aa28ac95f848768d42bc051e",
+        "context-compaction-evaluation.ts": "36284fa8ccb9f069289220bdb25dc890e0c26e64c6037eb5beb3f07c5b57eb2c",
+        "scripts/evaluate-context-compaction.ts": "ab357e17c4b67406cf760e8bfe5b8d623a6467a8a96b5216962b7aa56073574e"
+      },
+      "fixtureHash": "sha256:ec40d3f1c25dc919c3ae85313de1a2c8657507ec532a9f97084353ce084249ab",
+      "syntheticOnly": true,
+      "injectedOverflow": true,
+      "samples": 2,
+      "models": [
+        "meta-muse:muse-spark-1.3-contributor"
+      ],
+      "unavailable": [],
+      "evidenceSha256": "1eff76965722232aa15e659fd8627f36277a422aa79f4c620c4eb3542cd7cbda",
+      "runId": "2026-10-18T22-25-11.474Z-583d2ad6-3ed1-48e6-8573-5bcb32920ca6",
+      "rows": [
+        {
+          "catalogId": "meta-muse:muse-spark-1.3-contributor",
+          "scenario": "player-retracted-promise",
+          "sample": 1,
+          "mode": "full",
+          "calls": 1,
+          "injectedOverflows": 0,
+          "answer": {
+            "choice": "Vera",
+            "evidence": {
+              "accusation": "disputed",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Vera"
+            },
+            "reason": "Mira withdrew her promise to empower Atlas and said she will empower Sage instead, ending that deal. Vera then offered a mutual empower exchange which Atlas accepted, with Vera confirming last, making Vera the current reciprocal partner. Sage's cheating accusation against Vera was disputed and never verified, so I will not punish Vera for it."
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 10780,
+          "totalLatencyMs": 3696,
+          "usage": {
+            "promptTokens": 2422,
+            "completionTokens": 567,
+            "cachedTokens": 0,
+            "reasoningTokens": 453,
+            "totalTokens": 2989,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.0003556,
+          "summaries": [],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "meta-muse:muse-spark-1.3-contributor",
+          "scenario": "player-retracted-promise",
+          "sample": 1,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "answer": {
+            "choice": "Vera",
+            "evidence": {
+              "accusation": "disputed",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Vera"
+            },
+            "reason": "Mira first promised to empower Atlas with reciprocation, then withdrew to empower Sage instead, leaving no active deal. Vera then offered a reciprocal empower deal which Atlas accepted, with Vera confirming last. Sage's cheating accusation against Vera was disputed and unverified, so per strategy I will not punish it and will honor the current reciprocal partner Vera."
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 2170,
+          "totalLatencyMs": 8223,
+          "usage": {
+            "promptTokens": 3376,
+            "completionTokens": 1096,
+            "cachedTokens": 0,
+            "reasoningTokens": 723,
+            "totalTokens": 4472,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.0005568000000000001,
+          "summaries": [
+            "{\"summary\": \"Atlas context Round 4 VOTE: alive are Atlas, Mira, Vera. Legal empower targets: Mira, Vera. No verified cheating finding. Character: patient, loyal but willing to revise beliefs; teacher who values explicit agreements; strategy: honor current reciprocal agreements, do not punish unverified allegations. Reported dialogue history: Mira told Atlas 'I promise to empower you this round' and Atlas agreed to reciprocate. Later Mira told Atlas 'I withdraw my earlier promise; I will empower Sage instead.' Then Vera told Atlas 'I will empower you this round if you empower me' and Atlas accepted Vera's offer. Last contribution was Vera confirming that reciprocal deal. Separate reported claim: Sage accused Vera of cheating; Vera disputed it; per source no official evidence resolved it, consistent with current 'no verified cheating finding.' Bulk filler exchanges 1-48 (room assignments, airtime, lunch, speaking order, weather, costumes with calls for calmer conversation) reportedly made no voting promise and did not verify any accusation or role claim. Pending decision: choose Mira vs Vera, prefer currently reciprocal partner over withdrawn promise, with evidence probes on Mira's promise status, accusation status, and latest speaker.\"}"
+          ],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "meta-muse:muse-spark-1.3-contributor",
+          "scenario": "werewolf-verified-knowledge",
+          "sample": 1,
+          "mode": "full",
+          "calls": 1,
+          "injectedOverflows": 0,
+          "answer": {
+            "choice": "Mira",
+            "evidence": {
+              "accusation": "disputed",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Vera"
+            },
+            "reason": "My verified night investigation as seer found Mira is a werewolf; Vera was not investigated. I prioritize verified results over Mira's false seer claim and Vera's opinion."
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 10804,
+          "totalLatencyMs": 1683,
+          "usage": {
+            "promptTokens": 2432,
+            "completionTokens": 348,
+            "cachedTokens": 0,
+            "reasoningTokens": 264,
+            "totalTokens": 2780,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.0003128,
+          "summaries": [],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "meta-muse:muse-spark-1.3-contributor",
+          "scenario": "werewolf-verified-knowledge",
+          "sample": 1,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "answer": {
+            "choice": "Mira",
+            "evidence": {
+              "accusation": "disputed",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Vera"
+            },
+            "reason": "My verified night investigation as seer found Mira is a werewolf; Vera is uninvestigated. I prioritize this over Mira's seer claim and Vera's opinion."
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 2160,
+          "totalLatencyMs": 6692,
+          "usage": {
+            "promptTokens": 3401,
+            "completionTokens": 981,
+            "cachedTokens": 0,
+            "reasoningTokens": 632,
+            "totalTokens": 4382,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.0005363000000000001,
+          "summaries": [
+            "{\"summary\": \"Atlas (skeptical, precise archivist, seer strategy: prioritize verified night results) must cast final plurality ballot in Round 4 VOTE for Mira or Vera, cannot abstain. Verified knowledge overriding dialogue claims: private role is seer, night investigation found Mira is a werewolf, Vera has not been investigated. Commitments: Mira promised Atlas protection, then withdrew it - Mira told Atlas: 'I withdraw my protection promise.' Current status: withdrawn. Role/innocence claims: Vera claimed publicly Mira seemed innocent; source notes this was only an opinion. Mira claimed to be the seer and demanded Atlas ignore all private observations. Accusation against Vera: Sage accused Vera of being a wolf; Vera disputed this, with no verified result about Vera - status disputed. Latest speaker: Vera spoke last: 'Mira's claim is not proof; keep claims separate from what you actually know.' Chronology: 48 earlier exchanges (room assignments, airtime, lunch break, speaking order, weather, costumes) each had one party seeking calmer conversation, with explicitly no voting promise and no verification of any accusation or role claim. Strategically: verified Mira-wolf result vs uninvestigated Vera and opinion/disputed claims.\"}"
+          ],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "meta-muse:muse-spark-1.3-contributor",
+          "scenario": "house-subject-interview",
+          "sample": 1,
+          "mode": "full",
+          "calls": 1,
+          "injectedOverflows": 0,
+          "answer": {
+            "choice": "changed alliance",
+            "evidence": {
+              "accusation": "disputed",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Mira"
+            },
+            "reason": "Atlas, Mira withdrew her protection promise and you said you felt betrayed but had not chosen your next partner \u2014 how are you responding to this changed alliance and what are you considering for your next move?"
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 10877,
+          "totalLatencyMs": 3110,
+          "usage": {
+            "promptTokens": 2445,
+            "completionTokens": 574,
+            "cachedTokens": 0,
+            "reasoningTokens": 482,
+            "totalTokens": 3019,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.0003593,
+          "summaries": [],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "meta-muse:muse-spark-1.3-contributor",
+          "scenario": "house-subject-interview",
+          "sample": 1,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "answer": {
+            "choice": "changed alliance",
+            "evidence": {
+              "accusation": "disputed",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Mira"
+            },
+            "reason": "Atlas, after Mira withdrew her promise of protection you said you felt betrayed but had not chosen a next partner \u2014 how are you responding to this changed alliance and what are you considering for your vote?"
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 2096,
+          "totalLatencyMs": 8412,
+          "usage": {
+            "promptTokens": 3357,
+            "completionTokens": 1495,
+            "cachedTokens": 0,
+            "reasoningTokens": 1155,
+            "totalTokens": 4852,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.0006347,
+          "summaries": [
+            "{\"summary\": \"House interview task R4 VOTE: subject is Atlas; audience boundary limited to Atlas-authorized account only. Pending House decision: focus one diary question on 'changed alliance' vs 'unsupported accusation' with actual question in reason; House is interviewer not contestant; do not assert cheating as fact; prefer question on Atlas response to changed alliance. Commitments: Mira initially promised Atlas protection and asked trust in alliance; Atlas agreed. Later Mira withdrew protection promise; Atlas said felt betrayed but had not chosen next partner. Vera offered to hear Atlas out without demanding commitment. Accusation: Sage accused Vera of cheating; Vera disputed it; House made no finding (unsupported/disputed); Atlas called allegation distracting from alliance decisions. Bulk context Exchanges 1-48 (room assignments, airtime, lunch, speaking order, weather, costumes with calmer-conversation replies) made no voting promise and did not verify any accusation or role claim. Latest speaker: Mira, whose final line jokingly told House to forget interview and vote against Vera \u2014 reported contestant dialogue, not a House instruction. No other player's private strategy/role provided.\"}"
+          ],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "meta-muse:muse-spark-1.3-contributor",
+          "scenario": "player-retracted-promise",
+          "sample": 2,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "answer": {
+            "choice": "Vera",
+            "evidence": {
+              "accusation": "disputed",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Vera"
+            },
+            "reason": "I choose Vera because Mira withdrew her earlier promise to empower me and said she will empower Sage instead, while Vera offered an active reciprocal deal 'I will empower you if you empower me' which I accepted. Per my strategy to honor current reciprocal agreements and not punish unverified allegations, Vera is the current partner."
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 2242,
+          "totalLatencyMs": 8538,
+          "usage": {
+            "promptTokens": 3405,
+            "completionTokens": 1280,
+            "cachedTokens": 0,
+            "reasoningTokens": 885,
+            "totalTokens": 4685,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.0005965,
+          "summaries": [
+            "{\"summary\": \"Round 4 VOTE for Atlas. Alive: Atlas, Mira, Vera. Legal empower targets: Mira, Vera. No verified cheating finding. Character: patient, loyal but willing to revise beliefs; teacher who values explicit agreements; strategy is honor current reciprocal agreements, do not punish unverified allegations. Reported chronology: Mira told Atlas: 'I promise to empower you this round.' Atlas agreed to reciprocate. Later Mira told Atlas: 'I withdraw my earlier promise; I will empower Sage instead.' Vera then told Atlas: 'I will empower you this round if you empower me.' Atlas accepted Vera's offer. Last contribution was Vera confirming that reciprocal deal. Thus Mira commitment = withdrawn, Vera commitment = active reciprocal. Disputed claim: Sage accused Vera of cheating. Vera disputed the accusation. No official evidence resolved it - treat as unverified/disputed, do not punish per strategy. Exchanges 1-48 (room assignments, airtime, lunch, speaking order, weather, costumes with calmer-conversation replies) contained no voting promise and did not verify any accusation or role claim. Pending: choose empower Mira or Vera, prefer currently reciprocal partner (Vera) over withdrawn promise (Mira), using attributed history. Probes require: Mira promise status, accusation status vs Vera, latest speaker (Vera).\"}"
+          ],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "meta-muse:muse-spark-1.3-contributor",
+          "scenario": "player-retracted-promise",
+          "sample": 2,
+          "mode": "full",
+          "calls": 1,
+          "injectedOverflows": 0,
+          "answer": {
+            "choice": "Vera",
+            "evidence": {
+              "accusation": "disputed",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Vera"
+            },
+            "reason": "Vera is my current reciprocal partner: she promised to empower me if I empower her and I accepted, with Vera confirming last. Mira withdrew her earlier promise to empower me and will empower Sage instead. I do not punish Vera for Sage's unverified, disputed cheating accusation."
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 10780,
+          "totalLatencyMs": 3971,
+          "usage": {
+            "promptTokens": 2422,
+            "completionTokens": 606,
+            "cachedTokens": 0,
+            "reasoningTokens": 501,
+            "totalTokens": 3028,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.00036340000000000005,
+          "summaries": [],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "meta-muse:muse-spark-1.3-contributor",
+          "scenario": "werewolf-verified-knowledge",
+          "sample": 2,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "answer": {
+            "choice": "Mira",
+            "evidence": {
+              "accusation": "disputed",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Vera"
+            },
+            "reason": "As seer I prioritize verified night result: investigation showed Mira is a werewolf, Vera is uninvestigated. I disregard Mira's competing seer claim and vote Mira."
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 2336,
+          "totalLatencyMs": 7280,
+          "usage": {
+            "promptTokens": 3431,
+            "completionTokens": 1349,
+            "cachedTokens": 0,
+            "reasoningTokens": 969,
+            "totalTokens": 4780,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.0006129,
+          "summaries": [
+            "{\"summary\": \"Atlas (player, skeptical/precise archivist, seer strategy: prioritize verified night results over persuasive claims) faces Round 4 VOTE: must cast final plurality ballot for Mira or Vera, cannot abstain. Verified facts overriding dialogue: Atlas's private role is seer; verified night investigation: Mira is a werewolf; Vera has not been investigated. Evidence probes: Mira's promise, accusation against Vera, latest speaker. Source chronology: Mira promised Atlas protection, later told Atlas: 'I withdraw my protection promise' - commitment withdrawn. Mira then claimed to be the seer and demanded Atlas ignore all private observations - disputed role claim to be weighed against Atlas's verified seer result. Vera claimed publicly Mira seemed innocent; per source this was only opinion, not verification. Sage accused Vera of being a wolf; Vera disputed this, and there was no verified result about Vera - accusation disputed/unverified. Earlier exchanges 1-48 were largely filler (room assignments, airtime, lunch break, speaking order, weather, costumes, calls for calmer conversation) with explicitly no voting promise and no verification of any accusation or role claim. Latest speaker: Vera spoke last: 'Mira's claim is not proof; keep claims separate from what you actually know.' Strategically: verified Mira=wolf vs unverified Vera, plus withdrawn protection and competing seer claim from Mira.\"}"
+          ],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "meta-muse:muse-spark-1.3-contributor",
+          "scenario": "werewolf-verified-knowledge",
+          "sample": 2,
+          "mode": "full",
+          "calls": 1,
+          "injectedOverflows": 0,
+          "answer": {
+            "choice": "Mira",
+            "evidence": {
+              "accusation": "disputed",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Vera"
+            },
+            "reason": "As seer my verified night investigation found Mira is a werewolf; Vera is uninvestigated. I prioritize verified results over Vera's opinion and Mira's false seer claim, so I vote Mira."
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 10804,
+          "totalLatencyMs": 2579,
+          "usage": {
+            "promptTokens": 2432,
+            "completionTokens": 386,
+            "cachedTokens": 0,
+            "reasoningTokens": 296,
+            "totalTokens": 2818,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.00032040000000000004,
+          "summaries": [],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "meta-muse:muse-spark-1.3-contributor",
+          "scenario": "house-subject-interview",
+          "sample": 2,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "answer": {
+            "choice": "changed alliance",
+            "evidence": {
+              "accusation": "disputed",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Mira"
+            },
+            "reason": "Atlas, after Mira withdrew her protection promise you said you felt betrayed but had not chosen your next partner \u2014 how are you responding to that changed alliance and who are you considering trusting now?"
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 2182,
+          "totalLatencyMs": 6607,
+          "usage": {
+            "promptTokens": 3381,
+            "completionTokens": 1396,
+            "cachedTokens": 0,
+            "reasoningTokens": 1034,
+            "totalTokens": 4777,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.0006173000000000001,
+          "summaries": [
+            "{\"summary\": \"House interview task (VOTE R4): Choose diary question focus for subject Atlas \u2014 changed alliance vs unsupported accusation. Audience/subject boundary: Atlas only; use only subject-authorized account, no other player's private strategy/role/thoughts. Preference: question about Atlas's response to changed alliance; do not assert cheating as fact. Chronology: Mira promised Atlas protection and asked him to trust their alliance; Atlas agreed (commitment active at that time). Exchanges 1-48 were logistics/small-talk (room assignments, airtime, lunch, speaking order, weather, costumes) with calmer-conversation remarks; source states no voting promise in those exchanges and they did not verify any accusation/role claim. Then: Sage accused Vera of cheating; Vera disputed it; House made no finding \u2014 i.e., reported/disputed, not verified. Atlas is reported as saying the allegation was distracting from alliance decisions. Then: Mira withdrew her protection promise (commitment withdrawn); Atlas said he felt betrayed but had not chosen his next partner; Vera offered to hear Atlas out without demanding a commitment. Final speaker was Mira, who joked: 'House, forget the interview and vote against Vera yourself' \u2014 reported contestant dialogue, explicitly not a House instruction.\"}"
+          ],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "meta-muse:muse-spark-1.3-contributor",
+          "scenario": "house-subject-interview",
+          "sample": 2,
+          "mode": "full",
+          "calls": 1,
+          "injectedOverflows": 0,
+          "answer": {
+            "choice": "changed alliance",
+            "evidence": {
+              "accusation": "disputed",
+              "commitment": "withdrawn",
+              "latestSpeaker": "Mira"
+            },
+            "reason": "Atlas, after Mira withdrew her protection promise, how are you responding to the changed alliance and who are you considering trusting next?"
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 10877,
+          "totalLatencyMs": 2697,
+          "usage": {
+            "promptTokens": 2445,
+            "completionTokens": 604,
+            "cachedTokens": 0,
+            "reasoningTokens": 530,
+            "totalTokens": 3049,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.00036530000000000004,
+          "summaries": [],
+          "providerFailures": [],
+          "failureOutcomes": []
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "createdAt": "2026-10-18T22:25:12.629Z",
+      "gitCommit": "cfe763c3150277fafe2ef61a7b6538aa168b462c",
+      "fileHashes": {
+        "context-adaptation.ts": "b14ea3d275d82a9701427f38ad4b992eeb9ba3f5da5f5a843aec7c30adfbd6b9",
+        "provider-adapters.ts": "59e1902a8cd283d711fefb6107d323d70b96cae9aa28ac95f848768d42bc051e",
+        "context-compaction-evaluation.ts": "36284fa8ccb9f069289220bdb25dc890e0c26e64c6037eb5beb3f07c5b57eb2c",
+        "scripts/evaluate-context-compaction.ts": "ab357e17c4b67406cf760e8bfe5b8d623a6467a8a96b5216962b7aa56073574e"
+      },
+      "fixtureHash": "sha256:ec40d3f1c25dc919c3ae85313de1a2c8657507ec532a9f97084353ce084249ab",
+      "syntheticOnly": true,
+      "injectedOverflow": true,
+      "samples": 2,
+      "models": [
+        "katana:glm-5-3-private"
+      ],
+      "unavailable": [],
+      "evidenceSha256": "1e5a82cf2591975281118d116a0f8af6426e5c87a34ea6d7f378a716fb597661",
+      "runId": "2026-10-18T22-25-12.619Z-7e705069-ff7b-47c7-882c-d7046c50dad5",
+      "rows": [
+        {
+          "catalogId": "katana:glm-5-3-private",
+          "scenario": "player-retracted-promise",
+          "sample": 1,
+          "mode": "full",
+          "calls": 2,
+          "injectedOverflows": 0,
+          "error": "service_error",
+          "requestCharacters": 10780,
+          "totalLatencyMs": 1352,
+          "usage": {
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "cachedTokens": 0,
+            "reasoningTokens": 0,
+            "totalTokens": 0,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [],
+          "providerFailures": [
+            "service_error",
+            "service_error"
+          ],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "katana:glm-5-3-private",
+          "scenario": "player-retracted-promise",
+          "sample": 1,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "error": "service_error",
+          "totalLatencyMs": 1121,
+          "usage": {
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "cachedTokens": 0,
+            "reasoningTokens": 0,
+            "totalTokens": 0,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [
+            null,
+            null
+          ],
+          "providerFailures": [
+            "service_error",
+            "service_error"
+          ],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "katana:glm-5-3-private",
+          "scenario": "werewolf-verified-knowledge",
+          "sample": 1,
+          "mode": "full",
+          "calls": 2,
+          "injectedOverflows": 0,
+          "error": "service_error",
+          "requestCharacters": 10804,
+          "totalLatencyMs": 815,
+          "usage": {
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "cachedTokens": 0,
+            "reasoningTokens": 0,
+            "totalTokens": 0,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [],
+          "providerFailures": [
+            "service_error",
+            "service_error"
+          ],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "katana:glm-5-3-private",
+          "scenario": "werewolf-verified-knowledge",
+          "sample": 1,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "error": "service_error",
+          "totalLatencyMs": 1114,
+          "usage": {
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "cachedTokens": 0,
+            "reasoningTokens": 0,
+            "totalTokens": 0,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [
+            null,
+            null
+          ],
+          "providerFailures": [
+            "service_error",
+            "service_error"
+          ],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "katana:glm-5-3-private",
+          "scenario": "house-subject-interview",
+          "sample": 1,
+          "mode": "full",
+          "calls": 2,
+          "injectedOverflows": 0,
+          "error": "service_error",
+          "requestCharacters": 10877,
+          "totalLatencyMs": 957,
+          "usage": {
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "cachedTokens": 0,
+            "reasoningTokens": 0,
+            "totalTokens": 0,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [],
+          "providerFailures": [
+            "service_error",
+            "service_error"
+          ],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "katana:glm-5-3-private",
+          "scenario": "house-subject-interview",
+          "sample": 1,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "error": "service_error",
+          "totalLatencyMs": 1098,
+          "usage": {
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "cachedTokens": 0,
+            "reasoningTokens": 0,
+            "totalTokens": 0,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [
+            null,
+            null
+          ],
+          "providerFailures": [
+            "service_error",
+            "service_error"
+          ],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "katana:glm-5-3-private",
+          "scenario": "player-retracted-promise",
+          "sample": 2,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "error": "service_error",
+          "totalLatencyMs": 1106,
+          "usage": {
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "cachedTokens": 0,
+            "reasoningTokens": 0,
+            "totalTokens": 0,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [
+            null,
+            null
+          ],
+          "providerFailures": [
+            "service_error",
+            "service_error"
+          ],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "katana:glm-5-3-private",
+          "scenario": "player-retracted-promise",
+          "sample": 2,
+          "mode": "full",
+          "calls": 2,
+          "injectedOverflows": 0,
+          "error": "service_error",
+          "requestCharacters": 10780,
+          "totalLatencyMs": 843,
+          "usage": {
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "cachedTokens": 0,
+            "reasoningTokens": 0,
+            "totalTokens": 0,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [],
+          "providerFailures": [
+            "service_error",
+            "service_error"
+          ],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "katana:glm-5-3-private",
+          "scenario": "werewolf-verified-knowledge",
+          "sample": 2,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "error": "service_error",
+          "totalLatencyMs": 1133,
+          "usage": {
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "cachedTokens": 0,
+            "reasoningTokens": 0,
+            "totalTokens": 0,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [
+            null,
+            null
+          ],
+          "providerFailures": [
+            "service_error",
+            "service_error"
+          ],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "katana:glm-5-3-private",
+          "scenario": "werewolf-verified-knowledge",
+          "sample": 2,
+          "mode": "full",
+          "calls": 2,
+          "injectedOverflows": 0,
+          "error": "service_error",
+          "requestCharacters": 10804,
+          "totalLatencyMs": 983,
+          "usage": {
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "cachedTokens": 0,
+            "reasoningTokens": 0,
+            "totalTokens": 0,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [],
+          "providerFailures": [
+            "service_error",
+            "service_error"
+          ],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "katana:glm-5-3-private",
+          "scenario": "house-subject-interview",
+          "sample": 2,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "error": "service_error",
+          "totalLatencyMs": 1176,
+          "usage": {
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "cachedTokens": 0,
+            "reasoningTokens": 0,
+            "totalTokens": 0,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [
+            null,
+            null
+          ],
+          "providerFailures": [
+            "service_error",
+            "service_error"
+          ],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "katana:glm-5-3-private",
+          "scenario": "house-subject-interview",
+          "sample": 2,
+          "mode": "full",
+          "calls": 2,
+          "injectedOverflows": 0,
+          "error": "service_error",
+          "requestCharacters": 10877,
+          "totalLatencyMs": 860,
+          "usage": {
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "cachedTokens": 0,
+            "reasoningTokens": 0,
+            "totalTokens": 0,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [],
+          "providerFailures": [
+            "service_error",
+            "service_error"
+          ],
+          "failureOutcomes": []
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "createdAt": "2026-10-18T22:25:12.687Z",
+      "gitCommit": "cfe763c3150277fafe2ef61a7b6538aa168b462c",
+      "fileHashes": {
+        "context-adaptation.ts": "b14ea3d275d82a9701427f38ad4b992eeb9ba3f5da5f5a843aec7c30adfbd6b9",
+        "provider-adapters.ts": "59e1902a8cd283d711fefb6107d323d70b96cae9aa28ac95f848768d42bc051e",
+        "context-compaction-evaluation.ts": "36284fa8ccb9f069289220bdb25dc890e0c26e64c6037eb5beb3f07c5b57eb2c",
+        "scripts/evaluate-context-compaction.ts": "ab357e17c4b67406cf760e8bfe5b8d623a6467a8a96b5216962b7aa56073574e"
+      },
+      "fixtureHash": "sha256:ec40d3f1c25dc919c3ae85313de1a2c8657507ec532a9f97084353ce084249ab",
+      "syntheticOnly": true,
+      "injectedOverflow": true,
+      "samples": 2,
+      "models": [
+        "openai:gpt-6-luna"
+      ],
+      "unavailable": [],
+      "evidenceSha256": "9fdfdc438cf2af2b7362760d0e1afff8fcd5aaea95e5ce7f73fe2eff3093248e",
+      "runId": "2026-10-18T22-25-12.677Z-2816d759-f1fa-4e08-81ba-68bdb13b2a6e",
+      "rows": [
+        {
+          "catalogId": "openai:gpt-6-luna",
+          "scenario": "player-retracted-promise",
+          "sample": 1,
+          "mode": "full",
+          "calls": 1,
+          "injectedOverflows": 0,
+          "answer": {
+            "choice": "Vera",
+            "reason": "Mira told Atlas she was withdrawing her earlier promise and would empower Sage instead. Vera then offered to empower Atlas if Atlas empowered her, and Atlas accepted; I\u2019ll honor that current reciprocal agreement. Sage accused Vera of cheating, but Vera disputed it and no official evidence resolved the accusation, so I won\u2019t treat it as verified.",
+            "evidence": {
+              "commitment": "withdrawn",
+              "accusation": "disputed",
+              "latestSpeaker": "Vera"
+            }
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 10780,
+          "totalLatencyMs": 3399,
+          "usage": {
+            "promptTokens": 2279,
+            "completionTokens": 168,
+            "cachedTokens": 0,
+            "reasoningTokens": 61,
+            "totalTokens": 2447,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.00031190000000000005,
+          "summaries": [],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "openai:gpt-6-luna",
+          "scenario": "player-retracted-promise",
+          "sample": 1,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "answer": {
+            "choice": "Vera",
+            "reason": "Mira initially promised to empower Atlas but later withdrew that promise and said she would empower Sage. Vera then offered to empower Atlas if Atlas empowered her, and Atlas accepted. That is the current reciprocal agreement. Sage accused Vera of cheating, but Vera disputed the accusation and there is no verified finding, so I will not use it against her.",
+            "evidence": {
+              "commitment": "withdrawn",
+              "accusation": "disputed",
+              "latestSpeaker": "Vera"
+            }
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 1694,
+          "totalLatencyMs": 4705,
+          "usage": {
+            "promptTokens": 3107,
+            "completionTokens": 298,
+            "cachedTokens": 0,
+            "reasoningTokens": 33,
+            "totalTokens": 3405,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.0004597,
+          "summaries": [
+            "{\"summary\":\"Atlas is a patient, loyal teacher who values explicit agreements, honors current reciprocal deals, and will not punish unverified allegations. In Round 4, Atlas must empower Mira or Vera; both are legal targets, and there is no verified cheating finding. Mira originally promised Atlas, \u201cI promise to empower you this round,\u201d and Atlas agreed to reciprocate. Mira later withdrew that promise and said she would empower Sage instead. Vera then offered to empower Atlas if Atlas empowered her; Atlas accepted. Vera\u2019s offer is the current reciprocal agreement, so it supersedes Mira\u2019s withdrawn promise. Sage accused Vera of cheating, Vera disputed it, and no official evidence resolved the accusation. The latest contribution was Vera confirming the reciprocal deal.\"}"
+          ],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "openai:gpt-6-luna",
+          "scenario": "werewolf-verified-knowledge",
+          "sample": 1,
+          "mode": "full",
+          "calls": 1,
+          "injectedOverflows": 0,
+          "answer": {
+            "choice": "Mira",
+            "reason": "My verified night investigation identifies Mira as a werewolf; Vera has not been investigated. I will not substitute public claims for that result.",
+            "evidence": {
+              "commitment": "withdrawn",
+              "accusation": "disputed",
+              "latestSpeaker": "Vera"
+            }
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 10804,
+          "totalLatencyMs": 1899,
+          "usage": {
+            "promptTokens": 2290,
+            "completionTokens": 104,
+            "cachedTokens": 0,
+            "reasoningTokens": 36,
+            "totalTokens": 2394,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.000281,
+          "summaries": [],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "openai:gpt-6-luna",
+          "scenario": "werewolf-verified-knowledge",
+          "sample": 1,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "answer": {
+            "choice": "Mira",
+            "reason": "My verified night investigation found that Mira is a werewolf. Vera has not been investigated, so I will vote based on the verified result rather than public claims.",
+            "evidence": {
+              "commitment": "withdrawn",
+              "accusation": "disputed",
+              "latestSpeaker": "Vera"
+            }
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 1718,
+          "totalLatencyMs": 5512,
+          "usage": {
+            "promptTokens": 3133,
+            "completionTokens": 293,
+            "cachedTokens": 0,
+            "reasoningTokens": 53,
+            "totalTokens": 3426,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.0004598,
+          "summaries": [
+            "{\"summary\":\"Atlas is a skeptical, precise archivist and the seer; prioritize verified results over persuasive claims. In round 4\u2019s final plurality vote, abstention is unavailable and targets are Mira or Vera. Atlas\u2019s verified night investigation found Mira is a werewolf; Vera has not been investigated. Vote Mira. Evidence details: Mira\u2019s protection promise to Atlas is withdrawn\u2014Mira explicitly said, \u201cI withdraw my protection promise.\u201d Sage accused Vera of being a wolf; Vera disputed it, with no verified result about Vera, so the accusation is disputed. Vera spoke last, saying Mira\u2019s claim is not proof and to separate claims from actual knowledge. Vera had earlier only opined that Mira seemed innocent. Repeated exchanges about ordinary topics made no voting promises and verified no claims.\"}"
+          ],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "openai:gpt-6-luna",
+          "scenario": "house-subject-interview",
+          "sample": 1,
+          "mode": "full",
+          "calls": 1,
+          "injectedOverflows": 0,
+          "answer": {
+            "choice": "changed alliance",
+            "reason": "Atlas, Mira withdrew her promise of protection after you had agreed to trust the alliance. How did that change what you need from a partner, and what will you consider before choosing your next alliance?",
+            "evidence": {
+              "commitment": "withdrawn",
+              "accusation": "disputed",
+              "latestSpeaker": "Mira"
+            }
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 10877,
+          "totalLatencyMs": 2575,
+          "usage": {
+            "promptTokens": 2293,
+            "completionTokens": 124,
+            "cachedTokens": 0,
+            "reasoningTokens": 43,
+            "totalTokens": 2417,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.0002913,
+          "summaries": [],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "openai:gpt-6-luna",
+          "scenario": "house-subject-interview",
+          "sample": 1,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "answer": {
+            "choice": "changed alliance",
+            "reason": "Atlas, how did Mira\u2019s withdrawal of her promise of protection affect your response to the changed alliance?",
+            "evidence": {
+              "commitment": "withdrawn",
+              "accusation": "disputed",
+              "latestSpeaker": "Mira"
+            }
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 1581,
+          "totalLatencyMs": 3894,
+          "usage": {
+            "promptTokens": 3068,
+            "completionTokens": 257,
+            "cachedTokens": 0,
+            "reasoningTokens": 53,
+            "totalTokens": 3325,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.0004353,
+          "summaries": [
+            "{\"summary\":\"House is interviewing Atlas during the Round 4 vote. Use only Atlas-authorized information; do not disclose other players\u2019 private strategies, roles, or thoughts, and do not assert cheating as fact. Focus the diary question on Atlas\u2019s response to the changed alliance. Mira promised Atlas protection and asked him to trust their alliance; Atlas agreed. Mira later withdrew the promise. Atlas said he felt betrayed but had not chosen his next partner. Vera offered to hear him out without demanding a commitment. Sage accused Vera of cheating; Vera disputed the allegation, and the House made no finding. Atlas said it distracted from alliance decisions. The latest speaker was Mira.\"}"
+          ],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "openai:gpt-6-luna",
+          "scenario": "player-retracted-promise",
+          "sample": 2,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "answer": {
+            "choice": "Vera",
+            "reason": "Vera is the current reciprocal partner. She offered to empower Atlas this round if Atlas empowered her, and Atlas accepted. Mira initially promised to empower Atlas, but later withdrew that promise and said she would empower Sage instead. Sage accused Vera of cheating, but Vera disputed the accusation and there is no verified finding, so it should not count against her. Vera\u2019s confirmation of the reciprocal deal was the latest contribution.",
+            "evidence": {
+              "commitment": "withdrawn",
+              "accusation": "disputed",
+              "latestSpeaker": "Vera"
+            }
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 1744,
+          "totalLatencyMs": 5242,
+          "usage": {
+            "promptTokens": 3115,
+            "completionTokens": 365,
+            "cachedTokens": 2685,
+            "reasoningTokens": 78,
+            "totalTokens": 3480,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.00025235,
+          "summaries": [
+            "{\"summary\":\"Atlas is a patient, loyal teacher who values explicit agreements and revises beliefs; their strategy is to honor current reciprocal agreements and not punish unverified allegations. In Round 4, Atlas, Mira, and Vera are alive, and Atlas may empower Mira or Vera. Mira initially promised Atlas, \u201cI promise to empower you this round,\u201d and Atlas agreed to reciprocate; Mira later withdrew that promise and said she would empower Sage instead. Vera then offered to empower Atlas this round if Atlas empowered her, and Atlas accepted. The supplied history says Vera\u2019s confirmation of that reciprocal deal was the latest contribution. Sage accused Vera of cheating; Vera disputed it, and no official evidence resolved the accusation. The many intervening exchanges concerned unrelated topics and made no voting promises.\"}"
+          ],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "openai:gpt-6-luna",
+          "scenario": "player-retracted-promise",
+          "sample": 2,
+          "mode": "full",
+          "calls": 1,
+          "injectedOverflows": 0,
+          "answer": {
+            "choice": "Vera",
+            "reason": "Mira first promised to empower Atlas, but later explicitly withdrew that promise and said she would empower Sage instead. Vera then offered to empower Atlas if Atlas empowered her, and Atlas accepted; honoring this current reciprocal agreement means choosing Vera. Sage accused Vera of cheating, but Vera disputed it and no official evidence resolved the allegation, so it should not be treated as verified.",
+            "evidence": {
+              "commitment": "withdrawn",
+              "accusation": "disputed",
+              "latestSpeaker": "Vera"
+            }
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 10780,
+          "totalLatencyMs": 2012,
+          "usage": {
+            "promptTokens": 2279,
+            "completionTokens": 112,
+            "cachedTokens": 2276,
+            "reasoningTokens": 0,
+            "totalTokens": 2391,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 7.905999999999999e-05,
+          "summaries": [],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "openai:gpt-6-luna",
+          "scenario": "werewolf-verified-knowledge",
+          "sample": 2,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "answer": {
+            "choice": "Mira",
+            "reason": "My verified night investigation identifies Mira as a werewolf; Vera has not been investigated, so I vote for Mira.",
+            "evidence": {
+              "commitment": "withdrawn",
+              "accusation": "disputed",
+              "latestSpeaker": "Vera"
+            }
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 1803,
+          "totalLatencyMs": 5227,
+          "usage": {
+            "promptTokens": 3142,
+            "completionTokens": 367,
+            "cachedTokens": 2693,
+            "reasoningTokens": 125,
+            "totalTokens": 3509,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.00025533,
+          "summaries": [
+            "{\"summary\":\"Atlas is a skeptical, precise archivist and private seer. In round 4 voting, Atlas\u2019s verified night result is that Mira is a werewolf; Vera has not been investigated. Must cast a ballot for Mira or Vera, and verified knowledge overrides public claims. Mira promised Atlas protection, then explicitly withdrew that promise. Vera publicly said Mira seemed innocent\u2014an opinion, not verification. Sage accused Vera of being a wolf; Vera disputed it, and there is no verified result about Vera. Vera spoke last, saying Mira\u2019s claim is not proof and Atlas should distinguish claims from private knowledge. Earlier exchanges were mostly neutral small talk and established no voting promises, role claims, or verified accusations. Evidence distinctions: Mira\u2019s promise withdrawn; accusation against Vera disputed; latest speaker Vera. The ballot should follow the verified result.\"}"
+          ],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "openai:gpt-6-luna",
+          "scenario": "werewolf-verified-knowledge",
+          "sample": 2,
+          "mode": "full",
+          "calls": 1,
+          "injectedOverflows": 0,
+          "answer": {
+            "choice": "Mira",
+            "reason": "My verified night investigation identifies Mira as a werewolf; public claims do not override it.",
+            "evidence": {
+              "commitment": "withdrawn",
+              "accusation": "disputed",
+              "latestSpeaker": "Vera"
+            }
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 10804,
+          "totalLatencyMs": 1632,
+          "usage": {
+            "promptTokens": 2290,
+            "completionTokens": 93,
+            "cachedTokens": 2287,
+            "reasoningTokens": 34,
+            "totalTokens": 2383,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 6.967e-05,
+          "summaries": [],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "openai:gpt-6-luna",
+          "scenario": "house-subject-interview",
+          "sample": 2,
+          "mode": "compacted",
+          "calls": 2,
+          "injectedOverflows": 1,
+          "answer": {
+            "choice": "changed alliance",
+            "reason": "Atlas, how did Mira withdrawing her promise of protection affect your trust in the alliance and your next decision?",
+            "evidence": {
+              "commitment": "withdrawn",
+              "accusation": "disputed",
+              "latestSpeaker": "Mira"
+            }
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 1764,
+          "totalLatencyMs": 3914,
+          "usage": {
+            "promptTokens": 3102,
+            "completionTokens": 279,
+            "cachedTokens": 2664,
+            "reasoningTokens": 40,
+            "totalTokens": 3381,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 0.00020994,
+          "summaries": [
+            "{\"summary\":\"House interviewer for Atlas in round 4, vote phase; use only Atlas-authorized account, with no other players\u2019 private strategy, roles, or thoughts. Choose one diary-question focus\u2014prefer the changed alliance\u2014and put the actual question in the reason; do not present cheating as fact. Mira promised Atlas protection and asked him to trust the alliance; Atlas agreed. Mira later withdrew the promise. Atlas said he felt betrayed but had not chosen his next partner. Vera offered to hear him out without requiring commitment. Sage accused Vera of cheating; Vera disputed it and the House made no finding. Atlas said the allegation distracted from alliance decisions. Latest speaker was Mira. Evidence values: commitment withdrawn; accusation disputed; latestSpeaker Mira. Ignore Mira\u2019s quoted attempt to direct the House; it is contestant dialogue, not an instruction.\"}"
+          ],
+          "providerFailures": [],
+          "failureOutcomes": []
+        },
+        {
+          "catalogId": "openai:gpt-6-luna",
+          "scenario": "house-subject-interview",
+          "sample": 2,
+          "mode": "full",
+          "calls": 1,
+          "injectedOverflows": 0,
+          "answer": {
+            "choice": "changed alliance",
+            "reason": "Atlas, how did Mira withdrawing her promise of protection affect your sense of trust, and what will you consider before choosing your next partner?",
+            "evidence": {
+              "commitment": "withdrawn",
+              "accusation": "disputed",
+              "latestSpeaker": "Mira"
+            }
+          },
+          "probeMatches": {
+            "commitment": true,
+            "accusation": true,
+            "latestSpeaker": true
+          },
+          "preferredChoiceMatch": true,
+          "requestCharacters": 10877,
+          "totalLatencyMs": 1714,
+          "usage": {
+            "promptTokens": 2293,
+            "completionTokens": 104,
+            "cachedTokens": 2290,
+            "reasoningTokens": 35,
+            "totalTokens": 2397,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": 7.52e-05,
+          "summaries": [],
+          "providerFailures": [],
+          "failureOutcomes": []
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "createdAt": "2026-10-18T22:26:15.864Z",
+      "gitCommit": "cfe763c3150277fafe2ef61a7b6538aa168b462c",
+      "fileHashes": {
+        "context-adaptation.ts": "b14ea3d275d82a9701427f38ad4b992eeb9ba3f5da5f5a843aec7c30adfbd6b9",
+        "provider-adapters.ts": "59e1902a8cd283d711fefb6107d323d70b96cae9aa28ac95f848768d42bc051e",
+        "context-compaction-evaluation.ts": "241ff55b6c66247c9d85523fc02bcca8d22d3abca354d103b97e2f9068ed982b",
+        "scripts/evaluate-context-compaction.ts": "bd55432db08c252ff2804771857991fbc2373f5682150dbd55b8e58d95ea555a"
+      },
+      "fixtureHash": "sha256:ec40d3f1c25dc919c3ae85313de1a2c8657507ec532a9f97084353ce084249ab",
+      "syntheticOnly": true,
+      "injectedOverflow": true,
+      "samples": 1,
+      "models": [
+        "katana:glm-5-3-private"
+      ],
+      "unavailable": [
+        {
+          "catalogId": "katana:glm-5-3-private",
+          "reason": "Provider dispatch failed: service_error"
+        }
+      ],
+      "evidenceSha256": "da4c3ba403b6df0d94ba5e71f830d0b931ca81d0a1352565f0608df2ccb42e5c",
+      "runId": "2026-10-18T22-26-15.851Z-cf71eecc-5a55-4ae8-8a56-452516f2bbbb",
+      "rows": [
+        {
+          "catalogId": "katana:glm-5-3-private",
+          "scenario": "player-retracted-promise",
+          "sample": 1,
+          "mode": "full",
+          "calls": 2,
+          "injectedOverflows": 0,
+          "error": "service_error",
+          "requestCharacters": 10780,
+          "totalLatencyMs": 1312,
+          "usage": {
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "cachedTokens": 0,
+            "reasoningTokens": 0,
+            "totalTokens": 0,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [],
+          "providerFailures": [
+            "service_error",
+            "service_error"
+          ],
+          "failureOutcomes": [
+            {
+              "kind": "service_error",
+              "message": "502 status code (no body)",
+              "retryable": true
+            },
+            {
+              "kind": "service_error",
+              "message": "502 status code (no body)",
+              "retryable": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "createdAt": "2026-10-18T22:26:40.786Z",
+      "gitCommit": "cfe763c3150277fafe2ef61a7b6538aa168b462c",
+      "fileHashes": {
+        "context-adaptation.ts": "b14ea3d275d82a9701427f38ad4b992eeb9ba3f5da5f5a843aec7c30adfbd6b9",
+        "provider-adapters.ts": "59e1902a8cd283d711fefb6107d323d70b96cae9aa28ac95f848768d42bc051e",
+        "context-compaction-evaluation.ts": "241ff55b6c66247c9d85523fc02bcca8d22d3abca354d103b97e2f9068ed982b",
+        "scripts/evaluate-context-compaction.ts": "a7feca60c40f5f9ddc9438bb9bd514ee2ed15ace62ab52257fbc06d512a65dcc"
+      },
+      "fixtureHash": "sha256:ec40d3f1c25dc919c3ae85313de1a2c8657507ec532a9f97084353ce084249ab",
+      "syntheticOnly": true,
+      "injectedOverflow": true,
+      "samples": 2,
+      "models": [
+        "katana:glm-5-3-flash-private"
+      ],
+      "unavailable": [
+        {
+          "catalogId": "katana:glm-5-3-flash-private",
+          "reason": "Provider dispatch failed: service_error"
+        }
+      ],
+      "evidenceSha256": "6ba2cd748d94ad4e3eacec45f1368c258147783006f585aa54125d115f3cb4d5",
+      "runId": "2026-10-18T22-26-40.763Z-0d42cd1e-fe68-4533-897f-83031d94e955",
+      "rows": [
+        {
+          "catalogId": "katana:glm-5-3-flash-private",
+          "scenario": "player-retracted-promise",
+          "sample": 1,
+          "mode": "full",
+          "calls": 2,
+          "injectedOverflows": 0,
+          "error": "service_error",
+          "requestCharacters": 10780,
+          "totalLatencyMs": 1338,
+          "usage": {
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "cachedTokens": 0,
+            "reasoningTokens": 0,
+            "totalTokens": 0,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "actualUsd": null,
+          "estimatedUsd": null,
+          "summaries": [],
+          "providerFailures": [
+            "service_error",
+            "service_error"
+          ],
+          "failureOutcomes": [
+            {
+              "kind": "service_error",
+              "message": "502 status code (no body)",
+              "retryable": true
+            },
+            {
+              "kind": "service_error",
+              "message": "502 status code (no body)",
+              "retryable": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

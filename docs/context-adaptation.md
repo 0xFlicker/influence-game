@@ -14,7 +14,7 @@ Normal requests retain their original content. Builders mark literal spans of th
 - Retry the action using the derived messages and the unchanged output contract. Preserve unmarked bytes; JSON field replacements remain valid JSON objects with an explicit `derivedContextMemory` field. Require the complete rendered message set to shrink. A smaller request can still overflow because model capacity also includes output/schema/vision overhead.
 - Do not resend a model's known-overflowing revision under unchanged policy. A different sealed model can try the latest revision. Failed compaction, no reduction, exhausted work or exhausted adapted action retries return through the existing typed engine failure path.
 
-The default work limits are conservative implementation defaults, not a claim of optimal cost or universal fit. Deterministic coverage includes a Unicode/escaped source above 256 KiB and representative game builders. Hosted-model memory quality and cost still need opt-in evaluation; mocks prove execution and isolation, not strategic fidelity.
+The default work limits are conservative implementation defaults, not a claim of optimal cost or universal fit. Deterministic coverage includes a Unicode/escaped source above 256 KiB and representative game builders. The [initial opt-in provider evaluation](evaluations/2026-10-18-context-compaction.md) measures narrow fixture retention and cost on Luna/Muse and records task leakage into summaries. Broader hosted-model quality remains pending; mocks prove execution and isolation, not strategic fidelity.
 
 ## Journal and recovery
 
@@ -47,4 +47,4 @@ Private Influence/House decision traces record the actual adapted messages. Prod
 
 Run `bun run test`, `bun run test:postgres` and `bun run check`. Focused tests cover strict summary decoding, source drift, restart reuse, persistent overflow, legal decision preservation, both retrospective builders, private House boundaries, journal separation, owner fencing and provider health. Do not interpret a passing mock summary as evidence that a hosted model preserved strategic nuance.
 
-Deploy the additive migration with the application through normal staging and production approval. No feature flag or private-data export is needed. The queue remains rollout/evaluation pending until actual deployment and an opt-in quality evaluation are recorded.
+Deploy the additive migration with the application through normal staging and production approval. No feature flag or private-data export is needed. The queue remains rollout/evaluation pending until actual deployment and the remaining quality issues identified by evaluation are resolved.
