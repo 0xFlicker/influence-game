@@ -30,6 +30,7 @@ interface ProviderFunctionToolDefinition {
 }
 import {
   exactStructuredOutputRegistry,
+  formatLengthRepairNote,
   type ExactStructuredOutputArtifact,
   type ExactStructuredOutputResult,
 } from "./structured-output";
@@ -40,6 +41,7 @@ import {
   classifyResponsesTerminalOutcome,
   type ProviderAttemptAccountingFacts,
   type ProviderAttemptRecord,
+  type LengthFeedback,
   type ProviderAttemptFailureOutcome,
   type ProviderCandidateValidation,
   type ProviderLogicalCallExecution,
@@ -95,12 +97,18 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
     toolUsesJsonSchema: boolean;
   }>();
   let liveAcceptedOutcome: ProviderModelOutcome | undefined;
+  let latestLengthFeedback: LengthFeedback | undefined = await options.call.readLengthFeedback();
   let replayInvocation: ModelInvocation<TStructuredValue> | undefined;
   const result = await options.call.executeManifest<ProviderModelOutcome, TValue>({
     ...(options.beforeDispatch && { beforeDispatch: options.beforeDispatch }),
     entries: options.runtimes.map((runtime) => {
       const adapterRuntime = runtime as AdapterBackedRuntime;
       const invocation = () => ({ ...(typeof options.invocation === "function" ? options.invocation() : options.invocation), contextSpans, compactionCharacter });
+      // Repair instructions belong to this attempt, not the frozen context source.
+      // Append after compaction so retries retain both the source hash and exact draft.
+      const withRepair = (base: ModelInvocation<TStructuredValue>): ModelInvocation<TStructuredValue> => latestLengthFeedback
+        ? { ...base, messages: [...base.messages, { role: "system" as const, content: formatLengthRepairNote(latestLengthFeedback) }] }
+        : base;
       let current: ModelInvocation<TStructuredValue> | undefined;
       let context: import("./provider-execution").ProviderContextIdentity | undefined;
       const prepare = async () => {
@@ -138,7 +146,7 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
         });
       };
       const compile = (attemptOrdinal: number): ProviderNativeRequest => {
-        const semanticCall = current ?? invocation();
+        const semanticCall = withRepair(current ?? invocation());
         const prepared = adapterRuntime.adapter.compile(
           semanticCall,
           adapterRuntime,
@@ -170,7 +178,7 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
         dispatch: async ({ attemptOrdinal, requestOptions }) => {
           const key = `${runtime.catalogId}:${attemptOrdinal}`;
           const compiled = compiledByAttempt.get(key);
-          const semanticCall = compiled?.invocation ?? invocation();
+          const semanticCall = compiled?.invocation ?? withRepair(invocation());
           const prepared = compiled?.request ?? adapterRuntime.adapter.compile(
             semanticCall,
             adapterRuntime,
@@ -211,8 +219,12 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
                 outcome,
                 compiledOutcome.toolUsesJsonSchema,
               );
-              if (decoded.status === "failure") return decoded.validation;
+              if (decoded.status === "failure") {
+                if ("feedback" in decoded.validation && decoded.validation.feedback) latestLengthFeedback = decoded.validation.feedback;
+                return decoded.validation;
+              }
               const validation = options.validate(outcome, decoded.value);
+              if (validation.status === "unusable" && validation.feedback) latestLengthFeedback = validation.feedback;
               if (validation.status === "usable") liveAcceptedOutcome = outcome;
               return validation;
             }
@@ -227,9 +239,12 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
             outcome.text!,
           );
           if (decoded.status === "invalid") {
-            return structuredValidationFailure(decoded);
+            const validation = structuredValidationFailure(decoded);
+            if ("feedback" in validation && validation.feedback) latestLengthFeedback = validation.feedback;
+            return validation;
           }
           const validation = options.validate(outcome, decoded.value);
+          if (validation.status === "unusable" && validation.feedback) latestLengthFeedback = validation.feedback;
           if (validation.status === "usable") liveAcceptedOutcome = outcome;
           return validation;
         },
@@ -368,6 +383,7 @@ function structuredValidationFailure(
       ? "undecodable_structured_output"
       : "malformed_output",
     message: result.message,
+    ...(result.feedback && { feedback: result.feedback }),
   };
 }
 

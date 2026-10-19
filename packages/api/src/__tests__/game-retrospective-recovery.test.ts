@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { DEFAULT_CONFIG, GameRunner, ProviderUnavailableError, RetrospectiveExecutionError, RetrospectiveContextCapacityError, durableProviderLogicalCallId, fixtureRetrospectiveCapacity, fixtureWerewolfRetrospective, replayCanonicalEvents } from "@influence/engine";
 import { advanceWerewolf, replayWerewolf, runWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
 import { schema } from "../db/index.js";
-import { setupTestDB } from "./test-utils.js";
+import { pinWerewolfRulesVersion, setupTestDB } from "./test-utils.js";
 import { insertGame, insertOwner } from "./durable-run-test-utils.js";
 import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
 import { ApiTestMockAgent } from "../services/game-lifecycle.js";
@@ -28,6 +28,7 @@ async function authorizedDB() {
 test("a Werewolf gameplay circuit releases ownership without fallback advancement and can be reclaimed", async () => {
   const db = await authorizedDB();
   const game = await createWerewolfGame(db, "rt08-recovery-admin", { preset: "one_wolf", agentProfileIds: [], maxDays: 1 });
+  await pinWerewolfRulesVersion(db, game.id, 8);
   const claim = await claimWerewolfGame(db, game.id);
   if (!claim.ok) throw Error(claim.error);
   const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);
@@ -144,6 +145,7 @@ test("Werewolf failure preserves its prepared request, frozen input and accepted
   const db = await authorizedDB();
   await db.insert(schema.users).values({ id: "rt08-wolf-owner" });
   const game = await createWerewolfGame(db, "rt08-wolf-owner", { preset: "one_wolf", agentProfileIds: [], maxDays: 1 });
+  await pinWerewolfRulesVersion(db, game.id, 8);
   const claim = await claimWerewolfGame(db, game.id);
   if (!claim.ok) throw Error(claim.error);
   const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);
@@ -183,6 +185,7 @@ test("a dispatched retrospective remains in active ownership until drain aborts 
   const db = await authorizedDB();
   await db.insert(schema.users).values({ id: "rt08-drain-owner" });
   const game = await createWerewolfGame(db, "rt08-drain-owner", { preset: "one_wolf", agentProfileIds: [], maxDays: 1 });
+  await pinWerewolfRulesVersion(db, game.id, 8);
   const claim = await claimWerewolfGame(db, game.id);
   if (!claim.ok) throw Error(claim.error);
   const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);
@@ -220,6 +223,7 @@ test("the existing Werewolf runtime checkpoints failed initialization and releas
   const db = await authorizedDB();
   await db.insert(schema.users).values({ id: "rt08-init-owner" });
   const game = await createWerewolfGame(db, "rt08-init-owner", { preset: "one_wolf", agentProfileIds: [], maxDays: 1 });
+  await pinWerewolfRulesVersion(db, game.id, 8);
   const claim = await claimWerewolfGame(db, game.id);
   if (!claim.ok) throw Error(claim.error);
   const agent: WerewolfAgent = { async prepareRetrospectiveCapacity() { throw new RetrospectiveContextCapacityError(); },

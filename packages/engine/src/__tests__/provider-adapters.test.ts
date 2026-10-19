@@ -158,6 +158,40 @@ async function rejectedProviderAttempt(
 }
 
 describe("provider-native adapters", () => {
+  it("repairs the exact rejected draft without changing the frozen context source", async () => {
+    const repairArtifact = createExactStructuredOutputArtifact<{ text: string }, { text: string }>({
+      action: "test.repair-text.v1", name: "repair_text",
+      schema: { type: "object", additionalProperties: false, required: ["text"], properties: { text: { type: "string", maxLength: 3 } } },
+      acceptedValueUsesProviderSchema: true,
+      decodeProviderPayload: value => ({ status: "valid", value }),
+      decodeAcceptedValue: value => ({ status: "valid", value: value as { text: string } }),
+    });
+    const requestBodies: unknown[] = [];
+    let attempt = 0;
+    const client = { chat: { completions: { create: async (body: unknown) => {
+      requestBodies.push(body);
+      const text = ++attempt === 1 ? "oversized draft" : "ok";
+      return { id: `repair-${attempt}`, choices: [{ finish_reason: "tool_calls", message: { role: "assistant", content: null,
+        tool_calls: [{ id: `call-${attempt}`, type: "function", function: { name: "repair_text", arguments: JSON.stringify({ text }) } }] } }] };
+    } } } } as unknown as OpenAI;
+    const providerRuntime = runtime("katana:grok-4-5", client);
+    const result = await executeModelInvocation({
+      call: new ProviderExecutionCoordinator({ wait: async () => {} }).startCall({ actor: { name: "Dax", role: "player" }, action: repairArtifact.action,
+        semantic: { version: 1, kind: "phase_call", phase: Phase.MINGLE, round: 0, canonicalEventSequence: 0, callSlot: 1 } }),
+      runtimes: [providerRuntime], maxAttempts: 2,
+      invocation: { contextSpans: [{ text: "Frozen history ".repeat(20), format: "text" }],
+        messages: [{ role: "user", content: "Say something brief. " + "Frozen history ".repeat(20) }], result: { kind: "tool", artifact: repairArtifact,
+        description: "Write a short line.", choice: { name: "repair_text" }, allowParallel: false }, outputTokenLimit: 256 },
+      validate: (_outcome, value) => value ? { status: "usable", value } : { status: "unusable", kind: "malformed_output", message: "missing" },
+    });
+    expect(result.value).toEqual({ text: "ok" });
+    expect(requestBodies).toHaveLength(2);
+    const messages = (requestBodies[1] as { messages: { content: string }[] }).messages;
+    expect(messages.at(-1)?.content).toContain('"oversized draft"');
+    expect(messages.at(-1)?.content).toContain("measured 15 unicode_code_points, allowed 3 (over by 12)");
+    expect(messages.at(-1)?.content).toContain("preserving its intent");
+  });
+
   it("keeps local requests concurrent and uses the local deadline instead of a hosted action deadline", async () => {
     const signals: AbortSignal[] = [];
     const releases: (() => void)[] = [];

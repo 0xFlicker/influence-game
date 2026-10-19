@@ -109,7 +109,7 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
         ...cue.moment.snapshot,
         entries: [cue.moment.entry],
       });
-      const spoken = line.spoken && !cue.ballot && !cue.nightAction;
+      const spoken = line.spoken && (!cue.ballot || cue.moment.entry.kind === "ballot") && !cue.nightAction;
       return {
         timing: {
           key: cue.key,

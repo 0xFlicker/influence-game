@@ -1317,7 +1317,7 @@ describe("provider call journal", () => {
     expect(owner.kernelHealth).toBe("degraded");
   });
 
-  test("aggregates recovered and exhausted rate limits without raw objects", async () => {
+  test("preserves successful thinking/native reasoning and rate-limit evidence alongside aggregates", async () => {
     const gameId = await insertGame(db);
     const ownerEpoch = await insertOwner(db, gameId);
     const storage = new FakeProviderEvidenceStorage();
@@ -1344,7 +1344,8 @@ describe("provider call journal", () => {
       outcome: { kind: "usable" },
       disposition: "accepted",
       requestId: "response-2",
-      rawResponse: undefined,
+      acceptedValue: { text: null, thinking: "Nothing consequential to add; listen." },
+      rawResponse: { status: 200, body: { reasoning: "native summary", encrypted_content: "opaque-native-reasoning" } },
       accounting: {
         usage: {
           promptTokens: 10,
@@ -1363,6 +1364,13 @@ describe("provider call journal", () => {
     });
     expect(storage.puts).toHaveLength(0);
     expect(await db.select().from(schema.gameEvidenceManifests)).toHaveLength(0);
+    expect(await reconcileProviderAttemptEvidence(db, { evidenceStorage: storage })).toMatchObject({ stored: 2, failed: 0 });
+    const retained = storage.puts.map(put => JSON.parse(put.body).attempt);
+    expect(retained.find(attempt => attempt.outcome.kind === "usable")).toMatchObject({
+      acceptedValue: { text: null, thinking: "Nothing consequential to add; listen." },
+      rawResponse: { body: { reasoning: "native summary", encrypted_content: "opaque-native-reasoning" } },
+    });
+    expect(retained.find(attempt => attempt.outcome.kind === "rate_limit").rawResponse.body).toEqual({ error: { message: "slow down" } });
 
     const exhaustedGameId = await insertGame(db);
     const exhaustedOwnerEpoch = await insertOwner(db, exhaustedGameId);
@@ -1387,7 +1395,21 @@ describe("provider call journal", () => {
       rateLimitOutcome: "exhausted",
       rateLimitTerminalReason: "rate limit exhausted",
     });
-    expect(storage.puts).toHaveLength(0);
+    expect(await reconcileProviderAttemptEvidence(db, { evidenceStorage: storage })).toMatchObject({ stored: 1, failed: 0 });
+    expect(storage.puts).toHaveLength(3);
+  });
+
+  test("retains introduction evidence at round zero", async () => {
+    const gameId = await insertGame(db), ownerEpoch = await insertOwner(db, gameId);
+    const storage = new FakeProviderEvidenceStorage();
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    const base = makeIntent(gameId, ownerEpoch);
+    const intent: ProviderAttemptIntent = { ...base, coordinate: { ...base.coordinate, round: 0,
+      semantic: { version: 1, kind: "phase_call", phase: Phase.VOTE, round: 0, canonicalEventSequence: 0, callSlot: 1 } } };
+    await allocateAndReserve(hooks, intent);
+    await hooks.onTerminal?.(makeRecord(intent, { outcome: { kind: "usable" }, disposition: "accepted", acceptedValue: { thinking: "Introduction rationale" } }));
+    expect(await reconcileProviderAttemptEvidence(db, { evidenceStorage: storage })).toMatchObject({ stored: 1, failed: 0 });
+    expect(JSON.parse(storage.puts[0]!.body).attempt.coordinate.round).toBe(0);
   });
 
   test("does not report a pending rate limit as recovered after unrelated failures", async () => {

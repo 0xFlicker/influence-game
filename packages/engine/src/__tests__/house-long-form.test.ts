@@ -78,6 +78,13 @@ describe("House-authored long-form output", () => {
       .toBe("invalid");
   });
 
+  it("returns exact UTF-16 feedback for oversized astral-character prose", () => {
+    const decoded = decodeHouseLongFormProvider({ summary: "😀".repeat(3_001), thinking: null }, context());
+    expect(decoded).toMatchObject({ status: "invalid", feedback: {
+      field: "summary", measured: 6_002, allowed: 6_000, overage: 2, unit: "utf16_code_units",
+    } });
+  });
+
   it("rejects stale or model-authored engine metadata on accepted replay", () => {
     const accepted = decodeAcceptedHouseLongForm({
       summary: "A producer catch-up.",

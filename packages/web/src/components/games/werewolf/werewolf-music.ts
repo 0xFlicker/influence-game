@@ -21,14 +21,14 @@ export function werewolfMusic(moment: WerewolfWatchMoment | null | undefined): M
     if (!faction) return null;
     track = faction === "village" ? "village" : "pack";
     section = `outcome:${faction}`; repeat = false; continueAtEnd = true;
-  } else if (entry.kind === "pack_vote" || entry.kind === "speech" && entry.audience === "pack") {
+  } else if (entry.kind === "pack_vote" || entry.kind === "proposal" || entry.kind === "speech" && entry.audience === "pack") {
     if (snapshot.audience !== "omniscient") return null;
     track = "pack"; section = `pack:${entry.day}`;
   } else if (entry.kind === "night" || entry.kind === "phase" && entry.phase === "night") {
     return null;
   } else if (entry.kind === "speech" && entry.audience === "public" || entry.kind === "phase" && entry.phase === "introduction") {
     track = "intro"; section = "intro";
-  } else if (entry.kind === "discussion" || entry.kind === "vote" || entry.kind === "phase" && (entry.phase === "day" || entry.phase === "vote")) {
+  } else if (entry.kind === "discussion" || entry.kind === "conversation" || entry.kind === "ballot" || entry.kind === "vote" || entry.kind === "phase" && (entry.phase === "day" || entry.phase === "vote")) {
     track = "day"; section = `day:${entry.day}`;
   } else return null;
   return {key: `${snapshot.gameId}:${snapshot.audience}:${section}`, src: `/music/werewolf/v1/${tracks[track].file}`, title: tracks[track].title, repeat, continueAtEnd};

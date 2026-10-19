@@ -27,7 +27,9 @@ export function werewolfThinkingActions(events: readonly WerewolfEvent[], cursor
     for (let i = 0; i < pending.length;) {
       const item = pending[i]!;
       const action = item.event.payload.action;
-      const ready = item.event.payload.decision.kind !== "target" ? position > previousCursor
+      const lastEntry = state.history.at(-1);
+      const ready = action === "public_vote" ? lastEntry?.kind === "ballot" && lastEntry.actorId === item.event.payload.actorId
+        : item.event.payload.decision.kind !== "target" ? position > previousCursor
         : action === "vote" ? event.type === "werewolf.day_vote_resolved"
         : action === "attack" && state.phase === "pack" ? event.type === "werewolf.pack_vote_resolved"
         : event.type === "werewolf.night_resolved";

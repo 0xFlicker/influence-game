@@ -5,7 +5,7 @@ import { modelCatalogEntryById } from "../model-catalog";
 import type { LlmProviderRuntime } from "../llm-client";
 import { WerewolfModelAgent } from "../werewolf/agent";
 import { observeWerewolf, projectWerewolfView } from "../werewolf/observation";
-import { replayWerewolf, startWerewolf, werewolfConfig, WEREWOLF_RULES } from "../werewolf/rules";
+import { replayWerewolf, startWerewolf, legacyWerewolfConfig as werewolfConfig, LEGACY_WEREWOLF_RULES as WEREWOLF_RULES } from "../werewolf/rules";
 import { werewolfRoleCoaching } from "../werewolf/strategy";
 
 test.each(["seer", "doctor", "villager", "werewolf"] as const)("%s receives only its own coaching without changing knowledge or the decision contract", async role => {
@@ -43,8 +43,18 @@ test.each(["seer", "doctor", "villager", "werewolf"] as const)("%s receives only
       expect(context.observation.board).toEqual(before.board);
       expect(Object.keys(context).at(-1)).toBe("turnReminder");
       expect(context.contributionGuidance ?? "").not.toContain("You do not need to contribute to every thread.");
-      if (role !== "werewolf") expect(context.roleCoaching).toBe(werewolfRoleCoaching(role));
-      else expect(Object.hasOwn(context, "roleCoaching")).toBe(false);
+      expect(context.roleCoaching).toBe(werewolfRoleCoaching(role));
+      if (role === "werewolf") {
+        expect(context.roleCoaching).toContain("You play for the wolves");
+        expect(context.roleCoaching).toContain("A genuine Seer can be a valuable elimination target");
+        expect(context.roleCoaching).not.toContain("You play for the village");
+        expect(context.roleCoaching).not.toContain("consider preserving their information");
+      } else {
+        expect(context.roleCoaching).toContain("You play for the village");
+        expect(context.roleCoaching).toContain("consider preserving their information");
+        expect(context.roleCoaching).not.toContain("You play for the wolves");
+        expect(context.roleCoaching).not.toContain("You may bluff a role or investigation");
+      }
       const action = actions[calls++]!;
       expect(context.request.action).toBe(action);
       const decision = action === "introduce" ? { text: "I will listen first.", cue: null, thinking: "Listen first." }

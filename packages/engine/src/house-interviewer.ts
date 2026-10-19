@@ -45,6 +45,7 @@ import type {
 } from "./model-invocation";
 import {
   createExactStructuredOutputArtifact,
+  measureLengthFeedback,
   type StructuredDomainDecodeResult,
 } from "./structured-output";
 import {
@@ -467,11 +468,13 @@ function houseSummarySchema(maxPublicSummaryCharacters: number): Record<string, 
         type: ["string", "null"],
         minLength: 1,
         maxLength: maxPublicSummaryCharacters,
+        description: `At most ${maxPublicSummaryCharacters} UTF-16 code units.`,
       },
       privateNarrativeNotebook: {
         type: ["string", "null"],
         minLength: 1,
         maxLength: HOUSE_PRIVATE_NARRATIVE_NOTEBOOK_MAX_CHARACTERS,
+        description: `At most ${HOUSE_PRIVATE_NARRATIVE_NOTEBOOK_MAX_CHARACTERS} UTF-16 code units.`,
       },
     },
   };
@@ -485,10 +488,18 @@ function decodeHouseSummary(
     return { status: "invalid", message: "House summary contains unsupported fields." };
   }
   const publicSummary = record.publicSummary;
+  if (typeof publicSummary === "string") {
+    const feedback = measureLengthFeedback(publicSummary, "publicSummary", maxPublicSummaryCharacters, "utf16_code_units");
+    if (feedback) return { status: "invalid", message: "House public summary exceeds its UTF-16 limit.", feedback };
+  }
   if (publicSummary !== null && !isBoundedHouseAuthoredText(publicSummary, maxPublicSummaryCharacters)) {
     return { status: "invalid", message: "House public summary is outside the allowed presentation bounds." };
   }
   const privateNarrativeNotebook = record.privateNarrativeNotebook;
+  if (typeof privateNarrativeNotebook === "string") {
+    const feedback = measureLengthFeedback(privateNarrativeNotebook, "privateNarrativeNotebook", HOUSE_PRIVATE_NARRATIVE_NOTEBOOK_MAX_CHARACTERS, "utf16_code_units");
+    if (feedback) return { status: "invalid", message: "House private narrative notebook exceeds its UTF-16 limit.", feedback };
+  }
   if (privateNarrativeNotebook !== null && !isBoundedHouseAuthoredText(
     privateNarrativeNotebook,
     HOUSE_PRIVATE_NARRATIVE_NOTEBOOK_MAX_CHARACTERS,
@@ -654,14 +665,15 @@ function normalizedBoundedStrings(value: unknown, maxItems: number, maxChars: nu
   const strings: string[] = [];
   for (const item of value) {
     if (typeof item !== "string") return null;
-    const normalized = item
-      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+    const normalized = normalizeBoundedText(item);
     if (!normalized || normalized.length > maxChars) return null;
     strings.push(normalized);
   }
   return strings;
+}
+
+function normalizeBoundedText(value: string): string {
+  return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function decodeHouseAllianceHuddleSchedule(
@@ -771,6 +783,24 @@ function decodeHouseAllianceHuddleOutcome(
   }
   const ask = readNullableString(record.ask);
   const plan = readNullableString(record.plan);
+  for (const [field, text, source, allowed] of [["ask", ask, record.ask, 800], ["plan", plan, record.plan, 1_600]] as const) {
+    if (text && text.length > allowed && typeof source === "string") {
+      const feedback = measureLengthFeedback(source, field, allowed, "utf16_code_units");
+      if (feedback) return { status: "invalid", message: `House huddle ${field} exceeds its UTF-16 limit.`, feedback };
+    }
+  }
+  for (const [field, value] of [["promises", record.promises], ["dissent", record.dissent], ["leakOrBetrayalClaims", record.leakOrBetrayalClaims]] as const) {
+    if (!Array.isArray(value)) continue;
+    for (let index = 0; index < value.length; index++) {
+      const item = value[index];
+      if (typeof item !== "string") continue;
+      const normalized = normalizeBoundedText(item);
+      if (normalized.length > 500) {
+        const feedback = measureLengthFeedback(item, `${field}[${index}]`, 500, "utf16_code_units");
+        if (feedback) return { status: "invalid", message: `House huddle ${field} exceeds its UTF-16 limit.`, feedback };
+      }
+    }
+  }
   const promises = normalizedBoundedStrings(record.promises, 12, 500);
   const dissent = normalizedBoundedStrings(record.dissent, 12, 500);
   const leakOrBetrayalClaims = normalizedBoundedStrings(
@@ -1848,13 +1878,13 @@ Respond with JSON only.`;
         schema: {
           type: "object",
           properties: {
-            ask: { type: "string", minLength: 1, maxLength: 800 },
-            plan: { type: "string", minLength: 1, maxLength: 1600 },
-            promises: { type: "array", maxItems: 12, items: { type: "string", minLength: 1, maxLength: 500 } },
-            dissent: { type: "array", maxItems: 12, items: { type: "string", minLength: 1, maxLength: 500 } },
+            ask: { type: "string", minLength: 1, maxLength: 800, description: "At most 800 UTF-16 code units." },
+            plan: { type: "string", minLength: 1, maxLength: 1600, description: "At most 1600 UTF-16 code units." },
+            promises: { type: "array", maxItems: 12, items: { type: "string", minLength: 1, maxLength: 500, description: "At most 500 UTF-16 code units." } },
+            dissent: { type: "array", maxItems: 12, items: { type: "string", minLength: 1, maxLength: 500, description: "At most 500 UTF-16 code units." } },
             confidence: { type: "string", enum: ["low", "medium", "high"] },
             posture: { type: "string", enum: ["coordinating", "fracturing", "performative", "guarded", "betrayal_watch"] },
-            leakOrBetrayalClaims: { type: "array", maxItems: 12, items: { type: "string", minLength: 1, maxLength: 500 } },
+            leakOrBetrayalClaims: { type: "array", maxItems: 12, items: { type: "string", minLength: 1, maxLength: 500, description: "At most 500 UTF-16 code units." } },
             thinking: { type: ["string", "null"] },
           },
           required: ["ask", "plan", "promises", "dissent", "confidence", "posture", "leakOrBetrayalClaims", "thinking"],

@@ -8,6 +8,7 @@ export interface RevealedVote {
 }
 export interface VoteLedgerState {
   title: string;
+  abstainLabel?: string;
   complete?: boolean;
   eligibility?: {ids: string[]; label: string};
   votes: RevealedVote[];

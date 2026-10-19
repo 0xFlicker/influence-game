@@ -24,8 +24,9 @@
 ## Product Direction
 
 - The House is the venue; Influence and Werewolf are separate games. `games.gameKind` selects the game, while Influence's `classic` / `format` kernels remain Influence-only.
-- Werewolf daytime discussion is sequential: publish each original contribution before the next speaker acts. Preserve optional cues as production notes; do not reintroduce House rewriting or a separate should-speak call without an explicit product decision.
-- Werewolf rules v7: preserve the seeded opening ring/cursor across nights. Openings return strict ordered recipientIds (0–3); freeze the random open-floor remainder. Replies address the opener; each spoken reply offers the opener one answer quoting that respondent and identifying the next possible speaker. Passes skip answers. Never infer scheduling from prose; commit each contribution before dispatching the next.
+- Current Werewolf v9 discussion is sequential: publish each original contribution before the next speaker acts. It uses one shared byte allowance, permits silence and directed conversation, then proceeds to one public sequential vote. Preserve optional cues as production notes; do not reintroduce House rewriting or a separate should-speak call.
+- Discussion passes and scheduler metadata are private to execution/debugging. Contestant history and reply references count spoken contributions only. Playback always skips discussion passes, including when Show thinking is enabled. Preserve canonical pass events and their thinking for debugging. Ballot abstentions remain public.
+- Preserve the seeded opening ring, opener/respondent/answer behavior, and sealed checkpoints as historical v7/v8 semantics only. Replays use the frozen version-specific reducer. Never infer scheduling or facts from prose.
 - Werewolf rules, private observations, faction outcomes, and spectator projections live in `packages/engine/src/werewolf/`. See `docs/werewolf.md`. Do not route Werewolf through Influence elimination, jury, scoring, narration, or transcript parsing.
 - Agent Profiles share character identity and visuals. `strategyStyle` is Influence-only; `werewolfStrategyStyle` is Werewolf-only. Never substitute one game's notes for the other.
 - The immediate audience is the user and friends, so the bar is an enjoyable-to-watch game with legible strategy rather than a fully public-scale product.
@@ -54,6 +55,9 @@
 
 ## Local Models
 
+- Paid simulations run **over the localhost API**, meaning through the API, not file-only execution. Preserve API game IDs so replay, Studio and MCP inspect the actual tested games.
+- Always retain simulation data: structured thinking, available native reasoning/summaries/encrypted payloads, complete sanitized provider requests/responses, usage, retries and failures. Never discard successful evidence, overwrite run artifacts, or continue spending after local evidence persistence fails. Keep private evidence out of contestant observations and public exports.
+
 - Local LM Studio experiments are a first-class development lane. Use the OpenAI-compatible provider env vars documented in `docs/local-model-evaluation.md`.
 - Simulation outputs should be stored locally, usually under `packages/engine/docs/simulations/`, unless a task says to publish or attach them elsewhere.
 - `--chatty` mode + the reasoning / transcript observability layer (`docs/reasoning-transcript-observability.md`) is now the expected way to inspect agent decision quality (Mingle turns, votes, power actions, council votes). The surfaced `thinking` and native `reasoningContext` on system transcript entries are first-class artifacts for local model work.
@@ -78,6 +82,6 @@
 - Prefer Compound Engineering skills for plan/implement/review/PR flows when available.
 - Update `docs/solutions/`, `CONCEPTS.md`, and ops docs when behavior changes.
 
-- Werewolf ballots use majority plus optional abstention before the last opener, then mandatory-target plurality after the last opener. Tied leaders spare everyone. Only canonical `werewolf.day_vote_resolved` establishes the result; never carry votes forward. Final model output cannot abstain, but a typed provider failure records a marked unavailable abstention rather than fabricating a target.
+- Werewolf v9 requires a strict majority of all living players in its single public vote; abstention is legal and a miss means no elimination. v7/v8 used thread checkpoints and a final plurality ballot. Only canonical `werewolf.day_vote_resolved` establishes the result; never carry votes forward. A typed provider failure records a marked unavailable abstention rather than fabricating a target.
 
-- Werewolf sealed day ballots may dispatch concurrently only from frozen prepared slots. Preserve journal replay and one canonical reveal. Live `voteProgress` is spectator-only telemetry: count accepted decisions for exact pending slots plus committed ballots, never expose choices or inject progress into contestant observations or historical cursor reads.
+- Werewolf v9 public ballots are serial: commit and publish each accepted choice before dispatching the next voter. Earlier v7/v8 sealed batches retain their historical journal replay and one canonical reveal. Never leak future ballots or inject spectator progress into contestant observations or historical cursor reads.

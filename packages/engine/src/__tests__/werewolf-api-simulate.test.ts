@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseWerewolfApiArgs, runWerewolfApiSimulation } from "../werewolf/api-simulate";
 import { projectWerewolfView, type WerewolfPublicEntry } from "../werewolf/observation";
-import { replayWerewolf, startWerewolf, werewolfConfig } from "../werewolf/rules";
+import { replayWerewolf, startWerewolf, legacyWerewolfConfig as werewolfConfig } from "../werewolf/rules";
 import { runWerewolf, werewolfFallback } from "../werewolf/runner";
 import type { WerewolfEvent } from "../werewolf/types";
 import { werewolfReportEntry } from "../werewolf/report";

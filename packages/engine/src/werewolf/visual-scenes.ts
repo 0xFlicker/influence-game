@@ -16,9 +16,9 @@ export interface WerewolfSceneDescriptor {
 /** All production callers use the same canonical cast and purpose, including repairs. */
 export function werewolfConversationScene(state: WerewolfState, action: WerewolfRequest["action"]): WerewolfSceneDescriptor | null {
   const pack = state.aliveIds.filter(id => state.roles[id] === "werewolf");
-  if (action === "pack_talk" && pack.length > 1) return { purpose: "pack", roomId: "mingle-1", boundarySequence: state.sequence,
+  if ((action === "pack_talk" || action === "pack_propose") && pack.length > 1) return { purpose: "pack", roomId: "mingle-1", boundarySequence: state.sequence,
     day: state.day, participantIds: pack, wolfIds: pack, targetId: null };
-  if (action === "open_thread" || action === "discuss") return { purpose: "village", roomId: "lobby", boundarySequence: state.sequence,
+  if (action === "open_thread" || action === "discuss" || action === "conversation" || action === "public_vote") return { purpose: "village", roomId: "lobby", boundarySequence: state.sequence,
     day: state.day, participantIds: [...state.aliveIds], wolfIds: [], targetId: null };
   return null;
 }

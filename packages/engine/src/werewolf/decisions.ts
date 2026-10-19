@@ -34,7 +34,13 @@ export function projectWerewolfDecisions(
     const { entry, before, state } = frame;
     if (!entry) continue;
     const name = (id: string) => state.players.find(player => player.id === id)?.name ?? "Player";
+    if (entry.kind === "ballot" && entry.actorId === actorId) entries.push({
+      cursor, day: entry.day, actorId, action: "vote", targetId: entry.targetId, unavailable: entry.unavailable,
+      context: `Day ${entry.day} · Public ballot · ${entry.requiredVotes} votes required`,
+      result: entry.targetId ? `Voted for ${name(entry.targetId)}.` : "Abstained.",
+    });
     if (entry.kind === "vote") {
+      if (state.config.rulesVersion === 9) continue;
       const ballot = entry.result.ballots.find(ballot => ballot.voterId === actorId);
       if (ballot) entries.push({
         cursor, day: entry.day, actorId, action: "vote", targetId: ballot.targetId, unavailable: ballot.unavailable,

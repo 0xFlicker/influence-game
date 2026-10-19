@@ -72,7 +72,7 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
   const back = () => {music.suspend(); watch.previous();};
   useWatchKeyboard({toggle, advance: () => director.manualAdvance(), back, previousChapter: () => adjacent(-1,"scene"), nextChapter: () => adjacent(1,"scene"), speed: value => director.setSpeed(value)});
   const contribution = cue ? replayMoment({...cue.moment.snapshot, entries:[cue.moment.entry]}) : null;
-  const performer = contribution?.spoken ? contribution.actor : undefined;
+  const performer = contribution?.spoken ? contribution?.actor : undefined;
   const thinkingCursor = cue?.moment.cursor;
   const gameId = data?.gameId;
   const actorId = performer?.id;

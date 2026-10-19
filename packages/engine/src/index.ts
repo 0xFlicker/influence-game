@@ -669,6 +669,8 @@ export {
 export {
   ExactStructuredOutputRegistry,
   createExactStructuredOutputArtifact,
+  measureLengthFeedback,
+  formatLengthRepairNote,
   compileProviderNormalizer,
   exactStructuredOutputRegistry,
   validateExactStructuredValue,
@@ -701,6 +703,7 @@ export type {
   ProviderAttemptIntent,
   ProviderAttemptOutcome,
   ProviderAttemptRecord,
+  LengthFeedback,
   ProviderAttemptUsageFacts,
   ProviderAcceptedResult,
   ProviderAcceptedValueValidation,

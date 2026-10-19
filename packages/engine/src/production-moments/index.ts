@@ -64,6 +64,7 @@ export type ProductionSource =
     })
   | (OrderedProductionSource & {
       kind: "werewolf-event"; eventSequence: number; entry: WerewolfPublicEntry;
+      rulesVersion?: 7 | 8 | 9;
       nightActions?: readonly WerewolfNightAction[];
     })
   | (OrderedProductionSource & {
@@ -262,7 +263,11 @@ function assembleWerewolfParts(source: Extract<ProductionSource, { kind: "werewo
     case "phase": break;
     case "speech": if (entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, true, entry.actorId); break;
     case "discussion": if (!entry.contribution.unavailable && entry.contribution.text?.trim()) emit({ kind: "speech" }, "speech", 1, true, entry.contribution.actorId); break;
+    case "conversation": if (!entry.unavailable && entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, true, entry.actorId); break;
+    case "ballot": if (!entry.unavailable && entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, true, entry.actorId); emit({ kind: "ballot", voterId: entry.actorId, purpose: "day", juryTiebreaker: false, revote: false }, "ballot", 2, true, entry.actorId); break;
+    case "proposal": if (audience === "omniscient" && !entry.unavailable && entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, false, entry.actorId); break;
     case "vote": {
+      if (source.rulesVersion === 9) { emit({ kind: "tally" }, "tally", 0); emit({ kind: "outcome" }, "outcome", 1); break; }
       const rank = (b: { targetId: string | null; unavailable: boolean }) => b.targetId ? 0 : b.unavailable ? 1 : 2;
       const ballots = [...entry.result.ballots].sort((a, b) => rank(a) - rank(b));
       for (const [index, ballot] of ballots.entries()) emit({ kind: "ballot", voterId: ballot.voterId, purpose: "day", juryTiebreaker: false, revote: false }, "ballot", index, true, ballot.voterId);

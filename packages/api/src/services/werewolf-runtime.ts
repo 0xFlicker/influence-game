@@ -4,7 +4,7 @@ import { WerewolfVisualBlocked } from "./werewolf-visual-policy.js";
 import { createWerewolfVisualPreparation } from "./werewolf-visual-runtime.js";
 import { eq } from "drizzle-orm";
 import { createLlmProviderRuntimesFromEnv, resolveProviderManifestFromGameConfig } from "@influence/engine";
-import { runWerewolf, replayWerewolf, WerewolfModelAgent, type WerewolfAgent } from "@influence/engine/werewolf";
+import { runWerewolf, replayWerewolf, WerewolfModelAgent, withWerewolfEvaluationBudget, type WerewolfAgent } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createApiProviderExecutionHooks } from "./provider-call-journal.js";
 import { renewGameRunOwner } from "./game-ownership.js";
@@ -31,6 +31,8 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
   const controller = new AbortController();
   const config = JSON.parse(game.config) as Record<string, unknown>;
   const mockAgent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request, observation }) {
+    if (request.action === "conversation") return { kind: "conversation", text: null, cue: null, recipientId: null, replyToContributionId: null };
+    if (request.action === "public_vote" || request.action === "pack_propose") return { kind: "spoken_target", targetId: request.legalTargetIds[0]!, text: "I will follow this choice.", cue: null, thinking: "Fixture choice" };
     if (request.action === "open_thread") return { kind: "opening", text: "Who changed their mind?", cue: null, recipientIds: request.legalRecipientIds.slice(0, 3) };
     if (request.action === "discuss" && observation.turnReminder?.stage === "reply"
       && request.actorId !== observation.turnReminder.respondentIds[0]) return { kind: "speech", cue: null, text: null };
@@ -39,7 +41,7 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
   } };
   const agent = agentOverride ?? (process.env.INFLUENCE_API_TEST_MOCK_RUNNER === "true" ? mockAgent : new WerewolfModelAgent({
     runtimes: createLlmProviderRuntimesFromEnv(resolveProviderManifestFromGameConfig(config), process.env, { openAIServiceTier: "flex", timeout: 120_000 }) ?? [],
-    hooks: createApiProviderExecutionHooks(db, { gameId, ownerEpoch }), ownerEpoch,
+    hooks: withWerewolfEvaluationBudget(createApiProviderExecutionHooks(db, { gameId, ownerEpoch }), process.env), ownerEpoch,
   }));
   let heartbeatFailure = false;
   const heartbeat = setInterval(() => {

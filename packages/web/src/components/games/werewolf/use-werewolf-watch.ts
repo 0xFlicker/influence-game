@@ -165,7 +165,8 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
   }, [activeCursor, holding, latestCursor, status, preparing, slug, audience, cutoff, director, commitWindow, follow, seek, withOpening]);
   const buffered = [...windows.current.values()];
   const active = openingCue ? buffered.find(w => w.fromCursor === 1)?.moments[0] ?? null : holding && tail && tail.cursor >= (activeCue?.moment.cursor ?? 0) ? tail : activeCue?.moment ?? tail;
-  const scrubStops = useMemo(() => werewolfScrubStops(data?.playback ?? []), [data?.playback]);
+  const playback = useMemo(() => data?.playback ?? [], [data?.playback]);
+  const scrubStops = useMemo(() => werewolfScrubStops(playback), [playback]);
   const activeStep = activeCue ? werewolfMomentCues(activeCue.moment).findIndex(cue => cue.key === activeCue.key) : 0;
   const exactStop = scrubStops.findIndex(stop => stop.cursor === active?.cursor && stop.step === Math.max(0, activeStep));
   const gameScrubPosition = exactStop >= 0 ? exactStop : Math.max(0, scrubStops.findLastIndex(stop => stop.cursor <= activeCursor));
@@ -184,10 +185,10 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
   };
   const timingCues = useMemo(() => [
     ...opening.current,
-    ...(data?.playback ?? []).flatMap(row => row.keys.map((key, step) => ({key, baseDurationMs: row.durationsMs[step]!, cursor: row.cursor, step}))),
+    ...playback.flatMap(row => row.keys.map((key, step) => ({key, baseDurationMs: row.durationsMs[step]!, cursor: row.cursor, step}))),
     ...(data?.status === "completed" && data.navigation.at(-1)?.chapterId === "retrospective" && data.playback.length
       ? [{key: `${data.gameId}:${data.audience}:${data.playback.at(-1)!.cursor}:reprise`, baseDurationMs: 4200, cursor: data.playback.at(-1)!.cursor, step: 1}] : []),
-  ], [data]);
+  ], [data, playback]);
   const seekTiming = async (key: string, elapsedMs: number) => {
     const openingIndex = opening.current.findIndex(cue => cue.key === key);
     const stop = timingCues.find(cue => cue.key === key);

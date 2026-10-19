@@ -3,7 +3,7 @@ import { InfluenceAgent } from "../agent";
 import { LLMHouseInterviewer } from "../house-interviewer";
 import { WerewolfModelAgent } from "../werewolf/agent";
 import { observeWerewolf } from "../werewolf/observation";
-import { startWerewolf, replayWerewolf, werewolfConfig } from "../werewolf/rules";
+import { startWerewolf, replayWerewolf, legacyWerewolfConfig as werewolfConfig } from "../werewolf/rules";
 import type { LlmProviderAdapter, ModelInvocation, ProviderModelOutcome } from "../model-invocation";
 import type { LlmProviderRuntime } from "../llm-client";
 import { modelCatalogEntryById } from "../model-catalog";

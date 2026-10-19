@@ -1,7 +1,7 @@
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "../fixtures/retrospective-agent";
 import { expect, test } from "bun:test";
 import { projectWerewolfPresentation } from "../werewolf/presentation";
-import { startWerewolf, werewolfConfig, replayWerewolf } from "../werewolf/rules";
+import { startWerewolf, legacyWerewolfConfig as werewolfConfig, replayWerewolf } from "../werewolf/rules";
 import { runWerewolf, type WerewolfAgent } from "../werewolf/runner";
 
 for (const preset of ["one_wolf", "two_wolves"] as const) test(`${preset}: complete presentation preserves every audience-local moment and its causal roster`, async () => {

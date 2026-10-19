@@ -32,14 +32,14 @@ export function buildWerewolfProductionSources(input: {
     const eventSequence = refs.get(moment.cursor);
     if (!eventSequence) throw new Error("Werewolf production row lacks accepted provenance");
     cursors.add(moment.cursor);
-    const actorId = !isWerewolfPlayable(moment.entry) ? undefined : moment.entry.kind === "speech" ? moment.entry.actorId : moment.entry.kind === "discussion" ? moment.entry.contribution.actorId : undefined;
+    const actorId = !isWerewolfPlayable(moment.entry) ? undefined : moment.entry.kind === "speech" || moment.entry.kind === "conversation" || moment.entry.kind === "ballot" || moment.entry.kind === "proposal" ? moment.entry.actorId : moment.entry.kind === "discussion" ? moment.entry.contribution.actorId : undefined;
     const thoughts = thoughtsByCursor.get(moment.cursor) ?? [];
     for (const [index, thought] of thoughts.entries()) {
       if (thought.eventSequence > eventSequence) throw new Error("Werewolf thought cannot reveal before its accepted action");
       sources.push({ kind: "werewolf-action", eventSequence: thought.eventSequence, actorId: thought.actorId, action: thought.action, thinking: thought.thinking,
         defaultThinking: Boolean(actorId && actorId === thought.actorId), order: { anchor: moment.cursor, offset: index } });
     }
-    sources.push({ kind: "werewolf-event", eventSequence, entry: moment.entry,
+    sources.push({ kind: "werewolf-event", eventSequence, entry: moment.entry, rulesVersion: moment.snapshot.rulesVersion,
       ...(input.audience === "omniscient" && moment.night ? { nightActions: moment.night.actions } : {}),
       order: { anchor: moment.cursor, offset: thoughts.length } });
   }

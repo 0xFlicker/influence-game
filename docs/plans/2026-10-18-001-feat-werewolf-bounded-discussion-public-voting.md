@@ -1,7 +1,7 @@
 ---
 title: Werewolf bounded discussion, public majority voting, and combined pack proposals
 type: feat
-status: proposed
+status: completed
 date: 2026-10-18
 ---
 
@@ -11,7 +11,7 @@ date: 2026-10-18
 
 Replace long opener-led daytime threads and repeated sealed ballots with one bounded open conversation, followed by one public sequential majority ballot with optional speech. Combine each wolf's private speech and attack proposal into one decision, eliminating the separate pack ballot calls.
 
-This document is a plan only. No implementation, deployment, or paid calls are part of authoring it. The user has authorized subsequent paid evaluation with `gpt-6-luna` and/or `muse-1.3-contributor`, with a **$15 aggregate ceiling**. The expected 20–30 games is an estimate, not permission to exceed that ceiling. Evaluate whole games across multiple days; do not substitute isolated days or truncated games for quality evidence.
+The user approved implementation after this plan was committed, including paid evaluation with `gpt-6-luna` and/or `muse-1.3-contributor`, with a **$15 aggregate ceiling**. Implementation and local verification are complete; production deployment is outside this task. See the [implementation evidence](../reviews/2026-10-18-werewolf-v9-implementation.md) and [full-game quality report](../reviews/2026-10-19-werewolf-v9-model-quality.md). Twenty final-schema games completed within the budget guard, alongside separately accounted exploratory/interrupted runs. The experiment did not demonstrate voluntary discussion silence, and one game reached eight days; these remain quality limitations rather than claimed acceptance successes. The expected 20–30 games was an estimate, not permission to exceed the ceiling.
 
 ## Confirmed requirements
 
@@ -29,15 +29,15 @@ This document is a plan only. No implementation, deployment, or paid calls are p
 
 The live-game and completed-game requirements are deliberately different. Historical interpretation remains necessary even when old model dispatch is removed. These explicit requirements supersede blanket removal of compatibility for released game reads.
 
-## Current implementation and problem
+## Previous implementation and problem
 
-`packages/engine/src/werewolf/rules.ts` schedules an opening from each living player, ordered respondents, and an opener answer after each spoken response. Each thread triggers a sealed ballot; the last ballot currently uses mandatory-target plurality. The documented worst case is `N × (3N − 1)` decisions per day before retries: 102 for six living players and 140 for seven.
+Released rules v7/v8 schedule an opening from each living player, ordered respondents, and an opener answer after each spoken response. Each thread triggers a sealed ballot; the last ballot uses mandatory-target plurality. The documented worst case is `N × (3N − 1)` decisions per day before retries: 102 for six living players and 140 for seven.
 
-Pack negotiation currently schedules optional speech from each wolf followed by separate sealed attack decisions. The next attempt can repeat both stages. Combining speech and target removes redundant evaluation without deriving a target from prose.
+Released pack negotiation schedules optional speech from each wolf followed by separate sealed attack decisions. The next attempt can repeat both stages. Combining speech and target removes redundant evaluation without deriving a target from prose.
 
 Current released rules versions are v7 and v8. `house-werewolf-inspection.ts` reconstructs history through the engine replay/projection functions and validates completion with `werewolfExecutionFinished`; changing the live runner alone cannot be assumed safe for MCP history. The player, Studio, production adapters, retrospectives, and results readers also consume canonical replay.
 
-## Proposed daytime rules
+## Accepted daytime rules
 
 ### 1. One shared output allowance
 
@@ -205,7 +205,7 @@ Update `docs/werewolf.md`, `docs/werewolf-rules-page-content.md`, `docs/reasonin
 
 Run Bun only: `bun run test`, `bun run test:postgres` against local PostgreSQL, `bun run check`, and affected deterministic browser journeys. Shared DB tests use `setupTestDB()` and remain sequential. Follow the elevated-access retry rule before diagnosing sandbox DB connection failures. Paid tests remain opt-in and outside required CI.
 
-### Paid full-game evaluation: authorized, not executed by this plan
+### Paid full-game evaluation
 
 - **Models:** `gpt-6-luna` and/or `muse-1.3-contributor` only, including fallback routes. `openai:gpt-6-luna` is present in the current catalog; verify the exact Muse provider route, structured-output support, availability, and prices before choosing it. Do not silently substitute another model.
 - **Ceiling:** $15 total across baseline calls if any, retries, fallback calls, compaction, retrospectives, failed/incomplete games, and all candidates. No image, video, or TTS generation. Use recorded provider usage and current configured pricing; do not assume a fixed per-game price.

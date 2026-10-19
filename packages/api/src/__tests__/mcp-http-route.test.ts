@@ -1,5 +1,5 @@
 import { loadPayloads } from "../services/payload-storage.js";
-import {completedWerewolfResultsFixture as werewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
+import {completedWerewolfResultsFixture as werewolfResultsFixture, completedCurrentWerewolfFixture} from "@influence/engine/fixtures/werewolf-results";
 import { readHouseGameRetrospective } from "../services/house-game-retrospective.js";
 import { insertOwner } from "./durable-run-test-utils.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
@@ -785,9 +785,15 @@ describe("/mcp Streamable HTTP route", () => {
       } finally { server.stop(true); }
     });
 
-    test("real House MCP route discovers both games and reads a known Unlisted slug without ownership", async () => {
+    test.each([7, 8, 9] as const)("real House MCP route discovers both games and reads completed v%i history without ownership", async rulesVersion => {
       const issued = await issueMcpAccessToken(db, {walletAddress:"0xmcphttp00000000000000000000000000000402"});
-      const events = await werewolfResultsFixture("village","mcp-wolf");
+      let events = rulesVersion === 9 ? await completedCurrentWerewolfFixture("mcp-wolf") : await werewolfResultsFixture("village","mcp-wolf");
+      if (rulesVersion === 7) {
+        events = events.slice(0, events.findIndex(event => event.type === "werewolf.completed") + 1);
+        const initial = events[0]!;
+        if (initial.type !== "werewolf.started") throw new Error("Missing historical setup");
+        initial.payload.config.rulesVersion = 7;
+      }
       await db.insert(schema.games).values([
         {id:"mcp-wolf",slug:"mcp-wolf-slug",gameKind:"werewolf",status:"completed",startedAt:new Date().toISOString(),config:'{"visibility":"unlisted"}'},
         {id:"mcp-public-wolf",slug:"mcp-public-wolf",gameKind:"werewolf",config:'{}'},
@@ -814,11 +820,30 @@ describe("/mcp Streamable HTTP route", () => {
         const listed = await rpc("tools/call",{name:"list_games",arguments:{}});
         expect((listed.structuredContent as {games:Array<{id:string}>}).games.map(game => game.id).sort()).toEqual(["mcp-influence","mcp-public-wolf"]);
         const read = await rpc("tools/call",{name:"read_game",arguments:{gameIdOrSlug:"mcp-wolf-slug",view:"replay",limit:1}});
-        const page = read.structuredContent as {gameKind:string;nextCursor:string;followUps:Array<{tool:HouseToolName;arguments:Record<string,unknown>}>};
+        const page = read.structuredContent as {gameKind:string;nextCursor:string|null;snapshot:{rulesVersion:number};entries:Array<{entry:{kind:string}}>;followUps:Array<{tool:HouseToolName;arguments:Record<string,unknown>}>};
         expect(page.gameKind).toBe("werewolf");expect(JSON.stringify(page)).not.toContain('"role"');
+        expect(page.snapshot.rulesVersion).toBe(rulesVersion);
         for (const next of page.followUps) {validateHouseInput(next.tool,next.arguments);expect(tools.some(tool => tool.name === next.tool)).toBe(true);}
         const continuation = page.followUps.find(next => next.arguments.cursor === page.nextCursor)!;
         expect((await rpc("tools/call",{name:continuation.tool,arguments:continuation.arguments})).isError).toBeUndefined();
+        if (rulesVersion === 9) {
+          const kinds = new Set(page.entries.map(item => item.entry.kind));
+          let current = page;
+          for (let pages = 0; current.nextCursor && pages < events.length; pages++) {
+            const next = current.followUps.find(item => item.arguments.cursor === current.nextCursor)!;
+            const result = await rpc("tools/call", { name: next.tool, arguments: { ...next.arguments, limit: 20 } });
+            current = result.structuredContent as typeof page;
+            for (const item of current.entries) kinds.add(item.entry.kind);
+          }
+          expect(current.nextCursor).toBeNull();
+          expect([...kinds]).toEqual(expect.arrayContaining(["conversation", "ballot", "result"]));
+          expect(kinds.has("proposal")).toBe(false);
+          const privateRead = await rpc("tools/call", { name: "read_game", arguments: { gameIdOrSlug: "mcp-wolf-slug", view: "replay", audience: "omniscient", limit: 20 } });
+          expect((privateRead.structuredContent as typeof page).entries.some(item => item.entry.kind === "proposal")).toBe(true);
+        }
+        const results = await rpc("tools/call", { name: "read_game_results", arguments: { gameIdOrSlug: "mcp-wolf-slug" } });
+        expect(results.isError).toBeUndefined();
+        expect(results.structuredContent).toMatchObject({ gameKind: "werewolf" });
         const invalid = await rpc("tools/call",{name:"read_game",arguments:{gameIdOrSlug:"mcp-wolf",limit:-1}});
         expect(invalid.structuredContent).toMatchObject({status:"invalid_input"});
         const hidden = await db.update(schema.games).set({hiddenAt:new Date().toISOString()}).where(eq(schema.games.id,"mcp-wolf"));

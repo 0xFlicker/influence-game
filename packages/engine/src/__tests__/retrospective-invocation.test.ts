@@ -140,6 +140,16 @@ describe("dedicated retrospective invocation", () => {
     for (const forbidden of ["CURRENT_MEMORY_MUST_NOT_ENTER", "CURRENT_PERSONA_MUST_NOT_ENTER", "CURRENT_BACKSTORY_MUST_NOT_ENTER", "mira ORIGINAL_STRATEGY", "atlas ORIGINAL_STRATEGY"]) expect(generated!.input).not.toContain(forbidden);
     expect(generated!.instructions).toBe(RETROSPECTIVE_SYSTEM_PROMPT);
     expect(generated!.instructions).toContain("untrusted quoted communication");
+    expect(generated!.instructions).toContain("Separate what you knew or believed at the time");
+    expect(generated!.instructions).toContain("no longer need to conceal your role or maintain a bluff");
+    expect(generated!.instructions).toContain("do not need to summarize the whole game");
+    expect(generated!.instructions).toContain("Check any claim about your vote or night target against ownRecordedActions");
+    expect(generated!.instructions).toContain("Winning does not prove every read was sound");
+    expect(generated!.instructions).toContain("revealedAfterGame summary names the winning faction");
+    expect(generated!.instructions).toContain("including when responding to an earlier final statement");
+    expect(generated!.instructions).not.toContain("I can see now");
+    expect(generated!.instructions).not.toContain("I suspected then");
+    expect(generated!.instructions).toContain("no pass, production cue, gameplay action, strategy update or private-thinking field");
     expect(generated!.reasoning?.effort).toBe("high");
     expect(generated!.max_output_tokens).toBe(RETROSPECTIVE_OUTPUT_TOKEN_LIMIT);
     expect(generated!.tool_choice).toEqual({ type: "function", name: "submit_retrospective" });

@@ -347,27 +347,31 @@ A durable pre-game cast member: either an owned Agent Profile or a House charact
 
 A match-assigned role: Werewolf, Villager, Seer, or Doctor. Wolves belong to the wolf faction; the other roles belong to the village. Victory belongs to the whole original faction, including dead teammates. Death removes all actions and never creates a juror. See the [versioned rules](docs/werewolf.md).
 
-## Werewolf public thread
+## Werewolf public conversation
 
-Opening order is shuffled once from the game seed and rotates across nights, skipping eliminated players. Each living player gets at most one opening per day. An opener chooses zero to three distinct other living recipients in order; the rest of the room follows in a seeded random order fixed for that thread. Each respondent speaks or passes once. After each spoken response the opener may speak or pass, answering that respondent while knowing the next possible speaker. A respondent pass skips the opener answer. An opening pass skips the thread. Every accepted contribution is public before the next call; there are no repeated response rounds or artificial pacing delays.
+Current v9 daytime conversation is an open, sequential floor governed by a frozen UTF-8 output allowance. Accepted speech consumes shared bytes; passes do not. Recipient IDs and reply contribution ordinals are structured canonical fields. The scheduler may direct up to three consecutive handoffs, after which the next speaker redirects or passes. A reference to an earlier contribution does not schedule its author. The byte allowance can end discussion before every living player gets an opportunity.
 
-## Werewolf day vote checkpoint
+An unspoken opportunity is private to execution and debugging. Contestants see only spoken contributions, using contiguous speech references mapped back to canonical IDs on acceptance; scheduler queues, offer counts and pass identities are not player evidence. A saved pass thought is an optional Omniscient replay shot, with camera focus and return but no speech.
 
-After each earlier thread, including a skipped opening, every living player casts a fresh sealed target vote or null to hear more. A strict majority of all living players ends the day immediately; otherwise the next opening begins. After the final opening, everyone must choose another living player. That final ballot uses plurality: the unique highest vote count eliminates its target, even below a majority. A tie for highest means no village elimination; normal night actions follow. The final ballot replaces the checkpoint rather than adding a second vote. All ballots reveal together and never carry forward. Provider failures produce explicitly marked unavailable abstentions, including at the final vote; models cannot voluntarily abstain there. Canonical `werewolf.day_vote_resolved` owns the ledger and transition.
+## Werewolf public day ballot
+
+In v9, each living player votes once in seeded order. Accepted ballots and optional messages are public before the next voter acts. A strict majority of all living players is required to eliminate; abstentions do not lower the threshold. A miss means no elimination and the day ends. There is no plurality, runoff, or additional discussion. Canonical `werewolf.day_vote_resolved` owns the final result; the individual typed ballot entries establish the public sequence. Historical v7/v8 checkpoint and final-plurality semantics remain version-bound.
 
 ## Werewolf production cue
 
 An optional opaque acting/feeling note attached to an original speech or pass, for example “a brittle laugh.” It is preserved for later production but does not become dialogue, strategy, emoji, camera instructions or a scheduling decision. The engine supplies speaker/thread/turn/public-history identities. The experiment has no House rewrite; current viewers display original words.
 
-## Werewolf pack negotiation
+## Werewolf pack proposal
 
-Up to three proposal/ballot attempts per night. Living wolves propose sequentially with seeded nightly initiative, then vote through a sealed simultaneous batch. Unanimity locks a target; disagreement reveals the ballots to the pack and reverses initiative. Three disagreements mean no attack. A lone wolf chooses directly. The canonical pack-vote resolution is visible to wolves and Omniscient, never Mystery; speech alone cannot establish agreement.
+Current v9 combines each living wolf's short speech and explicit target into a structured proposal. Wolves alternate in seeded order for up to three back-and-forth exchanges, stopping when current targets agree; this permits up to six decisions for two wolves, not a forced six. A lone wolf selects a target directly. Proposals are private to wolf observations and Omniscient replay. Historical v7/v8 retain sequential proposal plus sealed-batch unanimity.
 
 ## Werewolf private observation
 
 The seat-scoped model input containing public facts and speech, its own character and selected strategy, and only the role's authorized secrets. Wolves know the pack, Seers know their own checks, and Doctors know their previous protection target. Spoken role claims remain unverified speech.
 
 ## Game retrospective
+
+Retrospective knowledge separates information available during play from postgame revelations. Werewolf supplies each speaker with their own role, original pack knowledge where applicable, dated private results available before elimination, and named canonical actions. This is an evidence reference, not reconstructed motives or hidden thinking. A speaker can discuss later revelations without claiming they knew them when deciding. A separate named postgame summary identifies the winning faction, winners (including dead teammates), survivors, eliminations, and vote outcomes.
 
 A contestant-authored epilogue after the immutable competitive result. Every original contestant receives a complete chronological game account and gives one final speech. Influence uses exit order, then nonwinning finalists in seat order, with the winner last; Werewolf uses death order followed by a frozen survivor shuffle. Earlier accepted speeches are context for later speakers. Canonical definition/statement/completion records own order and progress; speech never changes game facts. The final execution boundary follows the complete epilogue. Results can be available while execution is active or paused; completed settlement and downstream jobs require the full proof. Final statements contain bounded speech, without a gameplay choice, strategy update or private thinking. Replay reuses each original solo portrait; Studio treats the statement as ordinary speech with explicit retrospective provenance, and frozen exports retain exact selections. See [contracts](docs/game-retrospective-contract.md), [frozen context/order](docs/game-retrospective-context.md), [strict invocation](docs/game-retrospective-invocation.md) and [execution/recovery](docs/game-retrospective-runtime.md).
 

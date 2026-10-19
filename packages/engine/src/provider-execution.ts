@@ -325,6 +325,19 @@ export interface ProviderAttemptFailureOutcome {
   kind: ProviderAttemptFailureKind;
   message: string;
   retryable: boolean;
+  /** Private feedback for a regenerated attempt; never accepted game state. */
+  feedback?: LengthFeedback;
+}
+
+export interface LengthFeedback {
+  draft: string;
+  field: string;
+  measured: number;
+  allowed: number;
+  overage: number;
+  unit: "utf8_bytes" | "utf16_code_units" | "unicode_code_points";
+  /** Exact rejected structured payload, private retry context only; never accepted game state. */
+  rejectedDecision?: unknown;
 }
 
 export type ProviderAttemptOutcome =
@@ -382,6 +395,8 @@ export interface ProviderAttemptRecord extends ProviderAttemptIntent {
    * without repeating an already accepted remote execution.
    */
   acceptedValue?: unknown;
+  /** Stored only inside the existing private failure evidence object. */
+  lengthFeedback?: LengthFeedback;
 }
 
 export interface ProviderAcceptedResult<TValue = unknown> {
@@ -397,6 +412,7 @@ export interface ProviderTerminalReceipt {
 }
 
 export interface ProviderExecutionHooks {
+  onReadLengthFeedback?(coordinate: ProviderLogicalCallCoordinate): Promise<LengthFeedback | undefined> | LengthFeedback | undefined;
   onReadContextAttempts?(coordinate: ProviderLogicalCallCoordinate): Promise<ProviderContextAttempt[]>;
   /** Return the previously accepted value for this stable logical call. */
   onReadAccepted?(
@@ -424,6 +440,7 @@ export type ProviderCandidateValidation<T> =
       kind: ProviderAttemptFailureKind;
       message: string;
       retryable?: boolean;
+      feedback?: LengthFeedback;
     };
 
 export type ProviderAcceptedValueValidation<T> =
@@ -669,6 +686,10 @@ export class ProviderLogicalCallExecution {
 
   async readContextAttempts(): Promise<ProviderContextAttempt[]> {
     return this.hooks?.onReadContextAttempts ? this.hooks.onReadContextAttempts(this.coordinate) : [...this.contextAttempts];
+  }
+
+  async readLengthFeedback(): Promise<LengthFeedback | undefined> {
+    return this.hooks?.onReadLengthFeedback?.(this.coordinate);
   }
 
   startContextCall(sourceHash: string, revision: number, chunk: number): ProviderLogicalCallExecution {
@@ -946,6 +967,12 @@ export class ProviderLogicalCallExecution {
             outcome: { kind: "usable" },
             ...(accounting && { accounting }),
             ...(requestId && { requestId }),
+            rawResponse: transportCapture.response ?? {
+              body: sanitizeProviderEvidence(
+                options.nativeResponse?.(dispatchResult.response) ?? dispatchResult.response,
+                transportCapture.credentialValues,
+              ),
+            },
           };
           usableResult = { value: validation.value };
         } else {
@@ -954,6 +981,7 @@ export class ProviderLogicalCallExecution {
             message: validation.message,
             retryable:
               validation.retryable ?? defaultRetryable(validation.kind),
+            ...(validation.feedback && { feedback: validation.feedback }),
           };
           const accounting = options.accounting?.(dispatchResult.response) ??
             extractProviderAttemptAccounting(
@@ -1014,6 +1042,9 @@ export class ProviderLogicalCallExecution {
               : "exhausted",
         ...(acceptedValue !== undefined && {
           acceptedValue,
+        }),
+        ...(capturedRecord.outcome.kind !== "usable" && capturedRecord.outcome.feedback && {
+          lengthFeedback: capturedRecord.outcome.feedback,
         }),
       };
 

@@ -1,6 +1,7 @@
 import { canonicalJson } from "@influence/prompt-lab-protocol";
 import { RetrospectiveContractError, type RetrospectiveInputV1 } from "../retrospective";
 import { appendRetrospectiveSection, freezeRetrospectiveGame, type RetrospectiveCapacityPolicy } from "../retrospective-context";
+import { werewolfRetrospectivePerspective } from "./retrospective-perspective";
 import { werewolfRetrospectiveSpeakerIds } from "./retrospective-order";
 import { applyWerewolfEvent, replayWerewolf } from "./rules";
 import type { WerewolfEvent, WerewolfState } from "./types";
@@ -12,8 +13,8 @@ function werewolfFact(event: WerewolfEvent): unknown {
     case "werewolf.phase_started": return { phase: event.payload.phase, day: event.payload.day };
     case "werewolf.action_accepted": {
       const { actorId, action, decision, fallback } = event.payload;
-      return { actorId, action, unavailable: fallback !== null, ...(decision.kind === "target" ? { targetId: decision.targetId }
-        : { passed: decision.text === null, ...(decision.kind === "opening" ? { recipientIds: decision.recipientIds } : {}) }) };
+      return { actorId, action, unavailable: fallback !== null, ...(decision.kind === "target" || decision.kind === "spoken_target" ? { targetId: decision.targetId, ...(decision.kind === "spoken_target" ? { passed: decision.text === null } : {}) }
+        : { passed: decision.text === null, ...(decision.kind === "opening" ? { recipientIds: decision.recipientIds } : {}), ...(decision.kind === "conversation" ? { recipientId: decision.recipientId, replyToContributionId: decision.replyToContributionId } : {}) }) };
     }
     case "werewolf.pack_vote_resolved": return { attempt: event.payload.attempt,
       ballots: event.payload.ballots.map(({ voterId, targetId }) => ({ voterId, targetId })), targetId: event.payload.targetId, endReason: event.payload.endReason };
@@ -52,14 +53,16 @@ export function compileWerewolfRetrospective(events: readonly WerewolfEvent[]) {
     appendRetrospectiveSection(input.sections, `day:${state.day}/${state.phase}`, event.sequence,
       `${event.type} ${canonicalJson(werewolfFact(event))}`);
     if (event.type === "werewolf.action_accepted" && event.payload.decision.kind !== "target" && event.payload.decision.text !== null) {
+      const packOnly = event.payload.action === "pack_talk" || event.payload.action === "pack_propose";
       input.dialogue.push({ eventSequence: event.sequence, source: { kind: "canonical_event", sequence: event.sequence },
-        actorId: event.payload.actorId, scope: event.payload.action === "pack_talk" ? "pack" : "public",
-        audiencePlayerIds: event.payload.action === "pack_talk" ? original.players.filter(player => original.roles[player.id] === "werewolf").map(player => player.id) : [],
+        actorId: event.payload.actorId, scope: packOnly ? "pack" : "public",
+        audiencePlayerIds: packOnly ? original.players.filter(player => original.roles[player.id] === "werewolf").map(player => player.id) : [],
         text: event.payload.decision.text });
     }
   }
   return { input, speakerIds, speakers: original.players.map(player => ({
     id: player.id, name: player.name, personality: player.personality, backstory: player.backstory, strategy: player.strategy,
+    werewolfPerspective: werewolfRetrospectivePerspective(prefix, original, player.id),
   })), definition: final.retrospective?.definition ?? null };
 }
 

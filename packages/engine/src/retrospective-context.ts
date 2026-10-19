@@ -6,6 +6,7 @@ import {
   type RetrospectiveDefinitionV1, type RetrospectiveInputV1, type RetrospectiveRequestV1,
   type RetrospectiveStateV1,
 } from "./retrospective";
+import { assertWerewolfRetrospectivePerspective, type WerewolfRetrospectivePerspective } from "./werewolf/retrospective-perspective";
 import { exactStructuredOutputRegistry } from "./structured-output";
 
 /** Private game-setup snapshot. Never put the whole roster's strategies in a prompt. */
@@ -15,6 +16,7 @@ export interface RetrospectiveSpeaker {
   personality: string;
   backstory: string;
   strategy: string;
+  werewolfPerspective?: WerewolfRetrospectivePerspective;
 }
 
 export interface FrozenRetrospectiveGame {
@@ -60,8 +62,10 @@ function speakerSnapshot(speaker: RetrospectiveSpeaker): RetrospectiveSpeaker {
     || typeof speaker.backstory !== "string" || typeof speaker.strategy !== "string") {
     throw new RetrospectiveContractError("Invalid frozen retrospective character");
   }
+  if (speaker.werewolfPerspective !== undefined) assertWerewolfRetrospectivePerspective(speaker.werewolfPerspective);
   return { id: speaker.id, name: speaker.name, personality: speaker.personality,
-    backstory: speaker.backstory, strategy: speaker.strategy };
+    backstory: speaker.backstory, strategy: speaker.strategy,
+    ...(speaker.werewolfPerspective === undefined ? {} : { werewolfPerspective: structuredClone(speaker.werewolfPerspective) }) };
 }
 
 export function freezeRetrospectiveGame(
@@ -112,7 +116,7 @@ export function assertRetrospectiveSpeakerContext(context: RetrospectiveSpeakerC
   const exact = (value: unknown, keys: string[]) => value !== null && typeof value === "object" && !Array.isArray(value)
     && Object.keys(value).length === keys.length && Object.keys(value).every(key => keys.includes(key));
   if (!exact(context, ["version", "request", "self", "game", "priorStatements"])
-    || !exact(context.self, ["id", "name", "personality", "backstory", "strategy"])) {
+    || !exact(context.self, ["id", "name", "personality", "backstory", "strategy", ...(context.self?.werewolfPerspective === undefined ? [] : ["werewolfPerspective"])])) {
     throw new RetrospectiveContractError("Invalid retrospective speaker context shape");
   }
   assertRetrospectiveRequest(context.request);

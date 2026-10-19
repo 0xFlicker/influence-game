@@ -3,7 +3,11 @@ import type {WatchCue} from "./watch-director";
 
 export const WATCH_FPS = 30;
 export function compileWatchTimeline(cues: readonly WatchCue[], thinking: (key: string) => string | null): CompiledTiming[] {
-  return compileTiming(cues.map(cue => ({...cue, kind: "scene", speech: null, thinking: thinking(cue.key)})), {ending: "finish-score", overrides: {}}, WATCH_FPS);
+  return compileTiming(cues.flatMap(cue => {
+    const text = thinking(cue.key);
+    if (cue.thinkingOnly && !text?.trim()) return [];
+    return [{...cue, kind: cue.thinkingOnly ? "thinking" as const : "scene" as const, speech: null, thinking: text}];
+  }), {ending: "finish-score", overrides: {}}, WATCH_FPS);
 }
 /** Absolute frame boundaries are rounded once by the same compiler used in Studio. */
 export function watchFrameTarget(timeline: readonly CompiledTiming[], frame: number) {

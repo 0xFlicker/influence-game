@@ -1,7 +1,7 @@
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "./retrospective-agent";
 import { observeWerewolf } from "../werewolf/observation";
 import { ProviderUnavailableError } from "../provider-execution";
-import { applyWerewolfEvent, nextWerewolfStep, replayWerewolf, startWerewolf, werewolfConfig, werewolfEvent } from "../werewolf/rules";
+import { applyWerewolfEvent, nextWerewolfStep, replayWerewolf, startWerewolf, legacyWerewolfConfig as werewolfConfig, werewolfConfig as currentConfig, werewolfEvent } from "../werewolf/rules";
 import { werewolfFallback, runWerewolf, type WerewolfAgent } from "../werewolf/runner";
 
 export type WerewolfResultScenario = "village" | "wolves" | "saved" | "disagreement" | "unavailable";
@@ -63,5 +63,20 @@ export async function completedWerewolfResultsFixture(...args: Parameters<typeof
     prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,
     async decide() { throw new Error("Outcome fixture cannot renew gameplay"); },
   });
+  return events;
+}
+
+/** Current public conversation/ballot contracts, including a complete retrospective. */
+export async function completedCurrentWerewolfFixture(gameId: string) {
+  const players = Array.from({ length: 6 }, (_, index) => ({ id: `${gameId}-p${index}`, name: `Player ${index}`, personality: "Fixture", backstory: "", strategy: "", avatarUrl: null }));
+  const events = [startWerewolf(gameId, players, currentConfig("one_wolf", 1), `${gameId}-seed`)];
+  const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request, observation }) {
+    if (request.action === "conversation") return { kind: "conversation", text: observation.board.entries.some(entry => entry.kind === "conversation") ? null : "Which claim should we test?", cue: null, recipientId: null, replyToContributionId: null };
+    if (request.action === "pack_propose") return { kind: "spoken_target", targetId: request.legalTargetIds[0]!, text: "My proposal.", cue: null, thinking: "Fixture" };
+    if (request.action === "public_vote") return { kind: "spoken_target", targetId: null, text: "I abstain.", cue: null, thinking: "Fixture" };
+    return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Fixture" }
+      : { kind: "speech", text: "A brief introduction.", cue: null };
+  } };
+  await runWerewolf({ read: async () => structuredClone(events), append: async event => { applyWerewolfEvent(replayWerewolf(events), event); events.push(event); } }, agent);
   return events;
 }

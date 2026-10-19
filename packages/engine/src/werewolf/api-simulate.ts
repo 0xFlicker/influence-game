@@ -3,14 +3,23 @@
  * Launch/watch API-backed Werewolf and render a text report without extra model calls.
  * Defaults to a six-player match with a ten-day safety cap and a saved live report.
  * Original contributions print as accepted. --transcript adds production notes
- * and turn coordinates. Openings select up to three ordered recipients.
+ * and turn coordinates. Discussion offers may pass or name a recipient.
  * No House rewrite or separate should-speak calls; readback adds no inference.
  * Omniscient labels every speaker with their role; Mystery hides dialogue roles.
- * Omniscient also reports each resolved pack ballot and disagreement/no-attack outcome.
+ * Omniscient also reports private pack proposals and agreement/no-attack outcomes.
  * The API owns inference, durable events and role secrecy.
- * Sealed daytime ballots run concurrently. The API reporter shows accepted-decision
- * counts as live spectator telemetry, separate from public history and player context.
- * Choices and private reasoning stay sealed until the full checkpoint resolves.
+ * Rules v9 use a shared UTF-8 speech budget: 400 bytes per living player,
+ * 320 per contribution. Three directed handoffs permit A → B → A → B;
+ * the last recipient redirects or passes, and may reference earlier statements.
+ * One public serial vote with optional speech follows; all living voters finish,
+ * strict majority eliminates, and abstentions never lower the threshold.
+ * Pack speech includes a standing target, with up to three full exchanges;
+ * matching proposals resolve early. Older completed rules retain their replay.
+ * Paid evaluations run through this API client. Configure the server game-worker
+ * with WEREWOLF_EVALUATION_BUDGET_USD and WEREWOLF_EVALUATION_BUDGET_LEDGER;
+ * attempts, retries, compaction and retrospectives all reserve against that cap.
+ * API private storage retains accepted thinking and complete sanitized provider
+ * evidence, including available native reasoning, independently of this report.
  * Reports distinguish the competitive outcome from retrospective completion.
  * --resume-retrospective explicitly requests authorized recovery of an existing game.
  * No `as any`, Influence House calls, or prose parsing.
@@ -146,9 +155,15 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
         if (!watchUrl) emit(`Watch: ${new URL(`/games/${encodeURIComponent(detail.slug)}/replay?audience=${args.audience}`, args.webUrl).href}`);
         emit(`Cast (${args.audience}): ${view.players.map(player => `${player.name}${args.audience === "omniscient" && player.role ? ` [${player.role}]` : ""}`).join(", ")}`);
         emit("Village wins by eliminating every wolf. Wolves win when they equal or outnumber everyone else.");
+        if (view.rulesVersion === 9) {
+          emit("Discussion uses a shared UTF-8 byte allowance and up to three directed handoffs; the final turn redirects or passes. Remaining space does not guarantee every player a discussion opportunity.");
+          emit("One public sequential ballot follows: vote with optional speech or abstain. A strict majority of all living players is required; the day then ends either way.");
+          emit("Pack speech and attack proposals are combined: up to three full exchanges, ending immediately when current targets match.");
+        } else {
         emit("After each thread, everyone votes for a target or abstains to hear more. A strict majority of all living players eliminates the target and ends the day; otherwise discussion continues. The final ballot requires a target: unique most votes wins; a tie means no village elimination.");
         emit("Each night the pack has three proposal/ballot attempts to agree unanimously. Three disagreements mean no attack.");
         emit("Discussion: persistent round-robin openers, at most one opening each per day. Up to three invited recipients reply first, then the rest in a fixed random order. The opener may answer each spoken reply; passes advance the queue.");
+        }
         for (const player of view.players) alive.add(player.id);
         rosterPrinted = true;
       }
@@ -180,17 +195,19 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
       const progress = detail.voteProgress;
       if (progress && detail.status === "in_progress") {
         if (progress.kind !== "day_vote" || view.phase !== "vote" || progress.day !== view.day
-          || progress.thread !== view.discussion?.thread || progress.total !== view.players.filter(player => player.alive).length
+          || progress.thread !== (view.rulesVersion === 9 ? 1 : view.discussion?.thread) || progress.total !== view.players.filter(player => player.alive).length
           || !Number.isInteger(progress.ready) || progress.ready < 0 || progress.ready > progress.total
-          || progress.voteMode !== (view.discussion?.thread === view.discussion?.totalThreads ? "plurality" : "majority")
+          || progress.voteMode !== (view.rulesVersion !== 9 && view.discussion?.thread === view.discussion?.totalThreads ? "plurality" : "majority")
           || progress.requiredVotes !== (progress.voteMode === "majority" ? Math.floor(progress.total / 2) + 1 : null)) throw new Error("Invalid Werewolf vote progress");
         const key = `${progress.day}:${progress.thread}`;
         if (key !== voteKey) {
           voteKey = key; voteStartedAt = now(); lastVoteReady = -1;
-          emit(`[Vote] Day ${progress.day} · after thread ${progress.thread} — ${progress.voteMode === "plurality" ? `Final ballot from ${progress.total} living players: unique most votes wins; ties spare everyone.` : `${progress.requiredVotes} matching votes needed from ${progress.total} living players.`} Choices reveal together; no public speech during voting.`);
+          if (view.rulesVersion === 9) emit(`[Vote] Day ${progress.day}: ${progress.requiredVotes} votes required. Each ballot and optional speech publishes before the next voter acts.`);
+          else emit(`[Vote] Day ${progress.day} · after thread ${progress.thread} — ${progress.voteMode === "plurality" ? `Final ballot from ${progress.total} living players: unique most votes wins; ties spare everyone.` : `${progress.requiredVotes} matching votes needed from ${progress.total} living players.`} Choices reveal together; no public speech during voting.`);
         }
         if (progress.ready !== lastVoteReady || now() - lastWaitingAt >= 30_000) {
-          emit(`[Voting ${Math.floor((now() - voteStartedAt) / 1000)}s] Day ${progress.day} · thread ${progress.thread} — ${progress.ready}/${progress.total} decisions ready. ${progress.ready === progress.total ? "All decisions ready; committing ballots and resolving." : `Waiting for ${progress.total - progress.ready}; ballots sealed.`}`);
+          if (view.rulesVersion === 9) emit(`[Voting] Day ${progress.day}: ${progress.ready}/${progress.total} public ballots committed.`);
+          else emit(`[Voting ${Math.floor((now() - voteStartedAt) / 1000)}s] Day ${progress.day} · thread ${progress.thread} — ${progress.ready}/${progress.total} decisions ready. ${progress.ready === progress.total ? "All decisions ready; committing ballots and resolving." : `Waiting for ${progress.total - progress.ready}; ballots sealed.`}`);
           lastVoteReady = progress.ready;
           lastWaitingAt = now();
         }

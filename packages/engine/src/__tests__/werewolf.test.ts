@@ -4,7 +4,7 @@ import { exactStructuredOutputRegistry } from "../structured-output";
 import { ProviderUnavailableError } from "../provider-execution";
 import { werewolfDecisionArtifact } from "../werewolf/agent";
 import { observeWerewolf, projectWerewolfView } from "../werewolf/observation";
-import { applyWerewolfEvent, nextWerewolfStep, replayWerewolf, startWerewolf, werewolfActionPlans, werewolfConfig, werewolfEvent } from "../werewolf/rules";
+import { applyWerewolfEvent, nextWerewolfStep, replayWerewolf, startWerewolf, werewolfActionPlans, legacyWerewolfConfig as werewolfConfig, werewolfEvent } from "../werewolf/rules";
 import { advanceWerewolf, runWerewolf, werewolfExecutionFinished, type WerewolfAgent, type WerewolfStore } from "../werewolf/runner";
 import type { WerewolfPlayer, WerewolfState } from "../werewolf/types";
 
