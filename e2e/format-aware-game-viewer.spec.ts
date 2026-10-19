@@ -188,10 +188,13 @@ test.describe("format-aware game viewer", () => {
     await expect.poll(async () => Number(await slider.getAttribute("max"))).toBeGreaterThan(withoutThought);
     await expect(page.getByLabel("Thinking order", {exact:true})).toHaveCount(0);
     await page.getByRole("button",{name:"Close settings",exact:true}).click();
-    // Enabling thinking preserves speech position. Seek back into the newly available thought.
-    await slider.fill(String(Math.max(0, Number(await slider.inputValue()) - (Number(await slider.getAttribute("max")) - withoutThought))));
-    await playbackKey(page,"ArrowRight");
+    // This fixture has one contribution. Start before its thought, independently
+    // of how far autoplay progressed before the browser managed to pause it.
+    await slider.fill("0");
+    await expect(slider).toHaveValue("0");
     const thought = page.locator('[data-in-scene-thinking]');
+    await expect(thought).toHaveCount(0);
+    await playbackKey(page,"ArrowRight");
     await expect(thought).toHaveCSS("opacity","1");
     await expect(thought).toContainText("One precise question");
     await expect(page.locator('[data-speech-bubble]')).toHaveCount(0);
