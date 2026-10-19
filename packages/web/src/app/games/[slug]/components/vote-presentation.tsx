@@ -83,7 +83,7 @@ export function VotePresentation({ beat, ledger, roster, elapsedMs, controlsInse
     <div ref={ledgerBox} className="absolute inset-x-3 z-20 mx-auto h-[clamp(88px,28%,200px)] max-w-6xl overflow-hidden rounded-2xl border border-white/15 bg-black/80 p-2 shadow-2xl backdrop-blur-md sm:inset-x-6" style={{ bottom: controlsInset + 12 }}>
       <FitPresentation enabled onLayoutChange={setLedgerLayout}>
         <VoteLedger title={ledger.title} votes={votes} total={ledger.total} roster={roster}
-          polarity={ledger.polarity} eligibility={ledger.complete ? ledger.eligibility : undefined}
+          polarity={ledger.polarity} abstainLabel={ledger.abstainLabel} eligibility={ledger.complete ? ledger.eligibility : undefined}
           currentId={revealed ? ledger.current.voterId : undefined} portraitOpacity={canFly ? Math.max(0, (progress - .85) / .15) : 1} />
       </FitPresentation>
     </div>
@@ -97,7 +97,7 @@ export function VotePresentation({ beat, ledger, roster, elapsedMs, controlsInse
   </div>;
 }
 
-export function VoteLedger({ title, votes, total, roster, currentId, portraitOpacity = 1, polarity = false, eligibility }: {
+export function VoteLedger({ title, votes, total, roster, currentId, portraitOpacity = 1, polarity = false, abstainLabel = "Hear more", eligibility }: {
   title: string;
   votes: readonly RevealedVote[];
   total: number;
@@ -105,6 +105,7 @@ export function VoteLedger({ title, votes, total, roster, currentId, portraitOpa
   currentId?: string;
   portraitOpacity?: number;
   polarity?: boolean;
+  abstainLabel?: string;
   eligibility?: VoteLedgerState["eligibility"];
 }) {
   const player = (id: string | null) => roster.find(entry => entry.id === id) ?? { id: id ?? "forfeit", name: id ?? "Forfeited", persona: "" };
@@ -116,7 +117,7 @@ export function VoteLedger({ title, votes, total, roster, currentId, portraitOpa
     </header>
     {votes.length === 0 ? <p className="text-xs text-white/45">Waiting for the first vote</p> : <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
       {rows.map(row => {
-        const target = row.targetId ? player(row.targetId) : {id: row.key, name: row.key === "abstain" ? "Hear more" : row.key === "unavailable" ? "Unavailable" : "Forfeited", persona: ""};
+        const target = row.targetId ? player(row.targetId) : {id: row.key, name: row.key === "abstain" ? abstainLabel : row.key === "unavailable" ? "Unavailable" : "Forfeited", persona: ""};
         const eligible = Boolean(row.targetId && eligibility?.ids.includes(row.targetId));
         return <li key={target.id} data-vote-target={target.id} data-vote-eligible={eligible} className={`flex min-w-0 items-center gap-3 rounded-xl border px-3 py-2 ${eligible ? "border-amber-300/70 bg-amber-300/15" : "border-white/10 bg-white/[.035]"}`}>
           {row.targetId && <AgentAvatar {...target} persona={target.persona ?? ""} size="8" />}

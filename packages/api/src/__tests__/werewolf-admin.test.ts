@@ -6,7 +6,7 @@ import type { WerewolfProductionSnapshot } from "../services/werewolf-production
 import { afterEach, beforeEach, expect, test, spyOn } from "bun:test";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
-import { runWerewolf, projectWerewolfView, replayWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
+import { legacyWerewolfConfig, runWerewolf, projectWerewolfView, replayWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { createSessionToken } from "../middleware/auth.js";
@@ -42,6 +42,16 @@ async function operator(role: string, permissions: string[] = []) {
 }
 async function game(completed = true, agentProfileIds: string[] = [], unprotectedHunt = false) {
   const g = await createWerewolfGame(db, "owner", { preset: "two_wolves", agentProfileIds, maxDays: 1 });
+  // The admin/production scenarios exercise the historical sealed pack and
+  // ordered-thread UI. Pin this fixture to v8 instead of inheriting the fresh
+  // game default.
+  const rows = await readWerewolfEvents(db, g.id);
+  const started = rows[0];
+  if (started?.type !== "werewolf.started") throw new Error("Expected started Werewolf fixture");
+  const historical = { ...started, payload: { ...started.payload, config: legacyWerewolfConfig("two_wolves", 1) } };
+  await db.update(schema.werewolfEvents).set({ event: historical }).where(eq(schema.werewolfEvents.gameId, g.id));
+  const [gameRow] = await db.select().from(schema.games).where(eq(schema.games.id, g.id));
+  if (gameRow) await db.update(schema.games).set({ config: JSON.stringify({ ...(JSON.parse(gameRow.config ?? "{}") as Record<string, unknown>), rulesVersion: 8 }) }).where(eq(schema.games.id, g.id));
   if (completed) {
     const owner = await claimWerewolfGame(db, g.id); if (!owner.ok) throw Error(owner.error);
     const state = replayWerewolf(await readWerewolfEvents(db, g.id));

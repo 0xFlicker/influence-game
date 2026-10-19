@@ -4,7 +4,7 @@ import { exactStructuredOutputRegistry } from "../structured-output";
 import { ProviderUnavailableError } from "../provider-execution";
 import { werewolfDecisionArtifact } from "../werewolf/agent";
 import { observeWerewolf, projectWerewolfView } from "../werewolf/observation";
-import { applyWerewolfEvent, nextWerewolfStep, replayWerewolf, startWerewolf, werewolfActionPlans, werewolfConfig, werewolfEvent } from "../werewolf/rules";
+import { applyWerewolfEvent, nextWerewolfStep, replayWerewolf, startWerewolf, werewolfActionPlans, legacyWerewolfConfig as werewolfConfig, werewolfEvent } from "../werewolf/rules";
 import { advanceWerewolf, runWerewolf, werewolfExecutionFinished, type WerewolfAgent, type WerewolfStore } from "../werewolf/runner";
 import type { WerewolfPlayer, WerewolfState } from "../werewolf/types";
 
@@ -35,6 +35,25 @@ async function until(ctx: ReturnType<typeof setup>, predicate: (state: WerewolfS
 }
 
 describe("Werewolf authority and recovery", () => {
+  test("an open circuit never becomes speech or a partially committed sealed ballot batch", async () => {
+    const ctx = setup();
+    await until(ctx, state => nextWerewolfStep(state).kind === "action");
+    const beforeSpeech = structuredClone(ctx.events);
+    const blocked: WerewolfAgent = { ...quietAgent, async decide() { throw new ProviderUnavailableError("Circuit open", "circuit_open"); } };
+    await expect(advanceWerewolf(ctx.store, blocked)).rejects.toMatchObject({ outcome: { kind: "circuit_open" } });
+    expect(ctx.events).toEqual(beforeSpeech);
+    await until(ctx, state => state.phase === "pack" && state.actions.length === 2);
+    const beforeBallots = structuredClone(ctx.events);
+    let calls = 0;
+    await expect(advanceWerewolf(ctx.store, { ...quietAgent, async decide(input) {
+      if (++calls === 2) return blocked.decide(input);
+      return quietAgent.decide(input);
+    } })).rejects.toMatchObject({ outcome: { kind: "circuit_open" } });
+    expect(calls).toBe(2);
+    expect(ctx.events).toEqual(beforeBallots);
+    await advanceWerewolf(ctx.store, quietAgent);
+    expect(ctx.events.length).toBe(beforeBallots.length + 2);
+  });
   test("admits exact presets, assigns roles once, and rejects corrupt setup", () => {
     for (const preset of ["one_wolf", "two_wolves"] as const) {
       const ctx = setup(preset);

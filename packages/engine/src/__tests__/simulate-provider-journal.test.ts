@@ -158,7 +158,7 @@ describe("local provider attempt journal", () => {
     );
   });
 
-  test("keeps artifact writer failures nonfatal", async () => {
+  test("stops on artifact writer failure while retaining the pending request in memory", async () => {
     const journal = createLocalProviderExecutionJournal({
       gameId: "game-id",
       ownerEpoch: "owner-id",
@@ -167,8 +167,25 @@ describe("local provider attempt journal", () => {
       },
     });
     const first = intent(1);
-    expect(() => journal.hooks.onReserve?.(first)).not.toThrow();
-    expect(() => journal.hooks.onTerminal?.(failure(first))).not.toThrow();
-    expect(journal.snapshot().failures).toHaveLength(1);
+    expect(() => journal.hooks.onReserve?.(first)).toThrow("disk unavailable");
+    expect(journal.snapshot().attempts).toEqual([{ intent: first }]);
+  });
+
+  test("retains successful thinking, native reasoning, requests and rate-limit bodies", async () => {
+    const journal = createLocalProviderExecutionJournal({ gameId: "game-id", ownerEpoch: "owner-id" });
+    const first = intent(1);
+    await journal.hooks.onReserve?.(first);
+    const terminal: ProviderAttemptRecord = { ...failure(first), outcome: { kind: "usable" }, disposition: "accepted",
+      acceptedValue: { text: null, thinking: "My point was already answered; listen." },
+      rawResponse: { status: 200, body: { reasoning: "provider summary", encrypted_content: "opaque-provider-reasoning" } } };
+    await journal.hooks.onTerminal?.(terminal);
+    await journal.hooks.onTerminal?.(terminal); // Idempotent terminal delivery.
+    expect(journal.snapshot().attempts).toEqual([{ intent: first, terminal }]);
+    const second = intent(2);
+    await journal.hooks.onReserve?.(second);
+    const limited: ProviderAttemptRecord = { ...failure(second), outcome: { kind: "rate_limit", message: "wait", retryable: true },
+      rawResponse: { status: 429, body: { error: "wait" } } };
+    await journal.hooks.onTerminal?.(limited);
+    expect(journal.snapshot().attempts[1]).toEqual({ intent: second, terminal: limited });
   });
 });

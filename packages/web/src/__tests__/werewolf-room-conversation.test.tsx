@@ -60,7 +60,6 @@ function frame(moment: WerewolfWatchMoment, scene: AcceptedVisualScene | null = 
 function roomIds(container: HTMLElement) {
   return [...container.querySelectorAll("[data-room-player]")].map(element => element.getAttribute("data-room-player"));
 }
-
 test("village conversation uses the living prefix cast and follows speaker changes without remounting", () => {
   const moment = discussion();
   const ready = mock();
@@ -157,4 +156,35 @@ test("a dead contestant's retrospective stays solo after the result, including w
   expect(view.getByText("You caught me. I should have defended my vote.")).not.toBeNull();
   expect(view.getByText("werewolf")).not.toBeNull();
   expect(view.getByText("Retrospective · Defeated faction · Voted out · Day 2")).not.toBeNull();
+});
+
+
+test("public ballot speeches use the vote bloc view, including spoken abstentions, without a facts overlay", () => {
+  const moment = discussion();
+  moment.snapshot = {...moment.snapshot, rulesVersion: 9};
+  moment.entry = {kind: "ballot", day: 2, actorId: "b", targetId: null, text: "I need a stronger case before voting.", cue: null, unavailable: false, totals: {b: 1}, requiredVotes: 2, remainingVoterIds: ["d"]};
+  moment.dayBallots = [{voterId: "a", targetId: "b", unavailable: false}, {voterId: "b", targetId: null, unavailable: false}];
+  const cue = werewolfMomentCues(moment)[0]!;
+  const view = render(<WerewolfContentFrame cue={cue} scene={null} elapsed={SOLO_READ_START_MS} reduced />);
+  expect(view.container.querySelector("[data-vote-presentation]")).not.toBeNull();
+  expect(view.getByText("I need a stronger case before voting.")).not.toBeNull();
+  expect(view.getByRole("region", {name: "Vote record"})).not.toBeNull();
+  expect(view.getByText("Abstain")).not.toBeNull();
+  expect(view.container.querySelector('[data-ledger-voter="a"]')).not.toBeNull();
+  expect(view.container.querySelector('[data-ledger-voter="b"]')).not.toBeNull();
+  expect(view.container.querySelector('[data-ledger-voter="d"]')).toBeNull();
+  expect(view.container.querySelector("[data-werewolf-canonical-details]")).toBeNull();
+  view.rerender(<WerewolfContentFrame cue={{...cue, moment: {...moment, entry: {...moment.entry, text: null}}}} scene={null} elapsed={SOLO_READ_START_MS} reduced />);
+  expect(view.queryByText("I need a stronger case before voting.")).toBeNull();
+  expect(view.container.querySelector("[data-vote-presentation]")).not.toBeNull();
+});
+
+test("pack proposal speech has no target banner", () => {
+  const moment = discussion();
+  moment.snapshot = {...moment.snapshot, rulesVersion: 9, audience: "omniscient", players: moment.snapshot.players.map(player => ({...player, role: "werewolf"}))};
+  moment.entry = {kind: "proposal", day: 2, beat: 1, actorId: "b", targetId: "a", text: "Let's choose Arden.", cue: null, unavailable: false};
+  const view = render(frame(moment));
+  expect(view.getByText("Let's choose Arden.")).not.toBeNull();
+  expect(view.queryByText("Proposed target: Arden")).toBeNull();
+  expect(view.container.querySelector("[data-werewolf-canonical-details]")).toBeNull();
 });

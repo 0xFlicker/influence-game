@@ -98,7 +98,7 @@ export function createWerewolfVisualPreparation(db: DrizzleDB, gameId: string, o
     if (descriptor) await prepare(state, descriptor);
     // A lone wolf never holds a meeting, but still needs a reusable form even
     // when the eventual night has no target. No fake scene is recorded here.
-    if (request.action === "attack" && state.aliveIds.filter(id => state.roles[id] === "werewolf").length === 1) {
+    if ((request.action === "attack" || request.action === "pack_propose") && state.aliveIds.filter(id => state.roles[id] === "werewolf").length === 1) {
       const key = `form:${request.actorId}`;
       if (await cached(key, state, { kind: "form", playerId: request.actorId })) return;
       const guard = boundary(state);

@@ -1,0 +1,70 @@
+# Werewolf v9 model quality report
+
+**Historical file-only cohort:** These runs did not satisfy the requested API simulation workflow and did not retain successful native response bodies. The [API follow-up](2026-10-19-werewolf-api-silence-and-evidence.md) records the retention fixes, revised silence prompt, and separately preserved API games. Findings below describe the earlier prompt and evidence only.
+
+**Status:** complete. The baseline contains 16 final-schema games (#02–#17); the separate prompt-refinement cohort contains four final-schema games (#18–#21). All 20 completed event streams and retrospectives replay against the final engine. This is a qualitative local simulation review, not a statistical model comparison.
+
+## Scope and evidence
+
+The baseline includes 16 completed runs against final v9 schemas: games #02–#06, the distinct one-wolf replacement for interrupted #07, and #08–#17. I replayed all 16 complete event streams with the current `replayWerewolf` reducer and projected the canonical logs through `projectWerewolfProductionWatch`; all completed and retrospective states replayed. Outcomes, day counts, ballots, alive roles, and protected nights below come from the canonical events/reducer, never retrospective statements.
+
+The separately preserved exploratory #01 completed before the `targetRequired` pack-proposal request fix, so it is excluded. The initial #07 Luna/two-wolf run was harness-interrupted after 10 canonical events and 8 provider receipts at Night 1; it has no completed outcome or retrospective and is excluded. Its files remain in `v9-luna-two-07/`. The final-schema replacement is `v9-luna-one-07-replacement/`.
+
+| Run | Model | Preset | Day ballots | Canonical outcome |
+|---|---|---:|---:|---|
+| #02 | Muse Spark 1.3 Contributor | one wolf | 2 | Wolves, parity |
+| #03 | GPT-6 Luna | two wolves | 3 | Village, wolves eliminated |
+| #04 | Muse Spark 1.3 Contributor | one wolf | 3 | Wolves, parity |
+| #05 | GPT-6 Luna | two wolves | 3 | Village, wolves eliminated |
+| #06 | Muse Spark 1.3 Contributor | one wolf | 2 | Village, wolves eliminated |
+| #07 replacement | GPT-6 Luna | one wolf | 1 | Village, wolves eliminated |
+| #08 | Muse Spark 1.3 Contributor | one wolf | 1 | Village, wolves eliminated |
+| #09 | GPT-6 Luna | one wolf | 2 | Village, wolves eliminated |
+| #10 | Muse Spark 1.3 Contributor | one wolf | 3 | Village, wolves eliminated |
+| #11 | GPT-6 Luna | two wolves | 3 | Village, wolves eliminated |
+| #12 | Muse Spark 1.3 Contributor | one wolf | 2 | Village, wolves eliminated |
+| #13 | GPT-6 Luna | two wolves | 2 | Village, wolves eliminated |
+| #14 | Muse Spark 1.3 Contributor | one wolf | 1 | Village, wolves eliminated |
+| #15 | GPT-6 Luna | two wolves | 8 | Wolves, parity |
+| #16 | Muse Spark 1.3 Contributor | one wolf | 2 | Village, wolves eliminated |
+| #17 | GPT-6 Luna | one wolf | 1 | Village, wolves eliminated |
+
+## Prompt-refinement candidates
+
+Parent code added conversation-only guidance before #18. These games test that guidance separately and are not pooled with baseline outcomes. Candidate #18 used Muse Spark 1.3 Contributor, one wolf, and seed `v9-muse-one-18`; it ended in a canonical wolf-parity win after three day ballots. Its three discussion windows had 25 non-null contributions, zero voluntary passes, and zero unavailable discussion fallbacks. The candidate delivered a more specific debate than several baseline samples, including a direct correction of Finn's claim that only Mira abstained silently, but the argument still over-weighted the wording difference, and the village lost.
+
+Candidate #19 used Luna with baseline #17's one-wolf seed, `v9-luna-one-17`; both games ended in a one-day village win. Candidate #19 had nine contributions, no discussion pass, and no provider failure. Its day-one discussion used 1,713 UTF-8 bytes versus 1,832 in #17. Those are short, single-day samples with different stochastic dialogue; the byte comparison is descriptive and not evidence of a causal improvement.
+
+Candidate #20 used Muse with baseline #16's one-wolf seed; both ended in a village win on Day 2. Candidate #20 had 18 contributions, zero discussion passes, and two output-token failures. Its dialogue included a meaningful claim conflict and correction after a Day 1 miselimination. Candidate #21 used Luna with a separate one-wolf seed and ended in a village win on Day 1; it had ten discussion contributions, zero passes, and no provider failures. Identical seeds reproduce the initial cast/scheduling conditions only; stochastic model dialogue means these are not causal guarantees. Each candidate had a separate output directory and was individually budget-gated.
+
+Artifact directories and canonical event logs are under [`packages/engine/docs/simulations/`](../../packages/engine/docs/simulations/). Reducer-derived records are in [`baseline17-metrics.json`](../../packages/engine/docs/simulations/v9-evaluation-evidence/baseline17-metrics.json) and [`candidates18-21-metrics.json`](../../packages/engine/docs/simulations/v9-evaluation-evidence/candidates18-21-metrics.json). The evidence folder also contains the copied shared budget ledger and admission schedule.
+
+## Quantitative read
+
+Across the 16 baseline games there were 39 completed day ballots, 384 accepted non-null conversation contributions, and 53 public-vote abstentions. All day windows offered a turn to every player alive at discussion start. There was one null-text discussion action, caused by a typed provider-unavailable fallback, and zero voluntary discussion passes. The rules support voluntary silence, but it was not observed. This remains a quality limitation: agents often filled every opportunity even when they had little new evidence. Candidates #18–#21 had 62 non-null contributions across seven discussion windows, with zero voluntary passes and zero unavailable discussion fallbacks. The prompt refinement did not demonstrate more voluntary silence.
+
+Two turns occurred after the maximum three directed handoffs had been used. Both redirected to a different legal recipient; there were no structural final-redirect violations. This is a small sample. Across consecutive day ballots, 81 voters changed their target or abstention choice; that is a ballot-change count only and does not attribute the change to any particular speech.
+
+Every discussion window ended at the output-budget boundary, not a silent sweep. Baseline windows contained 4–16 spoken contributions and left 75–313 UTF-8 bytes unused; refinement windows contained 5–12 contributions and left 30–287 bytes unused. Each remainder was below the full 320-byte message allowance, as required. Baseline discussions consumed 70,069 bytes across 39 days; refinement discussions consumed 10,569 bytes across seven days. There were 387 baseline discussion provider attempts for 384 accepted spoken contributions, and 63 refinement attempts for 62 spoken contributions. These include retries and do not imply a general small-call-count guarantee from an output-size limit. See the [cohort summary](../../packages/engine/docs/simulations/v9-evaluation-evidence/cohort-summary.json); detailed day records include allowance, usage, unused bytes, and voluntary/unavailable silence separately.
+
+The five completed two-wolf-preset games generated 19 pack resolutions. All 19 ended in agreement, with no attempt-limit disagreement: 11 resolutions used one proposal beat from each living wolf, and 8 used one beat after only one wolf remained alive. This shows reliable target agreement, but does not establish that every wolf partnership negotiated substantively.
+
+The canonical playback timing projection totals 11,070,800 ms (about 184.5 minutes) across the 16 baseline games and 1,946,750 ms (about 32.4 minutes) across the four candidates. This is the watch UI's deterministic presentation-time estimate, not model-generation wall time. Generation wall time was not recorded consistently. No matched v7/v8 local sample with comparable model, seed, and run shape was present in the simulations directory, so there is no matched historical baseline.
+
+## Trajectory notes
+
+The conversations could support useful direct exchanges. In #04, Mira challenged Finn to name a specific line rather than accuse Lyra's “quiet ledger”; Finn conceded that he had not named a line, then gave a concrete read. The group later used Mira's acceptance of the answer in its vote reasoning. The same game also repeated “concrete reasons/test,” “ledger,” and “stale push” language across several speakers. For example, Lyra's contribution #6 says her ledger “holds no case yet” but continues with a generic test; contribution #12 repeats agreement about Mira's test. That is a clear opportunity to pass instead of paraphrasing prior framing. Candidate #18 had a more specific debate over whether Mira's silent abstention was evidence, but the village over-weighted the distinction and lost. In #20, a Seer counterclaim led Rex to catch an inconsistency in Atlas's wording; Atlas corrected the claim and Rex updated his vote. That shows the sequential format can support direct challenge and influence, while remaining one stochastic trajectory. Across four candidates there were still no voluntary conversation passes, so the quiet-behavior issue remains unresolved.
+
+Game #15 is a majority-and-night-protection outlier. Canonical ballots show no elimination on days 1, 2, 3, 5, 6, and 7; Echo was eliminated on day 4 and Rex on day 8. Day 3 produced Rex 3, Atlas 2, Finn 1 against a threshold of 4. On day 5, Finn and Rex tied 2–2 against a threshold of 3; day 7 again tied them 2–2. The doctor blocked four of eight pack attacks on nights 2, 5, 6, and 7 (Rex, Vera, Rex, Vera). The day-8 ballot eliminated Rex at a two-vote threshold; reducer replay then confirmed the wolf-parity outcome with Finn (wolf) and Vera (doctor) alive. The trajectory repeatedly revisited Rex's seer claim and duplicate checks, Finn's pre-claim votes, and the same “verified” versus “unverified” evidence distinction. The majority rule is working as configured, but this seed produced a long stalemate followed by parity.
+
+## Provider attempts and spend
+
+The baseline final-schema journals contain 909 terminal receipts and 13 recorded retryable/exhausted failures: ten `max_output_tokens` structured-output truncations, two provider refusals in #15, and one `thinking` field exceeding its UTF-16 limit in #15. Both refusals returned OpenAI's generic “prompt was flagged as potentially violating our usage policy” message, one on a Finn pack proposal and one on Finn's public vote; the provider did not identify a cause, so the simulation's fictional elimination context is not asserted as the reason. The length failure was Kael's day-7 vote: the rejected thinking was 2,285 UTF-16 code units against a 2,000 limit. The accepted retry kept the structured target Finn and the same short Seer-claim argument, so the decision's intent survived the repair; its reasoning still misidentified the remaining-voter state. The other failures carried no length feedback. No attempt changed context revision, so the journals show no live context compaction/revision. No failures occurred in introductions or retrospectives. #16 had retryable `max_output_tokens` failures on conversation and public-vote turns, including exhausted output attempts; the final run completed using the engine's typed fallback where required. Candidates #18–#21 contain 157 receipts and four `max_output_tokens` failures in #18 and #20; all four complete logs and retrospectives replayed successfully.
+
+The shared budget ledger uses conservative reservations and token-usage estimates, not invoices. After #21, committed reservation was **$10.27357850** against the **$15.00** cap, estimated token usage summed to **$1.21853310**, and provider-reported actual cost was unavailable across the ledger. Three unsettled reservations totaling $0.04425925 remain included in committed reservation. Settled entries contribute the maximum of reserved amount, usage estimate, and provider actual. An earlier status message accidentally added unresolved-row count to the USD sum; the saved ledger and schedule use the correct formula.
+
+Admission checks passed individually: #17 began with $8.89743425 committed and $6.10256575 headroom; #18 with $9.21123900 and $5.78876100; #19 with $9.45104250 and $5.54895750; #20 with $9.76665000 and $5.23335000; and #21 with $9.94753650 and $5.05246350. Each exceeded the $4.68626450 reserve threshold (twice the largest completed-game reservation, $2.34313225). The launcher admitted #16 automatically after #15 without a contemporaneous check, although the reconstructed check would have passed. All later games were admitted one at a time with the check recorded; no unguarded loop ran.
+
+The guard rate assumptions are deliberately conservative: GPT-6 Luna uses $0.25/M input and $0.75/M output, above standard long-context input and equal to the published long-context cache-write/output rates; Muse Spark 1.3 Contributor uses $0.10/M input and $0.20/M output, its published Contributor rates. See [OpenAI API pricing](https://developers.openai.com/api/docs/pricing) and [Meta Model API pricing and rate limits](https://dev.meta.ai/docs/pricing-rate-limits). Meta states Contributor mode permits use of prompts and responses for training; that applies to the Muse cohort.
+
+Mechanics and provider compatibility were validated across complete six-player/one-wolf and eight-player/two-wolf games, including final-schema replay and retrospective completion. The sequential format produced direct replies, challenges, vote commitments, and observed vote shifts. Natural response quality is mixed: repeated framing remains, and neither baseline nor four prompt-refinement candidates produced voluntary discussion silence. The eight-day majority/protection stall in #15 is a pacing tail, and no matched legacy-model baseline exists. The evidence supports compatibility and qualitative strategic interaction, but does not establish improved quiet behavior or causal pacing improvement.

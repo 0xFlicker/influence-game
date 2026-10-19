@@ -4,7 +4,7 @@ export type WerewolfRole = "werewolf" | "villager" | "seer" | "doctor";
 export type WerewolfFaction = "village" | "wolves";
 export type WerewolfPreset = "one_wolf" | "two_wolves";
 export type WerewolfPhase = "introduction" | "pack" | "night" | "day" | "vote" | "retrospective" | "complete";
-export type WerewolfAction = "introduce" | "pack_talk" | "attack" | "investigate" | "protect" | "open_thread" | "discuss" | "vote";
+export type WerewolfAction = "introduce" | "pack_talk" | "attack" | "investigate" | "protect" | "open_thread" | "discuss" | "vote" | "conversation" | "public_vote" | "pack_propose";
 export type WerewolfVoteMode = "majority" | "plurality";
 
 export interface WerewolfPlayer {
@@ -22,15 +22,19 @@ export interface WerewolfPlayer {
 export interface WerewolfSetup { playerCount: 6 | 7 | 8; wolves: 1 | 2; seer: boolean; doctor: boolean }
 
 export interface WerewolfConfig {
-  rulesVersion: 7 | 8;
+  rulesVersion: 7 | 8 | 9;
   preset: WerewolfPreset;
   setup?: WerewolfSetup;
   maxDays: number;
+  /** Frozen v9 output policy. Absent in historical v7/v8 records. */
+  discussionPolicy?: { bytesPerLivingPlayer: number; messageBytes: number; maxHandoffs: number };
 }
 
 export type WerewolfDecision =
   | { kind: "opening"; text: string | null; cue: string | null; recipientIds: string[] }
   | { kind: "speech"; text: string | null; cue: string | null }
+  | { kind: "conversation"; text: string | null; cue: string | null; recipientId: string | null; replyToContributionId: number | null }
+  | { kind: "spoken_target"; targetId: string | null; text: string | null; cue: string | null; thinking: string }
   | { kind: "target"; targetId: string | null; thinking: string };
 
 export type WerewolfRequest = {
@@ -39,7 +43,10 @@ export type WerewolfRequest = {
 } & (
   | { action: "open_thread"; legalRecipientIds: string[] }
   | { action: "vote"; voteMode: WerewolfVoteMode }
-  | { action: Exclude<WerewolfAction, "open_thread" | "vote"> }
+  | { action: "conversation"; legalRecipientIds: string[]; legalReplyIds: number[]; messageBytes: number }
+  | { action: "public_vote"; messageBytes: number }
+  | { action: "pack_propose"; messageBytes: number; targetRequired: boolean }
+  | { action: Exclude<WerewolfAction, "open_thread" | "vote" | "conversation" | "public_vote" | "pack_propose"> }
 );
 
 export type WerewolfAcceptedAction = WerewolfRequest & {
@@ -158,6 +165,7 @@ export interface WerewolfState {
   day: number;
   actions: WerewolfAcceptedAction[];
   discussion: WerewolfDiscussion | null;
+  conversation?: WerewolfConversationState | null;
   pack: WerewolfPackNegotiation | null;
   resolved: boolean;
   previousProtection: string | null;
@@ -166,7 +174,43 @@ export interface WerewolfState {
   outcome: WerewolfOutcome | null;
 }
 
+export interface WerewolfConversationState {
+  order: string[];
+  voterIds: string[];
+  totalBytes: number;
+  remainingBytes: number;
+  messageBytes: number;
+  maxHandoffs: number;
+  lastOffered: Record<string, number>;
+  offers: number;
+  nextActorId: string;
+  handoffsUsed: number;
+  previousSpeakerId: string | null;
+  silentIds: string[];
+  unavailableIds: string[];
+  ended: boolean;
+  endReason: "output_budget" | "silence" | "unavailable_sweep" | null;
+}
+
+/** Public coordinates are contribution ordinals, never private event sequences. */
+export interface WerewolfConversationEntry {
+  kind: "conversation"; day: number; id: number; actorId: string;
+  text: string | null; cue: string | null; recipientId: string | null;
+  replyToContributionId: number | null; unavailable: boolean;
+  remainingBytes: number;
+}
+export interface WerewolfBallotEntry {
+  kind: "ballot"; day: number; actorId: string; targetId: string | null;
+  text: string | null; cue: string | null; unavailable: boolean;
+  totals: Record<string, number>; requiredVotes: number; remainingVoterIds: string[];
+}
+export interface WerewolfProposalEntry {
+  kind: "proposal"; day: number; actorId: string; targetId: string | null;
+  text: string | null; cue: string | null; unavailable: boolean; beat: number;
+}
+
 export type WerewolfHistoryEntry =
+  | WerewolfConversationEntry | WerewolfBallotEntry | WerewolfProposalEntry
   | { kind: "phase"; day: number; phase: "introduction" | "night" | "day" | "vote" }
   | ({ kind: "speech"; day: number; actorId: string; audience: "public" | "pack"; text: string | null; cue: string | null }
     & ({ purpose: "retrospective"; ordinal: number } | { purpose?: never; ordinal?: never }))

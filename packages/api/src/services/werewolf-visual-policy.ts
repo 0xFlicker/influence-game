@@ -73,7 +73,7 @@ export async function readWerewolfVisualPause(db: DrizzleDB | VisualTransaction,
     if (!descriptor)
       throw new Error("Paused scene is not at the canonical frontier");
   }
-  else if (!werewolfActionPlans(state).some(p => p.request.action === "attack" && pause.work.kind === "form" && p.request.actorId === pause.work.playerId))
+  else if (!werewolfActionPlans(state).some(p => (p.request.action === "attack" || p.request.action === "pack_propose") && pause.work.kind === "form" && p.request.actorId === pause.work.playerId))
     throw new Error("Paused wolf form is not at the canonical frontier");
   return pause;
 }

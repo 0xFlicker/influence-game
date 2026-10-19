@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { AGENT_CREATION_GAME_PRIMER } from "../services/agent-creation-game-primer.js";
 import {
   getGameMcpRules,
   listGameMcpArchetypes,
@@ -10,6 +11,18 @@ import {
 } from "../services/agent-archetypes.js";
 
 describe("game MCP rules catalog", () => {
+  test("current Werewolf rules and character coaching describe public majority voting", () => {
+    const rules = getGameMcpRules("werewolf").rules.sections[0]!.body;
+    for (const text of [rules, AGENT_CREATION_GAME_PRIMER]) {
+      expect(text).toContain("everyone votes exactly once");
+      expect(text).toContain("More than half of ALL living players");
+      expect(text).toContain("three full exchanges");
+      expect(text).toContain("shared UTF-8 speech byte allowance");
+      expect(text).not.toContain("final plurality vote");
+    }
+    expect(searchGameMcpRules({ gameKind: "werewolf", query: "majority" }).matches).toHaveLength(1);
+  });
+
   test("returns rules without stale per-agent rating reset copy", () => {
     const rules = getGameMcpRules("influence");
     const serialized = JSON.stringify(rules).toLowerCase();

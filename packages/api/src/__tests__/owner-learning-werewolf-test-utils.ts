@@ -1,9 +1,10 @@
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@influence/engine";
 import { randomUUID } from "node:crypto";
-import { replayWerewolf, runWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
+import { legacyWerewolfConfig, replayWerewolf, runWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
 import { claimWerewolfGame, createWerewolfGame, createWerewolfStore } from "../services/werewolf-games.js";
+import { eq } from "drizzle-orm";
 
 export async function playedWerewolfReview(db: DrizzleDB, existingOwner?: string) {
   const ownerUserId = existingOwner ?? randomUUID();
@@ -14,6 +15,15 @@ export async function playedWerewolfReview(db: DrizzleDB, existingOwner?: string
     strategyStyle: "INFLUENCE_ONLY", werewolfStrategyStyle: null,
   })).profile);
   const game = await createWerewolfGame(db, ownerUserId, { preset: "two_wolves", agentProfileIds: profiles.map(p => p.id), maxDays: 1, visibility: "unlisted" });
+  // Owner-learning parity is a replay of the historical thread/checkpoint
+  // flow. Pin its starting event explicitly so it does not inherit fresh-game
+  // defaults when the active rules version advances.
+  const [started] = await db.select().from(schema.werewolfEvents).where(eq(schema.werewolfEvents.gameId, game.id));
+  if (!started || started.event.type !== "werewolf.started") throw new Error("Expected started Werewolf fixture");
+  const historicalStart = { ...started.event, payload: { ...started.event.payload, config: legacyWerewolfConfig("two_wolves", 1) } };
+  await db.update(schema.werewolfEvents).set({ event: historicalStart }).where(eq(schema.werewolfEvents.gameId, game.id));
+  const [gameRow] = await db.select().from(schema.games).where(eq(schema.games.id, game.id));
+  if (gameRow) await db.update(schema.games).set({ config: JSON.stringify({ ...(JSON.parse(gameRow.config ?? "{}") as Record<string, unknown>), rulesVersion: 8 }) }).where(eq(schema.games.id, game.id));
   const claim = await claimWerewolfGame(db, game.id);
   if (!claim.ok) throw new Error(claim.error);
   const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);

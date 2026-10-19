@@ -2,7 +2,7 @@ import { ProviderUnavailableError, type ProviderUnavailableKind } from "./provid
 import { RetrospectiveContractError } from "./retrospective";
 import { RetrospectiveContextCapacityError } from "./retrospective-context";
 
-export type RetrospectiveFailureCode = ProviderUnavailableKind | "capacity_unavailable" | "context_capacity_exceeded" | "invalid_context";
+export type RetrospectiveFailureCode = ProviderUnavailableKind | "capacity_unavailable" | "invalid_context";
 export type RetrospectiveFailureStage = "initialize" | "statement";
 
 /** An exhausted required epilogue step has no rules-legal speech fallback. */

@@ -1,5 +1,13 @@
 import {expect, test} from "bun:test";
 import {compileWatchTimeline, WATCH_FPS, watchFrameTarget} from "../components/watch/watch-timeline";
+test("thought-only passes add only their captured thinking duration", () => {
+ const cues = [{key:"pass",baseDurationMs:0,thinkingOnly:true as const},{key:"speech",baseDurationMs:1000}];
+ expect(compileWatchTimeline(cues, () => null).map(cue => cue.key)).toEqual(["speech"]);
+ const timeline = compileWatchTimeline(cues, key => key === "pass" ? "No new point." : null);
+ expect(timeline[0]!.segments.map(segment => segment.kind)).toEqual(["thinking"]);
+ expect(timeline[0]!.endMs).toBe(5250);
+ expect(timeline[1]!.startMs).toBe(5250);
+});
 
 test("frames use elapsed presentation time, including positions inside unequal cues", () => {
   const timeline = compileWatchTimeline([{key: "short", baseDurationMs: 1000}, {key: "long", baseDurationMs: 9000}], () => null);

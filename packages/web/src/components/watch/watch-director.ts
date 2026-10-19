@@ -1,7 +1,7 @@
 /** One shared clock; game adapters own interpretation, ordering and speech timing. */
 import {thoughtTiming, thoughtContentTime, thoughtSpeechBoundaries, sampleThought, type ThoughtTiming, type SpeechBoundaries} from "./thinking-timing";
 export type {SpeechBoundaries} from "./thinking-timing";
-export interface WatchCue { key: string; baseDurationMs: number }
+export interface WatchCue { key: string; baseDurationMs: number; thinkingOnly?: true }
 export interface WatchPolicy<C extends WatchCue> {
   position(cue: C): number | null;
   speech(cue: C | null): SpeechBoundaries | null;
@@ -646,8 +646,11 @@ export class PresentationDirector<C extends WatchCue> {
       this.cueKeys = next.cues.map((cue) => cue.key);
     }
     if (next.cues[next.cursor]?.key !== this.state.cues[this.state.cursor]?.key) {
-      this.ready = true; this.thinkingPending = false; this.exactSeek = null;
+      this.ready = true; this.exactSeek = null;
       const cue = next.cues[next.cursor];
+      // A zero-speech thought shot must wait for its saved text before its timer
+      // can advance. The view releases this fence on success, absence or error.
+      this.thinkingPending = Boolean(cue?.thinkingOnly && this.thinkingEnabled && !this.thoughts.has(cue.key));
       const timing = cue ? thoughtTiming(this.getThinkingText(cue.key), this.policy.speech(cue)) : null;
       this.thought = timing && cue ? {key: cue.key, ...timing} : null;
     }

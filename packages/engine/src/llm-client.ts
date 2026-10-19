@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { lmStudioTimeoutMs } from "./local-inference";
 import {
   PROVIDER_PROFILES,
   type ModelReasoningPolicy,
@@ -31,6 +32,8 @@ export interface LlmClientConfig {
 
 /** One credential-free sealed manifest entry paired with its runtime client. */
 export interface LlmProviderRuntime {
+  /** Includes generation and any server-side queueing; concurrent dispatch stays enabled. */
+  localRequestTimeoutMs?: number;
   adapter: LlmProviderAdapter;
   catalogId: string;
   providerProfileId: ProviderProfileId;
@@ -386,7 +389,13 @@ export function createLlmClientFromEnv(
     : undefined;
   const flexProcessingEnabled = openAIServiceTier === "flex";
   const evidenceFetch = createProviderEvidenceFetch(
-    fetch,
+    providerProfileId === "lm-studio" ? (input, init) => {
+      // Non-streaming local inference may send no bytes for many minutes.
+      // Let the SDK/attempt deadline and cancellation own the wait, not Bun's
+      // independent five-minute socket idle timer.
+      const localInit: RequestInit & { timeout: false } = { ...init, timeout: false };
+      return fetch(input, localInit);
+    } : fetch,
     [apiKey, katanaKey, katanaSecret].filter((value): value is string =>
       Boolean(value),
     ),
@@ -399,7 +408,8 @@ export function createLlmClientFromEnv(
     client: new OpenAI({
       apiKey,
       ...(baseURL && { baseURL }),
-      ...(options.timeout !== undefined && { timeout: options.timeout }),
+      ...(options.timeout !== undefined ? { timeout: options.timeout }
+        : providerProfileId === "lm-studio" ? { timeout: lmStudioTimeoutMs(env) } : {}),
       ...(options.maxRetries !== undefined && { maxRetries: options.maxRetries }),
       fetch: providerFetch,
     }),
@@ -429,6 +439,7 @@ export function createLlmProviderRuntimesFromEnv(
     if (!config) {
       config = createLlmClientFromEnv(env, {
         ...options,
+        ...(entry.providerProfile.id === "lm-studio" && { timeout: lmStudioTimeoutMs(env) }),
         maxRetries: 0,
         providerProfileId: entry.providerProfile.id,
       }) ?? undefined;
@@ -442,6 +453,9 @@ export function createLlmProviderRuntimesFromEnv(
     }
     runtimes.push({
       adapter,
+      ...(entry.providerProfile.id === "lm-studio" && {
+        localRequestTimeoutMs: lmStudioTimeoutMs(env),
+      }),
       catalogId: entry.catalogId,
       providerProfileId: entry.providerProfile.id,
       modelId: entry.modelId,

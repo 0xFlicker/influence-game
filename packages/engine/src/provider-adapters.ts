@@ -1,4 +1,6 @@
+import { compactionOrientation, compactInvocation, contextSourceHash, contextSummaryArtifact, CONTEXT_SUMMARY_INSTRUCTIONS, CONTEXT_MAX_REVISIONS } from "./context-adaptation";
 import type OpenAI from "openai";
+import { DEFAULT_LM_STUDIO_TIMEOUT_MS } from "./local-inference";
 import type {
   ChatCompletion,
   ChatCompletionCreateParamsNonStreaming,
@@ -28,15 +30,18 @@ interface ProviderFunctionToolDefinition {
 }
 import {
   exactStructuredOutputRegistry,
+  formatLengthRepairNote,
   type ExactStructuredOutputArtifact,
   type ExactStructuredOutputResult,
 } from "./structured-output";
 import {
+  ProviderUnavailableError,
   classifyChatCompletionTerminalOutcome,
   classifyProviderError,
   classifyResponsesTerminalOutcome,
   type ProviderAttemptAccountingFacts,
   type ProviderAttemptRecord,
+  type LengthFeedback,
   type ProviderAttemptFailureOutcome,
   type ProviderCandidateValidation,
   type ProviderLogicalCallExecution,
@@ -62,6 +67,7 @@ export interface ExecuteModelInvocationOptions<TValue, TStructuredValue = unknow
     structuredValue: TStructuredValue | undefined,
   ): ProviderCandidateValidation<TValue>;
   onRetry?(record: ProviderAttemptRecord): Promise<void> | void;
+  onContextSummary?(outcome: ProviderModelOutcome, runtime: LlmProviderRuntime): void;
 }
 
 export interface ModelInvocationExecutionResult<TValue>
@@ -78,6 +84,10 @@ export interface ModelInvocationExecutionResult<TValue>
 export async function executeModelInvocation<TValue, TStructuredValue = unknown>(
   options: ExecuteModelInvocationOptions<TValue, TStructuredValue>,
 ): Promise<ModelInvocationExecutionResult<TValue>> {
+  // Capture renderer-owned spans before the first await; House/agents may prepare another call concurrently.
+  const initialInvocation = typeof options.invocation === "function" ? options.invocation() : options.invocation;
+  const contextSpans = initialInvocation.contextSpans?.map(span => ({ ...span }));
+  const compactionCharacter = initialInvocation.compactionCharacter && { ...initialInvocation.compactionCharacter };
   const compiledByAttempt = new Map<string, {
     invocation: ModelInvocation<TStructuredValue>;
     request: ProviderNativeRequest;
@@ -87,17 +97,56 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
     toolUsesJsonSchema: boolean;
   }>();
   let liveAcceptedOutcome: ProviderModelOutcome | undefined;
+  let latestLengthFeedback: LengthFeedback | undefined = await options.call.readLengthFeedback();
   let replayInvocation: ModelInvocation<TStructuredValue> | undefined;
   const result = await options.call.executeManifest<ProviderModelOutcome, TValue>({
     ...(options.beforeDispatch && { beforeDispatch: options.beforeDispatch }),
     entries: options.runtimes.map((runtime) => {
       const adapterRuntime = runtime as AdapterBackedRuntime;
-      const invocation = () =>
-        typeof options.invocation === "function"
-          ? options.invocation()
-          : options.invocation;
+      const invocation = () => ({ ...(typeof options.invocation === "function" ? options.invocation() : options.invocation), contextSpans, compactionCharacter });
+      // Repair instructions belong to this attempt, not the frozen context source.
+      // Append after compaction so retries retain both the source hash and exact draft.
+      const withRepair = (base: ModelInvocation<TStructuredValue>): ModelInvocation<TStructuredValue> => latestLengthFeedback
+        ? { ...base, messages: [...base.messages, { role: "system" as const, content: formatLengthRepairNote(latestLengthFeedback) }] }
+        : base;
+      let current: ModelInvocation<TStructuredValue> | undefined;
+      let context: import("./provider-execution").ProviderContextIdentity | undefined;
+      const prepare = async () => {
+        const original = invocation();
+        current = original;
+        if (options.call.coordinate.semantic.kind === "context_compaction") {
+          const attempts = await options.call.readContextAttempts();
+          if (attempts.some(attempt => attempt.catalogId === runtime.catalogId && attempt.outcome === "context_overflow")) {
+            throw new ProviderUnavailableError("Summary chunk previously exceeded this model's context", "context_overflow");
+          }
+          return;
+        }
+        if (!original.contextSpans?.length) return;
+        const sourceHash = contextSourceHash(original);
+        const attempts = await options.call.readContextAttempts();
+        if (attempts.some(attempt => attempt.sourceHash !== sourceHash)) throw new Error("Context source changed under the same logical call");
+        const revision = attempts.reduce((value, attempt) => Math.max(value, attempt.revision + (attempt.catalogId === runtime.catalogId && attempt.outcome === "context_overflow" ? 1 : 0)), 0);
+        if (revision > CONTEXT_MAX_REVISIONS) throw new ProviderUnavailableError("Context adaptation exhausted", "context_overflow");
+        context = { sourceHash, revision, maxAttempts: Math.max(1, Math.floor(options.maxAttempts)) };
+        if (!revision) return;
+        const orientation = compactionOrientation(original, options.call);
+        current = await compactInvocation({ invocation: original, call: options.call, sourceHash, revision,
+          summarize: async (call, text, maxCharacters) => {
+            const artifact = contextSummaryArtifact(maxCharacters);
+            const result = await executeModelInvocation({ call, runtimes: options.runtimes, maxAttempts: 2,
+              cancellationSignal: options.cancellationSignal, requestSignalFactory: options.requestSignalFactory,
+              invocation: { messages: [{ role: "system", content: CONTEXT_SUMMARY_INSTRUCTIONS },
+                { role: "user", content: JSON.stringify({ orientation, source: text, maxCharacters }) }],
+                result: { kind: "structured", artifact }, outputTokenLimit: 2048, reasoning: { effort: "low" } },
+              validate: (_outcome, value) => value ? { status: "usable", value } : { status: "unusable", kind: "malformed_output", message: "Missing context summary" },
+            });
+            if (result.liveOutcome) options.onContextSummary?.(result.liveOutcome, options.runtimes[result.manifestPosition]!);
+            return result.value.summary;
+          },
+        });
+      };
       const compile = (attemptOrdinal: number): ProviderNativeRequest => {
-        const semanticCall = invocation();
+        const semanticCall = withRepair(current ?? invocation());
         const prepared = adapterRuntime.adapter.compile(
           semanticCall,
           adapterRuntime,
@@ -110,6 +159,9 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
       };
       return {
         catalogId: runtime.catalogId,
+        beforeAttempt: prepare,
+        contextIdentity: () => context,
+        adaptContext: options.call.coordinate.semantic.kind !== "context_compaction" && Boolean(invocation().contextSpans?.length),
         compatibility: () =>
           adapterRuntime.adapter.validate(invocation(), adapterRuntime),
         preparedRequest: (attemptOrdinal) => {
@@ -126,13 +178,15 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
         dispatch: async ({ attemptOrdinal, requestOptions }) => {
           const key = `${runtime.catalogId}:${attemptOrdinal}`;
           const compiled = compiledByAttempt.get(key);
-          const semanticCall = compiled?.invocation ?? invocation();
+          const semanticCall = compiled?.invocation ?? withRepair(invocation());
           const prepared = compiled?.request ?? adapterRuntime.adapter.compile(
             semanticCall,
             adapterRuntime,
           );
           compiledByAttempt.delete(key);
-          const requestSignal = options.requestSignalFactory?.();
+          const requestSignal = runtime.providerProfileId === "lm-studio"
+            ? AbortSignal.timeout(runtime.localRequestTimeoutMs ?? DEFAULT_LM_STUDIO_TIMEOUT_MS)
+            : options.requestSignalFactory?.();
           const outcome = await adapterRuntime.adapter.dispatch(prepared, {
             ...requestOptions,
             ...((requestOptions.signal || requestSignal) && {
@@ -141,6 +195,7 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
                 : requestOptions.signal ?? requestSignal,
             }),
           });
+          if (context?.revision) outcome.invocationMessages = semanticCall.messages;
           invocationByOutcome.set(outcome, {
             invocation: semanticCall,
             toolUsesJsonSchema:
@@ -164,8 +219,12 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
                 outcome,
                 compiledOutcome.toolUsesJsonSchema,
               );
-              if (decoded.status === "failure") return decoded.validation;
+              if (decoded.status === "failure") {
+                if ("feedback" in decoded.validation && decoded.validation.feedback) latestLengthFeedback = decoded.validation.feedback;
+                return decoded.validation;
+              }
               const validation = options.validate(outcome, decoded.value);
+              if (validation.status === "unusable" && validation.feedback) latestLengthFeedback = validation.feedback;
               if (validation.status === "usable") liveAcceptedOutcome = outcome;
               return validation;
             }
@@ -180,9 +239,12 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
             outcome.text!,
           );
           if (decoded.status === "invalid") {
-            return structuredValidationFailure(decoded);
+            const validation = structuredValidationFailure(decoded);
+            if ("feedback" in validation && validation.feedback) latestLengthFeedback = validation.feedback;
+            return validation;
           }
           const validation = options.validate(outcome, decoded.value);
+          if (validation.status === "unusable" && validation.feedback) latestLengthFeedback = validation.feedback;
           if (validation.status === "usable") liveAcceptedOutcome = outcome;
           return validation;
         },
@@ -321,6 +383,7 @@ function structuredValidationFailure(
       ? "undecodable_structured_output"
       : "malformed_output",
     message: result.message,
+    ...(result.feedback && { feedback: result.feedback }),
   };
 }
 

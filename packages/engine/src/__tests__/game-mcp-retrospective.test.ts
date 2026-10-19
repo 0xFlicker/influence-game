@@ -7,6 +7,7 @@ import {Phase} from "../types";
 import {hashCanonicalJson} from "@influence/prompt-lab-protocol";
 import {createRetrospectiveDefinition,prepareRetrospectiveRequest,retrospectiveCompletionProof} from "../retrospective";
 import {completedWerewolfResultsFixture} from "../fixtures/werewolf-results";
+import { startWerewolf, werewolfConfig } from "../werewolf/rules";
 import {GameMcpReadModel} from "../game-mcp/read-model";
 import {createGameMcpServer} from "../game-mcp/server";
 import {simulationIdentity} from "../simulation-identity";
@@ -57,6 +58,15 @@ test("local Werewolf adapter validates the full tail and gives Mystery only its 
   expect(() => reader.readRetrospective("session",1,-1,13)).toThrow("bounded");
   writeFileSync(join(directory,"game-1-events.jsonl"),events.slice(0,-2).concat(events.at(-1)!).map(werewolfEvent => JSON.stringify({werewolfEvent})).join("\n")+"\n");
   expect(() => reader.readRetrospective("session",1)).toThrow();
+});
+test("local Werewolf history reads current v9 sessions through the owning versioned projector", () => {
+  const players = Array.from({ length: 6 }, (_, index) => ({ id: `v9-${index}`, name: `V9 ${index}`, personality: "Fixture", backstory: "", strategy: "", avatarUrl: null }));
+  const started = startWerewolf("local-v9", players, werewolfConfig("one_wolf"), "local-v9-seed");
+  const { reader } = corpus("werewolf", [started].map(werewolfEvent => ({ werewolfEvent })));
+  const history = reader.readWerewolfHistory("session", 1, "mystery");
+  expect(history.rulesVersion).toBe(9);
+  expect(history.moments[0]).toMatchObject({ entry: { kind: "phase", phase: "introduction" }, snapshot: { rulesVersion: 9 } });
+  expect(reader.readWerewolfProjection("session", 1).config.rulesVersion).toBe(9);
 });
 test("actual local MCP dispatch uses closed inspection arguments and explicit kind identity",async () => {
   const {root,directory} = corpus("influence",influence().map(canonicalEvent => ({canonicalEvent}))),server = createGameMcpServer(root);

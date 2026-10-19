@@ -1,7 +1,20 @@
 import {expect,test} from "bun:test";
 import {PresentationDirector,type PresentationClock,type WatchPolicy} from "../components/watch/watch-director";
-interface Cue {key:string;baseDurationMs:number;cursor:number}
+interface Cue {key:string;baseDurationMs:number;cursor:number;thinkingOnly?:true}
 const policy:WatchPolicy<Cue>={position:cue=>cue.cursor,speech:()=>null,isCatchUp:()=>false,acceptAtWatermark:()=>false,reconcile:cues=>cues};
+test("thought-only passes wait for saved text and advance immediately after camera return", () => {
+ const clock = new Clock(), director = new PresentationDirector({clock, policy, followTail:true});
+ director.load([{key:"pass",cursor:1,baseDurationMs:0,thinkingOnly:true},{key:"next",cursor:2,baseDurationMs:0,thinkingOnly:true}]);
+ director.play(); clock.tick(5000); expect(director.getSnapshot().activeKey).toBe("pass");
+ director.setThinking("pass","No new point.");
+ clock.tick(1300); expect(director.getThinkingFrame()?.focus).toBe(1);
+ clock.tick(2800); expect(director.getSnapshot().activeKey).toBe("pass");
+ clock.tick(250); expect(director.getThinkingFrame()?.opacity).toBe(0);
+ clock.tick(450); expect(director.getThinkingFrame()?.focus).toBeCloseTo(.5);
+ clock.tick(450); expect(director.getSnapshot().activeKey).toBe("next");
+ clock.tick(5000); expect(director.getSnapshot().waitingAtTail).toBe(false);
+ director.setThinking("next",null); clock.tick(0); expect(director.getSnapshot().waitingAtTail).toBe(true);
+});
 class Clock implements PresentationClock {
  time=0; id=0; timers=new Map<number,{at:number;callback:()=>void}>(); now(){return this.time;}
  setTimeout(callback:()=>void,delay:number){const id=++this.id;this.timers.set(id,{at:this.time+delay,callback});return id;}

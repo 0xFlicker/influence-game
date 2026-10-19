@@ -573,6 +573,38 @@ describe("LLMHouseInterviewer structured alliance huddles", () => {
     });
   });
 
+  it("retries huddle summaries with exact UTF-16 feedback for emoji-heavy asks", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const attempts: ProviderAttemptRecord[] = [];
+    const house = new LLMHouseInterviewer(makeOpenAIStub(requests, [
+      { content: huddleOutcomeContent({ ask: "😀".repeat(401) }) },
+      { content: huddleOutcomeContent({ ask: "A concise ask." }) },
+    ]), "test-model", { providerExecutionHooks: { onTerminal: record => { attempts.push(record); } } });
+    const result = await house.summarizeAllianceHuddle(makeHuddleOutcomeContext());
+    expect(result.ask).toBe("A concise ask.");
+    expect(attempts[0]?.outcome).toMatchObject({ kind: "malformed_output", feedback: {
+      field: "ask", measured: 802, allowed: 800, overage: 2, unit: "utf16_code_units",
+    } });
+    expect(requests).toHaveLength(2);
+    expect(JSON.stringify(requests[1]?.messages)).toContain("802 utf16_code_units, allowed 800 (over by 2)");
+  });
+
+  it("keeps the raw huddle schema cap for whitespace-heavy asks and reports the exact draft", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const attempts: ProviderAttemptRecord[] = [];
+    const rejectedAsk = `${" ".repeat(800)}A`;
+    const house = new LLMHouseInterviewer(makeOpenAIStub(requests, [
+      { content: huddleOutcomeContent({ ask: rejectedAsk }) },
+      { content: huddleOutcomeContent({ ask: "A concise ask." }) },
+    ]), "test-model", { providerExecutionHooks: { onTerminal: record => { attempts.push(record); } } });
+    const result = await house.summarizeAllianceHuddle(makeHuddleOutcomeContext());
+    expect(result.ask).toBe("A concise ask.");
+    expect(attempts[0]?.outcome).toMatchObject({ kind: "malformed_output", feedback: {
+      draft: rejectedAsk, field: "ask", measured: 801, allowed: 800, overage: 1, unit: "unicode_code_points",
+    } });
+    expect(JSON.stringify(requests[1]?.messages)).toContain("801 unicode_code_points, allowed 800 (over by 1)");
+  });
+
   it("replays canonical House values after provider null thinking is normalized away", async () => {
     const acceptedValues = new Map<string, { value: unknown; catalogId?: string }>();
     const liveRequests: Array<Record<string, unknown>> = [];
@@ -1680,8 +1712,8 @@ describe("LLMHouseInterviewer authored House summaries", () => {
       additionalProperties: false,
       required: ["publicSummary", "privateNarrativeNotebook"],
       properties: {
-        publicSummary: { type: ["string", "null"], minLength: 1, maxLength: 180 },
-        privateNarrativeNotebook: { type: ["string", "null"], minLength: 1, maxLength: 1_200 },
+        publicSummary: { type: ["string", "null"], minLength: 1, maxLength: 180, description: "At most 180 UTF-16 code units." },
+        privateNarrativeNotebook: { type: ["string", "null"], minLength: 1, maxLength: 1200, description: "At most 1200 UTF-16 code units." },
       },
     });
   });
@@ -1717,6 +1749,20 @@ describe("LLMHouseInterviewer authored House summaries", () => {
     expect(milestone).toContain("PRIVATE NOTEBOOK CANARY");
     expect(milestone).toContain("PRIVATE DIALOGUE CANARY");
     expect(milestone).toContain("PRIVATE DIARY CANARY");
+  });
+
+  it("records exact UTF-16 feedback for an oversized emoji summary draft", async () => {
+    const requests: Array<{ params: Record<string, unknown>; options?: Record<string, unknown> }> = [];
+    const attempts: ProviderAttemptRecord[] = [];
+    const house = new LLMHouseInterviewer(makeHouseSummaryOpenAIStub(requests, [
+      { structured: { publicSummary: "😀".repeat(91), privateNarrativeNotebook: null } },
+    ]), "test-model", { providerExecutionHooks: { onTerminal: record => { attempts.push(record); } } });
+    const result = await house.generateHouseSummary(makeHouseSummaryContext());
+    expect(result).toMatchObject({ status: "failed", reason: "provider_failure" });
+    expect(attempts[0]?.outcome).toMatchObject({ kind: "malformed_output", feedback: {
+      field: "publicSummary", measured: 182, allowed: 180, overage: 2, unit: "utf16_code_units",
+    } });
+    expect(requests).toHaveLength(1);
   });
 
   it("treats both nullable fields as an intentional model skip", async () => {

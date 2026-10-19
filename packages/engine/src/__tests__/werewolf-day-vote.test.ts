@@ -5,7 +5,7 @@ import { ProviderUnavailableError } from "../provider-execution";
 import { werewolfDecisionArtifact } from "../werewolf/agent";
 import { observeWerewolf, projectWerewolfView } from "../werewolf/observation";
 import { werewolfReportEntry } from "../werewolf/report";
-import { applyWerewolfEvent, nextWerewolfStep, replayWerewolf, startWerewolf, werewolfConfig, werewolfEvent } from "../werewolf/rules";
+import { applyWerewolfEvent, nextWerewolfStep, replayWerewolf, startWerewolf, legacyWerewolfConfig as werewolfConfig, werewolfEvent } from "../werewolf/rules";
 import { advanceWerewolf, werewolfFallback, type WerewolfAgent, type WerewolfStore } from "../werewolf/runner";
 
 async function setup(preset: "one_wolf" | "two_wolves" = "two_wolves", maxDays = 2) {

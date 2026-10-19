@@ -4,6 +4,7 @@ import { werewolfResultsFixture, type WerewolfResultScenario } from "../fixtures
 import { fixtureRetrospectiveCapacity, RetrospectiveStatementFixture } from "../fixtures/retrospective-agent";
 import { advanceWerewolf, runWerewolf, werewolfExecutionFinished, type WerewolfAgent, type WerewolfStore } from "../werewolf/runner";
 import { applyWerewolfEvent, replayWerewolf } from "../werewolf/rules";
+import { werewolfRetrospectivePerspective } from "../werewolf/retrospective-perspective";
 import { compileWerewolfRetrospective } from "../werewolf/retrospective";
 import { projectWerewolfView } from "../werewolf/observation";
 import { ProviderUnavailableError } from "../provider-execution";
@@ -59,7 +60,7 @@ test.each<WerewolfResultScenario>(["village", "wolves", "saved", "disagreement",
   for (const [ordinal, context] of fixture.contexts.entries()) {
     expect(context.game).toEqual(input!);
     expect(context.priorStatements.map(prior => prior.speech)).toEqual(state.retrospective!.statements.slice(0, ordinal).map(statement => statement.speech));
-    expect(context.self).toEqual(before.players.filter(player => player.id === context.request.actorId).map(({ id, name, personality, backstory, strategy }) => ({ id, name, personality, backstory, strategy }))[0]!);
+    expect(context.self).toEqual(before.players.filter(player => player.id === context.request.actorId).map(({ id, name, personality, backstory, strategy }) => ({ id, name, personality, backstory, strategy, werewolfPerspective: werewolfRetrospectivePerspective(events, before, id) }))[0]!);
     expect(state.retrospective!.statements[ordinal]!.requestHash).toBe(hashCanonicalJson(context.request));
   }
   expect(state.outcome).toEqual(before.outcome); expect(state.roles).toEqual(before.roles);

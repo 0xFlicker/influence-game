@@ -61,7 +61,7 @@ export function compileTiming(
     if (!cueKeys.has(key)) throw new Error(`Unknown override cue: ${key}`);
   let cursor = 0;
   return inputs.map((input) => {
-    if (!Number.isFinite(input.baseDurationMs) || input.baseDurationMs <= 0)
+    if (!Number.isFinite(input.baseDurationMs) || input.baseDurationMs < 0 || input.baseDurationMs === 0 && input.kind !== "thinking")
       throw new Error(`Invalid duration: ${input.key}`);
     const settings = { ...profile, ...profile.overrides[input.key] };
     const speech = input.speech;

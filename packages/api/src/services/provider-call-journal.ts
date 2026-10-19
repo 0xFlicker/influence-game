@@ -11,6 +11,7 @@ import {
   durableProviderSemanticCoordinateForSubcall,
   providerSemanticCoordinateHash,
   providerLogicalCallId,
+  providerActionCoordinate,
   ProviderCallBudgetExhaustedError,
   ProviderCircuitOpenError,
   resolveProviderManifestFromGameConfig,
@@ -32,7 +33,7 @@ import {
   type ProviderAttemptManifestMetadata,
   type WriteProviderAttemptEvidenceResult,
 } from "./private-trace-writer.js";
-import type { PrivateTraceStorageAdapter } from "./private-trace-storage.js";
+import { createPrivateTraceStorageAdapter, type PrivateTraceStorageAdapter } from "./private-trace-storage.js";
 import { sha256StableJson, stableJson } from "./stable-hash.js";
 import {
   assertProviderDispatchHealthInTransaction,
@@ -140,7 +141,8 @@ function assertCoordinate(
     throw new Error("Provider attempt owner epoch does not match journal authority");
   }
   assertProviderSemanticCoordinate(intent.coordinate.semantic);
-  const durableTurn = intent.coordinate.durableTurn;
+  const actionCoordinate = providerActionCoordinate(intent.coordinate);
+  const durableTurn = actionCoordinate.durableTurn;
   if (!durableTurn) {
     if (intent.coordinate.semantic.kind === "durable_turn") {
       throw new Error("Durable provider semantic coordinate requires a turn binding");
@@ -155,9 +157,9 @@ function assertCoordinate(
     throw new Error("Provider durable turn coordinate is invalid");
   }
   if (
-    intent.coordinate.semantic.kind !== "durable_turn"
-    || intent.coordinate.semantic.turnId !== durableTurn.turnId
-    || intent.coordinate.semantic.subcallSlot !== durableTurn.subcallSlot
+    actionCoordinate.semantic.kind !== "durable_turn"
+    || actionCoordinate.semantic.turnId !== durableTurn.turnId
+    || actionCoordinate.semantic.subcallSlot !== durableTurn.subcallSlot
   ) {
     throw new Error("Provider durable turn binding must match its semantic coordinate");
   }
@@ -216,6 +218,7 @@ async function assertDurableTurnSubcall(
   coordinate: ProviderLogicalCallCoordinate,
   access: "dispatch" | "replay",
 ): Promise<void> {
+  coordinate = providerActionCoordinate(coordinate);
   await assertWerewolfProviderTurn(tx, options.gameId, coordinate);
   const binding = coordinate.durableTurn;
   if (!binding) return;
@@ -414,6 +417,15 @@ async function allocateAttemptOrdinal(
   });
 }
 
+/** Reuse the existing explicit retrospective recovery generation for child retries. */
+async function contextRecoveryAt(tx: Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0],
+  options: CreateApiProviderExecutionHooksOptions, coordinate: ProviderLogicalCallCoordinate): Promise<string | undefined> {
+  if (coordinate.action !== "retrospective-statement") return undefined;
+  const [game] = await tx.select({ config: schema.games.config }).from(schema.games).where(eq(schema.games.id, options.gameId));
+  const resume = game ? (JSON.parse(game.config) as { retrospectiveResume?: { logicalCallId?: string; resumedAt?: string } }).retrospectiveResume : undefined;
+  return resume?.logicalCallId === logicalCallId(providerActionCoordinate(coordinate), options) ? resume.resumedAt : undefined;
+}
+
 async function reserveAttempt(
   db: DrizzleDB,
   options: CreateApiProviderExecutionHooksOptions,
@@ -427,7 +439,23 @@ async function reserveAttempt(
   await db.transaction(async (tx) => {
     await assertActiveOwner(tx, options);
     await assertDurableTurnSubcall(tx, options, intent.coordinate, "dispatch");
-    if (intent.coordinate.action === "retrospective-statement") {
+    if (intent.context || intent.coordinate.semantic.kind === "context_compaction") {
+      const identity = intent.context;
+      const limit = identity?.maxAttempts ?? 2;
+      if (!Number.isSafeInteger(limit) || limit < 1 || (identity && (
+        !/^sha256:[a-f0-9]{64}$/.test(identity.sourceHash) || !Number.isSafeInteger(identity.revision) || identity.revision < 0 || identity.revision > 3
+      ))) throw new Error("Invalid context attempt policy");
+      const recoveredAt = await contextRecoveryAt(tx, options, intent.coordinate);
+      const previous = await tx.select({ startedAt: schema.providerCallAttempts.startedAt, sourceHash: schema.providerCallAttempts.contextSourceHash,
+        revision: schema.providerCallAttempts.contextRevision, outcome: schema.providerCallAttempts.outcomeKind,
+        catalogId: schema.providerCallAttempts.catalogId }).from(schema.providerCallAttempts)
+        .where(eq(schema.providerCallAttempts.logicalCallId, callId));
+      if (identity && previous.some(row => row.sourceHash && row.sourceHash !== identity.sourceHash)) throw new Error("Context source identity conflict");
+      const matching = previous.filter(row => (!recoveredAt || row.startedAt >= recoveredAt) && row.catalogId === intent.preparedRequest.catalogId && (row.revision ?? 0) === (identity?.revision ?? 0));
+      if (matching.length >= limit || matching.some(row => row.outcome === "context_overflow")) {
+        throw new ProviderJournalEntryExhaustedError(intent.preparedRequest.catalogId!);
+      }
+    } else if (intent.coordinate.action === "retrospective-statement") {
       const [game] = await tx.select({ config: schema.games.config, gameKind: schema.games.gameKind }).from(schema.games).where(eq(schema.games.id, options.gameId));
       if (!game || !intent.preparedRequest.catalogId) throw new Error("Retrospective dispatch requires its sealed model identity");
       const resume = (JSON.parse(game.config) as { retrospectiveResume?: { logicalCallId?: string | null; retryAfterAttemptOrdinal?: number } }).retrospectiveResume;
@@ -461,6 +489,8 @@ async function reserveAttempt(
       attemptOrdinal: intent.attemptOrdinal,
       transportAttemptId: intent.attemptId,
       reservationHash: reservationHash(intent),
+      contextSourceHash: intent.context?.sourceHash,
+      contextRevision: intent.context?.revision,
       transport: intent.preparedRequest.transport,
       providerProfileId: intent.preparedRequest.providerProfileId,
       catalogId: intent.preparedRequest.catalogId,
@@ -531,6 +561,67 @@ async function readAcceptedResult(
   });
 }
 
+function lengthFeedbackFromEvidence(body: string): import("@influence/engine").LengthFeedback | undefined {
+  let parsed: unknown;
+  try { parsed = JSON.parse(body); } catch { throw new Error("Provider attempt evidence is not valid JSON"); }
+  if (!parsed || typeof parsed !== "object" || !("attempt" in parsed)) throw new Error("Provider attempt evidence is incomplete");
+  const attempt = (parsed as { attempt: Record<string, unknown> }).attempt;
+  const feedback = attempt.lengthFeedback;
+  if (!feedback || typeof feedback !== "object") return undefined;
+  const value = feedback as Record<string, unknown>;
+  if (typeof value.draft !== "string" || typeof value.field !== "string" || typeof value.measured !== "number"
+    || typeof value.allowed !== "number" || typeof value.overage !== "number"
+    || !["utf8_bytes", "utf16_code_units", "unicode_code_points"].includes(String(value.unit))) {
+    throw new Error("Provider attempt length feedback is invalid");
+  }
+  return value as unknown as import("@influence/engine").LengthFeedback;
+}
+
+async function readLengthFeedback(
+  db: DrizzleDB,
+  options: CreateApiProviderExecutionHooksOptions,
+  coordinate: ProviderLogicalCallCoordinate,
+): Promise<import("@influence/engine").LengthFeedback | undefined> {
+  assertCoordinate({ coordinate }, options);
+  const callId = logicalCallId(coordinate, options);
+  const rows = await db.transaction(async tx => {
+    await assertActiveOwner(tx, options);
+    await assertDurableTurnSubcall(tx, options, coordinate, "dispatch");
+    const attempts = await tx.select({ id: schema.providerCallAttempts.id, evidenceManifestId: schema.providerCallAttempts.evidenceManifestId,
+      startedAt: schema.providerCallAttempts.startedAt, attemptOrdinal: schema.providerCallAttempts.attemptOrdinal })
+      .from(schema.providerCallAttempts).where(and(eq(schema.providerCallAttempts.logicalCallId, callId), eq(schema.providerCallAttempts.outcomeKind, "malformed_output")))
+      .orderBy(sql`${schema.providerCallAttempts.startedAt} DESC`, sql`${schema.providerCallAttempts.attemptOrdinal} DESC`);
+    return attempts;
+  });
+  for (const attempt of rows) {
+    const [pending] = await loadPayloads(db.select().from(schema.providerAttemptEvidenceOutbox)
+      .where(eq(schema.providerAttemptEvidenceOutbox.attemptId, attempt.id)).limit(1));
+    if (pending?.body) {
+      const feedback = lengthFeedbackFromEvidence(pending.body);
+      if (feedback) return feedback;
+      continue;
+    }
+    if (!attempt.evidenceManifestId) continue;
+    const [manifest] = await db.select({ bucket: schema.gameEvidenceManifests.storageBucket, key: schema.gameEvidenceManifests.storageKey,
+      redactionStatus: schema.gameEvidenceManifests.redactionStatus, metadata: schema.gameEvidenceManifests.metadata }).from(schema.gameEvidenceManifests)
+      .where(eq(schema.gameEvidenceManifests.id, attempt.evidenceManifestId));
+    if (!manifest || manifest.redactionStatus !== "active" || !manifest.bucket || !manifest.key) continue;
+    const object = await (options.evidenceStorage ?? createPrivateTraceStorageAdapter()).getObject({ bucket: manifest.bucket, key: manifest.key });
+    const body = object.body ?? (object.bodyBytes ? new TextDecoder("utf-8", { fatal: true }).decode(object.bodyBytes) : undefined);
+    if (body) {
+      const expectedHash = manifest.metadata.sha256;
+      const actualHash = `sha256:${createHash("sha256").update(body).digest("hex")}`;
+      if (typeof expectedHash !== "string" || expectedHash !== actualHash
+        || typeof manifest.metadata.byteLength !== "number" || Buffer.byteLength(body, "utf8") !== manifest.metadata.byteLength) {
+        throw new Error("Provider attempt evidence failed its integrity check");
+      }
+      const feedback = lengthFeedbackFromEvidence(body);
+      if (feedback) return feedback;
+    }
+  }
+  return undefined;
+}
+
 async function terminalizeAttempt(
   db: DrizzleDB,
   options: CreateApiProviderExecutionHooksOptions,
@@ -551,21 +642,17 @@ async function terminalizeAttempt(
     throw new Error("Failed provider attempt cannot carry an accepted value");
   }
 
-  const evidenceState = record.outcome.kind === "rate_limit"
-    ? "aggregated"
-    : record.outcome.kind === "usable"
-      ? "not_required"
-      : "pending";
-  const preparedEvidence =
-    record.outcome.kind !== "usable" && record.outcome.kind !== "rate_limit"
-      ? prepareProviderAttemptEvidence({
+  // Accepted thinking is also stored separately for replay. Retain the complete
+  // sanitized response here so successful native reasoning and 429 evidence are
+  // not discarded. The private bucket/outbox path owns these immutable bodies.
+  const evidenceState = "pending";
+  const preparedEvidence = prepareProviderAttemptEvidence({
           gameId: options.gameId,
           ownerEpoch: options.ownerEpoch,
           logicalCallId: callId,
           attemptJournalId: attemptId,
           record,
-        })
-      : undefined;
+        });
   return db.transaction(async (tx) => {
     await assertActiveOwner(tx, options);
     await tx.execute(sql`
@@ -976,6 +1063,7 @@ function parseProviderAttemptManifestMetadata(
     "authentication",
     "configuration",
     "request_error",
+    "context_overflow",
     "cancellation",
     "empty_output",
     "malformed_output",
@@ -1017,9 +1105,10 @@ function parseProviderAttemptManifestMetadata(
   if (modelName !== nestedModelName) {
     throw new Error("Provider evidence model names do not match");
   }
-  const round = metadata.round === undefined
-    ? undefined
-    : requirePositiveInteger(metadata.round, "round");
+  const round = metadata.round;
+  if (round !== undefined && (typeof round !== "number" || !Number.isSafeInteger(round) || round < 0)) {
+    throw new Error("Provider evidence round must be a nonnegative safe integer");
+  }
   const createdAt = requireString(metadata.createdAt, "creation time");
   if (!Number.isFinite(Date.parse(createdAt))) {
     throw new Error("Provider evidence creation time is invalid");
@@ -1272,7 +1361,26 @@ export function createApiProviderExecutionHooks(
   options: CreateApiProviderExecutionHooksOptions,
 ): ProviderExecutionHooks {
   return {
+    onReadLengthFeedback: (coordinate) => readLengthFeedback(db, options, coordinate),
     onReadAccepted: (coordinate) => readAcceptedResult(db, options, coordinate),
+    onReadContextAttempts: async (coordinate) => {
+      assertCoordinate({ coordinate }, options);
+      return db.transaction(async tx => {
+        await assertActiveOwner(tx, options);
+        await assertDurableTurnSubcall(tx, options, coordinate, "dispatch");
+        const recoveredAt = await contextRecoveryAt(tx, options, coordinate);
+        const rows = await tx.select({ startedAt: schema.providerCallAttempts.startedAt, catalogId: schema.providerCallAttempts.catalogId,
+          sourceHash: schema.providerCallAttempts.contextSourceHash, revision: schema.providerCallAttempts.contextRevision,
+          outcome: schema.providerCallAttempts.outcomeKind }).from(schema.providerCallAttempts)
+          .where(eq(schema.providerCallAttempts.logicalCallId, logicalCallId(coordinate, options)));
+        return rows.flatMap(row => {
+          const sourceHash = row.sourceHash ?? (coordinate.semantic.kind === "context_compaction" ? coordinate.semantic.sourceHash : undefined);
+          const revision = row.revision ?? (coordinate.semantic.kind === "context_compaction" ? coordinate.semantic.revision : undefined);
+          return sourceHash && row.catalogId && revision !== undefined
+            ? [{ catalogId: row.catalogId, sourceHash, revision, outcome: recoveredAt && row.startedAt < recoveredAt ? null : row.outcome }] : [];
+        });
+      });
+    },
     onAllocateAttemptOrdinal: (coordinate) =>
       allocateAttemptOrdinal(db, options, coordinate),
     onReserve: (intent) => reserveAttempt(db, options, intent),

@@ -1,4 +1,4 @@
-import { applyWerewolfEvent, nextWerewolfStep, replayWerewolf, startWerewolf, werewolfConfig, werewolfEvent } from "../werewolf/rules";
+import { applyWerewolfEvent, nextWerewolfStep, replayWerewolf, startWerewolf, legacyWerewolfConfig as werewolfConfig, werewolfEvent } from "../werewolf/rules";
 import type { WerewolfDecision } from "../werewolf/types";
 import { describe, expect, test } from "bun:test";
 import { buildWerewolfTrailerManifest, validateWerewolfTrailerManifest, werewolfTrailerCueSheet } from "../postgame-media/werewolf-trailer-manifest";

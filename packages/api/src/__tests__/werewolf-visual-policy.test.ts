@@ -3,7 +3,7 @@ import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@inf
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
-import { advanceWerewolf, replayWerewolf, nextWerewolfStep, type WerewolfAgent } from "@influence/engine/werewolf";
+import { legacyWerewolfConfig, advanceWerewolf, replayWerewolf, nextWerewolfStep, type WerewolfAgent } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { claimWerewolfGame, createWerewolfGame, createWerewolfStore, readWerewolfEvents } from "../services/werewolf-games.js";
@@ -35,8 +35,12 @@ const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiv
   } };
 async function fixture(preset: "one_wolf" | "two_wolves" = "two_wolves", policy = "require_visuals") {
   const game = await createWerewolfGame(db, "operator", { preset, maxDays: 1, agentProfileIds: [] });
+  // These repair scenarios retain the released sealed-pack action boundaries.
+  const [started] = await readWerewolfEvents(db, game.id);
+  if (started?.type !== "werewolf.started") throw new Error("Missing start");
+  await db.update(schema.werewolfEvents).set({ event: { ...started, payload: { ...started.payload, config: legacyWerewolfConfig(preset, 1) } } }).where(eq(schema.werewolfEvents.gameId, game.id));
   const [row] = await db.select().from(schema.games).where(eq(schema.games.id, game.id));
-  await db.update(schema.games).set({ config: JSON.stringify({ ...JSON.parse(row!.config), visualMode: true, visualFailurePolicy: policy }) }).where(eq(schema.games.id, game.id));
+  await db.update(schema.games).set({ config: JSON.stringify({ ...JSON.parse(row!.config), rulesVersion: 8, visualMode: true, visualFailurePolicy: policy }) }).where(eq(schema.games.id, game.id));
   const claim = await claimWerewolfGame(db, game.id);
   if (!claim.ok)
     throw Error(claim.error);

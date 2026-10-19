@@ -628,6 +628,7 @@ export {
 } from "./house-personas";
 
 // LLM provider configuration
+export { lmStudioTimeoutMs } from "./local-inference";
 export {
   createFlexProcessingFetch,
   createLlmClientFromEnv,
@@ -668,6 +669,8 @@ export {
 export {
   ExactStructuredOutputRegistry,
   createExactStructuredOutputArtifact,
+  measureLengthFeedback,
+  formatLengthRepairNote,
   compileProviderNormalizer,
   exactStructuredOutputRegistry,
   validateExactStructuredValue,
@@ -700,6 +703,7 @@ export type {
   ProviderAttemptIntent,
   ProviderAttemptOutcome,
   ProviderAttemptRecord,
+  LengthFeedback,
   ProviderAttemptUsageFacts,
   ProviderAcceptedResult,
   ProviderAcceptedValueValidation,
@@ -720,6 +724,7 @@ export {
   canonicalProviderSemanticCoordinate,
   durableProviderLogicalCallId,
   providerLogicalCallId,
+  providerActionCoordinate,
   providerSemanticCoordinateHash,
 } from "./provider-execution";
 export {

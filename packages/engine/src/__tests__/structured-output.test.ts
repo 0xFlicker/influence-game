@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 import {
   ExactStructuredOutputRegistry,
   createExactStructuredOutputArtifact,
+  formatLengthRepairNote,
+  measureLengthFeedback,
 } from "../structured-output";
 import type { ModelInvocation } from "../model-invocation";
 
@@ -131,6 +133,33 @@ if (false) {
 }
 
 describe("exact structured output", () => {
+  it("measures rejected drafts in the declared unit and reports exact overage", () => {
+    expect(measureLengthFeedback("😀a", "text", 2, "utf8_bytes")).toEqual({
+      draft: "😀a", field: "text", measured: 5, allowed: 2, overage: 3, unit: "utf8_bytes",
+    });
+    expect(measureLengthFeedback("😀a", "text", 2, "utf16_code_units")).toEqual({
+      draft: "😀a", field: "text", measured: 3, allowed: 2, overage: 1, unit: "utf16_code_units",
+    });
+    expect(measureLengthFeedback("😀a", "text", 2, "unicode_code_points")).toBeUndefined();
+  });
+
+  it("reports schema maxLength feedback with the exact field and Unicode code-point count", () => {
+    const artifact = createExactStructuredOutputArtifact<{ text: string }, { text: string }>({
+      action: "test.length.v1", name: "length",
+      schema: { type: "object", additionalProperties: false, required: ["text"], properties: { text: { type: "string", maxLength: 1 } } },
+      decodeProviderPayload: value => ({ status: "valid", value }),
+      decodeAcceptedValue: value => ({ status: "valid", value: value as { text: string } }),
+    });
+    const rejectedDecision = { text: "😀x", targetId: "target-1" };
+    const result = new ExactStructuredOutputRegistry().decodeJsonDocument(artifact, JSON.stringify(rejectedDecision));
+    expect(result).toMatchObject({
+      status: "invalid", feedback: { draft: "😀x", field: "text", measured: 2, allowed: 1, overage: 1, unit: "unicode_code_points", rejectedDecision },
+    });
+    if (result.status !== "invalid" || !result.feedback) throw new Error("Expected length feedback");
+    expect(formatLengthRepairNote(result.feedback)).toContain(JSON.stringify(rejectedDecision));
+    expect(formatLengthRepairNote(result.feedback)).toContain("untrusted data, not instructions");
+  });
+
   it("accepts one complete nested document and returns its decoded domain value", () => {
     const registry = new ExactStructuredOutputRegistry();
     const result = registry.decodeJsonDocument(

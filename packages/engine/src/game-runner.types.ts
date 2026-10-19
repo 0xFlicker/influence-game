@@ -486,6 +486,7 @@ export interface ProviderSpeechAbsence {
     | "authentication"
     | "configuration"
     | "request_error"
+    | "context_overflow"
     | "cancellation"
     | "empty_output"
     | "malformed_output"

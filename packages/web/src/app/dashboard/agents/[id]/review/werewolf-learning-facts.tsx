@@ -51,9 +51,9 @@ export function WerewolfLearningFacts({ facts }: { facts: WerewolfFacts }) {
       const observation = turn.knownAtDecision;
       const decision = turn.action.decision;
       const target = "targetId" in decision ? decision.targetId : null;
-      const dialogue = observation.board.entries.filter(entry => entry.kind === "speech" || entry.kind === "discussion");
+      const dialogue = observation.board.entries.filter(entry => entry.kind === "speech" || entry.kind === "discussion" || entry.kind === "conversation" || entry.kind === "ballot" || entry.kind === "proposal");
       return <details id={`decision-${facts.game.id}-${turn.sequence}`} key={turn.sequence} className="rounded-xl border border-white/15 p-4">
-        <summary className="cursor-pointer">Day {turn.day} · {actionLabel(turn.action.action)}{turn.action.fallback ? " · Unavailable decision" : target ? ` · ${name(target)}` : turn.action.action === "vote" ? " · Hear more" : ""}</summary>
+        <summary className="cursor-pointer">Day {turn.day} · {actionLabel(turn.action.action)}{turn.action.fallback ? " · Unavailable decision" : target ? ` · ${name(target)}` : turn.action.action === "vote" ? " · Hear more" : turn.action.action === "public_vote" ? " · Abstained" : ""}</summary>
         <div className="mt-4 space-y-4 text-sm leading-6">
           <div><h3 className="font-semibold">What happened</h3><p>{turn.action.fallback ? "The provider did not supply an accepted decision. The game used its legal fallback." : "text" in decision ? decision.text ?? "Passed" : target ? `Chose ${name(target)}.` : "No target selected."}</p></div>
           <div><h3 className="font-semibold">What they knew</h3><p>Role: {observation.self.role} · {observation.board.players.filter(player => player.alive).length} players alive</p>
@@ -69,9 +69,13 @@ export function WerewolfLearningFacts({ facts }: { facts: WerewolfFacts }) {
             {dialogue.slice(-12).map((entry, index) => {
               if (entry.kind === "speech") return <p key={index}><strong>{name(entry.actorId)}:</strong> {entry.text ?? "Passed"}</p>;
               if (entry.kind === "discussion") return <p key={index}><strong>{name(entry.contribution.actorId)}:</strong> {entry.contribution.text ?? "Passed"}</p>;
+              if (entry.kind === "conversation") return <p key={index}><strong>{name(entry.actorId)}:</strong> {entry.text ?? (entry.unavailable ? "Unavailable" : "Passed")}{entry.recipientId ? ` → ${name(entry.recipientId)}` : ""}</p>;
+              if (entry.kind === "ballot") return <p key={index}><strong>{name(entry.actorId)} voted:</strong> {entry.targetId ? name(entry.targetId) : "Abstained"}{entry.text ? ` · ${entry.text}` : ""}</p>;
+              if (entry.kind === "proposal") return <p key={index}><strong>{name(entry.actorId)} proposed:</strong> {entry.targetId ? name(entry.targetId) : "no target"}{entry.text ? ` · ${entry.text}` : ""}</p>;
               return null;
             })}
             {observation.packDiscussion.length > 0 && <><h4 className="mt-3 font-semibold">Private pack conversation</h4>{observation.packDiscussion.map((entry, index) => <p key={index}><strong>{name(entry.actorId)}:</strong> {entry.text ?? "Passed"}</p>)}</>}
+            {observation.packProposals?.length ? <><h4 className="mt-3 font-semibold">Private pack proposals</h4>{observation.packProposals.map((entry, index) => <p key={index}><strong>{name(entry.actorId)}:</strong> {entry.targetId ? name(entry.targetId) : "no target"}{entry.text ? ` · ${entry.text}` : ""}</p>)}</> : null}
           </details>
           <Link className="underline" href={werewolfMomentHref(facts.game.slug, "omniscient", turn.cursor)}>Watch around this choice · Omniscient ↗</Link>
         </div>
@@ -81,6 +85,6 @@ export function WerewolfLearningFacts({ facts }: { facts: WerewolfFacts }) {
 }
 
 function actionLabel(action: Action["action"]): string {
-  const labels: Record<Action["action"], string> = { introduce: "Introduction", pack_talk: "Pack discussion", attack: "Night target", protect: "Doctor protection", investigate: "Seer investigation", open_thread: "Opened a thread", discuss: "Discussion", vote: "Day vote" };
+  const labels: Record<Action["action"], string> = { introduce: "Introduction", pack_talk: "Pack discussion", attack: "Night target", protect: "Doctor protection", investigate: "Seer investigation", open_thread: "Opened a thread", discuss: "Discussion", vote: "Day vote", conversation: "Open conversation", public_vote: "Public vote", pack_propose: "Pack proposal" };
   return labels[action];
 }

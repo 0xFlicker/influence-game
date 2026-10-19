@@ -20,15 +20,26 @@ export function werewolfCutSource(events: readonly WerewolfEvent[], slug: string
     if (entry.kind === "night") resolvedNights.add(entry.day);
     const nightPacket = entry.kind === "night" || entry.kind === "pack_vote"
       || (entry.kind === "speech" && entry.audience === "pack")
+      || entry.kind === "proposal"
       || (entry.kind === "discussion" && entry.contribution.thread === 1 && resolvedNights.has(entry.day));
-    const group = nightPacket ? `night:${entry.day}` : entry.kind === "discussion" ? `day:${entry.day}:thread:${entry.contribution.thread}`
+    const group = nightPacket ? `night:${entry.day}` : entry.kind === "conversation" ? `day:${entry.day}:conversation`
+      : entry.kind === "ballot" ? `day:${entry.day}:vote`
+      : entry.kind === "discussion" ? `day:${entry.day}:thread:${entry.contribution.thread}`
       : entry.kind === "vote" ? `day:${entry.day}:vote:${entry.result.thread}`
       : entry.kind === "speech" ? entry.purpose === "retrospective" ? "retrospective" : `${entry.day}:${entry.audience}` : `${entry.day}:${entry.kind}`;
     const base = { id: `w:${cursor}`, group, label: entry.kind === "speech" && entry.purpose === "retrospective" ? "Retrospective" : entry.day === 0 ? "Introductions" : `Day ${entry.day}`, position: cursor,
       replayHref: werewolfMomentHref(slug, audience, cursor) };
-    if (entry.kind === "speech" || entry.kind === "discussion") {
-      const actorId = entry.kind === "speech" ? entry.actorId : entry.contribution.actorId;
-      const text = entry.kind === "speech" ? entry.text : entry.contribution.text;
+    if (entry.kind === "ballot") {
+      const participantIds = [...new Set([entry.actorId, ...(entry.targetId ? [entry.targetId] : [])])];
+      evidence.push({ ...base, id: `${base.id}:choice`, participantIds, content: { kind: "fact", value: entry } });
+      if (entry.text?.trim()) evidence.push({ ...base, id: `${base.id}:speech`, participantIds: [entry.actorId], content: { kind: "dialogue", speakerId: entry.actorId, text: entry.text } });
+    } else if (entry.kind === "proposal") {
+      const participantIds = [...new Set([entry.actorId, ...(entry.targetId ? [entry.targetId] : [])])];
+      evidence.push({ ...base, id: `${base.id}:proposal`, participantIds, content: { kind: "fact", value: entry } });
+      if (entry.text?.trim()) evidence.push({ ...base, id: `${base.id}:speech`, participantIds: [entry.actorId], content: { kind: "dialogue", speakerId: entry.actorId, text: entry.text } });
+    } else if (entry.kind === "speech" || entry.kind === "discussion" || entry.kind === "conversation") {
+      const actorId = entry.kind === "discussion" ? entry.contribution.actorId : entry.actorId;
+      const text = entry.kind === "discussion" ? entry.contribution.text : entry.text;
       if (text?.trim()) evidence.push({ ...base, participantIds: [actorId], content: { kind: "dialogue", speakerId: actorId, text } });
     } else {
       // Public entries are allowlisted by the existing spectator projector.
