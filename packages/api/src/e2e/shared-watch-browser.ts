@@ -33,8 +33,17 @@ export async function seekWatch(page:Page,cursor:number,step=0,readable=true){
  const row = targetWindow.playback.find(row=>row.cursor===stop.cursor)!;
  const offset = !readable ? 0 : entry.kind === "ballot" || stop.key.includes(":ballot:") ? SOLO_READ_START_MS : speech ? entry.kind === "speech" && entry.purpose === "retrospective" ? SOLO_READ_START_MS : SCENE_READ_START_MS + row.durationsMs[step]! - sceneSpeechDurationMs(speech) : 0;
  const position = Math.ceil((stop.startMs + offset) * 30 / 1000);
+ const endPosition = Math.ceil((stop.startMs + row.durationsMs[step]!) * 30 / 1000);
  await page.evaluate(`(() => {const input=document.querySelector('input[aria-label="Replay position"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(String(position))});input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));})()`);
- await page.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')) >= ${cursor} && document.querySelector('input[aria-label="Replay position"]')?.value === "${position}" && !Array.from(document.querySelectorAll('[role="status"]')).some(node => node.textContent === "Preparing…")`);
+ // Playing seeks preserve the clock: by the next browser task the exact frame
+ // may already be gone. Require the requested cue/step, never an arbitrary later one.
+ await page.waitForFunction(`(() => {
+   const frame = Number(document.querySelector('input[aria-label="Replay position"]')?.value);
+   const playing = !!document.querySelector('button[aria-label="Pause replay"]');
+   return Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')) === ${stop.cursor}
+     && (playing ? frame >= ${position} && frame < ${endPosition} : frame === ${position})
+     && !Array.from(document.querySelectorAll('[role="status"]')).some(node => node.textContent === "Preparing…");
+ })()`);
 }
 /** Enter recorded play deliberately; do not wait for a cast-length-dependent opening. */
 export async function skipWerewolfOpening(page: Page) {

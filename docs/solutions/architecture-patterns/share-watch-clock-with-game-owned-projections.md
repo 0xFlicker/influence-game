@@ -36,6 +36,8 @@ Browser proofs should assert canonical action identity for shared URLs, not an a
 
 To test manual thinking reveal, seek the contribution's known start before advancing. Subtracting the inserted thinking duration from a paused autoplay position can land inside the readable thought on a slower runner; the next advance correctly dismisses it instead of revealing it.
 
+A playing seek preserves the clock, so a browser readiness poll can miss its exact target frame. Require the exact requested cue and its frame interval while playing; keep exact-frame equality when paused. Accepting any later cursor would hide a wrong seek.
+
 The thinking evidence loader provides context without a layout box. Solo and published-scene renderers place thought and speech inside their existing backdrop; responsive geometry reserves text space within that canvas. Werewolf expands a committed day checkpoint into uniquely keyed ballot subcues at the same source cursor, then its result cue. The shared vote renderer owns portrait collection; the game adapter owns receipt meaning and ordering. Abstention and unavailable receipts stay distinct, and neither creates speech.
 
 Thinking-first retains the thought through the entire spoken line and uses the speech fade-out boundaries, including manual dismissal. The thought position is independent of lazily measured speech height; portrait framing uses a stable text reservation while thinking is visible. This prevents the first speech measurement from moving the thought or headshot.
