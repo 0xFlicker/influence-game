@@ -348,6 +348,7 @@ export async function getGameWatchReplayFrames(
     if (
       options.presentationOnly
       && !viewerDecisionEvent
+      && event.eventType !== "retrospective.completed"
       && event.sequence !== lastPersistedSequence
     ) {
       continue;

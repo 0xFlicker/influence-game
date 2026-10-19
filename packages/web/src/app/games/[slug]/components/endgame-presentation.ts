@@ -8,6 +8,21 @@ export function buildEndgamePresentationCues(frames: readonly GameWatchReplayFra
   const eliminatedIds: string[] = [];
   let pendingElimination: { playerId: string; round: number } | null = null;
   for (const frame of frames) {
+    // Reuse the accepted result only after the full retrospective commits.
+    // Its own boundary keeps live append, seeking and exports in chronological order.
+    if (frame.eventType === "retrospective.completed") {
+      const winner = cues.findLast(cue => cue.kind === "endgame_winner");
+      if (winner) cues.push({ ...winner, key: `endgame:${frame.sequence}:results`,
+        canonicalSequence: frame.sequence, round: frame.round, phase: "RETROSPECTIVE" });
+      else {
+        const survivors = frame.players.filter(player => player.status === "alive");
+        if (survivors.length === 1) cues.push({source: "endgame", kind: "endgame_winner", key: `endgame:${frame.sequence}:results`,
+          canonicalSequence: frame.sequence, round: frame.round, phase: "RETROSPECTIVE", playerId: survivors[0]!.id, baseDurationMs: 4000,
+          standings: frame.players.map(player => ({playerId: player.id, placement: player.id === survivors[0]!.id ? 1
+            : eliminatedIds.length === frame.players.length - 1 && eliminatedIds.includes(player.id) ? frame.players.length - eliminatedIds.indexOf(player.id) : null})),
+          juryVoterIds: []});
+      }
+    }
     const event = frame.viewerDecisionEvent;
     if (!event) continue;
     if (event.type === "player.eliminated" && !eliminatedIds.includes(event.payload.playerId)) eliminatedIds.push(event.payload.playerId);

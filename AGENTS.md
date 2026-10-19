@@ -30,6 +30,7 @@
 - Werewolf rules, private observations, faction outcomes, and spectator projections live in `packages/engine/src/werewolf/`. See `docs/werewolf.md`. Do not route Werewolf through Influence elimination, jury, scoring, narration, or transcript parsing.
 - Agent Profiles share character identity and visuals. `strategyStyle` is Influence-only; `werewolfStrategyStyle` is Werewolf-only. Never substitute one game's notes for the other.
 - The immediate audience is the user and friends, so the bar is an enjoyable-to-watch game with legible strategy rather than a fully public-scale product.
+- Influence playback returns to the canonical winner and standings after `retrospective.completed`. Keep that completion boundary in presentation-only replay frames; unfinished retrospectives must not trigger the closing results screen.
 - Agent quality matters: agents need help exhibiting real strategy, remembering commitments, and making watchable social decisions.
 - The active `feat/inf-228-mingle-hardening` branch is an unfinished Mingle/open-room experiment intended for eventual merge to `main`. The UI mostly works, but it needs more testing and tuning before merge.
 
