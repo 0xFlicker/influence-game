@@ -40,6 +40,8 @@
  * bound to the replay cursor (sealed choices wait for resolution). Mystery never gets it.
  * Native provider reasoning traces remain separate diagnostics. Standalone canonical
  * logs contain target thinking; speech thinking lives in accepted provider evidence.
+ * Contestant rosters omit archetypes and image metadata; spectator exports retain them.
+ * Each contestant still receives its own character instructions.
  * Werewolf House characters freeze a Werewolf-specific archetype strategy at start.
  * Aggressor defaults preserve confrontational temperament and possible overcommitment;
  * evaluate faction benefit as well as survival when inspecting new-game behavior.

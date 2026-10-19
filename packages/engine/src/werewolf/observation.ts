@@ -93,7 +93,9 @@ export function projectWerewolfSnapshot(state: WerewolfState, audience: Werewolf
 }
 
 export interface WerewolfObservation {
-  board: WerewolfView;
+  board: Omit<WerewolfView, "players"> & {
+    players: Array<{ id: string; name: string; alive: boolean }>;
+  };
   turnReminder: WerewolfTurnReminder | null;
   self: { id: string; role: WerewolfRole; faction: WerewolfFaction; personality: string; backstory: string; strategy: string };
   packIds: string[];
@@ -112,7 +114,11 @@ export function observeWerewolf(state: WerewolfState, actorId: string): Werewolf
   const role = state.roles[actorId]!;
   const order = werewolfPackOrder(state);
   return {
-    board: projectWerewolfView(state, "mystery"),
+    board: {
+      ...projectWerewolfView(state, "mystery"),
+      // Contestants get game identities, not spectator character metadata.
+      players: state.players.map(p => ({ id: p.id, name: p.name, alive: state.aliveIds.includes(p.id) })),
+    },
     turnReminder: werewolfTurnReminder(state, actorId),
     self: { id: actorId, role, faction: role === "werewolf" ? "wolves" : "village", personality: player.personality, backstory: player.backstory, strategy: player.strategy },
     packIds: role === "werewolf" ? state.players.filter((p) => state.roles[p.id] === "werewolf").map((p) => p.id) : [],
