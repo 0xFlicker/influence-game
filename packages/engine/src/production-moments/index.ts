@@ -244,7 +244,7 @@ export function assembleProductionCatalog(input: {
       case "opening": emit({ kind: "opening" }, "opening", 0); break;
       case "influence-bridge": emit({ kind: "bridge" }, "bridge", 0); break;
       case "werewolf-action":
-        if (!["introduce", "discuss", "open_thread", "pack_talk", "attack", "protect", "investigate", "vote"].includes(source.action)) throw new Error("Unsupported Werewolf thinking action");
+        if (!["introduce", "discuss", "open_thread", "pack_talk", "attack", "protect", "investigate", "vote", "conversation", "public_vote", "pack_propose"].includes(source.action)) throw new Error("Unsupported Werewolf thinking action");
         if (input.audience === "omniscient") thought(source.thinking, source.defaultThinking, source.actorId);
         break;
       case "werewolf-event": assembleWerewolfParts(source, input.audience, emit); break;
@@ -264,7 +264,8 @@ function assembleWerewolfParts(source: Extract<ProductionSource, { kind: "werewo
     case "speech": if (entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, true, entry.actorId); break;
     case "discussion": if (!entry.contribution.unavailable && entry.contribution.text?.trim()) emit({ kind: "speech" }, "speech", 1, true, entry.contribution.actorId); break;
     case "conversation": if (!entry.unavailable && entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, true, entry.actorId); break;
-    case "ballot": if (!entry.unavailable && entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, true, entry.actorId); emit({ kind: "ballot", voterId: entry.actorId, purpose: "day", juryTiebreaker: false, revote: false }, "ballot", 2, true, entry.actorId); break;
+    // The spoken vote and its collection into the ledger share one replay cue.
+    case "ballot": emit({ kind: "ballot", voterId: entry.actorId, purpose: "day", juryTiebreaker: false, revote: false }, "ballot", 2, true, entry.actorId); break;
     case "proposal": if (audience === "omniscient" && !entry.unavailable && entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, false, entry.actorId); break;
     case "vote": {
       if (source.rulesVersion === 9) { emit({ kind: "tally" }, "tally", 0); emit({ kind: "outcome" }, "outcome", 1); break; }

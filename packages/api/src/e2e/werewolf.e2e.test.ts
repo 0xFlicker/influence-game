@@ -11,8 +11,9 @@ import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { legacyWerewolfConfig, runWerewolf, replayWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
-import {completedWerewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
+import {completedCurrentWerewolfFixture,completedWerewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
 import {projectWerewolfView} from "@influence/engine/werewolf/observation";
+import {defaultWerewolfStrategy} from "@influence/engine/werewolf/strategy";
 import sharp from "sharp";
 import type { StoredVisualShot } from "@influence/engine/visual-mode";
 import { readWerewolfPresentation } from "../services/werewolf-presentation.js";
@@ -179,15 +180,21 @@ test("CLI creates a v9 API Werewolf game and reports the public majority ballot"
       await seekWatch(viewer, ballotIndex + 1);
       const latestBallot = publicView.entries[ballotIndex];
       if (latestBallot?.kind !== "ballot") throw new Error("Expected a public ballot cursor");
-      await watchText(viewer, publicView.players.find(player => player.id === latestBallot.actorId)!.name);
-      await watchText(viewer, latestBallot.targetId ? `Vote: ${publicView.players.find(player => player.id === latestBallot.targetId)!.name}` : "Abstention");
-      await watchText(viewer, `Majority required: ${latestBallot.requiredVotes}`);
-      await watchText(viewer, "Totals:");
+      await viewer.waitForSelector(`[data-vote-presentation] [data-ledger-voter="${latestBallot.actorId}"]`);
+      const targetName = latestBallot.targetId ? publicView.players.find(player => player.id === latestBallot.targetId)!.name : "Abstain";
+      expect(await viewer.$eval(`[data-ledger-voter="${latestBallot.actorId}"]`, node => node.getAttribute("aria-label"))).toBe(`${publicView.players.find(player => player.id === latestBallot.actorId)!.name} → ${targetName}`);
+      expect(await viewer.evaluate('document.body.innerText.includes("Majority required:")')).toBe(false);
+      expect(await viewer.evaluate('document.body.innerText.includes("Remaining voters:")')).toBe(false);
       if (latestBallot.text) {
         await viewer.waitForSelector("[data-speech-bubble]");
         expect(await viewer.$eval("[data-speech-bubble]", node => node.textContent?.trim())).toContain(latestBallot.text);
       }
       await viewer.screenshot({ path: "/tmp/werewolf-v9-public-ballot.png" });
+      await viewer.goto(`${servers.webUrl}/games/${games[0]!.slug}/results`, { waitUntil: "domcontentloaded" });
+      await viewer.waitForSelector('[data-testid="werewolf-results"]');
+      const recap = await viewer.$eval('[data-testid="werewolf-results"]', node => node.textContent);
+      expect(recap).toContain("Day 1 · Public vote");
+      expect(recap).not.toContain("hear more");
     } finally { await viewer.close(); }
   } finally {
     cli.kill();
@@ -220,7 +227,7 @@ test("owner edits a game-specific strategy, creates Werewolf, and watches both v
       else void request.continue();
     });
     await page.evaluate("document.querySelector('#agent-werewolfStrategyStyle').nextElementSibling.open = true");
-    await text(page, "Keep a careful record of claims and votes");
+    await text(page, defaultWerewolfStrategy("observer"));
     await page.setViewport({ width: 390, height: 844 });
     await page.$eval("#agent-werewolfStrategyStyle", field => field.scrollIntoView({ block: "center" }));
     await page.screenshot({ path: "/tmp/werewolf-strategy-default-mobile.png", fullPage: false });
@@ -1600,3 +1607,27 @@ test("Decisions inspector keeps Mystery public and Omniscient thinking independe
     throw error;
   } finally { await page.close(); }
 }, 120_000);
+
+test("v9 abstentions keep their meaning in results and their original speech in Studio", async () => {
+  const id = "browser-v9-abstention-studio";
+  const events = await completedCurrentWerewolfFixture(id);
+  await database.db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"completed",startedAt:new Date().toISOString(),config:"{}"});
+  await database.db.insert(schema.werewolfEvents).values(events.map(event => ({gameId:id,sequence:event.sequence,event})));
+  const page = await createAuthenticatedPage(browser,admin.jwt,`${servers.webUrl}/games/${id}/results`);
+  try {
+    await page.waitForSelector('[data-testid="werewolf-results"]');
+    const ballots = await page.$$eval('[data-testid="werewolf-results"] tbody td:nth-child(2)', cells => cells.map(cell => cell.textContent));
+    expect(ballots).toHaveLength(5);
+    expect(ballots.every(ballot => ballot === "Abstain")).toBe(true);
+    await page.goto(`${servers.webUrl}/admin/production/games/${id}`, {waitUntil:"domcontentloaded"});
+    await page.waitForSelector('[data-composition-frame]');
+    const sourceResponse = await fetch(`${servers.apiUrl}/api/admin/production/games/${id}/source?audience=omniscient&thinking=on`, {headers:{Authorization:`Bearer ${admin.jwt}`}});
+    expect(sourceResponse.status).toBe(200);
+    const source = await sourceResponse.json() as {catalog:import("@influence/engine/production-moments").ProductionCatalog};
+    const moment = source.catalog.moments.find(moment => moment.part.kind === "ballot" && moment.part.purpose === "day")!;
+    await page.click(`[data-moment-id="${moment.id}"] > button:first-child`);
+    await page.waitForFunction(`document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment') === ${JSON.stringify(moment.id)}`);
+    await page.waitForSelector('[data-vote-presentation] [data-speech-bubble]');
+    expect(await page.$eval('[data-vote-presentation] [data-speech-bubble]', node => node.textContent)).toContain("I abstain.");
+  } finally {await page.close();}
+},60_000);

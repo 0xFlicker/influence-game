@@ -30,6 +30,10 @@ Player settings use the installed Floating UI portal/positioning primitives to e
 
 ## Shared scene composition
 
+Werewolf v9 public votes combine speech and portrait collection in one cue. The production catalog must likewise expose one ballot moment containing that original speech. Emitting a separate speech moment either makes binding ambiguous or repeats the whole ballot when both moments are selected. Cover real v9 events in both audiences, including private `conversation`, `pack_propose`, and `public_vote` thinking sources; historical fixtures alone cannot catch new-action catalog failures.
+
+Browser proofs should assert canonical action identity for shared URLs, not an autoplay frame sampled at a variable delay after navigation. Initialize unrelated analytics preferences explicitly. For exact Studio screenshot comparisons, await decoded media and settled measured layout as well as the committed frame number; keep pixel equality across independent seeks.
+
 The thinking evidence loader provides context without a layout box. Solo and published-scene renderers place thought and speech inside their existing backdrop; responsive geometry reserves text space within that canvas. Werewolf expands a committed day checkpoint into uniquely keyed ballot subcues at the same source cursor, then its result cue. The shared vote renderer owns portrait collection; the game adapter owns receipt meaning and ordering. Abstention and unavailable receipts stay distinct, and neither creates speech.
 
 Thinking-first retains the thought through the entire spoken line and uses the speech fade-out boundaries, including manual dismissal. The thought position is independent of lazily measured speech height; portrait framing uses a stable text reservation while thinking is visible. This prevents the first speech measurement from moving the thought or headshot.

@@ -157,7 +157,7 @@ afterAll(async () => {
 async function clickButton(page: Page, label: string, scope = "") {
   await clickStudioButton(page, label, scope);
 }
-async function captureStudioFrame(page: Page, frame: number, waitForPaint = true): Promise<Uint8Array> {
+async function captureStudioFrame(page: Page, frame: number): Promise<Uint8Array> {
   await page.bringToFront();
   await page.evaluate(`(() => {const input = document.querySelector('[aria-label="Seek frame"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(String(frame))}); input.dispatchEvent(new Event('input', {bubbles:true}));})()`);
   await page.waitForFunction(`Number(document.querySelector('[data-preview-frame]')?.getAttribute('data-preview-frame')) === ${frame} && Number(document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame')) === ${frame}`);
@@ -174,7 +174,28 @@ async function captureStudioFrame(page: Page, frame: number, waitForPaint = true
     }
     return true;
   })()`);
-  if (waitForPaint) await page.evaluate("new Promise(accept => requestAnimationFrame(() => requestAnimationFrame(() => accept())))");
+  // A committed frame can still be measuring its portrait, font and bubble
+  // layout after a Player remount. Require a settled layout before comparing
+  // pixels; keep the exact hash assertion across independent seeks below.
+  await page.evaluate(`(async () => {
+    let previous = '', stable = 0;
+    const deadline = performance.now() + 5000;
+    while (performance.now() < deadline) {
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      const canvas = document.querySelector('[data-composition-frame]');
+      if (!canvas || Number(canvas.getAttribute('data-composition-frame')) !== ${frame}) {stable = 0; continue;}
+      const ready = document.fonts.status === 'loaded' && Array.from(canvas.querySelectorAll('img')).every(image => image.complete && image.naturalWidth > 0);
+      const geometry = [canvas, ...canvas.querySelectorAll('*')].map(element => {
+        const box = element.getBoundingClientRect(), style = getComputedStyle(element);
+        return [box.x, box.y, box.width, box.height, style.opacity, style.transform];
+      });
+      const signature = canvas.innerHTML + JSON.stringify(geometry);
+      stable = ready && signature === previous ? stable + 1 : 0;
+      previous = signature;
+      if (stable >= 3) return;
+    }
+    throw new Error('Studio frame layout did not settle');
+  })()`);
   const png = await (await page.$("[data-composition-frame]"))!.screenshot();
   await Bun.write(temporaryPath(`production-studio-frame-${frame}-${Date.now()}.png`), png);
   return png;

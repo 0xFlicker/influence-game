@@ -12,7 +12,7 @@
     "simulate:werewolf:api": "cd packages/engine && bun run simulate:werewolf:api",
     "test": "bun run test:classification && bun run test:provider-free",
     "test:classification": "bun run scripts/check-test-classification.ts",
-    "test:provider-free": "bun test ./packages/engine ./packages/web ./packages/prompt-lab-protocol ./scripts --max-concurrency 1 --path-ignore-patterns='**/*live-provider*' --path-ignore-patterns='**/*external-smoke*'",
+    "test:provider-free": "bun test ./packages/engine ./packages/web ./packages/prompt-lab-protocol ./scripts --max-concurrency 1 --path-ignore-patterns='**/*live-provider*' --path-ignore-patterns='**/*external-smoke*' --path-ignore-patterns='**/docs/simulations/**'",
     "test:postgres": "cd packages/api && bun run test:postgres",
     "test:browser:api": "cd packages/api && bun run test:browser",
     "test:live-provider": "bun test --config=bunfig.manual.toml live-provider --max-concurrency 1",

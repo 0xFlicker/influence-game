@@ -31,7 +31,7 @@ export async function seekWatch(page:Page,cursor:number,step=0,readable=true){
   : entry.kind === "conversation" || entry.kind === "ballot" || entry.kind === "proposal" ? entry.text
   : null;
  const row = targetWindow.playback.find(row=>row.cursor===stop.cursor)!;
- const offset = !readable ? 0 : stop.key.includes(":ballot:") ? SOLO_READ_START_MS : speech ? entry.kind === "speech" && entry.purpose === "retrospective" ? SOLO_READ_START_MS : SCENE_READ_START_MS + row.durationsMs[step]! - sceneSpeechDurationMs(speech) : 0;
+ const offset = !readable ? 0 : entry.kind === "ballot" || stop.key.includes(":ballot:") ? SOLO_READ_START_MS : speech ? entry.kind === "speech" && entry.purpose === "retrospective" ? SOLO_READ_START_MS : SCENE_READ_START_MS + row.durationsMs[step]! - sceneSpeechDurationMs(speech) : 0;
  const position = Math.ceil((stop.startMs + offset) * 30 / 1000);
  await page.evaluate(`(() => {const input=document.querySelector('input[aria-label="Replay position"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(String(position))});input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));})()`);
  await page.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')) >= ${cursor} && document.querySelector('input[aria-label="Replay position"]')?.value === "${position}" && !Array.from(document.querySelectorAll('[role="status"]')).some(node => node.textContent === "Preparing…")`);
