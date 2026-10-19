@@ -16,6 +16,8 @@ Influence watch intelligence and alliance reads accept `throughEventSequence` an
 
 ## Werewolf decisions
 
+The API CLI separates the final competitive result from retrospective progress and completion. Paused epilogues include their saved reason and a permission-checked `--resume-retrospective --game ID` command; read-only reporting cannot restart them. An open circuit cannot produce gameplay fallback commitments, including a partially successful sealed ballot batch. Previously accepted decisions stay in the provider journal for replay. LM Studio retains concurrent dispatch with a configurable one-hour request timeout, including server-side queueing. These changes do not expose new private thinking: the API report still shows accepted speech, roles in Omniscient, and optional production notes; use the viewer's Show thinking/Decisions controls for captured thinking. Keep no `as any` and direct House calls.
+
 Daytime sealed ballots run concurrently using the same frozen public context. The API simulation report prints a checkpoint explanation, then live `N/M decisions ready` updates and a 30-second heartbeat while waiting. These counts include accepted journal results even before event commitment; they expose no voter identities, targets, abstentions or private reasoning. The live API returns `voteProgress` beside `view`, never inside contestant observations or historical cursor reads. All choices still reveal together. Restart gateway and worker to use the updated code; start a fresh rules-v8 game; no SQL migration is needed. Concurrent ballot execution does not change ballot call counts; actual latency still depends on the provider.
 
 

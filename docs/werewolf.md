@@ -208,7 +208,15 @@ bun run simulate:werewolf:api --max-days 2 --out /tmp/werewolf-smoke.txt
 
 # Read an existing game without creating another or making model calls.
 bun run simulate:werewolf:api --game GAME_ID_OR_SLUG --audience omniscient --transcript
+
+# After restoring the provider, explicitly resume an existing paused retrospective.
+# Requires resume_game_retrospective permission and an eligible operator role.
+bun run simulate:werewolf:api --game GAME_ID_OR_SLUG --resume-retrospective --audience omniscient --transcript
 ```
+
+A competitive result does not complete a rules-v8 game: all retrospective statements must also commit. The API CLI prints retrospective progress, reports a paused retrospective as incomplete with its saved failure reason, and exits unsuccessfully until execution completes. Watching again is read-only; it cannot resume a paused game. Explicit recovery reuses the current canonical frontier and preserves the outcome and accepted statements. A stale recovery request fails instead of retrying or creating a replacement game.
+
+An open provider circuit is never a gameplay fallback. Single turns and entire sealed ballot batches stop before committing fallback actions; already accepted provider results remain journaled. The API releases the owner while retaining `in_progress` so the existing recovery worker can reclaim the same frozen turn after provider health recovers. Required retrospective speech retains explicit paused recovery. LM Studio requests remain concurrent and allow an hour by default, configurable with `INFLUENCE_LM_STUDIO_TIMEOUT_MS` on the worker; cancellation still stops waiting immediately.
 
 Defaults: six House characters, one wolf and one Seer, `openai:gpt-6-luna`, low reasoning, a ten-day safety cap, and Mystery viewing. A normal match ends as soon as a faction wins; ten days is a ceiling rather than a target. This replaces the old two-day smoke default so a first game can reach its natural result. `--agent` is repeatable; empty seats use House characters with Werewolf archetype defaults. `--model-catalog`, `--reasoning-policy`, `--api-url`, `--web-url`, and `--timeout-seconds` are explicit overrides (`--help` lists them). `--api-url` is local loopback only. `--game` skips login and creation and renders an existing game from the beginning, then follows new entries.
 

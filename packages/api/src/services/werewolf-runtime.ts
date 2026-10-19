@@ -1,4 +1,4 @@
-import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity, RetrospectiveExecutionError } from "@influence/engine";
+import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity, RetrospectiveExecutionError, ProviderUnavailableError } from "@influence/engine";
 import { pauseRetrospectiveExecution } from "./game-retrospective-recovery.js";
 import { WerewolfVisualBlocked } from "./werewolf-visual-policy.js";
 import { createWerewolfVisualPreparation } from "./werewolf-visual-runtime.js";
@@ -81,8 +81,14 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
         return;
       }
       if (error instanceof WerewolfVisualBlocked) return;
-      if (!controller.signal.aborted) console.error(`[werewolf] Execution failed for ${gameId}`, error);
-      try { await releaseWerewolfOwner(db, gameId, ownerEpoch, !controller.signal.aborted && !heartbeatFailure); }
+      // A circuit cooldown is recoverable. Release ownership without advancing the
+      // frozen turn or suspending the game; the worker can reclaim after health recovery.
+      const circuitOpen = error instanceof ProviderUnavailableError && error.outcome.kind === "circuit_open";
+      if (!controller.signal.aborted) {
+        if (circuitOpen) console.warn(`[werewolf] Waiting for provider health recovery for ${gameId}; frozen turn preserved`);
+        else console.error(`[werewolf] Execution failed for ${gameId}`, error);
+      }
+      try { await releaseWerewolfOwner(db, gameId, ownerEpoch, !circuitOpen && !controller.signal.aborted && !heartbeatFailure); }
       catch (releaseError) { console.error(`[werewolf] Owner release failed for ${gameId}; lease expiry will fence recovery`, releaseError); }
     })
     .finally(() => { clearInterval(heartbeat); active.delete(gameId); });

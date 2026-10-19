@@ -25,6 +25,25 @@ async function authorizedDB() {
   return db;
 }
 
+test("a Werewolf gameplay circuit releases ownership without fallback advancement and can be reclaimed", async () => {
+  const db = await authorizedDB();
+  const game = await createWerewolfGame(db, "rt08-recovery-admin", { preset: "one_wolf", agentProfileIds: [], maxDays: 1 });
+  const claim = await claimWerewolfGame(db, game.id);
+  if (!claim.ok) throw Error(claim.error);
+  const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);
+  const before = await store.read();
+  const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,
+    async decide() { throw new ProviderUnavailableError("Local provider cooling down", "circuit_open"); } };
+  await startWerewolfRuntime(db, game.id, claim.claim.ownerEpoch, agent);
+  for (let i = 0; i < 200 && activeWerewolfCount(); i++) await Bun.sleep(10);
+  expect(activeWerewolfCount()).toBe(0);
+  expect(await store.read()).toEqual(before);
+  const [catalog] = await db.select().from(schema.games).where(eq(schema.games.id, game.id));
+  expect(catalog!.status).toBe("in_progress");
+  const next = await claimWerewolfGame(db, game.id);
+  expect(next.ok).toBe(true);
+}, 10_000);
+
 test("an existing initialization suspension resumes a large account into a complete retrospective", async () => {
   const db = await authorizedDB(), gameId = await insertGame(db, { status: "in_progress" });
   await db.update(schema.games).set({ transcriptCaptureVersion: 1, formalSpeechCaptureVersion: 1 }).where(eq(schema.games.id, gameId));

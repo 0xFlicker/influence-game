@@ -18,6 +18,7 @@ import {
 import {
   executeProviderHealthProbe,
   probeDueTransientProviderHealth,
+  startProviderHealthProbeRuntime,
   type ProviderHealthProbeTarget,
 } from "./provider-health-probe.js";
 
@@ -26,6 +27,52 @@ describe("provider health probes", () => {
 
   beforeEach(async () => {
     db = await setupTestDB();
+  });
+
+  test("local thinking probes use the configured deadline and a lease that outlives it", async () => {
+    const scopeKey = "entry:lm-studio:test-local";
+    await db.transaction(tx => recordProviderHealthOutcomeInTransaction(tx, {
+      providerProfileId: "lm-studio", catalogId: "lm-studio:test-local",
+      outcome: { kind: "configuration", message: "fixture", retryable: false },
+    }));
+    const result = await executeProviderHealthProbe(db, { scopeKey, owner: "test", allowBeforeCooldown: true }, {
+      env: { INFLUENCE_LM_STUDIO_TIMEOUT_MS: "7200000" },
+      createClientFromEnv: (_env, options) => {
+        expect(options?.timeout).toBe(7_200_000);
+        return {
+          client: { chat: { completions: { create: async (body: { max_tokens: number }) => {
+            expect(body.max_tokens).toBe(2048);
+            const [row] = await db.select().from(schema.providerHealthStates).where(eq(schema.providerHealthStates.scopeKey, scopeKey));
+            expect(Date.parse(row!.probeLeaseExpiresAt!) - Date.now()).toBeGreaterThan(7_200_000);
+            return { id: "local-probe", choices: [{ finish_reason: "stop", message: { role: "assistant", content: "OK" } }] };
+          } } } } as unknown as LlmClientConfig["client"], apiKeySource: "test", providerLabel: "local", providerProfileId: "lm-studio",
+          toolChoiceMode: "required", flexProcessingEnabled: false,
+        };
+      },
+    });
+    expect(result.status.state).toBe("closed");
+  });
+
+  test("a long probe does not block runtime startup and stop cancels its transport", async () => {
+    await openAuthCircuit(db);
+    await db.update(schema.providerHealthStates).set({ reason: "transport_timeout", cooldownUntil: new Date(0).toISOString() });
+    let ready!: () => void;
+    const started = new Promise<void>(resolve => { ready = resolve; });
+    const runtime = await startProviderHealthProbeRuntime(db, {
+      createClientFromEnv: () => ({
+        client: { responses: { create: async (_body: unknown, options: { signal: AbortSignal }) => {
+          ready();
+          return new Promise((_, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
+        } } } as unknown as LlmClientConfig["client"], apiKeySource: "test", providerLabel: "OpenAI", providerProfileId: "openai",
+        toolChoiceMode: "required", flexProcessingEnabled: false,
+      }),
+    });
+    try {
+      await started;
+      const sweep = runtime.runOnce();
+      runtime.stop();
+      expect(await sweep).toMatchObject({ attempted: 1, remainedOpen: 1 });
+    } finally { runtime.stop(); }
   });
 
   test("a requested usable probe closes the current auth breaker", async () => {

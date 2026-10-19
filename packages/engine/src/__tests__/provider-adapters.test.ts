@@ -158,6 +158,51 @@ async function rejectedProviderAttempt(
 }
 
 describe("provider-native adapters", () => {
+  it("keeps local requests concurrent and uses the local deadline instead of a hosted action deadline", async () => {
+    const signals: AbortSignal[] = [];
+    const releases: (() => void)[] = [];
+    const client = { chat: { completions: { create: async (_body: unknown, options: { signal: AbortSignal }) => {
+      signals.push(options.signal);
+      await new Promise<void>(resolve => releases.push(resolve));
+      return { id: "local", choices: [{ finish_reason: "tool_calls", message: { role: "assistant", content: null,
+        tool_calls: [{ id: "vote", type: "function", function: { name: "cast_vote", arguments: '{"target":"Atlas"}' } }] } }] };
+    } } } } as unknown as OpenAI;
+    const local: LlmProviderRuntime = { ...runtime("katana:grok-4-5", client),
+      adapter: createProviderAdapter("lm-studio", client), providerProfileId: "lm-studio", catalogId: "lm-studio:test",
+      localRequestTimeoutMs: 60_000, toolChoiceMode: "required",
+    };
+    const run = (slot: number) => executeModelInvocation({
+      call: new ProviderExecutionCoordinator().startCall({ actor: { name: "Dax", role: "player" }, action: voteArtifact.action,
+        semantic: { version: 1, kind: "phase_call", phase: Phase.VOTE, round: 0, canonicalEventSequence: 0, callSlot: slot } }),
+      runtimes: [local], invocation, maxAttempts: 1,
+      requestSignalFactory: () => { throw new Error("Hosted two-minute deadline must not apply to LM Studio"); },
+      validate: (_outcome, value) => value ? { status: "usable", value } : { status: "unusable", kind: "malformed_output", message: "missing" },
+    });
+    const results = Promise.all([run(1), run(2)]);
+    for (let i = 0; i < 100 && releases.length < 2; i++) await Bun.sleep(1);
+    expect(signals).toHaveLength(2);
+    expect(signals.every(signal => !signal.aborted)).toBe(true);
+    for (const release of releases) release();
+    expect((await results).map(result => result.value)).toEqual([{ target: "Atlas" }, { target: "Atlas" }]);
+  });
+
+  it.each(["timeout", "cancel"] as const)("local requests still honor %s", async mode => {
+    const controller = new AbortController();
+    const client = { chat: { completions: { create: async (_body: unknown, options: { signal: AbortSignal }) => {
+      const pending = new Promise((_, reject) => {
+        options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
+      });
+      if (mode === "cancel") controller.abort(new DOMException("Worker stopped", "AbortError"));
+      return pending;
+    } } } } as unknown as OpenAI;
+    const local: LlmProviderRuntime = { ...runtime("katana:grok-4-5", client), adapter: createProviderAdapter("lm-studio", client),
+      providerProfileId: "lm-studio", catalogId: "lm-studio:test", localRequestTimeoutMs: mode === "timeout" ? 5 : 60_000 };
+    const call = new ProviderExecutionCoordinator().startCall({ actor: { name: "Dax", role: "player" }, action: voteArtifact.action,
+      semantic: { version: 1, kind: "phase_call", phase: Phase.VOTE, round: 0, canonicalEventSequence: 0, callSlot: 1 } });
+    await expect(executeModelInvocation({ call, runtimes: [local], invocation, maxAttempts: 1, cancellationSignal: controller.signal,
+      validate: () => ({ status: "unusable", kind: "malformed_output", message: "unexpected response" }),
+    })).rejects.toMatchObject({ outcome: { kind: mode === "timeout" ? "transport_timeout" : "cancellation" } });
+  });
   it("decodes the same exact tool arguments through native tools and json_schema compatibility", async () => {
     const nativeClient = {
       chat: {

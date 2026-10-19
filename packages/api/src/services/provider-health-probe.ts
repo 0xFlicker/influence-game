@@ -7,6 +7,7 @@ import {
   executeModelInvocation,
   gameReadyCatalogEntries,
   modelCatalogEntryById,
+  lmStudioTimeoutMs,
   type LlmClientConfig,
   type ProviderAttemptOutcome,
   type ProviderAttemptRecord,
@@ -20,6 +21,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import {
   acquireProviderHealthProbe,
+  DEFAULT_PROVIDER_HEALTH_POLICY,
   completeProviderHealthProbe,
   listProviderHealth,
   type ProviderHealthProbeLease,
@@ -48,6 +50,7 @@ export interface ProviderHealthProbeObservation {
 }
 
 export interface ProviderHealthProbeDependencies {
+  signal?: AbortSignal;
   runProbe?: (
     target: ProviderHealthProbeTarget,
     lease: ProviderHealthProbeLease,
@@ -68,14 +71,19 @@ export async function executeProviderHealthProbe(
   },
   dependencies: ProviderHealthProbeDependencies = {},
 ): Promise<ProviderHealthProbeResult> {
+  dependencies.signal?.throwIfAborted();
   const target = await resolveProviderHealthProbeTarget(db, input.scopeKey);
-  const lease = await acquireProviderHealthProbe(db, input);
+  const env = dependencies.env ?? process.env;
+  const lease = await acquireProviderHealthProbe(db, input, target.providerProfileId === "lm-studio"
+    ? { ...DEFAULT_PROVIDER_HEALTH_POLICY, probeLeaseMs: lmStudioTimeoutMs(env) + 10_000 }
+    : DEFAULT_PROVIDER_HEALTH_POLICY);
   const runProbe = dependencies.runProbe
     ?? ((candidate, currentLease) => runLiveProviderHealthProbe(
       candidate,
       currentLease,
-      dependencies.env ?? process.env,
+      env,
       dependencies.createClientFromEnv ?? createLlmClientFromEnv,
+      dependencies.signal,
     ));
   let observation: ProviderHealthProbeObservation;
   try {
@@ -83,9 +91,9 @@ export async function executeProviderHealthProbe(
   } catch (error) {
     observation = {
       outcome: {
-        kind: "service_error",
+        kind: dependencies.signal?.aborted ? "cancellation" : "service_error",
         message: error instanceof Error ? error.message : "Provider health probe failed",
-        retryable: true,
+        retryable: !dependencies.signal?.aborted,
       },
     };
   }
@@ -107,7 +115,7 @@ export async function probeDueTransientProviderHealth(
   let closed = 0;
   let remainedOpen = 0;
   let skipped = 0;
-  for (const status of due) {
+  await Promise.all(due.map(async status => {
     try {
       const result = await executeProviderHealthProbe(db, {
         scopeKey: status.scopeKey,
@@ -121,7 +129,7 @@ export async function probeDueTransientProviderHealth(
       // expected; the durable scope remains authoritative and retryable.
       skipped += 1;
     }
-  }
+  }));
   return { attempted: due.length, closed, remainedOpen, skipped };
 }
 
@@ -129,10 +137,12 @@ export async function startProviderHealthProbeRuntime(
   db: DrizzleDB,
   options: ProviderHealthProbeDependencies & { intervalMs?: number } = {},
 ): Promise<{ runOnce: () => ReturnType<typeof probeDueTransientProviderHealth>; stop: () => void }> {
+  const controller = new AbortController();
+  const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
   let inFlight: ReturnType<typeof probeDueTransientProviderHealth> | null = null;
   const runOnce = () => {
     if (inFlight) return inFlight;
-    const current = probeDueTransientProviderHealth(db, options);
+    const current = probeDueTransientProviderHealth(db, { ...options, signal });
     inFlight = current;
     void current.then(
       () => { if (inFlight === current) inFlight = null; },
@@ -140,12 +150,14 @@ export async function startProviderHealthProbeRuntime(
     );
     return current;
   };
-  await runOnce();
+  const reportFailure = (error: unknown) => console.error("[provider-health] Probe sweep failed", error);
+  // A local probe can take an hour; it must not block worker startup.
+  void runOnce().catch(reportFailure);
   const timer = setInterval(() => {
-    void runOnce().catch(() => undefined);
+    void runOnce().catch(reportFailure);
   }, options.intervalMs ?? PROVIDER_PROBE_INTERVAL_MS);
   timer.unref();
-  return { runOnce, stop: () => clearInterval(timer) };
+  return { runOnce, stop: () => { clearInterval(timer); controller.abort(); } };
 }
 
 async function resolveProviderHealthProbeTarget(
@@ -185,18 +197,18 @@ async function runLiveProviderHealthProbe(
   lease: ProviderHealthProbeLease,
   env: NodeJS.ProcessEnv,
   createClient: NonNullable<ProviderHealthProbeDependencies["createClientFromEnv"]>,
+  signal?: AbortSignal,
 ): Promise<ProviderHealthProbeObservation> {
   const invocation: ModelInvocation = {
     messages: [{ role: "user", content: "Reply with OK." }],
     result: { kind: "text" },
-    // Meta Muse reasoning models can spend ~500 tokens before visible text,
-    // so the usual 16-token probe would report a false length failure.
-    outputTokenLimit: target.providerProfileId === "meta-muse" ? 2_048 : 16,
+    // Thinking models need room for reasoning before their visible OK.
+    outputTokenLimit: target.providerProfileId === "meta-muse" || target.providerProfileId === "lm-studio" ? 2_048 : 16,
   };
   const config = createClient(env, {
     providerProfileId: target.providerProfileId,
     maxRetries: 0,
-    timeout: PROVIDER_PROBE_TIMEOUT_MS,
+    timeout: target.providerProfileId === "lm-studio" ? lmStudioTimeoutMs(env) : PROVIDER_PROBE_TIMEOUT_MS,
     flexProcessing: false,
   });
   if (!config) {
@@ -213,6 +225,7 @@ async function runLiveProviderHealthProbe(
   const catalog = modelCatalogEntryById(target.catalogId);
   if (!catalog) throw new Error(`Provider health probe model ${target.catalogId} is unavailable`);
   const runtime: LlmProviderRuntime = {
+    ...(target.providerProfileId === "lm-studio" && { localRequestTimeoutMs: lmStudioTimeoutMs(env) }),
     adapter: createProviderAdapter(target.providerProfileId, config.client),
     catalogId: target.catalogId,
     providerProfileId: target.providerProfileId,
@@ -249,6 +262,7 @@ async function runLiveProviderHealthProbe(
   try {
     await executeModelInvocation({
       call,
+      cancellationSignal: signal,
       runtimes: [runtime],
       invocation,
       maxAttempts: 1,

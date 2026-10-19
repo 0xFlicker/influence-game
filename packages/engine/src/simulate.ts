@@ -113,10 +113,15 @@
  *     --model-catalog openai:gpt-5-mini --flex --llm-timeout-sec 900
  *
  * Local LM Studio (load the model and serve 127.0.0.1:1234 first):
+ * Shared LM Studio runtimes keep concurrent dispatch and allow one hour per
+ * request, including server queueing (INFLUENCE_LM_STUDIO_TIMEOUT_MS overrides).
+ * API Werewolf reports competitive results separately from epilogue completion;
+ * --game only watches, while --resume-retrospective requests authorized recovery.
+ * Keep exact output validation, no `as any`, and direct House calls.
  *   INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
  *     bun run simulate:local -- \
  *     --games 1 --players 8 --max-rounds 2 --variant mingle --chatty \
- *     --model <lm-studio-model-id> --llm-timeout-sec 300
+ *     --model <lm-studio-model-id>
  *
  * Inspect the new batch summary.md, game-1.txt, and game-1-turns.jsonl. Flex
  * summaries include tier-aware run spend plus one all-model cost comparison.

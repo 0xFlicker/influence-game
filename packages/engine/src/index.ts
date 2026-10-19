@@ -628,6 +628,7 @@ export {
 } from "./house-personas";
 
 // LLM provider configuration
+export { lmStudioTimeoutMs } from "./local-inference";
 export {
   createFlexProcessingFetch,
   createLlmClientFromEnv,

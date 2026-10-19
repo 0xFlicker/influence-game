@@ -93,7 +93,7 @@ export async function advanceWerewolf(store: WerewolfStore, agent: WerewolfAgent
           request, observation: observeWerewolf(state, request.actorId), signal });
       } catch (error) {
         signal?.throwIfAborted();
-        if (!(error instanceof ProviderUnavailableError)) throw error;
+        if (!(error instanceof ProviderUnavailableError) || error.outcome.kind === "circuit_open") throw error;
         decision = werewolfFallback({ ...state, sequence: sequence - 1 }, request);
         fallback = "provider_unavailable";
       }
@@ -126,7 +126,7 @@ export async function advanceWerewolf(store: WerewolfStore, agent: WerewolfAgent
         request: step.request, observation: observeWerewolf(state, step.request.actorId), signal });
     } catch (error) {
       signal?.throwIfAborted();
-      if (!(error instanceof ProviderUnavailableError)) throw error;
+      if (!(error instanceof ProviderUnavailableError) || error.outcome.kind === "circuit_open") throw error;
       decision = werewolfFallback(state, step.request);
       fallback = "provider_unavailable";
     }

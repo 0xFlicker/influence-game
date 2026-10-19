@@ -1,5 +1,6 @@
 import { compactionOrientation, compactInvocation, contextSourceHash, contextSummaryArtifact, CONTEXT_SUMMARY_INSTRUCTIONS, CONTEXT_MAX_REVISIONS } from "./context-adaptation";
 import type OpenAI from "openai";
+import { DEFAULT_LM_STUDIO_TIMEOUT_MS } from "./local-inference";
 import type {
   ChatCompletion,
   ChatCompletionCreateParamsNonStreaming,
@@ -175,7 +176,9 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
             adapterRuntime,
           );
           compiledByAttempt.delete(key);
-          const requestSignal = options.requestSignalFactory?.();
+          const requestSignal = runtime.providerProfileId === "lm-studio"
+            ? AbortSignal.timeout(runtime.localRequestTimeoutMs ?? DEFAULT_LM_STUDIO_TIMEOUT_MS)
+            : options.requestSignalFactory?.();
           const outcome = await adapterRuntime.adapter.dispatch(prepared, {
             ...requestOptions,
             ...((requestOptions.signal || requestSignal) && {

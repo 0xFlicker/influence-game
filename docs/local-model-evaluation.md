@@ -189,7 +189,7 @@ cd packages/engine
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- \
   --games 1 --players 8 --max-rounds 2 --variant mingle --chatty \
-  --model <lm-studio-model-id> --llm-timeout-sec 300
+  --model <lm-studio-model-id>
 ```
 
 Choose one recipe; do not run both unless comparing providers. Inspect the new `packages/engine/docs/simulations/batch-*/summary.md`, `game-1.txt`, and `game-1-turns.jsonl`, then record the provider/model, batch path, and each check as pass or fail:
@@ -312,6 +312,22 @@ For local API durable-run inspection, run the Trace MCP from the API package:
 Use this when the interesting run happened through the API lifecycle rather than the simulator. `list_manifests` shows private trace metadata and counts for one durable run; `read_content` opens one raw JSON/JSONL trace through the manifest access path; `search_reasoning_traces` does run-scoped content search with bounded previews. This stdio wrapper is a local producer/debug tool and depends on local DB/private-storage env. The wrapper bootstraps Postgres plus the local private content bucket, sources private content endpoint/access-key env vars, and keeps setup output off stdout so stdio MCP clients can launch it as a one-line command. Local Postgres runs in Docker; sandboxed agents usually need elevated sandbox access for DB-backed commands against `127.0.0.1:54320`. `bun run trace:local:smoke` proves the writer/read/search path against a real object store. The deployed HTTP Production Game MCP surface wires equivalent explicit private trace tools behind the `producer` scope, while `games:read` clients should use `read_round_facts` for sanitized canonical vote/power/Council context alongside cognitive artifacts; see `docs/game-mcp-production-oauth.md`.
 
 ## Full Stack Local Provider
+
+LM Studio game calls keep concurrent dispatch enabled; LM Studio schedules its own inference. They allow one hour per request by default, including server-side queueing. Set `INFLUENCE_LM_STUDIO_TIMEOUT_MS` on the game worker (and local simulator process) to change this, for example `7200000` for two hours. This overrides the shorter gameplay action/client deadlines for the LM Studio runtime only. Local transport disables Bun's separate socket idle limit so silent non-streaming inference can use that full deadline; cancellation, worker shutdown and hosted-provider deadlines still apply. The CLI's `--timeout-seconds` only limits how long it watches, not how long the server runs the game.
+
+For LM Studio, this setting takes precedence over `simulate:local --llm-timeout-sec` / `--llm-timeout-ms` in older evaluation examples. An explicit whole-game timeout still limits the overall run.
+
+For an eight-player local Werewolf evaluation:
+
+```bash
+bun run simulate:werewolf:api --model-catalog lm-studio:ternary-bonsai-2-27b-mlx \
+  --reasoning-policy action-policy --preset two_wolves --audience omniscient \
+  --transcript --timeout-seconds 14400
+```
+
+The report distinguishes the competitive result from retrospective completion. If the retrospective pauses, it prints the recorded reason and an explicit `--game ID --resume-retrospective` command. Recovery uses the existing authorized, frontier-checked endpoint; `--game ID` alone only watches. No `as any`, permissive output parsing or indirect House calls are needed for local evaluation.
+
+LM Studio health probes use the same configurable deadline, a lease extending beyond it, and a 2,048-token budget for thinking before visible output. Probe sweeps start in the background, dispatch due scopes concurrently, and cancel their transports when stopped; slow local recovery does not block service startup.
 
 To run the API against LM Studio:
 

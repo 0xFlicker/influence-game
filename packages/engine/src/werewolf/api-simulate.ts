@@ -11,6 +11,8 @@
  * Sealed daytime ballots run concurrently. The API reporter shows accepted-decision
  * counts as live spectator telemetry, separate from public history and player context.
  * Choices and private reasoning stay sealed until the full checkpoint resolves.
+ * Reports distinguish the competitive outcome from retrospective completion.
+ * --resume-retrospective explicitly requests authorized recovery of an existing game.
  * No `as any`, Influence House calls, or prose parsing.
  */
 import { parseGameVisibility } from "../game-visibility";
@@ -35,7 +37,7 @@ export function parseWerewolfApiArgs(argv: string[], env: Record<string, string 
     "model-catalog": { type: "string", default: DEFAULT_MODEL_CATALOG_ID },
     "reasoning-policy": { type: "string", default: "low" },
     agent: { type: "string", multiple: true, default: [] },
-    game: { type: "string" }, audience: { type: "string", default: "mystery" },
+    game: { type: "string" }, "resume-retrospective": { type: "boolean", default: false }, audience: { type: "string", default: "mystery" },
     transcript: { type: "boolean", default: false }, out: { type: "string" },
     "timeout-seconds": { type: "string", default: "1800" }, help: { type: "boolean", short: "h" },
   } });
@@ -47,16 +49,24 @@ export function parseWerewolfApiArgs(argv: string[], env: Record<string, string 
   if (values.agent.length > WEREWOLF_PRESETS[config.preset].players || values.agent.some(id => !id.trim()) || new Set(values.agent).size !== values.agent.length) throw new Error("Choose distinct --agent profile IDs within the preset's seat limit.");
   if (values.audience !== "mystery" && values.audience !== "omniscient") throw new Error("Choose --audience mystery or omniscient");
   if (values.game !== undefined && !values.game.trim()) throw new Error("--game requires an ID or slug");
+  if (values["resume-retrospective"] && !values.game) throw new Error("--resume-retrospective requires --game ID_OR_SLUG");
   const timeoutMs = Number(values["timeout-seconds"]) * 1000;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000) throw new Error("--timeout-seconds must be a positive number of at least one second");
   const providerManifest = normalizeProviderManifest([{ catalogId: values["model-catalog"], reasoningPolicy: values["reasoning-policy"] }]);
   resolveProviderManifest(providerManifest);
   return { visibility: parseGameVisibility(values.visibility), apiUrl: apiUrl.origin, webUrl: webUrl.origin, preset: config.preset, maxDays: config.maxDays,
     agentProfileIds: values.agent, providerManifest, game: values.game, audience: values.audience as WerewolfAudience,
-    transcript: values.transcript, out: values.out, timeoutMs, help: Boolean(values.help) };
+    resumeRetrospective: values["resume-retrospective"], transcript: values.transcript, out: values.out, timeoutMs, help: Boolean(values.help) };
 }
 
 interface ApiView { slug: string; status: string; view: WerewolfView; voteProgress: WerewolfVoteProgress | null }
+interface RetrospectiveRead {
+  progress: { status: string; statementCount: number; requiredStatements: number };
+  recovery: { expectedHead: { sequence: number; hash: string }; expectedFailureId: string | null; reasonCode: string } | null;
+}
+
+/** The report already contains the actionable error; the CLI must not print it twice. */
+class WerewolfReportError extends Error {}
 
 export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWerewolfApiArgs>, options: {
   log?: (line: string) => void;
@@ -87,6 +97,19 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
   const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
   const resume = (id: string) => `bun run simulate:werewolf:api --game ${quote(id)} --api-url ${quote(args.apiUrl)} --web-url ${quote(args.webUrl)} --audience ${args.audience}${args.transcript ? " --transcript" : ""}`;
   try {
+    if (args.resumeRetrospective && game) {
+      const token = await resolveCliApiSession({ apiOrigin: args.apiUrl, webOrigin: args.webUrl, requiredPermissions: ["resume_game_retrospective"] });
+      const current = await apiFetch<RetrospectiveRead>(args.apiUrl, `/api/games/${encodeURIComponent(game)}/retrospective?gameKind=werewolf`);
+      if (!current.recovery) throw new Error("This game has no paused retrospective to resume. Use --game without --resume-retrospective to watch it.");
+      await apiFetch(args.apiUrl, `/api/games/${encodeURIComponent(game)}/retrospective/resume`, {
+        method: "POST", headers: authHeaders(token), body: JSON.stringify({
+          gameIdOrSlug: game, gameKind: "werewolf", expectedHead: current.recovery.expectedHead,
+          expectedFailureId: current.recovery.expectedFailureId, idempotencyKey: randomUUID(),
+        }),
+      });
+      emit("Retrospective recovery requested for the existing game. Accepted statements and the competitive result are preserved.");
+      await flush();
+    }
     if (!game) {
       const token = await resolveCliApiSession({apiOrigin: args.apiUrl, webOrigin: args.webUrl, requiredPermissions: ["create_game", "start_game"]});
       creationRequested = true;
@@ -100,7 +123,7 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
       emit(`Started ${created.slug}: ${WEREWOLF_PRESETS[args.preset].players} players, up to ${args.maxDays} days.`);
       emit(`Model: ${args.providerManifest.map((selection) => `${selection.catalogId} (${selection.reasoningPolicy})`).join(", ")}.`);
       emit(`Watch: ${watchUrl}`);
-      emit(`Resume report: ${resume(game)}`);
+      emit(`Watch again (read-only): ${resume(game)}`);
       emit("Text reporting makes no model calls. Each accepted player contribution is displayed unchanged; there is no House rewrite.");
       // Persist identity before the first read, including when that read fails.
       await flush();
@@ -112,6 +135,7 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
     let voteKey: string | null = null;
     let voteStartedAt = now();
     let lastVoteReady = -1;
+    let retrospectiveStatus: string | undefined;
     const alive = new Set<string>();
     const deadline = now() + args.timeoutMs;
     while (now() < deadline) {
@@ -137,6 +161,20 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
           emit(`  Alive (${alive.size}): ${view.players.filter((player) => alive.has(player.id)).map((player) => player.name).join(", ")}.`);
         }
         if (entry.kind === "result") emit(`Roles revealed: ${view.players.map((player) => `${player.name} — ${player.role ?? "unknown"}${alive.has(player.id) ? "" : " (dead)"}`).join("; ")}.`);
+      }
+      if (view.entries.some(entry => entry.kind === "result")) {
+        const count = view.entries.filter(entry => entry.kind === "speech" && entry.purpose === "retrospective").length;
+        const status = detail.status === "suspended" ? "paused" : view.phase === "complete" ? (count ? "completed" : "unavailable") : "in progress";
+        const summary = `Retrospective: ${status} (${count}/${view.players.length} statements). Competitive result is final.`;
+        if (summary !== retrospectiveStatus) { emit(summary); retrospectiveStatus = summary; }
+        if (detail.status === "suspended") {
+          const retrospective = await apiFetch<RetrospectiveRead>(args.apiUrl, `/api/games/${encodeURIComponent(game)}/retrospective?gameKind=werewolf`);
+          if (retrospective.recovery) {
+            emit(`Retrospective paused: ${retrospective.recovery.reasonCode}. ${retrospective.progress.statementCount}/${retrospective.progress.requiredStatements} statements accepted.`);
+            emit(`After restoring the provider, request recovery (requires resume_game_retrospective permission): ${resume(game)} --resume-retrospective`);
+          }
+          throw new Error(`Game ${game} has a final competitive result, but its retrospective is incomplete. Watching alone does not resume execution.`);
+        }
       }
       if (view.cursor > cursor) lastProgressAt = lastWaitingAt = now();
       const progress = detail.voteProgress;
@@ -169,13 +207,13 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
       if (detail.status !== "in_progress") throw new Error(`Game ${game} stopped: ${detail.status}. No new game was launched.`);
       await sleep(Math.min(3000, Math.max(0, deadline - now())));
     }
-    throw new Error(`Stopped waiting; game ${game} continues on the server. Resume: ${resume(game)}`);
+    throw new Error(`Stopped waiting; game ${game} continues on the server. Watch again (read-only): ${resume(game)}`);
   } catch (error) {
     emit(`Report stopped: ${error instanceof Error ? error.message : String(error)}`);
-    if (game) emit(`Resume report: ${resume(game)}`);
+    if (game) emit(`Watch again (read-only; does not resume execution): ${resume(game)}`);
     else if (creationRequested) emit(`Check ${args.webUrl}/games/type/werewolf before launching again; the creation request may have reached the server.`);
     await flush();
-    throw error;
+    throw new WerewolfReportError(error instanceof Error ? error.message : String(error), { cause: error });
   }
 }
 
@@ -190,6 +228,8 @@ For eight characters with two wolves, a Seer and a Doctor:
   bun run simulate:werewolf:api --preset two_wolves
 Watch an existing game without creating or spending on another game:
   bun run simulate:werewolf:api --game ID_OR_SLUG --transcript --audience omniscient
+Resume a paused retrospective after restoring the provider (requires recovery permission):
+  bun run simulate:werewolf:api --game ID_OR_SLUG --resume-retrospective
 
 Options: --api-url URL --web-url URL --model-catalog ID --reasoning-policy low|medium|high|action-policy
          --agent PROFILE_ID (repeatable) --out REPORT.txt --timeout-seconds 1800
@@ -208,7 +248,7 @@ Game inference is paid/configured on the server; reports add no model calls.
 A day cap may end in a draw. Closing this CLI does not stop the server game.`);
     else await runWerewolfApiSimulation(args);
   } catch (error) {
-    console.error(error instanceof Error ? error.message : error);
+    if (!(error instanceof WerewolfReportError)) console.error(error instanceof Error ? error.message : error);
     process.exitCode = 1;
   }
 }
