@@ -180,12 +180,14 @@ export function beginTwoNamesMingleWindow(ctx: PhaseRunnerContext, window: "init
   );
 }
 
-export async function finishTwoNamesMingleWindow(ctx: PhaseRunnerContext, actor: PhaseActor, window: "initial_names" | "final_names"): Promise<void> {
+export async function finishTwoNamesMingleWindow(ctx: PhaseRunnerContext, actor: PhaseActor, window: "initial_names" | "final_names", socialComplete = false): Promise<void> {
   const current = projection(ctx);
   const pair = window === "initial_names" ? current.initialNomineeIds : current.finalistPlayerIds;
   if (!pair) throw new Error(`Two Names ${window} Mingle is missing its pair`);
-  await runAllianceFormationPhase(ctx);
-  await runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE, { completePhase: false });
+  if (!socialComplete) {
+    await runAllianceFormationPhase(ctx);
+    await runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE, { completePhase: false });
+  }
   await assertCanAcceptCommit(ctx);
   ctx.gameState.recordTwoNamesMingleCompleted(window, pair);
 }

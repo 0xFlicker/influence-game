@@ -18,7 +18,7 @@ export function resolveTranscriptPlayer(token: string | null | undefined, player
 }
 
 function isMingleDialogue(message: TranscriptEntry) {
-  return message.scope === "mingle" || (message.scope === "whisper" && (message.phase === "MINGLE" || message.phase === "FORMAT_MINGLE"));
+  return message.scope === "mingle" || message.scope === "huddle" || (message.scope === "whisper" && (message.phase === "MINGLE" || message.phase === "FORMAT_MINGLE"));
 }
 
 /** Reserve solo staging from committed transcript metadata, never image load timing. */

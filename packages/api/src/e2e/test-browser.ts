@@ -26,6 +26,13 @@ export async function launchBrowser(): Promise<Browser> {
   });
 }
 
+/** Fixture preference: keep consent overlays from intercepting unrelated journey controls. */
+export async function rejectOptionalAnalytics(page: Page): Promise<void> {
+  await page.evaluateOnNewDocument(() => {
+    localStorage.setItem("house:analytics-consent", JSON.stringify({ version: 1, analytics: false }));
+  });
+}
+
 /**
  * Create a new page with an authenticated session.
  *
@@ -40,6 +47,8 @@ export async function createAuthenticatedPage(
   opts?: { privateKey?: `0x${string}` },
 ): Promise<Page> {
   const page = await browser.newPage();
+
+  await rejectOptionalAnalytics(page);
 
   // Inject JWT into localStorage before the page loads
   await page.evaluateOnNewDocument((token: string) => {

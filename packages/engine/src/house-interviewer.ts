@@ -60,7 +60,7 @@ import {
   decodeHouseLongFormProvider,
   HOUSE_LONG_FORM_SUMMARY_SCHEMA,
 } from "./house-long-form";
-import type { AllianceHuddleConfidence, AllianceHuddleFactAtom, AllianceHuddleWindow } from "./types";
+import type { AllianceHuddleWindow } from "./types";
 import {
   DEFAULT_MODEL_ID,
   inferModelCapabilities,
@@ -192,7 +192,7 @@ export interface HouseAllianceHuddleCandidate {
   memberNames: string[];
   purpose: string;
   timebox?: string | null;
-  priorOutcomeCount: number;
+  priorSessionCount: number;
 }
 
 export interface HouseAllianceHuddleScheduleContext {
@@ -214,35 +214,6 @@ export interface HouseAllianceHuddleScheduleResult {
   scheduled: HouseAllianceHuddleScheduleItem[];
   skipped: HouseAllianceHuddleScheduleItem[];
   rationale?: string;
-  thinking?: string;
-  reasoningContext?: string;
-}
-
-export interface HouseAllianceHuddleOutcomeContext {
-  round: number;
-  phase: Phase.FORMAT_MINGLE | Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE;
-  window: AllianceHuddleWindow;
-  scheduleId: string;
-  alliance: {
-    id: UUID;
-    name: string;
-    memberNames: string[];
-    purpose: string;
-    timebox?: string | null;
-  };
-  transcript: Array<{ from: string; text: string }>;
-  /** Authoritative member-authored atoms. House may narrate but may not add facts. */
-  facts: AllianceHuddleFactAtom[];
-}
-
-export interface HouseAllianceHuddleOutcomeResult {
-  ask: string;
-  plan: string;
-  promises: string[];
-  dissent: string[];
-  confidence: AllianceHuddleConfidence;
-  posture: string;
-  leakOrBetrayalClaims: string[];
   thinking?: string;
   reasoningContext?: string;
 }
@@ -277,8 +248,6 @@ export interface IHouseInterviewer {
   ): Promise<HouseAllianceProposerSelectionResult>;
   /** Recommend scarce named-alliance huddles from active eligible alliances. The engine validates and repairs output. */
   planAllianceHuddles(context: HouseAllianceHuddleScheduleContext): Promise<HouseAllianceHuddleScheduleResult>;
-  /** Summarize a completed named-alliance huddle into the official compact outcome memory. */
-  summarizeAllianceHuddle(context: HouseAllianceHuddleOutcomeContext): Promise<HouseAllianceHuddleOutcomeResult>;
   /** Author viewer copy and optionally replace the private House notebook. */
   generateHouseSummary(context: HouseNarrativeTurnContext): Promise<HouseSummaryAttemptResult>;
   /** Generate richer House-authored producer copy without feeding it back into game state. */
@@ -660,22 +629,6 @@ function deterministicAllianceProposerSelection(
     }));
 }
 
-function normalizedBoundedStrings(value: unknown, maxItems: number, maxChars: number): string[] | null {
-  if (!Array.isArray(value) || value.length > maxItems) return null;
-  const strings: string[] = [];
-  for (const item of value) {
-    if (typeof item !== "string") return null;
-    const normalized = normalizeBoundedText(item);
-    if (!normalized || normalized.length > maxChars) return null;
-    strings.push(normalized);
-  }
-  return strings;
-}
-
-function normalizeBoundedText(value: string): string {
-  return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ").replace(/\s+/g, " ").trim();
-}
-
 function decodeHouseAllianceHuddleSchedule(
   value: unknown,
   context: HouseAllianceHuddleScheduleContext,
@@ -751,114 +704,6 @@ function readNullableString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-
-function huddleCoordinationLabel(window: AllianceHuddleWindow): string {
-  if (window === "format") return "locked-format";
-  return window === "pre_vote" ? "public Vote" : "Council";
-}
-
-function defaultHuddleAsk(window: AllianceHuddleWindow): string {
-  if (window === "format") return "Align under the locked format.";
-  return window === "pre_vote" ? "Align before the public Vote." : "Align before Council.";
-}
-
-function decodeHouseAllianceHuddleOutcome(
-  value: unknown,
-  representation: "provider" | "accepted",
-): StructuredDomainDecodeResult<HouseAllianceHuddleOutcomeResult> {
-  const decodedRecord = recordValue(value, "House huddle outcome");
-  if (decodedRecord.status === "invalid") return decodedRecord;
-  const record = decodedRecord.value;
-  if (!hasOnlyKeys(record, [
-    "ask",
-    "plan",
-    "promises",
-    "dissent",
-    "confidence",
-    "posture",
-    "leakOrBetrayalClaims",
-    "thinking",
-  ])) {
-    return { status: "invalid", message: "House huddle outcome contains unsupported fields." };
-  }
-  const ask = readNullableString(record.ask);
-  const plan = readNullableString(record.plan);
-  for (const [field, text, source, allowed] of [["ask", ask, record.ask, 800], ["plan", plan, record.plan, 1_600]] as const) {
-    if (text && text.length > allowed && typeof source === "string") {
-      const feedback = measureLengthFeedback(source, field, allowed, "utf16_code_units");
-      if (feedback) return { status: "invalid", message: `House huddle ${field} exceeds its UTF-16 limit.`, feedback };
-    }
-  }
-  for (const [field, value] of [["promises", record.promises], ["dissent", record.dissent], ["leakOrBetrayalClaims", record.leakOrBetrayalClaims]] as const) {
-    if (!Array.isArray(value)) continue;
-    for (let index = 0; index < value.length; index++) {
-      const item = value[index];
-      if (typeof item !== "string") continue;
-      const normalized = normalizeBoundedText(item);
-      if (normalized.length > 500) {
-        const feedback = measureLengthFeedback(item, `${field}[${index}]`, 500, "utf16_code_units");
-        if (feedback) return { status: "invalid", message: `House huddle ${field} exceeds its UTF-16 limit.`, feedback };
-      }
-    }
-  }
-  const promises = normalizedBoundedStrings(record.promises, 12, 500);
-  const dissent = normalizedBoundedStrings(record.dissent, 12, 500);
-  const leakOrBetrayalClaims = normalizedBoundedStrings(
-    record.leakOrBetrayalClaims,
-    12,
-    500,
-  );
-  if (!ask || !plan || ask.length > 800 || plan.length > 1_600) {
-    return { status: "invalid", message: "House huddle ask and plan must be bounded non-empty strings." };
-  }
-  if (!promises || !dissent || !leakOrBetrayalClaims) {
-    return { status: "invalid", message: "House huddle outcome lists must contain bounded non-empty strings." };
-  }
-  if (record.confidence !== "low" && record.confidence !== "medium" && record.confidence !== "high") {
-    return { status: "invalid", message: "House huddle confidence is unsupported." };
-  }
-  if (
-    record.posture !== "coordinating"
-    && record.posture !== "fracturing"
-    && record.posture !== "performative"
-    && record.posture !== "guarded"
-    && record.posture !== "betrayal_watch"
-  ) {
-    return { status: "invalid", message: "House huddle posture is unsupported." };
-  }
-  const thinking = decodeHouseThinking(record, "House huddle", representation);
-  if (thinking.status === "invalid") return thinking;
-  return {
-    status: "valid",
-    value: {
-      ask,
-      plan,
-      promises,
-      dissent,
-      confidence: record.confidence,
-      posture: record.posture,
-      leakOrBetrayalClaims,
-      ...thinking.value,
-    },
-  };
-}
-
-function fallbackHouseAllianceHuddleOutcome(
-  context: HouseAllianceHuddleOutcomeContext,
-): HouseAllianceHuddleOutcomeResult {
-  const transcriptFallback = context.transcript.length > 0
-    ? `Members discussed ${huddleCoordinationLabel(context.window)} coordination.`
-    : `No explicit member messages were recorded for ${context.alliance.name}.`;
-  return {
-    ask: defaultHuddleAsk(context.window),
-    plan: transcriptFallback,
-    promises: [],
-    dissent: [],
-    confidence: "low",
-    posture: "guarded",
-    leakOrBetrayalClaims: [],
-  };
-}
 
 export class LLMHouseInterviewer implements IHouseInterviewer {
   private readonly model: string;
@@ -1702,7 +1547,7 @@ Respond with JSON only.`;
         `members=${candidate.memberNames.join(", ")}`,
         `purpose=${this.contextSpans.add(candidate.purpose)}`,
         `timebox=${candidate.timebox ?? "open-ended"}`,
-        `priorOutcomes=${candidate.priorOutcomeCount}`,
+        `priorSessions=${candidate.priorSessionCount}`,
       ].join("; "))
       .join("\n");
     const prompt = `Schedule scarce named-alliance huddles for Influence.
@@ -1815,103 +1660,6 @@ Respond with JSON only.`;
           })),
         rationale: `House huddle scheduling failed; deterministic fallback applied (${err instanceof Error ? err.message : String(err)}).`,
       };
-    }
-  }
-
-  async summarizeAllianceHuddle(context: HouseAllianceHuddleOutcomeContext): Promise<HouseAllianceHuddleOutcomeResult> {
-    this.contextSpans.clear();
-    const transcript = context.transcript.length > 0
-      ? context.transcript.map((entry) => `${entry.from}: "${entry.text}"`).join("\n")
-      : "(no member messages recorded)";
-    const prompt = `Summarize a completed named-alliance huddle into the official compact outcome memory.
-
-Round: ${context.round}
-Phase: ${context.phase}
-Window: ${context.window}
-Alliance: ${context.alliance.name}
-Members: ${context.alliance.memberNames.join(", ")}
-Purpose: ${context.alliance.purpose}
-Timebox: ${context.alliance.timebox ?? "open-ended"}
-
-Huddle transcript:
-${this.contextSpans.add(transcript)}
-
-Authoritative structured member facts:
-${JSON.stringify(context.facts)}
-
-Your job:
-- Record the ask, plan, promises/protections, dissent, confidence, posture, and explicit leak or betrayal claims.
-- Treat only the typed member facts as authoritative for targets, commitments, responses, and contingencies. You may compress them into prose but must not manufacture a target, agreement, promise, consensus, or dissent absent from those facts.
-- Do not invent loyalty or force agreement if members were guarded or silent.
-- Do not mutate the alliance terms; this outcome is tactical memory, not a new contract.
-- Keep the outcome compact and useful for future member-safe prompts.
-
-Respond with JSON only.`;
-
-    try {
-      const messages = [
-        { role: "system" as const, content: withInfluenceGamePromptContext("You are The House producer summarizing named-alliance huddles. Return JSON only.") },
-        { role: "user" as const, content: prompt },
-      ];
-      const traceContext: PrivateDecisionTraceContext = {
-        ...(this.privateTraceGameId && { gameId: this.privateTraceGameId }),
-        ...(this.privateTraceOwnerEpoch && { ownerEpoch: this.privateTraceOwnerEpoch }),
-        action: "house-alliance-huddle-outcome",
-        actor: { name: "The House", role: "house" },
-        phase: context.phase,
-        round: context.round,
-        semanticCoordinate: {
-          version: 1,
-          kind: "alliance_huddle",
-          scheduleId: context.scheduleId,
-          exchangeOrdinal: 1,
-        },
-      };
-      const { value, response } = await this.callHouseJsonSchema({
-        action: "house-alliance-huddle-outcome",
-        source: "House/alliance-huddle-outcome",
-        round: context.round,
-        phase: context.phase,
-        traceContext,
-        messages,
-        schemaName: "house_alliance_huddle_outcome",
-        schema: {
-          type: "object",
-          properties: {
-            ask: { type: "string", minLength: 1, maxLength: 800, description: "At most 800 UTF-16 code units." },
-            plan: { type: "string", minLength: 1, maxLength: 1600, description: "At most 1600 UTF-16 code units." },
-            promises: { type: "array", maxItems: 12, items: { type: "string", minLength: 1, maxLength: 500, description: "At most 500 UTF-16 code units." } },
-            dissent: { type: "array", maxItems: 12, items: { type: "string", minLength: 1, maxLength: 500, description: "At most 500 UTF-16 code units." } },
-            confidence: { type: "string", enum: ["low", "medium", "high"] },
-            posture: { type: "string", enum: ["coordinating", "fracturing", "performative", "guarded", "betrayal_watch"] },
-            leakOrBetrayalClaims: { type: "array", maxItems: 12, items: { type: "string", minLength: 1, maxLength: 500, description: "At most 500 UTF-16 code units." } },
-            thinking: { type: ["string", "null"] },
-          },
-          required: ["ask", "plan", "promises", "dissent", "confidence", "posture", "leakOrBetrayalClaims", "thinking"],
-          additionalProperties: false,
-        },
-        decoder: {
-          decodeProvider: (record) => decodeHouseAllianceHuddleOutcome(record, "provider"),
-          decodeAccepted: (accepted) => decodeHouseAllianceHuddleOutcome(accepted, "accepted"),
-        },
-        maxTokens: 1800,
-        temperature: 0.35,
-      });
-      const output = response?.reasoning?.content
-        ? { ...value, reasoningContext: response.reasoning.content }
-        : value;
-      if (response) {
-        await this.emitPrivateDecisionTrace({
-          context: traceContext,
-          messages,
-          response,
-          output,
-        });
-      }
-      return output;
-    } catch (err) {
-      if (!(err instanceof ProviderUnavailableError)) throw err;
-      return fallbackHouseAllianceHuddleOutcome(context);
     }
   }
 
@@ -2366,39 +2114,6 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
           rationale: `Template House skipped ${candidate.name} after the huddle budget was spent.`,
         })),
       rationale: "Template House used deterministic active-alliance order.",
-    };
-  }
-
-  async summarizeAllianceHuddle(context: HouseAllianceHuddleOutcomeContext): Promise<HouseAllianceHuddleOutcomeResult> {
-    const speakerNames = context.transcript.map((entry) => entry.from);
-    const proposals = context.facts.flatMap((fact) =>
-      fact.kind === "proposal" || fact.kind === "commitment"
-        ? [`${fact.actorPlayerId}: ${fact.actionKind} -> ${fact.targetPlayerId}`]
-        : [],
-    );
-    const promises = context.facts.flatMap((fact) =>
-      fact.kind === "commitment"
-        ? [`${fact.actorPlayerId}: ${fact.actionKind} -> ${fact.targetPlayerId}`]
-        : [],
-    );
-    const dissent = context.facts.flatMap((fact) =>
-      fact.kind === "response" && fact.stance === "reject"
-        ? [`${fact.actorPlayerId} rejected ${fact.counterpartFactId}`]
-        : [],
-    );
-    return {
-      ask: defaultHuddleAsk(context.window),
-      plan: proposals.length > 0
-        ? `${context.alliance.name} proposals: ${proposals.join("; ")}.`
-        : context.transcript.length > 0
-          ? `${context.alliance.name} heard ${speakerNames.join(", ")} coordinate ${huddleCoordinationLabel(context.window)} commitments.`
-          : `No explicit member messages were recorded for ${context.alliance.name}.`,
-      promises,
-      dissent,
-      confidence: context.facts.some((fact) => fact.confidence === "high") ? "high" : context.facts.length > 0 ? "medium" : "low",
-      posture: dissent.length > 0 ? "fracturing" : context.facts.length > 0 ? "coordinating" : "guarded",
-      leakOrBetrayalClaims: [],
-      thinking: "Template House summarized the huddle deterministically.",
     };
   }
 

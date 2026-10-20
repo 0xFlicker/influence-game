@@ -1,3 +1,4 @@
+import { DEFAULT_CONVERSATION_POLICY } from "@influence/engine";
 /**
  * Free Game Queue API routes.
  *
@@ -261,6 +262,8 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
 
     const computedMaxRounds = Math.max(10, (maxPlayers - 4) + 3 + 2);
     const config = {
+      conversationPolicy: { ...DEFAULT_CONVERSATION_POLICY },
+      mingleSessionsPerRound: 2,
       maxRounds: computedMaxRounds,
       minPlayers,
       maxPlayers,

@@ -5,8 +5,6 @@ import {
   LLMHouseInterviewer,
   TemplateHouseInterviewer,
   type DiaryRoomContext,
-  type HouseAllianceHuddleOutcomeContext,
-  type HouseAllianceHuddleOutcomeResult,
   type HouseAllianceHuddleScheduleContext,
   type HouseAllianceProposerSelectionContext,
   type HouseMingleAssignmentContext,
@@ -374,7 +372,7 @@ function makeHuddleScheduleContext(): HouseAllianceHuddleScheduleContext {
         memberNames: ["Atlas", "Mira"],
         purpose: "Coordinate Vote Bomb ballots.",
         timebox: "through council",
-        priorOutcomeCount: 0,
+        priorSessionCount: 0,
       },
       {
         allianceId: "alliance-veil",
@@ -382,7 +380,7 @@ function makeHuddleScheduleContext(): HouseAllianceHuddleScheduleContext {
         memberNames: ["Mira", "Vera"],
         purpose: "Compare pressure reads.",
         timebox: null,
-        priorOutcomeCount: 1,
+        priorSessionCount: 1,
       },
     ],
   };
@@ -431,51 +429,7 @@ function allianceProposerSelectionContent(overrides: Record<string, unknown> = {
   });
 }
 
-function makeHuddleOutcomeContext(): HouseAllianceHuddleOutcomeContext {
-  return {
-    round: 2,
-    phase: Phase.FORMAT_MINGLE,
-    window: "format" as const,
-    scheduleId: "schedule-glass-1",
-    alliance: {
-      id: "alliance-glass",
-      name: "Glass Table",
-      memberNames: ["Atlas", "Mira"],
-      purpose: "Coordinate Vote Bomb ballots.",
-      timebox: "through council",
-    },
-    transcript: [
-      { from: "Atlas", text: "Mira, place your Vote Bomb ballot on Vera and I will do the same." },
-      { from: "Mira", text: "I can do that if we do not split our ballots." },
-    ],
-    facts: [],
-  };
-}
-
-function huddleOutcomeContent(overrides: Record<string, unknown> = {}): string {
-  return JSON.stringify({
-    ask: "Atlas asked Mira to place her Vote Bomb ballot on Vera.",
-    plan: "Atlas and Mira align their Vote Bomb ballots on Vera.",
-    promises: ["Atlas promised not to split the ballot."],
-    dissent: [],
-    confidence: "medium",
-    posture: "coordinating",
-    leakOrBetrayalClaims: [],
-    thinking: "The plan is concrete but still conditional.",
-    ...overrides,
-  });
-}
-
-describe("LLMHouseInterviewer structured alliance huddles", () => {
-  it("uses locked-format language for deterministic huddle fallbacks", async () => {
-    const house = new TemplateHouseInterviewer();
-
-    const result = await house.summarizeAllianceHuddle(makeHuddleOutcomeContext());
-
-    expect(result.ask).toBe("Align under the locked format.");
-    expect(result.plan).toContain("locked-format commitments");
-  });
-
+describe("LLMHouseInterviewer structured alliance huddle scheduling", () => {
   it("requests strict JSON schema output for huddle scheduling", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const house = new LLMHouseInterviewer(
@@ -543,226 +497,6 @@ describe("LLMHouseInterviewer structured alliance huddles", () => {
     ]);
   });
 
-  it("summarizes completed huddles into compact official outcomes", async () => {
-    const requests: Array<Record<string, unknown>> = [];
-    const house = new LLMHouseInterviewer(
-      makeOpenAIStub(requests, [{ content: huddleOutcomeContent() }]),
-      "test-model",
-    );
-
-    const result = await house.summarizeAllianceHuddle(makeHuddleOutcomeContext());
-
-    expect(result).toMatchObject({
-      ask: "Atlas asked Mira to place her Vote Bomb ballot on Vera.",
-      plan: "Atlas and Mira align their Vote Bomb ballots on Vera.",
-      promises: ["Atlas promised not to split the ballot."],
-      confidence: "medium",
-      posture: "coordinating",
-      thinking: "The plan is concrete but still conditional.",
-    });
-    const messages = requests[0]?.messages as Array<{ role: string; content: string }>;
-    expect(messages[1]?.content).toContain(
-      'Atlas: "Mira, place your Vote Bomb ballot on Vera and I will do the same."',
-    );
-    expect(requests[0]?.response_format).toMatchObject({
-      type: "json_schema",
-      json_schema: {
-        name: "house_alliance_huddle_outcome",
-        strict: true,
-      },
-    });
-  });
-
-  it("retries huddle summaries with exact UTF-16 feedback for emoji-heavy asks", async () => {
-    const requests: Array<Record<string, unknown>> = [];
-    const attempts: ProviderAttemptRecord[] = [];
-    const house = new LLMHouseInterviewer(makeOpenAIStub(requests, [
-      { content: huddleOutcomeContent({ ask: "😀".repeat(401) }) },
-      { content: huddleOutcomeContent({ ask: "A concise ask." }) },
-    ]), "test-model", { providerExecutionHooks: { onTerminal: record => { attempts.push(record); } } });
-    const result = await house.summarizeAllianceHuddle(makeHuddleOutcomeContext());
-    expect(result.ask).toBe("A concise ask.");
-    expect(attempts[0]?.outcome).toMatchObject({ kind: "malformed_output", feedback: {
-      field: "ask", measured: 802, allowed: 800, overage: 2, unit: "utf16_code_units",
-    } });
-    expect(requests).toHaveLength(2);
-    expect(JSON.stringify(requests[1]?.messages)).toContain("802 utf16_code_units, allowed 800 (over by 2)");
-  });
-
-  it("keeps the raw huddle schema cap for whitespace-heavy asks and reports the exact draft", async () => {
-    const requests: Array<Record<string, unknown>> = [];
-    const attempts: ProviderAttemptRecord[] = [];
-    const rejectedAsk = `${" ".repeat(800)}A`;
-    const house = new LLMHouseInterviewer(makeOpenAIStub(requests, [
-      { content: huddleOutcomeContent({ ask: rejectedAsk }) },
-      { content: huddleOutcomeContent({ ask: "A concise ask." }) },
-    ]), "test-model", { providerExecutionHooks: { onTerminal: record => { attempts.push(record); } } });
-    const result = await house.summarizeAllianceHuddle(makeHuddleOutcomeContext());
-    expect(result.ask).toBe("A concise ask.");
-    expect(attempts[0]?.outcome).toMatchObject({ kind: "malformed_output", feedback: {
-      draft: rejectedAsk, field: "ask", measured: 801, allowed: 800, overage: 1, unit: "unicode_code_points",
-    } });
-    expect(JSON.stringify(requests[1]?.messages)).toContain("801 unicode_code_points, allowed 800 (over by 1)");
-  });
-
-  it("replays canonical House values after provider null thinking is normalized away", async () => {
-    const acceptedValues = new Map<string, { value: unknown; catalogId?: string }>();
-    const liveRequests: Array<Record<string, unknown>> = [];
-    const liveHouse = new LLMHouseInterviewer(
-      makeOpenAIStub(liveRequests, [
-        { content: assignmentContent({ thinking: null }) },
-        { content: allianceProposerSelectionContent({ thinking: null }) },
-        { content: huddleScheduleContent({ thinking: null }) },
-        { content: huddleOutcomeContent({ thinking: null }) },
-      ]),
-      "test-model",
-      {
-        providerExecutionHooks: {
-          onTerminal: (record) => {
-            acceptedValues.set(record.coordinate.action, {
-              value: structuredClone(record.acceptedValue),
-              catalogId: record.preparedRequest.catalogId,
-            });
-            return { acceptedAttemptId: `accepted-${record.coordinate.action}` };
-          },
-        },
-      },
-    );
-
-    const liveResults = [
-      await liveHouse.assignMingleRooms(makeAssignmentContext()),
-      await liveHouse.selectAllianceProposers(makeAllianceProposerSelectionContext()),
-      await liveHouse.planAllianceHuddles(makeHuddleScheduleContext()),
-      await liveHouse.summarizeAllianceHuddle(makeHuddleOutcomeContext()),
-    ];
-
-    expect(liveRequests).toHaveLength(4);
-    expect([...acceptedValues.values()]).toHaveLength(4);
-    for (const accepted of acceptedValues.values()) {
-      expect(accepted.value).not.toHaveProperty("thinking");
-    }
-
-    const replayRequests: Array<Record<string, unknown>> = [];
-    const replayHouse = new LLMHouseInterviewer(
-      makeOpenAIStub(replayRequests, []),
-      "test-model",
-      {
-        providerExecutionHooks: {
-          onReadAccepted: (coordinate) => {
-            const accepted = acceptedValues.get(coordinate.action)!;
-            return {
-              attemptId: `accepted-${coordinate.action}`,
-              attemptOrdinal: 1,
-              catalogId: accepted.catalogId,
-              value: structuredClone(accepted.value),
-            };
-          },
-        },
-      },
-    );
-    const replayedResults = [
-      await replayHouse.assignMingleRooms(makeAssignmentContext()),
-      await replayHouse.selectAllianceProposers(makeAllianceProposerSelectionContext()),
-      await replayHouse.planAllianceHuddles(makeHuddleScheduleContext()),
-      await replayHouse.summarizeAllianceHuddle(makeHuddleOutcomeContext()),
-    ];
-
-    expect(replayedResults).toEqual(liveResults);
-    expect(replayRequests).toEqual([]);
-  });
-
-  it("rejects noncanonical accepted House huddle thinking without dispatch", async () => {
-    const base = JSON.parse(huddleOutcomeContent()) as Record<string, unknown>;
-    for (const acceptedValue of [
-      { ...base, thinking: null },
-      { ...base, thinking: "   " },
-      { ...base, thinking: 7 },
-      { ...base, thinking: { private: "reasoning" } },
-      { ...base, extraField: "unsupported" },
-    ]) {
-      const requests: Array<Record<string, unknown>> = [];
-      const house = new LLMHouseInterviewer(
-        makeOpenAIStub(requests, []),
-        "test-model",
-        {
-          providerExecutionHooks: {
-            onReadAccepted: () => ({ attemptOrdinal: 1, value: acceptedValue }),
-          },
-        },
-      );
-
-      await expect(house.summarizeAllianceHuddle(makeHuddleOutcomeContext()))
-        .rejects.toBeInstanceOf(ProviderAcceptedValueIntegrityError);
-      expect(requests).toEqual([]);
-    }
-  });
-
-  it("uses distinct stable coordinates for multiple House huddle outcomes and replays each summary", async () => {
-    const attempts: ProviderAttemptRecord[] = [];
-    const liveHouse = new LLMHouseInterviewer(
-      makeOpenAIStub([], [
-        { content: huddleOutcomeContent({ ask: "First alliance ask.", plan: "First alliance plan." }) },
-        { content: huddleOutcomeContent({ ask: "Second alliance ask.", plan: "Second alliance plan." }) },
-      ]),
-      "test-model",
-      {
-        providerExecutionHooks: {
-          onTerminal: (record) => {
-            attempts.push(record);
-            return { acceptedAttemptId: `accepted-huddle-${record.coordinate.semantic.kind === "alliance_huddle" ? record.coordinate.semantic.scheduleId : ""}` };
-          },
-        },
-      },
-    );
-    const contexts = [1, 2].map((scheduleOrdinal) => ({
-      ...makeHuddleOutcomeContext(),
-      scheduleId: `schedule-glass-${scheduleOrdinal}`,
-    }));
-    const liveResults: HouseAllianceHuddleOutcomeResult[] = [];
-    for (const context of contexts) liveResults.push(await liveHouse.summarizeAllianceHuddle(context));
-
-    expect(attempts.map((attempt) => attempt.coordinate.semantic)).toEqual([
-      { version: 1, kind: "alliance_huddle", scheduleId: "schedule-glass-1", exchangeOrdinal: 1 },
-      { version: 1, kind: "alliance_huddle", scheduleId: "schedule-glass-2", exchangeOrdinal: 1 },
-    ]);
-    expect(liveResults.map((result) => result.plan)).toEqual([
-      "First alliance plan.",
-      "Second alliance plan.",
-    ]);
-
-    const acceptedByScheduleId = new Map(
-      attempts.map((attempt) => [
-        attempt.coordinate.semantic.kind === "alliance_huddle"
-          ? attempt.coordinate.semantic.scheduleId
-          : "",
-        attempt.acceptedValue,
-      ]),
-    );
-    const replayRequests: Array<Record<string, unknown>> = [];
-    const replayHouse = new LLMHouseInterviewer(
-      makeOpenAIStub(replayRequests, []),
-      "test-model",
-      {
-        providerExecutionHooks: {
-          onReadAccepted: (coordinate) => ({
-            attemptId: `accepted-huddle-${coordinate.semantic.kind === "alliance_huddle" ? coordinate.semantic.scheduleId : ""}`,
-            attemptOrdinal: 1,
-            catalogId: attempts.find(
-              (attempt) => attempt.coordinate.semantic.kind === "alliance_huddle"
-                && coordinate.semantic.kind === "alliance_huddle"
-                && attempt.coordinate.semantic.scheduleId === coordinate.semantic.scheduleId,
-            )?.preparedRequest.catalogId,
-            value: structuredClone(acceptedByScheduleId.get(coordinate.semantic.kind === "alliance_huddle" ? coordinate.semantic.scheduleId : "")),
-          }),
-        },
-      },
-    );
-    const replayedResults: HouseAllianceHuddleOutcomeResult[] = [];
-    for (const context of contexts) replayedResults.push(await replayHouse.summarizeAllianceHuddle(context));
-
-    expect(replayedResults).toEqual(liveResults);
-    expect(replayRequests).toEqual([]);
-  });
 });
 
 describe("House alliance proposer selection", () => {

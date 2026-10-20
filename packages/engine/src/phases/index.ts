@@ -11,7 +11,7 @@ export {
   transcriptThinkingFor,
 } from "./phase-runner-context";
 export { runIntroductionPhase } from "./introduction";
-export { runLobbyPhase, runReckoningLobby, runTribunalLobby, computeLobbyMessagesPerPlayer } from "./lobby";
+export { runLobbyPhase, runReckoningLobby, runTribunalLobby } from "./lobby";
 export { runAllianceFormationPhase, runAllianceHuddleWindow } from "./alliances";
 export { runMinglePhase, computeRoomCount, allocateRooms } from "./mingle";
 export { runRumorPhase } from "./rumor";

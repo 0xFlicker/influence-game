@@ -1,3 +1,4 @@
+import { beginConversation, conversationPrompt } from "../open-conversation";
 import { describe, expect, test } from "bun:test";
 import { InfluenceAgent } from "../agent";
 import type { PhaseContext } from "../game-runner";
@@ -109,12 +110,14 @@ describe("OpenAI alliance structured-output acceptance", () => {
     expectSingleAcceptedAttempt(records, "alliance-action");
   }, MODEL_TIMEOUT_MS);
 
-  test("executes one huddle turn with the exact fact-atom union", async () => {
+  test("executes one speech-or-pass huddle decision without tactical fields", async () => {
     const records: ProviderAttemptRecord[] = [];
     const agent = makeLiveAgent(records);
 
     const turn = await agent.getAllianceHuddleTurn(
-      makeContext(Phase.PRE_VOTE_HUDDLE),
+      { ...makeContext(Phase.PRE_VOTE_HUDDLE), conversation: conversationPrompt(
+        {...beginConversation(["atlas-id","mira-id"],"live"),nextActorId:"atlas-id"},
+        [{id:"atlas-id",name:"Atlas"},{id:"mira-id",name:"Mira"}],[]) },
       {
         sessionId: "session-live-proof",
         allianceId: "alliance-live-proof",
@@ -126,12 +129,11 @@ describe("OpenAI alliance structured-output acceptance", () => {
         window: "pre_vote",
         scheduleId: "schedule-live-proof",
         pass: 1,
-        priorFacts: [],
       },
       [],
     );
 
-    expect(Array.isArray(turn.factAtoms)).toBe(true);
+    expect(turn).not.toHaveProperty("factAtoms");
     expect(turn.message === null || turn.message.trim().length > 0).toBe(true);
     expectSingleAcceptedAttempt(records, "alliance-huddle-turn");
   }, MODEL_TIMEOUT_MS);

@@ -10,6 +10,7 @@
  * signals. Creator-only access does not open the private transcript lane.
  */
 
+import { huddleSessionId } from "@influence/engine";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -153,25 +154,28 @@ export function huddleSessionsFromTrustedEvents(
     omittedUntrustedSessionCount?: number;
   },
 ): TrustedHuddleSessionLoad {
-  const sessions: TrustedHuddleSession[] = [];
+  const byId = new Map<string, TrustedHuddleSession>();
+  const completedSchedules = new Set(events.flatMap(row => row.envelope.type === "alliance.huddle_completed" ? [row.envelope.payload.session.scheduleId] : []));
   for (const row of events) {
-    if (row.eventType !== "alliance.huddle_completed") continue;
+    if (row.envelope.type === "alliance.huddle_scheduled" && completedSchedules.has(row.envelope.payload.schedule.id)) continue;
+    // Accepted selection freezes the audience before the first durable speech.
+    // Completed historical sessions retain their original identity and roster.
     const session = row.envelope.type === "alliance.huddle_completed"
       ? row.envelope.payload.session
-      : null;
+      : row.envelope.type === "alliance.huddle_scheduled"
+        ? { ...row.envelope.payload.schedule, id: huddleSessionId(row.envelope.payload.schedule.id), speakerIds: row.envelope.payload.schedule.memberIds }
+        : null;
     if (!session) continue;
     const speakerIds = [...session.speakerIds];
-    const phase = session.window === "pre_vote" ? "PRE_VOTE_HUDDLE" : "PRE_COUNCIL_HUDDLE";
-    sessions.push({
-      sessionId: session.id,
-      allianceId: session.allianceId,
-      round: session.round,
-      window: session.window,
-      phase,
-      speakerIds,
-      speakerKey: speakerSetKey(speakerIds),
+    const phase = session.window === "format" ? "FORMAT_MINGLE"
+      : session.window === "pre_vote" ? "PRE_VOTE_HUDDLE" : "PRE_COUNCIL_HUDDLE";
+    byId.set(session.id, {
+      sessionId: session.id, allianceId: session.allianceId,
+      round: session.round, window: session.window, phase,
+      speakerIds, speakerKey: speakerSetKey(speakerIds),
     });
   }
+  const sessions = [...byId.values()];
   return {
     sessions,
     trustedPrefixHealthy: meta.trustedPrefixHealthy,

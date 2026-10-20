@@ -1,9 +1,10 @@
+import { isSpectatorHuddleSpeech } from "@influence/engine";
 import { loadPayloads } from "./payload-storage.js";
 import { LEGACY_FORMAT_MANIFEST, Phase, replayCanonicalEvents, resolveFormatManifest, resolveGameKernel } from "@influence/engine";
 import { validHeadRectangle, type CharacterHeadPosition, type HeadRectangle } from "@influence/engine/character-portrait";
 import { assembleProductionCatalog, type ProductionCatalog } from "@influence/engine/production-moments";
 import { buildInfluenceProductionSources, type InfluenceProductionThought } from "@influence/engine/production-moments/influence-source";
-import { and, asc, eq, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, lte, or, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { getPersistedGameEvents } from "./game-event-read-model.js";
 import { getGameWatchReplayFrames } from "./game-watch-state.js";
@@ -130,7 +131,7 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
     getPersistedGameEvents(db, game.id), readGameExecutionState(db, game.id),
     db.select({ id: schema.gamePlayers.id, persona: schema.gamePlayers.persona }).from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.gameId, game.id)).orderBy(asc(schema.gamePlayers.joinedAt), asc(schema.gamePlayers.id)),
-    db.select().from(schema.transcripts).where(and(eq(schema.transcripts.gameId, game.id), ne(schema.transcripts.scope, "huddle")))
+    db.select().from(schema.transcripts).where(eq(schema.transcripts.gameId, game.id))
       .orderBy(asc(schema.transcripts.timestamp), asc(schema.transcripts.id)),
     db.select({ id: schema.gameTurns.id, sequence: schema.gameTurns.turnSequence, result: schema.gameTurns.commitResult })
       .from(schema.gameTurns).where(and(eq(schema.gameTurns.gameId, game.id), eq(schema.gameTurns.status, "committed"))),
@@ -157,6 +158,7 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
   else if (throughEventSequence !== history.lastTrustedSequence) throw new InfluenceProductionSourceError("Historical production source has no earlier accepted turn boundary");
   const committed = new Map(committedTurns.map(turn => [turn.id, turn.sequence]));
   const acceptedRows = rows.filter(row => {
+    if (row.scope === "huddle" && !isSpectatorHuddleSpeech({ ...row, dialogueContext: row.safeContext })) return false;
     if (row.gameTurnId && (!committed.has(row.gameTurnId) || throughTurnSequence !== null && committed.get(row.gameTurnId)! > throughTurnSequence)) return false;
     if (row.firstDurableEventSequence !== null && row.firstDurableEventSequence > throughEventSequence) return false;
     // Modern scratch dialogue without an accepted event boundary never enters a paused prefix.
@@ -216,11 +218,11 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
       ...(retrospective ? { retrospectiveSource: { eventSequence: retrospective.eventSequence, ordinal: retrospective.ordinal } } : {}),
       visualScene: row.safeContext?.visualScene, fromPlayerId, fromPlayerName: fromPlayerId ? frozen.get(fromPlayerId)?.player.name ?? null : null,
       toPlayerIds: stringArray(row.toPlayerIds), ...(row.roomId !== null && { roomId: row.roomId }),
-      ...(row.roomMetadata !== null && { roomMetadata: roomMetadata(row.roomMetadata) }), text: row.text, thinking: row.thinking, timestamp: row.timestamp };
+      ...(row.roomMetadata !== null && { roomMetadata: roomMetadata(row.roomMetadata) }), text: row.text, thinking: row.scope === "huddle" ? null : row.thinking, timestamp: row.timestamp };
   });
   const [cognition, assets, publications, sceneRows, episode] = await loadPayloads(Promise.all([
     db.select({ eventSequence: schema.gameCognitiveArtifacts.eventSequence, actorId: schema.gameCognitiveArtifacts.actorPlayerId,
-      decisionId: schema.gameCognitiveArtifacts.decisionId, payload: schema.gameCognitiveArtifacts.payload }).from(schema.gameCognitiveArtifacts).where(and(
+      action: schema.gameCognitiveArtifacts.action, decisionId: schema.gameCognitiveArtifacts.decisionId, payload: schema.gameCognitiveArtifacts.payload }).from(schema.gameCognitiveArtifacts).where(and(
       eq(schema.gameCognitiveArtifacts.gameId, game.id), eq(schema.gameCognitiveArtifacts.artifactType, "thinking"),
       eq(schema.gameCognitiveArtifacts.visibilityStatus, "active"), eq(schema.gameCognitiveArtifacts.redactionStatus, "active"),
       lte(schema.gameCognitiveArtifacts.eventSequence, throughEventSequence), sql`${schema.gameCognitiveArtifacts.createdAt}::timestamptz <= ${acceptedCutoff}::timestamptz`,
@@ -239,6 +241,7 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
   const thoughts: InfluenceProductionThought[] = [];
   const thoughtKeys = new Set<string>();
   for (const row of cognition) {
+    if (row.action === "alliance-huddle-turn") continue;
     if (!row.eventSequence || !row.actorId || typeof row.payload.thinking !== "string" || !row.payload.thinking.trim()) continue;
     if (!frozen.has(row.actorId)) throw new InfluenceProductionSourceError("Accepted thinking actor has no frozen game identity");
     const dialogue = row.decisionId ? selectedRows.findIndex(message => message.safeContext?.decisionId === row.decisionId) : -1;
@@ -247,9 +250,12 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
       const message = messages[dialogue]!, speaker = message.speakerPlayerId ?? message.fromPlayerId;
       if (message.anonymous || speaker !== row.actorId && speaker !== frozen.get(row.actorId)!.player.name)
         throw new InfluenceProductionSourceError("Accepted thinking response has inconsistent actor provenance");
+      if (message.scope === "huddle") continue;
       if (!messages[dialogue]!.thinking) messages[dialogue]!.thinking = row.payload.thinking;
       continue;
     }
+    // Conversation passes/unavailable offers have private evidence but no watch moment.
+    if (["lobby", "lobby-message", "mingle-turn"].includes(row.action)) continue;
     const key = `${row.eventSequence}:${row.actorId}`;
     if (thoughtKeys.has(key)) throw new InfluenceProductionSourceError("Ambiguous accepted thinking provenance");
     thoughtKeys.add(key);

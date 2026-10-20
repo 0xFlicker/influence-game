@@ -301,7 +301,7 @@ function buildPublicAllianceFacts(params: {
       const alliance = allianceById.get(session.allianceId)!;
       const speakers = session.speakerIds.map((id) => ({ id, name: nameForPlayer(params.playerNames, id) }));
       const messages = huddleMessagesForSession(params.transcriptRows, session, params.playerNames);
-      const outcome = outcomeBySessionId.get(session.id) ?? latestOutcome(outcomesByAllianceId.get(session.allianceId) ?? []);
+      const outcome = outcomeBySessionId.get(session.id);
       return {
         allianceId: session.allianceId,
         allianceName: alliance.name,

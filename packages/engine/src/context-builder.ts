@@ -1,3 +1,4 @@
+import { huddleSessionId } from "./open-conversation";
 /**
  * Influence Game - Context Builder
  *
@@ -10,6 +11,7 @@ import {
 } from "./alliance-huddle-outcome";
 import {
   buildRecallEvidenceBoundaryKey,
+  isActorAuthorizedDialogueCandidate,
   defaultRecallPlanCompiler,
   explainRecallPlanSelectionForPlan,
   type RecallPlanCompiler,
@@ -20,6 +22,7 @@ import type { TranscriptLogger } from "./transcript-logger";
 import type { AllianceHuddleOutcome, AllianceProposalLineage, AllianceProposalVersion, AllianceRecord, UUID, RoomAllocation, JuryMember, MingleRoomCount } from "./types";
 import { Phase } from "./types";
 import type {
+  TranscriptEntry,
   EliminationContext,
   JudgmentQuestionHistoryEntry,
   MingleIntentSummary,
@@ -192,6 +195,36 @@ export class ContextBuilder {
       const lineage = this.gameState.getAllianceProposalLineage(lineageId);
       return lineage ? this.agentParticipatedInLineage(lineage, agentId) : false;
     });
+  }
+
+  /** Speech is authorized against the accepted session roster, never current membership. */
+  private huddleRecallTranscript(agentId: UUID): TranscriptEntry[] {
+    const schedules = this.gameState.getAllianceHuddleSchedules();
+    const sessions = Object.values(this.gameState.getDomainProjection().allianceHuddleSessions);
+    return this.logger.transcript.filter(entry => {
+      if (entry.scope !== "huddle") return true;
+      const context = entry.dialogueContext;
+      const session = sessions.find(s => s.id === context?.sessionId);
+      const schedule = schedules.find(s => s.id === context?.scheduleId && s.decision === "scheduled");
+      if (!context || !schedule || context.sessionId !== huddleSessionId(schedule.id)
+        || context.allianceId !== schedule.allianceId || context.window !== schedule.window
+        || entry.round !== schedule.round || session && (session.scheduleId !== schedule.id || session.allianceId !== schedule.allianceId)) return false;
+      const audience = session?.speakerIds ?? schedule.memberIds;
+      return Boolean(context?.sessionId && audience?.includes(agentId) && entry.speakerPlayerId && audience.includes(entry.speakerPlayerId)
+        && context.sessionAudiencePlayerIds?.length === audience.length
+        && new Set(context.sessionAudiencePlayerIds).size === audience.length
+        && context.sessionAudiencePlayerIds.every(id => audience.includes(id)));
+    }).filter(entry => isActorAuthorizedDialogueCandidate(entry, agentId))
+      // Actor-local references cannot reveal gaps caused by a foreign conversation.
+      // The original accepted coordinates remain in the immutable transcript/evidence.
+      .map((entry, index) => ({ ...entry, entrySequence: index + 1 }));
+  }
+
+  private recentHuddleDialogue(agentId: UUID): Array<{ round: number; from: string; text: string }> {
+    const attended = this.huddleRecallTranscript(agentId).filter(e => e.scope === "huddle" && e.speakerPlayerId && e.text.trim());
+    const round = attended.at(-1)?.round;
+    // Keep the latest attended round through subsequent decisions; older rounds remain retrievable.
+    return attended.filter(e => e.round === round).map(e => ({ round: e.round, from: e.from, text: e.text }));
   }
 
   private compactHuddleOutcomesForActor(
@@ -911,6 +944,7 @@ export class ContextBuilder {
       alivePlayers: this.gameState.getAlivePlayers().map((p) => ({ id: p.id, name: p.name, shielded: p.shielded })),
       publicMessages: [...this.logger.publicMessages],
       mingleMessages: this.mingleInbox.get(agentId) ?? [],
+      recentHuddleDialogue: this.recentHuddleDialogue(agentId),
       empoweredId: extra?.empoweredId ?? this.gameState.empoweredId ?? undefined,
       councilCandidates: extra && "councilCandidates" in extra
         ? extra.councilCandidates
@@ -1019,7 +1053,7 @@ export class ContextBuilder {
         promptClass,
         continuity,
         phaseContext: base,
-        transcript: this.logger.transcript,
+        transcript: this.huddleRecallTranscript(params.agentId),
       }, plan),
       laneSummary: {
         protectedCount: plan.receipt.selectedLaneCounts.protected,
@@ -1064,7 +1098,7 @@ export class ContextBuilder {
       params.isEliminated,
       params.roomInfo,
     );
-    const transcript = this.logger.transcript;
+    const transcript = this.huddleRecallTranscript(params.agentId);
     const boundaryKey = buildRecallEvidenceBoundaryKey({
       actorId: params.agentId,
       promptClass: params.promptClass,

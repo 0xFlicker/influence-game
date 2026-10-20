@@ -6,7 +6,6 @@
 
 import type {
   AllianceHuddleFactAtom,
-  AllianceHuddleFactAtomDraft,
   UUID,
   PowerAction,
   JuryMember,
@@ -449,6 +448,9 @@ export interface GameCheckpointCapsule {
 // ---------------------------------------------------------------------------
 
 export interface AgentResponse extends StrategicDecisionMetadata {
+  recipientId?: string | null;
+  replyToContributionId?: number | null;
+  noReply?: boolean;
   /** Agent's internal thinking (hidden from players, visible to viewers) */
   thinking: string;
   /** The actual message content */
@@ -912,21 +914,22 @@ export interface AllianceHuddlePromptContext {
   window: "format" | "pre_vote" | "pre_council";
   scheduleId: UUID;
   pass: number;
-  /** Earlier engine-ID'd facts in this exact session, in acceptance order. */
-  priorFacts: AllianceHuddleFactAtom[];
 }
 
 export interface AllianceHuddleTurnAction extends StrategicDecisionMetadata {
+  recipientId?: string | null;
+  replyToContributionId?: number | null;
   /** Typed provider exhaustion for an optional huddle turn; omit the turn entirely. */
   providerAbsence?: ProviderSpeechAbsence;
   thinking?: string;
   reasoningContext?: string;
   message: string | null;
   noReply?: boolean;
-  factAtoms: AllianceHuddleFactAtomDraft[];
 }
 
 export interface MingleTurnAction extends StrategicDecisionMetadata {
+  recipientId?: string | null;
+  replyToContributionId?: number | null;
   /** Typed provider exhaustion for an optional turn; never emit a transcript entry. */
   providerAbsence?: ProviderSpeechAbsence;
   /** Agent's internal thinking (hidden from players, visible to viewers) */
@@ -1368,6 +1371,8 @@ export interface TwoNamesBoard {
 }
 
 export interface PhaseContext {
+  conversation?: import("./open-conversation").ConversationPrompt;
+  recentHuddleDialogue?: Array<{ round: number; from: string; text: string }>;
   /** Present only for games explicitly created in Visual Mode. */
   visual?: {
     performanceInstructions: string;
@@ -1670,7 +1675,7 @@ export interface RecallHistoryDialogueEvidence {
   phase: Phase;
   speakerLabel: string;
   dialogueText: string;
-  sourceClass: "public" | "mingle";
+  sourceClass: "public" | "mingle" | "huddle";
   evidenceRole: "historical_evidence";
 }
 
@@ -1728,7 +1733,7 @@ export interface RecallPlanReceipt {
   selectedByRankSlot: Array<{
     rankSlot: number;
     lane: "history";
-    sourceClass: "public" | "mingle";
+    sourceClass: "public" | "mingle" | "huddle";
   }>;
   /**
    * Actor-authorized evidence boundary only. Foreign private writes that advance

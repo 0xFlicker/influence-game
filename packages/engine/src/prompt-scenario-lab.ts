@@ -1,3 +1,4 @@
+import { beginConversation, conversationPrompt } from "./open-conversation";
 /**
  * Producer-only prompt scenario replay.
  *
@@ -331,7 +332,11 @@ function makeChainReplayOpenAIStub(
         const step = steps[stepIndex];
         stepIndex += 1;
         if (!step) throw new Error("Prompt scenario chain received an unexpected provider retry or extra call.");
-        if (step.kind === "diary" || step.kind === "lobby") {
+        if (step.kind === "lobby") return fakeResponsesToolCall("scenario-chain-lobby", "conversation_turn", {
+          ...step.response, thinking: step.response.thinking ?? "Fixture lobby reasoning.",
+          noReply: false, recipientId: null, replyToContributionId: null,
+        });
+        if (step.kind === "diary") {
           return fakeResponsesText({
             thinking: step.response.thinking ?? "Fixture diary reasoning.",
             message: step.response.message,
@@ -633,6 +638,7 @@ export async function runPromptScenarioChain(
     Phase.LOBBY,
     { publicMessages: [] },
   );
+  nextLobbyContext.conversation = conversationPrompt({ ...beginConversation(nextLobbyContext.alivePlayers.map(p => p.id), "scenario"), nextActorId: agent.id }, nextLobbyContext.alivePlayers, []);
   const nextLobbyResponse = await agent.getLobbyMessage(nextLobbyContext);
   if (!nextLobbyResponse.message.trim()) {
     throw new Error("Prompt scenario chain requires a model-authored next-lobby message.");

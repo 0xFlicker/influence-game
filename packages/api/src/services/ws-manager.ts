@@ -1,3 +1,4 @@
+import { isSpectatorHuddleSpeech } from "@influence/engine";
 /**
  * WebSocket Manager
  *
@@ -190,7 +191,7 @@ function buildPublicTranscriptEntry(entry: TranscriptEntry): PublicWsTranscriptE
     roomId: entry.roomId,
     roomMetadata: buildPublicRoomMetadata(entry.roomMetadata),
     text: entry.text,
-    thinking: entry.thinking,
+    thinking: entry.scope === "huddle" ? undefined : entry.thinking,
     anonymous: entry.anonymous,
     displayOrder: entry.displayOrder,
   };
@@ -231,7 +232,7 @@ export function buildWsPublicationPayload(
 }
 
 function shouldBroadcastTranscriptEntry(entry: TranscriptEntry): boolean {
-  return entry.scope !== "huddle";
+  return entry.scope !== "huddle" || isSpectatorHuddleSpeech(entry);
 }
 
 /** Called when a new WebSocket connection opens. */

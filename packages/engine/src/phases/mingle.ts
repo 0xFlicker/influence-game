@@ -1,6 +1,6 @@
+import { beginConversation, advanceConversation, conversationPrompt, type ConversationState } from "../open-conversation";
 import type {
   UUID,
-  MingleTurnActionRecord,
   RoomAllocation,
   MingleRoomAssignmentRecord,
   MingleRoomAssignmentSource,
@@ -335,11 +335,6 @@ export function allocateRooms(
   };
 }
 
-function describeRoom(ctx: PhaseRunnerContext, room: RoomAllocation): string {
-  const occupantNames = room.playerIds.map((id) => ctx.gameState.getPlayerName(id));
-  return `Room ${room.roomId}: ${occupantNames.length > 0 ? occupantNames.join(", ") : "Empty"}`;
-}
-
 function buildRoomCounts(localRooms: RoomAllocation[]): MingleRoomCount[] {
   return localRooms.map((room) => ({ roomId: room.roomId, count: room.playerIds.length }));
 }
@@ -366,60 +361,6 @@ function buildRoomsFromAssignments(
   return rooms;
 }
 
-function createAssignmentRecordsFromAssignments(
-  alivePlayers: Array<{ id: UUID; name: string }>,
-  roomByPlayerId: Map<UUID, number>,
-): MingleRoomAssignmentRecord[] {
-  return alivePlayers.map((player) => {
-    const assignedRoomId = roomByPlayerId.get(player.id) ?? 1;
-    return {
-      player: { id: player.id, name: player.name },
-      assignedRoomId,
-      source: "movement",
-    };
-  });
-}
-
-async function runMingleTurn(
-  ctx: PhaseRunnerContext,
-  localRooms: RoomAllocation[],
-  roomCounts: MingleRoomCount[],
-  roomByPlayerId: Map<UUID, number>,
-  roomCount: number,
-  totalBeats: number,
-  phase: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE | Phase.FORMAT_MINGLE,
-): Promise<MingleTurnActionRecord[]> {
-  const collectedTurns: CollectedMingleTurn[] = [];
-
-  for (const room of localRooms) {
-    if (room.playerIds.length === 0) continue;
-
-    const conversationHistory: Array<{ from: string; text: string }> = [];
-
-    for (const playerId of room.playerIds) {
-      collectedTurns.push(await executeMingleTurn({
-        ctx,
-        phase,
-        room,
-        playerId,
-        roomCount,
-        roomCounts,
-        mingleIntent: null,
-        totalBeats,
-        conversationHistory,
-      }));
-    }
-  }
-  return commitMingleTurnMovements({
-    ctx,
-    turns: collectedTurns,
-    roomByPlayerId,
-    roomCount,
-    phase,
-    mode: "live",
-  });
-}
-
 /** Serializable phase-local state; no closures, Maps or model clients cross a beat boundary. */
 export interface MingleWindowState {
   phase: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE | Phase.FORMAT_MINGLE;
@@ -430,6 +371,10 @@ export interface MingleWindowState {
   initialAllocation: ReturnType<typeof allocateRooms>;
   roomByPlayerId: Record<UUID, number>;
   allRooms: RoomAllocation[];
+  conversations: Array<ConversationState | null>;
+  opened: boolean;
+  movementIntents: Record<string, { gotoRoomId: number | null; gotoPlayerName: string | null }>;
+
 }
 
 export async function beginMingleWindow(
@@ -505,7 +450,9 @@ export async function beginMingleWindow(
   }
 
   return { phase, alivePlayers: alivePlayers.map(({ id, name }) => ({ id, name })), roomCount, beats, nextBeat: 1, initialAllocation,
-    roomByPlayerId: Object.fromEntries(roomByPlayerId), allRooms: [] };
+    roomByPlayerId: Object.fromEntries(roomByPlayerId), allRooms: [],
+    conversations: initialAllocation.rooms.map(room => room.playerIds.length < 2 ? null : beginConversation(room.playerIds, `${gameState.gameId}:mingle:${gameState.round}:1:${room.roomId}`, config.conversationPolicy)),
+    opened: false, movementIntents: {} };
 }
 
 /** Current committed arrangement, including empty rooms. */
@@ -515,54 +462,57 @@ export function mingleWindowRooms(state: MingleWindowState): RoomAllocation[] {
     : buildRoomsFromAssignments(new Map(Object.entries(state.roomByPlayerId)), state.alivePlayers, state.roomCount, state.initialAllocation.diagnostics.round, state.nextBeat);
 }
 
-/** Collect a whole beat before applying its simultaneous movement decisions. */
-export async function advanceMingleWindow(ctx: PhaseRunnerContext, state: MingleWindowState): Promise<MingleWindowState> {
-  assertMingleWindowRoster(ctx, state);
-  state = structuredClone(state);
-  if (state.nextBeat < 1 || state.nextBeat > state.beats) throw new Error("Mingle window has no pending beat");
+/** One committed allocation, contribution, movement choice, or simultaneous move. */
+export async function advanceMingleWindow(ctx: PhaseRunnerContext, prior: MingleWindowState): Promise<MingleWindowState> {
+  assertMingleWindowRoster(ctx, prior);
+  const state = structuredClone(prior);
+  if (state.nextBeat > state.beats) throw new Error("Mingle window has no pending beat");
   const { gameState, logger, contextBuilder } = ctx;
-  const { phase, alivePlayers, roomCount, beats, initialAllocation } = state;
-  const beat = state.nextBeat;
-  const allRooms = [...state.allRooms];
-  const roomByPlayerId = new Map(Object.entries(state.roomByPlayerId));
-  const localRooms = beat === 1
-    ? initialAllocation.rooms
-    : buildRoomsFromAssignments(roomByPlayerId, alivePlayers, roomCount, gameState.round, beat);
-  const roomCounts = buildRoomCounts(localRooms);
-  const beatRooms = localRooms;
-  const beatDiagnostics: MingleSessionDiagnostics = beat === 1
-    ? initialAllocation.diagnostics
-    : {
-        round: gameState.round,
-        beat,
-        roomCount,
-        eligiblePlayers: alivePlayers.map((player) => ({ id: player.id, name: player.name })),
-        assignments: createAssignmentRecordsFromAssignments(alivePlayers, roomByPlayerId).map((assignment) => ({
-          ...assignment,
-        })),
-        allocatedRooms: beatRooms.map((room) => ({
-          roomId: room.roomId,
-          beat: room.beat,
-          players: room.playerIds.map((playerId) => ({
-            id: playerId,
-            name: gameState.getPlayerName(playerId),
-          })),
-          conversationRan: room.playerIds.length >= 2,
-        })),
-      };
-
-  contextBuilder.currentRoomCounts = roomCounts;
-  contextBuilder.currentRoomAllocations = beatRooms;
-  allRooms.push(...beatRooms);
-
-  const allocationText = `Turn ${beat}: ${beatRooms.map((room) => describeRoom(ctx, room)).join(" | ")}`;
-  await assertCanAcceptCommit(ctx);
-  const allocationEntry = logger.logRoomAllocation(allocationText, beatRooms, [], beatDiagnostics, phase);
-  const actions = await runMingleTurn(ctx, localRooms, roomCounts, roomByPlayerId, roomCount, beats, phase);
-  if (allocationEntry.roomMetadata?.diagnostics) {
-    allocationEntry.roomMetadata.diagnostics.actions = actions;
+  const rooms = mingleWindowRooms(state);
+  const counts = buildRoomCounts(rooms);
+  contextBuilder.currentRoomCounts = counts;
+  contextBuilder.currentRoomAllocations = rooms;
+  if (!state.opened) {
+    await assertCanAcceptCommit(ctx);
+    logger.logRoomAllocation(`Room conversation ${state.nextBeat}`, rooms, [], undefined, state.phase);
+    state.allRooms.push(...rooms);
+    state.opened = true;
+    return state;
   }
-  return { ...state, nextBeat: beat + 1, allRooms, roomByPlayerId: Object.fromEntries(roomByPlayerId) };
+  const roomIndex = state.conversations.findIndex(c => c !== null && !c.ended);
+  const movementOnlyId = roomIndex < 0 && state.nextBeat < state.beats
+    ? state.alivePlayers.find(p => !Object.hasOwn(state.movementIntents, p.id))?.id : undefined;
+  if (roomIndex >= 0 || movementOnlyId) {
+    const room = roomIndex >= 0 ? rooms[roomIndex]! : rooms.find(r => r.playerIds.includes(movementOnlyId!))!;
+    const conversation = roomIndex >= 0 ? state.conversations[roomIndex]! : {
+      ...beginConversation(room.playerIds, `${gameState.gameId}:movement:${state.nextBeat}`, ctx.config.conversationPolicy), nextActorId: movementOnlyId!,
+    };
+    const lastAllocationIndex = logger.transcript.findLastIndex(e => e.roomMetadata !== undefined);
+    const history = logger.transcript.slice(lastAllocationIndex + 1).filter(e => e.scope === "mingle" && e.roomId === room.roomId)
+      .map(e => ({ from: e.from, text: e.text }));
+    const turn = await executeMingleTurn({ ctx, phase: state.phase, room, playerId: conversation.nextActorId,
+      roomCount: state.roomCount, roomCounts: counts, mingleIntent: null, totalBeats: state.beats, conversationHistory: history,
+      conversation: conversationPrompt(conversation, room.playerIds.map(id => ({id, name: gameState.getPlayerName(id)})), history,
+        movementOnlyId ? "only" : state.nextBeat < state.beats ? "optional" : "none") });
+    if (roomIndex >= 0) state.conversations[roomIndex] = advanceConversation(conversation, turn.playerId, turn.action);
+    if (state.nextBeat < state.beats && (!turn.action.providerAbsence || movementOnlyId)) state.movementIntents[turn.playerId] = {
+      gotoRoomId: turn.action.gotoRoomId ?? null, gotoPlayerName: turn.action.gotoPlayerName ?? null };
+    return state;
+  }
+  await assertCanAcceptCommit(ctx);
+  if (state.nextBeat < state.beats) {
+    const map = new Map(Object.entries(state.roomByPlayerId));
+    const turns: CollectedMingleTurn[] = state.alivePlayers.map(p => ({ playerId: p.id, fromName: p.name, recipientNames: [],
+      roomId: map.get(p.id)!, turn: state.nextBeat, action: state.movementIntents[p.id]!, message: null, messageSent: false, turnAction: "no_reply" }));
+    commitMingleTurnMovements({ ctx, turns, roomByPlayerId: map, roomCount: state.roomCount, phase: state.phase, mode: "live" });
+    state.roomByPlayerId = Object.fromEntries(map);
+  }
+  state.nextBeat++;
+  state.opened = false;
+  state.movementIntents = {};
+  state.conversations = mingleWindowRooms(state).map(room => room.playerIds.length < 2 ? null : beginConversation(room.playerIds,
+    `${gameState.gameId}:mingle:${gameState.round}:${state.nextBeat}:${room.roomId}`, ctx.config.conversationPolicy));
+  return state;
 }
 
 export async function finishMingleWindow(ctx: PhaseRunnerContext, state: MingleWindowState): Promise<void> {

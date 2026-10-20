@@ -148,8 +148,8 @@ describe("GameRunner stream listener", () => {
     const mingleTurn = agentTurns.find((e) => e.type === "agent_turn" && e.action === "mingle-turn");
     expect(mingleTurn).toBeDefined();
     if (mingleTurn?.type === "agent_turn") {
-      expect(mingleTurn.response).toHaveProperty("action");
-      expect(mingleTurn.response).toHaveProperty("messageDelivered");
+      expect(mingleTurn.response).toHaveProperty("noReply");
+      expect(mingleTurn.response).toHaveProperty("message");
     }
   });
 

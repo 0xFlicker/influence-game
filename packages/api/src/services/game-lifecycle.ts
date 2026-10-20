@@ -1,3 +1,5 @@
+import { conversationPolicy } from "@influence/engine";
+import { withEvaluationBudget } from "@influence/engine";
 import { fixtureInfluenceRetrospective, fixtureInfluenceRetrospectiveSetup, fixtureInfluenceRetrospectiveSpeaker } from "@influence/engine";
 import { RetrospectiveExecutionError } from "@influence/engine";
 import { pauseRetrospectiveExecution } from "./game-retrospective-recovery.js";
@@ -433,6 +435,8 @@ export function buildEngineConfigFromGameRecord(
   maxPlayers: number,
 ): GameConfig {
   return {
+    conversationPolicy: conversationPolicy(gameConfig.conversationPolicy as GameConfig["conversationPolicy"]),
+    mingleSessionsPerRound: typeof gameConfig.mingleSessionsPerRound === "number" ? gameConfig.mingleSessionsPerRound : 2,
     maxRounds: (gameConfig.maxRounds as number) ?? 10,
     minPlayers,
     maxPlayers,
@@ -712,7 +716,7 @@ async function startGameWithOwner(
     ? createPrivateTraceSink(db, gameId, ownerEpoch, game.cognitiveArtifactCaptureVersion)
     : undefined;
   const providerExecutionHooks = ownerEpoch
-    ? createApiProviderExecutionHooks(db, { gameId, ownerEpoch })
+    ? withEvaluationBudget(createApiProviderExecutionHooks(db, { gameId, ownerEpoch }), process.env, "INFLUENCE")
     : undefined;
   const toolChoiceMode = primaryRuntime?.toolChoiceMode;
 

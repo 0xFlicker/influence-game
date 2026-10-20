@@ -83,13 +83,12 @@ describe("simulation variant config", () => {
     const config = buildSimulationConfig("baseline");
 
     expect(config.powerLobbyAfterVote).toBe(false);
-    expect(config.mingleSessionsPerRound).toBe(3);
+    expect(config.mingleSessionsPerRound).toBe(2);
   });
 
   it("applies simulator-only LLM call bounds", () => {
     const config = buildSimulationConfig("mingle");
 
-    expect(config.lobbyMessagesPerPlayer).toBe(1);
     expect(config.maxDiaryFollowUps).toBeUndefined();
     expect(config.diaryRoomAfterPhases).toEqual([]);
     expect("enableStrategicReflections" in config).toBe(false);
@@ -292,7 +291,7 @@ describe("simulation variant config", () => {
     expect("minglePairCooldownRounds" in buildSimulationConfig("baseline")).toBe(false);
     expect("minglePairCooldownRounds" in buildSimulationConfig("mingle")).toBe(false);
     expect("minglePairCooldownRounds" in buildSimulationConfig("power-lobby")).toBe(false);
-    expect(buildSimulationConfig("mingle").mingleSessionsPerRound).toBe(3);
+    expect(buildSimulationConfig("mingle").mingleSessionsPerRound).toBe(2);
   });
 
   it("maps single-feature simulator variants to the correct flags", () => {
@@ -303,7 +302,7 @@ describe("simulation variant config", () => {
     expect(isPowerLobbyVariant("mingle")).toBe(false);
     expect(isMingleVariant("mingle")).toBe(true);
     expect(buildSimulationConfig("mingle").powerLobbyAfterVote).toBe(false);
-    expect(buildSimulationConfig("mingle").mingleSessionsPerRound).toBe(3);
+    expect(buildSimulationConfig("mingle").mingleSessionsPerRound).toBe(2);
   });
 
   it("maps combined simulator variants to both experimental flags", () => {
@@ -312,7 +311,7 @@ describe("simulation variant config", () => {
     expect(isPowerLobbyVariant("power-lobby-mingle")).toBe(true);
     expect(isMingleVariant("power-lobby-mingle")).toBe(true);
     expect(config.powerLobbyAfterVote).toBe(true);
-    expect(config.mingleSessionsPerRound).toBe(3);
+    expect(config.mingleSessionsPerRound).toBe(2);
   });
 
   it("computes partial aggregate stats from completed games only", () => {

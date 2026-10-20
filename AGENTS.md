@@ -34,6 +34,14 @@
 - Agent quality matters: agents need help exhibiting real strategy, remembering commitments, and making watchable social decisions.
 - The active `feat/inf-228-mingle-hardening` branch is an unfinished Mingle/open-room experiment intended for eventual merge to `main`. The UI mostly works, but it needs more testing and tuning before merge.
 
+## Influence open conversations
+
+- Lobby (including Reckoning/Tribunal), ordinary Mingle, and selected alliance huddles use bounded sequential speech/pass decisions. Defaults are 320 UTF-8 bytes per speech and 400 bytes per participant; two ordinary Mingle conversation rounds have one simultaneous movement boundary. Freeze these values in new-game configuration.
+- Give every contribution its own durable provider slot and commit before preparing the next context. Event sequence alone cannot identify successive conversation calls. Preserve feedback-informed length retries, accepted thinking, available native reasoning, and every sanitized provider attempt.
+- Passes are always skipped in playback, including Show thinking; their thinking stays saved for debugging. Private offers, passes, queue state, foreign budgets, and gaps in reference numbering never enter another contestant's prompt.
+- Huddles are private House-selected conversations, without new tactical fact atoms or House-generated outcomes. Frozen session participants retain attended dialogue after membership changes; outsiders learn no session existence or scheduling details. A spoken disclosure is a claim, not permission to read the session.
+- Spectator huddles show speech only, chronologically after Mingle, with an exact-cast room scene or portraits. Spectator visibility never widens contestant/API-owner recall. Historical completed outcomes remain readable.
+
 ## Known Risks
 
 - Current API Influence games execute as atomic durable logical turns. A normal process reload adopts the committed XState cursor and continues the same game; planned provider calls replay accepted values and uncommitted scratch effects are discarded. Werewolf adopts its own validated event cursor and frozen action/observation plans under the same owner-epoch and provider journal fences. Do not extend these claims to corrupt durable rows or historical runs without that authority.

@@ -1092,6 +1092,8 @@ function generatedSpeechOutput(message: string) {
   return {
     message,
     noReply: false,
+    recipientId: null,
+    replyToContributionId: null,
     gotoRoomId: null,
     gotoPlayerName: null,
     strategyDelta: `Recorded ${message}`,
@@ -1111,7 +1113,7 @@ function generatedProviderResponse(message: string) {
       id: "real-worker-function-call",
       type: "function_call",
       call_id: "real-worker-call",
-      name: "mingle_turn",
+      name: "conversation_turn",
       arguments: outputText,
     }],
     usage: {

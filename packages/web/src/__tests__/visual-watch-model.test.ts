@@ -237,3 +237,16 @@ test("Even Votes all-odd fallback displays the full canonical pool", async () =>
   const tally = cues.findIndex(cue=>cue.kind==="format_roll_call" && cue.voteSummary);
   expect(voteLedgerForCue(cues,tally)?.eligibility).toEqual({ids,label:"All totals are odd · empowered choice"});
 });
+
+test("huddle speech uses only its frozen audience in portrait rooms and keeps a saved scene on seek", () => {
+  const peers: GamePlayer[] = [player, {...player, id: "b", name: "Bea"}, {...player, id: "c", name: "Cal"}];
+  const huddle: TranscriptEntry = {...message, scope: "huddle", phase: "FORMAT_MINGLE", visualScene: undefined, toPlayerIds: ["b"], roomId: undefined};
+  const fallback = visualWatchPresentation({enabled: false, status: null, portraits: {}, scenes: []}, null, huddle, peers);
+  expect(fallback.beat).toMatchObject({kind: "portrait-room", participants: [{id: "a"}, {id: "b"}], roomNumber: null});
+  expect(JSON.stringify(fallback)).not.toContain('"Cal"');
+  const saved: VisualWatchData = {enabled: true, status: null, portraits: {}, fullBodies: {a: "/a.png", b: "/b.png"}, scenes: [
+    {id: "pair", roomId: "mingle-2", version: 1, afterDialogueSequence: 2, imageUrl: "/pair.png", participantIds: ["a", "b"], anchors: []},
+    {id: "changed", roomId: "mingle-2", version: 2, afterDialogueSequence: 3, imageUrl: "/changed.png", participantIds: ["a", "c"], anchors: []},
+  ]};
+  expect(visualWatchPresentation(saved, null, {...huddle, visualScene: {id: "pair", roomId: "mingle-2"}}, peers).beat).toMatchObject({kind: "scene", sceneId: "pair"});
+});

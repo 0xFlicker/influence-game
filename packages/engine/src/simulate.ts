@@ -19,7 +19,11 @@
  * Retrospectives remain speech-only and separate knowledge during play from
  * postgame revelations using named action, final-result and elimination references.
  * Ordinary Mingle authors conversation and movement, without typed coordination
- * receipts. Alliance huddle facts and historical receipt exports remain supported.
+ * receipts. Huddles use the same bounded conversation contract; only historical
+ * tactical receipts remain readable. Lobby/Mingle/huddle passes keep private evidence
+ * but produce no playback beat. API full-game tests use simulate:api (6–8 players)
+ * and INFLUENCE_EVALUATION_BUDGET_USD / INFLUENCE_EVALUATION_BUDGET_LEDGER on
+ * the localhost API worker; file-only runs do not prove durable API behavior.
  * Retrospective RT-01/02/03 supplies contracts, frozen context/order and strict
  * speech-only agent methods with verified capacity and accepted journal replay.
  * Influence and Werewolf runners now include the retrospective after a canonical outcome.
@@ -743,7 +747,6 @@ export function buildSimulationConfig(
     formatManifest?: readonly LaunchFormatId[];
   } = {},
 ): GameConfig {
-  const mingle = isMingleVariant(variant);
   const richProducer = options.richProducer === true;
   const enableDiary = options.enableDiary === true || richProducer;
   const maxRounds = options.maxRounds ?? 10;
@@ -753,9 +756,7 @@ export function buildSimulationConfig(
     maxRounds,
     formatManifest: resolveFormatManifest(options.formatManifest),
     diaryRoomAfterPhases: enableDiary ? [Phase.FORMAT_RESOLVE, Phase.COUNCIL] : [],
-    lobbyMessagesPerPlayer: 1,
     powerLobbyAfterVote: isPowerLobbyVariant(variant),
-    mingleSessionsPerRound: mingle ? 3 : DEFAULT_CONFIG.mingleSessionsPerRound,
     agentActionTimeoutMs: options.agentActionTimeoutMs ?? 90_000,
     enableHouseRoundSummaries: true,
     enableHouseLongFormSummaries: richProducer,

@@ -1,3 +1,4 @@
+import { validateConversationState, type ConversationState } from "./open-conversation";
 import { validateMingleWindowState } from "./mingle-window-contract";
 import {
   isCanonicalGameEventType,
@@ -197,6 +198,8 @@ export type GameExecutionCursorV1 =
       actorIndex: number;
       pass?: number;
     }
+  | { version: 1; kind: "huddle_conversation"; completion: MingleProgressV1["completion"]; progress: import("./phases/alliances").HuddleConversationProgress }
+  | { version: 1; kind: "lobby_conversation"; conversation: ConversationState }
   | { version: 1; kind: "mingle"; progress: MingleProgressV1 }
   | { version: 1; kind: "alliance"; progress: AllianceProgressV1 }
   | { version: 1; kind: "huddle"; progress: HuddleProgressV1 }
@@ -610,6 +613,17 @@ function validateCursor(value: unknown): string[] {
       validateBoundedUniqueStrings(value.actorIds, "serial_actor actorIds", errors);
       requireBoundedIndex(value.actorIndex, value.actorIds, true, "serial_actor actorIndex", errors);
       if (value.pass !== undefined) requirePositiveInteger(value.pass, "serial_actor pass", errors);
+      break;
+    case "huddle_conversation":
+      if (!exactRecord(value, ["version", "kind", "completion", "progress"]) || !exactRecord(value.progress, ["scheduleIds", "index", "conversation"])) return ["Invalid huddle conversation cursor"];
+      if (!["format_resolve", "two_names_override", "two_names_plea"].includes(String(value.completion))) errors.push("Invalid huddle completion");
+      validateBoundedUniqueStrings(value.progress.scheduleIds, "huddle schedules", errors);
+      requireBoundedIndex(value.progress.index, value.progress.scheduleIds, true, "huddle index", errors);
+      if (value.progress.conversation !== null) errors.push(...validateConversationState(value.progress.conversation));
+      break;
+    case "lobby_conversation":
+      if (!exactRecord(value, ["version", "kind", "conversation"])) return ["Invalid Lobby cursor"];
+      errors.push(...validateConversationState(value.conversation));
       break;
     case "mingle":
       if (!exactRecord(value, ["version", "kind", "progress"])) return ["mingle cursor fields are not exact"];

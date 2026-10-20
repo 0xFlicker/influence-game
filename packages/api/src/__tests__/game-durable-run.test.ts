@@ -106,7 +106,7 @@ describe("buildFinaleIntegrity", () => {
 });
 
 async function waitForCompletedDurableInspection(db: DrizzleDB, gameId: string) {
-  for (let attempt = 0; attempt < 100; attempt++) {
+  for (let attempt = 0; attempt < 1000; attempt++) {
     const result = await getDurableRunInspection(db, gameId);
     if (
       result.ok &&

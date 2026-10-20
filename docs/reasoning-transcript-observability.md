@@ -63,7 +63,7 @@ Final 4 pleas use the lobby scene with exactly the remaining four players. Viewe
 
 Scene preparation uses a committed-boundary hook before gameplay dispatch. The agent hook reads the accepted image afterward; waiting for scene generation is not an agent decision or an accepted cue. Paid render receipts remain durable even when a worker loses ownership before scene acceptance.
 
-Durable Mingle emits each beat's dialogue and movement diagnostics in one commit. Initial assignment, beat execution, and final alliance/huddle work have separate provider-turn identities. Recovery must reuse accepted results for the failed logical turn and must not dispatch a previously committed beat again.
+Durable Lobby, Mingle and huddles commit each contribution under a distinct provider slot. Room allocation, simultaneous movement, huddle selection/session boundaries and dialogue have separate accepted turns. Recovery replays accepted provider values without charging or publishing them again. Speech/pass and movement intent share one call where movement is available; unoffered/solo actors receive movement-only calls at the checkpoint.
 Performance instructions describe delivery and mannerisms; they are not private thinking,
 strategic decisions or canonical movement. Cues persist as producer-visible canonical records and are shared only with their applicable room audience; diary cues remain private. Cue strings have surrounding whitespace trimmed and are otherwise preserved without text matching, filtering or interpretation; gameplay actions retain their strict validation. Numbered images are derived from verified final-image head anchors,
 not intended staging coordinates. Keep direct House calls and exact schemas; do not
@@ -217,13 +217,7 @@ prompts, raw provider responses, storage keys, source pointers, decision logs,
 private trace manifests, and producer-only evidence must stay out of that
 websocket payload. This keeps live watch/replay useful without changing MCP or
 cognitive-artifact authorization policy.
-Transcript entries with `scope: "huddle"` are not published through the generic
-public websocket transcript or public transcript export. Public web/replay
-alliance inspection uses the dedicated alliance projection instead, which may
-show huddle speech while omitting hidden thinking, House scheduling rationale,
-raw envelopes, source pointers, and producer/debug evidence. Production Game MCP
-owner transcript pages may include member-private huddles authorized through owned
-seats; that is a separate owner policy surface from public watch.
+Accepted participant `huddle_speech` is projected into chronological public replay, live websocket dialogue, Studio and export without thinking. Private selection/pass/unavailable records and huddle cognition never produce watch moments. The saved scene binding uses the exact participant set and does not change ordinary room occupancy. Production Game MCP owner transcript pages independently require an immutable session-time audience; public spectator visibility does not widen owner or contestant access.
 
 Viewer decision transport is separate from transcript transport. After durable append,
 the websocket emits the additive `viewer_decision_event` envelope; persisted replay
@@ -416,7 +410,7 @@ Agent prompts no longer carry unbounded full public transcripts or complete hist
 
 | Lane | Contents | Budget |
 |---|---|---|
-| **Protected** | Board Contract, compact strategy state, authorized typed huddle fact atoms, current receipts | Reserved first; never displaced by history |
+| **Protected** | Board Contract, compact strategy state, historical authorized typed huddle fact atoms plus recent attended huddle dialogue, current receipts | Reserved first; never displaced by history |
 | **Hot** | Active-room Mingle messages for this turn | After protected |
 | **History** | Ranked public + actor-owned Mingle archive | Only `strategic_decision`; remaining budget after protected+hot, capped by the class history ceiling. If protected context overflows, strategic decisions retain a 1,200-character reserve; ordinary speech remains zero. |
 
@@ -506,7 +500,7 @@ See `CONCEPTS.md` (Recall Plan), `docs/local-model-evaluation.md` (evaluation pa
 
 12. Missing cognitive artifacts are not reconstructed from private traces. User-facing access must return authorized no-capture/degraded states rather than falling back to producer evidence.
 
-13. Hidden alliance huddle transcript, House scheduling rationale, and typed huddle outcomes are not public live contestant knowledge. Public websocket messages, public transcript export, public watch intelligence, and player-safe MCP cognitive reads must not expose raw huddle content. The dedicated public web/replay alliance projection may expose atom-derived official alliance facts and huddle speech for human audience inspection, but it must omit hidden thinking, House scheduling rationale, House interpretation, prompts, raw canonical envelopes, source pointers, and producer/debug fields.
+13. Huddle existence, speech, and House scheduling rationale are private contestant knowledge, authorized by immutable attendance. Spectator websocket, transcript, replay, Studio, and export projections may show accepted participant huddle speech without thinking. This deliberate spectator path does not widen contestant context, owner MCP authorization, or cognitive reads. Omit private passes, House scheduling rationale, House interpretation, prompts, raw canonical envelopes, source pointers, and producer/debug fields from spectator delivery.
 
 ## Local Model Specifics
 
@@ -517,7 +511,7 @@ See `docs/local-model-evaluation.md` for the full provider table. Key points tha
 - Game and Owner Learning provider-native structured payloads normalize exact literal `"null"` to JSON `null` only at explicitly nullable schema positions, before full schema and semantic acceptance. Case/whitespace variants and `"undefined"` are unchanged; required strings, ordinary prose, missing fields, and malformed JSON are not repaired. Nested object/array and unambiguous union positions use the same policy across providers. Raw response evidence stays unchanged; accepted values contain the normalized value, and durable replay does not re-normalize stored values. Existing historical literal-null strategy no-change semantics remain intact. Owner Learning applies the same normalizer after persisting the raw response and before exact schema/harness validation; recovery of staged raw responses uses that same acceptance path. The Prompt Thread experiment broker remains a raw transport and does not normalize responses.
 - Public player speech is accepted only from the exact schema-backed `AgentResponse` value for that invocation. Provider prose, fenced/embedded JSON, wrapper objects, extra or missing fields, and blank messages fail inside the provider-attempt boundary; they emit no accepted transcript entry, strategy mutation, or private accepted-turn trace. Durable replay revalidates the stored typed value without redispatching or emitting a second trace.
 - Structured player decisions use the same exact tool-argument envelope through native tools and local `json_schema` compatibility. Native mode accepts exactly one selected tool call; compatibility mode accepts only one complete top-level JSON document matching that selected tool's schema. Fences, surrounding prose, embedded objects, tool-name/`arguments` wrappers, missing or wrong tools, and schema-inexact arguments remain typed failures and cannot reach action normalization or accepted traces.
-- House room assignment, alliance proposer selection, huddle scheduling/outcome, and diary follow-up calls decode their exact semantic value before the attempt can succeed. Incomplete coverage or partitions, over-budget or unknown identities, invalid enums, and a fifth follow-up question retry as malformed output and emit no accepted trace. Provider payloads and accepted values have separate exact validators where normalization changes their shape: required provider `thinking: null` becomes an omitted accepted-domain field, while explicit null or any other noncanonical accepted value fails replay. Durable replay revalidates the accepted domain value and does not emit another provider trace.
+- House room assignment, alliance proposer selection, huddle scheduling, and diary follow-up calls decode their exact semantic value before the attempt can succeed. Incomplete coverage or partitions, over-budget or unknown identities, invalid enums, and a fifth follow-up question retry as malformed output and emit no accepted trace. Provider payloads and accepted values have separate exact validators where normalization changes their shape: required provider `thinking: null` becomes an omitted accepted-domain field, while explicit null or any other noncanonical accepted value fails replay. Durable replay revalidates the accepted domain value and does not emit another provider trace. New huddles make no House outcome call.
 - `REASONING_TOKEN_OVERHEAD`, `REASONING_OVERHEAD_HIGH/LOW`, the global 8192-token structured floor, and the global 4096-token public-message floor give reasoning models room before the visible/structured payload.
 - House Mingle room assignment and House alliance proposer selection are direct House calls, not agent tool calls. Both use strict JSON Schema output and the global structured token floor before deterministic fallback/repair; proposer repair prefers the lowest active-alliance count with stable living-roster ties.
 - Local paths no longer omit the `thinking` field from decision tool schemas. Agents are still expected to emit their internal reasoning (the "thinking" the prompts and schemas solicit). The raw hidden server channel (if present) is captured *separately* into `reasoningContext` only and never overwrites the emitted `thinking`. This gives high-contrast bright-white `thinking:` + bright-cyan `reasoning:` in --chatty for local models.
@@ -750,3 +744,12 @@ Recognized provider context overflow now triggers bounded, strict structured con
 Compaction request evidence includes actor/task orientation and the acting character context. It is private: Werewolf knowledge stays actor-scoped, retrospective character data comes from the frozen self, and House receives only the subject/audience context already present in its invocation. Historical spans are marked rather than repeated in every chunk request.
 
 The opt-in `evaluate:context-compaction` harness saves actual summary/action messages, outputs, latency and accounting in private run evidence, with a synthetic-only review export. Explicit probe scores are fixture checks, not factual grades for arbitrary games. The [first report](evaluations/2026-10-18-context-compaction.md) records task leakage into otherwise successful summaries.
+
+
+### Open conversation evidence
+
+New Lobby, Mingle and huddle turns return the strict `conversation_turn` contract: speech/pass, optional addressee and actor-local reply reference, private thinking and strategy, plus movement fields only when a checkpoint follows. Defaults allow 320 UTF-8 speech bytes and 400 bytes per participant. Rejected oversized speech receives its exact text, measured size and allowed size for a bounded shortening retry; every attempt remains saved. New facts are not required: clarification, humor, negotiation and useful restatement can be contributions.
+
+Passes are private and always skipped by playback even with Show thinking. They remain in accepted decision/provider evidence. Huddle speech is always speech-only for spectators. Recent attended huddle dialogue is included before the next decision; older attended speech can enter relevant recall. Authorization precedes selection, counts and caching. Recall references use actor-local spoken indices; canonical coordinates remain in the immutable source journal. Foreign sessions must not alter the contestant's prompt or recall receipt.
+
+The shared local evaluation guard accepts `INFLUENCE_EVALUATION_BUDGET_USD` and `INFLUENCE_EVALUATION_BUDGET_LEDGER` for API games. It reserves conservatively before every player/House provider dispatch; thinking, native reasoning and retries remain separate from the spoken-output allowance. Do not enable paid providers in required CI. Keep direct House calls and exact types; no `as any`.

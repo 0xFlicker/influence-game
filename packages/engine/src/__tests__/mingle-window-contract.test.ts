@@ -1,3 +1,4 @@
+import { beginConversation } from "../open-conversation";
 import { expect, test } from "bun:test";
 import { validateMingleWindowState } from "../mingle-window-contract";
 import { allocateRooms, type MingleWindowState } from "../phases/mingle";
@@ -7,7 +8,7 @@ function window(): MingleWindowState {
   const alivePlayers = Array.from({ length: 5 }, (_, index) => ({ id: `p${index}`, name: `Player ${index}` }));
   const initialAllocation = allocateRooms(null, alivePlayers, 3, 1);
   return { phase: Phase.FORMAT_MINGLE, alivePlayers, roomCount: 3, beats: 2, nextBeat: 1,
-    initialAllocation, roomByPlayerId: Object.fromEntries(initialAllocation.rooms.flatMap((room) => room.playerIds.map((id) => [id, room.roomId]))), allRooms: [] };
+    initialAllocation, opened: false, movementIntents: {}, conversations: initialAllocation.rooms.map(r => r.playerIds.length < 2 ? null : beginConversation(r.playerIds, "test")), roomByPlayerId: Object.fromEntries(initialAllocation.rooms.flatMap((room) => room.playerIds.map((id) => [id, room.roomId]))), allRooms: [] };
 }
 
 test("accepts exact serialized Mingle boundaries and completed windows", () => {
@@ -15,6 +16,7 @@ test("accepts exact serialized Mingle boundaries and completed windows", () => {
   expect(validateMingleWindowState(JSON.parse(JSON.stringify(state)))).toEqual([]);
   state.allRooms = [...structuredClone(state.initialAllocation.rooms), ...state.initialAllocation.rooms.map((room) => ({ ...room, beat: 2 }))];
   state.nextBeat = 3;
+  state.conversations = [];
   expect(validateMingleWindowState(state)).toEqual([]);
 });
 

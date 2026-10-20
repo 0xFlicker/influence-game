@@ -162,7 +162,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
     maxPlayers: 12,
   };
 
-  it("omits provider-exhausted Mingle turns without transcript or agent-turn state", async () => {
+  it("omits exhausted speech while preserving private unavailable evidence", async () => {
     class AbsentMingleAgent extends MockAgent {
       override async takeMingleTurn(): Promise<MingleTurnAction> {
         return {
@@ -196,8 +196,8 @@ describe("Mingle Rooms (current open-room phase)", () => {
     expect(result.winner).toBeDefined();
     expect(result.transcript.some((entry) => entry.scope === "mingle")).toBe(false);
     expect(events.some((event) =>
-      event.type === "agent_turn" && event.action === "mingle-turn"
-    )).toBe(false);
+      event.type === "agent_turn" && event.action === "mingle-turn" && event.visibility === "private"
+    )).toBe(true);
   });
 
   it("commits one legal seeded vote fallback with engine provenance", async () => {
@@ -300,7 +300,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
       (entry) => entry.scope === "system" && entry.phase === Phase.FORMAT_MINGLE && entry.roomMetadata,
     );
     expect(allocation).toBeDefined();
-    expect(allocation!.text).toContain("Turn 1:");
+    expect(allocation!.text).toContain("Room conversation 1");
     expect(allocation!.roomMetadata!.rooms).toHaveLength(3);
     expect(allocation!.roomMetadata!.rooms[0]!.playerIds.length).toBeGreaterThan(0);
   });
@@ -831,7 +831,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
 
   it("lets agents move rooms between Mingle turns", async () => {
     class ScriptedMingleAgent extends MockAgent {
-      private turnIndex = 0;
+      private offered = new Set<number>();
 
       constructor(
         id: string,
@@ -841,9 +841,11 @@ describe("Mingle Rooms (current open-room phase)", () => {
         super(id, name);
       }
 
-      override async takeMingleTurn(): Promise<MingleTurnAction> {
-        const action = this.actions[this.turnIndex];
-        this.turnIndex++;
+      override async takeMingleTurn(ctx: PhaseContext): Promise<MingleTurnAction> {
+        const beat = ctx.mingleBeat ?? 1;
+        const original = this.actions[beat - 1];
+        const action = original && this.offered.has(beat) ? {...original, message:null, noReply:true} : original;
+        this.offered.add(beat);
         return action ?? { thinking: "", message: null, noReply: true, gotoRoomId: null };
       }
     }
@@ -897,12 +899,11 @@ describe("Mingle Rooms (current open-room phase)", () => {
     expect(secondRooms[0]!.playerIds).not.toContain(alpha.id);
     expect(secondRooms[1]!.playerIds).toContain(alpha.id);
 
-    const alphaMove = allocations[0]!.roomMetadata!.diagnostics!.actions!.find((action) => action.player.name === "Alpha");
+    const alphaMove = movementRecords(events).find((action) => action.player.name === "Alpha");
     expect(alphaMove).toMatchObject({
       fromRoomId: 1,
       toRoomId: 2,
       moved: true,
-      action: "talk",
     });
     const removedMingleDebugKeys = ["strategy" + "Signal", "movement" + "Purpose"];
     expect(removedMingleDebugKeys.every((key) => alphaMove && !(key in alphaMove))).toBe(true);
@@ -910,7 +911,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
       (event) =>
         event.type === "agent_turn" &&
         event.phase === Phase.FORMAT_MINGLE &&
-        event.action === "mingle-turn" &&
+        event.action === "mingle-movement" &&
         event.actor.name === "Alpha",
     );
     expect(alphaTurn).toBeDefined();
@@ -935,7 +936,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
     expect(movedRoomMsg?.to).toEqual(["Gamma", "Delta", "Echo"]);
   });
 
-  it("runs three Mingle turns by default", async () => {
+  it("runs two room conversations by default", async () => {
     const agents = [
       new MockAgent(createUUID(), "Alpha"),
       new MockAgent(createUUID(), "Beta"),
@@ -960,13 +961,13 @@ describe("Mingle Rooms (current open-room phase)", () => {
     const allocations = result.transcript.filter(
       (entry) => entry.round === 1 && entry.phase === Phase.FORMAT_MINGLE && entry.scope === "system" && entry.roomMetadata,
     );
-    expect(allocations.map((entry) => entry.roomMetadata?.rooms[0]?.beat)).toEqual([1, 2, 3]);
-    expect(allocations.map((entry) => entry.text.split(":")[0])).toEqual(["Turn 1", "Turn 2", "Turn 3"]);
+    expect(allocations.map((entry) => entry.roomMetadata?.rooms[0]?.beat)).toEqual([1, 2]);
+    expect(allocations.map((entry) => entry.text.split(":")[0])).toEqual(["Room conversation 1", "Room conversation 2"]);
   });
 
-  it("resolves gotoPlayerName after every Mingle action and follows the target's next room", async () => {
+  it("resolves gotoPlayerName at the simultaneous checkpoint and follows the target's next room", async () => {
     class ScriptedMingleAgent extends MockAgent {
-      private turnIndex = 0;
+      private offered = new Set<number>();
 
       constructor(
         id: string,
@@ -976,15 +977,17 @@ describe("Mingle Rooms (current open-room phase)", () => {
         super(id, name);
       }
 
-      override async takeMingleTurn(): Promise<MingleTurnAction> {
-        const action = this.actions[this.turnIndex];
-        this.turnIndex++;
+      override async takeMingleTurn(ctx: PhaseContext): Promise<MingleTurnAction> {
+        const beat = ctx.mingleBeat ?? 1;
+        const original = this.actions[beat - 1];
+        const action = original && this.offered.has(beat) ? {...original, message:null, noReply:true} : original;
+        this.offered.add(beat);
         return action ?? { thinking: "", message: null, noReply: true, gotoRoomId: null, gotoPlayerName: null };
       }
     }
 
     const alpha = new ScriptedMingleAgent(createUUID(), "Alpha", [
-      { thinking: "Follow Kael, not his starting room.", message: "Kael, I'll catch up after this.", noReply: false, gotoRoomId: 1, gotoPlayerName: "Kael" },
+      { thinking: "Follow Kael, not his starting room.", message: "Kael, I'll catch up after this.", noReply: false, gotoRoomId: null, gotoPlayerName: "Kael" },
       { thinking: "Now with Kael.", message: "Good, this is the room I meant to find.", noReply: false, gotoRoomId: null, gotoPlayerName: null },
     ]);
     const kael = new ScriptedMingleAgent(createUUID(), "Kael", [
@@ -1022,15 +1025,15 @@ describe("Mingle Rooms (current open-room phase)", () => {
     const secondRooms = allocations[1]!.roomMetadata!.rooms;
     expect(secondRooms[2]!.playerIds).toEqual(expect.arrayContaining([alpha.id, kael.id]));
 
-    const firstActions = allocations[0]!.roomMetadata!.diagnostics!.actions!;
+    const firstActions = movementRecords(events);
     expect(firstActions.find((action) => action.player.name === "Alpha")).toMatchObject({
       fromRoomId: 1,
       toRoomId: 3,
       moved: true,
       gotoRoomId: null,
       gotoPlayerName: "Kael",
-      gotoRoomIgnored: true,
-      gotoStatus: "player_valid_room_ignored",
+      gotoRoomIgnored: false,
+      gotoStatus: "player_valid",
     });
     expect(firstActions.find((action) => action.player.name === "Kael")).toMatchObject({
       fromRoomId: 2,
@@ -1041,12 +1044,12 @@ describe("Mingle Rooms (current open-room phase)", () => {
       gotoStatus: "valid",
     });
 
-    const alphaTurn = events.find((event) => event.type === "agent_turn" && event.action === "mingle-turn" && event.actor.name === "Alpha");
+    const alphaTurn = events.find((event) => event.type === "agent_turn" && event.action === "mingle-movement" && event.actor.name === "Alpha");
     expect(alphaTurn?.type === "agent_turn" ? alphaTurn.response : null).toMatchObject({
       gotoRoomId: null,
       gotoPlayerName: "Kael",
-      gotoRoomIgnored: true,
-      gotoStatus: "player_valid_room_ignored",
+      gotoRoomIgnored: false,
+      gotoStatus: "player_valid",
       toRoomId: 3,
     });
   });
@@ -1081,7 +1084,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
 
     const runner = new GameRunner(
       agents,
-      { ...TEST_CONFIG, mingleSessionsPerRound: 1 },
+      { ...TEST_CONFIG, mingleSessionsPerRound: 2 },
       new FixedMingleHouseInterviewer({
         Alpha: 1,
         Beta: 1,
@@ -1092,11 +1095,11 @@ describe("Mingle Rooms (current open-room phase)", () => {
       }),
     );
     (runner as unknown as { gameState: GameState }).gameState.eliminatePlayer(vera.id);
-    const result = await runner.run();
+    const events: GameStreamEvent[] = [];
+    runner.setStreamListener(event=>events.push(event));
+    await runner.run();
 
-    const firstActions = result.transcript.find(
-      (entry) => entry.round === 1 && entry.scope === "system" && entry.roomMetadata,
-    )!.roomMetadata!.diagnostics!.actions!;
+    const firstActions = movementRecords(events);
     expect(firstActions.find((action) => action.player.name === "Alpha")).toMatchObject({
       fromRoomId: 1,
       toRoomId: 1,
@@ -1208,7 +1211,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
 
   it("preserves empty and singleton room metadata while singleton agents can move", async () => {
     class SparseMingleAgent extends MockAgent {
-      private turnIndex = 0;
+      private offered = new Set<number>();
 
       constructor(
         id: string,
@@ -1218,9 +1221,11 @@ describe("Mingle Rooms (current open-room phase)", () => {
         super(id, name);
       }
 
-      override async takeMingleTurn(): Promise<MingleTurnAction> {
-        const action = this.actions[this.turnIndex];
-        this.turnIndex++;
+      override async takeMingleTurn(ctx: PhaseContext): Promise<MingleTurnAction> {
+        const beat = ctx.mingleBeat ?? 1;
+        const original = this.actions[beat - 1];
+        const action = original && this.offered.has(beat) ? {...original, message:null, noReply:true} : original;
+        this.offered.add(beat);
         return action ?? { thinking: "", message: null, noReply: true, gotoRoomId: null };
       }
     }
@@ -1252,6 +1257,8 @@ describe("Mingle Rooms (current open-room phase)", () => {
         Vera: 2,
       }),
     );
+    const events:GameStreamEvent[]=[];
+    runner.setStreamListener(event=>events.push(event));
     const result = await runner.run();
 
     const allocations = result.transcript.filter(
@@ -1260,10 +1267,10 @@ describe("Mingle Rooms (current open-room phase)", () => {
     const firstRooms = allocations[0]!.roomMetadata!.rooms;
     expect(firstRooms).toHaveLength(4);
     expect(firstRooms.map((room) => room.playerIds.length)).toEqual([1, 4, 1, 1]);
-    expect(allocations[0]!.roomMetadata!.diagnostics!.allocatedRooms.map((room) => room.conversationRan)).toEqual([false, true, false, false]);
+    expect(firstRooms.map(room => room.playerIds.length > 1)).toEqual([false, true, false, false]);
 
-    const alphaFirstAction = allocations[0]!.roomMetadata!.diagnostics!.actions!.find((action) => action.player.name === "Alpha");
-    expect(alphaFirstAction).toMatchObject({ action: "no_reply", fromRoomId: 1, toRoomId: 2, moved: true });
+    const alphaFirstAction = movementRecords(events).find((action) => action.player.name === "Alpha");
+    expect(alphaFirstAction).toMatchObject({ fromRoomId: 1, toRoomId: 2, moved: true });
     expect(result.transcript.some((entry) => entry.round === 1 && entry.scope === "mingle" && entry.from === "Alpha" && entry.roomId === firstRooms[0]!.roomId)).toBe(false);
 
     const secondRooms = allocations[1]!.roomMetadata!.rooms;
@@ -1498,7 +1505,6 @@ describe("GameRunner - Lobby turn order", () => {
     maxRounds: 1,
     minPlayers: 4,
     maxPlayers: 12,
-    lobbyMessagesPerPlayer: 1,
     mingleSessionsPerRound: 1,
   };
 
@@ -1510,14 +1516,9 @@ describe("GameRunner - Lobby turn order", () => {
 
     await runner.run();
 
-    const firstRoundCalls = agents.map((agent) =>
-      agent.lobbyCalls.find((call) => call.round === 1 && call.subRound === 0),
-    );
-
-    expect(firstRoundCalls.map((call) => call?.seenSameRoundLobbyMessages.length)).toEqual([0, 1, 2, 3]);
-    expect(firstRoundCalls[1]!.seenSameRoundLobbyMessages[0]).toContain("Alpha heard 0 lobby messages");
-    expect(firstRoundCalls[2]!.seenSameRoundLobbyMessages[1]).toContain("Beta heard 1 lobby message");
-    expect(firstRoundCalls[3]!.seenSameRoundLobbyMessages[2]).toContain("Gamma heard 2 lobby messages");
+    const firstRoundCalls = agents.map(agent=>agent.lobbyCalls.find(call=>call.round===1)!).sort((a,b)=>a.seenSameRoundLobbyMessages.length-b.seenSameRoundLobbyMessages.length);
+    expect(firstRoundCalls.map(call=>call.seenSameRoundLobbyMessages.length)).toEqual([0,1,2,3]);
+    for (let i=1;i<firstRoundCalls.length;i++) expect(firstRoundCalls[i]!.seenSameRoundLobbyMessages[i-1]).toContain(`heard ${i-1} lobby message`);
   });
 });
 
@@ -1530,7 +1531,6 @@ describe("GameRunner - Power Lobby after vote experiment", () => {
     maxRounds: 2,
     minPlayers: 4,
     maxPlayers: 12,
-    lobbyMessagesPerPlayer: 1,
     mingleSessionsPerRound: 1,
   };
 
@@ -2717,3 +2717,8 @@ describe("Tribunal accusation stable commit order", () => {
     ]);
   });
 });
+
+function movementRecords(events:GameStreamEvent[]) {
+ return events.filter((e):e is Extract<GameStreamEvent,{type:"agent_turn"}>=>e.type==="agent_turn"&&e.action==="mingle-movement"&&e.round===1)
+  .map(e=>({...e.response,player:{id:e.actor.id,name:e.actor.name}}));
+}

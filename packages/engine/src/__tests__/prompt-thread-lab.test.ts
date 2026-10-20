@@ -106,6 +106,7 @@ function speech(
       request: { transportOnly: "source-request-id" },
       output: {
         message,
+        recipientId: null, replyToContributionId: null,
         noReply: false,
         gotoRoomId,
         gotoPlayerName,
@@ -148,7 +149,7 @@ function caseFixture(options: { resolvedPriorVote?: boolean } = {}): FrozenCaseA
     startingState: {
       canonicalEvents: source.getCanonicalEvents(),
       canonicalProjection: source.getDomainProjection(),
-      config: {},
+      config: { mingleSessionsPerRound: 3 },
       roster: ROSTER.map((player) => ({
         id: player.id,
         persona: {
@@ -361,7 +362,7 @@ describe("real prompt-thread replay", () => {
     expect(firstTurnUser).toContain("A: empowered B");
     expect(firstTurnUser).toContain("E: empowered B");
     expect(returningTurnUser).toContain(
-      "This is Mingle turn 2 of 3; 1 Mingle turn remains after this.",
+      "Movement happens together after all rooms finish this conversation round.",
     );
     expect(returningTurnUser).not.toContain(
       "This is your final Mingle turn this phase.",
@@ -511,7 +512,7 @@ describe("real prompt-thread replay", () => {
 function generatedResponse(turn: number): Record<string, unknown> {
   const output = JSON.stringify({
     thinking: `thinking ${turn}`,
-    message: `generated turn ${turn}`,
+    message: `generated turn ${turn}`, recipientId: null, replyToContributionId: null,
     noReply: false,
     gotoRoomId: null,
     gotoPlayerName: null,
@@ -527,7 +528,7 @@ function generatedResponse(turn: number): Record<string, unknown> {
       id: `function-${turn}`,
       type: "function_call",
       call_id: `call-${turn}`,
-      name: "mingle_turn",
+      name: "conversation_turn",
       arguments: output,
     }],
     usage: {
