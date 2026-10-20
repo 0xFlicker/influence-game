@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { createProviderAdapter, modelCatalogEntryById, fixtureRetrospectiveCapacity, fixtureWerewolfRetrospective, RetrospectiveExecutionError, type LlmProviderRuntime } from "@influence/engine";
 import { advanceWerewolf, replayWerewolf, runWerewolf, WerewolfModelAgent, type WerewolfAgent } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
-import { setupTestDB } from "./test-utils.js";
+import { pinWerewolfRulesVersion, setupTestDB } from "./test-utils.js";
 import { claimWerewolfGame, createWerewolfGame, createWerewolfStore, releaseWerewolfOwner } from "../services/werewolf-games.js";
 import { createApiProviderExecutionHooks } from "../services/provider-call-journal.js";
 import { getAdminGameCostDetail } from "../services/admin-game-cost-detail.js";
@@ -22,6 +22,7 @@ test.each(["first", "final"] as const)("%s retrospective response survives owner
   const db = await setupTestDB();
   await db.insert(schema.users).values({ id: "rt05-owner" });
   const game = await createWerewolfGame(db, "rt05-owner", { preset: "one_wolf", agentProfileIds: [], maxDays: 1, providerManifest: [{ catalogId: "openai:gpt-5-nano" }] });
+  await pinWerewolfRulesVersion(db, game.id, 8);
   const claim = await claimWerewolfGame(db, game.id);
   if (!claim.ok) throw new Error(claim.error);
   const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);
@@ -94,6 +95,7 @@ test("input insertion rolls back when the same start transaction cannot append i
   const db = await setupTestDB();
   await db.insert(schema.users).values({ id: "rt05-atomic-owner" });
   const game = await createWerewolfGame(db, "rt05-atomic-owner", { preset: "one_wolf", agentProfileIds: [], maxDays: 1 });
+  await pinWerewolfRulesVersion(db, game.id, 8);
   const claim = await claimWerewolfGame(db, game.id);
   if (!claim.ok) throw new Error(claim.error);
   const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);
@@ -126,6 +128,7 @@ test("a crash after exhausted native retries cannot spend again before explicit 
   await grantTestAuthority(db, "rt08-journal-owner", ["resume_game_retrospective"], "admin");
   const game = await createWerewolfGame(db, "rt08-journal-owner", { preset: "one_wolf", agentProfileIds: [], maxDays: 1,
     providerManifest: [{ catalogId: "openai:gpt-5-nano" }] });
+  await pinWerewolfRulesVersion(db, game.id, 8);
   const first = await claimWerewolfGame(db, game.id);
   if (!first.ok) throw Error(first.error);
   const store = createWerewolfStore(db, game.id, first.claim.ownerEpoch);

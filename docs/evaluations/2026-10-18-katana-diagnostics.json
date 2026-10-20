@@ -1,0 +1,58 @@
+{
+  "description": "Minimal synthetic Katana diagnostics. Same configured client, credentials and endpoint for every request; SDK retries disabled. No optional generation parameters.",
+  "createdAt": "2026-10-18T22:48:21.043Z",
+  "requests": [
+    {
+      "model": "glm-5-3-private",
+      "listed": true,
+      "request": {
+        "model": "glm-5-3-private",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Reply with the word hello."
+          }
+        ]
+      },
+      "latencyMs": 764,
+      "error": "502 status code (no body)"
+    },
+    {
+      "model": "glm-5-3-flash-private",
+      "listed": true,
+      "request": {
+        "model": "glm-5-3-flash-private",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Reply with the word hello."
+          }
+        ]
+      },
+      "latencyMs": 440,
+      "error": "502 status code (no body)"
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "listed": true,
+      "request": {
+        "model": "deepseek-v4-flash",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Reply with the word hello."
+          }
+        ]
+      },
+      "latencyMs": 2132,
+      "answer": "hello",
+      "finishReason": "stop",
+      "usage": {
+        "promptTokens": 10,
+        "completionTokens": 22,
+        "totalTokens": 32
+      }
+    }
+  ],
+  "rawEvidenceSha256": "233975eab9665c9b3accabaf0cf44d9f505dc70c6bb96a053ebebee121b845de"
+}

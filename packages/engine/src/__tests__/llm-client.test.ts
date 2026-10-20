@@ -55,6 +55,37 @@ describe("LLM client env config", () => {
     );
   });
 
+  it("gives local generation a long configurable timeout without changing hosted limits", () => {
+    const env = { INFLUENCE_LLM_BASE_URL: "http://127.0.0.1:1234/v1" };
+    expect(createLlmClientFromEnv(env)?.client.timeout).toBe(3_600_000);
+    const manifest = resolveProviderManifest([{ catalogId: "lm-studio:test-model", reasoningPolicy: "action-policy" }]);
+    expect(createLlmProviderRuntimesFromEnv(manifest, env, { timeout: 120_000 })?.[0]?.localRequestTimeoutMs).toBe(3_600_000);
+    expect(createLlmClientFromEnv({ ...env, INFLUENCE_LM_STUDIO_TIMEOUT_MS: "7200000" })?.client.timeout).toBe(7_200_000);
+    expect(createLlmClientFromEnv({ OPENAI_API_KEY: "test" }, { timeout: 120_000 })?.client.timeout).toBe(120_000);
+    for (const value of ["", "0", "-1", "1.5", "NaN", "2147483648"]) {
+      expect(() => createLlmClientFromEnv({ ...env, INFLUENCE_LM_STUDIO_TIMEOUT_MS: value })).toThrow("INFLUENCE_LM_STUDIO_TIMEOUT_MS");
+    }
+  });
+
+  it("disables Bun's socket idle limit only for local transport and retains cancellation", async () => {
+    const original = globalThis.fetch;
+    const observed: { timeout: unknown; signal: AbortSignal | null }[] = [];
+    globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit & { timeout?: boolean }) => {
+      observed.push({ timeout: init?.timeout, signal: init?.signal ?? (input instanceof Request ? input.signal : null) });
+      return Response.json({ id: "probe", choices: [{ finish_reason: "stop", message: { role: "assistant", content: "OK" } }] });
+    }, { preconnect: original.preconnect });
+    try {
+      const local = createLlmClientFromEnv({ INFLUENCE_LLM_BASE_URL: "http://127.0.0.1:1234/v1" })!;
+      const hosted = createLlmClientFromEnv({ OPENAI_API_KEY: "test" }, { flexProcessing: false })!;
+      const controller = new AbortController();
+      for (const config of [local, hosted]) await config.client.chat.completions.create({ model: "test", messages: [{ role: "user", content: "OK" }] }, { signal: controller.signal });
+      expect(observed.map(call => call.timeout)).toEqual([false, undefined]);
+      expect(observed.every(call => call.signal !== null)).toBe(true);
+      controller.abort();
+      expect(observed.every(call => call.signal?.aborted)).toBe(true);
+    } finally { globalThis.fetch = original; }
+  });
+
   it("does not route explicit LM Studio catalog selections to OpenAI without a base URL", () => {
     const config = createLlmClientFromEnv(
       { OPENAI_API_KEY: "openai-key" },

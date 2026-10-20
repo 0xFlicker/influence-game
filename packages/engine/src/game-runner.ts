@@ -2239,11 +2239,13 @@ export class GameRunner {
     try {
     const setups = [];
     for (const agent of this.agents.values()) setups.push(await agent.prepareRetrospectiveSetup(this.retrospectiveCancellation.signal));
-    const budgets = new Map<string, number>();
+    const budgets = new Map<string, number | null>();
     const effectiveModelIds = new Set<string>();
     for (const setup of setups) {
       for (const id of setup.capacities.effectiveModelIds) effectiveModelIds.add(id);
-      for (const model of setup.capacities.models) budgets.set(model.modelId, Math.min(budgets.get(model.modelId) ?? Infinity, model.maxContextBytes));
+      for (const model of setup.capacities.models) budgets.set(model.modelId,
+        model.maxContextBytes === null ? budgets.get(model.modelId) ?? null
+          : Math.min(budgets.get(model.modelId) ?? Infinity, model.maxContextBytes));
     }
     const frozen = freezeInfluenceRetrospective({ events: this.gameState.getCanonicalEvents(), transcript: this.logger.transcript,
       ...source, seats: setups.map(({ speaker }) => ({ id: speaker.id, name: speaker.name, personality: speaker.personality,

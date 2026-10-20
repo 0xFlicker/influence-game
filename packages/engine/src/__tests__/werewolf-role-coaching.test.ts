@@ -5,12 +5,13 @@ import { modelCatalogEntryById } from "../model-catalog";
 import type { LlmProviderRuntime } from "../llm-client";
 import { WerewolfModelAgent } from "../werewolf/agent";
 import { observeWerewolf, projectWerewolfView } from "../werewolf/observation";
-import { replayWerewolf, startWerewolf, werewolfConfig, WEREWOLF_RULES } from "../werewolf/rules";
+import { replayWerewolf, startWerewolf, legacyWerewolfConfig as werewolfConfig, LEGACY_WEREWOLF_RULES as WEREWOLF_RULES } from "../werewolf/rules";
 import { werewolfRoleCoaching } from "../werewolf/strategy";
 
 test.each(["seer", "doctor", "villager", "werewolf"] as const)("%s receives only its own coaching without changing knowledge or the decision contract", async role => {
-  const players = Array.from({ length: 8 }, (_, i) => ({ id: `p${i}`, name: `Player ${i}`, personality: "Bold",
-    backstory: "An actor", strategy: "OWNER_STRATEGY_UNCHANGED", avatarUrl: null }));
+  const players = Array.from({ length: 8 }, (_, i) => ({ id: `p${i}`, name: `Player ${i}`, personality: `PRIVATE_PERSONALITY_${i}`,
+    backstory: `PRIVATE_BACKSTORY_${i}`, strategy: `PRIVATE_STRATEGY_${i}`, personaKey: `PRIVATE_ARCHETYPE_${i}`,
+    avatarUrl: `https://example.invalid/PRIVATE_ARCHETYPE_${i}.png` }));
   const state = replayWerewolf([startWerewolf("coaching-test", players, werewolfConfig("two_wolves"), "coaching-test")]);
   const actorId = players.find(player => state.roles[player.id] === role)!.id;
   const observation = observeWerewolf(state, actorId);
@@ -28,14 +29,32 @@ test.each(["seer", "doctor", "villager", "werewolf"] as const)("%s receives only
       expect(body.messages[0].content).toContain("There are no daytime investigations.");
       const completedNights = before.board.entries.filter(entry => entry.kind === "night").length;
       expect(context.seerTiming).toMatchObject({ completedNights, maximumPossibleResults: completedNights });
-      expect(context.observation.self.strategy).toBe("OWNER_STRATEGY_UNCHANGED");
+      const self = players.find(player => player.id === actorId)!;
+      expect(context.observation.self).toMatchObject({ personality: self.personality, backstory: self.backstory, strategy: self.strategy });
+      expect(context.observation.board.players).toEqual(players.map(({ id, name }) => ({ id, name, alive: true })));
+      const prompt = JSON.stringify(body.messages);
+      for (const player of players) {
+        expect(prompt).not.toContain(player.personaKey);
+        if (player.id === actorId) continue;
+        for (const value of [player.personality, player.backstory, player.strategy]) expect(prompt).not.toContain(value);
+      }
       expect(context.observation.investigations).toEqual(before.investigations);
       expect(context.observation.previousProtection).toEqual(before.previousProtection);
       expect(context.observation.board).toEqual(before.board);
       expect(Object.keys(context).at(-1)).toBe("turnReminder");
       expect(context.contributionGuidance ?? "").not.toContain("You do not need to contribute to every thread.");
-      if (role !== "werewolf") expect(context.roleCoaching).toBe(werewolfRoleCoaching(role));
-      else expect(Object.hasOwn(context, "roleCoaching")).toBe(false);
+      expect(context.roleCoaching).toBe(werewolfRoleCoaching(role));
+      if (role === "werewolf") {
+        expect(context.roleCoaching).toContain("You play for the wolves");
+        expect(context.roleCoaching).toContain("A genuine Seer can be a valuable elimination target");
+        expect(context.roleCoaching).not.toContain("You play for the village");
+        expect(context.roleCoaching).not.toContain("consider preserving their information");
+      } else {
+        expect(context.roleCoaching).toContain("You play for the village");
+        expect(context.roleCoaching).toContain("consider preserving their information");
+        expect(context.roleCoaching).not.toContain("You play for the wolves");
+        expect(context.roleCoaching).not.toContain("You may bluff a role or investigation");
+      }
       const action = actions[calls++]!;
       expect(context.request.action).toBe(action);
       const decision = action === "introduce" ? { text: "I will listen first.", cue: null, thinking: "Listen first." }
@@ -59,9 +78,12 @@ test.each(["seer", "doctor", "villager", "werewolf"] as const)("%s receives only
   expect(calls).toBe(actions.length);
   expect(observation).toEqual(before);
   for (const audience of ["mystery", "omniscient"] as const) {
-    const view = JSON.stringify(projectWerewolfView(state, audience));
+    const spectator = projectWerewolfView(state, audience);
+    expect(spectator.players.map(p => p.personaKey)).toEqual(players.map(p => p.personaKey));
+    expect(spectator.players.map(p => p.avatarUrl)).toEqual(players.map(p => p.avatarUrl));
+    const view = JSON.stringify(spectator);
     expect(view).not.toContain("roleCoaching");
-    expect(view).not.toContain("OWNER_STRATEGY_UNCHANGED");
+    expect(view).not.toContain("PRIVATE_STRATEGY_");
   }
 });
 

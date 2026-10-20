@@ -1,6 +1,6 @@
 import {expect,test} from "bun:test";
 import {Phase} from "@influence/engine";
-import {completedWerewolfResultsFixture,werewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
+import {completedCurrentWerewolfFixture,completedWerewolfResultsFixture,werewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
 import {projectWerewolfWatch,projectWerewolfProductionProvenance} from "@influence/engine/werewolf/watch";
 import {werewolfThinkingActions} from "@influence/engine/werewolf/thinking";
 import type {WerewolfEvent} from "@influence/engine/werewolf/types";
@@ -14,8 +14,8 @@ import {buildExportCues} from "./cues";
 import {compilePresentation} from "./presentation";
 import {parseTimingProfile} from "./timing";
 
-async function fixture(audience:"mystery"|"omniscient") {
-  const events = await completedWerewolfResultsFixture("saved", "production-binding");
+async function fixture(audience:"mystery"|"omniscient", current = false) {
+  const events = current ? await completedCurrentWerewolfFixture("production-binding") : await completedWerewolfResultsFixture("saved", "production-binding");
   const windows = [];
   let next = 1;
   do {
@@ -27,8 +27,9 @@ async function fixture(audience:"mystery"|"omniscient") {
   } while(next <= windows[0]!.latestCursor);
   const thoughts = audience === "mystery" ? [] : werewolfThinkingActions(events,windows[0]!.latestCursor).flatMap(({event,cursor,day}) => {
     const decision = event.payload.decision;
-    return decision.kind === "target" && decision.thinking ? [{eventSequence:event.sequence,cursor,day,
-      actorId:event.payload.actorId,action:event.payload.action,thinking:decision.thinking}] : [];
+    const thinking = "thinking" in decision ? decision.thinking : current && decision.kind === "conversation" ? "I weighed whether to speak." : null;
+    return thinking ? [{eventSequence:event.sequence,cursor,day,
+      actorId:event.payload.actorId,action:event.payload.action,thinking}] : [];
   });
   const source = {kind:"werewolf" as const,windows,thoughts:[]};
   const provenance = projectWerewolfProductionProvenance(events,audience);
@@ -40,6 +41,25 @@ async function fixture(audience:"mystery"|"omniscient") {
   return {source,provenance,thoughts,catalog,base};
 }
 const settings = {profile:parseTimingProfile({ending:{holdMs:0}}),fps:30,assets:{},music:false};
+test("v9 Studio binds each spoken public ballot once, retaining speech and private action thoughts", async () => {
+  for (const audience of ["mystery", "omniscient"] as const) {
+    const input = await fixture(audience, true);
+    const moments = await bindWerewolfProductionPresentation(input);
+    const ballots = input.catalog.moments.filter(moment => moment.part.kind === "ballot" && moment.part.purpose === "day");
+    const entries = input.source.windows.flatMap(window => window.moments).filter(moment => moment.entry.kind === "ballot");
+    expect(ballots).toHaveLength(entries.length);
+    const cut = compilePresentation({...settings, source:moments, selectedIds:ballots.map(moment => moment.id)});
+    expect(cut.cues).toHaveLength(entries.length);
+    expect(cut.cues.map(cue => cue.speech?.text ?? null)).toEqual(entries.map(moment => moment.entry.kind === "ballot" ? moment.entry.text : null));
+    expect(cut.cues.every(cue => cue.picture.kind === "werewolf" && cue.picture.cue.ballot?.current.voterId === cue.speech?.speakerId)).toBe(true);
+    const full = compilePresentation({...settings, source:moments, selectedIds:input.catalog.moments.filter(moment => moment.defaultIncluded && moment.kind !== "thinking").map(moment => moment.id)});
+    expect(full.cues.filter(cue => cue.picture.kind === "werewolf" && cue.picture.cue.moment.entry.kind === "ballot")).toHaveLength(entries.length);
+    if (audience === "omniscient") {
+      expect(input.thoughts.map(thought => thought.action)).toEqual(expect.arrayContaining(["conversation", "public_vote", "pack_propose"]));
+      expect(input.catalog.moments.filter(moment => moment.kind === "thinking")).toHaveLength(input.thoughts.length);
+    } else expect(input.catalog.moments.some(moment => moment.kind === "thinking")).toBe(false);
+  }
+});
 test("Werewolf default moment compilation preserves existing full movie coverage",async () => {
   for (const audience of ["mystery","omniscient"] as const) {
     const input = await fixture(audience);

@@ -1,6 +1,6 @@
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "../fixtures/retrospective-agent";
 import {expect,test} from "bun:test";
-import {startWerewolf,werewolfConfig} from "../werewolf/rules";
+import {startWerewolf,legacyWerewolfConfig as werewolfConfig} from "../werewolf/rules";
 import {runWerewolf, type WerewolfAgent} from "../werewolf/runner";
 import {isWerewolfPlayable} from "../werewolf/watch-contract";
 import {projectWerewolfWatch} from "../werewolf/watch";

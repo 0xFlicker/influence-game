@@ -6,7 +6,7 @@ import { modelCatalogEntryById } from "../model-catalog";
 import type { LlmProviderRuntime } from "../llm-client";
 import { exactStructuredOutputRegistry } from "../structured-output";
 import { werewolfDecisionArtifact, WerewolfModelAgent } from "../werewolf/agent";
-import { nextWerewolfStep, replayWerewolf, startWerewolf, werewolfConfig, werewolfEvent } from "../werewolf/rules";
+import { nextWerewolfStep, replayWerewolf, startWerewolf, legacyWerewolfConfig as werewolfConfig, werewolfEvent } from "../werewolf/rules";
 import { advanceWerewolf, type WerewolfAgent } from "../werewolf/runner";
 
 const miraId = "7c731c26-a298-4987-b015-07ab4bae27ce";
@@ -28,6 +28,16 @@ describe("Werewolf names-only dialogue", () => {
   test("UUIDs remain legal structured targets", () => {
     const artifact = werewolfDecisionArtifact({ actorId: "speaker", action: "attack", legalTargetIds: [miraId] });
     expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify({ targetId: miraId, thinking: "Attack Mira." })).status).toBe("valid");
+  });
+
+  test("legacy UTF-16 feedback reports exact thinking overage for astral characters", () => {
+    const artifact = werewolfDecisionArtifact({ actorId: "speaker", action: "discuss", legalTargetIds: [] });
+    const result = exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify({
+      text: null, cue: null, thinking: "😀".repeat(1001),
+    }));
+    expect(result).toMatchObject({ status: "invalid", feedback: {
+      field: "thinking", measured: 2002, allowed: 2000, overage: 2, unit: "utf16_code_units",
+    } });
   });
 
   test("already committed speech stays readable without a transcript rewrite", () => {

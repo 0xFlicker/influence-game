@@ -6,6 +6,7 @@ import {
   type RetrospectiveDefinitionV1, type RetrospectiveInputV1, type RetrospectiveRequestV1,
   type RetrospectiveStateV1,
 } from "./retrospective";
+import { assertWerewolfRetrospectivePerspective, type WerewolfRetrospectivePerspective } from "./werewolf/retrospective-perspective";
 import { exactStructuredOutputRegistry } from "./structured-output";
 
 /** Private game-setup snapshot. Never put the whole roster's strategies in a prompt. */
@@ -15,6 +16,7 @@ export interface RetrospectiveSpeaker {
   personality: string;
   backstory: string;
   strategy: string;
+  werewolfPerspective?: WerewolfRetrospectivePerspective;
 }
 
 export interface FrozenRetrospectiveGame {
@@ -28,28 +30,21 @@ export interface FrozenRetrospectiveGame {
  */
 export interface RetrospectiveModelCapacity {
   modelId: string;
-  maxContextBytes: number;
+  /** null means no reliable capacity estimate; never an admission gate. */
+  maxContextBytes: number | null;
 }
 
 export interface RetrospectiveCapacityPolicy {
-  /** From the sealed effective manifest, independently of the admitted budgets. */
+  /** From the sealed effective manifest, independently of advisory estimates. */
   effectiveModelIds: readonly string[];
   models: readonly RetrospectiveModelCapacity[];
 }
 
 export class RetrospectiveContextCapacityError extends RetrospectiveContractError {
-  constructor(
-    readonly reason: "capacity_unavailable" | "context_capacity_exceeded",
-    readonly modelId: string | null,
-    readonly actorId: string | null,
-    readonly requiredBytes: number | null,
-    readonly availableBytes: number | null,
-    options?: ErrorOptions,
-  ) {
-    super(reason === "capacity_unavailable" ? "Retrospective requires an admitted input budget for every effective model"
-      : `Retrospective context for ${actorId} requires ${requiredBytes} bytes; ${modelId} admits ${availableBytes}`);
+  readonly reason = "capacity_unavailable" as const;
+  constructor() {
+    super("Retrospective requires a valid sealed runtime inventory");
     this.name = "RetrospectiveContextCapacityError";
-    if (options?.cause !== undefined) this.cause = options.cause;
   }
 }
 
@@ -67,8 +62,10 @@ function speakerSnapshot(speaker: RetrospectiveSpeaker): RetrospectiveSpeaker {
     || typeof speaker.backstory !== "string" || typeof speaker.strategy !== "string") {
     throw new RetrospectiveContractError("Invalid frozen retrospective character");
   }
+  if (speaker.werewolfPerspective !== undefined) assertWerewolfRetrospectivePerspective(speaker.werewolfPerspective);
   return { id: speaker.id, name: speaker.name, personality: speaker.personality,
-    backstory: speaker.backstory, strategy: speaker.strategy };
+    backstory: speaker.backstory, strategy: speaker.strategy,
+    ...(speaker.werewolfPerspective === undefined ? {} : { werewolfPerspective: structuredClone(speaker.werewolfPerspective) }) };
 }
 
 export function freezeRetrospectiveGame(
@@ -119,7 +116,7 @@ export function assertRetrospectiveSpeakerContext(context: RetrospectiveSpeakerC
   const exact = (value: unknown, keys: string[]) => value !== null && typeof value === "object" && !Array.isArray(value)
     && Object.keys(value).length === keys.length && Object.keys(value).every(key => keys.includes(key));
   if (!exact(context, ["version", "request", "self", "game", "priorStatements"])
-    || !exact(context.self, ["id", "name", "personality", "backstory", "strategy"])) {
+    || !exact(context.self, ["id", "name", "personality", "backstory", "strategy", ...(context.self?.werewolfPerspective === undefined ? [] : ["werewolfPerspective"])])) {
     throw new RetrospectiveContractError("Invalid retrospective speaker context shape");
   }
   assertRetrospectiveRequest(context.request);
@@ -146,15 +143,15 @@ export function assertRetrospectiveSpeakerContext(context: RetrospectiveSpeakerC
 
 export function preflightRetrospectiveContext(
   frozen: FrozenRetrospectiveGame, policy: RetrospectiveCapacityPolicy,
-): Array<{ modelId: string; actorId: string; requiredBytes: number; availableBytes: number }> {
+): Array<{ modelId: string; actorId: string; requiredBytes: number; availableBytes: number | null }> {
   const capacities = policy.models;
   if (!policy.effectiveModelIds.length || policy.effectiveModelIds.some(id => typeof id !== "string" || !id.trim())
     || !capacities.length || capacities.some(capacity => typeof capacity.modelId !== "string" || !capacity.modelId.trim()
-    || !Number.isSafeInteger(capacity.maxContextBytes) || capacity.maxContextBytes < 1)
+    || (capacity.maxContextBytes !== null && (!Number.isSafeInteger(capacity.maxContextBytes) || capacity.maxContextBytes < 1)))
     || new Set(capacities.map(capacity => capacity.modelId)).size !== capacities.length
     || policy.effectiveModelIds.some(id => !capacities.some(capacity => capacity.modelId === id))
     || capacities.some(capacity => !policy.effectiveModelIds.includes(capacity.modelId))) {
-    throw new RetrospectiveContextCapacityError("capacity_unavailable", null, null, null, null);
+    throw new RetrospectiveContextCapacityError();
   }
   assertRetrospectiveInputBinding(frozen.input, frozen.definition);
   const receipts = [];

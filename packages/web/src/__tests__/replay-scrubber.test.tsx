@@ -27,25 +27,25 @@ test("drag follows the pointer across playback rerenders and commits only once, 
   const seeks: number[] = [];
   let complete!: () => void;
   const onSeek = (value: number) => {seeks.push(value);return new Promise<void>(resolve => {complete=resolve;});};
-  const props = {cursor:4,count:130,onSeek};
+  const props = {frame:5,frameCount:130,fps:30,onSeek};
   const view = render(<ReplayScrubber {...props} />), input = slider(view);
   fireEvent.pointerDown(input,{button:0,pointerId:1});
   fireEvent.input(input,{target:{value:"40"}});
-  view.rerender(<ReplayScrubber {...props} cursor={5} />);
+  view.rerender(<ReplayScrubber {...props} frame={6} />);
   expect(input.value).toBe("40");
   fireEvent.input(input,{target:{value:"92"}});
   expect(input.value).toBe("92"); expect(seeks).toEqual([]);
   fireEvent.pointerUp(input,{pointerId:1});
   fireEvent.lostPointerCapture(input,{pointerId:1});
   expect(seeks).toEqual([92]); expect(input.value).toBe("92");
-  view.rerender(<ReplayScrubber {...props} cursor={91} />);
+  view.rerender(<ReplayScrubber {...props} frame={92} />);
   await act(async () => complete());
   expect(input.value).toBe("92");
 });
 
 test("canceled drags do not seek and end the scrub session once", () => {
   const seeks: number[] = []; let ends=0;
-  const view = render(<ReplayScrubber cursor={2} count={130} onSeek={value=>{seeks.push(value);}} onScrubEnd={()=>{ends++;}} />), input=slider(view);
+  const view = render(<ReplayScrubber frame={3} frameCount={130} fps={30} onSeek={value=>{seeks.push(value);}} onScrubEnd={()=>{ends++;}} />), input=slider(view);
   fireEvent.pointerDown(input,{button:0,pointerId:1});
   fireEvent.input(input,{target:{value:"90"}});
   fireEvent.pointerCancel(input,{pointerId:1}); fireEvent.lostPointerCapture(input,{pointerId:1});
@@ -54,7 +54,7 @@ test("canceled drags do not seek and end the scrub session once", () => {
 
 test("keyboard changes seek immediately; an earlier completion cannot reset a newer target", async () => {
   const seeks: number[] = [], completions: Array<()=>void> = [];
-  const view = render(<ReplayScrubber cursor={2} count={130} onSeek={value=>{seeks.push(value);return new Promise<void>(resolve=>completions.push(resolve));}} />), input=slider(view);
+  const view = render(<ReplayScrubber frame={3} frameCount={130} fps={30} onSeek={value=>{seeks.push(value);return new Promise<void>(resolve=>completions.push(resolve));}} />), input=slider(view);
   fireEvent.input(input,{target:{value:"4"}}); fireEvent.input(input,{target:{value:"5"}});
   expect(seeks).toEqual([4,5]);
   await act(async () => completions[0]!()); expect(input.value).toBe("5");
@@ -63,7 +63,7 @@ test("keyboard changes seek immediately; an earlier completion cannot reset a ne
 
 test("a track click commits on release and blur commits an interrupted drag", async () => {
   const seeks: number[] = [];
-  const view=render(<ReplayScrubber cursor={0} count={118} onSeek={value=>{seeks.push(value);}} />),input=slider(view);
+  const view=render(<ReplayScrubber frame={0} frameCount={118} fps={30} onSeek={value=>{seeks.push(value);}} />),input=slider(view);
   await act(async () => {
     fireEvent.pointerDown(input,{button:0,pointerId:1}); fireEvent.input(input,{target:{value:"80"}}); fireEvent.pointerUp(input,{pointerId:1});
   });

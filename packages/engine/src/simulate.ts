@@ -5,6 +5,19 @@
  * Influence Game — Batch Simulation Runner
  *
  * Runs multiple game simulations and outputs structured analysis.
+ * Preserve all sanitized provider attempts, including successful structured
+ * thinking and available native reasoning. Artifact write errors stop execution;
+ * pending requests and completed attempts remain available in the journal snapshot.
+ * Paid Werewolf evaluation uses simulate:werewolf:api for durable app-visible games.
+ * Discussion passes stay in private/debug evidence, not contestant observations;
+ * model-facing references count speech only. Replay skips passes even with
+ * Show thinking enabled; saved pass thoughts remain in debug evidence. Technical byte
+ * readouts are omitted from replay. Werewolf decisions allow 8,192 completion
+ * tokens independently of short public speech limits; prompts name the actor,
+ * distinguish elimination from endorsement, and clarify public disclosure.
+ * Strategic coaching is role-specific; shared vote instructions cover mechanics.
+ * Retrospectives remain speech-only and separate knowledge during play from
+ * postgame revelations using named action, final-result and elimination references.
  * Ordinary Mingle authors conversation and movement, without typed coordination
  * receipts. Alliance huddle facts and historical receipt exports remain supported.
  * Retrospective RT-01/02/03 supplies contracts, frozen context/order and strict
@@ -14,6 +27,10 @@
  * Current prompt guidance targets candid 40–75 word final statements; the strict
  * speech artifact retains its 2,000-code-point ceiling. See
  * docs/game-retrospective-runtime.md; native HTTP is mocked in focused tests.
+ * Provider context overflow now compacts marked context and retries the same decision.
+ * Local token reports include context-summary calls; summaries are private derived memory,
+ * never canonical facts or chatty speech. Compactors receive actor, character and pending-task
+ * orientation; House tasks retain their own subject/audience boundary. See docs/context-adaptation.md.
  * Keep exact types without `as any` and call House methods directly when wiring turns.
  * This runner is Influence-only. Werewolf uses src/werewolf/simulate.ts:
  *   bun run simulate:werewolf --preset two_wolves --seed sample-1 --chatty
@@ -36,6 +53,8 @@
  * bound to the replay cursor (sealed choices wait for resolution). Mystery never gets it.
  * Native provider reasoning traces remain separate diagnostics. Standalone canonical
  * logs contain target thinking; speech thinking lives in accepted provider evidence.
+ * Contestant rosters omit archetypes and image metadata; spectator exports retain them.
+ * Each contestant still receives its own character instructions.
  * Werewolf House characters freeze a Werewolf-specific archetype strategy at start.
  * Aggressor defaults preserve confrontational temperament and possible overcommitment;
  * evaluate faction benefit as well as survival when inspecting new-game behavior.
@@ -48,22 +67,15 @@
  * voluntary passes separately from provider-unavailable fallbacks.
  * Werewolf spoken text uses names; UUID leaks fail inside provider retries before
  * acceptance. Structured target IDs remain legal; stored dialogue is unchanged.
- * Pack negotiation allows three proposal/sealed-ballot attempts with unanimous
- * agreement, seeded nightly initiative, and swapped initiative after failure.
- * Three disagreements mean no attack; Doctor/Seer still act once. API Omniscient
- * reports show each resolved pack ballot; Mystery never receives those ballots.
- * Werewolf rotates a once-seeded opening ring across nights, skipping eliminated seats.
- * Each living player opens at most once per day, choosing 0–3 ordered recipients before
- * a seeded random open floor. Each spoken reply offers an opener answer; passes skip it.
- * Publish each original contribution before the next call, with a final turn reminder.
- * Earlier threads end with sealed target-or-abstain majority checkpoints. The final
- * thread uses mandatory-target plurality: unique most votes wins; ties spare everyone.
- * Reports distinguish vote modes; provider failures are marked unavailable abstentions.
- * Daytime requests add a separate final task: reply to the opener's quoted latest
- * message or pass; opener answers quote the prior respondent and name the next possible speaker.
- * Sealed daytime ballots run concurrently. The API reporter shows accepted-decision
- * counts as live spectator telemetry, separate from public history and player context.
- * Choices and private reasoning stay sealed until the full checkpoint resolves.
+ * Rules v9 use a shared UTF-8 speech budget: 400 bytes per living player,
+ * 320 per contribution. Three directed handoffs permit A → B → A → B;
+ * the last recipient redirects or passes, and may reference earlier statements.
+ * One public serial vote with optional speech follows; all living voters finish,
+ * strict majority eliminates, and abstentions never lower the threshold.
+ * Pack speech includes a standing target, with up to three full exchanges;
+ * matching proposals resolve early. Older completed rules retain their replay.
+ * Capped standalone evaluations supply --budget-usd and a shared --budget-ledger;
+ * attempts, retries, compaction and retrospectives all reserve against that cap.
  * API Werewolf replay links use /games/:slug/replay?audience=...; the viewer
  * can share an audience-bound source cursor without another model call.
  * See docs/werewolf.md; never send those logs to a spectator projection.
@@ -107,10 +119,15 @@
  *     --model-catalog openai:gpt-5-mini --flex --llm-timeout-sec 900
  *
  * Local LM Studio (load the model and serve 127.0.0.1:1234 first):
+ * Shared LM Studio runtimes keep concurrent dispatch and allow one hour per
+ * request, including server queueing (INFLUENCE_LM_STUDIO_TIMEOUT_MS overrides).
+ * API Werewolf reports competitive results separately from epilogue completion;
+ * --game only watches, while --resume-retrospective requests authorized recovery.
+ * Keep exact output validation, no `as any`, and direct House calls.
  *   INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
  *     bun run simulate:local -- \
  *     --games 1 --players 8 --max-rounds 2 --variant mingle --chatty \
- *     --model <lm-studio-model-id> --llm-timeout-sec 300
+ *     --model <lm-studio-model-id>
  *
  * Inspect the new batch summary.md, game-1.txt, and game-1-turns.jsonl. Flex
  * summaries include tier-aware run spend plus one all-model cost comparison.
@@ -817,6 +834,8 @@ export interface LocalProviderAttemptArtifact {
   formatVersion: 1;
   gameId: string;
   ownerEpoch: string;
+  /** Complete sanitized requests and terminal evidence, including successful thinking/native reasoning. */
+  attempts: Array<{ intent: ProviderAttemptIntent; terminal?: ProviderAttemptRecord }>;
   receipts: Array<{logicalCallId:string;action:string;catalogId?:string;attemptOrdinal:number;outcome:string;accounting?:ProviderAttemptRecord["accounting"]}>;
   failures: Array<{
     gameId: string;
@@ -846,7 +865,7 @@ function simulationHash(value: unknown): string {
   return `sha256:${createHash("sha256").update(stableSimulationJson(value)).digest("hex")}`;
 }
 
-/** Local counterpart of the API journal: exact sanitized failures, compact 429s. */
+/** Preserve every sanitized attempt, including pending requests, successes and rate limits. */
 export function createLocalProviderExecutionJournal(input: {
   gameId: string;
   ownerEpoch: string;
@@ -858,6 +877,7 @@ export function createLocalProviderExecutionJournal(input: {
 }): { hooks: ProviderExecutionHooks; snapshot: () => LocalProviderAttemptArtifact } {
   const reservations = new Map<string, string>();
   const terminals = new Map<string, string>();
+  const attempts = new Map<string, LocalProviderAttemptArtifact["attempts"][number]>();
   const failures: LocalProviderAttemptArtifact["failures"] = [];
   const receipts: LocalProviderAttemptArtifact["receipts"] = [];
   const rateLimits = new Map<string, LocalProviderAttemptArtifact["rateLimits"][number]>();
@@ -882,22 +902,26 @@ export function createLocalProviderExecutionJournal(input: {
     formatVersion: 1,
     gameId: input.gameId,
     ownerEpoch: input.ownerEpoch,
+    attempts: structuredClone([...attempts.values()]),
     receipts: [...receipts],
     failures: [...failures],
     rateLimits: [...rateLimits.values()],
   });
   const publish = () => {
-    try {
-      input.onChange?.(snapshot());
-    } catch (error) {
-      // The in-memory reservation remains authoritative for an uninterrupted
-      // local run; a diagnostics-artifact failure must not alter gameplay.
-      console.warn("Local provider-attempt artifact degraded:", error);
-    }
+    // Stop before another paid dispatch if evidence cannot be saved. The caller
+    // can persist the in-memory snapshot on failure; never silently drop it.
+    input.onChange?.(snapshot());
   };
 
   return {
     hooks: {
+      onReadLengthFeedback(coordinate) {
+        const callId = simulationHash({ domain: "influence.provider.logical-call.v2", coordinate: {
+          gameId: input.gameId, actor: coordinate.actor, action: coordinate.action,
+          phase: coordinate.phase, round: coordinate.round, semantic: coordinate.semantic,
+        } });
+        return [...failures].reverse().find(failure => failure.logicalCallId === callId)?.attempt.lengthFeedback;
+      },
       onReserve(intent) {
         if (
           (intent.coordinate.gameId !== undefined && intent.coordinate.gameId !== input.gameId) ||
@@ -935,6 +959,7 @@ export function createLocalProviderExecutionJournal(input: {
           usedCallsByCatalog.set(catalogId, usedCalls + 1);
         }
         reservations.set(id, simulationHash(intent));
+        attempts.set(id, { intent: structuredClone(intent) });
         publish();
       },
       onTerminal(record) {
@@ -947,6 +972,7 @@ export function createLocalProviderExecutionJournal(input: {
         }
         if (existing) return;
         terminals.set(id, terminalHash);
+        attempts.get(id)!.terminal = structuredClone(record);
         const callId = logicalId(record);
         receipts.push({logicalCallId:callId,action:record.coordinate.action,catalogId:record.preparedRequest.catalogId,
           attemptOrdinal:record.attemptOrdinal,outcome:record.outcome.kind,accounting:record.accounting});

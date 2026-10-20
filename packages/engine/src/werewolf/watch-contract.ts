@@ -12,6 +12,8 @@ export interface WerewolfWatchMoment {
   chapterId: string;
   sceneId: string;
   mediaKey: string | null;
+  /** Accepted public ballots through this moment, including across watch windows. */
+  dayBallots?: Array<{voterId: string; targetId: string | null; unavailable: boolean}>;
   /** First eligible pack/hunt appearance each night, calculated across complete history. */
   transformWolfIds?: string[];
   /** Only verified forms from the audience-permitted published scene. */
@@ -25,12 +27,14 @@ export interface WerewolfWatchWindow {
   publicationCutoff: string; latestCursor: number; fromCursor: number; throughCursor: number;
   players: WerewolfWatchIdentity[]; moments: WerewolfWatchMoment[]; navigation: WerewolfWatchIndex[];
   /** Compact audience-local scrub index; steps expand ballots and permitted night actions before their outcomes. */
-  playback: Array<{cursor: number; steps: number}>;
+  playback: Array<{cursor: number; steps: number; durationsMs: number[]; keys: string[]}>;
   media: Record<string, AcceptedVisualScene>;
 }
 export function isWerewolfPlayable(entry: WerewolfPublicEntry): boolean {
   if (entry.kind === "phase") return false;
   if (entry.kind === "speech") return Boolean(entry.text?.trim());
   if (entry.kind === "discussion") return !entry.contribution.unavailable && Boolean(entry.contribution.text?.trim());
+  if (entry.kind === "ballot") return true;
+  if (entry.kind === "conversation" || entry.kind === "proposal") return !entry.unavailable && Boolean(entry.text?.trim());
   return true;
 }

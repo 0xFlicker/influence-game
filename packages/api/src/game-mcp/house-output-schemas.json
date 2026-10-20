@@ -162,6 +162,16 @@
                   "gameId": {
                     "type": "string"
                   },
+                  "conversation": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/definitions/WerewolfConversationState"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "outcome": {
                     "anyOf": [
                       {
@@ -233,8 +243,12 @@
                     "$ref": "#/definitions/WerewolfAudience"
                   },
                   "rulesVersion": {
-                    "type": "number",
-                    "const": 8
+                    "enum": [
+                      7,
+                      8,
+                      9
+                    ],
+                    "type": "number"
                   },
                   "preset": {
                     "enum": [
@@ -381,6 +395,16 @@
                     "gameId": {
                       "type": "string"
                     },
+                    "conversation": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/definitions/WerewolfConversationState"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "outcome": {
                       "anyOf": [
                         {
@@ -452,8 +476,12 @@
                       "$ref": "#/definitions/WerewolfAudience"
                     },
                     "rulesVersion": {
-                      "type": "number",
-                      "const": 8
+                      "enum": [
+                        7,
+                        8,
+                        9
+                      ],
+                      "type": "number"
                     },
                     "preset": {
                       "enum": [
@@ -1957,6 +1985,107 @@
           "wolves"
         ]
       },
+      "WerewolfConversationState": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "voterIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "totalBytes": {
+            "type": "number"
+          },
+          "remainingBytes": {
+            "type": "number"
+          },
+          "messageBytes": {
+            "type": "number"
+          },
+          "maxHandoffs": {
+            "type": "number"
+          },
+          "lastOffered": {
+            "$ref": "#/definitions/Record<string,number>"
+          },
+          "offers": {
+            "type": "number"
+          },
+          "nextActorId": {
+            "type": "string"
+          },
+          "handoffsUsed": {
+            "type": "number"
+          },
+          "previousSpeakerId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "silentIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unavailableIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ended": {
+            "type": "boolean"
+          },
+          "endReason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "output_budget",
+                  "silence",
+                  "unavailable_sweep"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "endReason",
+          "ended",
+          "handoffsUsed",
+          "lastOffered",
+          "maxHandoffs",
+          "messageBytes",
+          "nextActorId",
+          "offers",
+          "order",
+          "previousSpeakerId",
+          "remainingBytes",
+          "silentIds",
+          "totalBytes",
+          "unavailableIds",
+          "voterIds"
+        ]
+      },
+      "Record<string,number>": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "number"
+        }
+      },
       "WerewolfOutcome": {
         "type": "object",
         "properties": {
@@ -2146,6 +2275,178 @@
               "contribution",
               "day",
               "kind"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "conversation"
+              },
+              "day": {
+                "type": "number"
+              },
+              "id": {
+                "type": "number"
+              },
+              "actorId": {
+                "type": "string"
+              },
+              "text": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "cue": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "recipientId": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "replyToContributionId": {
+                "type": [
+                  "null",
+                  "number"
+                ]
+              },
+              "unavailable": {
+                "type": "boolean"
+              },
+              "remainingBytes": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "actorId",
+              "cue",
+              "day",
+              "id",
+              "kind",
+              "recipientId",
+              "remainingBytes",
+              "replyToContributionId",
+              "text",
+              "unavailable"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "ballot"
+              },
+              "day": {
+                "type": "number"
+              },
+              "actorId": {
+                "type": "string"
+              },
+              "targetId": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "text": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "cue": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "unavailable": {
+                "type": "boolean"
+              },
+              "totals": {
+                "$ref": "#/definitions/Record<string,number>"
+              },
+              "requiredVotes": {
+                "type": "number"
+              },
+              "remainingVoterIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "actorId",
+              "cue",
+              "day",
+              "kind",
+              "remainingVoterIds",
+              "requiredVotes",
+              "targetId",
+              "text",
+              "totals",
+              "unavailable"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "proposal"
+              },
+              "day": {
+                "type": "number"
+              },
+              "actorId": {
+                "type": "string"
+              },
+              "targetId": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "text": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "cue": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "unavailable": {
+                "type": "boolean"
+              },
+              "beat": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "actorId",
+              "beat",
+              "cue",
+              "day",
+              "kind",
+              "targetId",
+              "text",
+              "unavailable"
             ]
           },
           {
@@ -2477,12 +2778,6 @@
           "plurality"
         ],
         "type": "string"
-      },
-      "Record<string,number>": {
-        "type": "object",
-        "additionalProperties": {
-          "type": "number"
-        }
       },
       "GameStatus": {
         "enum": [
@@ -5912,12 +6207,15 @@
       "WerewolfAction": {
         "enum": [
           "attack",
+          "conversation",
           "discuss",
           "introduce",
           "investigate",
           "open_thread",
+          "pack_propose",
           "pack_talk",
           "protect",
+          "public_vote",
           "vote"
         ],
         "type": "string"
@@ -6265,8 +6563,12 @@
                         }
                       },
                       "rulesVersion": {
-                        "type": "number",
-                        "const": 8
+                        "enum": [
+                          7,
+                          8,
+                          9
+                        ],
+                        "type": "number"
                       },
                       "day": {
                         "type": "number"

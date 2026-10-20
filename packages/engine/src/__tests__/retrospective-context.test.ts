@@ -203,9 +203,9 @@ test("preflight reserves worst-case JSON speech bytes for all speakers and fallb
     models: [capacities.models[0]!, { modelId: "limited-fallback", maxContextBytes: worst.requiredBytes - 1 }] });
   expect(constrained.find(receipt => receipt.modelId === "limited-fallback" && receipt.actorId === "rex"))
     .toMatchObject({ requiredBytes: worst.requiredBytes, availableBytes: worst.requiredBytes - 1 });
-  expect(() => preflightRetrospectiveContext(frozen, { ...capacities, models: [] })).toThrow("admitted input budget");
-  expect(() => preflightRetrospectiveContext(frozen, { ...capacities, models: [capacities.models[0]!] })).toThrow("admitted input budget");
-  expect(() => preflightRetrospectiveContext(frozen, { effectiveModelIds: ["unknown"], models: [{ modelId: "unknown", maxContextBytes: Number.NaN }] })).toThrow("admitted input budget");
+  expect(() => preflightRetrospectiveContext(frozen, { ...capacities, models: [] })).toThrow("valid sealed runtime inventory");
+  expect(() => preflightRetrospectiveContext(frozen, { ...capacities, models: [capacities.models[0]!] })).toThrow("valid sealed runtime inventory");
+  expect(() => preflightRetrospectiveContext(frozen, { effectiveModelIds: ["unknown"], models: [{ modelId: "unknown", maxContextBytes: Number.NaN }] })).toThrow("valid sealed runtime inventory");
 });
 
 test("long games retain their complete social account despite storage and estimated context sizes", async () => {

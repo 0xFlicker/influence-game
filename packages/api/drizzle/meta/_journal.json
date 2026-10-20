@@ -862,6 +862,13 @@
       "when": 1792191933906,
       "tag": "0122_text_operation_query_metadata",
       "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1792191933907,
+      "tag": "0123_context_adaptation",
+      "breakpoints": true
     }
   ]
 }

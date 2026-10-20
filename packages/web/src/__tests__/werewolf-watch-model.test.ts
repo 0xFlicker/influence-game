@@ -11,6 +11,25 @@ import {soloPresentationDurationMs, SOLO_READ_START_MS} from "../app/games/[slug
 const players = Array.from({length: 6}, (_, index) => ({id: `p${index}`, name: `Player ${index}`, personality: "Careful", backstory: "", strategy: "", avatarUrl: null}));
 const projection = projectWerewolfWatch([startWerewolf("silent-tail", players, werewolfConfig("one_wolf", 1), "seed")], "mystery");
 const template = projection.moments[0]!;
+test("passes have no playback cue and are consumed without waiting for thinking", () => {
+  for (const audience of ["mystery", "omniscient"] as const) {
+    const pass: WerewolfWatchMoment = {...template, cursor: 2, snapshot: {...template.snapshot, audience},
+      entry: {kind: "conversation", day: 1, id: 1, actorId: "p0", text: null, cue: null, recipientId: null, replyToContributionId: null, unavailable: false, remainingBytes: 2000}};
+    const window: WerewolfWatchWindow = {...projection, moments: [pass], audience, slug: "passes", status: "in_progress", publicationCutoff: "now", media: {}};
+    expect(werewolfCues([window])).toHaveLength(0);
+    expect(werewolfMomentCues(pass)).toHaveLength(0);
+    expect(consumedSilentTail([window], 1)?.cursor).toBe(2);
+  }
+});
+test("v9 public ballot moments are already revealed and the final result is not expanded again", () => {
+  const ballot: WerewolfWatchMoment = { ...template, dayBallots: [{voterId: "p0", targetId: "p1", unavailable: false}], entry: { kind: "ballot", day: 1, actorId: "p0", targetId: "p1", text: "I have seen enough.", cue: null, unavailable: false, totals: { p1: 1 }, requiredVotes: 4, remainingVoterIds: ["p1"] } };
+  expect(werewolfMomentCues(ballot)).toHaveLength(1);
+  expect(replayMoment({ ...ballot.snapshot, entries: [ballot.entry] })).toMatchObject({ title: "Day 1 · Public ballot", spoken: true });
+  const result: WerewolfWatchMoment = { ...template, entry: { kind: "vote", day: 1, result: { thread: 1, voteMode: "majority", requiredVotes: 4, dayEnded: true, eliminatedId: null, totals: { p1: 1 }, ballots: [{ voterId: "p0", targetId: "p1", unavailable: false }] } } };
+  expect(werewolfMomentCues(result)).toHaveLength(2);
+  expect(werewolfMomentCues(result)[0]?.ballot?.complete).toBe(true);
+  expect(replayMoment({ ...result.snapshot, rulesVersion: 9, entries: [result.entry] }).details.join(" ")).not.toContain("p0 → p1");
+});
 test("both Werewolf audiences reveal canonical parts only at the outcome and play each retrospective after the result", async () => {
   const {completedWerewolfResultsFixture} = await import("../../../engine/src/fixtures/werewolf-results");
   const events = await completedWerewolfResultsFixture("village", "rt10-watch");
@@ -68,7 +87,7 @@ test("silent consumption crosses loaded boundaries but never skips a missing win
 });
 
 test("Werewolf checkpoints reveal each accepted ballot, collect abstentions last, then announce the result", () => {
-  const moment: WerewolfWatchMoment = {...template, cursor:20, entry:{kind:"vote", day:1, result:{
+  const moment: WerewolfWatchMoment = {...template, snapshot:{...template.snapshot, rulesVersion:8}, cursor:20, entry:{kind:"vote", day:1, result:{
     thread:1, voteMode:"majority", requiredVotes:4, dayEnded:false, eliminatedId:null, totals:{p2:2},
     ballots:[{voterId:"p0",targetId:null,unavailable:false},{voterId:"p1",targetId:"p2",unavailable:false},
       {voterId:"p2",targetId:null,unavailable:true},{voterId:"p3",targetId:"p2",unavailable:false}],
@@ -114,7 +133,7 @@ test("completed Werewolf tallies use the recorded threshold or plurality result"
     ["majority", 3, "p2", ["p2"]], ["majority", 4, null, []],
     ["plurality", null, "p2", ["p2"]], ["plurality", null, null, []],
   ] as const) {
-    const moment: WerewolfWatchMoment = {...template, cursor:20, entry:{kind:"vote",day:1,result:{
+    const moment: WerewolfWatchMoment = {...template, snapshot:{...template.snapshot, rulesVersion:8}, cursor:20, entry:{kind:"vote",day:1,result:{
       thread:1,voteMode,requiredVotes,dayEnded:eliminatedId!==null,eliminatedId,totals:{p2:3,p3:1},
       ballots:[{voterId:"p0",targetId:"p2",unavailable:false}],
     }}};
@@ -151,4 +170,73 @@ for (const scenario of ["saved", "disagreement", "wolves", "village"] as const) 
       } else expect(save).toBeNull();
     }
   }
+});
+
+test("complete timing index matches windowed speech, every ballot, tally and private night cue", async () => {
+ const {completedWerewolfResultsFixture} = await import("../../../engine/src/fixtures/werewolf-results");
+ const events = await completedWerewolfResultsFixture("saved", "frame-index");
+ for (const audience of ["mystery", "omniscient"] as const) {
+   const index = projectWerewolfWatch(events, audience, 1, 32, () => true).playback;
+   for (const row of index) {
+     const moment = projectWerewolfWatch(events, audience, row.cursor, 1).moments[0]!;
+     moment.wolfForms = Object.fromEntries((moment.transformWolfIds ?? []).map(id => [id, "verified-form"]));
+     const cues = werewolfMomentCues(moment);
+     expect(row.keys).toEqual(cues.map(cue => cue.key));
+     expect(row.durationsMs).toEqual(cues.map(cue => cue.baseDurationMs));
+     expect(row.steps).toBe(cues.length);
+   }
+   expect(JSON.stringify(index)).not.toContain("thinking");
+   if (audience === "mystery") expect(index.flatMap(row => row.keys).some(key => /:(hunt|protect|investigate)$/.test(key))).toBe(false);
+ }
+});
+
+
+test("v9 windowed ballots retain only today's accepted prefix and match scrub timing; passes never stop playback", async () => {
+  const {completedCurrentWerewolfFixture} = await import("../../../engine/src/fixtures/werewolf-results");
+  const events = await completedCurrentWerewolfFixture("public-blocs");
+  for (const audience of ["mystery", "omniscient"] as const) {
+    const head = projectWerewolfWatch(events, audience, 1, 1);
+    const expected = [];
+    let ballotDay = -1;
+    for (let cursor = 1; cursor <= head.latestCursor; cursor++) {
+      const moment = projectWerewolfWatch(events, audience, cursor, 1).moments[0]!;
+      const entry = moment.entry;
+      if (entry.kind === "conversation" && entry.text === null) {
+        expect(head.playback.some(row => row.cursor === cursor)).toBe(false);
+        expect(head.navigation.some(row => row.cursor === cursor)).toBe(false);
+        expect(werewolfMomentCues(moment)).toEqual([]);
+      }
+      if (entry.kind === "ballot") {
+        if (ballotDay !== entry.day) {expected.length = 0; ballotDay = entry.day;}
+        expected.push({voterId: entry.actorId, targetId: entry.targetId, unavailable: entry.unavailable});
+        expect(moment.dayBallots).toEqual(expected);
+        const cue = werewolfMomentCues(moment)[0]!;
+        expect(cue.ballot?.votes.map(({voterId, targetId}) => ({voterId, targetId}))).toEqual(expected.map(({voterId, targetId}) => ({voterId, targetId})));
+        expect(cue.ballot?.total).toBe(expected.length + entry.remainingVoterIds.length);
+      }
+      const row = head.playback.find(row => row.cursor === cursor);
+      if (row) {
+        const cues = werewolfMomentCues(moment);
+        expect(cues.map(cue => cue.key)).toEqual(row.keys);
+        expect(cues.map(cue => cue.baseDurationMs)).toEqual(row.durationsMs);
+      }
+    }
+  }
+});
+
+test("spoken public ballots retain speech and solo timing in replay exports; silent abstentions invent no speech", async () => {
+  const {buildExportCues} = await import("../lib/replay-export/cues");
+  const ballot: WerewolfWatchMoment = {...template, cursor: 2,
+    dayBallots: [{voterId: "p0", targetId: null, unavailable: false}],
+    entry: {kind: "ballot", day: 1, actorId: "p0", targetId: null, text: "There is no case yet.", cue: null, unavailable: false, totals: {}, requiredVotes: 4, remainingVoterIds: ["p1"]}};
+  const window: WerewolfWatchWindow = {...projection, moments: [ballot], audience: "mystery", slug: "export-ballot", status: "in_progress", publicationCutoff: "now", media: {}};
+  const cue = buildExportCues({kind: "werewolf", windows: [window], thoughts: []}).find(cue => cue.source.kind === "werewolf")!;
+  expect(cue.speech?.text).toBe("There is no case yet.");
+  expect(cue.timing.speech?.readAtMs).toBe(SOLO_READ_START_MS);
+  expect(cue.timing.baseDurationMs).toBe(soloPresentationDurationMs("There is no case yet."));
+  if (ballot.entry.kind !== "ballot") throw new Error("Expected ballot fixture");
+  const silent = buildExportCues({kind: "werewolf", windows: [{...window, moments: [{...ballot, entry: {...ballot.entry, text: null}}]}], thoughts: []}).find(cue => cue.source.kind === "werewolf")!;
+  expect(silent.speech).toBeNull();
+  expect(silent.timing.speech).toBeNull();
+  expect(silent.timing.baseDurationMs).toBe(2200);
 });

@@ -1,7 +1,7 @@
 import { storeFields } from "../services/payload-storage.js";
 import { beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
-import { completedWerewolfResultsFixture as werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import { completedWerewolfResultsFixture as werewolfResultsFixture, completedCurrentWerewolfFixture } from "@influence/engine/fixtures/werewolf-results";
 import { replayWerewolf, werewolfActionPlans } from "@influence/engine/werewolf";
 import { werewolfConversationScene } from "@influence/engine/werewolf/visual-scenes";
 import { projectWerewolfProductionWatch } from "@influence/engine/werewolf/watch";
@@ -24,6 +24,17 @@ async function fixture() {
   await db.insert(schema.werewolfEvents).values(events.map(event => ({ gameId: id, sequence: event.sequence, event })));
   return { id, events };
 }
+
+test("production Studio source reads fresh v9 history without applying legacy thread rules", async () => {
+  const id = "production-werewolf-v9", events = await completedCurrentWerewolfFixture(id);
+  await db.insert(schema.games).values({ id, slug: `${id}-slug`, gameKind: "werewolf", status: "completed", startedAt: "2026-09-01T00:00:00.000Z", config: '{"visibility":"public","rulesVersion":9}' });
+  await db.insert(schema.werewolfEvents).values(events.map(event => ({ gameId: id, sequence: event.sequence, event })));
+  const source = await readWerewolfProductionSource(db, id, { audience: "mystery", thinking: false });
+  expect(source.window.rulesVersion).toBe(9);
+  expect(source.window.moments.some(moment => moment.entry.kind === "conversation")).toBe(true);
+  expect(source.window.moments.some(moment => moment.entry.kind === "ballot")).toBe(true);
+  expect(source.window.moments.some(moment => moment.entry.kind === "proposal")).toBe(false);
+});
 
 test("bounded Werewolf pages reproduce the complete shared catalog with each accepted thought and no staging", async () => {
   const { id } = await fixture();

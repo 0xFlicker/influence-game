@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { exactStructuredOutputRegistry } from "../structured-output";
 import { werewolfDecisionArtifact } from "../werewolf/agent";
 import { projectWerewolfView } from "../werewolf/observation";
-import { applyWerewolfEvent, nextWerewolfStep, replayWerewolf, startWerewolf, werewolfActionPlans, werewolfConfig, werewolfDayInitiative, werewolfEvent } from "../werewolf/rules";
+import { applyWerewolfEvent, nextWerewolfStep, replayWerewolf, startWerewolf, werewolfActionPlans, legacyWerewolfConfig as werewolfConfig, werewolfDayInitiative, werewolfEvent } from "../werewolf/rules";
 import { advanceWerewolf, werewolfFallback, type WerewolfAgent, type WerewolfStore } from "../werewolf/runner";
 import type { WerewolfDecision } from "../werewolf/types";
 import { werewolfConversationTurn } from "../werewolf/conversation";

@@ -8,32 +8,28 @@
  * Every player gets Seer timing from completed public nights, not hidden results.
  * Daytime players are prompted to pass rather than repeat or merely agree;
  * count voluntary passes separately from provider-unavailable fallbacks.
- * Earlier threads end with sealed target-or-abstain majority checkpoints. The final
- * thread uses mandatory-target plurality: unique most votes wins; ties spare everyone.
- * Reports distinguish vote modes; provider failures are marked unavailable abstentions.
- * A separate final task quotes the opener for recipients, or the prior respondent
- * for opener answers, identifying the next possible speaker. The seeded opening ring
- * persists across nights. Openers select 0–3 recipients; the rest follow in fixed random
- * order. Each spoken reply offers an opener answer; passes advance directly.
- * Original contributions print immediately; --transcript adds production notes
- * and turn coordinates. No House rewrite, extra speech-planning call, or gaze.
- * Pack proposals precede sealed ballots: three attempts, unanimous target, or no
- * attack. Nightly initiative is seeded and alternates after failed ballots.
- * Sealed daytime ballots run concurrently. The API reporter shows accepted-decision
- * counts as live spectator telemetry, separate from public history and player context.
- * Choices and private reasoning stay sealed until the full checkpoint resolves.
+ * Rules v9 use a shared UTF-8 speech budget: 400 bytes per living player,
+ * 320 per contribution. Three directed handoffs permit A → B → A → B;
+ * the last recipient redirects or passes, and may reference earlier statements.
+ * One public serial vote with optional speech follows; all living voters finish,
+ * strict majority eliminates, and abstentions never lower the threshold.
+ * Pack speech includes a standing target, with up to three full exchanges;
+ * matching proposals resolve early. Older completed rules retain their replay.
+ * Capped standalone evaluations supply --budget-usd and a shared --budget-ledger;
+ * attempts, retries, compaction and retrospectives all reserve against that cap.
  * No `as any` and no Influence House calls: the rules own every transition.
  * --out names a dedicated session directory. session.json declares Werewolf;
  * game-1.json and game-1-events.jsonl retain the full completed epilogue or typed
  * failure frontier. --chatty prints coverage/ordinal/prior counts separately from
- * accepted public speech. Provider receipts retain usage/cost without model prose.
+ * accepted public speech. Every sanitized provider attempt is retained privately,
+ * including successful thinking, available native reasoning and interrupted calls.
  */
 import { parseArgs } from "node:util";
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "../fixtures/retrospective-agent";
 import { randomUUID } from "node:crypto";
 import { mkdir, rename, writeFile } from "node:fs/promises";
-import { writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { renameSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { simulationIdentity } from "../simulation-identity";
 import { createLocalProviderExecutionJournal } from "../simulate";
 import { retrospectiveProgress } from "../retrospective-progress";
@@ -46,10 +42,12 @@ import { WerewolfModelAgent } from "./agent";
 import { projectWerewolfView } from "./observation";
 import { applyWerewolfEvent, replayWerewolf, startWerewolf, werewolfConfig, WEREWOLF_PRESETS } from "./rules";
 import { runWerewolf, werewolfFallback, type WerewolfAgent } from "./runner";
+import { WerewolfEvaluationBudget } from "./evaluation-budget";
 
 const { values } = parseArgs({ options: {
   preset: { type: "string", default: "one_wolf" }, seed: { type: "string", default: "werewolf-evaluation-1" },
   "max-days": { type: "string", default: "10" }, "model-catalog": { type: "string" },
+  "budget-usd": { type: "string" }, "budget-ledger": { type: "string" },
   out: { type: "string" }, transcript: { type: "boolean", default: false },
   audience: { type: "string", default: "mystery" }, chatty: { type: "boolean", default: false },
 } });
@@ -63,12 +61,25 @@ const archetypes = ["honest", "strategic", "deceptive", "paranoid", "social", "o
 const players = names.map((name, i) => ({ id: `seat-${i + 1}`, name, personality: getHousePersonaDetails(archetypes[i]!).personalityBlurb, backstory: "", strategy: defaultWerewolfStrategy(archetypes[i]!), avatarUrl: null }));
 const events = [startWerewolf(`werewolf-${randomUUID()}`, players, config, values.seed)];
 const directory = resolve(values.out ?? join(import.meta.dir,"../../docs/simulations",events[0]!.gameId));
-await mkdir(directory, { recursive: true });
+await mkdir(dirname(directory), { recursive: true });
+await mkdir(directory, { mode: 0o700 }); // Never overwrite an earlier simulation.
 await writeFile(join(directory,"session.json"),JSON.stringify(simulationIdentity("werewolf"),null,2));
 const output = join(directory,"game-1.json"), eventPath = join(directory,"game-1-events.jsonl"), providerPath = join(directory,"game-1-provider-attempts.json");
 const journalOptions:Parameters<typeof createLocalProviderExecutionJournal>[0] = {gameId:events[0]!.gameId,ownerEpoch:`local-werewolf:${events[0]!.gameId}`,
-  onChange:artifact => writeFileSync(providerPath,JSON.stringify(artifact,null,2))};
+  onChange:artifact => {
+    writeFileSync(`${providerPath}.tmp`,JSON.stringify(artifact,null,2), { mode: 0o600 });
+    renameSync(`${providerPath}.tmp`, providerPath);
+  }};
 const journal = createLocalProviderExecutionJournal(journalOptions);
+if ((values["budget-usd"] === undefined) !== (values["budget-ledger"] === undefined)) {
+  throw new Error("--budget-usd and --budget-ledger must be supplied together");
+}
+const budgetUsd = values["budget-usd"] === undefined ? undefined : Number(values["budget-usd"]);
+if (values["budget-usd"] !== undefined && (!Number.isFinite(budgetUsd) || budgetUsd! <= 0)) throw new Error("--budget-usd must be positive");
+const allowedBudgetModels = ["openai:gpt-6-luna", "meta-muse:muse-spark-1.3-contributor"];
+if (budgetUsd !== undefined && (!values["model-catalog"] || !allowedBudgetModels.includes(values["model-catalog"]))) {
+  throw new Error(`Budgeted runs require --model-catalog ${allowedBudgetModels.join(" or ")}`);
+}
 const persist = async (failure?:unknown) => {
   const state = replayWerewolf(events), completed = state.retrospective?.completedAtEventSequence != null;
   await writeFile(`${output}.tmp`, JSON.stringify({gameKind:"werewolf",status:failure ? "failed" : completed ? "completed" : "running",events,
@@ -77,12 +88,17 @@ const persist = async (failure?:unknown) => {
   await rename(`${output}.tmp`, output);
   await writeFile(`${eventPath}.tmp`,events.map(werewolfEvent => JSON.stringify({werewolfEvent})).join("\n")+"\n");
   await rename(`${eventPath}.tmp`,eventPath);
-  await writeFile(providerPath,JSON.stringify(journal.snapshot(),null,2));
+  journalOptions.onChange!(journal.snapshot());
   await writeFile(join(directory,"stats.json"),JSON.stringify({partial:!completed && failure === undefined,requestedGames:1,completedGames:completed ? 1 : 0,failedGames:failure ? 1 : 0}));
 };
 await persist();
 let delegate: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
   const state = replayWerewolf(events);
+  if (request.action === "pack_propose") return { kind: "spoken_target", targetId: request.legalTargetIds[0] ?? null,
+    text: null, cue: null, thinking: "Scripted proposal uses the first legal target" };
+  if (request.action === "public_vote") return { kind: "spoken_target", targetId: request.legalTargetIds[0] ?? null,
+    text: null, cue: null, thinking: "Scripted ballot uses the first legal target" };
+  if (request.action === "conversation") return { kind: "conversation", text: null, cue: null, recipientId: null, replyToContributionId: null };
   if (request.action === "vote" && request.voteMode === "plurality") return {
     kind: "target", targetId: state.aliveIds[(state.aliveIds.indexOf(request.actorId) + 1) % state.aliveIds.length]!, thinking: "Scripted cyclic ballot",
   };
@@ -93,7 +109,8 @@ if (values["model-catalog"]) {
   const runtimes = createLlmProviderRuntimesFromEnv(manifest, process.env);
   if (!runtimes) throw new Error("The selected provider is not configured");
   journalOptions.providerManifest = runtimes;
-  delegate = new WerewolfModelAgent({ runtimes, hooks:journal.hooks, ownerEpoch:`local-werewolf:${events[0]!.gameId}` });
+  const hooks = budgetUsd === undefined ? journal.hooks : new WerewolfEvaluationBudget(resolve(values["budget-ledger"]!), budgetUsd).hooks(journal.hooks);
+  delegate = new WerewolfModelAgent({ runtimes, hooks, ownerEpoch:`local-werewolf:${events[0]!.gameId}` });
 }
 const agent: WerewolfAgent = { prepareRetrospectiveCapacity: signal => delegate.prepareRetrospectiveCapacity(signal), getRetrospectiveStatement: async input => {
   if (values.chatty) console.log(JSON.stringify({action:"retrospective-statement",actorId:input.context.self.id,ordinal:input.context.request.ordinal,
@@ -102,8 +119,12 @@ const agent: WerewolfAgent = { prepareRetrospectiveCapacity: signal => delegate.
   return delegate.getRetrospectiveStatement(input);
 }, async decide(input) {
   const decision = await delegate.decide(input);
+  const evidence = values.chatty ? journal.snapshot().attempts.findLast(attempt =>
+    attempt.terminal?.outcome.kind === "usable" && attempt.intent.coordinate.semantic.kind === "werewolf_action"
+    && attempt.intent.coordinate.semantic.eventSequence === input.actionSlot)?.terminal : undefined;
   if (values.chatty) console.log(JSON.stringify({ visibility: "private", day: input.observation.board.day,
-    actionSlot: input.actionSlot, discussion: input.observation.board.discussion, request: input.request, decision }));
+    actionSlot: input.actionSlot, discussion: input.observation.board.discussion, request: input.request,
+    decision: evidence?.acceptedValue ?? decision, providerEvidence: providerPath }));
   return decision;
 } };
 let cursor = 0;

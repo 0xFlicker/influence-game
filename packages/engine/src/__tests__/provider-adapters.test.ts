@@ -158,6 +158,85 @@ async function rejectedProviderAttempt(
 }
 
 describe("provider-native adapters", () => {
+  it("repairs the exact rejected draft without changing the frozen context source", async () => {
+    const repairArtifact = createExactStructuredOutputArtifact<{ text: string }, { text: string }>({
+      action: "test.repair-text.v1", name: "repair_text",
+      schema: { type: "object", additionalProperties: false, required: ["text"], properties: { text: { type: "string", maxLength: 3 } } },
+      acceptedValueUsesProviderSchema: true,
+      decodeProviderPayload: value => ({ status: "valid", value }),
+      decodeAcceptedValue: value => ({ status: "valid", value: value as { text: string } }),
+    });
+    const requestBodies: unknown[] = [];
+    let attempt = 0;
+    const client = { chat: { completions: { create: async (body: unknown) => {
+      requestBodies.push(body);
+      const text = ++attempt === 1 ? "oversized draft" : "ok";
+      return { id: `repair-${attempt}`, choices: [{ finish_reason: "tool_calls", message: { role: "assistant", content: null,
+        tool_calls: [{ id: `call-${attempt}`, type: "function", function: { name: "repair_text", arguments: JSON.stringify({ text }) } }] } }] };
+    } } } } as unknown as OpenAI;
+    const providerRuntime = runtime("katana:grok-4-5", client);
+    const result = await executeModelInvocation({
+      call: new ProviderExecutionCoordinator({ wait: async () => {} }).startCall({ actor: { name: "Dax", role: "player" }, action: repairArtifact.action,
+        semantic: { version: 1, kind: "phase_call", phase: Phase.MINGLE, round: 0, canonicalEventSequence: 0, callSlot: 1 } }),
+      runtimes: [providerRuntime], maxAttempts: 2,
+      invocation: { contextSpans: [{ text: "Frozen history ".repeat(20), format: "text" }],
+        messages: [{ role: "user", content: "Say something brief. " + "Frozen history ".repeat(20) }], result: { kind: "tool", artifact: repairArtifact,
+        description: "Write a short line.", choice: { name: "repair_text" }, allowParallel: false }, outputTokenLimit: 256 },
+      validate: (_outcome, value) => value ? { status: "usable", value } : { status: "unusable", kind: "malformed_output", message: "missing" },
+    });
+    expect(result.value).toEqual({ text: "ok" });
+    expect(requestBodies).toHaveLength(2);
+    const messages = (requestBodies[1] as { messages: { content: string }[] }).messages;
+    expect(messages.at(-1)?.content).toContain('"oversized draft"');
+    expect(messages.at(-1)?.content).toContain("measured 15 unicode_code_points, allowed 3 (over by 12)");
+    expect(messages.at(-1)?.content).toContain("preserving its intent");
+  });
+
+  it("keeps local requests concurrent and uses the local deadline instead of a hosted action deadline", async () => {
+    const signals: AbortSignal[] = [];
+    const releases: (() => void)[] = [];
+    const client = { chat: { completions: { create: async (_body: unknown, options: { signal: AbortSignal }) => {
+      signals.push(options.signal);
+      await new Promise<void>(resolve => releases.push(resolve));
+      return { id: "local", choices: [{ finish_reason: "tool_calls", message: { role: "assistant", content: null,
+        tool_calls: [{ id: "vote", type: "function", function: { name: "cast_vote", arguments: '{"target":"Atlas"}' } }] } }] };
+    } } } } as unknown as OpenAI;
+    const local: LlmProviderRuntime = { ...runtime("katana:grok-4-5", client),
+      adapter: createProviderAdapter("lm-studio", client), providerProfileId: "lm-studio", catalogId: "lm-studio:test",
+      localRequestTimeoutMs: 60_000, toolChoiceMode: "required",
+    };
+    const run = (slot: number) => executeModelInvocation({
+      call: new ProviderExecutionCoordinator().startCall({ actor: { name: "Dax", role: "player" }, action: voteArtifact.action,
+        semantic: { version: 1, kind: "phase_call", phase: Phase.VOTE, round: 0, canonicalEventSequence: 0, callSlot: slot } }),
+      runtimes: [local], invocation, maxAttempts: 1,
+      requestSignalFactory: () => { throw new Error("Hosted two-minute deadline must not apply to LM Studio"); },
+      validate: (_outcome, value) => value ? { status: "usable", value } : { status: "unusable", kind: "malformed_output", message: "missing" },
+    });
+    const results = Promise.all([run(1), run(2)]);
+    for (let i = 0; i < 100 && releases.length < 2; i++) await Bun.sleep(1);
+    expect(signals).toHaveLength(2);
+    expect(signals.every(signal => !signal.aborted)).toBe(true);
+    for (const release of releases) release();
+    expect((await results).map(result => result.value)).toEqual([{ target: "Atlas" }, { target: "Atlas" }]);
+  });
+
+  it.each(["timeout", "cancel"] as const)("local requests still honor %s", async mode => {
+    const controller = new AbortController();
+    const client = { chat: { completions: { create: async (_body: unknown, options: { signal: AbortSignal }) => {
+      const pending = new Promise((_, reject) => {
+        options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
+      });
+      if (mode === "cancel") controller.abort(new DOMException("Worker stopped", "AbortError"));
+      return pending;
+    } } } } as unknown as OpenAI;
+    const local: LlmProviderRuntime = { ...runtime("katana:grok-4-5", client), adapter: createProviderAdapter("lm-studio", client),
+      providerProfileId: "lm-studio", catalogId: "lm-studio:test", localRequestTimeoutMs: mode === "timeout" ? 5 : 60_000 };
+    const call = new ProviderExecutionCoordinator().startCall({ actor: { name: "Dax", role: "player" }, action: voteArtifact.action,
+      semantic: { version: 1, kind: "phase_call", phase: Phase.VOTE, round: 0, canonicalEventSequence: 0, callSlot: 1 } });
+    await expect(executeModelInvocation({ call, runtimes: [local], invocation, maxAttempts: 1, cancellationSignal: controller.signal,
+      validate: () => ({ status: "unusable", kind: "malformed_output", message: "unexpected response" }),
+    })).rejects.toMatchObject({ outcome: { kind: mode === "timeout" ? "transport_timeout" : "cancellation" } });
+  });
   it("decodes the same exact tool arguments through native tools and json_schema compatibility", async () => {
     const nativeClient = {
       chat: {

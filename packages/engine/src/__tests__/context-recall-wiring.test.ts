@@ -74,6 +74,19 @@ describe("Recall Plan prompt-class wiring", () => {
     expect(ctx.recallPlan?.budget.historyCeilingChars).toBe(0);
   });
 
+  it("keeps character metadata out of Influence contestant contexts and recall plans", () => {
+    for (const player of gameState.getAlivePlayers()) {
+      Object.assign(player, { personaKey: "PRIVATE_ARCHETYPE", personality: "PRIVATE_PERSONALITY",
+        backstory: "PRIVATE_BACKSTORY", strategyStyle: "PRIVATE_STRATEGY" });
+    }
+    for (const phase of [Phase.LOBBY, Phase.MINGLE, Phase.VOTE, Phase.FORMAT_MINGLE, Phase.FORMAT_RESOLVE]) {
+      const ctx = builder.buildPhaseContextForAgentCall({ agentId: aliceId, phase,
+        promptClass: "strategic_decision", continuity: continuity() });
+      expect(ctx.alivePlayers).toEqual(gameState.getAlivePlayers().map(p => ({ id: p.id, name: p.name, shielded: p.shielded })));
+      expect(JSON.stringify(ctx)).not.toContain("PRIVATE_");
+    }
+  });
+
   it("strategic decisions may select authorized history", () => {
     const ctx = builder.buildPhaseContextForAgentCall({
       agentId: aliceId,

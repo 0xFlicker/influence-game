@@ -77,6 +77,7 @@ describe("provider health circuit authority", () => {
   test("request refusals, ambiguous client errors, and all rate limits stay call-scoped", async () => {
     await record(db, "refusal");
     await record(db, "request_error");
+    await record(db, "context_overflow");
     await record(db, "rate_limit");
 
     expect(await listProviderHealth(db)).toEqual([]);

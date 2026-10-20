@@ -57,6 +57,10 @@ export type ModelReasoningSummaryMode = "auto" | "concise" | "detailed";
  */
 export interface ModelInvocation<TStructuredValue = unknown> {
   messages: readonly ModelInvocationMessage[];
+  /** Exact renderer-owned spans allowed to be replaced by derived memory. */
+  contextSpans?: readonly { text: string; format: "text" | "json" }[];
+  /** The acting character only; House identity/instructions stay in its messages. */
+  compactionCharacter?: { personality: string; backstory: string; strategy: string; currentStrategy?: string };
   result: ModelInvocationResult<TStructuredValue>;
   outputTokenLimit: number;
   reasoning?: {
@@ -104,6 +108,8 @@ export interface ProviderReasoningEvidence {
 
 /** Provider-neutral result consumed by gameplay validation and tracing. */
 export interface ProviderModelOutcome {
+  /** Actual adapted messages for private tracing; never contestant state. */
+  invocationMessages?: readonly ModelInvocationMessage[];
   transport: string;
   nativeResponse: unknown;
   responseId?: string;

@@ -44,7 +44,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
     for (const key of keys.slice(3)) windows.current.delete(key);
     setData(value); setRevision(n => n + 1);
   }, [director]);
-  const seek = useCallback(async (position: number, play = playIntent.current, previous = false, initial = false, step = 0, openingStep?: number) => {
+  const seek = useCallback(async (position: number, play = playIntent.current, previous = false, initial = false, step = 0, openingStep?: number, elapsedMs?: number, seekKey?: string) => {
     playIntent.current = play;
     awaitingInitialCue.current = initial;
     target.current = position;
@@ -54,6 +54,12 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
     const controller = new AbortController(); request.current = controller;
     director.pause(); setFollow(play); setPreparing(true); setError(null);
     try {
+      if (!opening.current.length && position > 32) {
+        const head = await getWerewolfWatch(slug, audience, 1, controller.signal, cutoff);
+        if (controller.signal.aborted || generation !== intent.current) return;
+        opening.current = werewolfOpening(head, frozenTitle.current);
+        commitWindow(head, position);
+      }
       let next = Math.max(1, position), window: WerewolfWatchWindow;
       for (;;) {
         const start = Math.floor((next - 1) / 32) * 32 + 1;
@@ -71,7 +77,13 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
           const offset = Math.min(step, cues.filter(cue => cue.moment.cursor === cues[selected]!.moment.cursor).length - 1);
           director.load(withOpening(cues));
           director.seek(openingStep !== undefined ? Math.max(0, Math.min(opening.current.length - 1, openingStep)) :
-            initial && startCursor === undefined ? 0 : opening.current.length + selected + offset, initial && startCursor === undefined || openingStep === 0 && play ? 0 : undefined); setTail(null);
+            initial && startCursor === undefined ? 0 : opening.current.length + selected + offset, initial && startCursor === undefined || openingStep === 0 && play ? 0 : undefined);
+          if (elapsedMs !== undefined) {
+            const exact = seekKey ? director.getSnapshot().cueKeys.indexOf(seekKey) : director.getSnapshot().cursor;
+            if (exact < 0) throw new Error("This replay frame is no longer available.");
+            director.seekTimeline(exact, elapsedMs);
+          }
+          setTail(null);
           // Tail is always a scheduler holding state, even for terminal games.
           director.setFollowTail(true);
           if (playIntent.current) director.play();
@@ -153,7 +165,8 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
   }, [activeCursor, holding, latestCursor, status, preparing, slug, audience, cutoff, director, commitWindow, follow, seek, withOpening]);
   const buffered = [...windows.current.values()];
   const active = openingCue ? buffered.find(w => w.fromCursor === 1)?.moments[0] ?? null : holding && tail && tail.cursor >= (activeCue?.moment.cursor ?? 0) ? tail : activeCue?.moment ?? tail;
-  const scrubStops = useMemo(() => werewolfScrubStops(data?.playback ?? []), [data?.playback]);
+  const playback = useMemo(() => data?.playback ?? [], [data?.playback]);
+  const scrubStops = useMemo(() => werewolfScrubStops(playback), [playback]);
   const activeStep = activeCue ? werewolfMomentCues(activeCue.moment).findIndex(cue => cue.key === activeCue.key) : 0;
   const exactStop = scrubStops.findIndex(stop => stop.cursor === active?.cursor && stop.step === Math.max(0, activeStep));
   const gameScrubPosition = exactStop >= 0 ? exactStop : Math.max(0, scrubStops.findLastIndex(stop => stop.cursor <= activeCursor));
@@ -170,8 +183,26 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
     }
     return seek(1, playIntent.current, false, false, 0, step);
   };
-  return {...clock, openingCue, openingCount: opening.current.length, seekOpening, data, active, media, preparing, error, follow, holding, seek, navigationRevision, activeStep, scrubPosition: openingCue ? opening.current.findIndex(c => c.key === openingCue.key) : opening.current.length + gameScrubPosition, scrubCount: opening.current.length + scrubStops.length,
-    seekStop: (position: number) => {if (position <= opening.current.length) return seekOpening(position - 1); const stop = scrubStops[position - 1 - opening.current.length]; if (stop) return seek(stop.cursor, playIntent.current, false, false, stop.step);},
+  const timingCues = useMemo(() => [
+    ...opening.current,
+    ...playback.flatMap(row => row.keys.map((key, step) => ({key, baseDurationMs: row.durationsMs[step]!, cursor: row.cursor, step}))),
+    ...(data?.status === "completed" && data.navigation.at(-1)?.chapterId === "retrospective" && data.playback.length
+      ? [{key: `${data.gameId}:${data.audience}:${data.playback.at(-1)!.cursor}:reprise`, baseDurationMs: 4200, cursor: data.playback.at(-1)!.cursor, step: 1}] : []),
+  ], [data, playback]);
+  const seekTiming = async (key: string, elapsedMs: number) => {
+    const openingIndex = opening.current.findIndex(cue => cue.key === key);
+    const stop = timingCues.find(cue => cue.key === key);
+    if (!stop) return;
+    const loaded = director.getSnapshot().cueKeys.indexOf(key);
+    if (loaded >= 0 && !preparing) {
+      cancel(); setNavigationRevision(n => n + 1); setTail(null);
+      director.seekTimeline(loaded, elapsedMs);
+      return;
+    }
+    if (openingIndex >= 0) return seek(1, playIntent.current, false, false, 0, openingIndex, elapsedMs);
+    if ("cursor" in stop) await seek(stop.cursor, playIntent.current, false, false, stop.step, undefined, elapsedMs, key);
+  };
+  return {...clock, timingCues, seekTiming, openingCue, openingCount: opening.current.length, seekOpening, data, active, media, preparing, error, follow, holding, seek, navigationRevision, activeStep, scrubPosition: openingCue ? opening.current.findIndex(c => c.key === openingCue.key) : opening.current.length + gameScrubPosition, scrubCount: opening.current.length + scrubStops.length,
     retry: () => void seek(target.current,playIntent.current,false,awaitingInitialCue.current),
     toggle: () => { playIntent.current = !playIntent.current; setFollow(playIntent.current); if (!playIntent.current) director.pause(); else if (!preparing) director.play(); },
     previous: () => {

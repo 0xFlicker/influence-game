@@ -116,6 +116,11 @@ test.describe("format-aware game viewer", () => {
   // stories after a failure so CI reports the whole viewer's regressions.
   test.describe.configure({ mode: "default", retries: 0 });
 
+  test.beforeEach(async ({page}) => {
+    // Viewer stories do not depend on regional analytics configuration or notices.
+    await page.addInitScript(() => localStorage.setItem("house:analytics-consent", JSON.stringify({version:1, analytics:false})));
+  });
+
   test.beforeAll(async () => {
     test.setTimeout(180_000);
     if (process.env.PLAYWRIGHT_VIEWER_FIXTURE_WEB_URL) {
@@ -129,6 +134,36 @@ test.describe("format-aware game viewer", () => {
 
   test.afterAll(async () => {
     if (harnessProcess) await stopLocalFormatViewerHarness(harnessProcess);
+  });
+
+  test("Influence scrubber seeks individual frames and native drags preserve pause", async ({page}) => {
+    const slug = "frame-scrubber-fixture";
+    await installDeterministicFormatGame(page, {slug, scenarioId:"save_or_eliminate_clear", status:"completed"});
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page, "Pause replay");
+    await expect(page.getByRole("button", {name:"Play replay",exact:true})).toBeVisible();
+    const slider = page.getByRole("slider", {name:"Replay position", exact:true});
+    await expect(slider).toHaveAttribute("step", "1");
+    const count = Number(await slider.getAttribute("max"));
+    expect(count).toBeGreaterThan(1000);
+    await slider.fill("150");
+    await expect(slider).toHaveValue("150");
+    await slider.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(slider).toHaveValue("151");
+    await page.keyboard.press("ArrowLeft");
+    await expect(slider).toHaveValue("150");
+    const box = (await slider.boundingBox())!;
+    await page.mouse.move(box.x + box.width * .2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * .7, box.y + box.height / 2, {steps:10});
+    await page.mouse.up();
+    await expect(page.getByRole("button", {name:"Play replay",exact:true})).toBeVisible();
+    const frame = await slider.inputValue();
+    expect(Number(frame)).toBeGreaterThan(count * .6);
+    await page.waitForTimeout(100);
+    await expect(slider).toHaveValue(frame);
+    await page.screenshot({path:"/tmp/influence-frame-scrubber.png"});
   });
 
   test("captured thinking isolates the speaker before speech on the shared clock", async ({page}) => {
@@ -147,11 +182,19 @@ test.describe("format-aware game viewer", () => {
     await page.getByRole("button", {name:"Player settings", exact:true}).click();
     const settings = page.getByRole("dialog", {name:"Player settings"});
     await expect(settings.getByText("Keyboard shortcuts")).toBeVisible();
+    const slider = page.getByRole("slider", {name:"Replay position",exact:true});
+    const withoutThought = Number(await slider.getAttribute("max"));
     await page.getByLabel("Show thinking", { exact: true }).check();
+    await expect.poll(async () => Number(await slider.getAttribute("max"))).toBeGreaterThan(withoutThought);
     await expect(page.getByLabel("Thinking order", {exact:true})).toHaveCount(0);
     await page.getByRole("button",{name:"Close settings",exact:true}).click();
-    await playbackKey(page,"ArrowRight");
+    // This fixture has one contribution. Start before its thought, independently
+    // of how far autoplay progressed before the browser managed to pause it.
+    await slider.fill("0");
+    await expect(slider).toHaveValue("0");
     const thought = page.locator('[data-in-scene-thinking]');
+    await expect(thought).toHaveCount(0);
+    await playbackKey(page,"ArrowRight");
     await expect(thought).toHaveCSS("opacity","1");
     await expect(thought).toContainText("One precise question");
     await expect(page.locator('[data-speech-bubble]')).toHaveCount(0);
@@ -193,11 +236,21 @@ test.describe("format-aware game viewer", () => {
     expect(href).toBe(viewerUrl(`/games/${slug}/replay/16`));
     await expect(page.getByRole("button", { name: "Play replay", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Close settings", exact: true }).click();
-    const position = await page.getByRole("slider", { name: "Replay position", exact: true }).inputValue();
-    expect(Number(position)).toBeGreaterThan(1);
+    expect(Number(await page.getByRole("slider", { name: "Replay position", exact: true }).inputValue())).toBeGreaterThan(1);
     await page.goto(href!);
     await pauseAutoplay(page, "Pause replay");
-    await expect(page.getByRole("slider", { name: "Replay position", exact: true })).toHaveValue(position);
+    // A shared URL identifies the canonical action, not elapsed autoplay frames.
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "share", { configurable: true, value: undefined });
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+        writeText: async (url: string) => { document.documentElement.dataset.copiedMoment = url; },
+      } });
+    });
+    await page.getByRole("button", { name: "Player settings", exact: true }).click();
+    await page.getByRole("button", { name: "Share this moment", exact: true }).click();
+    await expect(page.getByRole("status")).toContainText("Share link copied.");
+    expect(await page.evaluate(() => document.documentElement.dataset.copiedMoment)).toBe(href);
+    await page.getByRole("button", { name: "Close settings", exact: true }).click();
     await page.getByRole("button", { name: "Play replay", exact: true }).click();
     await page.getByRole("button", { name: "Player settings", exact: true }).click();
     await expect(page.getByRole("button", { name: "Share this moment", exact: true })).toBeVisible();

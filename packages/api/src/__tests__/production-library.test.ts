@@ -12,7 +12,7 @@ import { initialGameTranscriptStateValues } from "../services/transcript-capture
 import { claimWerewolfGame, createWerewolfGame, createWerewolfStore } from "../services/werewolf-games.js";
 import { pauseWerewolfForVisuals, WerewolfVisualBlocked } from "../services/werewolf-visual-policy.js";
 import { insertOwner } from "./durable-run-test-utils.js";
-import { setupTestDB } from "./test-utils.js";
+import { pinWerewolfRulesVersion, setupTestDB } from "./test-utils.js";
 
 let db: DrizzleDB;
 const originalSecret = process.env.JWT_SECRET;
@@ -88,6 +88,7 @@ const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiv
 } };
 test.each(["scene", "form"] as const)("validated Werewolf %s pause is discoverable without private work details", async kind => {
   const created = await createWerewolfGame(db, "operator", { preset: kind === "form" ? "one_wolf" : "two_wolves", maxDays: 1, agentProfileIds: [] });
+  await pinWerewolfRulesVersion(db, created.id, 8);
   const [row] = await db.select().from(schema.games).where(eq(schema.games.id, created.id));
   await db.update(schema.games).set({ config: JSON.stringify({ ...JSON.parse(row!.config), visualMode: true, visualFailurePolicy: "require_visuals" }) }).where(eq(schema.games.id, created.id));
   const claim = await claimWerewolfGame(db, created.id); if (!claim.ok) throw new Error(claim.error);

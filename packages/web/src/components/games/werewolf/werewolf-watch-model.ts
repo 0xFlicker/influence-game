@@ -17,9 +17,9 @@ export const werewolfWatchPolicy: WatchPolicy<WerewolfWatchCue> = {
   acceptAtWatermark: () => false,
   reconcile: cues => cues,
   speech: cue => {
-    if (cue?.ballot) return null;
-    if (!cue || !["speech", "discussion"].includes(cue.moment.entry.kind)) return null;
-    if (cue.moment.entry.kind === "speech" && cue.moment.entry.purpose === "retrospective") return {
+    if (cue?.ballot && (cue.moment.entry.kind !== "ballot" || cue.moment.entry.text === null)) return null;
+    if (!cue || !["speech", "discussion", "conversation", "ballot", "proposal"].includes(cue.moment.entry.kind)) return null;
+    if (cue.moment.entry.kind === "ballot" || cue.moment.entry.kind === "speech" && cue.moment.entry.purpose === "retrospective") return {
       showAtMs: SOLO_SPEECH_START_MS, readAtMs: SOLO_READ_START_MS,
       hideAtMs: cue.baseDurationMs - SOLO_EXIT_MS, hiddenAtMs: cue.baseDurationMs,
     };
@@ -68,9 +68,10 @@ export function werewolfCues(windows: readonly WerewolfWatchWindow[]): WerewolfW
   return cues;
 }
 
-/** Day receipts are canonically public together; reveal order is presentation only. */
+/** Public ballots use their committed prefix; legacy sealed receipts reveal only after resolution. */
 export function werewolfMomentCues(moment: WerewolfWatchMoment): WerewolfWatchCue[] {
   const key = `${moment.snapshot.gameId}:${moment.snapshot.audience}:${moment.cursor}`;
+  if (!isWerewolfPlayable(moment.entry)) return [];
   const result: WerewolfWatchCue = {key, baseDurationMs: replayMoment({...moment.snapshot, entries: [moment.entry]}).duration, moment};
   const wolfIds = moment.transformWolfIds ?? [];
   const transform = (cue: WerewolfWatchCue): WerewolfWatchCue => {
@@ -82,9 +83,15 @@ export function werewolfMomentCues(moment: WerewolfWatchMoment): WerewolfWatchCu
     key: `${key}:${nightAction.kind}`, baseDurationMs: 5000, nightAction,
     moment: { ...moment, snapshot: moment.night!.before },
   })).map(cue => cue.nightAction?.kind === "hunt" ? transform(cue) : cue), result];
+  if (moment.entry.kind === "ballot") {
+    const ballots = moment.dayBallots;
+    if (!ballots?.length || ballots.at(-1)?.voterId !== moment.entry.actorId) throw new Error("Public ballot is missing its committed vote prefix");
+    const votes: RevealedVote[] = ballots.map(b => ({voterId: b.voterId, targetId: b.targetId, choice: b.targetId ? "exit" : b.unavailable ? "unavailable" : "abstain"}));
+    return [{...result, ballot: {title: "Day vote", votes, current: votes.at(-1)!, total: votes.length + moment.entry.remainingVoterIds.length, polarity: false, abstainLabel: "Abstain"}}];
+  }
   if (moment.entry.kind !== "vote") return [transform(result)];
   const rank = (ballot: {targetId: string | null; unavailable: boolean}) => ballot.targetId ? 0 : ballot.unavailable ? 1 : 2;
-  const ballots = [...moment.entry.result.ballots].sort((a,b) => rank(a) - rank(b));
+  const ballots = moment.snapshot.rulesVersion === 9 ? moment.entry.result.ballots : [...moment.entry.result.ballots].sort((a,b) => rank(a) - rank(b));
   const votes: RevealedVote[] = ballots.map(b => ({voterId:b.voterId, targetId:b.targetId,
     choice: b.targetId ? "exit" : b.unavailable ? "unavailable" : "abstain"}));
   const reveals = votes.map((current, index): WerewolfWatchCue => ({
@@ -101,7 +108,7 @@ export function werewolfMomentCues(moment: WerewolfWatchMoment): WerewolfWatchCu
   const summary = last ? {...last, key: `${key}:tally`, baseDurationMs: 3200,
     ballot: {...last.ballot!, complete: true, eligibility: {ids: eligible,
       label: vote.voteMode === "majority" ? `Majority required: ${vote.requiredVotes} votes` : "Unique highest count required · ties spare everyone"}}} : null;
-  return [...reveals, ...(summary ? [summary] : []), result];
+  return [...(moment.snapshot.rulesVersion === 9 ? [] : reveals), ...(summary ? [{...summary, ballot: {...summary.ballot, ...(moment.snapshot.rulesVersion === 9 ? {abstainLabel: "Abstain"} : {})}}] : []), result];
 
 }
 export function adjacentWerewolfPosition(index: WerewolfWatchWindow["navigation"], cursor: number, direction: -1 | 1, kind: "scene" | "chapter", step = 0) {
@@ -115,7 +122,11 @@ export function adjacentWerewolfPosition(index: WerewolfWatchWindow["navigation"
 export function consumedSilentTail(windows: readonly Pick<WerewolfWatchWindow, "moments">[], after: number) {
   const moments = new Map(windows.flatMap(window => window.moments.map(moment => [moment.cursor, moment] as const)));
   let cursor = after;
-  while (moments.has(cursor + 1) && !isWerewolfPlayable(moments.get(cursor + 1)!.entry)) cursor++;
+  while (moments.has(cursor + 1)) {
+    const next = moments.get(cursor + 1)!;
+    if (isWerewolfPlayable(next.entry)) break;
+    cursor++;
+  }
   return cursor > after ? moments.get(cursor)! : null;
 }
 

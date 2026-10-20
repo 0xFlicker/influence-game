@@ -66,7 +66,7 @@ export function WerewolfContentFrame({cue, scene, elapsed, reduced, navigationRe
   const lead = cue.transformation?.durationMs ?? 0;
   const sceneElapsed = Math.max(0, elapsed - lead);
   const readingElapsed = Math.max(0, readingTime - lead);
-  const text = cue.ballot ? cue.moment.snapshot.players.find(p => p.id === cue.ballot?.current.targetId)?.name ?? "" : moment.text;
+  const text = cue.moment.entry.kind === "ballot" ? moment.spoken ? moment.text : "" : cue.ballot ? cue.moment.snapshot.players.find(p => p.id === cue.ballot?.current.targetId)?.name ?? "" : moment.text;
   const beat: Extract<VisualPresentationBeat, {kind:"portrait"}> | null = actor ? {
     kind:"portrait", purpose: moment.retrospective ? "Retrospective" : cue.ballot ? "Ballot" : cue.moment.chapterId === "introduction" ? "Introduction" : moment.spoken ? "Conversation" : "Farewell",
     caption: moment.retrospective ? `Retrospective · ${moment.part ?? "Contestant"}` : cue.ballot ? "Vote to eliminate" : cue.moment.chapterId === "introduction" ? "Introduction" : moment.spoken ? moment.pack ? "Pack conversation" : "Conversation" : "",
@@ -75,7 +75,7 @@ export function WerewolfContentFrame({cue, scene, elapsed, reduced, navigationRe
     speech: {id:cue.key, playerId:actor.id, speaker:actor.name, text, portrait:{avatarUrl:actor.avatarUrl, persona:""}},
   } : null;
   const room: Extract<VisualPresentationBeat, {kind:"portrait-room"}> | null = beat && moment.spoken && !moment.retrospective &&
-    (cue.moment.entry.kind === "discussion" || cue.moment.entry.kind === "speech" && moment.pack) ? {
+    (cue.moment.entry.kind === "discussion" || cue.moment.entry.kind === "conversation" || cue.moment.entry.kind === "proposal" || cue.moment.entry.kind === "speech" && moment.pack) ? {
       kind: "portrait-room", roomNumber: null,
       roomLabel: moment.pack ? `Night ${cue.moment.snapshot.day} · Pack conversation` : `Day ${cue.moment.snapshot.day} · Village conversation`,
       participants: cue.moment.snapshot.players.filter(player => player.alive && (!moment.pack || player.role === "werewolf"))
@@ -89,11 +89,10 @@ export function WerewolfContentFrame({cue, scene, elapsed, reduced, navigationRe
   if (cue.ballot && beat) return <VotePresentation beat={beat} ledger={cue.ballot}
     roster={cue.moment.snapshot.players.map(p => ({id:p.id, name:p.name, persona:"", avatarUrl:p.avatarUrl ?? undefined}))}
     elapsedMs={sceneElapsed} readingElapsedMs={readingElapsed} reducedMotion={reduced}
-    paused={paused} silent={cue.ballot.current.targetId === null} onImageReady={() => onReady?.(true)} />;
+    paused={paused} silent={cue.moment.entry.kind === "ballot" ? !moment.spoken : cue.ballot.current.targetId === null} onImageReady={() => onReady?.(true)} />;
   return <>
     {visual ? <VisualSceneView paused={paused} navigationRevision={navigationRevision} scene={scene} focusPlayerId={moment.actor?.id} speech={moment.spoken && moment.actor ? {id: cue.key, playerId: moment.actor.id, speaker: moment.speaker, text: moment.text, portrait: {avatarUrl: moment.actor.avatarUrl, persona: "", personaKey: moment.actor.personaKey}} : null} elapsedMs={sceneElapsed} readingElapsedMs={readingElapsed} reducedMotion={reduced} onReadyChange={onReady} /> : room ? <PortraitRoom beat={room} elapsedMs={sceneElapsed} readingElapsedMs={readingElapsed} reducedMotion={reduced} controlsInset={0} speechPresentation="scene" onImageReady={() => onReady?.(true)} /> : beat ? <SoloPresentation beat={beat} elapsedMs={sceneElapsed} readingElapsedMs={readingElapsed}
       paused={paused} speechPresentation={moment.retrospective ? "solo" : "scene"} reducedMotion={reduced} hideSpeech={!moment.spoken} onImageReady={() => onReady?.(true)} /> : <div className="flex-1 bg-black" />}
-
     {!moment.spoken && <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 mx-auto max-h-[80%] max-w-xl overflow-y-auto rounded-xl border border-white/15 bg-black/90 p-5 text-center">
       <p className="text-xs text-white/50">The House</p><h2 className="mt-2 text-2xl text-white">{moment.text}</h2>
       {moment.details.length > 0 && <ul className="mt-4 space-y-1 text-sm text-white/65">{moment.details.map((detail,index) => <li key={index}>{detail}</li>)}</ul>}

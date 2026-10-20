@@ -7,6 +7,7 @@ import { findPresentationCueIndexForSequence } from "../app/games/[slug]/compone
 import { buildStoryScenes, isStoryDialogue, withHouseBridges } from "../app/games/[slug]/components/house-story";
 import { createPresentationDirector } from "../app/games/[slug]/components/influence-presentation-director";
 import { buildClassicPresentationCues, comparePresentationCues } from "../app/games/[slug]/components/dramatic-replay-viewer";
+import { buildExportCues } from "../lib/replay-export/cues";
 
 const players = ["Arden", "Kaiya", "Marnie", "Ione"].map((name) => ({ id: name, name, persona: "strategic", status: "alive" as const, shielded: false }));
 function frame(event: ViewerDecisionEvent): GameWatchReplayFrame {
@@ -52,6 +53,64 @@ test("winner holds end at the retrospective boundary and canonical parts survive
   expect(visualWatchPresentation(data, tail[0]!, retrospective, players, [], [ardenOut, jury]).beat).toMatchObject({purpose: "Retrospective", caption: "Retrospective · Eliminated · Round 3"});
   expect(visualWatchPresentation(data, tail[0]!, {...retrospective, fromPlayerId: "Ione"}, players, [], [ardenOut, jury]).beat).toMatchObject({caption: "Retrospective · Winner"});
   expect(visualWatchPresentation(data, winner, null, players).beat?.kind).toBe("winner");
+});
+
+test("completed retrospectives return to canonical results in playback and exports", () => {
+  const jury = frame({ ...base, round: 4, phase: Phase.JURY_VOTE, sequence: 30, type: "jury.winner_determined", payload: { votes: { Arden: "Ione", Marnie: "Kaiya" }, winnerId: "Ione" } });
+  const speech: TranscriptEntry = {id: 40, entrySequence: 40, gameId: "endgame", round: 4, phase: Phase.RETROSPECTIVE, firstDurableEventSequence: 40,
+    fromPlayerId: "Arden", fromPlayerName: "Arden", scope: "public", toPlayerIds: null, text: "I learned from the jury.", timestamp: 40};
+  const completion: GameWatchReplayFrame = {...jury, sequence: 41, timestamp: 41, phase: Phase.RETROSPECTIVE, eventType: "retrospective.completed", viewerDecisionEvent: undefined};
+  const prefix = [finalFour, ardenOut, finalThree, marnieOut, jury];
+  const scenes = buildStoryScenes([speech]);
+  const compile = (frames: GameWatchReplayFrame[]) => withHouseBridges([
+    ...buildClassicPresentationCues(scenes, frames, players), ...buildEndgamePresentationCues(frames),
+  ].sort(comparePresentationCues), scenes);
+  const pending = compile(prefix);
+  const completed = compile([...prefix, completion]);
+  expect(pending.at(-1)?.kind).toBe("classic_transcript");
+  expect(completed.slice(0, -1)).toEqual(pending);
+  const closing = completed.at(-1)!;
+  if (closing.source !== "endgame") throw new Error("Expected closing result");
+  expect(closing).toMatchObject({kind: "endgame_winner", playerId: "Ione", canonicalSequence: 41});
+  expect(compileRevealedWinnerCues(completed).slice(-2)).toEqual([null, closing]);
+  expect(new Set(completed.map(cue => cue.key)).size).toBe(completed.length);
+  const speechSeek = findPresentationCueIndexForSequence(completed, 40);
+  expect(completed[speechSeek]?.phase).toBe("RETROSPECTIVE");
+  expect(speechSeek).toBeLessThan(completed.length - 1);
+  expect(findPresentationCueIndexForSequence(completed, 41)).toBe(completed.length - 1);
+  expect(buildEndgamePresentationCues([completion])).toEqual([]);
+
+  const director = createPresentationDirector();
+  director.load(pending);
+  director.seek(pending.length - 1);
+  director.append(completed);
+  expect(director.getActiveCue()?.key).toBe(pending.at(-1)!.key);
+  director.seek(completed.length - 1);
+  expect(director.getActiveCue()).toEqual(closing);
+  director.dispose();
+
+  const exported = buildExportCues({kind: "influence", game: {id: "endgame", slug: "endgame", status: "completed", gameKernel: "classic", players},
+    frames: [...prefix, completion], messages: [speech], visual: {enabled: false, status: null, portraits: {}, scenes: []}, thoughts: {}});
+  const last = exported.at(-1)!;
+  expect(last.timing.kind).toBe("result");
+  expect(last.speech).toBeNull();
+  expect(last.picture.kind === "influence" && last.picture.beat).toMatchObject({kind: "winner", winner: {id: "Ione"},
+    standings: [{id: "Kaiya", placement: 2}, {id: "Marnie", placement: 3}, {id: "Arden", placement: 4}]});
+});
+
+test("single-survivor retrospectives close on results without inventing a jury or missing placements", () => {
+  const kaiyaOut = frame({...base, round: 5, sequence: 30, type: "player.eliminated", payload: {playerId: "Kaiya", playerName: "Kaiya"}});
+  const completion: GameWatchReplayFrame = {...kaiyaOut, sequence: 41, phase: Phase.RETROSPECTIVE, eventType: "retrospective.completed", viewerDecisionEvent: undefined,
+    players: players.map(player => ({...player, status: player.id === "Ione" ? "alive" : "eliminated"}))};
+  const closing = buildEndgamePresentationCues([ardenOut, marnieOut, kaiyaOut, completion]).at(-1)!;
+  expect(closing).toMatchObject({kind: "endgame_winner", playerId: "Ione", juryVoterIds: []});
+  expect(closing.standings).toEqual([
+    {playerId: "Arden", placement: 4}, {playerId: "Kaiya", placement: 2},
+    {playerId: "Marnie", placement: 3}, {playerId: "Ione", placement: 1},
+  ]);
+  expect(buildEndgamePresentationCues([completion]).at(-1)?.standings?.filter(player => player.placement === null)).toHaveLength(3);
+  expect(buildEndgamePresentationCues([{...completion, players}])).toEqual([]);
+  expect(buildEndgamePresentationCues([ardenOut, marnieOut, kaiyaOut]).some(cue => cue.kind === "endgame_winner")).toBe(false);
 });
 
 test("winner standings use canonical exits and remain hidden until the result cue", () => {

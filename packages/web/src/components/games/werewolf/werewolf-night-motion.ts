@@ -1,6 +1,6 @@
 /** Authored samples, not wall-clock animation: pause, speed and rewind share the director. */
-export const WOLF_TRANSFORM_MS = 3600;
-export const WOLF_STAGGER_MS = 240;
+import {WOLF_TRANSFORM_MS, WOLF_STAGGER_MS} from "@influence/engine/visual-speech";
+export {WOLF_TRANSFORM_MS, WOLF_STAGGER_MS} from "@influence/engine/visual-speech";
 export const NIGHT_CLAW_MS = 900;
 const switches = [
   {at: 0, wolf: false}, {at: 640, wolf: true},

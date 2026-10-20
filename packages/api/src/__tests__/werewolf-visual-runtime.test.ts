@@ -23,7 +23,8 @@ async function fixture(preset: "one_wolf" | "two_wolves" = "two_wolves") {
   return {game,store,controller,epoch:claim.claim.ownerEpoch};
 }
 const agent:WerewolfAgent={ prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}){
-  if(request.action==="open_thread")return {kind:"opening",text:null,cue:null,recipientIds:[]};
+  if(request.action==="conversation")return {kind:"conversation",text:"Fixture contribution",cue:null,recipientId:null,replyToContributionId:null};
+  if(request.action==="pack_propose" || request.action==="public_vote")return {kind:"spoken_target",targetId:request.legalTargetIds[0]!,text:"Fixture contribution",cue:null,thinking:"Fixture"};
   if(request.legalTargetIds.length)return {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Fixture"};
   return {kind:"speech",text:"Fixture contribution",cue:null};
 }};
@@ -46,7 +47,7 @@ test("automatic scenes publish once, recover without another render, and respect
   await advanceWerewolf(f.store,agent);
   expect(renders).toBe(0);
   expect(await db.select().from(schema.visualScenes)).toHaveLength(0);
-  await advanceTo(f, "pack_talk");
+  await advanceTo(f, "pack_propose");
   await advanceWerewolf(f.store,agent);
   expect(renders).toBe(1);
   const state=replayWerewolf(await f.store.read()),step=nextWerewolfStep(state);
@@ -55,7 +56,7 @@ test("automatic scenes publish once, recover without another render, and respect
   prepare=createPreparation(db,f.game.id,f.epoch,f.controller.signal,render,resolveForms);
   await prepare(state,step.request);
   expect(renders).toBe(1);
-  await advanceTo(f, "open_thread");
+  await advanceTo(f, "conversation");
   const living=replayWerewolf(await f.store.read()).aliveIds;
   await advanceWerewolf(f.store,agent);
   expect(renders).toBe(2);
@@ -101,7 +102,7 @@ test("automatic scenes publish once, recover without another render, and respect
 test("aborted preparation cannot publish or commit a fallback contribution",async()=>{
   const f=await fixture();
   const prepare=createWerewolfVisualPreparation(db,f.game.id,f.epoch,f.controller.signal,async()=>{f.controller.abort();throw new Error("stopped");});
-  await advanceTo(f,"pack_talk");
+  await advanceTo(f,"pack_propose");
   const before=await readWerewolfEvents(db,f.game.id);
   const state=replayWerewolf(before),step=nextWerewolfStep(state);
   if(step.kind!=="action")throw new Error("Expected introduction");
@@ -113,7 +114,7 @@ test("aborted preparation cannot publish or commit a fallback contribution",asyn
 test("missing renderer continues with character art and does not retry each speech",async()=>{
   const f=await fixture();let attempts=0;
   const prepare=createWerewolfVisualPreparation(db,f.game.id,f.epoch,f.controller.signal,async()=>{attempts++;throw new Error("Renderer unavailable");});
-  await advanceTo(f,"pack_talk");
+  await advanceTo(f,"pack_propose");
   const state=replayWerewolf(await f.store.read()),step=nextWerewolfStep(state);
   if(step.kind!=="action")throw new Error("Expected pack turn");
   await prepare(state,step.request);await prepare(state,step.request);
@@ -121,7 +122,7 @@ test("missing renderer continues with character art and does not retry each spee
   expect(await db.select().from(schema.visualMediaPublications).where(eq(schema.visualMediaPublications.gameId,f.game.id))).toHaveLength(0);
 });
 
-async function advanceTo(f: Awaited<ReturnType<typeof fixture>>, action: "pack_talk" | "open_thread" | "attack") {
+async function advanceTo(f: Awaited<ReturnType<typeof fixture>>, action: "pack_propose" | "conversation") {
   for (let n=0;n<100;n++) {
     const state=replayWerewolf(await f.store.read()), step=nextWerewolfStep(state);
     if(step.kind==="action" && step.request.action===action)return;
@@ -133,17 +134,17 @@ async function advanceTo(f: Awaited<ReturnType<typeof fixture>>, action: "pack_t
 for (const protectedTarget of [true,false]) test(`first daytime lobby uses ${protectedTarget ? "the full protected cast" : "only night survivors"}`,async()=>{
   const f=await fixture();let target:string|null=null;
   const nightAgent:WerewolfAgent={ prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide(input){
-    if(input.request.action==="attack")target=input.request.legalTargetIds[0]!;
+    if(input.request.action==="pack_propose")target=input.request.legalTargetIds[0]!;
     if(input.request.action==="protect")return {kind:"target",targetId:protectedTarget ? target : input.request.legalTargetIds.find(id=>id!==target)!,thinking:"Fixture protection"};
     return agent.decide(input);
   }};
   for(let n=0;n<100;n++){
     const step=nextWerewolfStep(replayWerewolf(await f.store.read()));
-    if(step.kind==="action" && step.request.action==="open_thread")break;
+    if(step.kind==="action" && step.request.action==="conversation")break;
     await advanceWerewolf(f.store,nightAgent);
   }
   const state=replayWerewolf(await f.store.read()),step=nextWerewolfStep(state);
-  if(step.kind!=="action" || step.request.action!=="open_thread")throw new Error("Expected first day opening");
+  if(step.kind!=="action" || step.request.action!=="conversation")throw new Error("Expected first day opening");
   expect(state.aliveIds).toHaveLength(protectedTarget ? 8 : 7);
   const prepare=createWerewolfVisualPreparation(db,f.game.id,f.epoch,f.controller.signal,async(db,scene,guard)=>{
     expect(scene.plan.cast.map(p=>p.id)).toEqual(state.aliveIds);
@@ -173,7 +174,7 @@ for (const protectedTarget of [true,false]) test(`first daytime lobby uses ${pro
 
 test("a lone wolf prepares a form before targeting without creating a meeting scene", async () => {
   const f = await fixture("one_wolf");
-  await advanceTo(f, "attack");
+  await advanceTo(f, "pack_propose");
   const state = replayWerewolf(await f.store.read()), step = nextWerewolfStep(state);
   if (step.kind !== "action") throw new Error("Expected attack");
   const forms: string[][] = [];

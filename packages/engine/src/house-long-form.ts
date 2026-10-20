@@ -4,7 +4,7 @@ import type {
   HouseCoveredWindow,
 } from "./game-runner.types";
 import { isBoundedHouseAuthoredText } from "./house-summary-frontier";
-import type { StructuredDomainDecodeResult } from "./structured-output";
+import { measureLengthFeedback, type StructuredDomainDecodeResult } from "./structured-output";
 
 export const HOUSE_LONG_FORM_SUMMARY_MAX_CHARACTERS = 6_000;
 
@@ -48,8 +48,16 @@ export function decodeHouseLongFormProvider(
   if (Object.keys(decoded.value).some((key) => key !== "summary" && key !== "thinking")) {
     return { status: "invalid", message: "House long-form summary contains unsupported fields." };
   }
+  if (typeof decoded.value.summary === "string") {
+    const feedback = measureLengthFeedback(decoded.value.summary, "summary", HOUSE_LONG_FORM_SUMMARY_MAX_CHARACTERS, "utf16_code_units");
+    if (feedback) return { status: "invalid", message: "House long-form summary exceeds its UTF-16 limit.", feedback };
+  }
   if (!isBoundedHouseAuthoredText(decoded.value.summary, HOUSE_LONG_FORM_SUMMARY_MAX_CHARACTERS)) {
     return { status: "invalid", message: "House long-form summary must be non-empty authored prose without control characters." };
+  }
+  if (typeof decoded.value.thinking === "string") {
+    const feedback = measureLengthFeedback(decoded.value.thinking, "thinking", 2_000, "utf16_code_units");
+    if (feedback) return { status: "invalid", message: "House long-form thinking exceeds its UTF-16 limit.", feedback };
   }
   if (decoded.value.thinking !== null
       && decoded.value.thinking !== undefined

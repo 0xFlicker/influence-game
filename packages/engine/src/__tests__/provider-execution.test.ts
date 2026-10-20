@@ -637,7 +637,7 @@ describe("ProviderExecutionCoordinator", () => {
         maxAttempts: 1,
         dispatch: async () => ({
           id: "chatcmpl-katana",
-          choices: [{ finish_reason: "stop", message: { content: "Maya" } }],
+          choices: [{ finish_reason: "stop", message: { content: "Maya", reasoning_content: "Native reasoning must survive a successful call." } }],
           usage: {
             prompt_tokens: 100,
             completion_tokens: 20,
@@ -675,7 +675,9 @@ describe("ProviderExecutionCoordinator", () => {
       },
     });
     expect(JSON.stringify(records[0]!.accounting)).not.toContain("must not enter accounting facts");
-    expect(records[0]!.rawResponse).toBeUndefined();
+    expect(records[0]!.rawResponse).toMatchObject({ body: { choices: [{ message: {
+      content: "Maya", reasoning_content: "Native reasoning must survive a successful call.",
+    } }] } });
   });
 
   it("does not dispatch when authoritative reservation fails", async () => {

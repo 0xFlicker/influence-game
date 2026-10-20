@@ -40,7 +40,9 @@ describe("Werewolf House owner learning", () => {
     for (const turn of facts.werewolf.decisions) {
       expect(turn.knownAtDecision.packIds).toEqual([]);
       expect(turn.knownAtDecision.investigations).toEqual([]);
-      expect(turn.knownAtDecision.board.players.every(player => player.role === undefined)).toBe(true);
+      for (const player of turn.knownAtDecision.board.players) {
+        expect(Object.keys(player).sort()).toEqual(["alive", "id", "name"]);
+      }
     }
     const wolf = await projectOwnerLearningEvidence(db, await validateOwnerLearningSelection(db, { ownerUserId: f.ownerUserId, agentProfileId: f.wolves[0]!.agentProfileId!, gameIds: [f.game.id] }), { instructions: "Test" });
     expect(JSON.stringify(wolf)).toContain("PRIVATE_PACK");

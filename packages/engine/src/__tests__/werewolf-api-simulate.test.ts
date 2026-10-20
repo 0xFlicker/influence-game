@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseWerewolfApiArgs, runWerewolfApiSimulation } from "../werewolf/api-simulate";
 import { projectWerewolfView, type WerewolfPublicEntry } from "../werewolf/observation";
-import { replayWerewolf, startWerewolf, werewolfConfig } from "../werewolf/rules";
+import { replayWerewolf, startWerewolf, legacyWerewolfConfig as werewolfConfig } from "../werewolf/rules";
 import { runWerewolf, werewolfFallback } from "../werewolf/runner";
 import type { WerewolfEvent } from "../werewolf/types";
 import { werewolfReportEntry } from "../werewolf/report";
@@ -64,6 +64,67 @@ function fixture(disagree = false) {
 }
 
 describe("Werewolf API simulation", () => {
+  test("paused retrospectives expose the actual failure and an explicit recovery command without writing", async () => {
+    const { events } = fixture();
+    const index = events.findIndex(event => event.type === "werewolf.retrospective_started");
+    const state = replayWerewolf(events.slice(0, index + 1));
+    const requests: string[] = [];
+    globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
+      expect(init?.method ?? "GET").toBe("GET");
+      const url = String(input); requests.push(url);
+      return Response.json(url.includes("/retrospective") ? {
+        progress: { status: "in_progress", statementCount: 0, requiredStatements: 8 },
+        recovery: { reasonCode: "circuit_open", expectedHead: { sequence: 12, hash: "head" }, expectedFailureId: "failure" },
+      } : { slug: "report-slug", status: "suspended", view: projectWerewolfView(state, "omniscient") });
+    }, { preconnect: originalFetch.preconnect });
+    const args = runArgs(["--game", "report-game", "--audience", "omniscient"]);
+    await expect(runWerewolfApiSimulation(args, { log: () => {} })).rejects.toThrow("retrospective is incomplete");
+    const report = await readFile(args.out, "utf8");
+    expect(report).toContain("Retrospective paused: circuit_open. 0/8 statements accepted");
+    expect(report).toContain("--resume-retrospective");
+    expect(report).toContain("read-only; does not resume execution");
+    expect(requests).toHaveLength(2);
+  });
+
+  test("explicit retrospective recovery uses the current frontier and never creates a game", async () => {
+    expect(() => parseWerewolfApiArgs(["--resume-retrospective"], {})).toThrow("requires --game");
+    const { final } = fixture();
+    const writes: { url: string; body: unknown }[] = [];
+    globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "POST") {
+        writes.push({ url, body: JSON.parse(String(init.body)) });
+        expect(init.headers).toMatchObject({ Authorization: "Bearer test-session" });
+        return Response.json({ status: "in_progress" });
+      }
+      if (url.includes("/retrospective")) return Response.json({ recovery: {
+        expectedHead: { sequence: 306, hash: "head-hash" }, expectedFailureId: "failure-id", reasonCode: "circuit_open",
+      } });
+      return Response.json({ slug: "report-slug", status: "completed", view: projectWerewolfView(final, "omniscient") });
+    }, { preconnect: originalFetch.preconnect });
+    const result = await runWerewolfApiSimulation(runArgs(["--game", "report-game", "--resume-retrospective", "--audience", "omniscient"]), { log: () => {} });
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({ url: "http://127.0.0.1:3000/api/games/report-game/retrospective/resume", body: {
+      gameIdOrSlug: "report-game", gameKind: "werewolf", expectedHead: { sequence: 306, hash: "head-hash" }, expectedFailureId: "failure-id", idempotencyKey: expect.any(String),
+    } });
+    expect(result.report).toContain("Retrospective: completed (8/8 statements)");
+  });
+
+  test.each(["not-paused", "stale", "denied"] as const)("retrospective recovery fails clearly for %s without retry or replacement", async failure => {
+    let writes = 0;
+    globalThis.fetch = Object.assign(async (_input: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        writes++;
+        return Response.json({ message: failure }, { status: failure === "denied" ? 403 : 409 });
+      }
+      return Response.json({ recovery: failure === "not-paused" ? null : {
+        expectedHead: { sequence: 306, hash: "head" }, expectedFailureId: "failure", reasonCode: "circuit_open",
+      } });
+    }, { preconnect: originalFetch.preconnect });
+    const args = runArgs(["--game", "report-game", "--resume-retrospective"]);
+    await expect(runWerewolfApiSimulation(args, { log: () => {} })).rejects.toThrow(failure === "not-paused" ? "no paused retrospective" : failure);
+    expect(writes).toBe(failure === "not-paused" ? 0 : 1);
+  });
   test("defaults to a full match with a safety cap and rejects invalid configuration before dispatch", () => {
     expect(parseWerewolfApiArgs([], {})).toMatchObject({ preset: "one_wolf", maxDays: 10, audience: "mystery", transcript: false, agentProfileIds: [], providerManifest: [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "low" }] });
     for (const args of [["--preset", "unknown"], ["--max-days", "0"], ["--max-days", "21"], ["--audience", "player"], ["--agent", "same", "--agent", "same"], ["--timeout-seconds", "NaN"], ["--api-url", "https://example.com"], ["--game", ""], ["--unknown"], ["--summaries"], ["--response-rounds", "1"], ["--response-rounds", "0"], ["--response-rounds", "4"]]) expect(() => parseWerewolfApiArgs(args, {})).toThrow();

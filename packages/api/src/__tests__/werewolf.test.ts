@@ -10,7 +10,7 @@ import { eq } from "drizzle-orm";
 import { createProviderAdapter, modelCatalogEntryById, DEFAULT_MODEL_CATALOG_ID, type LlmProviderRuntime } from "@influence/engine";
 import { advanceWerewolf, defaultWerewolfStrategy, nextWerewolfStep, observeWerewolf, replayWerewolf, runWerewolf, werewolfActionPlans, werewolfEvent, WerewolfModelAgent, type WerewolfAgent, type WerewolfView, type WerewolfVoteProgress } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
-import { setupTestDB } from "./test-utils.js";
+import { pinWerewolfRulesVersion, setupTestDB } from "./test-utils.js";
 import { claimWerewolfGame, createWerewolfGame, createWerewolfStore, readWerewolfLiveView, readWerewolfEvents, readWerewolfView, releaseWerewolfOwner } from "../services/werewolf-games.js";
 import { createOwnedAgentProfile, updateOwnedAgentProfile } from "../services/agent-profile-management.js";
 import { readWerewolfThinking } from "../services/werewolf-thinking.js";
@@ -33,12 +33,201 @@ beforeEach(async () => {
 });
 async function create(agentProfileIds: string[] = []) {
   const game = await createWerewolfGame(db, ownerId, { preset: "two_wolves", agentProfileIds, providerManifest: manifest, maxDays: 2 });
+  // This helper drives the pre-v9 opener/thread/checkpoint contract. Pin its
+  // event before claiming; fresh-game coverage creates a separate default-v9 game.
+  await pinWerewolfRulesVersion(db, game.id, 8);
   const claim = await claimWerewolfGame(db, game.id);
   if (!claim.ok) throw new Error(claim.error);
   return { ...game, ...claim.claim, store: createWerewolfStore(db, game.id, claim.claim.ownerEpoch) };
 }
 
 describe("Werewolf House integration", () => {
+  test("length-rejected speech survives provider owner recovery privately and repairs the same turn", async () => {
+    const game = await createWerewolfGame(db, ownerId, { preset: "one_wolf", agentProfileIds: [], providerManifest: [{ catalogId: "katana:glm-5-2" }], maxDays: 2 });
+    const claim = await claimWerewolfGame(db, game.id);
+    if (!claim.ok) throw new Error(claim.error);
+    const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);
+    const progression: WerewolfAgent = {
+      async prepareRetrospectiveCapacity() { return fixtureRetrospectiveCapacity(); },
+      getRetrospectiveStatement: fixtureWerewolfRetrospective,
+      async decide({ request }) {
+        if (request.action === "pack_propose") return { kind: "spoken_target", targetId: request.legalTargetIds[0]!, text: null, cue: null, thinking: "Choose a target" };
+        if (request.action === "public_vote") return { kind: "spoken_target", targetId: null, text: null, cue: null, thinking: "Wait for more" };
+        if (request.action === "conversation") return { kind: "conversation", text: null, cue: null, recipientId: null, replyToContributionId: null };
+        if (request.action === "open_thread") return { kind: "opening", text: null, cue: null, recipientIds: [] };
+        return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Fixture choice" }
+          : { kind: "speech", text: null, cue: null };
+      },
+    };
+    let state = replayWerewolf(await store.read());
+    let firstStep = nextWerewolfStep(state);
+    while (firstStep.kind !== "action" || firstStep.request.action !== "public_vote") {
+      state = await advanceWerewolf(store, progression);
+      firstStep = nextWerewolfStep(state);
+    }
+    const before = await readWerewolfView(db, game.id, "mystery");
+    const rejectedDraft = "x".repeat(321);
+    let rejectedTargetId: string | null = null;
+    const seenMessages: string[] = [];
+    const client = new OpenAI({ apiKey: "fixture", baseURL: "http://fixture.invalid/v1", maxRetries: 0, fetch: async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      seenMessages.push(JSON.stringify(body.messages));
+      const promptMessage = [...body.messages].reverse().find((message: { role: string; content: string }) => message.role === "user" && message.content.includes('"request"'));
+      if (!promptMessage) throw new Error("Expected frozen Werewolf request in provider messages");
+      const prompt = JSON.parse(promptMessage.content);
+      const retainedTarget = prompt.request.legalTargetIds[0];
+      rejectedTargetId ??= retainedTarget;
+      const args = seenMessages.length === 1
+        ? { text: rejectedDraft, cue: null, targetId: retainedTarget, thinking: "Private first draft" }
+        : { text: "A shorter point.", cue: null, targetId: retainedTarget, thinking: "A concise point." };
+      const toolName = (body.tools?.[0]?.function?.name as string | undefined) ?? "werewolf_public_vote";
+      return Response.json({ id: `length-feedback-${seenMessages.length}`, object: "chat.completion", created: 0, model: "glm-5-2",
+        choices: [{ index: 0, finish_reason: "tool_calls", message: { role: "assistant", content: null,
+          tool_calls: [{ id: "decision", type: "function", function: { name: toolName, arguments: JSON.stringify(args) } }] } }],
+        usage: { prompt_tokens: 20, completion_tokens: 15, total_tokens: 35 } });
+    } });
+    const entry = modelCatalogEntryById("katana:glm-5-2")!;
+    const runtime: LlmProviderRuntime = { adapter: createProviderAdapter("katana", client), catalogId: entry.id, providerProfileId: "katana", modelId: entry.modelId,
+      modelCapabilities: entry.capabilities, reasoningPolicy: "medium", toolChoiceMode: "required", position: 0, role: "primary" };
+    const actualHooks = createApiProviderExecutionHooks(db, { gameId: game.id, ownerEpoch: claim.claim.ownerEpoch });
+    const crashAfterMalformedEvidence = { ...actualHooks, async onTerminal(record: Parameters<NonNullable<typeof actualHooks.onTerminal>>[0]) {
+      const receipt = await actualHooks.onTerminal!(record);
+      if (record.outcome.kind === "malformed_output") throw new Error("Crash after private malformed evidence was journaled");
+      return receipt;
+    } };
+    const makeAgent = (ownerEpoch: string, hooks = createApiProviderExecutionHooks(db, { gameId: game.id, ownerEpoch })) =>
+      new WerewolfModelAgent({ runtimes: [runtime], hooks, ownerEpoch });
+    await expect(advanceWerewolf(store, makeAgent(claim.claim.ownerEpoch, crashAfterMalformedEvidence))).rejects.toThrow("Crash after private malformed evidence");
+    expect(seenMessages).toHaveLength(1);
+    expect(await readWerewolfView(db, game.id, "mystery")).toEqual(before);
+    expect((await db.select().from(schema.werewolfEvents).where(eq(schema.werewolfEvents.gameId, game.id))).some(row => JSON.stringify(row.event).includes(rejectedDraft))).toBe(false);
+    await releaseWerewolfOwner(db, game.id, claim.claim.ownerEpoch);
+    const replacement = await claimWerewolfGame(db, game.id);
+    if (!replacement.ok) throw new Error(replacement.error);
+    const resumedStore = createWerewolfStore(db, game.id, replacement.claim.ownerEpoch);
+    const resumed = await advanceWerewolf(resumedStore, makeAgent(replacement.claim.ownerEpoch));
+    expect(seenMessages.length).toBeGreaterThanOrEqual(2);
+    expect(seenMessages[1]).toContain("previous draft for text was rejected");
+    expect(seenMessages[1]).toContain(rejectedDraft);
+    expect(seenMessages[1]).toContain("321 utf8_bytes, allowed 320 (over by 1)");
+    expect(seenMessages[1]).toContain(rejectedTargetId!);
+    expect(resumed.history).toContainEqual(expect.objectContaining({ kind: "ballot", text: "A shorter point." }));
+    expect(resumed.actions).toContainEqual(expect.objectContaining({ decision: expect.objectContaining({ kind: "spoken_target", targetId: rejectedTargetId }) }));
+    expect(JSON.stringify(await readWerewolfView(db, game.id, "mystery"))).not.toContain(rejectedDraft);
+    expect(resumed.actions.at(-1)?.fallback).toBeNull();
+    const privateEvidence = await loadPayloads(db.select().from(schema.providerAttemptEvidenceOutbox));
+    expect(JSON.stringify(privateEvidence)).toContain(rejectedDraft);
+    expect(JSON.stringify(privateEvidence)).toContain("utf8_bytes");
+  }, 30_000);
+
+  test("v9 public ballots survive owner recovery as one-at-a-time visible choices", async () => {
+    const game = await createWerewolfGame(db, ownerId, { preset: "one_wolf", agentProfileIds: [], maxDays: 2 });
+    const claim = await claimWerewolfGame(db, game.id);
+    if (!claim.ok) throw new Error(claim.error);
+    const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);
+    let targetId: string | null = null;
+    let secondVoterId: string | null = null;
+    let secondBallotObservation: ReturnType<typeof observeWerewolf> | null = null;
+    const agent: WerewolfAgent = {
+      async prepareRetrospectiveCapacity() { return fixtureRetrospectiveCapacity(); },
+      getRetrospectiveStatement: fixtureWerewolfRetrospective,
+      async decide({ request, observation }) {
+        if (request.action === "conversation") return { kind: "conversation", text: null, cue: null, recipientId: null, replyToContributionId: null };
+        if (request.action === "public_vote") {
+          const earlier = observation.board.entries.filter(entry => entry.kind === "ballot");
+          if (earlier.length === 1) { secondBallotObservation = structuredClone(observation); secondVoterId = request.actorId; }
+          targetId ??= request.legalTargetIds[0] ?? null;
+          const choice = targetId && request.legalTargetIds.includes(targetId) ? targetId : null;
+          return { kind: "spoken_target", targetId: choice, text: "I am making my ballot public.", cue: null, thinking: "Choose from the visible evidence." };
+        }
+        if (request.action === "pack_propose") return { kind: "spoken_target", targetId: request.legalTargetIds[0]!, text: null, cue: null, thinking: "Choose a legal target." };
+        if (request.action === "open_thread") return { kind: "opening", text: null, cue: null, recipientIds: [] };
+        return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Fixture choice." }
+          : { kind: "speech", text: null, cue: null };
+      },
+    };
+    let state = replayWerewolf(await store.read());
+    while (state.phase !== "vote") state = await advanceWerewolf(store, agent);
+    state = await advanceWerewolf(store, agent);
+    expect(state.actions.filter(action => action.action === "public_vote")).toHaveLength(1);
+    expect(state.history.filter(entry => entry.kind === "ballot")).toHaveLength(1);
+    await releaseWerewolfOwner(db, game.id, claim.claim.ownerEpoch);
+    const replacement = await claimWerewolfGame(db, game.id);
+    if (!replacement.ok) throw new Error(replacement.error);
+    const resumedStore = createWerewolfStore(db, game.id, replacement.claim.ownerEpoch);
+    state = await advanceWerewolf(resumedStore, agent);
+    expect(secondBallotObservation).not.toBeNull();
+    expect(secondBallotObservation!.board.entries.filter(entry => entry.kind === "ballot")).toHaveLength(1);
+    expect(secondBallotObservation!.board.entries.filter(entry => entry.kind === "ballot")[0]).toMatchObject({ targetId, text: "I am making my ballot public." });
+    expect(secondBallotObservation!.board.entries.filter(entry => entry.kind === "ballot")[0]).toMatchObject({ remainingVoterIds: expect.arrayContaining([secondVoterId]) });
+    const final = await runWerewolf(resumedStore, agent);
+    const resolution = final.history.find(entry => entry.kind === "vote");
+    expect(resolution).toMatchObject({ kind: "vote", result: { voteMode: "majority", eliminatedId: targetId, dayEnded: true } });
+    expect(final.outcome).not.toBeNull();
+  }, 30_000);
+
+  test("new v9 games retain their rules identity in API view and replay reads", async () => {
+    const game = await createWerewolfGame(db, ownerId, { preset: "two_wolves", agentProfileIds: [], providerManifest: manifest, maxDays: 2 });
+    const claim = await claimWerewolfGame(db, game.id);
+    if (!claim.ok) throw new Error(claim.error);
+    const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);
+    const state = replayWerewolf(await store.read());
+    expect(state.config.rulesVersion).toBe(9);
+    const view = await readWerewolfView(db, game.id, "mystery");
+    expect(view).toMatchObject({ rulesVersion: 9, phase: "introduction", conversation: null });
+    const response = await createWerewolfRoutes(db).request(`/api/werewolf/${game.slug}/presentation?audience=mystery`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ view: { rulesVersion: 9, phase: "introduction", conversation: null } });
+  });
+
+  test("accepted v9 pack proposals survive owner loss before commit without a second provider call", async () => {
+    const game = await createWerewolfGame(db, ownerId, { preset: "two_wolves", agentProfileIds: [], providerManifest: [{ catalogId: "katana:glm-5-2" }] });
+    const claim = await claimWerewolfGame(db, game.id);
+    if (!claim.ok) throw new Error(claim.error);
+    const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);
+    let state = replayWerewolf(await store.read());
+    while (state.phase !== "pack") state = await advanceWerewolf(store, scripted);
+    const publicBefore = await readWerewolfView(db, game.id, "mystery");
+    let dispatches = 0;
+    const client = new OpenAI({ apiKey: "fixture", baseURL: "http://fixture.invalid/v1", maxRetries: 0, fetch: async (_url, init) => {
+      dispatches++;
+      const body = JSON.parse(String(init?.body));
+      const task = JSON.parse(body.messages.at(-1).content);
+      const decision = { text: "This is our best target.", targetId: task.request.legalTargetIds[0], cue: null, thinking: "Agree on a legal target." };
+      return Response.json({ id: `proposal-${dispatches}`, object: "chat.completion", created: 0, model: "glm-5-2",
+        choices: [{ index: 0, finish_reason: "tool_calls", message: { role: "assistant", content: null,
+          tool_calls: [{ id: "decision", type: "function", function: { name: "werewolf_pack_propose", arguments: JSON.stringify(decision) } }] } }],
+        usage: { prompt_tokens: 20, completion_tokens: 15, total_tokens: 35 } });
+    } });
+    const entry = modelCatalogEntryById("katana:glm-5-2")!;
+    const runtime: LlmProviderRuntime = { adapter: createProviderAdapter("katana", client), catalogId: entry.id, providerProfileId: "katana", modelId: entry.modelId,
+      modelCapabilities: entry.capabilities, reasoningPolicy: "medium", toolChoiceMode: "required", position: 0, role: "primary" };
+    const agent = (ownerEpoch: string) => new WerewolfModelAgent({ runtimes: [runtime], ownerEpoch,
+      hooks: createApiProviderExecutionHooks(db, { gameId: game.id, ownerEpoch }) });
+    await expect(advanceWerewolf({ ...store, append: async () => { throw new Error("Crash before proposal commit"); } }, agent(claim.claim.ownerEpoch)))
+      .rejects.toThrow("Crash before proposal commit");
+    expect(dispatches).toBe(1);
+    expect(replayWerewolf(await store.read()).actions).toHaveLength(0);
+    await releaseWerewolfOwner(db, game.id, claim.claim.ownerEpoch);
+    const replacement = await claimWerewolfGame(db, game.id);
+    if (!replacement.ok) throw new Error(replacement.error);
+    const resumed = createWerewolfStore(db, game.id, replacement.claim.ownerEpoch);
+    state = await advanceWerewolf(resumed, agent(replacement.claim.ownerEpoch));
+    expect(dispatches).toBe(1);
+    expect(state.actions).toHaveLength(1);
+    expect(state.history.filter(item => item.kind === "proposal")).toHaveLength(1);
+    expect(await readWerewolfView(db, game.id, "mystery")).toEqual(publicBefore);
+    const next = nextWerewolfStep(state);
+    if (next.kind !== "action") throw new Error("Missing partner proposal");
+    expect(observeWerewolf(state, next.request.actorId).packProposals).toHaveLength(1);
+    state = await advanceWerewolf(resumed, agent(replacement.claim.ownerEpoch));
+    expect(dispatches).toBe(2);
+    state = await advanceWerewolf(resumed, agent(replacement.claim.ownerEpoch));
+    expect(state.pack?.ended).toBe(true);
+    expect(state.history.filter(item => item.kind === "pack_vote")).toHaveLength(1);
+    expect(dispatches).toBe(2);
+  });
+
   test("earlier experimental rules fail clearly without rewriting their log", async () => {
     const game = await create();
     const initial = (await game.store.read())[0]!;
@@ -47,7 +236,7 @@ describe("Werewolf House integration", () => {
     await db.update(schema.werewolfEvents).set({ event: initial }).where(eq(schema.werewolfEvents.gameId, game.id));
     const response = await createWerewolfRoutes(db).request(`/api/werewolf/${game.slug}`);
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: "This game uses an unsupported Werewolf rules version. Supported versions are v7 and v8." });
+    expect(await response.json()).toEqual({ error: "This game uses an unsupported Werewolf rules version. Supported versions are v7, v8 and v9." });
     expect(await game.store.read()).toEqual([initial]);
   });
   test("one character keeps separate strategies and freezes only Werewolf into its game", async () => {
@@ -202,6 +391,7 @@ describe("Werewolf House integration", () => {
   test.each(["malformed", "spoken_uuid", "discussion_reply", "opening_recipients", "day_abstention"] as const)("%s output retries and survives an owner change before commit", async invalidKind => {
     const action = invalidKind === "day_abstention" ? "vote" : invalidKind === "discussion_reply" ? "discuss" : invalidKind === "opening_recipients" ? "open_thread" : "introduce";
     const game = await createWerewolfGame(db, ownerId, { preset: "one_wolf", agentProfileIds: [], providerManifest: [{ catalogId: "katana:glm-5-2" }] });
+    await pinWerewolfRulesVersion(db, game.id, 8);
     const claim = await claimWerewolfGame(db, game.id);
     if (!claim.ok) throw new Error(claim.error);
     let dispatches = 0;
@@ -235,6 +425,7 @@ describe("Werewolf House integration", () => {
         dispatches++;
         return new Response(JSON.stringify({ id: `fixture-${dispatches}`, object: "chat.completion", created: 0, model: "glm-5-2",
           choices: [{ index: 0, finish_reason: "tool_calls", message: { role: "assistant", content: null,
+            reasoning_content: "PRIVATE_NATIVE_REASONING_CAPTURE",
             tool_calls: [{ id: "decision", type: "function", function: { name: `werewolf_${action}`, arguments: dispatches === 1 ? openingRequest ? JSON.stringify({ thinking: "PRIVATE_SPEECH_THINKING", text: "Invalid invitation", cue: null, recipientIds: [openingRequest.actorId] }) : invalidKind !== "spoken_uuid" ? "{}" : JSON.stringify({ thinking: "PRIVATE_SPEECH_THINKING", cue: null, text: "I trust Mira (7c731c26-a298-4987-b015-07ab4bae27ce)." }) : JSON.stringify(action === "vote" ? { targetId: null, thinking: "Hear more" } : openingRequest ? { thinking: "PRIVATE_SPEECH_THINKING", cue: null, text: "A persisted contribution.", recipientIds: openingRequest.legalRecipientIds.slice(0, 3).reverse() } : { thinking: "PRIVATE_SPEECH_THINKING", cue: null, text: "A persisted contribution." }) } }] } }],
           usage: { prompt_tokens: 20, completion_tokens: 15, total_tokens: 35 } }), { headers: { "content-type": "application/json" } });
       } });
@@ -256,6 +447,11 @@ describe("Werewolf House integration", () => {
     await store.prepare!(state, step.request);
     const accepted = await agent(claim.claim.ownerEpoch).decide({ gameId: game.id, actionSlot: state.sequence + 1, request: step.request, observation: observeWerewolf(state, step.request.actorId) });
     expect(dispatches).toBe(2);
+    const evidenceRows = await loadPayloads(db.select({ body: schema.providerAttemptEvidenceOutbox.body })
+      .from(schema.providerAttemptEvidenceOutbox).where(eq(schema.providerAttemptEvidenceOutbox.gameId, game.id)));
+    const acceptedEvidence = evidenceRows.map(row => JSON.parse(row.body).attempt).find(attempt => attempt.outcome.kind === "usable");
+    expect(acceptedEvidence.rawResponse.body.choices[0].message.reasoning_content).toBe("PRIVATE_NATIVE_REASONING_CAPTURE");
+    expect(acceptedEvidence.acceptedValue.thinking).toBe(action === "vote" ? "Hear more" : "PRIVATE_SPEECH_THINKING");
     expect(await store.read()).toHaveLength(state.sequence);
     expect(JSON.stringify(await readWerewolfThinking(db, game.id, "omniscient", 99999))).not.toContain("PRIVATE_SPEECH_THINKING");
     expect(await readWerewolfView(db, game.id, "mystery")).toEqual(before);
@@ -312,6 +508,7 @@ describe("Werewolf House integration", () => {
     const action = scenario === "attack" ? "attack" : "vote";
     const finalVote = scenario === "final_vote";
     const game = await createWerewolfGame(db, ownerId, { preset: "two_wolves", agentProfileIds: [], providerManifest: [{ catalogId: "katana:glm-5-2" }] });
+    await pinWerewolfRulesVersion(db, game.id, 8);
     const claim = await claimWerewolfGame(db, game.id);
     if (!claim.ok) throw new Error(claim.error);
     const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);

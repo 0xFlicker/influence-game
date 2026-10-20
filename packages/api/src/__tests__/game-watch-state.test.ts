@@ -19,6 +19,7 @@ import {
   insertGame,
   insertOwner,
   withJuryWinner,
+  withRetrospective,
 } from "./durable-run-test-utils.js";
 
 describe("GameWatchState", () => {
@@ -26,6 +27,19 @@ describe("GameWatchState", () => {
 
   beforeEach(async () => {
     db = await setupTestDB();
+  });
+
+  test("presentation frames retain retrospective completion before the final END boundary", async () => {
+    const gameId = await insertGame(db, { slug: "watch-retrospective-ending", status: "completed", config: gameConfig() });
+    await insertFixturePlayers(db, gameId);
+    const events = withRetrospective(withJuryWinner(createResolvedRoundCanonicalEventFixture(gameId), "mira"));
+    const ownerEpoch = await insertOwner(db, gameId);
+    await appendGameEvents(db, { gameId, ownerEpoch, events });
+    const frames = await getGameWatchReplayFrames(db, gameId, { presentationOnly: true });
+    const completion = events.find(event => event.type === "retrospective.completed")!;
+    expect(frames?.find(frame => frame.sequence === completion.sequence)?.eventType).toBe("retrospective.completed");
+    expect(frames?.at(-1)?.sequence).toBe(events.at(-1)!.sequence);
+    expect(completion.sequence).toBeLessThan(events.at(-1)!.sequence);
   });
 
   test("derives current live state from persisted durable projection", async () => {

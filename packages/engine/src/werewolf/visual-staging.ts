@@ -16,6 +16,7 @@ export function werewolfVisualStaging(state: WerewolfState, event: WerewolfEvent
     };
     return { boundary: event.sequence - 1, roomId: hunt?.roomId ?? null, purpose: hunt?.purpose ?? null, participantIds: hunt?.participantIds ?? [] };
   }
+  if (entry.kind === "proposal") return { boundary: event.sequence - 1, roomId: "mingle-1" as const, purpose: "pack" as const, participantIds: state.aliveIds.filter(id => state.roles[id] === "werewolf") };
   const pack = entry.kind === "pack_vote" || entry.kind === "speech" && entry.audience === "pack";
   return { boundary: event.sequence - 1, roomId: pack ? "mingle-1" as const : "lobby" as const,
     purpose: (pack ? "pack" : "village") as WerewolfScenePurpose,

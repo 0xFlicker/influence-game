@@ -57,8 +57,10 @@ async function click(page: Page, label: string, scope = "") {
   await page.evaluate(`${button}.click()`);
 }
 const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
-    if (request.action === "open_thread")
-      return { kind: "opening", text: "Let's discuss the night.", cue: null, recipientIds: [] };
+    if (request.action === "conversation")
+      return { kind: "conversation", text: "Let's discuss the night.", cue: null, recipientId: null, replyToContributionId: null };
+    if (request.action === "pack_propose" || request.action === "public_vote")
+      return { kind: "spoken_target", targetId: request.legalTargetIds[0]!, text: null, cue: null, thinking: "Fixture" };
     return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Fixture" } : { kind: "speech", text: "Hello village", cue: null };
   } };
 test("W7A create, visible pause, discover, repair, publish and explicitly resume", async () => {
@@ -86,12 +88,12 @@ test("W7A create, visible pause, discover, repair, publish and explicitly resume
       throw Error(claim.error);
     const store = createWerewolfStore(db, game!.id, claim.claim.ownerEpoch);
     let state = replayWerewolf(await store.read()), step = nextWerewolfStep(state);
-    for (let n = 0; n < 150 && !(step.kind === 'action' && step.request.action === 'open_thread'); n++) {
+    for (let n = 0; n < 150 && !(step.kind === 'action' && step.request.action === 'conversation'); n++) {
       await advanceWerewolf(store, agent);
       state = replayWerewolf(await store.read());
       step = nextWerewolfStep(state);
     }
-    if (step.kind !== 'action' || step.request.action !== 'open_thread')
+    if (step.kind !== 'action' || step.request.action !== 'conversation')
       throw Error('Missing day');
     const pending = step.request;
     const prepare = createWerewolfVisualPreparation(db, game!.id, claim.claim.ownerEpoch, new AbortController().signal, async () => null);

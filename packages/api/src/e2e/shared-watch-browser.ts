@@ -1,3 +1,4 @@
+import {sceneSpeechDurationMs, SOLO_READ_START_MS, SCENE_READ_START_MS} from "@influence/engine/visual-speech";
 import {expect} from "bun:test";
 import type {Page} from "puppeteer";
 import type {WerewolfPresentation} from "@influence/engine/werewolf/presentation";
@@ -9,19 +10,40 @@ async function watchStops(page: Page) {
  const response = await fetch(watchUrl);
  if (!response.ok) throw new Error(`Watch window failed: ${response.status}`);
  const window = await response.json() as import("@influence/engine/werewolf/watch-contract").WerewolfWatchWindow;
- const stops = window.playback.flatMap(entry => Array.from({length: entry.steps}, (_, step) => ({cursor: entry.cursor, step})));
+ let timeMs = 5000 + 3000 + window.players.length * 2500 + 5300;
+ const stops = window.playback.flatMap(entry => entry.durationsMs.map((duration, step) => {const stop = {cursor:entry.cursor,step,startMs:timeMs,key:entry.keys[step]!};timeMs += duration;return stop;}));
  // A later-moment deep link has no opening until the first window is loaded.
  const openingCount = urls.some(url => Number(new URL(url).searchParams.get("fromCursor") ?? 1) === 1) ? window.players.length + 3 : 0;
- await page.waitForFunction(`Number(document.querySelector('input[aria-label="Replay position"]')?.max) === ${openingCount + stops.length}`);
- return {stops, openingCount};
+ await page.waitForSelector('input[aria-label="Replay position"]:not([disabled])');
+ return {stops, openingCount, watchUrl};
 }
-export async function seekWatch(page:Page,cursor:number,step=0){
- const {stops, openingCount} = await watchStops(page);
+export async function seekWatch(page:Page,cursor:number,step=0,readable=true){
+ const {stops, watchUrl} = await watchStops(page);
  const index = stops.findIndex(stop=>stop.cursor>=cursor && (stop.cursor!==cursor || stop.step===step));
  if(index<0)throw new Error(`No playback stop for ${cursor}:${step}`);
- const position = openingCount + index + 1;
+ const stop = stops[index]!;
+ const targetUrl = new URL(watchUrl);targetUrl.searchParams.set("fromCursor",String(Math.floor((cursor-1)/32)*32+1));
+ const targetWindow = await (await fetch(targetUrl)).json() as import("@influence/engine/werewolf/watch-contract").WerewolfWatchWindow;
+ const moment = targetWindow.moments.find(moment=>moment.cursor===stop.cursor)!;
+ const entry = moment.entry;
+ const speech = entry.kind === "speech" ? entry.text
+  : entry.kind === "discussion" ? entry.contribution.text
+  : entry.kind === "conversation" || entry.kind === "ballot" || entry.kind === "proposal" ? entry.text
+  : null;
+ const row = targetWindow.playback.find(row=>row.cursor===stop.cursor)!;
+ const offset = !readable ? 0 : entry.kind === "ballot" || stop.key.includes(":ballot:") ? SOLO_READ_START_MS : speech ? entry.kind === "speech" && entry.purpose === "retrospective" ? SOLO_READ_START_MS : SCENE_READ_START_MS + row.durationsMs[step]! - sceneSpeechDurationMs(speech) : 0;
+ const position = Math.ceil((stop.startMs + offset) * 30 / 1000);
+ const endPosition = Math.ceil((stop.startMs + row.durationsMs[step]!) * 30 / 1000);
  await page.evaluate(`(() => {const input=document.querySelector('input[aria-label="Replay position"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(String(position))});input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));})()`);
- await page.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')) >= ${cursor} && document.querySelector('input[aria-label="Replay position"]')?.value === "${position}" && !Array.from(document.querySelectorAll('[role="status"]')).some(node => node.textContent === "Preparing…")`);
+ // Playing seeks preserve the clock: by the next browser task the exact frame
+ // may already be gone. Require the requested cue/step, never an arbitrary later one.
+ await page.waitForFunction(`(() => {
+   const frame = Number(document.querySelector('input[aria-label="Replay position"]')?.value);
+   const playing = !!document.querySelector('button[aria-label="Pause replay"]');
+   return Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')) === ${stop.cursor}
+     && (playing ? frame >= ${position} && frame < ${endPosition} : frame === ${position})
+     && !Array.from(document.querySelectorAll('[role="status"]')).some(node => node.textContent === "Preparing…");
+ })()`);
 }
 /** Enter recorded play deliberately; do not wait for a cast-length-dependent opening. */
 export async function skipWerewolfOpening(page: Page) {
@@ -39,13 +61,17 @@ export async function pauseWerewolf(page: Page) {
  await page.click('button[aria-label="Pause replay"]');
 }
 export async function watchText(page:Page,value:string){await page.waitForFunction(`document.body.innerText.includes(${JSON.stringify(value)})`,{timeout:25000});}
+export async function dismissAnalyticsNotice(page: Page) {
+ const ready=await page.waitForFunction(`Array.from(document.querySelectorAll("button")).some(button=>button.textContent?.trim()==="Reject optional tracking")`,{timeout:1500}).then(()=>true).catch(()=>false);
+ if(ready) await page.evaluate(`Array.from(document.querySelectorAll("button")).find(button=>button.textContent?.trim()==="Reject optional tracking")?.click()`);
+}
 export async function checkSharedWerewolfWatch(page:Page,url:string,apiUrl:string){
  const replayUrl=new URL(url);replayUrl.pathname=`/games/${replayUrl.pathname.split('/')[2]}/replay`;replayUrl.search="";url=replayUrl.href;
  const errors:string[]=[],requests:string[]=[];
  page.on("pageerror",error=>errors.push(String(error)));
  page.on("request",request=>{if(request.url().includes('/watch?'))requests.push(request.url());});
  const slug=new URL(url).pathname.split('/')[2]!;
- await page.setViewport({width:1440,height:1000});await page.goto(url,{waitUntil:"domcontentloaded"});
+ await page.setViewport({width:1440,height:1000});await page.goto(url,{waitUntil:"domcontentloaded"});await dismissAnalyticsNotice(page);
  // This manual-control scenario starts from a known preference; persistence has its own proof.
  await page.evaluate("localStorage.removeItem('house:watch:viewer:v1')");
  await page.waitForSelector('a[href$="/replay?audience=mystery"]'); await page.click('a[href$="/replay?audience=mystery"]');
@@ -79,7 +105,7 @@ export async function checkSharedWerewolfWatch(page:Page,url:string,apiUrl:strin
  await page.focus('button[aria-label="Player settings"]');await page.keyboard.press('ArrowRight');
  expect(await page.$eval('[data-werewolf-stage]',e=>Number(e.getAttribute('data-elapsed')))).toBe(paused);
  const mystery=await(await fetch(`${apiUrl}/api/werewolf/${slug}/presentation?audience=mystery`)).json() as WerewolfPresentation;
- const vote=mystery.view.entries.findIndex(entry=>entry.kind==="vote");if(vote>=0){await seekWatch(page,vote+1);await page.waitForFunction("document.querySelector('[data-watch-context]')?.textContent?.includes('Vote')");}
+ const vote=mystery.view.entries.findIndex(entry=>entry.kind==="vote");if(vote>=0){await seekWatch(page,vote+1);await watchText(page,mystery.view.rulesVersion === 9 ? "Public vote result" : "Vote after thread");}
  expect(await stage?.evaluate(node=>node.isConnected)).toBe(true);
  expect(await page.evaluate("Array.from(document.querySelectorAll('button')).some(e=>e.getAttribute('aria-label')==='Play replay')")).toBe(true);
  const resultCursor=mystery.view.entries.findIndex(entry=>entry.kind==="result")+1;
@@ -122,7 +148,9 @@ export async function checkConsecutiveReplies(page: Page, count = 4) {
 export async function checkInSceneThinking(page: Page, url: string, apiUrl: string) {
   const slug = new URL(url).pathname.split('/')[2]!;
   const presentation = await (await fetch(`${apiUrl}/api/werewolf/${slug}/presentation?audience=omniscient`)).json() as WerewolfPresentation;
-  const entries = presentation.view.entries.flatMap((entry, index) => entry.kind === "speech" && entry.text ? [{cursor:index + 1, actorId:entry.actorId, day:entry.day, action:"introduce", thinking:"I should ask one precise question before revealing what I know."}] : []);
+  const entries = presentation.view.entries.flatMap((entry, index) => entry.kind === "speech" && entry.day === 0 && entry.text ? [{cursor:index + 1, actorId:entry.actorId, day:entry.day, action:"introduce", thinking:"I should ask one precise question before revealing what I know."}] : []);
+  const first = entries[0];
+  if (!first) throw new Error("Thinking overlay fixture requires a recorded introduction");
   const diagnostics:string[] = [];
   page.on("console", message => {if(message.type() === "error")diagnostics.push(message.text());});
   page.on("requestfailed", request => diagnostics.push(`${request.url()}: ${request.failure()?.errorText}`));
@@ -136,13 +164,19 @@ export async function checkInSceneThinking(page: Page, url: string, apiUrl: stri
   // Wait for the new audience's opening instead of accepting the previous
   // session's stage during navigation and missing the new opening entirely.
   await skipWerewolfOpening(page);await pauseWerewolf(page);
+  await seekWatch(page, first.cursor);
   const cursor = await page.$eval('[data-werewolf-stage]', element => element.getAttribute('data-cursor'));
+  const framesWithoutThinking = await page.$eval('input[aria-label="Replay position"]', element => Number(element.getAttribute('max')));
   await page.locator('button[aria-label="Player settings"]').click();
   await page.waitForSelector('[role="dialog"][aria-label="Player settings"]');
   await watchText(page, 'Keyboard shortcuts');
   await page.click('[role="dialog"] input[type="checkbox"]');
   expect(await page.$('[aria-label="Thinking order"]')).toBeNull();
   await page.click('button[aria-label="Close settings"]');
+  // Enabling thoughts preserves the current speech position. Wait for the
+  // thought's timeline segment, then rewind this cue to test its actual entrance.
+  await page.waitForFunction(`Number(document.querySelector('input[aria-label="Replay position"]')?.getAttribute('max')) > ${framesWithoutThinking}`);
+  await seekWatch(page, first.cursor, 0, false);
   await page.evaluate("document.activeElement?.blur()");
   await page.keyboard.press('ArrowRight');
   try { await page.waitForSelector('[data-in-scene-thinking]', {timeout:10000}); }

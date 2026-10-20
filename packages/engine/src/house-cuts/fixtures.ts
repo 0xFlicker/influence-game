@@ -1,6 +1,6 @@
 /** Deliberately authored test dialogue; never evidence of real-game editorial quality. */
 import { createEdgeSmokeDuskEvents } from "../fixtures/edge-smoke-dusk";
-import { applyWerewolfEvent, nextWerewolfStep, replayWerewolf, startWerewolf, werewolfConfig, werewolfEvent } from "../werewolf/rules";
+import { applyWerewolfEvent, legacyWerewolfConfig, nextWerewolfStep, replayWerewolf, startWerewolf, werewolfEvent } from "../werewolf/rules";
 import type { WerewolfDecision } from "../werewolf/types";
 import { Phase } from "../types";
 import type { TranscriptEntry } from "../game-runner.types";
@@ -11,7 +11,10 @@ import { discoverCuts, type CutInvocation, type CutProposal } from "./editorial"
 export function cutWerewolfFixture(night?: "save" | "miss" | "no_attack") {
   const names = ["Mara", "Ivo", "Sable", "Rowan", "Lyra", "Ash", "Nyx", "Fern"];
   const players = names.map((name, i) => ({ id: `p${i}`, name, personality: "Fixture", backstory: "Fixture", strategy: "PRIVATE_STRATEGY", avatarUrl: null }));
-  const events = [startWerewolf("cut-fixture-werewolf", players, werewolfConfig("two_wolves", 1, night ? { playerCount: 8, wolves: 2, seer: true, doctor: true } : undefined), "cut-fixture")];
+  // These authored dialogue/pack fixtures predate v9. Keep them explicitly on
+  // the legacy contract so editorial tests do not silently change meaning when
+  // fresh games move to a new rules version.
+  const events = [startWerewolf("cut-fixture-werewolf", players, legacyWerewolfConfig("two_wolves", 1, night ? { playerCount: 8, wolves: 2, seer: true, doctor: true } : undefined), "cut-fixture")];
   let state = replayWerewolf(events);
   while (!state.outcome) {
     const step = nextWerewolfStep(state);
