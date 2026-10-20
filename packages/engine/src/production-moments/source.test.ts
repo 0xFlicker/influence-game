@@ -26,7 +26,7 @@ test("retrospectives are ordinary speech moments with canonical provenance and i
   const transcripts = [{id: 10, timestamp: 10, round: 1, phase: "RETROSPECTIVE", scope: "public", fromPlayerId: "atlas", retrospectiveSource: {eventSequence: 10, ordinal: 0}}];
   const sources = buildInfluenceProductionSources({gameId: "rt11-influence", gameKernel: "format", frames: [], transcripts});
   const catalog = assembleProductionCatalog({gameId: "rt11-influence", gameKind: "influence", audience: "public", sources});
-  expect(catalog.moments).toHaveLength(1); expect(catalog.moments[0]).toMatchObject({kind: "speech", purpose: "retrospective", actorId: "atlas", retrospectiveSource: {eventSequence: 10, ordinal: 0}});
+  expect(catalog.moments).toHaveLength(2); expect(catalog.moments[1]).toMatchObject({kind: "speech", purpose: "retrospective", actorId: "atlas", retrospectiveSource: {eventSequence: 10, ordinal: 0}});
   expect(() => buildInfluenceProductionSources({gameId: "rt11-influence", gameKernel: "format", frames: [], transcripts: [{...transcripts[0]!, retrospectiveSource: undefined}]})).toThrow("canonical provenance");
 });
 
@@ -37,10 +37,11 @@ test("classic historical prose subparts stay inside a stable transcript-backed m
   ];
   const sources = buildInfluenceProductionSources({ gameId: "g", gameKernel: "classic", transcripts, frames: [] });
   const catalog = assembleProductionCatalog({ gameId: "g", gameKind: "influence", audience: "public", sources });
-  expect(catalog.moments.map(m => m.part.kind)).toEqual(["speech"]);
-  expect(catalog.moments[0]!.source).toEqual({ kind: "influence-transcript", transcriptId: "7" });
+  expect(catalog.moments.map(m => m.part.kind)).toEqual(["opening", "speech"]);
+  expect(catalog.moments[0]!.source).toEqual({kind:"opening",gameKind:"influence"});
+  expect(catalog.moments[1]!.source).toEqual({ kind: "influence-transcript", transcriptId: "7" });
   const changed = buildInfluenceProductionSources({ gameId: "g", gameKernel: "classic", frames: [], transcripts: [{ ...transcripts[0]!, timestamp: 999, entrySequence: 300 }] });
-  expect(assembleProductionCatalog({ gameId: "g", gameKind: "influence", audience: "public", sources: changed }).moments[0]!.id).toBe(catalog.moments[0]!.id);
+  expect(assembleProductionCatalog({ gameId: "g", gameKind: "influence", audience: "public", sources: changed }).moments.map(m=>m.id)).toEqual(catalog.moments.map(m=>m.id));
 });
 
 test("sealed thought identity remains accepted-action provenance while reveal follows its voter presentation", () => {

@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "purpose": "Influence continuous House entrance, with first cast reveal at 20 seconds.",
+  "source": {
+    "provider": "Katana",
+    "model": "imgn-h3",
+    "mode": "768p",
+    "requestId": "03fabec0-547c-4824-a18d-b11c675ee087",
+    "seed": 2365587120,
+    "creditsSpent": 220,
+    "prompt": "A single uninterrupted cinematic dolly shot entering The House, an exclusive mysterious social strategy game venue. Photorealistic premium architectural film, restrained luxury, dark aubergine and charcoal stone, slender brushed brass trim, warm champagne lights and subtle violet accent lighting. Camera at human eye level with a rectilinear 28mm lens. Begin just outside very tall dark double doors with narrow warm light spilling through their central gap. The doors slowly open inward as the camera glides smoothly forward through them. Continue straight through a short elegant vestibule with rhythmic vertical columns, onto polished dark stone floors reflecting violet and gold light. Move into a spacious intimate circular salon with tall architectural ribs, soft haze, an empty low circular presentation platform, and a luminous violet recessed ceiling. The platform is ahead and slightly to the right, with quieter dark space to the left for titles. Camera gradually decelerates and settles into a composed wide view of the salon for the last three seconds. Continuous believable architectural space and consistent geometry throughout. Calm anticipation, intrigue, elegance, invitation. One take with smooth physically plausible forward motion, no edits, no cuts, no teleportation, no rapid turns, no handheld shake, no lens warping. No people, no faces, no statues, no screens, no text, no letters, no logos. No fire, no horror, no triumphant spectacle. Silent visual sequence, no dialogue, no voiceover, no music.",
+    "master": ".renders/influence-opening/entrance-v2/source.mp4",
+    "masterSha256": "dad73684749bf23d3f8b03f87891b9058f8a7627bb94c98f4dfee70f0b4972c6",
+    "durationSeconds": 15.083333,
+    "width": 1344,
+    "height": 768
+  },
+  "processing": {
+    "durationSeconds": 20,
+    "frameRate": 30,
+    "timeScale": 1.3259668801318647,
+    "interpolation": "FFmpeg minterpolate, motion-compensated",
+    "encoding": "H.264 CRF 20 retime, then CRF 18 delivery; yuv420p, faststart",
+    "arrivalHold": "Normalize PTS and pad final frame to exactly 600 frames",
+    "audio": "Removed; Suno track pending",
+    "posters": "First and final frames of the processed entrance"
+  },
+  "assets": {
+    "house-entrance.mp4": {
+      "bytes": 4907691,
+      "sha256": "09e2c9e996f5d06fdc7fd16283407f90becd7c4136e76c59c10798c8e4f99081"
+    },
+    "house-door.jpg": {
+      "bytes": 26226,
+      "sha256": "f7447e1ba087e675679b6175d3551307a2baf2bc34c935e1ab629faae3f4c8b2"
+    },
+    "house-salon.jpg": {
+      "bytes": 130899,
+      "sha256": "97d61d8669132b0f938a121258372aef2a4c10771ebb28018d7264210247b89b"
+    }
+  }
+}

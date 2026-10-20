@@ -15,7 +15,6 @@ import {
 } from "../../app/games/[slug]/components/influence-replay-cues";
 import {
   buildStoryScenes,
-  withHouseBridges,
 } from "../../app/games/[slug]/components/house-story";
 import {
   buildEndgamePresentationCues,
@@ -27,7 +26,6 @@ import {
   formatPresentationEligibilityFromFrames,
 } from "../../app/games/[slug]/components/format-presentation-model";
 import {
-  paceVisualBallots,
   visualWatchPresentation,
 } from "../../app/games/[slug]/components/visual-watch-model";
 import { influencePresentationPolicy } from "../../app/games/[slug]/components/influence-presentation-director";
@@ -45,6 +43,9 @@ import type { MusicSection } from "../../components/watch/watch-music";
 import { compileSafetyBounceLobbyLookup } from "../../app/games/[slug]/components/safety-bounce-scene-model";
 import type { ReplaySource } from "./source";
 import type { TimingInput } from "./timing";
+import {composeInfluencePresentation, influenceCastArt} from "../../app/games/[slug]/components/influence-presentation";
+import {influenceMusic} from "../../app/games/[slug]/components/influence-music";
+import type {InfluenceOpeningCue} from "../../app/games/[slug]/components/types";
 
 export type ExportPicture =
   | {
@@ -57,6 +58,7 @@ export type ExportPicture =
       room?: {number: number | null; label?: string; players: Extract<VisualPresentationBeat, {kind:"portrait-room"}>["participants"]};
     }
   | {kind: "werewolf-opening"; cue: WerewolfOpeningCue}
+  | ({kind: "influence-opening"; cue: InfluenceOpeningCue} & ReturnType<typeof influenceCastArt>)
   | {
       kind: "werewolf";
       cue: WerewolfWatchCue;
@@ -172,8 +174,7 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
     throw new Error(
       `Incomplete format presentation: ${JSON.stringify(compilation.diagnostic)}`,
     );
-  const cues = withHouseBridges(
-    paceVisualBallots(
+  const cues = composeInfluencePresentation(game.id,
       [
         ...(game.gameKernel === "format"
           ? mergeFormatAndSocialCues(compilation.cues, classic, scenes)
@@ -181,7 +182,6 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
         ...buildEndgamePresentationCues(frames),
       ].sort(comparePresentationCues),
       game.players,
-    ),
     scenes,
   );
   const frameForSequence = compileReplayFrameLookup(frames);
@@ -190,6 +190,12 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
   const ledgers = compileVoteLedgers(cues);
   const result: ExportCue[] = [];
   for (const [index, cue] of cues.entries()) {
+    if (cue.source === "opening") {
+      result.push({timing: {key:cue.key, baseDurationMs:cue.baseDurationMs, kind:"opening", speech:null, thinking:null},
+        picture: {kind:"influence-opening", cue, ...influenceCastArt(game.players.find(player => player.id === cue.opening.player?.id), visual)},
+        source:{kind:"opening"}, label:"Opening", speech:null, music:null});
+      continue;
+    }
     const message =
       cue.source === "classic"
         ? (scenes[cue.sceneIndex]?.messages[cue.messageIndex] ?? null)
@@ -229,7 +235,7 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
             : "ballot"
           : spoken
             ? "speech"
-            : cue.kind === "endgame_winner"
+            : (winners[index] ?? cue).kind === "endgame_winner"
               ? "result"
               : "scene",
         speech: influencePresentationPolicy.speech(cue),
@@ -256,7 +262,7 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
               text: spoken.text,
             }
           : null,
-      music: null,
+      music: influenceMusic(game.id, winners[index] ?? cue, message),
     });
   }
   return result;

@@ -62,7 +62,7 @@ await withPreparedReplay(
                   ? "tally"
                   : "ballot"
                 : picture.cue.moment.entry.kind))
-          : picture.kind === "werewolf-opening" ? `opening-${picture.cue.opening.shot}` : picture.kind === "thinking" ? "thinking" : (picture.beat?.kind ?? picture.cue.kind);
+          : picture.kind === "werewolf-opening" || picture.kind === "influence-opening" ? `opening-${picture.cue.opening.shot}` : picture.kind === "thinking" ? "thinking" : (picture.beat?.kind ?? picture.cue.kind);
       const interval = manifest.timeline[index]!;
       if (interval.thought) {
         const thought = interval.thought;

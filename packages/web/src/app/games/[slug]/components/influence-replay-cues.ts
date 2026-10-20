@@ -200,6 +200,7 @@ export function findCueForAdjacentScene(
 }
 
 function cueSceneIdentity(cue: PresentationCue): string {
+  if (cue.source === "opening") return "opening";
   return voteSceneIdentity(cue) ?? (cue.source === "classic"
     ? `classic:${cue.sceneIndex}`
     : cue.key);

@@ -350,8 +350,11 @@ test("Studio keyboard panels, metadata saving and character preferences keep the
   const previousPreference = await page.evaluate("localStorage.getItem('house.studio.character-shortcuts.v1')") as string|null;
   let phase='metadata focus'; page.setDefaultTimeout(10_000);
   let releases: (()=>void)[] = [], saves = 0, selections = 0;
+  const pendingSaves = new Set<HTTPRequest>();
+  const settled = (request: HTTPRequest) => {pendingSaves.delete(request);};
+  page.on('requestfinished', settled); page.on('requestfailed', settled);
   const intercept = async (request:HTTPRequest) => {
-    if (request.method()==='POST' && new URL(request.url()).pathname.endsWith('/annotation')) {saves++; await new Promise<void>(accept=>releases.push(accept));}
+    if (request.method()==='POST' && new URL(request.url()).pathname.endsWith('/annotation')) {saves++; pendingSaves.add(request); await new Promise<void>(accept=>releases.push(accept));}
     if (request.method()==='POST' && new URL(request.url()).pathname.endsWith('/selection')) selections++;
     await request.continue();
   };
@@ -434,8 +437,17 @@ test("Studio keyboard panels, metadata saving and character preferences keep the
     await page.mouse.reset(); release();
     // A failed assertion may leave a released annotation request committing.
     // Settle it before restoring fixture rows, including failure cleanup.
-    try {await page.waitForNetworkIdle({idleTime:200,timeout:5000});} finally {
+    // Streaming soundtrack/video requests need not become idle. Only the
+    // intercepted annotation writes can race restoration of these fixture rows.
+    try {
+      const deadline = Date.now() + 5000;
+      while (pendingSaves.size) {
+        if (Date.now() >= deadline) throw new Error("Annotation writes did not settle before fixture cleanup");
+        await Bun.sleep(25);
+      }
+    } finally {
       await page.evaluate(`localStorage.${previousPreference===null ? "removeItem('house.studio.character-shortcuts.v1')" : `setItem('house.studio.character-shortcuts.v1',${JSON.stringify(previousPreference)})`}`);
+      page.off('requestfinished', settled); page.off('requestfailed', settled);
       page.off('request',intercept); await page.setRequestInterception(false); await page.close();
       await database.db.delete(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.gameId,fixture.id));
       if (saved.length) await database.db.insert(schema.productionMomentAnnotations).values(saved);
@@ -766,6 +778,9 @@ test("Moment rows seek readable content while target icons seek the start in bot
         await page.locator(`[data-moment-id="${id}"] > button:first-child`).click();
         await page.waitForFunction(`document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(id)} && Number(getComputedStyle(document.querySelector('[data-preview-frame] [data-speech-bubble]')).opacity)===1`);
         await configureStudioCut(page,"Smart","None"); await clickButton(page,"Selected cut");
+        // The source already contains this row and readable thought. Wait for
+        // the routed cut view before issuing another row navigation.
+        await page.waitForFunction("document.querySelector('[data-preview-view]')?.getAttribute('data-preview-view') === 'cut' && document.querySelector('[data-composition-frame]')");
         await page.waitForSelector(`[data-moment-id="${thought}"]`);
         await page.locator(`[data-moment-id="${thought}"] > button:first-child`).click();
         await page.waitForFunction("Number(getComputedStyle(document.querySelector('[data-preview-frame] [data-in-scene-thinking]')).opacity)===1");

@@ -167,3 +167,13 @@ test("range audio retains the full traversal source offset and envelope clock", 
     placeAudioClip(voice, { fromFrame: 180, untilFrame: 240 }, 30),
   ).toBeNull();
 });
+
+test("closing summaries finish the existing score without adding another song duration", () => {
+  const closing = {...score,repeat:false,continueAtEnd:true};
+  const cues = [0,1].map(index=>({timing:{...timing,key:`closing-${index}`,kind:"result" as const,baseDurationMs:2000},music:closing}));
+  const timeline = compileTiming(cues.map(c=>c.timing),parseTimingProfile(),30);
+  const result = compileAudio(cues,timeline,assets,parseTimingProfile(),true);
+  expect(result.durationMs).toBe(5000);
+  expect(result.clips).toHaveLength(1);
+  expect(result.clips[0]).toMatchObject({startMs:0,endMs:5000,offsetMs:0});
+});

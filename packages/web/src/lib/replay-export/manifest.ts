@@ -101,6 +101,7 @@ export function validateManifest(value: ReplayManifest): void {
     keys.add(time.key);
     boundary = time.endMs;
     if (cue.picture.kind !== value.game.kind && !(value.game.kind === "werewolf" && cue.picture.kind === "werewolf-opening")
+      && !(value.game.kind === "influence" && cue.picture.kind === "influence-opening")
       && !(cue.picture.kind === "thinking" && cue.picture.gameKind === value.game.kind))
       throw new Error("Mixed game kinds in bundle");
     if (value.game.audience === "mystery" && cue.picture.kind === "werewolf") {

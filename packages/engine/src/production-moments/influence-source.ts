@@ -258,6 +258,8 @@ export function buildInfluenceProductionSources(input: {
     if (!isThought) { if (row.summary) summarized = true; previous = row; }
   }
   // Fail ambiguous descriptors at their owner before either API or web uses them.
+  if (result.some(source => source.kind !== "influence-thinking"))
+    result.unshift({kind: "opening", gameKind: "influence", order: {anchor: 0, offset: 0}});
   assembleProductionCatalog({ gameId: input.gameId, gameKind: "influence", audience: "public", sources: result });
   return result.sort((a, b) => a.order.anchor - b.order.anchor || a.order.offset - b.order.offset);
 }
