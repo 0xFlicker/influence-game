@@ -314,6 +314,7 @@ export interface InfluenceOpeningCue extends SpeechCue {
   phase: "INTRODUCTION";
   baseDurationMs: number;
   opening: {
+    backgroundUrl: string; entranceVideoUrl: string; posterUrl: string; logoUrl: string; musicUrl: string;
     shot: "house" | "title" | "cast" | "enter";
     startMs: number;
     totalMs: number;

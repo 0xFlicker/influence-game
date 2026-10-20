@@ -2,6 +2,13 @@
 
 Open **Admin → Production**, choose a completed or validated visually paused Influence or Werewolf game, and open its studio. The library uses bounded metadata pages. A game played without generated imagery remains editable with portraits.
 
+Influence uses the same 20-second House entrance, cast reveal, welcome card and
+phase score as the public player. The opening is one selectable editorial moment;
+**Add episode opening** includes all of its shots. Its timing stays fixed when
+changing reading speed or motion timing. Music can be disabled for the whole cut,
+and the final result can hold until the closing song finishes. Prepared exports
+freeze the opening media and soundtrack alongside the selected cast art.
+
 Games played before retrospectives remain editable. Influence sources retain their original accepted history and dialogue, including older classic games without a canonical event log; Werewolf v7 retains its original outcome boundary. Retrospective completion proof is required only after the game enters its canonical retrospective. Opening Studio never migrates a game or generates missing final statements.
 
 Influence format ballot reveals follow canonical frame eligibility order, independently of database seat/join order. The catalog and shared preview/export compiler therefore agree on the first ballot and its preceding phase bridge. Fixing this presentation order does not change accepted source hashes, moment IDs or frozen selections. A missing production picture still fails at the binder; Studio does not silently drop accepted moments.

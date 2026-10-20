@@ -3,7 +3,7 @@
 import {useState, type ReactNode} from "react";
 import {OpeningBrowserVideo, type OpeningVideoProps} from "@/components/watch/opening-browser-video";
 import type {InfluenceOpeningCue} from "./types";
-import {INFLUENCE_OPENING_ASSETS, sampleInfluenceOpening} from "./influence-opening";
+import {sampleInfluenceOpening} from "./influence-opening";
 import styles from "./influence-opening.module.css";
 
 function CastPortrait({name, fullBodyUrl, headshotUrls}: {name: string; fullBodyUrl?: string; headshotUrls: (string | undefined)[]}) {
@@ -25,12 +25,12 @@ export function InfluenceOpeningFrame({cue, elapsedMs, reduced = false, fullBody
 }) {
   const shot = cue.opening;
   const frame = sampleInfluenceOpening(cue, elapsedMs, reduced);
-  const media = {src: INFLUENCE_OPENING_ASSETS.entrance, poster: INFLUENCE_OPENING_ASSETS.entrancePoster, timeMs: frame.videoMs, playing, speed};
+  const media = {src: shot.entranceVideoUrl, poster: shot.posterUrl, timeMs: frame.videoMs, playing, speed};
   return <div className={styles.frame} data-influence-opening={shot.shot} data-opening-key={cue.key}>
     <div className={styles.picture} style={{opacity: frame.exitOpacity * frame.entranceOpacity}}>
       {frame.entrance && !reduced
         ? video ? video(media) : <OpeningBrowserVideo {...media} className={styles.backdrop} />
-        : <img className={styles.backdrop} src={INFLUENCE_OPENING_ASSETS.background} alt="" style={{transform: `scale(${frame.scale})`}} />}
+        : <img className={styles.backdrop} src={shot.backgroundUrl} alt="" style={{transform: `scale(${frame.scale})`}} />}
       <div className={styles.shade} style={{opacity: frame.entrance ? frame.opacity * 0.65 : 1}} />
       <div className={styles.content} style={{opacity: frame.opacity}}>
         {shot.shot === "house" && <div className={styles.brand}>
@@ -38,7 +38,7 @@ export function InfluenceOpeningFrame({cue, elapsedMs, reduced = false, fullBody
         </div>}
         {shot.shot === "title" && <div className={styles.title}>
           <p>A GAME OF SOCIAL STRATEGY</p>
-          <img src={INFLUENCE_OPENING_ASSETS.logo} alt="Influence" />
+          <img src={shot.logoUrl} alt="Influence" />
           <span className={styles.rule} style={{transform: `scaleX(${frame.ruleScale})`}} />
         </div>}
         {shot.shot === "cast" && shot.player && <div className={styles.cast}>

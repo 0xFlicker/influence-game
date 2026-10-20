@@ -1,5 +1,6 @@
 import type {GamePlayer} from "@/lib/api";
 import type {InfluenceOpeningCue} from "./types";
+import {INFLUENCE_MUSIC} from "./influence-music";
 
 const root = "/visual/influence/opening-v1";
 export const INFLUENCE_OPENING_ASSETS = {
@@ -28,7 +29,10 @@ export function influenceOpening(gameId: string, players: readonly Pick<GamePlay
     const cue: InfluenceOpeningCue = {
       source: "opening", kind: "influence_opening", key: `${gameId}:opening:${shot}:${player?.id ?? ""}`,
       canonicalSequence: null, round: 0, phase: "INTRODUCTION", baseDurationMs: duration,
-      opening: {shot, startMs, totalMs, castCount: players.length, ...(player ? {player, castIndex} : {})},
+      opening: {shot, startMs, totalMs, castCount: players.length,
+        backgroundUrl: INFLUENCE_OPENING_ASSETS.background, entranceVideoUrl: INFLUENCE_OPENING_ASSETS.entrance,
+        posterUrl: INFLUENCE_OPENING_ASSETS.entrancePoster, logoUrl: INFLUENCE_OPENING_ASSETS.logo,
+        musicUrl: INFLUENCE_MUSIC.opening.src, ...(player ? {player, castIndex} : {})},
     };
     startMs += duration;
     return cue;

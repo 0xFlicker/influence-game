@@ -17,7 +17,7 @@ import { useWatchKeyboard } from "@/components/watch/use-watch-keyboard";
 import { VisualPresentation } from "./visual-presentation";
 import { compileVoteLedgers } from "./vote-ledger-model";
 import { useVisualWatch } from "./use-visual-watch";
-import { visualWatchPresentation, paceVisualBallots } from "./visual-watch-model";
+import { visualWatchPresentation } from "./visual-watch-model";
 import { MotionConfig } from "motion/react";
 import type {
   TranscriptEntry,
@@ -36,7 +36,7 @@ import {
   ROOM_TYPE_COLORS,
 } from "./constants";
 import { ConnectionBadge, GameStateHUD } from "./game-info";
-import { buildStoryScenes, withHouseBridges } from "./house-story";
+import { buildStoryScenes } from "./house-story";
 import { buildEndgamePresentationCues, compileRevealedWinnerCues } from "./endgame-presentation";
 import { compileSafetyBounceLobbyLookup } from "./safety-bounce-scene-model";
 import { shouldSuppressDramaticAdvance } from "./dramatic-interaction";
@@ -55,12 +55,11 @@ import { usePresentationDirector } from "./influence-presentation-director";
 import { FormatPresentation } from "./format-presentation";
 import { ActiveFormatLabel } from "./active-format-label";
 import { findPresentationCueIndexForSequence } from "./presentation-sequence";
-import {influenceOpening} from "./influence-opening";
+import {composeInfluencePresentation, influenceCastArt} from "./influence-presentation";
 import {InfluenceOpeningFrame} from "./influence-opening-frame";
 import {influenceMusic, influenceOpeningAudio} from "./influence-music";
 import {useWatchMusic} from "@/components/watch/use-watch-music";
 import {useOpeningAudio} from "@/components/watch/use-opening-audio";
-import {resolveAgentAvatarUrl} from "@/components/agent-avatar";
 
 interface DramaticReplayViewerProps {
   preferenceScope?: WatchPreferenceScope;
@@ -154,10 +153,7 @@ function DramaticReplayTheater({
       replayFrames,
     ],
   );
-  const presentationCues = useMemo(() => canonicalPresentationCues.length ? [
-    ...influenceOpening(game.id, players),
-    ...withHouseBridges(paceVisualBallots(canonicalPresentationCues, players), scenes),
-  ] : [], [canonicalPresentationCues, game.id, players, scenes]);
+  const presentationCues = useMemo(() => composeInfluencePresentation(game.id, canonicalPresentationCues, players, scenes), [canonicalPresentationCues, game.id, players, scenes]);
   const voteLedgers = useMemo(() => compileVoteLedgers(presentationCues), [presentationCues]);
   const revealedWinners = useMemo(() => compileRevealedWinnerCues(presentationCues), [presentationCues]);
   const lobbyMessages = useMemo(() => compileSafetyBounceLobbyLookup(classicCues, scenes), [classicCues, scenes]);
@@ -231,14 +227,14 @@ function DramaticReplayTheater({
   const musicSection = influenceMusic(game.id, revealedWinners[Math.min(directorSnapshot.cursor, presentationCues.length - 1)] ?? activeCue, currentMessage);
   const closingMusic = !live && musicSection?.continueAtEnd === true && activeCue !== null
     && directorSnapshot.cursor === presentationCues.length - 1
-    && director.getElapsedBaseMs() >= activeCue.baseDurationMs && playRequested;
-  const transportPlaying = isPlaying || closingMusic;
+    && director.getElapsedBaseMs() >= activeCue.baseDurationMs && playRequested && !preferences.musicMuted;
   const preparing = live && presentationHydrationStatus !== "ready";
   const ambient = useWatchMusic({
-    section:musicSection, playing:transportPlaying && !openingCue,
+    section:musicSection, playing:(isPlaying || closingMusic) && !openingCue,
     muted:preferences.musicMuted, volume:preferences.musicVolume, preparing,
     holding:directorSnapshot.waitingAtTail, live, navigationRevision:director.getNavigationRevision(),
   });
+  const transportPlaying = isPlaying || closingMusic && (ambient.status === "playing" || ambient.status === "loading");
   const openingAudio = useOpeningAudio({
     tracks:influenceOpeningAudio(openingCue, director.getElapsedBaseMs()),
     playing:isPlaying && !preparing, muted:preferences.musicMuted, volume:preferences.musicVolume, speed,
@@ -701,9 +697,7 @@ function DramaticReplayTheater({
       >
         {openingCue ? <>
           <InfluenceOpeningFrame cue={openingCue} elapsedMs={director.getElapsedBaseMs()} reduced={reducedMotion} playing={isPlaying} speed={speed}
-            fullBodyUrl={openingPlayer ? visualData?.fullBodies?.[openingPlayer.id] : undefined}
-            portraitUrl={openingPlayer ? visualData?.portraits[openingPlayer.id] ?? resolveAgentAvatarUrl(openingPlayer.currentAgent?.avatarUrl ?? openingPlayer.avatarUrl, openingPlayer.persona, openingPlayer.name, openingPlayer.personaKey) : undefined}
-            fallbackPortraitUrl={openingPlayer ? resolveAgentAvatarUrl(null, openingPlayer.persona, openingPlayer.name, openingPlayer.personaKey) : undefined} />
+            {...influenceCastArt(openingPlayer, visualData)} />
           <button type="button" data-replay-controls className="absolute right-4 top-4 z-20 rounded-full border border-white/20 bg-black/60 px-4 py-2 text-xs text-white/80 hover:bg-black/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-200"
             onClick={event => {
               event.stopPropagation();

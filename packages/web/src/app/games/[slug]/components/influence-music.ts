@@ -4,6 +4,8 @@ import type {InfluenceOpeningCue, PresentationCue} from "./types";
 import type {PhaseKey, TranscriptEntry} from "@/lib/api";
 
 const root = "/music/influence/v1";
+export const INFLUENCE_OPENING_FADE_IN_MS = 700;
+export const INFLUENCE_OPENING_FADE_OUT_MS = 2000;
 export const INFLUENCE_MUSIC = {
   opening: {src:`${root}/an-invitation-to-power.mp3`, title:"An Invitation to Power"},
   social: {src:`${root}/good-company.mp3`, title:"Good Company"},
@@ -56,6 +58,6 @@ export function influenceMusic(gameId: string, cue: PresentationCue | null, mess
 export function influenceOpeningAudio(cue: InfluenceOpeningCue | null, elapsedMs: number): OpeningAudioTrack[] {
   if (!cue) return [];
   const timeMs = cue.opening.startMs + Math.max(0, Math.min(elapsedMs, cue.baseDurationMs));
-  return [{src:INFLUENCE_MUSIC.opening.src, time:timeMs / 1000,
-    gain:Math.max(0, Math.min(1, timeMs / 700, (cue.opening.totalMs - timeMs) / 2000))}];
+  return [{src:cue.opening.musicUrl, time:timeMs / 1000,
+    gain:Math.max(0, Math.min(1, timeMs / INFLUENCE_OPENING_FADE_IN_MS, (cue.opening.totalMs - timeMs) / INFLUENCE_OPENING_FADE_OUT_MS))}];
 }

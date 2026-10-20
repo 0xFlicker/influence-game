@@ -1,6 +1,7 @@
 import type { ExportCue } from "./cues";
 import type { CachedAsset } from "./assets";
 import type { CompiledTiming, TimingProfile } from "./timing";
+import {INFLUENCE_OPENING_FADE_IN_MS, INFLUENCE_OPENING_FADE_OUT_MS} from "../../app/games/[slug]/components/influence-music";
 
 export interface AudioClip {
   asset: string;
@@ -39,11 +40,14 @@ export function compileAudio(
   const final = cues.at(-1)!;
   if (final.timing.kind === "result") {
     if (profile.ending === "finish-score") {
-      if (music && final.music?.continueAtEnd)
+      if (music && final.music?.continueAtEnd) {
+        let first = cues.length - 1;
+        while (first > 0 && cues[first - 1]!.music?.key === final.music.key) first--;
         durationMs = Math.max(
           durationMs,
-          last.startMs + duration(final.music.src),
+          timeline[first]!.startMs + duration(final.music.src),
         );
+      }
     } else durationMs += profile.ending.holdMs;
   }
   const clips: AudioClip[] = timeline.flatMap((cue) =>
@@ -63,6 +67,16 @@ export function compileAudio(
       : [],
   );
   if (music) {
+    const opening = cues.findIndex(c => c.picture?.kind === "influence-opening");
+    const end = cues.findLastIndex(c => c.picture?.kind === "influence-opening");
+    const influence = cues[opening]?.picture;
+    if (influence?.kind === "influence-opening") {
+      const asset = influence.cue.opening.musicUrl;
+      const startMs = timeline[opening]!.startMs, endMs = timeline[end]!.endMs;
+      if (duration(asset) < endMs - startMs) throw new Error("Opening score is shorter than the opening");
+      clips.push({asset, purpose:"music", startMs, endMs, offsetMs:0, gain:volume,
+        fadeInMs:INFLUENCE_OPENING_FADE_IN_MS, fadeOutMs:INFLUENCE_OPENING_FADE_OUT_MS});
+    }
     const first = cues.findIndex(c => c.picture?.kind === "werewolf-opening");
     const last = cues.findLastIndex(c => c.picture?.kind === "werewolf-opening");
     const picture = cues[first]?.picture;

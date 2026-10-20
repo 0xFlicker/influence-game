@@ -857,11 +857,13 @@ A protocol-neutral read of a visible Public or Unlisted game, dispatched by game
 
 Werewolf inspection positions count audience-visible source entries, including silent entries. Mystery and Omniscient positions are not interchangeable. Influence canonical event and transcript entry positions remain separate; dialogue never becomes authoritative board state. A replay page pins its source head and projects its board at the delivered prefix. Thinking is an explicit spectator artifact with its own cutoff, not native provider reasoning or a private strategy read.
 
-Influence's browser replay opening is an editorial 20-second continuous House
+Influence's shared replay opening is an editorial 20-second continuous House
 entrance with title overlays, followed by cast reveals and a welcome card
 preceding recorded gameplay. Its shots have no canonical event
 coordinate and reveal only cast identity. The shared director controls them;
-event deep links and live joins retain their gameplay position. See
+event deep links and live joins retain their gameplay position. Studio and exports
+use the same shots, cast art and music; the opening is one selectable editorial
+moment, separate from canonical gameplay. See
 [replay presentation and music](docs/solutions/architecture-patterns/shared-replay-music-transport.md).
 
 Werewolf trailers share House postgame delivery after the approved opening-only teaser policy (`werewolf-opening-quotes-v1`). Mystery Cuts settling is an input boundary, not a per-trailer approval gate. Empty/failed settled Cuts produce cast/premise only; pending Cuts wait. Source music is pinned in the render snapshot and packaged with the worker.

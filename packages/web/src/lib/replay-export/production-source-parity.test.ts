@@ -3,11 +3,17 @@ import { createFormatKernelViewerScenario, FORMAT_KERNEL_VIEWER_SCENARIO_IDS } f
 import { assembleProductionCatalog, productionMomentKey } from "@influence/engine/production-moments";
 import { buildInfluenceProductionSources } from "@influence/engine/production-moments/influence-source";
 import { compileFormatPresentationPrefix } from "../../app/games/[slug]/components/format-presentation-model";
-import { paceVisualBallots } from "../../app/games/[slug]/components/visual-watch-model";
-import { withHouseBridges } from "../../app/games/[slug]/components/house-story";
+import {composeInfluencePresentation, influenceCastArt} from "../../app/games/[slug]/components/influence-presentation";
+import {influenceMusic, influenceOpeningAudio, INFLUENCE_MUSIC} from "../../app/games/[slug]/components/influence-music";
+import {buildExportCues} from "./cues";
+import {bindInfluenceProductionPresentation} from "./production-presentation";
+import {compilePresentation} from "./presentation";
+import {parseTimingProfile, sampleTiming} from "./timing";
+import {audioGain} from "./audio";
+import type {ReplaySource} from "./source";
 import { buildStoryScenes } from "../../app/games/[slug]/components/house-story";
 import { buildClassicPresentationCues, comparePresentationCues } from "../../app/games/[slug]/components/influence-replay-cues";
-import { buildEndgamePresentationCues } from "../../app/games/[slug]/components/endgame-presentation";
+import { buildEndgamePresentationCues, compileRevealedWinnerCues } from "../../app/games/[slug]/components/endgame-presentation";
 import type { PresentationCue, ReplayScene } from "../../app/games/[slug]/components/types";
 import type { GameWatchReplayFrame, TranscriptEntry, ViewerDecisionEvent } from "../api";
 import { Phase } from "@influence/engine";
@@ -15,14 +21,14 @@ import { influenceProductionReference } from "./influence-production-reference";
 
 function referenceKeys(cues: readonly PresentationCue[], scenes: readonly ReplayScene[] = []): string[] {
   const byKey = new Map(cues.map(cue => [cue.key, cue]));
-  return cues.map(cue => {
+  return [...new Set(cues.map(cue => {
     const ref = influenceProductionReference(cue, key => byKey.get(key), current => current.source === "classic"
       ? scenes[current.sceneIndex]?.messages[current.messageIndex] : undefined);
     return productionMomentKey("g", ref.source, ref.part);
-  });
+  }))];
 }
 
-test("production inventory preserves classic history, endgame ballots and both jury tally groups", () => {
+test("production inventory preserves classic history, endgame ballots and both jury tally groups", async () => {
   const players = ["a", "b", "c"].map(id => ({ id, name: id.toUpperCase(), persona: "", status: "alive" as const, shielded: false, currentAgent: null }));
   const events: ViewerDecisionEvent[] = [
     { sequence: 1, timestamp: "2026-10-09T00:00:01Z", round: 1, phase: Phase.VOTE, type: "endgame.elimination_resolved", payload: { stage: "reckoning", votes: { a: "c", b: "c" }, juryTiebreakerVotes: { c: "b" }, eliminatedId: "b" } },
@@ -36,25 +42,74 @@ test("production inventory preserves classic history, endgame ballots and both j
     { id: 11, gameId: "g", round: 2, phase: "JURY_VOTE", scope: "system", fromPlayerId: null, fromPlayerName: null, toPlayerIds: null, dialogueKind: "house_summary", firstDurableEventSequence: 3, text: "The game has ended.", timestamp: Date.parse("2026-10-09T00:00:04Z") },
   ];
   const scenes = buildStoryScenes(messages);
-  const cues = withHouseBridges(paceVisualBallots([...buildClassicPresentationCues(scenes, frames, players), ...buildEndgamePresentationCues(frames)].sort(comparePresentationCues), players), scenes);
+  const cues = composeInfluencePresentation("g", [...buildClassicPresentationCues(scenes, frames, players), ...buildEndgamePresentationCues(frames)].sort(comparePresentationCues), players, scenes);
   const sources = buildInfluenceProductionSources({ gameId: "g", gameKernel: "classic", transcripts: messages, frames });
   const catalog = assembleProductionCatalog({ gameId: "g", gameKind: "influence", audience: "public", sources });
   expect(catalog.moments.map(m => m.id)).toEqual(referenceKeys(cues, scenes));
   expect(catalog.moments.filter(m => m.kind === "tally")).toHaveLength(3);
-  expect(catalog.moments[0]!.part.kind).toBe("speech");
+  expect(catalog.moments[0]!.part.kind).toBe("opening");
+  expect(catalog.moments[1]!.part.kind).toBe("speech");
+  const source: Extract<ReplaySource,{kind:"influence"}> = {kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"classic",players},
+    messages,frames,thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[]}};
+  const exported = buildExportCues(source);
+  expect(exported.map(c=>"cue" in c.picture ? c.picture.cue : null)).toEqual(cues);
+  const winners = compileRevealedWinnerCues(cues);
+  expect(exported.map(c=>c.music)).toEqual(cues.map((cue,index)=>influenceMusic("g",winners[index]??cue,
+    cue.source === "classic" ? scenes[cue.sceneIndex]?.messages[cue.messageIndex] : null)));
+  expect(new Set(exported.flatMap(c=>c.music ? [c.music.title] : []))).toEqual(new Set(["Good Company","Names on the Table","The Empty Chair","The Last Word"]));
+  expect(exported.at(-1)!.timing.kind).toBe("result");
+  const bound = await bindInfluenceProductionPresentation({source,catalog,thoughts:[]});
+  expect(bound.flatMap(m=>m.segments).map(c=>({picture:c.picture,music:c.music}))).toEqual(exported.map(c=>({picture:c.picture,music:c.music})));
 });
 
 for (const scenarioId of FORMAT_KERNEL_VIEWER_SCENARIO_IDS.filter(id => !id.startsWith("malformed_"))) {
-  test(`production inventory binds exact existing format cue coverage: ${scenarioId}`, () => {
+  test(`player, Studio and export share opening, cast, timings and music: ${scenarioId}`, async () => {
     const scenario = createFormatKernelViewerScenario(scenarioId);
     const players = scenario.roster.map(player => ({ ...player, persona: "", status: "alive" as const, shielded: false }));
     const compilation = compileFormatPresentationPrefix({ gameId: "g", gameKernel: "format", roster: players, decisions: scenario.decisions });
     expect(compilation.diagnostic).toBeNull();
-    const cues = withHouseBridges(paceVisualBallots(compilation.cues, players), []);
-    const frames = scenario.decisions.map(event => ({ sequence: event.sequence, timestamp: Date.parse(event.timestamp), round: event.round, phase: event.phase ?? "INIT", players, viewerDecisionEvent: event }));
+    const cues = composeInfluencePresentation("g", compilation.cues, players, []);
+    const frames = scenario.decisions.map(event => ({ sequence: event.sequence, timestamp: Date.parse(event.timestamp), round: event.round, phase: event.phase ?? "INIT" as const, players, viewerDecisionEvent: event }));
     const sources = buildInfluenceProductionSources({ gameId: "g", gameKernel: "format", transcripts: [], frames });
     const catalog = assembleProductionCatalog({ gameId: "g", gameKind: "influence", audience: "public", sources });
     const expected = referenceKeys(cues);
     expect(catalog.moments.map(m => m.id)).toEqual(expected);
+    const source: Extract<ReplaySource,{kind:"influence"}> = {
+      kind:"influence", game:{id:"g",slug:"g",status:"completed",gameKernel:"format",players}, messages:[], thoughts:{},
+      frames:frames.map(frame => ({...frame,schemaVersion:3,gameId:"g",slug:"g",eventType:frame.viewerDecisionEvent.type,
+        counts:{totalPlayers:players.length,alivePlayers:players.length,eliminatedPlayers:0,unknownPlayers:0}})),
+      visual:{enabled:false,status:null,portraits:{},fullBodies:{[players[0]!.id]:"/full-body.png"},scenes:[]},
+    };
+    const exported = buildExportCues(source);
+    expect(exported.map(c => "cue" in c.picture ? c.picture.cue : null)).toEqual(cues);
+    expect(exported.map(c => c.music)).toEqual(cues.map(c => influenceMusic("g",c)));
+    const bound = await bindInfluenceProductionPresentation({source,catalog,thoughts:[]});
+    const assets = Object.fromEntries(Object.values(INFLUENCE_MUSIC).map(track => [track.src,{path:track.src,sha256:"fixture",mediaType:"audio" as const,durationMs:240_000}]));
+    const settings = {source:bound,profile:parseTimingProfile({motionScale:.5}),fps:30,assets,music:true,volume:.4};
+    const studio = compilePresentation({...settings,selectedIds:catalog.moments.map(m=>m.id)});
+    expect(bound.flatMap(m=>m.segments).map(({momentId,...cue})=>{void momentId; return cue;})).toEqual(exported);
+    expect(studio.cues.map(c=>({picture:c.picture,music:c.music,duration:c.timing.baseDurationMs}))).toEqual(exported.map(c=>({picture:c.picture,music:c.music,duration:c.timing.baseDurationMs})));
+    const opening = studio.cues.filter(c=>c.picture.kind === "influence-opening");
+    expect(opening).toHaveLength(players.length+3);
+    expect(opening[2]!.picture).toMatchObject({kind:"influence-opening",...influenceCastArt(players[0],source.visual)});
+    expect(studio.timeline[2]!.startMs).toBe(20_000);
+    const score = studio.audio.clips.find(c=>c.asset===INFLUENCE_MUSIC.opening.src)!;
+    expect(score).toBeDefined();
+    for (const [index,cue] of opening.entries()) {
+      if (cue.picture.kind !== "influence-opening") throw new Error("Opening expected");
+      const time = studio.timeline[index]!;
+      for (const local of [0,Math.min(500,cue.timing.baseDurationMs),cue.timing.baseDurationMs-1]) {
+        expect(sampleTiming(time,time.startMs+local).elapsedMs).toBeCloseTo(local);
+        expect(audioGain(score,time.startMs+local,studio.audio.clips)).toBeCloseTo(influenceOpeningAudio(cue.picture.cue,local)[0]!.gain*.4);
+      }
+    }
+    const openingId = catalog.moments[0]!.id;
+    const introOnly = compilePresentation({...settings,selectedIds:[openingId]});
+    expect(introOnly.cues).toHaveLength(players.length+3);
+    expect(introOnly.audio.clips).toHaveLength(1);
+    const noIntro = compilePresentation({...settings,selectedIds:catalog.moments.slice(1).map(m=>m.id)});
+    expect(noIntro.cues.some(c=>c.source.kind==="opening")).toBe(false);
+    expect(noIntro.audio.clips.some(c=>c.asset===INFLUENCE_MUSIC.opening.src)).toBe(false);
+    expect(compilePresentation({...settings,selectedIds:[openingId],music:false}).audio.clips).toEqual([]);
   });
 }

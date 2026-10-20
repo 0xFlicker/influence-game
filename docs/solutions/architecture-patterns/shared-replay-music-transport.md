@@ -31,7 +31,7 @@ Implementation and proof: [replay music plan](../../plans/2026-10-05-002-feat-ho
 
 ## Influence opening and cast reveal
 
-Influence's browser player prepends editorial `opening` cues to its playable
+Influence's shared presentation composer prepends editorial `opening` cues to its playable
 history: a continuous House entrance (20 seconds), each contestant
 (2.8 seconds), and a welcome card (3 seconds). House branding appears early
 in the entrance, followed by an uninterrupted architectural approach, the
@@ -107,9 +107,21 @@ The review preview with music is retained under
 `.renders/influence-opening/video-v3-with-music/`: the existing 39.8-second
 1080p visual render with the packaged intro track starting at zero and matching
 opening fades.
-It changes browser playback only; production catalogs, edited cuts and video
-exports retain their existing accepted-source presentation. The editorial shots
-must not be assigned fabricated canonical event references.
+The player, Studio and exports use the same opening composition, cast-art
+selection, frame component and phase-music selector. The production catalog owns
+one `opening` moment with an editorial source reference, containing all authored
+shots. Cuts may include or omit it atomically; no canonical event reference is
+invented. Opening timing is fixed under editing profiles so the first cast
+entrance remains at 20 seconds. Its score is one continuous clip with the same
+gain envelope as browser playback. Packaged video, stills, logo, portraits and
+music URLs travel in presentation data and are frozen into export bundles.
+
+Music-enabled exports and Studio compile phase beds, loops, crossfades and the
+closing score through the shared audio scheduler. The final hold finishes the
+song from the beginning of its contiguous section, including subsequent House
+summaries; it does not add another full song duration at each summary. Browser
+transport displays continuing playback only while the unmuted closing score is
+loading or playing, and releases that state when the score ends or fails.
 
 Coverage: `packages/web/src/__tests__/influence-opening.test.ts` verifies identity
 isolation, clock behavior, handoff, exact seeks, chapter navigation and live/deep-link
@@ -117,3 +129,6 @@ behavior.
 `influence-music.test.ts` covers phase selection, result boundaries, packaged
 sources and intro alignment. Browser checks exercise real audio decoding,
 desktop/mobile controls, pause/seek/handoff and music continuing over results.
+`production-source-parity.test.ts` compares player composition against Studio and
+export pictures, cast order, music and timing across the format fixtures, including
+opening-only and opening-free cuts and exact opening audio envelopes.

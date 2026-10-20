@@ -25,6 +25,7 @@ export async function bindInfluenceProductionPresentation(input:{
   const transcripts = new Map(source.messages.map(message => [String(message.id),message]));
   const byMoment = new Map<string,ExportCue>();
   for (const cue of base) {
+    if (cue.picture.kind === "influence-opening") continue;
     if (cue.picture.kind !== "influence") throw new Error("Cross-game production picture");
     const ref = influenceProductionReference(cue.picture.cue,
       key => {const picture = cuesByKey.get(key)?.picture;return picture?.kind === "influence" ? picture.cue : undefined;},
@@ -42,6 +43,7 @@ export async function bindInfluenceProductionPresentation(input:{
   }
   let priorPicture:ExportCue|undefined;
   return validated.map((moment,index) => {
+    if (moment.source.kind === "opening") return {id:moment.id, segments:base.filter(cue => cue.picture.kind === "influence-opening").map(cue => ({...cue, momentId:moment.id}))};
     if (moment.kind !== "thinking") {
       const cue = byMoment.get(moment.id);
       if (!cue) throw new Error(`Production picture is missing: ${moment.id}`);

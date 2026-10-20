@@ -65,13 +65,13 @@ test("Influence independently exhausted paging lanes do not reload old frames or
   const catalog=assembleProductionCatalog({gameId,gameKind:"influence",audience:"public",sources:buildInfluenceProductionSources({gameId,gameKernel:"classic",transcripts:messages,frames:[]})});
   const snapshot={gameId,gameKind:"influence",audience:"public",throughEventSequence:2,publicationCutoff:"2026-10-09T00:00:00.000Z",sourceHash:`sha256:${"a".repeat(64)}`};
   // This adapter test owns pagination only; canonical frame projection is proved by source services.
-  const base={snapshot,status:"completed",game:{id:gameId,slug:gameId,status:"completed",players:[]},acceptedThoughts:[],annotations:[],totalFrames:2,totalMessages:2,totalMoments:2,totalThoughts:0,totalScenes:2,nextSequence:null,nextThoughtOffset:null};
-  const pages=[{...base,messages:[messages[0]],frames:[{sequence:1},{sequence:2}],catalog:{...catalog,moments:[catalog.moments[0]]},visual:{enabled:true,status:null,portraits:{},scenes:[{id:"scene-1"}],bindings:{first:"scene-1"},publicationSnapshot:{}},nextMessageOffset:1,nextCatalogOffset:1,nextVisualOffset:1},
-    {...base,messages:[messages[1]],frames:[],catalog:{...catalog,moments:[catalog.moments[1]]},visual:{enabled:true,status:null,portraits:{},scenes:[{id:"scene-2"}],bindings:{second:"scene-2"},publicationSnapshot:{}},nextMessageOffset:null,nextCatalogOffset:null,nextVisualOffset:null}];
+  const base={snapshot,status:"completed",game:{id:gameId,slug:gameId,status:"completed",players:[]},acceptedThoughts:[],annotations:[],totalFrames:2,totalMessages:2,totalMoments:catalog.moments.length,totalThoughts:0,totalScenes:2,nextSequence:null,nextThoughtOffset:null};
+  const pages=[{...base,messages:[messages[0]],frames:[{sequence:1},{sequence:2}],catalog:{...catalog,moments:catalog.moments.slice(0,2)},visual:{enabled:true,status:null,portraits:{},scenes:[{id:"scene-1"}],bindings:{first:"scene-1"},publicationSnapshot:{}},nextMessageOffset:1,nextCatalogOffset:2,nextVisualOffset:1},
+    {...base,messages:[messages[1]],frames:[],catalog:{...catalog,moments:catalog.moments.slice(2)},visual:{enabled:true,status:null,portraits:{},scenes:[{id:"scene-2"}],bindings:{second:"scene-2"},publicationSnapshot:{}},nextMessageOffset:null,nextCatalogOffset:null,nextVisualOffset:null}];
   const paths:string[]=[],loaded=await loadProductionReplaySource(reader(pages,paths),{gameId,gameKind:"influence",audience:"public",thinking:false});
   const next=new URL(paths[1]!,"http://local").searchParams;
-  expect(next.get("afterSequence")).toBe("2");expect(next.get("offset")).toBe("1");expect(next.get("catalogOffset")).toBe("1");expect(next.get("visualOffset")).toBe("1");
-  expect(loaded.catalog.moments).toHaveLength(2);
+  expect(next.get("afterSequence")).toBe("2");expect(next.get("offset")).toBe("1");expect(next.get("catalogOffset")).toBe("2");expect(next.get("visualOffset")).toBe("1");
+  expect(loaded.catalog.moments).toEqual(catalog.moments);
   if(loaded.source.kind!=="influence") throw new Error("Influence source expected");
   expect(loaded.source.messages).toHaveLength(2);expect(loaded.source.frames).toHaveLength(2);
   expect(loaded.source.visual.scenes).toHaveLength(2);expect(loaded.source.visual.bindings).toEqual({first:"scene-1",second:"scene-2"});

@@ -248,6 +248,30 @@ test.describe("format-aware game viewer", () => {
     expect((await musicState(page)).every(audio => audio.paused)).toBe(true);
     await page.getByRole("button", {name:"Play replay",exact:true}).click();
     await expect.poll(async () => (await musicState(page)).find(audio => audio.src?.includes("the-last-word"))?.paused).toBe(false);
+    // Finish the actual media element; an ended score must release the transport.
+    await page.evaluate(() => {
+      const audio = (window as unknown as {__scoreMedia:HTMLAudioElement[]}).__scoreMedia.find(audio=>audio.src.includes("the-last-word"))!;
+      audio.currentTime = audio.duration - .1;
+    });
+    await expect(page.getByRole("button", {name:"Play replay",exact:true})).toBeVisible();
+  });
+
+  test("Influence muted results stop at the end of the visual timeline", async ({page}) => {
+    const slug = "muted-closing-music";
+    await installDeterministicFormatGame(page, {slug, scenarioId:"majority_elimination_tie", status:"completed", decisions:[{
+      type:"jury.winner_determined", sequence:10, round:2, phase:Phase.JURY_VOTE,
+      timestamp:"2026-09-23T00:00:00.000Z", payload:{votes:{atlas:"rex"}, winnerId:"rex"},
+    }]});
+    await page.route(`**/api/games/${slug}/transcript*`, route => route.fulfill({json:[]}));
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page, "Pause replay");
+    const position = page.getByRole("slider", {name:"Replay position",exact:true});
+    const end = Number(await position.getAttribute("max"));
+    await position.fill(String(end - 30));
+    await expect(page.getByRole("button", {name:"Turn music on",exact:true})).toBeVisible();
+    await page.getByRole("button", {name:"Play replay",exact:true}).click();
+    await expect.poll(async()=>Number(await position.inputValue())).toBe(end);
+    await expect(page.getByRole("button", {name:"Play replay",exact:true})).toBeVisible();
   });
 
   test("Influence scrubber seeks individual frames and native drags preserve pause", async ({page}) => {

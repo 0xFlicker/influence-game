@@ -1,4 +1,5 @@
 import {WerewolfOpeningFrame} from "../../components/games/werewolf/werewolf-opening-frame";
+import {InfluenceOpeningFrame} from "../../app/games/[slug]/components/influence-opening-frame";
 import type {OpeningVideoProps} from "../../components/watch/opening-browser-video";
 import { useLayoutEffect, useState, useMemo, useRef, type RefObject } from "react";
 import {
@@ -156,14 +157,14 @@ export function ReplayFrame({
           }}
         >
           <div className="flex h-full min-h-0 flex-col overflow-hidden bg-black" data-composition-frame={preview ? frame : undefined} data-composition-moment={preview ? cue.momentId : undefined}>
-            {picture.kind !== "werewolf-opening" && <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60">
+            {picture.kind !== "werewolf-opening" && picture.kind !== "influence-opening" && <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60">
               {cue.label}
             </div>}
             <div
               ref={stage}
               className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
             >
-              {picture.kind === "thinking" ? <ThinkingFrame picture={picture} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} /> : picture.kind === "werewolf-opening" ? <WerewolfOpeningFrame cue={picture.cue} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} video={renderOpeningVideo} /> : picture.kind === "werewolf" ? (
+              {picture.kind === "influence-opening" ? <InfluenceOpeningFrame {...picture} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} video={renderOpeningVideo} /> : picture.kind === "thinking" ? <ThinkingFrame picture={picture} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} /> : picture.kind === "werewolf-opening" ? <WerewolfOpeningFrame cue={picture.cue} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} video={renderOpeningVideo} /> : picture.kind === "werewolf" ? (
                 <WerewolfContentFrame
                   cue={picture.cue}
                   scene={picture.scene}
