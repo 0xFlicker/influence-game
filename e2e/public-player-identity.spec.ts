@@ -53,6 +53,60 @@ test.describe("local public player identity", () => {
     if (harnessProcess) await stopLocalIdentityHarness(harnessProcess);
   });
 
+  test("signed-out game joins create a character before signup", async ({ browser }) => {
+    test.setTimeout(120_000);
+    for (const gameKind of ["influence", "werewolf"] as const) {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      const id = `public-join-${gameKind}`;
+      const character = { name: "Mira Vale", personaKey: "diplomat", gender: "female", personality: "A warm diplomat who keeps receipts.",
+        backstory: "An exiled ambassador.", strategyStyle: "Build trust.", performanceInstructions: "Quiet gestures.", visualDesign: "Blue coat.", werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips: ["One", "Two", "Three"] };
+      const privateRequests: string[] = [];
+      let previews = 0;
+      try {
+        page.on("request", request => {
+          const path = new URL(request.url()).pathname;
+          if (path === "/api/agent-profiles" || path.endsWith("/join")) privateRequests.push(path);
+        });
+        await page.route(`**/api/game-entries/${id}`, route => route.fulfill({ json: { id, slug: id, gameKind } }));
+        const game = { id, slug: id, gameKind, status: "waiting", playerCount: 4, players: [], modelLabel: "Standard", visibility: "public", started: false, preset: "classic", currentRound: 0, maxRounds: 11, currentPhase: "INIT", gameKernel: "classic", createdAt: new Date().toISOString() };
+        await page.route(`**/api/games/${id}`, route => route.fulfill({ json: game }));
+        await page.route(`**/api/werewolf/${id}/lobby`, route => route.fulfill({ json: game }));
+        await page.route(`**/api/games/${id}/episode`, route => route.fulfill({ status: 404, json: { error: "No episode yet" } }));
+        await page.route("**/api/agent-profiles/anonymous", route => {
+          if (route.request().method() === "POST") {
+            previews++;
+            return route.fulfill({ json: { reply: "Mira builds trust at the risk of waiting too long. Does she feel right?", profile: character } });
+          }
+          return route.fulfill({ json: { used: false } });
+        });
+        await page.goto(`${servers.webUrl}/games/${id}`);
+        await page.getByRole("button", { name: "Join with an agent" }).click();
+        await expect(page).toHaveURL(`${servers.webUrl}/agents/create?flow=join_game&gameId=${id}`, { timeout: 30_000 });
+        const signup = page.getByRole("dialog", { name: "Influence authentication" });
+        await expect(signup).toHaveCount(0);
+        const composer = page.getByLabel("Message the character assistant", { exact: true });
+        await composer.fill("An exiled diplomat who keeps receipts");
+        await page.getByRole("button", { name: "Send", exact: true }).click();
+        await expect(page.getByRole("button", { name: "Read Name", exact: true })).toContainText("Mira Vale");
+        await expect(signup).toHaveCount(0);
+        await page.getByRole("button", { name: "Yes, that feels right", exact: true }).click();
+        await composer.fill("A blue coat and gold rings");
+        await page.getByRole("button", { name: "Send", exact: true }).click();
+        await expect(signup).toBeVisible();
+        await expect(signup).toContainText("Create a free account for more House messages");
+        await signup.getByRole("button", { name: "Close authentication" }).click();
+        await expect(composer).toHaveValue("A blue coat and gold rings");
+        await expect(page.getByRole("button", { name: "Read Name", exact: true })).toContainText("Mira Vale");
+        await expect(page).toHaveURL(`${servers.webUrl}/agents/create?flow=join_game&gameId=${id}`);
+        expect(previews).toBe(1);
+        expect(privateRequests).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }
+  });
+
   test("game pre-show opens creation, reveals the cast, refreshes seats and enters live play", async ({ browser }) => {
     test.setTimeout(180_000);
     const player = (name: string, personaKey: string): GamePlayer => ({
