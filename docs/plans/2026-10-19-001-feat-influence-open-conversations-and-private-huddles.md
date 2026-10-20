@@ -1,7 +1,7 @@
 ---
 title: Influence open conversations, private huddle recall, and room playback
 type: feat
-status: proposed
+status: implemented
 date: 2026-10-19
 ---
 
@@ -11,7 +11,7 @@ date: 2026-10-19
 
 Bring the successful Werewolf conversation behavior to Influence Lobby, Mingle, and simplified alliance huddles: bounded spoken output, sequential contributions, optional replies, meaningful silence, and private decision evidence. Make huddles watchable as room conversations after ordinary Mingle while keeping their existence private from other contestants.
 
-This document is a plan only. The user authorized planning, not implementation or new inference spending in this turn. Source inspection is against merged `main` at `bde3e613`. No gameplay, prompts, schemas, or UI are changed by this document.
+The user subsequently authorized committing and implementing this plan, with full localhost API games of 6–8 players and a fresh aggregate $25 inference limit. The plan was committed first as `b1a7ffca`; the inspected baseline was merged `main` at `bde3e613`. Implementation is committed as `48029042`. See the [evaluation report](../evaluations/2026-10-19-influence-open-conversations.md) for verification, complete-game evidence, accounting, and remaining quality issues.
 
 ### Confirmed product requirements
 
@@ -36,9 +36,9 @@ The following are concrete defaults for implementation and evaluation, not claim
 - Use the directed-handoff limit for groups of three or more; allow natural alternation for two-person rooms.
 - Keep huddle thinking out of spectator room playback under the existing huddle audience policy. Private debugging retains it. Ordinary speaking-turn thinking keeps its existing authorized presentation behavior.
 
-## Current implementation and affected boundaries
+## Baseline implementation and affected boundaries
 
-| Area | Current source and behavior | Work required |
+| Area | Pre-change source and behavior | Planned change |
 | --- | --- | --- |
 | Lobby | `packages/engine/src/phases/lobby.ts`: one serial speech per living player by default; `agent.ts` warns there will be no further reply | Replace fixed speaker passes and timing prompts with a bounded conversation cursor and strict speak/pass contract |
 | Mingle | `phases/mingle.ts`, `mingle-turn-execution.ts`: three beats by default; each occupant acts once, then movements resolve simultaneously | Multiple sequential contributions per fixed room arrangement, room-local budgets, explicit movement intent handling |
@@ -206,7 +206,7 @@ Keep completed saved games readable and playable in player, Studio, API, and MCP
 4. **Huddle room presentation.** Add sanitized chronological moments and scene bindings across live player, saved replay, Studio, and export. Keep session existence out of contestant projections and skip silent/pass playback.
 5. **Whole-game evaluation and tuning.** Validate privacy and recovery deterministically, then run authorized full games through the localhost API. Review saved speech, thinking/reasoning, inference usage, and room playback; tune budgets or room-round count only from that evidence.
 
-Update `AGENTS.md`, `CONCEPTS.md`, observability/local-evaluation docs, and affected simulation JSDoc alongside implementation. This plan does not mark those future behaviors as already implemented in current documentation.
+`AGENTS.md`, `CONCEPTS.md`, observability/local-evaluation docs, and affected simulation JSDoc were updated alongside implementation. The sections above preserve the implementation contract; the evaluation report distinguishes tested behavior from remaining tuning hypotheses.
 
 ## Verification and acceptance
 
@@ -234,11 +234,11 @@ Update `AGENTS.md`, `CONCEPTS.md`, observability/local-evaluation docs, and affe
 - Saved pre-change games retain their original results, accepted dialogue, and historical reads. New games do not render empty tactical-outcome panels.
 - Both Two Names social windows and normal endgame/results completion remain correct.
 
-Run the repository's provider-free baseline, PostgreSQL baseline, typecheck/lint, and relevant classified browser suites before merging implementation. Follow the shared database isolation rules. Planning alone requires no test or inference run.
+Run the repository's provider-free baseline, PostgreSQL baseline, typecheck/lint, and relevant classified browser suites before merging implementation. Follow the shared database isolation rules. The implementation requires these checks; planning alone did not require inference.
 
 ### Full-game evaluation
 
-Use durable localhost API games so player, Studio, API, and MCP inspect the same tested artifacts. Resolve the remaining explicit inference authorization before starting paid runs; no fresh dollar allowance is established by this plan. Keep an aggregate spend ledger, budget guard, game IDs, immutable sanitized evidence, and useful failure records. Use low-cost monitoring where available.
+Use durable localhost API games so player, Studio, API, and MCP inspect the same tested artifacts. The implementation request authorizes a fresh $25 aggregate inference allowance for 6–8-player games. Keep an aggregate spend ledger, budget guard, game IDs, immutable sanitized evidence, and useful failure records. Use low-cost monitoring where available.
 
 Compare whole games, not isolated exchanges: early social rounds, later strategy, small and crowded rooms, solo starts, overlapping alliances, repeated huddles, and Two Names' second window. Evaluate with the authorized models where budget permits, including Muse given the user's gameplay preference.
 
