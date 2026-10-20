@@ -811,12 +811,14 @@ test("Werewolf autoplays with device preferences and Mystery preserves the saved
   try {
     if (!servers.webUrl) throw new Error("Web server missing");
     await page.goto(servers.webUrl,{waitUntil:"domcontentloaded"});
+    await dismissAnalyticsNotice(page);
     await page.evaluate("localStorage.setItem('house:watch:viewer:v1',JSON.stringify({thinking:true}))");
     await page.goto(`${servers.webUrl}/games/${game.slug}/replay?audience=omniscient`,{waitUntil:"domcontentloaded"});
     await page.waitForSelector('button[aria-label="Pause replay"]');
     await page.waitForFunction("Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-elapsed')) > 900");
     await pauseWerewolf(page);
     await page.click('button[aria-label="Player settings"]');
+    await page.waitForSelector('[role="dialog"] input[type="checkbox"]');
     expect(await page.evaluate("document.querySelector('[role=\"dialog\"] input[type=\"checkbox\"]').checked")).toBe(true);
     await page.click('[role="dialog"] input[type="checkbox"]');
     let saved=await page.evaluate("localStorage.getItem('house:watch:viewer:v1')");
@@ -824,6 +826,7 @@ test("Werewolf autoplays with device preferences and Mystery preserves the saved
     await page.reload({waitUntil:"domcontentloaded"});
     await pauseWerewolf(page);
     await page.click('button[aria-label="Player settings"]');
+    await page.waitForSelector('[role="dialog"] input[type="checkbox"]');
     expect(await page.evaluate("document.querySelector('[role=\"dialog\"] input[type=\"checkbox\"]').checked")).toBe(false);
     await page.click('[role="dialog"] input[type="checkbox"]');
     saved=await page.evaluate("localStorage.getItem('house:watch:viewer:v1')");
