@@ -350,56 +350,20 @@ function validateFinalRequest(
   ) {
     throw new PromptThreadBrokerError("invalid_request");
   }
-  if (policy.requestKind === "curator") {
-    const text = asRecord(request.text);
-    const format = asRecord(text?.format);
-    if (
-      request.input.length === 0 ||
-      format?.type !== "json_schema" ||
-      format.strict !== true
-    ) {
-      throw new PromptThreadBrokerError("invalid_request");
-    }
-    return;
-  }
-  if (request.input.length < 1_024 || request.prompt_cache_key !== cell.lineage) {
-    throw new PromptThreadBrokerError("invalid_request");
-  }
-  validateNativeFunctionTools(request);
-}
-
-function validateNativeFunctionTools(request: Record<string, unknown>): void {
-  if (request.tools === undefined) {
-    if (request.tool_choice !== undefined || request.parallel_tool_calls !== undefined) {
-      throw new PromptThreadBrokerError("invalid_request");
-    }
-    return;
-  }
-  if (!Array.isArray(request.tools) || request.tools.length < 1) {
-    throw new PromptThreadBrokerError("invalid_request");
-  }
-  const names = new Set<string>();
-  for (const candidate of request.tools) {
-    const tool = asRecord(candidate);
-    if (
-      tool?.type !== "function"
-      || typeof tool.name !== "string"
-      || tool.name.length < 1
-      || tool.name.length > 64
-      || tool.strict !== true
-      || !asRecord(tool.parameters)
-    ) {
-      throw new PromptThreadBrokerError("invalid_request");
-    }
-    names.add(tool.name);
-  }
-  const choice = asRecord(request.tool_choice);
+  const format = asRecord(asRecord(request.text)?.format);
   if (
-    choice?.type !== "function"
-    || typeof choice.name !== "string"
-    || !names.has(choice.name)
-    || request.parallel_tool_calls !== false
+    request.input.length === 0
+    || format?.type !== "json_schema"
+    || format.strict !== true
+    || !asRecord(format.schema)
+    || request.tools !== undefined
+    || request.tool_choice !== undefined
+    || request.parallel_tool_calls !== undefined
   ) {
+    throw new PromptThreadBrokerError("invalid_request");
+  }
+  if (policy.requestKind === "panel"
+    && (request.input.length < 1_024 || request.prompt_cache_key !== cell.lineage)) {
     throw new PromptThreadBrokerError("invalid_request");
   }
 }

@@ -29,7 +29,7 @@ describe("Full Influence Game (live provider)", () => {
         llmConfig.client,
         model,
         undefined,
-        { toolChoiceMode: llmConfig.toolChoiceMode },
+        {  },
       ).slice(0, 6);
       const runner = new GameRunner(
         agents,

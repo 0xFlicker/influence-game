@@ -60,14 +60,12 @@ test.each(["seer", "doctor", "villager", "werewolf"] as const)("%s receives only
       const decision = action === "introduce" ? { text: "I will listen first.", cue: null, thinking: "Listen first." }
         : { targetId: context.request.legalTargetIds[0], thinking: "A private role decision." };
       return Response.json({ id: `coaching-${calls}`, object: "chat.completion", created: 0, model: "glm-5-2",
-        choices: [{ index: 0, finish_reason: "tool_calls", message: { role: "assistant", content: null,
-          tool_calls: [{ id: "decision", type: "function", function: { name: `werewolf_${action}`, arguments: JSON.stringify(decision) } }],
-        } }], usage: { prompt_tokens: 20, completion_tokens: 20, total_tokens: 40 } });
+        choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify(decision) } }], usage: { prompt_tokens: 20, completion_tokens: 20, total_tokens: 40 } });
     } });
   const model = modelCatalogEntryById("katana:glm-5-2")!;
   const runtime: LlmProviderRuntime = { adapter: createProviderAdapter("katana", client), catalogId: model.id,
     providerProfileId: "katana", modelId: model.modelId, modelCapabilities: model.capabilities,
-    reasoningPolicy: "medium", toolChoiceMode: "required", position: 0, role: "primary" };
+    reasoningPolicy: "medium",  position: 0, role: "primary" };
   const agent = new WerewolfModelAgent({ runtimes: [runtime] });
   for (const action of actions) {
     const targetIds = action === "introduce" ? [] : players.filter(player => player.id !== actorId).map(player => player.id);
@@ -115,14 +113,12 @@ test.each([
       expect(context.observation.investigations).toEqual([]);
       expect(Object.keys(context).at(-1)).toBe("turnReminder");
       return Response.json({ id: "timing", object: "chat.completion", created: 0, model: "glm-5-2",
-        choices: [{ index: 0, finish_reason: "tool_calls", message: { role: "assistant", content: null,
-          tool_calls: [{ id: "decision", type: "function", function: { name: "werewolf_introduce", arguments: JSON.stringify({ text: null, cue: null, thinking: "Wait for evidence." }) } }],
-        } }], usage: { prompt_tokens: 20, completion_tokens: 20, total_tokens: 40 } });
+        choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({ text: null, cue: null, thinking: "Wait for evidence." }) } }], usage: { prompt_tokens: 20, completion_tokens: 20, total_tokens: 40 } });
     } });
   const model = modelCatalogEntryById("katana:glm-5-2")!;
   const runtime: LlmProviderRuntime = { adapter: createProviderAdapter("katana", client), catalogId: model.id,
     providerProfileId: "katana", modelId: model.modelId, modelCapabilities: model.capabilities,
-    reasoningPolicy: "medium", toolChoiceMode: "required", position: 0, role: "primary" };
+    reasoningPolicy: "medium",  position: 0, role: "primary" };
   await new WerewolfModelAgent({ runtimes: [runtime] }).decide({ gameId: state.gameId, actionSlot: 1, observation,
     request: { actorId, action: "introduce", legalTargetIds: [] } });
 });

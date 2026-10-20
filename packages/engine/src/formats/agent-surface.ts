@@ -1,4 +1,5 @@
-import type { ChatCompletionTool } from "openai/resources/chat/completions";
+import type { DecisionSchema } from "../model-invocation";
+
 import type {
   FormatDecisionFallbackReason,
   FormatDecisionProvenance,
@@ -62,7 +63,7 @@ export type SealedElimTargetDecision = FormatDecisionProvenance &
 
 export interface SealedElimToolCallRequest {
   prompt: string;
-  tool: ChatCompletionTool;
+  tool: DecisionSchema;
   traceAction: string;
 }
 
@@ -73,30 +74,26 @@ function exactTool(
   description: string,
   properties: Record<string, unknown>,
   required: readonly string[],
-): ChatCompletionTool {
+): DecisionSchema {
   return {
-    type: "function",
-    function: {
-      name,
-      description,
-      parameters: {
-        type: "object",
-        properties: {
-          ...STRATEGIC_THINKING_TOOL_PROPERTIES,
-          ...properties,
-          ...STRATEGIC_DECISION_TOOL_PROPERTIES,
-        },
-        required: ["thinking", ...required, ...STRATEGIC_DECISION_REQUIRED],
-        additionalProperties: false,
+    name,
+    description,
+    schema: {
+      type: "object",
+      properties: {
+        ...STRATEGIC_THINKING_TOOL_PROPERTIES,
+        ...properties,
+        ...STRATEGIC_DECISION_TOOL_PROPERTIES,
       },
-      strict: true,
+      required: ["thinking", ...required, ...STRATEGIC_DECISION_REQUIRED],
+      additionalProperties: false,
     },
   };
 }
 
 export function buildTwoNamesInitialNamesTool(
   legalNomineeNames: readonly string[],
-): ChatCompletionTool {
+): DecisionSchema {
   return exactTool(
     "two_names_initial_names",
     "Name two distinct legal contestants for the Two Names round.",
@@ -118,7 +115,7 @@ export function buildTwoNamesInitialNamesTool(
 
 export function buildTwoNamesOverrideTool(
   initialNomineeNames: readonly [string, string],
-): ChatCompletionTool {
+): DecisionSchema {
   return exactTool(
     "two_names_override",
     "Decline Override or remove exactly one current nominee.",
@@ -140,7 +137,7 @@ export function buildTwoNamesOverrideTool(
 export function buildTwoNamesTargetTool(
   action: TwoNamesTargetAction,
   legalTargetNames: readonly string[],
-): ChatCompletionTool {
+): DecisionSchema {
   const config = {
     replacement: {
       name: "two_names_replacement",
@@ -236,33 +233,29 @@ function decisionProvenance(
 export function buildSealedElimBallotTool(
   formatId: SealedElimFormatId,
   legalTargetNames: readonly string[],
-): ChatCompletionTool {
+): DecisionSchema {
   const surface = requireSealedElimRegistration(formatId).decision;
   return {
-    type: "function",
-    function: {
-      name: surface.toolName,
-      description: surface.toolDescription,
-      parameters: {
-        type: "object",
-        properties: {
-          ...STRATEGIC_THINKING_TOOL_PROPERTIES,
-          target: {
-            type: "string",
-            enum: [...legalTargetNames],
-            description: "One remaining non-self contestant from the legal target list.",
-          },
-          ...STRATEGIC_DECISION_TOOL_PROPERTIES,
+    name: surface.toolName,
+    description: surface.toolDescription,
+    schema: {
+      type: "object",
+      properties: {
+        ...STRATEGIC_THINKING_TOOL_PROPERTIES,
+        target: {
+          type: "string",
+          enum: [...legalTargetNames],
+          description: "One remaining non-self contestant from the legal target list.",
         },
-        required: ["thinking", "target", ...STRATEGIC_DECISION_REQUIRED],
-        additionalProperties: false,
+        ...STRATEGIC_DECISION_TOOL_PROPERTIES,
       },
-      strict: true,
+      required: ["thinking", "target", ...STRATEGIC_DECISION_REQUIRED],
+      additionalProperties: false,
     },
   };
 }
 
-/** Shared validate -> exact tool call -> accepted typed decision path. */
+/** Shared validate -> exact JSON response -> accepted typed decision path. */
 export async function runSealedElimTargetDecision(
   input: RunSealedElimTargetDecisionInput,
 ): Promise<SealedElimTargetDecision> {
@@ -285,7 +278,7 @@ Legal targets: ${legalTargets.map((player) => player.name).join(", ")}
 
 ${surface.strategyGuidance}
 
-Use the ${surface.toolName} tool.`;
+Return the ${surface.toolName} JSON response.`;
 
   const output = await input.callTool({
     prompt,

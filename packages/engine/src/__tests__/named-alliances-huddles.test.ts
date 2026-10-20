@@ -2,9 +2,9 @@ import { describe, expect, it } from "bun:test";
 import { ContextBuilder } from "../context-builder";
 import { GameState } from "../game-state";
 import { TemplateHouseInterviewer } from "../house-interviewer";
-import { runAllianceHuddleWindow } from "../phases/alliances";
+import { advanceHuddleConversation, beginAllianceHuddleWindow, runAllianceHuddleWindow } from "../phases/alliances";
 import type { PhaseActor, PhaseRunnerContext } from "../phases/phase-runner-context";
-import type { AllianceHuddlePromptContext, AllianceHuddleTurnAction, PhaseContext } from "../game-runner.types";
+import type { GameStreamEvent } from "../game-runner.types";
 import { TranscriptLogger } from "../transcript-logger";
 import { DEFAULT_CONFIG, Phase } from "../types";
 import { MockAgent } from "./mock-agent";
@@ -20,13 +20,6 @@ const PLAYERS = [
   { id: "harper", name: "Harper" },
 ];
 
-const LARGE_PLAYER_ROSTER = [
-  ...PLAYERS,
-  { id: "ian", name: "Ian" },
-  { id: "jules", name: "Jules" },
-  { id: "kai", name: "Kai" },
-  { id: "luz", name: "Luz" },
-];
 
 function createHuddleHarness(players = PLAYERS) {
   const gameState = new GameState(players, {
@@ -80,52 +73,7 @@ function activatePair(gameState: GameState, allianceId: string, lineageId: strin
   });
 }
 
-class RespondingHuddleAgent extends MockAgent {
-  override async getAllianceHuddleTurn(
-    _ctx: PhaseContext,
-    huddle: AllianceHuddlePromptContext,
-  ): Promise<AllianceHuddleTurnAction> {
-    const counterpart = huddle.priorFacts[0];
-    if (!counterpart) return super.getAllianceHuddleTurn(_ctx, huddle);
-    return {
-      thinking: "Endorse the accepted typed proposal.",
-      message: "I endorse that plan.",
-      noReply: false,
-      factAtoms: [{
-        kind: "response",
-        actorPlayerId: this.id,
-        counterpartFactId: counterpart.factId,
-        stance: "endorse",
-        confidence: "high",
-      }],
-      strategyDelta: null,
-    };
-  }
-}
-
-describe("named alliance huddle windows", () => {
-  it("keeps both format windows distinct and replays the same provider schedule identities", async () => {
-    const run = async () => {
-      const { gameState, actor, ctx } = createHuddleHarness();
-      activatePair(gameState, "alliance-ab", "lineage-ab", "version-ab", "alice", "bob");
-      const providerScheduleIds: string[] = [];
-      const summarize = ctx.houseInterviewer.summarizeAllianceHuddle.bind(ctx.houseInterviewer);
-      ctx.houseInterviewer.summarizeAllianceHuddle = async (context) => {
-        providerScheduleIds.push(context.scheduleId);
-        return summarize(context);
-      };
-      await runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE, { completePhase: false });
-      await runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE, { completePhase: false });
-      const outcomes = gameState.getAllianceHuddleOutcomes();
-      expect(outcomes).toHaveLength(2);
-      expect(new Set(outcomes.map((outcome) => outcome.id)).size).toBe(2);
-      expect(new Set(providerScheduleIds).size).toBe(2);
-      expect(gameState.getAlliance("alliance-ab")?.huddleOutcomeIds).toHaveLength(2);
-      return { providerScheduleIds, sessionIds: outcomes.map((outcome) => outcome.sessionId) };
-    };
-    expect(await run()).toEqual(await run());
-  });
-
+describe("private conversational alliance huddles", () => {
   it("reconstructs proposal, counter, and amendment identities from canonical boundaries", () => {
     const first = createHuddleHarness().gameState;
     const restored = GameState.fromCanonicalEvents(first.getCanonicalEvents());
@@ -157,278 +105,92 @@ describe("named alliance huddle windows", () => {
     expect(normalize(run(first))).toEqual(normalize(run(restored)));
   });
 
-  it("derives stable session and fact IDs for accepted response replay", async () => {
+  it("creates stable distinct sessions without tactical outcomes or House summaries", async () => {
     const run = async () => {
-      const { gameState, actor, ctx } = createHuddleHarness();
-      activatePair(gameState, "alliance-ab", "lineage-ab", "version-ab", "alice", "bob");
-      ctx.agents.set("bob", new RespondingHuddleAgent("bob", "Bob"));
-      await runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE);
-      return gameState.getAllianceHuddleOutcomes()[0]!;
+      const { gameState, actor, ctx, logger } = createHuddleHarness();
+      activatePair(gameState,"ab","lab","vab","alice","bob");
+      await runAllianceHuddleWindow(ctx,actor,Phase.FORMAT_MINGLE,{completePhase:false});
+      await runAllianceHuddleWindow(ctx,actor,Phase.FORMAT_MINGLE,{completePhase:false});
+      const sessions = Object.values(gameState.getDomainProjection().allianceHuddleSessions);
+      expect(sessions).toHaveLength(2);
+      expect(new Set(sessions.map(s=>s.id)).size).toBe(2);
+      expect(gameState.getAllianceHuddleOutcomes()).toEqual([]);
+      expect(gameState.getCanonicalEvents().some(e=>e.type==="alliance.huddle_outcome_recorded")).toBeFalse();
+      expect(logger.transcript.filter(e=>e.scope==="huddle")).toHaveLength(4);
+      expect(logger.transcript.every(e=>e.scope==="huddle")).toBeTrue();
+      return sessions.map(s=>s.id);
     };
-
-    const first = await run();
-    const replayed = await run();
-    expect(replayed.sessionId).toBe(first.sessionId);
-    expect(replayed.id).toBe(first.id);
-    expect(replayed.facts.map((fact) => fact.factId)).toEqual(
-      first.facts.map((fact) => fact.factId),
-    );
-    expect(replayed.facts[1]).toMatchObject({
-      kind: "response",
-      counterpartFactId: replayed.facts[0]?.factId,
-    });
+    expect(await run()).toEqual(await run());
   });
-
-  it("schedules active alliances within budget, skips the rest, and records outcomes", async () => {
-    const { gameState, logger, actor, ctx, phaseCompleteEvents } = createHuddleHarness();
-    activatePair(gameState, "alliance-ab", "lineage-ab", "version-ab", "alice", "bob");
-    activatePair(gameState, "alliance-cd", "lineage-cd", "version-cd", "charlie", "dana");
-    activatePair(gameState, "alliance-ef", "lineage-ef", "version-ef", "echo", "finn");
-
-    const scheduleTurns: Array<{ decision: unknown; allianceId: unknown }> = [];
-    const huddleTurns: string[] = [];
-    const houseOutcomeScheduleIds: string[] = [];
-    const summarizeAllianceHuddle = ctx.houseInterviewer.summarizeAllianceHuddle.bind(ctx.houseInterviewer);
-    ctx.houseInterviewer.summarizeAllianceHuddle = async (context) => {
-      houseOutcomeScheduleIds.push(context.scheduleId);
-      return summarizeAllianceHuddle(context);
-    };
-    logger.setStreamListener((event) => {
-      if (event.type !== "agent_turn") return;
-      if (event.action === "alliance-huddle-schedule") {
-        scheduleTurns.push({
-          decision: event.response.decision,
-          allianceId: event.response.allianceId,
-        });
-      }
-      if (event.action === "alliance-huddle-turn" && event.actor.id) {
-        huddleTurns.push(event.actor.id);
-      }
-    });
-
-    await runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE);
-
-    expect(gameState.getAllianceHuddleSchedules().map((schedule) => schedule.decision)).toEqual([
-      "scheduled",
-      "scheduled",
-      "skipped",
-    ]);
-    expect(scheduleTurns).toEqual([
-      { decision: "scheduled", allianceId: "alliance-ab" },
-      { decision: "scheduled", allianceId: "alliance-cd" },
-      { decision: "skipped", allianceId: "alliance-ef" },
-    ]);
-    expect(huddleTurns).toEqual(["alice", "bob", "charlie", "dana"]);
-    const huddleEntries = logger.transcript.filter((entry) => entry.scope === "huddle");
-    expect(huddleEntries.map((entry) => entry.from)).toEqual([
-      "Alice",
-      "Bob",
-      "Charlie",
-      "Dana",
-    ]);
-    // Session identity exists before messages; two same-roster-style huddles get distinct session context.
-    const sessionIds = new Set(huddleEntries.map((entry) => entry.dialogueContext?.sessionId));
-    expect(sessionIds.size).toBe(2);
-    for (const entry of huddleEntries) {
-      expect(entry.entrySequence).toBeGreaterThan(0);
-      expect(entry.dialogueKind).toBe("huddle_speech");
-      expect(entry.speakerPlayerId).toBeTruthy();
-      expect(entry.audiencePlayerIds?.length).toBe(2);
-      expect(entry.dialogueContext?.allianceId).toBeTruthy();
-      expect(entry.dialogueContext?.scheduleId).toBeTruthy();
-      expect(entry.dialogueContext?.sessionId).toBeTruthy();
-      expect(entry.dialogueContext?.sessionAudiencePlayerIds?.length).toBe(2);
-    }
-    expect(gameState.getAllianceHuddleOutcomes()).toHaveLength(2);
-    expect(houseOutcomeScheduleIds).toHaveLength(2);
-    expect(new Set(houseOutcomeScheduleIds).size).toBe(2);
-    expect(gameState.getAllianceHuddleOutcomes()[0]).toMatchObject({
-      facts: expect.any(Array),
-      participantPlayerIds: ["alice", "bob"],
-    });
-    expect(gameState.getAllianceHuddleOutcomes()[0]?.facts).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        kind: "proposal",
-        actorPlayerId: "alice",
-        actionKind: "format_ballot",
-        targetPlayerId: "bob",
-      }),
-    ]));
-    expect(gameState.getAlliance("alliance-ab")?.huddleOutcomeIds).toHaveLength(1);
-    expect(phaseCompleteEvents).toContainEqual({ type: "PHASE_COMPLETE" });
-  });
-
-  it("allows The House to grant fewer huddles than the maximum budget", async () => {
+  it("recalls speech only for immutable participants, including after departure", async () => {
     const { gameState, actor, ctx } = createHuddleHarness();
-    activatePair(gameState, "alliance-ab", "lineage-ab", "version-ab", "alice", "bob");
-    activatePair(gameState, "alliance-cd", "lineage-cd", "version-cd", "charlie", "dana");
-    ctx.houseInterviewer = {
-      ...ctx.houseInterviewer,
-      planAllianceHuddles: async () => ({
-        scheduled: [],
-        skipped: [
-          { allianceId: "alliance-ab", rationale: "No current decision relevance." },
-          { allianceId: "alliance-cd", rationale: "No current decision relevance." },
-        ],
-        rationale: "The House intentionally saved the huddle budget.",
-      }),
-    } as PhaseRunnerContext["houseInterviewer"];
-
-    await runAllianceHuddleWindow(ctx, actor, Phase.PRE_COUNCIL_HUDDLE);
-
-    expect(gameState.getAllianceHuddleSchedules().map((schedule) => schedule.decision)).toEqual([
-      "skipped",
-      "skipped",
-    ]);
-    expect(gameState.getAllianceHuddleOutcomes()).toEqual([]);
+    activatePair(gameState,"ab","lab","vab","alice","bob");
+    const before = ctx.contextBuilder.buildPhaseContext("charlie",Phase.FORMAT_RESOLVE);
+    await runAllianceHuddleWindow(ctx,actor,Phase.FORMAT_MINGLE);
+    expect(ctx.contextBuilder.buildPhaseContext("alice",Phase.FORMAT_RESOLVE).recentHuddleDialogue).toHaveLength(2);
+    expect(ctx.contextBuilder.buildPhaseContext("bob",Phase.FORMAT_RESOLVE).recentHuddleDialogue).toHaveLength(2);
+    expect(ctx.contextBuilder.buildPhaseContext("charlie",Phase.FORMAT_RESOLVE).recentHuddleDialogue).toEqual(before.recentHuddleDialogue);
+    gameState.eliminatePlayer("alice");
+    expect(ctx.contextBuilder.buildPhaseContext("alice",Phase.FORMAT_RESOLVE).recentHuddleDialogue).toHaveLength(2);
+    expect(ctx.contextBuilder.buildPhaseContext("charlie",Phase.FORMAT_RESOLVE).recentHuddleDialogue).toEqual([]);
   });
-
-  it("omits an exhausted optional huddle turn without transcript, agent turn, or commitment", async () => {
-    const { gameState, logger, actor, ctx } = createHuddleHarness();
-    activatePair(gameState, "alliance-ab", "lineage-ab", "version-ab", "alice", "bob");
-    const alice = ctx.agents.get("alice")!;
-    alice.getAllianceHuddleTurn = async () => ({
-      message: null,
-      noReply: true,
-      factAtoms: [],
-      providerAbsence: { kind: "provider_exhausted", outcome: "refusal" },
-    });
-    const turns: string[] = [];
-    logger.setStreamListener((event) => {
-      if (event.type === "agent_turn" && event.action === "alliance-huddle-turn" && event.actor.id) {
-        turns.push(event.actor.id);
-      }
-    });
-
-    await runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE);
-
-    expect(logger.transcript.some((entry) => entry.scope === "huddle" && entry.from === "Alice")).toBe(false);
-    expect(turns).not.toContain("alice");
-    expect((gameState.getAllianceHuddleOutcomes()[0]?.facts ?? []).some(
-      (fact) => fact.actorPlayerId === "alice",
-    )).toBe(false);
-  });
-
-  it("records an explicit empty fact set even when House interpretation invents a shared plan", async () => {
-    const { gameState, logger, actor, ctx } = createHuddleHarness();
-    activatePair(gameState, "alliance-ab", "lineage-ab", "version-ab", "alice", "bob");
-    for (const playerId of ["alice", "bob"]) {
-      ctx.agents.get(playerId)!.getAllianceHuddleTurn = async () => ({
-        message: null,
-        noReply: true,
-        factAtoms: [],
-      });
-    }
-    const baseHouse = ctx.houseInterviewer;
-    baseHouse.summarizeAllianceHuddle = async () => ({
-      ask: "Target Charlie.",
-      plan: "Alice and Bob unanimously promised to target Charlie.",
-      promises: ["Both players promised the vote."],
-      dissent: [],
-      confidence: "high",
-      posture: "locked",
-      leakOrBetrayalClaims: ["Bob leaked the plan."],
-    });
-    const outcomeTurns: Array<Record<string, unknown>> = [];
-    logger.setStreamListener((event) => {
-      if (event.type === "agent_turn" && event.action === "alliance-huddle-outcome") {
-        outcomeTurns.push(event.response);
-      }
-    });
-
-    await runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE);
-
-    const outcome = gameState.getAllianceHuddleOutcomes()[0]!;
-    expect(outcome.facts).toEqual([]);
-    expect(JSON.stringify(outcome)).not.toContain("Charlie");
-    expect(outcomeTurns[0]?.interpretation).toMatchObject({
-      plan: "Alice and Bob unanimously promised to target Charlie.",
-    });
-    const event = gameState.getCanonicalEvents().find(
-      (candidate) => candidate.type === "alliance.huddle_outcome_recorded",
-    );
-    if (!event || event.type !== "alliance.huddle_outcome_recorded" || event.payloadVersion !== 2) {
-      throw new Error("expected huddle outcome v2 event");
-    }
-    expect(event.payload.outcome.facts).toEqual([]);
-  });
-
-  it("rechecks owner authority after House summary before accepting a huddle outcome", async () => {
-    const { gameState, logger, actor, ctx } = createHuddleHarness();
-    activatePair(gameState, "alliance-ab", "lineage-ab", "version-ab", "alice", "bob");
-    const baseHouse = ctx.houseInterviewer;
-    let houseSummaryReturned = false;
-    let outcomeEmitted = false;
-    logger.setStreamListener((event) => {
-      if (event.type === "agent_turn" && event.action === "alliance-huddle-outcome") {
-        outcomeEmitted = true;
-      }
-    });
-    ctx.houseInterviewer = {
-      planAllianceHuddles: baseHouse.planAllianceHuddles.bind(baseHouse),
-      summarizeAllianceHuddle: async (context) => {
-        const result = await baseHouse.summarizeAllianceHuddle(context);
-        houseSummaryReturned = true;
-        return result;
-      },
-    } as PhaseRunnerContext["houseInterviewer"];
-    ctx.beforeAcceptedCommit = () => {
-      if (houseSummaryReturned) throw new Error("owner lease lost after House summary");
+  it("foreign huddles do not change full decision context, references, cache results, or receipts", async () => {
+    const run = async (withHuddle: boolean) => {
+      const { gameState, actor, ctx, logger } = createHuddleHarness();
+      activatePair(gameState, "ab", "lab", "vab", "alice", "bob");
+      logger.logPublic("charlie", "I want to hear a clear proposal.", Phase.LOBBY);
+      // Warm the actual process-local reference cache before the private work.
+      ctx.contextBuilder.buildPhaseContextForAgentCall({ agentId: "charlie", phase: Phase.FORMAT_RESOLVE, promptClass: "strategic_decision" });
+      if (withHuddle) await runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE, { completePhase: false });
+      logger.logPublic("dana", "My public proposal is unchanged.", Phase.LOBBY);
+      const { providerCallBoundaryEventSequence, ...context } = ctx.contextBuilder.buildPhaseContextForAgentCall({ agentId: "charlie", phase: Phase.FORMAT_RESOLVE, promptClass: "strategic_decision" });
+      // The private provider journal uses the real committed boundary. Agent prompt
+      // tests separately prove this execution-only coordinate is never rendered.
+      expect(providerCallBoundaryEventSequence).toBeGreaterThan(0);
+      return context;
     };
-
-    await expect(runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE))
-      .rejects.toThrow("owner lease lost after House summary");
-
-    expect(gameState.getAllianceHuddleOutcomes()).toEqual([]);
-    expect(outcomeEmitted).toBe(false);
+    expect(await run(true)).toEqual(await run(false));
   });
-
-  it("repairs invalid House picks and runs huddles pass-wise with max two sessions per alliance", async () => {
-    const { gameState, logger, actor, ctx } = createHuddleHarness(LARGE_PLAYER_ROSTER);
-    activatePair(gameState, "alliance-ab", "lineage-ab", "version-ab", "alice", "bob");
-    activatePair(gameState, "alliance-cd", "lineage-cd", "version-cd", "charlie", "dana");
-    const baseHouse = ctx.houseInterviewer;
-    const houseOutcomeScheduleIds: string[] = [];
-    ctx.houseInterviewer = {
-      ...baseHouse,
-      planAllianceHuddles: async () => ({
-        scheduled: [
-          { allianceId: "alliance-ab", rationale: "First pass for the visible pair." },
-          { allianceId: "missing-alliance", rationale: "Invalid House output." },
-          { allianceId: "alliance-ab", rationale: "Second pass for follow-up." },
-        ],
-        skipped: [],
-        rationale: "The House tried to spend the scarce huddle window.",
-      }),
-      summarizeAllianceHuddle: async (context) => {
-        houseOutcomeScheduleIds.push(context.scheduleId);
-        return baseHouse.summarizeAllianceHuddle(context);
-      },
-    } as PhaseRunnerContext["houseInterviewer"];
-    const huddleTurns: string[] = [];
-    logger.setStreamListener((event) => {
-      if (event.type === "agent_turn" && event.action === "alliance-huddle-turn" && event.actor.id) {
-        huddleTurns.push(event.actor.id);
-      }
-    });
-
+  it("rejects ambiguous duplicate session audiences before recall", async () => {
+    const { gameState, actor, ctx, logger } = createHuddleHarness();
+    activatePair(gameState, "ab", "lab", "vab", "alice", "bob");
     await runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE);
-
-    expect(gameState.getAllianceHuddleSchedules().map((schedule) => ({
-      allianceId: schedule.allianceId,
-      pass: schedule.pass,
-      decision: schedule.decision,
-    }))).toEqual([
-      { allianceId: "alliance-ab", pass: 1, decision: "scheduled" },
-      { allianceId: "alliance-cd", pass: 1, decision: "scheduled" },
-      { allianceId: "alliance-ab", pass: 2, decision: "scheduled" },
-    ]);
-    expect(huddleTurns).toEqual(["alice", "bob", "charlie", "dana", "alice", "bob"]);
-    expect(gameState.getAllianceHuddleOutcomes()).toHaveLength(3);
-    expect(houseOutcomeScheduleIds).toHaveLength(3);
-    expect(new Set(houseOutcomeScheduleIds).size).toBe(3);
+    for (const entry of logger.transcript) {
+      if (entry.scope === "huddle" && entry.dialogueContext) {
+        entry.dialogueContext.sessionAudiencePlayerIds = ["alice", "alice"];
+      }
+    }
+    expect(ctx.contextBuilder.buildPhaseContext("alice", Phase.FORMAT_RESOLVE).recentHuddleDialogue).toEqual([]);
+    expect(ctx.contextBuilder.buildPhaseContext("bob", Phase.FORMAT_RESOLVE).recentHuddleDialogue).toEqual([]);
   });
-
+  it("retains private pass evidence and completes an entirely silent session without speech", async () => {
+    const { gameState, actor, ctx, logger } = createHuddleHarness();
+    activatePair(gameState,"ab","lab","vab","alice","bob");
+    for(const id of ["alice","bob"]) ctx.agents.get(id)!.getAllianceHuddleTurn = async () => ({message:null,noReply:true,thinking:"Nothing useful to add"});
+    const events:GameStreamEvent[]=[];
+    logger.setStreamListener(e=>events.push(e));
+    await runAllianceHuddleWindow(ctx,actor,Phase.FORMAT_MINGLE);
+    expect(logger.transcript).toEqual([]);
+    const passes=events.filter(e=>e.type==="agent_turn"&&e.action==="alliance-huddle-turn");
+    expect(passes).toHaveLength(2);
+    expect(passes.every(e=>e.type==="agent_turn"&&e.visibility==="private"&&e.thinking==="Nothing useful to add")).toBeTrue();
+    expect(Object.values(gameState.getDomainProjection().allianceHuddleSessions)).toHaveLength(1);
+  });
+  it("checks ownership before accepting each speech and resumes the frozen floor", async () => {
+    const { gameState, ctx, logger }=createHuddleHarness();
+    activatePair(gameState,"ab","lab","vab","alice","bob");
+    let progress=await beginAllianceHuddleWindow(ctx,Phase.FORMAT_MINGLE);
+    progress=await advanceHuddleConversation(ctx,progress);
+    const frozen=JSON.stringify(progress);
+    ctx.beforeAcceptedCommit=async()=>{throw new Error("stale owner");};
+    await expect(advanceHuddleConversation(ctx,progress)).rejects.toThrow("stale owner");
+    expect(logger.transcript).toEqual([]);
+    expect(JSON.stringify(progress)).toBe(frozen);
+    ctx.beforeAcceptedCommit=async()=>{};
+    const next=await advanceHuddleConversation(ctx,JSON.parse(frozen));
+    expect(next.conversation!.offers).toBe(1);
+    expect(logger.transcript).toHaveLength(1);
+  });
   it("closes universal alliances before huddle eligibility", async () => {
     const { gameState, actor, ctx } = createHuddleHarness();
     gameState.recordAllianceProposal({

@@ -1,3 +1,4 @@
+import { prepareCommittedHuddleScene } from "./visual-huddle-boundary.js";
 import { applyPublishedVisualScene } from "./visual-scene-store.js";
 import { hasCompleteVisualHeads } from "@influence/engine/visual-mode";
 import { eq } from "drizzle-orm";
@@ -33,6 +34,11 @@ export function createVisualGameRuntime(db: DrizzleDB, gameId: string, ownerEpoc
         const assets = await prepareVisualGameAssets(db, gameId, guard);
         readContext = createVisualTurnContextReader(db, { gameId, ownerEpoch, requireVisuals, frozenCast: assets.cast });
         if (requireVisuals && (assets.cast.some((member) => member.portraitFallback === true) || Object.keys(assets.backgrounds).length < Object.keys(VISUAL_ROOMS).length)) throw new Error("Required character references or room backgrounds are unavailable");
+        if (execution.cursor.kind === "huddle_conversation") {
+          const huddleScene = await prepareCommittedHuddleScene(db, { snapshot, frozenCast: assets.cast, backgrounds: assets.backgrounds, requireVisuals });
+          readContext = createVisualTurnContextReader(db, { gameId, ownerEpoch, requireVisuals, frozenCast: assets.cast, huddleScene });
+          return;
+        }
         if (execution.cursor.kind === "mingle") {
           await prepareCommittedMingleScenes(db, { snapshot, frozenCast: assets.cast, backgrounds: assets.backgrounds, requireVisuals });
           return;

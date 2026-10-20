@@ -105,7 +105,7 @@ describe("named alliance complete-round integration", () => {
     expect(canonicalTypes).toContain("alliance.activated");
     expect(canonicalTypes).toContain("alliance.huddle_scheduled");
     expect(canonicalTypes).toContain("alliance.huddle_completed");
-    expect(canonicalTypes).toContain("alliance.huddle_outcome_recorded");
+    expect(canonicalTypes).not.toContain("alliance.huddle_outcome_recorded");
     expect(house.allianceProposerSelectionContexts).toHaveLength(1);
     expect(house.allianceProposerSelectionContexts[0]?.budget).toBe(2);
     expect(agents[0]!.allianceOpportunities.map((opportunity) => opportunity.kind)).toEqual(["proposer"]);
@@ -144,7 +144,7 @@ describe("named alliance complete-round integration", () => {
       (event): event is Extract<GameStreamEvent, { type: "agent_turn" }> =>
         event.type === "agent_turn" && event.action === "alliance-huddle-outcome" && event.round === 1,
     );
-    expect(huddleOutcomes.length).toBeGreaterThanOrEqual(1);
+    expect(huddleOutcomes).toHaveLength(0);
     expect(huddleOutcomes.every((event) => event.phase === Phase.FORMAT_MINGLE)).toBe(true);
 
     const huddleSpeech = result.transcript.filter((entry) => entry.scope === "huddle" && entry.round === 1);

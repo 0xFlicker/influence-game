@@ -6,6 +6,12 @@ import {
 } from "../services/game-lifecycle.js";
 
 describe("game lifecycle engine config", () => {
+  test("hydrates frozen conversation allowances and room-round counts", () => {
+    const policy = { bytesPerParticipant: 500, messageBytes: 320, maxHandoffs: 3 };
+    expect(buildEngineConfigFromGameRecord({ conversationPolicy: policy, mingleSessionsPerRound: 2 }, 6, 8)).toMatchObject({ conversationPolicy: policy, mingleSessionsPerRound: 2 });
+    expect(() => buildEngineConfigFromGameRecord({ conversationPolicy: { ...policy, messageBytes: -1 } }, 6, 8)).toThrow("Invalid conversation policy");
+  });
+
   test("bounds API provider request deadlines", () => {
     expect(providerRequestTimeoutMs({})).toBe(45_000);
     expect(providerRequestTimeoutMs({ INFLUENCE_LLM_REQUEST_TIMEOUT_MS: "15000" })).toBe(15_000);

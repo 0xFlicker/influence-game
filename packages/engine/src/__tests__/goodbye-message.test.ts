@@ -190,7 +190,7 @@ function makePhaseRunnerContext(agents: GoodbyeProbeAgent[]): PhaseRunnerContext
 }
 
 describe("goodbye message handling", () => {
-  test("getEliminationMessage uses a strict dedicated tool and public vote disclosure", async () => {
+  test("getEliminationMessage uses a dedicated schema and public vote disclosure", async () => {
     const agent = new InfluenceAgent(
       "atlas-id",
       "Atlas",
@@ -205,18 +205,15 @@ describe("goodbye message handling", () => {
 
     let capturedPrompt = "";
     let capturedTool: {
-      function: {
-        name: string;
-        strict?: boolean;
-        parameters?: { additionalProperties?: unknown };
-      };
+      name: string;
+      schema: { additionalProperties?: unknown };
     } | undefined;
     (agent as unknown as {
-      callTool: (
+      callDecision: (
         prompt: string,
         tool: typeof capturedTool,
       ) => Promise<AgentResponse>;
-    }).callTool = async (prompt, tool) => {
+    }).callDecision = async (prompt, tool) => {
       capturedPrompt = prompt;
       capturedTool = tool;
       return { thinking: "I know who voted for me.", message: "Goodbye." };
@@ -247,9 +244,8 @@ describe("goodbye message handling", () => {
       },
     });
 
-    expect(capturedTool?.function.name).toBe("farewell_message");
-    expect(capturedTool?.function.strict).toBe(true);
-    expect(capturedTool?.function.parameters?.additionalProperties).toBe(false);
+    expect(capturedTool?.name).toBe("farewell_message");
+    expect(capturedTool?.schema?.additionalProperties).toBe(false);
     expect(capturedPrompt).toContain("You have EXITED the game.");
     expect(capturedPrompt).toContain("You will not get another turn");
     expect(capturedPrompt).toContain("Do NOT discuss future strategy");
@@ -273,8 +269,8 @@ describe("goodbye message handling", () => {
 
     let capturedPrompt = "";
     (agent as unknown as {
-      callTool: (prompt: string) => Promise<AgentResponse>;
-    }).callTool = async (prompt) => {
+      callDecision: (prompt: string) => Promise<AgentResponse>;
+    }).callDecision = async (prompt) => {
       capturedPrompt = prompt;
       return { thinking: "I only know the count.", message: "Goodbye." };
     };
@@ -1014,13 +1010,7 @@ function makeOpenAIStub(responses: OpenAIStubResponse[]): { openai: OpenAI; call
           calls.push(params);
           const response = responses[Math.min(calls.length - 1, responses.length - 1)] ?? {};
           const output = response.toolName && response.toolArguments
-            ? [{
-                id: "fc_test",
-                type: "function_call",
-                call_id: "call_test",
-                name: response.toolName,
-                arguments: response.toolArguments,
-              }]
+            ? [{ type: "message", role: "assistant", content: [{ type: "output_text", text: response.toolArguments }] }]
             : response.refusal
               ? [{
                   id: "msg_refusal",
@@ -1090,8 +1080,8 @@ function getUserPrompt(call: Record<string, unknown> | undefined): string {
     ?.find((message) => message.role === "user")?.content ?? "";
 }
 
-describe("InfluenceAgent exact tool-call boundary", () => {
-  test("sendRoomMessage rejects JSON arguments returned as assistant content", async () => {
+describe("InfluenceAgent exact JSON-schema boundary", () => {
+  test("sendRoomMessage rejects a JSON response missing required strategy state", async () => {
     const { openai, calls } = makeOpenAIStub([
       {
         content: JSON.stringify({
@@ -1107,24 +1097,20 @@ describe("InfluenceAgent exact tool-call boundary", () => {
 
     expect(result).toMatchObject({
       message: "",
-      providerAbsence: { outcome: "wrong_tool" },
+      providerAbsence: { outcome: "malformed_output" },
     });
 
-    const tool = (calls[0]?.tools as Array<{
-      strict?: boolean;
-      parameters?: { required?: string[]; additionalProperties?: unknown };
-    }>)[0];
-    expect(tool?.strict).toBe(true);
-    expect(tool?.parameters?.required).toEqual([
-      "thinking",
-      "message",
-      "pass",
-      "strategyDelta",
-    ]);
-    expect(tool?.parameters?.additionalProperties).toBe(false);
+    expect(calls[0]?.tools).toBeUndefined();
+    const format = (calls[0]?.text as { format: {
+      strict: boolean;
+      schema: { required: string[]; additionalProperties: boolean };
+    } }).format;
+    expect(format.strict).toBe(true);
+    expect(format.schema.required).toEqual(["thinking", "message", "pass", "strategyDelta"]);
+    expect(format.schema.additionalProperties).toBe(false);
   });
 
-  test("getVotes rejects JSON arguments returned as assistant content", async () => {
+  test("getVotes rejects a JSON response missing required fields", async () => {
     const { openai } = makeOpenAIStub([
       {
         content: JSON.stringify({
@@ -1136,10 +1122,10 @@ describe("InfluenceAgent exact tool-call boundary", () => {
     const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", openai, "gpt-5-nano");
 
     await expect(agent.getVotes(makeAgentContext(Phase.VOTE)))
-      .rejects.toThrow("Tool call missing for cast_votes");
+      .rejects.toThrow("Structured output failed exact schema validation");
   });
 
-  test("getPowerAction retries with more tokens when the forced tool call is incomplete", async () => {
+  test("getPowerAction retries with more tokens when the schema response is incomplete", async () => {
     const { openai, calls } = makeOpenAIStub([
       { content: null, finishReason: "length" },
       {
@@ -1171,7 +1157,7 @@ describe("InfluenceAgent exact tool-call boundary", () => {
     expect(calls[1]?.max_output_tokens).toBeGreaterThan(calls[0]?.max_output_tokens as number);
   });
 
-  test("getPowerAction does not rewrite a missing native tool call into another request shape", async () => {
+  test("getPowerAction keeps the schema contract when retrying malformed output", async () => {
     const { openai, calls } = makeOpenAIStub([
       { content: null, finishReason: "stop" },
       {
@@ -1187,10 +1173,12 @@ describe("InfluenceAgent exact tool-call boundary", () => {
     await expect(agent.getPowerAction(
       makeAgentContext(Phase.POWER),
       ["vera-id", "mira-id"],
-    )).rejects.toThrow("Tool call missing for use_power");
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toHaveProperty("tools");
-    expect(calls[0]).not.toHaveProperty("text");
+    )).rejects.toThrow("Structured output failed exact schema validation");
+    expect(calls.length).toBeGreaterThan(1);
+    for (const call of calls) {
+      expect(call).not.toHaveProperty("tools");
+      expect(call).toHaveProperty("text");
+    }
   });
 
   test("getPowerAction does not retry a refusal through JSON fallback", async () => {

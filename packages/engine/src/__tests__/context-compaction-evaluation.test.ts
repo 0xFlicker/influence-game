@@ -10,7 +10,7 @@ for (const scenario of COMPACTION_SCENARIOS) {
     const requests: ModelInvocation[] = [];
     const model = modelCatalogEntryById("openai:gpt-6-luna")!;
     const runtime: LlmProviderRuntime = { catalogId: model.id, providerProfileId: model.providerProfileId, modelId: model.modelId,
-      modelCapabilities: model.capabilities, reasoningPolicy: "low", toolChoiceMode: "named", position: 0, role: "primary",
+      modelCapabilities: model.capabilities, reasoningPolicy: "low",  position: 0, role: "primary",
       adapter: { id: "evaluation-fixture", validate: () => ({ compatible: true }), classifyError: classifyProviderError,
         compile: invocation => ({ transport: "fixture", body: invocation }),
         dispatch: async request => {

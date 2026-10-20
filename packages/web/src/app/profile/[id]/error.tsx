@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { Nav } from "@/components/nav";
+import { ReportClientError } from "@/components/report-client-error";
 
 export default function PublicPlayerProfileError({
+  error,
   reset,
 }: {
   error: Error & { digest?: string };
@@ -11,6 +13,7 @@ export default function PublicPlayerProfileError({
 }) {
   return (
     <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
+      <ReportClientError error={error} />
       <Nav />
       <main className="mx-auto flex w-full min-w-0 max-w-6xl flex-1 items-center px-4 py-8 sm:px-6 sm:py-10">
         <section className="influence-panel mx-auto w-full max-w-xl rounded-xl p-6 text-center sm:p-8">

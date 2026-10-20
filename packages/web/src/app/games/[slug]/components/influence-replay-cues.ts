@@ -114,6 +114,18 @@ export function comparePresentationCues(
   return 0;
 }
 
+/** Existing classic-only display parsing; callers must supply only the visible transcript prefix. */
+export function classicEliminatedPlayerIds(messages: readonly TranscriptEntry[], players: readonly GamePlayer[]): Set<string> {
+  const ids = new Set<string>();
+  for (const msg of messages) {
+    if (msg.scope === "system" && (msg.text.includes("ELIMINATED:") || msg.text.includes("AUTO-ELIMINATE:"))) {
+      const player = players.find((p) => msg.text.includes(p.name));
+      if (player) ids.add(player.id);
+    }
+  }
+  return ids;
+}
+
 export function buildReplayPlayersForCue(input: {
   players: readonly GamePlayer[];
   isFormatGame: boolean;

@@ -1102,7 +1102,7 @@ test.describe("format-aware game viewer", () => {
     await expect(page.locator('[data-format-cue="format_elimination"]')).toContainText("Echo is eliminated");
   });
 
-  test("nonvisual live portraits keep phase navigation on the presented dialogue", async ({ page }) => {
+  test("nonvisual live conversations keep phase navigation and the correct room cast", async ({ page }) => {
     const slug = "nonvisual-live-portraits";
     const scenario = createFormatKernelViewerScenario("two_names_declined");
     const fixture = await installDeterministicFormatGame(page, {
@@ -1114,16 +1114,21 @@ test.describe("format-aware game viewer", () => {
     await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
     await expect.poll(() => fixture.sockets.length).toBe(1);
     const actor = scenario.roster[0]!;
+    const mingleAudience = scenario.roster.slice(1, 3);
     for (const [index, phase] of ["INTRODUCTION", "LOBBY", "FORMAT_MINGLE"].entries()) {
       fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: {
         entrySequence: index + 1, round: phase === "INTRODUCTION" ? 0 : 1,
-        phase, from: actor.id, scope: "public", text: `Accepted dialogue ${index + 1}.`, timestamp: Date.now() + index,
+        phase, from: actor.id, scope: phase === "FORMAT_MINGLE" ? "mingle" : "public",
+        ...(phase === "FORMAT_MINGLE" && {to: mingleAudience.map(player => player.id)}),
+        text: `Accepted dialogue ${index + 1}.`, timestamp: Date.now() + index,
       } }));
-      const purpose = phase === "INTRODUCTION" ? "Introduction" : "Conversation";
-      const speech = page.getByRole("region", { name: `${purpose}: ${actor.name}`, exact: true });
-      // Consecutive conversations share a speaker/region. Wait for this accepted
-      // line, not the previous line that may still be finishing its exit fade.
+      const region = phase === "INTRODUCTION" ? `Introduction: ${actor.name}` : phase === "LOBBY" ? "Lobby" : "Mingle room";
+      const speech = page.getByRole("region", { name: region, exact: true });
+      // Wait for this accepted line rather than the previous phase's exit fade.
       await expect(speech.getByText(`Accepted dialogue ${index + 1}.`, { exact: true })).toBeVisible({ timeout: 15_000 });
+      const cast = phase === "INTRODUCTION" ? [] : phase === "LOBBY" ? scenario.roster : [actor, ...mingleAudience];
+      await expect(speech.locator("[data-room-player]")).toHaveCount(cast.length);
+      for (const player of cast) await expect(speech.locator(`[data-room-player="${player.id}"]`)).toBeVisible();
       const label = phase === "INTRODUCTION" ? "Introductions" : phase === "LOBBY" ? "Public Lobby" : "Format Mingle";
       await expect(page.getByRole("heading", { name: label, level: 1, exact: true })).toBeVisible();
       await expect(page.locator(".influence-phase-title")).toHaveCount(0, { timeout: 15_000 });

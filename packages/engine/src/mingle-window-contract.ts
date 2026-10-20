@@ -1,3 +1,4 @@
+import { conversationStateSchema, validateConversationState } from "./open-conversation";
 import Ajv from "ajv";
 import type { MingleWindowState } from "./phases/mingle";
 import { Phase } from "./types";
@@ -18,6 +19,8 @@ const diagnostics = object({ round: positive, beat: positive, roomCount: positiv
 const validate = new Ajv({ allErrors: true }).compile<MingleWindowState>(object({
   phase: { enum: [Phase.MINGLE, Phase.MINGLE_I, Phase.POST_VOTE_MINGLE, Phase.FORMAT_MINGLE] },
   alivePlayers: list(player), roomCount: positive, beats: { ...positive, maximum: 1000 }, nextBeat: positive,
+  conversations: list({ anyOf: [conversationStateSchema, { type: "null" }] }), opened: { type: "boolean" },
+  movementIntents: { type: "object", maxProperties: 100, additionalProperties: object({ gotoRoomId: { type: ["integer", "null"], minimum: 1 }, gotoPlayerName: nullableText }) },
   initialAllocation: object({ rooms: list(room), diagnostics }),
   roomByPlayerId: { type: "object", maxProperties: 1000, additionalProperties: positive }, allRooms: list(room),
 }));
@@ -40,7 +43,17 @@ export function validateMingleWindowState(value: unknown): string[] {
   };
   checkRooms(value.initialAllocation.rooms, 1);
   if (value.nextBeat === 1 && value.initialAllocation.rooms.some((room) => room.playerIds.some((id) => value.roomByPlayerId[id] !== room.roomId))) errors.push("mingle initial movement map differs from allocation");
-  if (value.allRooms.length !== (value.nextBeat - 1) * value.roomCount) errors.push("mingle window history is incomplete");
-  for (let beat = 1; beat < value.nextBeat; beat += 1) checkRooms(value.allRooms.filter((room) => room.beat === beat), beat);
+  if (value.allRooms.length !== (value.nextBeat - 1 + Number(value.opened)) * value.roomCount) errors.push("mingle window history is incomplete");
+  for (let beat = 1; beat < value.nextBeat + Number(value.opened); beat += 1) checkRooms(value.allRooms.filter((room) => room.beat === beat), beat);
+  if (value.conversations.length !== (value.nextBeat <= value.beats ? value.roomCount : 0)) errors.push("Invalid room conversation count");
+  for (const [index, c] of value.conversations.entries()) {
+    const occupants = ids.filter(id => value.roomByPlayerId[id] === index + 1);
+    if (c) {
+      errors.push(...validateConversationState(c));
+      if (c.order.length !== occupants.length || c.order.some(id => !occupants.includes(id))) errors.push("Conversation participants differ from room occupants");
+    } else if (occupants.length > 1) errors.push("Missing occupied room conversation");
+  }
+  for (const [id, intent] of Object.entries(value.movementIntents)) if (!ids.includes(id) || intent.gotoRoomId !== null && intent.gotoRoomId > value.roomCount
+    || intent.gotoRoomId !== null && intent.gotoPlayerName !== null) errors.push("Invalid saved movement intent");
   return errors;
 }

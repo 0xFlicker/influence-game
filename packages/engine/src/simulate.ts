@@ -5,6 +5,9 @@
  * Influence Game — Batch Simulation Runner
  *
  * Runs multiple game simulations and outputs structured analysis.
+ * New decisions use native JSON Schema (Responses text.format or Chat Completions
+ * response_format), without tool-choice modes. LM Studio remains best effort.
+ * Completed-game playback/Studio formats and private historical evidence stay readable.
  * Preserve all sanitized provider attempts, including successful structured
  * thinking and available native reasoning. Artifact write errors stop execution;
  * pending requests and completed attempts remain available in the journal snapshot.
@@ -19,7 +22,15 @@
  * Retrospectives remain speech-only and separate knowledge during play from
  * postgame revelations using named action, final-result and elimination references.
  * Ordinary Mingle authors conversation and movement, without typed coordination
- * receipts. Alliance huddle facts and historical receipt exports remain supported.
+ * receipts. Huddles use the same bounded conversation contract; only historical
+ * tactical receipts remain readable. Lobby/Mingle/huddle passes keep private evidence
+ * but produce no playback beat. Spoken huddles show saved thinking under the same
+ * Show thinking toggle as other speaking turns; native reasoning stays private.
+ * House summary author calls allow 8,192 completion tokens for reasoning and JSON;
+ * ordinary/milestone public prose stays bounded to 180/360 UTF-16 code units.
+ * API full-game tests use simulate:api (6–8 players)
+ * and INFLUENCE_EVALUATION_BUDGET_USD / INFLUENCE_EVALUATION_BUDGET_LEDGER on
+ * the localhost API worker; file-only runs do not prove durable API behavior.
  * Retrospective RT-01/02/03 supplies contracts, frozen context/order and strict
  * speech-only agent methods with verified capacity and accepted journal replay.
  * Influence and Werewolf runners now include the retrospective after a canonical outcome.
@@ -268,7 +279,7 @@
  * SAFE makes the target VULNERABLE; VULNERABLE makes the target SAFE.
  * Provider requests call the renamed formats Save-or-Exit (`save_or_exit`),
  * The Short List (`short_list`), and Highest Count (`highest_count`), use
- * remaining/exited/exit vocabulary, and expose matching provider tool names.
+ * remaining/exited/exit vocabulary, and expose matching decision schema names.
  * The engine maps those provider values back to canonical
  * `save_or_eliminate`/`vote_bomb`/`majority_elimination` format IDs and the
  * canonical `eliminate` action before validation, journaling, checkpointing,
@@ -299,7 +310,7 @@
  * them back into live targets.
  * API-backed saved agents also pass owner-authored personality, backstory,
  * strategy instructions, and temperature into InfluenceAgent. Those inputs,
- * together with resolved model/provider/reasoning/tool policy, define the
+ * together with resolved model/provider/reasoning policy, define the
  * effective analytical revision; simulation comparisons should hold the same
  * snapshot constant rather than relying on a mutable display profile.
  *
@@ -368,7 +379,6 @@ import {
 } from "./llm-client";
 import type {
   LlmProviderRuntime,
-  LlmToolChoiceMode,
   OpenAIReasoningSummaryMode,
 } from "./llm-client";
 import type {
@@ -444,7 +454,6 @@ interface SimulationModelRuntime {
   catalogId?: string;
   capabilities: ModelRequestCapabilities;
   reasoningPolicy: ModelReasoningPolicy;
-  preferredToolChoiceMode?: LlmToolChoiceMode;
 }
 
 function readPositiveInt(value: string | undefined, fallback: number): number {
@@ -743,7 +752,6 @@ export function buildSimulationConfig(
     formatManifest?: readonly LaunchFormatId[];
   } = {},
 ): GameConfig {
-  const mingle = isMingleVariant(variant);
   const richProducer = options.richProducer === true;
   const enableDiary = options.enableDiary === true || richProducer;
   const maxRounds = options.maxRounds ?? 10;
@@ -753,9 +761,7 @@ export function buildSimulationConfig(
     maxRounds,
     formatManifest: resolveFormatManifest(options.formatManifest),
     diaryRoomAfterPhases: enableDiary ? [Phase.FORMAT_RESOLVE, Phase.COUNCIL] : [],
-    lobbyMessagesPerPlayer: 1,
     powerLobbyAfterVote: isPowerLobbyVariant(variant),
-    mingleSessionsPerRound: mingle ? 3 : DEFAULT_CONFIG.mingleSessionsPerRound,
     agentActionTimeoutMs: options.agentActionTimeoutMs ?? 90_000,
     enableHouseRoundSummaries: true,
     enableHouseLongFormSummaries: richProducer,
@@ -788,7 +794,6 @@ function selectCast(
   requestedPersonas: string[] | null,
   openai: OpenAI,
   modelRuntime: SimulationModelRuntime,
-  toolChoiceMode: LlmToolChoiceMode = "named",
   openAIReasoningSummary?: OpenAIReasoningSummaryMode,
   privateTraceSink?: import("./game-runner").PrivateTraceSink,
   providerExecutionHooks?: ProviderExecutionHooks,
@@ -817,7 +822,6 @@ function selectCast(
   return selected.map(({ name, personality }) => {
     const id: UUID = randomUUID();
     return new InfluenceAgent(id, name, personality, openai, modelRuntime.modelId, undefined, undefined, {
-      toolChoiceMode,
       ...(openAIReasoningSummary && { openAIReasoningSummary }),
       providerProfileId: modelRuntime.providerProfileId,
       ...(modelRuntime.catalogId && { catalogId: modelRuntime.catalogId }),
@@ -2016,7 +2020,6 @@ function resolveCatalogBackedSimulationModel(args: SimArgs): SimulationModelRunt
     catalogId: resolved.catalogId,
     capabilities: resolved.model.capabilities,
     reasoningPolicy: resolved.reasoningPolicy,
-    ...(resolved.model.preferredToolChoiceMode && { preferredToolChoiceMode: resolved.model.preferredToolChoiceMode }),
   };
 }
 
@@ -2097,7 +2100,7 @@ async function main() {
   console.log(`Games: ${args.games} | Players per game: ${args.players} | Max rounds: ${args.maxRounds} | Model: ${modelRuntime.modelId} | Variant: ${args.variant}`);
   if (modelRuntime.catalogId) console.log(`Model catalog: ${modelRuntime.catalogId}`);
   console.log(`Reasoning policy: ${modelRuntime.reasoningPolicy}`);
-  console.log(`Provider: ${describeLlmProvider(llmConfig)} | API key: ${llmConfig.apiKeySource} | Tool choice: ${llmConfig.toolChoiceMode}`);
+  console.log(`Provider: ${describeLlmProvider(llmConfig)} | API key: ${llmConfig.apiKeySource} | Output: JSON Schema`);
   console.log(`OpenAI reasoning summaries: ${openAIReasoningSummary ?? "off"}`);
   if (args.flex) {
     console.log(
@@ -2176,9 +2179,6 @@ async function main() {
     writeFileSync(providerAttemptsPath, JSON.stringify(providerJournal.snapshot(), null, 2));
 
     // Create fresh agents for each game
-    const toolChoiceMode = providerRuntimes?.[0]?.toolChoiceMode
-      ?? modelRuntime.preferredToolChoiceMode
-      ?? llmConfig.toolChoiceMode;
     const promptReuse = new PromptReuseAggregate();
     const recallPlanReceipts = new RecallPlanReceiptAggregate();
     const privateTraceSink: import("./game-runner").PrivateTraceSink = (trace) => {
@@ -2191,7 +2191,6 @@ async function main() {
       args.personas,
       openai,
       modelRuntime,
-      toolChoiceMode,
       openAIReasoningSummary,
       privateTraceSink,
       providerJournal.hooks,
@@ -2209,7 +2208,6 @@ async function main() {
     console.log(`  Players: ${agents.map((a) => a.name).join(", ")}`);
 
     const houseInterviewer = new LLMHouseInterviewer(openai, modelRuntime.modelId, {
-      toolChoiceMode,
       providerProfileId: modelRuntime.providerProfileId,
       ...(modelRuntime.catalogId && { catalogId: modelRuntime.catalogId }),
       modelCapabilities: modelRuntime.capabilities,

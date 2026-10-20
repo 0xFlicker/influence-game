@@ -62,17 +62,16 @@ function provider(options: { overflow?: boolean; arguments?: string | ((index: n
       if (options.overflow && body.input.length > 20000) return Response.json({ error: { code: "context_length_exceeded", message: "maximum context length exceeded" } }, { status: 400 });
       const arguments_ = typeof options.arguments === "function" ? options.arguments(generations++) : (generations++, options.arguments ?? JSON.stringify({ speech }));
       if (path.endsWith("/chat/completions")) return Response.json({ id: `chat-${generations}`, object: "chat.completion", model: body.model,
-        choices: [{ finish_reason: "tool_calls", message: { role: "assistant", content: null,
-          tool_calls: [{ id: `call-${generations}`, type: "function", function: { name: "submit_retrospective", arguments: arguments_ } }] } }],
+        choices: [{ finish_reason: "stop", message: { role: "assistant", content: arguments_ } }],
         usage: { prompt_tokens: 100, completion_tokens: 80, total_tokens: 180 } }, { status: options.status ?? 200 });
       return Response.json({ id: `resp-${generations}`, object: "response", status: "completed", model: body.model,
-        output: [{ type: "function_call", id: `fc-${generations}`, call_id: `call-${generations}`, status: "completed", name: "submit_retrospective", arguments: arguments_ }],
+        output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: arguments_ }] }],
         usage: { input_tokens: 100, output_tokens: 80, total_tokens: 180, input_tokens_details: { cached_tokens: 20 }, output_tokens_details: { reasoning_tokens: 30 } } }, { status: options.status ?? 200 });
     } });
   const entry = modelCatalogEntryById(options.catalogId ?? "openai:gpt-5-nano")!;
   const runtime: LlmProviderRuntime = { adapter: createProviderAdapter(entry.providerProfileId, client),
     catalogId: entry.id, providerProfileId: entry.providerProfileId, modelId: entry.modelId, modelCapabilities: entry.capabilities,
-    reasoningPolicy: "high", toolChoiceMode: "named", position: options.position ?? 0,
+    reasoningPolicy: "high",  position: options.position ?? 0,
     role: options.position ? "fallback" : "primary", ...(options.position && { maxCallsPerGame: 5 }) };
   return { client, runtime, requests };
 }
@@ -152,9 +151,10 @@ describe("dedicated retrospective invocation", () => {
     expect(generated!.instructions).toContain("no pass, production cue, gameplay action, strategy update or private-thinking field");
     expect(generated!.reasoning?.effort).toBe("high");
     expect(generated!.max_output_tokens).toBe(RETROSPECTIVE_OUTPUT_TOKEN_LIMIT);
-    expect(generated!.tool_choice).toEqual({ type: "function", name: "submit_retrospective" });
-    expect(generated!.parallel_tool_calls).toBe(false);
-    expect(generated!.tools[0]).toMatchObject({ name: "submit_retrospective", strict: true, parameters: {
+    expect(generated!.tool_choice).toBeUndefined();
+    expect(generated!.parallel_tool_calls).toBeUndefined();
+    expect(generated!.tools).toBeUndefined();
+    expect(generated!.text?.format).toMatchObject({ name: "submit_retrospective", strict: true, schema: {
       additionalProperties: false, required: ["speech"], properties: { speech: { type: "string", maxLength: 2000 } },
     } });
     expect(records).toHaveLength(1);

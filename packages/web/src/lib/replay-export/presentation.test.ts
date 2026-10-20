@@ -5,6 +5,7 @@ import {buildExportCues,type ExportCue} from "./cues";
 import {compilePresentation,thinkingSegment,thinkingPicture,retainPresentationAnchor} from "./presentation";
 import {compileTiming,parseTimingProfile,sampleTiming} from "./timing";
 import {votePresentationTiming} from "../../app/games/[slug]/components/vote-presentation-timing";
+import type {TranscriptEntry} from "../api";
 
 async function fixture() {
   const events = await werewolfResultsFixture("village","moment-pictures");
@@ -16,6 +17,22 @@ async function fixture() {
   return {speech,thought,cues};
 }
 const settings = {profile:parseTimingProfile({ending:{holdMs:0}}),fps:30,assets:{},music:false};
+test("historical lobby export respects exits and preserves its room label in standalone thinking", () => {
+  const players = ["Ada", "Bea"].map((name,index) => ({id:name,name,persona:"",status:index ? "eliminated" as const : "alive" as const,shielded:false}));
+  const opening: TranscriptEntry = {id:1,gameId:"g",round:1,phase:"LOBBY",scope:"public",fromPlayerId:"Ada",fromPlayerName:"Ada",
+    toPlayerIds:null,text:"First lobby",timestamp:1};
+  const exit: TranscriptEntry = {...opening,id:2,scope:"system",phase:"REVEAL",fromPlayerId:null,text:"ELIMINATED: Bea",timestamp:2};
+  const later: TranscriptEntry = {...opening,id:3,round:2,text:"Later lobby",timestamp:3};
+  const cues = buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"classic",players},
+    messages:[opening,exit,later],frames:[],visual:{enabled:false,status:null,portraits:{},scenes:[]},thoughts:{}});
+  const speeches = cues.filter(cue => cue.speech);
+  const before = speeches[0]!, after = speeches[1]!;
+  expect(before.picture).toMatchObject({kind:"influence",beat:{kind:"portrait-room",participants:[{id:"Ada"},{id:"Bea"}]}});
+  expect(after.picture).toMatchObject({kind:"influence",beat:{kind:"portrait-room",participants:[{id:"Ada"}]}});
+  expect(thinkingSegment(after,"thought","We are fewer now.","Ada").picture).toMatchObject({
+    kind:"thinking",room:{number:null,label:"Lobby",players:[{id:"Ada"}]},
+  });
+});
 test("thinking framing follows the accepted Influence actor rather than a neighboring portrait",async () => {
   const {speech} = await fixture();
   const players = ["p1","p2"].map(id => ({id,name:id,persona:"",status:"active" as const,shielded:false}));

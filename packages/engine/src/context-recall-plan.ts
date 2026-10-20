@@ -126,6 +126,7 @@ export function buildRecallEvidenceBoundaryKey(params: {
       voterId: entry.voterId,
       empowerTargetId: entry.empowerTargetId,
     })),
+    recentHuddleDialogue: phaseContext.recentHuddleDialogue ?? [],
     hotMingle: (phaseContext.mingleMessages ?? []).map((message) => ({
       from: message.from,
       text: message.text,
@@ -435,7 +436,6 @@ function addNameTokens(sink: Set<string>, name: string | null | undefined): void
 const INELIGIBLE_SCOPES = new Set<TranscriptEntry["scope"]>([
   "thinking",
   "diary",
-  "huddle",
   "whisper",
   "system",
 ]);
@@ -460,6 +460,11 @@ export function isActorAuthorizedDialogueCandidate(
     return true;
   }
 
+  if (entry.scope === "huddle") {
+    const audience = entry.dialogueContext?.sessionAudiencePlayerIds;
+    return Boolean(entry.dialogueContext?.sessionId && entry.speakerPlayerId && audience?.includes(entry.speakerPlayerId)
+      && audience.includes(actorId) && entry.audiencePlayerIds?.includes(actorId));
+  }
   if (entry.scope === "mingle") {
     const speakerId = entry.speakerPlayerId;
     if (typeof speakerId !== "string" || speakerId.length === 0) return false;
@@ -478,7 +483,7 @@ export interface ProjectedRecallCandidate {
   phase: Phase;
   speakerLabel: string;
   dialogueText: string;
-  sourceClass: "public" | "mingle";
+  sourceClass: "public" | "mingle" | "huddle";
   /** Stable source order for tie-break: public before mingle. */
   sourceOrder: number;
 }
@@ -494,10 +499,10 @@ export function projectAuthorizedCandidate(
   if (typeof entry.entrySequence !== "number" || !Number.isFinite(entry.entrySequence)) {
     return null;
   }
-  if (entry.scope !== "public" && entry.scope !== "mingle") {
+  if (entry.scope !== "public" && entry.scope !== "mingle" && entry.scope !== "huddle") {
     return null;
   }
-  const sourceClass: "public" | "mingle" = entry.scope;
+  const sourceClass: "public" | "mingle" | "huddle" = entry.scope;
   return {
     entrySequence: entry.entrySequence,
     round: entry.round,
@@ -909,7 +914,7 @@ export function compileRecallPlan(params: CompileRecallPlanParams): RecallPlan {
   const hotMessages = projectHotMessages(phaseContext);
   const hotLane = { activeRoomMessages: hotMessages };
 
-  const protectedChars = measureStructuredChars(protectedLane);
+  const protectedChars = measureStructuredChars(protectedLane) + measureStructuredChars(phaseContext.recentHuddleDialogue ?? []);
   const hotChars = measureStructuredChars(hotLane);
   const protectedOverflow = protectedChars >= envelope.envelopeChars;
 

@@ -417,6 +417,8 @@ function reportRunner(
           input: "x".repeat(1_024),
           instructions: "stable panel instructions",
           max_output_tokens: 1_000,
+          text: { format: { type: "json_schema", name: "panel_response", strict: true,
+            schema: { type: "object", properties: { message: { type: "string" } }, required: ["message"], additionalProperties: false } } },
         };
         const response = await value.dispatch(request);
         return {

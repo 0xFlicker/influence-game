@@ -151,12 +151,14 @@ describe("shared Mingle turn execution", () => {
     stale.initialAllocation.diagnostics.round += 1;
     await expect(advanceMingleWindow(ctx, stale)).rejects.toThrow("canonical round and roster");
     const serialized = JSON.stringify(initial);
-    const first = await advanceMingleWindow(ctx, initial!);
+    let first = await advanceMingleWindow(ctx, initial!);
+    while(first.nextBeat === 1) first = await advanceMingleWindow(ctx, first);
     expect(JSON.stringify(initial)).toBe(serialized);
     expect(first.nextBeat).toBe(2);
     await expect(finishMingleWindow(ctx, first)).rejects.toThrow("every beat");
     const restored: MingleWindowState = JSON.parse(JSON.stringify(first));
-    const second = await advanceMingleWindow(ctx, restored);
+    let second = await advanceMingleWindow(ctx, restored);
+    while(second.nextBeat === 2) second = await advanceMingleWindow(ctx, second);
     expect(second.nextBeat).toBe(3);
     expect(restored.nextBeat).toBe(2);
     await finishMingleWindow(ctx, second);

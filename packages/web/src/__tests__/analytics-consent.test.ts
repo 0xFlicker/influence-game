@@ -15,8 +15,10 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
       let initialized = 0, stopped = 0, optedOut = 0, optedIn = 0;
       let sdkConfig;
       const events = [];
+      const errors = [];
       mock.module("posthog-js", () => ({ default: {
         init: (key, config) => { initialized++; sdkConfig = config; }, capture: name => events.push(name),
+        captureException: error => errors.push(error),
         identify: () => {}, reset: () => {}, get_property: () => null,
         opt_in_capturing: () => optedIn++, opt_out_capturing: () => optedOut++, clear_opt_in_out_capturing: () => {},
         stopSessionRecording: () => stopped++, startSessionRecording: () => {},
@@ -24,6 +26,8 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
       const consent = await import("./src/lib/analytics-consent");
       const analytics = await import("./src/lib/product-analytics");
       analytics.captureProductEvent("before-region");
+      analytics.captureProductException(new Error("before-region"));
+      assert.equal(errors.length, 0);
       await analytics.initializeAnalytics("test", "https://invalid.example");
       assert.equal(initialized, 0);
       await consent.loadAnalyticsConsent();
@@ -47,6 +51,15 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
       assert.deepEqual(events, ["allowed"]);
       assert.equal(sdkConfig.capture_pageleave, true);
       assert.equal(sdkConfig.capture_performance, undefined);
+      assert.deepEqual(sdkConfig.capture_exceptions, {
+        capture_unhandled_errors: true, capture_unhandled_rejections: true, capture_console_errors: false,
+      });
+      analytics.captureProductException(new Error("allowed"));
+      assert.equal(errors.length, 1);
+      const exception = sdkConfig.before_send({ event: "$exception", properties: {
+        $exception_list: [{ type: "Error", value: "private-prompt" }], $exception_values: ["private-prompt"],
+      } });
+      assert.ok(!JSON.stringify(exception).includes("private-prompt"));
       // SDK-originated exit/performance events share our filtering and privacy
       // boundary even though they don't call captureProductEvent.
       const automaticEvent = event => ({ event, properties: {
@@ -74,6 +87,9 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
       // persistent opt-out flag, which every other tab reads on capture.
       const optOutsBeforeRouteChange = optedOut;
       analytics.suspendAnalytics();
+      analytics.captureProductException(new Error("excluded"));
+      assert.equal(errors.length, 1);
+      assert.equal(sdkConfig.before_send({ event: "$exception", properties: {} }), null);
       assert.equal(sdkConfig.before_send(automaticEvent("$pageleave")), null);
       analytics.captureProductEvent("private-page");
       assert.equal(analytics.analyticsActive(), false);
@@ -91,6 +107,9 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
       assert.equal(sdkConfig.before_send(automaticEvent("$pageleave")), null);
       assert.equal(sdkConfig.before_send(automaticEvent("$web_vitals")), null);
       analytics.captureProductEvent("after-rejection");
+      analytics.captureProductException(new Error("rejected"));
+      assert.equal(errors.length, 1);
+      assert.equal(sdkConfig.before_send({ event: "$exception", properties: {} }), null);
       assert.equal(analytics.analyticsActive(), false);
       assert.deepEqual(events, ["allowed"]);
       assert.ok(stopped > 0 && optedOut > optOutsBeforeRouteChange);

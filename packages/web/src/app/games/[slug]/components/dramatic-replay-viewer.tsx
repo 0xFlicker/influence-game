@@ -1,6 +1,6 @@
 "use client";
 import {useWatchTimeline} from "@/components/watch/use-watch-timeline";
-import {isFormatSocialTranscriptMessage, buildClassicPresentationCues, buildReplayPlayersForCue, comparePresentationCues, findCueForAdjacentScene, formatCueScene, formatSnapshotForPresentationCursor, mergeFormatAndSocialCues} from "./influence-replay-cues";
+import {isFormatSocialTranscriptMessage, buildClassicPresentationCues, buildReplayPlayersForCue, classicEliminatedPlayerIds, comparePresentationCues, findCueForAdjacentScene, formatCueScene, formatSnapshotForPresentationCursor, mergeFormatAndSocialCues} from "./influence-replay-cues";
 export {isFormatSocialTranscriptMessage, buildClassicPresentationCues, buildReplayPlayersForCue, comparePresentationCues, findCueForAdjacentScene, formatSnapshotForPresentationCursor} from "./influence-replay-cues";
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
@@ -198,10 +198,76 @@ function DramaticReplayTheater({
       ? formatCueScene(activeCue)
       : undefined;
   const currentMessage = scene?.messages[messageIndex] ?? null;
+  const allVisibleMessages = useMemo(() => {
+    const msgs: TranscriptEntry[] = [];
+    const seenMessages = new Set<string>();
+    const visibleCues = presentationCues.slice(0, directorSnapshot.cursor + 1);
+    for (const cue of visibleCues) {
+      if (cue.source !== "classic") continue;
+      const message = scenes[cue.sceneIndex]?.messages[cue.messageIndex];
+      if (!message || (isFormatGame && !isFormatSocialTranscriptMessage(message))) {
+        continue;
+      }
+      const messageKey = `${cue.sceneIndex}:${cue.messageIndex}`;
+      if (seenMessages.has(messageKey)) continue;
+      seenMessages.add(messageKey);
+      msgs.push(message);
+    }
+    return msgs;
+  }, [directorSnapshot.cursor, isFormatGame, presentationCues, scenes]);
+
+  const canonicalReplayFrame = useMemo(() => {
+    if (openingCue) return null;
+    if (!isFormatGame || replayFrames.length === 0) return null;
+    const canonicalSequence = activeCue?.canonicalSequence;
+    if (canonicalSequence === null || canonicalSequence === undefined) {
+      return replayFrames[0] ?? null;
+    }
+    // A committed resolution expands into votes, pool and choice before the exit.
+    // Keep the cast on its preceding canonical frame until that exit is presented.
+    const beforeExit = activeCue?.source === "format" && ["format_roll_call", "format_aggregate", "format_tiebreak", "format_deciding_vote"].includes(activeCue.kind);
+    for (let index = replayFrames.length - 1; index >= 0; index -= 1) {
+      const frame = replayFrames[index]!;
+      if (beforeExit ? frame.sequence < canonicalSequence : frame.sequence <= canonicalSequence) return frame;
+    }
+    return replayFrames[0] ?? null;
+  }, [activeCue, openingCue, isFormatGame, replayFrames]);
+
+  // Classic replay retains its frozen transcript parser. Format replay status
+  // comes only from the canonical replay-frame snapshot at the active cue.
+  const eliminatedIds = useMemo(() => {
+    if (isFormatGame) {
+      return new Set(
+        canonicalReplayFrame?.players
+          .filter((player) => player.status === "eliminated")
+          .map((player) => player.id) ?? [],
+      );
+    }
+    const lastMessage = allVisibleMessages.at(-1);
+    const prefix = lastMessage ? filteredMessages.slice(0, filteredMessages.indexOf(lastMessage) + 1) : [];
+    return classicEliminatedPlayerIds(prefix, players);
+  }, [allVisibleMessages, filteredMessages, canonicalReplayFrame, isFormatGame, players]);
+
+  const aliveCount = isFormatGame && canonicalReplayFrame
+    ? canonicalReplayFrame.counts.alivePlayers
+    : players.length - eliminatedIds.size;
+
+  // Build players with correct alive/eliminated status for current replay position
+  const replayPlayers = useMemo(
+    () => openingCue ? players.map(player => ({...player, status: "alive" as const, shielded: false, pressureStatus: undefined, exposeScore: undefined})) : buildReplayPlayersForCue({
+      players,
+      isFormatGame,
+      canonicalFrame: canonicalReplayFrame,
+      classicEliminatedIds: eliminatedIds,
+      live,
+    }),
+    [canonicalReplayFrame, eliminatedIds, isFormatGame, players, live, openingCue],
+  );
+
   const visualData = useVisualWatch(game.id, true, live, activeCue?.key);
   const priorLobbyMessages = formatCue ? lobbyMessages(formatCue.round, formatCue.canonicalSequence) : [];
   const visual = visualWatchPresentation(
-    visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, revealedWinners[Math.min(directorSnapshot.cursor, presentationCues.length - 1)] ?? activeCue, currentMessage, players, priorLobbyMessages, replayFrames,
+    visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, revealedWinners[Math.min(directorSnapshot.cursor, presentationCues.length - 1)] ?? activeCue, currentMessage, replayPlayers, priorLobbyMessages, replayFrames,
   );
   const thinkingActor = influenceThinkingActor(activeCue, visual.beat);
   const thinkingSpeaker = players.find(player => player.id === thinkingActor)?.name ?? "Player";
@@ -341,82 +407,10 @@ function DramaticReplayTheater({
     presentationCues,
     presentationHydrationStatus,
   ]);
-
-  const allVisibleMessages = useMemo(() => {
-    const msgs: TranscriptEntry[] = [];
-    const seenMessages = new Set<string>();
-    const visibleCues = presentationCues.slice(0, directorSnapshot.cursor + 1);
-    for (const cue of visibleCues) {
-      if (cue.source !== "classic") continue;
-      const message = scenes[cue.sceneIndex]?.messages[cue.messageIndex];
-      if (!message || (isFormatGame && !isFormatSocialTranscriptMessage(message))) {
-        continue;
-      }
-      const messageKey = `${cue.sceneIndex}:${cue.messageIndex}`;
-      if (seenMessages.has(messageKey)) continue;
-      seenMessages.add(messageKey);
-      msgs.push(message);
-    }
-    return msgs;
-  }, [directorSnapshot.cursor, isFormatGame, presentationCues, scenes]);
-
   const isTwoNamesPresentation = formatCue?.after.activeFormatId === "two_names";
   const usesFullHeightContent = Boolean(openingCue) || fullscreen || formatCue?.kind === "two_names_plea" || visual.beat !== null;
   const isSoloPresentation = visual.beat?.kind === "portrait" || visual.beat?.kind === "nominee-selection";
   const isRoomPresentation = visual.beat?.kind === "scene" || visual.beat?.kind === "portrait-room" || visual.beat?.kind === "safety-bounce" || visual.beat?.kind === "winner";
-
-  const canonicalReplayFrame = useMemo(() => {
-    if (openingCue) return null;
-    if (!isFormatGame || replayFrames.length === 0) return null;
-    const canonicalSequence = activeCue?.canonicalSequence;
-    if (canonicalSequence === null || canonicalSequence === undefined) {
-      return replayFrames[0] ?? null;
-    }
-    // A committed resolution expands into votes, pool and choice before the exit.
-    // Keep the cast on its preceding canonical frame until that exit is presented.
-    const beforeExit = activeCue?.source === "format" && ["format_roll_call", "format_aggregate", "format_tiebreak", "format_deciding_vote"].includes(activeCue.kind);
-    for (let index = replayFrames.length - 1; index >= 0; index -= 1) {
-      const frame = replayFrames[index]!;
-      if (beforeExit ? frame.sequence < canonicalSequence : frame.sequence <= canonicalSequence) return frame;
-    }
-    return replayFrames[0] ?? null;
-  }, [activeCue?.canonicalSequence, activeCue?.kind, activeCue?.source, openingCue, isFormatGame, replayFrames]);
-
-  // Classic replay retains its frozen transcript parser. Format replay status
-  // comes only from the canonical replay-frame snapshot at the active cue.
-  const eliminatedIds = useMemo(() => {
-    if (isFormatGame) {
-      return new Set(
-        canonicalReplayFrame?.players
-          .filter((player) => player.status === "eliminated")
-          .map((player) => player.id) ?? [],
-      );
-    }
-    const ids = new Set<string>();
-    for (const msg of allVisibleMessages) {
-      if (msg.scope === "system" && (msg.text.includes("ELIMINATED:") || msg.text.includes("AUTO-ELIMINATE:"))) {
-        const player = players.find((p) => msg.text.includes(p.name));
-        if (player) ids.add(player.id);
-      }
-    }
-    return ids;
-  }, [allVisibleMessages, canonicalReplayFrame, isFormatGame, players]);
-  const aliveCount = isFormatGame && canonicalReplayFrame
-    ? canonicalReplayFrame.counts.alivePlayers
-    : players.length - eliminatedIds.size;
-
-  // Build players with correct alive/eliminated status for current replay position
-  const replayPlayers = useMemo(
-    () => openingCue ? players.map(player => ({...player, status: "alive" as const, shielded: false, pressureStatus: undefined, exposeScore: undefined})) : buildReplayPlayersForCue({
-      players,
-      isFormatGame,
-      canonicalFrame: canonicalReplayFrame,
-      classicEliminatedIds: eliminatedIds,
-      live,
-    }),
-    [canonicalReplayFrame, eliminatedIds, isFormatGame, players, live, openingCue],
-  );
-
   useEffect(() => {
     if (!scene || !onPlaybackStateChange) return;
     onPlaybackStateChange({

@@ -30,7 +30,7 @@ const CONFIG = {
   modelId: "gpt-5.6-luna",
   serviceTier: "flex",
   reasoningPolicy: "low",
-  toolChoiceMode: "named",
+  outputFormat: "json_schema",
   reasoningSummary: "auto",
   sampleCount: 3,
 } as const;
@@ -150,7 +150,7 @@ describe("R32 provider samples", () => {
       "--stage=before",
       "--catalog-id=openai:gpt-5.6-luna",
       "--reasoning-policy=low",
-      "--tool-choice-mode=named",
+      "--output-format=json_schema",
       "--service-tier=flex",
       "--reasoning-summary=auto",
       "--samples=1",

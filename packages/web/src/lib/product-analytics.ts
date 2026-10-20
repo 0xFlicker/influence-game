@@ -1,6 +1,7 @@
 "use client";
 
 import { sanitizeAnalyticsProperties } from "./analytics-privacy";
+import { scrubExceptionProperties } from "./analytics-errors";
 import { getAnalyticsConsent, subscribeAnalyticsConsent } from "./analytics-consent";
 import type { PostHog } from "posthog-js";
 let posthog: PostHog;
@@ -49,7 +50,11 @@ export async function initializeAnalytics(key: string, host: string): Promise<vo
       // SPA pageviews already carry previous-page duration; capture the final
       // page on browser exit through the SDK's pagehide/beacon handling.
       capture_pageleave: true,
-      capture_exceptions: false,
+      capture_exceptions: {
+        capture_unhandled_errors: true,
+        capture_unhandled_rejections: true,
+        capture_console_errors: false,
+      },
       // Leave capture_performance unset so Web Vitals follows project settings.
       disable_surveys: true,
       respect_dnt: true,
@@ -77,6 +82,7 @@ export async function initializeAnalytics(key: string, host: string): Promise<vo
         // SDK-generated events must use the same dashboard filters as ours.
         event.properties.channel = "web";
         event.properties.environment = "production";
+        if (event.event === "$exception") scrubExceptionProperties(event.properties);
         // SDK defaults can contain full URLs; never send query strings, fragments,
         // OAuth codes, private editor text or request bodies.
         sanitizeAnalyticsProperties(event.properties);
@@ -109,6 +115,12 @@ export function captureProductEvent(event: string, properties: Properties = {}):
   if (!analyticsActive()) return;
   try { posthog.capture(event, { ...properties, channel: "web", environment: "production" }); }
   catch { console.warn("[Analytics] Event capture unavailable"); }
+}
+
+export function captureProductException(error: Error): void {
+  if (!analyticsActive()) return;
+  try { posthog.captureException(error); }
+  catch { console.warn("[Analytics] Exception capture unavailable"); }
 }
 
 export function capturePage(pathname: string): void {

@@ -75,17 +75,15 @@ describe("Werewolf names-only dialogue", () => {
         const body = JSON.parse(String(init?.body)) as { messages: Array<{ role: string; content: string }> };
         expect(body.messages.find(message => message.role === "system")?.content).toContain("refer to players only by their character names");
         return Response.json({ id: `speech-${dispatches}`, object: "chat.completion", created: 0, model: "glm-5-2",
-          choices: [{ index: 0, finish_reason: "tool_calls", message: { role: "assistant", content: null,
-            tool_calls: [{ id: "proposal", type: "function", function: { name: "werewolf_pack_talk", arguments: JSON.stringify({
+          choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
               ...(mode === "missing_thinking" ? {} : { thinking: "Remove the anchor." }), cue: null, text: mode === "missing_thinking" ? cleanSpeech : exhausted || dispatches === 1 ? leakedSpeech : cleanSpeech,
-            }) } }],
-          } }], usage: { prompt_tokens: 20, completion_tokens: 20, total_tokens: 40 } });
+            }) } }], usage: { prompt_tokens: 20, completion_tokens: 20, total_tokens: 40 } });
       },
     });
     const model = modelCatalogEntryById("katana:glm-5-2")!;
     const runtime: LlmProviderRuntime = { adapter: createProviderAdapter("katana", client), catalogId: model.id,
       providerProfileId: "katana", modelId: model.modelId, modelCapabilities: model.capabilities,
-      reasoningPolicy: "medium", toolChoiceMode: "required", position: 0, role: "primary" };
+      reasoningPolicy: "medium",  position: 0, role: "primary" };
     const accepted = await advanceWerewolf(store, new WerewolfModelAgent({ runtimes: [runtime] }));
     expect(dispatches).toBe(exhausted ? 3 : 2);
     expect(accepted.actions[0]).toMatchObject({ fallback: exhausted ? "provider_unavailable" : null,

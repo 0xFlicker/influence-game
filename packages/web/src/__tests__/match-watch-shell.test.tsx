@@ -223,17 +223,32 @@ describe("MatchWatchShell", () => {
     expect(html).toContain('title="Exit"');
   });
 
-  it("uses the portrait theater for nonvisual live games and replays", async () => {
+  it("uses the Mingle portrait circle for nonvisual lobbies in live games and replays", async () => {
     for (const live of [false, true]) {
       const html = await renderPlayer(<MatchWatchShell
         game={{ ...game(), visualMode: false, status: live ? "in_progress" : "completed" }}
         messages={[entry({ text: "Can I count on you?", phase: "LOBBY", scope: "public" })]}
         live={live} connStatus={live ? "live" : "replay"}
       />, true);
-      expect(html).toContain('aria-label="Conversation: Atlas"');
+      expect(html).toContain('aria-label="Lobby"');
+      expect(html).toContain("data-portrait-room");
+      expect(html).not.toContain('aria-label="Conversation: Atlas"');
       expect(html).not.toContain("MINGLE MAP");
       expect(html).toContain("data-replay-controls");
     }
+  });
+
+  it("excludes historical exits from a later lobby without using final roster status for earlier lobbies", async () => {
+    const elimination = entry({id: 2, phase: "REVEAL", scope: "system", fromPlayerId: null, text: "ELIMINATED: Lyra", timestamp: 2});
+    const lobby = entry({id: 3, round: 2, phase: "LOBBY", scope: "public", timestamp: 3});
+    const later = await renderPlayer(<MatchWatchShell game={game()} messages={[elimination, lobby]} live={false} connStatus="replay" />, true);
+    expect(later).toContain('data-room-player="p1"');
+    expect(later).not.toContain('data-room-player="p2"');
+    const earlier = await renderPlayer(<MatchWatchShell game={game()} messages={[
+      entry({phase: "LOBBY", scope: "public"}), elimination, lobby,
+    ]} live={false} connStatus="replay" />, true);
+    expect(earlier).toContain('data-room-player="p1"');
+    expect(earlier).toContain('data-room-player="p2"');
   });
 
   it("does not parse Format Mingle transcript prose into authoritative rooms", () => {

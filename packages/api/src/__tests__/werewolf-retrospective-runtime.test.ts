@@ -50,13 +50,13 @@ test.each(["first", "final"] as const)("%s retrospective response survives owner
     expect(context.request.ordinal).toBe(ordinal);
     expect(context.priorStatements.map((prior: { speech: string }) => prior.speech)).toEqual(state.retrospective!.statements.map(prior => prior.speech));
     return Response.json({ id: "rt05-response", object: "response", status: "completed", model: body.model,
-      output: [{ type: "function_call", id: "rt05-output", call_id: "rt05-call", status: "completed", name: "submit_retrospective", arguments: JSON.stringify({ speech: "  I now understand the whole game. 😀\n " }) }],
+      output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify({ speech: "  I now understand the whole game. 😀\n " }) }] }],
       usage: { input_tokens: 100, output_tokens: 40, total_tokens: 140 } });
   } });
   const entry = modelCatalogEntryById("openai:gpt-5-nano")!;
   const runtime: LlmProviderRuntime = { adapter: createProviderAdapter(entry.providerProfileId, client), catalogId: entry.id,
     providerProfileId: entry.providerProfileId, modelId: entry.modelId, modelCapabilities: entry.capabilities,
-    reasoningPolicy: "high", toolChoiceMode: "named", position: 0, role: "primary" };
+    reasoningPolicy: "high",  position: 0, role: "primary" };
   const makeAgent = (ownerEpoch: string): WerewolfAgent => {
     const model = new WerewolfModelAgent({ runtimes: [runtime], hooks: createApiProviderExecutionHooks(db, { gameId: game.id, ownerEpoch }), ownerEpoch });
     return { ...scripted, async prepareRetrospectiveCapacity() { throw new Error("Frozen setup cannot rebuild capacity again"); }, getRetrospectiveStatement: input => model.getRetrospectiveStatement(input) };
@@ -139,13 +139,13 @@ test("a crash after exhausted native retries cannot spend again before explicit 
     generations++;
     const body = JSON.parse(String(init?.body));
     return Response.json({ id: `rt08-native-${generations}`, object: "response", created_at: 0, status: "completed", model: body.model,
-      output: [{ type: "function_call", id: `rt08-output-${generations}`, call_id: `rt08-call-${generations}`, status: "completed", name: "submit_retrospective", arguments: JSON.stringify(valid ? { speech: "I finally see what changed the outcome." } : {}) }],
+      output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify(valid ? { speech: "I finally see what changed the outcome." } : {}) }] }],
       usage: { input_tokens: 100, output_tokens: 40, total_tokens: 140 } });
   } });
   const entry = modelCatalogEntryById("openai:gpt-5-nano")!;
   const runtime: LlmProviderRuntime = { adapter: createProviderAdapter(entry.providerProfileId, client), catalogId: entry.id,
     providerProfileId: entry.providerProfileId, modelId: entry.modelId, modelCapabilities: entry.capabilities,
-    reasoningPolicy: "high", toolChoiceMode: "named", position: 0, role: "primary" };
+    reasoningPolicy: "high",  position: 0, role: "primary" };
   const model = (ownerEpoch: string) => new WerewolfModelAgent({ runtimes: [runtime], hooks: createApiProviderExecutionHooks(db, { gameId: game.id, ownerEpoch }), ownerEpoch });
   await expect(advanceWerewolf(store, model(first.claim.ownerEpoch))).rejects.toMatchObject({ code: "malformed_output" });
   expect(generations).toBe(3);

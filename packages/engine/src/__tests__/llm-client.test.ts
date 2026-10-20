@@ -7,7 +7,6 @@ import {
   NO_FLEX_TRANSPORT_RETRY_HEADER,
   normalizeOpenAIRequestServiceTier,
   resolveOpenAIReasoningSummaryMode,
-  resolveToolChoiceMode,
 } from "../llm-client";
 import { resolveProviderManifest } from "../model-catalog";
 
@@ -48,7 +47,6 @@ describe("LLM client env config", () => {
     expect(config?.apiKeySource).toBe("local-default");
     expect(config?.baseURL).toBe("http://127.0.0.1:1234/v1");
     expect(config?.providerProfileId).toBe("lm-studio");
-    expect(config?.toolChoiceMode).toBe("required");
     expect(config?.openAIReasoningSummary).toBeUndefined();
     expect(describeLlmProvider(config!)).toBe(
       "OpenAI-compatible local (http://127.0.0.1:1234/v1)",
@@ -177,7 +175,6 @@ describe("LLM client env config", () => {
     expect(config?.baseURLSource).toBe("meta-muse-profile");
     expect(config?.providerLabel).toBe("Meta Muse");
     expect(config?.providerProfileId).toBe("meta-muse");
-    expect(config?.toolChoiceMode).toBe("auto");
     expect(config?.openAIReasoningSummary).toBeUndefined();
     expect(config?.openAIServiceTier).toBeUndefined();
     expect(config?.flexProcessingEnabled).toBe(false);
@@ -564,24 +561,5 @@ describe("OpenAI reasoning summary config", () => {
 
   it("does not enable summaries for OpenAI-compatible base URLs", () => {
     expect(resolveOpenAIReasoningSummaryMode({ INFLUENCE_OPENAI_REASONING_SUMMARY: "auto" }, "http://127.0.0.1:1234/v1")).toBeUndefined();
-  });
-});
-
-describe("LLM structured output mode config", () => {
-  it("uses named tool choice for OpenAI by default", () => {
-    expect(resolveToolChoiceMode({}, undefined)).toBe("named");
-  });
-
-  it("uses required tool choice for local OpenAI-compatible providers", () => {
-    expect(resolveToolChoiceMode({}, "http://127.0.0.1:1234/v1")).toBe("required");
-  });
-
-  it("lets env override the provider-derived mode", () => {
-    expect(
-      resolveToolChoiceMode(
-        { INFLUENCE_LLM_TOOL_CHOICE_MODE: "json" },
-        "http://127.0.0.1:1234/v1",
-      ),
-    ).toBe("json_schema");
   });
 });

@@ -51,7 +51,7 @@ function metaRuntime(catalogId: string): LlmProviderRuntime {
     modelId: entry.modelId,
     modelCapabilities: entry.capabilities,
     reasoningPolicy: "low",
-    toolChoiceMode: config.toolChoiceMode,
+
     position: 0,
     role: "primary",
   };
@@ -117,7 +117,7 @@ describe("Meta Muse adapter (live provider)", () => {
   it("decodes an exact tool vote under auto tool choice", async () => {
     const value = await execute<{ target: string }>(metaRuntime("meta-muse:muse-spark-1.3-contributor"), {
       messages,
-      result: { kind: "tool", artifact: voteArtifact, description: "Cast one vote.", choice: { name: "cast_vote" }, allowParallel: false },
+      result: { kind: "structured", artifact: voteArtifact },
       outputTokenLimit: 2_048,
       reasoning: { effort: "low" },
     });

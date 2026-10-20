@@ -1,3 +1,4 @@
+import { isSpectatorHuddleSpeech } from "@influence/engine";
 import {
   assertCanonicalGameEvent,
   projectViewerDecisionEvent,
@@ -221,7 +222,7 @@ async function materializePayload(
           `Transcript publication ${gameId}:${payload.turnId}:${payload.transcriptOrdinal} has no committed entry`,
         );
       }
-      if (row.scope === "huddle") {
+      if (row.scope === "huddle" && !isSpectatorHuddleSpeech({ ...row, dialogueContext: row.safeContext })) {
         throw new GamePublicationIntegrityError(
           `Transcript publication ${gameId}:${payload.turnId}:${payload.transcriptOrdinal} exposes a private huddle`,
         );

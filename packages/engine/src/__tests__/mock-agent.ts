@@ -172,26 +172,12 @@ export class MockAgent implements IAgent {
     const queued = this.huddleTurns.shift();
     if (queued) return queued;
     const alreadySpoke = conversationHistory?.some((entry) => entry.from === this.name) ?? false;
-    const targetPlayerId = huddle.memberIds.find((playerId) => playerId !== this.id);
     return {
       thinking: alreadySpoke ? "mock: already spoke in this huddle" : "mock: coordinate with the alliance huddle",
       message: alreadySpoke
         ? null
         : `${huddle.allianceName}: I can hold the line if we keep the plan simple.`,
       noReply: alreadySpoke,
-      factAtoms: targetPlayerId
-        ? [{
-            kind: "proposal",
-            actorPlayerId: this.id,
-            actionKind: huddle.window === "format"
-              ? "format_ballot"
-              : huddle.window === "pre_vote"
-                ? "empower_vote"
-                : "council_vote",
-            targetPlayerId,
-            confidence: "medium",
-          }]
-        : [],
       strategyDelta: this.strategyDelta("take alliance huddle turn"),
     };
   }

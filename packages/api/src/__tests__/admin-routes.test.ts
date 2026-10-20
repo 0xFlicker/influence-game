@@ -246,7 +246,7 @@ describe("producer role seed", () => {
     );
 
     expect(resolved.roles).toEqual(["producer"]);
-    expect(resolved.permissions).toEqual(["manage_game_assets", "resume_game_retrospective"]);
+    expect([...resolved.permissions].sort()).toEqual(["manage_game_assets", "resume_game_retrospective"]);
     expect(resolved.permissions).not.toContain("manage_roles");
     expect(resolved.permissions).not.toContain("view_admin");
     expect(resolved.permissions).not.toContain("retry_game_settlement");

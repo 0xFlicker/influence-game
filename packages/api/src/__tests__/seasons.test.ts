@@ -140,7 +140,7 @@ describe("season admission and state", () => {
         providerProfileId: revision.effectiveRuntimeSnapshot.providerProfileId as string,
         catalogId: revision.effectiveRuntimeSnapshot.catalogId as string,
         reasoningPolicy: (revision.effectiveRuntimeSnapshot.reasoningPolicy as string | null | undefined) ?? null,
-        toolChoiceMode: (revision.effectiveRuntimeSnapshot.toolChoiceMode as string | null | undefined) ?? null,
+
         temperature: config.temperature as number,
       }));
     }

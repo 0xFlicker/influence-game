@@ -4,6 +4,8 @@
  * Standalone prototype types — no ElizaOS dependency.
  */
 
+import { DEFAULT_CONVERSATION_POLICY } from "./open-conversation";
+
 export type UUID = string;
 import type { LaunchFormatId } from "./format-presentation-metadata";
 
@@ -637,6 +639,7 @@ export const MIN_NEW_GAME_PLAYERS = 6;
 export const MAX_NEW_GAME_PLAYERS = 12;
 
 export interface GameConfig {
+  conversationPolicy?: import("./open-conversation").ConversationPolicy;
   /** Frozen legal formats for this game. Omission is normalized at admission. */
   formatManifest?: readonly LaunchFormatId[];
   /** Max rounds before game is declared a draw */
@@ -649,9 +652,7 @@ export interface GameConfig {
   maxDiaryFollowUps?: number;
   /** If set, only run diary rooms after these phases. If unset, diary rooms run after every phase. */
   diaryRoomAfterPhases?: Phase[];
-  /** Messages per player in the lobby phase. Defaults to one. */
-  lobbyMessagesPerPlayer?: number;
-  /** Number of open-room movement beats per round (default 2). */
+  /** Number of open-room conversation rounds (default 2; movement between rounds). */
   mingleSessionsPerRound?: number;
   /** Max milliseconds to wait for a single endgame agent action before using a House fallback. */
   agentActionTimeoutMs?: number;
@@ -664,6 +665,8 @@ export interface GameConfig {
 }
 
 export const DEFAULT_CONFIG: GameConfig = {
+  conversationPolicy: { ...DEFAULT_CONVERSATION_POLICY },
+  mingleSessionsPerRound: 2,
   maxRounds: 10,
   minPlayers: MIN_NEW_GAME_PLAYERS,
   maxPlayers: MAX_NEW_GAME_PLAYERS,

@@ -89,7 +89,7 @@ interface CliOptions {
   stage: ProviderScenarioStage;
   catalogId: string;
   reasoningPolicy: ModelReasoningPolicy;
-  toolChoiceMode: "named";
+  outputFormat: "json_schema";
   serviceTier: "flex";
   reasoningSummary: "auto";
   sampleCount: 1 | 3;
@@ -136,8 +136,8 @@ export function parseR32ProviderEvaluationArgs(args: readonly string[] = process
   if (stage !== "before" && stage !== "after") throw new Error("--stage must be before or after.");
   const reasoningPolicy = requiredArg(args, "reasoning-policy");
   if (reasoningPolicy !== "low") throw new Error("--reasoning-policy must be low for the frozen R32 comparison.");
-  const toolChoiceMode = requiredArg(args, "tool-choice-mode");
-  if (toolChoiceMode !== "named") throw new Error("--tool-choice-mode must be named for the frozen R32 comparison.");
+  const outputFormat = requiredArg(args, "output-format");
+  if (outputFormat !== "json_schema") throw new Error("--output-format must be json_schema for the frozen R32 comparison.");
   const serviceTier = requiredArg(args, "service-tier");
   if (serviceTier !== "flex") throw new Error("--service-tier must be flex for the frozen R32 comparison.");
   const reasoningSummary = requiredArg(args, "reasoning-summary");
@@ -148,7 +148,7 @@ export function parseR32ProviderEvaluationArgs(args: readonly string[] = process
     stage,
     catalogId: requiredArg(args, "catalog-id"),
     reasoningPolicy,
-    toolChoiceMode,
+    outputFormat,
     serviceTier,
     reasoningSummary,
     sampleCount: parsedSamples,
@@ -1011,7 +1011,6 @@ async function runScenarioSample(input: {
     catalogId: input.config.catalogId,
     modelCapabilities: modelSelection.model.capabilities,
     reasoningPolicy: modelSelection.reasoningPolicy,
-    toolChoiceMode: "named" as const,
     openAIReasoningSummary: "auto" as const,
     privateTraceSink: (trace: PrivateDecisionTrace) => { traces.push(structuredClone(trace)); },
     providerExecutionHooks: hooks,
@@ -1101,7 +1100,7 @@ async function main(): Promise<void> {
   if (selection.providerProfile.id !== "openai") {
     throw new Error("The frozen R32 comparison requires the hosted OpenAI profile.");
   }
-  if (!selection.model.capabilities.supportsStructuredOutput || !selection.model.capabilities.supportsTools) {
+  if (!selection.model.capabilities.supportsStructuredOutput) {
     throw new Error("The selected model does not support every frozen R32 surface.");
   }
   const config: ProviderScenarioRunConfig = assertProviderScenarioRunConfig({
@@ -1110,7 +1109,7 @@ async function main(): Promise<void> {
     modelId: selection.modelId,
     serviceTier: options.serviceTier,
     reasoningPolicy: selection.reasoningPolicy,
-    toolChoiceMode: options.toolChoiceMode,
+    outputFormat: options.outputFormat,
     reasoningSummary: options.reasoningSummary,
     sampleCount: options.sampleCount,
   }, scenarios.map((scenario) => scenario.pack));

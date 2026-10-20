@@ -368,7 +368,6 @@ Hosted-provider secrets are injected via Doppler (`doppler run -- <command>`). L
 | `INFLUENCE_LLM_PREFLIGHT` | No | enabled | API game start validates selected provider/model metadata before claiming the run; set `off` only for incompatible local providers |
 | `INFLUENCE_LLM_PREFLIGHT_TIMEOUT_MS` | No | `10000` | Timeout for API start provider/model preflight |
 | `INFLUENCE_LLM_REQUEST_TIMEOUT_MS` | No | `45000` | Per-attempt provider request timeout for API games; clamped to 1-300 seconds |
-| `INFLUENCE_LLM_TOOL_CHOICE_MODE` | No | `required` for local base URLs, otherwise `named` | Structured decision-call mode: `named`, `required`, `auto`, or `json_schema` |
 | `INFLUENCE_OPENAI_REASONING_SUMMARY` | No | `auto` for hosted OpenAI, off for local base URLs | Hosted OpenAI Responses reasoning summary mode: `auto`, `concise`, `detailed`, or `off` |
 | `PRIVY_APP_ID` | Yes | -- | Privy app ID for auth |
 | `PRIVY_APP_SECRET` | Yes | -- | Privy app secret for auth |

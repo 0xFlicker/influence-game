@@ -2731,7 +2731,7 @@ describe("Game REST API", () => {
       expect(JSON.stringify(body)).not.toContain("provider");
     });
 
-    test("keeps generic transcript huddle filtering while exposing huddle speech through alliances", async () => {
+    test("filters unqualified huddles and publishes accepted huddle speech with thinking", async () => {
       const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
       await insertFixturePlayers(db, id);
       await markGameInProgress(db, id);
@@ -2807,6 +2807,16 @@ describe("Game REST API", () => {
       expect(JSON.stringify(transcriptBody)).toContain("PUBLIC_TRANSCRIPT_SENTINEL");
       expect(JSON.stringify(transcriptBody)).not.toContain("ALLIANCE_HUDDLE_PUBLIC_READ_SENTINEL");
       expect(JSON.stringify(transcriptBody)).not.toContain("ALLIANCE_HUDDLE_THINKING_SENTINEL");
+      await db.insert(schema.transcripts).values({ gameId: id, round: 1, phase: Phase.FORMAT_MINGLE,
+        fromPlayerId: "atlas", speakerPlayerId: "atlas", scope: "huddle", toPlayerIds: JSON.stringify(["echo"]),
+        audiencePlayerIds: ["atlas", "echo"], captureVersion: 1, entrySequence: 3, dialogueKind: "huddle_speech",
+        safeContext: {version: 1, sessionId: "modern-session", sessionAudiencePlayerIds: ["atlas", "echo"]},
+        text: "MODERN_HUDDLE_SPEECH", thinking: "SAVED_HUDDLE_THOUGHT", timestamp: 150 });
+      const page = await (await app.request(`/api/games/${id}/transcript?limit=1&offset=1`)).json();
+      expect(page).toHaveLength(1);
+      if (!Array.isArray(page)) throw new Error("Expected transcript page");
+      expect(page[0]).toMatchObject({text: "MODERN_HUDDLE_SPEECH", thinking: "SAVED_HUDDLE_THOUGHT"});
+      expect(JSON.stringify(page)).not.toContain("modern-session");
     });
 
     test("returns empty alliance facts for games without alliance events", async () => {

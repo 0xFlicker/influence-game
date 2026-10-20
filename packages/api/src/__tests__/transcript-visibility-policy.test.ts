@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { GameState, Phase } from "@influence/engine";
+import { GameState, Phase, huddleSessionId } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { appendGameEvents } from "../services/game-events.js";
@@ -466,6 +466,24 @@ describe("transcript visibility policy", () => {
     expect(load.sessions).toHaveLength(1);
     expect(load.sessions[0]?.sessionId).toBe("session-t");
     expect(load.sessions[0]?.speakerIds).toEqual([alice, bob]);
+  });
+
+  test("live format huddle speech authorizes only the accepted frozen participants before completion", async () => {
+    const gameId = await insertGame(db, { slug: "vis-live-huddle", status: "in_progress" });
+    const state = new GameState([{ id: "a", name: "A" }, { id: "b", name: "B" }, { id: "c", name: "C" }], { gameId, now: fixedClock() });
+    state.startRound();
+    state.recordAllianceHuddleSchedule({ id: "live-schedule", allianceId: "pair", window: "format", round: 1,
+      pass: 1, decision: "scheduled", memberIds: ["a", "b"], rationale: "Private selection", createdAt: "2026-06-14T00:00:00Z" });
+    const ownerEpoch = await insertOwner(db, gameId);
+    await appendGameEvents(db, { gameId, ownerEpoch, events: state.getCanonicalEvents() });
+    const load = await loadTrustedHuddleSessions(db, gameId);
+    expect(load.sessions).toHaveLength(1);
+    expect(load.sessions[0]!.phase).toBe(Phase.FORMAT_MINGLE);
+    const row = baseRow({ scope: "huddle", phase: Phase.FORMAT_MINGLE, captureVersion: 1, entrySequence: 1,
+      speakerPlayerId: "a", audiencePlayerIds: ["a", "b"], dialogueKind: "huddle_speech",
+      safeContext: { version: 1, allianceId: "pair", sessionId: huddleSessionId("live-schedule"), window: "format", sessionAudiencePlayerIds: ["a", "b"] } });
+    expect(classifyAuthorizedTranscriptRow(row, { ...evidenceForOwned(["b"]), trustedHuddleSessions: load.sessions })).toBe("huddle");
+    expect(classifyAuthorizedTranscriptRow(row, { ...evidenceForOwned(["c"]), trustedHuddleSessions: load.sessions })).toBeNull();
   });
 
   test("producer/sysop metadata does not widen MatchAccessContext ownership", async () => {

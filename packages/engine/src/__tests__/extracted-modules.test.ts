@@ -13,7 +13,6 @@ import { ContextBuilder } from "../context-builder";
 import { Phase } from "../types";
 import type { UUID, RoomAllocation } from "../types";
 import type { GameStreamEvent } from "../game-runner.types";
-import { computeLobbyMessagesPerPlayer } from "../phases/lobby";
 import { computeRoomCount, allocateRooms } from "../phases/mingle";
 import { runJudgmentJuryQuestions } from "../phases/endgame";
 import type { PhaseActor, PhaseRunnerContext } from "../phases/phase-runner-context";
@@ -703,20 +702,6 @@ describe("ContextBuilder", () => {
 // ---------------------------------------------------------------------------
 // Phase utility functions
 // ---------------------------------------------------------------------------
-
-describe("computeLobbyMessagesPerPlayer", () => {
-  it("defaults to one pass at every player count", () => {
-    expect(computeLobbyMessagesPerPlayer(4)).toBe(1);
-    expect(computeLobbyMessagesPerPlayer(6)).toBe(1);
-    expect(computeLobbyMessagesPerPlayer(8)).toBe(1);
-    expect(computeLobbyMessagesPerPlayer(12)).toBe(1);
-  });
-
-  it("respects config override", () => {
-    expect(computeLobbyMessagesPerPlayer(4, 6)).toBe(6);
-    expect(computeLobbyMessagesPerPlayer(12, 1)).toBe(1);
-  });
-});
 
 describe("computeRoomCount", () => {
   it("skips open rooms below five alive players", () => {

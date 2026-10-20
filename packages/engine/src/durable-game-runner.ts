@@ -1,3 +1,4 @@
+import { isSpectatorHuddleSpeech } from "./open-conversation";
 import { optionalPerformanceCue } from "./performance-cue";
 import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
 import type { CanonicalGameEvent } from "./canonical-events";
@@ -401,7 +402,7 @@ export function buildTurnCommitDraft(input: {
           availableAt: null,
         }]
       : []),
-    ...input.effects.transcriptEntries.flatMap((entry, index) => VIEWER_SAFE_TRANSCRIPT_SCOPES.has(entry.scope)
+    ...input.effects.transcriptEntries.flatMap((entry, index) => (VIEWER_SAFE_TRANSCRIPT_SCOPES.has(entry.scope) || isSpectatorHuddleSpeech(entry))
       ? [{
           version: 1 as const,
           kind: "transcript_entry" as const,

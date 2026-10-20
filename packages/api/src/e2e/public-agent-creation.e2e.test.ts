@@ -1,3 +1,4 @@
+import { rejectOptionalAnalytics } from "./test-browser.js";
 import { loadPayloads } from "../services/payload-storage.js";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Hono } from "hono";
@@ -75,6 +76,7 @@ afterAll(async () => { await cleanupE2eResources([
 test("creator sits below working desktop/mobile navigation with visible Advanced create and Close", async () => {
   const context = await browser.createBrowserContext();
   const page = await context.newPage();
+  await rejectOptionalAnalytics(page);
   try {
     for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
       await page.setViewport(viewport);
@@ -130,6 +132,7 @@ test("creator sits below working desktop/mobile navigation with visible Advanced
 test("public hall → one tracked preview → image signup → free account messages, with draft preserved", async () => {
   const context = await browser.createBrowserContext();
   const page = await context.newPage();
+  await rejectOptionalAnalytics(page);
   page.on("console", message => { if (message.type() === "error") console.error("[browser]", message.text()); });
   try {
     await page.setViewport({ width: 1440, height: 1000 });

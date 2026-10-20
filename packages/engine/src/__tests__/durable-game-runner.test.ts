@@ -70,6 +70,10 @@ class MemoryDurableTurnStore implements DurableGameTurnStore {
     return [...this.planned.values()].find((intent) => intent.branch.action === action);
   }
 
+  plannedIntentsForAction(action: string): GameTurnIntentV1[] {
+    return [...this.planned.values()].filter(intent => intent.branch.action === action);
+  }
+
   async load(): Promise<DurableGameTurnSnapshotV1 | null> {
     return this.snapshot ? structuredClone(this.snapshot) : null;
   }
@@ -588,7 +592,7 @@ describe("GameRunner durable logical turns", () => {
     const resumed = new GameRunner(resumedAgents, config, undefined, {
       gameId: store.snapshot!.execution.gameId, durableTurnStore: store,
       prepareVisualBoundary: async (snapshot) => {
-        if (snapshot.execution.cursor.kind === "mingle" && snapshot.execution.cursor.progress.window?.nextBeat === 2) {
+        if (!prepared && snapshot.execution.cursor.kind === "mingle" && snapshot.execution.cursor.progress.window?.nextBeat === 2) {
           expect(resumedAgents.flatMap((agent) => agent.mingleContexts)).toHaveLength(0);
           prepared = true;
         }
@@ -600,11 +604,15 @@ describe("GameRunner durable logical turns", () => {
     await expectAborted(resumed.run());
     expect(prepared).toBeTrue();
     const turns = resumedAgents.flatMap((agent) => agent.mingleContexts);
-    expect(turns).toHaveLength(5);
+    expect(turns.length).toBeGreaterThanOrEqual(5);
     expect(turns.every((context) => context.mingleBeat === 2 && context.currentRoomId === 3)).toBeTrue();
     expect(turns.some((context) => context.mingleMessages.length > 0)).toBeTrue();
-    expect(store.committedActions.filter((action) => action === "mingle-beat-1")).toHaveLength(1);
-    expect(store.committedActions.filter((action) => action === "mingle-beat-2")).toHaveLength(1);
+    expect(store.committedActions.filter((action) => action === "mingle-beat-1").length).toBeGreaterThan(1);
+    expect(store.committedActions.filter((action) => action === "mingle-beat-2").length).toBeGreaterThan(1);
+    const calls = [1, 2].flatMap(beat => store.plannedIntentsForAction(`mingle-beat-${beat}`).flatMap(intent => intent.providerSubcalls));
+    expect(calls).toHaveLength(firstAgents.flatMap(agent => agent.mingleContexts).length + turns.length);
+    expect(calls.every(call => call.action === "mingle-turn" && call.semanticCoordinate?.kind === "durable_turn")).toBeTrue();
+    expect(new Set(calls.map(call => call.logicalCallId)).size).toBe(calls.length);
   });
 
 
@@ -828,7 +836,7 @@ describe("GameRunner durable logical turns", () => {
       expect(stableEvents(committed)).toEqual(stableEvents(failedDraft!));
       expect(store.plannedIntentForAction(action)).toEqual(failedIntent!);
       expect(store.committedActions.filter((entry) => entry === action)).toHaveLength(1);
-      expect(committed.canonicalEvents.some((event) => event.type === (action.startsWith("mingle-complete") ? "alliance.huddle_outcome_recorded" : "mingle.rooms_allocated")))
+      expect(committed.canonicalEvents.some((event) => event.type === (action.startsWith("mingle-complete") ? "alliance.huddle_scheduled" : "mingle.rooms_allocated")))
         .toBeTrue();
     },
   );
@@ -1003,16 +1011,15 @@ describe("GameRunner durable logical turns", () => {
       durableTurnStore: store,
     });
     store.onCommit = (draft) => {
-      if (draft.nextExecution.cursor.kind === "serial_actor"
-          && draft.nextExecution.cursor.lane === "lobby_speech"
-          && draft.nextExecution.cursor.actorIndex === 1) {
+      if (draft.nextExecution.cursor.kind === "lobby_conversation"
+          && draft.nextExecution.cursor.conversation.offers === 1) {
         runner.abort();
       }
     };
 
     const run = runner.run();
-    await waitFor(() => heldFirstLobbyCommit && agents[0]!.lobbyCalls === 1);
-    expect(agents[1]!.lobbyCalls).toBe(0);
+    await waitFor(() => heldFirstLobbyCommit && agents.reduce((n,a)=>n+a.lobbyCalls,0) === 1);
+    expect(agents.filter(a=>a.lobbyCalls===0)).toHaveLength(2);
     releaseCommit?.();
     await expectAborted(run);
   });
@@ -1037,19 +1044,18 @@ describe("GameRunner durable logical turns", () => {
       durableTurnStore: store,
     });
     store.onCommit = (draft) => {
-      if (draft.nextExecution.cursor.kind === "serial_actor"
-          && draft.nextExecution.cursor.lane === "lobby_speech"
-          && draft.nextExecution.cursor.actorIndex === 1) {
+      if (draft.nextExecution.cursor.kind === "lobby_conversation"
+          && draft.nextExecution.cursor.conversation.offers === 1) {
         runner.abort();
       }
     };
 
     const run = runner.run();
-    await waitFor(() => held && agents[0]!.lobbyCalls === 1);
-    expect(agents[0]!.liveAllies).toEqual([]);
+    await waitFor(() => held && agents.reduce((n,a)=>n+a.lobbyCalls,0) === 1);
+    expect(agents.every(a=>a.liveAllies.length===0)).toBeTrue();
     releaseCommit?.();
     await expectAborted(run);
-    expect(agents[0]!.liveAllies).toContain("Beta");
+    expect(agents.some(a=>a.liveAllies.includes("Beta"))).toBeTrue();
   });
 
   it("commits initial votes and re-votes in stable roster order", async () => {
@@ -1492,9 +1498,8 @@ describe("GameRunner durable logical turns", () => {
       durableTurnStore: store,
     });
     store.onCommit = (draft) => {
-      if (draft.nextExecution.cursor.kind === "serial_actor"
-          && draft.nextExecution.cursor.lane === "lobby_speech"
-          && draft.nextExecution.cursor.actorIndex === 1) {
+      if (draft.nextExecution.cursor.kind === "lobby_conversation"
+          && draft.nextExecution.cursor.conversation.offers === 1) {
         firstRunner.abort();
       }
     };
@@ -1511,25 +1516,19 @@ describe("GameRunner durable logical turns", () => {
       durableTurnStore: store,
     });
     store.onCommit = (draft) => {
-      if (draft.nextExecution.cursor.kind === "serial_actor"
-          && draft.nextExecution.cursor.lane === "lobby_speech"
-          && draft.nextExecution.cursor.actorIndex === 2) {
+      if (draft.nextExecution.cursor.kind === "lobby_conversation"
+          && draft.nextExecution.cursor.conversation.offers === 2) {
         resumedRunner.abort();
       }
     };
     await expectAborted(resumedRunner.run());
 
     expect(resumedAgents.map((agent) => agent.introductionCalls)).toEqual([0, 0, 0]);
-    expect(resumedAgents.map((agent) => agent.lobbyCalls)).toEqual([0, 1, 0]);
-    expect(
-      resumedAgents[1]!.lobbyContexts[0]!.publicMessages.some(
-        (entry) => entry.from === "Alpha" && entry.phase === "LOBBY",
-      ),
-    ).toBe(true);
-    expect(
-      store.snapshot!.transcriptEntries.filter(
-        (entry) => entry.scope === "public" && entry.phase === "LOBBY",
-      ).map((entry) => entry.from),
-    ).toEqual(["Alpha", "Beta"]);
+    expect(resumedAgents.reduce((n,a)=>n+a.lobbyCalls,0)).toBe(1);
+    const firstSpeaker = firstAgents.find(a=>a.lobbyCalls===1)!;
+    const secondSpeaker = resumedAgents.find(a=>a.lobbyCalls===1)!;
+    expect(secondSpeaker.id).not.toBe(firstSpeaker.id);
+    expect(secondSpeaker.lobbyContexts[0]!.publicMessages.some(e=>e.from===firstSpeaker.name&&e.phase==="LOBBY")).toBeTrue();
+    expect(store.snapshot!.transcriptEntries.filter(e=>e.scope==="public"&&e.phase==="LOBBY").map(e=>e.from)).toEqual([firstSpeaker.name,secondSpeaker.name]);
   });
 });

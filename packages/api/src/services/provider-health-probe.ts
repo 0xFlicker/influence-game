@@ -232,7 +232,6 @@ async function runLiveProviderHealthProbe(
     modelId: target.modelId,
     modelCapabilities: catalog.capabilities,
     reasoningPolicy: catalog.defaultReasoningPolicy,
-    toolChoiceMode: catalog.preferredToolChoiceMode ?? config.toolChoiceMode,
     ...(config.openAIReasoningSummary && {
       openAIReasoningSummary: config.openAIReasoningSummary,
     }),
