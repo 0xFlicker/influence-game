@@ -38,7 +38,7 @@ export function thinkingPicture(cue: ExportCue, actorId = cue.speech?.speakerId)
   if (!actor) throw new Error(`Thinking actor is absent from source roster: ${actorId}`);
   return {kind:"thinking",gameKind:"influence",actor:{...actor,persona:actor.persona ?? ""},sourceElapsedMs,
     scene:beat?.kind === "scene" ? picture.rooms.find(scene => scene.id === beat.sceneId) ?? null : null,
-    ...(beat?.kind === "portrait-room" && {room:{number:beat.roomNumber,players:beat.participants}})};
+    ...(beat?.kind === "portrait-room" && {room:{number:beat.roomNumber,label:beat.roomLabel,players:beat.participants}})};
 }
 
 export function thinkingSegment(cue: ExportCue, id: string, text: string, actorId?: string): ExportCue {

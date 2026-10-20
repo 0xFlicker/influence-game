@@ -1,3 +1,4 @@
+import { rejectOptionalAnalytics } from "./test-browser.js";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, Page } from "puppeteer";
 import { DEFAULT_MODEL_CATALOG_ID, GameState } from "@influence/engine";
@@ -65,6 +66,7 @@ async function text(page:Page,value:string) {
 }
 test("old/new House cards, title search, stable links and responsive art",async()=>{
   const page=await browser.newPage();
+  await rejectOptionalAnalytics(page);
   try {
     for(const width of [1440,390]) {
       await page.setViewport({width,height:1000,isMobile:width===390,hasTouch:width===390});
@@ -107,6 +109,7 @@ test("old/new House cards, title search, stable links and responsive art",async(
 },120000);
 test("anonymous Unlisted entry works, while hidden games stay unavailable",async()=>{
   const page=await browser.newPage();
+  await rejectOptionalAnalytics(page);
   try {
     await page.goto(`${servers.webUrl}/games/secret-village-link`,{waitUntil:"domcontentloaded"});await text(page,"Watch Mystery");
     await page.goto(`${servers.webUrl}/games/hidden-village`,{waitUntil:"domcontentloaded"});await text(page,"Game not found");
@@ -115,6 +118,7 @@ test("anonymous Unlisted entry works, while hidden games stay unavailable",async
 
 test("mixed profile and owner history filter in place at desktop/mobile widths",async()=>{
   const page=await browser.newPage();
+  await rejectOptionalAnalytics(page);
   try {
     for (const width of [1440,390]) {
       await page.setViewport({width,height:1000});

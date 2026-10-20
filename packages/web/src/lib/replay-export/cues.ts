@@ -11,6 +11,7 @@ import {
   mergeFormatAndSocialCues,
   comparePresentationCues,
   compileReplayFrameLookup,
+  classicEliminatedPlayerIds,
 } from "../../app/games/[slug]/components/influence-replay-cues";
 import {
   buildStoryScenes,
@@ -53,7 +54,7 @@ export type ExportPicture =
       roleLabel?: string;
       scene: AcceptedVisualScene | null;
       sourceElapsedMs: number;
-      room?: {number: number | null; players: Extract<VisualPresentationBeat, {kind:"portrait-room"}>["participants"]};
+      room?: {number: number | null; label?: string; players: Extract<VisualPresentationBeat, {kind:"portrait-room"}>["participants"]};
     }
   | {kind: "werewolf-opening"; cue: WerewolfOpeningCue}
   | {
@@ -199,9 +200,12 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
         : [];
     const state = frameForSequence(cue.canonicalSequence);
     const playersById = new Map(state?.players.map(player => [player.id, player]));
+    const classicExits = game.gameKernel !== "format" && !state && message
+      ? classicEliminatedPlayerIds(messages.slice(0, messages.indexOf(message) + 1), game.players)
+      : new Set<string>();
     const activePlayers = game.players.map((player) => ({
       ...player,
-      status: playersById.get(player.id)?.status ?? "alive",
+      status: playersById.get(player.id)?.status ?? (classicExits.has(player.id) ? "eliminated" as const : "alive" as const),
       shielded: playersById.get(player.id)?.shielded ?? false,
     }));
     const picture = visualWatchPresentation(

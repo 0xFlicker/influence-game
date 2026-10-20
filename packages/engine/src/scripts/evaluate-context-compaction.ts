@@ -50,7 +50,7 @@ modelRuns: for (const catalogId of models) {
   } catch { unavailable.push({ catalogId, reason: "model discovery failed" }); await save(); continue; }
   const runtime: LlmProviderRuntime = { adapter: createProviderAdapter(template.providerProfileId, config.client),
     catalogId, providerProfileId: template.providerProfileId, modelId, modelCapabilities: template.capabilities,
-    reasoningPolicy: "low", toolChoiceMode: "named", position: 0, role: "primary" };
+    reasoningPolicy: "low",  position: 0, role: "primary" };
   let providerCalls = 0;
   for (let sample = 1; sample <= samples; sample++) {
     for (const scenario of COMPACTION_SCENARIOS) {

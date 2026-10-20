@@ -1,3 +1,5 @@
+import { conversationPolicy } from "@influence/engine";
+import { withEvaluationBudget } from "@influence/engine";
 import { fixtureInfluenceRetrospective, fixtureInfluenceRetrospectiveSetup, fixtureInfluenceRetrospectiveSpeaker } from "@influence/engine";
 import { RetrospectiveExecutionError } from "@influence/engine";
 import { pauseRetrospectiveExecution } from "./game-retrospective-recovery.js";
@@ -31,7 +33,6 @@ import type {
   CanonicalGameEvent,
   IAgent,
   MingleIntentAction,
-  LlmToolChoiceMode,
   Personality,
   GameConfig,
   GameRunnerOptions,
@@ -433,6 +434,8 @@ export function buildEngineConfigFromGameRecord(
   maxPlayers: number,
 ): GameConfig {
   return {
+    conversationPolicy: conversationPolicy(gameConfig.conversationPolicy as GameConfig["conversationPolicy"]),
+    mingleSessionsPerRound: typeof gameConfig.mingleSessionsPerRound === "number" ? gameConfig.mingleSessionsPerRound : 2,
     maxRounds: (gameConfig.maxRounds as number) ?? 10,
     minPlayers,
     maxPlayers,
@@ -712,9 +715,8 @@ async function startGameWithOwner(
     ? createPrivateTraceSink(db, gameId, ownerEpoch, game.cognitiveArtifactCaptureVersion)
     : undefined;
   const providerExecutionHooks = ownerEpoch
-    ? createApiProviderExecutionHooks(db, { gameId, ownerEpoch })
+    ? withEvaluationBudget(createApiProviderExecutionHooks(db, { gameId, ownerEpoch }), process.env, "INFLUENCE")
     : undefined;
-  const toolChoiceMode = primaryRuntime?.toolChoiceMode;
 
   // Construct agents from player records
   const agents: IAgent[] = players.map((player) => {
@@ -736,16 +738,12 @@ async function startGameWithOwner(
     const agentCfg = JSON.parse(player.agentConfig) as {
       model?: string;
       temperature?: number;
-      toolChoiceMode?: unknown;
     };
 
     const personality = resolvePersonality(
       persona.personaKey ?? persona.personality,
     );
     const model = agentCfg.model ?? resolvedModelSelection.modelId;
-    const playerToolChoiceMode = player.agentProfileId
-      ? parseToolChoiceMode(agentCfg.toolChoiceMode) ?? toolChoiceMode
-      : toolChoiceMode;
 
     const memoryStore = new PgMemoryStore(db);
     const agent = new InfluenceAgent(
@@ -757,7 +755,6 @@ async function startGameWithOwner(
       persona.backstory,
       memoryStore,
       {
-        ...(playerToolChoiceMode && { toolChoiceMode: playerToolChoiceMode }),
         ...(primaryRuntime.openAIReasoningSummary && { openAIReasoningSummary: primaryRuntime.openAIReasoningSummary }),
         providerProfileId: resolvedModelSelection.providerProfile.id,
         catalogId: resolvedModelSelection.catalogId,
@@ -783,7 +780,6 @@ async function startGameWithOwner(
         resolvedModelSelection.modelId,
         {
           gameId,
-          ...(toolChoiceMode && { toolChoiceMode }),
           providerProfileId: resolvedModelSelection.providerProfile.id,
           catalogId: resolvedModelSelection.catalogId,
           modelCapabilities: resolvedModelSelection.model.capabilities,
@@ -852,12 +848,6 @@ async function startGameWithOwner(
   });
 
   return {};
-}
-
-function parseToolChoiceMode(value: unknown): LlmToolChoiceMode | undefined {
-  return value === "named" || value === "required" || value === "auto" || value === "json_schema"
-    ? value
-    : undefined;
 }
 
 export function classifyGameRunFailure(error: unknown): {

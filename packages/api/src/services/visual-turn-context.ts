@@ -15,6 +15,7 @@ const CONVERSATIONAL_METHODS = new Set(["getLobbyMessage", "sendRoomMessage", "t
 /** Explicit text-only context is always supported. This reader never generates or charges. */
 export function createVisualTurnContextReader(db: DrizzleDB, input: {
   gameId: string; ownerEpoch: string; requireVisuals?: boolean; frozenCast: readonly VisualCastMember[];
+  huddleScene?: import("./visual-scene-store.js").StoredVisualScene | null;
 }): NonNullable<GameRunnerOptions["prepareVisualTurn"]> {
   const frozenCast = new Map(input.frozenCast.map((member) => [member.id, structuredClone(member)]));
   if (frozenCast.size !== input.frozenCast.length) throw new Error("Duplicate frozen visual profile");
@@ -27,17 +28,20 @@ export function createVisualTurnContextReader(db: DrizzleDB, input: {
       instructions = typeof profile.performanceInstructions === "string" ? profile.performanceInstructions : "";
     }
     const result: NonNullable<PhaseContext["visual"]> = { performanceInstructions: instructions };
-    const roomId = CONVERSATIONAL_METHODS.has(method) ? visualRoomForPhase(context.phase, context.currentRoomId, context.endgameStage) : null;
+    const isHuddle = method === "getAllianceHuddleTurn" && committedCursor.kind === "huddle_conversation";
+    const roomId = isHuddle ? input.huddleScene?.plan.roomId ?? null : CONVERSATIONAL_METHODS.has(method) ? visualRoomForPhase(context.phase, context.currentRoomId, context.endgameStage) : null;
     if (!roomId) return result;
     let participantIds: string[];
-    if (roomId.startsWith("mingle-")) {
+    if (isHuddle && committedCursor.kind === "huddle_conversation") {
+      participantIds = committedCursor.progress.conversation?.order ?? [];
+    } else if (roomId.startsWith("mingle-")) {
       if (committedCursor.kind !== "mingle" || committedCursor.progress.window?.phase !== context.phase || committedCursor.progress.window?.nextBeat !== context.mingleBeat) return result;
       const room = mingleWindowRooms(committedCursor.progress.window).find((entry) => entry.roomId === context.currentRoomId);
       if (!room) return result;
       participantIds = room.playerIds;
     } else participantIds = [...new Set([...context.alivePlayers.map((player) => player.id), ...(roomId === "finals" ? (context.jury ?? []).map((member) => member.playerId) : [])])];
     if (!participantIds.includes(context.selfId)) return result;
-    const scene = await applyPublishedVisualScene(db, await readCurrentVisualScene(db, input.gameId, roomId));
+    const scene = isHuddle ? input.huddleScene : await applyPublishedVisualScene(db, await readCurrentVisualScene(db, input.gameId, roomId));
     const unavailable = async (reason: NonNullable<VisualFailureEvidence["context"]>["reason"], error?: unknown) => {
       const sceneParticipants = scene?.plan.cast.map(({ id, name }) => ({ id, name })) ?? [];
       const expectedParticipants = participantIds.map((id) => ({ id, name: frozenCast.get(id)?.name ?? context.alivePlayers.find((player) => player.id === id)?.name ?? context.jury?.find((member) => member.playerId === id)?.playerName ?? id }));

@@ -1,3 +1,4 @@
+import { isSpectatorHuddleSpeech } from "@influence/engine";
 /**
  * WebSocket Manager
  *
@@ -231,7 +232,7 @@ export function buildWsPublicationPayload(
 }
 
 function shouldBroadcastTranscriptEntry(entry: TranscriptEntry): boolean {
-  return entry.scope !== "huddle";
+  return entry.scope !== "huddle" || isSpectatorHuddleSpeech(entry);
 }
 
 /** Called when a new WebSocket connection opens. */

@@ -1,3 +1,5 @@
+import { DEFAULT_CONVERSATION_POLICY } from "@influence/engine";
+import { isSpectatorHuddleSpeech } from "@influence/engine";
 import { readHouseParticipation } from "../services/house-participation.js";
 import { forecastRetrospectiveBudget } from "@influence/engine/retrospective-budget";
 import { createGameResultsRoutes } from "./game-results.js";
@@ -25,7 +27,7 @@ import { readEpisodePresentations } from "../services/episode-presentation.js";
 
 import { createVisualRoutes } from "./visual.js";
 import { Hono, type Context } from "hono";
-import { eq, inArray, asc, or, and, ne } from "drizzle-orm";
+import { eq, inArray, asc, or, and, ne, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -238,6 +240,8 @@ export function createGameRoutes(db: DrizzleDB) {
     }
 
     const config = {
+      conversationPolicy: { ...DEFAULT_CONVERSATION_POLICY },
+      mingleSessionsPerRound: 2,
       maxRounds: computedMaxRounds,
       minPlayers,
       maxPlayers,
@@ -1034,7 +1038,13 @@ export function createGameRoutes(db: DrizzleDB) {
       .from(schema.transcripts)
       .where(and(
         eq(schema.transcripts.gameId, gameId),
-        ne(schema.transcripts.scope, "huddle"),
+        // Filter before pagination so private/legacy huddle rows cannot end a page early.
+        or(ne(schema.transcripts.scope, "huddle"), and(
+          eq(schema.transcripts.dialogueKind, "huddle_speech"),
+          sql`${schema.transcripts.text} ~ '[^[:space:]]'`,
+          sql`length(${schema.transcripts.safeContext}->>'sessionId') > 0`,
+          sql`(${schema.transcripts.safeContext}->'sessionAudiencePlayerIds') @> jsonb_build_array(${schema.transcripts.speakerPlayerId})`,
+        )),
       ))
       .orderBy(asc(schema.transcripts.timestamp), asc(schema.transcripts.id));
     const rows = await (limit === undefined ? query : query.limit(limit).offset(offset));
@@ -1048,7 +1058,7 @@ export function createGameRoutes(db: DrizzleDB) {
       }
     };
 
-    const entries = rows.map((row) => {
+    const entries = rows.filter(row => row.scope !== "huddle" || isSpectatorHuddleSpeech({ ...row, dialogueContext: row.safeContext })).map((row) => {
       const roomMetadata = parseJsonOrNull(row.roomMetadata);
       return {
         id: row.id,

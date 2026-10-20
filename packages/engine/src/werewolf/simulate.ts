@@ -42,7 +42,7 @@ import { WerewolfModelAgent } from "./agent";
 import { projectWerewolfView } from "./observation";
 import { applyWerewolfEvent, replayWerewolf, startWerewolf, werewolfConfig, WEREWOLF_PRESETS } from "./rules";
 import { runWerewolf, werewolfFallback, type WerewolfAgent } from "./runner";
-import { WerewolfEvaluationBudget } from "./evaluation-budget";
+import { EvaluationBudget } from "../evaluation-budget";
 
 const { values } = parseArgs({ options: {
   preset: { type: "string", default: "one_wolf" }, seed: { type: "string", default: "werewolf-evaluation-1" },
@@ -109,7 +109,7 @@ if (values["model-catalog"]) {
   const runtimes = createLlmProviderRuntimesFromEnv(manifest, process.env);
   if (!runtimes) throw new Error("The selected provider is not configured");
   journalOptions.providerManifest = runtimes;
-  const hooks = budgetUsd === undefined ? journal.hooks : new WerewolfEvaluationBudget(resolve(values["budget-ledger"]!), budgetUsd).hooks(journal.hooks);
+  const hooks = budgetUsd === undefined ? journal.hooks : new EvaluationBudget(resolve(values["budget-ledger"]!), budgetUsd).hooks(journal.hooks);
   delegate = new WerewolfModelAgent({ runtimes, hooks, ownerEpoch:`local-werewolf:${events[0]!.gameId}` });
 }
 const agent: WerewolfAgent = { prepareRetrospectiveCapacity: signal => delegate.prepareRetrospectiveCapacity(signal), getRetrospectiveStatement: async input => {

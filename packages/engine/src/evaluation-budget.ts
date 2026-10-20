@@ -1,12 +1,17 @@
 import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { ProviderAttemptIntent, ProviderAttemptRecord, ProviderExecutionHooks } from "../provider-execution";
+import type { ProviderAttemptIntent, ProviderAttemptRecord, ProviderExecutionHooks } from "./provider-execution";
+
+const ledgerQueues = new Map<string, Promise<void>>();
 
 const MILLION = 1_000_000;
 const INPUT_FRAMING_TOKEN_RESERVE = 16_384;
 const PRICES: Record<string, { input: number; output: number }> = {
   "openai:gpt-6-luna": { input: 0.25, output: 0.75 }, // long-context cache-write tier, no cache discount
   "meta-muse:muse-spark-1.3-contributor": { input: 0.10, output: 0.20 },
+  // Twice Katana's published $1.38/$2.75 rates (2026-10-19), with no cache discount.
+  // https://kat.imgnai.com/llms.txt — one authorized small Grok evaluation.
+  "katana:grok-4-3": { input: 2.76, output: 5.50 },
 };
 type Entry = { attemptId: string; catalogId: string; reservedUsd: number; framingAdjustmentUsd?: number; usageEstimateUsd: number | null; providerActualUsd: number | null; status: "reserved" | "settled" };
 type Ledger = { version: 1; capUsd: number; framingReserveTokens?: number; entries: Entry[] };
@@ -32,7 +37,7 @@ function reserveFor(intent: ProviderAttemptIntent): { catalogId: string; usd: nu
 }
 
 /** A serialized, append-only spend guard. Unknown terminal outcomes retain their full reservation. */
-export class WerewolfEvaluationBudget {
+export class EvaluationBudget {
   private readonly lockPath: string;
   constructor(private readonly path: string, private readonly capUsd: number) {
     if (!Number.isFinite(capUsd) || capUsd <= 0) throw new Error("Evaluation budget must be a positive USD amount");
@@ -88,6 +93,17 @@ export class WerewolfEvaluationBudget {
   }
 
   private async withLedger(mutate: (ledger: Ledger) => void | Promise<void>): Promise<void> {
+    const preceding = ledgerQueues.get(this.path) ?? Promise.resolve();
+    const pending = preceding.then(() => this.writeLedger(mutate));
+    // Serialize parallel decisions within the API worker; the file lock still
+    // rejects independent workers sharing a ledger accidentally.
+    const settled = pending.then(() => {}, () => {});
+    ledgerQueues.set(this.path, settled);
+    try { await pending; }
+    finally { if (ledgerQueues.get(this.path) === settled) ledgerQueues.delete(this.path); }
+  }
+
+  private async writeLedger(mutate: (ledger: Ledger) => void | Promise<void>): Promise<void> {
     await mkdir(dirname(this.path), { recursive: true });
     let lock;
     try { lock = await open(this.lockPath, "wx"); }
@@ -138,11 +154,11 @@ function committedUsd(entry: Entry): number {
 }
 
 /** Operator-supplied local API evaluation cap; no client may select a ledger path. */
-export function withWerewolfEvaluationBudget(base: ProviderExecutionHooks, env: Record<string, string | undefined>): ProviderExecutionHooks {
-  const path = env.WEREWOLF_EVALUATION_BUDGET_LEDGER;
-  const cap = env.WEREWOLF_EVALUATION_BUDGET_USD;
+export function withEvaluationBudget(base: ProviderExecutionHooks, env: Record<string, string | undefined>, game: "WEREWOLF" | "INFLUENCE" = "WEREWOLF"): ProviderExecutionHooks {
+  const path = env[`${game}_EVALUATION_BUDGET_LEDGER`];
+  const cap = env[`${game}_EVALUATION_BUDGET_USD`];
   if (path === undefined && cap === undefined) return base;
-  if (!path?.trim() || !cap?.trim()) throw new Error("Set both WEREWOLF_EVALUATION_BUDGET_LEDGER and WEREWOLF_EVALUATION_BUDGET_USD");
+  if (!path?.trim() || !cap?.trim()) throw new Error(`Set both ${game}_EVALUATION_BUDGET_LEDGER and ${game}_EVALUATION_BUDGET_USD`);
   if (env.NODE_ENV === "production") throw new Error("Local evaluation ledgers cannot be used in production");
-  return new WerewolfEvaluationBudget(path, Number(cap)).hooks(base);
+  return new EvaluationBudget(path, Number(cap)).hooks(base);
 }

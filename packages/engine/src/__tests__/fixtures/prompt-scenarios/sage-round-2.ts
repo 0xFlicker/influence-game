@@ -273,7 +273,7 @@ export const ACCEPTED_SAGE_ROUND_2_SCENARIO = {
   nextLobby: {
     response: {
       thinking: "I need to survive the apparent accountability pile-on without sounding desperate. Frame the Thane vote as answered, distinguish current conduct from historical receipt, and place Lyra's repeated auditing as the live pressure point while respecting Zara's likely empowerment.",
-      message: roundThreePublicMessages[4]!.text,
+      message: "I answered for Thane. Lyra, repeating the audit is not new evidence. Zara, judge what we do now rather than inheriting someone else’s verdict.",
       strategyDelta: null,
     },
   },

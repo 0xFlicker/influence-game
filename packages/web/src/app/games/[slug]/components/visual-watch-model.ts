@@ -18,13 +18,13 @@ export function resolveTranscriptPlayer(token: string | null | undefined, player
 }
 
 function isMingleDialogue(message: TranscriptEntry) {
-  return message.scope === "mingle" || (message.scope === "whisper" && (message.phase === "MINGLE" || message.phase === "FORMAT_MINGLE"));
+  return message.scope === "mingle" || message.scope === "huddle" || (message.scope === "whisper" && (message.phase === "MINGLE" || message.phase === "FORMAT_MINGLE"));
 }
 
 /** Reserve solo staging from committed transcript metadata, never image load timing. */
 export function isSoloTranscript(message: TranscriptEntry): boolean {
   return Boolean(!message.anonymous && (message.acceptedBallot || ((message.speakerPlayerId || message.fromPlayerId)
-    && (message.phase === "RETROSPECTIVE" || message.presentationPurpose === "farewell" || message.phase === "INTRODUCTION" || message.scope === "diary" || (!message.visualScene && !isMingleDialogue(message))))));
+    && (message.phase === "RETROSPECTIVE" || message.presentationPurpose === "farewell" || message.phase === "INTRODUCTION" || message.scope === "diary" || (!message.visualScene && message.phase !== "LOBBY" && !isMingleDialogue(message))))));
 }
 
 export function transcriptPresentationDurationMs(message: TranscriptEntry, players: readonly GamePlayer[] = []) {
@@ -135,6 +135,17 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
     const binding = message.entrySequence !== undefined ? data.bindings?.[message.entrySequence] : undefined;
     const target = data.scenes.find(scene => scene.id === (binding ?? message.visualScene?.id)
       && message.entrySequence !== undefined && scene.afterDialogueSequence < message.entrySequence);
+    if (message.phase === "LOBBY" && speaker && !target) {
+      const sequence = message.firstDurableEventSequence ?? cue?.canonicalSequence;
+      const frame = frames.findLast(frame => sequence != null ? frame.sequence <= sequence
+        : frame.round < message.round || (frame.round === message.round && frame.phase === "LOBBY"));
+      // Callers supply replay-position status for historical runs without frames.
+      const aliveIds = frame ? new Set(frame.players.filter(player => player.status === "alive").map(player => player.id)) : null;
+      const participants = players.filter(player => aliveIds ? aliveIds.has(player.id) : player.status === "alive");
+      return { rooms, beat: { kind: "portrait-room", roomNumber: null, roomLabel: "Lobby",
+        participants: participants.map(player => ({ ...player, avatarUrl: data.portraits[player.id] ?? player.avatarUrl })),
+        speech: { id: String(message.id), playerId: speaker.id, speaker: speaker.name, text: message.text } } };
+    }
     if (isMingleDialogue(message) && speaker) {
       const audience = message.toPlayerIds ?? target?.participantIds ?? [];
       const ids = new Set([speaker.id, ...audience.flatMap(token => {

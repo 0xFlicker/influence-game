@@ -313,6 +313,7 @@ export class TranscriptLogger {
     const dialogueContext: TranscriptDialogueContext = {
       version: 1,
       sessionAudiencePlayerIds: sessionAudience,
+      ...(this.visualScenes.has(fromId) && { visualScene: this.visualScenes.get(fromId) }),
       ...(huddleContext?.allianceId && { allianceId: huddleContext.allianceId }),
       ...(huddleContext?.scheduleId && { scheduleId: huddleContext.scheduleId }),
       ...(huddleContext?.sessionId && { sessionId: huddleContext.sessionId }),

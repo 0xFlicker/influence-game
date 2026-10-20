@@ -1,6 +1,6 @@
+import { beginConversation, conversationPrompt, type ConversationPrompt } from "./open-conversation";
 import { createUUID } from "./game-state";
 import type { MingleTurnAction, MingleIntentSummary } from "./game-runner.types";
-import { formatMingleTurnOperatorText } from "./operator-turn-text";
 import {
   assertCanAcceptCommit,
   prepareAgentPhaseContext,
@@ -26,7 +26,7 @@ export type MingleExecutionPhase =
   | Phase.FORMAT_MINGLE;
 
 export type MingleMovementMode = "live" | "evaluation_frozen_schedule";
-export const DEFAULT_MINGLE_BEATS = 3;
+export const DEFAULT_MINGLE_BEATS = 2;
 
 export interface InitializedMingleExecution {
   alivePlayers: Array<{ id: UUID; name: string }>;
@@ -108,6 +108,7 @@ export async function executeMingleTurn(input: {
   mingleIntent: MingleIntentSummary | null;
   totalBeats: number;
   conversationHistory: Array<{ from: string; text: string }>;
+  conversation?: ConversationPrompt;
 }): Promise<CollectedMingleTurn> {
   const {
     ctx,
@@ -146,6 +147,9 @@ export async function executeMingleTurn(input: {
       mingleIntent,
     },
   );
+  phaseCtx.conversation = input.conversation ?? conversationPrompt(
+    { ...beginConversation(room.playerIds, `${gameState.gameId}:room:${room.roomId}:${room.beat}`, ctx.config.conversationPolicy), nextActorId: playerId },
+    room.playerIds.map(id => ({ id, name: gameState.getPlayerName(id) })), conversationHistory, room.beat < totalBeats ? "optional" : "none");
   phaseCtx.mingleBeat = room.beat;
   phaseCtx.mingleTotalBeats = totalBeats;
 
@@ -174,6 +178,9 @@ export async function executeMingleTurn(input: {
   }
 
   await assertCanAcceptCommit(ctx);
+  logger.emitAgentTurn({ phase, action: "mingle-turn", actor: { id: playerId, name: fromName, role: "player" }, visibility: "private",
+    response: { ...resolvedAction, ...strategicDecisionResponse(resolvedAction), roomId: room.roomId, unavailable: Boolean(resolvedAction.providerAbsence) },
+    thinking: resolvedAction.thinking, reasoningContext: resolvedAction.reasoningContext });
   if (resolvedAction.providerAbsence) {
     return {
       playerId,
@@ -209,7 +216,7 @@ export async function executeMingleTurn(input: {
     resolvedAction.strategyGameplayAccepted !== false,
   );
 
-  const message = resolvedAction.noReply ? null : resolvedAction.message?.trim();
+  const message = resolvedAction.noReply ? null : resolvedAction.message;
   const messageSent = Boolean(message && recipientIds.length > 0);
   const turnAction = message ? "talk" : "no_reply";
   if (messageSent && message) {
@@ -265,7 +272,7 @@ export function commitMingleTurnMovements(input: {
     phase,
     mode,
   } = input;
-  const { gameState, logger } = ctx;
+  const { gameState } = ctx;
   const requestedMovements = resolveMingleMovements(
     turns,
     gameState,
@@ -290,50 +297,10 @@ export function commitMingleTurnMovements(input: {
     if (mode === "live") nextRoomByPlayerId.set(turn.playerId, movement.toRoomId);
 
     const moved = movement.toRoomId !== turn.roomId;
-    const operatorText = formatMingleTurnOperatorText({
-      playerName: turn.fromName,
-      roomId: turn.roomId,
-      message: turn.message,
-      messageSent: turn.messageSent,
-      toRoomId: movement.toRoomId,
-      moved,
-      gotoRoomId: requested.gotoRoomId,
-      gotoPlayerName: requested.gotoPlayerName,
-      gotoStatus: requested.gotoStatus,
+    if (mode === "live") ctx.logger.emitAgentTurn({
+      phase, action: "mingle-movement", actor: { id: turn.playerId, name: turn.fromName, role: "player" }, visibility: "private",
+      response: { fromRoomId: turn.roomId, ...movement, moved },
     });
-    logger.emitAgentTurn({
-      phase,
-      action: "mingle-turn",
-      actor: { id: turn.playerId, name: turn.fromName, role: "player" },
-      visibility: "private",
-      response: {
-        action: turn.turnAction,
-        message: turn.message,
-        noReply: turn.action.noReply ?? !turn.message,
-        messageDelivered: turn.messageSent,
-        fromRoomId: turn.roomId,
-        roomId: turn.roomId,
-        toRoomId: movement.toRoomId,
-        moved,
-        gotoRoomId: requested.gotoRoomId,
-        gotoPlayerName: requested.gotoPlayerName,
-        gotoRoomIgnored: requested.gotoRoomIgnored,
-        gotoStatus: requested.gotoStatus,
-        coordinationReceipt: turn.action.coordinationReceipt,
-        ...(mode === "evaluation_frozen_schedule" && {
-          requestedToRoomId: requested.toRoomId,
-          movementApplied: false,
-        }),
-        ...strategicDecisionResponse(turn.action),
-      },
-      thinking: turn.action.thinking,
-      reasoningContext: turn.action.reasoningContext,
-      scope: "mingle",
-      text: operatorText,
-      to: turn.recipientNames,
-      roomId: turn.roomId,
-    });
-
     records.push({
       player: { id: turn.playerId, name: turn.fromName },
       turn: turn.turn,

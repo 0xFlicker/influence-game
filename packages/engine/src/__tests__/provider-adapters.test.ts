@@ -45,13 +45,7 @@ const invocation: ModelInvocation<{ target: string }> = {
     { role: "system", content: "Play Influence." },
     { role: "user", content: "Choose one target." },
   ],
-  result: {
-    kind: "tool",
-    artifact: voteArtifact,
-    description: "Cast one legal vote.",
-    choice: { name: "cast_vote" },
-    allowParallel: false,
-  },
+  result: { kind: "structured", artifact: voteArtifact },
   outputTokenLimit: 4_096,
   reasoning: { effort: "medium", summary: "auto" },
   temperature: 0.65,
@@ -109,7 +103,7 @@ function runtime(
     modelId: model.modelId,
     modelCapabilities: model.capabilities,
     reasoningPolicy: "medium",
-    toolChoiceMode: model.preferredToolChoiceMode ?? "named",
+
     ...(model.providerProfileId === "openai" && {
       openAIReasoningSummary: "auto" as const,
       openAIServiceTier: "flex" as const,
@@ -171,8 +165,7 @@ describe("provider-native adapters", () => {
     const client = { chat: { completions: { create: async (body: unknown) => {
       requestBodies.push(body);
       const text = ++attempt === 1 ? "oversized draft" : "ok";
-      return { id: `repair-${attempt}`, choices: [{ finish_reason: "tool_calls", message: { role: "assistant", content: null,
-        tool_calls: [{ id: `call-${attempt}`, type: "function", function: { name: "repair_text", arguments: JSON.stringify({ text }) } }] } }] };
+      return { id: `repair-${attempt}`, choices: [{ finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({ text }) } }] };
     } } } } as unknown as OpenAI;
     const providerRuntime = runtime("katana:grok-4-5", client);
     const result = await executeModelInvocation({
@@ -180,8 +173,7 @@ describe("provider-native adapters", () => {
         semantic: { version: 1, kind: "phase_call", phase: Phase.MINGLE, round: 0, canonicalEventSequence: 0, callSlot: 1 } }),
       runtimes: [providerRuntime], maxAttempts: 2,
       invocation: { contextSpans: [{ text: "Frozen history ".repeat(20), format: "text" }],
-        messages: [{ role: "user", content: "Say something brief. " + "Frozen history ".repeat(20) }], result: { kind: "tool", artifact: repairArtifact,
-        description: "Write a short line.", choice: { name: "repair_text" }, allowParallel: false }, outputTokenLimit: 256 },
+        messages: [{ role: "user", content: "Say something brief. " + "Frozen history ".repeat(20) }], result: { kind: "structured", artifact: repairArtifact }, outputTokenLimit: 256 },
       validate: (_outcome, value) => value ? { status: "usable", value } : { status: "unusable", kind: "malformed_output", message: "missing" },
     });
     expect(result.value).toEqual({ text: "ok" });
@@ -198,12 +190,11 @@ describe("provider-native adapters", () => {
     const client = { chat: { completions: { create: async (_body: unknown, options: { signal: AbortSignal }) => {
       signals.push(options.signal);
       await new Promise<void>(resolve => releases.push(resolve));
-      return { id: "local", choices: [{ finish_reason: "tool_calls", message: { role: "assistant", content: null,
-        tool_calls: [{ id: "vote", type: "function", function: { name: "cast_vote", arguments: '{"target":"Atlas"}' } }] } }] };
+      return { id: "local", choices: [{ finish_reason: "stop", message: { role: "assistant", content: '{"target":"Atlas"}' } }] };
     } } } } as unknown as OpenAI;
     const local: LlmProviderRuntime = { ...runtime("katana:grok-4-5", client),
       adapter: createProviderAdapter("lm-studio", client), providerProfileId: "lm-studio", catalogId: "lm-studio:test",
-      localRequestTimeoutMs: 60_000, toolChoiceMode: "required",
+      localRequestTimeoutMs: 60_000,
     };
     const run = (slot: number) => executeModelInvocation({
       call: new ProviderExecutionCoordinator().startCall({ actor: { name: "Dax", role: "player" }, action: voteArtifact.action,
@@ -237,23 +228,15 @@ describe("provider-native adapters", () => {
       validate: () => ({ status: "unusable", kind: "malformed_output", message: "unexpected response" }),
     })).rejects.toMatchObject({ outcome: { kind: mode === "timeout" ? "transport_timeout" : "cancellation" } });
   });
-  it("decodes the same exact tool arguments through native tools and json_schema compatibility", async () => {
-    const nativeClient = {
+  it("decodes the same exact JSON response on Grok and GLM", async () => {
+    const grokClient = {
       chat: {
         completions: {
           create: async () => ({
             id: "chat_native",
             choices: [{
-              finish_reason: "tool_calls",
-              message: {
-                role: "assistant",
-                content: null,
-                tool_calls: [{
-                  id: "call_native",
-                  type: "function",
-                  function: { name: "cast_vote", arguments: '{"target":"Atlas"}' },
-                }],
-              },
+              finish_reason: "stop",
+              message: { role: "assistant", content: '{"target":"Atlas"}' },
             }],
           }),
         },
@@ -272,16 +255,14 @@ describe("provider-native adapters", () => {
         },
       },
     } as unknown as OpenAI;
-    const nativeRuntime = runtime("katana:grok-4-5", nativeClient);
-    nativeRuntime.toolChoiceMode = "named";
+    const grokRuntime = runtime("katana:grok-4-5", grokClient);
     const jsonSchemaRuntime = runtime("katana:glm-5-2", jsonSchemaClient);
-    jsonSchemaRuntime.toolChoiceMode = "json_schema";
 
-    expect(await executeVoteInvocation(nativeRuntime)).toEqual({ target: "Atlas" });
+    expect(await executeVoteInvocation(grokRuntime)).toEqual({ target: "Atlas" });
     expect(await executeVoteInvocation(jsonSchemaRuntime)).toEqual({ target: "Atlas" });
   });
 
-  it("rejects prose recovery and wrapper envelopes in json_schema compatibility", async () => {
+  it("rejects prose recovery and wrapper envelopes in native JSON-schema responses", async () => {
     const cases = [
       ["plain text", "undecodable_structured_output"],
       ["```json\n{\"target\":\"Atlas\"}\n```", "undecodable_structured_output"],
@@ -307,77 +288,20 @@ describe("provider-native adapters", () => {
         },
       } as unknown as OpenAI;
       const providerRuntime = runtime("katana:glm-5-2", client);
-      providerRuntime.toolChoiceMode = "json_schema";
 
       const error = await rejectedProviderAttempt(executeVoteInvocation(providerRuntime));
       expect(error.record.outcome.kind).toBe(expectedKind);
     }
   });
 
-  it("keeps native tool envelope failures typed by decode stage", async () => {
-    const cases: Array<{
-      toolCalls: unknown[];
-      expectedKind: "wrong_tool" | "undecodable_structured_output" | "malformed_output";
-    }> = [
-      { toolCalls: [], expectedKind: "wrong_tool" },
-      {
-        toolCalls: [{
-          id: "wrong",
-          type: "function",
-          function: { name: "other_tool", arguments: '{"target":"Atlas"}' },
-        }],
-        expectedKind: "wrong_tool",
-      },
-      {
-        toolCalls: [{
-          id: "truncated",
-          type: "function",
-          function: { name: "cast_vote", arguments: '{"target":' },
-        }],
-        expectedKind: "undecodable_structured_output",
-      },
-      {
-        toolCalls: [{
-          id: "missing",
-          type: "function",
-          function: { name: "cast_vote", arguments: "{}" },
-        }],
-        expectedKind: "malformed_output",
-      },
-      {
-        toolCalls: [{
-          id: "extra",
-          type: "function",
-          function: { name: "cast_vote", arguments: '{"target":"Atlas","extra":true}' },
-        }],
-        expectedKind: "malformed_output",
-      },
-    ];
-
-    for (const testCase of cases) {
-      const client = {
-        chat: {
-          completions: {
-            create: async () => ({
-              id: "chat_invalid_native",
-              choices: [{
-                finish_reason: testCase.toolCalls.length > 0 ? "tool_calls" : "stop",
-                message: {
-                  role: "assistant",
-                  content: null,
-                  tool_calls: testCase.toolCalls,
-                },
-              }],
-            }),
-          },
-        },
-      } as unknown as OpenAI;
-      const providerRuntime = runtime("katana:grok-4-5", client);
-      providerRuntime.toolChoiceMode = "named";
-
-      const error = await rejectedProviderAttempt(executeVoteInvocation(providerRuntime));
-      expect(error.record.outcome.kind).toBe(testCase.expectedKind);
-    }
+  it("rejects native tool replies instead of treating their arguments as JSON responses", async () => {
+    const client = { chat: { completions: { create: async () => ({
+      choices: [{ finish_reason: "tool_calls", message: { role: "assistant", content: null,
+        tool_calls: [{ id: "unexpected", type: "function", function: { name: "cast_vote", arguments: '{"target":"Atlas"}' } }] } }],
+    }) } } } as unknown as OpenAI;
+    const error = await rejectedProviderAttempt(executeVoteInvocation(runtime("katana:grok-4-5", client)));
+    expect(error.record.outcome.kind).toBe("malformed_output");
+    expect(error.record.acceptedValue).toBeUndefined();
   });
 
   it("retries a malformed native envelope and accepts only the exact recovery", async () => {
@@ -391,21 +315,10 @@ describe("provider-native adapters", () => {
             return {
               id: `chat_retry_${attempt}`,
               choices: [{
-                finish_reason: "tool_calls",
-                message: {
-                  role: "assistant",
-                  content: null,
-                  tool_calls: [{
-                    id: `call_${attempt}`,
-                    type: "function",
-                    function: {
-                      name: "cast_vote",
-                      arguments: attempt === 1
+                finish_reason: "stop",
+                message: { role: "assistant", content: attempt === 1
                         ? '{"target":"Atlas","extra":true}'
-                        : '{"target":"Atlas"}',
-                    },
-                  }],
-                },
+                        : '{"target":"Atlas"}' },
               }],
             };
           },
@@ -413,7 +326,6 @@ describe("provider-native adapters", () => {
       },
     } as unknown as OpenAI;
     const providerRuntime = runtime("katana:grok-4-5", client);
-    providerRuntime.toolChoiceMode = "named";
     const coordinator = new ProviderExecutionCoordinator({
       wait: async () => {},
       hooks: { onTerminal: (record) => { records.push(record); } },
@@ -431,7 +343,7 @@ describe("provider-native adapters", () => {
     expect(records[1]?.acceptedValue).toEqual({ target: "Atlas" });
   });
 
-  it("rejects an inexact durable tool value without dispatching", async () => {
+  it("rejects an inexact durable decision value without dispatching", async () => {
     let dispatches = 0;
     const client = {
       chat: {
@@ -538,7 +450,7 @@ describe("provider-native adapters", () => {
     ]);
   });
 
-  it.each(["openai:gpt-6-luna", "openai:gpt-5.6-luna"] as const)("compiles %s Responses reasoning with strict tools and caching", (catalogId) => {
+  it.each(["openai:gpt-6-luna", "openai:gpt-5.6-luna"] as const)("compiles %s Responses reasoning with strict JSON schemas and caching", (catalogId) => {
     const client = {} as OpenAI;
     const openai = runtime(catalogId, client);
 
@@ -555,10 +467,10 @@ describe("provider-native adapters", () => {
       max_output_tokens: 4_096,
       prompt_cache_options: { ttl: "30m" },
     });
-    expect(withFallbacks).toHaveProperty("tools");
+    expect(withFallbacks).not.toHaveProperty("tools");
     expect(withFallbacks).not.toHaveProperty("reasoning_effort");
     expect(withFallbacks).not.toHaveProperty("temperature");
-    expect(withFallbacks.tools?.[0]).toMatchObject({ type: "function", strict: true });
+    expect(withFallbacks.text?.format).toMatchObject({ type: "json_schema", name: "cast_vote", strict: true });
   });
 
   it("preserves Grok options while GLM omits only unsupported options", () => {
@@ -574,17 +486,17 @@ describe("provider-native adapters", () => {
       max_tokens: 4_096,
       temperature: 0.65,
       reasoning_effort: "medium",
-      parallel_tool_calls: false,
     });
-    expect(grokBody).toHaveProperty("tools");
+    expect(grokBody).not.toHaveProperty("tools");
+    expect(grokBody.response_format).toMatchObject({type: "json_schema"});
     expect(glmBody).toMatchObject({
       model: "glm-5-2",
       max_tokens: 4_096,
       temperature: 0.65,
-      parallel_tool_calls: false,
     });
     expect(glmBody).not.toHaveProperty("reasoning_effort");
-    expect(glmBody).toHaveProperty("tools");
+    expect(glmBody).not.toHaveProperty("tools");
+    expect(glmBody.response_format).toMatchObject({type: "json_schema"});
   });
 
   it("does not change a Katana primary request when an OpenAI fallback is present", () => {
@@ -611,16 +523,8 @@ describe("provider-native adapters", () => {
             return {
               id: "chat_ok",
               choices: [{
-                finish_reason: "tool_calls",
-                message: {
-                  role: "assistant",
-                  content: null,
-                  tool_calls: [{
-                    id: "call_1",
-                    type: "function",
-                    function: { name: "cast_vote", arguments: '{"target":"Atlas"}' },
-                  }],
-                },
+                finish_reason: "stop",
+                message: { role: "assistant", content: '{"target":"Atlas"}' },
               }],
             };
           },
@@ -682,19 +586,8 @@ describe("provider-native adapters", () => {
             return {
               id: "chat_ok",
               choices: [{
-                finish_reason: "tool_calls",
-                message: {
-                  role: "assistant",
-                  content: null,
-                  tool_calls: [{
-                    id: "call_1",
-                    type: "function",
-                    function: {
-                      name: "cast_vote",
-                      arguments: '{"target":"Atlas"}',
-                    },
-                  }],
-                },
+                finish_reason: "stop",
+                message: { role: "assistant", content: '{"target":"Atlas"}' },
               }],
               _request_id: "req_katana_1",
               usage: {
@@ -728,7 +621,7 @@ describe("provider-native adapters", () => {
       ],
       invocation,
       maxAttempts: 1,
-      validate: (outcome) => outcome.toolCalls[0]?.name === "cast_vote"
+      validate: (outcome, decoded) => decoded?.target === "Atlas"
         ? { status: "usable", value: outcome }
         : {
             status: "unusable",
@@ -792,16 +685,8 @@ describe("provider-native adapters", () => {
             return {
               id: "chat_ok",
               choices: [{
-                finish_reason: "tool_calls",
-                message: {
-                  role: "assistant",
-                  content: null,
-                  tool_calls: [{
-                    id: "call_1",
-                    type: "function",
-                    function: { name: "cast_vote", arguments: '{"target":"Atlas"}' },
-                  }],
-                },
+                finish_reason: "stop",
+                message: { role: "assistant", content: '{"target":"Atlas"}' },
               }],
             };
           },
@@ -829,7 +714,7 @@ describe("provider-native adapters", () => {
           ? AbortSignal.abort(new DOMException("Timed out", "AbortError"))
           : new AbortController().signal;
       },
-      validate: (outcome) => outcome.toolCalls[0]?.name === "cast_vote"
+      validate: (outcome, decoded) => decoded?.target === "Atlas"
         ? { status: "usable", value: outcome }
         : { status: "unusable", kind: "wrong_tool", message: "missing vote", retryable: false },
     });
@@ -856,11 +741,8 @@ describe("provider-native adapters", () => {
             return {
               id: "chat_recovered", object: "chat.completion", model: "grok-4-5",
               choices: [{
-                finish_reason: "tool_calls",
-                message: {
-                  role: "assistant", content: null,
-                  tool_calls: [{ id: "call_recovered", type: "function", function: { name: "cast_vote", arguments: '{"target":"Atlas"}' } }],
-                },
+                finish_reason: "stop",
+                message: { role: "assistant", content: '{"target":"Atlas"}' },
               }],
               usage: { prompt_tokens: 100, completion_tokens: 40, total_tokens: 140 },
             };
@@ -873,24 +755,23 @@ describe("provider-native adapters", () => {
     expect(calls).toBe(2);
   });
 
-  it("compiles Meta Muse tool invocations to Responses with auto tool choice", () => {
+  it("compiles Meta Muse decisions to Responses with enforced JSON Schema", () => {
     const meta = runtime("meta-muse:muse-spark-1.3-contributor", {} as OpenAI);
-    meta.toolChoiceMode = "auto";
     const body = compileMetaMuseResponsesRequest(invocation, meta) as unknown as Record<string, unknown>;
 
     expect(body.model).toBe("muse-spark-1.3-contributor");
-    expect(body.tool_choice).toBe("auto");
+    expect(body.tool_choice).toBeUndefined();
     expect(body.store).toBe(false);
     expect(body.service_tier).toBeUndefined();
     expect(body.temperature).toBeUndefined();
-    expect(Array.isArray(body.tools)).toBe(true);
+    expect(body.tools).toBeUndefined();
+    expect(body.text).toMatchObject({format: {type: "json_schema", name: "cast_vote", strict: true}});
     const request = meta.adapter.compile(invocation, meta);
     expect(request.transport).toBe("meta-muse.responses");
   });
 
   it("compiles Meta Muse structured invocations to strict json_schema text format", () => {
     const meta = runtime("meta-muse:muse-spark-1.3-contributor", {} as OpenAI);
-    meta.toolChoiceMode = "auto";
     const body = compileMetaMuseResponsesRequest(structuredInvocation, meta) as unknown as Record<string, unknown>;
 
     expect(body.text).toEqual({
@@ -909,12 +790,11 @@ describe("provider-native adapters", () => {
 
   it("keeps larger Meta Muse output limits unchanged", () => {
     const meta = runtime("meta-muse:muse-spark-1.3-contributor", {} as OpenAI);
-    meta.toolChoiceMode = "auto";
     const body = compileMetaMuseResponsesRequest(invocation, meta) as unknown as Record<string, unknown>;
     expect(body.max_output_tokens).toBe(4_096);
   });
 
-  it.each(["auto", "json_schema"] as const)("decodes an exact Meta Muse Responses tool call and rejects a missing call under %s mode", async (toolChoiceMode) => {
+  it("decodes Muse JSON responses and rejects prose", async () => {
     const toolClient = {
       responses: {
         create: async () => ({
@@ -922,23 +802,23 @@ describe("provider-native adapters", () => {
           status: "completed",
           output: [
             { type: "reasoning", id: "rs_meta", summary: [] },
-            { type: "function_call", call_id: "call_meta", name: "cast_vote", arguments: '{"target":"Atlas"}' },
+            { type: "message", role: "assistant", content: [{ type: "output_text", text: '{"target":"Atlas"}' }] },
           ],
           usage: { input_tokens: 532, input_tokens_details: { cached_tokens: 10 }, output_tokens: 102, output_tokens_details: { reasoning_tokens: 32 }, total_tokens: 634 },
         }),
       },
     } as unknown as OpenAI;
     const meta = runtime("meta-muse:muse-spark-1.3-contributor", toolClient);
-    meta.toolChoiceMode = toolChoiceMode;
     expect(await executeVoteInvocation(meta)).toEqual({ target: "Atlas" });
 
     const outcome = normalizeOpenAIResponse({
       id: "resp_meta_tool",
       status: "completed",
-      output: [{ type: "function_call", call_id: "call_meta", name: "cast_vote", arguments: '{"target":"Atlas"}' }],
+      output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: '{"target":"Atlas"}' }] }],
     } as never, undefined, "meta-muse.responses");
     expect(outcome.transport).toBe("meta-muse.responses");
-    expect(outcome.toolCalls).toEqual([{ id: "call_meta", name: "cast_vote", arguments: '{"target":"Atlas"}' }]);
+    expect(outcome.toolCalls).toEqual([]);
+    expect(outcome.text).toBe('{"target":"Atlas"}');
 
     const proseClient = {
       responses: {
@@ -951,15 +831,14 @@ describe("provider-native adapters", () => {
       },
     } as unknown as OpenAI;
     const proseMeta = runtime("meta-muse:muse-spark-1.3-contributor", proseClient);
-    proseMeta.toolChoiceMode = toolChoiceMode;
     const error = await rejectedProviderAttempt(executeVoteInvocation(proseMeta));
-    expect(error.outcome.kind).toBe("wrong_tool");
+    expect(error.outcome.kind).toBe("undecodable_structured_output");
   });
 });
 
 
 describe("nullable normalization across native transports", () => {
-  it.each(["responses-tool", "responses-structured", "chat-tool", "chat-json-schema-tool", "chat-structured"])(
+  it.each(["responses-structured", "chat-structured"])(
     "normalizes within the attempt and preserves native evidence for %s", async (mode) => {
       const artifact = createExactStructuredOutputArtifact<{ target: string | null }, { target: string | null }>({
         action: "test.null-target.v1", name: "null_target",
@@ -971,17 +850,13 @@ describe("nullable normalization across native transports", () => {
         decodeAcceptedValue: (value) => ({ status: "valid", value: value as { target: string | null } }),
       });
       const isResponses = mode.startsWith("responses");
-      const isTool = mode.endsWith("tool");
-      const usesToolCall = isTool && mode !== "chat-json-schema-tool";
       const raw = '{"target":"null"}';
       const native = isResponses ? {
         id: "resp_null", object: "response", status: "completed",
-        output: usesToolCall ? [{ type: "function_call", id: "fc_1", call_id: "call_1", name: artifact.name, arguments: raw }]
-          : [{ type: "message", id: "msg_1", role: "assistant", status: "completed", content: [{ type: "output_text", text: raw, annotations: [] }] }],
+        output: [{ type: "message", id: "msg_1", role: "assistant", status: "completed", content: [{ type: "output_text", text: raw, annotations: [] }] }],
       } : {
-        id: "chat_null", choices: [{ finish_reason: usesToolCall ? "tool_calls" : "stop", message: {
-          role: "assistant", content: usesToolCall ? null : raw,
-          ...(usesToolCall && { tool_calls: [{ id: "call_1", type: "function", function: { name: artifact.name, arguments: raw } }] }),
+        id: "chat_null", choices: [{ finish_reason: "stop", message: {
+          role: "assistant", content: raw,
         } }],
       };
       const before = structuredClone(native);
@@ -990,7 +865,6 @@ describe("nullable normalization across native transports", () => {
         chat: { completions: { create: async () => native } },
       } as unknown as OpenAI;
       const provider = runtime(isResponses ? "openai:gpt-5.6-luna" : "katana:grok-4-5", client);
-      provider.toolChoiceMode = mode === "chat-json-schema-tool" ? "json_schema" : "named";
       const records: ProviderAttemptRecord[] = [];
       const call = new ProviderExecutionCoordinator({ wait: async () => {}, hooks: {
         onTerminal: (record) => { records.push(record); },
@@ -1001,8 +875,7 @@ describe("nullable normalization across native transports", () => {
       const result = await executeModelInvocation({
         call, runtimes: [provider], maxAttempts: 1,
         invocation: { messages: [{ role: "user", content: "Choose no target." }], outputTokenLimit: 256,
-          result: isTool ? { kind: "tool", artifact, choice: { name: artifact.name }, allowParallel: false }
-            : { kind: "structured", artifact },
+          result: { kind: "structured", artifact },
         },
         validate: (_outcome, decoded) => decoded?.target === null
           ? { status: "usable", value: decoded }
@@ -1024,12 +897,12 @@ describe("vision invocation contracts", () => {
   };
   const client = {} as OpenAI;
 
-  it("routes GPT-6 Luna image decisions through Responses with reasoning and strict tools", () => {
+  it("routes GPT-6 Luna image decisions through Responses with reasoning and strict JSON schemas", () => {
     const provider = runtime("openai:gpt-6-luna", client);
     provider.reasoningPolicy = "high";
     const invocation: ModelInvocation = {
       ...visual,
-      result: { kind: "tool", artifact: targetArtifact, choice: { name: targetArtifact.name }, allowParallel: false },
+      result: { kind: "structured", artifact: targetArtifact },
       reasoning: { effort: "high" },
       temperature: 0.7,
       promptCache: { key: "luna-visual", ttl: "30m" },
@@ -1041,7 +914,7 @@ describe("vision invocation contracts", () => {
       model: "gpt-6-luna",
       reasoning: { effort: "high" },
       prompt_cache_options: { ttl: "30m" },
-      tools: [{ type: "function", name: targetArtifact.name, strict: true }],
+      text: { format: { type: "json_schema", name: targetArtifact.name, strict: true } },
       input: [{ role: "user", content: [
         { type: "input_text", text: "Read your room." },
         { type: "input_image", image_url: image.url, detail: "high" },

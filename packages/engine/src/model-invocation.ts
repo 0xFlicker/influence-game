@@ -4,7 +4,6 @@ import type {
   ProviderProfileId,
 } from "./model-catalog";
 import type {
-  LlmToolChoiceMode,
   OpenAIRequestServiceTier,
 } from "./llm-client";
 import type { ProviderAttemptAccountingFacts } from "./provider-execution";
@@ -33,18 +32,18 @@ export interface ModelInvocationToolCall {
   arguments: string;
 }
 
+/** Definition of the single response a decision turn must return. */
+export interface DecisionSchema {
+  name: string;
+  description?: string;
+  schema: Record<string, unknown>;
+}
+
 export type ModelInvocationResult<TStructuredValue = unknown> =
   | { kind: "text" }
   | {
       kind: "structured";
       artifact: ExactStructuredOutputArtifact<TStructuredValue>;
-    }
-  | {
-      kind: "tool";
-      artifact: ExactStructuredOutputArtifact<TStructuredValue>;
-      description?: string;
-      choice: "auto" | "required" | { name: string };
-      allowParallel?: false;
     };
 
 /** Provider-neutral request for exposing a bounded reasoning summary. */
@@ -80,7 +79,6 @@ export interface ProviderRuntimeDescriptor {
   modelId: string;
   modelCapabilities: ModelRequestCapabilities;
   reasoningPolicy: "action-policy" | ModelReasoningEffort;
-  toolChoiceMode: LlmToolChoiceMode;
   openAIReasoningSummary?: ModelReasoningSummaryMode;
   openAIServiceTier?: OpenAIRequestServiceTier;
 }

@@ -203,7 +203,7 @@ export class WerewolfModelAgent implements WerewolfAgent {
           ...(conversationTurn === null ? [] : [{ role: "user" as const,
             content: JSON.stringify({ turnReminder, conversationTurn }) }]),
         ],
-        result: { kind: "tool", artifact, description: `Submit your ${input.request.action} decision.`, choice: "required", allowParallel: false },
+        result: { kind: "structured", artifact },
         outputTokenLimit: 8192, temperature: 0.8,
       },
       validate: (_outcome, value) => value
@@ -248,7 +248,7 @@ export class WerewolfModelAgent implements WerewolfAgent {
             vote: request.action === "public_vote" ? { legalEliminationTargets: request.legalTargetIds.map(named), requiredVotes: Math.floor(livingCount / 2) + 1, order: c!.voterIds!.map(named),
               ballots: observation.board.entries.flatMap(entry => entry.kind === "ballot" && entry.day === observation.board.day ? [{ voter: named(entry.actorId), eliminate: entry.targetId === null ? null : named(entry.targetId) }] : []),
               votingAllowanceBytes, votingMessageBytes, unit: "UTF-8 bytes" } : null, instruction }) }],
-        result: { kind: "tool", artifact: werewolfDecisionArtifact(request, references), choice: "required", allowParallel: false }, outputTokenLimit: 8192, temperature: 0.8 },
+        result: { kind: "structured", artifact: werewolfDecisionArtifact(request, references) }, outputTokenLimit: 8192, temperature: 0.8 },
       validate: (_outcome, value) => value ? { status: "usable", value } : { status: "unusable", kind: "undecodable_structured_output", message: "Missing exact Werewolf decision" } });
     return werewolfGameplayDecision(result.value);
   }

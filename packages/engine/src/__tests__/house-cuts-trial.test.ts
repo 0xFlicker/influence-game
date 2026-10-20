@@ -16,7 +16,7 @@ function runtime(output?: string, capacityFailures = 0) {
   let calls = 0;
   const model = modelCatalogEntryById(CUT_EDITORIAL_MODEL)!;
   const value: LlmProviderRuntime = { catalogId: CUT_EDITORIAL_MODEL, modelId: model.modelId, providerProfileId: "openai",
-    modelCapabilities: model.capabilities, reasoningPolicy: "low", toolChoiceMode: "named", position: 0, role: "primary",
+    modelCapabilities: model.capabilities, reasoningPolicy: "low",  position: 0, role: "primary",
     adapter: { id: "test", validate: () => ({ compatible: true }),
       compile: (invocation, descriptor) => { tiers.push(descriptor.openAIServiceTier); return { transport: "openai.responses", body: invocation.messages }; },
       async dispatch(request) {

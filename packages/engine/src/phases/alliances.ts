@@ -1,3 +1,4 @@
+import { huddleSessionId, beginConversation, advanceConversation, conversationPrompt, type ConversationState } from "../open-conversation";
 import { createHash } from "node:crypto";
 import { Phase } from "../types";
 import type { AllianceAction, AllianceActionOpportunity, AllianceHuddlePromptContext, AllianceHuddleTurnAction } from "../game-runner.types";
@@ -5,15 +6,12 @@ import type {
   HouseAllianceProposerCandidate,
   HouseAllianceProposerSelectionResult,
 } from "../house-interviewer";
-import type { AllianceHuddleFactAtom, AllianceHuddleOutcome, AllianceHuddleScheduleRecord, AllianceHuddleSessionRecord, AllianceHuddleWindow, AllianceRecord, UUID } from "../types";
+import type { AllianceHuddleScheduleRecord, AllianceHuddleWindow, AllianceRecord, UUID } from "../types";
 import {
   formatAllianceActionOperatorText,
-  formatAllianceHuddleOutcomeOperatorText,
   formatAllianceHuddleScheduleOperatorText,
-  formatAllianceHuddleTurnOperatorText,
   type AllianceActionOperatorContext,
 } from "../operator-turn-text";
-import { formatAllianceHuddleFacts } from "../alliance-huddle-outcome";
 import {
   agentTurnSourcePointer,
   assertCanAcceptCommit,
@@ -539,9 +537,7 @@ function huddleCandidate(ctx: PhaseRunnerContext, alliance: AllianceRecord, wind
     memberNames: allianceMemberNames(ctx, liveAllianceMemberIds(ctx, alliance)),
     purpose: alliance.purpose,
     timebox: alliance.timebox,
-    priorOutcomeCount: alliance.huddleOutcomeIds
-      .map((outcomeId) => ctx.gameState.getAllianceHuddleOutcomes().find((outcome) => outcome.id === outcomeId))
-      .filter((outcome) => outcome?.window === window).length,
+    priorSessionCount: Object.values(ctx.gameState.getDomainProjection().allianceHuddleSessions).filter(session => session.allianceId === alliance.id && session.window === window).length,
   };
 }
 
@@ -610,220 +606,67 @@ function emitHuddleScheduleTurn(
   });
 }
 
-async function collectAllianceHuddleTurn(
-  ctx: PhaseRunnerContext,
-  speakerId: UUID,
-  huddle: AllianceHuddlePromptContext,
-  conversationHistory: Array<{ from: string; text: string }>,
-): Promise<AllianceHuddleTurnAction | null> {
-  const agent = ctx.agents.get(speakerId)!;
-  if (!agent.getAllianceHuddleTurn) {
-    return null;
-  }
+export interface HuddleConversationProgress {
+  scheduleIds: string[];
+  index: number;
+  conversation: ConversationState | null;
+}
 
-  const phase = huddle.window === "format"
-    ? Phase.FORMAT_MINGLE
-    : huddle.window === "pre_vote"
-      ? Phase.PRE_VOTE_HUDDLE
-      : Phase.PRE_COUNCIL_HUDDLE;
-  const phaseCtx = prepareAgentPhaseContext(
-    ctx,
-    agent,
-    speakerId,
-    phase,
-    "ordinary_speech",
-    {
-      empoweredId: ctx.gameState.empoweredId ?? undefined,
-      councilCandidates: ctx.gameState.councilCandidates ?? undefined,
-    },
-  );
+/** Accept at most one contribution, or finish/start a session without model inference. */
+export async function advanceHuddleConversation(ctx: PhaseRunnerContext, prior: HuddleConversationProgress): Promise<HuddleConversationProgress> {
+  const progress = structuredClone(prior);
+  const schedule = ctx.gameState.getAllianceHuddleSchedules().find(s => s.id === progress.scheduleIds[progress.index]);
+  if (!schedule || schedule.decision !== "scheduled") throw new Error("Missing selected huddle schedule");
+  const alliance = ctx.gameState.getAlliance(schedule.allianceId);
+  if (!alliance) throw new Error("Missing huddle alliance");
+  const phase = schedule.window === "format" ? Phase.FORMAT_MINGLE : schedule.window === "pre_vote" ? Phase.PRE_VOTE_HUDDLE : Phase.PRE_COUNCIL_HUDDLE;
+  const sessionId = huddleSessionId(schedule.id);
+  if (!progress.conversation) {
+    progress.conversation = beginConversation(schedule.memberIds, sessionId, ctx.config.conversationPolicy);
+    return progress;
+  }
+  const conversation = progress.conversation;
+  if (conversation.ended) {
+    await assertCanAcceptCommit(ctx);
+    ctx.gameState.recordAllianceHuddleCompleted({ id: sessionId, scheduleId: schedule.id, allianceId: alliance.id,
+      window: schedule.window, round: schedule.round, pass: schedule.pass, speakerIds: [...schedule.memberIds], completedAt: new Date().toISOString() });
+    return { ...progress, index: progress.index + 1, conversation: null };
+  }
+  const speakerId = conversation.nextActorId;
+  const agent = ctx.agents.get(speakerId);
+  if (!agent) throw new Error("Missing huddle participant");
+  const history = ctx.logger.transcript.filter(e => e.scope === "huddle" && e.dialogueContext?.sessionId === sessionId)
+    .map(e => ({ from: e.from, text: e.text }));
+  const phaseCtx = prepareAgentPhaseContext(ctx, agent, speakerId, phase, "ordinary_speech");
+  phaseCtx.conversation = conversationPrompt(conversation, schedule.memberIds.map(id => ({ id, name: ctx.gameState.getPlayerName(id) })), history);
+  phaseCtx.roomMates = schedule.memberIds.map(id => ctx.gameState.getPlayerName(id));
+  delete phaseCtx.currentRoomId;
+  delete phaseCtx.roomCounts;
+  delete phaseCtx.roomCount;
+  delete phaseCtx.mingleBeat;
+  delete phaseCtx.mingleTotalBeats;
+  const huddle: AllianceHuddlePromptContext = { sessionId, allianceId: alliance.id, allianceName: alliance.name,
+    memberIds: [...schedule.memberIds], memberNames: allianceMemberNames(ctx, schedule.memberIds), purpose: alliance.purpose,
+    timebox: alliance.timebox, window: schedule.window, scheduleId: schedule.id, pass: schedule.pass };
+  let turn: AllianceHuddleTurnAction;
   try {
-    return await agent.getAllianceHuddleTurn(phaseCtx, huddle, conversationHistory);
+    turn = await agent.getAllianceHuddleTurn?.(phaseCtx, huddle, history) ?? { message: null, noReply: true };
   } catch (error) {
     if (!(error instanceof ProviderUnavailableError)) throw error;
-    return {
-      message: null,
-      noReply: true,
-      factAtoms: [],
-      providerAbsence: {
-        kind: "provider_exhausted",
-        outcome: error.outcome.kind,
-      },
-    };
+    turn = { message: null, noReply: true, providerAbsence: { kind: "provider_exhausted", outcome: error.outcome.kind } };
   }
-}
-
-async function completeHuddleSession(
-  ctx: PhaseRunnerContext,
-  phase: AllianceHuddlePhase,
-  alliance: AllianceRecord,
-  schedule: AllianceHuddleScheduleRecord,
-): Promise<void> {
-  const speakerIds = schedule.memberIds.filter((memberId) => ctx.gameState.getPlayer(memberId)?.status === "alive");
-  const conversationHistory: Array<{ from: string; text: string }> = [];
-  const facts: AllianceHuddleFactAtom[] = [];
-  // Canonical session identity is created before any message so modern huddle
-  // rows carry alliance/schedule/session IDs plus exact session-time audience.
-  const sessionId = deterministicHuddleId([
-    "alliance-huddle-session-v1",
-    schedule.id,
-  ]);
-  const huddle: AllianceHuddlePromptContext = {
-    sessionId,
-    allianceId: alliance.id,
-    allianceName: alliance.name,
-    memberIds: [...speakerIds],
-    memberNames: allianceMemberNames(ctx, speakerIds),
-    purpose: alliance.purpose,
-    timebox: alliance.timebox,
-    window: schedule.window,
-    scheduleId: schedule.id,
-    pass: schedule.pass,
-    priorFacts: facts,
-  };
-  const huddleMessageContext = {
-    allianceId: alliance.id,
-    scheduleId: schedule.id,
-    sessionId,
-    window: schedule.window,
-    sessionAudiencePlayerIds: speakerIds,
-  };
-  for (const [speakerOrdinal, speakerId] of speakerIds.entries()) {
-    const turn = await collectAllianceHuddleTurn(ctx, speakerId, huddle, conversationHistory);
-    if (!turn || turn.providerAbsence) continue;
-    await assertCanAcceptCommit(ctx);
-    const message = turn.noReply ? null : (turn.message?.trim() || null);
-    facts.push(...turn.factAtoms.map((fact, factOrdinal) => ({
-      ...fact,
-      factId: deterministicHuddleId([
-        "alliance-huddle-fact-v1",
-        sessionId,
-        speakerId,
-        speakerOrdinal,
-        factOrdinal,
-        fact.kind,
-        "actionKind" in fact ? fact.actionKind : null,
-        "targetPlayerId" in fact ? fact.targetPlayerId : null,
-      ]),
-      sessionId,
-    })));
-    if (message) {
-      ctx.logger.logHuddleMessage(
-        speakerId,
-        speakerIds.filter((memberId) => memberId !== speakerId),
-        message,
-        phase,
-        turn.thinking,
-        turn.reasoningContext,
-        huddleMessageContext,
-      );
-      conversationHistory.push({ from: ctx.gameState.getPlayerName(speakerId), text: message });
-    }
-    resolveActionStrategyCandidate(
-      ctx.agents.get(speakerId)!,
-      turn,
-      turn.strategyGameplayAccepted !== false,
-    );
-    const speakerName = ctx.gameState.getPlayerName(speakerId);
-    ctx.logger.emitAgentTurn({
-      phase,
-      action: "alliance-huddle-turn",
-      actor: { id: speakerId, name: speakerName, role: "player" },
-      visibility: "private",
-      response: {
-        scheduleId: schedule.id,
-        allianceId: alliance.id,
-        allianceName: alliance.name,
-        sessionId,
-        action: message ? "talk" : "no_reply",
-        message,
-        ...strategicDecisionResponse(turn),
-      },
-      thinking: turn.thinking,
-      reasoningContext: turn.reasoningContext,
-      scope: "huddle",
-      text: formatAllianceHuddleTurnOperatorText({
-        playerName: speakerName,
-        allianceName: alliance.name,
-        message,
-      }),
-    });
-  }
-
-  const completedAt = new Date().toISOString();
-  const session: AllianceHuddleSessionRecord = {
-    id: sessionId,
-    scheduleId: schedule.id,
-    allianceId: alliance.id,
-    window: schedule.window,
-    round: schedule.round,
-    pass: schedule.pass,
-    speakerIds,
-    completedAt,
-  };
-  ctx.gameState.recordAllianceHuddleCompleted(session);
-
-  const memberNames = allianceMemberNames(ctx, speakerIds);
-  const summary = await ctx.houseInterviewer.summarizeAllianceHuddle({
-    round: schedule.round,
-    phase,
-    window: schedule.window,
-    scheduleId: schedule.id,
-    alliance: {
-      id: alliance.id,
-      name: alliance.name,
-      memberNames,
-      purpose: alliance.purpose,
-      timebox: alliance.timebox,
-    },
-    transcript: conversationHistory,
-    facts,
-  });
+  progress.conversation = advanceConversation(conversation, speakerId, turn);
   await assertCanAcceptCommit(ctx);
-  const outcome: AllianceHuddleOutcome = {
-    id: deterministicHuddleId(["alliance-huddle-outcome-v1", sessionId]),
-    sessionId: session.id,
-    allianceId: alliance.id,
-    window: schedule.window,
-    round: schedule.round,
-    facts,
-    // Immutable session participant snapshot — not current alliance membership.
-    participantPlayerIds: [...speakerIds],
-    createdAt: completedAt,
-  };
-  ctx.gameState.recordAllianceHuddleOutcome(outcome);
-  ctx.logger.emitAgentTurn({
-    phase,
-    action: "alliance-huddle-outcome",
-    actor: { name: "The House", role: "house" },
-    visibility: "private",
-    response: {
-      scheduleId: schedule.id,
-      sessionId: session.id,
-      allianceId: alliance.id,
-      outcome,
-      interpretation: {
-        ask: summary.ask,
-        plan: summary.plan,
-        promises: summary.promises,
-        dissent: summary.dissent,
-        confidence: summary.confidence,
-        posture: summary.posture,
-        leakOrBetrayalClaims: summary.leakOrBetrayalClaims,
-      },
-    },
-    thinking: summary.thinking,
-    reasoningContext: summary.reasoningContext,
-    scope: "huddle",
-    text: formatAllianceHuddleOutcomeOperatorText({
-      allianceName: alliance.name,
-      factSummaries: formatAllianceHuddleFacts(
-        outcome.facts,
-        (playerId) => ctx.gameState.getPlayerName(playerId),
-      ),
-    }),
-  });
+  const message = turn.providerAbsence || turn.noReply ? null : turn.message;
+  if (message) ctx.logger.logHuddleMessage(speakerId, schedule.memberIds.filter(id => id !== speakerId), message, phase,
+    turn.thinking, turn.reasoningContext, { allianceId: alliance.id, scheduleId: schedule.id, sessionId, window: schedule.window, sessionAudiencePlayerIds: schedule.memberIds, decisionId: turn.decisionId });
+  if (!turn.providerAbsence) resolveActionStrategyCandidate(agent, turn, turn.strategyGameplayAccepted !== false);
+  ctx.logger.emitAgentTurn({ phase, action: "alliance-huddle-turn", actor: { id: speakerId, name: ctx.gameState.getPlayerName(speakerId), role: "player" }, visibility: "private",
+    response: { sessionId, scheduleId: schedule.id, allianceId: alliance.id, message, noReply: !message,
+      unavailable: Boolean(turn.providerAbsence), ...strategicDecisionResponse(turn) }, thinking: turn.thinking, reasoningContext: turn.reasoningContext });
+  return progress;
 }
+
 
 export async function runAllianceFormationPhase(
   ctx: PhaseRunnerContext,
@@ -958,21 +801,8 @@ export async function runAllianceFormationPhase(
   }
 }
 
-export async function runAllianceHuddleWindow(
-  ctx: PhaseRunnerContext,
-  actor: PhaseActor,
-  phase: AllianceHuddlePhase,
-  options: { completePhase?: boolean } = {},
-): Promise<void> {
-  const completePhase = options.completePhase ?? true;
-  const label = phase === Phase.FORMAT_MINGLE
-    ? "POST-FORMAT ALLIANCE HUDDLES"
-    : phase === Phase.PRE_VOTE_HUDDLE
-      ? "PRE-VOTE ALLIANCE HUDDLES"
-      : "PRE-COUNCIL ALLIANCE HUDDLES";
-  ctx.logger.emitPhaseChange(phase);
-  ctx.logger.logSystem(`=== ${label} ===`, phase);
-
+export async function beginAllianceHuddleWindow(ctx: PhaseRunnerContext, phase: AllianceHuddlePhase): Promise<HuddleConversationProgress> {
+  const scheduleIds: string[] = [];
   ctx.gameState.closeUniversalAlliancesBeforeMingle(phase);
   const eligible = ctx.gameState.getHuddleEligibleAlliances();
   const budget = huddleBudget(ctx.gameState.getAlivePlayers().length);
@@ -980,13 +810,7 @@ export async function runAllianceHuddleWindow(
   // Capture the canonical boundary once, before any schedule/provider result.
   // It survives scratch-turn replay and separates repeated format windows.
   const windowEventSequence = ctx.gameState.getCanonicalEvents().at(-1)?.sequence ?? 0;
-  if (eligible.length === 0) {
-    if (completePhase) {
-      actor.send({ type: "PHASE_COMPLETE" });
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-    return;
-  }
+  if (eligible.length === 0) return { scheduleIds, index: 0, conversation: null };
   const eligibleById = new Map(eligible.map((alliance) => [alliance.id, alliance]));
   const housePlan = await ctx.houseInterviewer.planAllianceHuddles({
     round: ctx.gameState.round,
@@ -1060,7 +884,7 @@ export async function runAllianceHuddleWindow(
     await assertCanAcceptCommit(ctx);
     ctx.gameState.recordAllianceHuddleSchedule(schedule);
     emitHuddleScheduleTurn(ctx, phase, schedule);
-    await completeHuddleSession(ctx, phase, alliance, schedule);
+    scheduleIds.push(schedule.id);
   }
 
   for (const { alliance, rationale } of skipped) {
@@ -1080,8 +904,15 @@ export async function runAllianceHuddleWindow(
     emitHuddleScheduleTurn(ctx, phase, schedule);
   }
 
-  if (completePhase) {
+  return { scheduleIds, index: 0, conversation: null };
+}
+
+export async function runAllianceHuddleWindow(ctx: PhaseRunnerContext, actor: PhaseActor, phase: AllianceHuddlePhase,
+  options: { completePhase?: boolean } = {}): Promise<void> {
+  let progress = await beginAllianceHuddleWindow(ctx, phase);
+  while (progress.index < progress.scheduleIds.length) progress = await advanceHuddleConversation(ctx, progress);
+  if (options.completePhase ?? true) {
     actor.send({ type: "PHASE_COMPLETE" });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise(resolve => setTimeout(resolve, 0));
   }
 }

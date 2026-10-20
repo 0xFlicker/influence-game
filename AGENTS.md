@@ -34,6 +34,15 @@
 - Agent quality matters: agents need help exhibiting real strategy, remembering commitments, and making watchable social decisions.
 - The active `feat/inf-228-mingle-hardening` branch is an unfinished Mingle/open-room experiment intended for eventual merge to `main`. The UI mostly works, but it needs more testing and tuning before merge.
 
+## Influence open conversations
+
+- Non-visual Lobby playback uses the same circular portrait room as Mingle, with the living cast at that replay point. Historical classic games without frames use the existing elimination display rules on the transcript prefix, never the final roster status. Studio thinking shots retain the room label. Introductions retain individual portrait staging.
+- Lobby (including Reckoning/Tribunal), ordinary Mingle, and selected alliance huddles use bounded sequential speech/pass decisions. Defaults are 320 UTF-8 bytes per speech and 400 bytes per participant; two ordinary Mingle conversation rounds have one simultaneous movement boundary. Freeze these values in new-game configuration.
+- Give every contribution its own durable provider slot and commit before preparing the next context. Event sequence alone cannot identify successive conversation calls. Preserve feedback-informed length retries, accepted thinking, available native reasoning, and every sanitized provider attempt.
+- Passes are always skipped in playback, including Show thinking; their thinking stays saved for debugging. Private offers, passes, queue state, foreign budgets, and gaps in reference numbering never enter another contestant's prompt.
+- Huddles are private House-selected conversations, without new tactical fact atoms or House-generated outcomes. Frozen session participants retain attended dialogue after membership changes; outsiders learn no session existence or scheduling details. A spoken disclosure is a claim, not permission to read the session.
+- Spectator huddles show accepted speech and its saved thinking when Show thinking is enabled, just like other speaking turns, chronologically after Mingle with an exact-cast room scene or portraits. Passes remain skipped. Spectator visibility never widens contestant/API-owner recall. Historical completed outcomes remain readable.
+
 ## Known Risks
 
 - Current API Influence games execute as atomic durable logical turns. A normal process reload adopts the committed XState cursor and continues the same game; planned provider calls replay accepted values and uncommitted scratch effects are discarded. Werewolf adopts its own validated event cursor and frozen action/observation plans under the same owner-epoch and provider journal fences. Do not extend these claims to corrupt durable rows or historical runs without that authority.
@@ -47,7 +56,7 @@
 
 ## Model-output structure
 
-- Any model turn whose output affects control flow, game state, continuity, producer evidence, or later model context must use a provider-native tool or an exact strict JSON schema. A schema that merely accepts any object is not a structured contract.
+- Any model turn whose output affects control flow, game state, continuity, producer evidence, or later model context must use a provider-native exact strict JSON schema response. A schema that merely accepts any object is not a structured contract.
 - Validate the decoded semantic value inside the provider-attempt boundary. Non-empty text, parseable `{}`, missing required fields filled with defaults, fenced JSON, or a JSON object extracted from surrounding prose must never count as a successful structured turn.
 - Structured-output failure must remain typed: retry it under the shared provider policy, apply an explicit rules-legal fallback at the owning phase boundary, or fail clearly. Do not silently reinterpret malformed structured output as dialogue or other agent-authored prose.
 - Prose fields are presentation, even when returned inside a tool call. Do not infer claims, participants, decisions, addressees, phase, history, or simulation state by applying regexes or string conventions to model prose. When downstream code needs those values, return and validate them as separate structured fields or derive them from canonical events/projections, then render prose from that structure.
@@ -59,7 +68,7 @@
 - Paid simulations run **over the localhost API**, meaning through the API, not file-only execution. Preserve API game IDs so replay, Studio and MCP inspect the actual tested games.
 - Always retain simulation data: structured thinking, available native reasoning/summaries/encrypted payloads, complete sanitized provider requests/responses, usage, retries and failures. Never discard successful evidence, overwrite run artifacts, or continue spending after local evidence persistence fails. Keep private evidence out of contestant observations and public exports.
 
-- Local LM Studio experiments are a first-class development lane. Use the OpenAI-compatible provider env vars documented in `docs/local-model-evaluation.md`.
+- Local LM Studio is a best-effort experimental lane, not a production qualification target. Use the OpenAI-compatible provider env vars documented in `docs/local-model-evaluation.md`.
 - Simulation outputs should be stored locally, usually under `packages/engine/docs/simulations/`, unless a task says to publish or attach them elsewhere.
 - `--chatty` mode + the reasoning / transcript observability layer (`docs/reasoning-transcript-observability.md`) is now the expected way to inspect agent decision quality (Mingle turns, votes, power actions, council votes). The surfaced `thinking` and native `reasoningContext` on system transcript entries are first-class artifacts for local model work.
 

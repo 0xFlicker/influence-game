@@ -1,3 +1,4 @@
+import { beginConversation, conversationPrompt } from "./open-conversation";
 /**
  * Producer-only prompt scenario replay.
  *
@@ -300,7 +301,7 @@ function makeReplayOpenAIStub(
       create: async (params: Record<string, unknown>) => {
         requests.push(params);
         return action.kind === "vote"
-          ? fakeResponsesToolCall("scenario-vote", "cast_votes", {
+          ? fakeResponsesText({
               thinking: action.response.thinking ?? "Fixture vote reasoning.",
               empower: action.response.empower,
               strategyDelta: action.response.strategyDelta ?? null,
@@ -331,7 +332,11 @@ function makeChainReplayOpenAIStub(
         const step = steps[stepIndex];
         stepIndex += 1;
         if (!step) throw new Error("Prompt scenario chain received an unexpected provider retry or extra call.");
-        if (step.kind === "diary" || step.kind === "lobby") {
+        if (step.kind === "lobby") return fakeResponsesText({
+          ...step.response, thinking: step.response.thinking ?? "Fixture lobby reasoning.",
+          noReply: false, recipientId: null, replyToContributionId: null,
+        });
+        if (step.kind === "diary") {
           return fakeResponsesText({
             thinking: step.response.thinking ?? "Fixture diary reasoning.",
             message: step.response.message,
@@ -343,10 +348,7 @@ function makeChainReplayOpenAIStub(
             }),
           });
         }
-        return fakeResponsesToolCall(
-          "scenario-chain-vote",
-          "cast_votes",
-          {
+        return fakeResponsesText({
             thinking: step.response.thinking ?? "Fixture next-vote reasoning.",
             empower: step.response.empower,
             ...(Object.prototype.hasOwnProperty.call(step.response, "strategy") && {
@@ -401,24 +403,6 @@ function fakeResponsesText(value: Record<string, unknown>) {
   };
 }
 
-function fakeResponsesToolCall(
-  callId: string,
-  name: string,
-  value: Record<string, unknown>,
-) {
-  return {
-    id: `resp_${callId}`,
-    object: "response",
-    status: "completed",
-    output: [{
-      id: `fc_${callId}`,
-      type: "function_call",
-      call_id: callId,
-      name,
-      arguments: JSON.stringify(value),
-    }],
-  };
-}
 
 /**
  * Runs one public agent action against a deterministic fake provider.
@@ -633,6 +617,7 @@ export async function runPromptScenarioChain(
     Phase.LOBBY,
     { publicMessages: [] },
   );
+  nextLobbyContext.conversation = conversationPrompt({ ...beginConversation(nextLobbyContext.alivePlayers.map(p => p.id), "scenario"), nextActorId: agent.id }, nextLobbyContext.alivePlayers, []);
   const nextLobbyResponse = await agent.getLobbyMessage(nextLobbyContext);
   if (!nextLobbyResponse.message.trim()) {
     throw new Error("Prompt scenario chain requires a model-authored next-lobby message.");

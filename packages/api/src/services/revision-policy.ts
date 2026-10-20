@@ -19,7 +19,6 @@ export interface EffectiveAgentRuntimeSnapshot {
   providerProfileId: string;
   catalogId: string;
   reasoningPolicy: string | null;
-  toolChoiceMode: string | null;
   temperature: number;
 }
 
@@ -57,7 +56,6 @@ const EXECUTION_FIELDS = [
   "providerProfileId",
   "catalogId",
   "reasoningPolicy",
-  "toolChoiceMode",
   "temperature",
 ] as const;
 
@@ -75,7 +73,6 @@ export function canonicalizeEffectiveRuntimeSnapshot(
     providerProfileId: snapshot.providerProfileId.trim(),
     catalogId: snapshot.catalogId.trim(),
     reasoningPolicy: canonicalNullableText(snapshot.reasoningPolicy),
-    toolChoiceMode: canonicalNullableText(snapshot.toolChoiceMode),
     temperature: snapshot.temperature,
   };
 }
@@ -95,7 +92,6 @@ export function fingerprintEffectiveRuntimeSnapshot(
     providerProfileId: canonical.providerProfileId,
     catalogId: canonical.catalogId,
     reasoningPolicy: canonical.reasoningPolicy,
-    toolChoiceMode: canonical.toolChoiceMode,
     temperature: canonical.temperature,
   });
 }

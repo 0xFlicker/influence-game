@@ -1,7 +1,8 @@
 import { loadPayloads } from "../services/payload-storage.js";
 import { createVisualTurnContextReader } from "../services/visual-turn-context.js";
 import { eq } from "drizzle-orm";
-import { GameState, Phase, type DurableGameTurnSnapshotV1 } from "@influence/engine";
+import { beginConversation, huddleSessionId, GameState, Phase, type DurableGameTurnSnapshotV1 } from "@influence/engine";
+import { prepareCommittedHuddleScene } from "../services/visual-huddle-boundary.js";
 import { prepareCommittedMingleScenes } from "../services/visual-mingle-boundary.js";
 import { insertOwner } from "./durable-run-test-utils.js";
 import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
@@ -135,6 +136,7 @@ test("prepares five committed Mingle rooms and regenerates only rooms affected b
       version: 1, completion: "format_resolve", inboxStartIndex: 0, window: {
         phase: Phase.FORMAT_MINGLE, alivePlayers: cast.map(({ id, name }) => ({ id, name })), roomCount: 5, beats: 3, nextBeat: 1,
         initialAllocation: { rooms, diagnostics: { round: 1, beat: 1, roomCount: 5, eligiblePlayers: cast.map(({ id, name }) => ({ id, name })), assignments: [], allocatedRooms: [] } },
+        opened: false, movementIntents: {}, conversations: rooms.map(room => room.playerIds.length < 2 ? null : beginConversation(room.playerIds, "test")),
         roomByPlayerId: Object.fromEntries(rooms.flatMap((room) => room.playerIds.map((id) => [id, room.roomId]))), allRooms: [],
       },
     },
@@ -163,6 +165,10 @@ test("prepares five committed Mingle rooms and regenerates only rooms affected b
   window.allRooms = structuredClone(window.initialAllocation.rooms);
   window.roomByPlayerId.p0 = 5;
   window.nextBeat = 2;
+  window.conversations = Array.from({length:window.roomCount},(_,i)=>{
+    const ids=cast.filter(p=>window.roomByPlayerId[p.id]===i+1).map(p=>p.id);
+    return ids.length < 2 ? null : beginConversation(ids,"test");
+  });
   execution.heads.turnSequence = 1;
   await db.update(schema.gameExecutionStates).set({ executionCursor: execution.cursor, committedTurnSequence: 1 }).where(eq(schema.gameExecutionStates.gameId, "game"));
   const moved = await prepare();
@@ -375,4 +381,36 @@ test("optional harmonization provider failure retains verified panels and its re
   expect(ready.shots?.groups.flatMap(shot=>shot.visibleParticipantIds)).toHaveLength(6);
   expect(imageCalls).toBe(groups + 1);
   expect((await loadPayloads(db.select().from(schema.visualRenderAttempts))).some(attempt=>attempt.receipt?.status===400)).toBe(true);
+});
+
+
+test("huddle scenes reuse only an exact cast, freeze the speech binding, and leave ordinary rooms alone", async () => {
+  const cast = Array.from({length: 3}, (_, i) => ({ id: `p${i}`, name: `Player ${i}`, referenceArtifactId: artifactId, performanceInstructions: "Calm" }));
+  const game = new GameState(cast, { gameId: "game" });
+  game.recordAllianceHuddleSchedule({ id: "selection", allianceId: "pair", window: "format", round: 1, pass: 1,
+    decision: "scheduled", memberIds: ["p0", "p1"], rationale: "Private", createdAt: new Date().toISOString() });
+  await db.update(schema.games).set({status: "in_progress"}).where(eq(schema.games.id, "game"));
+  const ownerEpoch = await insertOwner(db, "game", {expiresAt: "2099-01-01T00:00:00Z"});
+  await db.insert(schema.gameTranscriptStates).values(initialGameTranscriptStateValues("game"));
+  const execution = createInitialGameExecutionStateV1({ gameId: "game", ownerEpoch, xstateSnapshot: {value: "format_mingle"},
+    cursor: {version: 1, kind: "huddle_conversation", completion: "format_resolve", progress: {scheduleIds: ["selection"], index: 0, conversation: beginConversation(["p0", "p1"], "selection")}} });
+  await initializeGameExecutionAuthority(db, execution);
+  const snapshot: DurableGameTurnSnapshotV1 = {version: 1, execution, canonicalEvents: [...game.getCanonicalEvents()], transcriptEntries: []};
+  const fullRoom = await prepareVisualScene(db, {gameId: "game", boundarySequence: 0,
+    plan: planVisualScene({roomId: "mingle-1", backgroundArtifactId: artifactId, cast})});
+  await renderPlannedVisualScene(db, fullRoom);
+  // Only room five is available for a newly staged huddle; the larger room cannot be reused.
+  const input = {snapshot, frozenCast: cast, backgrounds: {"mingle-5": artifactId}};
+  const first = await prepareCommittedHuddleScene(db, input);
+  expect(first?.id).not.toBe(fullRoom.id);
+  expect(first?.plan.roomId).toBe("mingle-5");
+  expect(first?.plan.cast.map(m => m.id)).toEqual(["p0", "p1"]);
+  const counts = [imageCalls, visionCalls];
+  expect((await prepareCommittedHuddleScene(db, input))?.id).toBe(first?.id);
+  expect([imageCalls, visionCalls]).toEqual(counts);
+  snapshot.transcriptEntries.push({round: 1, phase: Phase.FORMAT_MINGLE, scope: "huddle", from: "Player 0", text: "Hello", timestamp: 1,
+    dialogueContext: {version: 1, sessionId: huddleSessionId("selection"), visualScene: {id: first!.id, roomId: "mingle-5"}}});
+  expect((await prepareCommittedHuddleScene(db, input))?.id).toBe(first?.id);
+  expect((await readCurrentVisualScene(db, "game", "mingle-1"))?.id).toBe(fullRoom.id);
+  expect([imageCalls, visionCalls]).toEqual(counts);
 });

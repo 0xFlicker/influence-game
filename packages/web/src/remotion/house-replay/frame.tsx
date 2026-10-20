@@ -238,7 +238,7 @@ function ThinkingFrame({picture, elapsedMs, reduced}: {
   reduced: boolean;
 }) {
   const actor = picture.actor;
-  if (picture.room) return <PortraitRoom beat={{kind:"portrait-room",roomNumber:picture.room.number,
+  if (picture.room) return <PortraitRoom beat={{kind:"portrait-room",roomNumber:picture.room.number,roomLabel:picture.room.label,
     participants:picture.room.players,speech:{id:actor.id,playerId:actor.id,speaker:actor.name,text:""}}}
     hideSpeech elapsedMs={elapsedMs} readingElapsedMs={elapsedMs} reducedMotion={reduced} controlsInset={0} />;
   if (picture.scene) return <VisualSceneView scene={picture.scene} speech={null}

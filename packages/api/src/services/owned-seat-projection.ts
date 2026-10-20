@@ -2,7 +2,6 @@ import { Hydrated } from "./payload-storage.js";
 import { randomUUID } from "node:crypto";
 import {
   resolveProviderManifestFromGameConfig,
-  resolveToolChoiceMode,
 } from "@influence/engine";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
@@ -153,11 +152,6 @@ export async function projectOwnedSeatInTransaction(
   const effectiveRuntimeSnapshot = resolveFreeTrackEffectiveRuntimeSnapshot(profile, {
     modelSelection,
     temperature,
-    toolChoiceMode: resolveToolChoiceMode(
-      process.env,
-      undefined,
-      resolvedModelSelection.providerProfile.id,
-    ),
   });
   const persona = JSON.stringify({
     name: effectiveRuntimeSnapshot.name,
@@ -174,7 +168,6 @@ export async function projectOwnedSeatInTransaction(
   const agentConfig = JSON.stringify({
     model: effectiveRuntimeSnapshot.model,
     temperature: effectiveRuntimeSnapshot.temperature,
-    toolChoiceMode: effectiveRuntimeSnapshot.toolChoiceMode,
   });
   const resolvedRevision = await resolveGameEffectiveAgentRevisionInTransaction(tx, {
     profile,

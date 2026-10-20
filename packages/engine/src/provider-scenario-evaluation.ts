@@ -25,7 +25,7 @@ export interface ProviderScenarioRunConfig {
   modelId: string;
   serviceTier: string;
   reasoningPolicy: string;
-  toolChoiceMode: string;
+  outputFormat: string;
   reasoningSummary: string;
   sampleCount: 1 | 3;
 }
@@ -163,7 +163,7 @@ export function assertProviderScenarioRunConfig(
     "modelId",
     "serviceTier",
     "reasoningPolicy",
-    "toolChoiceMode",
+    "outputFormat",
     "reasoningSummary",
   ] as const) {
     requireNonEmpty(`config.${key}`, config[key]);
@@ -224,7 +224,7 @@ const COMPARABLE_CONFIG_KEYS = [
   "modelId",
   "serviceTier",
   "reasoningPolicy",
-  "toolChoiceMode",
+  "outputFormat",
   "reasoningSummary",
   "sampleCount",
 ] as const satisfies ReadonlyArray<keyof ProviderScenarioRunConfig>;

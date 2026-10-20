@@ -223,3 +223,25 @@ test("forged game, audience, head, hash and reference snapshots cannot enter a s
   await expect(readInfluenceProductionSource(db, gameId, { snapshot: { ...first.snapshot, mediaReferences: { ...first.snapshot.mediaReferences, fullBodies: { atlas: "https://example.test/forged.png" } } } })).rejects.toThrow("frozen reference");
   await expect(readInfluenceProductionSource(db, gameId, { snapshot: { ...first.snapshot, acceptedSourceHash: `sha256:${"0".repeat(64)}` }, refreshVisuals: true })).rejects.toThrow("accepted source changed");
 });
+
+
+test.each(["transcript", "cognition"])("huddles replay with %s thinking and silent conversation decisions never create moments", async (thinkingSource) => {
+  const { gameId, events } = await fixture("private-conversation-playback");
+  const speech = await dialogue(gameId, 1, { scope: "huddle", phase: Phase.FORMAT_MINGLE,
+    speakerPlayerId: "atlas", audiencePlayerIds: ["atlas", "echo"], captureVersion: 1,
+    dialogueKind: "huddle_speech", entrySequence: 1, firstDurableEventSequence: events[0]!.sequence,
+    text: "We can compare our options here.", thinking: thinkingSource === "transcript" ? "HUDDLE_THINKING" : null,
+    safeContext: { version: 1, sessionId: "session-one", sessionAudiencePlayerIds: ["atlas", "echo"], decisionId: "huddle-spoken" } });
+  await db.insert(schema.gameCognitiveArtifacts).values(await storeFields([
+    { id: "huddle-thought", gameId, eventSequence: events[0]!.sequence, decisionId: "huddle-spoken", actorRole: "player", actorPlayerId: "atlas",
+      artifactType: "thinking", action: "alliance-huddle-turn", payload: { thinking: "HUDDLE_THINKING" }, payloadByteLength: 100 },
+    ...["lobby", "lobby-message", "mingle-turn", "alliance-huddle-turn"].map((action, i) => ({ id: `pass-${i}`, gameId,
+      eventSequence: events[0]!.sequence, decisionId: `silent-${i}`, actorRole: "player" as const, actorPlayerId: "atlas",
+      artifactType: "thinking" as const, action, payload: { thinking: "PRIVATE_PASS_THINKING" }, payloadByteLength: 100 })),
+  ], { payload: "json-gzip" }));
+  const source = await readInfluenceProductionSource(db, gameId);
+  expect(source.messages.find(m => m.id === speech.id)?.thinking).toBe("HUDDLE_THINKING");
+  expect(source.catalog.moments.filter(m => m.source.kind === "influence-transcript" && m.source.transcriptId === String(speech.id)).map(m => m.kind)).toEqual(["thinking", "speech"]);
+  expect(JSON.stringify(source)).not.toContain("PRIVATE_PASS_THINKING");
+  expect(await db.select().from(schema.gameCognitiveArtifacts).where(eq(schema.gameCognitiveArtifacts.gameId, gameId))).toHaveLength(5);
+});

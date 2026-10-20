@@ -167,7 +167,7 @@ describe("prompt scenario lab", () => {
       expect(systemPrompt).toContain("Do not summarize the action");
     }
 
-    for (const request of privatePack.providerRequests.slice(1, 3)) {
+    for (const request of privatePack.providerRequests.slice(1, 2)) {
       const text = request.text as {
         format?: {
           schema?: {
@@ -179,16 +179,14 @@ describe("prompt scenario lab", () => {
       expect(description).toContain("material, actionable change");
       expect(description).toContain("Do not summarize the action");
     }
-    const voteTools = privatePack.providerRequests[3]?.tools as Array<{
-      parameters?: {
-        properties?: Record<string, { description?: unknown }>;
-      };
-    }>;
-    const voteDescription = voteTools[0]?.parameters?.properties?.strategyDelta?.description;
+    const voteText = privatePack.providerRequests[3]?.text as {
+      format: { schema: { properties: Record<string, { description?: unknown }> } };
+    };
+    const voteDescription = voteText.format.schema.properties.strategyDelta?.description;
     expect(voteDescription).toContain("material, actionable change");
     expect(voteDescription).toContain("Do not summarize the action");
     expect(privatePack.decisionTraces.map((trace) => trace.action)).toEqual(["diary", "diary", "lobby", "vote"]);
-    expect(privatePack.nextLobbyResponse.message).toContain("living choices matter");
+    expect(privatePack.nextLobbyResponse.message).toContain("judge what we do now");
     expect(privatePack.nextVoteResponse.empowerTarget).toBe("1e846a8f-4df7-4cc4-a94e-c74452769080");
     expect(JSON.stringify(privatePack.providerRequests[2])).toContain("Audit Riven");
     expect(JSON.stringify(privatePack.providerRequests[3])).toContain("Treat Luna as a consequential");

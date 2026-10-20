@@ -4,7 +4,7 @@ import { WerewolfVisualBlocked } from "./werewolf-visual-policy.js";
 import { createWerewolfVisualPreparation } from "./werewolf-visual-runtime.js";
 import { eq } from "drizzle-orm";
 import { createLlmProviderRuntimesFromEnv, resolveProviderManifestFromGameConfig } from "@influence/engine";
-import { runWerewolf, replayWerewolf, WerewolfModelAgent, withWerewolfEvaluationBudget, type WerewolfAgent } from "@influence/engine/werewolf";
+import { runWerewolf, replayWerewolf, WerewolfModelAgent, withEvaluationBudget, type WerewolfAgent } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createApiProviderExecutionHooks } from "./provider-call-journal.js";
 import { renewGameRunOwner } from "./game-ownership.js";
@@ -41,7 +41,7 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
   } };
   const agent = agentOverride ?? (process.env.INFLUENCE_API_TEST_MOCK_RUNNER === "true" ? mockAgent : new WerewolfModelAgent({
     runtimes: createLlmProviderRuntimesFromEnv(resolveProviderManifestFromGameConfig(config), process.env, { openAIServiceTier: "flex", timeout: 120_000 }) ?? [],
-    hooks: withWerewolfEvaluationBudget(createApiProviderExecutionHooks(db, { gameId, ownerEpoch }), process.env), ownerEpoch,
+    hooks: withEvaluationBudget(createApiProviderExecutionHooks(db, { gameId, ownerEpoch }), process.env), ownerEpoch,
   }));
   let heartbeatFailure = false;
   const heartbeat = setInterval(() => {

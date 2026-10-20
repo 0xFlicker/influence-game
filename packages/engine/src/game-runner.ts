@@ -1,3 +1,5 @@
+import { beginAllianceHuddleWindow, advanceHuddleConversation } from "./phases/alliances";
+import { conversationPolicy } from "./open-conversation";
 import { seededRandom } from "./seeded-random";
 import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
 import { freezeInfluenceRetrospective } from "./influence-retrospective";
@@ -155,9 +157,10 @@ import {
   collectIntroductionBatch,
 } from "./phases/introduction";
 import {
+  beginEndgameLobby,
   beginLobbyPhase,
-  computeLobbyMessagesPerPlayer,
-  runLobbySpeakerTurn,
+  runLobbyConversationTurn,
+  beginLobbyConversation,
 } from "./phases/lobby";
 import {
   applyEmpowerRevoteBatch,
@@ -286,6 +289,7 @@ export class GameRunner {
     this.houseNarrativeContinuity = createEmptyHouseNarrativeContinuity(this.gameState.gameId);
     this.config = {
       ...config,
+      conversationPolicy: conversationPolicy(config.conversationPolicy),
       maxRounds,
       formatManifest: [...this.gameState.formatManifest],
     };
@@ -1610,55 +1614,32 @@ export class GameRunner {
           await beginLobbyPhase(ctx);
           return {
             version: 1,
-            kind: "serial_actor",
-            lane: "lobby_speech",
-            actorIds,
-            actorIndex: 0,
-            pass: 1,
+            kind: "lobby_conversation",
+            conversation: beginLobbyConversation(ctx),
           };
         });
         continue;
       }
 
-      if (phase === "lobby" && cursor.kind === "serial_actor" && cursor.lane === "lobby_speech") {
-        const playerId = cursor.actorIds[cursor.actorIndex];
-        if (!playerId) throw new Error("Lobby durable cursor points past its actor roster");
-        const passes = computeLobbyMessagesPerPlayer(
-          cursor.actorIds.length,
-          this.config.lobbyMessagesPerPlayer,
-        );
-        await this.executeDurableTurn({
-          branch: "single_provider",
-          action: "lobby-speech",
-          actorIds: [playerId],
-          providerActions: [{
-            actorId: playerId,
-            action: "lobby",
-            contractId: "agent-lobby-message-v1",
-          }],
+      if (["lobby", "reckoning_lobby", "tribunal_lobby"].includes(phase) && cursor.kind === "lobby_conversation") {
+        const playerId = cursor.conversation.nextActorId;
+        await this.executeDurableTurn({ branch: "single_provider", action: "lobby-speech", actorIds: [playerId],
+          providerActions: [{ actorId: playerId, action: "lobby", contractId: "agent-lobby-conversation-v1" }],
         }, async (ctx) => {
-          const pass = cursor.pass ?? 1;
-          await runLobbySpeakerTurn(ctx, playerId, pass - 1, passes);
-          const nextIndex = cursor.actorIndex + 1;
-          if (nextIndex < cursor.actorIds.length) {
-            return { ...cursor, actorIndex: nextIndex };
-          }
-          if (pass < passes) {
-            return { ...cursor, actorIndex: 0, pass: pass + 1 };
-          }
-          return { version: 1, kind: "rules", operation: "phase_close" };
+          const conversation = await runLobbyConversationTurn(ctx, cursor.conversation);
+          return conversation.ended ? { version: 1, kind: "rules", operation: "phase_close" } : { ...cursor, conversation };
         });
         continue;
       }
 
-      if (phase === "lobby" && cursor.kind === "rules" && cursor.operation === "phase_close") {
+      if (["lobby", "reckoning_lobby", "tribunal_lobby"].includes(phase) && cursor.kind === "rules" && cursor.operation === "phase_close") {
         await this.executeDurableTurn({
           branch: "engine",
           action: "lobby-close",
-          houseBeat: this.requireHouseBeat("lobby"),
+          houseBeat: this.requireHouseBeat(phase === "lobby" ? "lobby" : phase === "reckoning_lobby" ? "reckoning_lobby" : "tribunal_lobby"),
         }, async (_ctx, scratchActor) => {
           scratchActor.send({ type: "PHASE_COMPLETE" });
-          return { version: 1, kind: "phase_enter", actor: "vote" };
+          return { version: 1, kind: "phase_enter", actor: phase === "lobby" ? "vote" : phase === "reckoning_lobby" ? "reckoning_plea" : "tribunal_accusation" };
         });
         continue;
       }
@@ -1901,11 +1882,14 @@ export class GameRunner {
       if (phase === "format_mingle" && cursor.kind === "mingle") {
         const { window, completion, inboxStartIndex } = cursor.progress;
         if (window && window.nextBeat <= window.beats) {
+          const speakerId = window.opened ? window.conversations.find(conversation => conversation && !conversation.ended)?.nextActorId
+            ?? (window.nextBeat < window.beats ? window.alivePlayers.find(player => !Object.hasOwn(window.movementIntents, player.id))?.id : undefined) : undefined;
           await this.executeDurableTurn({
-            branch: "engine", action: `mingle-beat-${window.nextBeat}`, actorIds: this.gameState.getAlivePlayerIds(),
+            branch: speakerId ? "single_provider" : "engine", action: `mingle-beat-${window.nextBeat}`, actorIds: speakerId ? [speakerId] : this.gameState.getAlivePlayerIds(),
+            providerActions: speakerId ? [{ actorId: speakerId, action: "mingle-turn", contractId: "agent-mingle-conversation-v1" }] : [],
           }, async (ctx) => {
             const next = await advanceMingleWindow(ctx, window);
-            if (next.nextBeat <= next.beats) ctx.gameState.recordRoomAllocations(mingleWindowRooms(next), [], [], next.phase);
+            if (next.nextBeat !== window.nextBeat && next.nextBeat <= next.beats) ctx.gameState.recordRoomAllocations(mingleWindowRooms(next), [], [], next.phase);
             return { version: 1, kind: "mingle", progress: { version: 1, completion, inboxStartIndex, window: next } };
           });
         } else {
@@ -1915,21 +1899,31 @@ export class GameRunner {
               { actorId: null, action: "house-alliance-proposer-selection", contractId: "house-alliance-proposer-selection-v1" },
               { actorId: null, action: "house-alliance-huddle-schedule", contractId: "house-alliance-huddle-schedule-v1" },
             ],
-          }, async (ctx, scratchActor) => {
+          }, async (ctx) => {
             if (window) await finishMingleWindow(ctx, window);
-            if (completion === "format_resolve") {
-              await runAllianceFormationPhase(ctx);
-              await runAllianceHuddleWindow(ctx, scratchActor, Phase.FORMAT_MINGLE);
-              return { version: 1, kind: "phase_enter", actor: "format_resolve" };
-            }
-            await finishTwoNamesMingleWindow(ctx, scratchActor, completion === "two_names_override" ? "initial_names" : "final_names");
-            if (completion === "two_names_plea") {
-              scratchActor.send({ type: "PHASE_COMPLETE" });
-              await new Promise((resolve) => setTimeout(resolve, 0));
-            }
-            return { version: 1, kind: "two_names", progress: { version: 1, stage: completion === "two_names_override" ? "override" : "plea", pleaIndex: 0 } };
+            await runAllianceFormationPhase(ctx);
+            const progress = await beginAllianceHuddleWindow(ctx, Phase.FORMAT_MINGLE);
+            return { version: 1, kind: "huddle_conversation", completion, progress };
           });
         }
+        continue;
+      }
+
+      if (phase === "format_mingle" && cursor.kind === "huddle_conversation") {
+        const speakerId = cursor.progress.conversation && !cursor.progress.conversation.ended ? cursor.progress.conversation.nextActorId : undefined;
+        await this.executeDurableTurn({ branch: speakerId ? "single_provider" : "engine", action: "huddle-conversation", actorIds: speakerId ? [speakerId] : [],
+          providerActions: speakerId ? [{ actorId: speakerId, action: "alliance-huddle-turn", contractId: "agent-huddle-conversation-v1" }] : [],
+        }, async (ctx, scratchActor) => {
+          if (cursor.progress.index < cursor.progress.scheduleIds.length) return { ...cursor, progress: await advanceHuddleConversation(ctx, cursor.progress) };
+          if (cursor.completion === "format_resolve") {
+            scratchActor.send({ type: "PHASE_COMPLETE" });
+            await new Promise(resolve => setTimeout(resolve, 0));
+            return { version: 1, kind: "phase_enter", actor: "format_resolve" };
+          }
+          await finishTwoNamesMingleWindow(ctx, scratchActor, cursor.completion === "two_names_override" ? "initial_names" : "final_names", true);
+          if (cursor.completion === "two_names_plea") { scratchActor.send({ type: "PHASE_COMPLETE" }); await new Promise(resolve => setTimeout(resolve, 0)); }
+          return { version: 1, kind: "two_names", progress: { version: 1, stage: cursor.completion === "two_names_override" ? "override" : "plea", pleaIndex: 0 } };
+        });
         continue;
       }
 
@@ -2069,9 +2063,9 @@ export class GameRunner {
           action: "reckoning-lobby",
           actorIds: this.gameState.getAlivePlayerIds(),
           houseBeat: this.requireHouseBeat("reckoning_lobby"),
-        }, async (ctx, scratchActor) => {
-          await runReckoningLobby(ctx, scratchActor);
-          return this.cursorAfterEndgamePhase(scratchActor, ["reckoning_plea"]);
+        }, async (ctx) => {
+          await beginEndgameLobby(ctx, "reckoning");
+          return { version: 1, kind: "lobby_conversation", conversation: beginLobbyConversation(ctx) };
         });
         continue;
       }
@@ -2108,9 +2102,9 @@ export class GameRunner {
           action: "tribunal-lobby",
           actorIds: this.gameState.getAlivePlayerIds(),
           houseBeat: this.requireHouseBeat("tribunal_lobby"),
-        }, async (ctx, scratchActor) => {
-          await runTribunalLobby(ctx, scratchActor);
-          return this.cursorAfterEndgamePhase(scratchActor, ["tribunal_accusation"]);
+        }, async (ctx) => {
+          await beginEndgameLobby(ctx, "tribunal");
+          return { version: 1, kind: "lobby_conversation", conversation: beginLobbyConversation(ctx) };
         });
         continue;
       }
