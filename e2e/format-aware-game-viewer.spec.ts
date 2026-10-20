@@ -330,6 +330,7 @@ test.describe("format-aware game viewer", () => {
     // of how far autoplay progressed before the browser managed to pause it.
     await slider.fill("0");
     await expect(slider).toHaveValue("0");
+    await skipOpening(page);
     const thought = page.locator('[data-in-scene-thinking]');
     await expect(thought).toHaveCount(0);
     await playbackKey(page,"ArrowRight");
@@ -769,6 +770,7 @@ test.describe("format-aware game viewer", () => {
     await expect(solo.locator("blockquote")).toContainText(target.name);
     await expect(solo.locator("blockquote")).not.toContainText("Private thinking");
     await restartReplay(page);
+    await skipOpening(page);
     await expect(solo.locator("blockquote")).toHaveCount(0);
     await solo.click();
     await page.clock.runFor(300);
@@ -918,6 +920,7 @@ test.describe("format-aware game viewer", () => {
       acceptedBallot: { purpose: "winner", voterId: voter.id, targetId: "rex" },
     })) }));
     await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await skipOpening(page);
     await expect(page.getByRole("region", { name: "Ballot: Atlas" }).locator("blockquote").locator("..")).toHaveCSS("opacity", "1");
     await pauseAutoplay(page, "⏸ Pause");
     for (const voter of voters) {
@@ -963,6 +966,7 @@ test.describe("format-aware game viewer", () => {
       await page.route("**/winner-body.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600"><circle cx="200" cy="70" r="45" fill="#bd9d70"/><path d="M160 120H240L260 350H230V570H205V350H195V570H170V350H140Z" fill="#ded4c0"/></svg>' }));
       await page.goto(viewerUrl(`/games/${slug}/replay`));
       await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
+      await skipOpening(page);
       await expect(page.getByRole("region", { name: "Ballot: Atlas" })).toBeVisible();
       await pauseAutoplay(page, mobile ? "Pause replay" : "⏸ Pause");
       const next = page.getByRole("button", { name: "Next scene", exact: true });
@@ -1028,10 +1032,15 @@ test.describe("format-aware game viewer", () => {
     ];
     await installDeterministicFormatGame(page, { slug, scenarioId: "majority_elimination_tie", status: "completed", decisions });
     await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await skipOpening(page);
     await expect(page.getByRole("region", { name: "Ballot: Atlas" }).locator("blockquote").locator("..")).toHaveCSS("opacity", "1");
     await pauseAutoplay(page, "⏸ Pause");
     await restartReplay(page);
+    await skipOpening(page);
     const next = () => page.getByRole("button", { name: "Next scene", exact: true }).click();
+    // A paused skip must land on the first readable ballot, not its hidden
+    // entrance frame where the next arrow would discard that vote.
+    await expect(page.getByRole("region", {name: "Ballot: Atlas"}).getByRole("blockquote")).toHaveText("Lyra");
     let revealed = 0;
     for (const [voter, target] of [["Atlas", "Lyra"], ["Lyra", "Atlas"], ["Echo", "Atlas"], ["Rex", "Lyra"]]) {
       await assertSoloBallot(page, voter!, target!);
@@ -1426,6 +1435,7 @@ test.describe("format-aware game viewer", () => {
       const replayShell = page.getByTestId("match-watch-shell");
       await expect(replayShell).toBeVisible();
       await expect(replayShell).toHaveAttribute("data-watch-mode", "replay");
+      await skipOpening(page);
       await expect(
         replayShell.getByText(entry.formatName, { exact: true }).first(),
       ).toBeVisible();
@@ -1994,6 +2004,12 @@ async function advanceClockUntilVisible(
   throw new Error(`${stageLabel} did not appear before ${maxElapsedMs}ms.`);
 }
 
+// Gameplay stories enter through the public control; opening stories keep frame zero.
+async function skipOpening(page: Page): Promise<void> {
+  await page.getByRole("button", {name: "Skip intro", exact: true}).click();
+  await expect(page.locator("[data-influence-opening]")).toHaveCount(0);
+}
+
 async function restartReplay(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Player settings", exact: true }).click();
   await page.getByRole("button", { name: "Restart replay", exact: true }).click();
@@ -2023,6 +2039,7 @@ async function assertCompletedFormatReplayProgression(
 ): Promise<void> {
   await pauseAutoplay(page, "⏸ Pause");
   await restartReplay(page);
+  await skipOpening(page);
   const initial = await replayPlayerCounts(replayShell);
 
   // Every accepted ballot remains a separate roster-ordered speech beat.

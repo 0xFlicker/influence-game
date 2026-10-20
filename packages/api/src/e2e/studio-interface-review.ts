@@ -1,7 +1,7 @@
 import { expect } from "bun:test";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { Page } from "puppeteer";
+import type { Page, NodeFor } from "puppeteer";
 
 type Bounds = {x: number; y: number; width: number; height: number; bottom: number};
 type Layout = {viewport: {width: number; height: number}; page: {width: number; height: number}; monitor: Bounds; editor: Bounds; timeline: Bounds};
@@ -11,9 +11,9 @@ type StudioDialog = "Presentation" | "Local recordings" | "Export selected cut" 
 export async function clickStudioButton(page: Page, text: string, scope = "") {
   const expression = `(() => {const root = ${scope ? `document.querySelector(${JSON.stringify(scope)})` : "Array.from(document.querySelectorAll('dialog[open]')).at(-1) ?? document"};
     return Array.from(root?.querySelectorAll('button') ?? []).find(node => node.textContent?.trim() === ${JSON.stringify(text)} && !node.disabled && node.getClientRects().length > 0);})()`;
-  await page.waitForFunction(expression);
-  const node = await page.evaluateHandle(expression);
-  try {await node.asElement()!.click();} finally {await node.dispose();}
+  // Re-resolve after media preparation replaces the toolbar. The locator owns
+  // readiness and detached-node retries while retaining native pointer input.
+  await page.locator(new Function(`return ${expression}`) as () => NodeFor<"button">).click();
 }
 
 export async function setStudioInput(page: Page, label: string, value: string) {
@@ -29,9 +29,7 @@ export async function openStudioDialog(page: Page, title: StudioDialog) {
   if (!await page.$('dialog[open]') && ["Presentation", "Local recordings", "Source settings", "Workspace"].includes(title)) await clickStudioButton(page, "Tools");
   if (title === "Selected cut rule") {
     const expression = "Array.from(document.querySelectorAll('button')).find(node => node.textContent?.trim().startsWith('Cut rule') && node.getClientRects().length > 0)";
-    await page.waitForFunction(expression);
-    const node = await page.evaluateHandle(expression);
-    try {await node.asElement()!.click();} finally {await node.dispose();}
+    await page.locator(new Function(`return ${expression}`) as () => NodeFor<"button">).click();
   } else await clickStudioButton(page, trigger);
   await page.waitForSelector(`dialog[open][aria-label="${title}"]`, {visible: true});
   if (title === "Scene versions & production") {

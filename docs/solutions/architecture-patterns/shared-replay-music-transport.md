@@ -132,3 +132,10 @@ desktop/mobile controls, pause/seek/handoff and music continuing over results.
 `production-source-parity.test.ts` compares player composition against Studio and
 export pictures, cast order, music and timing across the format fixtures, including
 opening-only and opening-free cuts and exact opening audio envelopes.
+
+Gameplay browser stories must explicitly use **Skip intro** after entering or
+restarting a replay before asserting ballots, thinking or results. Frame zero
+belongs to the opening; intro stories should continue to test that boundary.
+Studio stories must wait for the preview's selected-cut view to commit before
+clicking moment rows: those rows can already exist in Source, so their presence
+alone does not prove the routed view transition has completed.

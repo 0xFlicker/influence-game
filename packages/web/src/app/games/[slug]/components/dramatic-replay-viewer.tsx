@@ -697,7 +697,8 @@ function DramaticReplayTheater({
               event.stopPropagation();
               const firstGameCue = presentationCues.findIndex(cue => cue.source !== "opening");
               suspendMusic();
-              if (firstGameCue >= 0) director.seek(firstGameCue, 0);
+              // Normal navigation lands paused ballots on their readable frame.
+              if (firstGameCue >= 0) director.seek(firstGameCue);
             }}>Skip intro</button>
         </> : <WatchThinking director={director} cueKey={activeCue?.key ?? null} enabled={showThinking} speaker={thinkingSpeaker} load={loadThinking}>
         <div className={`mx-auto w-full min-h-0 ${!usesFullHeightContent ? "my-auto" : ""} ${usesFullHeightContent ? "flex flex-1 flex-col" : ""} ${fullscreen || isSoloPresentation || isRoomPresentation ? "" : "max-w-3xl"}`}>
