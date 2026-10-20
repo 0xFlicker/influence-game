@@ -7,7 +7,7 @@ test("join opening follows analytics readiness only while the selector is mounte
     import { strict as assert } from "node:assert";
     import { Window } from "happy-dom";
     const dom = new Window({ url: "http://localhost" });
-    for (const name of ["window", "document", "navigator", "HTMLElement", "Node", "Event"]) {
+    for (const name of ["window", "document", "navigator", "localStorage", "HTMLElement", "Node", "Event"]) {
       Object.defineProperty(globalThis, name, { configurable: true, value: name === "window" ? dom : dom[name] });
     }
     dom.HTMLDialogElement.prototype.showModal = function() {};
@@ -22,7 +22,8 @@ test("join opening follows analytics readiness only while the selector is mounte
       analyticsOperation: () => null,
       measureProductRequest: (operation, request) => request(),
     }));
-    const router = { push() {} };
+    const paths = [];
+    const router = { push(path) { paths.push(path); } };
     mock.module("next/navigation", () => ({ useRouter: () => router }));
     mock.module("next/image", () => ({ default: () => null }));
     const { createElement } = await import("react");
@@ -32,6 +33,8 @@ test("join opening follows analytics readiness only while the selector is mounte
     const changeActivity = async value => act(async () => { active = value; listeners.forEach(listener => listener()); });
     let view;
     await act(async () => { view = render(createElement(AgentSelector, props)); });
+    assert.deepEqual(paths, [props.createHref]);
+    assert.equal(view.queryByRole("alert"), null);
     assert.equal(events.length, 0);
     // Region lookup / SDK initialization completes while dialog is still open.
     await changeActivity(true);

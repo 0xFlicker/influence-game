@@ -3,6 +3,7 @@
 import { CastingRoster, CastCard, CastInvitation } from "@/components/casting/casting-roster";
 import { CastPortraitDialog } from "@/components/casting/cast-portrait";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { WerewolfAudience } from "@influence/engine/werewolf/observation";
@@ -46,6 +47,7 @@ export function WerewolfEntry({ slug, audience, replay = false, startCursor }: {
 }
 
 export function WerewolfWaitingGame({ game, refresh }: { game: WerewolfLobbyData; refresh: () => Promise<void> }) {
+  const router = useRouter();
   const auth = useAuth();
   const { hasPermission, roles } = usePermissions();
   const canStart = hasPermission("start_game") && roles.some(role => ["gamer", "admin", "sysop"].includes(role));
@@ -57,7 +59,11 @@ export function WerewolfWaitingGame({ game, refresh }: { game: WerewolfLobbyData
   const openSeats = Math.max(0, game.playerCount - game.players.length);
   const canJoin = openSeats > 0 && (!inCast || operator);
   const createHref = `/agents/create?flow=join_game&gameId=${encodeURIComponent(game.id)}`;
-  function choose() { if (!auth.authenticated) auth.openSignIn(); else setChoosing(true); }
+  function choose() {
+    if (!auth.ready || !canJoin) return;
+    if (!auth.authenticated) { router.push(createHref); return; }
+    setChoosing(true);
+  }
   async function act(action: () => Promise<unknown>) {
     if (pending.current) return;
     pending.current = true; setBusy(true); setError(null);

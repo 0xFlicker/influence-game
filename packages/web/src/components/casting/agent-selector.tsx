@@ -49,7 +49,10 @@ export function AgentSelector({ description, createHref, onClose, onSelect, excl
       setLoading(true);
       setFetchError(null);
       try {
-        if (!getAuthToken()) throw new Error("Sign in to choose a saved agent.");
+        if (!getAuthToken()) {
+          router.push(createHref);
+          return;
+        }
         const next = await listAgents();
         if (!active) return;
         if (next.length === 0) {
