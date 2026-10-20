@@ -60,7 +60,7 @@ export function McpSetupCard({ hasHistory }: { hasHistory: boolean }) {
 export function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { account, authenticated, openSignIn } = useAuth();
+  const { account, authenticated } = useAuth();
   const publicIdentity = useAuthenticatedPublicIdentity();
   const { hasPermission } = usePermissions();
   const [joinTarget, setJoinTarget] = useState<{ game: GameSummary } | null>(null);
@@ -217,7 +217,7 @@ export function DashboardContent() {
 
   function handleJoinClick(game: GameSummary) {
     if (!authenticated) {
-      openSignIn();
+      router.push(`/agents/create?flow=join_game&gameId=${encodeURIComponent(game.id)}`);
       return;
     }
     setJoinTarget({ game });

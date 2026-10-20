@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, mock, test } from "bun:test";
 import { render, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
 import { fileURLToPath } from "node:url";
 
@@ -15,6 +15,8 @@ test("Werewolf separates Fill AI from Start and checks their permissions indepen
   const globals = ["window", "document", "navigator", "localStorage", "HTMLElement", "Node", "Event"] as const;
   const saved = new Map(globals.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   for (const key of globals) Object.defineProperty(globalThis, key, { configurable: true, value: dom[key] });
+  const navigation = await import("next/navigation");
+  mock.module("next/navigation", () => ({ ...navigation, useRouter: () => ({ push() {} }) }));
   const { InfluenceAuthContext } = await import("../hooks/use-auth");
   const { WerewolfWaitingGame } = await import("../components/games/werewolf/werewolf-entry");
   const { setApiBase } = await import("../lib/api");
