@@ -17,8 +17,8 @@ interface RetainedMotionControl { pause(): void; play(): void; complete(): void;
 export const influencePresentationPolicy: WatchPolicy<PresentationCue> = {
   position: cue => cue.canonicalSequence,
   speech: speechBoundaries,
-  scrubAtMs: cue => cue.kind === "format_deciding_vote" ? 2000 : voteSceneIdentity(cue) && !cue.voteSummary ? SOLO_READ_START_MS : cue.voteSummary ? 0 : speechBoundaries(cue)?.showAtMs ?? 0,
-  isCatchUp: cue => cue.source !== "format" && Boolean(cue.liveCatchUp),
+  scrubAtMs: cue => cue.source === "opening" ? 350 : cue.kind === "format_deciding_vote" ? 2000 : voteSceneIdentity(cue) && !cue.voteSummary ? SOLO_READ_START_MS : cue.voteSummary ? 0 : speechBoundaries(cue)?.showAtMs ?? 0,
+  isCatchUp: cue => cue.source === "opening" || cue.source !== "format" && Boolean(cue.liveCatchUp),
   acceptAtWatermark: (cue, watermark) => cue.source !== "format" && cue.canonicalSequence === watermark,
   reconcile: retainActiveHouseBridge,
 };

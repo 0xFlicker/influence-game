@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { Window } from "happy-dom";
 import type { ReactElement } from "react";
 import { Phase } from "@influence/engine";
@@ -32,7 +32,7 @@ import { buildStoryScenes } from "../app/games/[slug]/components/house-story";
 // These checks need the mounted theater: it waits for device preferences before
 // starting its director. Keep the server-shell assertions below separate.
 let restoreDOM: (() => Promise<void>) | undefined;
-async function renderPlayer(element: ReactElement) {
+async function renderPlayer(element: ReactElement, skipOpening = false) {
   await restoreDOM?.();
   restoreDOM = undefined;
   const dom = new Window({url: "http://localhost"});
@@ -40,7 +40,12 @@ async function renderPlayer(element: ReactElement) {
   const descriptors = new Map(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   for (const key of keys) Object.defineProperty(globalThis, key, {configurable:true, value:key === "window" ? dom : key === "requestAnimationFrame" ? dom.requestAnimationFrame.bind(dom) : key === "cancelAnimationFrame" ? dom.cancelAnimationFrame.bind(dom) : dom[key]});
   restoreDOM = async () => {await act(async () => {cleanup();});await dom.close();for(const key of keys){const descriptor=descriptors.get(key);if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}};
-  return render(element).container.innerHTML;
+  const view = render(element);
+  if (skipOpening) {
+    const skip = view.queryByRole("button", {name: "Skip intro"});
+    if (skip) fireEvent.click(skip);
+  }
+  return view.container.innerHTML;
 }
 afterEach(async () => {await restoreDOM?.();restoreDOM=undefined;});
 
@@ -185,7 +190,9 @@ describe("MatchWatchShell", () => {
     expect(html).toContain("INFLUENCE");
     expect(html).toContain("Watch Room");
     expect(html).toContain("vast-violet-code");
-    expect(textHtml).toContain("Round 1 Replay");
+    expect(textHtml).toContain("Round 0 Replay");
+    expect(html).toContain('data-influence-opening="house"');
+    expect(html).toContain("Skip intro");
     expect(html).toContain("Cast &amp; Status");
     expect(html).toContain('aria-label="Cast selection"');
     expect(html).toContain('data-testid="match-watch-count-alive"');
@@ -197,7 +204,7 @@ describe("MatchWatchShell", () => {
     expect(html).toContain("Alliance");
     expect(html).toContain("Diary");
     expect(html).not.toContain("Receipts");
-    expect(textHtml).toContain("Atlas is still competing in round 1.");
+    expect(textHtml).toContain("Atlas is still competing in round 0.");
     expect(html).toContain("data-replay-controls");
     expect(html).toContain('aria-label="Player settings"');
     expect(html).toContain('aria-label="Replay position"');
@@ -222,7 +229,7 @@ describe("MatchWatchShell", () => {
         game={{ ...game(), visualMode: false, status: live ? "in_progress" : "completed" }}
         messages={[entry({ text: "Can I count on you?", phase: "LOBBY", scope: "public" })]}
         live={live} connStatus={live ? "live" : "replay"}
-      />);
+      />, true);
       expect(html).toContain('aria-label="Conversation: Atlas"');
       expect(html).not.toContain("MINGLE MAP");
       expect(html).toContain("data-replay-controls");
@@ -400,6 +407,7 @@ describe("MatchWatchShell", () => {
         live={false}
         connStatus="replay"
       />,
+      true,
     );
 
     expect(html).toContain('data-presentation-animation-boundary="true"');

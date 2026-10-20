@@ -304,4 +304,23 @@ export interface EndgamePresentationCue extends SpeechCue {
   ballot?: { voterId: string; targetId: string; purpose: "eliminate" | "winner"; juryTiebreaker: boolean };
 }
 
-export type PresentationCue = ClassicPresentationCue | FormatPresentationCue | HousePresentationCue | EndgamePresentationCue;
+/** Editorial opening shots have no canonical game coordinate or game-state payload. */
+export interface InfluenceOpeningCue extends SpeechCue {
+  source: "opening";
+  kind: "influence_opening";
+  key: string;
+  canonicalSequence: null;
+  round: 0;
+  phase: "INTRODUCTION";
+  baseDurationMs: number;
+  opening: {
+    shot: "house" | "title" | "cast" | "enter";
+    startMs: number;
+    totalMs: number;
+    player?: {id: string; name: string; avatarUrl?: string};
+    castIndex?: number;
+    castCount: number;
+  };
+}
+
+export type PresentationCue = ClassicPresentationCue | FormatPresentationCue | HousePresentationCue | EndgamePresentationCue | InfluenceOpeningCue;

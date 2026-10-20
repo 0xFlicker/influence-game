@@ -5,6 +5,7 @@ import type {TranscriptEntry} from "../api";
 /** Bind explicit cue provenance, never a generated cursor/key or rendered prose. */
 export function influenceProductionReference(cue:PresentationCue,findCue:(key:string)=>PresentationCue|undefined,
   messageFor:(cue:PresentationCue)=>TranscriptEntry|undefined):{source:ProductionSourceReference;part:ProductionMomentPart} {
+  if (cue.source === "opening") throw new Error("Editorial opening shots have no canonical production reference");
   if (cue.source === "house") {
     const following = findCue(cue.followingCueKey);
     if (!following) throw new Error("House bridge is missing its accepted following presentation");

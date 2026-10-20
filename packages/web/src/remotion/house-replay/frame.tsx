@@ -1,4 +1,5 @@
-import {WerewolfOpeningFrame, type OpeningVideoProps} from "../../components/games/werewolf/werewolf-opening-frame";
+import {WerewolfOpeningFrame} from "../../components/games/werewolf/werewolf-opening-frame";
+import type {OpeningVideoProps} from "../../components/watch/opening-browser-video";
 import { useLayoutEffect, useState, useMemo, useRef, type RefObject } from "react";
 import {
   AbsoluteFill,

@@ -26,6 +26,21 @@ import {
 } from "./local-harness";
 
 const RUN_FORMAT_VIEWER = process.env.PLAYWRIGHT_FORMAT_VIEWER === "1";
+async function observeMusic(page: Page) {
+  await page.addInitScript(() => {
+    const media: HTMLAudioElement[] = [];
+    Object.defineProperty(window, "__scoreMedia", {value:media});
+    const NativeAudio = window.Audio;
+    window.Audio = class extends NativeAudio {
+      constructor(src?: string) {super(src); media.push(this);}
+    };
+  });
+}
+function musicState(page: Page) {
+  return page.evaluate(() => (window as unknown as {__scoreMedia: HTMLAudioElement[]}).__scoreMedia.map(audio => ({
+    src:audio.getAttribute("src"), time:audio.currentTime, paused:audio.paused, volume:audio.volume, rate:audio.playbackRate, error:audio.error?.code,
+  })));
+}
 const FORMAT_VIEWER_SLUG =
   process.env.PLAYWRIGHT_FORMAT_VIEWER_SLUG ?? "young-ruby-isle";
 const CLASSIC_VIEWER_SLUG =
@@ -134,6 +149,105 @@ test.describe("format-aware game viewer", () => {
 
   test.afterAll(async () => {
     if (harnessProcess) await stopLocalFormatViewerHarness(harnessProcess);
+  });
+
+  for (const mobile of [false, true]) {
+    test(`Influence opening reveals cast and preserves navigation on ${mobile ? "phone" : "desktop"}`, async ({page}, testInfo) => {
+      await observeMusic(page);
+      await page.setViewportSize(mobile ? {width:390,height:844} : {width:1440,height:1000});
+      await page.emulateMedia({reducedMotion: mobile ? "reduce" : "no-preference"});
+      const slug = `opening-${mobile ? "phone" : "desktop"}`;
+      const scenario = createFormatKernelViewerScenario("majority_elimination_clear");
+      const roster = scenario.roster.map((player, index) => ({
+        ...player, name: index === 0 ? "Alexandria Montgomery" : player.name,
+      }));
+      await installDeterministicFormatGame(page, {slug, scenarioId:"majority_elimination_clear", status:"completed", roster});
+      await page.route(`**/api/games/${slug}/visual`, route => route.fulfill({json:{
+        enabled:false, status:null, scenes:[], fullBodies:{[roster[0]!.id]:mobile ? "/missing-opening-body.png" : "/opening-body.svg"},
+        portraits:{[roster[0]!.id]:viewerUrl("/avatars/personas/diplomat.png"), [roster[1]!.id]:"/missing-opening-portrait.png"},
+      }}));
+      let bodyRequests = 0;
+      await page.route("**/missing-opening-body.png", route => {bodyRequests++;return route.fulfill({status:404,body:"missing"});});
+      await page.route("**/opening-body.svg", route => route.fulfill({contentType:"image/svg+xml",body:'<svg xmlns="http://www.w3.org/2000/svg" width="200" height="400"><rect width="200" height="400" fill="#bda278"/></svg>'}));
+      await page.route("**/missing-opening-portrait.png", route => route.fulfill({status:404,body:"missing"}));
+      await page.goto(viewerUrl(`/games/${slug}/replay`));
+      const opening = page.locator("[data-influence-opening]");
+      await expect(opening).toBeVisible();
+      await pauseAutoplay(page, "Pause replay");
+      expect(await musicState(page)).toEqual([]);
+      await expect(page.getByRole("slider", {name:"Music volume"})).toBeInViewport();
+      const slider = page.getByRole("slider", {name:"Replay position",exact:true});
+      await slider.fill("450");
+      await slider.press("ArrowRight");
+      await expect(opening).toHaveAttribute("data-influence-opening", "title");
+      if (mobile) {
+        await expect(opening.locator("video")).toHaveCount(0);
+      } else {
+        const video = opening.locator("video");
+        await expect(video).toBeVisible();
+        await expect.poll(() => video.evaluate(element => (element as HTMLVideoElement).currentTime)).toBeCloseTo(15, 0);
+        expect(await video.evaluate(element => (element as HTMLVideoElement).paused)).toBe(true);
+      }
+      await page.getByRole("button", {name:"Turn music on", exact:true}).click();
+      await page.getByRole("slider", {name:"Music volume"}).fill("40");
+      await page.getByRole("button", {name:"Play replay", exact:true}).click();
+      await expect.poll(async () => (await musicState(page)).find(audio => audio.src?.includes("an-invitation"))?.paused).toBe(false);
+      const introAudio = (await musicState(page)).find(audio => audio.src?.includes("an-invitation"))!;
+      expect(introAudio.time).toBeGreaterThan(14.9);
+      expect(introAudio.time).toBeLessThan(18);
+      expect(introAudio.volume).toBe(.4);
+      await pauseAutoplay(page, "Pause replay");
+      expect((await musicState(page)).every(audio => audio.paused)).toBe(true);
+      await slider.fill("630");
+      await slider.press("ArrowRight");
+      await expect(opening).toHaveAttribute("data-influence-opening", "cast");
+      await expect(opening.getByRole("heading", {name:"Alexandria Montgomery"})).toBeVisible();
+      await expect(opening.locator("[data-cast-image]")).toHaveAttribute("data-cast-image", mobile ? "headshot" : "full-body");
+      await expect(opening.locator("[data-cast-image]")).toHaveAttribute("src", mobile ? /\/avatars\/personas\/diplomat\.png$/ : /\/opening-body\.svg$/);
+      expect(bodyRequests).toBe(mobile ? 1 : 0);
+      await assertLocatorInsideViewport(opening.getByRole("heading", {name:"Alexandria Montgomery"}), mobile ? 390 : 1440);
+      await page.screenshot({path:testInfo.outputPath("opening-cast.png")});
+      await expect(page.getByRole("button", {name:"Play replay",exact:true})).toBeVisible();
+      await slider.fill("720");
+      await slider.press("ArrowRight");
+      await expect(opening.locator('[data-cast-image="headshot"]')).toHaveAttribute("src", /\/avatars\/personas\//);
+      await expect.poll(() => opening.locator('[data-cast-image="headshot"]').evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+      await page.getByRole("button", {name:"Skip intro",exact:true}).click();
+      await expect(opening).toHaveCount(0);
+      await expect(page.getByRole("button", {name:"Play replay",exact:true})).toBeVisible();
+      await page.getByRole("button", {name:"Play replay",exact:true}).click();
+      await expect.poll(async () => (await musicState(page)).some(audio => audio.src?.includes("/music/influence/") && !audio.src.includes("an-invitation") && !audio.paused)).toBe(true);
+      expect((await musicState(page)).filter(audio => !audio.paused).every(audio => audio.rate === 1)).toBe(true);
+      await pauseAutoplay(page, "Pause replay");
+      await restartReplay(page);
+      await expect(opening).toHaveAttribute("data-influence-opening", "house");
+      await expect(page.getByRole("button", {name:"Play replay",exact:true})).toBeVisible();
+      await page.goto(viewerUrl(`/games/${slug}/replay/1`));
+      await pauseAutoplay(page, "Pause replay");
+      await expect(opening).toHaveCount(0);
+    });
+  }
+
+  test("Influence closing music continues over results and Pause stops it", async ({page}) => {
+    await observeMusic(page);
+    const slug = "closing-music";
+    await installDeterministicFormatGame(page, {slug, scenarioId:"majority_elimination_tie", status:"completed", decisions:[{
+      type:"jury.winner_determined", sequence:10, round:2, phase:Phase.JURY_VOTE,
+      timestamp:"2026-09-23T00:00:00.000Z", payload:{votes:{atlas:"rex"}, winnerId:"rex"},
+    }]});
+    await page.route(`**/api/games/${slug}/transcript*`, route => route.fulfill({json:[]}));
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page, "Pause replay");
+    const position = page.getByRole("slider", {name:"Replay position",exact:true});
+    await position.fill(String(Number(await position.getAttribute("max")) - 30));
+    await page.getByRole("button", {name:"Turn music on",exact:true}).click();
+    await page.getByRole("button", {name:"Play replay",exact:true}).click();
+    await expect.poll(async () => (await musicState(page)).find(audio => audio.src?.includes("the-last-word"))?.time).toBeGreaterThan(3);
+    await expect(page.getByRole("button", {name:"Pause replay",exact:true})).toBeVisible();
+    await pauseAutoplay(page, "Pause replay");
+    expect((await musicState(page)).every(audio => audio.paused)).toBe(true);
+    await page.getByRole("button", {name:"Play replay",exact:true}).click();
+    await expect.poll(async () => (await musicState(page)).find(audio => audio.src?.includes("the-last-word"))?.paused).toBe(false);
   });
 
   test("Influence scrubber seeks individual frames and native drags preserve pause", async ({page}) => {

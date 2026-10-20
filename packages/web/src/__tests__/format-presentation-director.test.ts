@@ -71,7 +71,7 @@ function cue(
   sequence: number | null,
   round = 1,
   source: "classic" | "format" = "format",
-): PresentationCue {
+): Extract<PresentationCue, {source: "classic" | "format"}> {
   if (source === "classic") {
     return {
       source,

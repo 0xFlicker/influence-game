@@ -1,0 +1,239 @@
+{
+  "version": 1,
+  "provider": "Suno",
+  "sourceSelection": "User-selected full tracks, starting at 0:00; original WAV/MP3/M4A exports retained in the local Music archive.",
+  "processing": "Two-pass FFmpeg loudnorm I=-20 LUFS, TP=-2 dBTP, LRA=11; MP3 160 kbps stereo 48 kHz, no embedded cover art. No trims or loop edits. WAV masters unchanged.",
+  "introCastRevealAtSeconds": 20,
+  "tracks": [
+    {
+      "id": "an-invitation-to-power",
+      "title": "An Invitation to Power",
+      "phases": [
+        "intro",
+        "cast reveal"
+      ],
+      "source": "An Invitation to Power — intro _ cast reveal.wav",
+      "sourceSha256": "810c1431bd5c0989d435cbca44c669139cf5502d06f3c2e4cc217255f02cc6e0",
+      "durationSeconds": 163.2,
+      "file": "an-invitation-to-power.mp3",
+      "bytes": 3265106,
+      "sha256": "79d4c7f30bfccdec37b4384bb6d71be4febb057ac7e4e16c027bfa712251f895",
+      "normalization": {
+        "input_i": "-15.83",
+        "input_tp": "-3.95",
+        "input_lra": "9.00",
+        "input_thresh": "-26.04",
+        "output_i": "-19.96",
+        "output_tp": "-8.07",
+        "output_lra": "9.00",
+        "output_thresh": "-30.16",
+        "normalization_type": "linear",
+        "target_offset": "-0.04"
+      },
+      "loudnessAnalysis": {
+        "input_i": "-15.88",
+        "input_tp": "-3.94",
+        "input_lra": "9.70",
+        "input_thresh": "-26.14",
+        "output_i": "-18.42",
+        "output_tp": "-4.52",
+        "output_lra": "5.40",
+        "output_thresh": "-28.52",
+        "normalization_type": "dynamic",
+        "target_offset": "-1.58"
+      }
+    },
+    {
+      "id": "good-company",
+      "title": "Good Company",
+      "phases": [
+        "introductions",
+        "Mingle"
+      ],
+      "source": "Good Company — introductions _ Mingle.wav",
+      "sourceSha256": "21bdd3b82c19ecca3829b235d1f554d81546f043976475c4729ea9519b2863e2",
+      "durationSeconds": 218.52,
+      "file": "good-company.mp3",
+      "bytes": 4371496,
+      "sha256": "835bf91f882bde09d21b6ce16271594075fc4548e746e37076d485bc77e17072",
+      "normalization": {
+        "input_i": "-16.17",
+        "input_tp": "-2.90",
+        "input_lra": "7.40",
+        "input_thresh": "-26.34",
+        "output_i": "-19.97",
+        "output_tp": "-6.70",
+        "output_lra": "7.40",
+        "output_thresh": "-30.14",
+        "normalization_type": "linear",
+        "target_offset": "-0.03"
+      },
+      "loudnessAnalysis": {
+        "input_i": "-16.20",
+        "input_tp": "-2.89",
+        "input_lra": "7.50",
+        "input_thresh": "-26.43",
+        "output_i": "-19.72",
+        "output_tp": "-3.41",
+        "output_lra": "6.90",
+        "output_thresh": "-29.83",
+        "normalization_type": "dynamic",
+        "target_offset": "-0.28"
+      }
+    },
+    {
+      "id": "terms-and-conditions",
+      "title": "Terms and Conditions",
+      "phases": [
+        "strategic choices",
+        "format actions"
+      ],
+      "source": "Terms and Conditions — strategic choices _ format actions.wav",
+      "sourceSha256": "1cc23c86080dbf78975f0fa15d39de3091ab345fb609b6e356ce3c175204fd22",
+      "durationSeconds": 199.6,
+      "file": "terms-and-conditions.mp3",
+      "bytes": 3993264,
+      "sha256": "0f3b6d415ed70de2672cff45654f1d372a18f5de28a5979ab3573956397570ad",
+      "normalization": {
+        "input_i": "-15.87",
+        "input_tp": "-3.12",
+        "input_lra": "7.60",
+        "input_thresh": "-25.92",
+        "output_i": "-19.96",
+        "output_tp": "-7.21",
+        "output_lra": "7.60",
+        "output_thresh": "-30.01",
+        "normalization_type": "linear",
+        "target_offset": "-0.04"
+      },
+      "loudnessAnalysis": {
+        "input_i": "-15.91",
+        "input_tp": "-3.12",
+        "input_lra": "8.20",
+        "input_thresh": "-26.00",
+        "output_i": "-18.89",
+        "output_tp": "-5.50",
+        "output_lra": "5.60",
+        "output_thresh": "-28.93",
+        "normalization_type": "dynamic",
+        "target_offset": "-1.11"
+      }
+    },
+    {
+      "id": "names-on-the-table",
+      "title": "Names on the Table",
+      "phases": [
+        "pleas",
+        "ballots",
+        "tiebreaks"
+      ],
+      "source": "Names on the Table — pleas _ ballots _ tiebreaks.wav",
+      "sourceSha256": "3b45e07b369db98edfa1b0da607f383ac9615c484ea51984e2d507776264c88d",
+      "durationSeconds": 199.2,
+      "file": "names-on-the-table.mp3",
+      "bytes": 3985102,
+      "sha256": "81b131ab027824ae4218d0e314f77f8a5dcafc57804c63a852f8d4d195f8eb83",
+      "normalization": {
+        "input_i": "-14.99",
+        "input_tp": "-2.84",
+        "input_lra": "7.30",
+        "input_thresh": "-25.15",
+        "output_i": "-19.97",
+        "output_tp": "-7.82",
+        "output_lra": "7.30",
+        "output_thresh": "-30.13",
+        "normalization_type": "linear",
+        "target_offset": "-0.03"
+      },
+      "loudnessAnalysis": {
+        "input_i": "-15.02",
+        "input_tp": "-2.84",
+        "input_lra": "7.60",
+        "input_thresh": "-25.25",
+        "output_i": "-19.33",
+        "output_tp": "-5.53",
+        "output_lra": "7.00",
+        "output_thresh": "-29.39",
+        "normalization_type": "dynamic",
+        "target_offset": "-0.67"
+      }
+    },
+    {
+      "id": "the-empty-chair",
+      "title": "The Empty Chair",
+      "phases": [
+        "farewell",
+        "diary",
+        "reflection"
+      ],
+      "source": "The Empty Chair — farewell _ diary _ reflection.wav",
+      "sourceSha256": "2bba16121d3513cb85b979d087602c3d9995d2d882e58f225af3e8b9d597cfb4",
+      "durationSeconds": 207.84,
+      "file": "the-empty-chair.mp3",
+      "bytes": 4157899,
+      "sha256": "86b9d6773be8a7812163d6a8447b03471547b08c0517fc33a8f13a8580f0fdcc",
+      "normalization": {
+        "input_i": "-16.59",
+        "input_tp": "-3.54",
+        "input_lra": "9.20",
+        "input_thresh": "-26.93",
+        "output_i": "-19.97",
+        "output_tp": "-6.92",
+        "output_lra": "9.30",
+        "output_thresh": "-30.31",
+        "normalization_type": "linear",
+        "target_offset": "-0.03"
+      },
+      "loudnessAnalysis": {
+        "input_i": "-16.62",
+        "input_tp": "-3.54",
+        "input_lra": "9.20",
+        "input_thresh": "-26.99",
+        "output_i": "-20.02",
+        "output_tp": "-4.43",
+        "output_lra": "8.40",
+        "output_thresh": "-30.25",
+        "normalization_type": "dynamic",
+        "target_offset": "0.02"
+      }
+    },
+    {
+      "id": "the-last-word",
+      "title": "The Last Word",
+      "phases": [
+        "winner",
+        "closing results"
+      ],
+      "source": "The Last Word — winner _ closing results.wav",
+      "sourceSha256": "4597b5853703814f1e49eb274955c0e1cbf48c3acecc85328bc0ada8a10864d2",
+      "durationSeconds": 159.2,
+      "file": "the-last-word.mp3",
+      "bytes": 3185417,
+      "sha256": "b2924a40272458b840216e704cdc59fced1fcc0a6a010bdfe84f3420a5d3f6ec",
+      "normalization": {
+        "input_i": "-16.11",
+        "input_tp": "-4.05",
+        "input_lra": "9.80",
+        "input_thresh": "-26.35",
+        "output_i": "-19.94",
+        "output_tp": "-7.88",
+        "output_lra": "9.70",
+        "output_thresh": "-30.19",
+        "normalization_type": "linear",
+        "target_offset": "-0.06"
+      },
+      "loudnessAnalysis": {
+        "input_i": "-16.17",
+        "input_tp": "-4.04",
+        "input_lra": "10.40",
+        "input_thresh": "-26.46",
+        "output_i": "-19.71",
+        "output_tp": "-6.52",
+        "output_lra": "8.00",
+        "output_thresh": "-29.81",
+        "normalization_type": "dynamic",
+        "target_offset": "-0.29"
+      }
+    }
+  ]
+}
