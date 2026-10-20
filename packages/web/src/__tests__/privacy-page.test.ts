@@ -9,7 +9,7 @@ const pageSource = readFileSync(
 describe("privacy policy page", () => {
   it("publishes the provided policy copy at a stable route", () => {
     expect(pageSource).toContain("Privacy Policy");
-    expect(pageSource).toContain("Last Updated: October 17, 2026");
+    expect(pageSource).toContain("Last Updated: October 18, 2026");
     expect(pageSource).toContain("FALSE_FLOOR.websiteUrl");
     expect(pageSource).toContain("FALSE_FLOOR.supportEmail");
     expect(pageSource).toContain("False Floor operates");

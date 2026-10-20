@@ -24,7 +24,7 @@ import { resolve } from "node:path";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import type { Browser, Page } from "puppeteer";
-import { schema } from "../db/index.js";
+import { schema, type DrizzleDB } from "../db/index.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
 import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 import { claimWerewolfGame, createWerewolfGame, createWerewolfStore } from "../services/werewolf-games.js";
@@ -63,9 +63,7 @@ beforeAll(async () => {
 }, 240_000);
 
 async function checkFailedPackNegotiations() {
-  const game = await createHistoricalWerewolfGame({ preset: "two_wolves", agentProfileIds: [], maxDays: 1 });
-  const claim = await claimWerewolfGame(database.db, game.id);
-  if (!claim.ok) throw new Error(claim.error);
+  const game = await createClaimedHistoricalWerewolfGame({ preset: "two_wolves", agentProfileIds: [], maxDays: 1 });
   const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request, observation }) {
     if (request.action === "vote") {
       if (request.voteMode === "majority") return { kind: "target", targetId: null, thinking: "Hear more" };
@@ -81,7 +79,7 @@ async function checkFailedPackNegotiations() {
     return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Private fixture" }
       : { kind: "speech", cue: null, text: request.action === "pack_talk" ? "My pack proposal." : null };
   } };
-  await runWerewolf(createWerewolfStore(database.db, game.id, claim.claim.ownerEpoch), agent);
+  await runWerewolf(createWerewolfStore(database.db, game.id, game.ownerEpoch), agent);
   const page = await browser.newPage();
   try {
     const mystery = await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/presentation?audience=mystery`)).json() as WerewolfPresentation;
@@ -104,15 +102,23 @@ async function checkFailedPackNegotiations() {
   } finally { await page.close(); }
 }
 /** Legacy choreography tests must opt into the saved v8 replay contract. */
-async function createHistoricalWerewolfGame(input: Parameters<typeof createWerewolfGame>[2]) {
-  const game = await createWerewolfGame(database.db, admin.userId, input);
-  const [started] = await database.db.select().from(schema.werewolfEvents).where(eq(schema.werewolfEvents.gameId, game.id));
-  if (!started || started.event.type !== "werewolf.started") throw new Error("Expected started Werewolf fixture");
-  const historical = { ...started.event, payload: { ...started.event.payload, config: legacyWerewolfConfig(input.preset, input.maxDays ?? 10) } };
-  await database.db.update(schema.werewolfEvents).set({ event: historical }).where(eq(schema.werewolfEvents.gameId, game.id));
-  const [row] = await database.db.select().from(schema.games).where(eq(schema.games.id, game.id));
-  if (row) await database.db.update(schema.games).set({ config: JSON.stringify({ ...(JSON.parse(row.config ?? "{}") as Record<string, unknown>), rulesVersion: 8 }) }).where(eq(schema.games.id, game.id));
-  return game;
+async function createClaimedHistoricalWerewolfGame(input: Parameters<typeof createWerewolfGame>[2]) {
+  // The recovery worker must never see a runnable fixture before its historical
+  // events and test-owned lease are committed together. Nested service
+  // transactions become savepoints on this transaction-scoped connection.
+  return database.db.transaction(async tx => {
+    const fixtureDb = tx as unknown as DrizzleDB;
+    const game = await createWerewolfGame(fixtureDb, admin.userId, input);
+    const [started] = await fixtureDb.select().from(schema.werewolfEvents).where(eq(schema.werewolfEvents.gameId, game.id));
+    if (!started || started.event.type !== "werewolf.started") throw new Error("Expected started Werewolf fixture");
+    const historical = { ...started.event, payload: { ...started.event.payload, config: legacyWerewolfConfig(input.preset, input.maxDays ?? 10) } };
+    await fixtureDb.update(schema.werewolfEvents).set({ event: historical }).where(eq(schema.werewolfEvents.gameId, game.id));
+    const [row] = await fixtureDb.select().from(schema.games).where(eq(schema.games.id, game.id));
+    if (row) await fixtureDb.update(schema.games).set({ config: JSON.stringify({ ...(JSON.parse(row.config ?? "{}") as Record<string, unknown>), rulesVersion: 8 }) }).where(eq(schema.games.id, game.id));
+    const claim = await claimWerewolfGame(fixtureDb, game.id);
+    if (!claim.ok) throw new Error(claim.error);
+    return { ...game, ownerEpoch: claim.claim.ownerEpoch };
+  });
 }
 afterAll(async () => {
   await cleanupE2eResources([
@@ -331,10 +337,9 @@ test("owner edits a game-specific strategy, creates Werewolf, and watches both v
 test("failed pack negotiations stay hidden in Mystery and remain understandable in Omniscient", checkFailedPackNegotiations, 60_000);
 
 test("Werewolf admin workspace supports desktop and mobile cost, activity, production and visibility journeys", async () => {
-  const game = await createHistoricalWerewolfGame({ preset: "two_wolves", agentProfileIds: [], maxDays: 1 });
-  const claim = await claimWerewolfGame(database.db, game.id); if (!claim.ok) throw new Error(claim.error);
+  const game = await createClaimedHistoricalWerewolfGame({ preset: "two_wolves", agentProfileIds: [], maxDays: 1 });
   let ballotRequests = 0;
-  await runWerewolf(createWerewolfStore(database.db, game.id, claim.claim.ownerEpoch), { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
+  await runWerewolf(createWerewolfStore(database.db, game.id, game.ownerEpoch), { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
     if (request.action === "vote" && request.voteMode === "majority" && ballotRequests++ < 2) return {kind:"target", targetId:null, thinking:"I need more evidence"};
     if (request.action === "open_thread") return { kind: "opening", text: "Who can explain their suspicion?", cue: null, recipientIds: request.legalTargetIds.slice(0, 2) };
     return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Private decision" } : { kind: "speech", text: "A short contribution", cue: null };
@@ -537,10 +542,8 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
 }, 120_000);
 
 test("Werewolf without visual mode shows village and pack portrait rooms on desktop and mobile", async () => {
-  const game = await createHistoricalWerewolfGame({preset: "two_wolves", agentProfileIds: [], maxDays: 1});
-  const claim = await claimWerewolfGame(database.db, game.id);
-  if (!claim.ok) throw new Error(claim.error);
-  await runWerewolf(createWerewolfStore(database.db, game.id, claim.claim.ownerEpoch), {
+  const game = await createClaimedHistoricalWerewolfGame({preset: "two_wolves", agentProfileIds: [], maxDays: 1});
+  await runWerewolf(createWerewolfStore(database.db, game.id, game.ownerEpoch), {
     prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity,
     getRetrospectiveStatement: fixtureWerewolfRetrospective,
     async decide({request}) {
@@ -748,9 +751,8 @@ test("shared replay fences delayed seeks and crosses silent live windows without
 }, 60_000);
 
 test("Werewolf thinking isolates the speaker before speech on desktop and mobile", async () => {
-  const game = await createHistoricalWerewolfGame({preset:"one_wolf",agentProfileIds:[],maxDays:1});
-  const claim = await claimWerewolfGame(database.db,game.id);if(!claim.ok)throw new Error(claim.error);
-  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{ prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}){
+  const game = await createClaimedHistoricalWerewolfGame({preset:"one_wolf",agentProfileIds:[],maxDays:1});
+  await runWerewolf(createWerewolfStore(database.db,game.id,game.ownerEpoch),{ prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}){
     if(request.action==="open_thread")return {kind:"opening",text:null,cue:null,recipientIds:[]};
     return request.legalTargetIds.length ? {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Private decision"} : {kind:"speech",text:"I want to hear what everyone has to say before I make up my mind.",cue:null};
   }});
@@ -800,9 +802,8 @@ test("opening stops stay distinct from recorded cursors in both audiences", asyn
 }, 60_000);
 
 test("Werewolf autoplays with device preferences and Mystery preserves the saved choice", async () => {
-  const game = await createHistoricalWerewolfGame({preset:"one_wolf",agentProfileIds:[],maxDays:1});
-  const claim = await claimWerewolfGame(database.db,game.id);if(!claim.ok)throw new Error(claim.error);
-  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{ prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}){
+  const game = await createClaimedHistoricalWerewolfGame({preset:"one_wolf",agentProfileIds:[],maxDays:1});
+  await runWerewolf(createWerewolfStore(database.db,game.id,game.ownerEpoch),{ prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}){
     if(request.action==="open_thread")return {kind:"opening",text:null,cue:null,recipientIds:[]};
     return request.legalTargetIds.length ? {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Private decision"} : {kind:"speech",text:"I want to hear what everyone has to say before I make up my mind.",cue:null};
   }});
@@ -810,12 +811,14 @@ test("Werewolf autoplays with device preferences and Mystery preserves the saved
   try {
     if (!servers.webUrl) throw new Error("Web server missing");
     await page.goto(servers.webUrl,{waitUntil:"domcontentloaded"});
+    await dismissAnalyticsNotice(page);
     await page.evaluate("localStorage.setItem('house:watch:viewer:v1',JSON.stringify({thinking:true}))");
     await page.goto(`${servers.webUrl}/games/${game.slug}/replay?audience=omniscient`,{waitUntil:"domcontentloaded"});
     await page.waitForSelector('button[aria-label="Pause replay"]');
     await page.waitForFunction("Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-elapsed')) > 900");
     await pauseWerewolf(page);
     await page.click('button[aria-label="Player settings"]');
+    await page.waitForSelector('[role="dialog"] input[type="checkbox"]');
     expect(await page.evaluate("document.querySelector('[role=\"dialog\"] input[type=\"checkbox\"]').checked")).toBe(true);
     await page.click('[role="dialog"] input[type="checkbox"]');
     let saved=await page.evaluate("localStorage.getItem('house:watch:viewer:v1')");
@@ -823,6 +826,7 @@ test("Werewolf autoplays with device preferences and Mystery preserves the saved
     await page.reload({waitUntil:"domcontentloaded"});
     await pauseWerewolf(page);
     await page.click('button[aria-label="Player settings"]');
+    await page.waitForSelector('[role="dialog"] input[type="checkbox"]');
     expect(await page.evaluate("document.querySelector('[role=\"dialog\"] input[type=\"checkbox\"]').checked")).toBe(false);
     await page.click('[role="dialog"] input[type="checkbox"]');
     saved=await page.evaluate("localStorage.getItem('house:watch:viewer:v1')");
@@ -836,9 +840,8 @@ test("Werewolf autoplays with device preferences and Mystery preserves the saved
 
 
 test("House entry is anonymous, rejects invalid audiences and shares a later source moment without restarting", async () => {
-  const game = await createHistoricalWerewolfGame({preset:"one_wolf",agentProfileIds:[],maxDays:1,visibility:"unlisted"});
-  const claim = await claimWerewolfGame(database.db,game.id); if(!claim.ok) throw new Error(claim.error);
-  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{ prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}) {
+  const game = await createClaimedHistoricalWerewolfGame({preset:"one_wolf",agentProfileIds:[],maxDays:1,visibility:"unlisted"});
+  await runWerewolf(createWerewolfStore(database.db,game.id,game.ownerEpoch),{ prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}) {
     if(request.action === "open_thread") return {kind:"opening",text:"What have you learned?",recipientIds:request.legalRecipientIds.slice(0,3),cue:null};
     if(request.action === "vote" && request.voteMode === "majority") return {kind:"target",targetId:null,thinking:"Hear more"};
     return request.legalTargetIds.length ? {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Fixture decision"} : {kind:"speech",text:"I want to compare the evidence.",cue:null};
@@ -847,6 +850,7 @@ test("House entry is anonymous, rejects invalid audiences and shares a later sou
   const reads:string[]=[];page.on("request",request=>{if(request.url().includes("/api/"))reads.push(request.url());});
   try {
     await page.goto(`${servers.webUrl}/games/${game.slug}`,{waitUntil:"domcontentloaded"});
+    await dismissAnalyticsNotice(page);
     await page.waitForSelector('a[href$="/replay?audience=mystery"]');
     expect(reads.some(url=>new URL(url).pathname === `/api/games/${game.slug}`)).toBe(false);
     await page.waitForSelector('meta[name="robots"][content*="noindex"]');
@@ -1082,9 +1086,8 @@ test.each(["classic", "format"] as const)("%s Influence retrospective portraits 
 
 
 test("House replay music follows transport, remembers volume and stays visible on mobile", async () => {
-  const game = await createHistoricalWerewolfGame({preset:"one_wolf",agentProfileIds:[],maxDays:1});
-  const claim=await claimWerewolfGame(database.db,game.id);if(!claim.ok)throw new Error(claim.error);
-  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{ prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}){
+  const game = await createClaimedHistoricalWerewolfGame({preset:"one_wolf",agentProfileIds:[],maxDays:1});
+  await runWerewolf(createWerewolfStore(database.db,game.id,game.ownerEpoch),{ prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}){
     if(request.action==="open_thread")return {kind:"opening",text:"Let us compare the accounts carefully before we decide who should leave the village today.",cue:null,recipientIds:[]};
     return request.legalTargetIds.length ? {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Private decision"} : {kind:"speech",text:"I want to hear what everyone has to say before I make up my mind about anyone in this village.",cue:null};
   }});
@@ -1506,11 +1509,8 @@ test("Decisions inspector keeps Mystery public and Omniscient thinking independe
   }
   const { replayWerewolf } = await import("@influence/engine/werewolf");
   progress("create game");
-  const game = await createHistoricalWerewolfGame({ preset: "two_wolves", agentProfileIds: [], maxDays: 1 });
-  progress("claim game");
-  const claim = await claimWerewolfGame(database.db, game.id);
-  if (!claim.ok) throw new Error(claim.error);
-  const store = createWerewolfStore(database.db, game.id, claim.claim.ownerEpoch);
+  const game = await createClaimedHistoricalWerewolfGame({ preset: "two_wolves", agentProfileIds: [], maxDays: 1 });
+  const store = createWerewolfStore(database.db, game.id, game.ownerEpoch);
   const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request, observation }) {
     if (request.action === "open_thread") return { kind: "opening", text: null, cue: null, recipientIds: [] };
     // The inspector requires a doctor with both private night and public day
