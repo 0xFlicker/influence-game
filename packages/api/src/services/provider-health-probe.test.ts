@@ -46,7 +46,7 @@ describe("provider health probes", () => {
             expect(Date.parse(row!.probeLeaseExpiresAt!) - Date.now()).toBeGreaterThan(7_200_000);
             return { id: "local-probe", choices: [{ finish_reason: "stop", message: { role: "assistant", content: "OK" } }] };
           } } } } as unknown as LlmClientConfig["client"], apiKeySource: "test", providerLabel: "local", providerProfileId: "lm-studio",
-          toolChoiceMode: "required", flexProcessingEnabled: false,
+           flexProcessingEnabled: false,
         };
       },
     });
@@ -64,7 +64,7 @@ describe("provider health probes", () => {
           ready();
           return new Promise((_, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
         } } } as unknown as LlmClientConfig["client"], apiKeySource: "test", providerLabel: "OpenAI", providerProfileId: "openai",
-        toolChoiceMode: "required", flexProcessingEnabled: false,
+         flexProcessingEnabled: false,
       }),
     });
     try {
@@ -189,7 +189,7 @@ describe("provider health probes", () => {
       apiKeySource: "test",
       providerLabel: "OpenAI",
       providerProfileId: "openai",
-      toolChoiceMode: "required",
+
       flexProcessingEnabled: false,
       openAIServiceTier: "auto",
     });

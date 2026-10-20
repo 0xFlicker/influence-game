@@ -104,10 +104,8 @@ if (false) {
   const validTool: ModelInvocation<AcceptedPick> = {
     messages: [],
     result: {
-      kind: "tool",
+      kind: "structured",
       artifact,
-      choice: { name: artifact.name },
-      allowParallel: false,
     },
     outputTokenLimit: 100,
   };
@@ -126,7 +124,7 @@ if (false) {
   const invalidTool: ModelInvocation = {
     messages: [],
     // @ts-expect-error tool invocations require their exact artifact
-    result: { kind: "tool", choice: "required" },
+    result: { kind: "structured", choice: "required" },
     outputTokenLimit: 100,
   };
   void [validStructured, validText, validTool, invalidText, invalidStructured, invalidTool];

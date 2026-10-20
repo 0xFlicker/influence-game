@@ -11,7 +11,6 @@ import { createProviderEvidenceFetch } from "./provider-execution";
 import { createProviderAdapter } from "./provider-adapters";
 import type { LlmProviderAdapter } from "./model-invocation";
 
-export type LlmToolChoiceMode = "named" | "required" | "auto" | "json_schema";
 export type OpenAIReasoningSummaryMode = "auto" | "concise" | "detailed";
 export type OpenAIRequestServiceTier = "flex" | "auto";
 
@@ -22,7 +21,6 @@ export interface LlmClientConfig {
   baseURLSource?: string;
   providerLabel: string;
   providerProfileId: ProviderProfileId;
-  toolChoiceMode: LlmToolChoiceMode;
   openAIReasoningSummary?: OpenAIReasoningSummaryMode;
   /** True when this client adds Flex tiering and retry/fallback handling to OpenAI requests. */
   flexProcessingEnabled: boolean;
@@ -40,7 +38,6 @@ export interface LlmProviderRuntime {
   modelId: string;
   modelCapabilities: ModelRequestCapabilities;
   reasoningPolicy: ModelReasoningPolicy;
-  toolChoiceMode: LlmToolChoiceMode;
   openAIReasoningSummary?: OpenAIReasoningSummaryMode;
   openAIServiceTier?: OpenAIRequestServiceTier;
   position: number;
@@ -271,18 +268,6 @@ function isLocalBaseURL(baseURL?: string): boolean {
   return Boolean(baseURL && /localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(baseURL));
 }
 
-function normalizeToolChoiceMode(value: string | undefined): LlmToolChoiceMode | null {
-  const normalized = value?.trim().toLowerCase().replace("-", "_");
-  if (!normalized) return null;
-  if (normalized === "named" || normalized === "required" || normalized === "auto") {
-    return normalized;
-  }
-  if (normalized === "json" || normalized === "json_schema" || normalized === "schema") {
-    return "json_schema";
-  }
-  return null;
-}
-
 function normalizeOpenAIReasoningSummaryMode(value: string | undefined): OpenAIReasoningSummaryMode | "off" | null {
   const normalized = value?.trim().toLowerCase();
   if (!normalized) return null;
@@ -303,18 +288,6 @@ function resolveProfileId(baseURL: string | undefined, explicitProfileId?: Provi
 
 function requiresExplicitBaseURL(providerProfileId: ProviderProfileId): boolean {
   return providerProfileId === "lm-studio" || providerProfileId === "custom-openai-compatible";
-}
-
-export function resolveToolChoiceMode(
-  env: NodeJS.ProcessEnv = process.env,
-  baseURL?: string,
-  providerProfileId?: ProviderProfileId,
-): LlmToolChoiceMode {
-  const profile = providerProfileId ? PROVIDER_PROFILES[providerProfileId] : undefined;
-  return normalizeToolChoiceMode(env.INFLUENCE_LLM_TOOL_CHOICE_MODE)
-    ?? normalizeToolChoiceMode(env.INFLUENCE_LLM_TOOL_CHOICE)
-    ?? profile?.defaultToolChoiceMode
-    ?? (isLocalBaseURL(baseURL) ? "required" : "named");
 }
 
 export function resolveOpenAIReasoningSummaryMode(
@@ -418,7 +391,6 @@ export function createLlmClientFromEnv(
     baseURLSource: baseURLConfig?.key,
     providerLabel: explicitProfileId ? profile.label : providerLabel(baseURL),
     providerProfileId,
-    toolChoiceMode: resolveToolChoiceMode(env, baseURL, providerProfileId),
     flexProcessingEnabled,
     ...(openAIServiceTier && { openAIServiceTier }),
     ...(providerProfileId === "openai" && openAIReasoningSummary && { openAIReasoningSummary }),
@@ -461,8 +433,6 @@ export function createLlmProviderRuntimesFromEnv(
       modelId: entry.modelId,
       modelCapabilities: entry.model.capabilities,
       reasoningPolicy: entry.reasoningPolicy,
-      toolChoiceMode:
-        entry.model.preferredToolChoiceMode ?? config.toolChoiceMode,
       ...(config.openAIReasoningSummary && {
         openAIReasoningSummary: config.openAIReasoningSummary,
       }),

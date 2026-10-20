@@ -19,7 +19,7 @@ const BASE_SNAPSHOT: EffectiveAgentRuntimeSnapshot = {
   providerProfileId: "openai",
   catalogId: "openai:gpt-5-nano",
   reasoningPolicy: "low",
-  toolChoiceMode: "auto",
+
   temperature: 0.9,
 };
 

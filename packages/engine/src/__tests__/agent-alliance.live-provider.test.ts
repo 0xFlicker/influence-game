@@ -54,7 +54,7 @@ function makeLiveAgent(records: ProviderAttemptRecord[]): InfluenceAgent {
       catalogId: model.id,
       modelCapabilities: model.capabilities,
       reasoningPolicy: "low",
-      toolChoiceMode: model.preferredToolChoiceMode ?? config.toolChoiceMode,
+
       structuredCallMaxAttempts: 1,
       evaluationFailFast: true,
       ...(config.openAIReasoningSummary && {

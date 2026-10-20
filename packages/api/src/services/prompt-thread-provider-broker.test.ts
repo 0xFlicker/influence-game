@@ -14,6 +14,9 @@ const cells = [
   { cellId: "two", ordinal: 2, actorId: "lyra", lineage: "branch-a", controlReturnTurn: true },
 ];
 
+const text = { format: { type: "json_schema", name: "panel_response", strict: true,
+  schema: { type: "object", properties: { message: { type: "string" } }, required: ["message"], additionalProperties: false } } };
+
 describe("PromptThreadProviderBroker", () => {
   it("admits each planned cell once and in manifest order", () => {
     const broker = new PromptThreadProviderBroker(cells);
@@ -115,13 +118,14 @@ describe("PromptThreadProviderBroker", () => {
           model: PROMPT_THREAD_PANEL_MODEL,
           prompt_cache_key: "opaque-lineage",
           input: "x".repeat(1_024),
+          text,
         },
       }, async () => ({ id: "response-1", status: "completed", usage: { input_tokens_details: { cached_tokens: 0 } } }));
       expect(result.receipt.responseId).toBe("response-1");
     });
   });
 
-  it("accepts only strict native Responses function tools for panel cells", async () => {
+  it("accepts native JSON Schema and rejects tool requests for panel cells", async () => {
     const root = await mkdtemp(join(tmpdir(), "prompt-thread-broker-tools-"));
     const workspace = await createPrivateWorkspace(root, { gitWorktreeRoots: [] });
     const broker = new PromptThreadProviderBroker([{ ...cells[0]!, lineage: "opaque-lineage" }]);
@@ -129,14 +133,7 @@ describe("PromptThreadProviderBroker", () => {
       model: PROMPT_THREAD_PANEL_MODEL,
       prompt_cache_key: "opaque-lineage",
       input: "x".repeat(1_024),
-      tools: [{
-        type: "function",
-        name: "respond_to_mingle",
-        strict: true,
-        parameters: { type: "object", properties: {}, additionalProperties: false },
-      }],
-      tool_choice: { type: "function", name: "respond_to_mingle" },
-      parallel_tool_calls: false,
+      text,
     };
     await withRunMutationLock(workspace, "run-tools", async (lock) => {
       const result = await broker.dispatch(lock, {
@@ -184,6 +181,7 @@ describe("PromptThreadProviderBroker", () => {
       prompt_cache_key: "opaque-lineage",
       input: "x".repeat(1_024),
       max_output_tokens: 40,
+      text,
     };
 
     expect(() => broker.prepare({
@@ -249,7 +247,7 @@ describe("PromptThreadProviderBroker", () => {
           model: "frontier-curator",
           input: "{}",
           service_tier: "flex",
-          text: { format: { type: "json_schema", strict: true } },
+          text,
         },
       }, async (request) => ({
         id: "curator-response",

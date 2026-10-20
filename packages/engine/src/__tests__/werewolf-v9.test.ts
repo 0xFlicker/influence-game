@@ -109,14 +109,13 @@ describe("Werewolf v9", () => {
       systemPrompt = body.messages[0].content;
       const request = sent!.request as {action: string};
       return Response.json({ id: "allowance-prompt", object: "chat.completion", created: 0, model: "glm-5-2",
-        choices: [{ index: 0, finish_reason: "tool_calls", message: { role: "assistant", content: null,
-          tool_calls: [{ id: "decision", type: "function", function: { name: `werewolf_${request.action}`, arguments: JSON.stringify(request.action === "public_vote"
+        choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify(request.action === "public_vote"
             ? {text: null, cue: null, targetId: null, thinking: "No elimination target."}
-            : {text: null, cue: null, recipientId: null, replyToContributionId: null, thinking: "Wait for useful information"}) } }] } }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } });
+            : {text: null, cue: null, recipientId: null, replyToContributionId: null, thinking: "Wait for useful information"}) } }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } });
     } });
     const entry = modelCatalogEntryById("katana:glm-5-2")!;
     const runtime: LlmProviderRuntime = { adapter: createProviderAdapter("katana", client), catalogId: entry.id, providerProfileId: "katana", modelId: entry.modelId,
-      modelCapabilities: entry.capabilities, reasoningPolicy: "medium", toolChoiceMode: "required", position: 0, role: "primary" };
+      modelCapabilities: entry.capabilities, reasoningPolicy: "medium",  position: 0, role: "primary" };
     const agent = new WerewolfModelAgent({ runtimes: [runtime] });
     const decide = async (state: WerewolfState) => {
       const turn = nextWerewolfStep(state);

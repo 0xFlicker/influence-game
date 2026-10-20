@@ -22,13 +22,13 @@ function provider(decision: unknown) {
       if (!summary && JSON.stringify(invocation.messages).length > 50000) throw Object.assign(new Error("context window exceeded"), { code: "context_length_exceeded", status: 400 });
       const base: ProviderModelOutcome = { transport: "fixture.responses", nativeResponse: {}, toolCalls: [] };
       if (summary) return { ...base, text: JSON.stringify({ summary: "Mira promised protection; Atlas disputed it." }) };
-      if (invocation.result.kind === "tool") return { ...base, toolCalls: [{ name: invocation.result.artifact.name, arguments: JSON.stringify(decision) }] };
+      if (invocation.result.kind === "structured") return { ...base, text: JSON.stringify(decision) };
       return { ...base, text: typeof decision === "string" ? decision : JSON.stringify(decision) };
     },
   };
   const model = modelCatalogEntryById("openai:gpt-5.6-luna")!;
   const runtime: LlmProviderRuntime = { adapter, catalogId: model.id, providerProfileId: model.providerProfileId, modelId: model.modelId,
-    modelCapabilities: model.capabilities, reasoningPolicy: "low", toolChoiceMode: "named", position: 0, role: "primary" };
+    modelCapabilities: model.capabilities, reasoningPolicy: "low",  position: 0, role: "primary" };
   return { runtime, requests, adapter };
 }
 function summaryOrientation(requests: ModelInvocation[]) {
@@ -89,7 +89,7 @@ test("Werewolf compacts actor-visible history while retaining verified role know
 });
 
 test("House interview compacts only the subject's provided history and preserves the interview boundary", async () => {
-  const p = provider("Atlas, why did you dispute Mira's promise?");
+  const p = provider({ question: "Atlas, why did you dispute Mira's promise?" });
   const house = new LLMHouseInterviewer(p.adapter, p.runtime.modelId, { providerManifest: [p.runtime] });
   const context = phase(); context.mingleMessages = [{ from: "Mira", text: history }];
   const result = await house.generateQuestion({ agentId: "atlas", agentName: "Atlas", round: 1, precedingPhase: Phase.MINGLE_I, sessionEventSequence: 3, playerKnowledge: context });

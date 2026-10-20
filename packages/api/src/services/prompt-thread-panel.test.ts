@@ -363,6 +363,8 @@ function runner(
           input: "x".repeat(1_024),
           instructions: "stable panel instructions",
           max_output_tokens: 1_000,
+          text: { format: { type: "json_schema", name: "panel_response", strict: true,
+            schema: { type: "object", properties: { message: { type: "string" } }, required: ["message"], additionalProperties: false } } },
         };
         const response = await value.dispatch(request);
         return {
@@ -652,6 +654,8 @@ describe("prompt thread panel", () => {
               prompt_cache_key: firstCell.actorLineage,
               input: "x".repeat(1_024),
               instructions: "stable panel instructions",
+              text: { format: { type: "json_schema", name: "panel_response", strict: true,
+                schema: { type: "object", properties: { message: { type: "string" } }, required: ["message"], additionalProperties: false } } },
             },
           },
           async () => ({
@@ -1109,13 +1113,7 @@ function generatedProviderResponse(message: string) {
     status: "completed",
     service_tier: "flex",
     output_text: outputText,
-    output: [{
-      id: "real-worker-function-call",
-      type: "function_call",
-      call_id: "real-worker-call",
-      name: "conversation_turn",
-      arguments: outputText,
-    }],
+    output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: outputText }] }],
     usage: {
       input_tokens: 1,
       input_tokens_details: { cached_tokens: 0 },
@@ -1169,7 +1167,9 @@ if (command === "handshake") {
     prompt_cache_key: input.cell.actorLineage,
     input: "x".repeat(1024),
     instructions: "stable panel instructions",
-    max_output_tokens: 1000
+    max_output_tokens: 1000,
+    text: { format: { type: "json_schema", name: "panel_response", strict: true,
+      schema: { type: "object", properties: { message: { type: "string" } }, required: ["message"], additionalProperties: false } } }
   };
   const saved = input.savedResponse;
   const response = saved === undefined

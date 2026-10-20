@@ -5,7 +5,6 @@ import {
   DEFAULT_MODEL_CATALOG_ID,
   resolveModelSelection,
   type GameModelSelection,
-  type LlmToolChoiceMode,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -54,7 +53,6 @@ export function resolveFreeTrackEffectiveRuntimeSnapshot(
   options: {
     modelSelection?: GameModelSelection | null;
     temperature?: number;
-    toolChoiceMode?: LlmToolChoiceMode;
   } = {},
 ): EffectiveAgentRuntimeSnapshot {
   const resolved = resolveModelSelection(
@@ -71,9 +69,6 @@ export function resolveFreeTrackEffectiveRuntimeSnapshot(
     providerProfileId: resolved.providerProfile.id,
     catalogId: resolved.catalogId,
     reasoningPolicy: resolved.reasoningPolicy,
-    toolChoiceMode: resolved.model.preferredToolChoiceMode
-      ?? options.toolChoiceMode
-      ?? resolved.providerProfile.defaultToolChoiceMode,
     temperature: options.temperature ?? 0.9,
   };
 }
@@ -332,7 +327,6 @@ function parseEffectiveRuntimeSnapshot(value: Record<string, unknown>): Effectiv
     providerProfileId: value.providerProfileId as string,
     catalogId: value.catalogId as string,
     reasoningPolicy: nullableString(value.reasoningPolicy),
-    toolChoiceMode: nullableString(value.toolChoiceMode),
     temperature: value.temperature,
   };
 }

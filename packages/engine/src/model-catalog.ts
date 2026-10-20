@@ -1,4 +1,4 @@
-import type { OpenAIReasoningSummaryMode, LlmToolChoiceMode } from "./llm-client";
+import type { OpenAIReasoningSummaryMode } from "./llm-client";
 
 export { DEFAULT_MODEL_CATALOG_ID, DEFAULT_MODEL_ID } from "./model-defaults";
 
@@ -24,7 +24,6 @@ export interface ProviderProfile {
   label: string;
   baseURL?: string;
   isLocal: boolean;
-  defaultToolChoiceMode: LlmToolChoiceMode;
   openAIReasoningSummary?: OpenAIReasoningSummaryMode;
 }
 
@@ -37,7 +36,6 @@ export interface ModelCatalogEntry {
   defaultReasoningPolicy: ModelReasoningPolicy;
   allowedReasoningEfforts: readonly ModelReasoningEffort[];
   capabilities: ModelRequestCapabilities;
-  preferredToolChoiceMode?: LlmToolChoiceMode;
   notes?: string;
 }
 
@@ -79,36 +77,29 @@ export const PROVIDER_PROFILES: Record<ProviderProfileId, ProviderProfile> = {
     id: "openai",
     label: "OpenAI",
     isLocal: false,
-    defaultToolChoiceMode: "named",
     openAIReasoningSummary: "auto",
   },
   "lm-studio": {
     id: "lm-studio",
     label: "OpenAI-compatible local",
     isLocal: true,
-    defaultToolChoiceMode: "required",
   },
   katana: {
     id: "katana",
     label: "Katana (IMGNAI)",
     baseURL: "https://kat.imgnai.com/v1",
     isLocal: false,
-    defaultToolChoiceMode: "named",
   },
   "meta-muse": {
     id: "meta-muse",
     label: "Meta Muse",
     baseURL: "https://api.meta.ai/v1",
     isLocal: false,
-    // Meta Model API accepts only "auto" tool choice (verified 2026-10-13);
-    // named/required choices return HTTP 400 on Chat Completions and Responses.
-    defaultToolChoiceMode: "auto",
   },
   "custom-openai-compatible": {
     id: "custom-openai-compatible",
     label: "OpenAI-compatible",
     isLocal: false,
-    defaultToolChoiceMode: "named",
   },
 };
 
@@ -302,7 +293,6 @@ export const MODEL_CATALOG: readonly ModelCatalogEntry[] = [
     defaultReasoningPolicy: "action-policy",
     allowedReasoningEfforts: [],
     capabilities: KATANA_JSON_SCHEMA_ONLY_CAPABILITIES,
-    preferredToolChoiceMode: "json_schema",
     notes: "Failed local API-backed Influence evaluation: JSON Schema transport worked, but core vote/revote/strategy decisions were repeatedly empty or semantically invalid and advanced via fallbacks.",
   },
   {
@@ -471,7 +461,7 @@ export function normalizeProviderManifest(value: unknown): GameProviderManifest 
     if (model.evaluationStatus !== "game-ready") {
       return providerManifestError(`model ${selection.catalogId} is not game-ready`);
     }
-    if (!model.capabilities.supportsStructuredOutput || !model.capabilities.supportsTools) {
+    if (!model.capabilities.supportsStructuredOutput) {
       return providerManifestError(`model ${selection.catalogId} is incompatible with Influence decisions`);
     }
 

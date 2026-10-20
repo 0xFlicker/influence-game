@@ -55,7 +55,7 @@
 
 ## Model-output structure
 
-- Any model turn whose output affects control flow, game state, continuity, producer evidence, or later model context must use a provider-native tool or an exact strict JSON schema. A schema that merely accepts any object is not a structured contract.
+- Any model turn whose output affects control flow, game state, continuity, producer evidence, or later model context must use a provider-native exact strict JSON schema response. A schema that merely accepts any object is not a structured contract.
 - Validate the decoded semantic value inside the provider-attempt boundary. Non-empty text, parseable `{}`, missing required fields filled with defaults, fenced JSON, or a JSON object extracted from surrounding prose must never count as a successful structured turn.
 - Structured-output failure must remain typed: retry it under the shared provider policy, apply an explicit rules-legal fallback at the owning phase boundary, or fail clearly. Do not silently reinterpret malformed structured output as dialogue or other agent-authored prose.
 - Prose fields are presentation, even when returned inside a tool call. Do not infer claims, participants, decisions, addressees, phase, history, or simulation state by applying regexes or string conventions to model prose. When downstream code needs those values, return and validate them as separate structured fields or derive them from canonical events/projections, then render prose from that structure.
@@ -67,7 +67,7 @@
 - Paid simulations run **over the localhost API**, meaning through the API, not file-only execution. Preserve API game IDs so replay, Studio and MCP inspect the actual tested games.
 - Always retain simulation data: structured thinking, available native reasoning/summaries/encrypted payloads, complete sanitized provider requests/responses, usage, retries and failures. Never discard successful evidence, overwrite run artifacts, or continue spending after local evidence persistence fails. Keep private evidence out of contestant observations and public exports.
 
-- Local LM Studio experiments are a first-class development lane. Use the OpenAI-compatible provider env vars documented in `docs/local-model-evaluation.md`.
+- Local LM Studio is a best-effort experimental lane, not a production qualification target. Use the OpenAI-compatible provider env vars documented in `docs/local-model-evaluation.md`.
 - Simulation outputs should be stored locally, usually under `packages/engine/docs/simulations/`, unless a task says to publish or attach them elsewhere.
 - `--chatty` mode + the reasoning / transcript observability layer (`docs/reasoning-transcript-observability.md`) is now the expected way to inspect agent decision quality (Mingle turns, votes, power actions, council votes). The surfaced `thinking` and native `reasoningContext` on system transcript entries are first-class artifacts for local model work.
 

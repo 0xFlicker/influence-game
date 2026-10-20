@@ -933,24 +933,15 @@ function deterministicOpenAIStub(scripts: StoredTrace[]): OpenAI {
   };
   return {
     responses: {
-      create: async (params: Record<string, unknown>) => {
+      create: async (_params: Record<string, unknown>) => {
         const script = nextScript();
-        return storedTraceResponse(script, params);
+        return storedTraceResponse(script);
       },
     },
     chat: {
       completions: {
         create: async (params: Record<string, unknown>) => {
           const script = nextScript();
-          const toolChoice = record(params.tool_choice, "deterministic tool choice");
-          const chosenFunction = record(
-            toolChoice.function,
-            "deterministic tool function",
-          );
-          const name =
-            typeof chosenFunction.name === "string"
-              ? chosenFunction.name
-              : script.action;
           return {
             id: `deterministic-${script.manifestId}`,
             object: "chat.completion",
@@ -958,20 +949,12 @@ function deterministicOpenAIStub(scripts: StoredTrace[]): OpenAI {
             model: String(params.model ?? "fixture-model"),
             choices: [{
               index: 0,
-              finish_reason: "tool_calls",
+              finish_reason: "stop",
               logprobs: null,
               message: {
                 role: "assistant",
-                content: null,
+                content: JSON.stringify(script.output),
                 refusal: null,
-                tool_calls: [{
-                  id: `tool-${script.manifestId}`,
-                  type: "function",
-                  function: {
-                    name,
-                    arguments: JSON.stringify(script.output),
-                  },
-                }],
               },
             }],
             usage: {
@@ -1007,7 +990,7 @@ function createGeneratedCellProvider(
               if (!intent) {
                 throw new Error(`Generated replay is missing intent for ${actorId}`);
               }
-              return storedTraceResponse(intent, params);
+              return storedTraceResponse(intent);
             }
             const actorOffset = validated.actorIds.indexOf(actorId);
             if (actorOffset < 0) {
@@ -1039,23 +1022,9 @@ function createGeneratedCellProvider(
 
 function storedTraceResponse(
   script: StoredTrace,
-  request?: Record<string, unknown>,
 ): Record<string, unknown> {
   const outputText = JSON.stringify(script.output);
-  const choice = request?.tool_choice;
-  const chosenName = choice && typeof choice === "object" && !Array.isArray(choice)
-    && "name" in choice && typeof choice.name === "string"
-    ? choice.name
-    : null;
-  const output = chosenName
-    ? [{
-        id: `function-${script.manifestId}`,
-        type: "function_call",
-        call_id: `call-${script.manifestId}`,
-        name: chosenName,
-        arguments: outputText,
-      }]
-    : [{
+  const output = [{
         id: `message-${script.manifestId}`,
         type: "message",
         role: "assistant",

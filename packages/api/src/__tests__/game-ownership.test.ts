@@ -144,7 +144,7 @@ describe("atomic game owner claim and roster freeze", () => {
       .toMatchObject({ mu: 41, sigma: 4 });
   });
 
-  test("freezes the environment-resolved tool choice used by owned agents", async () => {
+  test("ignores retired tool-choice settings when freezing new owned agents", async () => {
     const savedToolChoice = process.env.INFLUENCE_LLM_TOOL_CHOICE_MODE;
     process.env.INFLUENCE_LLM_TOOL_CHOICE_MODE = "required";
     try {
@@ -153,10 +153,10 @@ describe("atomic game owner claim and roster freeze", () => {
       expect(owner.ok).toBeTrue();
 
       const seat = await ownedSeatFor(fixture.db, fixture.gameId, fixture.profileA.id);
-      expect(JSON.parse(seat.agentConfig).toolChoiceMode).toBe("required");
+      expect(JSON.parse(seat.agentConfig).toolChoiceMode).toBeUndefined();
       const revision = (await loadPayloads(fixture.db.select().from(schema.agentRevisions)
         .where(eq(schema.agentRevisions.id, seat.agentRevisionId!))))[0]!;
-      expect(revision.effectiveRuntimeSnapshot.toolChoiceMode).toBe("required");
+      expect(revision.effectiveRuntimeSnapshot.toolChoiceMode).toBeUndefined();
     } finally {
       if (savedToolChoice === undefined) delete process.env.INFLUENCE_LLM_TOOL_CHOICE_MODE;
       else process.env.INFLUENCE_LLM_TOOL_CHOICE_MODE = savedToolChoice;

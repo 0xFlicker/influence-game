@@ -5,6 +5,9 @@
  * Influence Game — Batch Simulation Runner
  *
  * Runs multiple game simulations and outputs structured analysis.
+ * New decisions use native JSON Schema (Responses text.format or Chat Completions
+ * response_format), without tool-choice modes. LM Studio remains best effort.
+ * Completed-game playback/Studio formats and private historical evidence stay readable.
  * Preserve all sanitized provider attempts, including successful structured
  * thinking and available native reasoning. Artifact write errors stop execution;
  * pending requests and completed attempts remain available in the journal snapshot.
@@ -276,7 +279,7 @@
  * SAFE makes the target VULNERABLE; VULNERABLE makes the target SAFE.
  * Provider requests call the renamed formats Save-or-Exit (`save_or_exit`),
  * The Short List (`short_list`), and Highest Count (`highest_count`), use
- * remaining/exited/exit vocabulary, and expose matching provider tool names.
+ * remaining/exited/exit vocabulary, and expose matching decision schema names.
  * The engine maps those provider values back to canonical
  * `save_or_eliminate`/`vote_bomb`/`majority_elimination` format IDs and the
  * canonical `eliminate` action before validation, journaling, checkpointing,
@@ -307,7 +310,7 @@
  * them back into live targets.
  * API-backed saved agents also pass owner-authored personality, backstory,
  * strategy instructions, and temperature into InfluenceAgent. Those inputs,
- * together with resolved model/provider/reasoning/tool policy, define the
+ * together with resolved model/provider/reasoning policy, define the
  * effective analytical revision; simulation comparisons should hold the same
  * snapshot constant rather than relying on a mutable display profile.
  *
@@ -376,7 +379,6 @@ import {
 } from "./llm-client";
 import type {
   LlmProviderRuntime,
-  LlmToolChoiceMode,
   OpenAIReasoningSummaryMode,
 } from "./llm-client";
 import type {
@@ -452,7 +454,6 @@ interface SimulationModelRuntime {
   catalogId?: string;
   capabilities: ModelRequestCapabilities;
   reasoningPolicy: ModelReasoningPolicy;
-  preferredToolChoiceMode?: LlmToolChoiceMode;
 }
 
 function readPositiveInt(value: string | undefined, fallback: number): number {
@@ -793,7 +794,6 @@ function selectCast(
   requestedPersonas: string[] | null,
   openai: OpenAI,
   modelRuntime: SimulationModelRuntime,
-  toolChoiceMode: LlmToolChoiceMode = "named",
   openAIReasoningSummary?: OpenAIReasoningSummaryMode,
   privateTraceSink?: import("./game-runner").PrivateTraceSink,
   providerExecutionHooks?: ProviderExecutionHooks,
@@ -822,7 +822,6 @@ function selectCast(
   return selected.map(({ name, personality }) => {
     const id: UUID = randomUUID();
     return new InfluenceAgent(id, name, personality, openai, modelRuntime.modelId, undefined, undefined, {
-      toolChoiceMode,
       ...(openAIReasoningSummary && { openAIReasoningSummary }),
       providerProfileId: modelRuntime.providerProfileId,
       ...(modelRuntime.catalogId && { catalogId: modelRuntime.catalogId }),
@@ -2021,7 +2020,6 @@ function resolveCatalogBackedSimulationModel(args: SimArgs): SimulationModelRunt
     catalogId: resolved.catalogId,
     capabilities: resolved.model.capabilities,
     reasoningPolicy: resolved.reasoningPolicy,
-    ...(resolved.model.preferredToolChoiceMode && { preferredToolChoiceMode: resolved.model.preferredToolChoiceMode }),
   };
 }
 
@@ -2102,7 +2100,7 @@ async function main() {
   console.log(`Games: ${args.games} | Players per game: ${args.players} | Max rounds: ${args.maxRounds} | Model: ${modelRuntime.modelId} | Variant: ${args.variant}`);
   if (modelRuntime.catalogId) console.log(`Model catalog: ${modelRuntime.catalogId}`);
   console.log(`Reasoning policy: ${modelRuntime.reasoningPolicy}`);
-  console.log(`Provider: ${describeLlmProvider(llmConfig)} | API key: ${llmConfig.apiKeySource} | Tool choice: ${llmConfig.toolChoiceMode}`);
+  console.log(`Provider: ${describeLlmProvider(llmConfig)} | API key: ${llmConfig.apiKeySource} | Output: JSON Schema`);
   console.log(`OpenAI reasoning summaries: ${openAIReasoningSummary ?? "off"}`);
   if (args.flex) {
     console.log(
@@ -2181,9 +2179,6 @@ async function main() {
     writeFileSync(providerAttemptsPath, JSON.stringify(providerJournal.snapshot(), null, 2));
 
     // Create fresh agents for each game
-    const toolChoiceMode = providerRuntimes?.[0]?.toolChoiceMode
-      ?? modelRuntime.preferredToolChoiceMode
-      ?? llmConfig.toolChoiceMode;
     const promptReuse = new PromptReuseAggregate();
     const recallPlanReceipts = new RecallPlanReceiptAggregate();
     const privateTraceSink: import("./game-runner").PrivateTraceSink = (trace) => {
@@ -2196,7 +2191,6 @@ async function main() {
       args.personas,
       openai,
       modelRuntime,
-      toolChoiceMode,
       openAIReasoningSummary,
       privateTraceSink,
       providerJournal.hooks,
@@ -2214,7 +2208,6 @@ async function main() {
     console.log(`  Players: ${agents.map((a) => a.name).join(", ")}`);
 
     const houseInterviewer = new LLMHouseInterviewer(openai, modelRuntime.modelId, {
-      toolChoiceMode,
       providerProfileId: modelRuntime.providerProfileId,
       ...(modelRuntime.catalogId && { catalogId: modelRuntime.catalogId }),
       modelCapabilities: modelRuntime.capabilities,

@@ -45,13 +45,7 @@ const toolInvocation: ModelInvocation<{ target: "Mira" | "Vera"; rationale: stri
     content:
       "Cast one legal Influence vote. Atlas is not eligible. Legal targets are Mira and Vera. Use the provided tool.",
   }],
-  result: {
-    kind: "tool",
-    artifact: voteToolArtifact,
-    description: "Commit one legal Influence vote.",
-    choice: { name: "cast_vote" },
-    allowParallel: false,
-  },
+  result: { kind: "structured", artifact: voteToolArtifact },
   outputTokenLimit: 512,
   reasoning: { effort: "low", summary: "auto" },
   temperature: 0.2,
@@ -182,7 +176,7 @@ function requiredRuntime(
     modelId: model.modelId,
     modelCapabilities: model.capabilities,
     reasoningPolicy: "action-policy",
-    toolChoiceMode: model.preferredToolChoiceMode ?? config.toolChoiceMode,
+
     ...(config.openAIReasoningSummary && {
       openAIReasoningSummary: config.openAIReasoningSummary,
     }),

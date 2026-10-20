@@ -45,7 +45,7 @@ function fixture(options: { alwaysOverflow?: boolean; crashAfterSummary?: boolea
     },
   };
   const runtime: LlmProviderRuntime = { adapter, catalogId: model.id, providerProfileId: model.providerProfileId, modelId: model.modelId,
-    modelCapabilities: model.capabilities, reasoningPolicy: "low", toolChoiceMode: "named", position: 0, role: "primary" };
+    modelCapabilities: model.capabilities, reasoningPolicy: "low",  position: 0, role: "primary" };
   const run = (request = invocation) => executeModelInvocation({ call: new ProviderExecutionCoordinator({ hooks, wait: async () => {} }).startCall(coordinate),
     runtimes: options.fallback ? [runtime, { ...runtime, catalogId: "fallback:test", position: 1, role: "fallback" }] : [runtime], invocation: request, maxAttempts: 1,
     validate: outcome => ({ status: "usable", value: outcome.text! }) });

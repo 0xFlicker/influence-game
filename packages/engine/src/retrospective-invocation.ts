@@ -16,8 +16,7 @@ Use character names in spoken text, never internal IDs or event references. Aim 
 
 function invocation(content: string): ModelInvocation<RetrospectiveSpeechV1> {
   return { messages: [{ role: "system", content: RETROSPECTIVE_SYSTEM_PROMPT }, { role: "user", content }],
-    result: { kind: "tool", artifact: retrospectiveSpeechArtifact, description: "Submit your final public statement about the completed game.",
-      choice: { name: retrospectiveSpeechArtifact.name }, allowParallel: false },
+    result: { kind: "structured", artifact: retrospectiveSpeechArtifact },
     outputTokenLimit: RETROSPECTIVE_OUTPUT_TOKEN_LIMIT, reasoning: { effort: "low" }, temperature: 0.8 };
 }
 

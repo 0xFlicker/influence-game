@@ -5,7 +5,6 @@ import type {
   ChatCompletion,
   ChatCompletionCreateParamsNonStreaming,
   ChatCompletionMessageParam,
-  ChatCompletionTool,
 } from "openai/resources/chat/completions";
 import type {
   Response as OpenAIResponse,
@@ -22,16 +21,9 @@ import type {
   ProviderRuntimeDescriptor,
 } from "./model-invocation";
 
-interface ProviderFunctionToolDefinition {
-  name: string;
-  description?: string;
-  parameters: Record<string, unknown>;
-  strict?: boolean;
-}
 import {
   exactStructuredOutputRegistry,
   formatLengthRepairNote,
-  type ExactStructuredOutputArtifact,
   type ExactStructuredOutputResult,
 } from "./structured-output";
 import {
@@ -94,7 +86,6 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
   }>();
   const invocationByOutcome = new WeakMap<object, {
     invocation: ModelInvocation<TStructuredValue>;
-    toolUsesJsonSchema: boolean;
   }>();
   let liveAcceptedOutcome: ProviderModelOutcome | undefined;
   let latestLengthFeedback: LengthFeedback | undefined = await options.call.readLengthFeedback();
@@ -198,9 +189,6 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
           if (context?.revision) outcome.invocationMessages = semanticCall.messages;
           invocationByOutcome.set(outcome, {
             invocation: semanticCall,
-            toolUsesJsonSchema:
-              semanticCall.result.kind === "tool"
-              && asRecord(asRecord(prepared.body).response_format).type === "json_schema",
           });
           return outcome;
         },
@@ -211,28 +199,11 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
           }
           const semanticCall = compiledOutcome.invocation;
           if (semanticCall.result.kind !== "structured") {
-            if (semanticCall.result.kind === "tool") {
-              const terminalFailure = structuredTerminalFailure(outcome, false);
-              if (terminalFailure) return terminalFailure;
-              const decoded = decodeExactToolOutcome(
-                semanticCall.result.artifact,
-                outcome,
-                compiledOutcome.toolUsesJsonSchema,
-              );
-              if (decoded.status === "failure") {
-                if ("feedback" in decoded.validation && decoded.validation.feedback) latestLengthFeedback = decoded.validation.feedback;
-                return decoded.validation;
-              }
-              const validation = options.validate(outcome, decoded.value);
-              if (validation.status === "unusable" && validation.feedback) latestLengthFeedback = validation.feedback;
-              if (validation.status === "usable") liveAcceptedOutcome = outcome;
-              return validation;
-            }
             const validation = options.validate(outcome, undefined);
             if (validation.status === "usable") liveAcceptedOutcome = outcome;
             return validation;
           }
-          const terminalFailure = structuredTerminalFailure(outcome, true);
+          const terminalFailure = structuredTerminalFailure(outcome);
           if (terminalFailure) return terminalFailure;
           const decoded = exactStructuredOutputRegistry.decodeJsonDocument(
             semanticCall.result.artifact,
@@ -263,10 +234,7 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
       replayInvocation ??= typeof options.invocation === "function"
         ? options.invocation()
         : options.invocation;
-      if (
-        replayInvocation.result.kind !== "structured"
-        && replayInvocation.result.kind !== "tool"
-      ) {
+      if (replayInvocation.result.kind !== "structured") {
         return { status: "valid", value: value as TValue };
       }
       const decoded = exactStructuredOutputRegistry.decodeAcceptedValue(
@@ -286,7 +254,6 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
 
 function structuredTerminalFailure(
   outcome: ProviderModelOutcome,
-  requireText: boolean,
 ): ProviderCandidateValidation<never> | undefined {
   if (outcome.refusal || outcome.stopReason === "content_filter") {
     return {
@@ -303,7 +270,10 @@ function structuredTerminalFailure(
       message: "length",
     };
   }
-  if (requireText && !outcome.text?.trim()) {
+  if (outcome.toolCalls.length > 0) {
+    return { status: "unusable", kind: "malformed_output", message: "Expected a JSON response, received a tool call." };
+  }
+  if (!outcome.text?.trim()) {
     return {
       status: "unusable",
       kind: "empty_output",
@@ -311,67 +281,6 @@ function structuredTerminalFailure(
     };
   }
   return undefined;
-}
-
-function decodeExactToolOutcome<TValue>(
-  artifact: ExactStructuredOutputArtifact<TValue>,
-  outcome: ProviderModelOutcome,
-  usesJsonSchema: boolean,
-):
-  | { status: "decoded"; value: TValue }
-  | { status: "failure"; validation: ProviderCandidateValidation<never> } {
-  if (usesJsonSchema) {
-    if (!outcome.text?.trim()) {
-      return {
-        status: "failure",
-        validation: {
-          status: "unusable",
-          kind: "empty_output",
-          message: `Tool arguments missing for ${artifact.name}`,
-        },
-      };
-    }
-    const decoded = exactStructuredOutputRegistry.decodeJsonDocument(
-      artifact,
-      outcome.text,
-    );
-    return decoded.status === "valid"
-      ? { status: "decoded", value: decoded.value }
-      : { status: "failure", validation: structuredValidationFailure(decoded) };
-  }
-
-  if (outcome.toolCalls.length !== 1) {
-    return {
-      status: "failure",
-      validation: {
-        status: "unusable",
-        kind: "wrong_tool",
-        message: outcome.toolCalls.length === 0
-          ? `Tool call missing for ${artifact.name}`
-          : `Expected one ${artifact.name} tool call, received ${outcome.toolCalls.length}`,
-        retryable: false,
-      },
-    };
-  }
-  const toolCall = outcome.toolCalls[0]!;
-  if (toolCall.name !== artifact.name) {
-    return {
-      status: "failure",
-      validation: {
-        status: "unusable",
-        kind: "wrong_tool",
-        message: `Expected ${artifact.name}, received ${toolCall.name}`,
-        retryable: false,
-      },
-    };
-  }
-  const decoded = exactStructuredOutputRegistry.decodeJsonDocument(
-    artifact,
-    toolCall.arguments,
-  );
-  return decoded.status === "valid"
-    ? { status: "decoded", value: decoded.value }
-    : { status: "failure", validation: structuredValidationFailure(decoded) };
 }
 
 function structuredValidationFailure(
@@ -398,16 +307,6 @@ abstract class OpenAICompatibleAdapter implements LlmProviderAdapter {
   ) {
     const imageError = imageInvocationError(invocation, runtime);
     if (imageError) return { compatible: false, reason: imageError };
-    if (
-      invocation.result.kind === "tool" &&
-      !runtime.modelCapabilities.supportsTools &&
-      !(
-        runtime.toolChoiceMode === "json_schema" &&
-        runtime.modelCapabilities.supportsStructuredOutput
-      )
-    ) {
-      return { compatible: false, reason: "function tools are unsupported" };
-    }
     if (
       invocation.result.kind === "structured" &&
       !runtime.modelCapabilities.supportsStructuredOutput
@@ -535,9 +434,7 @@ export class KatanaProviderAdapter extends OpenAICompatibleAdapter {
 
 /**
  * Meta Model API (Muse Spark / Wonder) via its Responses endpoint.
- * Only "auto" tool choice is accepted, so semantic required/named choices
- * compile to "auto" here; exact tool decoding still requires exactly one
- * correct tool call, and a missing call stays a typed structured failure.
+ * Decisions use native JSON-schema responses, just like the other adapters.
  */
 export class MetaMuseProviderAdapter extends OpenAICompatibleAdapter {
   readonly id = "meta-muse";
@@ -588,7 +485,6 @@ export function compileMetaMuseResponsesRequest(
   runtime: ProviderRuntimeDescriptor,
 ): ResponseCreateParamsNonStreaming {
   const body = compileOpenAIResponsesRequest(invocation, runtime) as unknown as Record<string, unknown>;
-  if ("tool_choice" in body) body.tool_choice = "auto";
   if (typeof body.max_output_tokens === "number" && body.max_output_tokens < META_MUSE_MIN_OUTPUT_TOKENS) {
     body.max_output_tokens = META_MUSE_MIN_OUTPUT_TOKENS;
   }
@@ -696,7 +592,7 @@ export function compileOpenAIResponsesRequest(
       && inputMessages[0].content.length > 0
     ? inputMessages[0].content
     : inputMessages.flatMap(responseInputItems);
-  const reasoningEffort = requestedReasoningEffort(invocation, runtime, true);
+  const reasoningEffort = requestedReasoningEffort(invocation, runtime);
   const summary = invocation.reasoning?.summary ?? runtime.openAIReasoningSummary;
   const body: Record<string, unknown> = {
     model: runtime.modelId,
@@ -735,36 +631,8 @@ export function compileOpenAIResponsesRequest(
         schema: artifact.schema,
       },
     };
-  } else if (invocation.result.kind === "tool") {
-    const artifact = invocation.result.artifact;
-    body.tools = [responsesFunctionTool({
-      name: artifact.name,
-      ...(invocation.result.description && { description: invocation.result.description }),
-      parameters: artifact.schema,
-      strict: true,
-    })];
-    body.tool_choice = responsesToolChoice(invocation.result.choice);
-    body.parallel_tool_calls = false;
   }
   return body as unknown as ResponseCreateParamsNonStreaming;
-}
-
-function responsesFunctionTool(tool: ProviderFunctionToolDefinition): Record<string, unknown> {
-  return {
-    type: "function",
-    name: tool.name,
-    ...(tool.description && { description: tool.description }),
-    parameters: tool.parameters,
-    strict: tool.strict ?? true,
-  };
-}
-
-function responsesToolChoice(
-  choice: "auto" | "required" | { name: string },
-): "auto" | "required" | { type: "function"; name: string } {
-  return choice === "auto" || choice === "required"
-    ? choice
-    : { type: "function", name: choice.name };
 }
 
 export function compileChatCompletionsRequest(
@@ -785,37 +653,15 @@ export function compileChatCompletionsRequest(
   ) {
     body.temperature = invocation.temperature;
   }
-  const hasTools = invocation.result.kind === "tool";
   const reasoningEffort = requestedReasoningEffort(
     invocation,
     runtime,
-    !hasTools || runtime.modelCapabilities.supportsToolReasoningEffort,
   );
   if (reasoningEffort) body.reasoning_effort = reasoningEffort;
 
   if (invocation.result.kind === "structured") {
     const artifact = invocation.result.artifact;
     body.response_format = chatJsonSchemaFormat(artifact.name, artifact.schema);
-  } else if (invocation.result.kind === "tool") {
-    const toolResult = invocation.result;
-    const artifact = toolResult.artifact;
-    if (runtime.toolChoiceMode === "json_schema") {
-      body.response_format = chatJsonSchemaFormat(
-        `${artifact.name}_arguments`,
-        artifact.schema,
-      );
-    } else {
-      body.tools = [chatTool({
-        name: artifact.name,
-        ...(toolResult.description && { description: toolResult.description }),
-        parameters: artifact.schema as Record<string, unknown>,
-        strict: true,
-      })];
-      body.tool_choice = chatToolChoice(runtime.toolChoiceMode, toolResult.choice);
-      if (runtime.providerProfileId === "openai" || runtime.providerProfileId === "katana") {
-        body.parallel_tool_calls = false;
-      }
-    }
   }
   return body as unknown as ChatCompletionCreateParamsNonStreaming;
 }
@@ -831,24 +677,11 @@ function chatJsonSchemaFormat(
   };
 }
 
-function chatToolChoice(
-  mode: ProviderRuntimeDescriptor["toolChoiceMode"],
-  choice: "auto" | "required" | { name: string },
-): "auto" | "required" | { type: "function"; function: { name: string } } {
-  if (mode === "required" || mode === "auto") return mode;
-  if (choice === "auto" || choice === "required") return choice;
-  return {
-    type: "function",
-    function: { name: choice.name },
-  };
-}
-
 function requestedReasoningEffort(
   invocation: ModelInvocation,
   runtime: ProviderRuntimeDescriptor,
-  permitted: boolean,
 ) {
-  if (!permitted || !runtime.modelCapabilities.supportsReasoningEffort) {
+  if (!runtime.modelCapabilities.supportsReasoningEffort) {
     return undefined;
   }
   if (
@@ -859,18 +692,6 @@ function requestedReasoningEffort(
     return runtime.reasoningPolicy;
   }
   return invocation.reasoning?.effort;
-}
-
-function chatTool(tool: ProviderFunctionToolDefinition): ChatCompletionTool {
-  return {
-    type: "function",
-    function: {
-      name: tool.name,
-      ...(tool.description && { description: tool.description }),
-      parameters: tool.parameters,
-      ...(tool.strict !== undefined && { strict: tool.strict }),
-    },
-  };
 }
 
 function chatMessage(message: ModelInvocationMessage): ChatCompletionMessageParam {

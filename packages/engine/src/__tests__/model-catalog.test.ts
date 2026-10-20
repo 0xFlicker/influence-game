@@ -104,7 +104,6 @@ describe("model catalog", () => {
     }
     const profile = PROVIDER_PROFILES["meta-muse"];
     expect(profile.baseURL).toBe("https://api.meta.ai/v1");
-    expect(profile.defaultToolChoiceMode).toBe("auto");
     // Non-text Meta models never become game LLMs through dynamic inference.
     expect(modelCatalogEntryById("meta-muse:muse-image-1.0")).toBeUndefined();
     expect(modelCatalogEntryById("meta-muse:sam-3.1")).toBeUndefined();
@@ -163,7 +162,6 @@ describe("model catalog", () => {
     expect(qNaifu?.evaluationStatus).toBe("disabled");
     expect(qNaifu?.capabilities.supportsStructuredOutput).toBe(true);
     expect(qNaifu?.capabilities.supportsTools).toBe(false);
-    expect(qNaifu?.preferredToolChoiceMode).toBe("json_schema");
   });
 
   it("normalizes game model selection and reasoning policies", () => {

@@ -16,7 +16,7 @@ import { STRATEGY_DELTA_QUALITY_SCENARIOS } from "./fixtures/prompt-scenarios/st
 describe("compact strategy decision envelope", () => {
   it("uses thinking plus a nullable delta on ordinary strategic actions", () => {
     const tool = buildSealedElimBallotTool("majority_elimination", ["Mira", "Vera"]);
-    const parameters = tool.function.parameters as {
+    const parameters = tool.schema as {
       properties: Record<string, unknown>;
       required: string[];
     };

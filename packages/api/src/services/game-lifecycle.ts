@@ -33,7 +33,6 @@ import type {
   CanonicalGameEvent,
   IAgent,
   MingleIntentAction,
-  LlmToolChoiceMode,
   Personality,
   GameConfig,
   GameRunnerOptions,
@@ -718,7 +717,6 @@ async function startGameWithOwner(
   const providerExecutionHooks = ownerEpoch
     ? withEvaluationBudget(createApiProviderExecutionHooks(db, { gameId, ownerEpoch }), process.env, "INFLUENCE")
     : undefined;
-  const toolChoiceMode = primaryRuntime?.toolChoiceMode;
 
   // Construct agents from player records
   const agents: IAgent[] = players.map((player) => {
@@ -740,16 +738,12 @@ async function startGameWithOwner(
     const agentCfg = JSON.parse(player.agentConfig) as {
       model?: string;
       temperature?: number;
-      toolChoiceMode?: unknown;
     };
 
     const personality = resolvePersonality(
       persona.personaKey ?? persona.personality,
     );
     const model = agentCfg.model ?? resolvedModelSelection.modelId;
-    const playerToolChoiceMode = player.agentProfileId
-      ? parseToolChoiceMode(agentCfg.toolChoiceMode) ?? toolChoiceMode
-      : toolChoiceMode;
 
     const memoryStore = new PgMemoryStore(db);
     const agent = new InfluenceAgent(
@@ -761,7 +755,6 @@ async function startGameWithOwner(
       persona.backstory,
       memoryStore,
       {
-        ...(playerToolChoiceMode && { toolChoiceMode: playerToolChoiceMode }),
         ...(primaryRuntime.openAIReasoningSummary && { openAIReasoningSummary: primaryRuntime.openAIReasoningSummary }),
         providerProfileId: resolvedModelSelection.providerProfile.id,
         catalogId: resolvedModelSelection.catalogId,
@@ -787,7 +780,6 @@ async function startGameWithOwner(
         resolvedModelSelection.modelId,
         {
           gameId,
-          ...(toolChoiceMode && { toolChoiceMode }),
           providerProfileId: resolvedModelSelection.providerProfile.id,
           catalogId: resolvedModelSelection.catalogId,
           modelCapabilities: resolvedModelSelection.model.capabilities,
@@ -856,12 +848,6 @@ async function startGameWithOwner(
   });
 
   return {};
-}
-
-function parseToolChoiceMode(value: unknown): LlmToolChoiceMode | undefined {
-  return value === "named" || value === "required" || value === "auto" || value === "json_schema"
-    ? value
-    : undefined;
 }
 
 export function classifyGameRunFailure(error: unknown): {

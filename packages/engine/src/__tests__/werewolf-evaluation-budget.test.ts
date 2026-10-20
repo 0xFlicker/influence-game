@@ -24,6 +24,23 @@ function terminal(id: string, promptTokens?: number): ProviderAttemptRecord {
 }
 
 describe("Shared evaluation spend guard", () => {
+  test("reserves Grok schema calls and retains reported router cost", async () => fixture(async path => {
+    const hooks = new EvaluationBudget(path, 1).hooks({});
+    const request = intent("grok", 100);
+    request.preparedRequest.catalogId = "katana:grok-4-3";
+    request.preparedRequest.providerProfileId = "katana";
+    request.preparedRequest.model = "grok-4-3";
+    request.preparedRequest.body = { messages: [{ role: "user", content: "x".repeat(100) }],
+      max_tokens: 8192, response_format: { type: "json_schema" } };
+    await hooks.onReserve!(request);
+    await hooks.onTerminal!({ ...terminal("grok", 100), preparedRequest: request.preparedRequest,
+      accounting: { usage: { promptTokens: 100, completionTokens: 20 },
+        actualCostMicrousd: 150_000 } });
+    const entry = JSON.parse(await readFile(path, "utf8")).entries[0];
+    expect(entry.reservedUsd).toBeGreaterThan(0.09);
+    expect(entry.providerActualUsd).toBe(0.15);
+    expect(entry.status).toBe("settled");
+  }));
   test("local API configuration preserves journal hooks and rejects partial or production setup", async () => fixture(async path => {
     const base = { onReadAccepted: async () => undefined };
     expect(withEvaluationBudget(base, {})).toBe(base);

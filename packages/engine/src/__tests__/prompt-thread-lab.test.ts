@@ -524,13 +524,7 @@ function generatedResponse(turn: number): Record<string, unknown> {
     status: "completed",
     service_tier: "flex",
     output_text: output,
-    output: [{
-      id: `function-${turn}`,
-      type: "function_call",
-      call_id: `call-${turn}`,
-      name: "conversation_turn",
-      arguments: output,
-    }],
+    output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: output }] }],
     usage: {
       input_tokens: 2_000,
       input_tokens_details: { cached_tokens: 0 },

@@ -879,3 +879,7 @@ Ordinary Mingle coordination happens through conversation, without structured pr
 ### Derived context memory
 
 A lossy summary used to fit an authorized model request after provider context overflow. It retains links through the provider journal to the original source and does not alter canonical facts, player strategy state or acceptance rules. A `context_compaction` logical call stores a private accepted summary separately from the parent game decision. See [context adaptation](docs/context-adaptation.md).
+
+### Native structured decisions
+
+Future game runs request a complete JSON document using the provider’s JSON Schema response format. Exact schema and domain validation precede acceptance; the response is a decision artifact, not a function to execute. Native reasoning remains separate private evidence. Historical tool-call evidence and accepted game events remain readable without rewriting completed games. Deployment drains active games; this transport change does not add in-progress upgrade compatibility.

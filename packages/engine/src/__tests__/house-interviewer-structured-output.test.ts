@@ -975,6 +975,27 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
     ]);
   });
 
+  it.each([
+    "A plain-text question?",
+    '```json\n{"question":"Who do you trust?"}\n```',
+    'Before {"question":"Who do you trust?"} after',
+    '{}',
+    '{"question":"Who do you trust?","extra":true}',
+    '{"question":"   "}',
+  ])("rejects malformed opening diary questions: %s", async (content) => {
+    const requests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const house = new LLMHouseInterviewer(makeOpenAIStub(requests, [{ content }]), "test-model", {
+      privateTraceSink: (trace) => { traces.push(trace); },
+    });
+    await expect(house.generateQuestion(makeDiaryContext())).rejects.toThrow();
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.response_format).toMatchObject({
+      type: "json_schema", json_schema: { name: "house_question", strict: true },
+    });
+    expect(traces).toHaveLength(0);
+  });
+
   it("applies action-specific validation to generic House HTTP-200 responses", async () => {
     const emptyAttempts: ProviderAttemptRecord[] = [];
     const emptyHouse = new LLMHouseInterviewer(
@@ -982,7 +1003,7 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
       "test-model",
       { providerExecutionHooks: { onTerminal: (record) => { emptyAttempts.push(record); } } },
     );
-    await expect(emptyHouse.generateQuestion(makeDiaryContext())).rejects.toThrow("missing_assistant_message");
+    await expect(emptyHouse.generateQuestion(makeDiaryContext())).rejects.toThrow("invalid_json");
     expect(emptyAttempts.map((record) => record.outcome.kind)).toEqual([
       "empty_output",
       "empty_output",
@@ -1057,7 +1078,7 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
     it.each(["active", "resolved"])(`supplies ${formatId} rules and %s timing to diary questions and follow-ups`, async (status) => {
       const requests: Array<Record<string, unknown>> = [];
       const house = new LLMHouseInterviewer(makeOpenAIStub(requests, [
-        { content: "How did those rules affect your plan?" },
+        { content: JSON.stringify({ question: "How did those rules affect your plan?" }) },
         { content: JSON.stringify({ decision: "follow_up", text: "Which commitment mattered?" }) },
       ]), "test-model");
       const context = makeDiaryContext();
@@ -1083,7 +1104,7 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
 
   it.each([false, true])("omits diary format rules before selection or during endgame (%s)", async (endgame) => {
     const requests: Array<Record<string, unknown>> = [];
-    const house = new LLMHouseInterviewer(makeOpenAIStub(requests, [{ content: "What matters now?" }]), "test-model");
+    const house = new LLMHouseInterviewer(makeOpenAIStub(requests, [{ content: JSON.stringify({ question: "What matters now?" }) }]), "test-model");
     const context = makeDiaryContext();
     context.playerKnowledge = {
       ...context.playerKnowledge,
@@ -1099,7 +1120,7 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
   it("uses safe diary board keys while preserving prior player-authored Q&A exactly", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const house = new LLMHouseInterviewer(
-      makeOpenAIStub(requests, [{ content: "What changed after that result?" }]),
+      makeOpenAIStub(requests, [{ content: JSON.stringify({ question: "What changed after that result?" }) }]),
       "test-model",
     );
     const context = makeDiaryContext({
@@ -1195,12 +1216,12 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
     const runInterviewCalls = async () => {
       const attempts: ProviderAttemptRecord[] = [];
       const house = new LLMHouseInterviewer(
-        makeOpenAIStub([], [{
-          content: JSON.stringify({
-            decision: "close",
-            text: "The House has heard enough.",
-          }),
-        }]),
+        makeOpenAIStub([], [
+          { content: JSON.stringify({ question: "Who do you trust?" }) },
+          { content: JSON.stringify({ question: "Who do you trust?" }) },
+          { content: JSON.stringify({ decision: "close", text: "The House has heard enough." }) },
+          { content: JSON.stringify({ decision: "close", text: "The House has heard enough." }) },
+        ]),
         "test-model",
         { providerExecutionHooks: { onTerminal: (record) => { attempts.push(record); } } },
       );
@@ -1249,7 +1270,7 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
     const house = new LLMHouseInterviewer(
       makeOpenAIStub(requests, [{ content: assignmentContent() }]),
       "test-model",
-      { toolChoiceMode: "required" },
+      {  },
     );
 
     await house.assignMingleRooms(makeAssignmentContext());
@@ -1313,7 +1334,7 @@ describe("LLMHouseInterviewer sealed provider manifest", () => {
       { error: Object.assign(new Error("invalid prompt"), { status: 400 }) },
     ]);
     const fallbackClient = makeOpenAIStub(fallbackRequests, [
-      { content: "Atlas, who do you trust enough to risk your game for?" },
+      { content: JSON.stringify({ question: "Atlas, who do you trust enough to risk your game for?" }) },
     ]);
     const house = new LLMHouseInterviewer(
       primaryClient,
@@ -1334,7 +1355,7 @@ describe("LLMHouseInterviewer sealed provider manifest", () => {
             modelId: primary.modelId,
             modelCapabilities: primary.capabilities,
             reasoningPolicy: "action-policy",
-            toolChoiceMode: "named",
+
             position: 0,
             role: "primary",
           },
@@ -1345,7 +1366,7 @@ describe("LLMHouseInterviewer sealed provider manifest", () => {
             modelId: fallback.modelId,
             modelCapabilities: fallback.capabilities,
             reasoningPolicy: "action-policy",
-            toolChoiceMode: "named",
+
             position: 1,
             role: "fallback",
             maxCallsPerGame: 3,

@@ -80,15 +80,13 @@ describe("Werewolf House integration", () => {
       const args = seenMessages.length === 1
         ? { text: rejectedDraft, cue: null, targetId: retainedTarget, thinking: "Private first draft" }
         : { text: "A shorter point.", cue: null, targetId: retainedTarget, thinking: "A concise point." };
-      const toolName = (body.tools?.[0]?.function?.name as string | undefined) ?? "werewolf_public_vote";
       return Response.json({ id: `length-feedback-${seenMessages.length}`, object: "chat.completion", created: 0, model: "glm-5-2",
-        choices: [{ index: 0, finish_reason: "tool_calls", message: { role: "assistant", content: null,
-          tool_calls: [{ id: "decision", type: "function", function: { name: toolName, arguments: JSON.stringify(args) } }] } }],
+        choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify(args) } }],
         usage: { prompt_tokens: 20, completion_tokens: 15, total_tokens: 35 } });
     } });
     const entry = modelCatalogEntryById("katana:glm-5-2")!;
     const runtime: LlmProviderRuntime = { adapter: createProviderAdapter("katana", client), catalogId: entry.id, providerProfileId: "katana", modelId: entry.modelId,
-      modelCapabilities: entry.capabilities, reasoningPolicy: "medium", toolChoiceMode: "required", position: 0, role: "primary" };
+      modelCapabilities: entry.capabilities, reasoningPolicy: "medium",  position: 0, role: "primary" };
     const actualHooks = createApiProviderExecutionHooks(db, { gameId: game.id, ownerEpoch: claim.claim.ownerEpoch });
     const crashAfterMalformedEvidence = { ...actualHooks, async onTerminal(record: Parameters<NonNullable<typeof actualHooks.onTerminal>>[0]) {
       const receipt = await actualHooks.onTerminal!(record);
@@ -195,13 +193,12 @@ describe("Werewolf House integration", () => {
       const task = JSON.parse(body.messages.at(-1).content);
       const decision = { text: "This is our best target.", targetId: task.request.legalTargetIds[0], cue: null, thinking: "Agree on a legal target." };
       return Response.json({ id: `proposal-${dispatches}`, object: "chat.completion", created: 0, model: "glm-5-2",
-        choices: [{ index: 0, finish_reason: "tool_calls", message: { role: "assistant", content: null,
-          tool_calls: [{ id: "decision", type: "function", function: { name: "werewolf_pack_propose", arguments: JSON.stringify(decision) } }] } }],
+        choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify(decision) } }],
         usage: { prompt_tokens: 20, completion_tokens: 15, total_tokens: 35 } });
     } });
     const entry = modelCatalogEntryById("katana:glm-5-2")!;
     const runtime: LlmProviderRuntime = { adapter: createProviderAdapter("katana", client), catalogId: entry.id, providerProfileId: "katana", modelId: entry.modelId,
-      modelCapabilities: entry.capabilities, reasoningPolicy: "medium", toolChoiceMode: "required", position: 0, role: "primary" };
+      modelCapabilities: entry.capabilities, reasoningPolicy: "medium",  position: 0, role: "primary" };
     const agent = (ownerEpoch: string) => new WerewolfModelAgent({ runtimes: [runtime], ownerEpoch,
       hooks: createApiProviderExecutionHooks(db, { gameId: game.id, ownerEpoch }) });
     await expect(advanceWerewolf({ ...store, append: async () => { throw new Error("Crash before proposal commit"); } }, agent(claim.claim.ownerEpoch)))
@@ -424,14 +421,12 @@ describe("Werewolf House integration", () => {
         }
         dispatches++;
         return new Response(JSON.stringify({ id: `fixture-${dispatches}`, object: "chat.completion", created: 0, model: "glm-5-2",
-          choices: [{ index: 0, finish_reason: "tool_calls", message: { role: "assistant", content: null,
-            reasoning_content: "PRIVATE_NATIVE_REASONING_CAPTURE",
-            tool_calls: [{ id: "decision", type: "function", function: { name: `werewolf_${action}`, arguments: dispatches === 1 ? openingRequest ? JSON.stringify({ thinking: "PRIVATE_SPEECH_THINKING", text: "Invalid invitation", cue: null, recipientIds: [openingRequest.actorId] }) : invalidKind !== "spoken_uuid" ? "{}" : JSON.stringify({ thinking: "PRIVATE_SPEECH_THINKING", cue: null, text: "I trust Mira (7c731c26-a298-4987-b015-07ab4bae27ce)." }) : JSON.stringify(action === "vote" ? { targetId: null, thinking: "Hear more" } : openingRequest ? { thinking: "PRIVATE_SPEECH_THINKING", cue: null, text: "A persisted contribution.", recipientIds: openingRequest.legalRecipientIds.slice(0, 3).reverse() } : { thinking: "PRIVATE_SPEECH_THINKING", cue: null, text: "A persisted contribution." }) } }] } }],
+          choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", reasoning_content: "PRIVATE_NATIVE_REASONING_CAPTURE", content: dispatches === 1 ? openingRequest ? JSON.stringify({ thinking: "PRIVATE_SPEECH_THINKING", text: "Invalid invitation", cue: null, recipientIds: [openingRequest.actorId] }) : invalidKind !== "spoken_uuid" ? "{}" : JSON.stringify({ thinking: "PRIVATE_SPEECH_THINKING", cue: null, text: "I trust Mira (7c731c26-a298-4987-b015-07ab4bae27ce)." }) : JSON.stringify(action === "vote" ? { targetId: null, thinking: "Hear more" } : openingRequest ? { thinking: "PRIVATE_SPEECH_THINKING", cue: null, text: "A persisted contribution.", recipientIds: openingRequest.legalRecipientIds.slice(0, 3).reverse() } : { thinking: "PRIVATE_SPEECH_THINKING", cue: null, text: "A persisted contribution." }) } }],
           usage: { prompt_tokens: 20, completion_tokens: 15, total_tokens: 35 } }), { headers: { "content-type": "application/json" } });
       } });
     const model = modelCatalogEntryById("katana:glm-5-2")!;
     const runtime: LlmProviderRuntime = { adapter: createProviderAdapter("katana", client), catalogId: model.id, providerProfileId: "katana", modelId: model.modelId,
-      modelCapabilities: model.capabilities, reasoningPolicy: "medium", toolChoiceMode: "required", position: 0, role: "primary" };
+      modelCapabilities: model.capabilities, reasoningPolicy: "medium",  position: 0, role: "primary" };
     const agent = (ownerEpoch: string) => new WerewolfModelAgent({ runtimes: [runtime], ownerEpoch, hooks: createApiProviderExecutionHooks(db, { gameId: game.id, ownerEpoch }) });
     const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);
     let state = replayWerewolf(await store.read());
@@ -542,13 +537,12 @@ describe("Werewolf House integration", () => {
         const input = JSON.parse(JSON.parse(String(init?.body)).messages.at(-1).content);
         if (action === "vote" && input.request.actorId === plans.at(-1)!.request.actorId) await lastVoter.promise;
         return Response.json({ id: `discussion-${dispatches}`, object: "chat.completion", created: 0, model: "glm-5-2",
-          choices: [{ index: 0, finish_reason: "tool_calls", message: { role: "assistant", content: null,
-            tool_calls: [{ id: "decision", type: "function", function: { name: `werewolf_${action}`, arguments: JSON.stringify({ targetId: action === "vote" ? finalVote ? start.aliveIds[(start.aliveIds.indexOf(input.request.actorId) + 1) % start.aliveIds.length] : null : plans[0]!.request.legalTargetIds[0], thinking: "PRIVATE_THINKING" }) } }] } }],
+          choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({ targetId: action === "vote" ? finalVote ? start.aliveIds[(start.aliveIds.indexOf(input.request.actorId) + 1) % start.aliveIds.length] : null : plans[0]!.request.legalTargetIds[0], thinking: "PRIVATE_THINKING" }) } }],
           usage: { prompt_tokens: 20, completion_tokens: 15, total_tokens: 35 } });
       } });
     const model = modelCatalogEntryById("katana:glm-5-2")!;
     const runtime: LlmProviderRuntime = { adapter: createProviderAdapter("katana", client), catalogId: model.id, providerProfileId: "katana", modelId: model.modelId,
-      modelCapabilities: model.capabilities, reasoningPolicy: "medium", toolChoiceMode: "required", position: 0, role: "primary" };
+      modelCapabilities: model.capabilities, reasoningPolicy: "medium",  position: 0, role: "primary" };
     const agent = (ownerEpoch: string) => new WerewolfModelAgent({ runtimes: [runtime], ownerEpoch, hooks: createApiProviderExecutionHooks(db, { gameId: game.id, ownerEpoch }) });
     let commits = 0;
     const tracked = agent(claim.claim.ownerEpoch);

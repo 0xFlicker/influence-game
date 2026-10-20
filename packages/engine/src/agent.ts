@@ -1,3 +1,4 @@
+import type { DecisionSchema } from "./model-invocation";
 import { measureLengthFeedback } from "./structured-output";
 import { ContextSpans } from "./context-adaptation";
 /**
@@ -12,7 +13,6 @@ import { PERFORMANCE_CUE_SCHEMA, PERFORMANCE_CUE_GUIDANCE, optionalPerformanceCu
 import { assertVisualAnchors, latestSceneCues, visualRoomForPhase } from "./visual-mode";
 import type OpenAI from "openai";
 import type {
-  ChatCompletionTool,
 } from "openai/resources/chat/completions";
 import type {
   AgentCallOptions,
@@ -103,7 +103,6 @@ import { ruleSheetForFormat } from "./format-pressure";
 import { buildDiaryFormatContext } from "./diary-format-context";
 import type {
   LlmProviderRuntime,
-  LlmToolChoiceMode,
   OpenAIReasoningSummaryMode,
 } from "./llm-client";
 import {
@@ -247,7 +246,7 @@ ${round === 1 ? "You are meeting people and forming first impressions; curiosity
       return `PHASE BEHAVIOR - MINGLE I (PRE-VOTE MINGLE + ALLIANCE ACTION WINDOW):
 This phase has two parts before the standard Vote: first private-room Mingle conversation, then structured named-alliance actions.
 - During private-room Mingle turns, talk normally with only the occupants of your current room. Use that conversation to feel out trust, test voting plans, float possible deals, or gather information.
-- During structured alliance-action turns, use the alliance action tool to propose, accept, decline, counter, defer, trial, amend, or pass on official named alliances.
+- During structured alliance-action turns, return the alliance action JSON response to propose, accept, decline, counter, defer, trial, amend, or pass on official named alliances.
 - Do not confuse room talk with official alliance truth: casual conversation, promises, and deal language are not official named alliances unless they become explicit structured alliance actions.
 - Official alliance truth comes from explicit consent to the same proposal version.
 - You may belong to multiple active alliances.
@@ -383,39 +382,35 @@ const DIARY_EMOTIONAL_RANGE: Record<Personality, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// Tool schemas for structured agent decisions (OpenAI function calling)
+// JSON schemas for structured agent decisions
 // ---------------------------------------------------------------------------
 
-const TOOL_SEND_WHISPERS: ChatCompletionTool = {
-  type: "function",
-  function: {
-    name: "send_whispers",
-    description: "Send private whisper messages to other players",
-    parameters: {
-      type: "object",
-      properties: {
-        whispers: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              to: {
-                type: "array",
-                items: { type: "string" },
-                description: "Player name(s) to whisper to",
-              },
-              text: { type: "string", description: "The whisper message" },
+const TOOL_SEND_WHISPERS: DecisionSchema = {
+  name: "send_whispers",
+  description: "Send private whisper messages to other players",
+  schema: {
+    type: "object",
+    properties: {
+      whispers: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            to: {
+              type: "array",
+              items: { type: "string" },
+              description: "Player name(s) to whisper to",
             },
-            required: ["to", "text"],
-            additionalProperties: false,
+            text: { type: "string", description: "The whisper message" },
           },
-          description: "List of whisper messages to send",
+          required: ["to", "text"],
+          additionalProperties: false,
         },
+        description: "List of whisper messages to send",
       },
-      required: ["whispers"],
-      additionalProperties: false,
     },
-    strict: true,
+    required: ["whispers"],
+    additionalProperties: false,
   },
 };
 
@@ -505,53 +500,49 @@ When the response schema offers strategyDelta, treat it as exceptional rather th
 ${STRATEGY_DELTA_GUIDANCE}
 A pivot can be valid even when it breaks the prior plan; record the new actionable posture, not a defense of consistency. Strategy is private, fallible cognition and never makes a target, alliance, commitment, or vote canonical.`;
 
-const TOOL_MINGLE_INTENT: ChatCompletionTool = {
-  type: "function",
-  function: {
-    name: "form_mingle_intent",
-    description: "Form a hidden private Mingle intent to the house to choose a room. This is producer/debug strategy, not player-visible speech.",
-    parameters: {
-      type: "object",
-      properties: {
-        thinking: { type: "string", description: "Your internal reasoning for this Mingle intent (hidden from other players)" },
-        seekPlayers: {
-          type: "array",
-          items: { type: "string" },
-          description: "Player names you want to seek out or compare notes with during Mingle",
-        },
-        avoidPlayers: {
-          type: "array",
-          items: { type: "string" },
-          description: "Player names you prefer to avoid during Mingle",
-        },
-        preferredRoomSize: {
-          type: "string",
-          enum: ["solo", "pair", "small_group", "large_group", "any"],
-          description: "Preferred room size for this Mingle phase",
-        },
-        purpose: {
-          type: "string",
-          description: "Your private purpose for this Mingle phase",
-        },
-        provisionalTarget: {
-          type: ["string", "null"],
-          description: "One remaining provisional target or threat to test, or null if you are intentionally not naming one yet. Never name yourself or a contestant who has exited.",
-        },
-        noTargetReason: {
-          type: ["string", "null"],
-          description: "Why you are not naming a remaining provisional target, or null if you named one. Explain what evidence is missing, not just that it is early.",
-        },
-        openingAsk: {
-          type: "string",
-          description: "An opening ask, probe, or information trade you want to try when room context allows",
-        },
-        ...STRATEGIC_LENS_TOOL_PROPERTIES,
-        ...STRATEGIC_DECISION_TOOL_PROPERTIES,
+const TOOL_MINGLE_INTENT: DecisionSchema = {
+  name: "form_mingle_intent",
+  description: "Form a hidden private Mingle intent to the house to choose a room. This is producer/debug strategy, not player-visible speech.",
+  schema: {
+    type: "object",
+    properties: {
+      thinking: { type: "string", description: "Your internal reasoning for this Mingle intent (hidden from other players)" },
+      seekPlayers: {
+        type: "array",
+        items: { type: "string" },
+        description: "Player names you want to seek out or compare notes with during Mingle",
       },
-      required: ["thinking", "seekPlayers", "avoidPlayers", "preferredRoomSize", "purpose", "provisionalTarget", "noTargetReason", "openingAsk", ...STRATEGIC_LENS_REQUIRED, ...STRATEGIC_DECISION_REQUIRED],
-      additionalProperties: false,
+      avoidPlayers: {
+        type: "array",
+        items: { type: "string" },
+        description: "Player names you prefer to avoid during Mingle",
+      },
+      preferredRoomSize: {
+        type: "string",
+        enum: ["solo", "pair", "small_group", "large_group", "any"],
+        description: "Preferred room size for this Mingle phase",
+      },
+      purpose: {
+        type: "string",
+        description: "Your private purpose for this Mingle phase",
+      },
+      provisionalTarget: {
+        type: ["string", "null"],
+        description: "One remaining provisional target or threat to test, or null if you are intentionally not naming one yet. Never name yourself or a contestant who has exited.",
+      },
+      noTargetReason: {
+        type: ["string", "null"],
+        description: "Why you are not naming a remaining provisional target, or null if you named one. Explain what evidence is missing, not just that it is early.",
+      },
+      openingAsk: {
+        type: "string",
+        description: "An opening ask, probe, or information trade you want to try when room context allows",
+      },
+      ...STRATEGIC_LENS_TOOL_PROPERTIES,
+      ...STRATEGIC_DECISION_TOOL_PROPERTIES,
     },
-    strict: true,
+    required: ["thinking", "seekPlayers", "avoidPlayers", "preferredRoomSize", "purpose", "provisionalTarget", "noTargetReason", "openingAsk", ...STRATEGIC_LENS_REQUIRED, ...STRATEGIC_DECISION_REQUIRED],
+    additionalProperties: false,
   },
 };
 
@@ -588,7 +579,7 @@ function allianceActionTool(
   opportunity: AllianceActionOpportunity,
   handles: readonly AllianceActionHandle[],
   actions: readonly AllianceAction["action"][],
-): ChatCompletionTool {
+): DecisionSchema {
   const termProperties = {
     name: {
       type: "string",
@@ -660,26 +651,22 @@ function allianceActionTool(
   }
 
   return {
-    type: "function",
-    function: {
-      name: "take_alliance_action",
-      description: opportunity.kind === "response"
-        ? "Respond to the one active named-alliance proposal selected by the engine."
-        : "Use the current named-alliance proposer opportunity.",
-      parameters: {
-        type: "object",
-        properties: {
-          thinking: { type: "string", description: "Your internal reasoning for this alliance action (hidden from other players)" },
-          decision: {
-            anyOf: decisionVariants,
-            description: "The exact legal alliance action and only the fields that action uses.",
-          },
-          ...STRATEGIC_DECISION_TOOL_PROPERTIES,
+    name: "take_alliance_action",
+    description: opportunity.kind === "response"
+      ? "Respond to the one active named-alliance proposal selected by the engine."
+      : "Use the current named-alliance proposer opportunity.",
+    schema: {
+      type: "object",
+      properties: {
+        thinking: { type: "string", description: "Your internal reasoning for this alliance action (hidden from other players)" },
+        decision: {
+          anyOf: decisionVariants,
+          description: "The exact legal alliance action and only the fields that action uses.",
         },
-        required: ["thinking", "decision", ...STRATEGIC_DECISION_REQUIRED],
-        additionalProperties: false,
+        ...STRATEGIC_DECISION_TOOL_PROPERTIES,
       },
-      strict: true,
+      required: ["thinking", "decision", ...STRATEGIC_DECISION_REQUIRED],
+      additionalProperties: false,
     },
   };
 }
@@ -751,229 +738,192 @@ function allianceActionAcceptedDomainSchema(input: {
   };
 }
 
-const TOOL_RUMOR: ChatCompletionTool = {
-  type: "function",
-  function: {
-    name: "spread_rumor",
-    description: "Write an anonymous rumor with private producer/debug strategic-lens metadata.",
-    parameters: {
-      type: "object",
-      properties: {
-        thinking: { type: "string", description: "Your internal reasoning for this anonymous rumor (hidden from other players)" },
-        message: {
-          type: "string",
-          description: "The anonymous rumor text shown publicly",
-        },
-        ...STRATEGIC_LENS_TOOL_PROPERTIES,
-        ...STRATEGIC_DECISION_TOOL_PROPERTIES,
+const TOOL_RUMOR: DecisionSchema = {
+  name: "spread_rumor",
+  description: "Write an anonymous rumor with private producer/debug strategic-lens metadata.",
+  schema: {
+    type: "object",
+    properties: {
+      thinking: { type: "string", description: "Your internal reasoning for this anonymous rumor (hidden from other players)" },
+      message: {
+        type: "string",
+        description: "The anonymous rumor text shown publicly",
       },
-      required: ["thinking", "message", ...STRATEGIC_LENS_REQUIRED, ...STRATEGIC_DECISION_REQUIRED],
-      additionalProperties: false,
+      ...STRATEGIC_LENS_TOOL_PROPERTIES,
+      ...STRATEGIC_DECISION_TOOL_PROPERTIES,
     },
-    strict: true,
+    required: ["thinking", "message", ...STRATEGIC_LENS_REQUIRED, ...STRATEGIC_DECISION_REQUIRED],
+    additionalProperties: false,
   },
 };
 
-const TOOL_SEND_ROOM_MESSAGE: ChatCompletionTool = {
-  type: "function",
-  function: {
-    name: "send_room_message",
-    description: "Send your private message to everyone else in your room, or pass",
-    parameters: {
-      type: "object",
-      properties: {
-        thinking: { type: "string", description: "Your internal reasoning for this message (hidden from other players)" },
-        message: {
-          type: ["string", "null"],
-          description: "Your private message to your room partner, or null when passing",
-        },
-        pass: {
-          type: "boolean",
-          description: "Set to true to pass (end your side of the conversation)",
-        },
+const TOOL_SEND_ROOM_MESSAGE: DecisionSchema = {
+  name: "send_room_message",
+  description: "Send your private message to everyone else in your room, or pass",
+  schema: {
+    type: "object",
+    properties: {
+      thinking: { type: "string", description: "Your internal reasoning for this message (hidden from other players)" },
+      message: {
+        type: ["string", "null"],
+        description: "Your private message to your room partner, or null when passing",
       },
-      required: ["thinking", "message", "pass"],
-      additionalProperties: false,
+      pass: {
+        type: "boolean",
+        description: "Set to true to pass (end your side of the conversation)",
+      },
     },
-    strict: true,
+    required: ["thinking", "message", "pass"],
+    additionalProperties: false,
   },
 };
 
 /** Empower ballot tool. Legal names are other living players only (no self-empower). */
-function buildCastVotesTool(legalEmpowerNames: readonly string[]): ChatCompletionTool {
+function buildCastVotesTool(legalEmpowerNames: readonly string[]): DecisionSchema {
   return {
-    type: "function",
-    function: {
-      // EXPOSE REMOVED from cast_votes (format-kernel): empower-only ballot. Do not reintroduce expose.
-      name: "cast_votes",
-      description:
-        "Cast the empower vote for this round (chooses who picks the round format and breaks format ties). Must be exactly one other remaining contestant from the legal list — not yourself.",
-      parameters: {
-        type: "object",
-        properties: {
-          thinking: {
-            type: "string",
-            description: "Your internal reasoning for this vote (hidden from other players)",
-          },
-          empower: {
-            type: "string",
-            enum: [...legalEmpowerNames],
-            description:
-              "Exact remaining contestant name to empower. Must be someone else on the legal list — never yourself.",
-          },
-          ...STRATEGIC_DECISION_TOOL_PROPERTIES,
-        },
-        required: ["thinking", "empower", ...STRATEGIC_DECISION_REQUIRED],
-        additionalProperties: false,
-      },
-      strict: true,
-    },
-  };
-}
-
-const TOOL_EMPOWER_REVOTE: ChatCompletionTool = {
-  type: "function",
-  function: {
-    name: "cast_empower_revote",
-    description: "Resolve an empower tie by choosing only one of the tied empower candidates",
-    parameters: {
+    name: "cast_votes",
+    description:
+      "Cast the empower vote for this round (chooses who picks the round format and breaks format ties). Must be exactly one other remaining contestant from the legal list — not yourself.",
+    schema: {
       type: "object",
       properties: {
-        thinking: { type: "string", description: "Your internal reasoning for this empower revote (hidden from other players)" },
-        empower: { type: "string", description: "One tied candidate name to empower" },
+        thinking: {
+          type: "string",
+          description: "Your internal reasoning for this vote (hidden from other players)",
+        },
+        empower: {
+          type: "string",
+          enum: [...legalEmpowerNames],
+          description:
+            "Exact remaining contestant name to empower. Must be someone else on the legal list — never yourself.",
+        },
         ...STRATEGIC_DECISION_TOOL_PROPERTIES,
       },
       required: ["thinking", "empower", ...STRATEGIC_DECISION_REQUIRED],
       additionalProperties: false,
     },
-    strict: true,
+  };
+}
+
+const TOOL_EMPOWER_REVOTE: DecisionSchema = {
+  name: "cast_empower_revote",
+  description: "Resolve an empower tie by choosing only one of the tied empower candidates",
+  schema: {
+    type: "object",
+    properties: {
+      thinking: { type: "string", description: "Your internal reasoning for this empower revote (hidden from other players)" },
+      empower: { type: "string", description: "One tied candidate name to empower" },
+      ...STRATEGIC_DECISION_TOOL_PROPERTIES,
+    },
+    required: ["thinking", "empower", ...STRATEGIC_DECISION_REQUIRED],
+    additionalProperties: false,
   },
 };
 
-const TOOL_CANDIDATE_SELECTION: ChatCompletionTool = {
-  type: "function",
-  function: {
-    name: "select_council_candidates",
-    description: "Privately resolve unresolved initial Council candidate slots after Vote",
-    parameters: {
-      type: "object",
-      properties: {
-        thinking: { type: "string", description: "Your internal reasoning for the candidate selection (hidden from other players)" },
-        candidates: {
-          type: "array",
-          items: { type: "string" },
-          description: "Player names selected from the eligible candidate list, in order",
-        },
-        ...STRATEGIC_DECISION_TOOL_PROPERTIES,
+const TOOL_CANDIDATE_SELECTION: DecisionSchema = {
+  name: "select_council_candidates",
+  description: "Privately resolve unresolved initial Council candidate slots after Vote",
+  schema: {
+    type: "object",
+    properties: {
+      thinking: { type: "string", description: "Your internal reasoning for the candidate selection (hidden from other players)" },
+      candidates: {
+        type: "array",
+        items: { type: "string" },
+        description: "Player names selected from the eligible candidate list, in order",
       },
-      required: ["thinking", "candidates", ...STRATEGIC_DECISION_REQUIRED],
-      additionalProperties: false,
+      ...STRATEGIC_DECISION_TOOL_PROPERTIES,
     },
-    strict: true,
+    required: ["thinking", "candidates", ...STRATEGIC_DECISION_REQUIRED],
+    additionalProperties: false,
   },
 };
 
-const TOOL_POWER_ACTION: ChatCompletionTool = {
-  type: "function",
-  function: {
-    name: "use_power",
-    description: "Use your Empowered ability: send out a candidate, protect a contestant, or pass",
-    parameters: {
-      type: "object",
-      properties: {
-        thinking: { type: "string", description: "Your internal reasoning for this decision (hidden from other players)" },
-        action: {
-          type: "string",
-          enum: ["exit", "protect", "pass"],
-          description: "The power action to take",
-        },
-        target: { type: "string", description: "Player name to target" },
-        shieldPullUpCandidates: {
-          type: "array",
-          items: { type: "string" },
-          description: "Replacement candidate names to pull up if protecting a current Council candidate creates an unresolved replacement slot; otherwise use an empty array",
-        },
-        ...STRATEGIC_DECISION_TOOL_PROPERTIES,
+const TOOL_POWER_ACTION: DecisionSchema = {
+  name: "use_power",
+  description: "Use your Empowered ability: send out a candidate, protect a contestant, or pass",
+  schema: {
+    type: "object",
+    properties: {
+      thinking: { type: "string", description: "Your internal reasoning for this decision (hidden from other players)" },
+      action: {
+        type: "string",
+        enum: ["exit", "protect", "pass"],
+        description: "The power action to take",
       },
-      required: ["thinking", "action", "target", "shieldPullUpCandidates", ...STRATEGIC_DECISION_REQUIRED],
-      additionalProperties: false,
+      target: { type: "string", description: "Player name to target" },
+      shieldPullUpCandidates: {
+        type: "array",
+        items: { type: "string" },
+        description: "Replacement candidate names to pull up if protecting a current Council candidate creates an unresolved replacement slot; otherwise use an empty array",
+      },
+      ...STRATEGIC_DECISION_TOOL_PROPERTIES,
     },
-    strict: true,
+    required: ["thinking", "action", "target", "shieldPullUpCandidates", ...STRATEGIC_DECISION_REQUIRED],
+    additionalProperties: false,
   },
 };
 
-const TOOL_COUNCIL_VOTE: ChatCompletionTool = {
-  type: "function",
-  function: {
-    name: "council_vote",
-    description: "Vote for one Council candidate to exit the game",
-    parameters: {
-      type: "object",
-      properties: {
-        thinking: { type: "string", description: "Your internal reasoning for this vote (hidden from other players)" },
-        target: { type: "string", description: "Council candidate selected to exit" },
-        ...STRATEGIC_DECISION_TOOL_PROPERTIES,
-      },
-      required: ["thinking", "target", ...STRATEGIC_DECISION_REQUIRED],
-      additionalProperties: false,
+const TOOL_COUNCIL_VOTE: DecisionSchema = {
+  name: "council_vote",
+  description: "Vote for one Council candidate to exit the game",
+  schema: {
+    type: "object",
+    properties: {
+      thinking: { type: "string", description: "Your internal reasoning for this vote (hidden from other players)" },
+      target: { type: "string", description: "Council candidate selected to exit" },
+      ...STRATEGIC_DECISION_TOOL_PROPERTIES,
     },
-    strict: true,
+    required: ["thinking", "target", ...STRATEGIC_DECISION_REQUIRED],
+    additionalProperties: false,
   },
 };
 
 function buildPickRoundFormatTool(
   offeredFormats: [FormatSurfaceId, FormatSurfaceId],
-): ChatCompletionTool {
+): DecisionSchema {
   return {
-    type: "function",
-    function: {
-      name: "pick_round_format",
-      description: "As the empowered player, pick one of the two House-offered formats for this round.",
-      parameters: {
-        type: "object",
-        properties: {
-          thinking: { type: "string", description: "Your hidden strategic reasoning for this format choice." },
-          formatId: {
-            type: "string",
-            enum: [...offeredFormats],
-            description: "Exactly one format id from the offered pair.",
-          },
-          ...STRATEGIC_DECISION_TOOL_PROPERTIES,
+    name: "pick_round_format",
+    description: "As the empowered player, pick one of the two House-offered formats for this round.",
+    schema: {
+      type: "object",
+      properties: {
+        thinking: { type: "string", description: "Your hidden strategic reasoning for this format choice." },
+        formatId: {
+          type: "string",
+          enum: [...offeredFormats],
+          description: "Exactly one format id from the offered pair.",
         },
-        required: ["thinking", "formatId", ...STRATEGIC_DECISION_REQUIRED],
-        additionalProperties: false,
+        ...STRATEGIC_DECISION_TOOL_PROPERTIES,
       },
-      strict: true,
+      required: ["thinking", "formatId", ...STRATEGIC_DECISION_REQUIRED],
+      additionalProperties: false,
     },
   };
 }
 
-function buildSaveOrEliminateBallotTool(legalTargetNames: string[]): ChatCompletionTool {
+function buildSaveOrEliminateBallotTool(legalTargetNames: string[]): DecisionSchema {
   return {
-    type: "function",
-    function: {
-      name: "save_or_exit_ballot",
-      description: "Cast one sealed Save-or-Exit ballot for a legal non-self contestant.",
-      parameters: {
-        type: "object",
-        properties: {
-          thinking: { type: "string", description: "Your hidden strategic reasoning for this sealed ballot." },
-          polarity: {
-            type: "string",
-            enum: ["save", "exit"],
-            description: "Whether this ballot adds +1 SAVE or −1 EXIT to the target's net.",
-          },
-          target: {
-            type: "string",
-            enum: [...legalTargetNames],
-            description: "One legal non-self target name.",
-          },
-          ...STRATEGIC_DECISION_TOOL_PROPERTIES,
+    name: "save_or_exit_ballot",
+    description: "Cast one sealed Save-or-Exit ballot for a legal non-self contestant.",
+    schema: {
+      type: "object",
+      properties: {
+        thinking: { type: "string", description: "Your hidden strategic reasoning for this sealed ballot." },
+        polarity: {
+          type: "string",
+          enum: ["save", "exit"],
+          description: "Whether this ballot adds +1 SAVE or −1 EXIT to the target's net.",
         },
-        required: ["thinking", "polarity", "target", ...STRATEGIC_DECISION_REQUIRED],
-        additionalProperties: false,
+        target: {
+          type: "string",
+          enum: [...legalTargetNames],
+          description: "One legal non-self target name.",
+        },
+        ...STRATEGIC_DECISION_TOOL_PROPERTIES,
       },
-      strict: true,
+      required: ["thinking", "polarity", "target", ...STRATEGIC_DECISION_REQUIRED],
+      additionalProperties: false,
     },
   };
 }
@@ -983,128 +933,104 @@ function buildFormatTargetTool(input: {
   description: string;
   targetDescription: string;
   legalTargetNames: string[];
-}): ChatCompletionTool {
+}): DecisionSchema {
   return {
-    type: "function",
-    function: {
-      name: input.name,
-      description: input.description,
-      parameters: {
-        type: "object",
-        properties: {
-          thinking: { type: "string", description: "Your hidden strategic reasoning for this decision." },
-          target: {
-            type: "string",
-            enum: [...input.legalTargetNames],
-            description: input.targetDescription,
-          },
-          ...STRATEGIC_DECISION_TOOL_PROPERTIES,
-        },
-        required: ["thinking", "target", ...STRATEGIC_DECISION_REQUIRED],
-        additionalProperties: false,
-      },
-      strict: true,
-    },
-  };
-}
-
-const TOOL_ELIMINATION_VOTE: ChatCompletionTool = {
-  type: "function",
-  function: {
-    name: "exit_vote",
-    description: "Vote for one contestant to exit during the endgame",
-    parameters: {
+    name: input.name,
+    description: input.description,
+    schema: {
       type: "object",
       properties: {
-        thinking: { type: "string", description: "Your internal reasoning for this vote (hidden from other players)" },
-        target: { type: "string", description: "Contestant selected to exit" },
+        thinking: { type: "string", description: "Your hidden strategic reasoning for this decision." },
+        target: {
+          type: "string",
+          enum: [...input.legalTargetNames],
+          description: input.targetDescription,
+        },
         ...STRATEGIC_DECISION_TOOL_PROPERTIES,
       },
       required: ["thinking", "target", ...STRATEGIC_DECISION_REQUIRED],
       additionalProperties: false,
     },
-    strict: true,
+  };
+}
+
+const TOOL_ELIMINATION_VOTE: DecisionSchema = {
+  name: "exit_vote",
+  description: "Vote for one contestant to exit during the endgame",
+  schema: {
+    type: "object",
+    properties: {
+      thinking: { type: "string", description: "Your internal reasoning for this vote (hidden from other players)" },
+      target: { type: "string", description: "Contestant selected to exit" },
+      ...STRATEGIC_DECISION_TOOL_PROPERTIES,
+    },
+    required: ["thinking", "target", ...STRATEGIC_DECISION_REQUIRED],
+    additionalProperties: false,
   },
 };
 
-const TOOL_ELIMINATION_MESSAGE: ChatCompletionTool = {
-  type: "function",
-  function: {
-    name: "farewell_message",
-    description: "Deliver a contestant's final public message after their exit is official.",
-    parameters: {
-      type: "object",
-      properties: {
-        thinking: {
-          type: "string",
-          description: "Your private reaction to the confirmed exit and disclosed result.",
-        },
-        message: {
-          type: "string",
-          description: "Your final public message in 1-2 sentences.",
-        },
+const TOOL_ELIMINATION_MESSAGE: DecisionSchema = {
+  name: "farewell_message",
+  description: "Deliver a contestant's final public message after their exit is official.",
+  schema: {
+    type: "object",
+    properties: {
+      thinking: {
+        type: "string",
+        description: "Your private reaction to the confirmed exit and disclosed result.",
       },
-      required: ["thinking", "message"],
-      additionalProperties: false,
+      message: {
+        type: "string",
+        description: "Your final public message in 1-2 sentences.",
+      },
     },
-    strict: true,
+    required: ["thinking", "message"],
+    additionalProperties: false,
   },
 };
 
-const TOOL_MAKE_ACCUSATION: ChatCompletionTool = {
-  type: "function",
-  function: {
-    name: "make_accusation",
-    description: "Publicly accuse a contestant and state why they should exit",
-    parameters: {
-      type: "object",
-      properties: {
-        thinking: { type: "string", description: "Your internal reasoning for this accusation (hidden from other players)" },
-        target: { type: "string", description: "Player name to accuse" },
-        accusation: { type: "string", description: "Your accusation text" },
-      },
-      required: ["thinking", "target", "accusation"],
-      additionalProperties: false,
+const TOOL_MAKE_ACCUSATION: DecisionSchema = {
+  name: "make_accusation",
+  description: "Publicly accuse a contestant and state why they should exit",
+  schema: {
+    type: "object",
+    properties: {
+      thinking: { type: "string", description: "Your internal reasoning for this accusation (hidden from other players)" },
+      target: { type: "string", description: "Player name to accuse" },
+      accusation: { type: "string", description: "Your accusation text" },
     },
-    strict: true,
+    required: ["thinking", "target", "accusation"],
+    additionalProperties: false,
   },
 };
 
-const TOOL_ASK_JURY_QUESTION: ChatCompletionTool = {
-  type: "function",
-  function: {
-    name: "ask_jury_question",
-    description: "As a juror, ask one question to one finalist",
-    parameters: {
-      type: "object",
-      properties: {
-        thinking: { type: "string", description: "Your internal reasoning for this question (hidden from other players)" },
-        target: { type: "string", description: "Finalist name to ask" },
-        question: { type: "string", description: "Your question" },
-      },
-      required: ["thinking", "target", "question"],
-      additionalProperties: false,
+const TOOL_ASK_JURY_QUESTION: DecisionSchema = {
+  name: "ask_jury_question",
+  description: "As a juror, ask one question to one finalist",
+  schema: {
+    type: "object",
+    properties: {
+      thinking: { type: "string", description: "Your internal reasoning for this question (hidden from other players)" },
+      target: { type: "string", description: "Finalist name to ask" },
+      question: { type: "string", description: "Your question" },
     },
-    strict: true,
+    required: ["thinking", "target", "question"],
+    additionalProperties: false,
   },
 };
 
-const TOOL_JURY_VOTE: ChatCompletionTool = {
-  type: "function",
-  function: {
-    name: "jury_vote",
-    description: "As a juror, vote for the winner of the game",
-    parameters: {
-      type: "object",
-      properties: {
-        thinking: { type: "string", description: "Your internal reasoning for this vote (hidden from other players)" },
-        winner: { type: "string", description: "Finalist name who should win" },
-        ...STRATEGIC_DECISION_TOOL_PROPERTIES,
-      },
-      required: ["thinking", "winner", ...STRATEGIC_DECISION_REQUIRED],
-      additionalProperties: false,
+const TOOL_JURY_VOTE: DecisionSchema = {
+  name: "jury_vote",
+  description: "As a juror, vote for the winner of the game",
+  schema: {
+    type: "object",
+    properties: {
+      thinking: { type: "string", description: "Your internal reasoning for this vote (hidden from other players)" },
+      winner: { type: "string", description: "Finalist name who should win" },
+      ...STRATEGIC_DECISION_TOOL_PROPERTIES,
     },
-    strict: true,
+    required: ["thinking", "winner", ...STRATEGIC_DECISION_REQUIRED],
+    additionalProperties: false,
   },
 };
 
@@ -1353,11 +1279,6 @@ interface AgentMemory {
 }
 
 export interface InfluenceAgentOptions {
-  /**
-   * OpenAI supports named function forcing. Some OpenAI-compatible local
-   * servers only support string tool_choice values or JSON schema responses.
-   */
-  toolChoiceMode?: LlmToolChoiceMode;
   /** Optional producer/debug trace sink for raw model-call evidence. */
   privateTraceSink?: PrivateTraceSink;
   /** Hosted OpenAI Responses API reasoning summary mode. OpenAI-compatible local providers stay on chat completions. */
@@ -1790,7 +1711,6 @@ export class InfluenceAgent implements IAgent {
   private readonly catalogId?: string;
   private readonly modelCapabilities: ModelRequestCapabilities;
   private readonly reasoningPolicy: ModelReasoningPolicy;
-  private readonly toolChoiceMode: LlmToolChoiceMode;
   private readonly privateTraceSink?: PrivateTraceSink;
   private readonly promptReuseCollector = new PromptReuseCollector();
   private readonly openAIReasoningSummary?: OpenAIReasoningSummaryMode;
@@ -1839,7 +1759,6 @@ export class InfluenceAgent implements IAgent {
     this.catalogId = options.catalogId;
     this.modelCapabilities = options.modelCapabilities ?? inferModelCapabilities(model, this.providerProfileId);
     this.reasoningPolicy = options.reasoningPolicy ?? "action-policy";
-    this.toolChoiceMode = options.toolChoiceMode ?? "named";
     this.privateTraceSink = options.privateTraceSink;
     this.promptCacheLineage = options.promptCacheLineage;
     this.evaluationFailFast = options.evaluationFailFast ?? false;
@@ -1862,7 +1781,6 @@ export class InfluenceAgent implements IAgent {
           modelId: model,
           modelCapabilities: this.modelCapabilities,
           reasoningPolicy: this.reasoningPolicy,
-          toolChoiceMode: this.toolChoiceMode,
           ...(options.openAIReasoningSummary && {
             openAIReasoningSummary: options.openAIReasoningSummary,
           }),
@@ -2497,9 +2415,11 @@ Keep it to 2-3 sentences. Be human, relatable, and memorable. You want to be som
       } : {}),
       ...STRATEGIC_DECISION_TOOL_PROPERTIES,
     };
-    const tool: ChatCompletionTool = { type: "function", function: { name: "conversation_turn", strict: true,
+    const tool: DecisionSchema = {
+      name: "conversation_turn",
       description: "Speak or pass in this conversation; private strategy is optional unless reconciliation is required.",
-      parameters: { type: "object", additionalProperties: false, properties, required: Object.keys(properties) } } };
+      schema: { type: "object", additionalProperties: false, properties, required: Object.keys(properties) },
+    };
     type Value = { thinking: string; message: string | null; noReply: boolean; recipientId: string | null;
       replyToContributionId: number | null; gotoRoomId?: number | null; gotoPlayerName?: string | null; reasoningContext?: string };
     const decode = (v: Value): StructuredDomainDecodeResult<Value> => {
@@ -2530,7 +2450,7 @@ ${c.warnFinalHandoff ? "If you hand off now, the recipient must redirect afterwa
 ${c.movement === "optional" ? "Movement happens together after all rooms finish this conversation round. You can still hear replies before leaving. Choose at most one room or player to follow; both null means stay and replaces your previous intent. Follow resolves to that player's final destination. Your current speech reaches only this room." : c.movement === "only" ? "This is a movement-only decision before the next room round. Set noReply true and message/recipient/reply reference null. Choose one destination or leave both null to stay." : "No movement follows this conversation. Continue toward the next legal game action when the conversation ends."}
 Use conversation_turn. Private strategy is your interpretation; dialogue does not create an official commitment or vote.`;
     try {
-      const result = await this.callTool<Value>(prompt, tool, mappedAgentToolSemanticDecoder(action, decode, (value, schema) => {
+      const result = await this.callDecision<Value>(prompt, tool, mappedAgentToolSemanticDecoder(action, decode, (value, schema) => {
         const exact = validateExactStructuredValue(schema, value, `Accepted conversation ${action}`);
         return exact.status === "invalid" ? exact : decode(value as Value);
       }), 400, this.buildSystemPrompt(ctx.phase, ctx.round), this.traceOptions(ctx, { action, reasoningEffort: "medium" }));
@@ -2556,7 +2476,7 @@ Use whispers to build alliances, gather intelligence, or plant seeds of suspicio
 
 Available players: ${otherPlayers.map((p) => p.name).join(", ")}
 
-Use the send_whispers tool to submit your whisper messages. Use player NAMES (not IDs).`;
+Return the send_whispers JSON response to submit your whisper messages. Use player NAMES (not IDs).`;
 
     try {
       type WhisperProviderValue = { whispers: Array<{ to: string[]; text: string }> };
@@ -2596,7 +2516,7 @@ Use the send_whispers tool to submit your whisper messages. Use player NAMES (no
           },
         };
       };
-      const result = await this.callTool<WhisperProviderValue, WhisperDomainValue>(
+      const result = await this.callDecision<WhisperProviderValue, WhisperDomainValue>(
         prompt,
         TOOL_SEND_WHISPERS,
         mappedAgentToolSemanticDecoder(
@@ -2678,7 +2598,7 @@ Standing target check:
 
 ${STRATEGIC_LENS_GUIDANCE}
 
-Use the form_mingle_intent tool.`;
+Return the form_mingle_intent JSON response.`;
 
     try {
       type MingleIntentProviderValue = {
@@ -2763,7 +2683,7 @@ Use the form_mingle_intent tool.`;
           },
         };
       };
-      const result = await this.callTool<MingleIntentProviderValue, MingleIntentDomainValue>(
+      const result = await this.callDecision<MingleIntentProviderValue, MingleIntentDomainValue>(
         prompt,
         TOOL_MINGLE_INTENT,
         mappedAgentToolSemanticDecoder(
@@ -3075,7 +2995,7 @@ ${opportunity.kind === "proposer"
         ? providerExact
         : { status: "valid", value: providerValue };
     };
-    const result = await this.callTool<AllianceActionProviderValue, AllianceActionDomainValue>(
+    const result = await this.callDecision<AllianceActionProviderValue, AllianceActionDomainValue>(
         this.buildUserPrompt(promptContext) + openPrompt,
         allianceActionTool(opportunity, allianceHandles, allowedActions),
         mappedAgentToolSemanticDecoder(
@@ -3201,10 +3121,10 @@ Think ahead: what will this room DO after this conversation? Agree on a target, 
 Keep it to 1-3 sentences. Make every word count.
 ${!isFirstMessage ? `\nIf you have nothing more to say, use pass: true to end your side of the conversation.\nThe room closes when BOTH of you pass consecutively.` : ""}
 
-Use the send_room_message tool to send your message${!isFirstMessage ? " or pass" : ""}.`;
+Return the send_room_message JSON response to send your message${!isFirstMessage ? " or pass" : ""}.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; message?: string; pass?: boolean; reasoningContext?: string }>(
+      const result = await this.callDecision<{ thinking?: string; message?: string; pass?: boolean; reasoningContext?: string }>(
         prompt,
         TOOL_SEND_ROOM_MESSAGE,
         agentToolSemanticDecoder("room-message", (value) =>
@@ -3270,10 +3190,10 @@ ${rumorStyle}
 ${STRATEGIC_LENS_GUIDANCE}
 
 Keep it to 1-2 sentences. One sharp claim is better than two weak ones.
-Use the spread_rumor tool.`;
+Return the spread_rumor JSON response.`;
 
     try {
-      const result = await this.callTool<{
+      const result = await this.callDecision<{
         thinking?: string;
         message?: unknown;
         strategicLens?: unknown;
@@ -3336,9 +3256,9 @@ Cast your empower vote for this round.
 
 **Legal empower names (exact spelling; other remaining contestants only — not you):** ${legalEmpowerNames.join(", ")}
 
-Use the cast_votes tool. The empower field must be exactly one name from the legal list above.`;
+Return the cast_votes JSON response. The empower field must be exactly one name from the legal list above.`;
 
-    const result = await this.callTool<
+    const result = await this.callDecision<
       PlayerNameDecision<"empower">,
       PlayerIdDecision<"empower">
     >(
@@ -3406,9 +3326,9 @@ Eligible tied empower candidates: ${tiedPlayers.map((player) => player.name).joi
 
 Choose exactly one eligible tied candidate to empower. If this revote is still tied, the wheel randomly chooses the empowered player from the still-tied candidates.
 
-Use the cast_empower_revote tool. Return only an empower target from the eligible tied candidates.`;
+Return the cast_empower_revote JSON response. Return only an empower target from the eligible tied candidates.`;
 
-    const result = await this.callTool<
+    const result = await this.callDecision<
       PlayerNameDecision<"empower">,
       PlayerIdDecision<"empower">
     >(
@@ -3458,9 +3378,9 @@ ${request.fallbackReason ? `Fallback context: ${request.fallbackReason}` : ""}
 
 Choose exactly ${request.requiredCount} player${request.requiredCount === 1 ? "" : "s"} from the eligible list. This is a private producer/debug decision, not public speech. Own the strategic debt: who will blame you, who may owe you, and what vote receipt supports the choice.
 
-Use the select_council_candidates tool.`;
+Return the select_council_candidates JSON response.`;
 
-    const result = await this.callTool<
+    const result = await this.callDecision<
       PlayerNamesDecision<"candidates">,
       PlayerIdsDecision<"candidates">
     >(
@@ -3611,8 +3531,8 @@ Anti-repeat power guidance:
 - If you break from your public Power Lobby record, your hidden thinking MUST cite the speaker and evidence from this round's Power Lobby.
 - When the lobby record conflicts, when council would expose useful public votes, or when you lack a fresh receipt, prefer pass.
 
-Before using the tool, decide what future debt or backlash your action creates. Prefer pass or protect when they create a callable ally, a sharper council fight, or a betrayal hook for later.
-Use the use_power tool to declare your final hidden action.`;
+Before deciding, consider what future debt or backlash your action creates. Prefer pass or protect when they create a callable ally, a sharper council fight, or a betrayal hook for later.
+Return the use_power JSON response to declare your final hidden action.`;
 
     type PowerProviderValue = AgentToolStrategyFields & {
       action: "exit" | "protect" | "pass";
@@ -3669,7 +3589,7 @@ Use the use_power tool to declare your final hidden action.`;
         },
       };
     };
-    const result = await this.callTool<PowerProviderValue, PowerDomainValue>(
+    const result = await this.callDecision<PowerProviderValue, PowerDomainValue>(
         prompt,
         TOOL_POWER_ACTION,
         mappedAgentToolSemanticDecoder(
@@ -3766,13 +3686,13 @@ Candidates:
 
 Who should exit? Consider your alliances, threats, and long-term strategy.
 
-Use the council_vote tool to cast your vote.`;
+Return the council_vote JSON response to cast your vote.`;
 
     const councilCandidates = [
       { id: c1, name: c1Name },
       { id: c2, name: c2Name },
     ];
-    const result = await this.callTool<
+    const result = await this.callDecision<
       ExitVoteProviderValue,
       PlayerIdDecision<"eliminate">
     >(
@@ -3805,20 +3725,20 @@ Use the council_vote tool to cast your vote.`;
       const rule = isLaunchFormatId(formatId)
         ? ruleSheetForFormat(formatId)
         : "House supplied this format id without a registered launch rule sheet.";
-      return `- ${label} (tool id: ${formatSurfaceId(formatId)}): ${rule}`;
+      return `- ${label} (format id: ${formatSurfaceId(formatId)}): ${rule}`;
     }).join("\n");
     const prompt = this.buildUserPrompt(ctx) + `
 ## Pick This Round's Format
 You are empowered. Choose exactly one of the two House-offered formats below.
-In speech and thinking, use the full product names shown below. The tool requires the matching tool id.
+In speech and thinking, use the full product names shown below. The JSON response requires the matching format id.
 
 ${offeredRules}
 
-No format is locked yet. Treat every format-specific plan as contingent until this tool choice is accepted.
+No format is locked yet. Treat every format-specific plan as contingent until this choice is accepted.
 Picking the format does not grant immunity. You remain eligible to cast sealed ballots, point during Safety Bounce, receive ballots, and exit under the format you choose.
 Choose the format that best serves your current relationships, threat map, and ability to shape the round.
 
-Use the pick_round_format tool with exactly one offered format id.`;
+Return the pick_round_format JSON response with exactly one offered format id.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
 
       type FormatPickProviderValue = AgentToolStrategyFields & {
@@ -3836,7 +3756,7 @@ Use the pick_round_format tool with exactly one offered format id.`;
         }
         return { status: "valid", value: { ...value, formatId: canonical } };
       };
-      const result = await this.callTool<FormatPickProviderValue, FormatPickDomainValue>(
+      const result = await this.callDecision<FormatPickProviderValue, FormatPickDomainValue>(
         prompt,
         buildPickRoundFormatTool(offeredSurfaceFormats),
         mappedAgentToolSemanticDecoder(
@@ -3897,7 +3817,7 @@ ${supplementalActiveFormatRule(ctx, "save_or_eliminate")}
 Your ballot is sealed until the House reveal. Choose SAVE (+1 net) or EXIT (−1 net) for exactly one remaining non-self contestant.
 Legal targets: ${legalTargets.map((player) => player.name).join(", ")}
 
-Use the save_or_exit_ballot tool.`;
+Return the save_or_exit_ballot JSON response.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
 
       type SaveOrExitProviderValue = PlayerNameDecision<"target", { polarity: "save" | "exit" }>;
@@ -3917,7 +3837,7 @@ Use the save_or_exit_ballot tool.`;
           },
         };
       };
-      const result = await this.callTool<
+      const result = await this.callDecision<
         SaveOrExitProviderValue,
         SaveOrExitDomainValue
       >(
@@ -3993,7 +3913,7 @@ Use the save_or_exit_ballot tool.`;
       ruleSheet: activeFormatRule(ctx, formatId),
       callTool: ({ prompt, tool, traceAction }) => {
         const legalTargets = formatPlayersForIds(ctx, aliveIds, { excludeSelf: true });
-        return this.callTool<
+        return this.callDecision<
           PlayerNameDecision<"target">,
           SealedElimModelOutput
         >(
@@ -4093,7 +4013,7 @@ ${supplementalActiveFormatRule(ctx, "two_names")}
 You are Empowered. Publicly nominate exactly two distinct contestants. You may not nominate yourself.
 Legal nominees: ${legalNominees.map((player) => player.name).join(", ")}
 
-The order is public reveal order. Use the ${registration.decision.initialNames.toolName} tool.`;
+The order is public reveal order. Return the ${registration.decision.initialNames.toolName} JSON response.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const decodeProvider = (
       value: TwoNamesInitialProviderValue,
@@ -4117,7 +4037,7 @@ The order is public reveal order. Use the ${registration.decision.initialNames.t
         },
       };
     };
-    const result = await this.callTool<TwoNamesInitialProviderValue, TwoNamesInitialDomainValue>(
+    const result = await this.callDecision<TwoNamesInitialProviderValue, TwoNamesInitialDomainValue>(
       prompt,
       buildTwoNamesInitialNamesTool(legalNominees.map((player) => player.name)),
       mappedAgentToolSemanticDecoder(
@@ -4187,7 +4107,7 @@ ${supplementalActiveFormatRule(ctx, "two_names")}
 You hold Override. Either decline and keep both nominees, or remove exactly one nominee.
 Current nominees: ${nominees.map((player) => player.name).join(", ")}
 
-If you use Override, Empowered will immediately name a legal replacement. Use the ${registration.decision.override.toolName} tool.`;
+If you use Override, Empowered will immediately name a legal replacement. Return the ${registration.decision.override.toolName} JSON response.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const decodeProvider = (
       value: TwoNamesOverrideProviderValue,
@@ -4205,7 +4125,7 @@ If you use Override, Empowered will immediately name a legal replacement. Use th
       const { useOverride: _useOverride, removed: _removed, ...rest } = value;
       return { status: "valid", value: { ...rest, action: "use", removedNomineeId: removed.id } };
     };
-    const result = await this.callTool<TwoNamesOverrideProviderValue, TwoNamesOverrideDomainValue>(
+    const result = await this.callDecision<TwoNamesOverrideProviderValue, TwoNamesOverrideDomainValue>(
       prompt,
       buildTwoNamesOverrideTool([nominees[0]!.name, nominees[1]!.name]),
       mappedAgentToolSemanticDecoder(
@@ -4298,7 +4218,7 @@ ${supplementalActiveFormatRule(ctx, "two_names")}
 ${instruction}
 Legal choices: ${legalTargets.map((player) => player.name).join(", ")}
 
-Use the ${descriptor.toolName} tool.`;
+Return the ${descriptor.toolName} JSON response.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const decodeProvider = (
       value: PlayerNameDecision<"target">,
@@ -4308,7 +4228,7 @@ Use the ${descriptor.toolName} tool.`;
       const { target: _target, ...rest } = value;
       return { status: "valid", value: { ...rest, targetId: findByName(legalTargets, value.target)!.id } };
     };
-    const result = await this.callTool<PlayerNameDecision<"target">, PlayerIdDecision<"targetId">>(
+    const result = await this.callDecision<PlayerNameDecision<"target">, PlayerIdDecision<"targetId">>(
       prompt,
       buildTwoNamesTargetTool(action, legalTargets.map((player) => player.name)),
       mappedAgentToolSemanticDecoder(
@@ -4441,10 +4361,10 @@ You are currently ${actorStatus}. Whoever you point to becomes ${targetStatus} a
 The pointer itself is not SAFE or VULNERABLE; it assigns the opposite of your current status to the target.
 Point to exactly one unclassified player based on that exact consequence.
 
-Use the bounce_pointer tool.`;
+Return the bounce_pointer JSON response.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
 
-      const result = await this.callTool<
+      const result = await this.callDecision<
         PlayerNameDecision<"target">,
         PlayerIdDecision<"target">
       >(
@@ -4488,10 +4408,10 @@ ${supplementalActiveFormatRule(ctx, "safety_bounce")}
 The public bounce is complete. This exit ballot is sealed, and only the vulnerable pool is eligible.
 Legal vulnerable targets: ${legalTargets.map((player) => player.name).join(", ")}
 
-Use the safety_bounce_vote tool.`;
+Return the safety_bounce_vote JSON response.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
 
-      const result = await this.callTool<
+      const result = await this.callDecision<
         PlayerNameDecision<"target">,
         PlayerIdDecision<"target">
       >(
@@ -4535,10 +4455,10 @@ ${supplementalLockedFormatRule(ctx)}
 The active format ended in an exit tie. As the Empowered contestant, choose exactly one tied contestant to exit. Empowerment is not immunity; it gives you this tiebreak responsibility only.
 Legal tied targets: ${legalTargets.map((player) => player.name).join(", ")}
 
-Use the format_tiebreak tool.`;
+Return the format_tiebreak JSON response.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
 
-      const result = await this.callTool<
+      const result = await this.callDecision<
         PlayerNameDecision<"target">,
         PlayerIdDecision<"target">
       >(
@@ -4614,10 +4534,10 @@ This is your FINAL public statement before you leave the game for good.
 You will not get another turn, and you have no future rounds to play.
 You may snap back at the people who exposed or voted out you, reveal a secret, issue a warning, say goodbye, or leave gracefully.
 Do NOT discuss future strategy, future votes, or what you will do next in the game.
-Use the farewell_message tool. Keep the public message to 1-2 sentences.`;
+Return the farewell_message JSON response. Keep the public message to 1-2 sentences.`;
 
     try {
-      const result = await this.callTool<{
+      const result = await this.callDecision<{
         thinking?: string;
         message?: string;
         reasoningContext?: string;
@@ -4737,10 +4657,10 @@ Available players: ${others.map((p) => p.name).join(", ")}
 
 Who should exit? Consider everything that has happened in the game.
 
-Use the exit_vote tool to cast your vote.`;
+Return the exit_vote JSON response to cast your vote.`;
 
     try {
-      const result = await this.callTool<
+      const result = await this.callDecision<
         ExitVoteProviderValue,
         PlayerIdDecision<"eliminate">
       >(
@@ -4779,10 +4699,10 @@ Be specific — reference their gameplay, betrayals, or strategies.
 
 Available players: ${others.map((p) => p.name).join(", ")}
 
-Use the make_accusation tool to submit your accusation.`;
+Return the make_accusation JSON response to submit your accusation.`;
 
     try {
-      const result = await this.callTool<
+      const result = await this.callDecision<
         PlayerNameDecision<"target", { accusation: string }>,
         PlayerIdDecision<"target", { accusation: string }>
       >(
@@ -4862,10 +4782,10 @@ Finalists:
 Ask a pointed, revealing question. You want to know who truly deserves to win.
 If prior Judgment questions are listed, ask from a distinct angle rather than repeating the same deal, betrayal, contingency, or accountability frame.
 
-Use the ask_jury_question tool to submit your question.`;
+Return the ask_jury_question JSON response to submit your question.`;
 
     try {
-      const result = await this.callTool<
+      const result = await this.callDecision<
         PlayerNameDecision<"target", { question: string }>,
         PlayerIdDecision<"target", { question: string }>
       >(
@@ -4951,10 +4871,10 @@ ${JURY_VOTING_CRITERIA[this.personality]}
 
 Consider their gameplay, their answers to the jury, and the full arc of the game.
 
-Use the jury_vote tool to cast your vote.`;
+Return the jury_vote JSON response to cast your vote.`;
 
     try {
-      const result = await this.callTool<
+      const result = await this.callDecision<
         PlayerNameDecision<"winner">,
         PlayerIdDecision<"winner">
       >(
@@ -5209,7 +5129,7 @@ Use these as live facts for strategy and conversation. You may plead, bargain, r
     if (!pressure.selectedFormat) {
       return `## Current Format Pressure
 - Empowered chooser: ${pressure.empoweredName}
-- Offered formats: ${offeredNames.join(" vs ")} (tool ids: ${pressure.offeredFormats.map(formatSurfaceId).join(", ")})
+- Offered formats: ${offeredNames.join(" vs ")} (format ids: ${pressure.offeredFormats.map(formatSurfaceId).join(", ")})
 - No format is locked yet. Treat plans for either offered format as contingent until the empowered player chooses. Prefer full public names in speech.`;
     }
 
@@ -5220,7 +5140,7 @@ Use these as live facts for strategy and conversation. You may plead, bargain, r
       ? `\n\n## The Short List Coordination\n${getFormatRegistration("vote_bomb").decision.strategyGuidance}`
       : "";
     return `## Current Format Pressure
-- Locked round format: ${lockedName} (tool id: ${formatSurfaceId(pressure.selectedFormat)})
+- Locked round format: ${lockedName} (format id: ${formatSurfaceId(pressure.selectedFormat)})
 - Empowered chooser and format tiebreaker: ${pressure.empoweredName}
 - Active rule sheet: ${pressure.ruleSheetSummary ?? ruleSheetForFormat(pressure.selectedFormat)}
 - Visibility: ${this.formatVisibilityGuidance(pressure.selectedFormat)}
@@ -5280,7 +5200,7 @@ Use only this locked format for the current round. Prefer the full public name i
 - The empower tally selected the format chooser, not an immune player.
 - The House offers exactly two named formats. No format is locked until the empowered player chooses.
 - Any plan for an offered format remains contingent until that choice is accepted.
-- Prefer full public names (Save-or-Exit, The Short List, Safety Bounce) in speech; tools use snake_case ids.`;
+- Prefer full public names (Save-or-Exit, The Short List, Safety Bounce) in speech; structured responses use snake_case ids.`;
     }
     if (ctx.phase === Phase.VOTE) {
       return `## Standard Vote Rules
@@ -5825,7 +5745,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
   }
 
   // ---------------------------------------------------------------------------
-  // LLM calls — free text and tool invocation
+  // LLM calls — text and structured decisions
   // ---------------------------------------------------------------------------
 
   private usesReasoningBudget(): boolean {
@@ -6095,10 +6015,6 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       .slice(0, 24)}`;
   }
 
-  private usesLocalStructuredCompatibility(): boolean {
-    return this.toolChoiceMode !== "named";
-  }
-
   private applyStructuredTokenFloor(effectiveMaxTokens: number): number {
     return Math.max(effectiveMaxTokens, InfluenceAgent.MIN_STRUCTURED_TOKENS);
   }
@@ -6107,45 +6023,8 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     return Math.max(effectiveMaxTokens, InfluenceAgent.MIN_MESSAGE_TOKENS);
   }
 
-  private static omitThinkingFromSchema(schema: unknown): unknown {
-    if (!schema || typeof schema !== "object" || Array.isArray(schema)) return schema;
-
-    const record = schema as Record<string, unknown>;
-    const properties = record.properties;
-    const nextProperties =
-      properties && typeof properties === "object" && !Array.isArray(properties)
-        ? Object.fromEntries(
-            Object.entries(properties as Record<string, unknown>)
-              .filter(([key]) => key !== "thinking"),
-          )
-        : properties;
-    const required = Array.isArray(record.required)
-      ? record.required.filter((key) => key !== "thinking")
-      : record.required;
-
-    return {
-      ...record,
-      ...(nextProperties !== undefined && { properties: nextProperties }),
-      ...(required !== undefined && { required }),
-    };
-  }
-
-  private toolForStructuredMode(tool: ChatCompletionTool, options?: LlmCallOptions): ChatCompletionTool {
-    // We no longer strip "thinking" for local structured compatibility.
-    // Agents should still emit their internal thinking (in tool args or free content)
-    // even when using local models. The raw hidden channel (if any) goes only to
-    // reasoningContext. This makes --chatty + local model Mingle/vote/power traces
-    // show both the emitted thinking and the native reasoningContext.
-    return {
-      ...tool,
-      function: {
-        ...tool.function,
-        parameters: this.withStrategyCandidateSchema(
-          (tool.function.parameters ?? {}) as Record<string, unknown>,
-          options,
-        ),
-      },
-    };
+  private decisionSchemaWithStrategy(tool: DecisionSchema, options?: LlmCallOptions): DecisionSchema {
+    return { ...tool, schema: this.withStrategyCandidateSchema(tool.schema, options) };
   }
 
   private decodeExactAgentResponsePayload(
@@ -6352,12 +6231,12 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
   }
 
   /**
-   * Structured tool-invocation LLM call for agent decisions.
-   * Forces the model to invoke the specified tool, returning validated JSON args.
+   * Native JSON-schema response for one agent decision.
+   * Validates the decoded value inside the provider attempt before acceptance.
    */
-  private async callTool<TProviderValue, TDomainValue = TProviderValue>(
+  private async callDecision<TProviderValue, TDomainValue = TProviderValue>(
     prompt: string,
-    tool: ChatCompletionTool,
+    tool: DecisionSchema,
     semanticDecoder: AgentToolSemanticDecoder<TProviderValue, TDomainValue>,
     maxTokens = 200,
     systemPrompt?: string,
@@ -6370,8 +6249,8 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     );
     const maxAttempts = this.structuredCallMaxAttempts ?? 2; // 1 initial + 1 retry
     const sourceKey = options?.action ? `${this.name}/${options.action}` : this.name;
-    const requestTool = this.toolForStructuredMode(tool, options);
-    const action = options?.action ?? requestTool.function.name;
+    const requestTool = this.decisionSchemaWithStrategy(tool, options);
+    const action = options?.action ?? requestTool.name;
     if (!AGENT_TOOL_SEMANTIC_ACTION_SET.has(action)) {
       throw new Error(`Agent tool action ${action} has no registered semantic decoder family.`);
     }
@@ -6398,9 +6277,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       }
       return { status: "valid", value };
     };
-    const domainSchema = structuredClone(
-      (requestTool.function.parameters ?? {}) as Record<string, unknown>,
-    );
+    const domainSchema = structuredClone(requestTool.schema);
     if (options?.visual) {
       const properties = domainSchema.properties as Record<string, unknown>;
       delete properties.cue;
@@ -6418,8 +6295,11 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     };
     const artifact = createExactStructuredOutputArtifact<TProviderValue, TDomainValue>({
       action: `agent-tool.${action}.${options?.visual ? "visual." : ""}v1`,
-      name: requestTool.function.name,
-      schema: (requestTool.function.parameters ?? {}) as Record<string, unknown>,
+      name: requestTool.name,
+      schema: {
+        ...(requestTool.description && { description: requestTool.description }),
+        ...requestTool.schema,
+      },
       acceptedValueUsesProviderSchema: false,
       optionalPerformanceCue: Boolean(options?.visual),
       decodeProviderPayload: (value) => {
@@ -6445,13 +6325,8 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
         messages,
         effectiveMaxTokens,
         {
-          kind: "tool",
+          kind: "structured",
           artifact,
-          ...(requestTool.function.description && {
-            description: requestTool.function.description,
-          }),
-          choice: { name: requestTool.function.name },
-          allowParallel: false,
         },
         options,
       ),
@@ -6462,14 +6337,14 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
         : {
             status: "unusable",
             kind: "malformed_output",
-            message: `Tool arguments were not decoded for ${requestTool.function.name}`,
+            message: `JSON response was not decoded for ${requestTool.name}`,
           },
       onRetry: (record) => {
         if (record.outcome.kind === "undecodable_structured_output") {
           effectiveMaxTokens = Math.ceil(effectiveMaxTokens * 1.5);
         }
         console.warn(
-          `[${this.name}] callTool(${requestTool.function.name}) attempt ${record.attemptOrdinal} failed, retrying: ${record.outcome.kind}`,
+          `[${this.name}] callDecision(${requestTool.name}) attempt ${record.attemptOrdinal} failed, retrying: ${record.outcome.kind}`,
         );
       },
     });
@@ -6502,7 +6377,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       messages,
       response: liveOutcome,
       output: args,
-      toolName: requestTool.function.name,
+      toolName: requestTool.name,
       toolArguments: args,
       providerReasoningSummary,
     });

@@ -16,7 +16,7 @@ import {
   displayNameForFormat,
   type LaunchFormatId,
 } from "./format-presentation-metadata";
-import type { LlmProviderRuntime, LlmToolChoiceMode } from "./llm-client";
+import type { LlmProviderRuntime } from "./llm-client";
 import { Phase } from "./types";
 import type { UUID } from "./types";
 import { parseOpenAIServiceTier, type TokenTracker } from "./token-tracker";
@@ -269,7 +269,6 @@ export interface LLMHouseInterviewerOptions {
   privateTraceSink?: PrivateTraceSink;
   gameId?: UUID;
   ownerEpoch?: string;
-  toolChoiceMode?: LlmToolChoiceMode;
   structuredOutputTimeoutMs?: number;
   providerProfileId?: ProviderProfileId;
   modelCapabilities?: ModelRequestCapabilities;
@@ -717,7 +716,6 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   private readonly promptReuseCollector = new PromptReuseCollector();
   private readonly privateTraceGameId?: UUID;
   private readonly privateTraceOwnerEpoch?: string;
-  private readonly toolChoiceMode: LlmToolChoiceMode;
   private readonly structuredOutputTimeoutMs: number;
   private readonly houseSummaryTimeoutMs?: number;
   private readonly providerExecution: ProviderExecutionCoordinator;
@@ -737,7 +735,6 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     this.privateTraceSink = options.privateTraceSink;
     this.privateTraceGameId = options.gameId;
     this.privateTraceOwnerEpoch = options.ownerEpoch;
-    this.toolChoiceMode = options.toolChoiceMode ?? "named";
     this.structuredOutputTimeoutMs = options.structuredOutputTimeoutMs ?? 45_000;
     this.houseSummaryTimeoutMs = options.houseSummaryTimeoutMs;
     this.providerExecution = new ProviderExecutionCoordinator({
@@ -754,7 +751,6 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
           modelId: model,
           modelCapabilities: this.modelCapabilities,
           reasoningPolicy: this.reasoningPolicy,
-          toolChoiceMode: this.toolChoiceMode,
           position: 0,
           role: "primary",
         }];
@@ -836,6 +832,10 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
         }
         if (liveOutcome) {
           this.responseProviderOutcome.set(value as object, liveOutcome);
+          this.responseProviderRuntime.set(liveOutcome, this.providerManifest[manifestPosition]!);
+          if (acceptedAttemptId) {
+            this.responseProviderAttemptId.set(liveOutcome, acceptedAttemptId);
+          }
         }
       }
       return value;
@@ -845,66 +845,6 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   private runtimeForResponse(response: ProviderModelOutcome): LlmProviderRuntime {
     return this.responseProviderRuntime.get(response as object)
       ?? this.providerManifest[0]!;
-  }
-
-  private executeHouseModelTransport(
-    context: PrivateDecisionTraceContext,
-    invocation: ModelInvocation,
-    options: {
-      maxAttempts?: number;
-      requestSignalFactory?: () => AbortSignal | undefined;
-      cancellationSignal?: AbortSignal;
-      validate?: (response: ProviderModelOutcome) => ProviderCandidateValidation<ProviderModelOutcome>;
-    } = {},
-  ): Promise<ProviderModelOutcome> {
-    return this.executeModelCall({
-      call: this.startProviderCall(context),
-      invocation,
-      maxAttempts: options.maxAttempts ?? 2,
-      ...(options.requestSignalFactory && { requestSignalFactory: options.requestSignalFactory }),
-      ...(options.cancellationSignal && { cancellationSignal: options.cancellationSignal }),
-      validate: (response) => {
-        if (response.refusal || response.stopReason === "content_filter") {
-          return {
-            status: "unusable",
-            kind: "refusal",
-            message: response.refusal ?? "content_filter",
-            retryable: false,
-          };
-        }
-        if (response.stopReason === "length") {
-          return {
-            status: "unusable",
-            kind: "undecodable_structured_output",
-            message: "length",
-            retryable: true,
-          };
-        }
-        if (!response.text && response.toolCalls.length === 0) {
-          return {
-            status: "unusable",
-            kind: "empty_output",
-            message: "missing_assistant_message",
-            retryable: true,
-          };
-        }
-        return options.validate?.(response) ?? this.validateHouseTextResponse(response);
-      },
-    });
-  }
-
-  private validateHouseTextResponse(
-    response: ProviderModelOutcome,
-  ): ProviderCandidateValidation<ProviderModelOutcome> {
-    const content = response.text?.trim();
-    return content
-      ? { status: "usable", value: response }
-      : {
-          status: "unusable",
-          kind: "empty_output",
-          message: "empty_house_text",
-          retryable: true,
-        };
   }
 
   private recordUsage(source: string, response: ProviderModelOutcome): void {
@@ -1220,10 +1160,6 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       ...(effort && { reasoning: { effort } }),
       temperature,
     };
-  }
-
-  private applyMessageTokenFloor(maxTokens: number): number {
-    return Math.max(maxTokens, 4096);
   }
 
   private applyStructuredTokenFloor(maxTokens: number): number {
@@ -1903,37 +1839,43 @@ Respond with JSON only.`;
       {
         role: "system" as const,
         content: withInfluenceGamePromptContext(
-          `${PLAYER_FACING_INTERVIEWER_PERSONALITY}\n\nRespond with ONLY the question text, nothing else.`,
+          `${PLAYER_FACING_INTERVIEWER_PERSONALITY}\n\nReturn the question in the required JSON response.`,
         ),
       },
       { role: "user" as const, content: gameStatePrompt },
     ];
 
-    const response = await this.executeHouseModelTransport(
-      this.diaryPrivateTraceContext("house-question", context),
-      this.houseInvocation(
-        messages,
-        { kind: "text" },
-        this.applyMessageTokenFloor(
-          this.requestedReasoningEffort() ? 4_150 : 150,
-        ),
-        0.9,
-      ),
-    );
-
-    this.recordUsage("House/question", response);
-
-    const question = response.text?.trim();
-    const output = question && question.length > 0
-      ? question
-      : `${context.agentName}, what's on your mind right now?`;
-    await this.emitPrivateDecisionTrace({
-      context: this.diaryPrivateTraceContext("house-question", context),
+    const decodeQuestion = (value: unknown): StructuredDomainDecodeResult<{ question: string }> => {
+      if (!value || typeof value !== "object" || Array.isArray(value)
+        || typeof (value as Record<string, unknown>).question !== "string"
+        || !(value as { question: string }).question.trim()) {
+        return { status: "invalid", message: "House question must be non-empty text." };
+      }
+      return { status: "valid", value: value as { question: string } };
+    };
+    const traceContext = this.diaryPrivateTraceContext("house-question", context);
+    const { value, response } = await this.callHouseJsonSchema({
+      action: "house-question",
+      source: "House/question",
+      round: context.round,
+      phase: context.precedingPhase,
+      traceContext,
       messages,
-      response,
-      output: { question: output },
+      schemaName: "house_question",
+      schema: {
+        type: "object",
+        properties: { question: { type: "string", minLength: 1 } },
+        required: ["question"],
+        additionalProperties: false,
+      },
+      decoder: { decodeProvider: decodeQuestion, decodeAccepted: decodeQuestion },
+      maxTokens: this.requestedReasoningEffort() ? 4_150 : 150,
+      temperature: 0.9,
     });
-    return output;
+    if (response) await this.emitPrivateDecisionTrace({
+      context: traceContext, messages, response, output: value,
+    });
+    return value.question.trim();
   }
 
   async generateFollowUpOrClose(

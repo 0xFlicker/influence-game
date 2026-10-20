@@ -636,7 +636,6 @@ export {
   describeLlmProvider,
   normalizeOpenAIRequestServiceTier,
   resolveOpenAIReasoningSummaryMode,
-  resolveToolChoiceMode,
 } from "./llm-client";
 export type {
   FlexProcessingFetchOptions,
@@ -645,7 +644,6 @@ export type {
   FlexTransportTerminalOutcome,
   LlmClientConfig,
   LlmProviderRuntime,
-  LlmToolChoiceMode,
   OpenAIReasoningSummaryMode,
   OpenAIRequestServiceTier,
 } from "./llm-client";

@@ -179,12 +179,10 @@ describe("prompt scenario lab", () => {
       expect(description).toContain("material, actionable change");
       expect(description).toContain("Do not summarize the action");
     }
-    const voteTools = privatePack.providerRequests[3]?.tools as Array<{
-      parameters?: {
-        properties?: Record<string, { description?: unknown }>;
-      };
-    }>;
-    const voteDescription = voteTools[0]?.parameters?.properties?.strategyDelta?.description;
+    const voteText = privatePack.providerRequests[3]?.text as {
+      format: { schema: { properties: Record<string, { description?: unknown }> } };
+    };
+    const voteDescription = voteText.format.schema.properties.strategyDelta?.description;
     expect(voteDescription).toContain("material, actionable change");
     expect(voteDescription).toContain("Do not summarize the action");
     expect(privatePack.decisionTraces.map((trace) => trace.action)).toEqual(["diary", "diary", "lobby", "vote"]);

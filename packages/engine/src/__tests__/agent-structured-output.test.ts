@@ -130,40 +130,19 @@ function recordResponsesRequest(
   requests: Array<Record<string, unknown>>,
   params: Record<string, unknown>,
 ): void {
-  const nativeTools = Array.isArray(params.tools)
-    ? params.tools as Array<Record<string, unknown>>
-    : [];
-  const nativeChoice = params.tool_choice as Record<string, unknown> | undefined;
-  requests.push({
-    ...params,
-    nativeRequest: params,
-    // Most tests in this file inspect semantic prompt/tool behavior. Preserve a
-    // stable inspection projection while provider-adapters.test.ts asserts the
-    // exact native Responses wire shape.
-    messages: [
-      ...(typeof params.instructions === "string"
-        ? [{ role: "system", content: params.instructions }]
-        : []),
-      ...(typeof params.input === "string"
-        ? [{ role: "user", content: params.input }]
-        : Array.isArray(params.input) ? params.input : []),
-    ],
-    tools: nativeTools.map((tool) => ({
-      type: "function",
-      function: {
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters,
-        strict: tool.strict,
-      },
-    })),
-    ...(nativeChoice?.type === "function" && {
-      tool_choice: {
-        type: "function",
-        function: { name: nativeChoice.name },
-      },
-    }),
-  });
+  requests.push({ ...params, nativeRequest: params, messages: [
+    ...(typeof params.instructions === "string" ? [{role: "system", content: params.instructions}] : []),
+    ...(typeof params.input === "string" ? [{role: "user", content: params.input}] : Array.isArray(params.input) ? params.input : []),
+  ] });
+}
+
+function schemaFormat(request: Record<string, unknown> | undefined): { name: string; strict: boolean; schema: Record<string, unknown> } {
+  expect(request?.tools).toBeUndefined();
+  expect(request?.tool_choice).toBeUndefined();
+  const format = (request?.text as {format?: unknown} | undefined)?.format
+    ?? (request?.response_format as {json_schema?: unknown} | undefined)?.json_schema;
+  expect(format).toBeDefined();
+  return format as {name: string; strict: boolean; schema: Record<string, unknown>};
 }
 
 function makeToolOpenAIStub(
@@ -188,12 +167,7 @@ function makeToolOpenAIStub(
                   summary: [{ type: "summary_text", text: reasoningContent }],
                 }]
               : []),
-            {
-              type: "function_call",
-              call_id: "call-1",
-              name: toolName,
-              arguments: JSON.stringify(args),
-            },
+            { type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify(args) }] },
           ],
         };
       },
@@ -205,22 +179,8 @@ function makeToolOpenAIStub(
           return {
             choices: [
               {
-                finish_reason: "tool_calls",
-                message: {
-                  role: "assistant",
-                  content: null,
-                  ...(reasoningContent !== undefined && { reasoning_content: reasoningContent }),
-                  tool_calls: [
-                    {
-                      id: "call-1",
-                      type: "function",
-                      function: {
-                        name: toolName,
-                        arguments: JSON.stringify(args),
-                      },
-                    },
-                  ],
-                },
+                finish_reason: "stop",
+                message: { role: "assistant", ...(reasoningContent !== undefined && { reasoning_content: reasoningContent }), content: JSON.stringify(args) },
               },
             ],
           };
@@ -252,12 +212,7 @@ function makeToolSequenceOpenAIStub(
                   summary: [{ type: "summary_text", text: response.reasoningContent }],
                 }]
               : []),
-            {
-              type: "function_call",
-              call_id: `call-${requests.length}`,
-              name: response.toolName,
-              arguments: JSON.stringify(response.args),
-            },
+            { type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify(response.args) }] },
           ],
         };
       },
@@ -271,22 +226,8 @@ function makeToolSequenceOpenAIStub(
           return {
             choices: [
               {
-                finish_reason: "tool_calls",
-                message: {
-                  role: "assistant",
-                  content: null,
-                  ...(response.reasoningContent !== undefined && { reasoning_content: response.reasoningContent }),
-                  tool_calls: [
-                    {
-                      id: `call-${requests.length}`,
-                      type: "function",
-                      function: {
-                        name: response.toolName,
-                        arguments: JSON.stringify(response.args),
-                      },
-                    },
-                  ],
-                },
+                finish_reason: "stop",
+                message: { role: "assistant", ...(response.reasoningContent !== undefined && { reasoning_content: response.reasoningContent }), content: JSON.stringify(response.args) },
               },
             ],
           };
@@ -391,12 +332,7 @@ function makeResponsesOpenAIStub(
               ],
             },
             ...(toolCall
-              ? [{
-                  type: "function_call",
-                  call_id: "call-test",
-                  name: toolCall.name,
-                  arguments: JSON.stringify(toolCall.args),
-                }]
+              ? [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify(toolCall.args) }] }]
               : [{
                   id: "msg-test",
                   type: "message",
@@ -610,25 +546,23 @@ describe("sealed-elim agent decision surface", () => {
     expect(ballot.decisionId).toBe(traces[0]?.decisionId);
     expect(traces[0]?.action).toBe("format-majority-elimination-ballot");
     const request = requests[0]!;
-    expect((request.tool_choice as { function?: { name?: string } }).function?.name)
+    expect(schemaFormat(request).name)
       .toBe("highest_count_ballot");
-    const tool = (request.tools as Array<{
-      function: {
+    const tool = ([schemaFormat(request)] as unknown as Array<{
         strict?: boolean;
-        parameters?: {
+        schema?: {
           properties?: { target?: { enum?: string[] } };
           required?: string[];
           additionalProperties?: boolean;
         };
-      };
-    }>)[0]!;
-    expect(tool.function.strict).toBe(true);
-    expect(tool.function.parameters?.additionalProperties).toBe(false);
-    expect(tool.function.parameters?.required).toEqual(
+      }>)[0]!;
+    expect(tool.strict).toBe(true);
+    expect(tool.schema?.additionalProperties).toBe(false);
+    expect(tool.schema?.required).toEqual(
       expect.arrayContaining(["thinking", "target", "strategyDelta"]),
     );
-    expect(tool.function.parameters?.required).not.toContain("decisionLog");
-    expect(tool.function.parameters?.properties?.target?.enum).toEqual(["Mira", "Vera"]);
+    expect(tool.schema?.required).not.toContain("decisionLog");
+    expect(tool.schema?.properties?.target?.enum).toEqual(["Mira", "Vera"]);
 
     const prompt = (request.messages as Array<{ content: string }>).at(-1)?.content ?? "";
     expect(prompt).toContain("Highest Count");
@@ -689,19 +623,17 @@ describe("sealed-elim agent decision surface", () => {
     expect(ballot.decisionId).toBe(traces[0]?.decisionId);
     expect(traces[0]?.action).toBe("format-even-votes-ballot");
     const request = requests[0]!;
-    expect((request.tool_choice as { function?: { name?: string } }).function?.name)
+    expect(schemaFormat(request).name)
       .toBe("even_votes_ballot");
-    const tool = (request.tools as Array<{
-      function: {
-        parameters?: {
+    const tool = ([schemaFormat(request)] as unknown as Array<{
+        schema?: {
           properties?: { strategyDelta?: { description?: string } };
           required?: string[];
         };
-      };
-    }>)[0]!;
-    expect(tool.function.parameters?.properties?.strategyDelta?.description)
+      }>)[0]!;
+    expect(tool.schema?.properties?.strategyDelta?.description)
       .toBe(STRATEGY_DELTA_GUIDANCE);
-    expect(tool.function.parameters?.required).toContain("strategyDelta");
+    expect(tool.schema?.required).toContain("strategyDelta");
     const prompt = (request.messages as Array<{ content: string }>).at(-1)?.content ?? "";
     expect(prompt).toContain(ruleSheetForFormat("even_votes"));
     expect(prompt.toLowerCase()).toContain("parity");
@@ -743,17 +675,15 @@ describe("sealed-elim agent decision surface", () => {
 
       await scenario.invoke(agent);
 
-      const tool = (requests[0]?.tools as Array<{
-        function: {
-          parameters?: {
+      const tool = ([schemaFormat(requests[0])] as unknown as Array<{
+          schema?: {
             properties?: Record<string, unknown>;
             required?: string[];
           };
-        };
-      }>)[0]!;
-      expect(tool.function.parameters?.properties).toHaveProperty("strategy");
-      expect(tool.function.parameters?.properties).not.toHaveProperty("strategyDelta");
-      expect(tool.function.parameters?.required).toContain("strategy");
+        }>)[0]!;
+      expect(tool.schema?.properties).toHaveProperty("strategy");
+      expect(tool.schema?.properties).not.toHaveProperty("strategyDelta");
+      expect(tool.schema?.required).toContain("strategy");
     }
   });
 
@@ -915,9 +845,7 @@ describe("Two Names agent decision surface", () => {
       "format-two-names-ballot",
       "format-two-names-tiebreak",
     ]);
-    const tools = requests.map((request) => (request.tools as Array<{
-      function: { name: string; strict?: boolean; parameters?: { additionalProperties?: boolean } };
-    }>)[0]!.function);
+    const tools = requests.map((request) => ([schemaFormat(request)] as unknown as Array<{ name: string; strict?: boolean; schema?: { additionalProperties?: boolean } }>)[0]!);
     expect(tools.map((tool) => tool.name)).toEqual([
       "two_names_initial_names",
       "two_names_override",
@@ -927,7 +855,7 @@ describe("Two Names agent decision surface", () => {
     ]);
     for (const tool of tools) {
       expect(tool.strict).toBe(true);
-      expect(tool.parameters?.additionalProperties).toBe(false);
+      expect(tool.schema?.additionalProperties).toBe(false);
     }
   });
 
@@ -1141,13 +1069,11 @@ describe("InfluenceAgent structured output mode", () => {
     agent.markCompactStrategyReconciliationRequired();
 
     const votes = await agent.getVotes(makeContext(Phase.VOTE));
-    const requestTool = (requests[0]?.tools as Array<{
-      function: { parameters?: { properties?: Record<string, unknown>; required?: string[] } };
-    }>)[0]!;
+    const requestTool = ([schemaFormat(requests[0])] as unknown as Array<{ schema?: { properties?: Record<string, unknown>; required?: string[] } }>)[0]!;
 
-    expect(requestTool.function.parameters?.properties).toHaveProperty("strategy");
-    expect(requestTool.function.parameters?.properties).not.toHaveProperty("strategyDelta");
-    expect(requestTool.function.parameters?.required).toContain("strategy");
+    expect(requestTool.schema?.properties).toHaveProperty("strategy");
+    expect(requestTool.schema?.properties).not.toHaveProperty("strategyDelta");
+    expect(requestTool.schema?.required).toContain("strategy");
     expect(agent.getCompactStrategyState()).toMatchObject({
       lifecycle: "reconciliation_required",
       revision: 1,
@@ -2025,16 +1951,13 @@ describe("InfluenceAgent structured output mode", () => {
       "format_tiebreak",
     ];
     expect(requests.map((request) => {
-      const choice = request.tool_choice as { function?: { name?: string } };
-      return choice.function?.name;
+      return schemaFormat(request).name;
     })).toEqual(expectedToolNames);
     for (const request of requests) {
-      const tools = request.tools as Array<{
-        function: { strict?: boolean; parameters?: { additionalProperties?: unknown; required?: string[] } };
-      }>;
-      expect(tools[0]?.function.strict).toBe(true);
-      expect(tools[0]?.function.parameters?.additionalProperties).toBe(false);
-      expect(tools[0]?.function.parameters?.required).toContain("strategyDelta");
+      const tools = [schemaFormat(request)] as unknown as Array<{ strict?: boolean; schema?: { additionalProperties?: unknown; required?: string[] } }>;
+      expect(tools[0]?.strict).toBe(true);
+      expect(tools[0]?.schema?.additionalProperties).toBe(false);
+      expect(tools[0]?.schema?.required).toContain("strategyDelta");
     }
 
     const prompts = requests.map((request) => {
@@ -2232,11 +2155,9 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).not.toContain("At Power, the empowered player");
     expect(prompt).not.toContain("If Power does not eliminate");
 
-    const tools = requests[0]?.tools as Array<{
-      function: { name: string; parameters?: { properties?: { empower?: { enum?: string[] } } } };
-    }>;
-    const castVotes = tools?.find((tool) => tool.function.name === "cast_votes");
-    const empowerEnum = castVotes?.function.parameters?.properties?.empower?.enum ?? [];
+    const tools = [schemaFormat(requests[0])] as unknown as Array<{ name: string; schema?: { properties?: { empower?: { enum?: string[] } } } }>;
+    const castVotes = tools?.find((tool) => tool.name === "cast_votes");
+    const empowerEnum = castVotes?.schema?.properties?.empower?.enum ?? [];
     expect(empowerEnum).not.toContain("Atlas");
     expect(empowerEnum).toContain("Mira");
   });
@@ -2367,16 +2288,16 @@ describe("InfluenceAgent structured output mode", () => {
       const messages = request.messages as Array<{ content: string }>;
       return messages.map((message) => message.content).join("\n");
     });
-    expect(prompts[0]).toContain("Locked round format: Save-or-Exit (tool id: save_or_exit)");
+    expect(prompts[0]).toContain("Locked round format: Save-or-Exit (format id: save_or_exit)");
     expect(prompts[0]).toContain(ruleSheetForFormat("save_or_eliminate"));
     expect(prompts[0]).toContain("ballot is sealed");
     expect(prompts[0]).not.toContain(ruleSheetForFormat("vote_bomb"));
     expect(prompts[0]).not.toContain("Concentrating votes on one player can make");
-    expect(prompts[1]).toContain("Locked round format: The Short List (tool id: short_list)");
+    expect(prompts[1]).toContain("Locked round format: The Short List (format id: short_list)");
     expect(prompts[1]).toContain(ruleSheetForFormat("vote_bomb"));
     expect(prompts[1]).toContain("ballot is sealed");
     expect(prompts[1]).not.toContain(ruleSheetForFormat("save_or_eliminate"));
-    expect(prompts[2]).toContain("Locked round format: Safety Bounce (tool id: safety_bounce)");
+    expect(prompts[2]).toContain("Locked round format: Safety Bounce (format id: safety_bounce)");
     expect(prompts[2]).toContain(ruleSheetForFormat("safety_bounce"));
     expect(prompts[2]).toContain("pointers are public");
     expect(prompts[2]).toContain("final exit ballot is sealed");
@@ -2445,17 +2366,15 @@ describe("InfluenceAgent structured output mode", () => {
       ["mira-id"],
     );
 
-    const ballotTool = (requests[1]?.tools as Array<{
-      function: {
-        parameters?: {
+    const ballotTool = ([schemaFormat(requests[1])] as unknown as Array<{
+        schema?: {
           properties?: { strategyDelta?: { description?: string } };
           required?: string[];
         };
-      };
-    }>)[0]!;
-    expect(ballotTool.function.parameters?.properties?.strategyDelta?.description)
+      }>)[0]!;
+    expect(ballotTool.schema?.properties?.strategyDelta?.description)
       .toBe(STRATEGY_DELTA_GUIDANCE);
-    expect(ballotTool.function.parameters?.required).toContain("strategyDelta");
+    expect(ballotTool.schema?.required).toContain("strategyDelta");
 
     const prompts = requests.map((request) => {
       const messages = request.messages as Array<{ content: string }>;
@@ -2570,7 +2489,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(requests[0]?.temperature).toBe(0.42);
   });
 
-  it("uses named tool choice by default", async () => {
+  it("uses a strict JSON-schema response by default", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -2588,11 +2507,8 @@ describe("InfluenceAgent structured output mode", () => {
       thinking: expect.any(String),
       strategyDelta: null,
     });
-    expect(requests[0]?.tool_choice).toEqual({
-      type: "function",
-      function: { name: "cast_votes" },
-    });
-    expect(requests[0]?.parallel_tool_calls).toBe(false);
+    expect(schemaFormat(requests[0]).name).toBe("cast_votes");
+    expect(requests[0]?.parallel_tool_calls).toBeUndefined();
     const messages = requests[0]?.messages as Array<{ role: string; content: string }>;
     expect(messages[0]?.content).toContain("fictional, text-only social-strategy competition");
     expect(messages[0]?.content).toContain("leave the competition until a winner remains");
@@ -2687,11 +2603,8 @@ describe("InfluenceAgent structured output mode", () => {
     expect(trace.prompt.messages[0]).toMatchObject({ role: "system" });
     expect(trace.prompt.messages[1]).toMatchObject({ role: "user" });
     expect(trace.response.finishReason).toBe("completed");
-    expect(trace.response.toolCalls?.[0]).toMatchObject({
-      id: "call-1",
-      type: "function_call",
-      name: "cast_votes",
-    });
+    expect(trace.response.toolCalls).toBeUndefined();
+    expect(trace.response.content).toContain("I empower Mira");
     expect(trace.toolArguments).toMatchObject({
       thinking: "I empower Mira as format chooser.",
       empower: "mira-id",
@@ -2756,7 +2669,7 @@ describe("InfluenceAgent structured output mode", () => {
     });
   });
 
-  it("keeps Luna tool calls on Responses with configured reasoning", async () => {
+  it("keeps Luna schema decisions on Responses with configured reasoning", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const luna = modelCatalogEntryById("openai:gpt-5.6-luna");
     const fallback = modelCatalogEntryById("katana:glm-5-2");
@@ -2784,7 +2697,7 @@ describe("InfluenceAgent structured output mode", () => {
             modelId: luna.modelId,
             modelCapabilities: luna.capabilities,
             reasoningPolicy: "medium",
-            toolChoiceMode: "named",
+
             openAIReasoningSummary: "auto",
             position: 0,
             role: "primary",
@@ -2796,7 +2709,7 @@ describe("InfluenceAgent structured output mode", () => {
             modelId: fallback.modelId,
             modelCapabilities: fallback.capabilities,
             reasoningPolicy: "action-policy",
-            toolChoiceMode: "named",
+
             position: 1,
             role: "fallback",
             maxCallsPerGame: 3,
@@ -2809,7 +2722,7 @@ describe("InfluenceAgent structured output mode", () => {
     await agent.getVotes(makeContext(Phase.VOTE));
 
     expect(requests).toHaveLength(1);
-    expect(requests[0]?.tools).toBeArray();
+    expect(schemaFormat(requests[0]).strict).toBe(true);
     expect(requests[0]?.nativeRequest).toMatchObject({
       model: luna.modelId,
       store: false,
@@ -2872,12 +2785,7 @@ describe("InfluenceAgent structured output mode", () => {
       store: false,
       prompt_cache_key: expect.stringMatching(/^influence:[a-f0-9]{24}$/),
       prompt_cache_options: { ttl: "30m" },
-      tools: [{
-        type: "function",
-        name: "cast_votes",
-        strict: true,
-      }],
-      tool_choice: { type: "function", name: "cast_votes" },
+      text: { format: { type: "json_schema", name: "cast_votes", strict: true } },
     });
     expect(requests[0]).not.toHaveProperty("prompt_cache_retention");
     expect(traces).toHaveLength(1);
@@ -3003,7 +2911,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).not.toContain("final lobby message");
   });
 
-  it("can use required string tool choice for local OpenAI-compatible providers", async () => {
+  it("uses the same JSON-schema contract for local OpenAI-compatible providers", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -3013,7 +2921,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { providerProfileId: "lm-studio", toolChoiceMode: "required" },
+      { providerProfileId: "lm-studio",  },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -3024,26 +2932,24 @@ describe("InfluenceAgent structured output mode", () => {
       thinking: expect.any(String),
       strategyDelta: null,
     });
-    expect(requests[0]?.tool_choice).toBe("required");
+    expect(requests[0]?.tool_choice).toBeUndefined();
     expect(requests[0]?.max_tokens).toBe(8192);
     expect("parallel_tool_calls" in requests[0]!).toBe(false);
-    const tools = requests[0]?.tools as Array<{
-      function: {
-        parameters: {
+    const tools = [schemaFormat(requests[0])] as unknown as Array<{
+        schema: {
           properties: Record<string, unknown>;
           required: string[];
         };
-      };
-    }>;
+      }>;
     // We intentionally no longer strip "thinking" for local structured/required tool choice.
     // Agents must still be able to emit their internal reasoning (populates `thinking:`
     // in --chatty and the `thinking` on TranscriptEntry) even on local models. The raw
     // server reasoning_content (if any) goes only to the separate `reasoningContext`.
-    expect(tools[0]!.function.parameters.properties.thinking).toBeDefined();
-    expect(tools[0]!.function.parameters.required).toContain("thinking");
+    expect(tools[0]!.schema.properties.thinking).toBeDefined();
+    expect(tools[0]!.schema.required).toContain("thinking");
   });
 
-  it("runs JSON schema fallback through the common retry handler", async () => {
+  it("runs JSON schema retries through the common retry handler", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -3053,7 +2959,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "json_schema" },
+      {  },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -3134,7 +3040,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -3196,7 +3102,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -3214,7 +3120,7 @@ describe("InfluenceAgent structured output mode", () => {
       reasoningContext: "Hidden local reasoning for candidate selection.",
       strategyDelta: null,
     });
-    expect(requests[0]?.tool_choice).toEqual("required");
+    expect(requests[0]?.tool_choice).toBeUndefined();
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.at(-1)!.content;
     expect(prompt).toContain("## Private Council Candidate Selection");
@@ -3362,7 +3268,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -3417,7 +3323,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -3478,7 +3384,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -3494,20 +3400,12 @@ describe("InfluenceAgent structured output mode", () => {
       reasoningContext: "Hidden local reasoning for the alliance action.",
       strategyDelta: "propose a small early vote pact",
     });
-    expect(requests[0]?.tools).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          function: expect.objectContaining({ name: "take_alliance_action" }),
-        }),
-      ]),
-    );
-    const tool = (requests[0]?.tools as Array<{
-      function: { parameters: { properties: { decision: { anyOf: Array<{ properties: { action: { enum: unknown[] } } }> } } } };
-    }>)[0]!;
-    expect(tool.function.parameters.properties.decision.anyOf.map(
+    expect(schemaFormat(requests[0]).name).toBe("take_alliance_action");
+    const tool = ([schemaFormat(requests[0])] as unknown as Array<{ schema: { properties: { decision: { anyOf: Array<{ properties: { action: { enum: unknown[] } } }> } } } }>)[0]!;
+    expect(tool.schema.properties.decision.anyOf.map(
       (variant) => variant.properties.action.enum,
     )).toEqual([["pass"], ["propose"]]);
-    expect(JSON.stringify(tool.function.parameters.properties.decision)).not.toContain("allianceHandle");
+    expect(JSON.stringify(tool.schema.properties.decision)).not.toContain("allianceHandle");
   });
 
   it("binds proposal responses to the engine-owned opportunity without provider identifiers", async () => {
@@ -3585,20 +3483,18 @@ describe("InfluenceAgent structured output mode", () => {
       lineageId: "engine-lineage",
       versionId: "engine-version",
     });
-    const tool = (requests[0]?.tools as Array<{
-      function: { parameters: { properties: Record<string, unknown> & { decision: { anyOf: Array<{ properties: { action: { enum: unknown[] } } }> } } } };
-    }>)[0]!;
-    expect(tool.function.parameters.properties).not.toHaveProperty("lineageId");
-    expect(tool.function.parameters.properties).not.toHaveProperty("versionId");
-    expect(tool.function.parameters.properties.decision.anyOf).toHaveLength(1);
-    expect(tool.function.parameters.properties.decision.anyOf[0]?.properties.action.enum).toEqual([
+    const tool = ([schemaFormat(requests[0])] as unknown as Array<{ schema: { properties: Record<string, unknown> & { decision: { anyOf: Array<{ properties: { action: { enum: unknown[] } } }> } } } }>)[0]!;
+    expect(tool.schema.properties).not.toHaveProperty("lineageId");
+    expect(tool.schema.properties).not.toHaveProperty("versionId");
+    expect(tool.schema.properties.decision.anyOf).toHaveLength(1);
+    expect(tool.schema.properties.decision.anyOf[0]?.properties.action.enum).toEqual([
       "accept",
       "decline",
       "defer",
       "trial",
       "pass",
     ]);
-    expect(JSON.stringify(tool.function.parameters.properties.decision)).not.toContain("memberNames");
+    expect(JSON.stringify(tool.schema.properties.decision)).not.toContain("memberNames");
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.at(-1)?.content ?? "";
     expect(prompt).toContain("proposed Glass Table");
@@ -3699,10 +3595,8 @@ describe("InfluenceAgent structured output mode", () => {
       name: "Glass Pair",
     });
     expect(action).not.toHaveProperty("versionId");
-    const tool = (requests[0]?.tools as Array<{
-      function: { parameters: { properties: { decision: { anyOf: Array<{ properties: { action: { enum: unknown[] } } }> } } } };
-    }>)[0]!;
-    expect(tool.function.parameters.properties.decision.anyOf.map(
+    const tool = ([schemaFormat(requests[0])] as unknown as Array<{ schema: { properties: { decision: { anyOf: Array<{ properties: { action: { enum: unknown[] } } }> } } } }>)[0]!;
+    expect(tool.schema.properties.decision.anyOf.map(
       (variant) => variant.properties.action.enum,
     )).toEqual([
       ["accept", "decline", "defer", "trial", "pass"],
@@ -3978,13 +3872,11 @@ describe("InfluenceAgent structured output mode", () => {
       allianceId: "alliance-current",
       name: "Glass Table",
     });
-    const tool = (requests[0]?.tools as Array<{
-      function: { parameters: { properties: { decision: { anyOf: Array<{ properties: Record<string, { enum?: unknown[] }> }> } } } };
-    }>)[0]!;
-    expect(tool.function.parameters.properties.decision.anyOf.map(
+    const tool = ([schemaFormat(requests[0])] as unknown as Array<{ schema: { properties: { decision: { anyOf: Array<{ properties: Record<string, { enum?: unknown[] }> }> } } } }>)[0]!;
+    expect(tool.schema.properties.decision.anyOf.map(
       (variant) => variant.properties.action?.enum,
     )).toEqual([["pass"], ["propose"], ["amend"]]);
-    expect(tool.function.parameters.properties.decision.anyOf[2]?.properties.allianceHandle?.enum).toEqual(["A1"]);
+    expect(tool.schema.properties.decision.anyOf[2]?.properties.allianceHandle?.enum).toEqual(["A1"]);
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.at(-1)?.content ?? "";
     expect(prompt).toContain("A1: Glass Table");
@@ -4010,7 +3902,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -4054,7 +3946,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -4091,19 +3983,17 @@ describe("InfluenceAgent structured output mode", () => {
     });
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.at(-1)!.content;
-    const tools = requests[0]?.tools as Array<{
-      function: {
-        parameters: {
+    const tools = [schemaFormat(requests[0])] as unknown as Array<{
+        schema: {
           properties: Record<string, unknown>;
           required: string[];
         };
-      };
-    }>;
+      }>;
     const removedMingleDebugKeys = ["strategy" + "Signal", "movement" + "Purpose"];
-    expect(tools[0]!.function.parameters.properties.gotoPlayerName).toBeDefined();
-    expect(tools[0]!.function.parameters.required).toContain("gotoPlayerName");
-    expect(removedMingleDebugKeys.every((key) => !(key in tools[0]!.function.parameters.properties))).toBe(true);
-    expect(removedMingleDebugKeys.every((key) => !tools[0]!.function.parameters.required.includes(key))).toBe(true);
+    expect(tools[0]!.schema.properties.gotoPlayerName).toBeDefined();
+    expect(tools[0]!.schema.required).toContain("gotoPlayerName");
+    expect(removedMingleDebugKeys.every((key) => !(key in tools[0]!.schema.properties))).toBe(true);
+    expect(removedMingleDebugKeys.every((key) => !tools[0]!.schema.required.includes(key))).toBe(true);
     expect(prompt).toContain("Find one person willing to compare Vera reads without committing too early.");
     expect(prompt).toContain("leave both null to stay");
     expect(prompt).toContain("Passing is private");
@@ -4167,7 +4057,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -4182,7 +4072,7 @@ describe("InfluenceAgent structured output mode", () => {
 
     expect(turn.coordinationReceipt).toBeUndefined();
     expect(turn.message).toContain("I propose we empower you");
-    const schema = JSON.stringify(requests[0]?.tools);
+    const schema = JSON.stringify(schemaFormat(requests[0]));
     expect(schema).not.toContain("coordinationFact");
     expect(schema).not.toContain("noProposal");
     const prompt = ((requests[0]?.messages as Array<{ content: string }>).at(-1)?.content) ?? "";
@@ -4200,7 +4090,7 @@ describe("InfluenceAgent structured output mode", () => {
     const prompt = JSON.stringify(requests[0]?.messages);
     expect(prompt).toContain("No movement follows this conversation");
     expect(prompt).not.toContain("will not hear another reply");
-    expect(JSON.stringify(requests[0]?.tools)).not.toContain("gotoRoomId");
+    expect(JSON.stringify(schemaFormat(requests[0]))).not.toContain("gotoRoomId");
   });
 
   it("includes post-vote pressure facts in Mingle prompts", async () => {
@@ -4224,7 +4114,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -4372,12 +4262,10 @@ describe("InfluenceAgent structured output mode", () => {
     }, ["mira-id", "vera-id"]);
 
     const messages = requests[0]?.messages as Array<{ content: string }>;
-    const tools = requests[0]?.tools as Array<{
-      function: { name: string; strict?: boolean; parameters?: { additionalProperties?: unknown } };
-    }>;
-    const councilTool = tools.find((tool) => tool.function.name === "council_vote");
-    expect(councilTool?.function.strict).toBe(true);
-    expect(councilTool?.function.parameters?.additionalProperties).toBe(false);
+    const tools = [schemaFormat(requests[0])] as unknown as Array<{ name: string; strict?: boolean; schema?: { additionalProperties?: unknown } }>;
+    const councilTool = tools.find((tool) => tool.name === "council_vote");
+    expect(councilTool?.strict).toBe(true);
+    expect(councilTool?.schema?.additionalProperties).toBe(false);
 
     const prompt = messages.at(-1)!.content;
     expect(prompt).toContain("## Council Vote Rules");
@@ -4467,7 +4355,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     const alivePlayers = [
       { id: "atlas-id", name: "Atlas" },
@@ -4548,7 +4436,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {},
     );
     agent.onGameStart("game-1", [
       { id: "atlas-id", name: "Atlas" },
@@ -4624,7 +4512,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -4692,7 +4580,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {},
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -4775,7 +4663,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {},
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -4879,7 +4767,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {},
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -4948,7 +4836,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {},
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -4990,7 +4878,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {},
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -5002,16 +4890,14 @@ describe("InfluenceAgent structured output mode", () => {
       reasoningContext: "Hidden local reasoning for direct elimination.",
       strategyDelta: "Cut Vera because her endgame cover is too strong.",
     });
-    const tools = requests[0]?.tools as Array<{
-      function: {
-        parameters: {
+    const tools = [schemaFormat(requests[0])] as unknown as Array<{
+        schema: {
           properties: Record<string, unknown>;
           required: string[];
         };
-      };
-    }>;
-    expect(tools[0]!.function.parameters.properties.strategyDelta).toBeDefined();
-    expect(tools[0]!.function.parameters.required).toContain("strategyDelta");
+      }>;
+    expect(tools[0]!.schema.properties.strategyDelta).toBeDefined();
+    expect(tools[0]!.schema.required).toContain("strategyDelta");
   });
 
   it("uses an endgame prompt frame with Board Contract and without unbounded history", async () => {
@@ -5028,7 +4914,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     const players = [
       { id: "atlas-id", name: "Atlas", shielded: true },
@@ -5103,7 +4989,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     finalist.onGameStart("game-1", makeContext().alivePlayers);
     const judgmentCtx: PhaseContext = {
@@ -5153,7 +5039,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     juror.onGameStart("game-1", [
       { id: "mira-id", name: "Mira" },
@@ -5268,7 +5154,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -5279,16 +5165,14 @@ describe("InfluenceAgent structured output mode", () => {
       thinking: "Vera owned her betrayal and made the sharper case.",
       reasoningContext: "Hidden local reasoning for the winner vote.",
     });
-    const tools = requests[0]?.tools as Array<{
-      function: {
-        parameters: {
+    const tools = [schemaFormat(requests[0])] as unknown as Array<{
+        schema: {
           properties: Record<string, unknown>;
           required: string[];
         };
-      };
-    }>;
-    expect(tools[0]!.function.parameters.properties.strategyDelta).toBeUndefined();
-    expect(tools[0]!.function.parameters.required).not.toContain("strategyDelta");
+      }>;
+    expect(tools[0]!.schema.properties.strategyDelta).toBeUndefined();
+    expect(tools[0]!.schema.required).not.toContain("strategyDelta");
   });
 
   it("returns typed absence instead of fabricated speech when optional provider calls exhaust", async () => {
@@ -5301,7 +5185,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -5336,7 +5220,7 @@ describe("InfluenceAgent structured output mode", () => {
       undefined,
       undefined,
       {
-        toolChoiceMode: "required",
+
         structuredCallMaxAttempts: 1,
         privateTraceSink: (trace) => { traces.push(trace); },
         providerExecutionHooks: {
@@ -5424,7 +5308,7 @@ describe("InfluenceAgent structured output mode", () => {
       undefined,
       undefined,
       {
-        toolChoiceMode: "required",
+
         providerExecutionHooks: {
           onReserve: () => {
             throw providerError;
@@ -5478,7 +5362,7 @@ describe("InfluenceAgent structured output mode", () => {
       undefined,
       undefined,
       {
-        toolChoiceMode: "required",
+
         providerExecutionHooks: {
           onReserve: () => {
             throw programmingError;
@@ -5535,7 +5419,7 @@ describe("InfluenceAgent structured output mode", () => {
         undefined,
         undefined,
         {
-          toolChoiceMode: "required",
+
           providerExecutionHooks: {
             onReserve: () => { throw scenario.error; },
           },
@@ -5569,7 +5453,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -5609,7 +5493,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -5644,7 +5528,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -5676,7 +5560,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -5728,7 +5612,7 @@ describe("InfluenceAgent structured output mode", () => {
             modelId: primary.modelId,
             modelCapabilities: primary.capabilities,
             reasoningPolicy: "action-policy",
-            toolChoiceMode: "named",
+
             position: 0,
             role: "primary",
           },
@@ -5739,7 +5623,7 @@ describe("InfluenceAgent structured output mode", () => {
             modelId: fallback.modelId,
             modelCapabilities: fallback.capabilities,
             reasoningPolicy: "action-policy",
-            toolChoiceMode: "named",
+
             position: 1,
             role: "fallback",
             maxCallsPerGame: 3,
@@ -6199,7 +6083,7 @@ describe("U4 selective context recall rendering", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     agent.onGameStart("game-1", [
       { id: "atlas-id", name: "Atlas" },
@@ -6269,7 +6153,7 @@ describe("U4 selective context recall rendering", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      {  },
     );
     agent.onGameStart("game-1", [
       { id: "atlas-id", name: "Atlas" },
