@@ -229,9 +229,15 @@ jobs:
       - name: Build and push ${{ matrix.target }}
         env:
           PRIVY_APP_ID: ${{ secrets.PRIVY_APP_ID }}
+          POSTHOG_PERSONAL_API_KEY: ${{ matrix.target == 'web' && secrets.POSTHOG_PERSONAL_API_KEY || '' }}
         run: |
+          posthog_args=()
+          if [ "${{ matrix.target }}" = "web" ]; then
+            posthog_args=(--build-arg POSTHOG_UPLOAD_SOURCEMAPS=1 --secret id=posthog_api_key,env=POSTHOG_PERSONAL_API_KEY)
+          fi
           docker build -f ${{ matrix.dockerfile }} \
             --build-arg GIT_SHA=${{ github.sha }} \
+            "${posthog_args[@]}" \
             ${{ matrix.build_args }} \
             -t ${{ matrix.image }}:${{ steps.sha.outputs.short }} \
             -t ${{ matrix.image }}:staging \

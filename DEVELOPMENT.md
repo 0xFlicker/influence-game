@@ -184,6 +184,8 @@ E2E tests live in two places and require more infrastructure:
 
 Browser Coverage runs with zero retries. API/web output is drained into bounded logs and CI uploads Playwright/Puppeteer evidence only on failure. Every harness owns a uniquely named database, terminates its child processes, and drops that database in cleanup.
 
+Historical Werewolf browser fixtures create the game, rewrite its frozen version, and claim its execution lease in one transaction. This keeps the background recovery worker from adopting the fixture during setup. Replay interaction stories dismiss the optional analytics notice before exercising mobile player controls.
+
 The authenticated browser harness checks web readiness through the existing `/health` rewrite to the isolated API. This checks the web listener and backend connection within the bounded startup deadline without requiring a cold homepage compilation to finish inside a short polling request. Browser stories still navigate and assert their actual pages.
 
 The pre-show Create flow allows 30 seconds for cold route compilation while asserting the exact agent-creation URL and destination content on desktop and mobile.
