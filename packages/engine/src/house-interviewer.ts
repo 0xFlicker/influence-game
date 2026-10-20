@@ -284,14 +284,16 @@ export interface LLMHouseInterviewerOptions {
 }
 
 const HOUSE_SUMMARY_LIMITS = {
+  // Reasoning shares the completion allowance; short prose still needs room
+  // for reasoning and the private notebook before the JSON document closes.
   ordinary: {
     wallClockMs: 45_000,
-    maxCompletionTokens: 512,
+    maxCompletionTokens: 8192,
     maxProseCharacters: houseSummaryCharacterLimit("ordinary"),
   },
   milestone: {
     wallClockMs: 75_000,
-    maxCompletionTokens: 900,
+    maxCompletionTokens: 8192,
     maxProseCharacters: houseSummaryCharacterLimit("milestone"),
   },
 } as const satisfies Record<HouseBeatClass, {

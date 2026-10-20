@@ -23,6 +23,8 @@
  * tactical receipts remain readable. Lobby/Mingle/huddle passes keep private evidence
  * but produce no playback beat. Spoken huddles show saved thinking under the same
  * Show thinking toggle as other speaking turns; native reasoning stays private.
+ * House summary author calls allow 8,192 completion tokens for reasoning and JSON;
+ * ordinary/milestone public prose stays bounded to 180/360 UTF-16 code units.
  * API full-game tests use simulate:api (6–8 players)
  * and INFLUENCE_EVALUATION_BUDGET_USD / INFLUENCE_EVALUATION_BUDGET_LEDGER on
  * the localhost API worker; file-only runs do not prove durable API behavior.

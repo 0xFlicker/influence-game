@@ -1366,6 +1366,35 @@ describe("LLMHouseInterviewer sealed provider manifest", () => {
 });
 
 describe("LLMHouseInterviewer authored House summaries", () => {
+  for (const catalogId of ["openai:gpt-6-luna", "meta-muse:muse-spark-1.3-contributor"]) {
+    it.each(["ordinary", "milestone"] as const)(`reserves reasoning and JSON output headroom for ${catalogId} %s summaries`, async (beatClass) => {
+      const requests: Array<{ params: Record<string, unknown>; options?: Record<string, unknown> }> = [];
+      const model = modelCatalogEntryById(catalogId)!;
+      const house = new LLMHouseInterviewer(
+        makeHouseSummaryOpenAIStub(requests, [{
+          structured: { publicSummary: "Ada's promise is under pressure.", privateNarrativeNotebook: null },
+        }]),
+        model.modelId,
+        {
+          providerProfileId: model.providerProfileId,
+          modelCapabilities: model.capabilities,
+          reasoningPolicy: "medium",
+        },
+      );
+
+      expect((await house.generateHouseSummary(makeHouseSummaryContext(beatClass))).status).toBe("emitted");
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.params).toMatchObject({
+        max_output_tokens: 8192,
+        reasoning: { effort: "medium" },
+        text: { format: { strict: true, schema: { properties: {
+          publicSummary: { maxLength: beatClass === "ordinary" ? 180 : 360 },
+          privateNarrativeNotebook: { maxLength: 1200 },
+        } } } },
+      });
+    });
+  }
+
   it("accepts byte-exact House prose and a whole-snapshot notebook in one provider call", async () => {
     const requests: Array<{ params: Record<string, unknown>; options?: Record<string, unknown> }> = [];
     const traces: PrivateDecisionTrace[] = [];

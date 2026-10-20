@@ -216,3 +216,33 @@ that recovered and a secondary private-trace indexing warning during ownership
 change. The primary provider evidence objects are intact; this report does not
 claim every secondary index was free of warnings. The immutable exports include
 accepted history and failed attempts without rewriting the diagnostic game.
+
+## House summary capacity and Tribunal tool diagnosis
+
+Inspection of the saved `punk-brown-rock` provider evidence confirmed the round
+3 and 4 House summary failures reached `max_output_tokens: 2048`. They used
+1,810 and 2,046 reasoning tokens respectively; both responses were incomplete.
+House summary author calls now allow 8,192 completion tokens for both beat
+classes, without increasing public prose or notebook limits or changing the
+configured reasoning effort. This is a code correction, not a new live-run result.
+
+The round 6 Jace and Finn Tribunal jury requests both included the strict
+`exit_vote` tool with required `thinking` and `target` fields. The Muse adapter
+compiled tool selection to `auto`, as required by this integration's supported
+request contract. Both completed responses contained reasoning plus an assistant
+message and no function call. Strict argument schemas constrain a returned tool
+call; they do not force one when selection is `auto`.
+
+The exact-tool decoder marked missing calls `wrong_tool` with `retryable: false`,
+overriding the shared provider policy's retryable default. Therefore each went
+straight to the Tribunal's explicit, marked engine fallback despite a two-attempt
+call allowance. Neither prose response became an accepted vote. Both fallback
+votes selected Thane. This investigation leaves that behavior unchanged; a
+follow-up should give recoverable missing-tool responses a bounded correction
+retry before falling back, or use a strict response schema for Muse decisions.
+
+The summary change passes all 59 focused House structured-output tests, including
+new ordinary/milestone request assertions for Luna and Muse. The provider-free
+baseline passes 2,739 tests with five skips; the PostgreSQL baseline passes all
+2,094 tests, and typecheck/lint pass. No additional inference was purchased for
+this diagnosis or capacity change.
