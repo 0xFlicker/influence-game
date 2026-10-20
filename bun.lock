@@ -110,6 +110,7 @@
         "wagmi": "^2.14.16",
       },
       "devDependencies": {
+        "@posthog/cli": "0.18.10",
         "@posthog/nextjs-config": "1.11.2",
         "@remotion/bundler": "^4.0.486",
         "@remotion/renderer": "^4.0.486",
