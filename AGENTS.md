@@ -36,6 +36,7 @@
 
 ## Influence open conversations
 
+- Non-visual Lobby playback uses the same circular portrait room as Mingle, with the living cast at that replay point. Historical classic games without frames use the existing elimination display rules on the transcript prefix, never the final roster status. Studio thinking shots retain the room label. Introductions retain individual portrait staging.
 - Lobby (including Reckoning/Tribunal), ordinary Mingle, and selected alliance huddles use bounded sequential speech/pass decisions. Defaults are 320 UTF-8 bytes per speech and 400 bytes per participant; two ordinary Mingle conversation rounds have one simultaneous movement boundary. Freeze these values in new-game configuration.
 - Give every contribution its own durable provider slot and commit before preparing the next context. Event sequence alone cannot identify successive conversation calls. Preserve feedback-informed length retries, accepted thinking, available native reasoning, and every sanitized provider attempt.
 - Passes are always skipped in playback, including Show thinking; their thinking stays saved for debugging. Private offers, passes, queue state, foreign budgets, and gaps in reference numbering never enter another contestant's prompt.

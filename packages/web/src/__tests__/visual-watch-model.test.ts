@@ -6,7 +6,7 @@ import { createPresentationDirector } from "../app/games/[slug]/components/influ
 import { visualWatchPresentation, paceVisualBallots, transcriptPresentationDurationMs, type VisualWatchData } from "../app/games/[slug]/components/visual-watch-model";
 import { soloPresentationDurationMs } from "../app/games/[slug]/components/solo-presentation-timing";
 import { visualSpeechDurationMs } from "@influence/engine/visual-speech";
-import type { GamePlayer, TranscriptEntry } from "../lib/api";
+import type { GamePlayer, GameWatchReplayFrame, TranscriptEntry } from "../lib/api";
 const player: GamePlayer = { id: "a", name: "Ada", persona: "social", status: "alive", shielded: false };
 const message: TranscriptEntry = { id: 10, gameId: "g", round: 1, phase: "LOBBY", fromPlayerId: "a", fromPlayerName: "Ada", scope: "public", toPlayerIds: null, text: "Let us talk.", timestamp: 1, entrySequence: 5, visualScene: { id: "old", roomId: "lobby" } };
 const data: VisualWatchData = { enabled: true, status: null, portraits: { a: "/frozen.png" }, scenes: [
@@ -38,13 +38,33 @@ test("ballot phases do not fall back to room imagery or invented ballot text", (
 
 test("games without generated media still present portraits and House text", () => {
   const plain: VisualWatchData = { enabled: false, status: null, portraits: {}, scenes: [] };
-  expect(visualWatchPresentation(plain, null, { ...message, visualScene: undefined }, [player]).beat).toMatchObject({ kind: "portrait", speech: { text: message.text } });
+  expect(visualWatchPresentation(plain, null, { ...message, visualScene: undefined }, [player]).beat).toMatchObject({ kind: "portrait-room", roomLabel: "Lobby", speech: { text: message.text } });
   expect(visualWatchPresentation(plain, null, { ...message, visualScene: undefined, fromPlayerId: null, scope: "system", phase: "REVEAL" }, [player]).beat).toEqual({ kind: "house", text: message.text });
+});
+
+test("Lobby circles use the cast at the replay cursor, including silent players and backward seeks", () => {
+  const roster: GamePlayer[] = [player, { ...player, id: "b", name: "Bea", status: "eliminated" }];
+  const opening: GameWatchReplayFrame = {
+    schemaVersion: 3, gameId: "g", slug: "g", sequence: 3, timestamp: 1, eventType: "phase.started",
+    round: 1, phase: "LOBBY", players: roster.map(player => ({ ...player, status: "alive" })),
+    counts: { totalPlayers: 2, alivePlayers: 2, eliminatedPlayers: 0, unknownPlayers: 0 },
+  };
+  const later: GameWatchReplayFrame = { ...opening, sequence: 20, round: 2, players: roster,
+    counts: { ...opening.counts, alivePlayers: 1, eliminatedPlayers: 1 } };
+  const frames = [opening, later];
+  const plain: VisualWatchData = { enabled: false, status: null, portraits: {}, scenes: [] };
+  const lobby = { ...message, visualScene: undefined, firstDurableEventSequence: 5 };
+  const present = (entry: TranscriptEntry) => visualWatchPresentation(plain, null, entry, roster, [], frames).beat;
+  expect(present(lobby)).toMatchObject({ kind: "portrait-room", roomLabel: "Lobby", participants: [{ id: "a" }, { id: "b" }] });
+  expect(present({ ...lobby, round: 2, firstDurableEventSequence: 21 })).toMatchObject({ participants: [{ id: "a" }] });
+  expect(present(lobby)).toMatchObject({ participants: [{ id: "a" }, { id: "b" }] });
+  expect(present({ ...lobby, phase: "INTRODUCTION" })).toMatchObject({ kind: "portrait", purpose: "Introduction" });
+  expect(visualWatchPresentation(plain, null, lobby, roster).beat).toMatchObject({ participants: [{ id: "a" }] });
 });
 
 test("saved names resolve only to a unique frozen seat and unresolved attribution stays readable", () => {
   const plain = { ...data, scenes: [] };
-  expect(visualWatchPresentation(plain, null, { ...message, fromPlayerId: "Ada", visualScene: undefined }, [player]).beat).toMatchObject({ kind: "portrait", player: { id: "a" }, speech: { playerId: "a" } });
+  expect(visualWatchPresentation(plain, null, { ...message, fromPlayerId: "Ada", visualScene: undefined }, [player]).beat).toMatchObject({ kind: "portrait-room", participants: [{ id: "a" }], speech: { playerId: "a" } });
   expect(visualWatchPresentation(plain, null, { ...message, fromPlayerId: "Ada", visualScene: undefined }, [player, { ...player, id: "other" }]).beat).toMatchObject({ speech: { playerId: null, text: message.text } });
 });
 
@@ -67,7 +87,7 @@ test("published canonical binding displays formerly portrait-only speech without
   expect(visualWatchPresentation(published, null, { ...fallback, presentationPurpose: "farewell" }, [player]).beat).toMatchObject({ purpose: "Farewell" });
   expect(visualWatchPresentation(published, null, { ...fallback, scope: "diary" }, [player]).beat).toMatchObject({ purpose: "Diary" });
   expect(visualWatchPresentation(published, null, { ...fallback, phase: "INTRODUCTION" }, [player]).beat).toMatchObject({ purpose: "Introduction" });
-  expect(visualWatchPresentation({ ...data, bindings: {} }, null, fallback, [player]).beat?.kind).toBe("portrait");
+  expect(visualWatchPresentation({ ...data, bindings: {} }, null, fallback, [player]).beat?.kind).toBe("portrait-room");
 });
 
 
@@ -80,7 +100,7 @@ test("all accepted ballot purposes say only the target name using the frozen bod
 
 test("solo and room cues budget their staging while House speech keeps its timing", () => {
   expect(transcriptPresentationDurationMs(message, [player])).toBe(sceneSpeechDurationMs(message.text));
-  expect(transcriptPresentationDurationMs({ ...message, visualScene: undefined }, [player])).toBe(soloPresentationDurationMs(message.text));
+  expect(transcriptPresentationDurationMs({ ...message, visualScene: undefined }, [player])).toBe(sceneSpeechDurationMs(message.text));
   expect(transcriptPresentationDurationMs({ ...message, phase: "INTRODUCTION" }, [player])).toBe(soloPresentationDurationMs(message.text));
   expect(transcriptPresentationDurationMs({ ...message, visualScene: undefined, fromPlayerId: null, scope: "system", dialogueKind: "house_summary" }, [player])).toBe(visualSpeechDurationMs(message.text));
   expect(transcriptPresentationDurationMs({ ...message, text: "Hidden reasoning. ".repeat(60), acceptedBallot: { voterId: "a", targetId: "a", purpose: "winner" } }, [player])).toBe(soloPresentationDurationMs("Ada"));
