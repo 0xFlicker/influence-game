@@ -298,6 +298,8 @@ Authenticated players can enter one owned, eligible agent. Current admins, sysop
 
 **Start Werewolf** separately requires `start_game`, requires every seat to be filled, respects deployment admission, freezes each member's current approved identity and Werewolf strategy, assigns roles, and atomically commits `werewolf.started` with `in_progress`. No roles or gameplay events exist before that point. Blank Werewolf strategy uses the archetype default; Influence strategy is never substituted. The waiting page refreshes into the viewing-mode choice when the game starts. Cancelled unstarted games have no replay. The CLI's existing immediate-create-and-start API remains its explicit simulation path.
 
+Waiting lobbies adopt the rules version deployed when they start. The start transaction updates `games.config.rulesVersion` to match the frozen `werewolf.started` event while preserving unrelated config fields. Historical events and completed games are not rewritten.
+
 Migration `0107_werewolf_lobbies.sql` adds the admission table; it does not change historical game events. The House hall, icon, casting hero and agent selector are shared; Werewolf owns its admission state and rules. Waiting games in the admin list link to their casting lobby rather than attempting to render gameplay or production before any events exist.
 
 

@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { replayWerewolf } from "@influence/engine/werewolf";
+import { replayWerewolf, werewolfConfig } from "@influence/engine/werewolf";
 import { DEFAULT_MODEL_CATALOG_ID } from "@influence/engine";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createSessionToken } from "../middleware/auth.js";
@@ -158,6 +158,28 @@ test("lobby creation and start have separate permission gates, while ordinary au
   expect(await readWerewolfEvents(db, game.id)).toEqual([]);
 });
 
+
+test("an older waiting lobby adopts the current rules version without losing config fields", async () => {
+  const game = await create();
+  const [waiting] = await db.select().from(schema.games).where(eq(schema.games.id, game.id));
+  // Represent a lobby persisted before the deployment upgraded Werewolf rules.
+  const olderConfig = { ...JSON.parse(waiting!.config), rulesVersion: 8, customMetadata: { label: "preserve me" } };
+  await db.update(schema.games).set({ config: JSON.stringify(olderConfig) }).where(eq(schema.games.id, game.id));
+  await fillWerewolfLobby(db, game.id);
+  await startWerewolfLobby(db, game.id);
+
+  const events = await readWerewolfEvents(db, game.id);
+  expect(events).toHaveLength(1);
+  const event = events[0]!;
+  expect(event.type).toBe("werewolf.started");
+  if (event.type !== "werewolf.started") throw new Error("Expected canonical start event");
+  const currentVersion = werewolfConfig("one_wolf").rulesVersion;
+  expect(currentVersion).not.toBe(olderConfig.rulesVersion);
+  expect(event.payload.config.rulesVersion).toBe(currentVersion);
+  const [started] = await db.select().from(schema.games).where(eq(schema.games.id, game.id));
+  expect(started!.status).toBe("in_progress");
+  expect(JSON.parse(started!.config)).toEqual({ ...olderConfig, rulesVersion: event.payload.config.rulesVersion });
+});
 
 test("custom setup, provider policy, casting and visuals survive lobby start", async () => {
   const setup = {playerCount:7 as const,wolves:2 as const,seer:false,doctor:true};

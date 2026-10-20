@@ -101,7 +101,7 @@ export async function startWerewolfLobby(db: DrizzleDB, id: string) {
     const players = await freezeWerewolfRoster(tx, seats, game.maxPlayers, normalizeWerewolfCasting(config));
     const event = startWerewolf(game.id, players, rules, randomUUID());
     await tx.insert(schema.werewolfEvents).values({ gameId: game.id, sequence: event.sequence, event });
-    await tx.update(schema.games).set({ status: "in_progress", startedAt: new Date().toISOString() }).where(eq(schema.games.id, game.id));
+    await tx.update(schema.games).set({ status: "in_progress", startedAt: new Date().toISOString(), config: JSON.stringify({ ...config, rulesVersion: rules.rulesVersion }) }).where(eq(schema.games.id, game.id));
     await queueEpisodeCopy(tx, game.id);
     return { id: game.id, slug: game.slug };
   });
