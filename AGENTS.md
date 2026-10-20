@@ -40,7 +40,7 @@
 - Give every contribution its own durable provider slot and commit before preparing the next context. Event sequence alone cannot identify successive conversation calls. Preserve feedback-informed length retries, accepted thinking, available native reasoning, and every sanitized provider attempt.
 - Passes are always skipped in playback, including Show thinking; their thinking stays saved for debugging. Private offers, passes, queue state, foreign budgets, and gaps in reference numbering never enter another contestant's prompt.
 - Huddles are private House-selected conversations, without new tactical fact atoms or House-generated outcomes. Frozen session participants retain attended dialogue after membership changes; outsiders learn no session existence or scheduling details. A spoken disclosure is a claim, not permission to read the session.
-- Spectator huddles show speech only, chronologically after Mingle, with an exact-cast room scene or portraits. Spectator visibility never widens contestant/API-owner recall. Historical completed outcomes remain readable.
+- Spectator huddles show accepted speech and its saved thinking when Show thinking is enabled, just like other speaking turns, chronologically after Mingle with an exact-cast room scene or portraits. Passes remain skipped. Spectator visibility never widens contestant/API-owner recall. Historical completed outcomes remain readable.
 
 ## Known Risks
 

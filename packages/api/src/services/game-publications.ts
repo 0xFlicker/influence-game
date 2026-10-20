@@ -330,7 +330,7 @@ function publicTranscriptEntry(row: {
     ...(row.roomId !== null && { roomId: row.roomId }),
     ...(roomMetadata && { roomMetadata }),
     text: row.text,
-    ...(row.scope !== "huddle" && row.thinking !== null && { thinking: row.thinking }),
+    ...(row.thinking !== null && { thinking: row.thinking }),
     timestamp: row.timestamp,
   };
 }

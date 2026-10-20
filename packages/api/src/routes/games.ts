@@ -1080,7 +1080,7 @@ export function createGameRoutes(db: DrizzleDB) {
         ...(row.roomId != null && { roomId: row.roomId }),
         ...(roomMetadata && { roomMetadata }),
         text: row.text,
-        thinking: row.scope === "huddle" ? null : row.thinking,
+        thinking: row.thinking,
         timestamp: row.timestamp,
       };
     });

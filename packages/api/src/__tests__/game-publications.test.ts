@@ -261,6 +261,23 @@ describe("durable game publications", () => {
     }
   });
 
+  test("committed huddle speech retains thinking during reconnect delivery", async () => {
+    const fixture = await createPublicationFixture(db);
+    await insertTurnTranscript(db, fixture, 1, "huddle", "Let's compare our options.");
+    await db.update(schema.transcripts).set({
+      thinking: "I want to test this commitment.",
+      safeContext: { version: 1, sessionId: "private-session", sessionAudiencePlayerIds: ["player-a", "player-b"] },
+    }).where(eq(schema.transcripts.gameId, fixture.gameId));
+    await insertPublication(db, fixture, 1, {
+      version: 1, kind: "transcript_entry", turnId: fixture.turnId, transcriptOrdinal: 1,
+    });
+    const publication = (await readDueGamePublicationSuffix(db, fixture.gameId, { now: new Date(NOW) }))[0];
+    expect(publication?.payload).toMatchObject({ type: "message", entry: {
+      scope: "huddle", text: "Let's compare our options.", thinking: "I want to test this commitment.",
+    } });
+    expect(JSON.stringify(publication?.payload)).not.toContain("private-session");
+  });
+
   test("bounds reconnect catch-up instead of accumulating an unlimited publication history", async () => {
     const fixture = await createPublicationFixture(db);
     await insertViewerEvent(db, fixture, 1, "one");

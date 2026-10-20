@@ -4,6 +4,19 @@ The user authorized full 6–8-player localhost API games within a fresh $25
 inference budget. These games are durable API records, inspectable in the player,
 Studio, API, and authorized MCP reads. No production deployment was performed.
 
+Subsequent product change: spoken huddles now expose their saved structured
+thinking through the normal Show thinking playback toggle. The speech-only
+observations below describe the evaluated implementation before that change;
+passes still produce no playback beat. No new inference is needed to replay the
+existing saved thoughts.
+
+Follow-up validation: 2,735 provider-free tests, 2,094 PostgreSQL tests, 35 focused
+playback tests, and the final 173-test API projection/privacy rerun passed;
+typecheck and lint passed. A browser check of `lean-peach-gem/replay/30` showed
+Lyra's saved huddle thought with Show thinking enabled and hid it when disabled.
+No additional inference was used. Verification evidence is saved under the
+private evaluation directory's `huddle-thinking-followup/` subdirectory.
+
 ## Runs
 
 | Game | Model | Players | Purpose |

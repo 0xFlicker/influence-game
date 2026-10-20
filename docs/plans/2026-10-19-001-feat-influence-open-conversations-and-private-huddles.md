@@ -34,7 +34,7 @@ The following are concrete defaults for implementation and evaluation, not claim
 - Start with a 320-byte individual speech limit and 400 bytes per participant per conversation; measure the entire round, including huddles, before increasing allowances.
 - Retain current House initial placement and scarce huddle-selection policy. Do not combine this work with redesigning room allocation or alliance eligibility.
 - Use the directed-handoff limit for groups of three or more; allow natural alternation for two-person rooms.
-- Keep huddle thinking out of spectator room playback under the existing huddle audience policy. Private debugging retains it. Ordinary speaking-turn thinking keeps its existing authorized presentation behavior.
+- Follow-up product decision: spoken huddles expose saved structured thinking under the normal Show thinking toggle. Passes remain skipped; strategy/native reasoning and contestant recall retain their private boundaries.
 
 ## Baseline implementation and affected boundaries
 
@@ -180,7 +180,7 @@ Create one explicit scene/session binding for each huddle. Show its actual spoke
 
 Use the existing room dialogue director: establish the room, focus the speaker, present the original speech, return to the room, then advance. Passes have no thinking, fake `[PASS]`, empty speech, or floor-offer playback cue. An entirely silent session creates no empty conversation scene in the watch sequence; its private execution evidence remains saved.
 
-Huddle speech is spectator-visible through the deliberate game-level projection already supported by alliance inspection. Huddle thinking/strategy/native reasoning remain under existing private access rules, even when the generic Show thinking setting is on. Do not widen generic public websocket or MCP transcript authorization as a shortcut to room playback. Add a bounded, sanitized spectator delivery/read path as needed for live watching and seek parity.
+Huddle speech and its saved structured thinking are spectator-visible through deliberate game-level playback projections, including live websocket delivery. Show thinking governs thought presentation as for other speaking turns. Strategy/native reasoning and owner-scoped MCP authorization remain unchanged. Do not expose unmatched huddle thoughts, passes, or session scheduling metadata. Keep live watching and seek parity.
 
 ### Visual room selection
 
@@ -230,7 +230,7 @@ Keep completed saved games readable and playable in player, Studio, API, and MCP
 
 - Lobby replies and passes; ordinary room transitions; no technical budget banners or pass beats.
 - Spoken huddle after Mingle, multiple/overlapping sessions, exact-set visual reuse, mismatch requiring a new arrangement, deterministic room selection, portrait fallback, delayed image load, and seeking.
-- Player, Studio, export, authorized API/MCP, and retrospective/context readers agree on chronology and audience. No huddle thinking appears through a generic Show thinking toggle.
+- Player, Studio and export show spoken huddle thinking under Show thinking. Pass thoughts remain absent. Authorized API/MCP and retrospective/context readers retain their separate audience boundaries.
 - Saved pre-change games retain their original results, accepted dialogue, and historical reads. New games do not render empty tactical-outcome panels.
 - Both Two Names social windows and normal endgame/results completion remain correct.
 

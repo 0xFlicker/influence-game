@@ -240,6 +240,26 @@ describe("WebSocket Manager", () => {
     expect(published).toHaveLength(0);
   });
 
+  test("accepted huddle speech includes thinking but excludes native reasoning and session metadata", () => {
+    const { server, published } = createMockServer();
+    setServer(server);
+    broadcastGameEvent("game-huddle", {
+      type: "transcript_entry",
+      entry: {
+        round: 1, phase: Phase.FORMAT_MINGLE, timestamp: Date.now(), from: "Alice",
+        scope: "huddle", speakerPlayerId: "p1", dialogueKind: "huddle_speech",
+        dialogueContext: { version: 1, sessionId: "private-session", sessionAudiencePlayerIds: ["p1", "p2"] },
+        text: "Let's compare our options.", thinking: "I want to test this commitment.",
+        reasoningContext: "PRIVATE_NATIVE_REASONING",
+      },
+    });
+    expect(published).toHaveLength(1);
+    const entry = JSON.parse(published[0]!.data).entry;
+    expect(entry.thinking).toBe("I want to test this commitment.");
+    expect(entry.reasoningContext).toBeUndefined();
+    expect(entry.dialogueContext).toBeUndefined();
+  });
+
   test("broadcastGameEvent preserves room metadata on transcript entries", () => {
     const { server, published } = createMockServer();
     setServer(server);

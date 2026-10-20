@@ -191,7 +191,7 @@ function buildPublicTranscriptEntry(entry: TranscriptEntry): PublicWsTranscriptE
     roomId: entry.roomId,
     roomMetadata: buildPublicRoomMetadata(entry.roomMetadata),
     text: entry.text,
-    thinking: entry.scope === "huddle" ? undefined : entry.thinking,
+    thinking: entry.thinking,
     anonymous: entry.anonymous,
     displayOrder: entry.displayOrder,
   };

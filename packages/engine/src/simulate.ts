@@ -21,7 +21,9 @@
  * Ordinary Mingle authors conversation and movement, without typed coordination
  * receipts. Huddles use the same bounded conversation contract; only historical
  * tactical receipts remain readable. Lobby/Mingle/huddle passes keep private evidence
- * but produce no playback beat. API full-game tests use simulate:api (6–8 players)
+ * but produce no playback beat. Spoken huddles show saved thinking under the same
+ * Show thinking toggle as other speaking turns; native reasoning stays private.
+ * API full-game tests use simulate:api (6–8 players)
  * and INFLUENCE_EVALUATION_BUDGET_USD / INFLUENCE_EVALUATION_BUDGET_LEDGER on
  * the localhost API worker; file-only runs do not prove durable API behavior.
  * Retrospective RT-01/02/03 supplies contracts, frozen context/order and strict

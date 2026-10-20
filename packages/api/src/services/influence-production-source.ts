@@ -218,7 +218,7 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
       ...(retrospective ? { retrospectiveSource: { eventSequence: retrospective.eventSequence, ordinal: retrospective.ordinal } } : {}),
       visualScene: row.safeContext?.visualScene, fromPlayerId, fromPlayerName: fromPlayerId ? frozen.get(fromPlayerId)?.player.name ?? null : null,
       toPlayerIds: stringArray(row.toPlayerIds), ...(row.roomId !== null && { roomId: row.roomId }),
-      ...(row.roomMetadata !== null && { roomMetadata: roomMetadata(row.roomMetadata) }), text: row.text, thinking: row.scope === "huddle" ? null : row.thinking, timestamp: row.timestamp };
+      ...(row.roomMetadata !== null && { roomMetadata: roomMetadata(row.roomMetadata) }), text: row.text, thinking: row.thinking, timestamp: row.timestamp };
   });
   const [cognition, assets, publications, sceneRows, episode] = await loadPayloads(Promise.all([
     db.select({ eventSequence: schema.gameCognitiveArtifacts.eventSequence, actorId: schema.gameCognitiveArtifacts.actorPlayerId,
@@ -241,7 +241,6 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
   const thoughts: InfluenceProductionThought[] = [];
   const thoughtKeys = new Set<string>();
   for (const row of cognition) {
-    if (row.action === "alliance-huddle-turn") continue;
     if (!row.eventSequence || !row.actorId || typeof row.payload.thinking !== "string" || !row.payload.thinking.trim()) continue;
     if (!frozen.has(row.actorId)) throw new InfluenceProductionSourceError("Accepted thinking actor has no frozen game identity");
     const dialogue = row.decisionId ? selectedRows.findIndex(message => message.safeContext?.decisionId === row.decisionId) : -1;
@@ -250,12 +249,11 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
       const message = messages[dialogue]!, speaker = message.speakerPlayerId ?? message.fromPlayerId;
       if (message.anonymous || speaker !== row.actorId && speaker !== frozen.get(row.actorId)!.player.name)
         throw new InfluenceProductionSourceError("Accepted thinking response has inconsistent actor provenance");
-      if (message.scope === "huddle") continue;
       if (!messages[dialogue]!.thinking) messages[dialogue]!.thinking = row.payload.thinking;
       continue;
     }
     // Conversation passes/unavailable offers have private evidence but no watch moment.
-    if (["lobby", "lobby-message", "mingle-turn"].includes(row.action)) continue;
+    if (["lobby", "lobby-message", "mingle-turn", "alliance-huddle-turn"].includes(row.action)) continue;
     const key = `${row.eventSequence}:${row.actorId}`;
     if (thoughtKeys.has(key)) throw new InfluenceProductionSourceError("Ambiguous accepted thinking provenance");
     thoughtKeys.add(key);
