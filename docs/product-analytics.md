@@ -132,7 +132,13 @@ runtime env or image layer. `POSTHOG_UPLOAD_SOURCEMAPS=1` selects this release-b
 step; local and PR preview builds do not upload maps or need the credential.
 The PostHog integration handles credential and upload failures normally; there
 are no separate secret-presence checks. Upload failure stops the build before image push.
-The plugin deletes maps after upload; Docker additionally checks that no static
+The compiler hook scopes upload and deletion to `<distDir>/static`, the browser
+bundles. Server and build-tool chunks are excluded: build-tool chunks can lack
+native debug IDs, and this integration does not collect server exceptions.
+The web package pins and explicitly selects PostHog CLI 0.18.10; the plugin's
+default resolver otherwise selects its webpack dependency's older CLI, which
+does not support these native Turbopack IDs.
+The plugin deletes browser maps after upload; Docker additionally checks that no static
 `.map` files remain before packaging the runtime. Production promotes this same
 immutable image, so the uploaded maps match the shipped chunks.
 
