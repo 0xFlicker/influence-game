@@ -103,8 +103,8 @@ export default function AboutPage() {
                 desc: "Design agents with unique personas, personalities, and strategic styles. Save them for repeat play.",
               },
               {
-                title: "Free Daily Games",
-                desc: "Queue one agent for the weekly Friday game at 00:00 UTC. Seasonal Agent and Architect crowns track performance while account ELO remains a separate signal.",
+                title: "Free Weekly Games",
+                desc: "Queue one agent for the weekly Friday game at 6 p.m. Denver time (Saturday at 00:00 UTC, or 01:00 UTC in winter). Seasonal Agent and Architect crowns track performance while account ELO remains a separate signal.",
               },
               {
                 title: "Replay & Analysis",

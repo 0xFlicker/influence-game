@@ -35,24 +35,44 @@ afterAll(async () => {
 });
 
 describe("free queue season admission", () => {
-  test("next draw time follows Thursday at 23:00 UTC", () => {
-    expect(getNextDailyFreeDrawAt(new Date("2026-09-24T22:59:59Z")))
-      .toBe("2026-09-24T23:00:00.000Z");
-    expect(getNextDailyFreeDrawAt(new Date("2026-09-24T23:00:00Z")))
-      .toBe("2026-10-01T23:00:00.000Z");
+  test("next draw time follows Friday at 5 p.m. Denver", () => {
+    expect(getNextDailyFreeDrawAt(new Date("2026-09-25T22:59:59Z")))
+      .toBe("2026-09-25T23:00:00.000Z");
+    expect(getNextDailyFreeDrawAt(new Date("2026-09-25T23:00:00Z")))
+      .toBe("2026-10-02T23:00:00.000Z");
     expect(getNextDailyFreeDrawAt(new Date("2026-09-27T12:00:00Z")))
-      .toBe("2026-10-01T23:00:00.000Z");
+      .toBe("2026-10-02T23:00:00.000Z");
   });
 
-  test("next game time follows the weekly Thursday draw", () => {
-    expect(getNextFreeGameTime(new Date("2026-09-24T23:30:00Z")))
-      .toBe("2026-09-25T00:00:00.000Z");
-    expect(getNextFreeGameTime(new Date("2026-09-25T00:00:00Z")))
-      .toBe("2026-10-02T00:00:00.000Z");
+  test("next game time follows Friday at 6 p.m. Denver", () => {
+    expect(getNextFreeGameTime(new Date("2026-09-25T23:30:00Z")))
+      .toBe("2026-09-26T00:00:00.000Z");
+    expect(getNextFreeGameTime(new Date("2026-09-26T00:00:00Z")))
+      .toBe("2026-10-03T00:00:00.000Z");
     expect(getNextFreeGameTime(new Date("2026-09-27T12:00:00Z")))
-      .toBe("2026-10-02T00:00:00.000Z");
+      .toBe("2026-10-03T00:00:00.000Z");
     expect(getNextFreeGameTime(new Date("2026-12-31T23:00:00Z")))
-      .toBe("2027-01-01T00:00:00.000Z");
+      .toBe("2027-01-02T01:00:00.000Z");
+  });
+
+  test.each([
+    ["2026-03-07T01:00:00Z", "2026-03-13T23:00:00.000Z", "2026-03-14T00:00:00.000Z"],
+    ["2026-10-31T00:00:00Z", "2026-11-07T00:00:00.000Z", "2026-11-07T01:00:00.000Z"],
+  ])("resolves the target Friday's DST offset from %s", (now, draw, start) => {
+    expect(getNextDailyFreeDrawAt(new Date(now))).toBe(draw);
+    expect(getNextFreeGameTime(new Date(now))).toBe(start);
+    expect(Date.parse(start) - Date.parse(draw)).toBe(3_600_000);
+  });
+
+  test("winter start stays on this Denver Friday after UTC midnight", () => {
+    expect(getNextDailyFreeDrawAt(new Date("2026-11-06T23:59:59Z")))
+      .toBe("2026-11-07T00:00:00.000Z");
+    expect(getNextDailyFreeDrawAt(new Date("2026-11-07T00:00:00Z")))
+      .toBe("2026-11-14T00:00:00.000Z");
+    expect(getNextFreeGameTime(new Date("2026-11-07T00:30:00Z")))
+      .toBe("2026-11-07T01:00:00.000Z");
+    expect(getNextFreeGameTime(new Date("2026-11-07T01:00:00Z")))
+      .toBe("2026-11-14T01:00:00.000Z");
   });
   test("ordinary player queue mutations still require current legal acceptance", async () => {
     const db = await setupTestDB();
@@ -275,8 +295,8 @@ describe("free queue season admission", () => {
       gameConfig.modelSelection,
       { catalogId: "katana:grok-4-6", reasoningPolicy: "action-policy", maxCallsPerGame: 24 },
     ]);
-    expect(gameConfig.visualMode).toBe(true);
-    expect(gameConfig.visualFailurePolicy).toBe("best_effort");
+    expect(gameConfig.visualMode).toBe(false);
+    expect(gameConfig).not.toHaveProperty("visualFailurePolicy");
     expect(gameConfig).not.toHaveProperty("modelTier");
     expect(seats.filter((seat) => seat.userId === null).map((seat) => JSON.parse(seat.agentConfig).model))
       .toEqual(Array(10).fill("gpt-6-luna"));
