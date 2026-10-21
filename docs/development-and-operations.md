@@ -563,14 +563,16 @@ Actual USD displays N/C (Not collected) when no provider-reported cost records e
 
 ### Weekly Season 0 games
 
-Automatic free-track games draw Thursday at 23:00 UTC and start Friday at
-00:00 UTC (Thursday evening in America/Denver, 18:00 MDT / 17:00 MST).
+Automatic free-track games run once a week in `America/Denver`: draw Friday
+at 17:00 and start Friday at 18:00. During daylight saving time this is a
+Friday 23:00 UTC draw and Saturday 00:00 UTC start; in winter it is a
+Saturday 00:00 UTC draw and Saturday 01:00 UTC start.
 The EventBridge schedules live in `linode-iac/terraform/lambda-crons.tf`.
-The queue API supplies the next weekly start time to the public countdown.
-New draws enable Visual Mode with `best_effort`: rendering failures continue
-with portraits. The scheduled manifest uses GPT-6 Luna; the former GLM 5.2
-and Grok 4.5 fallback entries do not support image input in our catalog and
-would prevent Visual Mode startup. Existing games keep their frozen config.
+The queue API resolves the target Friday's Denver timezone offset and supplies
+the next weekly start time to the public days/hours/minutes/seconds countdown.
+New 12-player draws disable Visual Mode and use portrait playback. The
+scheduled manifest uses GPT-6 Luna with bounded Grok 4.6 routing. Existing
+games keep their frozen config.
 
 ### Account role grants and scheduler rollout
 

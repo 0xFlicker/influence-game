@@ -28,12 +28,13 @@ import { PlayerProfileLink } from "@/components/player-profile-link";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatCountdown(ms: number): string {
+export function formatCountdown(ms: number): string {
   if (ms <= 0) return "Starting soon...";
-  const hours = Math.floor(ms / 3600000);
+  const days = Math.floor(ms / 86400000);
+  const hours = Math.floor((ms % 86400000) / 3600000);
   const minutes = Math.floor((ms % 3600000) / 60000);
   const seconds = Math.floor((ms % 60000) / 1000);
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return `${days}d ${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 function StatusBadge({ status }: { status: GameStatus }) {
@@ -81,10 +82,10 @@ function CountdownTimer({ nextGameTime }: { nextGameTime?: string }) {
       <p className="influence-section-title mb-2">
         Next {ACTIVE_GAME.name} game in
       </p>
-      <p className="text-4xl font-mono font-bold text-text-primary tracking-wider">
+      <p className="text-2xl sm:text-4xl font-mono font-bold text-text-primary tracking-wider">
         {remaining === null ? "Loading schedule..." : formatCountdown(remaining)}
       </p>
-      <p className="influence-copy-muted text-xs mt-2">Weekly on Friday at 00:00 UTC · Thursday evening in Denver</p>
+      <p className="influence-copy-muted text-xs mt-2">Weekly on Friday at 6 p.m. Denver · Saturday at 00:00 UTC (01:00 in winter)</p>
     </div>
   );
 }
@@ -781,7 +782,7 @@ export function FreeGameContent() {
             )}
           </p>
           <p className="influence-copy-muted text-xs mt-1">
-            12 players drawn Thursday at 23:00 UTC. Game starts one hour later.
+            12 players drawn Friday at 5 p.m. Denver. Game starts one hour later.
           </p>
         </div>
       </section>

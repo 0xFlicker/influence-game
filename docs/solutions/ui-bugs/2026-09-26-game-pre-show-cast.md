@@ -88,8 +88,15 @@ The active-season shelf links to that season, and game shelves link to their
 corresponding type collection.
 
 Both games render the same `EpisodeCard`, card shell, status labels, footer actions,
-metadata, portrait frames, and touch preview. The eyebrow is The House / Influence
-or The House / Werewolf; waiting cards say Casting open and show joined/capacity.
+metadata, portrait frames, and touch preview. Each card displays its game logo
+with the accessible name Influence or Werewolf; waiting cards say Casting open
+and show joined/capacity. Browser coverage verifies the visible logo loads and
+locates the destination link by its episode heading. The October game-card
+redesign removed the old text eyebrow and the explicit Open-title link label;
+tests must exercise the current branding and navigation rather than those removed selectors.
+Identity browser contexts start with a saved analytics opt-out, matching the
+format-viewer suite. Otherwise the region-dependent notice can cover controls
+such as the pre-show refresh retry and turn a click into a test timeout.
 Primary actions are Join game, Watch live, and Watch replay. Permission-gated
 operator controls use one renderer and appear directly on the card for authorized users.
 Both games expose Start, Fill AI, Stop/End, and Hide when applicable. Fill AI saves
