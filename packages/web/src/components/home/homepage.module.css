@@ -1,6 +1,6 @@
 .home {background:#101114;color:#eeeae4;flex:1;position:relative;isolation:isolate}
 .home::before {content:"";position:absolute;inset:0;z-index:-1;background:radial-gradient(ellipse at 75% 0%,#39334338,transparent 65%);pointer-events:none}
-.inner {max-width:1440px;margin:auto;padding:36px 40px 100px}
+.inner {max-width:1920px;margin:auto;padding:36px clamp(32px,3vw,64px) 48px}
 .hero {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.08fr);align-items:center;gap:52px}
 .eyebrow {font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:#c1b5a1;margin:0 0 20px;font-weight:600}
 .intro h1 {font:400 clamp(38px,4.3vw,64px)/1.08 Georgia,serif;letter-spacing:-.045em;margin:0;text-wrap:balance}
@@ -45,7 +45,8 @@
 .update {display:flex;flex-wrap:wrap;gap:12px 24px;border-top:1px solid #ffffff15;padding-top:22px;margin:28px 0 0;font-size:12px;line-height:1.7;color:#c2bbc9}
 .update>span {font-size:10px;text-transform:uppercase;letter-spacing:.15em;color:#8e8798}
 .update a:hover {text-decoration:underline;text-underline-offset:4px}
-@media (max-width:1100px) {.inner{padding:36px 28px 150px}.hero{gap:28px}.intro h1{font-size:44px}.lede{font-size:14px}.previewCaption a{font-size:16px}}
+@media (min-width:1800px) {.hero{gap:64px}.intro h1{font-size:80px}.lede{max-width:560px;font-size:18px}.games{margin-top:36px}.game{min-height:250px}}
+@media (max-width:1100px) {.inner{padding:36px 28px 48px}.hero{gap:28px}.intro h1{font-size:44px}.lede{font-size:14px}.previewCaption a{font-size:16px}}
 @media (max-width:1023px) {.hero{grid-template-columns:1fr}.intro{max-width:640px}.preview{margin-top:12px}.intro h1{font-size:clamp(40px,6vw,60px)}}
-@media (max-width:600px) {.inner{padding:34px 22px 110px}.hero{gap:30px}.intro h1{font-size:42px;letter-spacing:-.045em}.eyebrow{font-size:9px;letter-spacing:.14em;margin-bottom:18px}.lede{font-size:14px;line-height:1.7;margin:22px 0}.actions{gap:10px}.actions a{font-size:12px;padding:13px 12px;gap:6px}.connect{font-size:11px}.preview{margin-top:10px}.previewStage{aspect-ratio:16/9}.previewLogo{width:94px;height:30px}.previewCaption{padding:12px 16px 0;grid-template-columns:94px 1fr;min-height:100px}.previewCaption a{font-size:17px}.previewTag{left:14px;top:14px;font-size:9px}.games{grid-template-columns:1fr;gap:18px;margin-top:30px}.gameCopy{padding:25px 22px}.gameCopy h2{width:260px}.gameCopy>p:not(.eyebrow){font-size:13px}.gameLinks{gap:20px}.update{gap:5px}}
+@media (max-width:600px) {.inner{padding:34px 22px 40px}.hero{gap:30px}.intro h1{font-size:42px;letter-spacing:-.045em}.eyebrow{font-size:9px;letter-spacing:.14em;margin-bottom:18px}.lede{font-size:14px;line-height:1.7;margin:22px 0}.actions{gap:10px}.actions a{font-size:12px;padding:13px 12px;gap:6px}.connect{font-size:11px}.preview{margin-top:10px}.previewStage{aspect-ratio:16/9}.previewLogo{width:94px;height:30px}.previewCaption{padding:12px 16px 0;grid-template-columns:94px 1fr;min-height:100px}.previewCaption a{font-size:17px}.previewTag{left:14px;top:14px;font-size:9px}.games{grid-template-columns:1fr;gap:18px;margin-top:30px}.gameCopy{padding:25px 22px}.gameCopy h2{width:260px}.gameCopy>p:not(.eyebrow){font-size:13px}.gameLinks{gap:20px}.update{gap:5px}}
 @media (prefers-reduced-motion:reduce) {.slide,.actions a{transition:none}}

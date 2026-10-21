@@ -13,7 +13,7 @@ export default function HomePage() {
     : null;
 
   return (
-    <div className="influence-page min-h-screen flex flex-col">
+    <div className="influence-page flex flex-col">
       <Nav />
       <HomepageHero latestUpdate={latestUpdate} />
     </div>

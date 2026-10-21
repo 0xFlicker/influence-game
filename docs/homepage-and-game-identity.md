@@ -117,3 +117,12 @@ House narration previews size text against the artwork container (`cqw`), not
 the viewport. They reserve the top for logo/status and the bottom for the frame
 caption, with a five-line excerpt limit. Full episode copy remains in the card
 preview dialog and detail page.
+
+## Homepage on large displays
+
+The homepage composition expands to 1920px, with a larger headline above 1800px
+and matching footer content alignment. Its page wrapper does not force a full
+viewport before the shared footer, which is rendered by the root layout.
+Bottom padding is 48px on desktop/tablet and 40px on mobile, so the footer follows
+the latest update without an artificial empty screen. Content may still require
+scrolling on shorter viewports; the footer is not fixed or overlaid.
