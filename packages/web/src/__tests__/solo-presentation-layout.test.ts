@@ -21,6 +21,14 @@ test(`ultrawide speech stays beside the contained portrait`, () => {
   expect(bubble.left - (image.left + image.width)).toBeCloseTo(20);
   expect(image.left + bubble.left + bubble.width).toBeCloseTo(3440);
 });
+test("full-body introduction speech connects at the saved head instead of the torso", () => {
+  const head = {x:.4,y:.04,width:.2,height:.16};
+  const layout = layoutSoloPresentation(1920,1080,1024,1536,true,0,440,head);
+  const headY = layout.image.top + layout.image.height * (head.y + head.height / 2);
+  expect(layout.beside).toBe(true);
+  expect(layout.bubble.top + layout.tailTop).toBeCloseTo(headY);
+  expect(layout.bubble.top).toBeLessThan(layout.image.top + layout.image.height * .2);
+});
 test("silent ballots keep their whole character above the ledger", () => {
   const {image} = layoutSoloPresentation(390,640,1024,1536,true,180,308,undefined,false);
   expect(image.top+image.height).toBeLessThanOrEqual(460);

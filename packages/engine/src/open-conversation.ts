@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import Ajv from "ajv";
+import { DEFAULT_CONVERSATION_POLICY } from "./conversation-policy";
 
-export const DEFAULT_CONVERSATION_POLICY = { bytesPerParticipant: 400, messageBytes: 320, maxHandoffs: 3 } as const;
 export interface ConversationPolicy { bytesPerParticipant: number; messageBytes: number; maxHandoffs: number }
 /** Private operational state only. Dialogue bodies remain in the accepted transcript. */
 export interface ConversationState {

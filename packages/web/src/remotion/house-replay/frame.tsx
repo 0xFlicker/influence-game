@@ -113,6 +113,7 @@ export function ReplayFrame({
   );
   const picture = cue.picture;
   const stage = useRef<HTMLDivElement>(null);
+  const thinkingActor = picture.kind === "werewolf" ? picture.cue.moment.snapshot.players.find(player => player.id === cue.speech?.speakerId) : null;
   useLayoutEffect(() => {
     if (stage.current && picture.kind === "influence")
       samplePresentationEntrances(
@@ -127,7 +128,8 @@ export function ReplayFrame({
       <SceneThinkingProvider
         thought={
           sample.thought
-            ? { ...sample.thought, speaker: picture.kind === "thinking" ? picture.actor.name : cue.speech?.speaker ?? "" }
+            ? { ...sample.thought, speaker: picture.kind === "thinking" ? picture.actor.name : thinkingActor?.name ?? cue.speech?.speaker ?? "",
+                roleLabel: picture.kind === "thinking" ? picture.roleLabel : picture.kind === "werewolf" && picture.cue.moment.snapshot.audience === "omniscient" ? thinkingActor?.role ?? undefined : undefined }
             : null
         }
       >

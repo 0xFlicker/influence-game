@@ -102,7 +102,7 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
         {watch.openingCue ? <div className="relative min-h-0 flex-1" onClick={event => {if (!(event.target instanceof Element) || !event.target.closest("button")) director.manualAdvance();}}>
           <WerewolfOpeningFrame cue={watch.openingCue} elapsedMs={watch.elapsed} playing={snapshot.isPlaying && !watch.preparing && !watch.holding} speed={snapshot.speed} reduced={snapshot.reducedMotion} />
           <button type="button" className="absolute right-4 top-4 rounded border border-white/20 bg-black/60 px-3 py-2 text-xs text-white/80" onClick={() => {music.suspend(); void watch.seek(1);}}>Skip opening</button>
-        </div> : <WatchThinking director={director} cueKey={cue?.key ?? null} enabled={audience === "omniscient" && thinking} speaker={performer?.name ?? "Player"} load={loadThinking}>
+        </div> : <WatchThinking director={director} cueKey={cue?.key ?? null} enabled={audience === "omniscient" && thinking} speaker={performer?.name ?? "Player"} roleLabel={audience === "omniscient" ? performer?.role ?? undefined : undefined} load={loadThinking}>
         <WerewolfWatchStage navigationRevision={watch.navigationRevision} contextLabel={active ? replayMoment({...active.snapshot, entries:[active.entry]}).title : undefined} cue={cue} scene={active?.mediaKey ? watch.media[active.mediaKey] ?? null : null} elapsed={watch.elapsed} reduced={snapshot.reducedMotion} director={director} holding={watch.holding} status={data?.status} />
         </WatchThinking>}
         {watch.preparing && <p role="status" className="absolute right-3 top-2 text-xs text-white/40">Preparing…</p>}

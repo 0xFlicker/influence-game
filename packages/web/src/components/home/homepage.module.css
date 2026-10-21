@@ -13,14 +13,13 @@
 .connect a {color:#d0c9db;text-decoration:underline;text-underline-offset:4px;white-space:nowrap}
 .home a:focus-visible,.home button:focus-visible {outline:2px solid #d7cafa;outline-offset:4px}
 .preview {min-width:0;background:#19191e;border:1px solid #3b3741;border-radius:10px;overflow:hidden;box-shadow:0 18px 60px #0004}
-.previewStage {position:relative;aspect-ratio:16/9;background:#111}
+.previewStage {touch-action:pan-y pinch-zoom;position:relative;aspect-ratio:16/9;background:#111}
 .slide {position:absolute;inset:0;opacity:0;transition:opacity .8s ease;pointer-events:none}
 .slide[data-active="true"] {opacity:1}
 .previewImage {object-fit:contain}
 .previewLogo {width:120px;height:38px;object-fit:contain;object-position:left center}
 .previewTag {position:absolute;top:20px;left:20px;font-size:10px;text-transform:uppercase;letter-spacing:.2em;color:#f7eee2;background:#121114b8;border:1px solid #ffffff26;padding:6px 9px;border-radius:3px}
 .previewCaption {display:grid;grid-template-columns:120px 1fr;align-items:center;gap:6px 12px;padding:14px 22px 0;min-height:100px}
-.previewCaption p {margin:0;font-size:9px;line-height:1.6;text-align:right;text-transform:uppercase;letter-spacing:.12em;color:#b8aa94}
 .previewCaption a {grid-column:1/-1;font:400 18px/1.3 Georgia,serif;color:#f2eee7;text-decoration:none}
 .previewControls {display:flex;align-items:center;gap:8px;padding:4px 14px 8px}
 .previewControls button {min-width:44px;min-height:44px;padding:6px 10px;border-radius:4px;color:#c8c2d0;font-size:12px}
@@ -31,9 +30,9 @@
 .slideSelectors button[aria-pressed="true"] span {background:#ddd0b5}
 .games {display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:32px}
 .game {position:relative;overflow:hidden;border-radius:8px;border:1px solid #45404a;min-height:280px}
-.gameArt {object-fit:cover;object-position:center;opacity:.68}
+.gameArt {object-fit:cover;object-position:50% 82%;opacity:.82}
 .game::after {content:"";position:absolute;inset:0;background:linear-gradient(90deg,#0c0c11dc,#0c0c1144),linear-gradient(0deg,#0c0c11bb,transparent 80%)}
-.game[data-game="werewolf"] .gameArt {object-position:50% 28%}
+.game[data-game="werewolf"] .gameArt {object-position:50% 48%}
 .gameCopy {position:relative;z-index:1;padding:26px 30px}
 .gameCopy .eyebrow {margin:0 0 9px;color:#d5c6b2}
 .gameCopy h2 {margin:0 0 12px;width:280px;max-width:100%;height:68px;display:flex;align-items:center}

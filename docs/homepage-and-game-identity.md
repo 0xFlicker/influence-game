@@ -23,9 +23,9 @@ pills, and homepage Lobby phase styling are removed.
 - A production Influence screenshot from `open-scarlet-moon`, 82:59: Morrow
   AI's speech. The requested 82:58 falls in the transition immediately before
   the readable speech frame in this capture.
-- A localhost Werewolf screenshot from `hazy-ruby-sand`, Omniscient view, 1:39:
-  Marlow Reed speaks in the pack room. The requested 1:38 is a speech fade;
-  the next second provides a fully readable caption. This user-selected preview
+- A localhost Werewolf screenshot from `hazy-ruby-sand`, Omniscient view, 1:38:
+  Marlow Reed speaks in the pack room, captured after the speech fade settles.
+  This user-selected preview
   intentionally shows wolf forms and Marlow's role, and is labelled Omniscient.
 
 The captures are 1920 × 1080 browser screenshots of the fullscreen presentation,
@@ -36,9 +36,16 @@ published. The four scenes alternate games, giving each equal preview time.
 There are no invented live indicators, quotes, scores or activity counts.
 Future screenshots should be deliberately selected; do not automatically pull a
 recent frame that could expose private thinking or an unintended game outcome.
+The `-v2` captures use the larger shared speech typography. Production Influence
+data was read through the updated local renderer; no production code was changed.
+Versioned asset paths prevent older optimized thumbnails from hiding the update.
 
 The slideshow advances every seven seconds. Pause, previous, next and direct
-selection controls are available. Hover and keyboard focus pause rotation;
+selection controls are available. Touch devices can swipe horizontally on the
+image; vertical scrolling and pinch zoom remain native. Speaker/time attribution
+is omitted from the caption; Werewolf retains its Mystery/Omniscient view label.
+The Influence crop favors the lower stage and the Werewolf crop centers the
+village rather than the sky. Hover and keyboard focus pause rotation;
 manual navigation pauses it until Play is selected. Reduced-motion preferences
 disable autoplay and fades. Hidden tabs do not advance slides. The homepage has
 no additional game API dependency.

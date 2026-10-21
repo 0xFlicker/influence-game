@@ -116,7 +116,7 @@ export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingEl
   const framing = currentLayer.frame;
   const transitioning = imageKnown && from.url !== to.url && sceneCameraProgress(cameraElapsedMs) < 1;
   const thinkingReady = imageKnown && !transitioning && currentLayer.url === scene.imageUrl;
-  const rawBubble = placeSceneBubble(size.width, Math.max(0, size.height - controlsInset), framing, head, 220);
+  const rawBubble = placeSceneBubble(size.width, Math.max(0, size.height - controlsInset), framing, head);
   const thought = useSceneThinking();
   const available = Math.max(0,size.height - controlsInset);
   // Use the verified head box even when the speech pointer has zero dimensions.
@@ -149,7 +149,7 @@ export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingEl
       style={{ opacity, width: bubble.width, height: bubble.height, left: bubble.left, top: bubble.top, padding:speechFit.padding }}>
       <div className={`mb-2 flex h-5 shrink-0 items-center gap-3 ${speechFit.typography && speechFit.typography.pages.length > 1 && !speechFit.typography.footerHeight ? "pr-12" : ""}`}>
         {(imageFailed || !anchor && !pointer) && speech.playerId && <div data-headshot-fallback><AgentAvatar {...speech.portrait} persona={speech.portrait?.persona ?? ""} name={speech.speaker} size="12" /></div>}
-        <p className="truncate text-xs font-semibold text-white/65">{speech.playerId === null ? "Anonymous" : speech.speaker}</p>
+        <p className="truncate text-base font-semibold text-white/80">{speech.playerId === null ? "Anonymous" : speech.speaker}</p>
       </div>
       <TimedSpeech typography={speechFit.typography} text={speech.text} elapsedMs={speechPresentation === "solo" ? soloPresentationMotion(speech.text, readingElapsedMs).speechElapsedMs : readingElapsedMs - SCENE_SPEECH_START_MS} className="text-sm leading-relaxed" />
       {head && <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/20 bg-black/90 ${bubble.below ? "border-t border-l" : "border-b border-r"}`} style={{ left: bubble.arrowLeft, top: bubble.below ? -8 : undefined, bottom: bubble.below ? undefined : -8 }} />}

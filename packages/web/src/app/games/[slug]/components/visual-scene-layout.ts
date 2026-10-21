@@ -32,16 +32,16 @@ export function panScene(from: SceneFrame, to: SceneFrame, elapsedMs: number): S
 }
 
 /** Prefer above, then below. Page capacity leaves the complete head unobscured. */
-export function placeSceneBubble(width: number, height: number, image: SceneFrame, head?: HeadRect, speechHeight = 220) {
+export function placeSceneBubble(width: number, height: number, image: SceneFrame, head?: HeadRect, speechHeight = 360) {
   const margin = 12, gap = 16;
-  const bubbleWidth = Math.max(0, Math.min(480, width - margin * 2));
+  const bubbleWidth = Math.max(0, Math.min(720, width - margin * 2));
   const x = head ? image.left + (head.x + head.width / 2) * image.width : width / 2;
   const top = head ? image.top + head.y * image.height : 0;
   const bottom = head ? top + head.height * image.height : 0;
   const aboveSpace = Math.max(0, top - gap - margin);
   const belowSpace = Math.max(0, height - bottom - gap - margin);
   // Header, padding and the pagination footer must leave at least one complete line.
-  const preferredHeight = Math.min(Math.max(speechHeight, 128), 220, Math.max(128, height * .45));
+  const preferredHeight = Math.min(Math.max(speechHeight, 128), 360, Math.max(128, height * .45));
   const below = !head || (aboveSpace < preferredHeight && belowSpace > aboveSpace);
   const available = head ? (below ? belowSpace : aboveSpace) : height - margin * 2;
   const bubbleHeight = Math.max(0, Math.min(preferredHeight, available));
