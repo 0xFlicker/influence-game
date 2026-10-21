@@ -1,5 +1,7 @@
 import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
+import { GameLogo } from "../game-logo";
+import type { BrandedGame } from "@/lib/game-brand";
 
 interface GameCardProps extends Omit<ComponentProps<"article">, "title" | "children"> {
   title: string;
@@ -7,6 +9,7 @@ interface GameCardProps extends Omit<ComponentProps<"article">, "title" | "child
   status: string;
   statusLabel: string;
   eyebrow: string;
+  gameKind: BrandedGame;
   description: string;
   meta: ReactNode;
   artwork: ReactNode;
@@ -14,12 +17,13 @@ interface GameCardProps extends Omit<ComponentProps<"article">, "title" | "child
   onOpen?: ComponentProps<typeof Link>["onClick"];
 }
 
-export function GameCard({ title, href, status, statusLabel, eyebrow, description, meta, artwork, actions, onOpen, ...article }: GameCardProps) {
+export function GameCard({ title, href, status, statusLabel, eyebrow, gameKind, description, meta, artwork, actions, onOpen, ...article }: GameCardProps) {
   return <article {...article} className={`episode-card ${article.className ?? ""}`}>
     <Link className="episode-card-link" aria-label={`Open ${title}`} href={href} onClick={onOpen}>
       {artwork}
       <span className={`episode-status episode-status-${status}`}>{statusLabel}</span>
       <div className="episode-copy">
+        <GameLogo game={gameKind} className="episode-game-logo" />
         <div className="episode-eyebrow">{eyebrow}</div>
         <h2>{title}</h2>
         <p>{description}</p>

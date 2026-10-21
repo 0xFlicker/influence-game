@@ -2,6 +2,8 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { completedGameModeHref } from "@/lib/game-links";
+import { GameLogo } from "@/components/game-logo";
+import type { BrandedGame } from "@/lib/game-brand";
 export interface WatchHeaderModel {
  matchTitle: string; roundLabel: string; connectionLabel: string;
  counts: { alivePlayers: number; eliminatedPlayers: number };
@@ -46,13 +48,13 @@ export function ShellHeader({
   gamePath,
   showResultsCta,
   exitHref = "/games",
-  brand = "INFLUENCE",
+  gameKind,
 }: {
   model: WatchHeaderModel;
   gamePath: string;
   showResultsCta: boolean;
   exitHref?: string;
-  brand?: string;
+  gameKind: BrandedGame;
 }) {
   return (
     <header className="relative mx-2 mt-2 flex h-11 shrink-0 items-center gap-2 rounded-md border border-white/10 bg-black/45 px-2 shadow-panel backdrop-blur-glass lg:mx-3 lg:mt-3 lg:grid lg:h-auto lg:min-h-14 lg:grid-cols-[18rem_minmax(0,1fr)_22rem] lg:items-center lg:gap-3 lg:rounded-lg lg:px-4 lg:py-0">
@@ -102,7 +104,7 @@ export function ShellHeader({
 
       {/* Desktop (lg+): multi-column chrome with room for brand + actions */}
       <div className="hidden min-w-0 items-center gap-4 lg:flex">
-        <div className="text-sm font-medium tracking-[0.45em] text-white/90">{brand}</div>
+        <GameLogo game={gameKind} className="h-9 w-36 object-contain" />
         <div className="h-5 w-px bg-white/10" />
         <div className="text-[10px] uppercase tracking-[0.28em] text-white/35">Watch Room</div>
       </div>

@@ -445,3 +445,5 @@
 .episode-season { display: block; margin-top: 8px; }
 .episode-management { flex-basis: 100%; font-size: 12px; color: #afb8ab; }
 .episode-management a { text-decoration: underline; text-underline-offset: 3px; }
+
+.episode-game-logo { width: 155px; height: 42px; object-fit: contain; object-position: left center; margin-bottom: 10px; }

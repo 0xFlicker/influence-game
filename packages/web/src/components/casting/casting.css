@@ -119,3 +119,5 @@
 .werewolf-casting-launch { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1.5rem; margin-top: 2rem; padding: 1.5rem 0; border-block: 1px solid #dfbe8025; }
 .werewolf-casting-launch > div > p:not(:first-child) { margin-top: .5rem; font-size: .8rem; line-height: 1.6; color: #bcb4a7; }
 @media (max-width: 639px) { .werewolf-casting-settings { grid-template-columns: 1fr; gap: 1rem; } }
+
+.pre-show-poster .pre-show-game-logo { width: min(90%, 360px); height: 100px; object-fit: contain; }

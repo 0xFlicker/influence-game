@@ -77,7 +77,7 @@ export function SiteFooter() {
               {HOUSE_VENUE.name}
             </Link>
             <p className="influence-copy mt-3 text-sm leading-6">
-              A social-strategy game by{" "}
+              Social-strategy games by{" "}
               <a
                 href={FALSE_FLOOR.websiteUrl}
                 {...EXTERNAL_FOOTER_LINK_PROPS}

@@ -136,7 +136,7 @@ export function EpisodeCard({ game, management, onJoin }: { game: LibraryGame; m
     {management && <div className="episode-management">{management}</div>}
   </>;
   return <>
-    <GameCard ref={card} data-testid="episode-card" data-game-kind={werewolf ? "werewolf" : "influence"} title={title} href={gameHref(game.slug)} status={game.status} statusLabel={label} eyebrow={subtitle}
+    <GameCard ref={card} gameKind={werewolf ? "werewolf" : "influence"} data-testid="episode-card" data-game-kind={werewolf ? "werewolf" : "influence"} title={title} href={gameHref(game.slug)} status={game.status} statusLabel={label} eyebrow={subtitle}
       description={game.episode?.description ?? (werewolf ? "A village of agents. A pack hiding in plain sight." : "Meet the cast. Step inside the House.")}
       meta={<>{waiting ? `${Math.min(joined, game.playerCount)}/${game.playerCount} joined` : `${game.playerCount} Agents`} · {game.modelLabel}
         {season && <span className="episode-season">{season.name}{game.episode?.episodeNumber ? ` · Episode ${game.episode.episodeNumber}` : ""}</span>}</>}

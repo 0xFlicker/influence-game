@@ -9,6 +9,7 @@ import {buildExportCues} from "../lib/replay-export/cues";
 import {compileTiming, parseTimingProfile} from "../lib/replay-export/timing";
 import {compileAudio, audioGain} from "../lib/replay-export/audio";
 import {assertNoPrivateFields} from "../lib/replay-export/source";
+import {ReplayAssets} from "../lib/replay-export/assets";
 
 async function windows() {
   const events = await werewolfResultsFixture("village", "opening-test");
@@ -17,6 +18,22 @@ async function windows() {
     return {...view, slug:"opening-test", audience, status:"completed", publicationCutoff:"2026-10-07T00:00:00Z", media:{}} satisfies WerewolfWatchWindow;
   });
 }
+test("Werewolf title freezes its wordmark for self-contained replay exports", async () => {
+  const [window] = await windows();
+  const title = werewolfOpening(window!)[1]!;
+  const visited: string[] = [];
+  class RecordingAssets extends ReplayAssets {
+    override async cache(source: string) {
+      visited.push(source);
+      return `assets/frozen-${visited.length}`;
+    }
+  }
+  const assets = new RecordingAssets("/tmp/unused-werewolf-bundle", "/tmp/unused-public", new URL("http://localhost"), new AbortController().signal);
+  const frozen = await assets.freeze({kind: "werewolf-opening", cue: title});
+  expect(visited).toContain("/brand/werewolf-wordmark-v1.png");
+  expect(frozen.cue.opening.logoUrl).toStartWith("assets/");
+  expect(title.opening.logoUrl).toBe("/brand/werewolf-wordmark-v1.png");
+});
 test("opening reveals only permitted roles and keeps both audiences on the same neutral shot sequence", async () => {
   const [mystery, omni] = await windows();
   const m = werewolfOpening(mystery!, "Silence Beneath the Lanterns"), o = werewolfOpening(omni!, "Silence Beneath the Lanterns");
@@ -25,6 +42,8 @@ test("opening reveals only permitted roles and keeps both audiences on the same 
   const withoutRoles = o.map(c => {const copy=structuredClone(c); if(copy.opening.player) delete copy.opening.player.role;return copy;});
   expect(m).toEqual(withoutRoles);
   expect(m[1]!.opening.title).toBe("Silence Beneath the Lanterns");
+  expect(m[1]!.opening.logoUrl).toBe("/brand/werewolf-wordmark-v1.png");
+  expect(m[0]!.opening.logoUrl).toBe("/logo.png");
   expect(m[1]!.opening.backgroundUrl).not.toBe(m[0]!.opening.backgroundUrl);
   expect(werewolfOpening(mystery!)[1]!.opening.title).toBe("Werewolf");
   expect(werewolfOpening({...mystery!,fromCursor:33})).toEqual([]);

@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { GameLogo } from "@/components/game-logo";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import "./casting.css";
@@ -36,7 +36,7 @@ export function CastingHero({ gameKind, eyebrow = "The House presents", intro, p
           {children}
         </div>
         <div className="pre-show-poster" aria-hidden="true">
-          <Image src="/logo.png" alt="" width={120} height={120} />
+          <GameLogo game={gameKind} decorative className="pre-show-game-logo" />
           <p>{gameKind === "werewolf" ? "Everyone has a secret." : "Trust is a strategy."}<br /><em>{gameKind === "werewolf" ? "Some have teeth." : "So is betrayal."}</em></p>
           <span>The House / {gameLabel}</span>
         </div>

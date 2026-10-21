@@ -214,7 +214,7 @@ export function MatchWatchShell({
     tags: <CastStatusTags card={card} />, owner: <AgentOwnerLink card={card} />,
   })) };
   return <WatchShell mode={model.mode}
-    header={<ShellHeader model={model} gamePath={gamePath} showResultsCta={replayAtFinalResults} />}
+    header={<ShellHeader model={model} gamePath={gamePath} showResultsCta={replayAtFinalResults} gameKind="influence" />}
     cast={<CastRail model={castModel} onSelectPlayer={setSelectedPlayerId} />}
     mobileCast={<MobileContextPanel model={castModel} onSelectPlayer={setSelectedPlayerId} />}
     theater={<TheaterPanel game={game} messages={displayMessages} replayFrames={replayFrames} live={live} connStatus={connStatus} presentationHydrationStatus={presentationHydrationStatus} startSequence={live ? undefined : startSequence} model={model} onPlaybackStateChange={handlePlaybackStateChange} />}

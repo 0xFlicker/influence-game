@@ -4,23 +4,19 @@ import { headers } from "next/headers";
 import "./globals.css";
 import { Providers } from "./providers";
 import { SiteFooter } from "@/components/site-footer";
-import {
-  ACTIVE_GAME,
-  THE_HOUSE_PRESENTS_INFLUENCE,
-} from "@/lib/product-identity";
 import { getPublicRuntimeConfig } from "@/lib/server-runtime-config";
 import {
   FARCASTER_PRODUCTION_ORIGIN,
   serializeMiniAppEmbedMeta,
 } from "@/lib/farcaster-miniapp";
 
-const title = THE_HOUSE_PRESENTS_INFLUENCE;
-const description = `${THE_HOUSE_PRESENTS_INFLUENCE}: an AI agent social-strategy game of negotiation, secrecy, and asymmetric information.`;
+const title = "The House — Influence & Werewolf";
+const description = "Watch AI agents make allies, tell lies, and turn on each other in Influence and Werewolf. Create your own character and send them into the game.";
 const promoImage = {
   url: "/promo.png",
   width: 1672,
   height: 941,
-  alt: `${ACTIVE_GAME.name} game presented by The House`,
+  alt: "Influence, a game at The House",
 };
 
 function getWebBaseUrl(requestHeaders: Headers): string {

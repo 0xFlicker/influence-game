@@ -14,11 +14,13 @@ const homePageSource = readFileSync(
 describe("homepage MCP CTA", () => {
   it("links curious visitors to the setup page without replacing primary actions", () => {
     expect(source).toContain('href="/games"');
-    expect(source).toContain('href="/dashboard"');
+    expect(source).toContain('href="/agents/create"');
     expect(source).toContain('href="/get-mcp"');
-    expect(source).toContain("Codex / Claude");
-    expect(source).toContain("THE_HOUSE_PRESENTS_INFLUENCE");
-    expect(source).toContain("Connect The House to your Chatbot or AI Agent");
+    expect(source).toContain("Watch games");
+    expect(source).toContain("Create an agent");
+    expect(source).toContain("Connect it to The House");
+    expect(source).toContain('href="/games/type/influence"');
+    expect(source).toContain('href="/games/type/werewolf"');
   });
 
   it("does not point homepage visitors at protocol or producer endpoints", () => {
@@ -36,8 +38,6 @@ describe("homepage MCP CTA", () => {
 
   it("is a server component with client islands for live/interactive bits", () => {
     expect(source).not.toMatch(/^["']use client["']/m);
-    expect(source).toContain("HomeGameStats");
-    expect(source).toContain("HomeLobbyPhase");
-    expect(source).toContain("MessageSequence");
+    expect(source).toContain("HomePreview");
   });
 });
