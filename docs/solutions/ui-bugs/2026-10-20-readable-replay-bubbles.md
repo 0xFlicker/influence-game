@@ -28,3 +28,8 @@ presentation bundle.
 Validation covers retained text across pages, head alignment, growing trails,
 disabled thinking privacy, actual replay frames, and current-format Remotion
 proof frames built from preserved local QA evidence at 1920×1080 and 390×844.
+
+For curated homepage captures, speech fades follow the replay clock. Waiting
+after seeking a paused replay does not finish the fade. Advance to a stable
+speech frame and assert the bubble's computed opacity is at least 0.99 before
+capturing. Marlow's pack-room preview uses 1:39 rather than the fading 1:38 frame.

@@ -27,7 +27,7 @@ import { readEpisodePresentations } from "../services/episode-presentation.js";
 
 import { createVisualRoutes } from "./visual.js";
 import { Hono, type Context } from "hono";
-import { eq, inArray, asc, or, and, ne, sql } from "drizzle-orm";
+import { eq, inArray, asc, desc, isNotNull, or, and, ne, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -297,6 +297,24 @@ export function createGameRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
   // GET /api/games — list games (with optional status filter)
   // -------------------------------------------------------------------------
+
+  // A bounded, spoiler-free homepage selection, ordered by completion rather than creation.
+  app.get("/api/games/recently-finished", async (c) => {
+    const kinds = enabledGameKinds();
+    if (!kinds.length) return c.json([]);
+    const rows = await db.selectDistinctOn([schema.games.gameKind], {
+      id: schema.games.id, slug: schema.games.slug, gameKind: schema.games.gameKind,
+      status: schema.games.status, seasonId: schema.games.seasonId, endedAt: schema.games.endedAt,
+    }).from(schema.games)
+      .where(and(inArray(schema.games.gameKind, kinds), eq(schema.games.status, "completed"), isNotNull(schema.games.endedAt), publicGameFilter()))
+      .orderBy(asc(schema.games.gameKind), desc(sql`${schema.games.endedAt}::timestamptz`), asc(schema.games.id));
+    const episodes = await readEpisodePresentations(db, rows);
+    c.header("Cache-Control", "private, no-store");
+    return c.json(rows.map(game => ({
+      id: game.id, slug: game.slug, gameKind: game.gameKind, completedAt: game.endedAt,
+      title: episodes.get(game.id)!.title, cast: episodes.get(game.id)!.cast.slice(0, 4),
+    })));
+  });
 
   app.get("/api/games", optionalAuth(db), async (c) => {
     if (!enabledGameKinds().includes("influence")) return c.json([]);

@@ -6,6 +6,25 @@ The homepage navigation omits duplicate creation actions; other pages retain the
 The MCP connection remains a secondary link. Both game panels link to their game
 library and rules. Latest Updates remains below the game panels.
 
+“Meet the cast. Make your own.” introduces two equal hero actions. Below the hero,
+Recently finished and a creation example occupy equal desktop columns and stack
+on mobile. On mobile the creation example follows the watching preview before
+Recently finished, so visitors meet both paths early. The creation example uses
+Marlow Reed's real portrait and an excerpt
+from his public introduction in localhost `hazy-ruby-sand`; it is a character
+spotlight, not a fabricated creation transcript. The original 512px WebP portrait
+is packaged at `/home/marlow-reed-portrait.webp`. No role or private strategy is
+included in that example.
+
+`GET /api/games/recently-finished` selects one publicly listed completed game per
+enabled game kind, ordered by its actual completion timestamp with an ID tie-break.
+Hidden, private, unfinished and missing-completion records are excluded before
+selection. Its response contains only identity, title, completion date and up to
+four opening-cast portraits from the existing spoiler-safe episode projection.
+The homepage displays up to three portraits and links straight to playback, using
+Mystery for Werewolf. It shows loading, empty and unavailable states without
+blocking the rest of the page. Recency is not a quality recommendation.
+
 On desktop the preview occupies the right side of the hero. Below 1024px it follows
 the introduction and its actions. The original Influence backdrop is retained in
 its panel; Werewolf uses its own lantern-village artwork. The shared page uses a
@@ -23,10 +42,10 @@ pills, and homepage Lobby phase styling are removed.
 - A production Influence screenshot from `open-scarlet-moon`, 82:59: Morrow
   AI's speech. The requested 82:58 falls in the transition immediately before
   the readable speech frame in this capture.
-- A localhost Werewolf screenshot from `hazy-ruby-sand`, Omniscient view, 1:38:
-  Marlow Reed speaks in the pack room, captured after the speech fade settles.
-  This user-selected preview
-  intentionally shows wolf forms and Marlow's role, and is labelled Omniscient.
+- A localhost Werewolf screenshot from `hazy-ruby-sand`, Omniscient view, 1:39:
+  Marlow Reed speaks in the pack room. The `-v3` capture advances beyond the
+  requested 1:38 fade and asserts bubble opacity is at least 0.99 before capture.
+  This user-selected preview intentionally shows wolf forms and Marlow's role.
 
 The captures are 1920 × 1080 browser screenshots of the fullscreen presentation,
 with Show thinking disabled and transport controls hidden. No screenshot pixels
@@ -43,12 +62,14 @@ Versioned asset paths prevent older optimized thumbnails from hiding the update.
 The slideshow advances every seven seconds. Pause, previous, next and direct
 selection controls are available. Touch devices can swipe horizontally on the
 image; vertical scrolling and pinch zoom remain native. Speaker/time attribution
-is omitted from the caption; Werewolf retains its Mystery/Omniscient view label.
+is omitted from the caption. Every slide uses the same “A look inside” pill;
+Mystery/Omniscient labels are omitted from this introduction to the games.
 The Influence crop favors the lower stage and the Werewolf crop centers the
 village rather than the sky. Hover and keyboard focus pause rotation;
 manual navigation pauses it until Play is selected. Reduced-motion preferences
 disable autoplay and fades. Hidden tabs do not advance slides. The homepage has
-no additional game API dependency.
+one bounded game API request for the Recently finished section; the curated
+slideshow and creation example remain independent of that request.
 
 ## Game logos
 

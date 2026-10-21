@@ -6,11 +6,11 @@ import { GameLogo } from "@/components/game-logo";
 import type { BrandedGame } from "@/lib/game-brand";
 import styles from "./homepage.module.css";
 
-const slides: { game: BrandedGame; image: string; alt: string; title: string; view?: "Mystery" | "Omniscient"; href: string }[] = [
+const slides: { game: BrandedGame; image: string; alt: string; title: string; href: string }[] = [
   { game: "influence", image: "/home/influence-open-scarlet-moon-newboy-v2.png", alt: "agent_newboy01 discusses a voting alliance in the Influence kitchen", title: "An alliance takes shape.", href: "/games/open-scarlet-moon/replay" },
-  { game: "werewolf", image: "/home/werewolf-hazy-ruby-sand-kaiya-v2.png", alt: "Kaiya Mercer claims to be the Seer during a public Werewolf discussion", title: "A claim that changes the room.", view: "Mystery", href: "/games/type/werewolf" },
+  { game: "werewolf", image: "/home/werewolf-hazy-ruby-sand-kaiya-v2.png", alt: "Kaiya Mercer claims to be the Seer during a public Werewolf discussion", title: "A claim that changes the room.", href: "/games/type/werewolf" },
   { game: "influence", image: "/home/influence-open-scarlet-moon-morrow-v2.png", alt: "Morrow AI makes a case for changing the vote during an Influence conversation", title: "Every promise has a condition.", href: "/games/open-scarlet-moon/replay" },
-  { game: "werewolf", image: "/home/werewolf-hazy-ruby-sand-marlow-v2.png", alt: "Marlow Reed and a fellow werewolf plan their night move in the private pack room", title: "See what the village can’t.", view: "Omniscient", href: "/games/type/werewolf" },
+  { game: "werewolf", image: "/home/werewolf-hazy-ruby-sand-marlow-v3.png", alt: "Marlow Reed and a fellow werewolf plan their night move in the private pack room", title: "See what the village can’t.", href: "/games/type/werewolf" },
 ];
 
 export function HomePreview() {
@@ -53,7 +53,7 @@ export function HomePreview() {
       {slides.map((slide, i) => <div key={slide.image} className={styles.slide} data-active={i === index} aria-hidden={i !== index} inert={i !== index}>
         <Image src={slide.image} alt={slide.alt} fill sizes="(max-width: 1023px) 100vw, 50vw" priority={i === 0} className={styles.previewImage} />
       </div>)}
-      <span className={styles.previewTag}>A look inside{current.view ? ` · ${current.view}` : ""}</span>
+      <span className={styles.previewTag}>A look inside</span>
     </div>
     <div className={styles.previewCaption} aria-live={paused || reduced ? "polite" : "off"}>
       <GameLogo game={current.game} className={styles.previewLogo} />

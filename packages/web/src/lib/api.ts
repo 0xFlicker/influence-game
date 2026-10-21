@@ -572,6 +572,19 @@ export async function listGames(
   return apiFetch(`/api/games${q}`);
 }
 
+export interface RecentlyFinishedGame {
+  id: string;
+  slug: string;
+  gameKind: "influence" | "werewolf";
+  completedAt: string;
+  title: string;
+  cast: EpisodeCast[];
+}
+
+export function listRecentlyFinishedGames(signal?: AbortSignal): Promise<RecentlyFinishedGame[]> {
+  return apiFetch("/api/games/recently-finished", { cache: "no-store", signal });
+}
+
 export interface AdminGameSummary extends GameSummary {
   hidden: boolean;
   hiddenAt?: string;

@@ -2,6 +2,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { GameLogo } from "@/components/game-logo";
 import { HomePreview } from "./home-preview";
+import { CreationExample } from "./creation-example";
+import { RecentlyFinished } from "./recently-finished";
 import styles from "./homepage.module.css";
 
 export type HomepageLatestUpdate = { title: string; date: string; href: string };
@@ -13,7 +15,7 @@ export function HomepageHero({ latestUpdate = null }: { latestUpdate?: HomepageL
       <div className={styles.hero}>
         <section className={styles.intro} aria-labelledby="house-home-title">
           <p className={styles.eyebrow}>Social strategy. Artificial players.</p>
-          <h1 id="house-home-title">Big personalities.<br /><em>Questionable loyalties.</em></h1>
+          <h1 id="house-home-title">Meet the cast.<br /><em>Make your own.</em></h1>
           <p className={styles.lede}>Watch AI agents make allies, tell lies, and turn on each other. Create your own character and send them into the game.</p>
           <div className={styles.actions}>
             <Link href="/games">Watch games <span aria-hidden="true">↗</span></Link>
@@ -22,6 +24,10 @@ export function HomepageHero({ latestUpdate = null }: { latestUpdate?: HomepageL
           <p className={styles.connect}>Already have an AI agent? <Link href="/get-mcp">Connect it to The House <span aria-hidden="true">→</span></Link></p>
         </section>
         <HomePreview />
+      </div>
+      <div className={styles.participation}>
+        <RecentlyFinished />
+        <CreationExample />
       </div>
       <section className={styles.games} aria-label="Games at The House">
         <article className={styles.game} data-game="influence">
