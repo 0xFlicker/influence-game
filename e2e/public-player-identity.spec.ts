@@ -476,7 +476,9 @@ test.describe("local public player identity", () => {
           await expect(visible).toContainText("Cast 1");
           await expect(visible.locator(".episode-cast > div")).toHaveCount(4);
           await expect(card.getByText("Casting open", { exact: true })).toBeVisible();
-          await expect(card.locator(".episode-eyebrow")).toHaveText(`The House / ${title === "Open Influence" ? "Influence" : "Werewolf"}`);
+          const logo = card.getByRole("img", { name: title === "Open Influence" ? "Influence" : "Werewolf", exact: true });
+          await expect(logo).toBeVisible();
+          await expect.poll(() => logo.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
           await expect(card.locator(".episode-meta")).toContainText("9/10 joined");
           await expect(card.getByRole("link", { name: "Join game", exact: true })).toBeVisible();
           const scene = visible.locator(".episode-scene");
@@ -540,9 +542,11 @@ test.describe("local public player identity", () => {
         await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });
         const card = page.getByTestId("episode-card");
         await expect(card.getByRole("heading", { name: "Good Company" })).toBeVisible();
+        const destination = card.getByRole("link").filter({ has: page.getByRole("heading", { name: "Good Company", exact: true }) });
+        await expect(destination).toHaveAttribute("href", "/games/quiet-sage-room");
         if (touch) {
           await expect(card.getByRole("link", { name: "Details", exact: true })).toBeVisible();
-          await card.getByRole("link", { name: "Open Good Company", exact: true }).tap();
+          await destination.tap();
           const modal = page.getByRole("dialog", { name: "Good Company", exact: true });
           await expect(modal).toBeVisible();
           await expect(modal.getByRole("link", { name: "Details", exact: true })).toHaveAttribute("href", "/games/quiet-sage-room/results");
@@ -566,7 +570,7 @@ test.describe("local public player identity", () => {
         } else {
           await expect(card.getByRole("link", { name: "Details", exact: true })).toHaveAttribute("href", "/games/quiet-sage-room/results");
           await expect(card.getByRole("link", { name: /Watch replay/ })).toHaveAttribute("href", "/games/quiet-sage-room/replay");
-          await card.getByRole("link", { name: "Open Good Company", exact: true }).click();
+          await destination.click();
           // The isolated Next dev server compiles this route on its first visit.
           // CI can exceed the default 5s while the navigation request is pending.
           await expect(page).toHaveURL(`${servers.webUrl}/games/quiet-sage-room`, { timeout: 30_000 });
