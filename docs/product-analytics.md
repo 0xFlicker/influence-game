@@ -169,6 +169,9 @@ The banner has one analytics category and equally accessible Accept/Reject
 buttons outside the US. The US notice offers Got it and Reject optional tracking;
 it is shown once per browser storage lifetime and dismissed on navigation. Its
 separate notice-shown marker never grants consent or changes the analytics choice.
+On desktop (1024px and wider), the notice spans the bottom edge with its text
+and actions side by side to reduce vertical obstruction. Smaller screens retain
+the inset, stacked card; both layouts scroll within short viewports.
 The banner explains measurement and navigation-diagnosis purposes and
 links directly to the analytics section of the Privacy policy, which describes
 masked session recordings and shows their status. There is no separate recording

@@ -53,7 +53,7 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
   }, []);
   const thought = useSceneThinking();
   const geometry = layoutSoloPresentation(size.width, size.height, loaded.source === source ? loaded.width : 0,
-    loaded.source === source ? loaded.height : 0, Boolean(fullBody), controlsInset, 308, player.headRectangle, !hideSpeech);
+    loaded.source === source ? loaded.height : 0, Boolean(fullBody), controlsInset, 440, player.headRectangle, !hideSpeech);
   const headRect = validHeadRectangle(player.headRectangle) ? player.headRectangle : {x:.4, y:.04, width:.2, height:.16};
   const available = Math.max(0, size.height - controlsInset);
   const face = fullBody ? headRect : {x:.24,y:.12,width:.52,height:.52};
@@ -84,7 +84,7 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
       className={`absolute max-w-none ${fullBody ? `object-contain ${backdropStyles.featheredBody}` : "rounded-full object-cover shadow-2xl ring-1 ring-white/30"}`} style={{ ...geometry.image, opacity: imageOpacity ?? motion.imageOpacity }} />
     </div>
     {!thought && !hideSpeech && motion.speechOpacity > 0 && <div data-speech-bubble style={{ ...bubble, opacity: motion.speechOpacity, padding:speechFit.padding }} className="absolute flex flex-col rounded-2xl border border-white/25 bg-black/85 shadow-xl">
-      <div className={`mb-2 shrink-0 text-xs leading-5 ${speechFit.typography && speechFit.typography.pages.length > 1 && !speechFit.typography.footerHeight ? "pr-12" : ""}`}>
+      <div className={`mb-2 shrink-0 text-base leading-5 ${speechFit.typography && speechFit.typography.pages.length > 1 && !speechFit.typography.footerHeight ? "pr-12" : ""}`}>
         <p className="flex h-5 items-baseline gap-x-2 overflow-hidden font-semibold">
           <span className="min-w-0 truncate">{player.name}</span>
           {beat.roleLabel ? <span data-speaker-role className="shrink-0 text-amber-200">{beat.roleLabel}</span> : <span className="shrink-0 font-normal text-white/50">{beat.caption ?? beat.purpose}</span>}
@@ -94,7 +94,7 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
       <blockquote className="flex min-h-0 flex-1 flex-col">
         {staticSpeech ? <p className="break-words" style={{fontSize:speechFit.typography?.fontSize,lineHeight:1.4}}>{speech.text}</p> : <TimedSpeech text={speech.text} elapsedMs={speechPresentation === "scene" ? readingElapsedMs - SCENE_SPEECH_START_MS : soloPresentationMotion(speech.text, readingElapsedMs).speechElapsedMs} typography={speechFit.typography} />}
       </blockquote>
-      <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/25 bg-black ${geometry.beside ? "-left-2 top-1/2 border-l border-b" : geometry.above ? "-bottom-2 border-r border-b" : "-top-2 border-l border-t"}`} style={geometry.beside ? undefined : { left: tailLeft - 8 }} />
+      <span aria-hidden="true" data-speech-tail className={`absolute h-4 w-4 rotate-45 border-white/25 bg-black ${geometry.beside ? "-left-2 border-l border-b" : geometry.above ? "-bottom-2 border-r border-b" : "-top-2 border-l border-t"}`} style={geometry.beside ? {top: Math.min(bubble.height - 16, fullBody ? geometry.tailTop : bubble.height / 2) - 8} : { left: tailLeft - 8 }} />
     </div>}
     <ThinkingFocusOverlay frame={frame} layout={focus} />
   </section>;

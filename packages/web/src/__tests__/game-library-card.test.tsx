@@ -9,7 +9,9 @@ test("old and waiting games use the same spoiler-safe village artwork", () => {
     const html=renderToString(<EpisodeCard game={{...game,status}} />);
     expect(html).toContain('/visual/werewolf/lantern-village.webp');
     expect(html).toContain('href="/games/original-slug"');
-    expect(html).toContain('The House / Werewolf');
+    expect(html).toContain('alt="Werewolf"');
+    expect(html).not.toContain('The House / Werewolf');
+    expect(html).not.toContain(game.modelLabel);
     expect(html).toContain(status === "waiting" ? "Casting open" : status === "in_progress" ? "Live" : "Completed");
   }
 });

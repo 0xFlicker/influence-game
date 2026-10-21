@@ -30,7 +30,7 @@ export function EpisodeLanding({ slug, initialGame }: { slug: string; initialGam
   const title = gameDisplayName(summary);
   const frames = preview?.frames.length ? preview.frames : episodeFallbackFrames(summary);
   if (game.status === "waiting") return <GameViewer gameId={slug} initialGame={game} />;
-  return <GameEpisode
+  return <GameEpisode gameKind="influence"
     eyebrow={`${game.season?.name ?? "Influence"}${summary.episode?.episodeNumber ? ` · Episode ${summary.episode.episodeNumber}` : ""} · ${game.status === "in_progress" ? "Live" : game.status}`}
     title={title} description={summary.episode?.description ?? "Watch the House trailer, replay the game unspoiled, or inspect the full results."}
     media={preview?.media.status === "ready" && !ended ? <EpisodeTrailer preview={preview} autoplay={autoplay} onEnded={() => setEnded(true)} /> : <EpisodeArtwork title={title} frames={frames} active={ended} />}

@@ -39,7 +39,7 @@ export function Nav({ menu = false }: { menu?: boolean }) {
     || pathname === "/games/new"
     || pathname === "/admin/games/new"
     || (pathname.startsWith("/games/") && !["free", "public", "private", "season"].includes(gameRoute));
-  const showCreateActions = ready && !permissionsLoading && !focusedFlow;
+  const showCreateActions = ready && !permissionsLoading && !focusedFlow && pathname !== "/";
 
   const navLinks = (
     <>

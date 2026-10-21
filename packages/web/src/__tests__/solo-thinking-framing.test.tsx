@@ -37,6 +37,19 @@ const beat: Extract<VisualPresentationBeat,{kind:"portrait"}> = {
   speech:{id:"s",playerId:"p",speaker:"Player",text:"Hello, everyone."},
 };
 const load = async () => null;
+test("thinking shows its supplied role while a disabled Mystery thought renders no private content", async () => {
+  const director = new PresentationDirector<WatchCue>({policy:{position:()=>1,speech:()=>null,isCatchUp:()=>false,acceptAtWatermark:()=>false,reconcile:cues=>cues}});
+  const thinking = spyOn(director,"getThinkingFrame").mockReturnValue({text:"A private plan.",elapsedMs:100,durationMs:2000,opacity:1,focus:1});
+  const content = (enabled:boolean) => <WatchThinking director={director} cueKey={null} enabled={enabled} speaker="Player" roleLabel="werewolf" load={load}>
+    <SoloPresentation beat={beat} elapsedMs={1000}/>
+  </WatchThinking>;
+  const view=render(content(true));
+  expect(view.container.querySelector("[data-thinking-role]")?.textContent).toBe("werewolf");
+  view.rerender(content(false));
+  expect(view.container.querySelector("[data-in-scene-thinking]")).toBeNull();
+  expect(view.container.textContent).not.toContain("A private plan.");
+  await act(async()=>{});thinking.mockRestore();
+});
 test("the tie-break scene shows the empowered thought before returning to the unselected nominee pool", async () => {
   Object.defineProperties(dom.HTMLElement.prototype, {clientWidth:{configurable:true,get:()=>1440},clientHeight:{configurable:true,get:()=>900}});
   const chooser = {id:"p",name:"Player",persona:"",avatarUrl:"/portrait.png",status:"alive" as const,shielded:false};

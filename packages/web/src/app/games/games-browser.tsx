@@ -394,12 +394,14 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
         </div>
       ) : (
         <div className={compact ? "episode-compact" : ""}>
+          <div className={openGames.length > 0 && seasonGames.length > 0 && activeSeason ? "episode-featured-shelves" : undefined}>
           {openGames.length > 0 && <EpisodeShelf name="Open" grid={false}>
             {openGames.map(item => <GameCard key={item.game.id} game={item.game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
           </EpisodeShelf>}
           {seasonGames.length > 0 && activeSeason && <EpisodeShelf name="Active season" grid={false} href={`/games/season/${encodeURIComponent(activeSeason.slug)}`}>
             {seasonGames.map(game => <GameCard key={game.id} game={game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
           </EpisodeShelf>}
+          </div>
           {libraryWerewolf.length > 0 && <EpisodeShelf name="Werewolf" grid={compact || !!filters.search || filters.status !== "all" || kind === "werewolf"} href="/games/type/werewolf">
             {libraryWerewolf.map(game => <GameCard key={game.id} game={game} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
           </EpisodeShelf>}
@@ -415,6 +417,10 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
 function EpisodeShelf({ name, grid, href, children }: { name: string; grid: boolean; href?: string; children: React.ReactNode }) {
   const rail = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ left: false, right: false });
+  const scroll = (direction: number) => rail.current?.scrollBy({
+    left: direction * rail.current.clientWidth,
+    behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+  });
   useEffect(() => {
     const element = rail.current;
     if (!element || grid) return;
@@ -425,5 +431,5 @@ function EpisodeShelf({ name, grid, href, children }: { name: string; grid: bool
     update();
     return () => { observer.disconnect(); element.removeEventListener("scroll", update); };
   }, [grid, children]);
-  return <section className="episode-shelf" aria-label={name}><div className="episode-shelf-heading"><h2>{name}</h2>{!grid && <div className="flex gap-2">{href && <Link href={href} className="rounded border border-white/20 px-3 py-2 text-sm">View all</Link>}<button disabled={!edges.left} aria-label={`Previous ${name} games`} onClick={() => rail.current?.scrollBy({ left: -rail.current.clientWidth, behavior: "smooth" })}>←</button><button disabled={!edges.right} aria-label={`Next ${name} games`} onClick={() => rail.current?.scrollBy({ left: rail.current.clientWidth, behavior: "smooth" })}>→</button></div>}</div><div ref={rail} className={grid ? "episode-grid" : `episode-rail ${edges.left ? "has-before" : ""} ${edges.right ? "has-after" : ""}`}>{children}</div></section>;
+  return <section className="episode-shelf" aria-label={name}><div className="episode-shelf-heading"><h2>{name}</h2>{!grid && <div className="flex gap-2">{href && <Link href={href} className="rounded border border-white/20 px-3 py-2 text-sm">View all</Link>}<button disabled={!edges.left} aria-label={`Previous ${name} games`} onClick={() => scroll(-1)}>←</button><button disabled={!edges.right} aria-label={`Next ${name} games`} onClick={() => scroll(1)}>→</button></div>}</div><div ref={rail} className={grid ? "episode-grid" : `episode-rail ${edges.left ? "has-before" : ""} ${edges.right ? "has-after" : ""}`}>{children}</div></section>;
 }

@@ -793,6 +793,7 @@ export type { CostedTokenRequest, TokenCostProjection, TokenCostRateCard } from 
 export { computeMingleRoomCount } from "./mingle-turn-execution";
 export { mingleWindowRooms } from "./phases/mingle";
 
-export { DEFAULT_CONVERSATION_POLICY, conversationPolicy, beginConversation, isSpectatorHuddleSpeech, huddleSessionId } from "./open-conversation";
+export { DEFAULT_CONVERSATION_POLICY } from "./conversation-policy";
+export { conversationPolicy, beginConversation, isSpectatorHuddleSpeech, huddleSessionId } from "./open-conversation";
 
 export { withEvaluationBudget } from "./evaluation-budget";

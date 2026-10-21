@@ -187,7 +187,8 @@ describe("MatchWatchShell", () => {
     const textHtml = withoutReactTextMarkers(html);
 
     expect(html).toContain('data-testid="match-watch-shell"');
-    expect(html).toContain("INFLUENCE");
+    expect(html).toContain('alt="Influence"');
+    expect(html).toContain('src="/home/influence-logo.png"');
     expect(html).toContain("Watch Room");
     expect(html).toContain("vast-violet-code");
     expect(textHtml).toContain("Round 0 Replay");

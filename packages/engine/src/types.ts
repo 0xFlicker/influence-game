@@ -4,7 +4,7 @@
  * Standalone prototype types — no ElizaOS dependency.
  */
 
-import { DEFAULT_CONVERSATION_POLICY } from "./open-conversation";
+import { DEFAULT_CONVERSATION_POLICY } from "./conversation-policy";
 
 export type UUID = string;
 import type { LaunchFormatId } from "./format-presentation-metadata";

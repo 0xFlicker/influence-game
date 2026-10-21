@@ -1,7 +1,15 @@
 import {expect,test} from "bun:test";
-import {fitBubbleText, type BubbleBudget} from "../components/watch/bubble-typography";
+import {bubbleFontRange, fitBubbleText, type BubbleBudget} from "../components/watch/bubble-typography";
 const measure = (text:string,width:number,font:number) => Math.max(1,Math.ceil(text.length * font * .5 / width)) * font * 1.4;
 const budget:BubbleBudget = {width:480,height:300,chrome:66,padding:18,maxFont:28,minFont:18};
+test("video-sized bubbles retain large type and all text across pages", () => {
+ const text="I need to hear your explanation before deciding where I stand. ".repeat(40);
+ const fit=fitBubbleText(text,{...budget,width:720,height:360,...bubbleFontRange(720,false)},measure);
+ expect(fit.fontSize).toBeGreaterThanOrEqual(36);
+ expect(fit.pages.length).toBeGreaterThan(1);
+ expect(fit.pages.join("")).toBe(text);
+ for(const page of fit.pages) expect(measure(page,682,fit.fontSize)+budget.chrome+22).toBeLessThanOrEqual(fit.height);
+});
 test("short dialogue uses larger type and a snug bubble without changing padding", () => {
  const fit=fitBubbleText("Why did you change your vote?",budget,measure);
  expect(fit.fontSize).toBe(28);expect(fit.height).toBeLessThan(150);expect(fit.pages).toHaveLength(1);

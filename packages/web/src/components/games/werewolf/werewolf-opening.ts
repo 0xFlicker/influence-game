@@ -1,5 +1,6 @@
 import type {WerewolfWatchWindow} from "@influence/engine/werewolf/watch-contract";
 import type {WatchPolicy} from "../../watch/watch-director";
+import {GAME_BRANDS} from "../../../lib/game-brand";
 import {werewolfWatchPolicy, type WerewolfWatchCue} from "./werewolf-watch-model";
 
 const root = "/visual/werewolf/opening-v1";
@@ -42,7 +43,7 @@ export function werewolfOpening(window: WerewolfWatchWindow, title?: string): We
   let startMs = 0;
   return shots.map(({shot, duration, player}) => {
     const cue: WerewolfOpeningCue = {key: `${window.gameId}:opening:${shot}:${player?.id ?? ""}`, baseDurationMs: duration,
-      opening: {shot, startMs, totalMs, title: title?.trim() || "Werewolf", logoUrl: OPENING_ASSETS.logo, musicUrl: OPENING_ASSETS.music,
+      opening: {shot, startMs, totalMs, title: title?.trim() || "Werewolf", logoUrl: shot === "title" ? GAME_BRANDS.werewolf.logo : OPENING_ASSETS.logo, musicUrl: OPENING_ASSETS.music,
         backgroundUrl: shot === "house" ? OPENING_ASSETS.lanternPoster : shot === "door" ? OPENING_ASSETS.doorPoster : OPENING_ASSETS.alley,
         ...(shot === "house" ? {videoUrl: OPENING_ASSETS.lantern, effectUrl: OPENING_ASSETS.lanternEffects, transitionUrl: OPENING_ASSETS.alley} :
           shot === "door" ? {videoUrl: OPENING_ASSETS.door, effectUrl: OPENING_ASSETS.doorEffects} : {}), ...(player ? {player} : {})}};

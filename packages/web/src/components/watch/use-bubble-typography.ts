@@ -1,7 +1,7 @@
 "use client";
 import {useSampledStage} from "./sampled-stage";
 import {useLayoutEffect, useState, type RefObject} from "react";
-import {fitBubbleText, type BubbleTypography} from "./bubble-typography";
+import {bubbleFontRange, fitBubbleText, type BubbleTypography} from "./bubble-typography";
 import type {SceneFrame} from "@/app/games/[slug]/components/visual-scene-layout";
 
 /** Measure before speech is shown; time/page changes cannot resize the bubble. */
@@ -10,9 +10,8 @@ export function useBubbleTypography(frame: RefObject<HTMLElement | null>, text: 
   const {width, height} = box;
   const padding = compact ? 10 : 18;
   const chrome = padding * 2 + 2 + headerHeight;
-  const maxFont = kind === "thought" ? compact ? 17 : 22 : compact ? 20 : 28;
-  const minFont = compact ? 12 : kind === "thought" ? 16 : 18;
-  const key = JSON.stringify([text,width,height,kind,compact,headerHeight]);
+  const {minFont, maxFont} = bubbleFontRange(width, compact);
+  const key = JSON.stringify([text,width,height,kind,compact,headerHeight,minFont,maxFont]);
   const frozen=sampled?.layouts?.[key];
   const capture=sampled?.captureLayout;
   const [measured, setMeasured] = useState<{key:string; value:BubbleTypography} | null>(null);

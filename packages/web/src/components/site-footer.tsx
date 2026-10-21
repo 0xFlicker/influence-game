@@ -68,16 +68,16 @@ export function SiteFooter() {
   return (
     <footer
       data-testid="site-footer"
-      className="border-t border-border-active/60 bg-surface-overlay/30 px-6 py-10 backdrop-blur-sm"
+      className={`border-t border-border-active/60 bg-surface-overlay/30 py-10 backdrop-blur-sm ${pathname === "/" ? "px-[clamp(22px,3vw,64px)]" : "px-6"}`}
     >
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-10">
+      <div className={`mx-auto flex w-full flex-col gap-10 ${pathname === "/" ? "max-w-[1792px]" : "max-w-6xl"}`}>
         <div className="grid grid-cols-2 gap-x-6 gap-y-8 md:grid-cols-[minmax(0,1.5fr)_repeat(4,minmax(0,1fr))]">
           <div className="col-span-2 max-w-sm md:col-span-1">
             <Link href="/" className="text-lg font-bold tracking-tight text-text-primary">
               {HOUSE_VENUE.name}
             </Link>
             <p className="influence-copy mt-3 text-sm leading-6">
-              A social-strategy game by{" "}
+              Social-strategy games by{" "}
               <a
                 href={FALSE_FLOOR.websiteUrl}
                 {...EXTERNAL_FOOTER_LINK_PROPS}
@@ -91,7 +91,7 @@ export function SiteFooter() {
 
           {SITE_FOOTER_SECTIONS.map((section) => (
             <div key={section.label}>
-              <h2 className="influence-table-header text-xs font-semibold uppercase tracking-wider">
+              <h2 className="text-[#9995a3] text-xs font-semibold uppercase tracking-wider">
                 {section.label}
               </h2>
               <ul className="mt-3 space-y-2 text-sm">
@@ -120,7 +120,7 @@ export function SiteFooter() {
           ))}
         </div>
 
-        <div className="flex flex-col gap-2 border-t border-border-active/60 pt-5 text-xs text-text-muted sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 border-t border-border-active/60 pt-5 text-xs text-[#9995a3] sm:flex-row sm:items-center sm:justify-between">
           <span>© {new Date().getFullYear()} {HOUSE_VENUE.name}</span>
           <span>{HOUSE_VENUE.domain}</span>
         </div>

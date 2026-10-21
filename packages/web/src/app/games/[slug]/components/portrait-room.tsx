@@ -108,14 +108,14 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
   const centerX = size.width * (beside ? .72 : .5);
   const diameter = Math.min(seats[0]?.diameter ?? 0, available * (beside ? deep ? .3 : .44 : .34));
   const thought = useSceneThinking();
-  const bubbleHeight = Math.max(0, Math.min(300, 248, beside ? available - 56 : available * (deep ? .3 : .45)));
+  const bubbleHeight = Math.max(0, Math.min(400, beside ? available - 56 : available * (deep ? .3 : .45)));
   const centerY = beside ? available * (deep ? .64 : .5) : deep ? available * .8 : Math.max(diameter / 2 + 44, (available + bubbleHeight) / 2);
   const bubbleTop = beside ? 44 : Math.max(44, centerY - diameter / 2 - bubbleHeight - 24);
   const opacity = speechPresentation === "solo" ? soloPresentationMotion(beat.speech.text, elapsedMs, false, reducedMotion).speechOpacity
     : sceneSpeechOpacity(beat.speech.text, elapsedMs, reducedMotion);
   const speechTime = speechPresentation === "solo" ? soloPresentationMotion(beat.speech.text, readingElapsedMs).speechElapsedMs
     : readingElapsedMs - SCENE_SPEECH_START_MS;
-  const bubbleWidth = Math.max(0, Math.min(480, beside ? size.width * .43 : deep ? size.width * .58 : size.width - 24));
+  const bubbleWidth = Math.max(0, Math.min(720, beside ? size.width * .43 : deep ? size.width * .58 : size.width - 24));
   const rawBubble = {left: beside ? 12 : (size.width - bubbleWidth) / 2, top: bubbleTop,
     width: bubbleWidth, height: bubbleHeight};
   const focus = thinkingFocus(size.width,available,{left:centerX-diameter*.28,top:centerY-diameter*.4,width:diameter*.56,height:diameter*.56},thought?.focus ?? 0,true,reducedMotion);
@@ -148,7 +148,7 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
     </div>
     {!thought && !hideSpeech && opacity > 0 && <div data-speech-bubble className="absolute z-[200] flex flex-col rounded-2xl border border-white/25 bg-black/90 px-5 py-4 shadow-xl"
       style={{...bubble, opacity, padding:speechFit.padding}}>
-      <p className={`mb-2 h-5 shrink-0 truncate text-xs font-semibold leading-5 text-white/70 ${speechFit.typography && speechFit.typography.pages.length > 1 && !speechFit.typography.footerHeight ? "pr-12" : ""}`}>{beat.speech.speaker}</p>
+      <p className={`mb-2 h-5 shrink-0 truncate text-base font-semibold leading-5 text-white/80 ${speechFit.typography && speechFit.typography.pages.length > 1 && !speechFit.typography.footerHeight ? "pr-12" : ""}`}>{beat.speech.speaker}</p>
       <TimedSpeech text={beat.speech.text} elapsedMs={speechTime} typography={speechFit.typography} className="text-base leading-relaxed" />
       <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/25 bg-black/90 ${beside ? "-right-2 border-r border-t" : "-bottom-2 left-1/2 -translate-x-1/2 border-r border-b"}`} style={beside ? { top: centerY - bubbleTop - 8 } : undefined} />
     </div>}

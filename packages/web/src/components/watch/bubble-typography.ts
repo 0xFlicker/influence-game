@@ -6,6 +6,12 @@ export interface BubbleTypography {
 export interface BubbleBudget {width: number; height: number; chrome: number; padding: number; maxFont: number; minFont: number}
 export type MeasureBubbleText = (text: string, width: number, fontSize: number) => number;
 
+/** Keep video text legible; paginate long passages instead of shrinking below this floor. */
+export function bubbleFontRange(width: number, compact: boolean) {
+  const minFont = compact ? 16 : Math.round(Math.max(20, Math.min(38, width * .055)));
+  return {minFont, maxFont: minFont + (compact ? 6 : 8)};
+}
+
 /** Choose type and one frame for the entire message, never for its current page. */
 export function fitBubbleText(text: string, budget: BubbleBudget, measure: MeasureBubbleText): BubbleTypography {
   const {width, height, chrome, padding, maxFont, minFont} = budget;

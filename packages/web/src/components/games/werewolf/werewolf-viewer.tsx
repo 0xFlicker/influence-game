@@ -91,7 +91,7 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
     {id:"overview", label:"Overview", content:<InspectorSection title="Character" section={{cards: identity ? [{id:identity.id,title:identity.personaKey ?? identity.name,meta:person?.role ?? "",body:[identity.personality,identity.backstory].filter(Boolean).join("\n\n")}] : [],reason:"Choose a player."}} />},
     {id:"decisions",label:"Decisions",content: active && selectedId ? <WerewolfDecisions gameId={active.snapshot.gameId} slug={slug} audience={audience} cursor={cursor} players={players} actorId={selectedId} onSeek={seek} /> : null},
   ]} />;
-  return <WatchShell mode="replay" header={<ShellHeader model={header} gamePath={slug} showResultsCta={false} exitHref="/games" brand="THE HOUSE" />}
+  return <WatchShell mode="replay" header={<ShellHeader model={header} gamePath={slug} showResultsCta={false} exitHref="/games" gameKind="werewolf" />}
     cast={<CastRail model={cast} onSelectPlayer={setSelected} />}
     mobileCast={<div className="shrink-0 xl:hidden"><MobileContextPanel model={cast} onSelectPlayer={id => {setSelected(id);setInspecting(true);}} /><button className="px-3 py-1 text-xs text-white/60" onClick={() => setInspecting(true)}>Player info</button></div>}
     inspector={<div role={inspecting ? "dialog" : undefined} aria-modal={inspecting || undefined} aria-label={inspecting ? "Player information" : undefined} className={inspecting ? "fixed inset-3 z-50 flex min-h-0 flex-col bg-black xl:static" : "hidden min-h-0 xl:block"}>{inspecting && <button className="shrink-0 p-3 text-right text-sm text-white/70 xl:hidden" onClick={() => setInspecting(false)}>Close player info</button>}{inspect}</div>}
@@ -102,7 +102,7 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
         {watch.openingCue ? <div className="relative min-h-0 flex-1" onClick={event => {if (!(event.target instanceof Element) || !event.target.closest("button")) director.manualAdvance();}}>
           <WerewolfOpeningFrame cue={watch.openingCue} elapsedMs={watch.elapsed} playing={snapshot.isPlaying && !watch.preparing && !watch.holding} speed={snapshot.speed} reduced={snapshot.reducedMotion} />
           <button type="button" className="absolute right-4 top-4 rounded border border-white/20 bg-black/60 px-3 py-2 text-xs text-white/80" onClick={() => {music.suspend(); void watch.seek(1);}}>Skip opening</button>
-        </div> : <WatchThinking director={director} cueKey={cue?.key ?? null} enabled={audience === "omniscient" && thinking} speaker={performer?.name ?? "Player"} load={loadThinking}>
+        </div> : <WatchThinking director={director} cueKey={cue?.key ?? null} enabled={audience === "omniscient" && thinking} speaker={performer?.name ?? "Player"} roleLabel={audience === "omniscient" ? performer?.role ?? undefined : undefined} load={loadThinking}>
         <WerewolfWatchStage navigationRevision={watch.navigationRevision} contextLabel={active ? replayMoment({...active.snapshot, entries:[active.entry]}).title : undefined} cue={cue} scene={active?.mediaKey ? watch.media[active.mediaKey] ?? null : null} elapsed={watch.elapsed} reduced={snapshot.reducedMotion} director={director} holding={watch.holding} status={data?.status} />
         </WatchThinking>}
         {watch.preparing && <p role="status" className="absolute right-3 top-2 text-xs text-white/40">Preparing…</p>}

@@ -10,7 +10,7 @@ export function thinkingFocus(width: number, height: number, face: SceneFrame, p
   const beside = width >= 640 && width >= height;
   const faceOnRight = beside && (faceSide ? faceSide === "right" : face.left + face.width / 2 > width / 2);
   const square = Math.max(0, Math.min(beside ? width * .48 : width - margin * 2, beside ? height - margin * 2 : height * .48));
-  const textWidth = Math.max(0, Math.min(560, beside ? width - square - gap - margin * 2 : width - margin * 2));
+  const textWidth = Math.max(0, Math.min(760, beside ? width - square - gap - margin * 2 : width - margin * 2));
   const left = beside ? (width - square - gap - textWidth) / 2 : (width - square) / 2;
   const top = beside ? (height - square) / 2 : margin;
   const target = {x:left + (faceOnRight ? textWidth + gap : 0) + square / 2, y:top + square * .46};
@@ -21,8 +21,8 @@ export function thinkingFocus(width: number, height: number, face: SceneFrame, p
   const x = (target.x - source.x * zoom) * amount;
   const y = (target.y - source.y * zoom) * amount;
   const head = {x:source.x * scale + x, y:source.y * scale + y};
-  const box: SceneFrame = {left:beside ? faceOnRight ? left : left + square + gap : margin, top:beside ? Math.max(margin,(height - Math.min(380,height - margin * 2)) / 2) : top + square + gap,
-    width:textWidth, height:Math.max(0,beside ? Math.min(380,height - margin * 2) : height - (top + square + gap) - margin)};
+  const box: SceneFrame = {left:beside ? faceOnRight ? left : left + square + gap : margin, top:beside ? Math.max(margin,(height - Math.min(480,height - margin * 2)) / 2) : top + square + gap,
+    width:textWidth, height:Math.max(0,beside ? Math.min(480,height - margin * 2) : height - (top + square + gap) - margin)};
   // Reduced motion cuts to a still close-up instead of animating the camera.
   const radius = Math.max(24, Math.max(face.width,face.height) * scale * .7);
   const mediaStyle: CSSProperties = {transformOrigin:"0 0", transform:`translate(${x}px, ${y}px) scale(${scale})`};
@@ -32,7 +32,7 @@ export type ThinkingFocusLayout = ReturnType<typeof thinkingFocus>;
 
 export function ThinkingFocusOverlay({frame, layout}: {frame: RefObject<HTMLElement | null>; layout: ThinkingFocusLayout}) {
   const thought = useSceneThinking();
-  const fit = useBubbleTypography(frame, thought?.text ?? "", layout.box, "thought", layout.box.height < 180);
+  const fit = useBubbleTypography(frame, thought?.text ?? "", layout.box, "thought", layout.box.height < 180, thought?.roleLabel ? 48 : 28);
   if (!thought) return null;
   const {head, radius} = layout;
   const fittedWidth = fit.typography?.width ?? layout.box.width;
