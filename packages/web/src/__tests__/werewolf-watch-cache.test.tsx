@@ -63,6 +63,27 @@ function fixture(speeches: number[], latestCursor = 128, status = "cancelled") {
 
 const useFixtureWatch = () => useWerewolfWatch("g", "mystery", "2026-10-06T00:00:00.000Z", 1);
 
+test("background visibility preserves playback intent and an explicit pause stays paused on return", async () => {
+  fixture([1, 2], 2);
+  const view = renderHook(useFixtureWatch);
+  await waitFor(() => expect(view.result.current.preparing).toBe(false));
+  expect(view.result.current.snapshot.isPlaying).toBe(true);
+  const visibility = async (hidden: boolean) => act(async () => {
+    Object.defineProperty(document, "hidden", {configurable: true, value: hidden});
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await visibility(true);
+  expect(view.result.current.follow).toBe(true);
+  expect(view.result.current.snapshot.isPlaying).toBe(true);
+  await act(async () => {await view.result.current.seek(2, true);});
+  expect(view.result.current.snapshot.isPlaying).toBe(true);
+  await act(async () => view.result.current.toggle());
+  expect(view.result.current.follow).toBe(false);
+  await visibility(false);
+  expect(view.result.current.snapshot.isPlaying).toBe(false);
+  expect(view.result.current.follow).toBe(false);
+});
+
 test("cached distant windows wait for missing history after rewind and Previous", async () => {
   const requests = fixture([1, 40, 65, 97]);
   const view = renderHook(useFixtureWatch);

@@ -228,6 +228,51 @@ test.describe("format-aware game viewer", () => {
     });
   }
 
+  test("unmuted intro, phase and closing music keep playing across background visibility", async ({page}) => {
+    await observeMusic(page);
+    const slug = "background-music";
+    await installDeterministicFormatGame(page, {slug, scenarioId:"majority_elimination_tie", status:"completed", decisions:[{
+      type:"jury.winner_determined", sequence:10, round:2, phase:Phase.JURY_VOTE,
+      timestamp:"2026-09-23T00:00:00.000Z", payload:{votes:{atlas:"rex"}, winnerId:"rex"},
+    }]});
+    await page.route(`**/api/games/${slug}/transcript*`, route => route.fulfill({json:[]}));
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await page.getByRole("button", {name:"Turn music on",exact:true}).click();
+    const keepsPlaying = async (track: string) => {
+      const audio = async () => (await musicState(page)).find(media => media.src?.includes(track) && !media.paused);
+      await expect.poll(async () => (await audio())?.time ?? -1).toBeGreaterThan(.5);
+      for (const hidden of [true, false]) {
+        const before = (await audio())!.time;
+        // Drive the browser visibility boundary deterministically in headless CI;
+        // the actual decoded media clock must continue without an unlock gesture.
+        await page.evaluate(hidden => {
+          Object.defineProperty(document, "hidden", {configurable:true, value:hidden});
+          Object.defineProperty(document, "visibilityState", {configurable:true, value:hidden ? "hidden" : "visible"});
+          document.dispatchEvent(new Event("visibilitychange"));
+          window.dispatchEvent(new Event(hidden ? "blur" : "focus"));
+        }, hidden);
+        if (hidden) {
+          const volume = page.getByRole("slider", {name:"Music volume",exact:true});
+          await volume.fill(String(Number(await volume.inputValue()) + 5));
+        }
+        await expect.poll(async () => (await audio())?.time ?? -1).toBeGreaterThan(before + .2);
+        await expect(page.getByRole("button", {name:"Mute music",exact:true})).toBeVisible();
+        await expect(page.getByRole("button", {name:"Pause replay",exact:true})).toBeVisible();
+      }
+    };
+    await keepsPlaying("an-invitation-to-power");
+    await skipOpening(page);
+    await keepsPlaying("names-on-the-table");
+    await pauseAutoplay(page, "Pause replay");
+    const position = page.getByRole("slider", {name:"Replay position",exact:true});
+    await position.fill(String(Number(await position.getAttribute("max")) - 30));
+    await page.getByRole("button", {name:"Play replay",exact:true}).click();
+    await expect.poll(async () => (await musicState(page)).find(media => media.src?.includes("the-last-word"))?.time ?? -1).toBeGreaterThan(3);
+    await keepsPlaying("the-last-word");
+    await pauseAutoplay(page, "Pause replay");
+    expect((await musicState(page)).every(media => media.paused)).toBe(true);
+  });
+
   test("Influence closing music continues over results and Pause stops it", async ({page}) => {
     await observeMusic(page);
     const slug = "closing-music";

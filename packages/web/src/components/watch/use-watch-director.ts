@@ -13,12 +13,10 @@ export function useWatchDirector<C extends WatchCue>(policy: WatchPolicy<C>) {
     let frame = 0;
     const sample = () => { setElapsed(director.getElapsedBaseMs()); frame = requestAnimationFrame(sample); };
     frame = requestAnimationFrame(sample);
-    const hidden = () => { if (document.hidden) director.pause(); };
-    document.addEventListener("visibilitychange", hidden);
     const preference = matchMedia("(prefers-reduced-motion: reduce)");
     const motion = () => director.setReducedMotion(preference.matches);
     motion(); preference.addEventListener("change", motion);
-    return () => { unsubscribe(); cancelAnimationFrame(frame); document.removeEventListener("visibilitychange", hidden); preference.removeEventListener("change", motion); director.dispose(); };
+    return () => { unsubscribe(); cancelAnimationFrame(frame); preference.removeEventListener("change", motion); director.dispose(); };
   }, [director]);
   return {director, snapshot, elapsed};
 }

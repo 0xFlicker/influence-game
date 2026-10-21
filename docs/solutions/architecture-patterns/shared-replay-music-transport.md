@@ -14,7 +14,7 @@ The House owns the two-deck streaming controller, device sound preferences and v
 
 A pointer scrub suspends sound immediately and freezes track selection until the final seek resolves. Same-section seeks preserve musical position; cross-section seeks and explicit restart start from zero. Keyboard/scene seeks have no pointer lifecycle, so the navigation revision also resynchronizes transport. Preserve the user's play/pause intent across all seeks. Pause freezes both decks during overlap. Initial mute allocates no media; after unlock, mute uses master gain zero and retains media position.
 
-Saved mute intent is separate from browser playback permission. Call unlock directly in a player gesture, create/resume the AudioContext there, and handle both media `play()` rejection and a context resume that remains pending. A denial shows Enable music without overwriting the saved preference. Do not retry on every render or new section. Fence async completion after pause, seek, replacement and disposal. Hidden tabs pause through the existing director and stay paused on return.
+Saved mute intent is separate from browser playback permission. Call unlock directly in a player gesture, create/resume the AudioContext there, and handle both media `play()` rejection and a context resume that remains pending. A denial shows Enable music without overwriting the saved preference. Do not retry on every render or new section. Fence async completion after pause, seek, replacement and disposal. Losing focus or hiding the tab preserves playback and sound intent, so unmuted intro, phase and closing music continue in the background. Explicit pause, mute, scrubbing and disposal still stop sound; returning to the tab needs no mute-toggle cycle. Watch analytics continue to count visible viewing only.
 
 Sound preferences extend the existing per-device viewer/production record and validate fields independently. Thinking-only records preserve their values. Trailer sound remains separate. Mute and volume are always outside settings, even on narrow screens; optional speed/thinking controls yield room, and Go live remains available in settings when its inline button cannot fit.
 
@@ -101,7 +101,7 @@ Influence samples the song at opening start + local cue time, preserving the
 seconds and out over the final two seconds. Gameplay music uses the shared
 two-deck transport at 1×. Mute and volume use the existing device preferences;
 first visits start muted. The music gesture also prepares the ambient context
-for the automatic handoff. Scrubbing, pausing and hiding the tab suspend sound.
+for the automatic handoff. Scrubbing and pausing suspend sound; hiding the tab preserves playback.
 
 The review preview with music is retained under
 `.renders/influence-opening/video-v3-with-music/`: the existing 39.8-second
