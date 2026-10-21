@@ -1,42 +1,53 @@
+.game-library-page {
+  background: #101114;
+  color: #eeeae4;
+  color-scheme: dark;
+}
+.game-library-content {
+  --episode-columns: 3;
+  flex: 1;
+  width: 100%;
+  margin: 0 auto;
+  padding: 36px clamp(32px, 3vw, 96px) 64px;
+}
 .episode-card {
   position:relative;
   min-width:0;
   overflow:hidden;
   border:1px solid rgb(255 255 255/.1);
-  border-radius:16px;
-  background:var(--color-surface,#171b19);
+  border-radius:10px;
+  background:#19191e;
+  display:flex;
+  flex-direction:column;
   isolation:isolate;
   scroll-snap-align:start;
   transition:border-color .3s,box-shadow .5s
 }
 .episode-card:hover {
-  border-color:rgb(191 214 175/.35);
+  border-color:#77717f;
   box-shadow:0 18px 55px #0003
 }
 .episode-card-link {
   display:block;
+  flex:1;
   color:inherit;
   text-decoration:none
 }
 .episode-card-link:focus-visible {
-  outline:3px solid #bfd6af;
+  outline:2px solid #ddbf87;
   outline-offset:-4px
 }
 .episode-artwork {
   position:relative;
+  container-type:inline-size;
   aspect-ratio:16/9;
   overflow:hidden;
-  background:#101610
+  background:#101114
 }
 .episode-frame {
   position:absolute;
   inset:0;
-  opacity:0;
-  transition:opacity 1s;
   pointer-events:none
-}
-.episode-frame.is-visible {
-  opacity:1
 }
 .episode-scene {
   object-fit:cover;
@@ -86,20 +97,20 @@
 }
 .episode-house {
   position:absolute;
-  inset:15% 9%;
+  inset:24% 7% 20%;
   display:flex;
   flex-direction:column;
-  justify-content:center
-}
-.episode-house>span {
-  font-size:10px;
-  letter-spacing:.18em;
-  color:#dfdfc6
+  justify-content:center;
+  overflow:hidden
 }
 .episode-house p {
-  font:italic clamp(20px,2.5vw,35px)/1.2 Georgia,serif;
+  font:italic clamp(12px,4cqw,20px)/1.4 Georgia,serif;
   color:#f2f0e8;
-  max-width:540px
+  margin:0;
+  display:-webkit-box;
+  -webkit-line-clamp:5;
+  -webkit-box-orient:vertical;
+  overflow:hidden
 }
 .episode-frame-label {
   position:absolute;
@@ -111,16 +122,17 @@
 }
 .episode-status {
   position:absolute;
-  top:18px;
-  left:18px;
+  top:12px;
+  left:12px;
+  z-index:1;
   font-size:11px;
   letter-spacing:.09em;
   text-transform:uppercase;
   padding:5px 9px;
-  background:#111912db;
+  background:#17171de8;
   border:1px solid #ffffff25;
   border-radius:5px;
-  color:#edece4
+  color:#eeeae4
 }
 .episode-status-in_progress {
   color:#c6e7a4
@@ -153,8 +165,12 @@
   margin-bottom:15px
 }
 .episode-meta {
-  color:#8e9c88;
-  font-size:12px
+  color:#b7b3bf;
+  font-size:12px;
+  line-height:1.6;
+  text-align:right;
+  margin-left:auto;
+  min-width:0;
 }
 .episode-desktop-actions,.episode-modal-actions {
   display:flex;
@@ -162,8 +178,15 @@
   gap:9px;
   flex-wrap:wrap
 }
+.episode-card-footer {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:8px 12px;
+  padding:0 16px 16px;
+}
 .episode-desktop-actions {
-  padding:3px 25px 23px
+  gap:6px;
 }
 .episode-desktop-actions>a,.episode-modal-actions>a,.episode-modal button,.episode-video-controls button {
   padding:10px 14px;
@@ -179,7 +202,7 @@
   max-height:none;
   margin:0;
   padding:0;
-  background:#101511;
+  background:#19191e;
   color:#f2f1e8;
   border:0;
   overflow:auto;
@@ -199,7 +222,7 @@
   position:sticky;
   top:0;
   z-index:3;
-  background:#101511ef
+  background:#19191ef5
 }
 .episode-modal button,.episode-video-controls button {
   border:1px solid #ffffff30;
@@ -209,7 +232,7 @@
   aspect-ratio:4/3
 }
 .episode-modal-media .episode-house p {
-  font-size:clamp(26px,5vw,45px)
+  font-size:clamp(16px,4cqw,32px)
 }
 .episode-modal .episode-copy {
   padding-bottom:calc(28px + env(safe-area-inset-bottom))
@@ -257,8 +280,8 @@
 .episode-rail {
   display:grid;
   grid-auto-flow:column;
-  grid-auto-columns:calc((100% - 24px)/2);
-  gap:24px;
+  grid-auto-columns:calc((100% - (var(--shelf-columns, var(--episode-columns, 3)) - 1)*20px)/var(--shelf-columns, var(--episode-columns, 3)));
+  gap:20px;
   overflow-x:auto;
   scroll-snap-type:x mandatory;
   scrollbar-width:none;
@@ -269,8 +292,8 @@
 }
 .episode-grid {
   display:grid;
-  grid-template-columns:repeat(2,minmax(0,1fr));
-  gap:24px
+  grid-template-columns:repeat(var(--episode-columns, 3),minmax(0,1fr));
+  gap:20px
 }
 .episode-editor {
   min-width:0;
@@ -310,7 +333,7 @@
   align-items:center;
   gap:10px;
   flex-wrap:wrap;
-  margin-bottom:30px
+  margin-bottom:24px
 }
 .episode-library-toolbar input {
   flex:1;
@@ -320,7 +343,8 @@
   padding:11px 14px;
   border:1px solid #ffffff25;
   border-radius:8px;
-  background:#ffffff05
+  background:#19191e;
+  color:#eeeae4;
 }
 .episode-landing {
   max-width:1040px;
@@ -360,39 +384,54 @@
   padding:12px 0
 }
 .episode-skeleton {
-  aspect-ratio:4/3;
-  background:#ffffff05;
-  border-radius:15px;
+  aspect-ratio:1.1;
+  background:#19191e;
+  border:1px solid #ffffff1a;
+  border-radius:10px;
   animation:episode-pulse 2s infinite
 }
-.episode-compact .episode-copy h2 {
-  font-size:24px
+@media(min-width:1600px) {
+  .game-library-content { --episode-columns:4; }
 }
-@media(max-width:1023px) {
-  .episode-rail {
-    grid-auto-columns:100%;
-    gap:16px
+@media(min-width:2000px) {
+  .game-library-content { --episode-columns:5; }
+  .game-library-content .episode-featured-shelves {
+    display:grid;
+    grid-template-columns:repeat(var(--episode-columns),minmax(0,1fr));
+    gap:20px;
   }
-  .episode-grid {
-    grid-template-columns:1fr
+  .game-library-content .episode-featured-shelves > .episode-shelf { min-width:0; }
+  .game-library-content .episode-featured-shelves > .episode-shelf:first-child {
+    grid-column:span 2;
+    --shelf-columns:2;
   }
-  .episode-copy {
-    padding:20px
-  }
-  .episode-copy h2 {
-    font-size:30px
-  }
-  .episode-copy p {
-    min-height:0
-  }
-  .episode-shelf-heading h2 {
-    font-size:22px
+  .game-library-content .episode-featured-shelves > .episode-shelf:last-child {
+    grid-column:span calc(var(--episode-columns) - 2);
+    --shelf-columns:calc(var(--episode-columns) - 2);
   }
 }
-@media(hover:none),(pointer:coarse) {
-  .episode-card .episode-copy {
-    padding-bottom:23px
-  }
+@media(min-width:2400px) {
+  .game-library-content { --episode-columns:6; }
+}
+@media(min-width:2800px) {
+  .game-library-content { --episode-columns:7; }
+}
+@media(min-width:3200px) {
+  .game-library-content { --episode-columns:8; }
+}
+@media(max-width:1279px) {
+  .episode-rail { grid-auto-columns:calc((100% - 20px)/2); }
+  .episode-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:767px) {
+  .game-library-content { padding:28px 20px 48px; }
+  .episode-rail { grid-auto-columns:92%; gap:14px; }
+  .episode-grid { grid-template-columns:1fr; gap:20px; }
+  .episode-shelf-heading { gap:10px; margin-bottom:14px; }
+  .episode-shelf-heading h2 { font-size:21px; }
+  .episode-shelf-heading button { padding:8px; }
+  .episode-library-toolbar input { flex-basis:100%; min-width:0; }
+  .episode-library-toolbar select { flex:1; min-width:0; }
 }
 @keyframes episode-open {
   from {
@@ -434,16 +473,68 @@
 .episode-shelf-heading button:disabled { opacity: .3; }
 
 
-.episode-card { display: flex; flex-direction: column; border-color: #b79a6440; }
-.episode-card-link { flex: 1; }
-.episode-card .episode-eyebrow { color: #ddbf87; }
-.episode-card .episode-status { background: #211a12e8; color: #f5e4c2; border-color: #c5a56966; }
-.episode-card .influence-button-primary, .episode-modal-actions > .influence-button-primary { background: #d9b979; color: #21180c; }
-.episode-card .influence-button-primary:hover { background: #e5c98d; }
-.episode-card .episode-desktop-actions { margin-top: auto; align-items: flex-start; }
-.episode-card .episode-desktop-actions > button { padding: 10px 14px; border-radius: 8px; font-size: 13px; }
-.episode-season { display: block; margin-top: 8px; }
-.episode-management { flex-basis: 100%; font-size: 12px; color: #afb8ab; }
-.episode-management a { text-decoration: underline; text-underline-offset: 3px; }
-
-.episode-game-logo { width: 155px; height: 42px; object-fit: contain; object-position: left center; margin-bottom: 10px; }
+/* Compact discovery cards share the same layout in shelves and collections. */
+.episode-card-media { position:relative; }
+.episode-card-media::after {
+  content:"";
+  position:absolute;
+  inset:0;
+  background:linear-gradient(#101114b3,transparent 34%);
+  pointer-events:none;
+}
+.episode-card-logo {
+  position:absolute;
+  top:10px;
+  right:14px;
+  z-index:1;
+  width:120px;
+  height:34px;
+  object-fit:contain;
+  object-position:right center;
+  filter:drop-shadow(0 1px 3px #101114);
+}
+.episode-card .episode-copy { padding:14px 16px 12px; }
+.episode-card .episode-copy h2 {
+  font-size:22px;
+  line-height:1.18;
+  margin:0 0 8px;
+  text-wrap:pretty;
+  overflow-wrap:anywhere;
+}
+.episode-card .episode-copy p {
+  font-size:13px;
+  line-height:1.55;
+  color:#bcb9c2;
+  min-height:0;
+  margin:0;
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+}
+.episode-card .influence-button-primary, .episode-modal-actions > .influence-button-primary {
+  background:#d9b979;
+  color:#21180c;
+}
+.episode-card .influence-button-primary:hover { background:#e5c98d; }
+.episode-card .episode-desktop-actions > :is(a,button) {
+  display:inline-flex;
+  align-items:center;
+  min-height:44px;
+  padding:9px 10px;
+  border-radius:6px;
+  font-size:12px;
+  white-space:nowrap;
+}
+.episode-card .episode-desktop-actions > :is(a,button):active { transform:translateY(1px); }
+.episode-card :is(a,button):focus-visible, .episode-library-toolbar :is(input,select,a):focus-visible,
+.episode-shelf-heading :is(a,button):focus-visible { outline:2px solid #ddbf87; outline-offset:3px; }
+.episode-card-link:focus-visible { outline-offset:-3px; }
+.episode-library-toolbar input::placeholder { color:#a8a4b0; }
+.episode-shelf-heading :is(a,button) { min-height:44px; white-space:nowrap; }
+.episode-meta > span { display:block; }
+.episode-season { max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.episode-management { padding:0 16px 14px; font-size:12px; color:#bcb9c2; }
+.episode-management a { text-decoration:underline; text-underline-offset:3px; }
+.episode-game-logo { width:155px; height:42px; object-fit:contain; object-position:left center; margin-bottom:10px; }
+.episode-modal-logo { width:140px; height:38px; object-fit:contain; object-position:left center; }

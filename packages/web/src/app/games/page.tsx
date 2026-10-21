@@ -9,11 +9,11 @@ export const metadata = {
 
 export default function GamesPage() {
   return (
-    <div className="influence-page min-h-screen flex flex-col">
+    <div className="game-library-page min-h-screen flex flex-col">
       <Nav />
 
-      <main className="flex-1 px-6 py-10 max-w-[1480px] mx-auto w-full">
-        <h1 className="influence-phase-title text-3xl font-bold mb-2">
+      <main className="game-library-content">
+        <h1 className="text-3xl font-semibold tracking-tight mb-2">
           Every room has a story.
         </h1>
         <p className="influence-copy mb-8">

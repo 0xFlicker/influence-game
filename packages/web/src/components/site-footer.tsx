@@ -91,7 +91,7 @@ export function SiteFooter() {
 
           {SITE_FOOTER_SECTIONS.map((section) => (
             <div key={section.label}>
-              <h2 className="influence-table-header text-xs font-semibold uppercase tracking-wider">
+              <h2 className="text-[#9995a3] text-xs font-semibold uppercase tracking-wider">
                 {section.label}
               </h2>
               <ul className="mt-3 space-y-2 text-sm">
@@ -120,7 +120,7 @@ export function SiteFooter() {
           ))}
         </div>
 
-        <div className="flex flex-col gap-2 border-t border-border-active/60 pt-5 text-xs text-text-muted sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 border-t border-border-active/60 pt-5 text-xs text-[#9995a3] sm:flex-row sm:items-center sm:justify-between">
           <span>© {new Date().getFullYear()} {HOUSE_VENUE.name}</span>
           <span>{HOUSE_VENUE.domain}</span>
         </div>
