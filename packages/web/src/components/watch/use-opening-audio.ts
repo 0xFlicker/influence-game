@@ -56,11 +56,9 @@ export function useOpeningAudio(input: Input) {
   const scrubbing = useRef(false);
   useEffect(() => {
     const audio = new OpeningAudio(setStatus); controller.current = audio;
-    const hide = () => {if (document.hidden) audio.suspend();};
-    document.addEventListener("visibilitychange", hide);
-    return () => {document.removeEventListener("visibilitychange",hide);audio.dispose();controller.current = null;};
+    return () => {audio.dispose();controller.current = null;};
   }, []);
-  useEffect(() => {controller.current?.update({...input, playing:input.playing && !scrubbing.current && !document.hidden});}, [input]);
+  useEffect(() => {controller.current?.update({...input, playing:input.playing && !scrubbing.current});}, [input]);
   return {status,
     unlock: useCallback(() => controller.current?.unlock(), []),
     suspend: useCallback(() => controller.current?.suspend(), []),

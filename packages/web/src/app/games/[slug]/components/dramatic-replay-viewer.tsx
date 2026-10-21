@@ -312,11 +312,6 @@ function DramaticReplayTheater({
     // Prepare the ambient AudioContext in the same gesture as opening playback.
     unlockAmbient(); unlockOpening();
   }, [unlockAmbient, unlockOpening]);
-  useEffect(() => {
-    const hide = () => {if (document.hidden) setPlayRequested(false);};
-    document.addEventListener("visibilitychange", hide);
-    return () => document.removeEventListener("visibilitychange", hide);
-  }, []);
 
 
   // Set data-phase on root for cinematic CSS cascade
