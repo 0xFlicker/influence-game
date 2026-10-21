@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type BrowserContext } from "@playwright/test";
+import { expect, test, type Browser, type BrowserContext, type BrowserContextOptions } from "@playwright/test";
 import type { GameDetail, GamePlayer, SavedAgent } from "../packages/web/src/lib/api";
 import type { ProductionLibraryGame, ProductionLibraryPage } from "../packages/web/src/lib/production-studio";
 import {
@@ -56,7 +56,7 @@ test.describe("local public player identity", () => {
   test("signed-out game joins create a character before signup", async ({ browser }) => {
     test.setTimeout(120_000);
     for (const gameKind of ["influence", "werewolf"] as const) {
-      const context = await browser.newContext();
+      const context = await identityContext(browser);
       const page = await context.newPage();
       const id = `public-join-${gameKind}`;
       const character = { name: "Mira Vale", personaKey: "diplomat", gender: "female", personality: "A warm diplomat who keeps receipts.",
@@ -115,7 +115,7 @@ test.describe("local public player identity", () => {
       currentAgent: { name, avatarUrl: `/avatars/personas/${personaKey}.png`, role: { key: "strategic", label: "Strategist" }, competition: { gamesPlayed: 7, wins: 3, winRate: 3 / 7 } },
     });
     for (const width of [1440, 390]) {
-      const context = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 1100 }, hasTouch: width === 390, isMobile: width === 390 });
+      const context = await identityContext(browser, { viewport: { width, height: width === 390 ? 844 : 1100 }, hasTouch: width === 390, isMobile: width === 390 });
       const page = await context.newPage();
       let game: GameDetail = { id: "preshow-fixture", slug: "preshow-fixture", status: "waiting", gameKernel: "classic", playerCount: 4, players: [], currentRound: 0, maxRounds: 11, currentPhase: "INIT", modelLabel: "Standard", visibility: "public", createdAt: new Date().toISOString() };
       let failRefresh = false;
@@ -195,7 +195,7 @@ test.describe("local public player identity", () => {
   test("pre-show operator controls respect permissions and execute game actions", async ({ browser }) => {
     test.setTimeout(120_000);
     for (const width of [1440, 390]) {
-      const context = await browser.newContext({ viewport: { width, height: 900 } });
+      const context = await identityContext(browser, { viewport: { width, height: 900 } });
       await context.addInitScript(token => localStorage.setItem("influence_session", token), fixture.completeJwt);
       const page = await context.newPage();
       let permissions: string[] = [];
@@ -252,7 +252,7 @@ test.describe("local public player identity", () => {
     test.setTimeout(180_000);
     const savedAgent = (id: string, name: string, personaKey: SavedAgent["personaKey"]): SavedAgent => ({ id, name, personaKey, avatarUrl: null, backstory: null, personality: "Fixture", strategyStyle: null, gamesPlayed: 3, gamesWon: 1, createdAt: "2026-09-01", updatedAt: "2026-09-01" });
     for (const width of [1440, 390]) {
-      const context = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 1100 }, hasTouch: width === 390, isMobile: width === 390 });
+      const context = await identityContext(browser, { viewport: { width, height: width === 390 ? 844 : 1100 }, hasTouch: width === 390, isMobile: width === 390 });
       await context.addInitScript(token => localStorage.setItem("influence_session", token), fixture.completeJwt);
       const page = await context.newPage();
       const owner = { publicId: fixture.publicId, handle: fixture.handle, displayName: "E2E Flick" };
@@ -363,7 +363,7 @@ test.describe("local public player identity", () => {
       { ...base, id: "wolf", slug: "wolf", gameKind: "werewolf", joinedPlayers: 8 },
     ];
     for (const width of [1440, 390]) {
-      const context = await browser.newContext({ viewport: { width, height: 1000 } });
+      const context = await identityContext(browser, { viewport: { width, height: 1000 } });
       const page = await context.newPage();
       let active = true;
       try {
@@ -395,7 +395,7 @@ test.describe("local public player identity", () => {
   test("library cards share visible authorized controls and separate Fill AI from Start", async ({ browser }) => {
     test.setTimeout(120_000);
     for (const width of [1440, 390]) {
-      const context = await browser.newContext({ viewport: { width, height: 1000 } });
+      const context = await identityContext(browser, { viewport: { width, height: 1000 } });
       await context.addInitScript(token => localStorage.setItem("influence_session", token), fixture.completeJwt);
       const page = await context.newPage();
       let permissions: string[] = [];
@@ -449,7 +449,7 @@ test.describe("local public player identity", () => {
     const influence = { id: "open-influence", slug: "open-influence", visibility: "public", status: "waiting", playerCount: 10, alivePlayers: 9, modelLabel: "Standard", createdAt: new Date().toISOString(), episode };
     const werewolf = { id: "open-werewolf", slug: "open-werewolf", gameKind: "werewolf", status: "waiting", playerCount: 10, joinedPlayers: 9, modelLabel: "Standard", createdAt: new Date().toISOString(), episode: { ...episode, title: "Open Werewolf" } };
     for (const touch of [false, true]) {
-      const context = await browser.newContext({ viewport: touch ? { width: 390, height: 844 } : { width: 1440, height: 1000 }, hasTouch: touch, isMobile: touch, reducedMotion: "no-preference" });
+      const context = await identityContext(browser, { viewport: touch ? { width: 390, height: 844 } : { width: 1440, height: 1000 }, hasTouch: touch, isMobile: touch, reducedMotion: "no-preference" });
       const page = await context.newPage();
       let open = true;
       await page.clock.install();
@@ -525,7 +525,7 @@ test.describe("local public player identity", () => {
     const game = { id: "episode-fixture", slug: "quiet-sage-room", status: "completed", playerCount: 4, players: [], currentRound: 5, maxRounds: 5, currentPhase: "DONE", alivePlayers: 1, eliminatedPlayers: 3, phaseTimeRemaining: null, modelLabel: "Standard", visibility: "public", createdAt: new Date().toISOString(), season: { id: "s0", name: "Season 0", slug: "season-0" }, episode: { title: "Good Company", description: "Four strangers. Four different ideas about trust.", episodeNumber: 42, cast: [{ id: "mira", name: "Mira", avatarUrl: null, personaKey: "strategic" }], coverUrl: null, status: "ready", locked: false, revision: 1, frameOrder: [] } };
     const preview = { episode: game.episode, frames: [{ id: "house", kind: "house", label: "A word from the House", text: game.episode.description }], media: { schemaVersion: 1, mediaType: "house_highlights_trailer", status: "ready", renderVersion: 1, durationSeconds: 12, preview: { title: game.episode.title, description: game.episode.description }, video: { url: `${servers.webUrl}/episode-fixture.mp4`, contentType: "video/mp4", width: 1920, height: 1080 }, poster: { url: `${servers.webUrl}/house-highlights/generated/alliance-formation.jpg`, altText: "The House", contentType: "image/jpeg" }, captions: { url: `${servers.webUrl}/episode-fixture.vtt`, contentType: "text/vtt", language: "en", label: "English" }, manifest: { url: "", contentType: "application/json" } } };
     for (const touch of [false, true]) {
-      const context = await browser.newContext({ viewport: touch ? { width: 390, height: 844 } : { width: 1440, height: 1000 }, hasTouch: touch, isMobile: touch });
+      const context = await identityContext(browser, { viewport: touch ? { width: 390, height: 844 } : { width: 1440, height: 1000 }, hasTouch: touch, isMobile: touch });
       const page = await context.newPage();
       try {
         await page.addInitScript(() => {
@@ -747,7 +747,7 @@ test.describe("local public player identity", () => {
   test("pins and dismisses the preview on touch inside a narrow viewport", async ({
     browser,
   }) => {
-    const context = await browser.newContext({
+    const context = await identityContext(browser, {
       hasTouch: true,
       isMobile: true,
       viewport: { width: 390, height: 844 },
@@ -1091,11 +1091,21 @@ test.describe("local public player identity", () => {
   });
 });
 
+async function identityContext(browser: Browser, options: BrowserContextOptions = {}): Promise<BrowserContext> {
+  const context = await browser.newContext(options);
+  // Identity stories use a saved opt-out so the region-dependent analytics
+  // notice cannot cover their controls. Consent behavior has its own coverage.
+  await context.addInitScript(() => {
+    localStorage.setItem("house:analytics-consent", JSON.stringify({ version: 1, analytics: false }));
+  });
+  return context;
+}
+
 async function authenticatedContext(
   browser: Browser,
   jwt: string,
 ): Promise<BrowserContext> {
-  const context = await browser.newContext();
+  const context = await identityContext(browser);
   await context.addInitScript((token) => {
     localStorage.setItem("influence_session", token);
   }, jwt);
