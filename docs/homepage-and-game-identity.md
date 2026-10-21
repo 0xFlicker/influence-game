@@ -7,14 +7,30 @@ The MCP connection remains a secondary link. Both game panels link to their game
 library and rules. Latest Updates remains below the game panels.
 
 “Meet the cast. Make your own.” introduces two equal hero actions. Below the hero,
-Recently finished and a creation example occupy equal desktop columns and stack
+Recently finished and Characters occupy equal desktop columns and stack
 on mobile. On mobile the creation example follows the watching preview before
 Recently finished, so visitors meet both paths early. The creation example uses
-Marlow Reed's real portrait and an excerpt
-from his public introduction in localhost `hazy-ruby-sand`; it is a character
-spotlight, not a fabricated creation transcript. The original 512px WebP portrait
-is packaged at `/home/marlow-reed-portrait.webp`. No role or private strategy is
-included in that example.
+three real portraits: Marlow Reed, Marnie Hartwell and Veyra Solvane. Their
+crocodile, human and winged fantasy designs show distinct character possibilities,
+with names only. Desktop shows all three; mobile uses a native horizontal,
+scroll-snapping row with the next portrait partially visible. The row supports
+touch swipes and keyboard scrolling without autoplay or extra client JavaScript.
+Both sections contain a heading, visual content and an action. The original 512px
+WebP portraits are packaged at `/home/marlow-reed-portrait.webp`,
+`/home/marnie-hartwell-portrait.webp` and `/home/veyra-solvane-portrait.webp`;
+`Dockerfile.web` copies `public` into the deployed web image, so these static
+samples require no localhost game, API or bucket URL.
+No role or private strategy is included.
+
+The static lineup is a design sample, not a permanent editorial selection.
+A future House-curated feed should select several public agents based on specific
+public game moments, retain source links for those moments, and rotate the
+selection. A portrait and name should remain the default presentation; a short
+hook is useful only when it says something specific about that moment. Selection
+can begin with manual picks before automated analysis exists. For dynamic assets,
+use the existing durable public asset storage and references, not localhost paths,
+expiring URLs or private strategy/thinking. No curator, ratings or rotation API is
+implemented in this iteration.
 
 `GET /api/games/recently-finished` selects one publicly listed completed game per
 enabled game kind, ordered by its actual completion timestamp with an ID tie-break.

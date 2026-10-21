@@ -19,9 +19,7 @@ export function RecentlyFinished() {
     return () => controller.abort();
   }, []);
   return <section className={styles.recent} aria-labelledby="recently-finished-title">
-    <p className={styles.eyebrow}>Take a seat</p>
     <h2 id="recently-finished-title">Recently finished</h2>
-    <p className={styles.sectionCopy}>A fresh story from each game. Pick one and press play.</p>
     <div className={styles.recentGames} aria-busy={!games && !error}>
       {error ? <p role="status" className={styles.recentStatus}>Recent games couldn’t load. <Link href="/games">Browse the games library →</Link></p>
         : games === null ? <p role="status" className={styles.recentStatus}>Finding the latest games…</p>
