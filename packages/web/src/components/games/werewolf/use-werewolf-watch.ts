@@ -104,11 +104,6 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
   }, [slug, audience, cutoff, commitWindow, director, startCursor, withOpening]);
   const cancel = useCallback(() => { intent.current++; request.current?.abort(); }, []);
   useEffect(() => { void seek(startCursor ?? 1, playIntent.current, false, true); return cancel; }, [seek, cancel, startCursor]);
-  useEffect(() => {
-    const visibility = () => { if (document.hidden) {playIntent.current = false; setFollow(false);} };
-    document.addEventListener("visibilitychange", visibility);
-    return () => document.removeEventListener("visibilitychange", visibility);
-  }, []);
   const playbackCue = director.getActiveCue();
   const openingCue = isOpeningCue(playbackCue) ? playbackCue : null;
   const activeCue = playbackCue && !isOpeningCue(playbackCue) ? playbackCue : null;
