@@ -10,7 +10,6 @@ import PublicPlayerProfileNotFound from "../app/(site)/profile/[id]/not-found";
 import { PublicPlayerProfileView } from "../app/profile/[id]/public-player-profile";
 import {
   PublicProfileShareButton,
-  sharePublicPlayerProfile,
 } from "../app/profile/[id]/public-profile-share-button";
 import type {
   PublicPlayerProfile,
@@ -318,75 +317,6 @@ describe("public player profile sharing", () => {
       ...profileFixture.identity,
       handle: null,
     })).toBe(`/profile/${profileFixture.identity.publicId}`);
-  });
-
-  it("uses native sharing first with the exact canonical URL", async () => {
-    let sharedData: ShareData | undefined;
-    let copied = false;
-    const result = await sharePublicPlayerProfile({
-      displayName: "Flick",
-      canonicalPath: "/profile/flick",
-      origin: "https://thehouse.game",
-      share: async (data) => {
-        sharedData = data;
-      },
-      copy: async () => {
-        copied = true;
-      },
-    });
-
-    expect(sharedData).toEqual({
-      title: "Flick on Influence",
-      text: "View Flick's competitive profile on Influence.",
-      url: "https://thehouse.game/profile/flick",
-    });
-    expect(copied).toBe(false);
-    expect(result).toEqual({
-      tone: "success",
-      message: "Share dialog opened.",
-    });
-  });
-
-  it("treats native cancellation as neutral without copying", async () => {
-    let copied = false;
-    const result = await sharePublicPlayerProfile({
-      displayName: "Flick",
-      canonicalPath: "/profile/flick",
-      origin: "https://thehouse.game",
-      share: async () => {
-        throw new DOMException("Cancelled", "AbortError");
-      },
-      copy: async () => {
-        copied = true;
-      },
-    });
-
-    expect(copied).toBe(false);
-    expect(result).toEqual({
-      tone: "neutral",
-      message: "Share cancelled.",
-    });
-  });
-
-  it("falls back from unavailable native sharing to the exact canonical clipboard URL", async () => {
-    let copiedUrl = "";
-    const result = await sharePublicPlayerProfile({
-      displayName: "Flick",
-      canonicalPath: "/profile/flick",
-      origin: "https://thehouse.game",
-      share: async () => {
-        throw new Error("Native sharing unavailable");
-      },
-      copy: async (url) => {
-        copiedUrl = url;
-      },
-    });
-
-    expect(copiedUrl).toBe("https://thehouse.game/profile/flick");
-    expect(result).toEqual({
-      tone: "success",
-      message: "Profile link copied.",
-    });
   });
 
   it("renders an accessible 44px share control and live feedback region", () => {

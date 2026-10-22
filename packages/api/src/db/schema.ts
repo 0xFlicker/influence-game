@@ -73,6 +73,19 @@ import { MCP_OAUTH_SCOPE_CHECK_VALUES } from "../services/mcp-scope-policy.js";
 
 export type PostgameMediaType = "house_highlights_trailer";
 
+/** Immutable public share coordinates, never an authorization grant. */
+export const houseShareLinks = pgTable("house_share_links", {
+  code: text("code").primaryKey(),
+  path: text("path").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [uniqueIndex("house_share_links_path_unique").on(table.path)]);
+
+export const houseShareRateLimits = pgTable("house_share_rate_limits", {
+  key: text("key").primaryKey(),
+  count: integer("count").notNull(),
+  resetAt: timestamp("reset_at", { withTimezone: true }).notNull(),
+}, table => [index("house_share_rate_limits_expiry").on(table.resetAt)]);
+
 /** One frozen private context per game; canonical history owns all speech/progress. */
 export const gameRetrospectiveInputs = pgTable("game_retrospective_inputs", {
   gameId: text("game_id").primaryKey().references(() => games.id, { onDelete: "cascade" }),

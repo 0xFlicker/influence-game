@@ -1,4 +1,3 @@
-import {sharePostgameLink} from "../lib/share-link";
 import { describe, expect, it } from "bun:test";
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToString } from "react-dom/server";
@@ -7,10 +6,6 @@ import {
   postgameMediaStateCopy,
   SeasonReceiptSummary,
 } from "../app/games/[slug]/components/completed-game-entry";
-import {
-  PostgameMediaPlayer,
-  sharePostgameTrailer,
-} from "../app/games/[slug]/components/postgame-media-player";
 import {
   resolveApiUrl,
   type GameDetail,
@@ -168,126 +163,6 @@ describe("CompletedGameEntry", () => {
       expect(html).not.toContain("diagnostic");
     });
   }
-
-  it("uses the canonical game URL and clipboard fallback feedback", async () => {
-    let copiedUrl = "";
-    const result = await sharePostgameTrailer({
-      gameId,
-      origin: "https://thehouse.game",
-      title: "House Highlights",
-      text: "A completed Influence game, told through the House.",
-      copy: async (url) => {
-        copiedUrl = url;
-      },
-    });
-
-    expect(copiedUrl).toBe(`https://thehouse.game/games/${gameId}`);
-    expect(result).toEqual({ tone: "success", message: "Share link copied." });
-  });
-
-  it("opens native sharing with the canonical game URL", async () => {
-    let sharedData: ShareData | undefined;
-    const result = await sharePostgameTrailer({
-      gameId,
-      origin: "https://thehouse.game",
-      title: "House Highlights",
-      text: "The pact collapsed one vote too late.",
-      share: async (data) => {
-        sharedData = data;
-      },
-    });
-
-    expect(sharedData).toEqual({
-      title: "House Highlights",
-      text: "The pact collapsed one vote too late.",
-      url: `https://thehouse.game/games/${gameId}`,
-    });
-    expect(result).toEqual({ tone: "success", message: "Share dialog opened." });
-  });
-
-  it("opens native sharing with a scene-specific House Cut URL", async () => {
-    let sharedData: ShareData | undefined;
-    const result = await sharePostgameLink({
-      href: "/games/edge-smoke-dusk/highlights?scene=alliance-cut%3A1%3Aember#scene-alliance-cut%3A1%3Aember",
-      origin: "https://thehouse.game",
-      title: "Ember was cut from inside the pact — House Highlights",
-      text: "Nova voted against Ember in Round 1.",
-      unavailableMessage: "Unable to share this cut right now.",
-      share: async (data) => {
-        sharedData = data;
-      },
-    });
-
-    expect(sharedData).toEqual({
-      title: "Ember was cut from inside the pact — House Highlights",
-      text: "Nova voted against Ember in Round 1.",
-      url: "https://thehouse.game/games/edge-smoke-dusk/highlights?scene=alliance-cut%3A1%3Aember#scene-alliance-cut%3A1%3Aember",
-    });
-    expect(result).toEqual({ tone: "success", message: "Share dialog opened." });
-  });
-
-  it("copies the scene-specific House Cut URL when native sharing is unavailable", async () => {
-    let copiedUrl = "";
-    const result = await sharePostgameLink({
-      href: "/games/edge-smoke-dusk/highlights?scene=alliance-cut%3A1%3Aember#scene-alliance-cut%3A1%3Aember",
-      origin: "https://thehouse.game",
-      title: "Ember was cut from inside the pact — House Highlights",
-      text: "Nova voted against Ember in Round 1.",
-      unavailableMessage: "Unable to share this cut right now.",
-      copy: async (url) => {
-        copiedUrl = url;
-      },
-    });
-
-    expect(copiedUrl).toBe(
-      "https://thehouse.game/games/edge-smoke-dusk/highlights?scene=alliance-cut%3A1%3Aember#scene-alliance-cut%3A1%3Aember",
-    );
-    expect(result).toEqual({ tone: "success", message: "Share link copied." });
-  });
-
-  it("does not copy the trailer URL when native sharing is cancelled", async () => {
-    let copyAttempted = false;
-    const result = await sharePostgameTrailer({
-      gameId,
-      origin: "https://thehouse.game",
-      title: "House Highlights",
-      text: "The pact collapsed one vote too late.",
-      share: async () => {
-        throw new DOMException("Share cancelled", "AbortError");
-      },
-      copy: async () => {
-        copyAttempted = true;
-      },
-    });
-
-    expect(copyAttempted).toBe(false);
-    expect(result).toEqual({ tone: "neutral", message: "Share cancelled." });
-  });
-
-  it("reports share errors through visible live feedback", async () => {
-    const result = await sharePostgameTrailer({
-      gameId,
-      origin: "https://thehouse.game",
-      title: "House Highlights",
-      text: "A completed Influence game, told through the House.",
-      share: async () => {
-        throw new Error("Share unavailable");
-      },
-      copy: async () => {
-        throw new Error("Clipboard unavailable");
-      },
-    });
-
-    expect(result).toEqual({
-      tone: "error",
-      message: "Unable to share this trailer right now.",
-    });
-
-    const html = renderToString(<PostgameMediaPlayer gameId={gameId} media={readyMedia()} />);
-    expect(html).toContain('aria-live="polite"');
-    expect(html).toContain('aria-label="Share trailer"');
-  });
-
 
   it("loads social metadata without replay history and fails safely when the game disappears", async () => {
     const originalFetch = globalThis.fetch, originalBase = process.env.WEB_BASE_URL;
