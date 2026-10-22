@@ -6,6 +6,8 @@
 - `manage_game_imports`: POST direct game-export import.
 - Ordinary exports retain their existing read authority.
 
+Accounts delegated only `manage_invites` see the Admin link and land on Invites. Revoking that permission removes both navigation and API access.
+
 ## Remote import removed
 
 Cross-environment browsing and importing have been removed. There is no Import Game admin panel, remote game-list route, source-configuration endpoint, or outbound game-import fetch. No import-source environment settings are needed. The API accepts a complete uploaded export at `POST /api/admin/import-game`, guarded by `manage_game_imports`; the former URL-and-slug payload is invalid. Existing imported games and ordinary game exports are unaffected.
