@@ -449,7 +449,8 @@ async function finishBackgroundRuntimeStartup(
   const episodeWorker = gameExecutionWorker ? startEpisodeWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const visualMediaWorker = gameExecutionWorker ? startVisualMediaWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const ownerLearningApiKey = process.env.OPENAI_API_KEY?.trim();
-  const agentScreeningWorker = gameExecutionWorker && ownerLearningApiKey
+  // The existing mock-runner lane must never dispatch real screening requests.
+  const agentScreeningWorker = gameExecutionWorker && ownerLearningApiKey && process.env.INFLUENCE_API_TEST_MOCK_RUNNER !== "true"
     ? startAgentScreeningWorker(db, createAgentScreeningProvider(ownerLearningApiKey), () => runtimeActivation.canClaimWork()) : null;
   if (gameExecutionWorker && !ownerLearningApiKey) console.warn("[agent-screening] OPENAI_API_KEY missing; shadow work remains pending");
   assertNotAborted();
