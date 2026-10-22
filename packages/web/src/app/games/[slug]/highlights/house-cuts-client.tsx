@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api";
 import { useRuntimeConfig } from "@/lib/runtime-config";
 import type { HouseCutsResponse } from "@influence/engine/house-cuts/publication";
-import { usePostgameShare, shareFeedbackClassName } from "../components/postgame-media-player";
+import { HouseShareButton } from "@/components/house-share-button";
 import { gameHref, gameHighlightsHref } from "@/lib/game-links";
 
 export function HouseCutsClient({ slug, audience, selectedId }: { slug: string; audience?: string; selectedId?: string }) {
@@ -51,10 +51,8 @@ export function HouseCutsView({ slug, data, selectedId }: { slug: string; data: 
 }
 
 function CutShare({ href, title, text }: { href: string; title: string; text: string }) {
-  const { feedback, shareLink } = usePostgameShare({ href, title: `${title} — House Cuts`, text, unavailableMessage: "Unable to share this Cut right now." });
-  return <div>
-    <button type="button" className="text-white/80 hover:text-white" aria-label={`Share this Cut: ${title}`} onClick={() => void shareLink()}>Share this Cut ↗</button>
-    <Link className="ml-5 text-white/60 hover:text-white" href={href}>Open Cut</Link>
-    {feedback && <p role="status" className={shareFeedbackClassName(feedback)}>{feedback.message}</p>}
+  return <div className="flex items-center gap-3">
+    <HouseShareButton href={href} label={`Share this Cut: ${title}`} title={`${title} — House Cuts`} text={text} />
+    <Link className="text-white/60 hover:text-white" href={href}>Open Cut</Link>
   </div>;
 }

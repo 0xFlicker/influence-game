@@ -1,3 +1,4 @@
+import { createHouseShareRoutes } from "./routes/house-share-links.js";
 import { renderExecutionConfig } from "@influence/engine/render-execution-config";
 import { remoteRenderingEnabled, startRenderWakeDispatcher } from "./services/postgame-media-execution.js";
 import { startHouseCutWorker } from "./services/house-cut-worker.js";
@@ -617,6 +618,7 @@ const mcpRoutes = createMcpRoutes(db);
 app.route("/", mcpRoutes);
 
 // Game routes
+app.route("/", createHouseShareRoutes(db));
 app.route("/", createGameEntryRoutes(db));
 app.route("/", createWerewolfRoutes(db));
 app.route("/", createWerewolfAdminRoutes(db));
@@ -763,7 +765,7 @@ const server = await listenBeforeRuntimeInitialization({
       }
 
       // Delegate everything else to Hono
-      return app.fetch(req, { env: {} });
+      return app.fetch(req, { clientAddress: server.requestIP(req)?.address });
     },
     websocket: {
       open(ws) {

@@ -898,3 +898,7 @@ A private, advisory AI assessment of one immutable Agent Profile content revisio
 ### Native structured decisions
 
 Future game runs request a complete JSON document using the provider’s JSON Schema response format. Exact schema and domain validation precede acceptance; the response is a decision artifact, not a function to execute. Native reasoning remains separate private evidence. Historical tool-call evidence and accepted game events remain readable without rewriting completed games. Deployment drains active games; this transport change does not add in-progress upgrade compatibility.
+
+### House share link
+
+An immutable `/s/<code>` reference to a supported public House route and its validated viewing settings. A replay share freezes the moment at the share click, including cue-local time, audience and playback preferences. The link is not an authorization grant or game-state record. See [House sharing](docs/house-sharing.md).

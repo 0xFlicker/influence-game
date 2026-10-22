@@ -7,10 +7,15 @@ import {startTestServers,stopTestServers,type TestServerHandles} from "./test-se
 import {launchBrowser,closeBrowser,rejectOptionalAnalytics} from "./test-browser.js";
 import {seedFormatAwareGameViewerFixtures} from "./format-aware-game-viewer-fixture.js";
 import {cleanupE2eResources} from "./cleanup.js";
+import {storeFields} from "../services/payload-storage.js";
 let database:TestDB, servers:TestServerHandles, browser:Browser;
 beforeAll(async () => {
  database=await createIsolatedTestDb();
  await seedFormatAwareGameViewerFixtures(database.db);
+ await database.db.insert(schema.users).values({id:"share-player",walletAddress:"0x1111111111111111111111111111111111111111",handle:"share-player",displayName:"Share Player"});
+ await database.db.insert(schema.houseCutJobs).values(await storeFields({gameId:"e2e-dark-coral-horn",audience:"public" as const,status:"ready" as const,
+  publication:{version:"share-fixture",audience:"public" as const,cuts:[{id:"share-cut-1",title:"A shared House Cut",context:"The pact holds.",angle:"A strategic moment.",payoff:null,quotes:[],participants:[],sourceRefs:[],replayHref:"/games/dark-coral-horn/replay/1"}]},
+ },{publication:"json-gzip"}));
  const id="player-card-village", events=await completedCurrentWerewolfFixture(id);
  await database.db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"completed",startedAt:new Date().toISOString(),config:JSON.stringify({visibility:"unlisted",preset:"one_wolf",rulesVersion:9,providerManifest:[{catalogId:"openai:gpt-6-luna"}]})});
  await database.db.insert(schema.werewolfEvents).values(events.map(event=>({gameId:id,sequence:event.sequence,event})));
@@ -27,10 +32,19 @@ async function clickText(frame:Frame|Page,text:string) {
  await frame.waitForFunction(selector);
  await frame.evaluate(`${selector}.click()`);
 }
+const shortShares = new Map<string,string>();
 async function captureShare(frame:Frame|Page):Promise<URL> {
- await frame.evaluate('Object.defineProperty(navigator,"share",{configurable:true,value:async data=>{window.__shared=data.url;}})');
- await clickText(frame,"Share");
- return new URL(String(await frame.evaluate('window.__shared')));
+ await frame.evaluate('window.__shared=undefined;Object.defineProperty(navigator,"share",{configurable:true,value:async data=>{window.__shared=data.url;}})');
+ await frame.click('button[aria-label="Share this moment"]');
+ await frame.waitForSelector('input[aria-label="House share link"]');
+ await frame.click('button[aria-label="Share link"]');
+ await frame.waitForFunction('typeof window.__shared === "string"');
+ const short=new URL(String(await frame.evaluate('window.__shared')));
+ expect(short.pathname).toMatch(/^\/s\/[1-9A-HJ-NP-Za-km-z]{10}$/);expect(short.search).toBe("");
+ const resolved=await (await fetch(`${servers.webUrl}/api/share-links/${short.pathname.split("/").at(-1)}`)).json() as {path:string};
+ const expanded=new URL(resolved.path,short.origin);shortShares.set(expanded.href,short.href);
+ await frame.click('button[aria-label="Close share"]');
+ return expanded;
 }
 async function pause(frame:Frame|Page) {
  await frame.waitForSelector('button[aria-label="Pause replay"]');
@@ -46,7 +60,9 @@ async function scrub(frame:Frame|Page,value:number) {
 }
 test("Twitterbot and browsers receive matching player metadata, bounded HTML and framing headers",async()=>{
  const path="/games/dark-coral-horn/replay?speed=2&thinking=0&muted=1&volume=0.6";
- const responses=await Promise.all(["Twitterbot/1.0","Mozilla/5.0","FarcasterBot/1.0"].map(agent=>fetch(`${servers.webUrl}${path}`,{headers:{"User-Agent":agent}})));
+ const created=await fetch(`${servers.webUrl}/api/share-links`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({path})});
+ expect(created.status).toBe(200);const short=await created.json() as {path:string};
+ const responses=await Promise.all(["Twitterbot/1.0","Mozilla/5.0","FarcasterBot/1.0"].map(agent=>fetch(`${servers.webUrl}${short.path}`,{headers:{"User-Agent":agent}})));
  for(const response of responses){
   expect(response.status).toBe(200);const html=await response.text();
   expect(html).toContain('name="twitter:card" content="player"');
@@ -106,16 +122,26 @@ for(const slug of ["dark-coral-horn","player-card-village"]){
    // Farcaster launches the normal app at this moment, including its site providers.
    const appPage=await browser.newPage();await rejectOptionalAnalytics(appPage);
    try {
-    await appPage.goto(shared.href,{waitUntil:"domcontentloaded"});
+    await appPage.goto(`${shortShares.get(shared.href)}?t=999&speed=4&redirect=https://example.com`,{waitUntil:"domcontentloaded"});
+    await appPage.waitForFunction(`location.pathname===${JSON.stringify(shared.pathname)}`);
+    expect(new URL(appPage.url()).searchParams.get("t")).toBe(shared.searchParams.get("t"));
     await appPage.waitForSelector('meta[name="fc:miniapp"]');
     expect(await appPage.$$eval('meta[name="fc:miniapp"]',nodes=>nodes.length)).toBe(1);
-    const miniapp=JSON.parse(await appPage.$eval('meta[name="fc:miniapp"]',node=>node.getAttribute("content")!));
+    const crawler=await browser.newPage();await crawler.setJavaScriptEnabled(false);
+    let miniapp: {button: {title:string;action:{url:string}}};
+    try {
+     await crawler.goto(shortShares.get(shared.href)!,{waitUntil:"domcontentloaded"});
+     miniapp=JSON.parse(await crawler.$eval('meta[name="fc:miniapp"]',node=>node.getAttribute("content")!));
+    } finally {await crawler.close();}
     expect(miniapp.button.title).toBe("Watch replay");
     const launch=new URL(miniapp.button.action.url);
-    expect(launch.origin).toBe(shared.origin);expect(launch.pathname).toBe(shared.pathname);
+    expect(launch.origin).toBe(shared.origin);expect(launch.pathname).toBe(new URL(shortShares.get(shared.href)!).pathname);
     expect(launch.searchParams.get("app")).toBe("mini");
-    for(const [key,value] of shared.searchParams)expect(launch.searchParams.get(key)).toBe(value);
+    launch.searchParams.set("t","999");launch.searchParams.set("speed","4");
     await appPage.goto(launch.href,{waitUntil:"domcontentloaded"});
+    await appPage.waitForFunction(`location.pathname===${JSON.stringify(shared.pathname)}`);
+    for(const [key,value] of shared.searchParams)expect(new URL(appPage.url()).searchParams.get(key)).toBe(value);
+    expect(new URL(appPage.url()).searchParams.get("app")).toBe("mini");
     await appPage.waitForSelector('input[aria-label="Replay position"]:not([disabled])',{timeout:60_000});await pause(appPage);
     const launched=await captureShare(appPage);
     expect(launched.searchParams.get("cue")).toBe(shared.searchParams.get("cue"));
@@ -125,13 +151,16 @@ for(const slug of ["dark-coral-horn","player-card-village"]){
    }finally{await appPage.close();}
    await scrub(frame,0);await frame.waitForFunction(`Number(document.querySelector('input[aria-label="Replay position"]')?.value)===0`);
    // Native sharing unavailable: the native dialog exposes a frozen, selectable link.
-   await frame.evaluate(()=>Object.defineProperty(navigator,"share",{configurable:true,value:undefined}));await clickText(frame,"Share");
-   await frame.waitForSelector("dialog[open]");expect(await frame.$eval('input[aria-label="Replay share link"]',e=>e.value)).toContain("cue=");
+   await frame.evaluate(()=>Object.defineProperty(navigator,"share",{configurable:true,value:undefined}));await frame.click('button[aria-label="Share this moment"]');
+   await frame.waitForSelector('input[aria-label="House share link"]');expect(await frame.$eval('input[aria-label="House share link"]',e=>e.value)).toContain("/s/");
    await page.screenshot({path:`/tmp/${slug}-embed-share.png`});
    expect(requests.some(url=>/clerk|privy|\/api\/auth|posthog|farcaster/.test(url))).toBe(false);
    await clickText(frame,"✕");
    await frame.evaluate('Object.defineProperty(navigator,"share",{configurable:true,value:async()=>{throw new DOMException("Cancelled","AbortError");}})');
-   await clickText(frame,"Share");expect(await frame.$("dialog[open]")).toBeNull();
+   await frame.click('button[aria-label="Share this moment"]');await frame.waitForSelector('input[aria-label="House share link"]');
+   await frame.click('button[aria-label="Share link"]');
+   await frame.waitForFunction('document.querySelector("dialog[open]")?.textContent.includes("Share cancelled.")');
+   await frame.click('button[aria-label="Close share"]');
    for(const width of [320,480]) {
     await page.setViewport({width,height:480});
     await frame.waitForFunction(`document.documentElement.clientWidth<=${width}`);
@@ -154,4 +183,53 @@ test("normal completed replay links without timecode start at the opening and ex
    expect((await captureShare(page)).searchParams.get("cue")).toContain("opening");
   }
  }catch(error){console.error("Normal player diagnostics",await page.evaluate("({url:location.href,text:document.body.innerText})"));throw error;}finally{await page.close();}
+},150_000);
+
+test("share preparation failure can retry the original playing moment",async()=>{
+ const page=await browser.newPage();await rejectOptionalAnalytics(page);
+ const paths:string[]=[];
+ await page.setRequestInterception(true);
+ page.on("request",request=>{
+  if(new URL(request.url()).pathname==="/api/share-links" && request.method()==="POST"){
+   paths.push((JSON.parse(request.postData()!) as {path:string}).path);
+   if(paths.length===1){void request.respond({status:503,contentType:"application/json",body:'{"error":"unavailable"}'});return;}
+  }
+  void request.continue();
+ });
+ try{
+  await page.goto(`${servers.webUrl}/games/dark-coral-horn/replay`,{waitUntil:"domcontentloaded"});
+  await page.waitForSelector('input[aria-label="Replay position"]:not([disabled])',{timeout:60_000});
+  await page.click('button[aria-label="Share this moment"]');
+  await page.waitForFunction('document.querySelector("dialog[open]")?.textContent.includes("Try again")');
+  expect(await page.$('input[aria-label="House share link"]')).toBeNull();
+  const position=await page.$eval('input[aria-label="Replay position"]',e=>Number(e.value));
+  await page.waitForFunction(`Number(document.querySelector('input[aria-label="Replay position"]').value)>${position+5}`);
+  await clickText(page,"Try again");
+  await page.waitForSelector('input[aria-label="House share link"]');
+  expect(paths).toHaveLength(2);expect(paths[0]).toBe(paths[1]);
+  expect(await page.$eval('input[aria-label="House share link"]',e=>e.value)).toContain("/s/");
+ }finally{await page.close();}
+},120_000);
+
+test("public profile and House Cut icon buttons produce working short links and matching cards",async()=>{
+ const page=await browser.newPage();await rejectOptionalAnalytics(page);
+ try{
+  for(const item of [
+   {path:"/profile/share-player",label:"Share Share Player profile",target:"/profile/share-player",preview:"Share Player"},
+   {path:"/games/dark-coral-horn/highlights",label:"Share this Cut: A shared House Cut",target:"/games/dark-coral-horn/highlights?audience=public&scene=share-cut-1",preview:"A shared House Cut"},
+  ]){
+   await page.goto(`${servers.webUrl}${item.path}`,{waitUntil:"domcontentloaded"});
+   await page.waitForSelector(`button[aria-label="${item.label}"]`,{timeout:60_000});
+   expect(await page.$eval(`button[aria-label="${item.label}"]`,e=>e.textContent)).toBe("");
+   await page.click(`button[aria-label="${item.label}"]`);
+   await page.waitForSelector('input[aria-label="House share link"]');
+   const short=await page.$eval('input[aria-label="House share link"]',e=>e.value);
+   expect(new URL(short).pathname).toMatch(/^\/s\/[1-9A-HJ-NP-Za-km-z]{10}$/);
+   const response=await fetch(short,{headers:{"User-Agent":"Twitterbot/1.0"}});expect(response.status).toBe(200);
+   const html=await response.text(),head=html.slice(0,html.indexOf("</head>"));expect(head).toContain(item.preview);expect(head).toContain('name="fc:miniapp"');
+   if(item.label.includes("Cut"))expect(head).toContain("/highlights/card-image/share-cut-1");
+   await page.goto(short,{waitUntil:"domcontentloaded"});
+   await page.waitForFunction(`location.pathname+location.search===${JSON.stringify(item.target)}`);
+  }
+ }finally{await page.close();}
 },150_000);

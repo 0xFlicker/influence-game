@@ -10,24 +10,21 @@ function isShareCancellation(error: unknown): boolean {
     && error.name === "AbortError";
 }
 
-export async function sharePostgameLink({
-  href,
-  origin,
+export async function shareHouseLink({
+  url,
   title,
   text,
   unavailableMessage,
   share,
   copy,
 }: {
-  href: string;
-  origin: string;
+  url: string;
   title: string;
   text: string;
   unavailableMessage: string;
   share?: (data: ShareData) => Promise<void>;
   copy?: (url: string) => Promise<void>;
 }): Promise<ShareFeedback> {
-  const url = new URL(href, origin).toString();
 
   if (share) {
     try {
@@ -37,7 +34,7 @@ export async function sharePostgameLink({
       if (isShareCancellation(error)) {
         return { tone: "neutral", message: "Share cancelled." };
       }
-      // Copying the canonical page is a useful fallback when native sharing fails.
+      // Copying the prepared short link is a useful fallback when native sharing fails.
     }
   }
 

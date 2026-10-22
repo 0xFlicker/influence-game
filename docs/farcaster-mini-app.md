@@ -53,6 +53,11 @@ Manifest and embed builders live in
 
 ### Shared replay launches
 
+Share buttons now publish `/s/<code>` URLs. Their Farcaster action re-enters the
+short-link resolver with `app=mini`, which restores the saved destination and ignores
+extra cast query settings. See [House sharing](house-sharing.md) for lifetime,
+allowed routes, abuse protection and initial-head preview behavior.
+
 Completed game and replay cards show **Watch replay**. Their action opens the full
 `/games/[slug]/replay` page (or `/replay/[sequence]` for an Influence moment), with
 the validated cue, cue-local time, speed, thinking, music, and Werewolf audience/cursor

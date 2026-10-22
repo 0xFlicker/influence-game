@@ -52,6 +52,8 @@
     "./game-availability": "./src/game-availability.ts",
     "./fixtures/werewolf-results": "./src/fixtures/werewolf-results.ts",
     "./werewolf/results-contract": "./src/werewolf/results-contract.ts",
+    "./house-share-target": "./src/house-share-target.ts",
+    "./replay-share-state": "./src/replay-share-state.ts",
     "./game-links": "./src/game-links.ts",
     "./house-cuts/fixtures": "./src/house-cuts/fixtures.ts",
     "./house-cuts/editorial": "./src/house-cuts/editorial.ts",
