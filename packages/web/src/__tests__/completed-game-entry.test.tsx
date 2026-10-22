@@ -17,7 +17,7 @@ import {
   setApiBase,
   type PublicPostgameMediaResponse,
 } from "../lib/api";
-import { generateMetadata } from "../app/games/[slug]/page";
+import { generateMetadata } from "../app/(site)/games/[slug]/page";
 import { HouseGameRoute } from "../app/games/[slug]/house-route";
 import { HouseGameEntry } from "../components/games/house-game-entry";
 
@@ -289,79 +289,26 @@ describe("CompletedGameEntry", () => {
   });
 
 
-  it("uses saved Werewolf episode copy and existing trailer art without fetching Influence detail", async () => {
-    const originalFetch = globalThis.fetch;
-    const calls: string[] = [];
-    const media = readyMedia();
-    media.preview = { title: "Werewolf at The House", description: "Who will you trust?" };
-    globalThis.fetch = (async (url: Parameters<typeof fetch>[0]) => {
+  it("loads social metadata without replay history and fails safely when the game disappears", async () => {
+    const originalFetch = globalThis.fetch, originalBase = process.env.WEB_BASE_URL;
+    process.env.WEB_BASE_URL = "https://thehouse.game";
+    const calls:string[] = [];
+    globalThis.fetch = (async (url:Parameters<typeof fetch>[0]) => {
       calls.push(String(url));
-      return Response.json(String(url).includes("/api/game-entries/")
-        ? { id: "wolf-game", slug: "wolf-game", gameKind: "werewolf", visibility: "unlisted" } : { episode: { title: "Lanterns and Lies", description: "Six strangers gather." }, media });
+      return Response.json({id:"wolf-game",slug:"wolf-game",gameKind:"werewolf",status:"completed",visibility:"unlisted",title:"Lanterns and Lies",description:"Six strangers gather.",coverUrl:"/cover.webp"});
     }) as typeof fetch;
     try {
-      const metadata = await generateMetadata({ params: Promise.resolve({ slug: "wolf-game" }) });
+      const metadata = await generateMetadata({params:Promise.resolve({slug:"wolf-game"})});
       expect(metadata.title).toBe("Lanterns and Lies — Werewolf · The House");
       expect(metadata.description).toBe("Six strangers gather.");
-      expect(metadata.alternates?.canonical).toBe("/games/wolf-game");
-      expect(metadata.openGraph?.images).toEqual([{ url: media.poster.url, alt: media.poster.altText }]);
-      expect(calls).toHaveLength(2);
-      expect(calls[1]).toEndWith("/api/games/wolf-game/episode");
-    } finally { globalThis.fetch = originalFetch; }
-  });
-
-  it("uses stored ready media for spoiler-safe social metadata and falls back safely", async () => {
-    const originalApiBackendUrl = process.env.API_BACKEND_URL;
-    const originalFetch = globalThis.fetch;
-    process.env.API_BACKEND_URL = "http://127.0.0.1:3333";
-    let mediaResponse: PublicPostgameMediaResponse = readyMedia();
-    globalThis.fetch = (async (url: Parameters<typeof fetch>[0]) => new Response(JSON.stringify(
-      String(url).includes("/api/game-entries/") ? {id:"game-id",slug:gameId,gameKind:"influence"} : String(url).endsWith(`/api/games/${gameId}`)
-        ? { id: "game-id", slug: gameId, status: "completed" }
-        : mediaResponse,
-    ), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    })) as unknown as typeof fetch;
-
-    try {
-      const readyMetadata = await generateMetadata({
-        params: Promise.resolve({ slug: gameId }),
-      });
-      const serializedReadyMetadata = JSON.stringify(readyMetadata);
-
-      expect(readyMetadata.title).toBe("House Highlights — Influence");
-      expect(readyMetadata.description).toBe("A completed Influence game, told through the House.");
-      expect(readyMetadata.alternates?.canonical).toBe(`/games/${gameId}`);
-      expect(readyMetadata.openGraph?.images).toEqual([
-        { url: "https://media.example.test/postgame/v3/poster.jpg", alt: "House Highlights cast roster" },
-      ]);
-      expect(serializedReadyMetadata.toLowerCase()).not.toContain("winner");
-      expect(serializedReadyMetadata.toLowerCase()).not.toContain("final vote");
-
-      mediaResponse = {
-        schemaVersion: 1,
-        mediaType: "house_highlights_trailer",
-        status: "queued",
-      };
-
-      const fallbackMetadata = await generateMetadata({
-        params: Promise.resolve({ slug: gameId }),
-      });
-      const serializedFallbackMetadata = JSON.stringify(fallbackMetadata);
-
-      expect(fallbackMetadata.title).toBe("Completed Game — Influence");
-      expect(fallbackMetadata.alternates?.canonical).toBe(`/games/${gameId}`);
-      expect(serializedFallbackMetadata.toLowerCase()).not.toContain("winner");
-      expect(serializedFallbackMetadata.toLowerCase()).not.toContain("final vote");
-    } finally {
-      if (originalApiBackendUrl === undefined) {
-        delete process.env.API_BACKEND_URL;
-      } else {
-        process.env.API_BACKEND_URL = originalApiBackendUrl;
-      }
-      globalThis.fetch = originalFetch;
-    }
+      expect(metadata.openGraph?.images).toEqual(["https://thehouse.game/cover.webp"]);
+      expect(JSON.stringify(metadata.twitter)).toContain('"card":"player"');
+      expect(calls).toHaveLength(1);expect(calls[0]).toEndWith("/api/game-entries/wolf-game/card");
+      globalThis.fetch = (async () => new Response("Unavailable",{status:404})) as unknown as typeof fetch;
+      const unavailable = await generateMetadata({params:Promise.resolve({slug:"missing"})});
+      expect(JSON.stringify(unavailable.twitter)).not.toContain('"card":"player"');
+      expect(unavailable.robots).toEqual({index:false,follow:false});
+    } finally {globalThis.fetch=originalFetch;if(originalBase===undefined)delete process.env.WEB_BASE_URL;else process.env.WEB_BASE_URL=originalBase;}
   });
 
   it("server-loads the game and delegates the authenticated preview to the episode landing", async () => {

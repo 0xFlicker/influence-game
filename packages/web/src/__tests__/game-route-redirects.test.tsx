@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import GameViewerPage from "../app/games/[slug]/page";
+import GameViewerPage from "../app/(site)/games/[slug]/page";
 
 describe("game route compatibility redirects", () => {
   it("redirects legacy results mode URLs to the route-owned results page", async () => {

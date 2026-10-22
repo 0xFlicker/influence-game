@@ -7,7 +7,7 @@ const freeContentSource = readFileSync(
   "utf8",
 );
 const freePageSource = readFileSync(
-  join(import.meta.dir, "../app/games/free/page.tsx"),
+  join(import.meta.dir, "../app/(site)/games/free/page.tsx"),
   "utf8",
 );
 const combinedSource = `${freeContentSource}\n${freePageSource}`;

@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 const pageSource = readFileSync(
-  join(import.meta.dir, "../app/privacy/page.tsx"),
+  join(import.meta.dir, "../app/(site)/privacy/page.tsx"),
   "utf8",
 );
 

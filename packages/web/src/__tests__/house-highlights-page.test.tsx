@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { renderToString } from "react-dom/server";
 import { HouseCutsView } from "../app/games/[slug]/highlights/house-cuts-client";
-import { generateMetadata } from "../app/games/[slug]/highlights/page";
+import { generateMetadata } from "../app/(site)/games/[slug]/highlights/page";
 import { houseCutsFixture } from "./house-cuts-fixture";
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });

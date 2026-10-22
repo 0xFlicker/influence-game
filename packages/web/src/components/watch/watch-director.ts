@@ -511,9 +511,11 @@ export class PresentationDirector<C extends WatchCue> {
   }
 
   /** A frame seek retains its local time if optional thinking finishes loading later. */
-  seekTimeline(cursor: number, elapsedMs: number): void {
+  seekTimeline(cursor: number, elapsedMs: number, includesThinking = false): void {
     this.seek(cursor, elapsedMs);
-    this.exactSeek = {elapsedMs, hadThought: this.thought !== null};
+    this.exactSeek = {elapsedMs, hadThought: includesThinking || this.thought !== null};
+    const cue = this.getActiveCue();
+    if (includesThinking && cue && this.policy.speech(cue) && !this.thoughts.has(cue.key)) this.setThinkingPending(cue.key, true);
   }
 
   reconnect(cues: readonly C[]): void {

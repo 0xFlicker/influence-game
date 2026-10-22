@@ -61,7 +61,12 @@ import {influenceMusic, influenceOpeningAudio} from "./influence-music";
 import {useWatchMusic} from "@/components/watch/use-watch-music";
 import {useOpeningAudio} from "@/components/watch/use-opening-audio";
 
+import {useReplayShare} from "@/components/watch/use-replay-share";
+import {replayShareHref, type ReplayShareState} from "@/lib/replay-share";
+import {gameReplayHref} from "@/lib/game-links";
+
 interface DramaticReplayViewerProps {
+  anonymous?: boolean;
   preferenceScope?: WatchPreferenceScope;
   game: GameDetail;
   messages: TranscriptEntry[];
@@ -77,11 +82,13 @@ interface DramaticReplayViewerProps {
 }
 
 export function DramaticReplayViewer(props: DramaticReplayViewerProps) {
-  const preferences = useWatchPreferences(props.preferenceScope);
-  if (!preferences.ready) return <WatchWaiting label="Preparing the player…" />;
+  const shared = useReplayShare(props.preferenceScope !== "production");
+  const preferences = useWatchPreferences(props.preferenceScope, shared.state, props.anonymous);
+  if (shared.error) return <p role="alert">{shared.error}</p>;
+  if (!shared.ready || !preferences.ready) return <WatchWaiting label="Preparing the player…" />;
   return (
     <MotionConfig reducedMotion="user">
-      <DramaticReplayTheater {...props} preferences={preferences} />
+      <DramaticReplayTheater {...props} shared={shared.state} preferences={preferences} />
     </MotionConfig>
   );
 }
@@ -98,7 +105,9 @@ function DramaticReplayTheater({
   startSequence,
   onPlaybackStateChange,
   preferences,
-}: DramaticReplayViewerProps & {preferences: ReturnType<typeof useWatchPreferences>}) {
+  anonymous = false,
+  shared,
+}: DramaticReplayViewerProps & {shared?:ReplayShareState; preferences: ReturnType<typeof useWatchPreferences>}) {
   const initialSequenceSeekAppliedRef = useRef(false);
   // Backward compat: always filter out old scope='thinking' entries (they lack per-message association)
   const filteredMessages = useMemo(
@@ -163,7 +172,7 @@ function DramaticReplayTheater({
     scope: animationScope,
     reducedMotion,
   } = usePresentationDirector({ followTail: live });
-  useWatchAnalytics(director, game.id, "influence", live ? "live" : "replay");
+  useWatchAnalytics(director, game.id, "influence", anonymous ? null : live ? "live" : "replay");
   const { fullscreen, button: fullscreenButton, error: fullscreenError, toggle: toggleFullscreen } = usePlayerFullscreen(animationScope);
   const {thinking:showThinking, setThinking:setShowThinking} = preferences;
   const timeline = useWatchTimeline(director, presentationCues, showThinking);
@@ -264,7 +273,7 @@ function DramaticReplayTheater({
     [canonicalReplayFrame, eliminatedIds, isFormatGame, players, live, openingCue],
   );
 
-  const visualData = useVisualWatch(game.id, true, live, activeCue?.key);
+  const visualData = useVisualWatch(game.id, true, live, activeCue?.key, anonymous);
   const priorLobbyMessages = formatCue ? lobbyMessages(formatCue.round, formatCue.canonicalSequence) : [];
   const visual = visualWatchPresentation(
     visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, revealedWinners[Math.min(directorSnapshot.cursor, presentationCues.length - 1)] ?? activeCue, currentMessage, replayPlayers, priorLobbyMessages, replayFrames,
@@ -281,10 +290,10 @@ function DramaticReplayTheater({
     if (!thinkingActor || thoughtRound === undefined || !thoughtPhase) return null;
     if (classicThought && messageThought) return messageThought;
     if (thoughtSequence == null) return null;
-    const result = await getPublicWatchIntelligence(game.slug, {actorPlayerId:thinkingActor, round:thoughtRound, phase:thoughtPhase, throughEventSequence:thoughtSequence, throughTranscriptSequence:entrySequence ?? 0, limit:4}, signal);
+    const result = await getPublicWatchIntelligence(game.slug, {actorPlayerId:thinkingActor, round:thoughtRound, phase:thoughtPhase, throughEventSequence:thoughtSequence, throughTranscriptSequence:entrySequence ?? 0, limit:4}, signal, anonymous);
     if (!result.ok) return null;
     return activeCue ? influenceThinkingText(result.intelligence.thinking.cards, activeCue, thinkingActor, messageId) : null;
-  }, [game.slug, thinkingActor, thoughtSequence, thoughtRound, thoughtPhase, messageThought, messageId, entrySequence, classicThought, activeCue]);
+  }, [anonymous, game.slug, thinkingActor, thoughtSequence, thoughtRound, thoughtPhase, messageThought, messageId, entrySequence, classicThought, activeCue]);
   const currentStateEntry = Boolean(live && formatCue && directorSnapshot.hydrationWatermark !== null
     && formatCue.canonicalSequence <= directorSnapshot.hydrationWatermark);
   const isPlaying = directorSnapshot.isPlaying;
@@ -340,14 +349,25 @@ function DramaticReplayTheater({
     ) {
       return;
     }
-    if (startSequence !== undefined && !initialSequenceSeekAppliedRef.current && directorSnapshot.cueKeys.length === 0) {
+    if (shared && !initialSequenceSeekAppliedRef.current && director.getSnapshot().cueKeys.length === 0) {
+      const index = shared.cue ? presentationCues.findIndex(cue => cue.key === shared.cue) : startSequence === undefined ? 0 : findPresentationCueIndexForSequence(presentationCues, startSequence);
+      if (index < 0) return;
+      director.setSpeed(shared.speed);
+      director.setThinkingEnabled(shared.thinking);
+      director.load(presentationCues, index);
+      director.seekTimeline(index, shared.time * 1000, shared.thinking);
+      initialSequenceSeekAppliedRef.current = true;
+      director.play();
+      return;
+    }
+    if (startSequence !== undefined && !initialSequenceSeekAppliedRef.current && director.getSnapshot().cueKeys.length === 0) {
       const seekIndex = findPresentationCueIndexForSequence(presentationCues, startSequence);
       director.load(presentationCues, Math.max(0,seekIndex));
       initialSequenceSeekAppliedRef.current = true;
       director.play();
       return;
     }
-    if (live && directorSnapshot.cueKeys.length === 0) {
+    if (live && director.getSnapshot().cueKeys.length === 0) {
       const latest = presentationCues.at(-1);
       if (latest?.source === "classic" && !latest.liveCatchUp) {
         // A newly published first speech needs its full reading time. Historical
@@ -359,8 +379,9 @@ function DramaticReplayTheater({
       director.play();
       return;
     }
-    if (directorSnapshot.cueKeys.length === 0) {
+    if (director.getSnapshot().cueKeys.length === 0) {
       director.load(presentationCues);
+      director.seek(0, 0);
       director.play();
       return;
     }
@@ -374,6 +395,7 @@ function DramaticReplayTheater({
     presentationCues,
     presentationHydrationStatus,
     startSequence,
+    shared,
   ]);
 
   useEffect(() => {
@@ -462,7 +484,7 @@ function DramaticReplayTheater({
 
   const goToBeginning = useCallback(() => {
     restartAmbient(); restartOpening();
-    setPlayRequested(false); director.pause(); director.setFollowTail(false); director.seek(0);
+    setPlayRequested(false); director.pause(); director.setFollowTail(false); director.seek(0, 0);
   }, [director, restartAmbient, restartOpening]);
 
   const goToPrevScene = useCallback(() => {
@@ -739,7 +761,12 @@ function DramaticReplayTheater({
           controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
-        <WatchTransport shareHref={activeCue?.canonicalSequence != null ? gameReplaySequenceHref(game.slug,activeCue.canonicalSequence) : undefined} fullscreen={fullscreen} fullscreenButton={fullscreenButton} toggleFullscreen={toggleFullscreen} fullscreenError={fullscreenError}
+        {shared?.cue && presentationCues.length > 0 && !presentationCues.some(cue => cue.key === shared.cue) && <p role="alert">This replay moment is no longer available.</p>}
+        <WatchTransport getShareHref={() => {
+          const cue = director.getActiveCue();
+          const href = cue?.canonicalSequence != null ? gameReplaySequenceHref(game.slug, cue.canonicalSequence) : gameReplayHref(game.slug);
+          return cue ? replayShareHref(href, cue.key, director.getTimelineElapsedBaseMs(), director.getSnapshot().speed, preferences) : href;
+        }} fullscreen={fullscreen} fullscreenButton={fullscreenButton} toggleFullscreen={toggleFullscreen} fullscreenError={fullscreenError}
           header={activeFormatIdForSocialScene ? <div className="mb-3 flex justify-center"><ActiveFormatLabel formatId={activeFormatIdForSocialScene} /></div> : null}
           isPlaying={transportPlaying} togglePlay={togglePlay} speed={speed} onSpeed={value => director.setSpeed(value)}
           music={{muted:preferences.musicMuted, volume:preferences.musicVolume, status:openingCue ? openingAudio.status : ambient.status,

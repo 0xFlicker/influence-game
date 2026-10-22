@@ -1,0 +1,31 @@
+import Link from "next/link";
+import { HOUSE_VENUE } from "@/lib/product-identity";
+import { CreateGameForm } from "@/app/admin/games/new/create-game-form";
+
+export const metadata = {
+  title: `Create Game - ${HOUSE_VENUE.name} Admin`,
+};
+
+export default function NewGamePage() {
+  return (
+    <div className="min-h-screen flex flex-col">
+      <div className="flex-1 px-6 py-10 max-w-4xl mx-auto w-full">
+
+          <div className="flex items-center gap-3 mb-8">
+            <Link
+              href="/admin"
+              className="text-white/40 hover:text-white/70 text-sm transition-colors"
+            >
+              ← Dashboard
+            </Link>
+            <span className="text-white/20">/</span>
+            <h1 className="text-2xl font-bold text-white">
+              Create Game
+            </h1>
+          </div>
+          <CreateGameForm />
+
+      </div>
+    </div>
+  );
+}

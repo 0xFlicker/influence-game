@@ -2,14 +2,14 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildMcpSetupClients } from "../lib/mcp-setup";
-import { safeMcpReturnTo } from "../app/get-mcp/page";
+import { safeMcpReturnTo } from "../app/(site)/get-mcp/page";
 
 const getMcpClientSource = readFileSync(
   join(import.meta.dir, "../app/get-mcp/get-mcp-client.tsx"),
   "utf8",
 );
 const pageSource = readFileSync(
-  join(import.meta.dir, "../app/get-mcp/page.tsx"),
+  join(import.meta.dir, "../app/(site)/get-mcp/page.tsx"),
   "utf8",
 );
 const combinedSource = `${getMcpClientSource}\n${pageSource}`;

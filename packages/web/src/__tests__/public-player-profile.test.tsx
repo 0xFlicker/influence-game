@@ -3,10 +3,10 @@ import { renderToString } from "react-dom/server";
 import type { ReactNode } from "react";
 import PublicPlayerProfilePage, {
   generateMetadata,
-} from "../app/profile/[id]/page";
-import PublicPlayerProfileError from "../app/profile/[id]/error";
-import PublicPlayerProfileLoading from "../app/profile/[id]/loading";
-import PublicPlayerProfileNotFound from "../app/profile/[id]/not-found";
+} from "../app/(site)/profile/[id]/page";
+import PublicPlayerProfileError from "../app/(site)/profile/[id]/error";
+import PublicPlayerProfileLoading from "../app/(site)/profile/[id]/loading";
+import PublicPlayerProfileNotFound from "../app/(site)/profile/[id]/not-found";
 import { PublicPlayerProfileView } from "../app/profile/[id]/public-player-profile";
 import {
   PublicProfileShareButton,

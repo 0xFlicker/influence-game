@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const source = readFileSync(
-  join(import.meta.dir, "../app/about/page.tsx"),
+  join(import.meta.dir, "../app/(site)/about/page.tsx"),
   "utf8",
 );
 
