@@ -44,12 +44,41 @@ domain. JWT verification uses the hostname only.
 | Surface | Location |
 | --- | --- |
 | Manifest | `GET /.well-known/farcaster.json` |
-| Embed meta | Root layout `fc:miniapp` |
+| Embed meta | Site layout default; completed game/replay pages override `fc:miniapp` |
 | Embed image | `/farcaster/embed.png` (3:2) |
 | Icon / splash | `/logo.png` |
 
 Manifest and embed builders live in
 `packages/web/src/lib/farcaster-miniapp.ts`.
+
+### Shared replay launches
+
+Completed game and replay cards show **Watch replay**. Their action opens the full
+`/games/[slug]/replay` page (or `/replay/[sequence]` for an Influence moment), with
+the validated cue, cue-local time, speed, thinking, music, and Werewolf audience/cursor
+settings plus `app=mini`. A bare replay starts at the beginning. Unrelated query
+parameters are not included in the generated action URL; hosts may independently
+merge the shared URL's query parameters according to the Farcaster specification.
+
+This uses the normal site providers, Mini App detection, Quick Auth, and navigation.
+It does not launch `/embed/`, whose anonymous player and framing policy are for X.
+Farcaster supports authentication and wallet actions through its SDK; normal House
+account permissions still apply, and wallet actions require the host/user approvals.
+The existing 3:2 Farcaster artwork is retained. The manifest's default home launch
+and non-replay cards are unchanged.
+
+Next.js serves blocking metadata for every User-Agent so the launch tag is present
+in the initial HTML head without JavaScript, including for unrecognized Farcaster
+crawlers. This trades metadata streaming for consistent crawler/browser responses;
+game card metadata uses the bounded card endpoint.
+
+Local coverage checks the metadata override, both replay URL formats, and browser
+restoration through the advertised action URL. Real host Quick Auth, splash dismissal,
+and navigation still need verification in Farcaster Preview after deployment.
+
+References: [embed specification](https://miniapps.farcaster.xyz/docs/specification),
+[Quick Auth](https://miniapps.farcaster.xyz/docs/guides/auth),
+[wallet integration](https://miniapps.farcaster.xyz/docs/guides/wallets).
 
 ### Domain association (optional until signed)
 
