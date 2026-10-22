@@ -4,6 +4,9 @@ import { createRequire } from "node:module";
 import { withPostHogConfig } from "@posthog/nextjs-config";
 
 const nextConfig: NextConfig = {
+  // Social clients must see launch metadata in the initial head, including unknown
+  // Mini App crawlers. Use the same delivery for browsers to avoid UA cache splits.
+  htmlLimitedBots: /.*/,
   // Keep the authenticated browser harness from taking the local dev server's lock.
   distDir: process.env.NEXT_PUBLIC_E2E_AUTH === "true" ? ".next/e2e" : ".next",
   // Transpile Privy + wagmi packages as needed

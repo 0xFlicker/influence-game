@@ -57,7 +57,7 @@ Deterministic PostgreSQL tests cover immediate saves, deduplication, evidence co
 
 ## Obsolete unscreened intake reviews
 
-Migration `0126_close_unscreened_superseded_reviews` closes legacy pending reviews as `superseded` when their revision is neither the latest submission nor the currently published revision and has no screening record. It releases their claims and increments their review version. New submissions apply the same cleanup transactionally. No production SQL command or operator backfill is needed for this cleanup: the normal deployment migration applies it.
+Migration `0127_close_unscreened_superseded_reviews` closes legacy pending reviews as `superseded` when their revision is neither the latest submission nor the currently published revision and has no screening record. It releases their claims and increments their review version. New submissions apply the same cleanup transactionally. No production SQL command or operator backfill is needed for this cleanup: the normal deployment migration applies it.
 
 The cleanup preserves ordinary screened revisions, current/published content, and explicit human work (flags, holds, escalations, rejected dispositions, resolved decisions, or reopened review cycles). It does not change publication, restrictions, AI evidence, retained snapshots, or historical decisions. Superseded reviews remain readable in Admin recovery as closed history; an admin can explicitly reopen one with a reason. This is intake cleanup, not Phase 2 enforcement.
 

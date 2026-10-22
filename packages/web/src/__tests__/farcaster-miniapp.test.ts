@@ -42,6 +42,21 @@ describe("farcaster mini app builders", () => {
     );
   });
 
+  test("replay launches retain their path and settings on the app origin", () => {
+    const embed = buildMiniAppEmbed(FARCASTER_PRODUCTION_ORIGIN, {
+      path: "/games/village/replay?audience=omniscient&cursor=73&cue=game%3A73&t=1.25&speed=2&thinking=1&muted=0&volume=0.6",
+      buttonTitle: "Watch replay",
+    });
+    const url = new URL(embed.button.action.url);
+    expect(url.pathname).toBe("/games/village/replay");
+    expect(url.searchParams.get("app")).toBe("mini");
+    expect(url.searchParams.get("cue")).toBe("game:73");
+    expect(url.searchParams.get("t")).toBe("1.25");
+    expect(embed.button.title).toBe("Watch replay");
+    expect(() => buildMiniAppEmbed(FARCASTER_PRODUCTION_ORIGIN, {path:"https://example.com/"})).toThrow();
+    expect(() => buildMiniAppEmbed(FARCASTER_PRODUCTION_ORIGIN, {path:"//example.com/"})).toThrow();
+  });
+
   test("manifest omits accountAssociation until committed", () => {
     const unsigned = buildMiniAppManifest({
       baseUrl: FARCASTER_PRODUCTION_ORIGIN,

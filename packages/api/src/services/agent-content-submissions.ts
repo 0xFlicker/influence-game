@@ -100,7 +100,7 @@ export async function recordContentSubmission(tx: Tx, mutation: AgentProfileMuta
     updatedAt: new Date().toISOString(),
   }).where(and(eq(schema.agentProfiles.id, profile.id), eq(schema.agentProfiles.userId, profile.userId))).returning();
   // Retire legacy, never-screened intake work when a newer snapshot replaces it.
-  // Match migration 0126; explicit human triage and retained AI findings stay reviewable.
+  // Match migration 0127; explicit human triage and retained AI findings stay reviewable.
   const closed = await tx.execute<{ id: string }>(sql`UPDATE agent_moderation_reviews AS review
     SET status = 'superseded', version = review.version + 1
     FROM agent_content_revisions AS revision

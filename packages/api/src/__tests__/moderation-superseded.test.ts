@@ -28,7 +28,7 @@ const edit = (id: string) => updateOwnedAgentProfile(db, { userId: owner }, id, 
 const unqueue = (id: string) => db.delete(schema.agentScreenings).where(eq(schema.agentScreenings.contentRevisionId, id));
 const review = async (id: string) => (await db.select().from(schema.agentModerationReviews).where(eq(schema.agentModerationReviews.id, id)))[0]!;
 const migrate = () => db.transaction(async tx => {
-  const statements = readFileSync(new URL("../../drizzle/0126_close_unscreened_superseded_reviews.sql", import.meta.url), "utf8").split("--> statement-breakpoint");
+  const statements = readFileSync(new URL("../../drizzle/0127_close_unscreened_superseded_reviews.sql", import.meta.url), "utf8").split("--> statement-breakpoint");
   for (const statement of statements) await tx.execute(sql.raw(statement));
 });
 
