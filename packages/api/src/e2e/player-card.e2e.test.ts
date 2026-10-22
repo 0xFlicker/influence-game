@@ -46,12 +46,15 @@ async function scrub(frame:Frame|Page,value:number) {
 }
 test("Twitterbot and browsers receive matching player metadata, bounded HTML and framing headers",async()=>{
  const path="/games/dark-coral-horn/replay?speed=2&thinking=0&muted=1&volume=0.6";
- const responses=await Promise.all(["Twitterbot/1.0","Mozilla/5.0"].map(agent=>fetch(`${servers.webUrl}${path}`,{headers:{"User-Agent":agent}})));
+ const responses=await Promise.all(["Twitterbot/1.0","Mozilla/5.0","FarcasterBot/1.0"].map(agent=>fetch(`${servers.webUrl}${path}`,{headers:{"User-Agent":agent}})));
  for(const response of responses){
   expect(response.status).toBe(200);const html=await response.text();
   expect(html).toContain('name="twitter:card" content="player"');
   expect(html.match(/name="twitter:card"/g)).toHaveLength(1);
   if(response === responses[0]) expect(html.slice(0,html.indexOf("</head>"))).toContain('name="twitter:player"');
+  const head=html.slice(0,html.indexOf("</head>"));
+  expect(head).toContain('name="fc:miniapp"');
+  expect(head).toContain("Watch replay");
   expect(html).toContain('name="twitter:player"');expect(html).toContain("/embed/games/dark-coral-horn?");
   expect(html).not.toContain('name="twitter:player:stream"');
  }
@@ -100,6 +103,26 @@ for(const slug of ["dark-coral-horn","player-card-village"]){
    expect(Math.abs(Number(restored.searchParams.get("t"))-Number(shared.searchParams.get("t")))).toBeLessThan(1.5);
    expect(restored.searchParams.get("muted")).toBe("0");expect(restored.searchParams.get("volume")).toBe("0.67");
    expect(restored.searchParams.get("speed")).toBe("2");expect(restored.searchParams.get("thinking")).toBe("1");
+   // Farcaster launches the normal app at this moment, including its site providers.
+   const appPage=await browser.newPage();await rejectOptionalAnalytics(appPage);
+   try {
+    await appPage.goto(shared.href,{waitUntil:"domcontentloaded"});
+    await appPage.waitForSelector('meta[name="fc:miniapp"]');
+    expect(await appPage.$$eval('meta[name="fc:miniapp"]',nodes=>nodes.length)).toBe(1);
+    const miniapp=JSON.parse(await appPage.$eval('meta[name="fc:miniapp"]',node=>node.getAttribute("content")!));
+    expect(miniapp.button.title).toBe("Watch replay");
+    const launch=new URL(miniapp.button.action.url);
+    expect(launch.origin).toBe(shared.origin);expect(launch.pathname).toBe(shared.pathname);
+    expect(launch.searchParams.get("app")).toBe("mini");
+    for(const [key,value] of shared.searchParams)expect(launch.searchParams.get(key)).toBe(value);
+    await appPage.goto(launch.href,{waitUntil:"domcontentloaded"});
+    await appPage.waitForSelector('input[aria-label="Replay position"]:not([disabled])',{timeout:60_000});await pause(appPage);
+    const launched=await captureShare(appPage);
+    expect(launched.searchParams.get("cue")).toBe(shared.searchParams.get("cue"));
+    expect(Math.abs(Number(launched.searchParams.get("t"))-Number(shared.searchParams.get("t")))).toBeLessThan(1.5);
+    for(const key of ["speed","thinking","muted","volume"])expect(launched.searchParams.get(key)).toBe(shared.searchParams.get(key));
+    expect(await appPage.$('[data-watch-mode="embed"]')).toBeNull();
+   }finally{await appPage.close();}
    await scrub(frame,0);await frame.waitForFunction(`Number(document.querySelector('input[aria-label="Replay position"]')?.value)===0`);
    // Native sharing unavailable: the native dialog exposes a frozen, selectable link.
    await frame.evaluate(()=>Object.defineProperty(navigator,"share",{configurable:true,value:undefined}));await clickText(frame,"Share");

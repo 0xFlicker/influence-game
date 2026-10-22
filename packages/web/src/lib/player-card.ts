@@ -3,6 +3,7 @@ import type {GameStatus, GameVisibility} from "./api";
 import {WEREWOLF_CARD_ART} from "./game-art";
 import {parseReplayAudience, parseReplayCursor, parseReplaySequenceParam} from "./game-links";
 import {parseReplayShare, REPLAY_SHARE_KEYS} from "./replay-share";
+import {serializeMiniAppEmbedMeta} from "./farcaster-miniapp";
 export interface PlayerCardGame {
   id:string; slug:string; gameKind:"influence"|"werewolf"; status:GameStatus;
   visibility:GameVisibility; title:string; description:string; coverUrl:string|null;
@@ -37,6 +38,10 @@ export function playerCardMetadata(game:PlayerCardGame, origin:string, search:Re
   if (sequence !== undefined && (game.gameKind !== "influence" || parseReplaySequenceParam(sequence) === undefined)) return metadata;
   let query:string;
   try { query = playerSearch(search,game.gameKind); } catch { return metadata; }
+  metadata.other = {"fc:miniapp":serializeMiniAppEmbedMeta(origin, {
+    path:`/games/${encodeURIComponent(game.slug)}/replay${sequence === undefined ? "" : `/${sequence}`}${query}`,
+    buttonTitle:"Watch replay",
+  })};
   // Next 16 requires streamUrl, but emits no stream tag for an empty value.
   // This is an HTML player, not a direct MP4 stream.
   metadata.twitter = {card:"player",title,description:game.description,images:[image],players:[{

@@ -53,18 +53,24 @@ export function absoluteAssetUrl(baseUrl: string, path: string): string {
   return `${origin}${normalized}`;
 }
 
-export function buildMiniAppEmbed(baseUrl: string) {
+interface MiniAppEmbedOptions {
+  path?: string;
+  buttonTitle?: string;
+}
+
+export function buildMiniAppEmbed(baseUrl: string, options: MiniAppEmbedOptions = {}) {
   const origin = baseUrl.replace(/\/+$/, "");
-  const homeUrl = withMiniAppQuery(`${origin}/`);
+  const launchUrl = new URL(options.path ?? "/", origin);
+  if (launchUrl.origin !== new URL(origin).origin) throw new Error("Mini App launch must stay on its own origin.");
   return {
     version: "1" as const,
     imageUrl: absoluteAssetUrl(origin, "/farcaster/embed.png"),
     button: {
-      title: FARCASTER_BUTTON_TITLE,
+      title: options.buttonTitle ?? FARCASTER_BUTTON_TITLE,
       action: {
         type: "launch_frame" as const,
         name: ACTIVE_GAME.name,
-        url: homeUrl,
+        url: withMiniAppQuery(launchUrl.href),
         splashImageUrl: absoluteAssetUrl(origin, "/logo.png"),
         splashBackgroundColor: FARCASTER_SPLASH_BACKGROUND,
       },
@@ -98,6 +104,6 @@ export function buildMiniAppManifest(config: MiniAppManifestConfig) {
   return { miniapp };
 }
 
-export function serializeMiniAppEmbedMeta(baseUrl: string): string {
-  return JSON.stringify(buildMiniAppEmbed(baseUrl));
+export function serializeMiniAppEmbedMeta(baseUrl: string, options: MiniAppEmbedOptions = {}): string {
+  return JSON.stringify(buildMiniAppEmbed(baseUrl, options));
 }

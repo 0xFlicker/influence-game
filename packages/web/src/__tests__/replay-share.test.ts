@@ -19,7 +19,17 @@ test("completed player cards preserve settings and audiences and use publicly ad
  if (!metadata.twitter || !("card" in metadata.twitter) || metadata.twitter.card !== "player") throw Error("Missing player card");
  expect(metadata.twitter.players).toEqual([{playerUrl:"https://thehouse.game/embed/games/village?cue=id%3Aomniscient%3A73&t=1.25&speed=2&thinking=1&muted=0&volume=0.6&audience=omniscient&cursor=73",streamUrl:"",width:640,height:640}]);
  expect(metadata.openGraph?.images).toEqual(["https://thehouse.game/visual/werewolf/lantern-village.webp"]);
+ const miniapp = JSON.parse(String(metadata.other?.["fc:miniapp"]));
+ expect(miniapp.button.title).toBe("Watch replay");
+ expect(miniapp.button.action.url).toBe("https://thehouse.game/games/village/replay?cue=id%3Aomniscient%3A73&t=1.25&speed=2&thinking=1&muted=0&volume=0.6&audience=omniscient&cursor=73&app=mini");
  expect(playerCardMetadata({...game,visibility:"unlisted"},"https://thehouse.game").robots).toEqual({index:false,follow:false});
+});
+test("Farcaster Influence moments use the full replay route and only validated settings", () => {
+ const metadata = playerCardMetadata({...game,gameKind:"influence"},"https://staging.thehouse.game",{cue:"cue:42",t:"2.5",speed:"0.5",thinking:"0",muted:"1",volume:"0.2",token:"secret",redirect:"https://example.com"},"42");
+ const miniapp = JSON.parse(String(metadata.other?.["fc:miniapp"]));
+ expect(miniapp.button.action.url).toBe("https://staging.thehouse.game/games/village/replay/42?cue=cue%3A42&t=2.5&speed=0.5&thinking=0&muted=1&volume=0.2&app=mini");
+ const bare = JSON.parse(String(playerCardMetadata(game,"https://thehouse.game").other?.["fc:miniapp"]));
+ expect(bare.button.action.url).toBe("https://thehouse.game/games/village/replay?audience=mystery&app=mini");
 });
 test("ineligible and invalid cards do not advertise a player; irrelevant queries are never forwarded", () => {
  expect(JSON.stringify(playerCardMetadata({...game,status:"in_progress"},"https://thehouse.game").twitter)).toContain("summary_large_image");
