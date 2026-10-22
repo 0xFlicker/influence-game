@@ -1,7 +1,16 @@
 import { describe, expect, it } from "bun:test";
 import GameViewerPage from "../app/(site)/games/[slug]/page";
+import GameReplayPage from "../app/(site)/games/[slug]/replay/page";
 
 describe("game route compatibility redirects", () => {
+  it("keeps replay identity and mode owned by the route", async () => {
+    const page = await GameReplayPage({
+      params: Promise.resolve({slug: "requested-game"}),
+      searchParams: Promise.resolve({slug: "other-game", mode: "results", startSequence: "999", audience: "omniscient", cursor: "12"}),
+    });
+    expect(page.props).toEqual({slug: "requested-game", mode: "replay", audience: "omniscient", cursor: "12"});
+  });
+
   it("redirects legacy results mode URLs to the route-owned results page", async () => {
     await expectLegacyModeRedirect("results", "/games/edge%20smoke%2Fdusk/results");
   });

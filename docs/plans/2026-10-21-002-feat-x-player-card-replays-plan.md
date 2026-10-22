@@ -94,6 +94,8 @@ The browser harness uses an isolated database and cleans up owned servers, Chrom
 
 Verified locally on October 22: `bun run test` **2,776 passed, 5 skipped**; `bun run test:postgres` **2,130 passed**; focused iframe browser tests **4 passed / 76 assertions**; `bun run check` passed. The production Next build passed using the existing test public Privy app ID (no real login credentials). The sandbox initially blocked local servers/database access and stalled the compiler; those commands succeeded when rerun with normal local access. Generated Next test config changes were removed.
 
+Review closeout: replay pages explicitly forward only audience and cursor, so query parameters cannot replace the route's slug, mode, or sequence. A regression test covers that boundary. Werewolf operator request/error state stays in the player so closing Settings does not discard it; the isolated permission component still never mounts in embeds. After these fixes, typecheck/lint, 20 focused tests, and all 4 iframe browser tests passed again.
+
 After deployment is separately authorized:
 
 1. Inspect public HTTPS HTML, poster decoding, player headers, and redirects through the actual Cloudflare/Caddy path, using both User-Agents. Verify the configured origin is the deployment being tested.

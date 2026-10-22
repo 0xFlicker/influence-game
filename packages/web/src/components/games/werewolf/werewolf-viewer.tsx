@@ -17,7 +17,7 @@ import {WatchWaiting} from "@/components/watch/watch-waiting";
 import {anonymousApiFetch, apiFetch} from "@/lib/api";
 import type {WerewolfThinking as ThinkingData} from "@influence/engine/werewolf/thinking";
 import {useWatchKeyboard} from "@/components/watch/use-watch-keyboard";
-import {getWerewolfWatch} from "@/lib/werewolf-api";
+import {getWerewolfWatch, stopWerewolf} from "@/lib/werewolf-api";
 import dynamic from "next/dynamic";
 import {useReplayShare} from "@/components/watch/use-replay-share";
 import {replayShareHref, type ReplayShareState} from "@/lib/replay-share";
@@ -50,6 +50,7 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
   const {thinking, setThinking} = preferences;
   const timeline = useWatchTimeline(director, watch.timingCues, audience === "omniscient" && thinking);
   const [inspecting, setInspecting] = useState(false), [transcript, setTranscript] = useState(false);
+  const [stopping, setStopping] = useState(false), [stopError, setStopError] = useState<string | null>(null);
   const cursor = active?.cursor ?? 1;
   const playbackCue = director.getActiveCue();
   const cue = playbackCue && !isOpeningCue(playbackCue) ? playbackCue : null;
@@ -100,6 +101,7 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
     inspector={<div role={inspecting ? "dialog" : undefined} aria-modal={inspecting || undefined} aria-label={inspecting ? "Player information" : undefined} className={inspecting ? "fixed inset-3 z-50 flex min-h-0 flex-col bg-black xl:static" : "hidden min-h-0 xl:block"}>{inspecting && <button className="shrink-0 p-3 text-right text-sm text-white/70 xl:hidden" onClick={() => setInspecting(false)}>Close player info</button>}{inspect}</div>}
     theater={<section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-white/10 bg-black/45">
       {watch.error && <div role="alert" className="shrink-0 p-2 text-xs text-amber-100">{watch.error} <button onClick={watch.retry}>Retry</button></div>}
+      {stopError && <p role="alert" className="shrink-0 p-2 text-xs text-amber-100">{stopError}</p>}
       {(data?.status === "cancelled" || data?.status === "suspended") && <p role="status" className="shrink-0 p-2 text-xs text-amber-100">{data.status === "cancelled" ? "An operator stopped this game." : data.visualPaused ? "Paused for visual repair. An operator must resume the game." : "This game stopped after an execution error."} Committed play remains available.</p>}
       <div ref={frame} data-player-fullscreen={fullscreen.fullscreen || undefined} className="relative flex min-h-0 flex-1 flex-col bg-black" style={fullscreen.fullscreen ? {position:"fixed",inset:0,width:"100vw",height:"100dvh",zIndex:1000} : undefined}>
         {embedded && <span className="pointer-events-none absolute left-3 top-3 z-30 rounded bg-black/70 px-2 py-1 text-[10px] text-white/75">Werewolf · {audience === "omniscient" ? "Omniscient · Spoilers" : "Mystery"}</span>}
@@ -120,7 +122,12 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
         <span className="text-xs text-white/50" aria-label="Viewing mode">Viewing mode: {audience === "omniscient" ? "Omniscient" : "Mystery"}</span>
         {active?.snapshot.outcome ? <Link href={gameResultsHref(slug)}>View results · Spoilers</Link> : null}
         <button onClick={() => setTranscript(value => !value)}>Transcript</button>
-        {data?.status === "in_progress" && <WerewolfOperator gameId={data.gameId} />}
+        {data?.status === "in_progress" && <WerewolfOperator busy={stopping} onStop={async () => {
+          setStopping(true); setStopError(null);
+          try { await stopWerewolf(data.gameId); }
+          catch (cause) { setStopError(cause instanceof Error ? cause.message : "Could not stop game."); }
+          finally { setStopping(false); }
+        }} />}
       </div>} thinking={audience === "omniscient" ? {enabled:thinking,onChange:setThinking} : undefined} />
         </div>
       {transcript && <div role="dialog" aria-modal="true" aria-label="Game transcript" className="absolute inset-4 z-40 flex flex-col overflow-hidden rounded-xl border border-white/20 bg-black p-4"><button className="self-end" onClick={() => setTranscript(false)}>Close transcript</button><RawTranscript key={`${cursor}`} slug={slug} audience={audience} cutoff={cutoff} cursor={cursor} /></div>}

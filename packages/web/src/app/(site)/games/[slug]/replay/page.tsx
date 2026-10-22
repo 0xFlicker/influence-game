@@ -5,5 +5,6 @@ type Props = {params:Promise<{slug:string}>;searchParams:Promise<ReplaySearch>};
 export async function generateMetadata({params,searchParams}:Props) { return getPlayerCardMetadata((await params).slug,await searchParams); }
 export default async function GameReplayPage({params,searchParams}:Props) {
   const {slug} = await params;
-  return <HouseGameRoute slug={slug} mode="replay" {...await searchParams} />;
+  const {audience, cursor} = await searchParams;
+  return <HouseGameRoute slug={slug} mode="replay" audience={audience} cursor={cursor} />;
 }

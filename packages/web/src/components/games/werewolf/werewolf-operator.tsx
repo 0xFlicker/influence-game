@@ -1,16 +1,7 @@
 "use client";
-import {useState} from "react";
 import {usePermissions} from "@/hooks/use-permissions";
-import {stopWerewolf} from "@/lib/werewolf-api";
-export function WerewolfOperator({gameId}: {gameId:string}) {
+export function WerewolfOperator({busy, onStop}: {busy:boolean; onStop:()=>Promise<void>}) {
   const {hasPermission} = usePermissions();
-  const [busy,setBusy] = useState(false);
-  const [error,setError] = useState<string>();
   if (!hasPermission("stop_game")) return null;
-  return <><button disabled={busy} onClick={async () => {
-    setBusy(true); setError(undefined);
-    try { await stopWerewolf(gameId); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Could not stop game."); }
-    finally { setBusy(false); }
-  }}>Stop game</button>{error && <p role="alert">{error}</p>}</>;
+  return <button disabled={busy} onClick={() => void onStop()}>Stop game</button>;
 }
