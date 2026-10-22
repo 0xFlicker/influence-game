@@ -1,4 +1,5 @@
 import { loadPayloads, storeFields } from "./payload-storage.js";
+import { enqueueAgentScreening } from "./agent-screening-queue.js";
 import { parseCharacterHeadPosition } from "@influence/engine/character-portrait";
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
@@ -91,6 +92,7 @@ export async function recordContentSubmission(tx: Tx, mutation: AgentProfileMuta
       ancestryKnown: prior ? prior.ancestryKnown : true, fingerprint, snapshot: { ...snapshot, assets } }, {"snapshot":"json-gzip"}));
     await tx.insert(schema.agentModerationReviews).values({ id: reviewId, contentRevisionId: revisionId, held: profile.moderationRequired });
   }
+  await enqueueAgentScreening(tx, revisionId!);
   const [saved] = await tx.update(schema.agentProfiles).set({
     latestContentRevisionId: revisionId!,
     contentRevisionId: profile.moderationRequired ? mutation.profile.contentRevisionId : revisionId!,

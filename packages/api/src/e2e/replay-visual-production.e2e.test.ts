@@ -1426,6 +1426,9 @@ test("Producer preserves exact lost-request controls, reviews and explicitly pub
     expect(await page.$eval('nav[aria-label="Administration"] a', link => link.getAttribute("href"))).toBe("/admin/werewolf");
     expect((await database.db.select().from(schema.visualScenes)).filter(scene => scene.gameId === gameId)).toHaveLength(0);
     await page.click(open);
+    // Source preparation replaces the initial properties layout. Wait for the
+    // committed preview before sending a pointer click to that moving toolbar.
+    await page.waitForSelector('[data-composition-frame]', {visible: true});
     await openStudioDialog(page, "Scene versions & production");
     await page.waitForSelector('[aria-label="Scene inspector"] [role="combobox"]');
     await page.waitForFunction("Array.from(document.querySelectorAll('[aria-label=\"Scene inspector\"] button')).some(b => b.textContent === 'Render missing image')");

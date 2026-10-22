@@ -1,6 +1,6 @@
 import sharp from "sharp";
 import type { DrizzleDB } from "../db/index.js";
-import { ModerationError, moderationAuthority, readModerationReceipt, listModerationRecovery, listModerationQueue, readModerationReview, readModerationEvidence, claimModerationReview, triageModerationReview, previewModerationDecision, decideModerationReview, reopenModerationReview } from "./moderation-intake.js";
+import { ModerationError, readScreeningOverview, moderationAuthority, readModerationReceipt, listModerationRecovery, listModerationQueue, readModerationReview, readModerationEvidence, claimModerationReview, triageModerationReview, previewModerationDecision, decideModerationReview, reopenModerationReview } from "./moderation-intake.js";
 import { restoreArchivedAgentProfile } from "./agent-profile-lifecycle.js";
 
 function object(value: unknown, keys: string[]): Record<string, unknown> {
@@ -30,11 +30,12 @@ function choice<const T extends string>(body: Record<string, unknown>, key: stri
 /** Shared bounded command adapter for HTTP and explicit-scope MCP calls. */
 export async function executeModerationRead(db: DrizzleDB, userId: string, value: unknown) {
   const b = object(value, ["operation", "reviewId", "actionId", "hash", "offset", "route", "filter", "action"]);
-  const operation = choice(b, "operation", ["capabilities", "queue", "review", "evidence", "preview", "receipt", "recovery"]);
-  const fields = { capabilities: [], queue: ["offset", "route", "filter"], recovery: ["offset"], receipt: ["actionId"], review: ["reviewId"], evidence: ["reviewId", "hash"], preview: ["reviewId", "action"] };
+  const operation = choice(b, "operation", ["capabilities", "screening_overview", "queue", "review", "evidence", "preview", "receipt", "recovery"]);
+  const fields = { screening_overview: [], capabilities: [], queue: ["offset", "route", "filter"], recovery: ["offset"], receipt: ["actionId"], review: ["reviewId"], evidence: ["reviewId", "hash"], preview: ["reviewId", "action"] };
   object(value, ["operation", ...fields[operation]]);
+  if (operation === "screening_overview") return readScreeningOverview(db, userId);
   if (operation === "capabilities") return moderationAuthority(db, userId);
-  if (operation === "queue") return listModerationQueue(db, userId, { offset: b.offset === undefined ? undefined : integer(b, "offset"), route: b.route === undefined ? undefined : choice(b, "route", ["ordinary", "escalated"]), filter: b.filter === undefined ? undefined : choice(b, "filter", ["all", "available", "mine", "flagged"]) });
+  if (operation === "queue") return listModerationQueue(db, userId, { offset: b.offset === undefined ? undefined : integer(b, "offset"), route: b.route === undefined ? undefined : choice(b, "route", ["ordinary", "escalated"]), filter: b.filter === undefined ? undefined : choice(b, "filter", ["all", "available", "mine", "flagged", "ai_review", "screening_incomplete"]) });
   if (operation === "recovery") return listModerationRecovery(db, userId, b.offset === undefined ? 0 : integer(b, "offset"));
   if (operation === "receipt") return readModerationReceipt(db, userId, text(b, "actionId"));
   const reviewId = text(b, "reviewId");

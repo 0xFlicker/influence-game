@@ -1,6 +1,8 @@
 import { Hydrated, loadPayloads } from "./payload-storage.js";
+import { readAgentScreening } from "./agent-screening-read.js";
+import { SCREENING_POLICY_VERSION } from "./agent-screening-policy.js";
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, exists, gt, lte, not, sql } from "drizzle-orm";
+import { and, asc, count, eq, exists, gt, lte, not, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { sha256StableJson } from "./stable-hash.js";
 import { contentSnapshot, decodeContentSnapshot, ContentSubmissionConflict } from "./agent-content-submissions.js";
@@ -161,21 +163,50 @@ async function receipt(tx: Tx, userId: string, actionId: string, requestHash: st
   return result;
 }
 
+/** Operational metadata only; never hydrate private screening or revision payloads. */
+export async function readScreeningOverview(db: DrizzleDB, userId: string) {
+  const authority = await moderationAuthority(db, userId);
+  const screenings = schema.agentScreenings;
+  const groups = await db.select({ status: screenings.status, recommendation: screenings.recommendation,
+    failureCode: screenings.failureCode, count: count() }).from(screenings)
+    .innerJoin(reviews, eq(reviews.contentRevisionId, screenings.contentRevisionId))
+    .where(and(eq(screenings.policyVersion, SCREENING_POLICY_VERSION),
+      authority.canEscalateReview ? undefined : eq(reviews.route, "ordinary")))
+    .groupBy(screenings.status, screenings.recommendation, screenings.failureCode)
+    .orderBy(asc(screenings.status), asc(screenings.recommendation), asc(screenings.failureCode));
+  const statuses = { pending: 0, running: 0, completed: 0, incomplete: 0 };
+  const recommendations = { no_concern: 0, review: 0, inconclusive: 0 };
+  const failures = new Map<string, number>();
+  for (const group of groups) {
+    statuses[group.status] += group.count;
+    if (group.recommendation) recommendations[group.recommendation] += group.count;
+    if (group.failureCode) failures.set(group.failureCode, (failures.get(group.failureCode) ?? 0) + group.count);
+  }
+  return { scope: authority.canEscalateReview ? "all_queues" as const : "ordinary" as const,
+    policyVersion: SCREENING_POLICY_VERSION, serverTime: await databaseTime(db),
+    total: groups.reduce((sum, group) => sum + group.count, 0), statuses, recommendations,
+    failures: [...failures].sort(([a], [b]) => a.localeCompare(b)).map(([code, count]) => ({ code, count })), groups };
+}
+
 export async function listModerationQueue(db: DrizzleDB, userId: string, options: {
-  route?: ModerationRoute; filter?: "all" | "available" | "mine" | "flagged"; offset?: number;
+  route?: ModerationRoute; filter?: "all" | "available" | "mine" | "flagged" | "ai_review" | "screening_incomplete"; offset?: number;
 } = {}) {
   const authority = await moderationAuthority(db, userId);
   const route = options.route ?? "ordinary";
   const filter = options.filter ?? "all";
   const offset = options.offset ?? 0;
-  if (!["ordinary", "escalated"].includes(route) || !["all", "available", "mine", "flagged"].includes(filter)
+  if (!["ordinary", "escalated"].includes(route) || !["all", "available", "mine", "flagged", "ai_review", "screening_incomplete"].includes(filter)
     || !Number.isSafeInteger(offset) || offset < 0 || offset > 1_000_000) {
     throw new ModerationError("invalid_filter", "Invalid queue filter or offset.", 400);
   }
   checkRoute(route, authority);
   const now = await databaseTime(db);
   const live = db.select({ id: claims.reviewId }).from(claims).where(and(eq(claims.reviewId, reviews.id), gt(claims.expiresAt, now)));
-  const where = and(eq(reviews.route, route), eq(reviews.status, "pending"),
+  // Backfilled findings must be discoverable even when the human review is resolved.
+  // Listing them does not reopen the review or change its decision.
+  const where = and(eq(reviews.route, route), filter === "ai_review" || filter === "screening_incomplete" ? undefined : eq(reviews.status, "pending"),
+    filter === "ai_review" ? eq(schema.agentScreenings.recommendation, "review") : undefined,
+    filter === "screening_incomplete" ? eq(schema.agentScreenings.status, "incomplete") : undefined,
     filter === "flagged" ? eq(reviews.flagged, true) : undefined,
     filter === "available" ? not(exists(live)) : undefined,
     filter === "mine" ? exists(db.select({ id: claims.reviewId }).from(claims).where(and(eq(claims.reviewId, reviews.id), eq(claims.reviewerId, userId), gt(claims.expiresAt, now)))) : undefined);
@@ -184,8 +215,10 @@ export async function listModerationQueue(db: DrizzleDB, userId: string, options
     agentProfileId: revisions.agentProfileId, snapshot: revisions.snapshot,
     ownSubmission: sql<boolean>`${revisions.userId} = ${userId}`,
     claimedBy: claims.reviewerId, expiresAt: claims.expiresAt,
+    screeningStatus: schema.agentScreenings.status, aiRecommendation: schema.agentScreenings.recommendation, reviewStatus: reviews.status,
   }).from(reviews).innerJoin(revisions, eq(revisions.id, reviews.contentRevisionId))
     .leftJoin(claims, and(eq(claims.reviewId, reviews.id), gt(claims.expiresAt, now)))
+    .leftJoin(schema.agentScreenings, and(eq(schema.agentScreenings.contentRevisionId, reviews.contentRevisionId), eq(schema.agentScreenings.policyVersion, SCREENING_POLICY_VERSION)))
     .where(where).orderBy(asc(reviews.createdAt), asc(reviews.id)).limit(26).offset(offset));
   const [activeClaim] = await db.select({ reviewId: claims.reviewId, expiresAt: claims.expiresAt, route: reviews.route }).from(claims)
     .innerJoin(reviews, eq(reviews.id, claims.reviewId)).where(and(eq(claims.reviewerId, userId), gt(claims.expiresAt, now), authority.canEscalateReview ? undefined : eq(reviews.route, "ordinary")));
@@ -208,8 +241,10 @@ export async function readModerationReview(db: DrizzleDB, userId: string, review
   const history = historyRows.map(({ result, ...event }) => ({ ...event,
     ...(["accept", "reject", "undo"].includes(event.kind) ? { decisionVersion: result.version, beforeDisposition: result.beforeDisposition, disposition: result.disposition, unavailable: result.afterRevisionId === null } : {}),
   }));
-  const [profile] = await db.select({ archivedAt: schema.agentProfiles.archivedAt }).from(schema.agentProfiles).where(eq(schema.agentProfiles.id, revision!.agentProfileId));
+  const [profile] = await db.select({ archivedAt: schema.agentProfiles.archivedAt, latestContentRevisionId: schema.agentProfiles.latestContentRevisionId }).from(schema.agentProfiles).where(eq(schema.agentProfiles.id, revision!.agentProfileId));
+  const screening = await readAgentScreening(db, review.contentRevisionId);
   return { review, revision, parent: parent ?? null, archived: Boolean(profile?.archivedAt), history, serverTime: now,
+    screening, isLatestSubmission: profile?.latestContentRevisionId === review.contentRevisionId,
     claim: claim ? { reviewerId: claim.reviewerId, acquiredAt: claim.acquiredAt, expiresAt: claim.expiresAt,
       ...(claim.reviewerId === userId ? { token: claim.token } : {}) } : null, ...authority };
 }

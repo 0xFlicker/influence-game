@@ -23,7 +23,9 @@ async function fixture(run: () => Promise<void>) {
     for (const entry of STORAGE_PAYLOAD_COLUMNS) {
       const columns = tables.get(entry.table) ?? new Map<string, string>();
       for (const key of entry.primaryKey) columns.set(key, key === "version" ? "integer" : "text");
-      columns.set(entry.column, entry.kind === "binary" ? "bytea" : entry.kind === "text" ? "text" : "jsonb");
+      // Screening tables were introduced after cutover and have never held inline bodies.
+      const column = entry.table === "agent_screenings" || entry.table === "agent_screening_attempts" ? `${entry.column}_object` : entry.column;
+      columns.set(column, entry.kind === "binary" ? "bytea" : entry.kind === "text" ? "text" : "jsonb");
       tables.set(entry.table, columns);
     }
     for (const [table, columns] of tables) {

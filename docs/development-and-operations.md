@@ -535,7 +535,7 @@ For local review use Doppler dev with an explicit local database URL. Run provid
 
 ### Character content evidence
 
-Agent submission writes durable content revisions and pending moderation records in the same transaction as the active profile. No moderator worker or enforcement runs yet. Image generation completes into draft assets; users must select and submit those assets. See [Character drafts and moderation evidence](agent-content-submissions.md) for idempotency, concurrency, asset retention, and the pending-review inspection query.
+Agent submission writes durable content revisions, moderation records and shadow-screening work in the same transaction as the active profile. OpenAI moderation and Luna attach advisory findings without changing publication or human decisions. See [Agent shadow screening](agent-shadow-screening.md) for worker activation, private evidence, migrations 0124–0125, resumable backfill and refusal fallback handling. Image generation completes into draft assets; users must select and submit those assets. See [Character drafts and moderation evidence](agent-content-submissions.md) for idempotency, concurrency and asset retention.
 
 ### Account inference controls
 

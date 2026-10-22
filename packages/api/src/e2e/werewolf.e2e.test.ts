@@ -1,9 +1,7 @@
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@influence/engine";
-import { DEFAULT_CONFIG, GameRunner } from "@influence/engine";
-import { ApiTestMockAgent } from "../services/game-lifecycle.js";
-import { createDurableGameRunnerStore } from "../services/durable-game-runner-store.js";
-import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
-import { insertGame, insertOwner, createCanonicalEventFixture, withJuryWinner, insertCanonicalEventRows } from "../__tests__/durable-run-test-utils.js";
+import { GameState } from "@influence/engine";
+import { createFormatEvents } from "./format-aware-game-viewer-fixture.js";
+import { insertGame, insertOwner, createCanonicalEventFixture, withJuryWinner, insertCanonicalEventRows, withRetrospective, insertRetrospectiveTranscriptFixture } from "../__tests__/durable-run-test-utils.js";
 import { readHouseGameRetrospective } from "../services/house-game-retrospective.js";
 import {readHouseGame} from "../services/house-game-inspection.js";
 import { afterAll, beforeAll, expect, test } from "bun:test";
@@ -29,7 +27,7 @@ import { createOwnedAgentProfile } from "../services/agent-profile-management.js
 import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 import { claimWerewolfGame, createWerewolfGame, createWerewolfStore } from "../services/werewolf-games.js";
 import { createAdminUser } from "./test-auth.js";
-import { closeBrowser, createAuthenticatedPage, launchBrowser } from "./test-browser.js";
+import { closeBrowser, createAuthenticatedPage, launchBrowser, rejectOptionalAnalytics } from "./test-browser.js";
 import { createIsolatedTestDb, destroyIsolatedTestDb, type TestDB } from "./test-db.js";
 import { startTestServers, stopTestServers, type TestServerHandles } from "./test-server.js";
 import { cleanupE2eResources } from "./cleanup.js";
@@ -122,6 +120,9 @@ async function createClaimedHistoricalWerewolfGame(input: Parameters<typeof crea
 }
 afterAll(async () => {
   await cleanupE2eResources([
+    ["screening provider isolation", async () => {
+      if (database) expect(await database.db.select({id: schema.agentScreeningAttempts.id}).from(schema.agentScreeningAttempts)).toHaveLength(0);
+    }],
     ["browser", async () => { if (browser) await closeBrowser(browser); }],
     ["servers", async () => { if (servers) await stopTestServers(servers); }],
     ["database", async () => { if (database) await destroyIsolatedTestDb(database.databaseUrl); }],
@@ -1051,20 +1052,22 @@ test("completed Influence results render without a retrospective", async () => {
 },90_000);
 
 test.each(["classic", "format"] as const)("%s Influence retrospective portraits follow canonical speech links and survive reload/backward seek", async gameKernel => {
-  const config = {...DEFAULT_CONFIG, visibility: "public", maxDiaryFollowUps: 0, diaryRoomAfterPhases: [], mingleSessionsPerRound: 1,
-    modelSelection: {catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" as const},
-    ...(gameKernel === "format" ? {formatManifest: ["save_or_eliminate" as const]} : {})};
-  const id = await insertGame(database.db, {status: "in_progress", config});
-  await database.db.update(schema.games).set({gameKernel, transcriptCaptureVersion: 1, formalSpeechCaptureVersion: 1}).where(eq(schema.games.id, id));
-  await database.db.insert(schema.gameTranscriptStates).values(initialGameTranscriptStateValues(id));
-  const agents = ["Atlas", "Echo", "Nova"].map((name, index) => new ApiTestMockAgent(`${id}-${index}`, name));
-  await database.db.insert(schema.gamePlayers).values(agents.map(agent => ({id: agent.id, gameId: id, persona: JSON.stringify({name: agent.name, personality: "Fixture"}), agentConfig: '{}', status: "alive" as const})));
-  const ownerEpoch = await insertOwner(database.db, id, {expiresAt: "2099-01-01T00:00:00.000Z"});
-  await new GameRunner(agents, config, undefined, {gameId: id, durableTurnStore: createDurableGameRunnerStore(database.db, {gameId: id, ownerEpoch})}).run();
-  await database.db.update(schema.games).set({status: "completed"}).where(eq(schema.games.id, id));
+  // Replay historical classic events directly: the current runner always uses
+  // the format kernel and cannot generate a classic history.
+  const id = await insertGame(database.db, {status: "completed", config: {visibility: "public", modelSelection: {catalogId: "openai:gpt-6-luna", reasoningPolicy: "action-policy"}}});
+  await database.db.update(schema.games).set({gameKernel}).where(eq(schema.games.id, id));
+  const players = ["Atlas", "Echo", "Nova", "Mira", "Nyx", "Vera"].map((name, index) => ({id: `${id}-${index}`, name}));
+  await database.db.insert(schema.gamePlayers).values(players.map(player => ({id: player.id, gameId: id, persona: JSON.stringify({name: player.name, personality: "Fixture"}), agentConfig: '{}'})));
+  const classic = new GameState(players, {gameId: id});
+  classic.startRound();
+  const events = withRetrospective(withJuryWinner(gameKernel === "classic" ? classic.getCanonicalEvents() : createFormatEvents(id, players, ["save_or_eliminate", "vote_bomb"]), players[0]!.id), 1);
+  await insertCanonicalEventRows(database.db, id, await insertOwner(database.db, id), events);
+  await insertRetrospectiveTranscriptFixture(database.db, events);
   const retrospective = await readHouseGameRetrospective(database.db, {gameIdOrSlug: id});
-  expect(retrospective.statements).toHaveLength(3);
-  const page = await browser.newPage();
+  expect(retrospective.statements).toHaveLength(players.length);
+  // Playback speed/preferences from other stories must not advance past a link.
+  const context = await browser.createBrowserContext(), page = await context.newPage();
+  await rejectOptionalAnalytics(page);
   try {
     for (const index of [0, 2, 1]) {
       const speech = retrospective.statements[index]!, speaker = retrospective.speakers[index]!;
@@ -1081,7 +1084,7 @@ test.each(["classic", "format"] as const)("%s Influence retrospective portraits 
     console.log(`Retrospective ${gameKernel} browser state:`, await page.evaluate("document.body.innerText"));
     await page.screenshot({path: `/tmp/retrospective-${gameKernel}-failed.png`});
     throw error;
-  } finally {await page.close();}
+  } finally {await context.close();}
 }, 120_000);
 
 
@@ -1091,7 +1094,8 @@ test("House replay music follows transport, remembers volume and stays visible o
     if(request.action==="open_thread")return {kind:"opening",text:"Let us compare the accounts carefully before we decide who should leave the village today.",cue:null,recipientIds:[]};
     return request.legalTargetIds.length ? {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Private decision"} : {kind:"speech",text:"I want to hear what everyone has to say before I make up my mind about anyone in this village.",cue:null};
   }});
-  const page=await browser.newPage();const errors:string[]=[];
+  const context=await browser.createBrowserContext(), page=await context.newPage();const errors:string[]=[];
+  await rejectOptionalAnalytics(page);
   page.on("pageerror",error=>errors.push(String(error)));
   try {
     await page.evaluateOnNewDocument(`(() => {
@@ -1175,13 +1179,17 @@ test("House replay music follows transport, remembers volume and stays visible o
     expect(await page.$('button[aria-label="Pause replay"]')).not.toBeNull();
     failMusic=false;await page.click('button[aria-label="Music unavailable. Retry"]');
     await page.waitForFunction("window.__musicAudio.some(a=>!a.paused && a.currentTime>0.1)");
-    await page.evaluate("window.__oldMusic=window.__musicAudio;Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));");
-    await page.waitForFunction("window.__musicAudio.every(a=>a.paused)");
-    await page.waitForSelector('button[aria-label="Play replay"]');
+    // Background playback intentionally retains sound and play intent.
+    await page.evaluate("window.__backgroundMusic=window.__musicAudio.find(a=>!a.paused);window.__backgroundTime=window.__backgroundMusic.currentTime;Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));");
+    await page.waitForFunction("!window.__backgroundMusic.paused && window.__backgroundMusic.currentTime>window.__backgroundTime+0.1");
+    await page.waitForSelector('button[aria-label="Pause replay"]');
     await page.evaluate("delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));");
-    expect(await page.evaluate("window.__musicAudio.every(a=>a.paused)")).toBe(true);
+    expect(await page.evaluate("window.__musicAudio.some(a=>!a.paused)")).toBe(true);
     expect(errors).toEqual([]);
-  } finally {await page.close();}
+  } catch (error) {
+    console.error("Music replay state", await page.evaluate("({text:document.body.innerText,audio:window.__musicAudio?.map(a=>({src:a.src,paused:a.paused,time:a.currentTime,error:a.error?.message})),contexts:window.__musicContexts?.map(c=>c.state)})"));
+    throw error;
+  } finally {await context.close();}
 },120_000);
 
 

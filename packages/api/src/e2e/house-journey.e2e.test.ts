@@ -92,7 +92,7 @@ test("old/new House cards, title search, stable links and responsive art",async(
     await page.type('input[aria-label="Search games"]','Lanterns and Lies');
     await page.waitForFunction(`document.querySelectorAll('.episode-card[data-game-kind="werewolf"]').length === 1`);
     const opensTouchPreview = await page.evaluate('matchMedia("(hover: none), (pointer: coarse)").matches');
-    await page.click('a[aria-label="Open Lanterns and Lies"]');
+    await page.locator('.episode-card-link[href="/games/old-lantern-village"]').click();
     if (opensTouchPreview) {
       const openGame = '.episode-modal-actions a[href="/games/old-lantern-village"]';
       await page.waitForSelector(openGame);
