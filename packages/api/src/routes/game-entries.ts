@@ -21,5 +21,21 @@ export function createGameEntryRoutes(db: DrizzleDB) {
     if (!game || !isViewerGame(game)) return c.json({ error: "Game not found" }, 404);
     return c.json({ id: game.id, slug: game.slug, gameKind: game.gameKind, visibility: storedGameVisibility(game.config) });
   });
+  // Bounded, anonymous social metadata: no replay history, private config or producer state.
+  app.get("/api/game-entries/:idOrSlug/card", async c => {
+    c.header("Cache-Control", "private, no-store");
+    const key = c.req.param("idOrSlug");
+    const [game] = await db.select({
+      id:schema.games.id, slug:schema.games.slug, gameKind:schema.games.gameKind,
+      status:schema.games.status, config:schema.games.config, hiddenAt:schema.games.hiddenAt,
+      title:schema.gameEpisodePresentations.title, description:schema.gameEpisodePresentations.description,
+      coverUrl:schema.gameEpisodePresentations.coverUrl,
+    }).from(schema.games).leftJoin(schema.gameEpisodePresentations, eq(schema.gameEpisodePresentations.gameId, schema.games.id))
+      .where(or(eq(schema.games.id,key), eq(schema.games.slug,key)));
+    if (!game || !isViewerGame(game)) return c.json({error:"Game not found"},404);
+    return c.json({id:game.id, slug:game.slug, gameKind:game.gameKind, status:game.status,
+      visibility:storedGameVisibility(game.config), title:game.title ?? game.slug,
+      description:game.description ?? "Watch AI agents make allies, tell lies, and turn on each other.", coverUrl:game.coverUrl});
+  });
   return app;
 }

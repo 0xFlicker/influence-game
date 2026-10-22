@@ -21,27 +21,30 @@ function read(scope: WatchPreferenceScope): WatchPreferences {
 }
 
 /** Read before mounting a player; unavailable controls never overwrite saved choices. */
-export function useWatchPreferences(scope: WatchPreferenceScope = "viewer") {
+export function useWatchPreferences(scope: WatchPreferenceScope = "viewer", initial?: WatchPreferences, ephemeral = false) {
   const current = useRef(defaults);
-  const [state,setState] = useState<{scope:WatchPreferenceScope; value:WatchPreferences} | null>(null);
+  const [state,setState] = useState<{scope:WatchPreferenceScope; initial?:WatchPreferences; value:WatchPreferences} | null>(null);
   useEffect(() => {
-    const refresh = () => {current.current = read(scope);setState({scope,value:current.current});};
+    const refresh = () => {current.current = initial ?? (ephemeral ? defaults : read(scope));setState({scope,initial,value:current.current});};
     const storage = (event: StorageEvent) => {if(event.key === null || event.key === watchPreferenceKey(scope))refresh();};
     refresh();
+    if (ephemeral || initial) return;
     window.addEventListener("storage",storage);
     window.addEventListener(changed,refresh);
     return () => {window.removeEventListener("storage",storage);window.removeEventListener(changed,refresh);};
-  },[scope]);
+  },[scope, initial, ephemeral]);
   const update = useCallback((patch: Partial<WatchPreferences>) => {
     const value = {...current.current,...patch};
     current.current = value;
     try {
-      window.localStorage.setItem(watchPreferenceKey(scope),JSON.stringify(value));
-      window.dispatchEvent(new Event(changed));
+      if (!ephemeral && !initial) {
+        window.localStorage.setItem(watchPreferenceKey(scope),JSON.stringify(value));
+        window.dispatchEvent(new Event(changed));
+      }
     } catch { console.warn("Player preferences could not be saved on this device."); }
-    setState({scope,value});
-  },[scope]);
-  return {ready:state?.scope === scope, ...(state?.scope === scope ? state.value : defaults),
+    setState({scope,initial,value});
+  },[scope, initial, ephemeral]);
+  return {ready:(state?.scope === scope && state.initial === initial), ...((state?.scope === scope && state.initial === initial) ? state.value : defaults),
     setThinking:useCallback((thinking:boolean)=>update({thinking}),[update]),
     setMusicMuted:useCallback((musicMuted:boolean)=>update({musicMuted}),[update]),
     setMusicVolume:useCallback((musicVolume:number)=>update({musicVolume:Math.max(0,Math.min(1,musicVolume))}),[update])};

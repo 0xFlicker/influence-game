@@ -8,10 +8,11 @@ export interface WatchHeaderModel {
  matchTitle: string; roundLabel: string; connectionLabel: string;
  counts: { alivePlayers: number; eliminatedPlayers: number };
 }
-export function WatchShell({mode, header, cast, mobileCast, theater, inspector, footer}: {
- mode: string; header: ReactNode; cast: ReactNode; mobileCast: ReactNode;
+export function WatchShell({mode, header, cast, mobileCast, theater, inspector, footer, embedded}: {
+ embedded?: boolean; mode: string; header: ReactNode; cast: ReactNode; mobileCast: ReactNode;
  theater: ReactNode; inspector: ReactNode; footer?: ReactNode;
 }) {
+ if (embedded) return <main className="fixed inset-0 flex min-h-0 flex-col overflow-hidden bg-black" data-watch-mode="embed">{theater}</main>;
  return <main className="fixed inset-0 z-30 flex min-h-0 flex-col overflow-hidden influence-shell" style={{backgroundColor: "#08080b"}} data-testid="match-watch-shell" data-watch-mode={mode}>
   <div className="pointer-events-none absolute inset-0 influence-phase-atmosphere" />
   <div className="pointer-events-none absolute inset-0 influence-phase-vignette" />

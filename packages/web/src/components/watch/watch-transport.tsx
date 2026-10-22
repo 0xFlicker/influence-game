@@ -9,15 +9,15 @@ interface WatchTransportProps {
  fullscreen: boolean; fullscreenButton: RefObject<HTMLButtonElement | null>; toggleFullscreen: () => void | Promise<void>; fullscreenError: string | null;
  music?: {muted: boolean; volume: number; status: MusicStatus; onMute: () => void; onVolume: (volume: number) => void; retry: () => void};
  onScrubStart?: () => void; onScrubEnd?: () => void;
- shareHref?: string; header?: ReactNode; settings?: ReactNode; isPlaying: boolean; togglePlay: () => void; speed: number; onSpeed: (speed: number) => void;
+ shareHref?: string; getShareHref?: () => string; header?: ReactNode; settings?: ReactNode; isPlaying: boolean; togglePlay: () => void; speed: number; onSpeed: (speed: number) => void;
  goToBeginning: () => void; goToPrevScene: () => void; onSeek: (position: number) => void | Promise<void>; goToNextScene: () => void; goToEnd: () => void;
  frame: number; frameCount: number; fps: number;
  thinking?: {enabled: boolean; onChange: (enabled: boolean) => void}; live: boolean; cursor: number; count: number;
 }
-export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, fullscreenError, header, isPlaying, togglePlay, speed, onSpeed, goToBeginning, goToPrevScene, onSeek, goToNextScene, goToEnd, live, cursor, count, frame, frameCount, fps, thinking, settings, shareHref, music, onScrubStart, onScrubEnd}: WatchTransportProps) {
+export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, fullscreenError, header, isPlaying, togglePlay, speed, onSpeed, goToBeginning, goToPrevScene, onSeek, goToNextScene, goToEnd, live, cursor, count, frame, frameCount, fps, thinking, settings, shareHref, getShareHref, music, onScrubStart, onScrubEnd}: WatchTransportProps) {
  const transport = useRef<HTMLDivElement>(null);
  const [width, setWidth] = useState(0);
- const available = width - (music ? 140 : 0);
+ const available = width - (music ? 140 : 0) - (shareHref || getShareHref ? 55 : 0);
  const capacity = available >= 1020 ? 2 : available >= 780 ? 1 : 0;
  useLayoutEffect(() => {
   const element = transport.current;
@@ -41,6 +41,7 @@ export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, 
  const speedControl = <fieldset className="min-w-0"><legend className="sr-only">Playback speed</legend><div className="flex items-center gap-1"><span className="mr-1 text-xs text-white/50">Speed</span>{SPEED_OPTIONS.map(option =>
   <button key={option.value} type="button" aria-pressed={speed === option.value} onClick={() => onSpeed(option.value)} className={`h-9 rounded-lg border px-2 text-xs ${speed === option.value ? "border-white/50 bg-white/15 text-white" : "border-transparent text-white/60 hover:bg-white/10"}`}>{option.label}</button>
  )}</div></fieldset>;
+ const volumeControl = music && <input aria-label="Music volume" type="range" min="0" max="100" step="1" value={Math.round(music.volume * 100)} onChange={event => music.onVolume(Number(event.target.value)/100)} className="h-10 w-[50px] cursor-pointer accent-white sm:w-20" />;
  const thinkingControl = thinking && <label className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-white/80"><input type="checkbox" checked={thinking.enabled} onChange={event => thinking.onChange(event.target.checked)} />Show thinking</label>;
  return <>
   <div ref={transport} data-watch-transport className="flex min-w-0 items-center gap-0 sm:gap-1" onClick={event => event.stopPropagation()}>
@@ -62,9 +63,10 @@ export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, 
       <button type="button" className={button} onClick={music.onMute} aria-pressed={!music.muted} aria-label={music.status === "blocked" ? "Enable music" : music.status === "unavailable" ? "Music unavailable. Retry" : music.muted ? "Turn music on" : "Mute music"} title={music.status === "blocked" ? "Enable music" : "Music"}>
         <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M11 4 6 8H3v8h3l5 4Z" />{music.muted || music.status === "blocked" || music.status === "unavailable" ? <path d="m16 9 6 6m0-6-6 6" /> : <path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" />}</svg>
       </button>
-      <input aria-label="Music volume" type="range" min="0" max="100" step="1" value={Math.round(music.volume * 100)} onChange={event => music.onVolume(Number(event.target.value)/100)} className="h-10 w-[50px] cursor-pointer accent-white sm:w-20" />
+      {width >= 400 && volumeControl}
     </div>}
     {live && width >= 520 && <button type="button" aria-label="Go live" title="Go live" onClick={goToEnd} className={`${button} text-[10px] uppercase tracking-wider`}><span className="size-1.5 rounded-full bg-red-400" aria-hidden="true" /><span className={width >= 520 ? "" : "sr-only"}>Live</span></button>}
+    {(shareHref || getShareHref) && <ShareMoment href={shareHref} getHref={getShareHref} />}
     <button {...getReferenceProps()} ref={referenceRef} type="button" aria-label="Player settings" title="Player settings" aria-expanded={open} onClick={event => {setPortalRoot(event.currentTarget.closest<HTMLElement>('[data-player-fullscreen="true"]') ?? undefined);setOpen(value => !value);}} className={button}>
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m10 3-1 3-3 1-2 3 2 2-1 3 2 3 3-1 2 3 3-1 1-3 3-1 1-3-2-2 1-3-3-2-3 1-2-2Z"/><circle cx="12" cy="12" r="3"/></svg>
     </button>
@@ -81,9 +83,9 @@ export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, 
         {music?.status === "unavailable" && <p role="status" className="mb-4 text-amber-200">Music unavailable · <button type="button" onClick={music.retry}>Retry</button></p>}
         {music?.status === "loading" && <p role="status" className="mb-4 text-white/60">Loading music…</p>}
         {header}
-        {shareHref && <div className="mb-4"><ShareMoment key={shareHref} href={shareHref} /></div>}
         {settings && <div className="mb-4 border-b border-white/10 pb-4" onClick={event => {if (event.target instanceof Element && event.target.closest("button")) setOpen(false);}}>{settings}</div>}
         <div className="space-y-4">
+          {width < 400 && music && <label className="flex items-center gap-3 text-white/80">Music volume{volumeControl}</label>}
           {capacity < 1 && speedControl}
           {capacity < 2 && thinkingControl}
         </div>

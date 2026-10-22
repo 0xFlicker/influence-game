@@ -7,11 +7,11 @@ import { centeredScrollLeft } from "../components/updates/update-diagram-lightbo
 import { UpdateMarkdownAnchor } from "../components/updates/update-markdown-anchor";
 
 const indexSource = readFileSync(
-  join(import.meta.dir, "../app/updates/page.tsx"),
+  join(import.meta.dir, "../app/(site)/updates/page.tsx"),
   "utf8",
 );
 const postSource = readFileSync(
-  join(import.meta.dir, "../app/updates/[slug]/page.tsx"),
+  join(import.meta.dir, "../app/(site)/updates/[slug]/page.tsx"),
   "utf8",
 );
 const shellSource = readFileSync(

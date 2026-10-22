@@ -7,7 +7,7 @@ const source = readFileSync(
   "utf8",
 );
 const homePageSource = readFileSync(
-  join(import.meta.dir, "../app/page.tsx"),
+  join(import.meta.dir, "../app/(site)/page.tsx"),
   "utf8",
 );
 

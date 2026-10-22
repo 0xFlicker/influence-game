@@ -8,11 +8,11 @@ const createFormSource = readFileSync(
   "utf8",
 );
 const createPageSource = readFileSync(
-  join(import.meta.dir, "../app/games/new/page.tsx"),
+  join(import.meta.dir, "../app/(site)/games/new/page.tsx"),
   "utf8",
 );
 const adminCreatePageSource = readFileSync(
-  join(import.meta.dir, "../app/admin/games/new/page.tsx"),
+  join(import.meta.dir, "../app/(site)/admin/games/new/page.tsx"),
   "utf8",
 );
 const combinedSource = `${createFormSource}\n${createPageSource}\n${adminCreatePageSource}`;

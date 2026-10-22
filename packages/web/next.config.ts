@@ -19,6 +19,13 @@ const nextConfig: NextConfig = {
   },
   // Standalone output for Docker deployments only
   ...(process.env.DOCKER_BUILD === "1" ? { output: "standalone" as const } : {}),
+  async headers() {
+    return [{source:"/embed/:path*",headers:[
+      {key:"Content-Security-Policy",value:"frame-ancestors 'self' https://x.com https://*.x.com https://twitter.com https://*.twitter.com"},
+      {key:"X-Robots-Tag",value:"noindex, nofollow"},
+      {key:"Referrer-Policy",value:"strict-origin-when-cross-origin"},
+    ]}];
+  },
   // Proxy /api/* to the API server in dev/test (in production Caddy handles this).
   // Uses API_BACKEND_URL (not NEXT_PUBLIC_API_URL) to avoid self-referencing loops.
   async rewrites() {

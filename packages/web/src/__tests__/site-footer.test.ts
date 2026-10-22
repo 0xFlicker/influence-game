@@ -8,7 +8,7 @@ import {
 } from "../components/site-footer";
 
 const layoutSource = readFileSync(
-  new URL("../app/layout.tsx", import.meta.url),
+  new URL("../app/(site)/layout.tsx", import.meta.url),
   "utf8",
 );
 const navSource = readFileSync(
@@ -17,7 +17,7 @@ const navSource = readFileSync(
 );
 
 describe("site footer", () => {
-  it("is rendered by the root layout", () => {
+  it("is rendered by the site layout", () => {
     expect(layoutSource).toContain('import { SiteFooter } from "@/components/site-footer"');
     expect(layoutSource).toContain("<SiteFooter />");
   });

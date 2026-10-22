@@ -99,6 +99,13 @@ export class ApiError extends Error {
   }
 }
 
+/** Public iframe reads never access device credentials, storage, or analytics. */
+export async function anonymousApiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(resolveApiUrl(path), {...options, credentials: "omit", headers: {Accept:"application/json"}});
+  if (!response.ok) throw apiErrorFromResponse(response.status, await response.text());
+  return response.json() as Promise<T>;
+}
+
 export function apiFetch<T>(path: string, options?: RequestInit, decode?: (response: Response) => Promise<T>): Promise<T> {
   return measureProductRequest(analyticsOperation(path, options?.method ?? "GET"), () => unmeasuredApiFetch(path, options, decode));
 }
@@ -1068,6 +1075,7 @@ export async function getPublicWatchIntelligence(
     throughTranscriptSequence?: number;
   } = {},
   signal?: AbortSignal,
+  anonymous = false,
 ): Promise<PublicWatchIntelligenceResult> {
   const search = new URLSearchParams();
   if (params.actorPlayerId) search.set("actorPlayerId", params.actorPlayerId);
@@ -1077,7 +1085,7 @@ export async function getPublicWatchIntelligence(
   if (params.throughEventSequence !== undefined) search.set("throughEventSequence", String(params.throughEventSequence));
   if (params.throughTranscriptSequence !== undefined) search.set("throughTranscriptSequence", String(params.throughTranscriptSequence));
   const query = search.toString();
-  return apiFetch(`/api/games/${gameIdOrSlug}/watch-intelligence${query ? `?${query}` : ""}`, {signal, cache:"no-store"});
+  return (anonymous ? anonymousApiFetch : apiFetch)(`/api/games/${gameIdOrSlug}/watch-intelligence${query ? `?${query}` : ""}`, {signal, cache:"no-store"});
 }
 
 /** The results endpoint returns the engine's canonical-event-derived read model verbatim. */

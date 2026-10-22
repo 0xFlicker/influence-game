@@ -143,3 +143,14 @@ test("duration refreshes preserve local frame and pause instead of changing sour
  expect(director.getTimelineElapsedBaseMs()).toBeCloseTo(1233.333333);
  expect(director.getSnapshot().isPlaying).toBe(false);
 });
+
+test("shared offsets inside an unloaded thought wait and restore the exact thought time", () => {
+ const clock = new Clock(), director = new PresentationDirector({clock,policy:speechPolicy});
+ director.load([{key:"one",cursor:1,baseDurationMs:4000},{key:"two",cursor:2,baseDurationMs:4000}]);
+ director.setSpeed(2);director.seekTimeline(0,5000,true);director.play();clock.tick(3000);
+ expect(director.getSnapshot().activeKey).toBe("one");
+ director.setThinking("one","A sufficiently long saved thought that takes more than five seconds to read carefully.");
+ expect(director.getTimelineElapsedBaseMs()).toBe(5000);
+ expect(director.getSnapshot().speed).toBe(2);
+ director.seekTimeline(0,0);expect(director.getTimelineElapsedBaseMs()).toBe(0);
+});

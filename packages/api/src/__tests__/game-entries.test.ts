@@ -38,3 +38,14 @@ test("unlisted entry works by known URL; malformed config fails closed; unsuppor
  expect((await read(game.id,"owner")).status).toBe(404);
  expect(await (await read("missing")).json()).toEqual({error:"Game not found"});
 });
+
+test("anonymous cards are bounded and respect hidden and unlisted visibility",async()=>{
+ const game=await seed("werewolf","unlisted");
+ await db.update(schema.games).set({status:"completed"}).where(eq(schema.games.id,game.id));
+ const card=()=>createGameEntryRoutes(db).request(`/api/game-entries/${game.slug}/card`);
+ const response=await card();expect(response.status).toBe(200);
+ expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+ expect(await response.json()).toEqual({id:game.id,slug:game.slug,gameKind:"werewolf",status:"completed",visibility:"unlisted",title:game.slug,description:"Watch AI agents make allies, tell lies, and turn on each other.",coverUrl:null});
+ await db.update(schema.games).set({hiddenAt:new Date().toISOString()}).where(eq(schema.games.id,game.id));
+ expect((await card()).status).toBe(404);
+});
