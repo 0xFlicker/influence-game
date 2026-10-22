@@ -1,6 +1,7 @@
 import { testUserIdForWallet } from "../__tests__/rbac-fixtures.js";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import type { Browser, Page } from "puppeteer";
 import { schema } from "../db/index.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
@@ -10,6 +11,7 @@ import { closeBrowser, createAuthenticatedPage, launchBrowser } from "./test-bro
 import { createIsolatedTestDb, destroyIsolatedTestDb, type TestDB } from "./test-db.js";
 import { startTestServers, stopTestServers, type TestServerHandles } from "./test-server.js";
 import { cleanupE2eResources } from "./cleanup.js";
+import { storeJson } from "../services/payload-storage.js";
 
 process.env.JWT_SECRET = "e2e-test-jwt-secret";
 let database: TestDB;
@@ -30,6 +32,14 @@ beforeAll(async () => {
   for (const userId of [moderator.userId, owner.userId, admin.userId]) await recordCurrentLegalAcceptance(database.db, userId, "existing_account", "0123456789abcdef0123456789abcdef01234567");
   const agent = await createOwnedAgentProfile(database.db, { userId: owner.userId }, { name: "Review Character", personality: "First submitted personality", gender: "non-binary" });
   profileId = agent.profile.id; reviewId = agent.receipt.moderationRecordId!;
+  await database.db.update(schema.agentScreenings).set({ status: "completed", recommendation: "review", result: await storeJson({ recommendation: "review", summary: "Review the submitted content.", findings: [{ category: "outside_game_collusion", source: "text", field: "personality", quote: "First submitted personality", assetHash: "", explanation: "Deterministic UI fixture; no real provider assessment." }] }) }).where(eq(schema.agentScreenings.contentRevisionId, agent.profile.contentRevisionId!));
+  const [screening] = await database.db.select().from(schema.agentScreenings);
+  for (const [stage, status, body, outcome] of [
+    ["moderation", 200, { model: "omni-moderation-latest", results: [{ flagged: false, categories: { hate: false }, category_scores: { hate: 0.00000195 } }] }, "accepted"],
+    ["luna", 400, { error: { code: "content_policy_violation" } }, "failed"],
+    ["luna_collusion", 200, { status: "completed" }, "accepted"],
+  ] as const) await database.db.insert(schema.agentScreeningAttempts).values({ id: randomUUID(), screeningId: screening!.id, stage, ordinal: 1,
+    request: await storeJson({ evidence: {} }), response: await storeJson({ evidence: { status, body: JSON.stringify(body) } }), outcome });
   servers = await startTestServers({ databaseUrl: database.databaseUrl, adminAddress: admin.wallet.address, jwtSecret: process.env.JWT_SECRET, logDirectory: "/tmp/moderation-browser-logs" });
   browser = await launchBrowser();
 }, 120_000);
@@ -62,9 +72,34 @@ test("moderator claims, previews and rejects; owner recovers a held correction a
   try {
     await page.setViewport({ width: 1440, height: 1000 });
     await text(page, "Review Character");
+    await text(page, "1 screened or queued revisions · Moderator queue only");
+    expect(await page.evaluate(`Array.from(document.querySelectorAll('[aria-label="Screening overview"] dl > div')).find(item => item.querySelector('dt')?.textContent === 'Completed')?.querySelector('dd')?.textContent`)).toBe("1");
+    expect(await page.evaluate(`Array.from(document.querySelectorAll('button')).filter(button => /refresh/i.test(button.textContent)).length`)).toBe(1);
     await page.waitForSelector('nav a[href="/moderation"]');
     await click(page, "Take next");
     await text(page, "Your claim:");
+    await text(page, "A provider refused the safety assessment.");
+    await text(page, "Text-only collusion result:");
+    await text(page, "content_policy_violation");
+    await text(page, "luna_collusion");
+    expect(await page.$eval('[aria-label="AI shadow screening"]', el => el.textContent)).toContain("0.0000019500");
+    const [screening] = await database.db.select().from(schema.agentScreenings);
+    await database.db.update(schema.agentScreenings).set({ status: "incomplete", recommendation: null, result: null, failureCode: "provider_timeout" });
+    await click(page, "Refresh");
+    await text(page, "provider_timeout: 1");
+    await text(page, "Screening incomplete — no clearance");
+    expect(await page.$eval('[aria-label="Review queue"]', el => el.textContent)).toContain("Screening incomplete");
+    expect(await page.$eval('[aria-label="AI shadow screening"]', el => el.textContent)).toContain("Screening incomplete — no clearance");
+    await database.db.update(schema.agentScreenings).set({ status: "completed", recommendation: "review", result: screening!.result, failureCode: null });
+    await click(page, "Refresh");
+    await text(page, "No screening failures recorded.");
+    await text(page, "Review the submitted content.");
+    expect(await page.$eval('[aria-label="Review queue"]', el => el.textContent)).toContain("AI recommends review");
+    expect(await page.$eval('[aria-label="AI shadow screening"]', el => el.textContent)).toContain("Human review recommended");
+    await text(page, "AI recommendation · Shadow mode");
+    await text(page, "Human review recommended");
+    await text(page, "Outside-game collusion");
+    await text(page, "does not change publication");
     expect(await page.$('a[href^="/admin/inference"]')).toBeNull();
     await page.waitForSelector("textarea:not([disabled])");
     await page.type("textarea", "Remove this submitted revision");
@@ -110,6 +145,7 @@ test("pass is admin-only, and a revoked moderator loses access without changing 
   const adminPage = await createAuthenticatedPage(browser, adminUser.jwt, `${servers.webUrl}/moderation`, { privateKey: adminUser.wallet.privateKey });
   try {
     await text(adminPage, "Admin recovery and resolved reviews");
+    await text(adminPage, "All review queues");
     await adminPage.select('select[aria-label="Queue"]', "escalated"); await text(adminPage, "Review Character");
     await click(adminPage, "Take next"); await text(adminPage, "Your claim:");
     await adminPage.waitForSelector('a[href^="/admin/inference?userId="]');
@@ -121,7 +157,7 @@ test("pass is admin-only, and a revoked moderator loses access without changing 
     await adminPage.goto(`${servers.webUrl}/moderation/recovery`, { waitUntil: "networkidle0" }); await text(adminPage, "Resolved reviews");
     await adminPage.goto(`${servers.webUrl}/moderation?review=${reviewId}`, { waitUntil: "networkidle0" });
     await text(adminPage, "Review Character");
-    await adminPage.click("details summary"); await click(adminPage, "Preview undo"); await text(adminPage, "Confirm whole-revision decision");
+    await adminPage.evaluate(`Array.from(document.querySelectorAll('details summary')).find(el => el.textContent === 'Review history')?.click()`); await click(adminPage, "Preview undo"); await text(adminPage, "Confirm whole-revision decision");
     await adminPage.waitForSelector("textarea:not([disabled])");
     await adminPage.type("textarea", "Undo earlier rejection without replacing the accepted correction");
     await click(adminPage, "Confirm decision"); await text(adminPage, "Decision recorded.");

@@ -10,15 +10,13 @@ Generated portraits now finish as selectable assets. Neither web creation nor ag
 
 ## Submission contract
 
-Moderation implementation is in progress on `codex/moderation-inbox`. Migrations
+The moderator inbox is implemented. Migrations
 `0092_moderation_intake` and `0093_moderation_effective_content` add explicit ancestry,
 timed claims, immutable audit receipts, separate submitted/effective revision
 pointers, publication holds, and archival metadata. The internal service supports
 whole-revision previews, decisions, dependent holds, admin reopen, and compensating
 undo. Current public-profile and admission reads enforce unavailable characters.
-There is no moderator HTTP/MCP endpoint or inbox screen yet; owner draft recovery,
-soft archival, and end-to-end recovery wiring remain release blockers. This is not
-a deployable completed moderation experience. See the
+HTTP/MCP moderation, owner draft recovery, soft archival and recovery are available. See the
 [moderator inbox plan](plans/2026-09-24-001-feat-account-controls-moderation-and-usage-plan.md).
 
 The operator-confirmed removal scope is **current profile and future game eligibility**.
@@ -42,7 +40,7 @@ An unrestricted submission transaction writes the active profile, its applicable
 
 `agent_content_revisions` snapshots name, persona, gender, personality, backstory, strategy, performance instructions, visual design, selected images, crop metadata and confirmed head geometry. Its image map references SHA-256 hashes in `agent_content_assets`, which retains exact submitted bytes, including crop source and exported portrait. Images must be readable from application storage; incomplete image evidence prevents a successful submission. Content revisions and receipts cannot be updated. These audit records retain the profile/user identity and competitive revision reference independently of deleting the live profile.
 
-`agent_moderation_reviews` has one pending record per content revision. A future moderator must inspect the referenced snapshot and hashed bytes, not mutable current profile fields or a freshly downloaded source URL. There is no moderation worker, model call, approval, enforcement or review interface in this release. Pending review does not affect admission, game execution or replay.
+`agent_moderation_reviews` has one review per content revision. Reviewers inspect the referenced snapshot and hashed bytes, not mutable current profile fields or a freshly downloaded source URL. OpenAI moderation and Luna now add asynchronous advisory assessments to those reviews; see [Agent shadow screening](agent-shadow-screening.md). AI screening never changes publication, admission, game execution, replay or human decisions.
 
 Operators can inspect pending work with:
 
@@ -109,6 +107,6 @@ Owner detail includes separate `ownerContent.published` and `ownerContent.submit
 
 Moderation affects current profiles and future eligibility. Historical images, game media and public asset URLs remain unchanged. Retained review evidence uses authenticated, private/no-store endpoints and passive PNG responses. An escalated parent cannot expose parent-only evidence through an ordinary child review.
 
-MCP exposes `read_moderation` and `act_on_moderation` with explicit `moderation:read` / `moderation:write` consent. Write requires read. Neither scope grants a role; the current database role and operation-specific admin checks remain authoritative. Existing grants are not broadened. Apply migrations `0092`–`0095` before serving this release. Automated moderation, account budgets, historical-media removal, and expanded admin metrics are separate work.
+MCP exposes `read_moderation` and `act_on_moderation` with explicit `moderation:read` / `moderation:write` consent. Write requires read. Neither scope grants a role; the current database role and operation-specific admin checks remain authoritative. Existing grants are not broadened. Apply migrations `0092`–`0095` for the inbox and `0124` for AI shadow screening. AI-triggered publication holds and notifications remain future work.
 
 The headshot composer waits for the source image to load before showing geometry warnings or allowing confirmation. If delivery fails, Retry image reloads the same source without spending generation allowance; Open source image helps distinguish storage/HTTP failures from editor problems. Closing and reopening retains the same source URL. Portrait localization and game-scene composition, geometry, and identity verification all use GPT-6 Sol. The model is recorded in request metadata and provider receipts. Existing accepted localization is reused across the model change, and uncertain attempts still require recovery before any paid redispatch.

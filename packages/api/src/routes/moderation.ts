@@ -42,6 +42,10 @@ export function createModerationRoutes(db: DrizzleDB) {
     console.error("[moderation] Request failed", error);
     return c.json({ error: "Moderation request failed. Refresh before retrying.", code: "moderation_failed" }, 500);
   });
+  app.get("/api/moderation/screening-overview", async c => {
+    object(c.req.query(), []);
+    return c.json(await executeModerationRead(db, c.get("user").id, { operation: "screening_overview" }));
+  });
   app.get("/api/moderation/capabilities", async c => c.json(await moderationAuthority(db, c.get("user").id)));
   app.get("/api/moderation/receipts/:id", async c => c.json(await readModerationReceipt(db, c.get("user").id, c.req.param("id"))));
   app.get("/api/moderation/recovery", async c => c.json(await listModerationRecovery(db, c.get("user").id, Number(c.req.query("offset") ?? 0))));
@@ -49,7 +53,7 @@ export function createModerationRoutes(db: DrizzleDB) {
     const q = object(c.req.query(), ["route", "filter", "offset"]);
     return c.json(await listModerationQueue(db, c.get("user").id, {
       route: q.route === undefined ? undefined : choice(q, "route", ["ordinary", "escalated"]),
-      filter: q.filter === undefined ? undefined : choice(q, "filter", ["all", "available", "mine", "flagged"]),
+      filter: q.filter === undefined ? undefined : choice(q, "filter", ["all", "available", "mine", "flagged", "ai_review", "screening_incomplete"]),
       offset: q.offset === undefined ? undefined : Number(q.offset),
     }));
   });

@@ -657,6 +657,7 @@ export {
   ProviderUnavailableError,
   ProviderExecutionCoordinator,
   createProviderEvidenceFetch,
+  classifyProviderError,
   providerAcceptedDecisionId,
   sanitizeProviderEvidence,
 } from "./provider-execution";

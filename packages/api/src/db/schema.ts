@@ -3674,6 +3674,44 @@ export const agentModerationReviews = pgTable("agent_moderation_reviews", {
   check("agent_moderation_reviews_version_check", sql`${table.version} >= 0`),
   check("agent_moderation_reviews_cycle_check", sql`${table.cycle} > 0`),
 ]);
+/** Advisory screening of an immutable agent revision under a versioned policy. */
+export const agentScreenings = pgTable("agent_screenings", {
+  id: text("id").primaryKey(),
+  contentRevisionId: text("content_revision_id").notNull().references(() => agentContentRevisions.id),
+  policyVersion: text("policy_version").notNull(),
+  status: text("status").$type<"pending" | "running" | "completed" | "incomplete">().notNull().default("pending"),
+  recommendation: text("recommendation").$type<"no_concern" | "review" | "inconclusive">(),
+  result: payloadColumn("result_object", "json-gzip").$type<StoredPayload<import("../services/agent-screening-policy.js").ScreeningRecommendation>>(),
+  owner: text("owner"),
+  leaseUntil: timestamp("lease_until", { withTimezone: true, mode: "string" }),
+  failureCode: text("failure_code"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  finishedAt: timestamp("finished_at", { withTimezone: true, mode: "string" }),
+}, table => [
+  uniqueIndex("agent_screenings_revision_policy_unique").on(table.contentRevisionId, table.policyVersion),
+  index("agent_screenings_pending_idx").on(table.status, table.createdAt),
+  check("agent_screenings_status_check", sql`${table.status} IN ('pending','running','completed','incomplete')`),
+  check("agent_screenings_recommendation_check", sql`${table.recommendation} IS NULL OR ${table.recommendation} IN ('no_concern','review','inconclusive')`),
+  ...payloadChecks("agent_screenings", { result: [table.result, "json-gzip"] }),
+]);
+/** Each dispatch retains its request before spending and its response before validation. */
+export const agentScreeningAttempts = pgTable("agent_screening_attempts", {
+  id: text("id").primaryKey(),
+  screeningId: text("screening_id").notNull().references(() => agentScreenings.id),
+  stage: text("stage").$type<"moderation" | "luna" | "luna_collusion">().notNull(),
+  ordinal: integer("ordinal").notNull(),
+  request: payloadColumn("request_object", "json-gzip").notNull().$type<StoredPayload<Record<string, unknown>>>(),
+  response: payloadColumn("response_object", "json-gzip").$type<StoredPayload<Record<string, unknown>>>(),
+  outcome: text("outcome").$type<"accepted" | "retryable" | "failed">(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, table => [
+  uniqueIndex("agent_screening_attempt_unique").on(table.screeningId, table.stage, table.ordinal),
+  check("agent_screening_attempt_stage_check", sql`${table.stage} IN ('moderation','luna','luna_collusion')`),
+  check("agent_screening_attempt_ordinal_check", sql`${table.ordinal} BETWEEN 1 AND 3`),
+  check("agent_screening_attempt_outcome_check", sql`${table.outcome} IS NULL OR ${table.outcome} IN ('accepted','retryable','failed')`),
+  ...payloadChecks("agent_screening_attempts", { request: [table.request, "json-gzip"], response: [table.response, "json-gzip"] }),
+]);
+
 /** Exact mutation receipt, including unchanged submissions, for response-loss recovery. */
 export const agentContentSubmissions = pgTable("agent_content_submissions", {
   id: text("id").primaryKey(),

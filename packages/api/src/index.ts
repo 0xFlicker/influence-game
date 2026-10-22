@@ -1,6 +1,8 @@
 import { renderExecutionConfig } from "@influence/engine/render-execution-config";
 import { remoteRenderingEnabled, startRenderWakeDispatcher } from "./services/postgame-media-execution.js";
 import { startHouseCutWorker } from "./services/house-cut-worker.js";
+import { startAgentScreeningWorker } from "./services/agent-screening-worker.js";
+import { createAgentScreeningProvider } from "./services/agent-screening-provider.js";
 import { isViewerGame, viewerGameAvailable } from "./services/game-visibility.js";
 import { createWerewolfAdminRoutes } from "./routes/werewolf-admin.js";
 import { createGameEntryRoutes } from "./routes/game-entries.js";
@@ -447,6 +449,9 @@ async function finishBackgroundRuntimeStartup(
   const episodeWorker = gameExecutionWorker ? startEpisodeWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const visualMediaWorker = gameExecutionWorker ? startVisualMediaWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const ownerLearningApiKey = process.env.OPENAI_API_KEY?.trim();
+  const agentScreeningWorker = gameExecutionWorker && ownerLearningApiKey
+    ? startAgentScreeningWorker(db, createAgentScreeningProvider(ownerLearningApiKey), () => runtimeActivation.canClaimWork()) : null;
+  if (gameExecutionWorker && !ownerLearningApiKey) console.warn("[agent-screening] OPENAI_API_KEY missing; shadow work remains pending");
   assertNotAborted();
   const ownerLearningFailureReconciliation = startOwnerLearningFailureReconciliationLoop(db, {
     canClaimWork: () => runtimeActivation.canClaimWork(),
@@ -512,6 +517,7 @@ async function finishBackgroundRuntimeStartup(
       await houseCutWorker?.stop();
       await episodeWorker?.stop();
       await visualMediaWorker?.stop();
+      await agentScreeningWorker?.stop();
       if (reconciliationTimer) clearInterval(reconciliationTimer);
       if (executionScanTimer) clearInterval(executionScanTimer);
       if (executionScan) {

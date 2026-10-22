@@ -16,6 +16,7 @@
     "db:migrate": "DRIZZLE_MIGRATIONS_DIR=./drizzle bun run src/db/migrate.ts",
     "db:seed": "DRIZZLE_MIGRATIONS_DIR=./drizzle bun run src/db/seed.ts",
     "backfill:watch-summaries": "bun run src/scripts/backfill-game-watch-state-summaries.ts",
+    "backfill:agent-screenings": "bun run src/scripts/backfill-agent-screenings.ts",
     "avatar-storage:rotate": "bun run src/scripts/rotate-private-avatar-storage-keys.ts",
     "auth:bootstrap-operator": "bun run src/scripts/bootstrap-initial-operator.ts",
     "auth:identity-inventory": "bun run src/scripts/preflight-auth-identities.ts",
