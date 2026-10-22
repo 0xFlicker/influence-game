@@ -1125,7 +1125,7 @@ export function createAdminRoutes(
   // GET /api/admin/settings/invite — get invite code settings
   // -------------------------------------------------------------------------
 
-  app.get("/api/admin/settings/invite", requireAdminRead, async (c) => {
+  app.get("/api/admin/settings/invite", requirePermission("view_admin", "manage_roles", "manage_invites"), async (c) => {
     const setting = (await db
       .select()
       .from(schema.appSettings)
@@ -1140,7 +1140,7 @@ export function createAdminRoutes(
   // PATCH /api/admin/settings/invite — toggle invite code requirement
   // -------------------------------------------------------------------------
 
-  app.patch("/api/admin/settings/invite", requireAdminRead, async (c) => {
+  app.patch("/api/admin/settings/invite", requirePermission("manage_invites"), async (c) => {
     const body = await parseJsonBody(c, "PATCH /api/admin/settings/invite");
     if (body?.inviteRequired === undefined) {
       return c.json({ error: "inviteRequired is required" }, 400);
@@ -1164,7 +1164,7 @@ export function createAdminRoutes(
   // GET /api/admin/invite-codes — list invite codes with filters
   // -------------------------------------------------------------------------
 
-  app.get("/api/admin/invite-codes", requireAdminRead, async (c) => {
+  app.get("/api/admin/invite-codes", requirePermission("manage_invites"), async (c) => {
     const requester = c.get("user");
     const emailAccessInput = {
       requesterUserId: requester.id,
@@ -1220,7 +1220,7 @@ export function createAdminRoutes(
   // POST /api/admin/invite-codes — generate codes for a user
   // -------------------------------------------------------------------------
 
-  app.post("/api/admin/invite-codes", requireAdminRead, async (c) => {
+  app.post("/api/admin/invite-codes", requirePermission("manage_invites"), async (c) => {
     const body = await parseJsonBody(c, "POST /api/admin/invite-codes");
     if (!body?.userId) {
       return c.json({ error: "userId is required" }, 400);
@@ -1257,7 +1257,7 @@ export function createAdminRoutes(
   // POST /api/admin/invite-codes/refill — bulk refill: ensure min codes
   // -------------------------------------------------------------------------
 
-  app.post("/api/admin/invite-codes/refill", requireAdminRead, async (c) => {
+  app.post("/api/admin/invite-codes/refill", requirePermission("manage_invites"), async (c) => {
     const body = await parseJsonBody(c, "POST /api/admin/invite-codes/refill");
     const minCodes = Math.min(Math.max(Number(body?.minCodes) || 5, 1), 100);
     const minAgeDays = Number(body?.minAgeDays) || 0;
@@ -1418,48 +1418,13 @@ export function createAdminRoutes(
   // POST /api/admin/import-game — import a previously exported game
   // -------------------------------------------------------------------------
 
-  app.post("/api/admin/import-game", requireAdminRead, async (c) => {
+  app.post("/api/admin/import-game", requirePermission("manage_game_imports"), async (c) => {
     const body = await parseJsonBody(c, "POST /api/admin/import-game");
-    if (!body) {
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
 
-    // Mode 1: Remote fetch — { sourceUrl, slug } → fetch export from remote env
-    // Mode 2: Direct import — { version, game, players, transcripts, ... }
-    let exportData = body;
-    if (body.sourceUrl && body.slug) {
-      const authHeader = c.req.header("Authorization");
-      let parsedUrl: URL;
-      try {
-        parsedUrl = new URL(body.sourceUrl as string);
-      } catch {
-        return c.json({ error: "Invalid sourceUrl" }, 400);
-      }
-      if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-        return c.json({ error: "Only http/https URLs are allowed" }, 400);
-      }
-
-      const exportUrl = `${parsedUrl.origin}/api/admin/export-game/${encodeURIComponent(body.slug as string)}`;
-      const headers: Record<string, string> = { Accept: "application/json" };
-      if (authHeader) headers["Authorization"] = authHeader;
-
-      try {
-        const resp = await fetch(exportUrl, { headers });
-        if (!resp.ok) {
-          const detail = await resp.text();
-          return c.json({
-            error: `Remote export failed (${resp.status})`,
-            detail,
-          }, resp.status as 502);
-        }
-        exportData = await resp.json();
-      } catch (err) {
-        return c.json({
-          error: "Failed to fetch export from remote environment",
-          detail: err instanceof Error ? err.message : String(err),
-        }, 502);
-      }
-    }
+    const exportData = body;
 
     // Validate required fields
     if (exportData.version !== 1) {
@@ -1784,60 +1749,6 @@ export function createAdminRoutes(
         error: "Import failed — transaction rolled back",
         detail: err instanceof Error ? err.message : String(err),
       }, 500);
-    }
-  });
-
-  // -------------------------------------------------------------------------
-  // GET /api/admin/remote-games — proxy to another env's game list
-  // -------------------------------------------------------------------------
-
-  app.get("/api/admin/remote-games", requireAdminRead, async (c) => {
-    const url = c.req.query("url");
-    if (!url) {
-      return c.json({ error: "url query parameter is required" }, 400);
-    }
-
-    // Validate URL shape (basic safety check)
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(url);
-    } catch {
-      return c.json({ error: "Invalid URL" }, 400);
-    }
-
-    // Only allow http/https
-    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-      return c.json({ error: "Only http/https URLs are allowed" }, 400);
-    }
-
-    // Forward the user's JWT to the remote env
-    const authHeader = c.req.header("Authorization");
-    const targetUrl = `${parsedUrl.origin}/api/games?status=completed`;
-
-    try {
-      const headers: Record<string, string> = {
-        "Accept": "application/json",
-      };
-      if (authHeader) {
-        headers["Authorization"] = authHeader;
-      }
-
-      const resp = await fetch(targetUrl, { headers });
-
-      if (!resp.ok) {
-        return c.json({
-          error: `Remote server returned ${resp.status}`,
-          detail: await resp.text(),
-        }, resp.status as 400);
-      }
-
-      const data = await resp.json();
-      return c.json(data);
-    } catch (err) {
-      return c.json({
-        error: "Failed to fetch from remote environment",
-        detail: err instanceof Error ? err.message : String(err),
-      }, 502);
     }
   });
 

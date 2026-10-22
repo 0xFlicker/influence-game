@@ -19,7 +19,7 @@ A user's email address may be serialized only to that same authenticated user or
 
 The allowed response paths are:
 
-- `POST /api/auth/login`, `POST /api/auth/local-cli-session`, `GET /api/auth/me`, and `GET/PATCH /api/profile`, where the response subject is the authenticated user.
+- `POST /api/auth/login`, `GET /api/auth/me`, and `GET/PATCH /api/profile`, where the response subject is the authenticated user.
 - `GET /api/admin/users` and `GET /api/admin/agents`, where email fields are returned for the subject user or a caller with a privileged email role. The route's existing permission gate still applies; the email role does not grant endpoint access by itself.
 
 All other REST, MCP, WebSocket, replay, leaderboard, queue, season, and public-player responses must omit email values, including an email copied or embedded in a legacy display-name field. Administrative labels such as invite-code owners use the same display-name redaction even though they never expose an email field. Public identity queries may load email internally only to reject email-derived display names. The generic authenticated request context deliberately omits email so serializing `c.get("user")` cannot expose it.

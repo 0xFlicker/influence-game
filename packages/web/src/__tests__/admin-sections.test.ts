@@ -14,7 +14,6 @@ describe("admin section routes", () => {
       "/admin/agents",
       "/admin/users",
       "/admin/invites",
-      "/admin/import",
     ]);
   });
 
@@ -28,4 +27,17 @@ describe("admin section routes", () => {
     expect(permitsAdminEntry({access:"producer"},{roles:[],permissions:["view_admin"]})).toBeFalse();
     expect(permitsAdminEntry(route,{roles:[],permissions:[]})).toBeFalse();
   });
+});
+
+test("invite controls require their own capability", () => {
+  for (const [path, permission] of [["/admin/invites", "manage_invites"]]) {
+    const entry = adminRoute(path)!;
+    expect(permitsAdminEntry(entry, { roles: [], permissions: ["view_admin", "manage_roles"] })).toBeFalse();
+    expect(permitsAdminEntry(entry, { roles: [], permissions: [permission] })).toBeTrue();
+  }
+});
+
+test("remote import has no admin navigation or tab", () => {
+  expect(isAdminTab("import")).toBeFalse();
+  expect(adminRoute("/admin/import")).toBeUndefined();
 });
