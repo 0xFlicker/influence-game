@@ -94,6 +94,22 @@ describe("release migration identity", () => {
 });
 
 describe("expand-contract release migration policy", () => {
+  test("allows only the exact reviewed obsolete-review lease cleanup", () => {
+    const migration = path.resolve(import.meta.dir, "../../drizzle/0126_close_unscreened_superseded_reviews.sql");
+    const sql = readFileSync(migration, "utf8");
+    expect(inspectReleaseMigrationFiles([migration])).toEqual([]);
+    for (const [file, content] of [
+      ["unreviewed.sql", sql],
+      [migration, sql.replace("AND NOT review.flagged", "")],
+      [migration, `${sql}\nDELETE FROM agent_moderation_reviews;`],
+      [migration, sql.replace("WHERE review_id IN (SELECT id FROM agent_moderation_reviews WHERE status = 'superseded')", "")],
+    ] as const) {
+      expect(inspectReleaseMigrationSql(file, content)).toContainEqual(
+        expect.objectContaining({ rule: "delete" }),
+      );
+    }
+  });
+
   test("allows only the exact reviewed retrospective size-gate removal", () => {
     const migration = path.resolve(import.meta.dir, "../../drizzle/0118_retrospective_input_size.sql");
     const sql = readFileSync(migration, "utf8");

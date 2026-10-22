@@ -2,7 +2,7 @@ import { Hydrated, loadPayloads } from "./payload-storage.js";
 import { readAgentScreening } from "./agent-screening-read.js";
 import { SCREENING_POLICY_VERSION } from "./agent-screening-policy.js";
 import { randomUUID } from "node:crypto";
-import { and, asc, count, eq, exists, gt, lte, not, sql } from "drizzle-orm";
+import { and, asc, count, eq, exists, inArray, gt, lte, not, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { sha256StableJson } from "./stable-hash.js";
 import { contentSnapshot, decodeContentSnapshot, ContentSubmissionConflict } from "./agent-content-submissions.js";
@@ -281,7 +281,7 @@ export async function claimModerationReview(db: DrizzleDB, userId: string, input
       input.reviewId ? undefined : not(exists(tx.select({ id: actions.id }).from(actions).where(and(
         eq(actions.reviewId, reviews.id), eq(actions.actorId, userId), eq(actions.kind, "flag"), eq(actions.cycle, reviews.cycle))))));
     const [selected] = await tx.select({ review: reviews }).from(reviews).innerJoin(revisions, eq(revisions.id, reviews.contentRevisionId))
-      .where(eligible).orderBy(asc(reviews.createdAt), asc(reviews.id)).limit(1);
+      .where(eligible).orderBy(asc(reviews.createdAt), asc(reviews.id)).limit(1).for("update", { of: reviews });
     if (!selected) throw new ModerationError("claim_unavailable", "No eligible review is available to claim.");
     const claim = { token: randomUUID(), acquiredAt: now, expiresAt: new Date(new Date(now).getTime() + LEASE_MS).toISOString() };
     await tx.insert(claims).values({ reviewerId: userId, reviewId: selected.review.id, ...claim });
@@ -306,7 +306,7 @@ export async function triageModerationReview(db: DrizzleDB, userId: string, inpu
   return write(db, userId, async (tx, now, authority) => {
     const prior = await replay(tx, userId, input.actionId, hash);
     if (prior) return prior;
-    const [review] = await tx.select().from(reviews).where(eq(reviews.id, input.reviewId));
+    const [review] = await tx.select().from(reviews).where(eq(reviews.id, input.reviewId)).for("update");
     if (!review) throw new ModerationError("review_not_found", "Review not found.", 404);
     checkRoute(review.route, authority);
     if (review.status !== "pending" || review.version !== input.version) throw new ModerationError("review_conflict", "The review changed. Refresh before acting.");
@@ -450,7 +450,7 @@ export async function reopenModerationReview(db: DrizzleDB, userId: string, inpu
     const [target] = await loadPayloads(tx.select({ review: reviews, revision: revisions }).from(reviews)
       .innerJoin(revisions, eq(revisions.id, reviews.contentRevisionId)).where(eq(reviews.id, input.reviewId)));
     if (!target) throw new ModerationError("review_not_found", "Review not found.", 404);
-    if (target.review.version !== input.version || target.review.status !== "resolved") throw new ModerationError("review_conflict", "Only unchanged resolved work can be reopened.");
+    if (target.review.version !== input.version || !["resolved", "superseded"].includes(target.review.status)) throw new ModerationError("review_conflict", "Only unchanged closed work can be reopened.");
     await tx.execute(sql`SELECT id FROM agent_profiles WHERE id = ${target.revision.agentProfileId} FOR UPDATE`);
     if (!(await moderationAuthority(tx, userId)).canUndo) throw new ModerationError("moderation_forbidden", "Admin recovery access is required.", 403);
     const [review] = await tx.update(reviews).set({ status: "pending", cycle: target.review.cycle + 1, version: target.review.version + 1 })
@@ -478,9 +478,9 @@ export async function readModerationReceipt(db: DrizzleDB, userId: string, actio
 export async function listModerationRecovery(db: DrizzleDB, userId: string, offset = 0) {
   if (!(await moderationAuthority(db, userId)).canUndo) throw new ModerationError("moderation_forbidden", "Admin recovery access is required.", 403);
   if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1_000_000) throw new ModerationError("invalid_input", "Invalid offset.", 400);
-  const resolved = await loadPayloads(db.select({ id: reviews.id, version: reviews.version, disposition: reviews.disposition,
+  const resolved = await loadPayloads(db.select({ id: reviews.id, version: reviews.version, disposition: reviews.disposition, status: reviews.status,
     snapshot: revisions.snapshot, profileId: revisions.agentProfileId })
-    .from(reviews).innerJoin(revisions, eq(revisions.id, reviews.contentRevisionId)).where(eq(reviews.status, "resolved"))
+    .from(reviews).innerJoin(revisions, eq(revisions.id, reviews.contentRevisionId)).where(inArray(reviews.status, ["resolved", "superseded"]))
     .orderBy(asc(reviews.createdAt), asc(reviews.id)).limit(26).offset(offset));
   const archived = await db.select({ id: schema.agentProfiles.id, name: schema.agentProfiles.name, version: schema.agentProfiles.moderationVersion,
     archivedAt: schema.agentProfiles.archivedAt }).from(schema.agentProfiles).where(sql`${schema.agentProfiles.archivedAt} IS NOT NULL`)

@@ -2,7 +2,7 @@ import { loadPayloads, storeFields } from "./payload-storage.js";
 import { enqueueAgentScreening } from "./agent-screening-queue.js";
 import { parseCharacterHeadPosition } from "@influence/engine/character-portrait";
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import type { AgentProfileMutationRead } from "./agent-profile-management.js";
@@ -99,6 +99,23 @@ export async function recordContentSubmission(tx: Tx, mutation: AgentProfileMuta
     moderationVersion: profile.moderationVersion + 1,
     updatedAt: new Date().toISOString(),
   }).where(and(eq(schema.agentProfiles.id, profile.id), eq(schema.agentProfiles.userId, profile.userId))).returning();
+  // Retire legacy, never-screened intake work when a newer snapshot replaces it.
+  // Match migration 0126; explicit human triage and retained AI findings stay reviewable.
+  const closed = await tx.execute<{ id: string }>(sql`UPDATE agent_moderation_reviews AS review
+    SET status = 'superseded', version = review.version + 1
+    FROM agent_content_revisions AS revision
+    WHERE review.content_revision_id = revision.id
+      AND revision.agent_profile_id = ${profile.id}
+      AND revision.id IS DISTINCT FROM ${saved!.latestContentRevisionId}
+      AND revision.id IS DISTINCT FROM ${saved!.contentRevisionId}
+      AND review.status = 'pending' AND review.route = 'ordinary'
+      AND review.disposition = 'allowed' AND NOT review.held AND NOT review.flagged
+      AND review.cycle = 1
+      AND NOT EXISTS (SELECT 1 FROM agent_screenings WHERE content_revision_id = revision.id)
+    RETURNING review.id`);
+  // A separate statement sees claims committed while the UPDATE waited for its
+  // review lock. A single CTE would retain the earlier statement snapshot.
+  if (closed.length) await tx.delete(schema.moderationClaims).where(inArray(schema.moderationClaims.reviewId, closed.map(row => row.id)));
   const result = { ...mutation, profile: saved!,
     receipt: { ...mutation.receipt, contentRevisionId: revisionId!, moderationRecordId: reviewId!,
       ...(profile.moderationRequired ? { publication: "held" as const } : { publication: "published" as const }) } };

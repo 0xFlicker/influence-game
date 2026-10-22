@@ -825,7 +825,7 @@ A presentation of the saved room speaker and exact private audience as headshots
 
 ### Character content revision and moderation record
 
-A **content revision** is the complete immutable snapshot submitted from a character draft, including image evidence and crop metadata. It is distinct from a competitive Agent revision: image-only edits do not recalibrate ratings. Each changed submission creates a **pending moderation record** atomically with the accepted profile update. Pending review is evidence for future moderation, not an admission or gameplay gate. See [the submission contract](docs/agent-content-submissions.md).
+A **content revision** is the complete immutable snapshot submitted from a character draft, including image evidence and crop metadata. It is distinct from a competitive Agent revision: image-only edits do not recalibrate ratings. Each changed submission creates a **pending moderation record** atomically with the accepted profile update. Pending review is evidence for future moderation, not an admission or gameplay gate. See [the submission contract](docs/agent-content-submissions.md). An obsolete, never-screened intake record may be closed as **superseded** when its revision is neither current nor published and has no explicit human triage or reopened cycle. This releases its claim without approving or rejecting content; Admin recovery retains the record and can reopen it. See [the cleanup rules](docs/agent-shadow-screening.md#obsolete-unscreened-intake-reviews).
 
 
 ### Scene media repair and viewer publication

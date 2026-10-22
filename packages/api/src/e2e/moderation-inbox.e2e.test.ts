@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { Browser, Page } from "puppeteer";
 import { schema } from "../db/index.js";
-import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { createOwnedAgentProfile, updateOwnedAgentProfile } from "../services/agent-profile-management.js";
 import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 import { createAdminUser, createPlayerUser, mintTestJwt, assignRole, type PlayerUserResult } from "./test-auth.js";
 import { closeBrowser, createAuthenticatedPage, launchBrowser } from "./test-browser.js";
@@ -144,7 +144,7 @@ test("pass is admin-only, and a revoked moderator loses access without changing 
   } finally { await page.close(); }
   const adminPage = await createAuthenticatedPage(browser, adminUser.jwt, `${servers.webUrl}/moderation`, { privateKey: adminUser.wallet.privateKey });
   try {
-    await text(adminPage, "Admin recovery and resolved reviews");
+    await text(adminPage, "Admin recovery and closed reviews");
     await text(adminPage, "All review queues");
     await adminPage.select('select[aria-label="Queue"]', "escalated"); await text(adminPage, "Review Character");
     await click(adminPage, "Take next"); await text(adminPage, "Your claim:");
@@ -154,7 +154,7 @@ test("pass is admin-only, and a revoked moderator loses access without changing 
     await click(adminPage, "Accept — keep allowed"); await text(adminPage, "Confirm whole-revision decision"); await click(adminPage, "Confirm decision"); await text(adminPage, "Decision recorded.");
     const [profile] = await database.db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, profileId));
     expect(profile!.personality).toBe("Recovered correction");
-    await adminPage.goto(`${servers.webUrl}/moderation/recovery`, { waitUntil: "networkidle0" }); await text(adminPage, "Resolved reviews");
+    await adminPage.goto(`${servers.webUrl}/moderation/recovery`, { waitUntil: "networkidle0" }); await text(adminPage, "Closed reviews");
     await adminPage.goto(`${servers.webUrl}/moderation?review=${reviewId}`, { waitUntil: "networkidle0" });
     await text(adminPage, "Review Character");
     await adminPage.evaluate(`Array.from(document.querySelectorAll('details summary')).find(el => el.textContent === 'Review history')?.click()`); await click(adminPage, "Preview undo"); await text(adminPage, "Confirm whole-revision decision");
@@ -165,3 +165,25 @@ test("pass is admin-only, and a revoked moderator loses access without changing 
     expect(afterUndo!.personality).toBe("Recovered correction");
   } finally { await adminPage.close(); }
 }, 120_000);
+
+
+test("superseded unscreened reviews leave the inbox and missing screenings are labelled honestly", async () => {
+  const legacy = await createOwnedAgentProfile(database.db, { userId: owner.userId }, { name: "Legacy unqueued review", personality: "Original" });
+  await database.db.delete(schema.agentScreenings).where(eq(schema.agentScreenings.contentRevisionId, legacy.receipt.contentRevisionId!));
+  await updateOwnedAgentProfile(database.db, { userId: owner.userId }, legacy.profile.id, { name: "Current queued review", submissionId: randomUUID() });
+  const unqueued = await createOwnedAgentProfile(database.db, { userId: owner.userId }, { name: "Current unqueued review", personality: "Current" });
+  await database.db.delete(schema.agentScreenings).where(eq(schema.agentScreenings.contentRevisionId, unqueued.receipt.contentRevisionId!));
+  const page = await createAuthenticatedPage(browser, adminUser.jwt, `${servers.webUrl}/moderation`, { privateKey: adminUser.wallet.privateKey });
+  try {
+    await text(page, "Current unqueued review");
+    const queue = await page.$eval('[aria-label="Review queue"]', node => node.textContent);
+    expect(queue).not.toContain("Legacy unqueued review");
+    expect(await page.evaluate(`Array.from(document.querySelectorAll('[aria-label="Review queue"] button')).find(node => node.textContent?.includes('Current unqueued review'))?.textContent`)).toContain("AI: not queued");
+    expect(await page.evaluate(`Array.from(document.querySelectorAll('[aria-label="Review queue"] button')).find(node => node.textContent?.includes('Current queued review'))?.textContent`)).toContain("AI: awaiting screening");
+    await page.goto(`${servers.webUrl}/moderation?review=${legacy.receipt.moderationRecordId}`, { waitUntil: "domcontentloaded" });
+    await text(page, "This older, unscreened review was closed");
+    expect(await page.evaluate(`Array.from(document.querySelectorAll('button')).find(node => node.textContent?.trim() === 'Claim revision')?.disabled`)).toBe(true);
+    await page.goto(`${servers.webUrl}/moderation/recovery`, { waitUntil: "domcontentloaded" });
+    await text(page, "Legacy unqueued review · allowed · superseded");
+  } finally { await page.close(); }
+}, 90_000);

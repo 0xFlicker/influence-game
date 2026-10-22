@@ -70,6 +70,13 @@ const RELEASE_SAFE_BIGINT_WIDENING = new RegExp(
   "i",
 );
 
+// This exact cleanup deletes only temporary leases on reviews it closes. Review
+// records, immutable actions, content and screening evidence remain untouched.
+// Pin the entire file so widening the cleanup requires a fresh policy review.
+const REVIEWED_CLAIM_CLEANUP_MIGRATIONS = new Map([
+  ["0126_close_unscreened_superseded_reviews.sql", "f0c5773f1e0322f7bf5778e739e4a9d9454233adf9ee80b2701c6ba28e42f666"],
+]);
+
 // Pin each reviewed removal's entire SQL file so any edit or additional
 // constraint removal requires a fresh policy review. 0108 removes only
 // Influence-specific review revision FKs; 0118 removes only the retrospective
@@ -152,6 +159,8 @@ export function inspectReleaseMigrationSql(
   );
   const violations: ReleaseMigrationPolicyViolation[] = [];
   for (const rule of RELEASE_MIGRATION_RULES) {
+    if (rule.rule === "delete" && REVIEWED_CLAIM_CLEANUP_MIGRATIONS.get(path.basename(file))
+      === createHash("sha256").update(sql).digest("hex")) continue;
     if (reviewedCutover && ["rename-column", "narrow-type", "drop-constraint"].includes(rule.rule)) continue;
     if (rule.rule === "narrow-type") {
       const unsafeTypeChange = policyInput
