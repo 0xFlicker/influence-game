@@ -60,6 +60,5 @@ export function getPublicRuntimeConfig(): PublicRuntimeConfig {
       "",
     EPHEMERAL: process.env.EPHEMERAL === "true",
     EPHEMERAL_PR: process.env.EPHEMERAL_PR ?? "",
-    SOURCE_ENV_URL: process.env.SOURCE_ENV_URL ?? "",
   };
 }

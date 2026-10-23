@@ -375,7 +375,7 @@ describe("local CLI session exchange", () => {
     app.route("/", createAuthRoutes(db));
   });
 
-  test("exchanges a loopback producer MCP token for a normal app session", async () => {
+  test("does not exchange a valid producer MCP token for an app session", async () => {
     const walletAddress = "0xproducer00000000000000000000000000000001";
     await db.insert(schema.users).values({
       id: "producer-cli-user",
@@ -402,33 +402,13 @@ describe("local CLI session exchange", () => {
       body: JSON.stringify({}),
     });
 
-    if (res.status !== 200) {
-      console.error("local CLI exchange failure", await res.clone().text());
-    }
-    expect(res.status).toBe(200);
-    const body = await res.json() as {
-      token: string;
-      user: {
-        publicId: string;
-        handle: string | null;
-        displayName: string;
-        publicIdentityOnboarding: { state: string };
-        roles: string[];
-        permissions: string[];
-      };
-    };
-    expect(body.user.roles).toContain("producer");
-    expect(body.user.roles).toContain("gamer");
-    expect(body.user.permissions).toContain("create_game");
-    expect(body.user.permissions).toContain("fill_game");
-    expect(body.user.permissions).toContain("start_game");
-    expect(body.user.publicId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(body.user.handle).toBeNull();
-    expect(body.user.displayName).toBe("Producer CLI");
-    expect(body.user.publicIdentityOnboarding.state).toBe("required");
-    const session = await verifySessionToken(body.token);
-    expect(session?.userId).toBe("producer-cli-user");
-    expect(session?.permissions).toContain("create_game");
+    expect(res.status).toBe(404);
+    const forged = await app.request("https://influence.example/api/auth/local-cli-session", {
+      method: "POST",
+      headers: { Host: "localhost:3000", Authorization: `Bearer ${mcpToken}` },
+      body: JSON.stringify({}),
+    });
+    expect(forged.status).toBe(404);
   });
 
   test("rejects the exchange away from loopback hosts", async () => {
@@ -438,8 +418,7 @@ describe("local CLI session exchange", () => {
       body: JSON.stringify({}),
     });
 
-    expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: "Local CLI session exchange is loopback-only" });
+    expect(res.status).toBe(404);
   });
 });
 

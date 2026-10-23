@@ -31,6 +31,7 @@ export function Nav({ menu = false }: { menu?: boolean }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { ready, authenticated, openSignIn, logout } = useAuth();
   const { isAdmin, roles, loading: permissionsLoading, hasPermission } = usePermissions();
+  const canAccessAdmin = isAdmin || hasPermission("manage_invites");
   const pathname = usePathname();
   const { suppressWebsiteAuthChrome, isMiniApp, contextUser } = useMiniApp();
   const gameRoute = pathname?.split("/")[2];
@@ -81,12 +82,12 @@ export function Nav({ menu = false }: { menu?: boolean }) {
       {authenticated && hasPermission("review_agent_content") && (
         <Link href="/moderation" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>Moderation</Link>
       )}
-      {authenticated && isAdmin && (
+      {authenticated && canAccessAdmin && (
         <Link href="/admin" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
           Admin
         </Link>
       )}
-      {authenticated && !isAdmin && roles.includes("producer") && <Link href="/admin/production" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>Production</Link>}
+      {authenticated && !canAccessAdmin && roles.includes("producer") && <Link href="/admin/production" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>Production</Link>}
 
       {isMiniApp && authenticated && contextUser?.username && (
         <span className="influence-copy-muted" title="Farcaster identity">
