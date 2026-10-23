@@ -77,7 +77,7 @@
 - Use Bun only; do not use npm or pnpm.
 - Fast provider-free baseline: `bun run test` (classification plus automatic engine/web/protocol discovery).
 - Saved source snapshots under `docs/simulations/` are debugging evidence, excluded from test discovery; preserve them rather than deleting them to make a test run pass.
-- Required API baseline: `bun run test:postgres` against local PostgreSQL. The CI job runs this as one Bun process with `--max-concurrency 1`.
+- Required API baseline: `bun run test:postgres` against local PostgreSQL. CI splits files across four independent runners and PostgreSQL services; each shard uses one Bun process with `--max-concurrency 1`. The required `API / PostgreSQL tests` aggregate passes only when every shard succeeds. Never parallelize tests against the same database.
 - Broader local baseline: `bun run check`.
 - Test ownership is structural: ordinary engine/web/protocol tests are provider-free; ordinary non-E2E API tests are PostgreSQL-owned; deterministic API browser tests use `*.e2e.test.ts`; paid/provider and external-write tests use `*.live-provider.test.ts` and `*.external-smoke.test.ts`. Root Playwright specs must be explicitly classified by `scripts/check-test-classification.ts`.
 - Live providers, external writes, real Clerk, staging, and paid simulations are opt-in only. Required CI must never receive their credentials.
