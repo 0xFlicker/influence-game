@@ -54,3 +54,13 @@ Incomplete jobs require manual investigation of their attempt references; there 
 ## Validation
 
 Deterministic PostgreSQL tests cover immediate saves, deduplication, evidence constraints, claims, restart recovery, bounded malformed-output retries, persistence failure, backfill and unchanged human moderation. Moderator route tests cover fresh authorization and read-only MCP parity. The moderation browser suite verifies the advisory panel alongside the existing human workflow. These checks do not establish model accuracy. Live evaluation requires a separately authorized provider run and human-labelled examples, including legitimate teamwork and coded collusion.
+
+## Obsolete unscreened intake reviews
+
+Migration `0127_close_unscreened_superseded_reviews` closes legacy pending reviews as `superseded` when their revision is neither the latest submission nor the currently published revision and has no screening record. It releases their claims and increments their review version. New submissions apply the same cleanup transactionally. No production SQL command or operator backfill is needed for this cleanup: the normal deployment migration applies it.
+
+The cleanup preserves ordinary screened revisions, current/published content, and explicit human work (flags, holds, escalations, rejected dispositions, resolved decisions, or reopened review cycles). It does not change publication, restrictions, AI evidence, retained snapshots, or historical decisions. Superseded reviews remain readable in Admin recovery as closed history; an admin can explicitly reopen one with a reason. This is intake cleanup, not Phase 2 enforcement.
+
+A missing screening record is labelled **AI: not queued** in the inbox. **AI: awaiting screening** means an actual pending screening exists; running screenings have their own label.
+
+The release policy pins the exact cleanup migration by hash: its only deletion is temporary claims on the reviews it closes. Changes to its scope require a new policy review; review history and evidence are retained.

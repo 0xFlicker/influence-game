@@ -226,7 +226,7 @@ export function ModerationInbox() {
       sessionStorage.removeItem("moderation-pending-action"); setPendingReceipt(null); lastCommand.current = null; setDetail(null); setPreview(null); await loadQueue();
     })}>Recover last action receipt</button>}
     {receipt && <p role="status" className="mb-4 rounded-lg border border-border-active p-4">{receipt}</p>}
-    {queue?.canUndo && <Link href="/moderation/recovery" className="influence-link mb-4 inline-block">Admin recovery and resolved reviews →</Link>}
+    {queue?.canUndo && <Link href="/moderation/recovery" className="influence-link mb-4 inline-block">Admin recovery and closed reviews →</Link>}
     {queue && overview && <ScreeningOverview data={overview} />}
     <div className="mb-5 flex flex-wrap gap-3">
       <select aria-label="Queue" value={route} disabled={busy} onChange={event => { setRoute(event.target.value as Route); setOffset(0); setDetail(null); setPreview(null); }} className={button}><option value="ordinary">Moderator queue</option>{queue?.canEscalateReview && <option value="escalated">Admin escalations</option>}</select>
@@ -238,7 +238,7 @@ export function ModerationInbox() {
     <div className="grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
       <aside aria-label="Review queue" className="space-y-2">
         {queue?.items.length === 0 && <p className="p-4 text-sm text-white/50">No items in this view.</p>}
-        {queue?.items.map(item => <button key={item.id} disabled={busy} onClick={() => void run(() => open(item.id))} className={`${button} block w-full text-left ${detail?.review.id === item.id ? "border-accent" : ""}`}><strong className="block">{item.name}</strong><span className="text-xs text-white/50">{item.disposition}{item.flagged ? " · Flagged" : ""}{item.claimedBy ? " · Claimed" : ""}{item.ownSubmission ? " · Your submission" : ""}</span><span className="block text-xs text-amber-200">{item.aiRecommendation === "review" ? "AI recommends review" : item.aiRecommendation === "inconclusive" ? "AI inconclusive" : item.screeningStatus === "incomplete" ? "Screening incomplete" : item.aiRecommendation === "no_concern" ? "AI: no concern detected" : "AI: awaiting screening"}</span></button>)}
+        {queue?.items.map(item => <button key={item.id} disabled={busy} onClick={() => void run(() => open(item.id))} className={`${button} block w-full text-left ${detail?.review.id === item.id ? "border-accent" : ""}`}><strong className="block">{item.name}</strong><span className="text-xs text-white/50">{item.disposition}{item.flagged ? " · Flagged" : ""}{item.claimedBy ? " · Claimed" : ""}{item.ownSubmission ? " · Your submission" : ""}</span><span className="block text-xs text-amber-200">{item.aiRecommendation === "review" ? "AI recommends review" : item.aiRecommendation === "inconclusive" ? "AI inconclusive" : item.screeningStatus === "incomplete" ? "Screening incomplete" : item.aiRecommendation === "no_concern" ? "AI: no concern detected" : item.screeningStatus === null ? "AI: not queued" : item.screeningStatus === "running" ? "AI: screening in progress" : "AI: awaiting screening"}</span></button>)}
         <div className="flex gap-2"><button className={button} disabled={busy || offset === 0} onClick={() => setOffset(Math.max(0, offset - 25))}>Previous</button><button className={button} disabled={busy || queue?.nextOffset == null} onClick={() => setOffset(queue!.nextOffset!)}>Next</button></div>
       </aside>
       {!detail ? <p className="p-4 text-white/50">Select a revision to inspect it, or take the next available item.</p> : <section className="min-w-0 space-y-4">
@@ -247,7 +247,7 @@ export function ModerationInbox() {
         </div>
         {detail.canUndo && detail.revision.userId && <Link className="text-sm text-indigo-300 underline" href={`/admin/inference?userId=${encodeURIComponent(detail.revision.userId)}`}>Owner spending and generation controls</Link>}
         <ShadowScreening screening={detail.screening} latest={detail.isLatestSubmission} />
-        {detail.review.status !== "pending" && <p className="text-sm text-white/60">This human review is resolved. AI findings do not reopen it. An admin can reopen it through Admin recovery if further review is needed.</p>}
+        {detail.review.status !== "pending" && <p className="text-sm text-white/60">{detail.review.status === "superseded" ? "This older, unscreened review was closed because a newer submission replaced it. No moderation decision was made." : "This human review is resolved. AI findings do not reopen it."} An admin can reopen it through Admin recovery if further review is needed.</p>}
         <div className="grid gap-4 xl:grid-cols-2"><Snapshot title="Previous revision" revision={detail.parent} reviewId={detail.review.id} /><Snapshot title="Submitted revision" revision={detail.revision} reviewId={detail.review.id} /></div>
         <label className="block text-sm">Decision or handoff reason<textarea maxLength={2000} value={reason} disabled={busy} onChange={event => setReason(event.target.value)} className="mt-2 block min-h-24 w-full rounded-lg border border-border-active bg-surface-raised p-3" /></label>
         <div className="flex flex-wrap gap-2">
