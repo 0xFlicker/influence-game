@@ -175,7 +175,9 @@ test.describe("format-aware game viewer", () => {
       await expect(opening).toBeVisible();
       await pauseAutoplay(page, "Pause replay");
       expect(await musicState(page)).toEqual([]);
+      if (mobile) await page.getByRole("button", {name:"Player settings", exact:true}).click();
       await expect(page.getByRole("slider", {name:"Music volume"})).toBeInViewport();
+      if (mobile) await page.getByRole("button", {name:"Close settings", exact:true}).click();
       const slider = page.getByRole("slider", {name:"Replay position",exact:true});
       await slider.fill("450");
       await slider.press("ArrowRight");
@@ -189,7 +191,9 @@ test.describe("format-aware game viewer", () => {
         expect(await video.evaluate(element => (element as HTMLVideoElement).paused)).toBe(true);
       }
       await page.getByRole("button", {name:"Turn music on", exact:true}).click();
+      if (mobile) await page.getByRole("button", {name:"Player settings", exact:true}).click();
       await page.getByRole("slider", {name:"Music volume"}).fill("40");
+      if (mobile) await page.getByRole("button", {name:"Close settings", exact:true}).click();
       await page.getByRole("button", {name:"Play replay", exact:true}).click();
       await expect.poll(async () => (await musicState(page)).find(audio => audio.src?.includes("an-invitation"))?.paused).toBe(false);
       const introAudio = (await musicState(page)).find(audio => audio.src?.includes("an-invitation"))!;
@@ -405,39 +409,56 @@ test.describe("format-aware game viewer", () => {
   for (const status of ["completed", "in_progress"] as const) test(`shared Influence moment links open their canonical action and preserve playback intent (${status})`, async ({ page }) => {
     const slug = "shared-action-fixture";
     await installDeterministicFormatGame(page, { slug, scenarioId: "save_or_eliminate_clear", status });
+    // This viewer uses a synthetic game. Model the short-link boundary here;
+    // player-card.e2e.test.ts exercises persistence and resolution through the API.
+    const links = new Map<string, string>();
+    await page.route("**/api/share-links", async route => {
+      expect(route.request().method()).toBe("POST");
+      const {path} = route.request().postDataJSON() as {path:string};
+      const code = String(links.size + 2).padStart(10, "2");
+      links.set(code, path);
+      await route.fulfill({json:{code}});
+    });
+    await page.route("**/s/*", async route => {
+      const code = new URL(route.request().url()).pathname.split("/").at(-1)!;
+      const path = links.get(code);
+      expect(path).toBeDefined();
+      await route.fulfill({status:302, headers:{location:viewerUrl(path!)}});
+    });
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "share", { configurable: true, value: undefined });
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+        writeText: async (url: string) => { document.documentElement.dataset.copiedMoment = url; },
+      } });
+    });
+    const copyMoment = async () => {
+      await page.getByRole("button", {name:"Share this moment", exact:true}).click();
+      const dialog = page.getByRole("dialog", {name:"Share this moment", exact:true});
+      await expect(dialog.getByRole("textbox", {name:"House share link"})).toBeVisible();
+      await dialog.getByRole("button", {name:"Share link", exact:true}).click();
+      await expect(dialog.getByRole("status")).toHaveText("Share link copied.");
+      const href = await page.evaluate(() => document.documentElement.dataset.copiedMoment!);
+      expect(new URL(href).pathname).toMatch(/^\/s\/[1-9A-HJ-NP-Za-km-z]{10}$/);
+      const target = new URL(links.get(new URL(href).pathname.split("/").at(-1)!)!, href);
+      await dialog.getByRole("button", {name:"Close share", exact:true}).click();
+      return {href, target};
+    };
     await page.goto(viewerUrl(`/games/${slug}/replay/16`));
     await pauseAutoplay(page, "Pause replay");
-    await page.getByRole("button", { name: "Player settings", exact: true }).click();
-    await page.evaluate(() => {
-      Object.defineProperty(navigator, "share", { configurable: true, value: undefined });
-      Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
-        writeText: async (url: string) => { document.documentElement.dataset.copiedMoment = url; },
-      } });
-    });
-    await page.getByRole("button", { name: "Share this moment", exact: true }).click();
-    await expect(page.getByRole("status")).toContainText("Share link copied.");
-    const href = await page.evaluate(() => document.documentElement.dataset.copiedMoment);
-    expect(href).toBe(viewerUrl(`/games/${slug}/replay/16`));
+    const {href, target} = await copyMoment();
+    expect(target.pathname).toBe(`/games/${slug}/replay/16`);
+    expect(target.searchParams.get("cue")).toBeTruthy();
     await expect(page.getByRole("button", { name: "Play replay", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Close settings", exact: true }).click();
+    expect((await copyMoment()).target.href).toBe(target.href);
     expect(Number(await page.getByRole("slider", { name: "Replay position", exact: true }).inputValue())).toBeGreaterThan(1);
-    await page.goto(href!);
+    await page.goto(href);
     await pauseAutoplay(page, "Pause replay");
-    // A shared URL identifies the canonical action, not elapsed autoplay frames.
-    await page.evaluate(() => {
-      Object.defineProperty(navigator, "share", { configurable: true, value: undefined });
-      Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
-        writeText: async (url: string) => { document.documentElement.dataset.copiedMoment = url; },
-      } });
-    });
-    await page.getByRole("button", { name: "Player settings", exact: true }).click();
-    await page.getByRole("button", { name: "Share this moment", exact: true }).click();
-    await expect(page.getByRole("status")).toContainText("Share link copied.");
-    expect(await page.evaluate(() => document.documentElement.dataset.copiedMoment)).toBe(href);
-    await page.getByRole("button", { name: "Close settings", exact: true }).click();
+    const restored = (await copyMoment()).target;
+    expect(restored.pathname).toBe(target.pathname);
+    expect(restored.searchParams.get("cue")).toBe(target.searchParams.get("cue"));
+    await expect(page.getByRole("button", {name:"Play replay", exact:true})).toBeVisible();
     await page.getByRole("button", { name: "Play replay", exact: true }).click();
-    await page.getByRole("button", { name: "Player settings", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Share this moment", exact: true })).toBeVisible();
+    await copyMoment();
     await expect(page.getByRole("button", { name: "Pause replay", exact: true })).toBeVisible();
   });
 

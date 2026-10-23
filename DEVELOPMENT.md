@@ -151,6 +151,9 @@ bun run test
 bun run db:bootstrap
 bun run test:postgres
 
+# Reproduce one of the four PostgreSQL CI shards (choose 1, 2, 3, or 4)
+bun run test:postgres --shard=1/4
+
 # Deterministic Browser Coverage lanes (isolated databases and child processes)
 bun run test:e2e:identity
 bun run test:e2e:layered-auth
@@ -167,6 +170,21 @@ bun run test:e2e:layered-auth:clerk
 ```
 
 **Important:** use the repository scripts, not raw root `bun test`. The scripts select the correct Bun config and ensure paid/external suites cannot be discovered by a required lane.
+
+Required PostgreSQL CI uses four Bun file shards, each on an independent runner
+with its own PostgreSQL service. Each shard keeps `--max-concurrency 1` and the
+existing `setupTestDB()` process lock; tests sharing a database must remain
+sequential. Concurrent local shard runs require distinct disposable databases
+through `TEST_DATABASE_URL`. The ordinary unsharded command still discovers all
+API tests. Do not add `--parallel`, `test.concurrent`, or `describe.concurrent`
+against the shared test database.
+Each test file must initialize and restore its own environment fixtures; shard
+assignment must not rely on another file setting authentication secrets or state.
+
+The required check remains `API / PostgreSQL tests`. It waits for every shard
+with fail-fast disabled, then fails unless their combined result is `success`,
+including when a shard failed, was cancelled, or was skipped. Release manifests
+still depend on this aggregate; branch protection does not need to change.
 
 ### E2E Tests
 
