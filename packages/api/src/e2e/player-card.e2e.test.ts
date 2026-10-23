@@ -46,9 +46,14 @@ async function captureShare(frame:Frame|Page):Promise<URL> {
  await frame.click('button[aria-label="Close share"]');
  return expanded;
 }
-async function pause(frame:Frame|Page) {
+async function pause(frame:Frame|Page, timeout = 60_000) {
+ // Pause as soon as hydration exposes the transport, before metadata checks
+ // spend the restoration tolerance playing at 2×. Keep native pointer input.
+ await ("page" in frame ? frame.page() : frame).bringToFront();
+ await frame.waitForSelector('input[aria-label="Replay position"]:not([disabled])',{timeout});
  await frame.waitForSelector('button[aria-label="Pause replay"]');
  await frame.click('button[aria-label="Pause replay"]');
+ await frame.waitForSelector('button[aria-label="Play replay"]');
 }
 async function scrub(frame:Frame|Page,value:number) {
  await frame.evaluate(`(() => {
@@ -93,7 +98,7 @@ for(const slug of ["dark-coral-horn","player-card-village"]){
   try {
    await page.goto(`${servers.webUrl}/__player-test`,{waitUntil:"domcontentloaded"});
    await page.waitForSelector("iframe");const frame=await (await page.$("iframe"))!.contentFrame();if(!frame)throw Error("Missing iframe");
-   await frame.waitForSelector('input[aria-label="Replay position"]:not([disabled])',{timeout:90_000});await pause(frame);
+   await pause(frame,90_000);
    expect(Number(await frame.$eval('input[aria-label="Replay position"]',e=>e.value))).toBeLessThan(150);
    await frame.click('button[aria-label="Player settings"]');await clickText(frame,"2×");
    const thinking=await frame.$('input[type="checkbox"]');if(thinking)await thinking.click();
@@ -113,7 +118,7 @@ for(const slug of ["dark-coral-horn","player-card-village"]){
    expect(shared.searchParams.get("speed")).toBe("2");expect(shared.searchParams.get("thinking")).toBe("1");expect(shared.searchParams.get("cue")).toBeTruthy();
    const embedPath=shared.pathname.replace(`/games/${slug}/replay`,`/embed/games/${slug}`);
    await frame.goto(`${servers.webUrl}${embedPath}${shared.search}`,{waitUntil:"domcontentloaded"});
-   await frame.waitForSelector('input[aria-label="Replay position"]:not([disabled])',{timeout:60_000});await pause(frame);
+   await pause(frame);
    const restored=await captureShare(frame);
    expect(restored.searchParams.get("cue")).toBe(shared.searchParams.get("cue"));
    expect(Math.abs(Number(restored.searchParams.get("t"))-Number(shared.searchParams.get("t")))).toBeLessThan(1.5);
@@ -140,16 +145,23 @@ for(const slug of ["dark-coral-horn","player-card-village"]){
     launch.searchParams.set("t","999");launch.searchParams.set("speed","4");
     await appPage.goto(launch.href,{waitUntil:"domcontentloaded"});
     await appPage.waitForFunction(`location.pathname===${JSON.stringify(shared.pathname)}`);
+    await pause(appPage);
     for(const [key,value] of shared.searchParams)expect(new URL(appPage.url()).searchParams.get(key)).toBe(value);
     expect(new URL(appPage.url()).searchParams.get("app")).toBe("mini");
-    await appPage.waitForSelector('input[aria-label="Replay position"]:not([disabled])',{timeout:60_000});await pause(appPage);
     const launched=await captureShare(appPage);
     expect(launched.searchParams.get("cue")).toBe(shared.searchParams.get("cue"));
     expect(Math.abs(Number(launched.searchParams.get("t"))-Number(shared.searchParams.get("t")))).toBeLessThan(1.5);
     for(const key of ["speed","thinking","muted","volume"])expect(launched.searchParams.get(key)).toBe(shared.searchParams.get(key));
     expect(await appPage.$('[data-watch-mode="embed"]')).toBeNull();
    }finally{await appPage.close();}
-   await scrub(frame,0);await frame.waitForFunction(`Number(document.querySelector('input[aria-label="Replay position"]')?.value)===0`);
+   // Returning from the app/crawler tabs must resume the iframe's paint loop
+   // before asserting its rendered cursor. Exercise an actual keyboard seek.
+   await page.bringToFront();
+   await frame.waitForSelector('button[aria-label="Play replay"]');
+   const scrubber = await frame.$('input[aria-label="Replay position"]');
+   if (!scrubber) throw new Error("Missing replay scrubber");
+   await scrubber.press("Home");
+   await frame.waitForFunction(`document.querySelector('input[aria-label="Replay position"]')?.value === "0"`);
    // Native sharing unavailable: the native dialog exposes a frozen, selectable link.
    await frame.evaluate(()=>Object.defineProperty(navigator,"share",{configurable:true,value:undefined}));await frame.click('button[aria-label="Share this moment"]');
    await frame.waitForSelector('input[aria-label="House share link"]');expect(await frame.$eval('input[aria-label="House share link"]',e=>e.value)).toContain("/s/");

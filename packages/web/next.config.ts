@@ -9,6 +9,8 @@ const nextConfig: NextConfig = {
   htmlLimitedBots: /.*/,
   // Keep the authenticated browser harness from taking the local dev server's lock.
   distDir: process.env.NEXT_PUBLIC_E2E_AUTH === "true" ? ".next/e2e" : ".next",
+  // The dev-tools badge covers native replay controls in small browser fixtures.
+  ...(process.env.NEXT_PUBLIC_E2E_AUTH === "true" ? { devIndicators: false as const } : {}),
   // Transpile Privy + wagmi packages as needed
   transpilePackages: [],
   outputFileTracingIncludes: { "/rules": ["../../docs/rules-page-content.md", "../../docs/werewolf-rules-page-content.md"] },
