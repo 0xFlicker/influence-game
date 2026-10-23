@@ -1,10 +1,10 @@
 import {afterAll,beforeAll,expect,test} from "bun:test";
-import type {Browser,Frame,Page} from "puppeteer";
+import {chromium,type Browser,type Frame,type Page} from "@playwright/test";
+import {existsSync} from "node:fs";
 import {completedCurrentWerewolfFixture} from "@influence/engine/fixtures/werewolf-results";
 import {schema} from "../db/index.js";
 import {createIsolatedTestDb,destroyIsolatedTestDb,type TestDB} from "./test-db.js";
 import {startTestServers,stopTestServers,type TestServerHandles} from "./test-server.js";
-import {launchBrowser,closeBrowser,rejectOptionalAnalytics} from "./test-browser.js";
 import {seedFormatAwareGameViewerFixtures} from "./format-aware-game-viewer-fixture.js";
 import {cleanupE2eResources} from "./cleanup.js";
 import {storeFields} from "../services/payload-storage.js";
@@ -20,13 +20,40 @@ beforeAll(async () => {
  await database.db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"completed",startedAt:new Date().toISOString(),config:JSON.stringify({visibility:"unlisted",preset:"one_wolf",rulesVersion:9,providerManifest:[{catalogId:"openai:gpt-6-luna"}]})});
  await database.db.insert(schema.werewolfEvents).values(events.map(event=>({gameId:id,sequence:event.sequence,event})));
  servers=await startTestServers({databaseUrl:database.databaseUrl,logDirectory:"/tmp/player-card-browser-logs"});
- browser=await launchBrowser();
+ const macChrome="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+ browser=await chromium.launch({
+  ...(existsSync(macChrome)?{executablePath:macChrome}:{}),
+ });
 },240_000);
 afterAll(async () => {await cleanupE2eResources([
- ["browser",async()=>{if(browser)await closeBrowser(browser);}],
+ ["browser",async()=>{if(browser)await browser.close();}],
  ["servers",async()=>{if(servers)await stopTestServers(servers);}],
  ["database",async()=>{if(database)await destroyIsolatedTestDb(database.databaseUrl);}],
 ]);},60_000);
+async function rejectOptionalAnalytics(page:Page) {
+ await page.addInitScript(() => {
+  localStorage.setItem("house:analytics-consent",JSON.stringify({version:1,analytics:false}));
+ });
+}
+async function freezeClock(page:Page) {
+ // Clock installation happens before the first navigation. Freeze it before
+ // restoring a link so native click latency cannot advance the replay.
+ await page.clock.pauseAt(await page.evaluate(() => Date.now()+1000));
+}
+async function pauseRestored(frame:Frame|Page) {
+ const page="page" in frame ? frame.page() : frame;
+ const deadline=Date.now()+60_000;
+ // Advance startup timers in small deterministic steps until the transport
+ // is ready. One final frame publishes its restored position before clicking.
+ while(!await frame.locator('input[aria-label="Replay position"]:not([disabled])').count()) {
+  if(Date.now()>deadline)throw Error("Replay transport did not become ready under the controlled clock");
+  await page.clock.runFor(1);
+  await Bun.sleep(10);
+ }
+ await page.clock.runFor(16);
+ await pause(frame);
+ await page.clock.resume();
+}
 async function clickText(frame:Frame|Page,text:string) {
  const selector = `Array.from(document.querySelectorAll("button")).find(b=>b.textContent?.trim()===${JSON.stringify(text)})`;
  await frame.waitForFunction(selector);
@@ -47,9 +74,9 @@ async function captureShare(frame:Frame|Page):Promise<URL> {
  return expanded;
 }
 async function pause(frame:Frame|Page, timeout = 60_000) {
- // Pause as soon as hydration exposes the transport, before metadata checks
- // spend the restoration tolerance playing at 2×. Keep native pointer input.
- await ("page" in frame ? frame.page() : frame).bringToFront();
+ // Keep native pointer input and prove the click actually paused playback.
+ const page="page" in frame ? frame.page() : frame;
+ await page.bringToFront();
  await frame.waitForSelector('input[aria-label="Replay position"]:not([disabled])',{timeout});
  await frame.waitForSelector('button[aria-label="Pause replay"]');
  await frame.click('button[aria-label="Pause replay"]');
@@ -89,11 +116,11 @@ for(const slug of ["dark-coral-horn","player-card-village"]){
   const page=await browser.newPage();const errors:string[]=[],requests:string[]=[];
   page.on("pageerror",error=>errors.push(String(error)));
   page.on("request",request=>{requests.push(request.url());if(request.url().includes("/api/"))expect(request.headers().authorization).toBeUndefined();});
-  await page.setViewport({width:640,height:640});
-  await page.evaluateOnNewDocument('Object.defineProperty(Storage.prototype,"getItem",{value:()=>{throw Error("Storage disabled for iframe test");}});Object.defineProperty(Storage.prototype,"setItem",{value:()=>{throw Error("Storage disabled for iframe test");}});');
-  await page.setRequestInterception(true);
-  page.on("request",request=>{
-   if(new URL(request.url()).pathname==="/__player-test")void request.respond({status:200,contentType:"text/html",body:`<iframe title="House" width="100%" height="100%" style="position:fixed;inset:0;border:0" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" allow="autoplay; fullscreen; web-share" src="/embed/games/${slug}${slug.includes('village')?'?audience=omniscient':''}"></iframe>`});else void request.continue();
+  await page.setViewportSize({width:640,height:640});
+  await page.addInitScript({content:'Object.defineProperty(Storage.prototype,"getItem",{value:()=>{throw Error("Storage disabled for iframe test");}});Object.defineProperty(Storage.prototype,"setItem",{value:()=>{throw Error("Storage disabled for iframe test");}});'});
+  await page.clock.install();
+  await page.route("**/__player-test",route=>{
+   return route.fulfill({status:200,contentType:"text/html",body:`<iframe title="House" width="100%" height="100%" style="position:fixed;inset:0;border:0" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" allow="autoplay; fullscreen; web-share" src="/embed/games/${slug}${slug.includes('village')?'?audience=omniscient':''}"></iframe>`});
   });
   try {
    await page.goto(`${servers.webUrl}/__player-test`,{waitUntil:"domcontentloaded"});
@@ -117,22 +144,23 @@ for(const slug of ["dark-coral-horn","player-card-village"]){
    expect(shared.searchParams.get("muted")).toBe("0");expect(shared.searchParams.get("volume")).toBe("0.67");
    expect(shared.searchParams.get("speed")).toBe("2");expect(shared.searchParams.get("thinking")).toBe("1");expect(shared.searchParams.get("cue")).toBeTruthy();
    const embedPath=shared.pathname.replace(`/games/${slug}/replay`,`/embed/games/${slug}`);
+   await freezeClock(page);
    await frame.goto(`${servers.webUrl}${embedPath}${shared.search}`,{waitUntil:"domcontentloaded"});
-   await pause(frame);
+   await pauseRestored(frame);
    const restored=await captureShare(frame);
    expect(restored.searchParams.get("cue")).toBe(shared.searchParams.get("cue"));
    expect(Math.abs(Number(restored.searchParams.get("t"))-Number(shared.searchParams.get("t")))).toBeLessThan(1.5);
    expect(restored.searchParams.get("muted")).toBe("0");expect(restored.searchParams.get("volume")).toBe("0.67");
    expect(restored.searchParams.get("speed")).toBe("2");expect(restored.searchParams.get("thinking")).toBe("1");
    // Farcaster launches the normal app at this moment, including its site providers.
-   const appPage=await browser.newPage();await rejectOptionalAnalytics(appPage);
+   const appPage=await browser.newPage();await rejectOptionalAnalytics(appPage);await appPage.clock.install();
    try {
     await appPage.goto(`${shortShares.get(shared.href)}?t=999&speed=4&redirect=https://example.com`,{waitUntil:"domcontentloaded"});
     await appPage.waitForFunction(`location.pathname===${JSON.stringify(shared.pathname)}`);
     expect(new URL(appPage.url()).searchParams.get("t")).toBe(shared.searchParams.get("t"));
-    await appPage.waitForSelector('meta[name="fc:miniapp"]');
+    await appPage.waitForSelector('meta[name="fc:miniapp"]',{state:"attached"});
     expect(await appPage.$$eval('meta[name="fc:miniapp"]',nodes=>nodes.length)).toBe(1);
-    const crawler=await browser.newPage();await crawler.setJavaScriptEnabled(false);
+    const crawler=await browser.newPage({javaScriptEnabled:false});
     let miniapp: {button: {title:string;action:{url:string}}};
     try {
      await crawler.goto(shortShares.get(shared.href)!,{waitUntil:"domcontentloaded"});
@@ -143,9 +171,10 @@ for(const slug of ["dark-coral-horn","player-card-village"]){
     expect(launch.origin).toBe(shared.origin);expect(launch.pathname).toBe(new URL(shortShares.get(shared.href)!).pathname);
     expect(launch.searchParams.get("app")).toBe("mini");
     launch.searchParams.set("t","999");launch.searchParams.set("speed","4");
+    await freezeClock(appPage);
     await appPage.goto(launch.href,{waitUntil:"domcontentloaded"});
+    await pauseRestored(appPage);
     await appPage.waitForFunction(`location.pathname===${JSON.stringify(shared.pathname)}`);
-    await pause(appPage);
     for(const [key,value] of shared.searchParams)expect(new URL(appPage.url()).searchParams.get(key)).toBe(value);
     expect(new URL(appPage.url()).searchParams.get("app")).toBe("mini");
     const launched=await captureShare(appPage);
@@ -174,7 +203,7 @@ for(const slug of ["dark-coral-horn","player-card-village"]){
    await frame.waitForFunction('document.querySelector("dialog[open]")?.textContent.includes("Share cancelled.")');
    await frame.click('button[aria-label="Close share"]');
    for(const width of [320,480]) {
-    await page.setViewport({width,height:480});
+    await page.setViewportSize({width,height:480});
     await frame.waitForFunction(`document.documentElement.clientWidth<=${width}`);
     await frame.waitForFunction(`(() => {const el=document.querySelector('[data-watch-transport]');return el.scrollWidth<=el.getBoundingClientRect().width+1;})()`);
     const bounds=await frame.evaluate(`(() => {const r=document.querySelector('[data-watch-transport]').getBoundingClientRect();return {width:r.width,scroll:document.querySelector('[data-watch-transport]').scrollWidth};})()` ) as {width:number;scroll:number};
@@ -200,13 +229,13 @@ test("normal completed replay links without timecode start at the opening and ex
 test("share preparation failure can retry the original playing moment",async()=>{
  const page=await browser.newPage();await rejectOptionalAnalytics(page);
  const paths:string[]=[];
- await page.setRequestInterception(true);
- page.on("request",request=>{
+ await page.route("**/api/share-links",route=>{
+  const request=route.request();
   if(new URL(request.url()).pathname==="/api/share-links" && request.method()==="POST"){
    paths.push((JSON.parse(request.postData()!) as {path:string}).path);
-   if(paths.length===1){void request.respond({status:503,contentType:"application/json",body:'{"error":"unavailable"}'});return;}
+   if(paths.length===1)return route.fulfill({status:503,contentType:"application/json",body:'{"error":"unavailable"}'});
   }
-  void request.continue();
+  return route.continue();
  });
  try{
   await page.goto(`${servers.webUrl}/games/dark-coral-horn/replay`,{waitUntil:"domcontentloaded"});

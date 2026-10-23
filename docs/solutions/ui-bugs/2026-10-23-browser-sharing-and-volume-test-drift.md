@@ -32,10 +32,30 @@ returning from app/crawler tabs, and verify paused state before a native Home-ke
 seek to frame zero. Keep the existing cue, settings and timing assertions; do not
 turn a delayed automation click into a larger allowed restoration error.
 
+The first PR #218 CI run still exceeded the restoration tolerance on a slow
+runner: the Werewolf mini-app had played 2.275 seconds before the native Pause
+click. Use Playwright's controlled clock for this API browser journey. Install
+the clock before navigation, freeze it before restoring the saved link, advance
+startup timers until the transport is ready, and pause with a native click.
+Resume normal time after verifying paused state. This preserves the real
+short-link API, saved cue/settings assertions, and original timing tolerance
+without making restoration depend on automation latency. Metadata elements need
+`state: "attached"` when waiting with Playwright because they are never visible.
+
 Cancelled browser jobs are eligible to upload available failure artifacts. A
 forced runner termination can still prevent upload or service-log flushing.
 Dependency installation consuming a job's time budget is separate from an
 assertion failure; inspect step timings before changing test deadlines.
+
+In [PR #218's first run](https://github.com/0xFlicker/influence-game/actions/runs/39979803884),
+the identity job spent 11 minutes 27 seconds downloading browser dependencies
+from Ubuntu's Azure mirror, leaving less than three minutes for its 18 tests.
+The entire identity suite passed locally in 2.5 minutes. Browser jobs now use the
+official Playwright image with browser system packages already installed. Keep
+its version aligned with `bun.lock`; container jobs reach the PostgreSQL service
+at `postgres:5432`. Only the small `unzip` prerequisite for Bun setup needs apt;
+Puppeteer jobs still install their own matching Chrome binary. Job deadlines and
+non-blocking merge policy remain unchanged.
 
 Focused validation commands:
 
@@ -63,3 +83,8 @@ passed. The provider-free baseline passed 2,777 tests (five skips); the PostgreS
 baseline passed 2,148 tests in a fresh database, which was dropped afterward.
 Repository typecheck/lint and diff whitespace checks passed. This is local proof,
 not a claim that the entire Browser Coverage workflow is now reliably green on CI.
+
+Follow-up validation after the first PR run: all 18 identity tests passed in
+2.5 minutes and all six player-card tests passed with controlled restoration
+time. Typecheck/lint, test classification and actionlint passed; the pinned
+browser image and its Bun setup prerequisite were also checked locally.
