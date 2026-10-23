@@ -7,9 +7,7 @@
 
 import { createHmac } from "node:crypto";
 import { Hono, type Context } from "hono";
-import { eq } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
-import { schema } from "../db/index.js";
 import {
   verifyPrivyToken,
   getPrivyUser,
@@ -18,8 +16,8 @@ import {
   type AuthEnv,
 } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
+import { extractBearerToken } from "../game-mcp/auth.js";
 import { isInviteRequired, redeemInviteCode } from "../lib/invite-codes.js";
-import { extractBearerToken, validateGameMcpBearerToken } from "../game-mcp/auth.js";
 import { projectAuthenticatedPublicIdentity } from "../services/authenticated-public-identity.js";
 import {
   createClerkAuthenticationVerifier,
@@ -106,44 +104,6 @@ export function createAuthRoutes(
     },
     dependencies.now ?? Date.now,
   );
-
-  // -------------------------------------------------------------------------
-  // POST /api/auth/local-cli-session — exchange local producer MCP OAuth token
-  // for a normal app session JWT. This is intentionally loopback-only so local
-  // scripts can reuse the existing browser OAuth grant without making MCP
-  // bearer tokens authenticate normal app routes directly.
-  // -------------------------------------------------------------------------
-
-  app.post("/api/auth/local-cli-session", async (c) => {
-    if (!isLoopbackHost(c.req.header("host"), c.req.url)) {
-      return c.json({ error: "Local CLI session exchange is loopback-only" }, 403);
-    }
-
-    const body = await parseJsonBody(c, "POST /api/auth/local-cli-session");
-    const tokenFromBody = typeof body?.mcpToken === "string" ? body.mcpToken.trim() : "";
-    const token = tokenFromBody || extractBearerToken(c.req.header("Authorization"));
-    if (!token) {
-      return c.json({ error: "mcpToken is required" }, 400);
-    }
-
-    const validation = await validateGameMcpBearerToken(db, token);
-    if (!validation.ok) {
-      return c.json({ error: "Invalid MCP token", reason: validation.reason }, validation.status);
-    }
-    if (validation.context.authProfile !== "producer") {
-      return c.json({ error: "Producer MCP scope is required" }, 403);
-    }
-
-    const user = (await db
-      .select()
-      .from(schema.users)
-      .where(eq(schema.users.id, validation.context.userId)))[0];
-    if (!user) {
-      return c.json({ error: "User not found" }, 401);
-    }
-
-    return c.json(await issueInfluenceSession(db, user));
-  });
 
   // -------------------------------------------------------------------------
   // POST /api/auth/login — exchange Privy token for session JWT
@@ -1034,11 +994,6 @@ export function readPrivyCompatibilityBridgeEnabled(
   throw new Error(
     'PRIVY_COMPATIBILITY_BRIDGE_ENABLED must be "true" or "false"',
   );
-}
-
-function isLoopbackHost(hostHeader: string | undefined, requestUrl?: string): boolean {
-  const host = hostFromHeader(hostHeader) ?? hostFromUrl(requestUrl);
-  return host === "127.0.0.1" || host === "localhost" || host === "[::1]" || host === "::1";
 }
 
 function hostFromHeader(hostHeader: string | undefined): string | undefined {

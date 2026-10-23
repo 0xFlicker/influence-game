@@ -285,7 +285,6 @@ test.describe("deterministic layered authentication", () => {
             ADMIN_ADDRESS: "",
             EPHEMERAL: false,
             EPHEMERAL_PR: "",
-            SOURCE_ENV_URL: "",
           },
         });
       });

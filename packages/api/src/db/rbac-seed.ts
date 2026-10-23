@@ -15,6 +15,8 @@ import { schema } from "./index.js";
 // ---------------------------------------------------------------------------
 
 const PERMISSIONS = [
+  { name: "manage_invites", description: "Manage signup policy and redeemable invite codes" },
+  { name: "manage_game_imports", description: "Import uploaded game exports" },
   { name: "manage_game_assets", description: "Manage editorial game images" },
   { name: "review_agent_content", description: "Claim and review character content revisions" },
   { name: "review_moderation_escalations", description: "Review content escalated to admins" },
@@ -58,6 +60,8 @@ const ROLES = [
       "resume_game_retrospective",
       "fill_game",
       "view_admin",
+      "manage_invites",
+      "manage_game_imports",
       "schedule_free_game",
       "hide_game",
       "manage_postgame_media",

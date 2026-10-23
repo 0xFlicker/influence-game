@@ -8,8 +8,7 @@ export const ADMIN_TABS = [
   { id: "free-queue", label: "Free Queue" },
   { id: "agents", label: "Agents" },
   { id: "users", label: "Users & Roles", permission: "manage_roles" },
-  { id: "invites", label: "Invites" },
-  { id: "import", label: "Import Game" },
+  { id: "invites", label: "Invites", permission: "manage_invites" },
 ] as const;
 
 export type AdminTab = (typeof ADMIN_TABS)[number]["id"];
@@ -29,12 +28,11 @@ export function adminTabLabel(tab: AdminTab): string {
 
 export type AdminAccess = { permissions: readonly string[]; roles: readonly string[] };
 export type AdminArea = "Games" | "Production" | "Operations" | "People";
-export type AdminEntry = { label: string; href: string; area: AdminArea; access: "admin" | "werewolf" | "producer" | "production" | "roles" | "visual" | "operator" };
+export type AdminEntry = { label: string; href: string; area: AdminArea; access: "admin" | "werewolf" | "producer" | "production" | "roles" | "visual" | "operator" | "invites" };
 export const ADMIN_ENTRIES: readonly AdminEntry[] = [
   { label: "Influence", href: "/admin/games", area: "Games", access: "admin" },
   { label: "Werewolf", href: "/admin/werewolf", area: "Games", access: "werewolf" },
   { label: "Seasons", href: "/admin/seasons", area: "Games", access: "visual" },
-  { label: "Import game", href: "/admin/import", area: "Games", access: "admin" },
   { label: "Production", href: "/admin/production", area: "Production", access: "production" },
   { label: "Inference", href: "/admin/inference", area: "Operations", access: "operator" },
   { label: "Providers", href: "/admin/providers", area: "Operations", access: "operator" },
@@ -42,12 +40,13 @@ export const ADMIN_ENTRIES: readonly AdminEntry[] = [
   { label: "Agents", href: "/admin/agents", area: "People", access: "admin" },
   { label: "Learning reviews", href: "/admin/reviews", area: "People", access: "admin" },
   { label: "Users & roles", href: "/admin/users", area: "People", access: "roles" },
-  { label: "Invites", href: "/admin/invites", area: "People", access: "admin" },
+  { label: "Invites", href: "/admin/invites", area: "People", access: "invites" },
 ];
 export function permitsAdminEntry(entry: Pick<AdminEntry, "access">, user: AdminAccess): boolean {
   const permission = (name: string) => user.permissions.includes(name);
   const producer = user.roles.some(role => role === "producer" || role === "sysop");
   switch (entry.access) {
+    case "invites": return permission("manage_invites");
     case "operator": return user.roles.some(role => role === "admin" || role === "sysop");
     case "producer": return producer;
     case "production": return producer || permission("view_admin") || permission("manage_roles");

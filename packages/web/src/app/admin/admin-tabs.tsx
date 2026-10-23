@@ -5,7 +5,6 @@ import { AdminPanel } from "./admin-panel";
 import { UserRolesPanel } from "./user-roles-panel";
 import { AgentsAdminPanel } from "./agents-admin-panel";
 import { InviteCodesPanel } from "./invite-codes-panel";
-import { ImportGamePanel } from "./import-game-panel";
 import { SeasonAdminPanel } from "./season-admin-panel";
 import { FreeQueuePanel } from "./free-queue-panel";
 import { AdminOwnerLearningReviews } from "./admin-owner-learning-reviews";
@@ -25,7 +24,6 @@ export function AdminTabs({ activeTab }: { activeTab: AdminTab }) {
       {activeTab === "agents" && <AgentsAdminPanel />}
       {activeTab === "users" && <UserRolesPanel />}
       {activeTab === "invites" && <InviteCodesPanel />}
-      {activeTab === "import" && <ImportGamePanel />}
     </div>
   );
 }

@@ -1792,8 +1792,8 @@ describe("admin route RBAC", () => {
     );
     await assignRole(db, producerWalletAddress, "producer");
 
-    await grantTestAuthority(db, delegatedUserId, ["view_admin", "manage_roles"]);
-    await grantTestAuthority(db, producerUserId, ["view_admin", "manage_roles"]);
+    await grantTestAuthority(db, delegatedUserId, ["view_admin", "manage_roles", "manage_invites"]);
+    await grantTestAuthority(db, producerUserId, ["view_admin", "manage_roles", "manage_invites"]);
     await grantTestAuthority(db, adminUserId, ["manage_roles"]);
     const producerOnlyId = await createUser(db, "0xpiionlyproducer", "Producer Only");
     await assignRole(db, "0xpiionlyproducer", "producer");

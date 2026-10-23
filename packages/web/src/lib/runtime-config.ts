@@ -27,7 +27,6 @@ export interface RuntimeConfig {
   ADMIN_ADDRESS: string;
   EPHEMERAL: boolean;
   EPHEMERAL_PR: string;
-  SOURCE_ENV_URL: string;
   ready: boolean;
 }
 
@@ -49,7 +48,6 @@ const defaults: RuntimeConfig = {
   ADMIN_ADDRESS: process.env.NEXT_PUBLIC_ADMIN_ADDRESS ?? "",
   EPHEMERAL: false,
   EPHEMERAL_PR: "",
-  SOURCE_ENV_URL: "",
   ready: hasLocalDefaults, // ready immediately in local dev, wait for fetch in Docker
 };
 
