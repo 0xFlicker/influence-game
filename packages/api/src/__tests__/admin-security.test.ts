@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { setupTestDB } from "./test-utils.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
@@ -10,11 +10,19 @@ import { createAdminRoutes } from "../routes/admin.js";
 describe("admin security boundaries", () => {
   let db: DrizzleDB;
   let token: string;
+  let previousJwtSecret: string | undefined;
   beforeEach(async () => {
+    previousJwtSecret = process.env.JWT_SECRET;
+    process.env.JWT_SECRET = "admin-security-test-secret";
     db = await setupTestDB();
     await seedRBAC(db);
     await db.insert(schema.users).values({ id: "observer", displayName: "Observer" });
     token = await createSessionToken("observer");
+  });
+
+  afterEach(() => {
+    if (previousJwtSecret === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = previousJwtSecret;
   });
 
   function request(path: string, method = "GET", body?: unknown) {
