@@ -1,7 +1,7 @@
 ---
 title: "How to put an interactive player inside an X post"
 date: 2026-10-22
-summary: "X Player Cards can load an HTML player inside a post. Here is the metadata, framing policy, Next.js setup, and testing process behind The House's replay implementation."
+summary: "Build an interactive X Player Card: metadata, framing policy, Next.js setup, tested web and mobile behavior, and a reusable skill with a playable example."
 tags:
   - engineering
   - watch
@@ -31,6 +31,30 @@ experience end to end.
 
 Here's how we implemented it for The House.
 
+## Update: what worked in real posts
+
+On **October 23, 2026**, we tested [Dropfield](https://dropfield.vercel.app/),
+a small falling-block game built from these lessons. The sharing surface and
+client made a difference:
+
+| Surface | Observed behavior |
+| --- | --- |
+| Regular X post on web | The game displays inline inside the post. |
+| Regular X post on mobile | X opens a web popup targeting the embed route, rather than playing inline in the feed. |
+| X Article | The interactive player does not work in an article. Use a regular post. |
+
+For this example, share `https://dropfield.vercel.app/`. The mobile popup opens
+`https://dropfield.vercel.app/embed/`, not the full share page. That is X opening
+the advertised player URL, separate from the player's own outbound link.
+The embed therefore needs to work both inside a frame and as a directly opened
+page, without relying on initialization or messages from a parent frame.
+
+These are results from our manual Dropfield test, not a guarantee for every
+domain or client version. We did not record browser, mobile OS, or app versions.
+The reusable skill and example are available in the
+[X Player Cards repository](https://github.com/0xFlicker/x-player-cards);
+installation instructions are below.
+
 ## Two URLs do different jobs
 
 Here's the flow:
@@ -39,7 +63,7 @@ Here's the flow:
 Someone posts your share URL
   → X fetches its HTML metadata and poster
   → A reader activates the card
-  → X loads your embedded URL inside its frame
+  → X opens your embedded URL: inline on web, in a web popup on mobile
 ```
 
 The **share URL** is an ordinary page on your website. It supplies the preview
@@ -314,12 +338,15 @@ small widths, denied storage, seeking, sound activation, and the ordinary
 outbound link. Our automated tests cover sandbox playback, anonymous reads,
 metadata delivery, and restoration of the shared moment.
 
-Finally, post the public share URL on X and test the actual card on desktop and
-the mobile clients you care about.
+Finally, put the public share URL in a **regular X post**, not an Article, and
+test the actual card on web and the mobile clients you care about. Record
+whether it stays inline or opens a popup, and verify the popup's destination.
 
 | Symptom | Check first |
 | --- | --- |
 | No card or only an image preview | Initial HTML tags, duplicate card types, crawler access, poster response, and X's treatment of the domain. |
+| No interactive player in an Article | Try a regular post; the Dropfield player did not work in Articles. |
+| Mobile opens a popup | This was the observed Dropfield behavior. Check that the popup targets the embed URL and the player works there. |
 | Preview appears but the player is blank | Final player URL, CSP, X-Frame-Options, mixed HTTP content, and JavaScript errors. |
 | Works in a tab but fails inside X | Auth dependencies, storage access, nested-frame permissions, and iframe-sized layout. |
 | Changes do not appear | Distinguish your CDN response from X's cached card metadata. |
@@ -329,7 +356,33 @@ does not establish that X has recrawled the URL. Compare the current public
 response with a fresh test share URL to help isolate stale card data. We have
 not established a guaranteed refresh interval or a reliable forced-refresh API.
 
-The part worth building around is the interaction: someone can arrive at a
-specific moment and explore it before leaving the post. A compact anonymous
-player, explicit framing headers, and an ordinary full-page destination make
-that interaction useful.
+## Build your own with the skill
+
+We packaged these lessons into the MIT-licensed
+[X Player Cards skill and template repository](https://github.com/0xFlicker/x-player-cards).
+It includes [Dropfield](https://dropfield.vercel.app/), the complete source,
+Vercel framing-header configuration, and browser tests for small sandboxed
+frames and denied storage.
+
+To install the skill for Codex, clone the repository into your skills directory:
+
+```sh
+mkdir -p ~/.agents/skills
+git clone https://github.com/0xFlicker/x-player-cards.git ~/.agents/skills/x-player-cards
+```
+
+Then ask your agent:
+
+```text
+Use $x-player-cards to build an interactive app for regular X posts.
+Start from the included example and deploy it to Vercel.
+```
+
+The repository root is the skill, so its instructions, references, scripts,
+and example stay together. For other coding agents, use their supported skill
+directory or ask them to read the repository's `SKILL.md` directly.
+
+The part worth building around is the interaction: someone can open a specific
+moment or a small game from a post and explore it. A compact anonymous player
+that works inline and in a mobile popup, explicit framing headers, and an
+ordinary full-page destination make that interaction useful.
