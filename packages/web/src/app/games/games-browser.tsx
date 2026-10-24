@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { enabledGameKinds } from "@influence/engine/game-availability";
 import { collectionLabel, matchesGameCollection, type GameCollection } from "@/lib/game-collections";
-import { listWerewolfGames, fillWerewolfLobby, startWerewolfLobby, stopWerewolf, type WerewolfGameSummary } from "@/lib/werewolf-api";
+import { listWerewolfGames, fillWerewolfLobby, startWerewolfLobby, stopWerewolf, setWerewolfHidden, type WerewolfGameSummary } from "@/lib/werewolf-api";
 import { EpisodeCard } from "./episode-preview";
 import {
   fillGame,
@@ -135,7 +135,7 @@ function GameCard({
     setActionError(null);
     setHiding(true);
     try {
-      await hideGame(game.id);
+      await (werewolf ? setWerewolfHidden(game.id, true) : hideGame(game.id));
       await onRefresh();
       setHiding(false);
     } catch (err) {

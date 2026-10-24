@@ -5,7 +5,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import type { WerewolfView } from "@influence/engine/werewolf/observation";
 import { werewolfReportEntry } from "@influence/engine/werewolf/report";
-import { apiFetch, type AdminGameCostSummary, type AdminGameCostDetail } from "@/lib/api";
+import type { AdminGameCostSummary, AdminGameCostDetail } from "@/lib/api";
+import { setWerewolfHidden, stopWerewolf } from "@/lib/werewolf-api";
 import "../../games/episodes.css";
 import { adminReadOptions, useAdminRead, useAdminSession } from "../admin-session";
 import { CostEvidence } from "../cost-evidence";
@@ -121,7 +122,7 @@ export function GameWorkspace({ gameId, children }: { gameId: string; children: 
     if (!data) return;
     setBusy(true); setActionError(null);
     try {
-      await apiFetch(kind === "stop" ? `/api/werewolf/${data.id}/stop` : `${root}/${data.id}/visibility`, { method: kind === "stop" ? "POST" : "PATCH", ...(kind === "visibility" ? { body: JSON.stringify({ hidden: !data.hidden }) } : {}) });
+      await (kind === "stop" ? stopWerewolf(data.id) : setWerewolfHidden(data.id, !data.hidden));
       if (!session.active) return;
       setConfirm(false); await client.invalidateQueries({ queryKey: ["admin", session.scope, root] }); await refresh();
     } catch (cause) { setActionError(cause instanceof Error ? cause.message : "Action failed"); } finally { setBusy(false); }

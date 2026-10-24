@@ -27,6 +27,10 @@ export const leaveWerewolfLobby = (id: string, playerId: string) => apiFetch(`/a
 export const fillWerewolfLobby = (id: string) => apiFetch(`/api/werewolf/${encodeURIComponent(id)}/fill`, { method: "POST" });
 export const startWerewolfLobby = (id: string) => apiFetch(`/api/werewolf/${encodeURIComponent(id)}/start`, { method: "POST" });
 export const stopWerewolf = (id: string) => apiFetch(`/api/werewolf/${encodeURIComponent(id)}/stop`, { method: "POST" });
+export const setWerewolfHidden = (id: string, hidden: boolean) => apiFetch<{hidden: boolean}>(
+  `/api/admin/werewolf/${encodeURIComponent(id)}/visibility`,
+  {method: "PATCH", body: JSON.stringify({hidden})},
+);
 
 export async function getWerewolfPresentation(slug: string, audience: WerewolfAudience, cursor: number | null, signal?: AbortSignal, publishedBefore?: string): Promise<WerewolfPresentation> {
   const data = await apiFetch<WerewolfPresentation>(`/api/werewolf/${encodeURIComponent(slug)}/presentation?audience=${audience}${cursor === null ? "" : `&cursor=${cursor}`}${publishedBefore ? `&publishedBefore=${encodeURIComponent(publishedBefore)}` : ""}`, { cache: "no-store", signal });

@@ -1748,3 +1748,26 @@ test("long public ballot explanations paginate inside their bubble", async () =>
     }
   } finally {await page.close();}
 },120_000);
+
+test("failed Werewolf game can be hidden from the public game card and restored", async () => {
+  const id = "failed-werewolf-hide-card";
+  await database.db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"suspended",config:JSON.stringify({visibility:"public",providerManifest:[{catalogId:"openai:gpt-6-luna"}]})});
+  const page = await createAuthenticatedPage(browser, admin.jwt, `${servers.webUrl}/games`, {privateKey:admin.wallet.privateKey});
+  try {
+    await rejectOptionalAnalytics(page);
+    await page.waitForSelector(`a[href="/games/${id}"]`);
+    await click(page,"Hide");
+    await page.waitForSelector('dialog[open][aria-label="Hide game"]');
+    const response = page.waitForResponse(r => r.url().endsWith(`/api/admin/werewolf/${id}/visibility`) && r.request().method() === "PATCH");
+    await page.evaluate(`Array.from(document.querySelectorAll('dialog[open] button')).find(b => b.textContent.trim() === 'Hide').click()`);
+    expect((await response).status()).toBe(200);
+    await page.waitForFunction(`!document.querySelector('a[href="/games/${id}"]')`);
+    expect((await database.db.select().from(schema.games).where(eq(schema.games.id,id)))[0]!.hiddenAt).not.toBeNull();
+    expect(await page.evaluate("document.body.innerText.includes('Use the Werewolf game endpoint')")).toBe(false);
+    const restored = await fetch(`${servers.apiUrl}/api/admin/werewolf/${id}/visibility`, {method:"PATCH",headers:{Authorization:`Bearer ${admin.jwt}`,"Content-Type":"application/json"},body:JSON.stringify({hidden:false})});
+    expect(restored.status).toBe(200);
+    await page.reload({waitUntil:"domcontentloaded"});
+    await page.waitForSelector(`a[href="/games/${id}"]`);
+    expect((await database.db.select().from(schema.games).where(eq(schema.games.id,id)))[0]!.hiddenAt).toBeNull();
+  } finally {await page.close();}
+},120_000);

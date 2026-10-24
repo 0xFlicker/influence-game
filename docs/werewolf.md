@@ -148,7 +148,7 @@ The existing `/api/games` creation and classic/format readers remain Influence s
 
 ## Admin and production workspace
 
-Open **Games → Werewolf** at `/admin/werewolf`. The persistent House administration shell groups routes under Games, Production, Operations and People, showing only destinations permitted for the current account. Producer-only accounts land on Werewolf instead of the Influence list. Search, lifecycle and hidden filters stay in the URL when entering a game and returning. Each game has Overview, Production, Costs and Activity; narrow screens use the section selector. Overview and Activity use the canonical omniscient projection, including original contributions, cues and resolved ballots, without private model reasoning.
+Open **Games → Werewolf** at `/admin/werewolf`. Hide on a public Werewolf game card and hide/restore in administration share the Werewolf visibility endpoint (`PATCH /api/admin/werewolf/:id/visibility`); they never use Influence hide/unhide routes. The persistent House administration shell groups routes under Games, Production, Operations and People, showing only destinations permitted for the current account. Producer-only accounts land on Werewolf instead of the Influence list. Search, lifecycle and hidden filters stay in the URL when entering a game and returning. Each game has Overview, Production, Costs and Activity; narrow screens use the section selector. Overview and Activity use the canonical omniscient projection, including original contributions, cues and resolved ballots, without private model reasoning.
 
 | Operation | Current authority | Availability |
 | --- | --- | --- |
