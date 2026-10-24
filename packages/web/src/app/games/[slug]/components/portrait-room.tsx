@@ -126,7 +126,9 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
   const speechBox = rawBubble;
   const speechFit = useBubbleTypography(frame, beat.speech.text, speechBox, "speech", available < 300);
   const fittedBubbleHeight = speechFit.typography?.height ?? speechBox.height;
-  const bubble = {...speechBox,width:speechFit.typography?.width ?? speechBox.width,height:fittedBubbleHeight,
+  const fittedBubbleWidth = speechFit.typography?.width ?? speechBox.width;
+  const bubble = {...speechBox,width:fittedBubbleWidth,height:fittedBubbleHeight,
+    left: beside ? speechBox.left : centerX - fittedBubbleWidth / 2,
     top: floorPerspective && !beside ? Math.max(44, centerY - diameter / 2 - fittedBubbleHeight - 12) : speechBox.top};
   const roomLabel = beat.roomLabel ?? `Mingle${beat.roomNumber === null ? "" : ` · Room ${beat.roomNumber}`}`;
   return <section ref={frame} aria-label={beat.roomLabel ?? (beat.roomNumber === null ? "Mingle room" : `Mingle room ${beat.roomNumber}`)} data-portrait-room

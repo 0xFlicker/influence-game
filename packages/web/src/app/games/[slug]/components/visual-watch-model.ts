@@ -57,9 +57,9 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
     }
   }
   let beat: VisualPresentationBeat | null = null;
-  const portrait = (id: string, text: string, purpose: Extract<VisualPresentationBeat, {kind: "portrait"}>["purpose"], caption?: string) => {
+  const portrait = (id: string, text: string, purpose: Extract<VisualPresentationBeat, {kind: "portrait"}>["purpose"], caption?: string, ballotPurpose?: "empower" | "council") => {
     const player = players.find((entry) => entry.id === id);
-    if (player) beat = { kind: "portrait", purpose, caption, player: { ...player, avatarUrl: data.portraits[id] ?? player.avatarUrl, fullBodyReferenceUrl: data.fullBodies?.[id], headRectangle: data.fullBodyHeads?.[id] }, speech: { id: cue?.key ?? String(message?.id), playerId: id, speaker: player.name, text } };
+    if (player) beat = { kind: "portrait", purpose, caption, ballotPurpose, player: { ...player, avatarUrl: data.portraits[id] ?? player.avatarUrl, fullBodyReferenceUrl: data.fullBodies?.[id], headRectangle: data.fullBodyHeads?.[id] }, speech: { id: cue?.key ?? String(message?.id), playerId: id, speaker: player.name, text } };
   };
   if (cue?.source === "endgame") {
     if (cue.kind === "endgame_winner") {
@@ -101,7 +101,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
     } else if (cue.visualBallot) {
       const ballot = cue.visualBallot;
       const target = players.find((player) => player.id === ballot.targetId);
-      if (target) portrait(ballot.voterId, target.name, "Ballot", ballot.revote ? "Revote to empower" : "Vote to empower");
+      if (target) portrait(ballot.voterId, target.name, "Ballot", ballot.revote ? "Revote to empower" : "Vote to empower", "empower");
     } else if (cue.kind === "format_roll_call") {
       const ballot = cue.ballot;
       const target = players.find((player) => player.id === ballot.targetId)?.name;
@@ -118,7 +118,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
   if (message.acceptedBallot) {
     const ballot = message.acceptedBallot;
     const target = players.find((player) => player.id === ballot.targetId);
-    if (target) portrait(ballot.voterId, target.name, "Ballot", ballot.purpose === "winner" ? "Vote for winner" : `Vote to ${ballot.purpose}`);
+    if (target) portrait(ballot.voterId, target.name, "Ballot", ballot.purpose === "winner" ? "Vote for winner" : `Vote to ${ballot.purpose}`, ballot.purpose === "empower" ? "empower" : "council");
   }
   else if (message.phase === "RETROSPECTIVE" && speakerId) {
     const prefix = frames.filter(frame => frame.sequence <= (message.firstDurableEventSequence ?? cue?.canonicalSequence ?? 0));

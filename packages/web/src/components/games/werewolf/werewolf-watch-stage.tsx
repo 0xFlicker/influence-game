@@ -90,7 +90,7 @@ export function WerewolfContentFrame({cue, scene, elapsed, reduced, navigationRe
   if (!cue.nightAction && cue.moment.entry.kind === "night" && cue.moment.entry.killedId) return <WerewolfNightOutcome cue={cue} elapsed={elapsed} reduced={reduced} />;
   if (cue.nightAction?.kind === "hunt") return <WerewolfHuntStage cue={cue} scene={timedOut ? null : scene} onReady={onReady ?? ignoreReadiness} />;
   if (cue.nightAction && !cue.nightDecision) return <WerewolfRoleStage action={cue.nightAction} players={cue.moment.snapshot.players} />;
-  if (cue.ballot && beat) return <VotePresentation backgroundUrl={WEREWOLF_ROOMS.village} beat={beat} ledger={cue.ballot}
+  if (cue.ballot && beat) return <VotePresentation backgroundUrl={WEREWOLF_ROOMS.vote} beat={beat} ledger={cue.ballot}
     roster={cue.moment.snapshot.players.map(p => ({id:p.id, name:p.name, persona:"", avatarUrl:p.avatarUrl ?? undefined}))}
     elapsedMs={sceneElapsed} readingElapsedMs={readingElapsed} reducedMotion={reduced}
     paused={paused} staticSpeech={cue.moment.entry.kind !== "ballot"} silent={cue.moment.entry.kind === "ballot" ? !moment.spoken : cue.ballot.current.targetId === null} onImageReady={() => onReady?.(true)} />;

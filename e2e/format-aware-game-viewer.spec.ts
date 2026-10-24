@@ -678,6 +678,7 @@ test.describe("format-aware game viewer", () => {
     const say = (index: number, sequence: number) => fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: { entrySequence: sequence, round: 1, phase: "FORMAT_MINGLE", from: cast[index]!.id, scope: "mingle", to: cast.filter((_, seat) => seat !== index).map(player => player.id), roomId: 2, text: index ? "We can make this room work together." : "Who wants to make a plan?", timestamp: Date.now() } }));
     say(0, 1);
     const room = page.getByRole("region", { name: "Mingle room 2" });
+    await expect(room.locator("[data-room-backdrop]")).toHaveAttribute("data-room-backdrop", "/visual/influence/rooms-v1/mingle-2.jpg");
     await expect(room.locator("[data-room-player]")).toHaveCount(3);
     await expect(room.locator('[data-active-speaker="true"]')).toHaveAttribute("data-room-player", cast[0]!.id);
     await expect(room.locator("[data-speech-bubble]")).toHaveCSS("opacity", "1");
@@ -697,6 +698,10 @@ test.describe("format-aware game viewer", () => {
         return rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight;
       }))).toBe(true);
       const bounds = await bubble.boundingBox();
+      if (size.height >= 600) {
+        const speaker = await room.locator('[data-active-speaker="true"]').boundingBox();
+        expect(Math.abs(bounds!.x + bounds!.width / 2 - speaker!.x - speaker!.width / 2)).toBeLessThan(2);
+      }
       expect(bounds!.y).toBeGreaterThanOrEqual(0);
       expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(size.height - 120);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

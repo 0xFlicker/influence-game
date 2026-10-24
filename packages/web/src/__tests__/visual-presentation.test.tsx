@@ -334,3 +334,26 @@ test("silent character focus selects their panel without inventing a speech bubb
   expect(view.container.querySelector('[data-speech-bubble]')).toBeNull();
   expect(Array.from(view.container.querySelectorAll("img")).some(image => image.getAttribute("src") === "/p2.png")).toBe(true);
 });
+
+test("static Influence settings follow numbered rooms and typed ballot purpose", () => {
+  const cast = [{id:"p1",name:"Arden",persona:"social"}];
+  const frame = (selected: VisualPresentationBeat) => <VisualPresentationFrame beat={selected} rooms={[]} elapsedMs={SCENE_READ_START_MS} reducedMotion />;
+  const view = render(frame({kind:"portrait-room",roomNumber:null,participants:cast,speech}));
+  const background = () => view.container.querySelector("[data-room-backdrop]")?.getAttribute("data-room-backdrop");
+  expect(background()).toBe("/visual/influence/rooms-v1/lobby.jpg");
+  for (let roomNumber=1; roomNumber<=5; roomNumber++) {
+    view.rerender(frame({kind:"portrait-room",roomNumber,participants:cast,speech}));
+    expect(background()).toBe(`/visual/influence/rooms-v1/mingle-${roomNumber}.jpg`);
+  }
+  const portrait: Extract<VisualPresentationBeat,{kind:"portrait"}> = {kind:"portrait",purpose:"Introduction",player:cast[0]!,speech};
+  view.rerender(frame(portrait));
+  expect(background()).toBe("/visual/influence/rooms-v1/lobby.jpg");
+  view.rerender(frame({...portrait,purpose:"Ballot",ballotPurpose:"empower",caption:"Vote to eliminate"}));
+  expect(background()).toBe("/visual/influence/rooms-v1/empower.jpg");
+  view.rerender(frame({...portrait,purpose:"Ballot",ballotPurpose:"council",caption:"Vote to empower"}));
+  expect(background()).toBe("/visual/influence/rooms-v1/council.jpg");
+  view.rerender(frame({...portrait,purpose:"Diary"}));
+  expect(background()).toBeUndefined();
+  view.rerender(frame(beat));
+  expect(background()).toBeUndefined();
+});

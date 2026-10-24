@@ -1725,6 +1725,7 @@ test("long public ballot explanations paginate inside their bubble", async () =>
       await seekWatch(page,ballot.cursor);
       await page.waitForSelector('[data-speech-bubble]');
       await page.waitForSelector('[data-speech-bubble] [aria-label^="Page 1 of"]', {timeout:5000});
+      expect(await page.$eval("[data-room-backdrop]", node => node.getAttribute("data-room-backdrop"))).toBe("/visual/werewolf/votes-v1/town-square.jpg");
       const fits = () => page.$eval('[data-speech-bubble]', bubble => {
         const copy = bubble.querySelector('blockquote > div > div:nth-child(2)')!;
         const bounds = bubble.getBoundingClientRect(), content = copy.getBoundingClientRect();
