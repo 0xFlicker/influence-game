@@ -10,6 +10,20 @@ const policy = () => normalizeGameModelRouting({ version: 1, defaultManifest: [{
   houseManifest: [{ catalogId: "meta-muse:muse-spark-1.3-contributor" }, { catalogId: "katana:deepseek-v4-flash", maxCallsPerGame: 2 }], overrides: {}, excludedCatalogIds: [] });
 
 describe("frozen game model routing", () => {
+  test("explicit preferences retain the game default first with a bounded shared allowance", () => {
+    const routing = { ...policy(), defaultModelMaxFallbackCalls: 7 };
+    const preferred = { catalogId: "katana:glm-5-3-flash-private" };
+    expect(contestantManifest(routing, preferred)).toEqual([
+      expect.objectContaining(preferred),
+      { ...routing.defaultManifest[0]!, maxCallsPerGame: 7 },
+      routing.defaultManifest[1]!,
+    ]);
+    expect(contestantManifest(routing, "default")).toEqual(routing.defaultManifest);
+    expect(contestantManifest(routing, routing.defaultManifest[0]!)).toEqual(routing.defaultManifest);
+    for (const value of [0, -1, 1.5, 10001, "7"]) {
+      expect(() => normalizeGameModelRouting({ ...routing, defaultModelMaxFallbackCalls: value })).toThrow("fallback calls");
+    }
+  });
   test("free selections are exactly the four agreed routes plus Default; experimental admin models stay strict", () => {
     for (const catalogId of FREE_MODEL_CATALOG_IDS) expect(() => assertModelEntitlement(normalizeModelPreference({ catalogId }), false)).not.toThrow();
     expect(() => assertModelEntitlement("default", false)).not.toThrow();
@@ -36,7 +50,7 @@ describe("frozen game model routing", () => {
     const sealed = sealGameModelRouting(policy(), ids.map((catalogId, i) => ({ id: `seat-${i}`, preference: { catalogId } })));
     const config = JSON.parse(JSON.stringify({ modelRouting: sealed }));
     ids.forEach((catalogId, i) => expect(actorProviderManifest(config, { id: `seat-${i}`, role: "player" })[0]!.catalogId).toBe(catalogId));
-    expect(config.modelRouting.contestants["seat-2"]).toHaveLength(1); // its primary consumes no fallback budget
+    expect(config.modelRouting.contestants["seat-2"].map((entry: { catalogId: string }) => entry.catalogId)).toEqual(["katana:deepseek-v4-flash", "openai:gpt-6-luna"]);
     expect(config.modelRouting.houseManifest[1].maxCallsPerGame).toBe(2);
   });
   test("exclusions and known input limitations reject primaries, skip incompatible fallbacks, and permit empty recovery", () => {

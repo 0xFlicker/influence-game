@@ -36,6 +36,15 @@ import { serializeTranscriptEntry } from "./transcript-serialization.js";
 
 type StoredTranscriptRow = typeof schema.transcripts.$inferSelect;
 
+/** A changed logical-call source needs repair, not repeated automatic dispatch. */
+export async function markDurableContextConflict(db: DrizzleDB, gameId: string, ownerEpoch: string): Promise<boolean> {
+  const rows = await db.update(schema.gameExecutionStates).set({ status: "repair_required", updatedAt: new Date().toISOString() })
+    .where(and(eq(schema.gameExecutionStates.gameId, gameId), eq(schema.gameExecutionStates.ownerEpoch, ownerEpoch),
+      eq(schema.gameExecutionStates.status, "ready")))
+    .returning({ gameId: schema.gameExecutionStates.gameId });
+  return rows.length === 1;
+}
+
 export class DurableGameRunnerStoreIntegrityError extends Error {
   constructor(message: string) {
     super(message);

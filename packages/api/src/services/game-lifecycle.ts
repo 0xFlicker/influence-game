@@ -4,6 +4,8 @@ import { withEvaluationBudget } from "@influence/engine";
 import { fixtureInfluenceRetrospective, fixtureInfluenceRetrospectiveSetup, fixtureInfluenceRetrospectiveSpeaker } from "@influence/engine";
 import { RetrospectiveExecutionError } from "@influence/engine";
 import { pauseRetrospectiveExecution } from "./game-retrospective-recovery.js";
+import { ContextSourceConflictError } from "@influence/engine";
+import { markDurableContextConflict } from "./durable-game-runner-store.js";
 import { abortAllWerewolf, abortWerewolf, activeWerewolfCount, isWerewolfRunning, startWerewolfRuntime } from "./werewolf-runtime.js";
 import { VisualPreparationBlocked, pauseForVisualRepair } from "./visual-policy.js";
 import { createVisualGameRuntime } from "./visual-game-runtime.js";
@@ -983,6 +985,15 @@ async function runGameAsync(
     await publishCurrentWatchState(db, gameId, "completion", refresh?.watchState);
     await reconcilePostgameMediaAfterCompletion(db, gameId);
   } catch (err) {
+    if (err instanceof ContextSourceConflictError && ownerEpoch && !runner.aborted) {
+      console.error(`[game-lifecycle] Context integrity conflict for ${gameId}:`, err.message);
+      if (await markDurableContextConflict(db, gameId, ownerEpoch)) {
+        await relinquishDurableGameRunOwner(db, gameId, ownerEpoch, "context_source_conflict");
+        await tryRefreshGameWatchStateSummary(db, gameId, "context_source_conflict");
+        broadcastRaw(gameId, { type: "error", message: "Game execution needs repair because a saved call's context changed. Committed play is preserved." });
+      }
+      return;
+    }
     if (err instanceof RetrospectiveExecutionError && ownerEpoch && !runner.aborted) {
       const paused = await pauseRetrospectiveExecution(db, gameId, ownerEpoch, err);
       if (paused) {

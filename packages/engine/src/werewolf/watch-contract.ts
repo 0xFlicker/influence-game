@@ -1,6 +1,7 @@
 import type {WerewolfView, WerewolfPublicEntry, WerewolfAudience} from "./observation";
 import type {AcceptedVisualScene} from "../visual-mode";
-export interface WerewolfWatchIdentity { id: string; name: string; avatarUrl: string | null; fullBodyReferenceUrl?: string | null; personaKey: string | null; personality: string; backstory: string }
+import type {ModelPreference} from "../game-model-routing";
+export interface WerewolfWatchIdentity { id: string; name: string; avatarUrl: string | null; fullBodyReferenceUrl?: string | null; personaKey: string | null; personality: string; backstory: string; modelPreference?: ModelPreference }
 export type WerewolfNightAction =
   | { kind: "protect"; actorId: string; targetId: string }
   | { kind: "investigate"; actorId: string; targetId: string; isWolf: boolean }

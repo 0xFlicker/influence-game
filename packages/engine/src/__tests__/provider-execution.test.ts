@@ -35,6 +35,35 @@ const coordinate: ProviderLogicalCallCoordinate = {
 };
 
 describe("ProviderExecutionCoordinator", () => {
+  it.each(["60", new Date(61_000).toUTCString()])("honors Retry-After %s by falling back immediately and cooling only the failed model", async retryAfter => {
+    let now = 1000;
+    const records: ProviderAttemptRecord[] = [];
+    const calls: string[] = [], waits: number[] = [];
+    const coordinator = new ProviderExecutionCoordinator({ now: () => now, wait: async delay => { waits.push(delay); },
+      hooks: { onTerminal: record => { records.push(record); } } });
+    const entries = ["katana:glm", "katana:grok"].map(catalogId => ({ catalogId, maxAttempts: 2,
+      preparedRequest: { transport: "test", providerProfileId: "katana" as const, catalogId, model: catalogId.split(":")[1]!, body: {} },
+      dispatch: async () => {
+        calls.push(catalogId);
+        if (catalogId === "katana:glm") throw Object.assign(new Error("502 status code (no body)"), {
+          status: 502, headers: { "retry-after": retryAfter, "cf-ray": "test-ray" }, body: { error: { code: "origin_bad_gateway" } },
+        });
+        return "accepted";
+      }, validate: (value: string) => ({ status: "usable" as const, value }),
+    }));
+    await coordinator.startCall(coordinate).executeManifest({ entries });
+    expect(calls).toEqual(["katana:glm", "katana:grok"]);
+    expect(waits).toEqual([]);
+    expect(records[0]!.disposition).toBe("exhausted");
+    expect(records[0]!.outcome).toMatchObject({ kind: "service_error", httpStatus: 502, errorCode: "origin_bad_gateway", retryAfterMs: 60_000 });
+    expect("message" in records[0]!.outcome && records[0]!.outcome.message).toContain("origin_bad_gateway; retry after 60s; ray test-ray");
+    expect("message" in records[0]!.outcome && records[0]!.outcome.message).not.toContain("no body");
+    await coordinator.startCall(coordinate).executeManifest({ entries });
+    expect(calls).toEqual(["katana:glm", "katana:grok", "katana:grok"]);
+    now = 61_001;
+    await coordinator.startCall(coordinate).executeManifest({ entries });
+    expect(calls.slice(-2)).toEqual(["katana:glm", "katana:grok"]);
+  });
   it("uses the existing journal identities for phase and Werewolf retrospective calls", () => {
     expect(providerLogicalCallId("game-1", { ...coordinate, semantic: { version: 1, kind: "phase_call", phase: Phase.VOTE,
       round: 2, canonicalEventSequence: 9, callSlot: 1 } })).toBe("sha256:3735d3610ea12be0f7a629298c2d9c81cb9201840e22c3aa3f9adc6c23fddaeb");
@@ -921,7 +950,7 @@ describe("ProviderExecutionCoordinator", () => {
 
     expect(records[0]!.outcome).toMatchObject({
       message:
-        "bad key [REDACTED] at https://provider.test/v1?api_key=%5BREDACTED%5D",
+        "bad key [REDACTED] at https://provider.test/v1?api_key=%5BREDACTED%5D [HTTP 400]",
     });
     expect(JSON.stringify(records[0])).not.toContain(secret);
     expect(JSON.stringify(records[0])).not.toContain("url-secret");
@@ -1016,7 +1045,7 @@ describe("ProviderExecutionCoordinator", () => {
     expect(records[0]).toMatchObject({
       requestId: "request-[REDACTED]",
       outcome: {
-        message: "provider reflected [REDACTED]",
+        message: "provider reflected [REDACTED] [HTTP 400]",
       },
       rawResponse: {
         status: 400,

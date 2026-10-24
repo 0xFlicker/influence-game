@@ -40,6 +40,7 @@ export interface MatchWatchAllianceCardModel {
     persona?: string;
     personaKey?: string;
     avatarUrl?: string;
+    modelPreference?: GamePlayer["modelPreference"];
   }>;
   memberNames: string[];
   purpose: string | null;
@@ -429,6 +430,7 @@ function buildAllianceMembers(
       ...(player?.persona ? { persona: player.persona } : {}),
       ...(player?.personaKey ? { personaKey: player.personaKey } : {}),
       ...(player?.avatarUrl ? { avatarUrl: player.avatarUrl } : {}),
+      ...(player?.modelPreference ? { modelPreference: player.modelPreference } : {}),
     };
   });
 }

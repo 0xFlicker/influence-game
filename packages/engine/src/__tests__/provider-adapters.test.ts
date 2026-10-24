@@ -18,7 +18,7 @@ import {
   ProviderExecutionCoordinator,
   type ProviderAttemptRecord,
 } from "../provider-execution";
-import { createExactStructuredOutputArtifact } from "../structured-output";
+import { createExactStructuredOutputArtifact, validateExactStructuredValue } from "../structured-output";
 
 const voteArtifact = createExactStructuredOutputArtifact<
   { target: string },
@@ -101,7 +101,7 @@ it("adaptive effort respects a model's frozen reasoning limits", () => {
 });
 
 function runtime(
-  catalogId: "openai:gpt-5.6-luna" | "openai:gpt-6-luna" | "katana:grok-4-5" | "katana:grok-4-6" | "katana:glm-5-2" | "meta-muse:muse-spark-1.3-contributor",
+  catalogId: "katana:claude-opus-4-7" | "openai:gpt-5.6-luna" | "openai:gpt-6-luna" | "katana:grok-4-5" | "katana:grok-4-6" | "katana:glm-5-2" | "meta-muse:muse-spark-1.3-contributor",
   client: OpenAI,
   position = 0,
 ): LlmProviderRuntime {
@@ -849,6 +849,30 @@ describe("provider-native adapters", () => {
 
 
 describe("nullable normalization across native transports", () => {
+  it("compiles Claude nullable enums without changing the allowed values or semantic schema", () => {
+    const schema = { type: "object", additionalProperties: false, required: ["recipient", "reply", "room"], properties: {
+      recipient: { type: ["string", "null"], enum: [null, "milo"] },
+      reply: { type: ["integer", "null"], enum: [null] },
+      room: { type: ["integer", "null"], enum: [null, 1, 2] },
+    } };
+    const artifact = createExactStructuredOutputArtifact({ action: "nullable-enum", name: "conversation_turn", schema,
+      decodeProviderPayload: value => ({ status: "valid", value }), decodeAcceptedValue: value => ({ status: "valid", value }) });
+    const model = runtime("katana:claude-opus-4-7", {} as OpenAI);
+    const request = model.adapter.compile({ ...invocation, result: { kind: "structured", artifact } }, model);
+    const native = (request.body as { response_format: { json_schema: { schema: Record<string, unknown> } } }).response_format.json_schema.schema;
+    expect(native).toMatchObject({ properties: {
+      recipient: { anyOf: [{ type: "string", enum: ["milo"] }, { type: "null", enum: [null] }] },
+      reply: { anyOf: [{ type: "null", enum: [null] }] },
+    } });
+    expect(artifact.schema).toEqual(schema);
+    for (const recipient of [null, "milo", "other", 1]) for (const reply of [null, 1, "1"]) for (const room of [null, 1, 2, 3, "1"]) {
+      const value = { recipient, reply, room };
+      expect(validateExactStructuredValue(native, value, "native").status).toBe(validateExactStructuredValue(schema, value, "semantic").status);
+    }
+    for (const invalid of [{}, { recipient: null, reply: null }, { recipient: null, reply: null, room: null, extra: true }]) {
+      expect(validateExactStructuredValue(native, invalid, "native").status).toBe("invalid");
+    }
+  });
   it.each(["responses-structured", "chat-structured"])(
     "normalizes within the attempt and preserves native evidence for %s", async (mode) => {
       const artifact = createExactStructuredOutputArtifact<{ target: string | null }, { target: string | null }>({

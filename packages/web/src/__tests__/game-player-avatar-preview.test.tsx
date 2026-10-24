@@ -34,6 +34,23 @@ function historicalPlayer(overrides: Partial<GamePlayer> = {}): GamePlayer {
 }
 
 describe("GamePlayerAvatarPreview", () => {
+  it("shows an explicit saved model beneath the archetype, including exact IDs", () => {
+    for (const [catalogId, label] of [["katana:glm-5-3-flash-private", "GLM Flash"], ["katana:custom-model", "katana:custom-model"]]) {
+      const model = getGamePlayerAvatarPreviewModel(historicalPlayer({ modelPreference: { catalogId: catalogId! } }));
+      const html = renderToString(<GamePlayerAvatarPreviewContent model={model} />);
+      expect(html).toContain(label!);
+      expect(html.indexOf("Observer")).toBeLessThan(html.indexOf(label!));
+    }
+  });
+
+  it("does not show a model label for Default or an absent selection", () => {
+    for (const modelPreference of ["default", undefined] as const) {
+      const model = getGamePlayerAvatarPreviewModel(historicalPlayer({ modelPreference }));
+      const html = renderToString(<GamePlayerAvatarPreviewContent model={model} />);
+      expect(html).not.toContain("Default");
+      expect(html).not.toContain("break-words");
+    }
+  });
   it("keeps historical identity while using the current portrait and record", () => {
     expect(getGamePlayerAvatarPreviewModel(historicalPlayer())).toEqual({
       name: "Historical Atlas",

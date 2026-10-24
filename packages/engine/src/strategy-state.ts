@@ -36,7 +36,7 @@ function clonePriorEpoch(
   epoch: CompactStrategyPriorEpoch | null,
 ): CompactStrategyPriorEpoch | null {
   return epoch
-    ? { ...epoch, deltas: [...epoch.deltas] }
+    ? { lifecycle: epoch.lifecycle, baseline: epoch.baseline, deltas: [...epoch.deltas], revision: epoch.revision }
     : null;
 }
 
@@ -44,9 +44,13 @@ export function cloneCompactStrategyState(
   state: CompactStrategyState,
 ): CompactStrategyState {
   return {
-    ...state,
+    // Context metadata serializes this value. JSONB recovery may reorder keys;
+    // always rebuild the declared shape before rendering or hashing it.
+    lifecycle: state.lifecycle,
+    baseline: state.baseline,
     deltas: [...state.deltas],
     priorEpoch: clonePriorEpoch(state.priorEpoch),
+    revision: state.revision,
   };
 }
 

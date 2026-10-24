@@ -11,6 +11,7 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { readWerewolfEvents, WerewolfGameError } from "./werewolf-games.js";
 import { werewolfReferenceMetadata, WEREWOLF_AUTO_PUBLISHER } from "./werewolf-production.js";
 import { readVisualProfileImage } from "./visual-game-assets.js";
+import { gamePlayerModelPreference } from "./game-player-model-preference.js";
 
 /** One audience-safe prefix, plus an exact public version; no producer DTO escapes. */
 export async function readWerewolfPresentation(db: DrizzleDB, id: string, audience: WerewolfAudience, cursor?: number, publicationCutoff = new Date().toISOString()) {
@@ -108,7 +109,12 @@ export async function readWerewolfWatch(db: DrizzleDB, id: string, audience: Wer
     return ids.some(id => Boolean(wolfForms[id]));
   });
   const references = await werewolfReferenceMetadata(db, game.id, events.find(event => event.type === "werewolf.started")?.payload.players);
-  return materializeWerewolfWatch(projection, { id: game.id, slug: game.slug, status: game.status, visualPaused: game.status === "suspended" && Boolean(werewolfVisualPause(JSON.parse(game.config))) }, audience, publicationCutoff, rows, references);
+  const config = JSON.parse(game.config);
+  const seats = await db.select({ id: schema.werewolfLobbySeats.id, modelPreference: schema.werewolfLobbySeats.modelPreference })
+    .from(schema.werewolfLobbySeats).where(eq(schema.werewolfLobbySeats.gameId, game.id));
+  const preferences = new Map(seats.map(seat => [seat.id, seat.modelPreference]));
+  const watch = materializeWerewolfWatch(projection, { id: game.id, slug: game.slug, status: game.status, visualPaused: game.status === "suspended" && Boolean(werewolfVisualPause(config)) }, audience, publicationCutoff, rows, references);
+  return { ...watch, players: watch.players.map(player => ({ ...player, ...gamePlayerModelPreference(config, player.id, preferences.get(player.id)) })) };
 }
 
 /** Same media binding for live watch and fixed production prefixes. Staging and

@@ -66,6 +66,22 @@ async function game(completed = true, agentProfileIds: string[] = [], unprotecte
   }
   return g;
 }
+test("watch identities expose explicit model overrides and omit Default in both audiences", async () => {
+  const g = await game(false);
+  const initial = await readWerewolfWatch(db, g.id, "mystery", 1, 10);
+  const [explicit, houseDefault] = initial.players;
+  const [row] = await db.select().from(schema.games).where(eq(schema.games.id, g.id));
+  const config = JSON.parse(row!.config);
+  await db.update(schema.games).set({ config: JSON.stringify({ ...config, modelRouting: {
+    ...config.modelRouting, overrides: { [explicit!.id]: { catalogId: "katana:kimi-k3" }, [houseDefault!.id]: "default" },
+  } }) }).where(eq(schema.games.id, g.id));
+  for (const audience of ["mystery", "omniscient"] as const) {
+    const watch = await readWerewolfWatch(db, g.id, audience, 1, 10);
+    expect(watch.players.find(p => p.id === explicit!.id)?.modelPreference).toEqual({ catalogId: "katana:kimi-k3" });
+    expect(watch.players.find(p => p.id === houseDefault!.id)).not.toHaveProperty("modelPreference");
+  }
+});
+
 test("v7 completed games retain admin and Studio editing access without changing their saved history", async () => {
   const id = "existing-v7", events = await werewolfResultsFixture("saved", id);
   const initial = events[0]!;

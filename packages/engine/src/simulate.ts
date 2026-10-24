@@ -5,6 +5,9 @@
  * Per-character API simulations use mixed-model-simulate.ts (root simulate:models).
  * --preview is offline; --models assigns seats, --provider-entry remains a fallback chain.
  * --house-entry configures independent House text work. Luna remains Flex.
+ * Explicit seats try their preference, then the full common route without duplicates.
+ * Roster policy.defaultModelMaxFallbackCalls bounds default-model recovery (24 by default).
+ * Retry-After cools the failed model while permitted fallbacks proceed immediately.
  * Actual paid runs require authorization and retain API IDs and durable evidence.
  * No direct House provider calls or `as any` invocation shortcuts.
  * Influence Game — Batch Simulation Runner

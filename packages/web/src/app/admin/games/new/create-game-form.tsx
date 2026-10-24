@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { MODEL_CATALOG, MODEL_REASONING_POLICIES, modelCatalogEntryById } from "@influence/engine/model-catalog";
 import { ModelPricing } from "@/components/model-pricing";
 import { DEFAULT_GAME_FALLBACK, DEFAULT_MODEL_CATALOG_ID } from "@influence/engine/model-defaults";
+import { DEFAULT_CONTESTANT_RECOVERY_CALLS } from "@influence/engine/game-model-routing";
 import {
   FORMAT_PRESENTATION_METADATA,
   LAUNCH_FORMAT_IDS,
@@ -30,7 +31,6 @@ import {
 } from "@/lib/api";
 import { CREATE_GAME_PLAYER_COUNTS } from "@/lib/game-creation";
 import { ACTIVE_GAME, HOUSE_VENUE } from "@/lib/product-identity";
-import { retrospectiveAttemptsPerModel } from "@influence/engine/retrospective-budget";
 
 // ---------------------------------------------------------------------------
 // Persona definitions (matches engine PERSONALITY_PROMPTS)
@@ -392,6 +392,16 @@ function supportsVisualMode(catalogId: string, models: readonly GameModelOption[
     ?? false;
 }
 
+export function DefaultModelFallbackLimit({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+  return <label className="mt-4 block text-sm text-white/80">
+    Default model fallback calls
+    <input type="number" min={1} max={10000} required value={value}
+      onChange={event => onChange(Number(event.target.value))}
+      className="mt-2 block w-28 rounded-lg border border-white/20 bg-black/30 px-3 py-2 text-white" />
+    <span className="mt-2 block text-sm text-white/55">Shared limit when contestants fall back from their preferred model.</span>
+  </label>;
+}
+
 export function ProviderRouteEditor({
   labelPrefix = "",
   entries,
@@ -473,7 +483,7 @@ export function ProviderRouteEditor({
         <div>
           <p className="text-sm font-medium text-white">{labelPrefix}Provider route</p>
           <p className="mt-1 max-w-2xl text-xs leading-5 text-white/45">
-            {labelPrefix ? "House calls start with Primary." : "Contestants choosing Default start with Primary; other contestants keep their own preference."}
+            {labelPrefix ? "House calls start with Primary." : "Contestants try their preferred model first, then this route. Default starts with Primary. Duplicate models are skipped."}
             {" "}These fallbacks apply in order when the preferred route cannot return a usable result. Assignments are sealed when the game starts.
           </p>
         </div>
@@ -669,6 +679,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
   const [form, setForm] = useState<FormState>(DEFAULT_STATE);
   const [houseRoute, setHouseRoute] = useState<ProviderRouteEntry[]>(() => DEFAULT_PROVIDER_MANIFEST.map(entry => ({ ...entry, uiId: `house-${nextProviderRouteId++}` })));
   const [exclusions, setExclusions] = useState<string[]>([]);
+  const [defaultModelMaxFallbackCalls, setDefaultModelMaxFallbackCalls] = useState(DEFAULT_CONTESTANT_RECOVERY_CALLS);
   const [models, setModels] = useState<GameModelOption[]>(GAME_MODELS);
   const providerRouteEdited = useRef(false);
   const [submitting, setSubmitting] = useState(false);
@@ -762,7 +773,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
     try {
       const params: CreateGameParams = {
         ...gameParams,
-        modelRouting: { version: 1, defaultManifest: cleanRoute(providerRoute), houseManifest: cleanRoute(houseRoute), excludedCatalogIds: exclusions, overrides: {} },
+        modelRouting: { version: 1, defaultManifest: cleanRoute(providerRoute), defaultModelMaxFallbackCalls, houseManifest: cleanRoute(houseRoute), excludedCatalogIds: exclusions, overrides: {} },
       };
       if (isWerewolf) {
         const { slug } = await createWerewolfLobby({ preset: village.wolves === 1 ? "one_wolf" : "two_wolves", setup: village, maxDays,
@@ -825,9 +836,6 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
 
       {/* Provider route */}
       <SectionCard title="Models">
-        <p className="mb-4 text-sm text-white/60">The retrospective adds {isWerewolf ? village.playerCount : form.playerCount} required final statements after the result,
-          with up to {retrospectiveAttemptsPerModel(isWerewolf ? "werewolf" : "influence")} attempts per model for each statement.
-          Each call includes the whole game and earlier statements. These calls share the fallback limits below with gameplay.</p>
         <ProviderRouteEditor
           entries={form.providerRoute}
           models={models}
@@ -838,6 +846,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
             set("providerRoute", providerRoute);
           }}
         />
+        <DefaultModelFallbackLimit value={defaultModelMaxFallbackCalls} onChange={setDefaultModelMaxFallbackCalls} />
       </SectionCard>
 
       <SectionCard title="House model and fallbacks">

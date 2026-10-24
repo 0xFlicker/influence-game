@@ -74,7 +74,26 @@ describe("provider health circuit authority", () => {
     db = await setupTestDB();
   });
 
-  test("request refusals, ambiguous client errors, and all rate limits stay call-scoped", async () => {
+  test.each(["service_error", "rate_limit"] as const)("%s Retry-After cools only GLM across actors and reopens after the deadline", async kind => {
+    const glm = { providerProfileId: "katana", catalogId: "katana:glm-5-3-flash-private" };
+    const result = await db.transaction(tx => recordProviderHealthOutcomeInTransaction(tx, { ...glm,
+      outcome: { kind, message: "origin_bad_gateway", retryable: true, retryAfterMs: 60_000 } }));
+    expect(result.circuit).toMatchObject({ scopeKey: `entry:${glm.catalogId}`, haltManifest: false });
+    const [row] = await listProviderHealth(db);
+    expect(Date.parse(row!.cooldownUntil!) - Date.parse(row!.openedAt!)).toBe(60_000);
+    for (let actor = 0; actor < 2; actor++) {
+      await expect(db.transaction(tx => assertProviderDispatchHealthInTransaction(tx, glm))).rejects.toMatchObject({ haltManifest: false });
+    }
+    await expect(db.transaction(tx => assertProviderDispatchHealthInTransaction(tx, { providerProfileId: "katana", catalogId: "katana:grok-4-6" }))).resolves.toBeUndefined();
+    const manifest = resolveProviderManifestFromGameConfig({ providerManifest: [{ catalogId: glm.catalogId }] });
+    expect(await checkDailyProviderAdmission(db, manifest)).toMatchObject({ ok: false, code: "provider_admission_closed" });
+    await db.update(schema.providerHealthStates).set({ cooldownUntil: new Date(0).toISOString() }).where(eq(schema.providerHealthStates.scopeKey, `entry:${glm.catalogId}`));
+    expect(await checkDailyProviderAdmission(db, manifest)).toEqual({ ok: true });
+    await expect(db.transaction(tx => assertProviderDispatchHealthInTransaction(tx, glm))).resolves.toBeUndefined();
+    expect((await listProviderHealth(db)).find(row => row.catalogId === glm.catalogId)).toMatchObject({ state: "closed", cooldownUntil: null });
+  });
+
+  test("request refusals, ambiguous client errors, and rate limits without Retry-After stay call-scoped", async () => {
     await record(db, "refusal");
     await record(db, "request_error");
     await record(db, "context_overflow");
@@ -189,19 +208,19 @@ describe("provider health circuit authority", () => {
     await record(db, "service_error");
     await record(db, "service_error");
     await expect(acquireProviderHealthProbe(db, {
-      scopeKey: "provider:openai",
+      scopeKey: "entry:openai:gpt-5.6-luna",
       owner: "automatic-probe",
       allowBeforeCooldown: false,
     }, TEST_POLICY)).rejects.toMatchObject({ code: "cooldown_active" });
 
     await db.update(schema.providerHealthStates).set({
       cooldownUntil: new Date(Date.now() - 1_000).toISOString(),
-    }).where(eq(schema.providerHealthStates.scopeKey, "provider:openai"));
+    }).where(eq(schema.providerHealthStates.scopeKey, "entry:openai:gpt-5.6-luna"));
     await expect(acquireProviderHealthProbe(db, {
-      scopeKey: "provider:openai",
+      scopeKey: "entry:openai:gpt-5.6-luna",
       owner: "automatic-probe",
       allowBeforeCooldown: false,
-    }, TEST_POLICY)).resolves.toMatchObject({ scopeKey: "provider:openai" });
+    }, TEST_POLICY)).resolves.toMatchObject({ scopeKey: "entry:openai:gpt-5.6-luna" });
   });
 
   test("opening between an observation and reservation blocks the ordinary call", async () => {

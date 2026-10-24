@@ -412,6 +412,7 @@ export function createGameRoutes(db: DrizzleDB) {
         ...(player.exposeScore !== undefined && { exposeScore: player.exposeScore }),
         ...(player.avatarUrl && { avatarUrl: player.avatarUrl }),
         currentAgent: player.currentAgent,
+        ...(player.modelPreference && { modelPreference: player.modelPreference }),
       })),
       modelLabel: modelLabelFromConfig(config),
       visibility: config.visibility ?? "public",

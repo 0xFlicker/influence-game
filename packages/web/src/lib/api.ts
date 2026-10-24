@@ -381,6 +381,7 @@ export interface GameWatchProjectionState {
 }
 
 export interface GameWatchPlayer {
+  modelPreference?: ModelPreference;
   id: string;
   name: string;
   persona: string;
@@ -2685,6 +2686,8 @@ export type PhaseKey = `${EnginePhase}` | "SUSPENDED";
 export type PlayerState = "alive" | "eliminated" | "unknown";
 
 export interface GamePlayer {
+  /** Selection saved for this game; not per-turn fallback attribution. */
+  modelPreference?: ModelPreference;
   id: string;
   name: string;
   persona: string;

@@ -560,6 +560,8 @@ bun run simulate:models --game influence --players 8 --models openai:gpt-6-luna,
 
 Preview is entirely offline and prints resolved assignments, fallback chains and dated/unknown metadata. It does not assert provider availability or quality. Repeated `--provider-entry` still defines the common fallback chain, never the seat list; `--house-entry` independently defines the House chain. Roster files carry their own complete policy. Luna stays Flex.
 
+An explicit seat preference tries its model before the full common route, with duplicates removed. In the example, Kimi would try Kimi → Luna → Grok. Luna's fallback allowance is 24 shared contestant calls by default; set `policy.defaultModelMaxFallbackCalls` in a roster file to change it. Grok retains the explicit 24-call cap. House accounting is separate. A valid future `Retry-After` skips the failed model until its cooldown expires while allowing the next route immediately; it does not impose a matching sleep on the game.
+
 Only after separately authorizing paid execution, omit `--preview`. The runner saves requested policy, game ID/slug and final seat mapping before start under a unique `packages/engine/docs/simulations/mixed-*` directory. It refuses non-local API origins and stops before starting if artifact persistence fails. The API worker retains its canonical random seed/config and full sanitized attempt evidence in the existing durable journal/object store. Keep those API records: JSON reports alone are not a complete replay backup.
 
 ```sh

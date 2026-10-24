@@ -911,6 +911,13 @@
       "when": 1792191933913,
       "tag": "0129_provider_journal_house_authority",
       "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1792191933914,
+      "tag": "0130_provider_route_cooldowns",
+      "breakpoints": true
     }
   ]
 }

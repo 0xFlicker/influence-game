@@ -57,6 +57,25 @@ test("disabled games pass the original nonvisual context directly", async () => 
   expect(agent.received[0]?.visual).toBeUndefined();
 });
 
+test("provider exhaustion is not an accepted call or performance cue, but a model-authored pass is", async () => {
+  for (const unavailable of [true, false]) {
+    const agent = new MockAgent("p1", "Arden");
+    agent.takeMingleTurn = async () => ({ message: null, noReply: true, recipientId: null, replyToContributionId: null,
+      cue: "Looks away",
+      ...(unavailable ? { providerAbsence: { kind: "provider_exhausted" as const, outcome: "transport_timeout" as const } } : { thinking: "Listen for now" }),
+    });
+    let cues = 0;
+    const wrapped = createStagedAgents(new Map([[agent.id, agent]]), [], [{ version: 1, slot: 1,
+      logicalCallId: "mingle-call", actorId: agent.id, action: "mingle-turn", contractId: "conversation_turn" }], "turn-8", {
+      committed, prepare: async () => ({ performanceInstructions: "Quiet delivery" }), recordCue: () => { cues++; },
+    });
+    const result = await wrapped.agents.get(agent.id)!.takeMingleTurn!(context, []);
+    expect(result.providerAbsence?.kind).toBe(unavailable ? "provider_exhausted" : undefined);
+    expect(wrapped.readAcceptedProviderCallIds()).toEqual(unavailable ? [] : ["mingle-call"]);
+    expect(cues).toBe(unavailable ? 0 : 1);
+  }
+});
+
 test("discarding a scratch turn prevents late scene preparation from dispatching the agent", async () => {
   const agent = new RecordingAgent("p1", "Arden");
   const gate = Promise.withResolvers<void>();

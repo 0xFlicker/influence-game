@@ -1782,12 +1782,14 @@ export type ProviderAttemptSpendProjectionState =
 export type ProviderHealthScopeKind = "provider" | "entry";
 export type ProviderHealthState = "closed" | "open" | "probing";
 export type ProviderHealthReason =
+  | "rate_limit"
   | "authentication"
   | "configuration"
   | "service_error"
   | "transport_timeout"
   | "transport_error";
 export type ProviderHealthEventKind =
+  | "cooldown_expired"
   | "failure_recorded"
   | "success_recorded"
   | "opened"
@@ -2133,7 +2135,7 @@ export const providerHealthStates = pgTable("provider_health_states", {
   index("provider_health_states_catalog_idx").on(table.catalogId, table.state),
   check("provider_health_states_scope_check", sql`${table.scopeKind} IN ('provider', 'entry')`),
   check("provider_health_states_state_check", sql`${table.state} IN ('closed', 'open', 'probing')`),
-  check("provider_health_states_reason_check", sql`${table.reason} IS NULL OR ${table.reason} IN ('authentication', 'configuration', 'service_error', 'transport_timeout', 'transport_error')`),
+  check("provider_health_states_reason_check", sql`${table.reason} IS NULL OR ${table.reason} IN ('authentication', 'configuration', 'service_error', 'transport_timeout', 'transport_error', 'rate_limit')`),
   check("provider_health_states_counts_check", sql`${table.revision} > 0 AND ${table.consecutiveFailureCount} >= 0`),
   check("provider_health_states_scope_shape_check", sql`
     (${table.scopeKind} = 'provider' AND ${table.catalogId} IS NULL)
@@ -2192,12 +2194,12 @@ export const providerHealthEvents = pgTable("provider_health_events", {
   createdAt: text("created_at").notNull().default(sql`now()::text`),
 }, (table) => [
   index("provider_health_events_scope_idx").on(table.scopeKey, table.createdAt),
-  check("provider_health_events_kind_check", sql`${table.eventKind} IN ('failure_recorded', 'success_recorded', 'opened', 'probe_started', 'probe_expired', 'probe_succeeded', 'probe_failed')`),
+  check("provider_health_events_kind_check", sql`${table.eventKind} IN ('failure_recorded', 'success_recorded', 'opened', 'probe_started', 'probe_expired', 'probe_succeeded', 'probe_failed', 'cooldown_expired')`),
   check("provider_health_events_state_check", sql`
     (${table.fromState} IS NULL OR ${table.fromState} IN ('closed', 'open', 'probing'))
     AND ${table.toState} IN ('closed', 'open', 'probing')
   `),
-  check("provider_health_events_reason_check", sql`${table.reason} IS NULL OR ${table.reason} IN ('authentication', 'configuration', 'service_error', 'transport_timeout', 'transport_error')`),
+  check("provider_health_events_reason_check", sql`${table.reason} IS NULL OR ${table.reason} IN ('authentication', 'configuration', 'service_error', 'transport_timeout', 'transport_error', 'rate_limit')`),
   check("provider_health_events_revision_check", sql`${table.revision} > 0`),
 ]);
 

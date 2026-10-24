@@ -124,6 +124,7 @@ function DramaticReplayTheater({
       personaKey: player.personaKey,
       avatarUrl: player.avatarUrl,
       currentAgent: player.currentAgent,
+      modelPreference: player.modelPreference,
     })),
     [players],
   );

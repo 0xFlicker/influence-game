@@ -804,3 +804,4 @@ export * from "./game-model-routing";
 export * from "./model-route-metadata";
 
 export * from "./model-routing-report";
+export { ContextSourceConflictError, contextSourceHash } from "./context-adaptation";

@@ -41,6 +41,8 @@ import {
 import { backfillGameCostAccounting } from "./provider-cost-accounting.js";
 import { appendGameEvents } from "./game-events.js";
 import { sha256StableJson } from "./stable-hash.js";
+import { cloneCompactStrategyState, createOpeningStrategyState, contextSourceHash, executeModelInvocation,
+  modelCatalogEntryById, classifyProviderError, type LlmProviderRuntime, type ModelInvocation } from "@influence/engine";
 
 class FakeProviderEvidenceStorage implements PrivateTraceStorageAdapter {
   readonly puts: PrivateTracePutObjectInput[] = [];
@@ -258,6 +260,71 @@ describe("provider call journal", () => {
     db = await setupTestDB();
   });
 
+  test("a failed fallback resumes with the same context after strategy traverses JSONB", async () => {
+    const gameId = await insertGame(db);
+    let ownerEpoch = await insertOwner(db, gameId);
+    const ids = ["katana:glm-5-2", "katana:grok-4-5"];
+    await db.update(schema.games).set({ config: JSON.stringify({ providerManifest: [
+      { catalogId: ids[0] }, { catalogId: ids[1], maxCallsPerGame: 8 },
+    ] }) }).where(eq(schema.games.id, gameId));
+    const binding = await insertPlannedDurableTurn(db, { gameId, ownerEpoch });
+    const coordinate = bindDurableTurn(makeIntent(gameId, ownerEpoch), binding).coordinate;
+    const state = createOpeningStrategyState();
+    const makeInvocation = (strategy: typeof state): ModelInvocation => ({
+      messages: [{ role: "user", content: "same frozen turn" }], contextSpans: [{ text: "same frozen turn", format: "text" }],
+      compactionCharacter: { personality: "Patient", backstory: "Teacher", strategy: "Listen",
+        currentStrategy: JSON.stringify(cloneCompactStrategyState(strategy)) },
+      result: { kind: "text" }, outputTokenLimit: 100,
+    });
+    let dispatches = 0, recovered = false;
+    const runtimes: LlmProviderRuntime[] = ids.map((id, position) => {
+      const model = modelCatalogEntryById(id)!;
+      return { catalogId: id, modelId: model.modelId, providerProfileId: model.providerProfileId, modelCapabilities: model.capabilities,
+        position, role: position === 0 ? "primary" : "fallback", reasoningPolicy: "low",
+        adapter: { id: "test", validate: () => ({ compatible: true }), classifyError: classifyProviderError,
+          compile: () => ({ transport: "test.chat", body: {} }), dispatch: async () => {
+            dispatches++;
+            if (position === 0) throw Object.assign(new Error("request rejected"), { status: 400 });
+            if (!recovered) throw Object.assign(new Error("Request timed out"), { name: "APITimeoutError" });
+            return { transport: "test.chat", nativeResponse: {}, toolCalls: [], text: "accepted" };
+          } },
+      };
+    });
+    const run = (invocation: ModelInvocation) => {
+      const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+      return executeModelInvocation({
+        call: new ProviderExecutionCoordinator({ hooks: { ...hooks, onTerminal: async record => {
+          const receipt = await hooks.onTerminal?.(record);
+          if (!recovered && record.preparedRequest.catalogId === ids[1]) throw new Error("process interrupted after fallback failure");
+          return receipt;
+        } } }).startCall(coordinate),
+        invocation, runtimes, maxAttempts: 2, validate: response => ({ status: "usable", value: response.text }),
+      });
+    };
+    await expect(run(makeInvocation(state))).rejects.toThrow("process interrupted after fallback failure");
+    expect(dispatches).toBe(2);
+    await db.update(schema.gameRunOwners).set({ status: "closed" }).where(and(
+      eq(schema.gameRunOwners.gameId, gameId), eq(schema.gameRunOwners.ownerEpoch, ownerEpoch)));
+    ownerEpoch = await insertOwner(db, gameId);
+    coordinate.ownerEpoch = ownerEpoch;
+    await db.update(schema.gameTurns).set({ plannedOwnerEpoch: ownerEpoch }).where(eq(schema.gameTurns.id, binding.turnId));
+    const [row] = await db.execute(sql`SELECT ${JSON.stringify(state)}::jsonb AS strategy`);
+    const restored = row!.strategy as typeof state;
+    expect(JSON.stringify(restored)).not.toBe(JSON.stringify(state));
+    expect(contextSourceHash(makeInvocation(restored))).toBe(contextSourceHash(makeInvocation(state)));
+    await expect(run(makeInvocation({ ...restored, revision: 1 }))).rejects.toThrow("Context source changed");
+    expect(dispatches).toBe(2);
+    recovered = true;
+    expect((await run(makeInvocation(restored))).value).toBe("accepted");
+    expect(dispatches).toBe(4);
+    expect((await run(makeInvocation(restored))).value).toBe("accepted");
+    expect(dispatches).toBe(4);
+    const attempts = await db.select().from(schema.providerCallAttempts).where(eq(schema.providerCallAttempts.gameId, gameId));
+    expect(attempts).toHaveLength(4);
+    expect(new Set(attempts.map(attempt => attempt.contextSourceHash)).size).toBe(1);
+    expect(new Set(attempts.map(attempt => attempt.ownerEpoch)).size).toBe(2);
+  });
+
   test("contestants share fallback caps, House has its own cap, and primary/replay consume no recovery allowance", async () => {
     const gameId = await insertGame(db), ownerEpoch = await insertOwner(db, gameId);
     const policy = normalizeGameModelRouting({ version: 1,
@@ -287,6 +354,28 @@ describe("provider call journal", () => {
       expect.objectContaining({ scope: "contestants", catalogId: "katana:glm-5-2", role: "fallback", usedCalls: 1, remainingCalls: 0 }),
       expect.objectContaining({ scope: "house", catalogId: "katana:glm-5-2", role: "fallback", usedCalls: 1, remainingCalls: 0 }),
     ]));
+  });
+
+  test("the game default has a shared fallback cap without charging default-primary calls", async () => {
+    const gameId = await insertGame(db), ownerEpoch = await insertOwner(db, gameId);
+    const policy = normalizeGameModelRouting({ version: 1,
+      defaultManifest: [{ catalogId: "katana:glm-5-2" }], defaultModelMaxFallbackCalls: 1,
+      houseManifest: [{ catalogId: "openai:gpt-6-luna" }], overrides: {}, excludedCatalogIds: [] });
+    const modelRouting = sealGameModelRouting(policy, [{ id: "default" },
+      ...["a", "b"].map(id => ({ id, preference: { catalogId: "openai:gpt-6-luna" } }))]);
+    await db.update(schema.games).set({ config: JSON.stringify({ modelRouting }) }).where(eq(schema.games.id, gameId));
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    const intent = (id: string) => {
+      const value = makeIntent(gameId, ownerEpoch);
+      value.coordinate.actor = { id, name: id, role: "player" };
+      value.attemptId += `-${id}`;
+      return value;
+    };
+    await allocateAndReserve(hooks, intent("default"));
+    await allocateAndReserve(hooks, intent("a"));
+    await expect(allocateAndReserve(hooks, intent("b"))).rejects.toBeInstanceOf(ProviderCallBudgetExhaustedError);
+    const rows = await db.select().from(schema.providerCallAttempts).where(eq(schema.providerCallAttempts.gameId, gameId));
+    expect(rows.map(row => row.fallbackBudgetKey).sort()).toEqual([null, "contestants:katana:glm-5-2"].sort());
   });
 
   test("episode naming uses independent House authority and rejects expired or misused leases", async () => {

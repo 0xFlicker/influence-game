@@ -4,7 +4,7 @@ import { parseArgs } from "node:util";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import { normalizeGameModelRouting, normalizeModelPreference, sealGameModelRouting, type GameModelRouting, type ModelPreference } from "./game-model-routing";
+import { DEFAULT_CONTESTANT_RECOVERY_CALLS, normalizeGameModelRouting, normalizeModelPreference, sealGameModelRouting, type GameModelRouting, type ModelPreference } from "./game-model-routing";
 import { DEFAULT_MODEL_CATALOG_ID, normalizeProviderManifest, parseProviderManifestEntry } from "./model-catalog";
 import { modelRouteMetadata } from "./model-route-metadata";
 import { apiFetch, authHeaders } from "./api-simulation-client";
@@ -46,7 +46,7 @@ async function main() {
   const houseManifest = normalizeProviderManifest(values["house-entry"]?.map(parseProviderManifestEntry) ?? defaultManifest);
   const roster: SimulationRoster = values.roster ? JSON.parse(await readFile(values.roster, "utf8")) : {
     seats: values.models!.split(",").map((catalogId, index) => ({ id: `seat-${index + 1}`, preference: normalizeModelPreference(catalogId.trim() === "default" ? "default" : { catalogId: catalogId.trim() }) })),
-    policy: { version: 1, defaultManifest, houseManifest, excludedCatalogIds: [], overrides: {} },
+    policy: { version: 1, defaultManifest, houseManifest, defaultModelMaxFallbackCalls: DEFAULT_CONTESTANT_RECOVERY_CALLS, excludedCatalogIds: [], overrides: {} },
   };
   const preview = previewModelRoster(roster, players);
   console.log(JSON.stringify(preview, null, 2));

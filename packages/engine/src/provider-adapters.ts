@@ -1,4 +1,4 @@
-import { compactionOrientation, compactInvocation, contextSourceHash, contextSummaryArtifact, CONTEXT_SUMMARY_INSTRUCTIONS, CONTEXT_MAX_REVISIONS } from "./context-adaptation";
+import { compactionOrientation, compactInvocation, contextSourceHash, contextComponentHashes, contextSummaryArtifact, ContextSourceConflictError, CONTEXT_SUMMARY_INSTRUCTIONS, CONTEXT_MAX_REVISIONS } from "./context-adaptation";
 import type OpenAI from "openai";
 import { DEFAULT_LM_STUDIO_TIMEOUT_MS } from "./local-inference";
 import type {
@@ -115,7 +115,9 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
         if (!original.contextSpans?.length) return;
         const sourceHash = contextSourceHash(original);
         const attempts = await options.call.readContextAttempts();
-        if (attempts.some(attempt => attempt.sourceHash !== sourceHash)) throw new Error("Context source changed under the same logical call");
+        if (attempts.some(attempt => attempt.sourceHash !== sourceHash)) {
+          throw new ContextSourceConflictError([...new Set(attempts.map(attempt => attempt.sourceHash))], sourceHash, contextComponentHashes(original));
+        }
         const revision = attempts.reduce((value, attempt) => Math.max(value, attempt.revision + (attempt.catalogId === runtime.catalogId && attempt.outcome === "context_overflow" ? 1 : 0)), 0);
         if (revision > CONTEXT_MAX_REVISIONS) throw new ProviderUnavailableError("Context adaptation exhausted", "context_overflow");
         context = { sourceHash, revision, maxAttempts: Math.max(1, Math.floor(options.maxAttempts)) };
@@ -408,9 +410,16 @@ export class KatanaProviderAdapter extends OpenAICompatibleAdapter {
     invocation: ModelInvocation,
     runtime: ProviderRuntimeDescriptor,
   ): ProviderNativeRequest {
+    // Claude's gateway rejects nullable enums expressed as type arrays. Keep
+    // the semantic artifact intact; only translate the native wire schema.
+    const nativeInvocation = runtime.modelId.startsWith("claude-") && invocation.result.kind === "structured"
+      ? { ...invocation, result: { ...invocation.result, artifact: { ...invocation.result.artifact,
+          schema: claudeEnumSchema(invocation.result.artifact.schema),
+        } } }
+      : invocation;
     return {
       transport: "katana.chat_completions",
-      body: compileChatCompletionsRequest(invocation, runtime),
+      body: compileChatCompletionsRequest(nativeInvocation, runtime),
     };
   }
 
@@ -430,6 +439,46 @@ export class KatanaProviderAdapter extends OpenAICompatibleAdapter {
       throw new ProviderNativeDecodeError(response);
     }
   }
+}
+
+/** Preserve exact enum membership while giving each branch a single type. */
+function claudeEnumSchema(schema: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  const result: Record<string, unknown> = structuredClone(schema);
+  // Traverse schema positions only; enum/default/const values are data.
+  for (const key of ["properties", "$defs", "definitions", "patternProperties"]) {
+    const children = result[key];
+    if (children && typeof children === "object" && !Array.isArray(children)) {
+      result[key] = Object.fromEntries(Object.entries(children).map(([name, child]) => [name,
+        child && typeof child === "object" && !Array.isArray(child) ? claudeEnumSchema(child) : child]));
+    }
+  }
+  for (const key of ["items", "additionalProperties"]) {
+    const child = result[key];
+    if (child && typeof child === "object" && !Array.isArray(child)) result[key] = claudeEnumSchema(child as Record<string, unknown>);
+  }
+  for (const key of ["anyOf", "oneOf", "allOf"]) {
+    if (Array.isArray(result[key])) result[key] = result[key].map(child => claudeEnumSchema(child));
+  }
+  if (Array.isArray(result.type) && result.type.includes("null") && Array.isArray(result.enum)) {
+    const types = result.type as string[];
+    const values = result.enum;
+    const branches = types.flatMap(type => {
+      const allowed = values.filter(value => type === "null" ? value === null
+        : type === "integer" ? typeof value === "number" && Number.isInteger(value)
+        : type === "array" ? Array.isArray(value)
+        : type === "object" ? value !== null && typeof value === "object" && !Array.isArray(value)
+        : typeof value === type && value !== null);
+      return allowed.length ? [{ type, enum: allowed }] : [];
+    });
+    if (branches.length) {
+      delete result.type;
+      delete result.enum;
+      // Existing anyOf still applies conjunctively with this enum restriction.
+      if (result.anyOf) result.allOf = [...(Array.isArray(result.allOf) ? result.allOf : []), { anyOf: branches }];
+      else result.anyOf = branches;
+    }
+  }
+  return result;
 }
 
 /**

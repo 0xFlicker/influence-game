@@ -6,7 +6,7 @@ export function agentModelLabel(preference: ModelPreference | null | undefined):
   return modelCatalogEntryById(preference.catalogId)?.displayName ?? preference.catalogId;
 }
 
-/** Current character preference; never infer a historical game's actual model. */
+/** Explicit model preference; never infer which model answered a particular turn. */
 export function AgentModelLabel({ preference, className = "text-xs text-text-secondary" }: {
   preference: ModelPreference | null | undefined;
   className?: string;

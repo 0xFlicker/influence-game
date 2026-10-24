@@ -1,4 +1,6 @@
-import { DEFAULT_MODEL_CATALOG_ID, normalizeProviderManifest, resolveProviderManifest, resolveProviderManifestFromGameConfig, type GameModelSelection, type GameProviderManifest, type ResolvedProviderManifestEntry } from "./model-catalog";
+import { DEFAULT_MODEL_CATALOG_ID, MAX_PROVIDER_ENTRY_CALLS_PER_GAME, normalizeProviderManifest, resolveProviderManifest, resolveProviderManifestFromGameConfig, type GameModelSelection, type GameProviderManifest, type ResolvedProviderManifestEntry } from "./model-catalog";
+
+export const DEFAULT_CONTESTANT_RECOVERY_CALLS = 24;
 
 export const FREE_MODEL_CATALOG_IDS = ["openai:gpt-6-luna", "katana:glm-5-3-flash-private", "katana:deepseek-v4-flash", "meta-muse:muse-spark-1.3-contributor"] as const;
 export type ModelPreference = "default" | GameModelSelection;
@@ -7,6 +9,8 @@ export type ModelPreference = "default" | GameModelSelection;
 export interface GameModelRouting {
   version: 1;
   defaultManifest: GameProviderManifest;
+  /** Shared contestant allowance when the default model follows an explicit preference. */
+  defaultModelMaxFallbackCalls?: number;
   houseManifest: GameProviderManifest;
   excludedCatalogIds: string[];
   overrides: Record<string, ModelPreference>;
@@ -34,7 +38,12 @@ function record(value: unknown): Record<string, unknown> {
 
 export function normalizeGameModelRouting(value: unknown): GameModelRouting {
   const input = record(value);
-  if (input.version !== 1 || Object.keys(input).some(key => !["version", "defaultManifest", "houseManifest", "excludedCatalogIds", "overrides", "contestants", "frozenRoutes"].includes(key))) throw new Error("Invalid model routing version or field");
+  if (input.version !== 1 || Object.keys(input).some(key => !["version", "defaultManifest", "defaultModelMaxFallbackCalls", "houseManifest", "excludedCatalogIds", "overrides", "contestants", "frozenRoutes"].includes(key))) throw new Error("Invalid model routing version or field");
+  const defaultModelMaxFallbackCalls = input.defaultModelMaxFallbackCalls ?? DEFAULT_CONTESTANT_RECOVERY_CALLS;
+  if (typeof defaultModelMaxFallbackCalls !== "number" || !Number.isSafeInteger(defaultModelMaxFallbackCalls)
+    || defaultModelMaxFallbackCalls < 1 || defaultModelMaxFallbackCalls > MAX_PROVIDER_ENTRY_CALLS_PER_GAME) {
+    throw new Error(`Default model fallback calls must be between 1 and ${MAX_PROVIDER_ENTRY_CALLS_PER_GAME}`);
+  }
   const excluded = input.excludedCatalogIds ?? [];
   if (!Array.isArray(excluded) || excluded.some(id => typeof id !== "string") || new Set(excluded).size !== excluded.length) throw new Error("Choose distinct model exclusions");
   const normalize = (manifest: unknown) => {
@@ -49,7 +58,7 @@ export function normalizeGameModelRouting(value: unknown): GameModelRouting {
     if (selected !== "default" && excluded.includes(selected.catalogId)) throw new Error("An excluded model is selected for a contestant");
     return [id, selected];
   }));
-  return { version: 1, defaultManifest: normalize(input.defaultManifest), houseManifest: normalize(input.houseManifest),
+  return { version: 1, defaultManifest: normalize(input.defaultManifest), defaultModelMaxFallbackCalls, houseManifest: normalize(input.houseManifest),
     excludedCatalogIds: excluded, overrides,
     ...(input.contestants !== undefined && { contestants: Object.fromEntries(Object.entries(record(input.contestants)).map(([id, route]) => [id, normalize(route)])) }) };
 }
@@ -58,7 +67,10 @@ export function contestantManifest(policy: GameModelRouting, preference: ModelPr
   const primary = preference === "default" ? policy.defaultManifest[0]! : preference;
   if (primary.catalogId.startsWith("katana:gpt-6-luna")) throw new Error("Luna must use the OpenAI Flex route");
   if (policy.excludedCatalogIds.includes(primary.catalogId)) throw new Error(`Model ${primary.catalogId} is excluded from this game`);
-  const route = normalizeProviderManifest([primary, ...policy.defaultManifest.slice(1).filter(entry => entry.catalogId !== primary.catalogId)]);
+  const recovery = policy.defaultManifest.filter(entry => entry.catalogId !== primary.catalogId).map(entry =>
+    entry.catalogId === policy.defaultManifest[0]!.catalogId
+      ? { ...entry, maxCallsPerGame: policy.defaultModelMaxFallbackCalls ?? DEFAULT_CONTESTANT_RECOVERY_CALLS } : entry);
+  const route = normalizeProviderManifest([primary, ...recovery]);
   const resolved = resolveProviderManifest(route);
   if (visualMode && !resolved[0]!.model.capabilities.supportsImageInput) throw new Error(`Model ${primary.catalogId} cannot receive this game's image context`);
   return route.filter((_, i) => i === 0 || !visualMode || resolved[i]!.model.capabilities.supportsImageInput);

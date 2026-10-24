@@ -74,6 +74,7 @@ export interface FormatPresentationRosterPlayer {
   personaKey?: string;
   avatarUrl?: string;
   currentAgent?: GamePlayer["currentAgent"];
+  modelPreference?: GamePlayer["modelPreference"];
 }
 
 export type FormatPresentationBallot =

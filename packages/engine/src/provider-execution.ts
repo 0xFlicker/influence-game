@@ -332,6 +332,10 @@ export interface ProviderAttemptFailureOutcome {
   kind: ProviderAttemptFailureKind;
   message: string;
   retryable: boolean;
+  /** Sanitized transport diagnostics; never a model-authored decision. */
+  httpStatus?: number;
+  errorCode?: string;
+  retryAfterMs?: number;
   /** Private feedback for a regenerated attempt; never accepted game state. */
   feedback?: LengthFeedback;
 }
@@ -650,6 +654,7 @@ export function isProviderFallbackEligible(
 }
 
 export class ProviderExecutionCoordinator {
+  private readonly cooldowns = new Map<string, number>();
   private readonly hooks?: ProviderExecutionHooks;
   private readonly wait: (
     milliseconds: number,
@@ -671,6 +676,7 @@ export class ProviderExecutionCoordinator {
       this.hooks,
       this.wait,
       this.now,
+      this.cooldowns,
     );
   }
 }
@@ -689,6 +695,7 @@ export class ProviderLogicalCallExecution {
       signal?: AbortSignal,
     ) => Promise<void>,
     private readonly now: () => number,
+    private readonly cooldowns = new Map<string, number>(),
   ) {}
 
   async readContextAttempts(): Promise<ProviderContextAttempt[]> {
@@ -706,7 +713,7 @@ export class ProviderLogicalCallExecution {
     let call = this.contextCalls.get(key);
     if (!call) {
       call = new ProviderLogicalCallExecution({ ...parent, semantic: { version: 1, kind: "context_compaction",
-        parent: this.coordinate.semantic, sourceHash, revision, chunk } }, this.hooks, this.wait, this.now);
+        parent: this.coordinate.semantic, sourceHash, revision, chunk } }, this.hooks, this.wait, this.now, this.cooldowns);
       this.contextCalls.set(key, call);
     }
     return call;
@@ -752,6 +759,10 @@ export class ProviderLogicalCallExecution {
     let lastJournalError: ProviderJournalEntryExhaustedError | undefined;
     for (const [manifestPosition, entry] of options.entries.entries()) {
       options.cancellationSignal?.throwIfAborted();
+      if ((this.cooldowns.get(entry.catalogId) ?? 0) > this.now()) {
+        lastCircuitError = new ProviderCircuitOpenError(entry.catalogId, `entry:${entry.catalogId}`, 0, false);
+        continue;
+      }
       const compatibility = entry.compatibility?.();
       if (compatibility && !compatibility.compatible) {
         lastCompatibilityError = new ProviderEntryIncompatibleError(
@@ -908,13 +919,14 @@ export class ProviderLogicalCallExecution {
       } catch (error) {
         if (error instanceof ProviderAttemptError) throw error;
         const completedAtMs = this.now();
-        const outcome = options.classifyError?.(
+        const classified = options.classifyError?.(
           error,
           options.cancellationSignal,
         ) ?? classifyProviderError(error, options.cancellationSignal);
         const rawResponse =
           transportCapture.response ??
           rawResponseFromError(error, transportCapture.credentialValues);
+        const outcome = withTransportDiagnostics(classified, rawResponse, completedAtMs);
         const accounting = extractProviderAttemptAccounting(
           rawResponse.body,
           asRecord(error).accounting,
@@ -1023,6 +1035,7 @@ export class ProviderLogicalCallExecution {
       const willRetry = contextRetry ||
         capturedRecord.outcome.kind !== "usable" &&
         capturedRecord.outcome.retryable &&
+        !capturedRecord.outcome.retryAfterMs &&
         localAttempt < maxAttempts;
       const acceptedValue = usableResult && this.hooks?.onTerminal
         ? boundedAcceptedValue(sanitizeProviderEvidence(
@@ -1055,6 +1068,9 @@ export class ProviderLogicalCallExecution {
         }),
       };
 
+      if (record.outcome.kind !== "usable" && record.outcome.retryable && record.outcome.retryAfterMs && record.preparedRequest.catalogId) {
+        this.cooldowns.set(record.preparedRequest.catalogId, this.now() + record.outcome.retryAfterMs);
+      }
       const terminalReceipt = await this.hooks?.onTerminal?.(record);
       const contextIdentity = record.context ?? (record.coordinate.semantic.kind === "context_compaction" ? record.coordinate.semantic : undefined);
       if (contextIdentity) this.contextAttempts.push({ catalogId: record.preparedRequest.catalogId!,
@@ -1657,6 +1673,31 @@ function defaultRetryable(kind: ProviderAttemptFailureKind): boolean {
     kind === "wrong_tool" ||
     kind === "undecodable_structured_output"
   );
+}
+
+/** Retry-After can be seconds or an HTTP date; invalid/elapsed values do not delay a route. */
+function withTransportDiagnostics(
+  outcome: ProviderAttemptFailureOutcome,
+  response: SanitizedProviderResponseEvidence,
+  now: number,
+): ProviderAttemptFailureOutcome {
+  const body = asRecord(response.body);
+  const error = asRecord(body.error);
+  const code = readString(error.code) || readString(body.code) || readString(error.type);
+  const errorCode = /^[a-zA-Z0-9_.:-]{1,128}$/.test(code) ? code : undefined;
+  const header = response.headers?.["retry-after"]?.trim();
+  const delay = header ? /^\d+(?:\.\d+)?$/.test(header) ? Number(header) * 1000 : Date.parse(header) - now : NaN;
+  const retryAfterMs = outcome.retryable && Number.isFinite(delay) && delay > 0 && delay <= 8.64e15 - now
+    ? Math.ceil(delay) : undefined;
+  const details = [response.status !== undefined ? `HTTP ${response.status}` : undefined,
+    errorCode, retryAfterMs ? `retry after ${retryAfterMs / 1000}s` : undefined,
+    response.headers?.["cf-ray"] ? `ray ${response.headers["cf-ray"]}` : undefined].filter(Boolean);
+  return { ...outcome,
+    ...(response.status !== undefined && { httpStatus: response.status }),
+    ...(errorCode && { errorCode }), ...(retryAfterMs && { retryAfterMs }),
+    // A captured structured body is more useful than the SDK's no-body summary.
+    ...(details.length && { message: `${outcome.message.includes("(no body)") && errorCode ? "Provider request failed" : outcome.message} [${details.join("; ")}]` }),
+  };
 }
 
 function rawResponseFromError(

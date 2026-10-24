@@ -10,6 +10,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import {
   createDurableGameRunnerStore,
+  markDurableContextConflict,
   DurableGameRunnerStoreIntegrityError,
 } from "../services/durable-game-runner-store.js";
 import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
@@ -23,6 +24,22 @@ describe("API durable GameRunner store", () => {
 
   beforeEach(async () => {
     db = await setupTestDB();
+  });
+
+  test("context conflicts fence automatic recovery without altering the committed frontier", async () => {
+    const fixture = await createFixture(db);
+    const store = createDurableGameRunnerStore(db, fixture);
+    const before = await store.initialize({ version: 1, gameId: fixture.gameId, xstateSnapshot: { value: "introduction" },
+      cursor: { version: 1, kind: "phase_enter", actor: "introduction" }, playerContinuityCapsules: [],
+      houseNarrativeContinuity: null, canonicalEvents: [], transcriptEntries: [] });
+    expect(await markDurableContextConflict(db, fixture.gameId, "stale-owner")).toBe(false);
+    expect(await markDurableContextConflict(db, fixture.gameId, fixture.ownerEpoch)).toBe(true);
+    const after = await store.load(fixture.gameId);
+    expect(after!.execution.status).toBe("repair_required");
+    expect(after!.execution.heads).toEqual(before.execution.heads);
+    expect(after!.execution.cursor).toEqual(before.execution.cursor);
+    expect(after!.canonicalEvents).toEqual(before.canonicalEvents);
+    expect(after!.transcriptEntries).toEqual(before.transcriptEntries);
   });
 
   test("initializes, commits, reloads, and replays one exact committed turn", async () => {

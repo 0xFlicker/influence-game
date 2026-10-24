@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import type { GameModelRouting, ModelPreference } from "@influence/engine/game-model-routing";
 import { apiFetch, getProviderModels, type ProviderModelInventoryEntry } from "@/lib/api";
-import { ProviderRouteEditor, type ProviderRouteEntry } from "@/app/admin/games/new/create-game-form";
+import { DefaultModelFallbackLimit, ProviderRouteEditor, type ProviderRouteEntry } from "@/app/admin/games/new/create-game-form";
+import { DEFAULT_CONTESTANT_RECOVERY_CALLS } from "@influence/engine/game-model-routing";
 import { ModelPreferencePicker } from "./model-preference-picker";
 import { AllowedModelsPicker } from "./allowed-models-picker";
 
@@ -43,6 +44,8 @@ export function GameModelSettings({ gameId }: { gameId: string }) {
         {(["defaultManifest", "houseManifest"] as const).map(key => <section key={key} className="rounded-xl border border-white/15 p-4">
           <h2 className="mb-3 font-semibold">{key === "defaultManifest" ? "Default contestants and shared fallbacks" : "House and House fallbacks"}</h2>
           <ProviderRouteEditor labelPrefix={key === "houseManifest" ? "House " : ""} entries={entries(policy[key])} models={options} visualMode={false} activeRoute={entries(policy[key])} onChange={route => setPolicy({ ...policy, [key]: clean(route) })} />
+          {key === "defaultManifest" && <DefaultModelFallbackLimit value={policy.defaultModelMaxFallbackCalls ?? DEFAULT_CONTESTANT_RECOVERY_CALLS}
+            onChange={defaultModelMaxFallbackCalls => setPolicy({ ...policy, defaultModelMaxFallbackCalls })} />}
         </section>)}
         <AllowedModelsPicker models={models} excludedIds={policy.excludedCatalogIds}
           inUseIds={[...policy.defaultManifest, ...policy.houseManifest].map(entry => entry.catalogId).concat(Object.values(policy.overrides).flatMap(value => value === "default" ? [] : [value.catalogId]))}

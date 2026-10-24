@@ -9,6 +9,7 @@ import {
   COMPACT_STRATEGY_LIMITS,
   applyStrategyCandidate,
   createOpeningStrategyState,
+  cloneCompactStrategyState,
   markStrategyReconciliationRequired,
 } from "../strategy-state";
 import { STRATEGY_DELTA_QUALITY_SCENARIOS } from "./fixtures/prompt-scenarios/strategy-delta-quality";
@@ -44,6 +45,16 @@ describe("compact strategy decision envelope", () => {
 });
 
 describe("compact strategy lifecycle", () => {
+  it("renders identical JSON after reordered durable state, including prior epochs", () => {
+    const state = markStrategyReconciliationRequired(createOpeningStrategyState());
+    const reorder = (value: unknown): unknown => Array.isArray(value) ? value.map(reorder)
+      : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).reverse().map(([key, child]) => [key, reorder(child)])) : value;
+    const reordered = reorder(state) as typeof state;
+    expect(JSON.stringify(cloneCompactStrategyState(reordered))).toBe(JSON.stringify(cloneCompactStrategyState(state)));
+    const clone = cloneCompactStrategyState(state);
+    clone.priorEpoch?.deltas.push("a new strategy");
+    expect(clone).not.toEqual(state);
+  });
   it("normalizes null, the literal string null, missing, and whitespace deltas to no change", () => {
     const opening = createOpeningStrategyState();
 
