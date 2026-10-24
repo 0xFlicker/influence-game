@@ -57,11 +57,11 @@
 ## Model-output structure
 
 - Any model turn whose output affects control flow, game state, continuity, producer evidence, or later model context must use a provider-native exact strict JSON schema response. A schema that merely accepts any object is not a structured contract.
-- Validate the decoded semantic value inside the provider-attempt boundary. Non-empty text, parseable `{}`, missing required fields filled with defaults, fenced JSON, or a JSON object extracted from surrounding prose must never count as a successful structured turn.
+- Validate the decoded semantic value inside the provider-attempt boundary. The shared decoder may unwrap one complete JSON object or array from Markdown fences or surrounding text before exact schema and semantic validation. Never repair JSON syntax, select among multiple candidates, search inside a malformed container, invent required fields, or accept plain prose as a decision. Preserve the original provider response as evidence.
 - Structured-output failure must remain typed: retry it under the shared provider policy, apply an explicit rules-legal fallback at the owning phase boundary, or fail clearly. Do not silently reinterpret malformed structured output as dialogue or other agent-authored prose.
 - Prose fields are presentation, even when returned inside a tool call. Do not infer claims, participants, decisions, addressees, phase, history, or simulation state by applying regexes or string conventions to model prose. When downstream code needs those values, return and validate them as separate structured fields or derive them from canonical events/projections, then render prose from that structure.
 - Provider adapters may decode the provider's exact native structured payload into the shared model outcome. They must not introduce permissive compatibility parsing that weakens the invocation's schema or semantic validation.
-- Keep focused malformed-output coverage for every structured turn, including non-JSON text, embedded/fenced JSON, `{}`, missing required fields, extra fields, and exhausted retries. Tests must prove malformed output cannot mutate continuity or masquerade as accepted speech.
+- Keep focused malformed-output coverage for every structured turn, including non-JSON text, broken/ambiguous wrapped JSON, `{}`, missing required fields, extra fields, and exhausted retries. Test valid unwrapping separately; malformed output must not mutate continuity or masquerade as accepted speech.
 
 ## Local Models
 

@@ -15,6 +15,9 @@
  * Runs multiple game simulations and outputs structured analysis.
  * New decisions use native JSON Schema (Responses text.format or Chat Completions
  * response_format), without tool-choice modes. LM Studio remains best effort.
+ * Shared decoding unwraps a single complete JSON container from fences or surrounding
+ * text, then enforces the unchanged schema and domain rules. It never repairs broken
+ * JSON or selects among candidates; original responses remain in private evidence.
  * Completed-game playback/Studio formats and private historical evidence stay readable.
  * Preserve all sanitized provider attempts, including successful structured
  * thinking and available native reasoning. Artifact write errors stop execution;

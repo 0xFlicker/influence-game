@@ -25,9 +25,13 @@ exact native JSON-schema response. OpenAI and Muse compile to Responses
 Completions `response_format`. The decision schema retains its description,
 required fields, semantic decoder, and optional performance-cue rules.
 
-There is no tool-choice mode or tool fallback. The adapter rejects tool calls,
-prose, fenced or embedded JSON, missing fields, and extra fields inside the
-provider-attempt boundary. Refusals and truncated output retain their own typed
+There is no tool-choice mode or tool fallback. As of October 24, shared decoding
+unwraps a single complete JSON object or array from fences or surrounding text,
+then validates the unchanged exact schema and domain rules. It never repairs
+syntax, chooses among multiple containers, or searches inside malformed JSON.
+Plain prose, tool calls, schema wrapper objects, missing fields, and extra fields
+still fail inside the provider-attempt boundary. Raw responses remain unchanged
+in private evidence. Refusals and truncated output retain their own typed
 failure classifications. Shared retries and phase-owned legal fallbacks remain
 in force. Length repair includes the rejected response and exact allowed size.
 

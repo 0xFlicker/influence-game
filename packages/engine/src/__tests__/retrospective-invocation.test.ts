@@ -171,8 +171,19 @@ describe("dedicated retrospective invocation", () => {
   });
 
   test.each([
-    { name: "prose", arguments_: "ordinary prose" }, { name: "fenced JSON", arguments_: '```json\n{"speech":"ok"}\n```' },
-    { name: "embedded JSON", arguments_: 'prefix {"speech":"ok"}' }, { name: "empty object", arguments_: "{}" },
+    '```json\n{"speech":"Well played."}\n```',
+    'Here is my statement: {"speech":"Well played."}',
+  ])("accepts a wrapped retrospective in one attempt: %s", async arguments_ => {
+    const { context } = dossier(), p = provider({ arguments: arguments_ }), records: ProviderAttemptRecord[] = [];
+    const result = await execute(context, [p.runtime], { onTerminal: record => { records.push(record); } });
+    expect(result.value).toEqual({ speech: "Well played." });
+    expect(records).toHaveLength(1);
+    expect(records[0]?.acceptedValue).toEqual({ speech: "Well played." });
+  });
+
+  test.each([
+    { name: "prose", arguments_: "ordinary prose" }, { name: "broken fenced JSON", arguments_: '```json\n{"speech":"ok",}\n```' },
+    { name: "ambiguous JSON", arguments_: 'prefix {"speech":"ok"} {"speech":"other"}' }, { name: "empty object", arguments_: "{}" },
     { name: "missing speech", arguments_: '{"text":"ok"}' }, { name: "extra field", arguments_: '{"speech":"ok","thinking":"hidden"}' },
     { name: "null speech", arguments_: '{"speech":null}' }, { name: "blank speech", arguments_: JSON.stringify({ speech: " \n " }) },
     { name: "oversized Unicode speech", arguments_: JSON.stringify({ speech: "😀".repeat(2001) }) },

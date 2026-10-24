@@ -285,7 +285,13 @@ describe("Werewolf v9", () => {
     const next = nextWerewolfStep(s); if (next.kind !== "action") throw new Error("No action");
     const artifact = werewolfDecisionArtifact(next.request);
     const valid = { text: "A short point.", cue: null, thinking: "A reason", ...(phase === "day" ? { recipientId: null, replyToContributionId: null } : { targetId: next.request.legalTargetIds[0] }) };
-    for (const raw of ["plain prose", "{}", `prefix ${JSON.stringify(valid)}`, `\`\`\`json\n${JSON.stringify(valid)}\n\`\`\``, JSON.stringify({ ...valid, extra: true }), JSON.stringify({ text: "missing fields" }), JSON.stringify({ ...valid, ...(phase === "day" ? { recipientId: "unknown" } : { targetId: "unknown" }) })]) {
+    for (const wrapped of [`prefix ${JSON.stringify(valid)}`, `\`\`\`json\n${JSON.stringify(valid)}\n\`\`\``]) {
+      expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, wrapped)).toEqual(
+        exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify(valid)),
+      );
+      expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, wrapped).status).toBe("valid");
+    }
+    for (const raw of ["plain prose", "{}", `prefix ${JSON.stringify({ ...valid, extra: true })}`, `\`\`\`json\n${JSON.stringify({ ...valid, extra: true })}\n\`\`\``, JSON.stringify({ ...valid, extra: true }), JSON.stringify({ text: "missing fields" }), JSON.stringify({ ...valid, ...(phase === "day" ? { recipientId: "unknown" } : { targetId: "unknown" }) })]) {
       expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, raw).status).toBe("invalid");
     }
     expect(c.state()).toEqual(s);

@@ -107,7 +107,7 @@ test("all conversation surfaces require exact non-empty thinking, including pass
       expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify(invalid)).status).toBe("invalid");
       expect(exactStructuredOutputRegistry.decodeAcceptedValue(artifact, { ...invalid, kind: action === "open_thread" ? "opening" : "speech" }).status).toBe("invalid");
     }
-    for (const invalid of ["hello", `prefix ${JSON.stringify(valid)}`, `\`\`\`json\n${JSON.stringify(valid)}\n\`\`\``]) {
+    for (const invalid of ["hello", `prefix ${JSON.stringify({ ...valid, extra: true })}`, `\`\`\`json\n${JSON.stringify({ ...valid, extra: true })}\n\`\`\``]) {
       expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, invalid).status).toBe("invalid");
     }
   }

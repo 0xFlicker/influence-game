@@ -977,8 +977,8 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
 
   it.each([
     "A plain-text question?",
-    '```json\n{"question":"Who do you trust?"}\n```',
-    'Before {"question":"Who do you trust?"} after',
+    '```json\n{"question":"Who do you trust?",}\n```',
+    'Before {"question":"Who do you trust?"} after {"question":"Who is lying?"}',
     '{}',
     '{"question":"Who do you trust?","extra":true}',
     '{"question":"   "}',
@@ -1589,7 +1589,7 @@ describe("LLMHouseInterviewer authored House summaries", () => {
     const cases: Array<Record<string, unknown> | string | undefined> = [
       undefined,
       "not json",
-      "```json\n{\"publicSummary\":\"embedded\",\"privateNarrativeNotebook\":null}\n```",
+      "```json\n{\"publicSummary\":\"embedded\"}\n```",
       {},
       { publicSummary: "missing notebook" },
       { publicSummary: "extra", privateNarrativeNotebook: null, claims: [] },

@@ -275,7 +275,7 @@ export class ExactStructuredOutputRegistry {
   ): ExactStructuredOutputResult<TValue> {
     let payload: unknown;
     try {
-      payload = JSON.parse(document);
+      payload = parseStructuredDocument(document);
     } catch {
       return {
         status: "invalid",
@@ -370,3 +370,44 @@ export class ExactStructuredOutputRegistry {
 }
 
 export const exactStructuredOutputRegistry = new ExactStructuredOutputRegistry();
+
+/**
+ * Prefer the whole response. If it is wrapped in prose or Markdown, unwrap one
+ * complete container without editing its contents. Never search inside a broken
+ * container or choose between multiple candidates, even if only one fits the
+ * schema. Native reasoning is not an input to this decoder.
+ */
+function parseStructuredDocument(document: string): unknown {
+  try {
+    return JSON.parse(document);
+  } catch (error) {
+    const stack: string[] = [];
+    let start = -1;
+    let end = -1;
+    let inString = false;
+    let escaped = false;
+    for (let index = 0; index < document.length; index += 1) {
+      const char = document[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === "\\") escaped = true;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (stack.length > 0 && char === '"') {
+        inString = true;
+      } else if (char === "{" || char === "[") {
+        if (stack.length === 0) {
+          if (start !== -1) throw error;
+          start = index;
+        }
+        stack.push(char === "{" ? "}" : "]");
+      } else if (char === "}" || char === "]") {
+        if (stack.pop() !== char) throw error;
+        if (stack.length === 0) end = index + 1;
+      }
+    }
+    if (start === -1 || end === -1 || stack.length > 0 || inString) throw error;
+    return JSON.parse(document.slice(start, end));
+  }
+}

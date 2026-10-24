@@ -273,11 +273,33 @@ describe("provider-native adapters", () => {
     expect(await executeVoteInvocation(jsonSchemaRuntime)).toEqual({ target: "Atlas" });
   });
 
-  it("rejects prose recovery and wrapper envelopes in native JSON-schema responses", async () => {
+  it.each([
+    '```json\n{"target":"Atlas"}\n```',
+    'Before {"target":"Atlas"} after',
+    'Rewrite within the byte allowance.{"target":"Atlas"}<｜end▁of▁sentence｜>',
+  ])("accepts wrapped JSON and preserves the original provider evidence: %s", async (content) => {
+    const records: ProviderAttemptRecord[] = [];
+    const client = { chat: { completions: { create: async () => ({
+      choices: [{ finish_reason: "stop", message: { role: "assistant", content } }],
+    }) } } } as unknown as OpenAI;
+    const coordinator = new ProviderExecutionCoordinator({
+      wait: async () => {},
+      hooks: { onTerminal: record => { records.push(record); } },
+    });
+    expect(await executeVoteInvocation(runtime("katana:glm-5-2", client), { coordinator })).toEqual({ target: "Atlas" });
+    expect(records).toHaveLength(1);
+    expect(records[0]?.acceptedValue).toEqual({ target: "Atlas" });
+    expect(records[0]?.rawResponse?.body).toMatchObject({
+      choices: [{ message: { content } }],
+    });
+  });
+
+  it("rejects plain prose, ambiguous JSON and schema wrapper envelopes", async () => {
     const cases = [
       ["plain text", "undecodable_structured_output"],
-      ["```json\n{\"target\":\"Atlas\"}\n```", "undecodable_structured_output"],
-      ["Before {\"target\":\"Atlas\"} after", "undecodable_structured_output"],
+      ['```json\n{"target":"Atlas",}\n```', "undecodable_structured_output"],
+      ['Before {"target":"Atlas"} after {"target":"Blair"}', "undecodable_structured_output"],
+      ['```json\n{"target":"Atlas","extra":true}\n```', "malformed_output"],
       ['{"arguments":{"target":"Atlas"}}', "malformed_output"],
       ['{"toolName":"cast_vote","target":"Atlas"}', "malformed_output"],
       ["{}", "malformed_output"],

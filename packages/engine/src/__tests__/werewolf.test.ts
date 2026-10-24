@@ -340,7 +340,7 @@ describe("Werewolf exact decision contracts", () => {
   test.each(["attack", "pack_talk"] as const)("pack %s rejects malformed or incomplete structured decisions", action => {
     const artifact = werewolfDecisionArtifact({ actorId: "p0", action, legalTargetIds: action === "attack" ? ["p1", "p2"] : [] });
     const valid = action === "attack" ? { targetId: "p1", thinking: "Remove the anchor." } : { cue: null, text: "Choose p1.", thinking: "Propose the anchor." };
-    for (const document of ["p1", "{}", `prefix ${JSON.stringify(valid)}`, `\`\`\`json\n${JSON.stringify(valid)}\n\`\`\``, JSON.stringify({ ...valid, extra: true }), action === "attack" ? '{"targetId":"p1"}' : '{"text":"p1"}']) {
+    for (const document of ["p1", "{}", `prefix ${JSON.stringify({ ...valid, extra: true })}`, `\`\`\`json\n${JSON.stringify({ ...valid, extra: true })}\n\`\`\``, JSON.stringify({ ...valid, extra: true }), action === "attack" ? '{"targetId":"p1"}' : '{"text":"p1"}']) {
       expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, document).status).toBe("invalid");
     }
     expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify(valid)).status).toBe("valid");

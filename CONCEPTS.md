@@ -899,7 +899,7 @@ A private, advisory AI assessment of one immutable Agent Profile content revisio
 
 ### Native structured decisions
 
-Future game runs request a complete JSON document using the provider’s JSON Schema response format. Exact schema and domain validation precede acceptance; the response is a decision artifact, not a function to execute. Native reasoning remains separate private evidence. Historical tool-call evidence and accepted game events remain readable without rewriting completed games. Deployment drains active games; this transport change does not add in-progress upgrade compatibility.
+Future game runs request a complete JSON document using the provider’s JSON Schema response format. Shared decoding may unwrap one complete JSON object or array from Markdown fences or surrounding text; exact schema and domain validation still precede acceptance. It never repairs JSON or chooses among multiple containers. The response is a decision artifact, not a function to execute; raw provider evidence remains unchanged. Native reasoning remains separate private evidence. Historical tool-call evidence and accepted game events remain readable without rewriting completed games. Deployment drains active games; this transport change does not add in-progress upgrade compatibility.
 
 ### House share link
 

@@ -179,7 +179,26 @@ describe("exact structured output", () => {
     });
   });
 
-  it("rejects non-document, fenced, embedded, labeled, wrapped, array, and trailing forms", () => {
+  it("unwraps one complete JSON value without changing quoted braces or escaped strings", () => {
+    const registry = new ExactStructuredOutputRegistry();
+    const artifact = pickArtifact();
+    const payload = { target: "Blair", rationale: 'Braces { [ ] } and a quote " and backslash \\ stay literal.', metadata: { confidence: "high" } };
+    const valid = JSON.stringify(payload);
+    for (const document of [
+      `\`\`\`json\n${valid}\n\`\`\``,
+      `\`\`\`\n${valid}\n\`\`\``,
+      `Here is the result:\n\`\`\`JSON\r\n${valid}\r\n\`\`\`\nDone.`,
+      `result=${valid}`,
+      `<result>${valid}</result>`,
+      `Rewrite within the byte allowance.${valid}<｜end▁of▁sentence｜>`,
+    ]) {
+      expect(registry.decodeJsonDocument(artifact, document)).toEqual({
+        status: "valid", value: { targetPlayerId: "player-blair", rationale: payload.rationale, confidence: "high" },
+      });
+    }
+  });
+
+  it("rejects broken, ambiguous, schema-wrapped and wrong-shaped values without searching nested objects", () => {
     const registry = new ExactStructuredOutputRegistry();
     const artifact = pickArtifact();
     const valid = JSON.stringify({
@@ -189,18 +208,53 @@ describe("exact structured output", () => {
     });
     const invalidDocuments = [
       "plain text",
-      `\`\`\`json\n${valid}\n\`\`\``,
-      `Here is the result: ${valid}`,
-      `result=${valid}`,
+      `${valid} then ${valid}`,
+      `Example: {} Answer: ${valid}`,
+      `${valid} trailing {`,
+      `} ${valid}`,
+      `\`\`\`json\n${valid}\n\`\`\`\n\`\`\`json\n${valid}\n\`\`\``,
+      `{"broken": ${valid}`,
+      `{"{ ${valid}`,
+      `{broken: ${valid}}`,
+      `prefix {"target":"Blair",} suffix`,
+      `prefix [${valid}} suffix`,
+      `prefix {"rationale":"unterminated ${valid}`,
       JSON.stringify({ arguments: JSON.parse(valid) }),
       JSON.stringify({ pick_target: JSON.parse(valid) }),
       JSON.stringify([JSON.parse(valid)]),
-      `${valid}\ntrailing`,
+      JSON.stringify(valid),
+      `prefix ${JSON.stringify({ arguments: JSON.parse(valid) })} suffix`,
     ];
 
     for (const document of invalidDocuments) {
       expect(registry.decodeJsonDocument(artifact, document).status).toBe("invalid");
     }
+  });
+
+  it("still checks schema and domain rules after unwrapping", () => {
+    const registry = new ExactStructuredOutputRegistry();
+    const artifact = pickArtifact();
+    for (const [payload, kind] of [
+      [{}, "schema_mismatch"],
+      [{ target: "Blair", rationale: "ok" }, "schema_mismatch"],
+      [{ target: "Blair", rationale: "ok", metadata: { confidence: "high" }, extra: true }, "schema_mismatch"],
+      [{ target: "Unknown", rationale: "ok", metadata: { confidence: "high" } }, "semantic_mismatch"],
+    ] as const) {
+      expect(registry.decodeJsonDocument(artifact, `\`\`\`json\n${JSON.stringify(payload)}\n\`\`\``)).toMatchObject({ status: "invalid", kind });
+    }
+  });
+
+  it("unwraps arrays only when the invocation schema permits an array", () => {
+    const artifact = createExactStructuredOutputArtifact<string[], string[]>({
+      action: "test.array.v1", name: "array",
+      schema: { type: "array", items: { type: "string" }, minItems: 1 },
+      decodeProviderPayload: value => ({ status: "valid", value }),
+      decodeAcceptedValue: value => Array.isArray(value) && value.every(item => typeof item === "string")
+        ? { status: "valid", value } : { status: "invalid", message: "Expected strings" },
+    });
+    const registry = new ExactStructuredOutputRegistry();
+    expect(registry.decodeJsonDocument(artifact, '```json\n["a", "b"]\n```')).toEqual({ status: "valid", value: ["a", "b"] });
+    expect(registry.decodeJsonDocument(artifact, 'prefix ["a", {}]')).toMatchObject({ status: "invalid", kind: "schema_mismatch" });
   });
 
   it("rejects structural and semantic gaps without mutating candidates", () => {

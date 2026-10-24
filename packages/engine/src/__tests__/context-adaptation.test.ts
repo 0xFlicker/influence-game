@@ -111,7 +111,7 @@ describe("context adaptation", () => {
     expect(JSON.parse(compacted.messages[0]!.content!).board).toEqual({ targets: ["b"], role: "seer" });
     expect(compacted.result).toBe(source.result);
   });
-  test.each(["plain", 'prefix {"summary":"x"}', '```json\n{"summary":"x"}\n```', '{}', '{"summary":""}', '{"summary":"x","extra":true}', '{"summary":4}'])("rejects malformed summary %s", text => {
+  test.each(["plain", 'prefix {"summary":"x","extra":true}', '```json\n{"summary":"x",}\n```', '{}', '{"summary":""}', '{"summary":"x","extra":true}', '{"summary":4}'])("rejects malformed summary %s", text => {
     expect(exactStructuredOutputRegistry.decodeJsonDocument(contextSummaryArtifact(100), text).status).toBe("invalid");
   });
   test("overflow classification stays separate from configuration, output length and generic 400", () => {
