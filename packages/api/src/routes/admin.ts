@@ -494,6 +494,7 @@ export function createAdminRoutes(
         backstory: schema.agentProfiles.backstory,
         personality: schema.agentProfiles.personality,
         strategyStyle: schema.agentProfiles.strategyStyle,
+        modelPreference: schema.agentProfiles.modelPreference,
         personaKey: schema.agentProfiles.personaKey,
         avatarUrl: schema.agentProfiles.avatarUrl,
         gamesPlayed: schema.agentProfiles.gamesPlayed,

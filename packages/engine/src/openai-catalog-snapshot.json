@@ -1,0 +1,1769 @@
+{
+  "checkedAt": "2026-10-23",
+  "pricingSource": "https://developers.openai.com/api/docs/pricing",
+  "models": {
+    "babbage-002": {
+      "source": "https://developers.openai.com/api/docs/models/babbage-002",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": false,
+        "supportsReasoningEffort": false,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": false,
+        "supportsTemperature": true,
+        "supportsOpenAIResponses": false,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": false,
+        "supportsTools": false
+      },
+      "allowedReasoningEfforts": [],
+      "contextTokens": null,
+      "outputTokens": 16384,
+      "pricing": {
+        "inputPer1M": 0.4,
+        "outputPer1M": 0.4,
+        "cachedInputPer1M": 0.4
+      },
+      "retired": true
+    },
+    "chat-latest": {
+      "source": "https://developers.openai.com/api/docs/models/chat-latest",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": false,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": false,
+        "supportsTemperature": true,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [],
+      "contextTokens": 400000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 5.0,
+        "cachedInputPer1M": 0.5,
+        "outputPer1M": 30.0
+      }
+    },
+    "computer-use-preview": {
+      "source": "https://developers.openai.com/api/docs/models/computer-use-preview",
+      "aliases": [
+        "computer-use-preview-2025-03-11"
+      ],
+      "capabilities": {
+        "supportsImageInput": false,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": false,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 8192,
+      "outputTokens": 1024,
+      "pricing": {
+        "inputPer1M": 3.0,
+        "outputPer1M": 12.0,
+        "cachedInputPer1M": 3.0
+      },
+      "retired": true
+    },
+    "davinci-002": {
+      "source": "https://developers.openai.com/api/docs/models/davinci-002",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": false,
+        "supportsReasoningEffort": false,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": false,
+        "supportsTemperature": true,
+        "supportsOpenAIResponses": false,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": false,
+        "supportsTools": false
+      },
+      "allowedReasoningEfforts": [],
+      "contextTokens": null,
+      "outputTokens": 16384,
+      "pricing": {
+        "inputPer1M": 2.0,
+        "outputPer1M": 2.0,
+        "cachedInputPer1M": 2.0
+      },
+      "retired": true
+    },
+    "gpt-3.5-turbo-instruct": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-3.5-turbo-instruct",
+      "aliases": [
+        "gpt-3.5-turbo-instruct-0914"
+      ],
+      "capabilities": {
+        "supportsImageInput": false,
+        "supportsReasoningEffort": false,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": false,
+        "supportsTemperature": true,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": false,
+        "supportsTools": false
+      },
+      "allowedReasoningEfforts": [],
+      "contextTokens": 4096,
+      "outputTokens": 4096,
+      "pricing": {
+        "inputPer1M": 1.5,
+        "outputPer1M": 2.0,
+        "cachedInputPer1M": 1.5
+      },
+      "retired": true
+    },
+    "gpt-3.5-turbo": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-3.5-turbo",
+      "aliases": [
+        "gpt-3.5-turbo-0125",
+        "gpt-3.5-turbo-1106",
+        "gpt-3.5-turbo-16k"
+      ],
+      "capabilities": {
+        "supportsImageInput": false,
+        "supportsReasoningEffort": false,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": false,
+        "supportsTemperature": true,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": false,
+        "supportsTools": false
+      },
+      "allowedReasoningEfforts": [],
+      "contextTokens": 16385,
+      "outputTokens": 4096,
+      "pricing": {
+        "inputPer1M": 0.5,
+        "outputPer1M": 1.5,
+        "cachedInputPer1M": 0.5
+      },
+      "retired": true
+    },
+    "gpt-4-turbo": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-4-turbo",
+      "aliases": [
+        "gpt-4-turbo-2024-04-09"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": false,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": false,
+        "supportsTemperature": true,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": false,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [],
+      "contextTokens": 128000,
+      "outputTokens": 4096,
+      "pricing": {
+        "inputPer1M": 10.0,
+        "outputPer1M": 30.0,
+        "cachedInputPer1M": 10.0
+      },
+      "retired": true
+    },
+    "gpt-4.1-mini": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-4.1-mini",
+      "aliases": [
+        "gpt-4.1-mini-2025-04-14"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": false,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": false,
+        "supportsTemperature": true,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [],
+      "contextTokens": 1047576,
+      "outputTokens": 32768,
+      "pricing": {
+        "inputPer1M": 0.4,
+        "outputPer1M": 1.6,
+        "cachedInputPer1M": 0.1
+      }
+    },
+    "gpt-4.1-nano": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-4.1-nano",
+      "aliases": [
+        "gpt-4.1-nano-2025-04-14"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": false,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": false,
+        "supportsTemperature": true,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [],
+      "contextTokens": 1047576,
+      "outputTokens": 32768,
+      "pricing": {
+        "inputPer1M": 0.1,
+        "outputPer1M": 0.4,
+        "cachedInputPer1M": 0.025
+      },
+      "retired": true
+    },
+    "gpt-4.1": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-4.1",
+      "aliases": [
+        "gpt-4.1-2025-04-14"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": false,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": false,
+        "supportsTemperature": true,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [],
+      "contextTokens": 1047576,
+      "outputTokens": 32768,
+      "pricing": {
+        "inputPer1M": 2.0,
+        "outputPer1M": 8.0,
+        "cachedInputPer1M": 0.5
+      }
+    },
+    "gpt-4": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-4",
+      "aliases": [
+        "gpt-4-0314",
+        "gpt-4-0613"
+      ],
+      "capabilities": {
+        "supportsImageInput": false,
+        "supportsReasoningEffort": false,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": false,
+        "supportsTemperature": true,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": false,
+        "supportsTools": false
+      },
+      "allowedReasoningEfforts": [],
+      "contextTokens": 8192,
+      "outputTokens": 8192,
+      "pricing": {
+        "inputPer1M": 30.0,
+        "outputPer1M": 60.0,
+        "cachedInputPer1M": 30.0
+      },
+      "retired": true
+    },
+    "gpt-4o-mini-search-preview": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-4o-mini-search-preview",
+      "aliases": [
+        "gpt-4o-mini-search-preview-2025-03-11"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": false,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": false,
+        "supportsTemperature": true,
+        "supportsOpenAIResponses": false,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": false
+      },
+      "allowedReasoningEfforts": [],
+      "contextTokens": 128000,
+      "outputTokens": 16384,
+      "pricing": {
+        "inputPer1M": 0.15,
+        "outputPer1M": 0.6,
+        "cachedInputPer1M": 0.15
+      },
+      "retired": true
+    },
+    "gpt-4o-mini": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-4o-mini",
+      "aliases": [
+        "gpt-4o-mini-2024-07-18"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": false,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": false,
+        "supportsTemperature": true,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [],
+      "contextTokens": 128000,
+      "outputTokens": 16384,
+      "pricing": {
+        "inputPer1M": 0.15,
+        "outputPer1M": 0.6,
+        "cachedInputPer1M": 0.075
+      }
+    },
+    "gpt-4o-search-preview": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-4o-search-preview",
+      "aliases": [
+        "gpt-4o-search-preview-2025-03-11"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": false,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": false,
+        "supportsTemperature": true,
+        "supportsOpenAIResponses": false,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": false
+      },
+      "allowedReasoningEfforts": [],
+      "contextTokens": 128000,
+      "outputTokens": 16384,
+      "pricing": {
+        "inputPer1M": 2.5,
+        "outputPer1M": 10.0,
+        "cachedInputPer1M": 2.5
+      },
+      "retired": true
+    },
+    "gpt-4o": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-4o",
+      "aliases": [
+        "gpt-4o-2024-08-06",
+        "gpt-4o-2024-11-20"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": false,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": false,
+        "supportsTemperature": true,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [],
+      "contextTokens": 128000,
+      "outputTokens": 16384,
+      "pricing": {
+        "inputPer1M": 2.5,
+        "outputPer1M": 10.0,
+        "cachedInputPer1M": 1.25
+      }
+    },
+    "gpt-5-chat-latest": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5-chat-latest",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": false,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": false,
+        "supportsTemperature": true,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [],
+      "contextTokens": 128000,
+      "outputTokens": 16384,
+      "pricing": {
+        "inputPer1M": 1.25,
+        "cachedInputPer1M": 0.125,
+        "outputPer1M": 10.0
+      },
+      "retired": true
+    },
+    "gpt-5-codex": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5-codex",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 400000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 1.25,
+        "cachedInputPer1M": 0.125,
+        "outputPer1M": 10.0
+      },
+      "retired": true
+    },
+    "gpt-5-mini": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5-mini",
+      "aliases": [
+        "gpt-5-mini-2025-08-07"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 400000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 0.25,
+        "outputPer1M": 2.0,
+        "cachedInputPer1M": 0.025
+      },
+      "flexPricing": {
+        "inputPer1M": 0.125,
+        "outputPer1M": 1.0,
+        "cachedInputPer1M": 0.0125
+      }
+    },
+    "gpt-5-nano": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5-nano",
+      "aliases": [
+        "gpt-5-nano-2025-08-07"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 400000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 0.05,
+        "outputPer1M": 0.4,
+        "cachedInputPer1M": 0.005
+      },
+      "flexPricing": {
+        "inputPer1M": 0.025,
+        "outputPer1M": 0.2,
+        "cachedInputPer1M": 0.0025
+      }
+    },
+    "gpt-5-pro": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5-pro",
+      "aliases": [
+        "gpt-5-pro-2025-10-06"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "high"
+      ],
+      "contextTokens": 400000,
+      "outputTokens": 272000,
+      "pricing": {
+        "inputPer1M": 15.0,
+        "outputPer1M": 120.0,
+        "cachedInputPer1M": 15.0
+      }
+    },
+    "gpt-5.1-chat-latest": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.1-chat-latest",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": false,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": false,
+        "supportsTemperature": true,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [],
+      "contextTokens": 128000,
+      "outputTokens": 16384,
+      "pricing": {
+        "inputPer1M": 1.25,
+        "cachedInputPer1M": 0.125,
+        "outputPer1M": 10.0
+      },
+      "retired": true
+    },
+    "gpt-5.1-codex-max": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.1-codex-max",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 400000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 1.25,
+        "cachedInputPer1M": 0.125,
+        "outputPer1M": 10.0
+      },
+      "retired": true
+    },
+    "gpt-5.1-codex-mini": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.1-codex-mini",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 400000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 0.25,
+        "cachedInputPer1M": 0.025,
+        "outputPer1M": 2.0
+      },
+      "retired": true
+    },
+    "gpt-5.1-codex": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.1-codex",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 400000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 1.25,
+        "cachedInputPer1M": 0.125,
+        "outputPer1M": 10.0
+      },
+      "retired": true
+    },
+    "gpt-5.1": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.1",
+      "aliases": [
+        "gpt-5.1-2025-11-13"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 400000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 1.25,
+        "outputPer1M": 10.0,
+        "cachedInputPer1M": 0.125
+      },
+      "flexPricing": {
+        "inputPer1M": 0.625,
+        "outputPer1M": 5.0,
+        "cachedInputPer1M": 0.0625
+      }
+    },
+    "gpt-5.2-chat-latest": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.2-chat-latest",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": false,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": false,
+        "supportsTemperature": true,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [],
+      "contextTokens": 128000,
+      "outputTokens": 16384,
+      "pricing": {
+        "inputPer1M": 1.75,
+        "cachedInputPer1M": 0.175,
+        "outputPer1M": 14.0
+      },
+      "retired": true
+    },
+    "gpt-5.2-codex": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.2-codex",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 400000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 1.75,
+        "cachedInputPer1M": 0.175,
+        "outputPer1M": 14.0
+      },
+      "retired": true
+    },
+    "gpt-5.2-pro": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.2-pro",
+      "aliases": [
+        "gpt-5.2-pro-2025-12-11"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": false,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "medium",
+        "high"
+      ],
+      "contextTokens": 400000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 21.0,
+        "outputPer1M": 168.0,
+        "cachedInputPer1M": 21.0
+      }
+    },
+    "gpt-5.2": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.2",
+      "aliases": [
+        "gpt-5.2-2025-12-11"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 400000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 1.75,
+        "outputPer1M": 14.0,
+        "cachedInputPer1M": 0.175
+      },
+      "flexPricing": {
+        "inputPer1M": 0.875,
+        "outputPer1M": 7.0,
+        "cachedInputPer1M": 0.0875
+      }
+    },
+    "gpt-5.3-chat-latest": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.3-chat-latest",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": false,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": false,
+        "supportsTemperature": true,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [],
+      "contextTokens": 128000,
+      "outputTokens": 16384,
+      "pricing": {
+        "inputPer1M": 1.75,
+        "cachedInputPer1M": 0.175,
+        "outputPer1M": 14.0
+      },
+      "retired": true
+    },
+    "gpt-5.3-codex": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.3-codex",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 400000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 1.75,
+        "cachedInputPer1M": 0.175,
+        "outputPer1M": 14.0
+      }
+    },
+    "gpt-5.4-mini": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.4-mini",
+      "aliases": [
+        "gpt-5.4-mini-2026-03-17"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 400000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 0.75,
+        "outputPer1M": 4.5,
+        "cachedInputPer1M": 0.075
+      },
+      "flexPricing": {
+        "inputPer1M": 0.375,
+        "outputPer1M": 2.25,
+        "cachedInputPer1M": 0.0375
+      }
+    },
+    "gpt-5.4-nano": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.4-nano",
+      "aliases": [
+        "gpt-5.4-nano-2026-03-17"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 400000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 0.2,
+        "outputPer1M": 1.25,
+        "cachedInputPer1M": 0.02
+      },
+      "flexPricing": {
+        "inputPer1M": 0.1,
+        "outputPer1M": 0.625,
+        "cachedInputPer1M": 0.01
+      }
+    },
+    "gpt-5.4-pro": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.4-pro",
+      "aliases": [
+        "gpt-5.4-pro-2026-03-05"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": false,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "medium",
+        "high"
+      ],
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 30.0,
+        "outputPer1M": 180.0,
+        "cachedInputPer1M": 30.0,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 60.0,
+            "outputPer1M": 270.0,
+            "cachedInputPer1M": 60.0
+          }
+        ]
+      },
+      "flexPricing": {
+        "inputPer1M": 15.0,
+        "outputPer1M": 90.0,
+        "cachedInputPer1M": 15.0,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 30.0,
+            "outputPer1M": 135.0,
+            "cachedInputPer1M": 30.0
+          }
+        ]
+      }
+    },
+    "gpt-5.4": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.4",
+      "aliases": [
+        "gpt-5.4-2026-03-05"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 2.5,
+        "outputPer1M": 15.0,
+        "cachedInputPer1M": 0.25,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 5.0,
+            "outputPer1M": 22.5,
+            "cachedInputPer1M": 0.5
+          }
+        ]
+      },
+      "flexPricing": {
+        "inputPer1M": 1.25,
+        "outputPer1M": 7.5,
+        "cachedInputPer1M": 0.125,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 2.5,
+            "outputPer1M": 11.25,
+            "cachedInputPer1M": 0.25
+          }
+        ]
+      }
+    },
+    "gpt-5.5-pro": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.5-pro",
+      "aliases": [
+        "gpt-5.5-pro-2026-04-23"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "medium",
+        "high"
+      ],
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 30.0,
+        "outputPer1M": 180.0,
+        "cachedInputPer1M": 30.0,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 60.0,
+            "outputPer1M": 270.0,
+            "cachedInputPer1M": 60.0
+          }
+        ]
+      }
+    },
+    "gpt-5.5": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.5",
+      "aliases": [
+        "gpt-5.5-2026-04-23"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 5.0,
+        "outputPer1M": 30.0,
+        "cachedInputPer1M": 0.5,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 10.0,
+            "outputPer1M": 45.0,
+            "cachedInputPer1M": 1.0
+          }
+        ]
+      },
+      "flexPricing": {
+        "inputPer1M": 2.5,
+        "outputPer1M": 15.0,
+        "cachedInputPer1M": 0.25,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 5.0,
+            "outputPer1M": 22.5,
+            "cachedInputPer1M": 0.5
+          }
+        ]
+      }
+    },
+    "gpt-5.6-luna": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": true,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 0.2,
+        "outputPer1M": 1.2,
+        "cachedInputPer1M": 0.02,
+        "cacheWriteInputPer1M": 0.25,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 0.4,
+            "outputPer1M": 1.8,
+            "cachedInputPer1M": 0.04,
+            "cacheWriteInputPer1M": 0.5
+          }
+        ]
+      },
+      "flexPricing": {
+        "inputPer1M": 0.1,
+        "outputPer1M": 0.6,
+        "cachedInputPer1M": 0.01,
+        "cacheWriteInputPer1M": 0.125,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 0.2,
+            "outputPer1M": 0.9,
+            "cachedInputPer1M": 0.02,
+            "cacheWriteInputPer1M": 0.25
+          }
+        ]
+      }
+    },
+    "gpt-5.6-sol": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.6-sol",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": true,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 4.0,
+        "outputPer1M": 20.0,
+        "cachedInputPer1M": 0.4,
+        "cacheWriteInputPer1M": 5.0,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 8.0,
+            "outputPer1M": 30.0,
+            "cachedInputPer1M": 0.8,
+            "cacheWriteInputPer1M": 10.0
+          }
+        ]
+      },
+      "flexPricing": {
+        "inputPer1M": 2.0,
+        "outputPer1M": 10.0,
+        "cachedInputPer1M": 0.2,
+        "cacheWriteInputPer1M": 2.5,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 4.0,
+            "outputPer1M": 15.0,
+            "cachedInputPer1M": 0.4,
+            "cacheWriteInputPer1M": 5.0
+          }
+        ]
+      }
+    },
+    "gpt-5.6-terra": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.6-terra",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": true,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 2.0,
+        "outputPer1M": 12.0,
+        "cachedInputPer1M": 0.2,
+        "cacheWriteInputPer1M": 2.5,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 4.0,
+            "outputPer1M": 18.0,
+            "cachedInputPer1M": 0.4,
+            "cacheWriteInputPer1M": 5.0
+          }
+        ]
+      },
+      "flexPricing": {
+        "inputPer1M": 1.0,
+        "outputPer1M": 6.0,
+        "cachedInputPer1M": 0.1,
+        "cacheWriteInputPer1M": 1.25,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 2.0,
+            "outputPer1M": 9.0,
+            "cachedInputPer1M": 0.2,
+            "cacheWriteInputPer1M": 2.5
+          }
+        ]
+      }
+    },
+    "gpt-5": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-5",
+      "aliases": [
+        "gpt-5-2025-08-07"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 400000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 1.25,
+        "outputPer1M": 10.0,
+        "cachedInputPer1M": 0.125
+      },
+      "flexPricing": {
+        "inputPer1M": 0.625,
+        "outputPer1M": 5.0,
+        "cachedInputPer1M": 0.0625
+      }
+    },
+    "gpt-6-astra": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-6-astra",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": true,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 10.0,
+        "outputPer1M": 50.0,
+        "cachedInputPer1M": 1.0,
+        "cacheWriteInputPer1M": 12.5,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 20.0,
+            "outputPer1M": 75.0,
+            "cachedInputPer1M": 2.0,
+            "cacheWriteInputPer1M": 25.0
+          }
+        ]
+      },
+      "flexPricing": {
+        "inputPer1M": 5.0,
+        "outputPer1M": 25.0,
+        "cachedInputPer1M": 0.5,
+        "cacheWriteInputPer1M": 6.25,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 10.0,
+            "outputPer1M": 37.5,
+            "cachedInputPer1M": 1.0,
+            "cacheWriteInputPer1M": 12.5
+          }
+        ]
+      }
+    },
+    "gpt-6-luna": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": true,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 0.1,
+        "outputPer1M": 0.5,
+        "cachedInputPer1M": 0.01,
+        "cacheWriteInputPer1M": 0.125,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 0.2,
+            "outputPer1M": 0.75,
+            "cachedInputPer1M": 0.02,
+            "cacheWriteInputPer1M": 0.25
+          }
+        ]
+      },
+      "flexPricing": {
+        "inputPer1M": 0.05,
+        "outputPer1M": 0.25,
+        "cachedInputPer1M": 0.005,
+        "cacheWriteInputPer1M": 0.0625,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 0.1,
+            "outputPer1M": 0.375,
+            "cachedInputPer1M": 0.01,
+            "cacheWriteInputPer1M": 0.125
+          }
+        ]
+      }
+    },
+    "gpt-6-sol": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-6-sol",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": true,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 2.0,
+        "outputPer1M": 10.0,
+        "cachedInputPer1M": 0.2,
+        "cacheWriteInputPer1M": 2.5,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 4.0,
+            "outputPer1M": 15.0,
+            "cachedInputPer1M": 0.4,
+            "cacheWriteInputPer1M": 5.0
+          }
+        ]
+      },
+      "flexPricing": {
+        "inputPer1M": 1.0,
+        "outputPer1M": 5.0,
+        "cachedInputPer1M": 0.1,
+        "cacheWriteInputPer1M": 1.25,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 2.0,
+            "outputPer1M": 7.5,
+            "cachedInputPer1M": 0.2,
+            "cacheWriteInputPer1M": 2.5
+          }
+        ]
+      }
+    },
+    "gpt-6.1-sol": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": true,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 2.0,
+        "outputPer1M": 10.0,
+        "cachedInputPer1M": 0.1,
+        "cacheWriteInputPer1M": 2.5,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 4.0,
+            "outputPer1M": 15.0,
+            "cachedInputPer1M": 0.2,
+            "cacheWriteInputPer1M": 5.0
+          }
+        ]
+      },
+      "flexPricing": {
+        "inputPer1M": 1.0,
+        "outputPer1M": 5.0,
+        "cachedInputPer1M": 0.05,
+        "cacheWriteInputPer1M": 1.25,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 2.0,
+            "outputPer1M": 7.5,
+            "cachedInputPer1M": 0.1,
+            "cacheWriteInputPer1M": 2.5
+          }
+        ]
+      }
+    },
+    "o1-pro": {
+      "source": "https://developers.openai.com/api/docs/models/o1-pro",
+      "aliases": [
+        "o1-pro-2025-03-19"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 200000,
+      "outputTokens": 100000,
+      "pricing": {
+        "inputPer1M": 150.0,
+        "outputPer1M": 600.0,
+        "cachedInputPer1M": 150.0
+      },
+      "retired": true
+    },
+    "o1": {
+      "source": "https://developers.openai.com/api/docs/models/o1",
+      "aliases": [
+        "o1-2024-12-17"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 200000,
+      "outputTokens": 100000,
+      "pricing": {
+        "inputPer1M": 15.0,
+        "outputPer1M": 60.0,
+        "cachedInputPer1M": 7.5
+      },
+      "retired": true
+    },
+    "o3-deep-research": {
+      "source": "https://developers.openai.com/api/docs/models/o3-deep-research",
+      "aliases": [
+        "o3-deep-research-2025-06-26"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": false,
+        "supportsTools": false
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 200000,
+      "outputTokens": 100000,
+      "pricing": {
+        "inputPer1M": 10.0,
+        "cachedInputPer1M": 2.5,
+        "outputPer1M": 40.0
+      },
+      "retired": true
+    },
+    "o3-mini": {
+      "source": "https://developers.openai.com/api/docs/models/o3-mini",
+      "aliases": [
+        "o3-mini-2025-01-31"
+      ],
+      "capabilities": {
+        "supportsImageInput": false,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 200000,
+      "outputTokens": 100000,
+      "pricing": {
+        "inputPer1M": 1.1,
+        "outputPer1M": 4.4,
+        "cachedInputPer1M": 0.55
+      },
+      "retired": true
+    },
+    "o3-pro": {
+      "source": "https://developers.openai.com/api/docs/models/o3-pro",
+      "aliases": [
+        "o3-pro-2025-06-10"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 200000,
+      "outputTokens": 100000,
+      "pricing": {
+        "inputPer1M": 20.0,
+        "outputPer1M": 80.0,
+        "cachedInputPer1M": 20.0
+      }
+    },
+    "o3": {
+      "source": "https://developers.openai.com/api/docs/models/o3",
+      "aliases": [
+        "o3-2025-04-16"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 200000,
+      "outputTokens": 100000,
+      "pricing": {
+        "inputPer1M": 2.0,
+        "outputPer1M": 8.0,
+        "cachedInputPer1M": 0.5
+      },
+      "flexPricing": {
+        "inputPer1M": 1.0,
+        "outputPer1M": 4.0,
+        "cachedInputPer1M": 0.25
+      }
+    },
+    "o4-mini-deep-research": {
+      "source": "https://developers.openai.com/api/docs/models/o4-mini-deep-research",
+      "aliases": [
+        "o4-mini-deep-research-2025-06-26"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": false,
+        "supportsTools": false
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 200000,
+      "outputTokens": 100000,
+      "pricing": {
+        "inputPer1M": 2.0,
+        "cachedInputPer1M": 0.5,
+        "outputPer1M": 8.0
+      },
+      "retired": true
+    },
+    "o4-mini": {
+      "source": "https://developers.openai.com/api/docs/models/o4-mini",
+      "aliases": [
+        "o4-mini-2025-04-16"
+      ],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": true,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 200000,
+      "outputTokens": 100000,
+      "pricing": {
+        "inputPer1M": 1.1,
+        "outputPer1M": 4.4,
+        "cachedInputPer1M": 0.275
+      },
+      "flexPricing": {
+        "inputPer1M": 0.55,
+        "outputPer1M": 2.2,
+        "cachedInputPer1M": 0.1375
+      },
+      "retired": true
+    },
+    "gpt-4o-2024-05-13": {
+      "source": "https://developers.openai.com/api/docs/guides/structured-outputs",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": false,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": false,
+        "supportsTemperature": true,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": false,
+        "supportsStructuredOutput": false,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [],
+      "contextTokens": 128000,
+      "outputTokens": 16384,
+      "pricing": {
+        "inputPer1M": 5.0,
+        "outputPer1M": 15.0,
+        "cachedInputPer1M": 5.0
+      }
+    }
+  }
+}

@@ -459,6 +459,7 @@ export const agentProfiles = pgTable("agent_profiles", {
   name: text("name").notNull(),
   backstory: text("backstory"), // Rich character backstory
   personality: text("personality").notNull(), // Personality prompt / description
+  modelPreference: jsonb("model_preference").$type<import("@influence/engine").ModelPreference>().notNull().default("default"),
   strategyStyle: text("strategy_style"), // Influence strategy only
   werewolfStrategyStyle: text("werewolf_strategy_style"),
   personaKey: text("persona_key"), // Archetype key (honest, strategic, etc.)
@@ -629,6 +630,7 @@ export const gamePlayers = pgTable("game_players", {
   agentProfileId: text("agent_profile_id").references(() => agentProfiles.id),
   agentRevisionId: text("agent_revision_id").references(() => agentRevisions.id, { onDelete: "restrict" }),
   persona: text("persona").notNull(), // JSON: { name, personality, strategyHints }
+  modelPreference: jsonb("model_preference").$type<import("@influence/engine").ModelPreference>().notNull().default("default"),
   agentConfig: text("agent_config").notNull(), // JSON: { model, temperature, etc. }
   joinedAt: text("joined_at")
     .notNull()
@@ -1685,6 +1687,8 @@ export const gameEvidenceManifests = pgTable("game_evidence_manifests", {
     .references(() => games.id),
   ownerEpoch: text("owner_epoch")
     .notNull(),
+  authorityKind: text("authority_kind").$type<"game" | "episode_copy">().notNull().default("game"),
+  gameOwnerEpoch: text("game_owner_epoch").generatedAlwaysAs(sql`CASE WHEN authority_kind = 'game' THEN owner_epoch END`),
   eventSequence: integer("event_sequence"),
   decisionId: text("decision_id"),
   evidenceType: text("evidence_type").notNull(),
@@ -1702,6 +1706,7 @@ export const gameEvidenceManifests = pgTable("game_evidence_manifests", {
     .notNull()
     .default(sql`now()::text`),
 }, (table) => [
+  check("game_evidence_manifests_authority_kind_check", sql`${table.authorityKind} IN ('game', 'episode_copy')`),
   index("game_evidence_manifests_game_id_idx").on(table.gameId),
   index("game_evidence_manifests_event_sequence_idx").on(table.gameId, table.eventSequence),
   index("game_evidence_manifests_game_owner_decision_id_idx").on(
@@ -1711,12 +1716,12 @@ export const gameEvidenceManifests = pgTable("game_evidence_manifests", {
   ),
   foreignKey({
     name: "game_evidence_owner_epoch_fk",
-    columns: [table.ownerEpoch],
+    columns: [table.gameOwnerEpoch],
     foreignColumns: [gameRunOwners.ownerEpoch],
   }),
   foreignKey({
     name: "game_evidence_manifests_game_owner_fk",
-    columns: [table.gameId, table.ownerEpoch],
+    columns: [table.gameId, table.gameOwnerEpoch],
     foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
   }),
   foreignKey({
@@ -1793,6 +1798,7 @@ export type ProviderHealthEventKind =
 
 /** One stable semantic logical call. Its id is a deterministic coordinate hash. */
 export const providerLogicalCalls = pgTable("provider_logical_calls", {
+  preferredCatalogId: text("preferred_catalog_id"),
   id: text("id").primaryKey(),
   gameId: text("game_id")
     .notNull()
@@ -1903,6 +1909,8 @@ export const providerCallAttempts = pgTable("provider_call_attempts", {
     .notNull()
     .references(() => games.id),
   ownerEpoch: text("owner_epoch").notNull(),
+  authorityKind: text("authority_kind").$type<"game" | "episode_copy">().notNull().default("game"),
+  gameOwnerEpoch: text("game_owner_epoch").generatedAlwaysAs(sql`CASE WHEN authority_kind = 'game' THEN owner_epoch END`),
   attemptOrdinal: integer("attempt_ordinal").notNull(),
   transportAttemptId: text("transport_attempt_id").notNull(),
   contextSourceHash: text("context_source_hash"),
@@ -1913,6 +1921,8 @@ export const providerCallAttempts = pgTable("provider_call_attempts", {
   transport: text("request_shape").notNull(),
   providerProfileId: text("provider_profile_id").notNull(),
   catalogId: text("catalog_id"),
+  fallbackBudgetKey: text("fallback_budget_key"),
+  rateCard: jsonb("rate_card").$type<import("@influence/engine").ModelRateCard>(),
   modelName: text("model_name").notNull(),
   startedAt: text("started_at").notNull(),
   indeterminateAt: text("indeterminate_at"),
@@ -1940,12 +1950,14 @@ export const providerCallAttempts = pgTable("provider_call_attempts", {
   createdAt: text("created_at").notNull().default(sql`now()::text`),
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 }, (table) => [
+  check("provider_call_attempts_authority_kind_check", sql`${table.authorityKind} IN ('game', 'episode_copy')`),
   uniqueIndex("provider_call_attempts_id_game_unique").on(table.id, table.gameId),
   uniqueIndex("provider_call_attempts_call_ordinal_unique")
     .on(table.logicalCallId, table.attemptOrdinal),
   uniqueIndex("provider_call_attempts_transport_id_unique")
     .on(table.transportAttemptId),
   index("provider_call_attempts_game_idx").on(table.gameId, table.createdAt),
+  index("provider_attempt_fallback_budget_idx").on(table.gameId, table.fallbackBudgetKey).where(sql`${table.fallbackBudgetKey} IS NOT NULL`),
   index("provider_call_attempts_game_catalog_idx")
     .on(table.gameId, table.catalogId),
   index("provider_call_attempts_projection_idx")
@@ -1959,7 +1971,7 @@ export const providerCallAttempts = pgTable("provider_call_attempts", {
   }),
   foreignKey({
     name: "provider_call_attempts_game_owner_fk",
-    columns: [table.gameId, table.ownerEpoch],
+    columns: [table.gameId, table.gameOwnerEpoch],
     foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
   }),
   check("provider_call_attempts_context_check", sql`(${table.contextSourceHash} IS NULL AND ${table.contextRevision} IS NULL) OR (${table.contextSourceHash} IS NOT NULL AND ${table.contextRevision} IS NOT NULL AND ${table.contextSourceHash} ~ '^sha256:[a-f0-9]{64}$' AND ${table.contextRevision} BETWEEN 0 AND 3)`),
@@ -2040,6 +2052,8 @@ export const providerAttemptEvidenceOutbox = pgTable("provider_attempt_evidence_
   logicalCallId: text("logical_call_id").notNull(),
   gameId: text("game_id").notNull(),
   ownerEpoch: text("owner_epoch").notNull(),
+  authorityKind: text("authority_kind").$type<"game" | "episode_copy">().notNull().default("game"),
+  gameOwnerEpoch: text("game_owner_epoch").generatedAlwaysAs(sql`CASE WHEN authority_kind = 'game' THEN owner_epoch END`),
   body: payloadColumn("body_object", "text-gzip").notNull().$type<StoredPayload<string>>(),
   bodySha256: text("body_sha256").notNull(),
   byteLength: integer("byte_length").notNull(),
@@ -2055,6 +2069,7 @@ export const providerAttemptEvidenceOutbox = pgTable("provider_attempt_evidence_
   createdAt: text("created_at").notNull().default(sql`now()::text`),
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 }, (table) => [
+  check("provider_attempt_evidence_outbox_authority_kind_check", sql`${table.authorityKind} IN ('game', 'episode_copy')`),
   ...payloadChecks("provider_attempt_evidence_outbox", { body: [table.body, "text-gzip"] }),
   index("provider_attempt_evidence_outbox_ready_idx")
     .on(table.nextReconciliationAt, table.claimExpiresAt, table.createdAt),
@@ -2070,7 +2085,7 @@ export const providerAttemptEvidenceOutbox = pgTable("provider_attempt_evidence_
   }),
   foreignKey({
     name: "provider_attempt_evidence_outbox_game_owner_fk",
-    columns: [table.gameId, table.ownerEpoch],
+    columns: [table.gameId, table.gameOwnerEpoch],
     foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
   }),
   check(

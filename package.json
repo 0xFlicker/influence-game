@@ -57,7 +57,9 @@
     "storage:inventory": "bun run packages/api/src/scripts/migrate-storage-payloads.ts inventory",
     "storage:copy": "bun run packages/api/src/scripts/migrate-storage-payloads.ts copy",
     "storage:verify": "bun run packages/api/src/scripts/migrate-storage-payloads.ts verify",
-    "storage:cutover": "bun run packages/api/src/scripts/migrate-storage-payloads.ts cutover"
+    "storage:cutover": "bun run packages/api/src/scripts/migrate-storage-payloads.ts cutover",
+    "simulate:models": "bun run packages/engine/src/mixed-model-simulate.ts",
+    "audit:models": "bun run scripts/audit-model-catalog.ts"
   },
   "devDependencies": {
     "@clerk/backend": "3.11.7",

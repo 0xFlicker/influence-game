@@ -1780,6 +1780,7 @@ describe("admin route RBAC", () => {
       userId: delegatedUserId,
       name: "PII Reader Agent",
       personality: "Reader-owned personality",
+      modelPreference: { catalogId: "openai:gpt-6.1-sol" },
     });
 
     const producerWalletAddress =
@@ -1831,9 +1832,11 @@ describe("admin route RBAC", () => {
     expect(delegatedAgentsResponse.status).toBe(200);
     const delegatedAgents = (await delegatedAgentsResponse.json()) as Array<{
       userId: string;
+      modelPreference: unknown;
       ownerDisplayName: string | null;
       ownerEmail: string | null;
     }>;
+    expect(delegatedAgents.find(agent => agent.userId === delegatedUserId)?.modelPreference).toEqual({ catalogId: "openai:gpt-6.1-sol" });
     expect(
       delegatedAgents.find((agent) => agent.userId === targetUserId)
         ?.ownerEmail,

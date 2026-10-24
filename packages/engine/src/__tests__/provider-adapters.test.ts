@@ -89,6 +89,17 @@ const structuredInvocation: ModelInvocation<{ targetPlayerId: string }> = {
   outputTokenLimit: 256,
 };
 
+it("adaptive effort respects a model's frozen reasoning limits", () => {
+  for (const [catalogId, expected] of [["openai:gpt-5-pro", "high"], ["openai:gpt-5.5-pro", "medium"]] as const) {
+    const model = modelCatalogEntryById(catalogId)!;
+    const body = compileOpenAIResponsesRequest({ ...structuredInvocation, reasoning: { effort: "low" } }, {
+      catalogId, modelId: model.modelId, providerProfileId: "openai", modelCapabilities: model.capabilities,
+      reasoningPolicy: "action-policy", allowedReasoningEfforts: model.allowedReasoningEfforts,
+    });
+    expect(body.reasoning?.effort).toBe(expected);
+  }
+});
+
 function runtime(
   catalogId: "openai:gpt-5.6-luna" | "openai:gpt-6-luna" | "katana:grok-4-5" | "katana:grok-4-6" | "katana:glm-5-2" | "meta-muse:muse-spark-1.3-contributor",
   client: OpenAI,
@@ -763,7 +774,7 @@ describe("provider-native adapters", () => {
     expect(body.tool_choice).toBeUndefined();
     expect(body.store).toBe(false);
     expect(body.service_tier).toBeUndefined();
-    expect(body.temperature).toBeUndefined();
+    expect(body.temperature).toBe(invocation.temperature);
     expect(body.tools).toBeUndefined();
     expect(body.text).toMatchObject({format: {type: "json_schema", name: "cast_vote", strict: true}});
     const request = meta.adapter.compile(invocation, meta);
@@ -941,7 +952,7 @@ describe("vision invocation contracts", () => {
   });
 
   it("rejects unsupported vision instead of silently dropping image context", () => {
-    const unsupported = runtime("katana:grok-4-5", client);
+    const unsupported = runtime("katana:glm-5-2", client);
     expect(unsupported.adapter.validate(visual, unsupported).compatible).toBe(false);
     expect(() => compileChatCompletionsRequest(visual, unsupported)).toThrow("image inputs are unsupported");
   });

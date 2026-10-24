@@ -33,6 +33,7 @@ export type ProviderAttemptFailureKind =
   | "undecodable_structured_output";
 
 export type ProviderActionCoordinateV1 =
+  | { version: 1; kind: "episode_copy"; revision: number; }
   | { version: 1; kind: "house_cut_discovery"; sourceHash: string; windowId: string; editorialVersion: string; }
   | { version: 1; kind: "werewolf_action"; eventSequence: number; }
   | {
@@ -117,6 +118,8 @@ export function canonicalProviderSemanticCoordinate(
       return JSON.stringify({ version: 1, kind: coordinate.kind,
         parent: JSON.parse(canonicalProviderSemanticCoordinate(coordinate.parent)),
         sourceHash: coordinate.sourceHash, revision: coordinate.revision, chunk: coordinate.chunk });
+    case "episode_copy":
+      return JSON.stringify({ version: 1, kind: coordinate.kind, revision: coordinate.revision });
     case "house_cut_discovery":
       return JSON.stringify({ version: 1, kind: coordinate.kind, sourceHash: coordinate.sourceHash, windowId: coordinate.windowId, editorialVersion: coordinate.editorialVersion });
     case "werewolf_action":
@@ -243,6 +246,10 @@ export function assertProviderSemanticCoordinate(
       if (!/^sha256:[a-f0-9]{64}$/.test(coordinate.sourceHash)) throw new Error("Invalid context source hash");
       positiveInteger(coordinate.revision, "revision");
       nonNegativeInteger(coordinate.chunk, "chunk");
+      return;
+    case "episode_copy":
+      exactFields(["version", "kind", "revision"]);
+      nonNegativeInteger(coordinate.revision, "revision");
       return;
     case "house_cut_discovery":
       exactFields(["version", "kind", "sourceHash", "windowId", "editorialVersion"]);

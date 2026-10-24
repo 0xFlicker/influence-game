@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import { resolveProviderManifestFromGameConfig } from "@influence/engine";
+import { actorProviderManifest, gameModelPolicy, resolveProviderManifest, resolveProviderManifestFromGameConfig } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 
@@ -64,6 +64,7 @@ export interface ProviderFailureRateLimitItem {
 export type ProviderFailureItem = ProviderFailureAttemptItem | ProviderFailureRateLimitItem;
 
 export interface ProviderFailureBudgetItem {
+  scope?: "contestants" | "house";
   catalogId: string;
   providerProfileId: string;
   modelName: string;
@@ -338,6 +339,8 @@ export async function getProviderFailureDetail(
       .where(eq(schema.games.id, gameId)),
     readProviderBudgetAggregates(db, gameId),
   ]);
+  const scoped = gameRows[0]?.config && JSON.parse(gameRows[0].config).modelRouting;
+  const effectiveBudgetRows = scoped ? await readScopedProviderBudgetAggregates(db, gameId) : budgetRows;
   const hasMore = rows.length > limit;
   const pageRows = rows.slice(0, limit);
   const last = pageRows[pageRows.length - 1];
@@ -347,7 +350,7 @@ export async function getProviderFailureDetail(
     schemaVersion: 1,
     gameId,
     summary: summaries.get(gameId) ?? emptyProviderFailureSummary(),
-    budgets: providerBudgetItems(gameRows[0]?.config, budgetRows),
+    budgets: providerBudgetItems(gameRows[0]?.config, effectiveBudgetRows),
     failures,
     page: {
       limit,
@@ -369,24 +372,30 @@ function providerBudgetItems(
 ): ProviderFailureBudgetItem[] {
   if (!rawConfig) return [];
   const config = JSON.parse(rawConfig) as Record<string, unknown>;
-  const manifest = resolveProviderManifestFromGameConfig(config);
+  const policy = config.modelRouting ? gameModelPolicy(config) : null;
+  const contestantEntries = policy ? [...resolveProviderManifestFromGameConfig(config), ...Object.keys(policy.contestants ?? {}).flatMap(id => actorProviderManifest(config, { id, role: "player" }))] : [];
+  const manifest = policy
+    ? [...new Map(contestantEntries.map(entry => [`${entry.role}:${entry.catalogId}`, { ...entry, scope: "contestants" as const }])).values(),
+      ...(policy.contestants ? actorProviderManifest(config, { role: "house" }) : resolveProviderManifest(policy.houseManifest)).map(entry => ({ ...entry, scope: "house" as const }))]
+    : resolveProviderManifestFromGameConfig(config).map(entry => ({ ...entry, scope: undefined }));
   const aggregateByCatalogId = new Map(
     aggregateRows.map((row) => [row.catalogId, row]),
   );
   return manifest.map((entry) => {
-    const aggregate = aggregateByCatalogId.get(entry.catalogId);
+    const aggregate = aggregateByCatalogId.get(entry.scope ? `${entry.scope}:${entry.role === "primary" ? "primary:" : ""}${entry.catalogId}` : entry.catalogId);
     const usedCalls = aggregate?.usedCalls ?? 0;
     const callCount = aggregate?.callCount ?? 0;
     const actualSourceCount = aggregate?.actualSourceCount ?? 0;
     const estimatedSourceCount = aggregate?.estimatedSourceCount ?? 0;
-    const actualCostMicrousd = aggregate?.actualCostMicrousd ?? 0;
-    const estimatedCostMicrousd = aggregate?.estimatedCostMicrousd ?? 0;
+    const actualCostMicrousd = Number(aggregate?.actualCostMicrousd ?? 0);
+    const estimatedCostMicrousd = Number(aggregate?.estimatedCostMicrousd ?? 0);
     const unpricedCallCount = aggregate?.unpricedCallCount ?? 0;
     const maxCallsPerGame = entry.maxCallsPerGame ?? null;
     const remainingCalls = maxCallsPerGame === null
       ? null
       : Math.max(0, maxCallsPerGame - usedCalls);
     return {
+      ...(entry.scope && { scope: entry.scope }),
       catalogId: entry.catalogId,
       providerProfileId: entry.providerProfile.id,
       modelName: entry.modelId,
@@ -572,6 +581,24 @@ async function readProviderBudgetAggregates(
       COALESCE(spend_usage.unpriced_call_count, 0)::int AS "unpricedCallCount"
     FROM attempt_usage
     FULL OUTER JOIN spend_usage USING (catalog_id)
+  `);
+}
+
+/** Count only this policy lane; a contestant primary never spends a fallback cap. */
+async function readScopedProviderBudgetAggregates(db: Pick<DrizzleDB, "execute">, gameId: string): Promise<ProviderBudgetAggregateRow[]> {
+  return db.execute<ProviderBudgetAggregateRow>(sql`
+    SELECT COALESCE(a.fallback_budget_key,
+      CASE WHEN c.actor_role IN ('house','system','producer') THEN 'house:primary:' ELSE 'contestants:primary:' END || a.catalog_id) AS "catalogId",
+      count(*)::int AS "usedCalls", count(s.id)::int AS "callCount",
+      count(*) FILTER (WHERE s.cost_source IN ('provider_actual','router_actual','org_reconciled'))::int AS "actualSourceCount",
+      count(*) FILTER (WHERE s.cost_source IN ('catalog_estimate','static_estimate'))::int AS "estimatedSourceCount",
+      COALESCE(sum(s.actual_cost_microusd),0)::bigint AS "actualCostMicrousd",
+      COALESCE(sum(s.estimated_cost_microusd),0)::bigint AS "estimatedCostMicrousd",
+      count(*) FILTER (WHERE s.cost_source = 'unavailable' OR s.id IS NULL)::int AS "unpricedCallCount"
+    FROM provider_call_attempts a JOIN provider_logical_calls c ON c.id = a.logical_call_id
+    LEFT JOIN game_provider_spend_entries s ON s.source_key = 'provider-attempt:' || a.id
+    WHERE a.game_id = ${gameId} AND a.catalog_id IS NOT NULL
+    GROUP BY 1
   `);
 }
 

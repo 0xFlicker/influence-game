@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { AllowedModelsPicker } from "@/components/allowed-models-picker";
 import { enabledGameKinds, type HouseGameKind } from "@influence/engine/game-availability";
 import { defaultWerewolfStrategy } from "@influence/engine/werewolf/strategy";
 import { createWerewolfLobby } from "@/lib/werewolf-api";
 import type { WerewolfSetup } from "@influence/engine/werewolf/types";
 import { useRouter } from "next/navigation";
-import { modelCatalogEntryById } from "@influence/engine/model-catalog";
+import { MODEL_CATALOG, MODEL_REASONING_POLICIES, modelCatalogEntryById } from "@influence/engine/model-catalog";
+import { ModelPricing } from "@/components/model-pricing";
 import { DEFAULT_GAME_FALLBACK, DEFAULT_MODEL_CATALOG_ID } from "@influence/engine/model-defaults";
 import {
   FORMAT_PRESENTATION_METADATA,
@@ -85,109 +87,19 @@ type GameModelOption = Pick<
   | "available"
   | "defaultReasoningPolicy"
   | "allowedReasoningPolicies"
-> & { sublabel: string; supportsImageInput?: boolean };
+  | "metadata"
+> & { supportsImageInput?: boolean };
 
-const GAME_MODELS: GameModelOption[] = [
-  {
-    catalogId: "openai:gpt-5-nano",
-    displayName: "OpenAI gpt-5-nano",
-    sublabel: "Fast baseline play",
-    configured: true,
-    available: null,
-    defaultReasoningPolicy: "medium",
-    allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
-  },
-  {
-    catalogId: "openai:gpt-5-mini",
-    displayName: "OpenAI gpt-5-mini",
-    sublabel: "Stronger strategy",
-    configured: true,
-    available: null,
-    defaultReasoningPolicy: "medium",
-    allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
-  },
-  {
-    catalogId: "openai:gpt-5.4-mini",
-    displayName: "OpenAI gpt-5.4-mini",
-    sublabel: "Most capable OpenAI 5.4 option",
-    configured: true,
-    available: null,
-    defaultReasoningPolicy: "medium",
-    allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
-  },
-  {
-    catalogId: "openai:gpt-5.6-luna",
-    displayName: "OpenAI gpt-5.6-luna",
-    sublabel: "Previous Luna generation",
-    configured: true,
-    available: null,
-    defaultReasoningPolicy: "medium",
-    allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
-  },
-  {
-    catalogId: "openai:gpt-6-luna",
-    displayName: "OpenAI gpt-6-luna",
-    sublabel: "Default cost-efficient play",
-    configured: true,
-    available: null,
-    defaultReasoningPolicy: "medium",
-    allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
-  },
-  {
-    catalogId: "katana:grok-4-3",
-    displayName: "xAI Grok 4.3",
-    sublabel: "Reasoning-heavy strategy test",
-    configured: true,
-    available: null,
-    defaultReasoningPolicy: "medium",
-    allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
-  },
-  {
-    catalogId: "katana:grok-4-6",
-    displayName: "xAI Grok 4.6",
-    sublabel: "Default fallback",
-    configured: true,
-    available: null,
-    defaultReasoningPolicy: "action-policy",
-    allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
-  },
-  {
-    catalogId: "katana:glm-5-2",
-    displayName: "Katana GLM 5.2",
-    sublabel: "Available for explicit testing",
-    configured: true,
-    available: null,
-    defaultReasoningPolicy: "action-policy",
-    allowedReasoningPolicies: ["action-policy"],
-  },
-  {
-    catalogId: "meta-muse:muse-spark-1.3",
-    displayName: "Meta Muse Spark 1.3",
-    sublabel: "Standard tier; no training on prompts",
-    configured: true,
-    available: null,
-    defaultReasoningPolicy: "action-policy",
-    allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
-  },
-  {
-    catalogId: "meta-muse:muse-spark-1.3-contributor",
-    displayName: "Meta Muse Spark 1.3 Contributor",
-    sublabel: "Cheapest play; Meta may train on game prompts",
-    configured: true,
-    available: null,
-    defaultReasoningPolicy: "action-policy",
-    allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
-  },
-  {
-    catalogId: "meta-muse:muse-wonder-1.0",
-    displayName: "Meta Muse Wonder 1.0",
-    sublabel: "Premium Meta tier; cap fallback calls",
-    configured: true,
-    available: null,
-    defaultReasoningPolicy: "action-policy",
-    allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
-  },
-];
+const GAME_MODELS: GameModelOption[] = MODEL_CATALOG.map(model => ({
+  catalogId: model.id,
+  displayName: model.displayName,
+  configured: true,
+  available: null,
+  defaultReasoningPolicy: model.defaultReasoningPolicy,
+  allowedReasoningPolicies: MODEL_REASONING_POLICIES.filter(policy => policy === "action-policy" || model.allowedReasoningEfforts.includes(policy)),
+  supportsImageInput: model.capabilities.supportsImageInput,
+  metadata: model.metadata,
+}));
 
 const THINKING_DEPTHS: Array<{
   value: ModelReasoningPolicy;
@@ -200,7 +112,7 @@ const THINKING_DEPTHS: Array<{
   { value: "high", label: "High", sublabel: "Heavier deliberation" },
 ];
 
-interface ProviderRouteEntry extends GameProviderManifestEntry {
+export interface ProviderRouteEntry extends GameProviderManifestEntry {
   uiId: string;
 }
 
@@ -465,7 +377,6 @@ function routeEntryError(
 ): string | null {
   if (!entry.catalogId) return "Select a model.";
   if (model?.configured === false) return "This provider is not configured.";
-  if (model?.available === false) return "This model is not currently available from its provider.";
   if (
     index > 0
     && (!Number.isSafeInteger(entry.maxCallsPerGame) || (entry.maxCallsPerGame ?? 0) < 1)
@@ -481,17 +392,17 @@ function supportsVisualMode(catalogId: string, models: readonly GameModelOption[
     ?? false;
 }
 
-function ProviderRouteEditor({
+export function ProviderRouteEditor({
+  labelPrefix = "",
   entries,
   models,
-  inventoryUnavailable,
   visualMode,
   activeRoute,
   onChange,
 }: {
+  labelPrefix?: string;
   entries: ProviderRouteEntry[];
   models: GameModelOption[];
-  inventoryUnavailable: boolean;
   visualMode: boolean;
   activeRoute: GameProviderManifestEntry[];
   onChange: (entries: ProviderRouteEntry[]) => void;
@@ -560,10 +471,10 @@ function ProviderRouteEditor({
     <div className="space-y-3">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-sm font-medium text-white">Provider route</p>
+          <p className="text-sm font-medium text-white">{labelPrefix}Provider route</p>
           <p className="mt-1 max-w-2xl text-xs leading-5 text-white/45">
-            Every call starts with Primary. If it cannot return a usable result, the game follows
-            these fallbacks in order. Active slots are sealed when the game is created.
+            {labelPrefix ? "House calls start with Primary." : "Contestants choosing Default start with Primary; other contestants keep their own preference."}
+            {" "}These fallbacks apply in order when the preferred route cannot return a usable result. Assignments are sealed when the game starts.
           </p>
         </div>
         <span className="text-xs tabular-nums text-white/35">
@@ -571,17 +482,11 @@ function ProviderRouteEditor({
         </span>
       </div>
 
-      {inventoryUnavailable && (
-        <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-100" role="status">
-          Live model inventory is unavailable. Known validated IDs remain selectable; retry by reopening this form.
-        </p>
-      )}
-
       <div className="space-y-3">
         {entries.map((entry, index) => {
           const selectedModel = models.find((model) => model.catalogId === entry.catalogId);
           const allowedPolicies = selectedModel?.allowedReasoningPolicies ?? ["action-policy"];
-          const skipped = visualMode && !supportsVisualMode(entry.catalogId, models);
+          const skipped = index > 0 && visualMode && !supportsVisualMode(entry.catalogId, models);
           const activeIndex = activeRoute.findIndex(active => active.catalogId === entry.catalogId);
           const error = skipped ? null : routeEntryError(entry, activeIndex, selectedModel);
           return (
@@ -616,7 +521,7 @@ function ProviderRouteEditor({
                     type="button"
                     onClick={() => move(index, index - 1)}
                     disabled={index === 0}
-                    aria-label={`Move ${index === 0 ? "primary" : `fallback ${index}`} up`}
+                    aria-label={`${labelPrefix}Move ${index === 0 ? "primary" : `fallback ${index}`} up`}
                     className="rounded-md border border-white/10 px-2.5 py-1.5 text-xs text-white/55 transition-colors hover:border-white/25 hover:text-white disabled:cursor-not-allowed disabled:opacity-25"
                   >
                     Up
@@ -625,7 +530,7 @@ function ProviderRouteEditor({
                     type="button"
                     onClick={() => move(index, index + 1)}
                     disabled={index === entries.length - 1}
-                    aria-label={`Move ${index === 0 ? "primary" : `fallback ${index}`} down`}
+                    aria-label={`${labelPrefix}Move ${index === 0 ? "primary" : `fallback ${index}`} down`}
                     className="rounded-md border border-white/10 px-2.5 py-1.5 text-xs text-white/55 transition-colors hover:border-white/25 hover:text-white disabled:cursor-not-allowed disabled:opacity-25"
                   >
                     Down
@@ -634,7 +539,7 @@ function ProviderRouteEditor({
                     type="button"
                     onClick={() => remove(index)}
                     disabled={entries.length === 1}
-                    aria-label={`Remove ${index === 0 ? "primary" : `fallback ${index}`}`}
+                    aria-label={`${labelPrefix}Remove ${index === 0 ? "primary" : `fallback ${index}`}`}
                     className="ml-1 rounded-md px-2.5 py-1.5 text-xs text-red-300/70 transition-colors hover:bg-red-500/10 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-25"
                   >
                     Remove
@@ -649,16 +554,17 @@ function ProviderRouteEditor({
                   </span>
                   <select
                     ref={(node) => { modelSelectRefs.current[entry.uiId] = node; }}
-                    aria-label={`${index === 0 ? "Primary" : `Fallback ${index}`} model`}
+                    aria-label={`${labelPrefix}${index === 0 ? "Primary" : `Fallback ${index}`} model`}
                     value={entry.catalogId}
                     onChange={(event) => selectModel(index, event.target.value)}
                     className="w-full rounded-lg border border-white/10 bg-[#09090c] px-3 py-2.5 text-sm text-white outline-none transition-colors focus:border-indigo-500"
                   >
+                    {!selectedModel && <option value={entry.catalogId}>{entry.catalogId}</option>}
                     {models.map((model) => {
                       const selectedElsewhere = entries.some(
                         (other, otherIndex) => otherIndex !== index && other.catalogId === model.catalogId,
                       );
-                      const unavailable = !model.configured || model.available === false;
+                      const unavailable = !model.configured;
                       return (
                         <option
                           key={model.catalogId}
@@ -675,9 +581,8 @@ function ProviderRouteEditor({
                       );
                     })}
                   </select>
-                  {selectedModel?.sublabel && (
-                    <span className="mt-1.5 block text-xs text-white/35">{selectedModel.sublabel}</span>
-                  )}
+                  <input aria-label={`${labelPrefix}${index === 0 ? "Primary" : `Fallback ${index}`} exact model ID`} value={entry.catalogId} onInput={event => selectModel(index, event.currentTarget.value)} className="mt-2 w-full rounded border border-white/10 bg-[#09090c] px-3 py-2 text-xs" />
+                  <ModelPricing rateCard={(selectedModel?.metadata ?? modelCatalogEntryById(entry.catalogId)?.metadata)?.rateCard} />
                 </label>
 
                 {index > 0 && (
@@ -687,8 +592,8 @@ function ProviderRouteEditor({
                     </span>
                     <input
                       type="number"
-                      disabled={skipped || activeIndex === 0}
-                      aria-label={`Fallback ${index} max calls per game`}
+                      disabled={activeIndex === 0}
+                      aria-label={`${labelPrefix}Fallback ${index} max calls per game`}
                       min={1}
                       max={10000}
                       step={1}
@@ -707,7 +612,7 @@ function ProviderRouteEditor({
                 <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-white/40">
                   Reasoning
                 </p>
-                <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={`${index === 0 ? "Primary" : `Fallback ${index}`} reasoning`}>
+                <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={`${labelPrefix}${index === 0 ? "Primary" : `Fallback ${index}`} reasoning`}>
                   {THINKING_DEPTHS.filter((option) => allowedPolicies.includes(option.value)).map((option) => (
                     <button
                       key={option.value}
@@ -740,7 +645,7 @@ function ProviderRouteEditor({
         disabled={!canAdd}
         className="w-full rounded-lg border border-dashed border-white/15 px-4 py-3 text-sm text-white/50 transition-colors hover:border-indigo-400/50 hover:bg-indigo-500/[0.05] hover:text-indigo-200 disabled:cursor-not-allowed disabled:opacity-30"
       >
-        + Add fallback
+        + {labelPrefix}Add fallback
       </button>
       <p className="sr-only" aria-live="polite">
         Provider route contains {entries.length} entries.
@@ -762,8 +667,9 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
   const gameName = isWerewolf ? "Werewolf" : ACTIVE_GAME.name;
   const router = useRouter();
   const [form, setForm] = useState<FormState>(DEFAULT_STATE);
+  const [houseRoute, setHouseRoute] = useState<ProviderRouteEntry[]>(() => DEFAULT_PROVIDER_MANIFEST.map(entry => ({ ...entry, uiId: `house-${nextProviderRouteId++}` })));
+  const [exclusions, setExclusions] = useState<string[]>([]);
   const [models, setModels] = useState<GameModelOption[]>(GAME_MODELS);
-  const [inventoryUnavailable, setInventoryUnavailable] = useState(false);
   const providerRouteEdited = useRef(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -772,7 +678,6 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
     let active = true;
     void getProviderModels().then((inventory) => {
       if (!active) return;
-      const staticById = new Map(GAME_MODELS.map((model) => [model.catalogId, model]));
       setModels(inventory.models.map((model) => ({
         catalogId: model.catalogId,
         supportsImageInput: model.capabilities.supportsImageInput,
@@ -781,13 +686,12 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
         available: model.available,
         defaultReasoningPolicy: model.defaultReasoningPolicy,
         allowedReasoningPolicies: model.allowedReasoningPolicies,
-        sublabel: staticById.get(model.catalogId)?.sublabel ?? model.notes ?? "Available for explicit testing",
+        metadata: model.metadata,
       })));
-      setInventoryUnavailable(inventory.status !== "complete");
-      if (!providerRouteEdited.current && inventory.status === "complete") {
+      if (!providerRouteEdited.current) {
         const configuredModelIds = new Set(
           inventory.models
-            .filter((model) => model.configured && model.available !== false)
+            .filter((model) => model.configured && model.available === true)
             .map((model) => model.catalogId),
         );
         setForm((current) => ({
@@ -801,7 +705,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
         }));
       }
     }).catch(() => {
-      if (active) setInventoryUnavailable(true);
+      if (active) console.warn("Model catalog request failed; retaining current choices.");
     });
     return () => { active = false; };
   }, []);
@@ -823,22 +727,13 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
 
   const { providerRoute, ...gameParams } = form;
   const needsImageModels = form.visualMode && !isWerewolf;
-  const activeProviderRoute = needsImageModels
-    ? providerRoute.filter(entry => supportsVisualMode(entry.catalogId, models))
-    : providerRoute;
-  const skippedModels = needsImageModels
-    ? providerRoute.filter(entry => !supportsVisualMode(entry.catalogId, models))
-    : [];
-  const visualDefault = needsImageModels && activeProviderRoute.length === 0
-    ? [...models].sort((a, b) => Number(b.catalogId === DEFAULT_MODEL_CATALOG_ID) - Number(a.catalogId === DEFAULT_MODEL_CATALOG_ID))
-      .find(model => model.configured && model.available !== false && supportsVisualMode(model.catalogId, models))
-    : undefined;
-  const effectiveProviderRoute: GameProviderManifestEntry[] = visualDefault
-    ? [{ catalogId: visualDefault.catalogId, reasoningPolicy: visualDefault.defaultReasoningPolicy }]
-    : activeProviderRoute.map((entry, index) => ({ ...entry, ...(index === 0 ? { maxCallsPerGame: undefined } : {}) }));
+  const skippedModels = needsImageModels ? providerRoute.filter((entry, index) => index > 0 && !supportsVisualMode(entry.catalogId, models)) : [];
+  const effectiveProviderRoute: GameProviderManifestEntry[] = providerRoute.filter(entry => !skippedModels.includes(entry));
+  const cleanRoute = (entries: GameProviderManifestEntry[]) => entries.map(({ catalogId, reasoningPolicy, maxCallsPerGame }) => ({ catalogId, reasoningPolicy, ...(maxCallsPerGame !== undefined && { maxCallsPerGame }) }));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (needsImageModels && !supportsVisualMode(providerRoute[0]!.catalogId, models)) { setError("The primary contestant model cannot receive image context. Choose an image-capable primary or turn off Visual Mode."); return; }
     if (!isWerewolf && !hasOpeningFormat(form.formatManifest, form.playerCount)) {
       setError("Select at least one format available in the opening round.");
       return;
@@ -847,10 +742,10 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
       setError("Select at least 2 personas.");
       return;
     }
-    const routeError = effectiveProviderRoute
+    const routeError = [...providerRoute, ...houseRoute]
       .map((entry, index) => routeEntryError(
         entry,
-        index,
+        index < providerRoute.length ? index : index - providerRoute.length,
         models.find((model) => model.catalogId === entry.catalogId),
       ))
       .find((message): message is string => Boolean(message));
@@ -867,17 +762,11 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
     try {
       const params: CreateGameParams = {
         ...gameParams,
-        providerManifest: effectiveProviderRoute.map((entry) => ({
-          catalogId: entry.catalogId,
-          reasoningPolicy: entry.reasoningPolicy,
-          ...(entry.maxCallsPerGame === undefined
-            ? {}
-            : { maxCallsPerGame: entry.maxCallsPerGame }),
-        })),
+        modelRouting: { version: 1, defaultManifest: cleanRoute(providerRoute), houseManifest: cleanRoute(houseRoute), excludedCatalogIds: exclusions, overrides: {} },
       };
       if (isWerewolf) {
         const { slug } = await createWerewolfLobby({ preset: village.wolves === 1 ? "one_wolf" : "two_wolves", setup: village, maxDays,
-          visibility: form.visibility, providerManifest: params.providerManifest!, personaPool: form.personaPool, fillStrategy: form.fillStrategy, visualMode: form.visualMode, visualFailurePolicy: form.visualFailurePolicy });
+          visibility: form.visibility, modelRouting: params.modelRouting!, personaPool: form.personaPool, fillStrategy: form.fillStrategy, visualMode: form.visualMode, visualFailurePolicy: form.visualFailurePolicy });
         router.push(`/games/${slug}`);
       } else {
         const { slug } = await createGame(params);
@@ -942,7 +831,6 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
         <ProviderRouteEditor
           entries={form.providerRoute}
           models={models}
-          inventoryUnavailable={inventoryUnavailable}
           visualMode={needsImageModels}
           activeRoute={effectiveProviderRoute}
           onChange={(providerRoute) => {
@@ -951,6 +839,13 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
           }}
         />
       </SectionCard>
+
+      <SectionCard title="House model and fallbacks">
+        <p className="mb-3 text-sm text-white/60">Summaries, production decisions, and episode titles use this route. House fallback allowances are separate from contestants.</p>
+        <ProviderRouteEditor labelPrefix="House " entries={houseRoute} models={models} visualMode={false} activeRoute={houseRoute} onChange={setHouseRoute} />
+      </SectionCard>
+      <AllowedModelsPicker models={models} excludedIds={exclusions} onChange={setExclusions}
+        inUseIds={[...form.providerRoute, ...houseRoute].map(entry => entry.catalogId)} />
 
       {/* Persona pool */}
       <SectionCard title="Persona Pool">
@@ -1032,7 +927,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
           Skipped for this game: {skippedModels.map(entry => models.find(model => model.catalogId === entry.catalogId)?.displayName ?? entry.catalogId).join(", ")}. You can change or remove these slots. Turning off Visual Mode restores them.
         </p>}
         {needsImageModels && effectiveProviderRoute[0] && <p className="mb-4 text-sm text-white/55">
-          {visualDefault ? "Using " : "Visual Primary: "}{models.find(model => model.catalogId === effectiveProviderRoute[0]!.catalogId)?.displayName ?? effectiveProviderRoute[0].catalogId}{visualDefault ? " as Primary because the selected models do not support images." : "."}
+          Visual Primary: {models.find(model => model.catalogId === effectiveProviderRoute[0]!.catalogId)?.displayName ?? effectiveProviderRoute[0].catalogId}.
         </p>}
         {form.visualMode && <RadioGroup label="Visual failure policy" value={form.visualFailurePolicy}
           options={[{ value: "best_effort" as const, label: "Best effort", sublabel: "Continue with portraits when rendering fails" }, { value: "require_visuals" as const, label: "Require visuals", sublabel: "Pause for admin repair if required visuals are unavailable" }]}

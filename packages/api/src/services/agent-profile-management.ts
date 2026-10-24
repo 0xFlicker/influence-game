@@ -1,3 +1,5 @@
+import { authorizedModelPreference, GameModelRoutingError } from "./game-model-routing.js";
+import { normalizeModelPreference, type ModelPreference } from "@influence/engine";
 import { loadPayloads } from "./payload-storage.js";
 import { currentReviewIdentity, reviewStrategyField } from "./owner-learning-game.js";
 import { parseCharacterHeadPosition } from "@influence/engine/character-portrait";
@@ -173,6 +175,7 @@ export type CreateOwnedAgentInput = Record<string, unknown>;
 export type UpdateOwnedAgentInput = Record<string, unknown>;
 
 export interface CreateAgentProfileMutationInput {
+  modelPreference?: unknown;
   name: unknown;
   personality: unknown;
   backstory?: unknown;
@@ -192,6 +195,7 @@ export interface CreateAgentProfileMutationInput {
 }
 
 export interface UpdateAgentProfileMutationInput {
+  modelPreference?: unknown;
   name?: unknown;
   personality?: unknown;
   backstory?: unknown;
@@ -263,6 +267,7 @@ export interface AgentCurrentRevisionSummary {
 }
 
 export interface AgentSummary {
+  modelPreference: ModelPreference;
   contentRevisionId: string | null;
   latestContentRevisionId: string | null;
   moderationRequired: boolean;
@@ -508,6 +513,7 @@ function prepareAgentProfileCreate(
   }
   const creationPayloadFingerprint = creationRequestId
     ? sha256StableJson({
+        modelPreference: normalizeModelPreference(input.modelPreference),
         name,
         backstory,
         personality,
@@ -527,6 +533,7 @@ function prepareAgentProfileCreate(
     userId: context.userId,
     creationRequestId,
     creationPayloadFingerprint,
+    modelPreference: normalizeModelPreference(input.modelPreference),
     name,
     backstory,
     personality,
@@ -565,6 +572,8 @@ export async function createOwnedAgentProfile(
   input: CreateAgentProfileMutationInput,
 ): Promise<AgentProfileMutationRead> {
   await getAccountRating(db, context.userId);
+  try { await authorizedModelPreference(db, context.userId, input.modelPreference); }
+  catch (error) { if (error instanceof GameModelRoutingError) throw new AgentProfileManagementError("invalid_agent_input", error.message, error.status); throw error; }
   const values = prepareAgentProfileCreate(context, input);
   if (context.avatarGenerationRequestId) throw new AgentProfileManagementError("invalid_agent_input", "Select the completed portrait before submitting.", 400);
   if (values.creationRequestId) {
@@ -814,7 +823,19 @@ export async function updateOwnedAgentProfileInLockedTransaction(
     locked: LockedOwnedAgentProfileMutation;
   },
 ): Promise<AgentProfileMutationRead> {
-  const { existing, lockedGames, candidateGames } = input.locked;
+  const { lockedGames, candidateGames } = input.locked;
+  let { existing } = input.locked;
+  if (input.input.modelPreference !== undefined) {
+    let modelPreference: ModelPreference;
+    try { modelPreference = await authorizedModelPreference(tx, input.context.userId, input.input.modelPreference); }
+    catch (error) { if (error instanceof GameModelRoutingError) throw new AgentProfileManagementError("invalid_agent_input", error.message, error.status); throw error; }
+    // Operational metadata saves atomically with the form, outside content moderation.
+    if (JSON.stringify(existing.modelPreference) !== JSON.stringify(modelPreference)) {
+      existing = (await tx.update(schema.agentProfiles)
+        .set({ modelPreference, updatedAt: new Date().toISOString() })
+        .where(eq(schema.agentProfiles.id, input.agentId)).returning())[0]!;
+    }
+  }
   const draft = await latestSubmittedProfile(tx, existing);
   const updates = prepareAgentProfileUpdates(input.context, input.input, draft.avatarUrl);
   updates.headPosition = await confirmProfileHead({ ...draft, ...updates }, draft, input.context.userId, input.context.contentAssets);
@@ -1175,7 +1196,7 @@ export async function updateOwnedAgent(
 
   const agentId = requiredStringField(input.agentId, "agentId", 200);
   const existing = await requireOwnedAgentProfile(db, context.userId, agentId);
-  const updates: UpdateAgentProfileMutationInput = { ...contentMetadata(input), submissionId: input.submissionId, expectedContentRevisionId: input.expectedContentRevisionId };
+  const updates: UpdateAgentProfileMutationInput = { ...contentMetadata(input), modelPreference: input.modelPreference, submissionId: input.submissionId, expectedContentRevisionId: input.expectedContentRevisionId };
   if (input.fullBodyReferenceUrl !== undefined) updates.fullBodyReferenceUrl = input.fullBodyReferenceUrl;
   if (input.performanceInstructions !== undefined) updates.performanceInstructions = input.performanceInstructions;
 
@@ -1427,6 +1448,7 @@ function serializeAgent(
   return {
     id: profile.id,
     displayName: profile.name,
+    modelPreference: profile.modelPreference,
     contentRevisionId: profile.contentRevisionId,
     latestContentRevisionId: profile.latestContentRevisionId,
     moderationRequired: profile.moderationRequired,

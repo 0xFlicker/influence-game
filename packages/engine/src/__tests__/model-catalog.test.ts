@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { normalizeModelPreference } from "../game-model-routing";
 import {
   DEFAULT_MODEL_ID,
   DEFAULT_MODEL_CATALOG_ID,
@@ -19,6 +20,63 @@ import {
 } from "../model-catalog";
 
 describe("model catalog", () => {
+  it("resolves Sol pricing and its documented Responses capabilities", () => {
+    const entry = modelCatalogEntryById("openai:gpt-6.1-sol")!;
+    expect(entry.capabilityEvidence).toBe("documented");
+    expect(entry.metadata.rateCard).toMatchObject({ version: "2026-10-23", rates: { inputPer1M: 2, outputPer1M: 10 } });
+    expect(entry.capabilities).toMatchObject({ supportsImageInput: true, supportsOpenAIResponses: true,
+      supportsStructuredOutput: true, supportsTools: true, supportsReasoningEffort: true, supportsToolReasoningEffort: false });
+    expect(resolveProviderManifest([{ catalogId: entry.id, reasoningPolicy: "high" }])[0]!.modelId).toBe("gpt-6.1-sol");
+  });
+
+  it("rejects non-decision models in discovery, exact preferences, primaries and fallbacks", () => {
+    const modelIds = ["gpt-image-2", "gpt-image-1-mini", "gpt-image-1.5", "chatgpt-image-latest", "gpt-image-1",
+      "gpt-image-2-2026-04-21", "gpt-image-2.5-sunburst", "sora-2", "gpt-4o-mini-transcribe",
+      "omni-moderation-latest", "text-embedding-3-small", "gpt-realtime-2.1", "gpt-live-1", "tts-1"];
+    for (const provider of ["openai", "custom-openai-compatible", "katana"]) {
+      for (const modelId of modelIds) {
+        const catalogId = `${provider}:${modelId}`;
+        expect(modelCatalogEntryById(catalogId)).toBeUndefined();
+        expect(() => normalizeModelPreference({ catalogId })).toThrow();
+        expect(() => normalizeProviderManifest([{ catalogId }])).toThrow();
+        expect(() => normalizeProviderManifest([{ catalogId: "openai:gpt-6-luna" }, { catalogId, maxCallsPerGame: 2 }])).toThrow();
+      }
+    }
+    expect(modelCatalogEntryById("custom-openai-compatible:openai/gpt-image-2")).toBeUndefined();
+    for (const catalogId of ["openai:gpt-6-luna", "openai:gpt-6.1-sol", "katana:kimi-k3"]) {
+      expect(modelCatalogEntryById(catalogId)?.capabilities.supportsImageInput).toBe(true);
+      expect(() => normalizeModelPreference({ catalogId })).not.toThrow();
+    }
+  });
+
+  it("resolves audited Kimi metadata without generic inferred or unknown-price notes", () => {
+    const entry = modelCatalogEntryById("katana:kimi-k3")!;
+    expect(entry.capabilityEvidence).toBe("documented");
+    expect(entry.metadata.documented).toMatchObject({ inputImages: true, strictSchema: true });
+    expect(entry.capabilities.supportsImageInput).toBe(entry.metadata.documented!.inputImages);
+    expect(entry.capabilities.supportsStructuredOutput).toBe(entry.metadata.documented!.strictSchema);
+    expect(inferModelCapabilities("kimi-k3", "katana")).toEqual(entry.capabilities);
+    expect(entry.metadata.rateCard?.rates.inputPer1M).toBeCloseTo(0.24378);
+    expect(entry.metadata.rateCard?.rates.outputPer1M).toBe(11.016);
+    expect(entry.notes).toBeUndefined();
+  });
+
+  it("exports the same resolved records used by lookup and runtime capability inference", () => {
+    for (const entry of MODEL_CATALOG) {
+      expect(modelCatalogEntryById(entry.id)).toBe(entry);
+      expect(inferModelCapabilities(entry.modelId, entry.providerProfileId)).toEqual(entry.capabilities);
+      if (entry.metadata.documented) {
+        expect(entry.capabilities.supportsImageInput).toBe(entry.metadata.documented.inputImages);
+        expect(entry.capabilities.supportsStructuredOutput).toBe(entry.metadata.documented.strictSchema);
+      }
+    }
+    const unknown = modelCatalogEntryById("katana:unlisted-example")!;
+    expect(unknown.capabilityEvidence).toBe("inferred");
+    expect(unknown.metadata.rateCard).toBeNull();
+    expect(unknown.metadata.documented).toBeNull();
+    expect(unknown.notes).toBeUndefined();
+  });
+
   it("resolves GPT-6 Luna as an image-capable reasoning model for primary and fallback slots", () => {
     const entry = modelCatalogEntryById("openai:gpt-6-luna")!;
     expect(gameReadyCatalogEntries()).toContain(entry);
@@ -38,7 +96,10 @@ describe("model catalog", () => {
     ]) {
       expect(resolveProviderManifest(manifest).every(slot => slot.model.capabilities.supportsImageInput)).toBe(true);
     }
-    expect(inferModelCapabilities("gpt-6-unlisted").supportsImageInput).toBe(false);
+    const unlisted = modelCatalogEntryById("openai:gpt-6-unlisted")!;
+    expect(inferModelCapabilities("gpt-6-unlisted")).toEqual(unlisted.capabilities);
+    expect(unlisted.capabilityEvidence).toBe("inferred");
+    expect(unlisted.metadata.documented).toBeNull();
   });
 
   it("resolves the GPT-6 Luna default through hosted Responses with strict tools", () => {
@@ -100,7 +161,7 @@ describe("model catalog", () => {
       expect(entry?.capabilities.supportsTools).toBe(true);
       expect(entry?.capabilities.supportsReasoningEffort).toBe(true);
       expect(entry?.capabilities.supportsOpenAIResponses).toBe(false);
-      expect(entry?.capabilities.supportsImageInput).toBe(false);
+      expect(entry?.capabilities.supportsImageInput).toBe(true);
     }
     const profile = PROVIDER_PROFILES["meta-muse"];
     expect(profile.baseURL).toBe("https://api.meta.ai/v1");
@@ -220,9 +281,7 @@ describe("model catalog", () => {
         ...(index > 0 && { maxCallsPerGame: 1 }),
       })),
     )).toThrow(`at most ${MAX_PROVIDER_MANIFEST_ENTRIES}`);
-    expect(() => normalizeProviderManifest([
-      { catalogId: "katana:q-naifu-a3b" },
-    ])).toThrow("not game-ready");
+    expect(normalizeProviderManifest([{ catalogId: "katana:q-naifu-a3b" }])[0]?.catalogId).toBe("katana:q-naifu-a3b");
     expect(() => normalizeProviderManifest([
       { catalogId: "katana:glm-5-2", reasoningPolicy: "high" },
     ])).toThrow("does not support high reasoning");

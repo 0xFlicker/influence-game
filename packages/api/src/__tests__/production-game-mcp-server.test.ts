@@ -233,6 +233,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const fullEnvelopeNames = fullEnvelopeTools.map((tool) => tool.name);
 
     expect(fullEnvelopeNames).toEqual([
+      "read_model_catalog",
+      "set_agent_model",
       "list_archetypes",
       "list_agents",
       "get_agent",
@@ -646,7 +648,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
   test("returns non-mutating scoped challenges for every eligible agent mutation", async () => {
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
 
-    for (const name of ["generate_agent_visual_reference", "crop_agent_portrait", "create_agent", "update_agent", "join_queue", "leave_queue"]) {
+    for (const name of ["set_agent_model", "generate_agent_visual_reference", "crop_agent_portrait", "create_agent", "update_agent", "join_queue", "leave_queue"]) {
       const response = await server.handle({
         jsonrpc: "2.0",
         id: name,
@@ -854,6 +856,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(response?.error).toBeUndefined();
     const tools = ((response?.result as { tools: unknown[] }).tools);
     expect(tools.map((tool) => (tool as { name: string }).name)).toEqual([
+      "read_game_model_routing",
+      "set_game_model_routing",
       "list_games",
       "read_game",
       "read_game_results",
@@ -1323,6 +1327,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "read_owned_match_narrative",
       "get_rules",
       "search_rules",
+      "read_model_catalog",
+      "set_agent_model",
       "list_archetypes",
       "list_agents",
       "get_agent",
@@ -1428,10 +1434,11 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         : ["list_learning_review_inputs", "list_open_learning_reviews", "read_learning_review", "preflight_learning_review"]
             .includes(tool.name)
           ? ["agents:read", "games:read"]
-          : ["generate_agent_visual_reference", "crop_agent_portrait", "create_agent", "update_agent", "join_queue", "leave_queue"]
+          : ["set_agent_model", "generate_agent_visual_reference", "crop_agent_portrait", "create_agent", "update_agent", "join_queue", "leave_queue"]
           .includes(tool.name)
         ? ["agents:read", "agents:write"]
         : [
+              "read_model_catalog",
               "list_archetypes",
               "list_agents",
               "get_agent",
@@ -1507,7 +1514,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       expect(tool.securitySchemes).toEqual([{ type: "oauth2", scopes: ["producer"] }]);
       expect(tool._meta.securitySchemes).toEqual(tool.securitySchemes);
       expect(tool.annotations).toEqual({
-        readOnlyHint: true,
+        readOnlyHint: tool.name !== "set_game_model_routing",
         openWorldHint: false,
         destructiveHint: false,
       });

@@ -691,7 +691,12 @@ function requestedReasoningEffort(
   ) {
     return runtime.reasoningPolicy;
   }
-  return invocation.reasoning?.effort;
+  const requested = invocation.reasoning?.effort;
+  const allowed = runtime.allowedReasoningEfforts;
+  if (!requested || !allowed || allowed.includes(requested)) return requested;
+  // Adaptive actions can request low on a model whose minimum is medium/high.
+  // Use the least supported effort; do not dispatch a known-invalid parameter.
+  return allowed[0];
 }
 
 function chatMessage(message: ModelInvocationMessage): ChatCompletionMessageParam {

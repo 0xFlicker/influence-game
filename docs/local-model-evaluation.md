@@ -549,3 +549,21 @@ bun run simulate:api -- --players 8 --games 1 --model-catalog openai:gpt-6-luna 
 Use the localhost CLI browser login or a private `INFLUENCE_API_SESSION_TOKEN`; never publish the credential. On the API process, set an explicitly authorized `INFLUENCE_EVALUATION_BUDGET_USD` and a fresh private `INFLUENCE_EVALUATION_BUDGET_LEDGER` path for the evaluation. All concurrent test games share that ledger. The guard reserves pessimistically and also records usage-based estimates; report both without claiming an estimate is a provider invoice.
 
 Default conversations allow 320 UTF-8 bytes per message and 400 bytes per participant. Ordinary Mingle has two conversation rounds and one simultaneous move. Inspect saved thinking, replies, voluntary passes versus provider absences, unoffered players, latest movement intent, next-decision recall and full-game duration. Huddles generate speech and private strategy, not typed tactical outcomes. Their existence is private from nonparticipants, while spectators can watch room playback with saved structured thinking under Show thinking; passes stay skipped. Save sanitized requests/responses, retries, errors and all available reasoning; never replace a failed run's artifacts with a corrected run. Keep direct House calls and exact types, without `as any`.
+
+## Mixed contestant models and separate House
+
+`bun run simulate:models` (repository root) supports Influence and Werewolf through the localhost API. `--models` is an ordered comma-separated list with exactly one provider-qualified ID (or `default`) per seat. `--roster path.json` instead accepts `{ seats: [{ id, agentProfileId?, preference }], policy }`, where `preference` is `"default"` or `{ catalogId, reasoningPolicy? }` and `policy` is the documented `GameModelRouting` object. A supplied profile must be owned by the authenticated operator.
+
+```sh
+bun run simulate:models --game influence --players 8 --models openai:gpt-6-luna,katana:glm-5-3-flash-private,katana:deepseek-v4-flash,meta-muse:muse-spark-1.3-contributor,openai:gpt-5-mini,katana:grok-4-6,katana:q-naifu-a3b,custom-openai-compatible:experimental --provider-entry openai:gpt-6-luna --provider-entry katana:grok-4-6,max-calls=24 --house-entry meta-muse:muse-spark-1.3-contributor --house-entry openai:gpt-6-luna,max-calls=12 --preview
+```
+
+Preview is entirely offline and prints resolved assignments, fallback chains and dated/unknown metadata. It does not assert provider availability or quality. Repeated `--provider-entry` still defines the common fallback chain, never the seat list; `--house-entry` independently defines the House chain. Roster files carry their own complete policy. Luna stays Flex.
+
+Only after separately authorizing paid execution, omit `--preview`. The runner saves requested policy, game ID/slug and final seat mapping before start under a unique `packages/engine/docs/simulations/mixed-*` directory. It refuses non-local API origins and stops before starting if artifact persistence fails. The API worker retains its canonical random seed/config and full sanitized attempt evidence in the existing durable journal/object store. Keep those API records: JSON reports alone are not a complete replay backup.
+
+```sh
+bun run simulate:models --report GAME_ID --api-url http://127.0.0.1:3000
+```
+
+Reports use separate append-only files, retain preferred and actual route counts, failure classes, House versus contestant spend, and explicitly unknown costs. Preserve existing `--chatty` inspection for detailed decisions and Studio/MCP inspection of the real game ID. Follow the direct-House-call and no-`as any` disciplines; simulation is not a second execution implementation.

@@ -302,11 +302,11 @@ function ProviderBudgets({ budgets }: { budgets: AdminProviderFailureBudget[] })
       <h3 id="provider-budget-title" className="text-sm font-semibold text-white">Provider call budgets</h3>
       <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
         {budgets.map((budget) => (
-          <div key={budget.catalogId} className="rounded-md border border-white/10 bg-white/[0.02] p-3">
+          <div key={`${budget.scope ?? "game"}:${budget.role}:${budget.catalogId}`} className="rounded-md border border-white/10 bg-white/[0.02] p-3">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-medium text-white">{budget.modelName}</p>
-                <p className="text-[10px] uppercase tracking-wide text-white/35">{budget.role}</p>
+                <p className="text-[10px] uppercase tracking-wide text-white/35">{budget.scope ? `${budget.scope} · ` : ""}{budget.role}</p>
               </div>
               <span className={budget.state === "exhausted" ? "text-xs text-red-300" : "text-xs text-white/50"}>
                 {budget.maxCallsPerGame === null

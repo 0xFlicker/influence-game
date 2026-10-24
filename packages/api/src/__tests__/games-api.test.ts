@@ -431,7 +431,7 @@ describe("Game REST API", () => {
   // =========================================================================
 
   describe("POST /api/games", () => {
-    test("seals an ordered provider manifest and projects its primary for restoration", async () => {
+    test("stores one routing policy with separate contestant and House chains", async () => {
       const providerManifest = [
         { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
         { catalogId: "katana:grok-4-5", reasoningPolicy: "medium", maxCallsPerGame: 12 },
@@ -446,8 +446,10 @@ describe("Game REST API", () => {
       const body = (await res.json()) as { id: string };
       const game = (await db.select().from(schema.games).where(eq(schema.games.id, body.id)))[0]!;
       const config = JSON.parse(game.config);
-      expect(config.providerManifest).toEqual(providerManifest);
-      expect(config.modelSelection).toEqual(providerManifest[0]);
+      expect(config.modelRouting.defaultManifest).toEqual(providerManifest);
+      expect(config.modelRouting.houseManifest).toEqual(providerManifest);
+      expect(config.providerManifest).toBeUndefined();
+      expect(config.modelRouting.defaultManifest[0]).toEqual(providerManifest[0]);
       expect(config.slotType).toBe("all_ai");
     });
 
@@ -536,7 +538,7 @@ describe("Game REST API", () => {
       expect(config).not.toHaveProperty("timers");
       expect(config).not.toHaveProperty("viewerMode");
       expect(config.maxRounds).toBe(10);
-      expect(config.modelSelection).toEqual({
+      expect(config.modelRouting.defaultManifest[0]).toEqual({
         catalogId: "openai:gpt-5.6-luna",
         reasoningPolicy: "action-policy",
       });
@@ -620,11 +622,11 @@ describe("Game REST API", () => {
         .from(schema.games)
         .where(eq(schema.games.id, body.id)))[0]!;
       const config = JSON.parse(game.config);
-      expect(config.modelSelection).toEqual({
+      expect(config.modelRouting.defaultManifest[0]).toEqual({
         catalogId: "katana:grok-4-3",
         reasoningPolicy: "high",
       });
-      expect(config.serviceTier).toBeUndefined();
+      expect(config.serviceTier).toBe("flex");
     });
 
     test("accepts GPT-5.6 Luna for an operator-created public game", async () => {
@@ -643,7 +645,7 @@ describe("Game REST API", () => {
       expect(res.status).toBe(201);
       const body = (await res.json()) as { id: string };
       const game = (await db.select().from(schema.games).where(eq(schema.games.id, body.id)))[0]!;
-      expect(JSON.parse(game.config).modelSelection).toEqual({
+      expect(JSON.parse(game.config).modelRouting.defaultManifest[0]).toEqual({
         catalogId: "openai:gpt-5.6-luna",
         reasoningPolicy: "action-policy",
       });
@@ -735,7 +737,7 @@ describe("Game REST API", () => {
       expect(await rejected.json()).toEqual({ error: "Invalid service tier" });
     });
 
-    test("rejects disabled q-naifu-a3b catalog entry after failed Katana evaluation", async () => {
+    test("permits experimental q-naifu-a3b for admins without a paid qualification gate", async () => {
       const res = await app.request(
         "/api/games",
         json(
@@ -747,8 +749,8 @@ describe("Game REST API", () => {
         ),
       );
 
-      expect(res.status).toBe(400);
-      expect(await res.json()).toEqual({ error: "Model is not game-ready" });
+      expect(res.status).toBe(201);
+      expect(await res.json()).toMatchObject({ id: expect.any(String), slug: expect.any(String) });
     });
 
     test("accepts dynamic LM Studio model catalog selections", async () => {
@@ -772,7 +774,7 @@ describe("Game REST API", () => {
         .from(schema.games)
         .where(eq(schema.games.id, body.id)))[0]!;
       const config = JSON.parse(game.config);
-      expect(config.modelSelection).toEqual({
+      expect(config.modelRouting.defaultManifest[0]).toEqual({
         catalogId: "lm-studio:google/gemma-4-26b-a4b-qat",
         reasoningPolicy: "action-policy",
       });
@@ -1967,7 +1969,7 @@ describe("Game REST API", () => {
 
       const players = await db.select().from(schema.gamePlayers);
       const agentConfig = JSON.parse(players[0]!.agentConfig);
-      expect(agentConfig.model).toBe("grok-4-3");
+      expect(agentConfig.model).toBeUndefined();
     });
   });
 
@@ -2008,8 +2010,8 @@ describe("Game REST API", () => {
           .select()
           .from(schema.gamePlayers)
           .where(eq(schema.gamePlayers.gameId, id));
-        expect(filledPlayers.map((player) => JSON.parse(player.agentConfig).model))
-          .toEqual(Array(6).fill("gpt-5.6-luna"));
+        expect(filledPlayers.map((player) => player.modelPreference))
+          .toEqual(Array(6).fill("default"));
         const housePlayers = filledPlayers.filter((player) => player.userId === null);
         expect(housePlayers).toHaveLength(5);
         expect(housePlayers.every((player) => {
@@ -2042,8 +2044,8 @@ describe("Game REST API", () => {
         .select()
         .from(schema.gamePlayers)
         .where(eq(schema.gamePlayers.gameId, id));
-      expect(players.map((player) => JSON.parse(player.agentConfig).model))
-        .toEqual(Array(6).fill("grok-4-3"));
+      expect(players.map((player) => player.modelPreference))
+        .toEqual(Array(6).fill("default"));
     });
   });
 

@@ -1,3 +1,5 @@
+import { OPENAI_MODEL_FACTS, KATANA_MODEL_FACTS, META_MODEL_FACTS } from "./provider-model-facts";
+
 /**
  * Influence Game - Token Usage Tracking & Cost Estimation
  *
@@ -6,7 +8,6 @@
  * for OpenAI gpt-5 family models.
  */
 
-import { DEFAULT_MODEL_ID } from "./model-catalog";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -74,95 +75,31 @@ export interface TierAwareCostEstimate {
 // Pricing table (published provider pricing)
 // ---------------------------------------------------------------------------
 
-export const MODEL_PRICING: Record<string, ModelPricing> = {
-  // Legacy models (no cache discount — cached = uncached)
-  "gpt-4o-mini": { inputPer1M: 0.15, cachedInputPer1M: 0.15, outputPer1M: 0.60 },
-  "gpt-4o": { inputPer1M: 2.50, cachedInputPer1M: 2.50, outputPer1M: 10.0 },
-  "o4-mini": { inputPer1M: 1.10, cachedInputPer1M: 1.10, outputPer1M: 4.40 },
-  "gpt-4.1-nano": { inputPer1M: 0.10, cachedInputPer1M: 0.10, outputPer1M: 0.40 },
-  "gpt-4.1-mini": { inputPer1M: 0.40, cachedInputPer1M: 0.40, outputPer1M: 1.60 },
-  "gpt-4.1": { inputPer1M: 2.00, cachedInputPer1M: 2.00, outputPer1M: 8.00 },
-  // gpt-5 family (90% cache discount)
-  "gpt-5-nano": { inputPer1M: 0.05, cachedInputPer1M: 0.005, outputPer1M: 0.40 },
-  "gpt-5-mini": { inputPer1M: 0.25, cachedInputPer1M: 0.025, outputPer1M: 2.00 },
-  "gpt-5": { inputPer1M: 1.25, cachedInputPer1M: 0.125, outputPer1M: 10.00 },
-  "gpt-5.4-nano": { inputPer1M: 0.20, cachedInputPer1M: 0.02, outputPer1M: 1.25 },
-  "gpt-5.4-mini": { inputPer1M: 0.75, cachedInputPer1M: 0.075, outputPer1M: 4.50 },
-  // GPT-5.6 Luna rates published after the July 30, 2026 price reduction.
-  "gpt-5.6-luna": {
-    inputPer1M: 0.20,
-    cachedInputPer1M: 0.02,
-    cacheWriteInputPer1M: 0.25,
-    outputPer1M: 1.20,
-  },
-  // https://developers.openai.com/api/docs/models/gpt-6-luna (2026-09-22).
-  "gpt-6-luna": {
-    inputPer1M: 0.10,
-    cachedInputPer1M: 0.01,
-    cacheWriteInputPer1M: 0.125,
-    outputPer1M: 0.50,
-    tiers: [{ minPromptTokens: 272_001, inputPer1M: 0.20, cachedInputPer1M: 0.02, cacheWriteInputPer1M: 0.25, outputPer1M: 0.75 }],
-  },
-  // Grok 4.3 family. Katana uses hyphenated model IDs and includes router markup.
-  "grok-4-3": {
-    inputPer1M: 1.375,
-    cachedInputPer1M: 0.22,
-    outputPer1M: 2.75,
-    tiers: [
-      { maxTotalTokens: 200_000, inputPer1M: 1.375, cachedInputPer1M: 0.22, outputPer1M: 2.75 },
-      { minTotalTokens: 200_001, inputPer1M: 2.75, cachedInputPer1M: 0.44, outputPer1M: 5.50 },
-    ],
-  },
-  // Katana catalog rates published August 2026.
-  "grok-4-5": {
-    inputPer1M: 2.02,
-    cachedInputPer1M: 0.303,
-    outputPer1M: 6.06,
-  },
-  "glm-5-2": {
-    inputPer1M: 0.98049,
-    cachedInputPer1M: 0.196098,
-    outputPer1M: 3.08154,
-  },
-  // xAI native APIs use the dotted ID.
-  "grok-4.3": { inputPer1M: 1.25, cachedInputPer1M: 0.20, outputPer1M: 2.50 },
-  // Meta Model API published rates (dev.meta.ai/docs/pricing-rate-limits, 2026-10-13).
-  "muse-spark-1.3": { inputPer1M: 1.25, cachedInputPer1M: 0.15, outputPer1M: 4.25 },
-  "muse-spark-1.3-contributor": { inputPer1M: 0.10, cachedInputPer1M: 0.002, outputPer1M: 0.20 },
-  "muse-wonder-1.0": { inputPer1M: 4.00, cachedInputPer1M: 0.20, outputPer1M: 20.00 },
-};
+/** Bare model IDs are retained for simulation estimates; routes always use provider-qualified facts. */
+export const MODEL_PRICING: Record<string, ModelPricing> = Object.fromEntries([
+  ...Object.entries(KATANA_MODEL_FACTS),
+  ...Object.entries(OPENAI_MODEL_FACTS),
+  ...Object.entries(META_MODEL_FACTS),
+].flatMap(([id, facts]) => facts.pricing ? [[id, facts.pricing]] : []));
+// Native xAI spelling, retained for simulator comparisons (not a configured game route).
+MODEL_PRICING["grok-4.3"] = { inputPer1M: 1.25, cachedInputPer1M: 0.20, outputPer1M: 2.50 };
 
-/** Flex uses the current OpenAI Batch-rate card. Only Flex-supported hosted OpenAI models belong here. */
-export const OPENAI_FLEX_MODEL_PRICING: Record<string, ModelPricing> = {
-  "gpt-5-nano": { inputPer1M: 0.025, cachedInputPer1M: 0.0025, outputPer1M: 0.20 },
-  "gpt-5-mini": { inputPer1M: 0.125, cachedInputPer1M: 0.0125, outputPer1M: 1.00 },
-  "gpt-5.4-nano": { inputPer1M: 0.10, cachedInputPer1M: 0.01, outputPer1M: 0.625 },
-  "gpt-5.4-mini": { inputPer1M: 0.375, cachedInputPer1M: 0.0375, outputPer1M: 2.25 },
-  "gpt-5.6-luna": {
-    inputPer1M: 0.10,
-    cachedInputPer1M: 0.01,
-    cacheWriteInputPer1M: 0.125,
-    outputPer1M: 0.60,
-  },
-  "gpt-6-luna": {
-    inputPer1M: 0.05,
-    cachedInputPer1M: 0.005,
-    cacheWriteInputPer1M: 0.0625,
-    outputPer1M: 0.25,
-    tiers: [{ minPromptTokens: 272_001, inputPer1M: 0.10, cachedInputPer1M: 0.01, cacheWriteInputPer1M: 0.125, outputPer1M: 0.375 }],
-  },
-};
+/** Only published Flex rate cards are eligible for Flex estimates. */
+export const OPENAI_FLEX_MODEL_PRICING: Record<string, ModelPricing> = Object.fromEntries(
+  Object.entries(OPENAI_MODEL_FACTS).flatMap(([id, facts]) => facts.flexPricing ? [[id, facts.flexPricing]] : []),
+);
 
 // ---------------------------------------------------------------------------
 // Cost estimation
 // ---------------------------------------------------------------------------
 
 export function estimateCost(usage: TokenUsage, pricing: ModelPricing): CostEstimate;
-export function estimateCost(usage: TokenUsage, model: string): CostEstimate;
-export function estimateCost(usage: TokenUsage, pricingOrModel: ModelPricing | string): CostEstimate {
+export function estimateCost(usage: TokenUsage, model: string): CostEstimate | null;
+export function estimateCost(usage: TokenUsage, pricingOrModel: ModelPricing | string): CostEstimate | null {
   const basePricing = typeof pricingOrModel === "string"
-    ? MODEL_PRICING[pricingOrModel] ?? MODEL_PRICING[DEFAULT_MODEL_ID]!
+    ? MODEL_PRICING[pricingOrModel]
     : pricingOrModel;
+  if (!basePricing) return null;
   const pricing = pricingForUsage(basePricing, usage);
   const model = typeof pricingOrModel === "string" ? pricingOrModel : "custom";
 

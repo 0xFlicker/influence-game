@@ -1,3 +1,4 @@
+import { creationModelRouting, sealRosterModelRouting } from "./game-model-routing.js";
 import { loadPayloads } from "./payload-storage.js";
 import type { WerewolfHouseCharacter } from "../db/werewolf-schema.js";
 import { queueEpisodeCopy } from "./episode-presentation.js";
@@ -9,7 +10,7 @@ import { parseGameVisibility } from "@influence/engine/game-visibility";
 import { enabledGameKinds } from "@influence/engine/game-availability";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
-import { DEFAULT_MODEL_CATALOG_ID, getHousePersonaDetails, normalizeProviderManifest, pickAgentNames, HOUSE_PERSONA_KEYS, resolveModelSelection, assertRetrospectiveInputBinding, materializeRetrospectiveContext, providerLogicalCallId } from "@influence/engine";
+import { getHousePersonaDetails, pickAgentNames, HOUSE_PERSONA_KEYS, assertRetrospectiveInputBinding, materializeRetrospectiveContext, providerLogicalCallId } from "@influence/engine";
 import type { ProviderLogicalCallCoordinate } from "@influence/engine";
 import { applyWerewolfEvent, resolveWerewolfStrategy, werewolfActionPlans, observeWerewolf, projectWerewolfView, replayWerewolf, startWerewolf, werewolfConfig, WEREWOLF_PRESETS, werewolfExecutionFinished, compileWerewolfRetrospective } from "@influence/engine/werewolf";
 import type { WerewolfAudience, WerewolfEvent, WerewolfPlayer, WerewolfPreset, WerewolfStore, WerewolfVoteProgress } from "@influence/engine/werewolf";
@@ -31,16 +32,6 @@ export async function readWerewolfEvents(db: Pick<DrizzleDB, "select">, gameId: 
     if (row.event.gameId !== row.gameId || row.event.sequence !== row.sequence) throw new Error("Corrupt Werewolf event envelope");
   }
   return rows.map((row) => row.event);
-}
-
-export function validateWerewolfModels(input?: unknown) {
-  let providerManifest;
-  try { providerManifest = normalizeProviderManifest(input ?? [{ catalogId: DEFAULT_MODEL_CATALOG_ID }]); }
-  catch (error) { throw new WerewolfGameError(error instanceof Error ? error.message : "Invalid provider manifest", 400); }
-  for (const selection of providerManifest) {
-    if (resolveModelSelection(selection).model.evaluationStatus !== "game-ready") throw new WerewolfGameError("Model is not available", 400);
-  }
-  return providerManifest;
 }
 
 export function normalizeWerewolfCasting(input: { personaPool?: unknown; fillStrategy?: unknown }) {
@@ -94,7 +85,7 @@ export function createWerewolfHousePlayers(existing: Array<Pick<WerewolfPlayer, 
 
 /** Starting is one transaction: freeze character + selected game strategy, roles, and model policy. */
 export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
-  visibility?: unknown; preset: WerewolfPreset; agentProfileIds: string[]; providerManifest?: unknown; maxDays?: number;
+  visibility?: unknown; preset: WerewolfPreset; agentProfileIds: string[]; providerManifest?: unknown; modelRouting?: unknown; maxDays?: number;
 }) {
   let visibility;
   try { visibility = parseGameVisibility(input.visibility); } catch { throw new WerewolfGameError("Game visibility must be public or unlisted", 400); }
@@ -105,7 +96,8 @@ export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
     || new Set(input.agentProfileIds).size !== input.agentProfileIds.length || input.agentProfileIds.length > count) {
     throw new WerewolfGameError("Choose distinct owned characters within the seat limit", 400);
   }
-  const providerManifest = validateWerewolfModels(input.providerManifest);
+  const modelRouting = await creationModelRouting(db, userId, { modelRouting: input.modelRouting, providerManifest: input.providerManifest });
+  const providerManifest = modelRouting.defaultManifest;
   const gameId = randomUUID();
   const slug = await generateUniqueSlug(async (candidate) => (await db.select({ id: schema.games.id }).from(schema.games).where(eq(schema.games.slug, candidate))).length > 0);
   await db.transaction(async (tx) => {
@@ -115,11 +107,19 @@ export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
       .where(and(inArray(schema.agentProfiles.id, input.agentProfileIds), eq(schema.agentProfiles.userId, userId))).orderBy(asc(schema.agentProfiles.id)).for("update") : [];
     if (profiles.length !== input.agentProfileIds.length) throw new WerewolfGameError("A selected character is unavailable", 403);
     const players = await freezeWerewolfRoster(tx, input.agentProfileIds.map(agentProfileId => ({ id: randomUUID(), agentProfileId })), count);
+    const sealedConfig = await sealRosterModelRouting(tx, { modelRouting }, players.map(player => ({ id: player.id, agentProfileId: player.agentProfileId,
+      modelPreference: profiles.find(profile => profile.id === player.agentProfileId)?.modelPreference ?? "default" })));
     const rules = werewolfConfig(input.preset, input.maxDays ?? 10);
     const initial = startWerewolf(gameId, players, rules, randomUUID());
     await tx.insert(schema.games).values({ id: gameId, slug, gameKind: "werewolf", gameKernel: null,
       createdById: userId, status: "in_progress", trackType: "custom", minPlayers: count, maxPlayers: count,
-      startedAt: new Date().toISOString(), config: JSON.stringify({ providerManifest, retrospectiveForecast: forecastRetrospectiveBudget("werewolf", count, providerManifest), serviceTier: "flex", visibility, rulesVersion: rules.rulesVersion, preset: input.preset }) });
+      startedAt: new Date().toISOString(), config: JSON.stringify({ ...sealedConfig, retrospectiveForecast: forecastRetrospectiveBudget("werewolf", count, providerManifest), serviceTier: "flex", visibility, rulesVersion: rules.rulesVersion, preset: input.preset }) });
+    // Immediate creation has the same enrollment evidence as a lobby start.
+    await tx.insert(schema.werewolfLobbySeats).values(players.map(({ id, agentProfileId, contentRevisionId: _revision, ...houseCharacter }) => ({
+      id, gameId, agentProfileId: agentProfileId ?? null,
+      modelPreference: profiles.find(profile => profile.id === agentProfileId)?.modelPreference ?? "default",
+      houseCharacter: agentProfileId ? null : houseCharacter,
+    })));
     await tx.insert(schema.werewolfEvents).values({ gameId, sequence: initial.sequence, event: initial });
     await queueEpisodeCopy(tx, gameId);
   });

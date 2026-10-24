@@ -1,3 +1,4 @@
+import { actorProviderManifest } from "@influence/engine";
 import { loadPayloads } from "../services/payload-storage.js";
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
@@ -876,7 +877,7 @@ async function expectCoherentFrozenSeat(
   expect(revision.effectiveRuntimeSnapshot).toMatchObject({
     name: persona.name,
     personality: persona.personality,
-    model: config.model,
+    model: actorProviderManifest(JSON.parse((await gameRow(db, gameId))!.config), { id: seat.id, role: "player" })[0]!.modelId,
     temperature: config.temperature,
   });
 }

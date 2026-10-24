@@ -1,3 +1,6 @@
+import { readGameModelRouting, saveModelPreference } from "../services/game-model-routing.js";
+import { providerModelInventory } from "../routes/provider-models.js";
+import { userHasAnyRole } from "../db/rbac.js";
 import {guardInfluenceInspection} from "../services/house-game-kind-guard.js";
 import {thinkingFollowUp} from "./house-follow-ups.js";
 import type {HouseThinkingRead} from "./house-contract-types.js";
@@ -615,6 +618,18 @@ export class ProductionGameMcpJsonRpcServer {
           avatarChangeSource: "mcp_provided_avatar",
         }, args));
       }
+      if (name === "read_model_catalog") {
+        requireScopes(auth, ["agents:read"]);
+        return content(await providerModelInventory(process.env, await userHasAnyRole(this.requireManagementDb(), auth.userId, ["admin", "sysop"])));
+      }
+      if (name === "set_agent_model") {
+        requireScopes(auth, ["agents:read", "agents:write"]);
+        return content(await saveModelPreference(this.requireManagementDb(), auth.userId, requiredString(args, "agentId"), args.modelPreference));
+      }
+      if (name === "read_game_model_routing" || name === "set_game_model_routing") {
+        requireScopes(auth, ["producer"]);
+        return content(await readGameModelRouting(this.requireManagementDb(), auth.userId, requiredString(args, "gameIdOrSlug"), name === "set_game_model_routing" ? args.policy : undefined));
+      }
       if (name === "update_agent") {
         requireScopes(auth, ["agents:read", "agents:write"]);
         const db = this.requireManagementDb();
@@ -796,6 +811,11 @@ function productionGameMcpTools(
   );
   const includeProducerVariant = sharedGameReadVariant === "producer";
   const tools: GameMcpToolDescriptor[] = [];
+  if (producerEligible) tools.push(...(["read_game_model_routing", "set_game_model_routing"] as const).map(name => tool({ name,
+    description: "Read or replace contestant default, House route, fallback caps, exclusions and cast overrides. Requires admin/sysop; edits only while waiting. Read first and preserve unmodified settings.",
+    properties: { gameIdOrSlug: { type: "string" }, ...(name === "set_game_model_routing" ? { policy: { type: "object" } } : {}) },
+    required: name === "set_game_model_routing" ? ["gameIdOrSlug", "policy"] : ["gameIdOrSlug"], scopes: ["producer"], readOnlyHint: name === "read_game_model_routing" })));
+
 
   if (sharedGameReadVariant) {
     const gameReadScopes: McpOAuthScope[] = [sharedGameReadVariant];
@@ -1282,6 +1302,10 @@ function matchNarrativeContent(value: MatchNarrativePageResult): {
 
 function userAgentReadTools(): GameMcpToolDescriptor[] {
   return [
+    tool({ name: "read_model_catalog", description: "Read free or admin text model choices, provider availability, capability evidence and pricing. No generation.", scopes: ["agents:read"], readOnlyHint: true }),
+    tool({ name: "set_agent_model", description: "Set an owned character's shared model preference for future enrollments. Existing lobby snapshots stay fixed. Default lets the House decide; choices are best effort.",
+      properties: { agentId: { type: "string" }, modelPreference: { anyOf: [{ type: "string", enum: ["default"] }, { type: "object", additionalProperties: false, required: ["catalogId"], properties: { catalogId: { type: "string" }, reasoningPolicy: { type: "string", enum: ["action-policy", "low", "medium", "high"] } } }] } },
+      required: ["agentId", "modelPreference"], scopes: ["agents:read", "agents:write"], readOnlyHint: false }),
     tool({
       name: "list_archetypes",
       description: "List valid user-selectable agent archetypes for create_agent and update_agent, with labels and creation hints. Call before choosing or validating an archetype. Requires agents:read. No side effects.",

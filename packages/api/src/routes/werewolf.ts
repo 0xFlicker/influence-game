@@ -1,3 +1,4 @@
+import { GameModelRoutingError } from "../services/game-model-routing.js";
 import { loadPayloads } from "../services/payload-storage.js";
 import { readEpisodePresentations } from "../services/episode-presentation.js";
 import { isViewerGame, publicGameFilter } from "../services/game-visibility.js";
@@ -19,6 +20,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
   app.use("/api/werewolf/*", async (c, next) => { c.header("Cache-Control", "private, no-store"); await next(); });
   app.onError((error, c) => {
+    if (error instanceof GameModelRoutingError) return c.json({ error: error.message }, error.status);
     if (error instanceof WerewolfRulesVersionError) return c.json({ error: error.message }, 409);
     if (error instanceof WerewolfGameError) return c.json({ error: error.message }, error.status);
     console.error("[werewolf] Request failed", error);
@@ -28,7 +30,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
     let input: Record<string, unknown>;
     try { input = await c.req.json(); } catch { return c.json({ error: "Invalid JSON" }, 400); }
     if (!input || typeof input !== "object" || Array.isArray(input)
-      || Object.keys(input).some((key) => !["visibility", "preset", "agentProfileIds", "providerManifest", "maxDays"].includes(key))
+      || Object.keys(input).some((key) => !["visibility", "preset", "agentProfileIds", "providerManifest", "modelRouting", "maxDays"].includes(key))
       || (input.preset !== "one_wolf" && input.preset !== "two_wolves")
       || !Array.isArray(input.agentProfileIds) || input.agentProfileIds.some((id) => typeof id !== "string")
       || (input.maxDays !== undefined && (!Number.isInteger(input.maxDays) || Number(input.maxDays) < 1 || Number(input.maxDays) > 20))) {
@@ -36,7 +38,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
     }
     try {
       const game = await createWerewolfGame(db, c.get("user")!.id, { visibility: input.visibility, preset: input.preset,
-        agentProfileIds: input.agentProfileIds as string[], providerManifest: input.providerManifest,
+        agentProfileIds: input.agentProfileIds as string[], providerManifest: input.providerManifest, modelRouting: input.modelRouting,
         ...(input.maxDays !== undefined ? { maxDays: Number(input.maxDays) } : {}) });
       return c.json(game, 201);
     } catch (error) {
@@ -49,7 +51,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
   app.post("/api/werewolf/lobbies", requireAuth(db), requirePermission("create_game"), async c => {
     const input = await c.req.json().catch(() => null);
     if (!input || typeof input !== "object" || Array.isArray(input)
-      || Object.keys(input).some(key => !["visibility", "preset", "providerManifest", "maxDays", "setup", "personaPool", "fillStrategy", "visualMode", "visualFailurePolicy"].includes(key))
+      || Object.keys(input).some(key => !["visibility", "preset", "providerManifest", "modelRouting", "maxDays", "setup", "personaPool", "fillStrategy", "visualMode", "visualFailurePolicy"].includes(key))
       || !["one_wolf", "two_wolves"].includes(input.preset)
       || (input.maxDays !== undefined && (!Number.isInteger(input.maxDays) || input.maxDays < 1 || input.maxDays > 20))) return c.json({ error: "Choose a Werewolf preset and a day limit from 1 to 20." }, 400);
     return c.json(await createWerewolfLobby(db, c.get("user").id, input), 201);

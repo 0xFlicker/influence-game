@@ -63,11 +63,11 @@ describe("token cost estimation", () => {
 
   it("prices the current Katana fallback models at their published token rates", () => {
     expect(estimateCostForKnownModel(usage, "grok-4-5")?.totalCost).toBeCloseTo(0.00505, 10);
-    expect(estimateCostForKnownModel(usage, "glm-5-2")?.totalCost).toBeCloseTo(0.00252126, 10);
+    expect(estimateCostForKnownModel(usage, "glm-5-2")?.totalCost).toBeCloseTo(0.0035871115, 10);
 
     const cacheReadUsage = { ...usage, cachedTokens: 200 };
     expect(estimateCostForKnownModel(cacheReadUsage, "grok-4-5")?.totalCost).toBeCloseTo(0.0047066, 10);
-    expect(estimateCostForKnownModel(cacheReadUsage, "glm-5-2")?.totalCost).toBeCloseTo(0.0023643816, 10);
+    expect(estimateCostForKnownModel(cacheReadUsage, "glm-5-2")?.totalCost).toBeCloseTo(0.0035868882, 10);
   });
 
   it("uses Katana's higher Grok rate above the 200k-token request tier", () => {

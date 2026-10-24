@@ -79,6 +79,8 @@ export interface ProviderRuntimeDescriptor {
   modelId: string;
   modelCapabilities: ModelRequestCapabilities;
   reasoningPolicy: "action-policy" | ModelReasoningEffort;
+  /** Copied from the frozen model record, so adaptive effort stays provider-compatible. */
+  allowedReasoningEfforts?: readonly ModelReasoningEffort[];
   openAIReasoningSummary?: ModelReasoningSummaryMode;
   openAIServiceTier?: OpenAIRequestServiceTier;
 }

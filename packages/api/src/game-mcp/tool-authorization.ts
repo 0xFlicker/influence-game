@@ -124,6 +124,7 @@ const GAME_READ_TOOLS = [
 ] as const;
 
 const AGENT_READ_TOOLS = [
+  "read_model_catalog",
   "list_archetypes",
   "list_agents",
   "get_agent",
@@ -135,6 +136,7 @@ const AGENT_READ_TOOLS = [
 ] as const;
 
 const AGENT_WRITE_TOOLS = [
+  "set_agent_model",
   "generate_agent_visual_reference",
   "crop_agent_portrait",
   "create_agent",
@@ -158,6 +160,7 @@ const OWNER_LEARNING_WRITE_TOOLS = [
 ] as const;
 
 const PRODUCER_TOOLS = [
+  "read_game_model_routing", "set_game_model_routing",
   "read_producer_visual_production",
   "read_producer_season_diagnostics",
   "inspect_durable_run",

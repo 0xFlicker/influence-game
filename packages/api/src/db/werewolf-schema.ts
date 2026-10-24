@@ -26,6 +26,7 @@ export const werewolfLobbySeats = pgTable("werewolf_lobby_seats", {
   id: text("id").primaryKey(),
   gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
   agentProfileId: text("agent_profile_id").references(() => agentProfiles.id, { onDelete: "cascade" }),
+  modelPreference: jsonb("model_preference").$type<import("@influence/engine").ModelPreference>().notNull().default("default"),
   houseCharacter: jsonb("house_character").$type<WerewolfHouseCharacter>(),
   joinedAt: text("joined_at").notNull().default(sql`now()::text`),
 }, table => [unique("werewolf_lobby_seat_unique").on(table.gameId, table.agentProfileId), check("werewolf_lobby_seat_identity", sql`(${table.agentProfileId} IS NOT NULL) <> (${table.houseCharacter} IS NOT NULL)`)]);

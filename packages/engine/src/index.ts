@@ -798,3 +798,9 @@ export { DEFAULT_CONVERSATION_POLICY } from "./conversation-policy";
 export { conversationPolicy, beginConversation, isSpectatorHuddleSpeech, huddleSessionId } from "./open-conversation";
 
 export { withEvaluationBudget } from "./evaluation-budget";
+
+export * from "./game-model-routing";
+
+export * from "./model-route-metadata";
+
+export * from "./model-routing-report";

@@ -2,6 +2,11 @@
 /**
  * API-backed House visibility is Public or Unlisted; local artifacts are not published.
  * See api-simulate.ts for --visibility. This does not change decision trace permissions.
+ * Per-character API simulations use mixed-model-simulate.ts (root simulate:models).
+ * --preview is offline; --models assigns seats, --provider-entry remains a fallback chain.
+ * --house-entry configures independent House text work. Luna remains Flex.
+ * Actual paid runs require authorization and retain API IDs and durable evidence.
+ * No direct House provider calls or `as any` invocation shortcuts.
  * Influence Game — Batch Simulation Runner
  *
  * Runs multiple game simulations and outputs structured analysis.

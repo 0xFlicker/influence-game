@@ -1,3 +1,4 @@
+import { actorProviderManifest, gameModelPolicy, sealGameModelRouting } from "@influence/engine";
 import { conversationPolicy } from "@influence/engine";
 import { withEvaluationBudget } from "@influence/engine";
 import { fixtureInfluenceRetrospective, fixtureInfluenceRetrospectiveSetup, fixtureInfluenceRetrospectiveSpeaker } from "@influence/engine";
@@ -590,7 +591,15 @@ export async function validateGameStartReadiness(
   let resolvedProviderManifest;
   try {
     resolvedProviderManifest = resolveProviderManifestFromGameConfig(gameConfig);
-    if (gameConfig.visualMode === true && resolvedProviderManifest.some((selection) => !selection.model.capabilities.supportsImageInput)) return { error: "Visual Mode requires image-capable models" };
+    if (gameConfig.modelRouting !== undefined) {
+      const policy = gameModelPolicy(gameConfig);
+      if (!policy.contestants) {
+        const seats = game.gameKind === "werewolf"
+          ? await db.select().from(schema.werewolfLobbySeats).where(eq(schema.werewolfLobbySeats.gameId, gameId))
+          : await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, gameId));
+        sealGameModelRouting(policy, seats.map(seat => ({ id: seat.id, preference: seat.modelPreference })), game.gameKind !== "werewolf" && gameConfig.visualMode === true);
+      }
+    } else if (gameConfig.visualMode === true && resolvedProviderManifest.some((selection) => !selection.model.capabilities.supportsImageInput)) return { error: "Visual Mode requires image-capable models" };
   } catch (error) {
     return { error: publicProviderStartupError(error) };
   }
@@ -604,6 +613,21 @@ export async function validateGameStartReadiness(
     return {};
   }
 
+  if (gameConfig.modelRouting !== undefined) {
+    const policy = gameModelPolicy(gameConfig);
+    const seats = game.gameKind === "werewolf"
+      ? await db.select().from(schema.werewolfLobbySeats).where(eq(schema.werewolfLobbySeats.gameId, gameId))
+      : await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, gameId));
+    const sealed = policy.contestants ? gameConfig : { modelRouting: sealGameModelRouting(policy,
+      seats.map(seat => ({ id: seat.id, preference: seat.modelPreference })), game.gameKind !== "werewolf" && gameConfig.visualMode === true) };
+    const actors = [{ role: "house", id: null }, ...seats.map(seat => ({ role: "player", id: seat.id }))];
+    for (const actor of actors) {
+      const route = actorProviderManifest(sealed, actor);
+      if (!route.some(entry => createLlmClientFromEnv(env, { providerProfileId: entry.providerProfile.id, coordinated: true }))) return { error: "LLM provider not configured" };
+    }
+    // Discovery is advisory; no remote listing gate for experimental/manual IDs.
+    return {};
+  }
   if (!providerPreflightEnabled(env)) {
     return {};
   }
@@ -690,24 +714,15 @@ async function startGameWithOwner(
   const gameConfig = JSON.parse(game.config) as Record<string, unknown>;
 
   const useTestMockRunner = process.env.INFLUENCE_API_TEST_MOCK_RUNNER === "true";
-  const resolvedModelSelection = resolveProviderManifestFromGameConfig(gameConfig)[0]!;
-
-  const providerRuntimes = useTestMockRunner
-    ? null
-    : createLlmProviderRuntimesFromEnv(
-        resolveProviderManifestFromGameConfig(gameConfig),
-        process.env,
-        {
-          openAIServiceTier: normalizeOpenAIRequestServiceTier(gameConfig.serviceTier) ?? "flex",
-          timeout: providerRequestTimeoutMs(process.env),
-        },
-      );
+  const runtimesForActor = (id: string | null, role: string) => createLlmProviderRuntimesFromEnv(
+    actorProviderManifest(gameConfig, { id, role }), process.env, {
+      openAIServiceTier: normalizeOpenAIRequestServiceTier(gameConfig.serviceTier) ?? "flex",
+      timeout: providerRequestTimeoutMs(process.env),
+    });
+  const providerRuntimes = useTestMockRunner ? null : runtimesForActor(null, "house");
   const primaryRuntime = providerRuntimes?.[0];
-  if (!primaryRuntime) {
-    if (!useTestMockRunner) {
-      return { error: "LLM provider not configured" };
-    }
-  }
+  const resolvedModelSelection = actorProviderManifest(gameConfig, { role: "house" })[0]!;
+  if (!primaryRuntime && !useTestMockRunner) return { error: "House LLM provider not configured" };
 
   // Create token tracker
   const tokenTracker = new TokenTracker();
@@ -731,6 +746,9 @@ async function startGameWithOwner(
       return new ApiTestMockAgent(player.id, persona.name);
     }
 
+    const providerRuntimes = runtimesForActor(player.id, "player");
+    const primaryRuntime = providerRuntimes?.[0];
+    const resolvedModelSelection = actorProviderManifest(gameConfig, { id: player.id, role: "player" })[0]!;
     if (!primaryRuntime || !providerRuntimes) {
       throw new Error("LLM provider not configured");
     }
@@ -743,7 +761,7 @@ async function startGameWithOwner(
     const personality = resolvePersonality(
       persona.personaKey ?? persona.personality,
     );
-    const model = agentCfg.model ?? resolvedModelSelection.modelId;
+    const model = resolvedModelSelection.modelId;
 
     const memoryStore = new PgMemoryStore(db);
     const agent = new InfluenceAgent(

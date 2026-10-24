@@ -1,0 +1,2155 @@
+{
+  "checkedAt": "2026-10-23",
+  "source": "https://kat.imgnai.com/v1/models/text",
+  "models": {
+    "q-naifu-a3b": {
+      "displayName": "Q-Naifu A3B",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 200000,
+      "outputTokens": 20000,
+      "parameters": [
+        "max_tokens",
+        "temperature",
+        "top_k",
+        "top_p",
+        "min_p",
+        "repeat_penalty",
+        "presence_penalty",
+        "response_format",
+        "stop"
+      ],
+      "pricing": {
+        "inputPer1M": 0.19999999999999998,
+        "outputPer1M": 1.25,
+        "cachedInputPer1M": 0.19999999999999998
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": false
+    },
+    "gpt-6-astra": {
+      "displayName": "GPT-6 Astra",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "parameters": [
+        "include_reasoning",
+        "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ],
+      "pricing": {
+        "inputPer1M": 10.200000000000001,
+        "outputPer1M": 51.0,
+        "cachedInputPer1M": 1.02,
+        "cacheWriteInputPer1M": 12.75,
+        "tiers": [
+          {
+            "inputPer1M": 20.400000000000002,
+            "outputPer1M": 76.5,
+            "cachedInputPer1M": 2.04,
+            "cacheWriteInputPer1M": 25.5,
+            "minPromptTokens": 272000
+          }
+        ]
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "gpt-6-astra-pro": {
+      "displayName": "GPT-6 Astra Pro",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "parameters": [
+        "include_reasoning",
+        "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ],
+      "pricing": {
+        "inputPer1M": 10.200000000000001,
+        "outputPer1M": 51.0,
+        "cachedInputPer1M": 1.02,
+        "cacheWriteInputPer1M": 12.75,
+        "tiers": [
+          {
+            "inputPer1M": 20.400000000000002,
+            "outputPer1M": 76.5,
+            "cachedInputPer1M": 2.04,
+            "cacheWriteInputPer1M": 25.5,
+            "minPromptTokens": 272000
+          }
+        ]
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "qwen3-8-max-0902": {
+      "displayName": "Qwen3.8 Max (0902)",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1000000,
+      "outputTokens": 131072,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logprobs",
+        "max_tokens",
+        "presence_penalty",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 2.04,
+        "outputPer1M": 6.12,
+        "cachedInputPer1M": 0.255
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "gemini-3-8-flash": {
+      "displayName": "Gemini 3.8 Flash",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1048576,
+      "outputTokens": 65536,
+      "parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.8415,
+        "outputPer1M": 4.2075,
+        "cachedInputPer1M": 0.08415,
+        "cacheWriteInputPer1M": 0.04250000000000004
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "muse-spark-1-3-contributor": {
+      "displayName": "Muse Spark 1.3 Contributor",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1048576,
+      "outputTokens": 943718,
+      "parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "repetition_penalty",
+        "response_format",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.102,
+        "outputPer1M": 0.204,
+        "cachedInputPer1M": 0.00204
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "claude-fable-5-1": {
+      "displayName": "Claude Fable 5.1",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1000000,
+      "outputTokens": 128000,
+      "parameters": [
+        "include_reasoning",
+        "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "tools",
+        "verbosity"
+      ],
+      "pricing": {
+        "inputPer1M": 10.1,
+        "outputPer1M": 50.5,
+        "cachedInputPer1M": 0.2525,
+        "cacheWriteInputPer1M": 12.625
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "glm-5-3-private": {
+      "displayName": "GLM 5.3 Private",
+      "supportsImages": false,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1048576,
+      "outputTokens": 131072,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_completion_tokens",
+        "max_tokens",
+        "min_p",
+        "parallel_tool_calls",
+        "presence_penalty",
+        "reasoning",
+        "reasoning_effort",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 1.456,
+        "outputPer1M": 4.576,
+        "cachedInputPer1M": 0.2704
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "glm-5-3-flash-private": {
+      "displayName": "GLM 5.3 Flash Private",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1048576,
+      "outputTokens": 131072,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logprobs",
+        "max_completion_tokens",
+        "max_tokens",
+        "min_p",
+        "parallel_tool_calls",
+        "presence_penalty",
+        "reasoning",
+        "reasoning_effort",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.156,
+        "outputPer1M": 0.52,
+        "cachedInputPer1M": 0.031200000000000002
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "grok-4-6": {
+      "displayName": "Grok 4.6",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 500000,
+      "outputTokens": 450000,
+      "parameters": [
+        "include_reasoning",
+        "logprobs",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 2.04,
+        "outputPer1M": 6.12,
+        "cachedInputPer1M": 0.51,
+        "tiers": [
+          {
+            "inputPer1M": 4.08,
+            "outputPer1M": 12.24,
+            "cachedInputPer1M": 1.02,
+            "minPromptTokens": 200000
+          }
+        ]
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "kimi-k3": {
+      "displayName": "Kimi K3",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1048576,
+      "outputTokens": 1048576,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "max_tokens",
+        "presence_penalty",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ],
+      "pricing": {
+        "inputPer1M": 0.24377999999999997,
+        "outputPer1M": 11.016,
+        "cachedInputPer1M": 0.2142
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "gpt-5-6-luna": {
+      "displayName": "GPT-5.6 Luna",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "parameters": [
+        "include_reasoning",
+        "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ],
+      "pricing": {
+        "inputPer1M": 0.202,
+        "outputPer1M": 1.212,
+        "cachedInputPer1M": 0.0202,
+        "cacheWriteInputPer1M": 0.2525
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "gpt-5-6-luna-pro": {
+      "displayName": "GPT-5.6 Luna Pro",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "parameters": [
+        "include_reasoning",
+        "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ],
+      "pricing": {
+        "inputPer1M": 0.202,
+        "outputPer1M": 1.212,
+        "cachedInputPer1M": 0.0202,
+        "cacheWriteInputPer1M": 0.2525
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "gpt-5-6-sol": {
+      "displayName": "GPT-5.6 Sol",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "parameters": [
+        "include_reasoning",
+        "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ],
+      "pricing": {
+        "inputPer1M": 4.04,
+        "outputPer1M": 20.2,
+        "cachedInputPer1M": 0.404,
+        "cacheWriteInputPer1M": 5.05
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "gpt-5-6-sol-pro": {
+      "displayName": "GPT-5.6 Sol Pro",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "parameters": [
+        "include_reasoning",
+        "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ],
+      "pricing": {
+        "inputPer1M": 4.04,
+        "outputPer1M": 20.2,
+        "cachedInputPer1M": 0.404,
+        "cacheWriteInputPer1M": 5.05
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "gpt-5-6-terra": {
+      "displayName": "GPT-5.6 Terra",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "parameters": [
+        "include_reasoning",
+        "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ],
+      "pricing": {
+        "inputPer1M": 2.02,
+        "outputPer1M": 12.12,
+        "cachedInputPer1M": 0.202,
+        "cacheWriteInputPer1M": 2.525
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "gpt-5-6-terra-pro": {
+      "displayName": "GPT-5.6 Terra Pro",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "parameters": [
+        "include_reasoning",
+        "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ],
+      "pricing": {
+        "inputPer1M": 2.02,
+        "outputPer1M": 12.12,
+        "cachedInputPer1M": 0.202,
+        "cacheWriteInputPer1M": 2.525
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "grok-4-5": {
+      "displayName": "Grok 4.5",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 500000,
+      "outputTokens": 450000,
+      "parameters": [
+        "include_reasoning",
+        "logprobs",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 2.02,
+        "outputPer1M": 6.06,
+        "cachedInputPer1M": 0.303,
+        "tiers": [
+          {
+            "inputPer1M": 4.04,
+            "outputPer1M": 12.12,
+            "cachedInputPer1M": 0.606,
+            "minPromptTokens": 200000
+          }
+        ]
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "glm-5-2": {
+      "displayName": "GLM 5.2",
+      "supportsImages": false,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1048576,
+      "outputTokens": 262144,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.034611499999999996,
+        "outputPer1M": 7.1049999999999995,
+        "cachedInputPer1M": 0.033495000000000004
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "glm-5-2-private": {
+      "displayName": "GLM 5.2 Private",
+      "supportsImages": false,
+      "supportsStructuredOutput": true,
+      "contextTokens": 524288,
+      "outputTokens": 524288,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "max_tokens",
+        "min_p",
+        "parallel_tool_calls",
+        "presence_penalty",
+        "reasoning",
+        "reasoning_effort",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 1.2978,
+        "outputPer1M": 3.09,
+        "cachedInputPer1M": 0.2266
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "claude-fable-5": {
+      "displayName": "Claude Fable 5",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1000000,
+      "outputTokens": 128000,
+      "parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "tool_choice",
+        "tools",
+        "verbosity"
+      ],
+      "pricing": {
+        "inputPer1M": 10.1,
+        "outputPer1M": 50.5,
+        "cachedInputPer1M": 1.01,
+        "cacheWriteInputPer1M": 12.625
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "claude-opus-4-8": {
+      "displayName": "Claude Opus 4.8",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1000000,
+      "outputTokens": 128000,
+      "parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "tool_choice",
+        "tools",
+        "verbosity"
+      ],
+      "pricing": {
+        "inputPer1M": 5.2,
+        "outputPer1M": 26.0,
+        "cachedInputPer1M": 0.52,
+        "cacheWriteInputPer1M": 6.5
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "claude-opus-4-8-fast": {
+      "displayName": "Claude Opus 4.8 Fast",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1000000,
+      "outputTokens": 128000,
+      "parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "tool_choice",
+        "tools",
+        "verbosity"
+      ],
+      "pricing": {
+        "inputPer1M": 10.4,
+        "outputPer1M": 52.0,
+        "cachedInputPer1M": 1.04,
+        "cacheWriteInputPer1M": 13.0
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "qwen3-7-max": {
+      "displayName": "Qwen3.7 Max",
+      "supportsImages": false,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1000000,
+      "outputTokens": 65536,
+      "parameters": [
+        "include_reasoning",
+        "logprobs",
+        "max_tokens",
+        "presence_penalty",
+        "reasoning",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 1.6224999999999998,
+        "outputPer1M": 4.867500000000001,
+        "cachedInputPer1M": 0.32449999999999996,
+        "cacheWriteInputPer1M": 2.028125
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "grok-build-0-1": {
+      "displayName": "Grok Build 0.1",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 256000,
+      "outputTokens": 230400,
+      "parameters": [
+        "include_reasoning",
+        "logprobs",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 1.0,
+        "outputPer1M": 2.0,
+        "cachedInputPer1M": 0.19999999999999998,
+        "tiers": [
+          {
+            "inputPer1M": 2.0,
+            "outputPer1M": 4.0,
+            "cachedInputPer1M": 0.39999999999999997,
+            "minPromptTokens": 200000
+          }
+        ]
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "gemini-3-5-flash": {
+      "displayName": "Gemini 3.5 Flash",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1048576,
+      "outputTokens": 65536,
+      "parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 1.6500000000000001,
+        "outputPer1M": 9.9,
+        "cachedInputPer1M": 0.165,
+        "cacheWriteInputPer1M": 0.09166666666666663
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "grok-4-3": {
+      "displayName": "Grok 4.3",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1000000,
+      "outputTokens": 900000,
+      "parameters": [
+        "include_reasoning",
+        "logprobs",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 1.375,
+        "outputPer1M": 2.75,
+        "cachedInputPer1M": 0.22,
+        "tiers": [
+          {
+            "inputPer1M": 2.75,
+            "outputPer1M": 5.5,
+            "cachedInputPer1M": 0.44,
+            "minPromptTokens": 200000
+          }
+        ]
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "qwen3-6-35b-a3b": {
+      "displayName": "Qwen3.6 35B A3B",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 262144,
+      "outputTokens": 262140,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.11,
+        "outputPer1M": 1.045,
+        "cachedInputPer1M": 0.055
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "qwen3-6-flash": {
+      "displayName": "Qwen3.6 Flash",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1000000,
+      "outputTokens": 65536,
+      "parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "presence_penalty",
+        "reasoning",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.20625000000000002,
+        "outputPer1M": 1.2375,
+        "cacheWriteInputPer1M": 0.2578125,
+        "cachedInputPer1M": 0.20625000000000002,
+        "tiers": [
+          {
+            "inputPer1M": 0.8250000000000001,
+            "outputPer1M": 3.3000000000000003,
+            "cacheWriteInputPer1M": 1.03125,
+            "cachedInputPer1M": 0.8250000000000001,
+            "minTotalTokens": 256001
+          }
+        ]
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "qwen3-6-max-preview": {
+      "displayName": "Qwen3.6 Max Preview",
+      "supportsImages": false,
+      "supportsStructuredOutput": true,
+      "contextTokens": 262144,
+      "outputTokens": 65536,
+      "parameters": [
+        "include_reasoning",
+        "logprobs",
+        "max_tokens",
+        "presence_penalty",
+        "reasoning",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 1.144,
+        "outputPer1M": 6.864,
+        "cacheWriteInputPer1M": 1.4300000000000002,
+        "cachedInputPer1M": 1.144,
+        "tiers": [
+          {
+            "inputPer1M": 1.76,
+            "outputPer1M": 10.56,
+            "cacheWriteInputPer1M": 2.2,
+            "cachedInputPer1M": 1.76,
+            "minTotalTokens": 128001
+          }
+        ]
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "deepseek-v4-flash": {
+      "displayName": "DeepSeek V4 Flash",
+      "supportsImages": false,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1048576,
+      "outputTokens": 384000,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.10010000000000001,
+        "outputPer1M": 0.20020000000000002,
+        "cachedInputPer1M": 0.02002
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "deepseek-v4-pro": {
+      "displayName": "DeepSeek V4 Pro",
+      "supportsImages": false,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1048576,
+      "outputTokens": 384000,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.7173672,
+        "outputPer1M": 1.4347344,
+        "cachedInputPer1M": 0.0597806
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "gpt-5-5": {
+      "displayName": "GPT-5.5",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "parameters": [
+        "include_reasoning",
+        "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ],
+      "pricing": {
+        "inputPer1M": 5.5,
+        "outputPer1M": 33.0,
+        "cachedInputPer1M": 0.55,
+        "tiers": [
+          {
+            "inputPer1M": 11.0,
+            "outputPer1M": 49.5,
+            "cachedInputPer1M": 1.1,
+            "minTotalTokens": 272001
+          }
+        ]
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "kimi-k2-6-private": {
+      "displayName": "Kimi K2.6 Private",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 262144,
+      "outputTokens": 262144,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "parallel_tool_calls",
+        "presence_penalty",
+        "reasoning",
+        "reasoning_effort",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 1.199,
+        "outputPer1M": 5.06,
+        "cachedInputPer1M": 0.407
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "qwen3-coder-next-private": {
+      "displayName": "Qwen3 Coder Next Private",
+      "supportsImages": false,
+      "supportsStructuredOutput": true,
+      "contextTokens": 262144,
+      "outputTokens": 262144,
+      "parameters": [
+        "frequency_penalty",
+        "logit_bias",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.198,
+        "outputPer1M": 1.32,
+        "cachedInputPer1M": 0.198
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "glm-5-1-private": {
+      "displayName": "GLM 5.1 Private",
+      "supportsImages": false,
+      "supportsStructuredOutput": true,
+      "contextTokens": 202752,
+      "outputTokens": 202752,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "parallel_tool_calls",
+        "presence_penalty",
+        "reasoning",
+        "reasoning_effort",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 1.331,
+        "outputPer1M": 4.62,
+        "cachedInputPer1M": 0.66
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "kimi-k2-6": {
+      "displayName": "Kimi K2.6",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 262144,
+      "outputTokens": 16384,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "parallel_tool_calls",
+        "presence_penalty",
+        "reasoning",
+        "reasoning_effort",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.7150000000000001,
+        "outputPer1M": 3.7510000000000003,
+        "cachedInputPer1M": 0.165
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "mimo-v2-flash-private": {
+      "displayName": "MiMo-V2-Flash Private",
+      "supportsImages": false,
+      "supportsStructuredOutput": true,
+      "contextTokens": 262144,
+      "outputTokens": 262144,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "max_tokens",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.11,
+        "outputPer1M": 0.33,
+        "cachedInputPer1M": 0.11
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "claude-opus-4-7": {
+      "displayName": "Claude Opus 4.7",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1000000,
+      "outputTokens": 128000,
+      "parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "tool_choice",
+        "tools",
+        "verbosity"
+      ],
+      "pricing": {
+        "inputPer1M": 5.5,
+        "outputPer1M": 27.5,
+        "cachedInputPer1M": 0.55,
+        "cacheWriteInputPer1M": 6.875
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "glm-5-1": {
+      "displayName": "GLM 5.1",
+      "supportsImages": false,
+      "supportsStructuredOutput": true,
+      "contextTokens": 202752,
+      "outputTokens": 65535,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "parallel_tool_calls",
+        "presence_penalty",
+        "reasoning",
+        "reasoning_effort",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 1.54,
+        "outputPer1M": 4.84,
+        "cachedInputPer1M": 0.286
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "gemma-4-26b-a4b": {
+      "displayName": "Gemma 4 26B A4B",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 262144,
+      "outputTokens": null,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.07425000000000001,
+        "outputPer1M": 0.24750000000000003,
+        "cachedInputPer1M": 0.04125
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "gemma-4-31b": {
+      "displayName": "Gemma 4 31B",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 262144,
+      "outputTokens": 16384,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.22,
+        "outputPer1M": 0.44,
+        "cachedInputPer1M": 0.22
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "qwen3-6-plus": {
+      "displayName": "Qwen3.6 Plus",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1000000,
+      "outputTokens": 65536,
+      "parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "presence_penalty",
+        "reasoning",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.35750000000000004,
+        "outputPer1M": 2.1449999999999996,
+        "cacheWriteInputPer1M": 0.446875,
+        "cachedInputPer1M": 0.35750000000000004,
+        "tiers": [
+          {
+            "inputPer1M": 1.4300000000000002,
+            "outputPer1M": 4.289999999999999,
+            "cacheWriteInputPer1M": 1.7875,
+            "cachedInputPer1M": 1.4300000000000002,
+            "minTotalTokens": 256001
+          }
+        ]
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "grok-4-20": {
+      "displayName": "Grok 4.20",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 2000000,
+      "outputTokens": 1800000,
+      "parameters": [
+        "include_reasoning",
+        "logprobs",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 1.375,
+        "outputPer1M": 2.75,
+        "cachedInputPer1M": 0.22,
+        "tiers": [
+          {
+            "inputPer1M": 2.75,
+            "outputPer1M": 5.5,
+            "cachedInputPer1M": 0.44,
+            "minPromptTokens": 200000
+          }
+        ]
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "grok-4-20-multi-agent": {
+      "displayName": "Grok 4.20 Multi-Agent",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 2000000,
+      "outputTokens": 1800000,
+      "parameters": [
+        "include_reasoning",
+        "logprobs",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "temperature",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 1.375,
+        "outputPer1M": 2.75,
+        "cachedInputPer1M": 0.22,
+        "tiers": [
+          {
+            "inputPer1M": 2.75,
+            "outputPer1M": 5.5,
+            "cachedInputPer1M": 0.44,
+            "minPromptTokens": 200000
+          }
+        ]
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": false
+    },
+    "minimax-m2-7": {
+      "displayName": "MiniMax M2.7",
+      "supportsImages": false,
+      "supportsStructuredOutput": true,
+      "contextTokens": 196608,
+      "outputTokens": 131072,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.33,
+        "outputPer1M": 1.32,
+        "cachedInputPer1M": 0.06599999999999999
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "gpt-5-4-mini": {
+      "displayName": "GPT-5.4 Mini",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 400000,
+      "outputTokens": 128000,
+      "parameters": [
+        "include_reasoning",
+        "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ],
+      "pricing": {
+        "inputPer1M": 0.8250000000000001,
+        "outputPer1M": 4.95,
+        "cachedInputPer1M": 0.0825
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "glm-5-turbo": {
+      "displayName": "GLM 5 Turbo",
+      "supportsImages": false,
+      "supportsStructuredOutput": true,
+      "contextTokens": 202752,
+      "outputTokens": 131072,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 1.32,
+        "outputPer1M": 4.4,
+        "cachedInputPer1M": 0.26399999999999996
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "qwen3-5-27b-private": {
+      "displayName": "Qwen3.5-27B Private",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 262144,
+      "outputTokens": 262144,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.33,
+        "outputPer1M": 2.64,
+        "cachedInputPer1M": 0.032999999999999995
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "gpt-5-4": {
+      "displayName": "GPT-5.4",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "parameters": [
+        "include_reasoning",
+        "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ],
+      "pricing": {
+        "inputPer1M": 2.75,
+        "outputPer1M": 16.5,
+        "cachedInputPer1M": 0.275,
+        "tiers": [
+          {
+            "inputPer1M": 5.5,
+            "outputPer1M": 24.75,
+            "cachedInputPer1M": 0.55,
+            "minTotalTokens": 272001
+          }
+        ]
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "gemini-3-1-flash-lite-preview": {
+      "displayName": "Gemini 3.1 Flash Lite Preview",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1048576,
+      "outputTokens": 65536,
+      "parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.275,
+        "outputPer1M": 1.6500000000000001,
+        "cachedInputPer1M": 0.0275,
+        "cacheWriteInputPer1M": 0.09166666666666663
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "qwen3-5-397b-a17b-private": {
+      "displayName": "Qwen3.5 397B A17B Private",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 262144,
+      "outputTokens": 262144,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.605,
+        "outputPer1M": 3.8500000000000005,
+        "cachedInputPer1M": 0.24750000000000003
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "minimax-m2-5-private": {
+      "displayName": "MiniMax M2.5 Private",
+      "supportsImages": false,
+      "supportsStructuredOutput": true,
+      "contextTokens": 196608,
+      "outputTokens": 196608,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "parallel_tool_calls",
+        "presence_penalty",
+        "reasoning",
+        "reasoning_effort",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.22,
+        "outputPer1M": 1.518,
+        "cachedInputPer1M": 0.0825
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "gemini-3-1-pro-preview": {
+      "displayName": "Gemini 3.1 Pro Preview",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1048576,
+      "outputTokens": 65536,
+      "parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 2.2,
+        "outputPer1M": 13.200000000000001,
+        "cachedInputPer1M": 0.22,
+        "cacheWriteInputPer1M": 0.41250000000000003,
+        "tiers": [
+          {
+            "inputPer1M": 4.4,
+            "outputPer1M": 19.8,
+            "cachedInputPer1M": 0.44,
+            "minTotalTokens": 200001
+          }
+        ]
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "claude-sonnet-4-6": {
+      "displayName": "Claude Sonnet 4.6",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1000000,
+      "outputTokens": 128000,
+      "parameters": [
+        "include_reasoning",
+        "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p",
+        "verbosity"
+      ],
+      "pricing": {
+        "inputPer1M": 3.3000000000000003,
+        "outputPer1M": 16.5,
+        "cachedInputPer1M": 0.33,
+        "cacheWriteInputPer1M": 4.125
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "glm-5": {
+      "displayName": "GLM 5",
+      "supportsImages": false,
+      "supportsStructuredOutput": true,
+      "contextTokens": 202752,
+      "outputTokens": null,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 1.1,
+        "outputPer1M": 3.52,
+        "cachedInputPer1M": 0.22
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "glm-5-private": {
+      "displayName": "GLM 5 Private",
+      "supportsImages": false,
+      "supportsStructuredOutput": true,
+      "contextTokens": 202752,
+      "outputTokens": 202752,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 1.32,
+        "outputPer1M": 3.8500000000000005,
+        "cachedInputPer1M": 0.5225
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "claude-opus-4-6": {
+      "displayName": "Claude Opus 4.6",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1000000,
+      "outputTokens": 128000,
+      "parameters": [
+        "include_reasoning",
+        "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p",
+        "verbosity"
+      ],
+      "pricing": {
+        "inputPer1M": 5.5,
+        "outputPer1M": 27.5,
+        "cachedInputPer1M": 0.55,
+        "cacheWriteInputPer1M": 6.875
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "kimi-k2-5-private": {
+      "displayName": "Kimi K2.5 Private",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 262144,
+      "outputTokens": 262144,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.66,
+        "outputPer1M": 3.3000000000000003,
+        "cachedInputPer1M": 0.24200000000000002
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "gemini-3-flash-preview": {
+      "displayName": "Gemini 3 Flash Preview",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 1048576,
+      "outputTokens": 65536,
+      "parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.55,
+        "outputPer1M": 3.3000000000000003,
+        "cachedInputPer1M": 0.055,
+        "cacheWriteInputPer1M": 0.09166666666666663
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "deepseek-v3-2-private": {
+      "displayName": "DeepSeek V3.2 Private",
+      "supportsImages": false,
+      "supportsStructuredOutput": true,
+      "contextTokens": 163840,
+      "outputTokens": 163840,
+      "parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 1.1,
+        "outputPer1M": 1.1,
+        "cachedInputPer1M": 0.55
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "qwen3-coder-480b-a35b-private": {
+      "displayName": "Qwen3 Coder 480B A35B Private",
+      "supportsImages": false,
+      "supportsStructuredOutput": false,
+      "contextTokens": 262000,
+      "outputTokens": 262000,
+      "parameters": [],
+      "pricing": {
+        "inputPer1M": 2.2,
+        "outputPer1M": 2.2,
+        "cachedInputPer1M": 2.2
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": false
+    },
+    "qwen3-vl-30b-a3b-instruct-private": {
+      "displayName": "Qwen3 VL 30B A3B Instruct Private",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 128000,
+      "outputTokens": 128000,
+      "parameters": [
+        "frequency_penalty",
+        "logit_bias",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.22,
+        "outputPer1M": 0.77,
+        "cachedInputPer1M": 0.032999999999999995
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "claude-haiku-4-5": {
+      "displayName": "Claude Haiku 4.5",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 200000,
+      "outputTokens": 64000,
+      "parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 1.1,
+        "outputPer1M": 5.5,
+        "cachedInputPer1M": 0.11,
+        "cacheWriteInputPer1M": 1.375
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    },
+    "gemma-3-27b-private": {
+      "displayName": "Gemma 3 27B Private",
+      "supportsImages": true,
+      "supportsStructuredOutput": true,
+      "contextTokens": 53920,
+      "outputTokens": 53920,
+      "parameters": [
+        "frequency_penalty",
+        "logit_bias",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p"
+      ],
+      "pricing": {
+        "inputPer1M": 0.12100000000000001,
+        "outputPer1M": 0.44,
+        "cachedInputPer1M": 0.12100000000000001
+      },
+      "minimumUsd": 0.00052,
+      "roundingUsd": 0.00052,
+      "supportsTools": true
+    }
+  }
+}

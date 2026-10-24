@@ -384,6 +384,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         avatarChangeSource: "web_upload",
         ...(avatarGenerationRequestId && { avatarGenerationRequestId }),
       }, {
+        modelPreference: body.modelPreference,
         name: body.name,
         backstory: body.backstory,
         personality: body.personality,
@@ -591,6 +592,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
           avatarGenerationRequestId: body.avatarGenerationRequestId,
         }),
       }, profileId, {
+        modelPreference: body.modelPreference,
         name: body.name,
         backstory: body.backstory,
         personality: body.personality,
@@ -695,6 +697,7 @@ function agentProfileErrorResponse(
     retryable: error.retryable,
     ...(error.details && { details: error.details }),
   };
+  if (error.statusCode === 403) return c.json(body, 403);
   if (error.statusCode === 404) return c.json(body, 404);
   if (error.statusCode === 409) return c.json(body, 409);
   return c.json(body, 400);

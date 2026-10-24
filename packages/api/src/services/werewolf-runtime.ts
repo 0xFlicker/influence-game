@@ -1,3 +1,4 @@
+import { actorProviderManifest, type GameModelRouting } from "@influence/engine";
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity, RetrospectiveExecutionError, ProviderUnavailableError } from "@influence/engine";
 import { pauseRetrospectiveExecution } from "./game-retrospective-recovery.js";
 import { WerewolfVisualBlocked } from "./werewolf-visual-policy.js";
@@ -39,8 +40,12 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
     return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Fixture choice" }
       : { kind: "speech", cue: null, text: "I will compare the claims with today's vote." };
   } };
+  const runtimeOptions = { openAIServiceTier: "flex" as const, timeout: 120_000 };
+  const contestantRuntimes = new Map(Object.keys((config.modelRouting as GameModelRouting | undefined)?.contestants ?? {}).map(id => [id,
+    createLlmProviderRuntimesFromEnv(actorProviderManifest(config, { id, role: "player" }), process.env, runtimeOptions) ?? []]));
   const agent = agentOverride ?? (process.env.INFLUENCE_API_TEST_MOCK_RUNNER === "true" ? mockAgent : new WerewolfModelAgent({
-    runtimes: createLlmProviderRuntimesFromEnv(resolveProviderManifestFromGameConfig(config), process.env, { openAIServiceTier: "flex", timeout: 120_000 }) ?? [],
+    runtimes: contestantRuntimes.size ? [...new Map([...contestantRuntimes.values()].flat().map(runtime => [runtime.catalogId, runtime])).values()] : createLlmProviderRuntimesFromEnv(resolveProviderManifestFromGameConfig(config), process.env, runtimeOptions) ?? [],
+    runtimesForActor: actorId => contestantRuntimes.get(actorId) ?? createLlmProviderRuntimesFromEnv(actorProviderManifest(config, { id: actorId, role: "player" }), process.env, runtimeOptions) ?? [],
     hooks: withEvaluationBudget(createApiProviderExecutionHooks(db, { gameId, ownerEpoch }), process.env), ownerEpoch,
   }));
   let heartbeatFailure = false;

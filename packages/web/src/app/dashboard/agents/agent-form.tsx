@@ -1,5 +1,7 @@
 "use client";
 
+import { ModelPreferencePicker } from "@/components/model-preference-picker";
+import type { ModelPreference } from "@influence/engine/game-model-routing";
 import { defaultWerewolfStrategy } from "@influence/engine/werewolf/strategy";
 
 import { characterEditFields, VISUAL_FIELDS, type CharacterEditCommand, type CharacterField } from "@influence/engine/agent-creation-assistant";
@@ -59,6 +61,7 @@ interface AgentFormProps {
 }
 
 interface EditorSnapshot {
+  modelPreference?: ModelPreference;
   visualDesign?: string | null;
   portraitCrop?: SavedAgent["portraitCrop"];
   headPosition?: SavedAgent["headPosition"];
@@ -112,7 +115,8 @@ function isUuid(value: string): boolean {
 }
 
 function sameSnapshot(left: EditorSnapshot, right: EditorSnapshot): boolean {
-  return left.name === right.name
+  return JSON.stringify(left.modelPreference ?? "default") === JSON.stringify(right.modelPreference ?? "default")
+    && left.name === right.name
     && (left.visualDesign ?? null) === (right.visualDesign ?? null)
     && JSON.stringify(left.headPosition ?? null) === JSON.stringify(right.headPosition ?? null)
     && JSON.stringify(left.headSuggestion ?? null) === JSON.stringify(right.headSuggestion ?? null)
@@ -189,6 +193,7 @@ export function AgentForm({
   const initialWerewolfStrategy = (comparingWerewolf ? strategyComparison?.initialWorking : undefined) ?? initial?.werewolfStrategyStyle ?? "";
   const initialPersona = initial ? initial.personaKey : "strategic";
   const initialSnapshot = useMemo<EditorSnapshot>(() => ({
+    modelPreference: initial?.modelPreference ?? "default",
     visualDesign: initial?.visualDesign ?? null,
     portraitCrop: initial?.portraitCrop ?? null,
     headPosition: initial?.headPosition ?? null,
@@ -212,6 +217,7 @@ export function AgentForm({
   const [name, setName] = useState(initialSnapshot.name);
   const [backstory, setBackstory] = useState(initialSnapshot.backstory);
   const [personality, setPersonality] = useState(initialSnapshot.personality);
+  const [modelPreference, setModelPreference] = useState<ModelPreference>(initialSnapshot.modelPreference ?? "default");
   const [strategyStyle, setStrategyStyle] = useState(initialSnapshot.strategyStyle);
   const [werewolfStrategyStyle, setWerewolfStrategyStyle] = useState(initialSnapshot.werewolfStrategyStyle);
   const [performanceInstructions, setPerformanceInstructions] = useState(initialSnapshot.performanceInstructions);
@@ -295,6 +301,7 @@ export function AgentForm({
     ? isAvatarCompletionPending(draftAvatarCompletion)
     : false;
   const currentSnapshot: EditorSnapshot = useMemo(() => ({
+    modelPreference,
     visualDesign,
     portraitCrop,
     headPosition,
@@ -309,7 +316,7 @@ export function AgentForm({
     personaKey,
     gender,
     explicitAvatarUrl,
-  }), [visualDesign, portraitCrop, headPosition, headSuggestion, backstory, explicitAvatarUrl, gender, name, personaKey, personality, strategyStyle, werewolfStrategyStyle, performanceInstructions, fullBodyReferenceUrl]);
+  }), [modelPreference, visualDesign, portraitCrop, headPosition, headSuggestion, backstory, explicitAvatarUrl, gender, name, personaKey, personality, strategyStyle, werewolfStrategyStyle, performanceInstructions, fullBodyReferenceUrl]);
   const dirty = !sameSnapshot(currentSnapshot, initialSnapshot);
   const anonymousDraftKey = `influence:agent-editor:${DRAFT_VERSION}:anonymous:${draftScope}`;
   const draftStorageKey = draftOwner
@@ -453,6 +460,7 @@ export function AgentForm({
     setPersonality(pendingRestore.current.personality);
     setStrategyStyle(pendingRestore.current.strategyStyle);
     setWerewolfStrategyStyle(pendingRestore.current.werewolfStrategyStyle);
+    setModelPreference(pendingRestore.current.modelPreference ?? "default");
     setPerformanceInstructions(pendingRestore.current.performanceInstructions);
     setFullBodyReferenceUrl(pendingRestore.current.fullBodyReferenceUrl);
     setPersonaKey(pendingRestore.current.personaKey);
@@ -704,6 +712,7 @@ export function AgentForm({
     setSaveError(null);
     try {
       const params: AgentProfileWriteParams = {
+        modelPreference,
         name: name.trim(),
         personality: personality.trim(),
         backstory: backstory.trim(),
@@ -830,6 +839,9 @@ export function AgentForm({
         </section>
       )}
 
+      {!publicPreview && <section className="mb-6">
+        <ModelPreferencePicker value={modelPreference} onChange={setModelPreference} disabled={submitting} />
+      </section>}
       <div hidden={!guided} className={guided ? "contents" : "hidden"}>
         <AgentCreationChat
           anonymous={anonymous} anonymousUsed={anonymousUsed}

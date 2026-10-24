@@ -1,0 +1,24 @@
+.layout {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hint {
+  max-width: 24rem;
+  color: rgb(var(--text-muted));
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+@media (min-width: 640px) {
+  .layout {
+    grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
+    align-items: end;
+    gap: 20px;
+  }
+
+  .hint {
+    padding-bottom: 2px;
+  }
+}

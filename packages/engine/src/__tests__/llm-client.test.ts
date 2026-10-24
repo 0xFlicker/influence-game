@@ -38,6 +38,26 @@ describe("LLM client env config", () => {
     expect(config?.client.maxRetries).toBe(0);
   });
 
+  it("coordinated Luna stays Flex with no hidden Standard retry after a 429", async () => {
+    const original = globalThis.fetch;
+    const tiers: unknown[] = [];
+    globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : input instanceof Request ? await input.json() : {};
+      tiers.push(body.service_tier);
+      return Response.json({ error: { message: "No Flex capacity", type: "rate_limit_error" } }, { status: 429 });
+    }, { preconnect: original.preconnect });
+    try {
+      const runtimes = createLlmProviderRuntimesFromEnv(resolveProviderManifest([
+        { catalogId: "openai:gpt-5-mini" }, { catalogId: "openai:gpt-6-luna", maxCallsPerGame: 2 },
+      ]), { OPENAI_API_KEY: "fixture" }, { openAIServiceTier: "auto" })!;
+      const luna = runtimes[1]!;
+      expect(luna.openAIServiceTier).toBe("flex");
+      const request = luna.adapter.compile({ messages: [{ role: "user", content: "Fixture" }], result: { kind: "text" }, outputTokenLimit: 32 }, luna);
+      await expect(luna.adapter.dispatch(request, { maxRetries: 0, headers: {} })).rejects.toThrow();
+      expect(tiers).toEqual(["flex"]);
+    } finally { globalThis.fetch = original; }
+  });
+
   it("uses a local dummy API key for LM Studio-compatible endpoints", () => {
     const config = createLlmClientFromEnv({
       INFLUENCE_LLM_BASE_URL: "http://127.0.0.1:1234/v1",

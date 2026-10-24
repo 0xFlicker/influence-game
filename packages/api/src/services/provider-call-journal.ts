@@ -1,3 +1,4 @@
+import { actorProviderManifest, modelRateCard } from "@influence/engine";
 import { storeJson, Hydrated, loadPayloads, storeFields } from "./payload-storage.js";
 import { assertWerewolfProviderTurn } from "./werewolf-games.js";
 import { ProviderJournalEntryExhaustedError, retrospectiveAttemptsPerModel } from "@influence/engine";
@@ -14,7 +15,6 @@ import {
   providerActionCoordinate,
   ProviderCallBudgetExhaustedError,
   ProviderCircuitOpenError,
-  resolveProviderManifestFromGameConfig,
 } from "@influence/engine";
 import type {
   ProviderAttemptIntent,
@@ -75,6 +75,7 @@ export interface ProviderEvidenceReconciliationDependencies {
 export interface CreateApiProviderExecutionHooksOptions {
   gameId: string;
   ownerEpoch: string;
+  episodeLease?: { revision: number };
   evidenceStorage?: PrivateTraceStorageAdapter;
   projectSpend?: (
     db: DrizzleDB,
@@ -141,6 +142,7 @@ function assertCoordinate(
     throw new Error("Provider attempt owner epoch does not match journal authority");
   }
   assertProviderSemanticCoordinate(intent.coordinate.semantic);
+  if (options.episodeLease && (intent.coordinate.semantic.kind !== "episode_copy" || intent.coordinate.semantic.revision !== options.episodeLease.revision || intent.coordinate.actor.role !== "house")) throw new Error("Episode journal authority cannot execute another responsibility");
   const actionCoordinate = providerActionCoordinate(intent.coordinate);
   const durableTurn = actionCoordinate.durableTurn;
   if (!durableTurn) {
@@ -279,6 +281,11 @@ async function assertActiveOwner(
   tx: Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0],
   options: CreateApiProviderExecutionHooksOptions,
 ): Promise<void> {
+  if (options.episodeLease) {
+    const [job] = await tx.select().from(schema.gameEpisodePresentations).where(eq(schema.gameEpisodePresentations.gameId, options.gameId)).for("update");
+    if (!job || job.leaseToken !== options.ownerEpoch || job.revision !== options.episodeLease.revision || job.status !== "generating" || job.locked || !job.leaseUntil || Date.parse(job.leaseUntil) <= Date.now()) throw new Error("Episode naming lease expired or replaced");
+    return;
+  }
   const owners = await tx.execute<{ status: string; expires_at: string | null }>(sql`
     SELECT status, expires_at
     FROM game_run_owners
@@ -298,14 +305,14 @@ async function assertProviderDispatchPolicy(
   tx: Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0],
   options: CreateApiProviderExecutionHooksOptions,
   intent: ProviderAttemptIntent,
-): Promise<void> {
+): Promise<string | null> {
   const catalogId = intent.preparedRequest.catalogId;
   if (!catalogId) {
     await assertProviderDispatchHealthInTransaction(tx, {
       providerProfileId: intent.preparedRequest.providerProfileId,
       catalogId: `${intent.preparedRequest.providerProfileId}:${intent.preparedRequest.model}`,
     });
-    return;
+    return null;
   }
 
   const game = (await tx.select({ config: schema.games.config })
@@ -315,15 +322,16 @@ async function assertProviderDispatchPolicy(
   const config = JSON.parse(game.config) as Record<string, unknown>;
   // Pre-manifest games remain primary-only during the bounded restoration
   // window. They have no fallback cap to reserve against.
-  if (config.providerManifest === undefined) {
+  if (config.providerManifest === undefined && config.modelRouting === undefined) {
     await assertProviderDispatchHealthInTransaction(tx, {
       providerProfileId: intent.preparedRequest.providerProfileId,
       catalogId,
     });
-    return;
+    return null;
   }
 
-  const entry = resolveProviderManifestFromGameConfig(config)
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('game_model_budget'), hashtext(${options.gameId}))`);
+  const entry = actorProviderManifest(config, intent.coordinate.actor)
     .find((candidate) => candidate.catalogId === catalogId);
   if (!entry) {
     throw new Error(`Provider entry ${catalogId} is not sealed for this game`);
@@ -338,16 +346,17 @@ async function assertProviderDispatchPolicy(
     providerProfileId: intent.preparedRequest.providerProfileId,
     catalogId,
   });
-  if (entry.maxCallsPerGame === undefined) return;
+  if (entry.maxCallsPerGame === undefined) return null;
 
   // assertActiveOwner holds the game-owner row FOR UPDATE, serializing every
   // reservation for this game. Counting existing rows therefore atomically
   // consumes the final permitted fallback unit without a refundable counter.
+  const budgetKey = config.modelRouting ? `${["house", "system", "producer"].includes(intent.coordinate.actor.role) ? "house" : "contestants"}:${catalogId}` : null;
   const used = (await tx.select({
     count: sql<number>`count(*)::int`,
   }).from(schema.providerCallAttempts).where(and(
     eq(schema.providerCallAttempts.gameId, options.gameId),
-    eq(schema.providerCallAttempts.catalogId, catalogId),
+    budgetKey ? eq(schema.providerCallAttempts.fallbackBudgetKey, budgetKey) : eq(schema.providerCallAttempts.catalogId, catalogId),
   )))[0]?.count ?? 0;
   if (used >= entry.maxCallsPerGame) {
     throw new ProviderCallBudgetExhaustedError(
@@ -356,6 +365,7 @@ async function assertProviderDispatchPolicy(
       entry.maxCallsPerGame,
     );
   }
+  return budgetKey;
 }
 
 async function allocateAttemptOrdinal(
@@ -369,7 +379,11 @@ async function allocateAttemptOrdinal(
   return db.transaction(async (tx) => {
     await assertActiveOwner(tx, options);
     await assertDurableTurnSubcall(tx, options, coordinate, "dispatch");
+    const [game] = await tx.select({ config: schema.games.config }).from(schema.games).where(eq(schema.games.id, options.gameId));
+    const config = game ? JSON.parse(game.config) as Record<string, unknown> : {};
+    const preferredCatalogId = config.modelRouting ? actorProviderManifest(config, coordinate.actor)[0]!.catalogId : null;
     await tx.insert(schema.providerLogicalCalls).values({
+      preferredCatalogId,
       id: callId,
       gameId: options.gameId,
       actorId: coordinate.actor.id,
@@ -467,7 +481,7 @@ async function reserveAttempt(
         throw new ProviderJournalEntryExhaustedError(intent.preparedRequest.catalogId);
       }
     }
-    await assertProviderDispatchPolicy(tx, options, intent);
+    const fallbackBudgetKey = await assertProviderDispatchPolicy(tx, options, intent);
     const existingCall = (await loadPayloads(tx.select().from(schema.providerLogicalCalls)
       .where(eq(schema.providerLogicalCalls.id, callId))))[0];
     if (!existingCall) {
@@ -486,9 +500,12 @@ async function reserveAttempt(
       logicalCallId: callId,
       gameId: options.gameId,
       ownerEpoch: options.ownerEpoch,
+      authorityKind: options.episodeLease ? "episode_copy" : "game",
       attemptOrdinal: intent.attemptOrdinal,
       transportAttemptId: intent.attemptId,
       reservationHash: reservationHash(intent),
+      fallbackBudgetKey,
+      rateCard: modelRateCard(intent.preparedRequest.catalogId ?? `${intent.preparedRequest.providerProfileId}:${intent.preparedRequest.model}`, typeof intent.preparedRequest.body === "object" && intent.preparedRequest.body && "service_tier" in intent.preparedRequest.body ? String(intent.preparedRequest.body.service_tier) : "default"),
       contextSourceHash: intent.context?.sourceHash,
       contextRevision: intent.context?.revision,
       transport: intent.preparedRequest.transport,
@@ -727,6 +744,7 @@ async function terminalizeAttempt(
         logicalCallId: callId,
         gameId: options.gameId,
         ownerEpoch: options.ownerEpoch,
+        authorityKind: options.episodeLease ? "episode_copy" : "game",
         body: preparedEvidence.body,
         bodySha256: preparedEvidence.bodySha256,
         byteLength: preparedEvidence.byteLength,
@@ -812,7 +830,7 @@ async function defaultProjectSpend(
       id: attempt.id,
       logicalCallId: attempt.logicalCallId,
       gameId: attempt.gameId,
-      ownerEpoch: attempt.ownerEpoch,
+      ownerEpoch: attempt.gameOwnerEpoch,
       attemptOrdinal: attempt.attemptOrdinal,
       actorId: logicalCall.actorId,
       actorName: logicalCall.actorName,
@@ -824,6 +842,7 @@ async function defaultProjectSpend(
       providerProfileId: attempt.providerProfileId,
       catalogId: attempt.catalogId,
       modelName: attempt.modelName,
+    rateCard: attempt.rateCard,
       completedAt: attempt.indeterminateAt,
       outcomeKind: "indeterminate",
       attemptStatus: "indeterminate",
@@ -837,7 +856,7 @@ async function defaultProjectSpend(
     id: attempt.id,
     logicalCallId: attempt.logicalCallId,
     gameId: attempt.gameId,
-    ownerEpoch: attempt.ownerEpoch,
+    ownerEpoch: attempt.gameOwnerEpoch,
     attemptOrdinal: attempt.attemptOrdinal,
     actorId: logicalCall.actorId,
     actorName: logicalCall.actorName,
@@ -849,6 +868,7 @@ async function defaultProjectSpend(
     providerProfileId: attempt.providerProfileId,
     catalogId: attempt.catalogId,
     modelName: attempt.modelName,
+    rateCard: attempt.rateCard,
     completedAt: attempt.completedAt,
     latencyMs: attempt.latencyMs,
     outcomeKind: attempt.outcomeKind,
@@ -1015,6 +1035,7 @@ function providerAttemptManifestValues(
     id: row.manifestId,
     gameId: row.gameId,
     ownerEpoch: row.ownerEpoch,
+    authorityKind: row.authorityKind,
     evidenceType: PROVIDER_ATTEMPT_EVIDENCE_TYPE,
     retentionClass: "debug",
     accessScope: "producer_admin" as const,

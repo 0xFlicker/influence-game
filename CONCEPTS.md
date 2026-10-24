@@ -902,3 +902,9 @@ Future game runs request a complete JSON document using the provider’s JSON Sc
 ### House share link
 
 An immutable `/s/<code>` reference to a supported public House route and its validated viewing settings. A replay share freezes the moment at the share click, including cue-local time, audience and playback preferences. The link is not an authorization grant or game-state record. See [House sharing](docs/house-sharing.md).
+
+## Model preference and game model routing
+
+A **model preference** is an operational character setting shared by both games. **Default** means use the game creator's contestant default. Enrollment snapshots the preference; an admin's game-specific override wins, including an explicit Default override. **House model** means the independent game-scoped text model for production responsibilities, not every House-owned contestant's model.
+
+A game's **model routing policy** defines contestant default/shared fallbacks, House primary/fallbacks, exclusions and caps. Atomic start freezes concrete routes and runtime metadata for each actor. Model choice is best effort under that policy. A **fallback reservation** counts a dispatched recovery attempt, including retries/uncertain dispatches; primary calls and accepted replay do not consume it. See [model routing](docs/model-routing.md).

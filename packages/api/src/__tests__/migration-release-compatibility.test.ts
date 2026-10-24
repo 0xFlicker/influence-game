@@ -20,6 +20,10 @@ describe("release migration identity", () => {
         "0059_sealed_provider_manifest.sql",
         "2202f1d0d3a67e7358720bf0eed1e5f8dc431aa910adbf6bebd0519a09f90c80",
       ],
+      [
+        "0128_game_model_routing.sql",
+        "a9e4cb9e7e3fd01f8d1f6fa888cf8f1c454e2550d5ab05f31acf9b09b00aa8c4",
+      ],
     ]);
 
     for (const [file, expectedHash] of publishedMigrations) {
@@ -94,6 +98,15 @@ describe("release migration identity", () => {
 });
 
 describe("expand-contract release migration policy", () => {
+  test("allows only the exact reviewed House journal authority upgrade", () => {
+    const migration = path.resolve(import.meta.dir, "../../drizzle/0129_provider_journal_house_authority.sql");
+    const sql = readFileSync(migration, "utf8");
+    expect(inspectReleaseMigrationFiles([migration])).toEqual([]);
+    expect(inspectReleaseMigrationSql(migration, `${sql}\nALTER TABLE games DROP CONSTRAINT games_game_kind_check;`)).toContainEqual(
+      expect.objectContaining({ rule: "drop-constraint" }),
+    );
+  });
+
   test("allows only the exact reviewed obsolete-review lease cleanup", () => {
     const migration = path.resolve(import.meta.dir, "../../drizzle/0127_close_unscreened_superseded_reviews.sql");
     const sql = readFileSync(migration, "utf8");

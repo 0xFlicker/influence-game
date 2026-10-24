@@ -5,6 +5,7 @@ import { listAdminAgents, type AdminAgent } from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
 import { TruncatedAddress } from "@/components/truncated-address";
 import { AgentAvatarPreview } from "@/components/agent-avatar-preview";
+import { AgentModelLabel } from "@/components/agent-model-label";
 
 function getPersonaInfo(key: string | null) {
   if (!key) return undefined;
@@ -45,6 +46,7 @@ function AgentDetailModal({
               name={agent.name}
               gamesPlayed={agent.gamesPlayed}
               gamesWon={agent.gamesWon}
+              modelPreference={agent.modelPreference}
               size="12"
             />
             <div className="min-w-0">
@@ -54,6 +56,7 @@ function AgentDetailModal({
               {persona && (
                 <span className="text-white/40 text-sm">{persona.name}</span>
               )}
+              <AgentModelLabel preference={agent.modelPreference} className="ml-2 text-sm text-text-secondary" />
             </div>
           </div>
           <button
@@ -194,6 +197,7 @@ export function AgentRow({
             name={agent.name}
             gamesPlayed={agent.gamesPlayed}
             gamesWon={agent.gamesWon}
+            modelPreference={agent.modelPreference}
             size="8"
           />
           <span className="text-white text-sm font-medium">{agent.name}</span>
@@ -201,6 +205,7 @@ export function AgentRow({
       </td>
       <td className="py-3 px-4 text-white/50 text-sm">
         {persona?.name ?? "—"}
+        <AgentModelLabel preference={agent.modelPreference} className="mt-1 block text-sm text-text-secondary" />
       </td>
       <td className="py-3 px-4 text-white/50 text-sm">
         {agent.ownerDisplayName || agent.ownerEmail ? (

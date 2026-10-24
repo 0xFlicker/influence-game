@@ -3,6 +3,7 @@ import { lmStudioTimeoutMs } from "./local-inference";
 import {
   PROVIDER_PROFILES,
   type ModelReasoningPolicy,
+  type ModelReasoningEffort,
   type ModelRequestCapabilities,
   type ProviderProfileId,
   type ResolvedProviderManifestEntry,
@@ -38,6 +39,7 @@ export interface LlmProviderRuntime {
   modelId: string;
   modelCapabilities: ModelRequestCapabilities;
   reasoningPolicy: ModelReasoningPolicy;
+  allowedReasoningEfforts?: readonly ModelReasoningEffort[];
   openAIReasoningSummary?: OpenAIReasoningSummaryMode;
   openAIServiceTier?: OpenAIRequestServiceTier;
   position: number;
@@ -46,6 +48,8 @@ export interface LlmProviderRuntime {
 }
 
 export interface CreateLlmClientOptions {
+  /** Coordinator owns every retry and receipt; transport must dispatch once. */
+  coordinated?: boolean;
   timeout?: number;
   maxRetries?: number;
   providerProfileId?: ProviderProfileId;
@@ -373,7 +377,7 @@ export function createLlmClientFromEnv(
       Boolean(value),
     ),
   );
-  const providerFetch = flexProcessingEnabled
+  const providerFetch = flexProcessingEnabled && !options.coordinated
     ? createFlexProcessingFetch(evidenceFetch)
     : evidenceFetch;
 
@@ -413,9 +417,18 @@ export function createLlmProviderRuntimesFromEnv(
         ...options,
         ...(entry.providerProfile.id === "lm-studio" && { timeout: lmStudioTimeoutMs(env) }),
         maxRetries: 0,
+        coordinated: true,
         providerProfileId: entry.providerProfile.id,
       }) ?? undefined;
-      if (!config) return null;
+      if (!config) {
+        const unavailable = () => { throw new Error(`Provider ${entry.providerProfile.id} is not configured`); };
+        runtimes.push({ catalogId: entry.catalogId, providerProfileId: entry.providerProfile.id, modelId: entry.modelId,
+          modelCapabilities: entry.model.capabilities, reasoningPolicy: entry.reasoningPolicy, allowedReasoningEfforts: entry.model.allowedReasoningEfforts, position: entry.position, role: entry.role,
+          ...(entry.maxCallsPerGame !== undefined && { maxCallsPerGame: entry.maxCallsPerGame }),
+          adapter: { id: entry.providerProfile.id, validate: () => ({ compatible: false, reason: `Provider ${entry.providerProfile.id} is not configured` }),
+            compile: unavailable, dispatch: unavailable, classifyError: () => ({ kind: "configuration", message: "Provider configuration unavailable", retryable: false }) } });
+        continue;
+      }
       clients.set(entry.providerProfile.id, config);
     }
     let adapter = adapters.get(entry.providerProfile.id);
@@ -433,11 +446,12 @@ export function createLlmProviderRuntimesFromEnv(
       modelId: entry.modelId,
       modelCapabilities: entry.model.capabilities,
       reasoningPolicy: entry.reasoningPolicy,
+      allowedReasoningEfforts: entry.model.allowedReasoningEfforts,
       ...(config.openAIReasoningSummary && {
         openAIReasoningSummary: config.openAIReasoningSummary,
       }),
       ...(config.openAIServiceTier && {
-        openAIServiceTier: config.openAIServiceTier,
+        openAIServiceTier: entry.modelId === "gpt-6-luna" ? "flex" : config.openAIServiceTier,
       }),
       position: entry.position,
       role: entry.role,

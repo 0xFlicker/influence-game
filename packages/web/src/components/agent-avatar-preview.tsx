@@ -18,6 +18,8 @@ import {
 } from "@floating-ui/react";
 import { useCallback, useId, useReducer, type ReactNode } from "react";
 import type { PersonaKey } from "@/lib/api";
+import type { ModelPreference } from "@influence/engine/game-model-routing";
+import { AgentModelLabel } from "./agent-model-label";
 import { getPersonaLabel } from "@/lib/personas";
 import { AgentAvatar, type AgentAvatarSize } from "./agent-avatar";
 import {
@@ -35,6 +37,7 @@ export interface PublicAgentAvatarPreview {
   name: string;
   gamesPlayed: number | null;
   gamesWon: number | null;
+  modelPreference?: ModelPreference;
 }
 
 interface AgentAvatarPreviewProps extends PublicAgentAvatarPreview {
@@ -54,6 +57,7 @@ export function AgentAvatarPreview({
   name,
   gamesPlayed,
   gamesWon,
+  modelPreference,
   size = "10",
   previewContent,
 }: AgentAvatarPreviewProps) {
@@ -151,6 +155,7 @@ export function AgentAvatarPreview({
                 name={name}
                 gamesPlayed={gamesPlayed}
                 gamesWon={gamesWon}
+                modelPreference={modelPreference}
               />
             )}
           </div>
@@ -168,6 +173,7 @@ export function AgentAvatarPreviewContent({
   name,
   gamesPlayed,
   gamesWon,
+  modelPreference,
 }: PublicAgentAvatarPreview) {
   const stats = getAgentAvatarPreviewStats(gamesPlayed, gamesWon);
   const roleLabel = role?.trim() || getPersonaLabel(personaKey);
@@ -186,6 +192,7 @@ export function AgentAvatarPreviewContent({
       <div className="mt-3 text-center">
         <p className="truncate text-sm font-semibold text-text-primary">{name}</p>
         <p className="influence-copy-muted mt-0.5 text-xs">{roleLabel}</p>
+        <AgentModelLabel preference={modelPreference} className="mt-1 block text-xs text-text-secondary break-all" />
       </div>
       {stats.kind === "record" ? (
         <dl className="mt-3 grid grid-cols-3 gap-2 border-t border-white/10 pt-3 text-center">

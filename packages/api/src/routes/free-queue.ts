@@ -1,3 +1,4 @@
+import { gameModelPolicy } from "@influence/engine";
 import { DEFAULT_CONVERSATION_POLICY } from "@influence/engine";
 /**
  * Free Game Queue API routes.
@@ -67,8 +68,6 @@ import { AgentProfileManagementError } from "../services/agent-profile-managemen
 import { getNextFreeGameTime } from "../services/free-game-schedule.js";
 import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
 import {
-  DAILY_FREE_MODEL,
-  DAILY_FREE_MODEL_SELECTION,
   DAILY_FREE_PROVIDER_MANIFEST,
 } from "../services/daily-provider-manifest.js";
 
@@ -267,8 +266,8 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       maxRounds: computedMaxRounds,
       minPlayers,
       maxPlayers,
-      modelSelection: DAILY_FREE_MODEL_SELECTION,
-      providerManifest: DAILY_FREE_PROVIDER_MANIFEST,
+      modelRouting: gameModelPolicy({ providerManifest: DAILY_FREE_PROVIDER_MANIFEST }),
+      serviceTier: "flex",
       visualMode: false,
       personaPool: [],
       fillStrategy: "balanced",
@@ -430,7 +429,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
                 strategyHints: null,
                 personaKey: archetype,
               }),
-              agentConfig: JSON.stringify({ model: DAILY_FREE_MODEL, temperature: 0.9 }),
+              agentConfig: JSON.stringify({ temperature: 0.9 }),
             });
         }
       }

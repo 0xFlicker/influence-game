@@ -128,6 +128,7 @@ export function GameWorkspace({ gameId, children }: { gameId: string; children: 
   }
   if (!valid) return <>{children}</>;
   return <div className={styles.main}>
+    <a href={`/admin/games/${gameId}/models`}>Models and cast</a>
     <Link href={`/admin/werewolf?${params}`} className={styles.back}>← Werewolf games</Link>
     {error && <Notice>{error} <button onClick={() => void refresh()}>Retry</button></Notice>}
     {!data ? !error && <p role="status" className={styles.empty}>Loading game workspace…</p> : <>

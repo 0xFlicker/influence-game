@@ -1,3 +1,4 @@
+import { grantTestAuthority } from "./rbac-fixtures.js";
 import { loadPayloads } from "../services/payload-storage.js";
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@influence/engine";
 import { completeCompetitionGame } from "../services/competition-completion.js";
@@ -30,6 +31,7 @@ const scripted: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospec
 beforeEach(async () => {
   db = await setupTestDB();
   await db.insert(schema.users).values({ id: ownerId });
+  await grantTestAuthority(db, ownerId, [], "admin");
 });
 async function create(agentProfileIds: string[] = []) {
   const game = await createWerewolfGame(db, ownerId, { preset: "two_wolves", agentProfileIds, providerManifest: manifest, maxDays: 2 });

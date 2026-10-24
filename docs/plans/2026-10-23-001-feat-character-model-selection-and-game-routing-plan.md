@@ -1,7 +1,7 @@
 ---
 title: "Character model selection, House routing, and admin fallbacks"
 date: 2026-10-23
-status: planned
+status: implemented
 type: feat
 ---
 
@@ -11,7 +11,7 @@ type: feat
 
 Allow an admin to create an Influence or Werewolf game with eight characters preferring eight different models, independently choose the House model, and keep play moving through explicit fallback routes. Give free users a small model picker while retaining broad model access for admins and sysops.
 
-This document records the agreed implementation scope. Saving it authorizes documentation only: no application changes, paid tests, live profile changes, deployment, or provider calls that generate content. Implementation and paid evaluation are separate future work.
+The user subsequently authorized implementation. Paid tests, live House-profile changes, deployment and content-generating provider calls remain outside this implementation authorization. See [implementation guide](../model-routing.md) and [cutover mapping](../deployment/game-model-routing-cutover.md).
 
 Model choice is always best effort. The game records both the preferred route and the actual route responsible for each accepted result. Catalog vetting means documenting capabilities and pricing, not requiring a paid certification run for every model.
 
@@ -171,7 +171,7 @@ Each contestant-chain entry has one per-game attempt allowance shared by all con
 
 ## Acceptance criteria
 
-All criteria below are pending implementation. Deterministic transport fixtures prove routing mechanics, not deployed provider availability or gameplay quality.
+The criteria below define the implementation verification bar; provider quality and deployed validation remain separate. Deterministic transport fixtures prove routing mechanics, not deployed provider availability or gameplay quality.
 
 | ID | Acceptance criterion | Evidence |
 |---|---|---|
@@ -261,6 +261,34 @@ These are navigation pointers, not a claim that the October 14 implementation in
 - Paid certification of every discovered model, unattended paid experiments, or automatic live House-profile reassignment.
 - Implicit Luna Standard recovery, implicit Muse Standard substitution, or a new consent flow. Explicit admin selection of other Muse variants remains allowed.
 - Image/audio/video model selection, unrelated game-rule changes, or weakening schemas to accommodate a model.
+
+## Implementation evidence
+
+The implementation includes the catalog and provider-qualified attempt pricing, enrollment snapshots, atomic assignment freeze, independent House routing, shared contestant and separate House fallback caps, character/admin UI, authorized HTTP/MCP operations, and the localhost simulation CLI. New games use `config.modelRouting`; the documented restoration reader preserves existing active games. Migrations `0128` and `0129` have been exercised in disposable local PostgreSQL databases and local development.
+
+Final local verification, October 23, 2026:
+
+- `bun run test`: 2,790 passed, 5 skipped, 0 failed. Loopback-server fixtures required execution outside the sandbox.
+- `bun run test:postgres` against an isolated local database: 2,159 passed, 0 failed. An earlier render-proof teardown timeout passed both its isolated retry and the final complete run.
+- `bun run check`: all workspace typechecks and lint checks passed.
+- Eight-model `simulate:models --preview`: passed without API authentication or provider requests.
+- `git diff --check`: passed.
+
+| Coverage | Evidence in the repo |
+|---|---|
+| Four free routes, exact admin IDs, override precedence, serialization, catalog changes after freeze, exclusions, unknown pricing and offline preview | `packages/engine/src/__tests__/game-model-routing.test.ts` |
+| Profile ownership, current role versus token claims, enrollment snapshot, entitlement revocation, frozen/forged writes and immediate Werewolf cast inspection | `packages/api/src/services/game-model-routing.test.ts` |
+| Eight distinct contestant routes plus a separate ninth House route, both games, real API runtime/journal with deterministic provider transport | `packages/api/src/__tests__/mixed-model-runtime.test.ts` |
+| Flex without hidden Standard dispatch | Mixed-runtime captured requests and `packages/engine/src/__tests__/llm-client.test.ts` |
+| Shared fallback reservations, primary exclusion, independent House caps, lease/owner fencing and replay | `packages/api/src/services/provider-call-journal.test.ts` |
+| Dated provider prices, minimum/rounding and immutable unknown historical pricing | Engine routing tests and `packages/api/src/services/provider-cost-accounting.test.ts` |
+| Independent House primary/fallback controls, exact IDs, visual compatibility and preserved common chain | `packages/web/src/app/admin/games/new/create-game-form.test.tsx` |
+
+The mixed-runtime fixtures assert accepted introductions from all eight contestants and separately journaled House copy, then stop. They prove routing and evidence mechanics, not completed paid mixed-model games or provider gameplay quality. Existing deterministic suites cover full game progression, context adaptation, schema failures and durable recovery. No deployed browser journey or paid provider test is claimed.
+
+Local startup repair: development had already applied the initial `0128` before more columns were added to that file. Its original checksum is restored and the additions now live in forward migration `0129`. Both known historical evidence-owner FK names are handled. Fresh-install and populated-upgrade coverage, journal and release-policy tests passed (58 tests); `bun run check` passed. Applying `0129` to development preserved 116 games, 9,476 provider attempts and 33,355 evidence manifests. A repeat migration run and all affected journal ORM queries succeeded. No API workers or paid providers were started for this repair.
+
+Staging/production inventory and cutover, deployed verification, and live House-profile assignments remain release/operator actions. The [House assignment proposal](house-character-model-assignments.md) is review-only and requires exact live profile/ownership confirmation before any writes. This implementation has not changed live profiles or deployed a migration to staging or production.
 
 ## References
 
