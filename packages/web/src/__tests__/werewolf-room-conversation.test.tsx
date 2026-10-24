@@ -6,19 +6,25 @@ import type {AcceptedVisualScene} from "@influence/engine/visual-mode";
 import {WerewolfContentFrame} from "../components/games/werewolf/werewolf-watch-stage";
 import {werewolfMomentCues} from "../components/games/werewolf/werewolf-watch-model";
 import {SCENE_READ_START_MS} from "../app/games/[slug]/components/scene-speech-timing";
-import {SOLO_READ_START_MS} from "../app/games/[slug]/components/solo-presentation-timing";
+import {SOLO_IMAGE_FADE_MS, SOLO_READ_START_MS} from "../app/games/[slug]/components/solo-presentation-timing";
 
 const globals = ["window", "document", "navigator", "Element", "HTMLElement", "Node", "Event", "ResizeObserver", "getComputedStyle"] as const;
 const original = new Map(globals.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
 let dom: Window;
+let dimensions: Map<string, PropertyDescriptor | undefined>;
 beforeEach(() => {
   dom = new Window({url: "http://localhost"});
+  dimensions = new Map(["clientWidth", "clientHeight"].map(key => [key, Object.getOwnPropertyDescriptor(dom.HTMLElement.prototype, key)]));
   Object.defineProperty(dom.document, "fonts", {value: {ready: Promise.resolve()}});
   for (const key of globals) Object.defineProperty(globalThis, key, {configurable: true, value: key === "window" ? dom : key === "getComputedStyle" ? dom.getComputedStyle.bind(dom) : dom[key]});
 });
 afterEach(async () => {
   await act(async () => {});
   cleanup();
+  for (const [key, descriptor] of dimensions) {
+    if (descriptor) Object.defineProperty(dom.HTMLElement.prototype, key, descriptor);
+    else Reflect.deleteProperty(dom.HTMLElement.prototype, key);
+  }
   dom.close();
   for (const key of globals) {
     const descriptor = original.get(key);
@@ -214,4 +220,44 @@ test("solo role clips use frozen full-body art and their room before revealing t
     if (actor === "b") expect(container.querySelector('[data-investigation-result]')?.textContent).toBe("Werewolf");
     unmount();
   }
+});
+
+
+test.each([1440, 800])("full-body solo shots stay anchored through the dissolve at %i px", width => {
+  Object.defineProperty(dom.HTMLElement.prototype, "clientWidth", {configurable: true, get: () => width});
+  Object.defineProperty(dom.HTMLElement.prototype, "clientHeight", {configurable: true, get: () => width === 1440 ? 900 : 1100});
+  const source = discussion();
+  source.chapterId = "introduction";
+  source.snapshot.players = source.snapshot.players.map(player => ({...player,fullBodyReferenceUrl:`/${player.id}-full.png`}));
+  const make = (id: string, cursor: number) => werewolfMomentCues({...source,cursor,
+    entry:{kind:"speech",day:0,actorId:id,audience:"public",text:`Hello from ${id}.`,cue:null}})[0]!;
+  const a = make("a",1), b = make("b",2);
+  const shot = (cue: typeof a, elapsed: number, previousCue?: typeof a, nextCue?: typeof a, reduced = false, paused = false) =>
+    <WerewolfContentFrame cue={cue} previousCue={previousCue} nextCue={nextCue} scene={null} elapsed={elapsed} reduced={reduced} paused={paused} />;
+  const view = render(shot(a,0,undefined,b));
+  const first = view.container.querySelector<HTMLImageElement>('[data-solo-portrait]')!;
+  expect(first.style.opacity).toBe("0");
+  Object.defineProperties(first, {naturalWidth:{value:800}, naturalHeight:{value:1200}});
+  fireEvent.load(first);
+  const geometry = () => [first.style.left, first.style.top, first.style.width, first.style.height];
+  const anchoredGeometry = geometry();
+  view.rerender(shot(a,SOLO_IMAGE_FADE_MS / 2,undefined,b));
+  expect(first.style.opacity).toBe("0.5");
+  view.rerender(shot(a,a.baseDurationMs - 1,undefined,b));
+  expect(first.style.opacity).toBe("1");
+  view.rerender(shot(b,0,a));
+  expect(view.container.querySelector('[data-solo-layer="outgoing"] [data-solo-portrait]')).toBe(first);
+  expect(geometry()).toEqual(anchoredGeometry);
+  expect(view.container.querySelector<HTMLElement>('[data-solo-layer="outgoing"]')?.style.opacity).toBe("1");
+  expect(view.container.querySelector<HTMLElement>('[data-solo-layer="current"]')?.style.opacity).toBe("0");
+  view.rerender(shot(b,SOLO_IMAGE_FADE_MS / 2,a,undefined,false,true));
+  expect(view.container.querySelector<HTMLElement>('[data-solo-layer="current"]')?.style.opacity).toBe("0.5");
+  expect(view.container.querySelector('[data-solo-layer="outgoing"] [data-speech-bubble]')).toBeNull();
+  view.rerender(shot(b,SOLO_IMAGE_FADE_MS,a));
+  expect(view.container.querySelector('[data-solo-layer="outgoing"]')).toBeNull();
+  view.rerender(shot(b,b.baseDurationMs - SOLO_IMAGE_FADE_MS / 2,a));
+  expect(view.container.querySelector<HTMLImageElement>('[data-solo-portrait]')?.style.opacity).toBe("0.5");
+  view.rerender(shot(b,0,a,undefined,true));
+  expect(view.container.querySelector('[data-solo-layer="outgoing"]')).toBeNull();
+  expect(view.container.querySelector<HTMLImageElement>('[data-solo-portrait]')?.style.opacity).toBe("1");
 });

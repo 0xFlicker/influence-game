@@ -15,7 +15,7 @@ import { SOLO_STUDIO_BACKDROP, StageBackdrop, RoomBackdrop } from "./stage-backd
 import backdropStyles from "./stage-backdrop.module.css";
 
 /** Frozen character art, never a generated talking-head clip or an inferred crop. */
-export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs, paused = false, reducedMotion = false, controlsInset = 0, speechPresentation = "solo", imageOpacity, onImageReady, backgroundUrl, hideSpeech = false, staticSpeech = false }: {
+export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs, paused = false, reducedMotion = false, controlsInset = 0, speechPresentation = "solo", imageOpacity, onImageReady, backgroundUrl, hideSpeech = false, reserveSpeechSpace = !hideSpeech, staticSpeech = false }: {
   beat: Extract<VisualPresentationBeat, { kind: "portrait" }>;
   elapsedMs: number;
   readingElapsedMs?: number;
@@ -26,6 +26,8 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
   /** The ballot collection takes over these exact pixels at the end of its reveal. */
   imageOpacity?: number;
   hideSpeech?: boolean;
+  /** Keep the character anchored when hiding only the outgoing speech bubble. */
+  reserveSpeechSpace?: boolean;
   backgroundUrl?: string;
   /** Canonical ballot labels are short receipt facts, not timed dialogue pages. */
   staticSpeech?: boolean;
@@ -54,7 +56,7 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
   }, []);
   const thought = useSceneThinking();
   const geometry = layoutSoloPresentation(size.width, size.height, loaded.source === source ? loaded.width : 0,
-    loaded.source === source ? loaded.height : 0, Boolean(fullBody), controlsInset, 440, player.headRectangle, !hideSpeech);
+    loaded.source === source ? loaded.height : 0, Boolean(fullBody), controlsInset, 440, player.headRectangle, reserveSpeechSpace);
   const headRect = validHeadRectangle(player.headRectangle) ? player.headRectangle : {x:.4, y:.04, width:.2, height:.16};
   const available = Math.max(0, size.height - controlsInset);
   const face = fullBody ? headRect : {x:.24,y:.12,width:.52,height:.52};

@@ -15,7 +15,7 @@ test("day music follows visible entries, never latest snapshot winner or roles",
  expect(werewolfMusic(moment({kind:"phase",phase:"vote",day:1}))?.key).toBe(werewolfMusic(before)?.key);
  expect(werewolfMusic(moment({kind:"phase",phase:"day",day:2}))?.key).not.toBe(werewolfMusic(before)?.key);
 });
-test("all introductions share one bed; missing moment, night, dawn and draw are silent",()=>{
+test("all introductions share one bed; missing moment, Mystery night/dawn and draw are silent",()=>{
  const first=moment({kind:"speech",day:0,actorId:"p1",audience:"public",text:"hello",cue:null});
  expect(werewolfMusic({...first,entry:{...first.entry,kind:"speech",actorId:"p2",audience:"public",text:"world",cue:null}})?.key).toBe(werewolfMusic(first)?.key);
  expect(werewolfMusic(null)).toBeNull();
@@ -48,4 +48,18 @@ test("pack music is omniscient only; public wolf result starts a distinct one-sh
  expect(werewolfMusic(omni)?.continueAtEnd).toBe(false);
  expect(werewolfMusic({...result,snapshot:{...result.snapshot,audience:"mystery"}})?.title).toBe("Wolves at the Festival");
  expect(werewolfMusic({...result,entry:{...result.entry,outcome:{faction:"village",winnerIds:[],reason:"wolves_eliminated"}}})?.title).toBe("Lanterns Still Burning");
+});
+
+
+test("pack, Doctor, Seer and night results share one continuous music section", () => {
+ const pack = {...moment({kind:"speech",day:1,actorId:"p1",audience:"pack",text:"A target.",cue:null}), snapshot:{...base.snapshot,audience:"omniscient" as const}};
+ const score = werewolfMusic(pack);
+ for (const entry of [
+  {kind:"phase",phase:"night",day:1},
+  {kind:"night",day:1,killedId:null,attackTargetId:"p1",protectedId:"p1"},
+ ] satisfies WerewolfPublicEntry[]) {
+  expect(werewolfMusic({...pack,entry})).toEqual(score);
+ }
+ expect(werewolfMusic({...pack,entry:{kind:"phase",phase:"day",day:1}})?.key).not.toBe(score?.key);
+ expect(werewolfMusic({...pack,entry:{kind:"phase",phase:"night",day:2}})?.key).not.toBe(score?.key);
 });

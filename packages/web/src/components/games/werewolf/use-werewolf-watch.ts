@@ -170,6 +170,14 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
   const active = openingCue ? buffered.find(w => w.fromCursor === 1)?.moments[0] ?? null : holding && tail && tail.cursor >= (activeCue?.moment.cursor ?? 0) ? tail : activeCue?.moment ?? tail;
   const playback = useMemo(() => data?.playback ?? [], [data?.playback]);
   const scrubStops = useMemo(() => werewolfScrubStops(playback), [playback]);
+  const neighborCues = useMemo(() => {
+    // Window revisions change on fetch/seek, not on every animation frame.
+    void revision;
+    return werewolfCues(contiguousWerewolfWindows([...windows.current.values()], activeCursor));
+  }, [revision, activeCursor]);
+  const neighborIndex = neighborCues.findIndex(cue => cue.key === activeCue?.key);
+  const previousCue = neighborIndex > 0 ? neighborCues[neighborIndex - 1] : undefined;
+  const nextCue = neighborIndex >= 0 ? neighborCues[neighborIndex + 1] : undefined;
   const activeStep = activeCue ? werewolfMomentCues(activeCue.moment).findIndex(cue => cue.key === activeCue.key) : 0;
   const exactStop = scrubStops.findIndex(stop => stop.cursor === active?.cursor && stop.step === Math.max(0, activeStep));
   const gameScrubPosition = exactStop >= 0 ? exactStop : Math.max(0, scrubStops.findLastIndex(stop => stop.cursor <= activeCursor));
@@ -205,7 +213,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
     if (openingIndex >= 0) return seek(1, playIntent.current, false, false, 0, openingIndex, elapsedMs);
     if ("cursor" in stop) await seek(stop.cursor, playIntent.current, false, false, stop.step, undefined, elapsedMs, key);
   };
-  return {...clock, timingCues, seekTiming, openingCue, openingCount: opening.current.length, seekOpening, data, active, media, preparing, error, follow, holding, seek, navigationRevision, activeStep, scrubPosition: openingCue ? opening.current.findIndex(c => c.key === openingCue.key) : opening.current.length + gameScrubPosition, scrubCount: opening.current.length + scrubStops.length,
+  return {...clock, previousCue, nextCue, timingCues, seekTiming, openingCue, openingCount: opening.current.length, seekOpening, data, active, media, preparing, error, follow, holding, seek, navigationRevision, activeStep, scrubPosition: openingCue ? opening.current.findIndex(c => c.key === openingCue.key) : opening.current.length + gameScrubPosition, scrubCount: opening.current.length + scrubStops.length,
     retry: () => void seek(target.current,playIntent.current,false,awaitingInitialCue.current),
     toggle: () => { playIntent.current = !playIntent.current; setFollow(playIntent.current); if (!playIntent.current) director.pause(); else if (!preparing) director.play(); },
     previous: () => {

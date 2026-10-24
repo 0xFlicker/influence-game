@@ -1701,3 +1701,49 @@ test("v10 solo night explanations precede results in distinct rooms at wide and 
     expect(mystery).not.toContain("choice tonight");
   } finally {await page.close();}
 }, 120_000);
+
+test("long public ballot explanations paginate inside their bubble", async () => {
+  const id = "browser-ballot-pagination";
+  const text = "I'm voting to eliminate Kimi K3. They pushed for a four-vote majority without naming a suspect first, then only offered DeepSeek Flash after Meta Spark pressed them directly. That sequencing—demand commitment before naming—is a wolf pattern worth acting on today.";
+  const events = await completedCurrentWerewolfFixture(id, 10);
+  for (const event of events) {
+    if (event.type === "werewolf.action_accepted" && event.payload.action === "public_vote" && event.payload.decision.kind === "spoken_target") {
+      event.payload.decision.text = text;
+    }
+  }
+  await database.db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"completed",startedAt:new Date().toISOString(),config:JSON.stringify({visibility:"public",providerManifest:[{catalogId:"openai:gpt-6-luna"}]})});
+  await database.db.insert(schema.werewolfEvents).values(events.map(event => ({gameId:id,sequence:event.sequence,event})));
+  const window = await (await fetch(`${servers.apiUrl}/api/werewolf/${id}/watch?audience=omniscient&limit=64`)).json() as import("@influence/engine/werewolf/watch-contract").WerewolfWatchWindow;
+  const ballot = window.moments.find(moment => moment.entry.kind === "ballot")!;
+  const page = await browser.newPage();
+  await rejectOptionalAnalytics(page);
+  try {
+    await page.goto(`${servers.webUrl}/games/${id}/replay?audience=omniscient`, {waitUntil:"domcontentloaded"});
+    await skipWerewolfOpening(page); await pauseWerewolf(page);
+    for (const size of [{width:1440,height:900},{width:700,height:1000}]) {
+      await page.setViewport(size);
+      await seekWatch(page,ballot.cursor);
+      await page.waitForSelector('[data-speech-bubble]');
+      await page.waitForSelector('[data-speech-bubble] [aria-label^="Page 1 of"]', {timeout:5000});
+      const fits = () => page.$eval('[data-speech-bubble]', bubble => {
+        const copy = bubble.querySelector('blockquote > div > div:nth-child(2)')!;
+        const bounds = bubble.getBoundingClientRect(), content = copy.getBoundingClientRect();
+        return content.bottom <= bounds.bottom - 10 && content.right <= bounds.right - 10 && content.top >= bounds.top;
+      });
+      expect(await fits()).toBe(true);
+      expect(await page.$eval('[data-speech-bubble] blockquote', node => node.textContent)).not.toContain("today.");
+      await page.screenshot({path:`/tmp/werewolf-ballot-pagination-${size.width}.png`});
+      const {visualSpeechReadingMs} = await import("@influence/engine/visual-speech");
+      const lastPageFrame = Number(await page.evaluate('document.querySelector(\'input[aria-label="Replay position"]\').value')) + Math.floor(visualSpeechReadingMs(text) * .95 * 30 / 1000);
+      await page.evaluate(`(() => {
+        const input = document.querySelector('input[aria-label="Replay position"]');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(String(lastPageFrame))});
+        input.dispatchEvent(new Event("input",{bubbles:true})); input.dispatchEvent(new Event("change",{bubbles:true}));
+      })()`);
+      await page.waitForFunction(`Number(document.querySelector('input[aria-label="Replay position"]')?.value) === ${lastPageFrame}`);
+      await page.screenshot({path:`/tmp/werewolf-ballot-last-${size.width}.png`});
+      await page.waitForFunction(`document.querySelector('[data-speech-bubble] blockquote')?.textContent?.includes("today.")`, {timeout:5000});
+      expect(await fits()).toBe(true);
+    }
+  } finally {await page.close();}
+},120_000);

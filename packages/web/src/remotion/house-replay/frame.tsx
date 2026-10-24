@@ -97,6 +97,7 @@ export function ReplayFrame({
     cue = data.cues[index]!;
   const sample = sampleTiming(data.timeline[index]!, timeMs);
   const previous = data.cues[index - 1];
+  const nextPicture = data.cues[index + 1]?.picture;
   const scene = sceneFor(cue),
     previousScene = sceneFor(previous);
   const images = useMemo(
@@ -169,6 +170,8 @@ export function ReplayFrame({
               {picture.kind === "influence-opening" ? <InfluenceOpeningFrame {...picture} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} video={renderOpeningVideo} /> : picture.kind === "thinking" ? <ThinkingFrame picture={picture} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} /> : picture.kind === "werewolf-opening" ? <WerewolfOpeningFrame cue={picture.cue} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} video={renderOpeningVideo} /> : picture.kind === "werewolf" ? (
                 <WerewolfContentFrame
                   cue={picture.cue}
+                  previousCue={previous?.picture.kind === "werewolf" && !previous.picture.scene ? previous.picture.cue : undefined}
+                  nextCue={nextPicture?.kind === "werewolf" && !nextPicture.scene ? nextPicture.cue : undefined}
                   scene={picture.scene}
                   elapsed={sample.elapsedMs}
                   reduced={data.reducedMotion}

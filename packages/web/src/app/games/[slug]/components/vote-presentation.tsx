@@ -12,7 +12,7 @@ import { SILENT_BALLOT_DURATION_MS, votePresentationTiming } from "./vote-presen
 import type { SceneFrame } from "./visual-scene-layout";
 import backdropStyles from "./stage-backdrop.module.css";
 
-export function VotePresentation({ beat, ledger, roster, elapsedMs, controlsInset = 0, silent = false, onImageReady, ...props }: {
+export function VotePresentation({ beat, ledger, roster, elapsedMs, controlsInset = 0, silent = false, staticSpeech = true, onImageReady, ...props }: {
   beat: Extract<VisualPresentationBeat, { kind: "portrait" }>;
   ledger: VoteLedgerState;
   roster: readonly FormatPresentationRosterPlayer[];
@@ -20,6 +20,8 @@ export function VotePresentation({ beat, ledger, roster, elapsedMs, controlsInse
   controlsInset?: number;
   backgroundUrl?: string;
   silent?: boolean;
+  /** Short ballot receipts stay static; spoken explanations use measured pages. */
+  staticSpeech?: boolean;
   onImageReady?: (source: string | null) => void;
   readingElapsedMs?: number;
   paused?: boolean;
@@ -74,7 +76,7 @@ export function VotePresentation({ beat, ledger, roster, elapsedMs, controlsInse
   } : null;
   return <div ref={stage} className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-vote-presentation>
     <SoloPresentation {...props} beat={beat} elapsedMs={elapsedMs} controlsInset={controlsInset + ledgerHeight + 24}
-      hideSpeech={silent || ledger.complete} staticSpeech onImageReady={source => {setImageSource(source); onImageReady?.(source);}}
+      hideSpeech={silent || ledger.complete} staticSpeech={staticSpeech} onImageReady={source => {setImageSource(source); onImageReady?.(source);}}
       imageOpacity={ledger.complete || canFly && progress > 0 ? 0 : undefined} />
     {ledger.complete && <div className="absolute inset-x-6 top-1/3 text-center" data-vote-complete>
       <p className="text-sm uppercase tracking-widest text-white/60">{ledger.title}</p>
