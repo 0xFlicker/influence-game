@@ -3,8 +3,8 @@ import type {AcceptedVisualScene} from "../visual-mode";
 import type {ModelPreference} from "../game-model-routing";
 export interface WerewolfWatchIdentity { id: string; name: string; avatarUrl: string | null; fullBodyReferenceUrl?: string | null; personaKey: string | null; personality: string; backstory: string; modelPreference?: ModelPreference }
 export type WerewolfNightAction =
-  | { kind: "protect"; actorId: string; targetId: string }
-  | { kind: "investigate"; actorId: string; targetId: string; isWolf: boolean }
+  | { kind: "protect"; actorId: string; targetId: string; speech?: {text: string; cue: string | null} }
+  | { kind: "investigate"; actorId: string; targetId: string; isWolf: boolean; speech?: {text: string; cue: string | null} }
   | { kind: "hunt"; wolfIds: string[]; targetId: string };
 export interface WerewolfWatchMoment {
   cursor: number;
@@ -38,4 +38,12 @@ export function isWerewolfPlayable(entry: WerewolfPublicEntry): boolean {
   if (entry.kind === "ballot") return true;
   if (entry.kind === "conversation" || entry.kind === "proposal") return !entry.unavailable && Boolean(entry.text?.trim());
   return true;
+}
+
+/** Shared expansion keeps server timing, navigation and browser scenes aligned. */
+export function werewolfNightSteps(actions: readonly WerewolfNightAction[]) {
+  return actions.flatMap(action => [
+    ...(action.kind !== "hunt" && action.speech ? [{action, decision: true}] : []),
+    {action, decision: false},
+  ]);
 }

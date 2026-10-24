@@ -237,3 +237,34 @@ for (const id of FORMAT_KERNEL_VIEWER_SCENARIO_IDS.filter(id => !id.startsWith("
     }
   });
 }
+
+test("v10 role explanations have separate private Studio moments and match server timing", async () => {
+  const events = await completedCurrentWerewolfFixture("v10-export", 10, {playerCount:6,wolves:1,seer:true,doctor:true});
+  for (const audience of ["mystery", "omniscient"] as const) {
+    const projected = projectWerewolfWatch(events,audience,1,64);
+    const window = {...projected, moments: projected.moments.map(({staging: _staging, ...moment}) => {void _staging; return moment;}), slug:"v10-export", status:"completed", audience, publicationCutoff:"2026-10-24T00:00:00Z", media:{}};
+    const source = {kind:"werewolf" as const, windows:[window], thoughts:[]};
+    const provenance = projectWerewolfProductionProvenance(events,audience);
+    const base = buildExportCues(source);
+    const catalog = assembleProductionCatalog({gameId:window.gameId, gameKind:"werewolf", audience,
+      sources:buildWerewolfProductionSources({gameId:window.gameId,audience,moments:window.moments,provenance,thoughts:[],opening:true})});
+    const bound = await bindWerewolfProductionPresentation({source,provenance,catalog,thoughts:[]});
+    const speeches = catalog.moments.filter(m => m.part.kind === "night-speech");
+    expect(speeches).toHaveLength(audience === "omniscient" ? 2 : 0);
+    for (const moment of window.moments) {
+      const cues = base.filter(c => c.picture.kind === "werewolf" && c.picture.cue.moment.cursor === moment.cursor && !c.picture.cue.reprise);
+      const row = window.playback.find(p => p.cursor === moment.cursor);
+      if (row) {
+        expect(cues.map(c => c.timing.key)).toEqual(row.keys);
+        expect(cues.map(c => c.timing.baseDurationMs)).toEqual(row.durationsMs);
+      }
+    }
+    const spokenSegments = speeches.map(speech => bound.find(m => m.id === speech.id)!.segments[0]!);
+    expect(new Set(spokenSegments.map(segment => segment.speech?.messageId)).size).toBe(speeches.length);
+    for (const speech of speeches) {
+      const segment = bound.find(m => m.id === speech.id)!.segments[0]!;
+      expect(segment.speech?.text).toContain("choice tonight");
+      expect(segment.speech?.speakerId).toBe(speech.actorId);
+    }
+  }
+});

@@ -18,6 +18,7 @@ export function VotePresentation({ beat, ledger, roster, elapsedMs, controlsInse
   roster: readonly FormatPresentationRosterPlayer[];
   elapsedMs: number;
   controlsInset?: number;
+  backgroundUrl?: string;
   silent?: boolean;
   onImageReady?: (source: string | null) => void;
   readingElapsedMs?: number;

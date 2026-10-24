@@ -277,7 +277,7 @@ export async function readWerewolfLiveView(db: DrizzleDB, gameId: string, audien
   const state = replayWerewolf(await readWerewolfEvents(db, gameId));
   const view = projectWerewolfView(state, audience);
   let voteProgress: WerewolfVoteProgress | null = null;
-  if (running && state.config.rulesVersion === 9 && state.phase === "vote" && !state.resolved) {
+  if (running && state.config.rulesVersion >= 9 && state.phase === "vote" && !state.resolved) {
     voteProgress = { kind: "day_vote", day: state.day, thread: 1, total: state.aliveIds.length,
       ready: state.actions.length, voteMode: "majority", requiredVotes: Math.floor(state.aliveIds.length / 2) + 1 };
   }

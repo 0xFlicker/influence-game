@@ -23,6 +23,7 @@ async function fixture(preset: "one_wolf" | "two_wolves" = "two_wolves") {
   return {game,store,controller,epoch:claim.claim.ownerEpoch};
 }
 const agent:WerewolfAgent={ prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}){
+  if ("solo" in request && request.solo) return {kind:"solo_target",targetId:request.legalTargetIds[0]!,text:"My choice for tonight.",cue:null};
   if(request.action==="conversation")return {kind:"conversation",text:"Fixture contribution",cue:null,recipientId:null,replyToContributionId:null};
   if(request.action==="pack_propose" || request.action==="public_vote")return {kind:"spoken_target",targetId:request.legalTargetIds[0]!,text:"Fixture contribution",cue:null,thinking:"Fixture"};
   if(request.legalTargetIds.length)return {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Fixture"};
@@ -135,7 +136,7 @@ for (const protectedTarget of [true,false]) test(`first daytime lobby uses ${pro
   const f=await fixture();let target:string|null=null;
   const nightAgent:WerewolfAgent={ prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide(input){
     if(input.request.action==="pack_propose")target=input.request.legalTargetIds[0]!;
-    if(input.request.action==="protect")return {kind:"target",targetId:protectedTarget ? target : input.request.legalTargetIds.find(id=>id!==target)!,thinking:"Fixture protection"};
+    if(input.request.action==="protect")return {kind:"solo_target",targetId:protectedTarget ? target : input.request.legalTargetIds.find(id=>id!==target)!,text:"My protection tonight.",cue:null};
     return agent.decide(input);
   }};
   for(let n=0;n<100;n++){

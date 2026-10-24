@@ -188,3 +188,30 @@ test("pack proposal speech has no target banner", () => {
   expect(view.queryByText("Proposed target: Arden")).toBeNull();
   expect(view.container.querySelector("[data-werewolf-canonical-details]")).toBeNull();
 });
+
+test("solo role clips use frozen full-body art and their room before revealing the result", () => {
+  const base = discussion();
+  const before = {...base.snapshot, rulesVersion: 10 as const, audience: "omniscient" as const, phase: "night" as const,
+    players: base.snapshot.players.map(p => ({...p, role: p.id === "a" ? "doctor" as const : "seer" as const, fullBodyReferenceUrl: `/${p.id}-full.png`}))};
+  const moment: WerewolfWatchMoment = {...base, snapshot: before,
+    entry: {kind: "night", day: 2, killedId: null, protectedId: "a", attackTargetId: null, investigation: {seerId:"b", targetId:"d", isWolf:true}},
+    night: {before, actions: [
+      {kind:"protect", actorId:"a", targetId:"a", speech:{text:"I need to survive to protect the village tomorrow.", cue:null}},
+      {kind:"investigate", actorId:"b", targetId:"d", isWolf:true, speech:{text:"Larry's claim needs checking tonight.", cue:null}},
+    ]}};
+  const cues = werewolfMomentCues(moment);
+  expect(cues).toHaveLength(5);
+  for (const [index, actor, room] of [[0,"a","doctor-room"], [2,"b","seer-room"]] as const) {
+    const {container, rerender, unmount} = render(<WerewolfContentFrame cue={cues[index]!} scene={null} elapsed={SOLO_READ_START_MS} reduced />);
+    expect(container.querySelector('[data-solo-image]')?.getAttribute('data-solo-image')).toBe("full-body");
+    expect(container.querySelector('[data-solo-portrait]')?.getAttribute('src')).toBe(`/${actor}-full.png`);
+    expect(container.querySelector('[data-room-backdrop]')?.getAttribute('data-room-backdrop')).toContain(room);
+    expect(container.querySelector('[data-thinking-camera] [data-room-backdrop]')).toBeNull();
+    expect(container.querySelector('[data-investigation-result]')).toBeNull();
+    rerender(<WerewolfContentFrame cue={cues[index+1]!} scene={null} elapsed={0} reduced />);
+    expect(container.querySelector('[data-night-role]')).not.toBeNull();
+    expect(container.querySelector('[data-speech-bubble]')).toBeNull();
+    if (actor === "b") expect(container.querySelector('[data-investigation-result]')?.textContent).toBe("Werewolf");
+    unmount();
+  }
+});

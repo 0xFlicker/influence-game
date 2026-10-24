@@ -155,7 +155,7 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
         if (!watchUrl) emit(`Watch: ${new URL(`/games/${encodeURIComponent(detail.slug)}/replay?audience=${args.audience}`, args.webUrl).href}`);
         emit(`Cast (${args.audience}): ${view.players.map(player => `${player.name}${args.audience === "omniscient" && player.role ? ` [${player.role}]` : ""}`).join(", ")}`);
         emit("Village wins by eliminating every wolf. Wolves win when they equal or outnumber everyone else.");
-        if (view.rulesVersion === 9) {
+        if (view.rulesVersion >= 9) {
           emit("Discussion uses a shared UTF-8 byte allowance and up to three directed handoffs; the final turn redirects or passes. Remaining space does not guarantee every player a discussion opportunity.");
           emit("One public sequential ballot follows: vote with optional speech or abstain. A strict majority of all living players is required; the day then ends either way.");
           emit("Pack speech and attack proposals are combined: up to three full exchanges, ending immediately when current targets match.");
@@ -195,18 +195,18 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
       const progress = detail.voteProgress;
       if (progress && detail.status === "in_progress") {
         if (progress.kind !== "day_vote" || view.phase !== "vote" || progress.day !== view.day
-          || progress.thread !== (view.rulesVersion === 9 ? 1 : view.discussion?.thread) || progress.total !== view.players.filter(player => player.alive).length
+          || progress.thread !== (view.rulesVersion >= 9 ? 1 : view.discussion?.thread) || progress.total !== view.players.filter(player => player.alive).length
           || !Number.isInteger(progress.ready) || progress.ready < 0 || progress.ready > progress.total
-          || progress.voteMode !== (view.rulesVersion !== 9 && view.discussion?.thread === view.discussion?.totalThreads ? "plurality" : "majority")
+          || progress.voteMode !== (view.rulesVersion < 9 && view.discussion?.thread === view.discussion?.totalThreads ? "plurality" : "majority")
           || progress.requiredVotes !== (progress.voteMode === "majority" ? Math.floor(progress.total / 2) + 1 : null)) throw new Error("Invalid Werewolf vote progress");
         const key = `${progress.day}:${progress.thread}`;
         if (key !== voteKey) {
           voteKey = key; voteStartedAt = now(); lastVoteReady = -1;
-          if (view.rulesVersion === 9) emit(`[Vote] Day ${progress.day}: ${progress.requiredVotes} votes required. Each ballot and optional speech publishes before the next voter acts.`);
+          if (view.rulesVersion >= 9) emit(`[Vote] Day ${progress.day}: ${progress.requiredVotes} votes required. Each ballot and optional speech publishes before the next voter acts.`);
           else emit(`[Vote] Day ${progress.day} · after thread ${progress.thread} — ${progress.voteMode === "plurality" ? `Final ballot from ${progress.total} living players: unique most votes wins; ties spare everyone.` : `${progress.requiredVotes} matching votes needed from ${progress.total} living players.`} Choices reveal together; no public speech during voting.`);
         }
         if (progress.ready !== lastVoteReady || now() - lastWaitingAt >= 30_000) {
-          if (view.rulesVersion === 9) emit(`[Voting] Day ${progress.day}: ${progress.ready}/${progress.total} public ballots committed.`);
+          if (view.rulesVersion >= 9) emit(`[Voting] Day ${progress.day}: ${progress.ready}/${progress.total} public ballots committed.`);
           else emit(`[Voting ${Math.floor((now() - voteStartedAt) / 1000)}s] Day ${progress.day} · thread ${progress.thread} — ${progress.ready}/${progress.total} decisions ready. ${progress.ready === progress.total ? "All decisions ready; committing ballots and resolving." : `Waiting for ${progress.total - progress.ready}; ballots sealed.`}`);
           lastVoteReady = progress.ready;
           lastWaitingAt = now();

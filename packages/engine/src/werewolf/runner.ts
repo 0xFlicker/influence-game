@@ -61,6 +61,11 @@ async function advanceRetrospective(store: WerewolfStore, agent: WerewolfAgent, 
 }
 
 export function werewolfFallback(state: WerewolfState, request: WerewolfRequest): WerewolfDecision {
+  if ("solo" in request && request.solo) {
+    const random = seededRandom(hashCanonicalJson({ seed: state.seed, purpose: "fallback", sequence: state.sequence + 1 }));
+    const choices = [...request.legalTargetIds].sort();
+    return {kind: "solo_target", targetId: choices[Math.floor(random() * choices.length)]!, text: null, cue: null};
+  }
   if (request.action === "conversation") return { kind: "conversation", text: null, cue: null, recipientId: null, replyToContributionId: null };
   if (request.action === "public_vote") return { kind: "spoken_target", text: null, cue: null, targetId: null, thinking: "" };
   if (request.action === "pack_propose") {

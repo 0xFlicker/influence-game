@@ -785,9 +785,9 @@ describe("/mcp Streamable HTTP route", () => {
       } finally { server.stop(true); }
     });
 
-    test.each([7, 8, 9] as const)("real House MCP route discovers both games and reads completed v%i history without ownership", async rulesVersion => {
+    test.each([7, 8, 9, 10] as const)("real House MCP route discovers both games and reads completed v%i history without ownership", async rulesVersion => {
       const issued = await issueMcpAccessToken(db, {walletAddress:"0xmcphttp00000000000000000000000000000402"});
-      let events = rulesVersion === 9 ? await completedCurrentWerewolfFixture("mcp-wolf") : await werewolfResultsFixture("village","mcp-wolf");
+      let events = (rulesVersion === 9 || rulesVersion === 10) ? await completedCurrentWerewolfFixture("mcp-wolf", rulesVersion) : await werewolfResultsFixture("village","mcp-wolf");
       if (rulesVersion === 7) {
         events = events.slice(0, events.findIndex(event => event.type === "werewolf.completed") + 1);
         const initial = events[0]!;
@@ -826,7 +826,7 @@ describe("/mcp Streamable HTTP route", () => {
         for (const next of page.followUps) {validateHouseInput(next.tool,next.arguments);expect(tools.some(tool => tool.name === next.tool)).toBe(true);}
         const continuation = page.followUps.find(next => next.arguments.cursor === page.nextCursor)!;
         expect((await rpc("tools/call",{name:continuation.tool,arguments:continuation.arguments})).isError).toBeUndefined();
-        if (rulesVersion === 9) {
+        if (rulesVersion >= 9) {
           const kinds = new Set(page.entries.map(item => item.entry.kind));
           let current = page;
           for (let pages = 0; current.nextCursor && pages < events.length; pages++) {

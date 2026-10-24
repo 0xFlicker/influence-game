@@ -11,7 +11,7 @@ import { TimedSpeech } from "./timed-speech";
 import type { VisualPresentationBeat } from "./visual-presentation";
 import { SCENE_SPEECH_START_MS, sceneSpeechOpacity } from "./scene-speech-timing";
 import { soloPresentationMotion } from "./solo-presentation-timing";
-import { SOLO_STUDIO_BACKDROP, StageBackdrop } from "./stage-backdrop";
+import { SOLO_STUDIO_BACKDROP, StageBackdrop, RoomBackdrop } from "./stage-backdrop";
 
 function portraitRoomTurn(count: number, index: number, speakerIndex: number, deep: boolean) {
   // Rotate the saved circular order so the current speaker stays in front.
@@ -66,12 +66,13 @@ export function portraitRoomTransitionSeats(width: number, count: number, previo
 }
 
 /** Saved audience membership supplies the cast; asset availability never changes the game. */
-export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion, controlsInset, speechPresentation, onImageReady, hideSpeech = false }: {
+export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion, controlsInset, speechPresentation, onImageReady, backgroundUrl, hideSpeech = false }: {
   beat: Extract<VisualPresentationBeat, { kind: "portrait-room" }>;
   elapsedMs: number; readingElapsedMs: number; reducedMotion: boolean; controlsInset: number;
   speechPresentation?: "solo" | "scene";
   onImageReady?: () => void;
   hideSpeech?: boolean;
+  backgroundUrl?: string;
 }) {
   const sampled = useSampledStage();
   const frame = useRef<HTMLElement>(null);
@@ -126,7 +127,7 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
   return <section ref={frame} aria-label={beat.roomLabel ?? (beat.roomNumber === null ? "Mingle room" : `Mingle room ${beat.roomNumber}`)} data-portrait-room
     className="relative min-h-0 w-full flex-1 overflow-hidden" style={{ perspective: 1200 }}>
     <div data-thinking-camera className="absolute inset-0" style={{...focus.mediaStyle,perspective:1200}}>
-    <StageBackdrop source={SOLO_STUDIO_BACKDROP} />
+    {backgroundUrl ? <RoomBackdrop source={backgroundUrl} /> : <StageBackdrop source={SOLO_STUDIO_BACKDROP} />}
     <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_70%,transparent,rgba(0,0,0,.55))]" />
     <p className="absolute inset-x-0 top-4 text-center text-xs font-medium uppercase tracking-[.2em] text-white/60">{roomLabel}</p>
     <div aria-hidden="true" className="absolute rounded-[50%] border border-white/10 bg-black/15" style={{ left: centerX, top: centerY - (deep ? roomDepth * 2 : 0) + diameter * .1, width: Math.max(0, size.width * (beside ? .5 : 1) - 80), height: diameter * .7 + (deep ? roomDepth * 2 : 0), transform: "translateX(-50%) rotateX(35deg)" }} />

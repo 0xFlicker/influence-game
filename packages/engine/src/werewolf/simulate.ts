@@ -23,6 +23,7 @@
  * failure frontier. --chatty prints coverage/ordinal/prior counts separately from
  * accepted public speech. Every sanitized provider attempt is retained privately,
  * including successful thinking, available native reasoning and interrupted calls.
+ * V10 solo night actions have one explanation and no separate required thinking.
  */
 import { parseArgs } from "node:util";
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "../fixtures/retrospective-agent";
@@ -94,6 +95,7 @@ const persist = async (failure?:unknown) => {
 await persist();
 let delegate: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
   const state = replayWerewolf(events);
+  if ("solo" in request && request.solo) return {kind: "solo_target", targetId: request.legalTargetIds[0]!, text: "I choose this player tonight.", cue: null};
   if (request.action === "pack_propose") return { kind: "spoken_target", targetId: request.legalTargetIds[0] ?? null,
     text: null, cue: null, thinking: "Scripted proposal uses the first legal target" };
   if (request.action === "public_vote") return { kind: "spoken_target", targetId: request.legalTargetIds[0] ?? null,

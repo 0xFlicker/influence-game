@@ -1,4 +1,5 @@
 "use client";
+import {WEREWOLF_ROOMS} from "./werewolf-rooms";
 import {useState} from "react";
 import type {WerewolfNightAction, WerewolfWatchMoment} from "@influence/engine/werewolf/watch-contract";
 
@@ -12,7 +13,7 @@ export function WerewolfRoleStage({action, players}: {action: RoleAction; player
   if (!actor || !target) throw new Error("Night action references a missing player");
   const doctor = action.kind === "protect", self = actor.id === target.id;
   const title = doctor ? `${actor.name} protects ${self ? "themself" : target.name}` : `${actor.name} investigates ${target.name}`;
-  return <section data-night-role={action.kind} className={`flex min-h-0 flex-1 flex-col items-center gap-3 overflow-y-auto px-4 py-4 sm:py-6 text-center ${doctor ? "bg-[#0b1b19]" : "bg-[#131326]"}`}>
+  return <section style={{backgroundImage: `linear-gradient(#0008, #000a), url("${doctor ? WEREWOLF_ROOMS.doctor : WEREWOLF_ROOMS.seer}")`, backgroundSize: "cover", backgroundPosition: "top"}} data-night-role={action.kind} className={`flex min-h-0 flex-1 flex-col items-center gap-3 overflow-y-auto px-4 py-4 sm:py-6 text-center ${doctor ? "bg-[#0b1b19]" : "bg-[#131326]"}`}>
     <div className={doctor ? "shrink-0 text-emerald-200" : "shrink-0 text-indigo-200"}>
       <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mx-auto mb-2 size-6">
         {doctor ? <path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6L12 3ZM12 8v8m-4-4h8" /> : <><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></>}

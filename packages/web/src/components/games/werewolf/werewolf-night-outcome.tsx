@@ -1,4 +1,5 @@
 "use client";
+import {WEREWOLF_ROOMS} from "./werewolf-rooms";
 import {useState} from "react";
 import type {WerewolfWatchCue} from "./werewolf-watch-model";
 import {nightClawFrame} from "./werewolf-night-motion";
@@ -11,7 +12,7 @@ export function WerewolfNightOutcome({cue, elapsed, reduced}: {cue: WerewolfWatc
   const source = victim.fullBodyReferenceUrl ?? victim.avatarUrl;
   const [failed, setFailed] = useState<string | null>(null);
   const frame = nightClawFrame(elapsed, reduced);
-  return <section data-night-elimination className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 bg-[#100f16] p-6 text-center text-white">
+  return <section style={{backgroundImage: `linear-gradient(#0008, #000a), url("${WEREWOLF_ROOMS.village}")`, backgroundSize: "cover", backgroundPosition: "top"}} data-night-elimination className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 bg-[#100f16] p-6 text-center text-white">
     <div className="relative min-h-0 w-full max-w-sm flex-1">
       {/* eslint-disable-next-line @next/next/no-img-element -- original victim art, available in the public dawn outcome */}
       {source && failed !== source && <img src={source} alt={victim.name} onError={() => setFailed(source)} className="h-full w-full object-contain" style={{filter: frame.settled ? "grayscale(1) brightness(.55)" : "none"}} />}

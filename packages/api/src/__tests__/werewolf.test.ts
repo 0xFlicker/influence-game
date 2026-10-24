@@ -53,6 +53,7 @@ describe("Werewolf House integration", () => {
       async prepareRetrospectiveCapacity() { return fixtureRetrospectiveCapacity(); },
       getRetrospectiveStatement: fixtureWerewolfRetrospective,
       async decide({ request }) {
+        if ("solo" in request && request.solo) return {kind: "solo_target", targetId: request.legalTargetIds[0]!, text: "My choice for tonight.", cue: null};
         if (request.action === "pack_propose") return { kind: "spoken_target", targetId: request.legalTargetIds[0]!, text: null, cue: null, thinking: "Choose a target" };
         if (request.action === "public_vote") return { kind: "spoken_target", targetId: null, text: null, cue: null, thinking: "Wait for more" };
         if (request.action === "conversation") return { kind: "conversation", text: null, cue: null, recipientId: null, replyToContributionId: null };
@@ -120,7 +121,7 @@ describe("Werewolf House integration", () => {
     expect(JSON.stringify(privateEvidence)).toContain("utf8_bytes");
   }, 30_000);
 
-  test("v9 public ballots survive owner recovery as one-at-a-time visible choices", async () => {
+  test("v10 public ballots survive owner recovery as one-at-a-time visible choices", async () => {
     const game = await createWerewolfGame(db, ownerId, { preset: "one_wolf", agentProfileIds: [], maxDays: 2 });
     const claim = await claimWerewolfGame(db, game.id);
     if (!claim.ok) throw new Error(claim.error);
@@ -132,6 +133,7 @@ describe("Werewolf House integration", () => {
       async prepareRetrospectiveCapacity() { return fixtureRetrospectiveCapacity(); },
       getRetrospectiveStatement: fixtureWerewolfRetrospective,
       async decide({ request, observation }) {
+        if ("solo" in request && request.solo) return {kind: "solo_target", targetId: request.legalTargetIds[0]!, text: "My choice for tonight.", cue: null};
         if (request.action === "conversation") return { kind: "conversation", text: null, cue: null, recipientId: null, replyToContributionId: null };
         if (request.action === "public_vote") {
           const earlier = observation.board.entries.filter(entry => entry.kind === "ballot");
@@ -166,21 +168,21 @@ describe("Werewolf House integration", () => {
     expect(final.outcome).not.toBeNull();
   }, 30_000);
 
-  test("new v9 games retain their rules identity in API view and replay reads", async () => {
+  test("new v10 games retain their rules identity in API view and replay reads", async () => {
     const game = await createWerewolfGame(db, ownerId, { preset: "two_wolves", agentProfileIds: [], providerManifest: manifest, maxDays: 2 });
     const claim = await claimWerewolfGame(db, game.id);
     if (!claim.ok) throw new Error(claim.error);
     const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);
     const state = replayWerewolf(await store.read());
-    expect(state.config.rulesVersion).toBe(9);
+    expect(state.config.rulesVersion).toBe(10);
     const view = await readWerewolfView(db, game.id, "mystery");
-    expect(view).toMatchObject({ rulesVersion: 9, phase: "introduction", conversation: null });
+    expect(view).toMatchObject({ rulesVersion: 10, phase: "introduction", conversation: null });
     const response = await createWerewolfRoutes(db).request(`/api/werewolf/${game.slug}/presentation?audience=mystery`);
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ view: { rulesVersion: 9, phase: "introduction", conversation: null } });
+    expect(await response.json()).toMatchObject({ view: { rulesVersion: 10, phase: "introduction", conversation: null } });
   });
 
-  test("accepted v9 pack proposals survive owner loss before commit without a second provider call", async () => {
+  test("accepted v10 pack proposals survive owner loss before commit without a second provider call", async () => {
     const game = await createWerewolfGame(db, ownerId, { preset: "two_wolves", agentProfileIds: [], providerManifest: [{ catalogId: "katana:glm-5-2" }] });
     const claim = await claimWerewolfGame(db, game.id);
     if (!claim.ok) throw new Error(claim.error);
@@ -235,7 +237,7 @@ describe("Werewolf House integration", () => {
     await db.update(schema.werewolfEvents).set({ event: initial }).where(eq(schema.werewolfEvents.gameId, game.id));
     const response = await createWerewolfRoutes(db).request(`/api/werewolf/${game.slug}`);
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: "This game uses an unsupported Werewolf rules version. Supported versions are v7, v8 and v9." });
+    expect(await response.json()).toEqual({ error: "This game uses an unsupported Werewolf rules version. Supported versions are v7, v8, v9 and v10." });
     expect(await game.store.read()).toEqual([initial]);
   });
   test("one character keeps separate strategies and freezes only Werewolf into its game", async () => {

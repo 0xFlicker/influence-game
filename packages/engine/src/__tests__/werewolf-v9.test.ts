@@ -15,6 +15,7 @@ import type { WerewolfDecision, WerewolfEvent, WerewolfState } from "../werewolf
 
 function setup(two = false, bytesPerLivingPlayer = 400) {
   const config = werewolfConfig(two ? "two_wolves" : "one_wolf", 10);
+  config.rulesVersion = 9;
   config.discussionPolicy!.bytesPerLivingPlayer = bytesPerLivingPlayer;
   const players = Array.from({ length: two ? 8 : 6 }, (_, i) => ({ id: `p${i}`, name: `Player ${i}`, personality: "Curious", backstory: "", strategy: "Reason carefully", avatarUrl: null }));
   const events = [startWerewolf("v9-test", players, config, "v9-seed")];

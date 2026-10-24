@@ -4,7 +4,7 @@ import {
   werewolfWatchPolicy,
   type WerewolfWatchCue,
 } from "../../components/games/werewolf/werewolf-watch-model";
-import { replayMoment } from "../../components/games/werewolf/replay-moment";
+import { werewolfCueMoment } from "../../components/games/werewolf/werewolf-watch-model";
 import { werewolfMusic } from "../../components/games/werewolf/werewolf-music";
 import {
   buildClassicPresentationCues,
@@ -108,11 +108,8 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
       picture:{kind:"werewolf-opening",cue}, source:{kind:"opening"}, label:"Opening", speech:null, music:null,
     })) : [];
     return [...opening, ...werewolfCues(source.windows).map((cue): ExportCue => {
-      const line = replayMoment({
-        ...cue.moment.snapshot,
-        entries: [cue.moment.entry],
-      });
-      const spoken = line.spoken && (!cue.ballot || cue.moment.entry.kind === "ballot") && !cue.nightAction;
+      const line = werewolfCueMoment(cue);
+      const spoken = line.spoken && (!cue.ballot || cue.moment.entry.kind === "ballot") && (!cue.nightAction || cue.nightDecision === true);
       return {
         timing: {
           key: cue.key,
@@ -140,7 +137,7 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
         label: line.title,
         speech: spoken
           ? {
-              messageId: `${cue.moment.snapshot.gameId}:${cue.moment.snapshot.audience}:${cue.moment.cursor}`,
+              messageId: cue.key,
               speakerId: line.actor?.id ?? null,
               speaker: line.speaker,
               text: line.text,

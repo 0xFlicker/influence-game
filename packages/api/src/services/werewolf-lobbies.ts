@@ -33,7 +33,7 @@ export async function createWerewolfLobby(db: DrizzleDB, userId: string, input: 
   const slug = await generateUniqueSlug(async candidate => (await db.select({ id: schema.games.id }).from(schema.games).where(eq(schema.games.slug, candidate))).length > 0);
   const count = rules.setup?.playerCount ?? WEREWOLF_PRESETS[input.preset].players;
   await db.insert(schema.games).values({ id, slug, gameKind: "werewolf", gameKernel: null, createdById: userId, status: "waiting", trackType: "custom", minPlayers: count, maxPlayers: count,
-    config: JSON.stringify({ preset: input.preset, setup: rules.setup, ...casting, visualMode: input.visualMode ?? false, visualFailurePolicy: input.visualFailurePolicy ?? "best_effort", maxDays: rules.maxDays, rulesVersion: rules.rulesVersion, modelRouting, serviceTier: "flex", visibility }) });
+    config: JSON.stringify({ preset: input.preset, setup: rules.setup, ...casting, visualMode: input.visualMode ?? false, visualFailurePolicy: input.visualFailurePolicy ?? "best_effort", maxDays: rules.maxDays, rulesVersion: rules.rulesVersion, discussionPolicy: rules.discussionPolicy, modelRouting, serviceTier: "flex", visibility }) });
   return { id, slug };
 }
 
@@ -97,6 +97,10 @@ export async function startWerewolfLobby(db: DrizzleDB, id: string) {
     const config = JSON.parse(game.config);
 
     const rules = werewolfConfig(config.preset, config.maxDays, config.setup);
+    if (![7, 8, 9, 10].includes(config.rulesVersion)) throw new WerewolfGameError("Unsupported frozen Werewolf rules version");
+    rules.rulesVersion = config.rulesVersion;
+    if (config.rulesVersion < 9) delete rules.discussionPolicy;
+    else if (config.discussionPolicy) rules.discussionPolicy = config.discussionPolicy;
     const seats = await tx.select().from(schema.werewolfLobbySeats).where(eq(schema.werewolfLobbySeats.gameId, game.id)).orderBy(asc(schema.werewolfLobbySeats.joinedAt), asc(schema.werewolfLobbySeats.id));
     if (seats.length !== game.maxPlayers) throw new WerewolfGameError("Fill all seats before starting the game.");
     const players = await freezeWerewolfRoster(tx, seats, game.maxPlayers, normalizeWerewolfCasting(config));

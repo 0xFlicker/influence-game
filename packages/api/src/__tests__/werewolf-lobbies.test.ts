@@ -160,7 +160,7 @@ test("lobby creation and start have separate permission gates, while ordinary au
 });
 
 
-test("an older waiting lobby adopts the current rules version without losing config fields", async () => {
+test("an older waiting lobby preserves its frozen rules version and config fields", async () => {
   const game = await create();
   const [waiting] = await db.select().from(schema.games).where(eq(schema.games.id, game.id));
   // Represent a lobby persisted before the deployment upgraded Werewolf rules.
@@ -176,10 +176,10 @@ test("an older waiting lobby adopts the current rules version without losing con
   if (event.type !== "werewolf.started") throw new Error("Expected canonical start event");
   const currentVersion = werewolfConfig("one_wolf").rulesVersion;
   expect(currentVersion).not.toBe(olderConfig.rulesVersion);
-  expect(event.payload.config.rulesVersion).toBe(currentVersion);
+  expect(event.payload.config.rulesVersion).toBe(olderConfig.rulesVersion);
   const [started] = await db.select().from(schema.games).where(eq(schema.games.id, game.id));
   expect(started!.status).toBe("in_progress");
-  expect(JSON.parse(started!.config)).toMatchObject({ ...olderConfig, rulesVersion: event.payload.config.rulesVersion });
+  expect(JSON.parse(started!.config)).toMatchObject(olderConfig);
   expect(Object.keys(JSON.parse(started!.config).modelRouting.contestants)).toHaveLength(6);
 });
 

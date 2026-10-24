@@ -142,7 +142,7 @@ async function click(page: Page, label: string) {
   await page.evaluate(`Array.from(document.querySelectorAll("button")).find(b => b.textContent?.trim() === ${JSON.stringify(label)})?.click()`);
 }
 
-test("CLI creates a v9 API Werewolf game and reports the public majority ballot", async () => {
+test("CLI creates a v10 API Werewolf game and reports the public majority ballot", async () => {
   const directory = await mkdtemp(`${tmpdir()}/werewolf-cli-`);
   const output = resolve(directory, "summary.txt");
   const cli = Bun.spawn(["bun", "run", "simulate:werewolf:api", "--api-url", servers.apiUrl, "--web-url", servers.webUrl!, "--max-days", "1", "--timeout-seconds", "45", "--transcript", "--out", output], {
@@ -173,7 +173,7 @@ test("CLI creates a v9 API Werewolf game and reports the public majority ballot"
     expect(games[0]!.maxPlayers).toBe(6);
     const publicView = (await (await fetch(`${servers.apiUrl}/api/werewolf/${games[0]!.slug}/presentation?audience=mystery`)).json() as { view: WerewolfPresentation["view"] }).view;
     const ballotIndex = publicView.entries.findLastIndex(entry => entry.kind === "ballot");
-    expect(publicView.rulesVersion).toBe(9);
+    expect(publicView.rulesVersion).toBe(10);
     expect(publicView.entries.filter(entry => entry.kind === "ballot")).toHaveLength(publicView.players.filter(player => player.alive || player.elimination?.kind === "vote").length);
     // Retrospective speech may follow the canonical result in completed replay.
     expect(publicView.entries.some(entry => entry.kind === "result")).toBe(true);
@@ -284,7 +284,7 @@ test("owner edits a game-specific strategy, creates Werewolf, and watches both v
     await page.waitForSelector('button[aria-label="Remove Arden Vale from cast"]');
     const [waiting] = await database.db.select().from(schema.games).where(eq(schema.games.slug, slug));
     expect(waiting!.status).toBe("waiting");
-    expect(JSON.parse(waiting!.config ?? "{}")).toMatchObject({ rulesVersion: 9 });
+    expect(JSON.parse(waiting!.config ?? "{}")).toMatchObject({ rulesVersion: 10 });
     expect(await database.db.select().from(schema.werewolfEvents).where(eq(schema.werewolfEvents.gameId, waiting!.id))).toHaveLength(0);
     await page.goto(`${servers.webUrl}/games`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector('select[aria-label="Game type"]');
@@ -1661,3 +1661,43 @@ test("v9 abstentions keep their meaning in results and their original speech in 
     expect(await page.$eval('[data-vote-presentation] [data-speech-bubble]', node => node.textContent)).toContain("I abstain.");
   } finally {await page.close();}
 },60_000);
+
+test("v10 solo night explanations precede results in distinct rooms at wide and narrow sizes", async () => {
+  const id = "browser-v10-night-rooms";
+  const events = await completedCurrentWerewolfFixture(id, 10, {playerCount: 6, wolves: 1, seer: true, doctor: true});
+  await database.db.insert(schema.games).values({id, slug:id, gameKind:"werewolf", status:"completed", startedAt:new Date().toISOString(), config:JSON.stringify({visibility:"public", providerManifest:[{catalogId:"openai:gpt-6-luna"}]})});
+  await database.db.insert(schema.werewolfEvents).values(events.map(event => ({gameId:id, sequence:event.sequence, event})));
+  const window = await (await fetch(`${servers.apiUrl}/api/werewolf/${id}/watch?audience=omniscient&limit=64`)).json() as import("@influence/engine/werewolf/watch-contract").WerewolfWatchWindow;
+  const night = window.moments.find(moment => moment.entry.kind === "night")!;
+  expect(window.playback.find(row => row.cursor === night.cursor)?.steps).toBe(6);
+  const page = await browser.newPage();
+  await rejectOptionalAnalytics(page);
+  try {
+    await page.goto(`${servers.webUrl}/games/${id}/replay?audience=omniscient`, {waitUntil:"domcontentloaded"});
+    await skipWerewolfOpening(page); await pauseWerewolf(page);
+    for (const size of [{width:1440, height:900}, {width:800,height:1100}]) {
+      await page.setViewport(size);
+      for (const [step, action, room] of [[0,"protect","doctor-room"], [2,"investigate","seer-room"]] as const) {
+        await seekWatch(page, night.cursor, step);
+        await page.waitForSelector(`[data-room-backdrop$="${room}.webp"]`);
+        await page.waitForSelector('[data-speech-bubble]');
+        expect(await page.$eval('[data-speech-bubble]', element => element.textContent)).toContain(`My ${action} choice tonight.`);
+        expect(await page.$('[data-investigation-result]')).toBeNull();
+        const image = await page.$eval(`[data-room-backdrop$="${room}.webp"]`, element => element.getAttribute("style"));
+        expect(image).toContain(`${room}.webp`);
+        await page.screenshot({path:`/tmp/werewolf-v10-${room}-${size.width}.png`});
+        await seekWatch(page, night.cursor, step + 1);
+        await page.waitForSelector(`[data-night-role="${action}"]`);
+        if (action === "investigate") await page.waitForSelector('[data-investigation-result]');
+      }
+      for (const [kind, room] of [["conversation","village-hall"], ["proposal","pack-lair"]] as const) {
+        const moment = window.moments.find(m => m.entry.kind === kind)!;
+        await seekWatch(page,moment.cursor);
+        await page.waitForSelector(`[data-room-backdrop$="${room}.webp"]`);
+        await page.screenshot({path:`/tmp/werewolf-v10-${room}-${size.width}.png`});
+      }
+    }
+    const mystery = await (await fetch(`${servers.apiUrl}/api/werewolf/${id}/watch?audience=mystery&limit=64`)).text();
+    expect(mystery).not.toContain("choice tonight");
+  } finally {await page.close();}
+}, 120_000);

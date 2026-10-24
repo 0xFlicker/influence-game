@@ -61,7 +61,7 @@ test("local Werewolf adapter validates the full tail and gives Mystery only its 
 });
 test("local Werewolf history reads current v9 sessions through the owning versioned projector", () => {
   const players = Array.from({ length: 6 }, (_, index) => ({ id: `v9-${index}`, name: `V9 ${index}`, personality: "Fixture", backstory: "", strategy: "", avatarUrl: null }));
-  const started = startWerewolf("local-v9", players, werewolfConfig("one_wolf"), "local-v9-seed");
+  const started = startWerewolf("local-v9", players, {...werewolfConfig("one_wolf"), rulesVersion: 9}, "local-v9-seed");
   const { reader } = corpus("werewolf", [started].map(werewolfEvent => ({ werewolfEvent })));
   const history = reader.readWerewolfHistory("session", 1, "mystery");
   expect(history.rulesVersion).toBe(9);

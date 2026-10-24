@@ -4,7 +4,7 @@ import { werewolfVisualStaging } from "./visual-staging";
 import { applyWerewolfEvent } from "./rules";
 import { projectWerewolfEntry, projectWerewolfSnapshot, type WerewolfAudience } from "./observation";
 import type { WerewolfEvent, WerewolfState } from "./types";
-import {isWerewolfPlayable, type WerewolfNightAction, type WerewolfWatchIdentity, type WerewolfWatchMoment, type WerewolfWatchIndex, type WerewolfWatchWindow} from "./watch-contract";
+import {werewolfNightSteps, isWerewolfPlayable, type WerewolfNightAction, type WerewolfWatchIdentity, type WerewolfWatchMoment, type WerewolfWatchIndex, type WerewolfWatchWindow} from "./watch-contract";
 
 /** Server-only staging coordinates never appear in the browser DTO. */
 export type WerewolfWatchStaging = ReturnType<typeof werewolfVisualStaging>;
@@ -50,17 +50,19 @@ function projectWatchHistory(events: readonly WerewolfEvent[], audience: Werewol
       else if (entry.kind === "speech") { chapterId = entry.purpose === "retrospective" ? "retrospective" : "introduction"; sceneId = chapterId; }
       const staging = before ?? state;
       const nightActions = resolvedNightActions(staging, entry, audience);
+      const nightSteps = werewolfNightSteps(nightActions);
       if (entry.kind === "ballot") {
         if (ballotDay !== entry.day) {dayBallots = []; ballotDay = entry.day;}
         dayBallots.push({voterId: entry.actorId, targetId: entry.targetId, unavailable: entry.unavailable});
       }
       if (isWerewolfPlayable(entry) && navigation.at(-1)?.sceneId !== sceneId) {
         const label = entry.kind === "discussion" ? `Day ${entry.day} · Thread ${entry.contribution.thread}` : entry.kind === "conversation" ? `Day ${entry.day} · Conversation` : entry.kind === "ballot" ? `Day ${entry.day} · Public ballot` : entry.kind === "proposal" ? `Night ${entry.day} · Pack proposal` : entry.kind === "vote" ? `Day ${entry.day} · Vote` : chapterId === "introduction" ? "Introductions" : chapterId === "retrospective" ? "Retrospective" : chapterId === "ending" ? "Ending" : `Cycle ${entry.day} · ${entry.kind === "night" ? "Dawn" : "Pack"}`;
-        for (const [step, action] of nightActions.entries()) {
+        for (const [step, {action}] of nightSteps.entries()) {
+          if (step > 0 && nightSteps[step - 1]!.action === action) continue;
           const roleLabel = action.kind === "protect" ? "Doctor" : action.kind === "investigate" ? "Seer" : "Hunt";
           navigation.push({cursor, step, chapterId, sceneId: `${chapterId}:${action.kind}`, label: `Night ${entry.day} · ${roleLabel}`});
         }
-        navigation.push({ cursor, step: nightActions.length, chapterId, sceneId, label });
+        navigation.push({ cursor, step: nightSteps.length, chapterId, sceneId, label });
       }
       const firstPackSpeech = (entry.kind === "proposal" || entry.kind === "speech" && entry.audience === "pack") && isWerewolfPlayable(entry);
       const hunt = nightActions.find(action => action.kind === "hunt");
@@ -71,15 +73,15 @@ function projectWatchHistory(events: readonly WerewolfEvent[], audience: Werewol
       if (isWerewolfPlayable(entry)) {
         const durationsMs = werewolfStepDurations(entry, state.players, nightActions, state.config.rulesVersion);
         if (transformWolfIds.length && hasWolfForms?.(visualStaging, cursor, transformWolfIds)) {
-          const step = nightActions.length ? nightActions.findIndex(action => action.kind === "hunt") : 0;
+          const step = nightActions.length ? nightSteps.findIndex(({action}) => action.kind === "hunt") : 0;
           if (step >= 0) durationsMs[step]! += WOLF_TRANSFORM_MS + (transformWolfIds.length - 1) * WOLF_STAGGER_MS;
         }
         const key = `${state.gameId}:${audience}:${cursor}`;
         const rank = (ballot: {targetId: string | null; unavailable: boolean}) => ballot.targetId ? 0 : ballot.unavailable ? 1 : 2;
-        const keys = entry.kind === "vote" && state.config.rulesVersion !== 9 && entry.result.ballots.length
+        const keys = entry.kind === "vote" && state.config.rulesVersion < 9 && entry.result.ballots.length
           ? [...[...entry.result.ballots].sort((a, b) => rank(a) - rank(b)).map(ballot => `${key}:ballot:${ballot.voterId}`), `${key}:tally`, key]
-          : entry.kind === "vote" && state.config.rulesVersion === 9 && entry.result.ballots.length ? [`${key}:tally`, key]
-          : [...nightActions.map(action => `${key}:${action.kind}`), key];
+          : entry.kind === "vote" && state.config.rulesVersion >= 9 && entry.result.ballots.length ? [`${key}:tally`, key]
+          : [...nightSteps.map(({action, decision}) => `${key}:${action.kind}${decision ? ":decision" : ""}`), key];
         playback.push({cursor, steps: durationsMs.length, durationsMs, keys});
       }
       if (cursor < fromCursor || cursor >= fromCursor + limit) continue;
@@ -130,11 +132,19 @@ function resolvedNightActions(state: WerewolfState, entry: import("./observation
   if (audience !== "omniscient" || entry.kind !== "night") return [];
   const actions: WerewolfNightAction[] = [];
   if (entry.protectedId) {
-    const protection = state.actions.find(action => action.action === "protect" && action.decision.kind === "target" && action.decision.targetId === entry.protectedId);
+    const protection = state.actions.find(action => action.action === "protect" && (action.decision.kind === "target" || action.decision.kind === "solo_target") && action.decision.targetId === entry.protectedId);
     if (!protection) throw new Error("Resolved protection has no accepted doctor action");
-    actions.push({kind: "protect", actorId: protection.actorId, targetId: entry.protectedId});
+    actions.push({kind: "protect", actorId: protection.actorId, targetId: entry.protectedId, ...nightSpeech(protection.decision)});
   }
-  if (entry.investigation) actions.push({kind: "investigate", actorId: entry.investigation.seerId, targetId: entry.investigation.targetId, isWolf: entry.investigation.isWolf});
+  if (entry.investigation) {
+    const investigation = state.actions.find(action => action.action === "investigate" && action.actorId === entry.investigation!.seerId);
+    if (!investigation) throw new Error("Resolved investigation has no accepted seer action");
+    actions.push({kind: "investigate", actorId: entry.investigation.seerId, targetId: entry.investigation.targetId, isWolf: entry.investigation.isWolf, ...nightSpeech(investigation.decision)});
+  }
   if (entry.attackTargetId) actions.push({kind: "hunt", wolfIds: state.aliveIds.filter(id => state.roles[id] === "werewolf"), targetId: entry.attackTargetId});
   return actions;
+}
+
+function nightSpeech(decision: import("./types").WerewolfDecision) {
+  return decision.kind === "solo_target" && decision.text !== null ? {speech: {text: decision.text, cue: decision.cue}} : {};
 }

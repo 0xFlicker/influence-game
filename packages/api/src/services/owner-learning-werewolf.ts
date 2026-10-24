@@ -78,7 +78,7 @@ export async function projectWerewolfReviewEvidence(db: DrizzleDB, selection: Ow
           if (call.action !== `werewolf.${request.action}` || call.acceptedValueSha256 !== sha256StableJson(call.acceptedValue)) throw new Error("Werewolf review thinking failed integrity validation");
           const decoded = exactStructuredOutputRegistry.decodeAcceptedValue(werewolfDecisionArtifact(request), call.acceptedValue);
           if (decoded.status !== "valid" || sha256StableJson(werewolfGameplayDecision(decoded.value)) !== sha256StableJson(decision)) throw new Error("Werewolf review thinking does not match its decision");
-          thinking = decoded.value.thinking;
+          thinking = "thinking" in decoded.value ? decoded.value.thinking : null;
         }
         decisions.push({ sequence: event.sequence, day: state.day, phase: state.phase,
           cursor: projectWerewolfView(state, "omniscient").cursor, action: structuredClone(event.payload), knownAtDecision, thinking });

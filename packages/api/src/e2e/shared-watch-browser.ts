@@ -31,7 +31,7 @@ export async function seekWatch(page:Page,cursor:number,step=0,readable=true){
   : entry.kind === "conversation" || entry.kind === "ballot" || entry.kind === "proposal" ? entry.text
   : null;
  const row = targetWindow.playback.find(row=>row.cursor===stop.cursor)!;
- const offset = !readable ? 0 : entry.kind === "ballot" || stop.key.includes(":ballot:") ? SOLO_READ_START_MS : speech ? entry.kind === "speech" && entry.purpose === "retrospective" ? SOLO_READ_START_MS : SCENE_READ_START_MS + row.durationsMs[step]! - sceneSpeechDurationMs(speech) : 0;
+ const offset = !readable ? 0 : entry.kind === "ballot" || stop.key.includes(":ballot:") || stop.key.endsWith(":decision") ? SOLO_READ_START_MS : speech ? entry.kind === "speech" && entry.purpose === "retrospective" ? SOLO_READ_START_MS : SCENE_READ_START_MS + row.durationsMs[step]! - sceneSpeechDurationMs(speech) : 0;
  const position = Math.ceil((stop.startMs + offset) * 30 / 1000);
  const endPosition = Math.ceil((stop.startMs + row.durationsMs[step]!) * 30 / 1000);
  await page.evaluate(`(() => {const input=document.querySelector('input[aria-label="Replay position"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(String(position))});input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));})()`);
@@ -105,7 +105,7 @@ export async function checkSharedWerewolfWatch(page:Page,url:string,apiUrl:strin
  await page.focus('button[aria-label="Player settings"]');await page.keyboard.press('ArrowRight');
  expect(await page.$eval('[data-werewolf-stage]',e=>Number(e.getAttribute('data-elapsed')))).toBe(paused);
  const mystery=await(await fetch(`${apiUrl}/api/werewolf/${slug}/presentation?audience=mystery`)).json() as WerewolfPresentation;
- const vote=mystery.view.entries.findIndex(entry=>entry.kind==="vote");if(vote>=0){await seekWatch(page,vote+1);await watchText(page,mystery.view.rulesVersion === 9 ? "Public vote result" : "Vote after thread");}
+ const vote=mystery.view.entries.findIndex(entry=>entry.kind==="vote");if(vote>=0){await seekWatch(page,vote+1);await watchText(page,mystery.view.rulesVersion >= 9 ? "Public vote result" : "Vote after thread");}
  expect(await stage?.evaluate(node=>node.isConnected)).toBe(true);
  expect(await page.evaluate("Array.from(document.querySelectorAll('button')).some(e=>e.getAttribute('aria-label')==='Play replay')")).toBe(true);
  const resultCursor=mystery.view.entries.findIndex(entry=>entry.kind==="result")+1;

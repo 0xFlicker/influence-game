@@ -24,7 +24,7 @@
 ## Product Direction
 
 - The House is the venue; Influence and Werewolf are separate games. `games.gameKind` selects the game, while Influence's `classic` / `format` kernels remain Influence-only.
-- Current Werewolf v9 discussion is sequential: publish each original contribution before the next speaker acts. It uses one shared byte allowance, permits silence and directed conversation, then proceeds to one public sequential vote. Preserve optional cues as production notes; do not reintroduce House rewriting or a separate should-speak call.
+- Current Werewolf v10 discussion is sequential: publish each original contribution before the next speaker acts. It uses one shared byte allowance, permits silence and directed conversation, then proceeds to one public sequential vote. Preserve optional cues as production notes; do not reintroduce House rewriting or a separate should-speak call.
 - Discussion passes and scheduler metadata are private to execution/debugging. Contestant history and reply references count spoken contributions only. Playback always skips discussion passes, including when Show thinking is enabled. Preserve canonical pass events and their thinking for debugging. Ballot abstentions remain public.
 - Preserve the seeded opening ring, opener/respondent/answer behavior, and sealed checkpoints as historical v7/v8 semantics only. Replays use the frozen version-specific reducer. Never infer scheduling or facts from prose.
 - Werewolf rules, private observations, faction outcomes, and spectator projections live in `packages/engine/src/werewolf/`. See `docs/werewolf.md`. Do not route Werewolf through Influence elimination, jury, scoring, narration, or transcript parsing.
@@ -93,6 +93,8 @@
 - Prefer Compound Engineering skills for plan/implement/review/PR flows when available.
 - Update `docs/solutions/`, `CONCEPTS.md`, and ops docs when behavior changes.
 
-- Werewolf v9 requires a strict majority of all living players in its single public vote; abstention is legal and a miss means no elimination. v7/v8 used thread checkpoints and a final plurality ballot. Only canonical `werewolf.day_vote_resolved` establishes the result; never carry votes forward. A typed provider failure records a marked unavailable abstention rather than fabricating a target.
+- Werewolf v9/v10 require a strict majority of all living players in its single public vote; abstention is legal and a miss means no elimination. v7/v8 used thread checkpoints and a final plurality ballot. Only canonical `werewolf.day_vote_resolved` establishes the result; never carry votes forward. A typed provider failure records a marked unavailable abstention rather than fabricating a target.
 
-- Werewolf v9 public ballots are serial: commit and publish each accepted choice before dispatching the next voter. Earlier v7/v8 sealed batches retain their historical journal replay and one canonical reveal. Never leak future ballots or inject spectator progress into contestant observations or historical cursor reads.
+- Werewolf v9/v10 public ballots are serial: commit and publish each accepted choice before dispatching the next voter. Earlier v7/v8 sealed batches retain their historical journal replay and one canonical reveal. Never leak future ballots or inject spectator progress into contestant observations or historical cursor reads.
+
+- Werewolf v10 solo night decisions (Doctor, Seer and lone wolf) require target plus one private spoken explanation, with no separate thinking field. Multi-wolf proposals retain thinking. Omniscient shows role explanation then result; Mystery and other contestants receive neither private choice nor aside. Freeze rules and discussion policy at creation, including waiting lobbies.

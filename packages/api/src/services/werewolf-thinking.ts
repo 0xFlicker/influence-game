@@ -57,7 +57,7 @@ export async function readWerewolfProductionThinking(db: Pick<DrizzleDB, "select
         const decoded = exactStructuredOutputRegistry.decodeAcceptedValue(werewolfDecisionArtifact(request), call.value);
         if (decoded.status !== "valid") throw new Error("Invalid accepted Werewolf thinking evidence");
         if (sha256StableJson(werewolfGameplayDecision(decoded.value)) !== sha256StableJson(decision)) throw new Error("Werewolf thinking does not match the committed action");
-        thinking = decoded.value.thinking;
+        thinking = "thinking" in decoded.value ? decoded.value.thinking : null;
       }
     }
     return thinking?.trim() ? [{ eventSequence: event.sequence, cursor, day, actorId: request.actorId, action: request.action, thinking }] : [];

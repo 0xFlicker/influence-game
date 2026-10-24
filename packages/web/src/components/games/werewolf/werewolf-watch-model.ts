@@ -1,4 +1,4 @@
-import {isWerewolfPlayable, type WerewolfNightAction, type WerewolfWatchMoment, type WerewolfWatchWindow} from "@influence/engine/werewolf/watch-contract";
+import {werewolfNightSteps, isWerewolfPlayable, type WerewolfNightAction, type WerewolfWatchMoment, type WerewolfWatchWindow} from "@influence/engine/werewolf/watch-contract";
 import type {WatchPolicy} from "@/components/watch/watch-director";
 import {replayMoment} from "./replay-moment";
 import {SCENE_SPEECH_START_MS, SCENE_READ_START_MS, SCENE_EXIT_HOLD_MS} from "@/app/games/[slug]/components/scene-speech-timing";
@@ -7,7 +7,7 @@ import {SOLO_READ_START_MS, SOLO_SPEECH_START_MS, SOLO_EXIT_MS, soloPresentation
 import {SILENT_BALLOT_DURATION_MS} from "@/app/games/[slug]/components/vote-presentation-timing";
 import type {RevealedVote, VoteLedgerState} from "@/app/games/[slug]/components/vote-ledger-model";
 import {WOLF_TRANSFORM_MS, WOLF_STAGGER_MS, NIGHT_CLAW_MS} from "./werewolf-night-motion";
-export interface WerewolfWatchCue { key: string; baseDurationMs: number; moment: WerewolfWatchMoment; transformation?: {wolfIds: string[]; durationMs: number}; nightAction?: WerewolfNightAction; ballot?: VoteLedgerState;
+export interface WerewolfWatchCue { key: string; baseDurationMs: number; moment: WerewolfWatchMoment; transformation?: {wolfIds: string[]; durationMs: number}; nightAction?: WerewolfNightAction; nightDecision?: boolean; ballot?: VoteLedgerState;
   /** Playback-only reprise of the result after the final retrospective. */
   reprise?: boolean }
 export const werewolfWatchPolicy: WatchPolicy<WerewolfWatchCue> = {
@@ -17,6 +17,8 @@ export const werewolfWatchPolicy: WatchPolicy<WerewolfWatchCue> = {
   acceptAtWatermark: () => false,
   reconcile: cues => cues,
   speech: cue => {
+    if (cue?.nightDecision) return {showAtMs: SOLO_SPEECH_START_MS, readAtMs: SOLO_READ_START_MS,
+      hideAtMs: cue.baseDurationMs - SOLO_EXIT_MS, hiddenAtMs: cue.baseDurationMs};
     if (cue?.ballot && (cue.moment.entry.kind !== "ballot" || cue.moment.entry.text === null)) return null;
     if (!cue || !["speech", "discussion", "conversation", "ballot", "proposal"].includes(cue.moment.entry.kind)) return null;
     if (cue.moment.entry.kind === "ballot" || cue.moment.entry.kind === "speech" && cue.moment.entry.purpose === "retrospective") return {
@@ -79,8 +81,10 @@ export function werewolfMomentCues(moment: WerewolfWatchMoment): WerewolfWatchCu
     const durationMs = WOLF_TRANSFORM_MS + (wolfIds.length - 1) * WOLF_STAGGER_MS;
     return {...cue, baseDurationMs: cue.baseDurationMs + durationMs, transformation: {wolfIds, durationMs}};
   };
-  if (moment.night) return [...moment.night.actions.map((nightAction): WerewolfWatchCue => ({ ...result,
-    key: `${key}:${nightAction.kind}`, baseDurationMs: 5000, nightAction,
+  if (moment.night) return [...werewolfNightSteps(moment.night.actions).map(({action: nightAction, decision}): WerewolfWatchCue => ({ ...result,
+    key: `${key}:${nightAction.kind}${decision ? ":decision" : ""}`,
+    baseDurationMs: decision && nightAction.kind !== "hunt" && nightAction.speech ? soloPresentationDurationMs(nightAction.speech.text) : 5000,
+    nightAction, nightDecision: decision,
     moment: { ...moment, snapshot: moment.night!.before },
   })).map(cue => cue.nightAction?.kind === "hunt" ? transform(cue) : cue), result];
   if (moment.entry.kind === "ballot") {
@@ -91,7 +95,7 @@ export function werewolfMomentCues(moment: WerewolfWatchMoment): WerewolfWatchCu
   }
   if (moment.entry.kind !== "vote") return [transform(result)];
   const rank = (ballot: {targetId: string | null; unavailable: boolean}) => ballot.targetId ? 0 : ballot.unavailable ? 1 : 2;
-  const ballots = moment.snapshot.rulesVersion === 9 ? moment.entry.result.ballots : [...moment.entry.result.ballots].sort((a,b) => rank(a) - rank(b));
+  const ballots = moment.snapshot.rulesVersion >= 9 ? moment.entry.result.ballots : [...moment.entry.result.ballots].sort((a,b) => rank(a) - rank(b));
   const votes: RevealedVote[] = ballots.map(b => ({voterId:b.voterId, targetId:b.targetId,
     choice: b.targetId ? "exit" : b.unavailable ? "unavailable" : "abstain"}));
   const reveals = votes.map((current, index): WerewolfWatchCue => ({
@@ -108,7 +112,7 @@ export function werewolfMomentCues(moment: WerewolfWatchMoment): WerewolfWatchCu
   const summary = last ? {...last, key: `${key}:tally`, baseDurationMs: 3200,
     ballot: {...last.ballot!, complete: true, eligibility: {ids: eligible,
       label: vote.voteMode === "majority" ? `Majority required: ${vote.requiredVotes} votes` : "Unique highest count required · ties spare everyone"}}} : null;
-  return [...(moment.snapshot.rulesVersion === 9 ? [] : reveals), ...(summary ? [{...summary, ballot: {...summary.ballot, ...(moment.snapshot.rulesVersion === 9 ? {abstainLabel: "Abstain"} : {})}}] : []), result];
+  return [...(moment.snapshot.rulesVersion >= 9 ? [] : reveals), ...(summary ? [{...summary, ballot: {...summary.ballot, ...(moment.snapshot.rulesVersion >= 9 ? {abstainLabel: "Abstain"} : {})}}] : []), result];
 
 }
 export function adjacentWerewolfPosition(index: WerewolfWatchWindow["navigation"], cursor: number, direction: -1 | 1, kind: "scene" | "chapter", step = 0) {
@@ -143,4 +147,16 @@ export function werewolfDoctorSave(moment: WerewolfWatchMoment) {
   const target = moment.snapshot.players.find(player => player.id === entry.attackTargetId);
   if (!doctor || !target) throw new Error("Recorded doctor save is missing its participants");
   return {doctor, target};
+}
+
+/** The role's accepted explanation precedes its result; never derive speech from the outcome. */
+export function werewolfCueMoment(cue: WerewolfWatchCue) {
+  const moment = replayMoment({...cue.moment.snapshot, entries: [cue.moment.entry]});
+  if (!cue.nightDecision) return moment;
+  const action = cue.nightAction;
+  if (!action || action.kind === "hunt" || !action.speech) throw new Error("Night decision clip requires accepted speech");
+  const actor = cue.moment.snapshot.players.find(player => player.id === action.actorId);
+  if (!actor) throw new Error("Night decision actor is absent");
+  return {...moment, actor, actorId: actor.id, speaker: actor.name, text: action.speech.text, spoken: true,
+    title: `Night ${cue.moment.snapshot.day} · ${action.kind === "protect" ? "Doctor" : "Seer"}`, details: []};
 }
