@@ -41,7 +41,7 @@ export function parseWerewolfApiArgs(argv: string[], env: Record<string, string 
   const { values } = parseArgs({ args: argv, options: {
     "api-url": { type: "string", default: env.INFLUENCE_API_BASE_URL ?? "http://127.0.0.1:3000" },
     "web-url": { type: "string", default: env.INFLUENCE_WEB_BASE_URL ?? "http://localhost:3001" },
-    visibility: { type: "string", default: env.INFLUENCE_API_SIM_VISIBILITY ?? "public" },
+    visibility: { type: "string", default: "public" },
     preset: { type: "string", default: "one_wolf" }, "max-days": { type: "string", default: "10" },
     "model-catalog": { type: "string", default: DEFAULT_MODEL_CATALOG_ID },
     "reasoning-policy": { type: "string", default: "low" },
@@ -249,6 +249,7 @@ Resume a paused retrospective after restoring the provider (requires recovery pe
   bun run simulate:werewolf:api --game ID_OR_SLUG --resume-retrospective
 
 Options: --api-url URL --web-url URL --model-catalog ID --reasoning-policy low|medium|high|action-policy
+         --visibility public|unlisted (default public; unlisted requires this flag)
          --agent PROFILE_ID (repeatable) --out REPORT.txt --timeout-seconds 1800
          --preset one_wolf|two_wolves --max-days 1..20 --game ID_OR_SLUG
          --audience mystery|omniscient --transcript

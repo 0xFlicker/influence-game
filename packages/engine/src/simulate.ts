@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 /**
- * API-backed House visibility is Public or Unlisted; local artifacts are not published.
+ * API-backed games default to Public; Unlisted requires --visibility unlisted.
+ * Environment variables cannot select Unlisted; local artifacts are not published.
  * See api-simulate.ts for --visibility. This does not change decision trace permissions.
  * Per-character API simulations use mixed-model-simulate.ts (root simulate:models).
  * --preview is offline; --models assigns seats, --provider-entry remains a fallback chain.

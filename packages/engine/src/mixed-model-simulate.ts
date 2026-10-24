@@ -9,6 +9,7 @@ import { DEFAULT_MODEL_CATALOG_ID, normalizeProviderManifest, parseProviderManif
 import { modelRouteMetadata } from "./model-route-metadata";
 import { apiFetch, authHeaders } from "./api-simulation-client";
 import { resolveCliApiSession } from "./cli-api-session";
+import { parseGameVisibility } from "./game-visibility";
 
 export interface SimulationRoster { seats: Array<{ id: string; agentProfileId?: string; preference: ModelPreference }>; policy: GameModelRouting }
 export function previewModelRoster(roster: SimulationRoster, players: number) {
@@ -18,14 +19,20 @@ export function previewModelRoster(roster: SimulationRoster, players: number) {
   return { policy: sealed, routes: [...new Set([...sealed.houseManifest, ...Object.values(sealed.contestants!).flat()].map(entry => entry.catalogId))].map(catalogId => ({ catalogId, ...modelRouteMetadata(catalogId) })) };
 }
 
-async function main() {
-  const { values } = parseArgs({ options: {
+export function parseMixedModelArgs(argv: string[] = process.argv.slice(2)) {
+  const { values } = parseArgs({ args: argv, options: {
     game: { type: "string", default: "werewolf" }, players: { type: "string", default: "8" }, models: { type: "string" }, roster: { type: "string" },
     "provider-entry": { type: "string", multiple: true }, "house-entry": { type: "string", multiple: true },
     preview: { type: "boolean", default: false }, report: { type: "string" },
+    visibility: { type: "string", default: "public" },
     "api-url": { type: "string", default: "http://127.0.0.1:3000" }, "web-url": { type: "string", default: "http://localhost:3001" },
     out: { type: "string", default: resolve(import.meta.dir, "../docs/simulations") },
   } });
+  return {...values, visibility: parseGameVisibility(values.visibility)};
+}
+
+async function main() {
+  const values = parseMixedModelArgs();
   const players = Number(values.players);
   if (!Number.isInteger(players) || players < 6 || players > 12) throw new Error("Choose 6–12 seats");
   if (values.game !== "werewolf" && values.game !== "influence") throw new Error("Choose influence or werewolf");
@@ -49,18 +56,18 @@ async function main() {
     policy: { version: 1, defaultManifest, houseManifest, defaultModelMaxFallbackCalls: DEFAULT_CONTESTANT_RECOVERY_CALLS, excludedCatalogIds: [], overrides: {} },
   };
   const preview = previewModelRoster(roster, players);
-  console.log(JSON.stringify(preview, null, 2));
+  console.log(JSON.stringify({visibility: values.visibility, ...preview}, null, 2));
   if (values.preview) return;
   const token = await session();
   const headers = authHeaders(token);
   const runDir = resolve(values.out!, `mixed-${new Date().toISOString().replaceAll(":", "-")}-${randomUUID().slice(0, 8)}`);
   await mkdir(runDir, { recursive: true });
-  await writeFile(resolve(runDir, "requested.json"), JSON.stringify({ game: values.game, roster, preview }, null, 2), { flag: "wx" });
+  await writeFile(resolve(runDir, "requested.json"), JSON.stringify({ game: values.game, visibility: values.visibility, roster, preview }, null, 2), { flag: "wx" });
   const werewolf = values.game === "werewolf";
   const game = await apiFetch<{ id: string; slug: string }>(api.origin, werewolf ? "/api/werewolf/lobbies" : "/api/games", {
     method: "POST", headers, body: JSON.stringify(werewolf
-      ? { preset: "two_wolves", setup: { playerCount: players, wolves: 2, seer: true, doctor: true }, maxDays: 10, visibility: "unlisted", modelRouting: roster.policy }
-      : { playerCount: players, visibility: "unlisted", modelRouting: roster.policy }),
+      ? { preset: "two_wolves", setup: { playerCount: players, wolves: 2, seer: true, doctor: true }, maxDays: 10, visibility: values.visibility, modelRouting: roster.policy }
+      : { playerCount: players, visibility: values.visibility, modelRouting: roster.policy }),
   });
   await writeFile(resolve(runDir, "game.json"), JSON.stringify(game, null, 2), { flag: "wx" });
   const root = werewolf ? `/api/werewolf/${game.id}` : `/api/games/${game.id}`;
