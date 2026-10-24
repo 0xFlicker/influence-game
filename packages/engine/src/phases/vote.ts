@@ -1,3 +1,4 @@
+import { tallyEmpowerRevote } from "../empower-revote-rules";
 import type { UUID } from "../types";
 import { Phase } from "../types";
 import type { EmpowerRevoteAction, IAgent, TargetDecision } from "../game-runner.types";
@@ -340,11 +341,16 @@ export async function resolveEmpowerRevote(
   tied: readonly UUID[],
   random: () => number = Math.random,
 ): Promise<UUID> {
-  const counts: Record<UUID, number> = {};
-  for (const id of tied) counts[id] = 0;
-  for (const target of Object.values(ctx.gameState.currentVoteTally.empowerVotes)) {
-    if (target in counts) counts[target] = (counts[target] ?? 0) + 1;
+  const revotes = new Map<UUID, UUID>();
+  for (const event of ctx.gameState.getCanonicalEvents()) {
+    if (event.type === "vote.empower_revote_cast" && event.round === ctx.gameState.round) {
+      revotes.set(event.payload.voterId, event.payload.target);
+    }
   }
+  const { counts } = tallyEmpowerRevote(
+    ctx.gameState.empowerRevoteVersion, tied,
+    new Map(Object.entries(ctx.gameState.currentVoteTally.empowerVotes)), revotes,
+  );
   const max = Math.max(...Object.values(counts), 0);
   const finalists = tied.filter((id) => counts[id] === max);
   const empoweredId = finalists.length === 1
@@ -610,29 +616,7 @@ export async function runVotePhase(
       );
     }
 
-    const reVoteCounts: Record<UUID, number> = {};
-    for (const id of tied) reVoteCounts[id] = 0;
-    for (const voter of reVoters) {
-      const target = gameState.currentVoteTally.empowerVotes[voter.id];
-      if (target && target in reVoteCounts) {
-        reVoteCounts[target] = (reVoteCounts[target] ?? 0) + 1;
-      }
-    }
-
-    const maxReVotes = Math.max(...Object.values(reVoteCounts), 0);
-    const reVoteTied = tied.filter((id) => reVoteCounts[id] === maxReVotes);
-
-    if (reVoteTied.length === 1) {
-      empoweredId = reVoteTied[0]!;
-      logger.logSystem(`Re-vote resolved: ${gameState.getPlayerName(empoweredId)} empowered`, Phase.VOTE);
-      await assertCanAcceptCommit(ctx);
-      gameState.setEmpowered(empoweredId, "revote");
-    } else {
-      empoweredId = reVoteTied[Math.floor(Math.random() * reVoteTied.length)]!;
-      logger.logSystem(`Re-vote still tied! THE WHEEL decides: ${gameState.getPlayerName(empoweredId)} empowered`, Phase.VOTE);
-      await assertCanAcceptCommit(ctx);
-      gameState.setEmpowered(empoweredId, "wheel");
-    }
+    empoweredId = await resolveEmpowerRevote(ctx, tied, ctx.random);
   }
 
   contextBuilder.revealVoteLedgerEntries(

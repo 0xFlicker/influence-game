@@ -285,6 +285,7 @@ export class GameRunner {
       : new GameState(agents.map((a) => ({ id: a.id, name: a.name })), {
           ...gameStateOptions,
           formatManifest: resolveFormatManifest(config.formatManifest),
+          empowerRevoteVersion: config.empowerRevoteVersion,
         });
     this.houseNarrativeContinuity = createEmptyHouseNarrativeContinuity(this.gameState.gameId);
     this.config = {
@@ -292,6 +293,7 @@ export class GameRunner {
       conversationPolicy: conversationPolicy(config.conversationPolicy),
       maxRounds,
       formatManifest: [...this.gameState.formatManifest],
+      empowerRevoteVersion: this.gameState.empowerRevoteVersion,
     };
     this.random = options.random;
     if (this.resumeFrom) {

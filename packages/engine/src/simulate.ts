@@ -160,6 +160,9 @@
  * Two Names requires at least five living players and proves nominations,
  * Override/replacement branching, ordered pleas, finalist ballots, and tiebreak.
  * New Override draws exclude Empowered; both nominees remain eligible.
+ * Game creation freezes empowerRevoteVersion: v2 counts only new revote ballots;
+ * existing unversioned games use v1 active ballots. Recovery and playback use the
+ * frozen version, never infer rules from winners, and preserve accepted outcomes.
  * The Short List gives every player shared coordination guidance in social,
  * huddle, diary, and ballot prompts. Inspect specific voter-to-target commitments,
  * projected totals, and defections against canonical ballots. Resolved-round

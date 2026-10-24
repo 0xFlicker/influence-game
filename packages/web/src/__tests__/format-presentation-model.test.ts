@@ -531,6 +531,7 @@ describe("format presentation compiler", () => {
       gameKernel: "format",
       roster: tieRoster,
       decisions: tiedDecisions,
+      empowerRevoteVersion: 2,
     });
 
     expect(pending.status).toBe("ready");
@@ -562,7 +563,7 @@ describe("format presentation compiler", () => {
       if (decision.type === "vote.empowered_set") return { ...decision, payload: { empowered: "atlas", method: "wheel" as const } };
       return decision;
     });
-    const wheel = compileFormatPresentationPrefix({ gameId: "game-1", gameKernel: "format", roster: tieRoster, decisions: wheelDecisions });
+    const wheel = compileFormatPresentationPrefix({ gameId: "game-1", gameKernel: "format", roster: tieRoster, decisions: wheelDecisions, empowerRevoteVersion: 2 });
     expect(wheel.status).toBe("ready");
     expect(wheel.cues.at(-1)).toMatchObject({ kind: "empowered_tally", counts: { atlas: 1, lyra: 1 }, empoweredId: "atlas", resolutionMethod: "wheel" });
     const manual = compileFormatPresentationPrefix({ gameId: "game-1", gameKernel: "format", roster: tieRoster, decisions: [

@@ -1,3 +1,4 @@
+import type { EmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import type { ModelPreference, GameModelRouting } from "@influence/engine/game-model-routing";
 import { analyticsOperation, measureProductRequest } from "@/lib/product-analytics";
 import type { HouseParticipation } from "@influence/engine/house-participation";
@@ -534,6 +535,8 @@ export interface GameSummary {
   eliminatedPlayers: number;
   modelLabel: string;
   visibility: GameVisibility;
+  /** Missing historical versions use v1. */
+  empowerRevoteVersion?: EmpowerRevoteVersion;
   /** Frozen game configuration; absent only on historical/mock payloads. */
   formatManifest?: EngineLaunchFormatId[];
   trackType?: TrackType;
@@ -2792,6 +2795,8 @@ export interface GameDetail {
   players: GamePlayer[];
   modelLabel: string;
   visibility: GameVisibility;
+  /** Missing historical versions use v1. */
+  empowerRevoteVersion?: EmpowerRevoteVersion;
   /** Frozen game configuration; absent only on historical/mock payloads. */
   formatManifest?: EngineLaunchFormatId[];
   seasonId?: string;

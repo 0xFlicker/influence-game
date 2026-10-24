@@ -166,6 +166,7 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
     gameId: game.id,
     gameKernel: game.gameKernel ?? "classic",
     formatManifest: game.formatManifest,
+    empowerRevoteVersion: game.empowerRevoteVersion,
     roster,
     decisions: formatPresentationDecisionsFromFrames(frames),
     eligiblePlayerIdsByRound: formatPresentationEligibilityFromFrames(frames),

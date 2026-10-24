@@ -367,6 +367,8 @@ Portraits sit on a semicircle projected through CSS perspective. Speaker changes
 
 The one reusable character-free studio asset is `/visual/solo-studio-backdrop.webp`. Its prompt and generation provenance are in [the fallback review](visual-fallback-review.md). No replay operation calls an image provider.
 
+Solo character shots keep this backdrop fixed to the stage edges, outside the thinking camera transform. Only the character moves during the close-up, so vertical camera shifts cannot expose a black band above the backdrop at wide or short aspect ratios.
+
 
 ## Werewolf production workspace
 

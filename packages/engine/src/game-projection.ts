@@ -1,3 +1,4 @@
+import { resolveEmpowerRevoteVersion, type EmpowerRevoteVersion } from "./empower-revote-rules";
 import {
   decodeLegacyAllianceHuddleOutcomeV1,
   withParticipantSnapshotFromSession,
@@ -55,6 +56,7 @@ export interface CanonicalGameProjection {
   playerOrder: UUID[];
   players: Record<UUID, ProjectedPlayer>;
   formatManifest: LaunchFormatId[];
+  empowerRevoteVersion: EmpowerRevoteVersion;
   currentVoteTally: VoteTally;
   currentCouncilTally: CouncilVoteTally;
   empoweredId: UUID | null;
@@ -109,6 +111,7 @@ export function createEmptyProjection(gameId: UUID): CanonicalGameProjection {
     playerOrder: [],
     players: {},
     formatManifest: [...LEGACY_FORMAT_MANIFEST],
+    empowerRevoteVersion: 1,
     currentVoteTally: { empowerVotes: {}, exposeVotes: {} },
     currentCouncilTally: { votes: {} },
     empoweredId: null,
@@ -250,6 +253,7 @@ export function applyCanonicalEvent(
       break;
     }
     case "game.roster_initialized": {
+      projection.empowerRevoteVersion = resolveEmpowerRevoteVersion(event.payload.empowerRevoteVersion);
       projection.formatManifest = event.payload.formatManifest === undefined
         ? [...LEGACY_FORMAT_MANIFEST]
         : resolveFormatManifest(event.payload.formatManifest);

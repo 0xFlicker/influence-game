@@ -568,6 +568,34 @@ test("specialized Influence readers reject Werewolf after authorization; shared 
   });
 });
 
+test("Influence read_game preserves the accepted revote result in its validated viewer contract", async () => {
+  const { GameState } = await import("@influence/engine");
+  const { insertGame, insertOwner } = await import("./durable-run-test-utils.js");
+  const { appendGameEvents } = await import("../services/game-events.js");
+  const id = await insertGame(db, { slug: "new-ballots-only", status: "in_progress" });
+  await db.update(schema.games).set({ config: JSON.stringify({ empowerRevoteVersion: 2 }) }).where(eq(schema.games.id, id));
+  const players = ["arden", "marnie", "milo", "rowan", "larry"].map(id => ({ id, name: id }));
+  const state = new GameState(players, { gameId: id });
+  state.startRound();
+  for (const [voter, target] of [["arden", "rowan"], ["marnie", "rowan"], ["milo", "arden"], ["rowan", "marnie"], ["larry", "arden"]] as const) {
+    state.recordVote(voter, target);
+  }
+  state.tallyEmpowerVotes();
+  for (const voter of ["marnie", "milo", "larry"]) state.clearEmpowerVote(voter);
+  state.recordEmpowerReVote("marnie", "rowan");
+  state.recordEmpowerReVote("milo", "arden");
+  state.recordEmpowerReVote("larry", "arden");
+  state.setEmpowered("arden", "revote");
+  await appendGameEvents(db, { gameId: id, ownerEpoch: await insertOwner(db, id), events: state.getCanonicalEvents() });
+  const page = await readHouseGame(db, { gameIdOrSlug: id, limit: 1 });
+  houseContent("read_game", page);
+  if (page.gameKind !== "influence") throw new Error("Expected Influence read");
+  expect(page.snapshot?.viewerDecisionEvent).toMatchObject({
+    type: "vote.empowered_set",
+    payload: { empowered: "arden", method: "revote" },
+  });
+});
+
 test("Influence canonical frames and thinking use separate exact cutoffs and the public watch policy", async () => {
   const { insertGame, insertOwner, createCanonicalEventFixture } = await import(
     "./durable-run-test-utils.js"

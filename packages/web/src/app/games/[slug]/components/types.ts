@@ -162,6 +162,7 @@ export type FormatPresentationCue =
       counts: Record<string, number>;
       receipts: FormatEmpowerVoteReceipt[];
       resolutionMethod?: "revote" | "wheel" | "manual";
+      countedVotes?: readonly { voterId: string; targetId: string }[];
     })
   | (FormatPresentationCueBase & {
       kind: "empowered_tie";

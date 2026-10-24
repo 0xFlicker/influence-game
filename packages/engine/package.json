@@ -29,6 +29,7 @@
     "./agent-profile-contract": "./src/agent-profile-contract.ts",
     "./agent-creation-traits": "./src/agent-creation-traits.ts",
     "./agent-creation-assistant": "./src/agent-creation-assistant.ts",
+    "./empower-revote-rules": "./src/empower-revote-rules.ts",
     "./format-rules": "./src/format-rules.ts",
     "./format-presentation-metadata": "./src/format-presentation-metadata.ts",
     "./format-selection-policy": "./src/format-selection-policy.ts",

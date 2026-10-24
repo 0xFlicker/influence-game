@@ -138,6 +138,7 @@ function DramaticReplayTheater({
       gameId: game.id,
       gameKernel: game.gameKernel ?? game.watchState?.gameKernel ?? "classic",
       formatManifest: game.formatManifest,
+      empowerRevoteVersion: game.empowerRevoteVersion,
       roster: formatRoster,
       decisions: formatPresentationDecisionsFromFrames(replayFrames),
       eligiblePlayerIdsByRound: formatPresentationEligibilityFromFrames(replayFrames),
@@ -146,6 +147,7 @@ function DramaticReplayTheater({
       formatRoster,
       game.gameKernel,
       game.formatManifest,
+      game.empowerRevoteVersion,
       game.id,
       game.watchState?.gameKernel,
       replayFrames,
@@ -426,7 +428,8 @@ function DramaticReplayTheater({
     presentationHydrationStatus,
   ]);
   const isTwoNamesPresentation = formatCue?.after.activeFormatId === "two_names";
-  const usesFullHeightContent = Boolean(openingCue) || fullscreen || formatCue?.kind === "two_names_plea" || visual.beat !== null;
+  const isEmpowerPresentation = formatCue?.kind === "empowered_tally" || formatCue?.kind === "empowered_tie";
+  const usesFullHeightContent = Boolean(openingCue) || fullscreen || isEmpowerPresentation || formatCue?.kind === "two_names_plea" || visual.beat !== null;
   const isSoloPresentation = visual.beat?.kind === "portrait" || visual.beat?.kind === "nominee-selection";
   const isRoomPresentation = visual.beat?.kind === "scene" || visual.beat?.kind === "portrait-room" || visual.beat?.kind === "safety-bounce" || visual.beat?.kind === "winner";
   useEffect(() => {
@@ -727,7 +730,7 @@ function DramaticReplayTheater({
             voteLedger={voteLedgers[directorSnapshot.cursor] ?? null} roster={formatRoster.map(player => ({ ...player, avatarUrl: visualData?.portraits[player.id] ?? player.avatarUrl }))} /> : <>
           {formatCue && (
             <div className={`min-h-0 flex-1 ${formatCue.kind === "two_names_plea" ? "h-full" : ""}`}>
-              <FitPresentation enabled={fullscreen}><FormatPresentation
+              <FitPresentation enabled={fullscreen || isEmpowerPresentation}><FormatPresentation
                 cue={formatCue}
                 roster={formatRoster}
                 currentStateEntry={Boolean(

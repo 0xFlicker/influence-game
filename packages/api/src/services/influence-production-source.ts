@@ -1,3 +1,4 @@
+import { resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import { isSpectatorHuddleSpeech } from "@influence/engine";
 import { loadPayloads } from "./payload-storage.js";
 import { LEGACY_FORMAT_MANIFEST, Phase, replayCanonicalEvents, resolveFormatManifest, resolveGameKernel } from "@influence/engine";
@@ -312,6 +313,8 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
     return { ...seat.player, status: final?.status === "eliminated" ? "eliminated" as const : "alive" as const, shielded: final?.shielded ?? false };
   });
   const exportGame = { id: game.id, slug: game.slug, status: game.status, players, gameKernel,
+    // Preserve historical pinned source hashes: an absent version already means v1.
+    ...(config.empowerRevoteVersion === undefined ? {} : { empowerRevoteVersion: resolveEmpowerRevoteVersion(config.empowerRevoteVersion) }),
     formatManifest: resolveFormatManifest(config.formatManifest ?? LEGACY_FORMAT_MANIFEST) };
   const acceptedBoundary = { gameId: game.id, gameKind: "influence" as const, audience: "public" as const, projectionVersion: 3 as const,
     throughEventSequence, throughTurnSequence, transcriptPrefix, acceptedCutoff };

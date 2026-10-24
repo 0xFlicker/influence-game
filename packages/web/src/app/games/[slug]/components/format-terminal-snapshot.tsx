@@ -1,3 +1,4 @@
+import type { EmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import type { ViewerDecisionEvent } from "@/lib/api";
 import { FormatOfferStage } from "./format-offer-stage";
 import { FormatPresentation } from "./format-presentation";
@@ -17,6 +18,7 @@ export function FormatTerminalSnapshot({
   roster,
   decisions,
   formatManifest,
+  empowerRevoteVersion,
   eligiblePlayerIdsByRound,
   loading = false,
 }: {
@@ -24,6 +26,7 @@ export function FormatTerminalSnapshot({
   roster: readonly FormatPresentationRosterPlayer[];
   decisions: readonly ViewerDecisionEvent[];
   formatManifest?: readonly LaunchFormatId[];
+  empowerRevoteVersion?: EmpowerRevoteVersion;
   eligiblePlayerIdsByRound?: ReadonlyMap<number, readonly string[]>;
   loading?: boolean;
 }) {
@@ -31,6 +34,7 @@ export function FormatTerminalSnapshot({
     gameId,
     gameKernel: "format",
     formatManifest,
+    empowerRevoteVersion,
     roster,
     decisions,
     eligiblePlayerIdsByRound,

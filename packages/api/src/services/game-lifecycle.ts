@@ -1,3 +1,4 @@
+import { resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import { actorProviderManifest, gameModelPolicy, sealGameModelRouting } from "@influence/engine";
 import { conversationPolicy } from "@influence/engine";
 import { withEvaluationBudget } from "@influence/engine";
@@ -442,6 +443,7 @@ export function buildEngineConfigFromGameRecord(
     maxRounds: (gameConfig.maxRounds as number) ?? 10,
     minPlayers,
     maxPlayers,
+    empowerRevoteVersion: resolveEmpowerRevoteVersion(gameConfig.empowerRevoteVersion),
     formatManifest: resolveFormatManifest(
       gameConfig.formatManifest ?? LEGACY_FORMAT_MANIFEST,
     ),

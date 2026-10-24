@@ -317,7 +317,7 @@ Rules are maintained in `docs/rules-page-content.md` (Influence) and `docs/werew
 
 ## House entry and moment sharing
 
-Both games now enter through `/games/:slug`. Casting, episode layout, cards and playback controls share House components while game modules retain their own data and rules. `/werewolf/:slug` was removed. Choose Mystery or Omniscient before playback; there is no mid-match audience switch. Public entry and replay work signed out.
+Both games now enter through `/games/:slug`. Casting, episode layout, cards and playback controls share House components while game modules retain their own data and rules. `/werewolf/:slug` was removed. Choose Mystery or Omniscient before playback; there is no mid-match audience switch. Results offer **Watch Mystery** and **Watch Omniscient**, both starting from the beginning in the selected audience. Public entry and replay work signed out.
 
 In player settings, **Share this moment** uses native sharing or copies a link such as `/games/example/replay?audience=mystery&cursor=65`. The cursor is a stable source entry for that audience, not an animation or page index. Opening the link begins in that source window with device preferences. Missing audience with a cursor, repeated/invalid values and unavailable initial positions fail explicitly. Links confer no private access. See [integration knowledge](solutions/architecture-patterns/house-game-entry-and-replay-moments.md).
 

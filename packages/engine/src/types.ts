@@ -639,6 +639,8 @@ export const MIN_NEW_GAME_PLAYERS = 6;
 export const MAX_NEW_GAME_PLAYERS = 12;
 
 export interface GameConfig {
+  /** Frozen at game creation; new engine-only games default to the current version. */
+  empowerRevoteVersion?: import("./empower-revote-rules").EmpowerRevoteVersion;
   conversationPolicy?: import("./open-conversation").ConversationPolicy;
   /** Frozen legal formats for this game. Omission is normalized at admission. */
   formatManifest?: readonly LaunchFormatId[];

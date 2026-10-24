@@ -55,6 +55,19 @@ The later resume reached commit and failed with `Provider call sha256:416f4f51b0
 
 **Verification:** The regression failed before the change. Afterward, 32 engine tests and 11 PostgreSQL commit/recovery tests passed. The database guard still rejects any draft falsely claiming the unsuccessful call was accepted.
 
+## Round 2 Empower presentation mismatch (fixed; recorded outcome preserved)
+
+Localhost MCP canonical events 41–48 show an initial Arden/Rowan tie, clearing only Marnie/Milo/Larry's votes, their three replacement ballots (Rowan/Arden/Arden), then Rowan selected by `wheel`. The viewer's `validEmpoweredSetWinner` counts only the replacement ballots (Arden 2, Rowan 1). Execution's `resolveEmpowerRevote` counts the complete active tally, including Arden's retained vote for Rowan (and Rowan's retained vote for Marnie, outside the tied set), so it sees Arden 2, Rowan 2 and uses the wheel. The viewer therefore emits `empower_tally_mismatch`: “Final Empowered agent does not match the accepted revote state.” The event log is complete with no MCP diagnostics; this is a counting-semantics disagreement, not missing data or a provider failure.
+
+The agreed rule for new games is new ballots only. Game creation now freezes `empowerRevoteVersion: 2`; canonical initialization records it and recovery retains it. Existing games without a version use version 1 for all remaining rounds, counting the active ballots. Engine and viewer share the versioned tally function; neither selects rules by matching a tally to the winner. This game remains version 1: its recorded round-2 tally displays Arden 2 (Milo, Larry) and Rowan 2 (Marnie, Arden), followed by Rowan’s recorded random wheel win. There is no historical warning in the viewer. Under version 2 these new ballots yield 2–1, so no wheel occurs. No recorded events, votes, outcomes or provider evidence are rewritten, and no game is resumed by this fix.
+
+Regression coverage includes the same five-player ballot pattern, recovery between revoters, exclusion of earlier rounds, true ties and no eligible revoters, preserved historical playback, and rejection of missing ballots or contradictory new-rule outcomes.
+
+Verification: a fresh localhost MCP read confirmed events 41–48 are unchanged, including Rowan's `wheel` result. Compiling the actual recorded round-two prefix now returns `ready` with no diagnostic. Browser playback shows the initial tie, revote receipts and preserved result in both embedded and fullscreen views; Empower tally scenes use the existing fit-to-frame layout so shorter viewports retain the full ledger. Both durable and non-durable execution use the shared revote resolver.
+
+Validation after freezing rule versions: 2,841 provider-free tests passed (5 skipped); typecheck and lint passed. The fresh PostgreSQL suite passed all 2,182 test cases but reported one unrelated 30-second staging-render cleanup-hook timeout. That file passed all 8 tests in isolation. Coverage includes both rules, legacy recovery and later rounds, stored creation configuration, terminal playback, and exports that preserve historical source hashes. The saved localhost MCP round-two prefix still compiles to the 2–2 tally and Rowan’s recorded wheel win. No paid inference or live-game mutation was used.
+
+
 ## Provider issue, not an established application defect
 
 Six inspected GLM Flash attempts failed across introduction, round-one Lobby and voting: all HTTP 502, `origin_bad_gateway`, with response times of roughly 0.6–1.4 seconds. Cloudflare reports an invalid or incomplete response from Katana's origin. No refusal or generated GLM output was returned. The underlying origin failure remains unknown; the evidence does not establish a prompt, schema or capability defect.

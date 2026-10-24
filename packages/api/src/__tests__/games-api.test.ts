@@ -800,6 +800,7 @@ describe("Game REST API", () => {
         .from(schema.games))[0]!;
       const config = JSON.parse(game.config);
       expect(config.maxRounds).toBeGreaterThanOrEqual(10);
+      expect(config.empowerRevoteVersion).toBe(2);
       expect(config.formatManifest).toEqual([
         "save_or_eliminate",
         "vote_bomb",
@@ -825,11 +826,12 @@ describe("Game REST API", () => {
       const created = (await res.json()) as { id: string };
       const detailRes = await app.request(`/api/games/${created.id}`);
       expect(detailRes.status).toBe(200);
-      const detail = (await detailRes.json()) as { formatManifest: string[] };
+      const detail = (await detailRes.json()) as { formatManifest: string[]; empowerRevoteVersion: number };
       expect(detail.formatManifest).toEqual(["vote_bomb", "majority_elimination"]);
+      expect(detail.empowerRevoteVersion).toBe(2);
 
       const listRes = await app.request("/api/games");
-      const listed = (await listRes.json()) as Array<{ id: string; formatManifest: string[] }>;
+      const listed = (await listRes.json()) as Array<{ id: string; formatManifest: string[]; empowerRevoteVersion: number }>;
       expect(listed.find((item) => item.id === created.id)?.formatManifest)
         .toEqual(["vote_bomb", "majority_elimination"]);
 
@@ -850,13 +852,15 @@ describe("Game REST API", () => {
       const game = (await db.select().from(schema.games).where(eq(schema.games.id, created.id)))[0]!;
       const legacyConfig = JSON.parse(game.config);
       delete legacyConfig.formatManifest;
+      delete legacyConfig.empowerRevoteVersion;
       await db.update(schema.games)
         .set({ config: JSON.stringify(legacyConfig) })
         .where(eq(schema.games.id, created.id));
 
       const detailRes = await app.request(`/api/games/${created.id}`);
       expect(detailRes.status).toBe(200);
-      const detail = (await detailRes.json()) as { formatManifest: string[] };
+      const detail = (await detailRes.json()) as { formatManifest: string[]; empowerRevoteVersion: number };
+      expect(detail.empowerRevoteVersion).toBe(1);
       expect(detail.formatManifest).toEqual([
         "save_or_eliminate",
         "vote_bomb",
@@ -864,7 +868,8 @@ describe("Game REST API", () => {
       ]);
 
       const listRes = await app.request("/api/games");
-      const listed = (await listRes.json()) as Array<{ id: string; formatManifest: string[] }>;
+      const listed = (await listRes.json()) as Array<{ id: string; formatManifest: string[]; empowerRevoteVersion: number }>;
+      expect(listed.find((item) => item.id === created.id)?.empowerRevoteVersion).toBe(1);
       expect(listed.find((item) => item.id === created.id)?.formatManifest).toEqual([
         "save_or_eliminate",
         "vote_bomb",

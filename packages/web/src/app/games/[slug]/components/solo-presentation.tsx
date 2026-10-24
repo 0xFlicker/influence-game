@@ -69,8 +69,9 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
   const tailLeft = Math.max(16, Math.min(bubble.width - 16, geometry.bubble.left + geometry.tailLeft - bubble.left));
   return <section ref={frame} aria-label={`${beat.purpose}: ${player.name}`} data-solo-image={fullBody ? "full-body" : "portrait"}
     className="relative min-h-0 w-full flex-1 overflow-hidden bg-black">
-    <div data-thinking-camera className="absolute inset-0" style={focus.mediaStyle}>
+    {/* Keep the backdrop filling the stage when the thinking camera shifts the character. */}
     <StageBackdrop source={SOLO_STUDIO_BACKDROP} />
+    <div data-thinking-camera className="absolute inset-0" style={focus.mediaStyle}>
     {/* eslint-disable-next-line @next/next/no-img-element -- frozen game image, with a static portrait only when full-body art is unavailable */}
     <img data-solo-portrait key={source} src={source} alt={player.name}
       onLoad={event => {

@@ -605,6 +605,8 @@ export type CanonicalGameEvent =
         players: Array<{ id: UUID; name: string; status: PlayerStatus; shielded: boolean }>;
         /** Frozen legal formats. Absent only on historical launch-trio games. */
         formatManifest?: LaunchFormatId[];
+        /** Missing on historical games, which use version 1. */
+        empowerRevoteVersion?: import("./empower-revote-rules").EmpowerRevoteVersion;
       }
     >
   | CanonicalEventEnvelope<

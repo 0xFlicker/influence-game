@@ -43,6 +43,18 @@ async function scene(gameId: string, image: string) {
   return acceptVisualScene(db, { sceneId: row.id, planHash: row.planHash, imageArtifactId: image, anchors: [], verifiedParticipantIds: ["atlas"] });
 }
 
+test("exports the frozen revote version without changing unversioned source documents", async () => {
+  const { gameId } = await fixture();
+  const legacy = await readInfluenceProductionSource(db, gameId);
+  expect(legacy.game).not.toHaveProperty("empowerRevoteVersion");
+  for (const version of [1, 2] as const) {
+    await db.update(schema.games).set({ config: JSON.stringify({ visualMode: true, empowerRevoteVersion: version }) }).where(eq(schema.games.id, gameId));
+    const source = await readInfluenceProductionSource(db, gameId);
+    expect(source.game.empowerRevoteVersion).toBe(version);
+    expect(source.snapshot.acceptedSourceHash).not.toBe(legacy.snapshot.acceptedSourceHash);
+  }
+});
+
 test("complete retrospective catalog requires exact captured canonical speech and rejects substitution or absence", async () => {
   const {gameId, events} = await fixture();
   const source = await readInfluenceProductionSource(db, gameId), retrospective = source.catalog.moments.filter(moment => moment.purpose === "retrospective");

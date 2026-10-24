@@ -866,6 +866,7 @@ export function GameViewer({
           <FormatTerminalSnapshot
             gameId={game.id}
             formatManifest={game.formatManifest}
+            empowerRevoteVersion={game.empowerRevoteVersion}
             roster={game.players.map((player) => ({
               id: player.id,
               name: player.name,
@@ -906,6 +907,7 @@ export function GameViewer({
           <FormatTerminalSnapshot
             gameId={game.id}
             formatManifest={game.formatManifest}
+            empowerRevoteVersion={game.empowerRevoteVersion}
             roster={game.players.map((player) => ({
               id: player.id,
               name: player.name,

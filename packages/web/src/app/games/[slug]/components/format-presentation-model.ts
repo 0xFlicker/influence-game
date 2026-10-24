@@ -1,3 +1,4 @@
+import { resolveEmpowerRevoteVersion, type EmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import type {
   GameKernel,
   GameWatchReplayFrame,
@@ -22,7 +23,7 @@ import {
   safetyBouncePointerDurationMs,
   safetyBouncePointerPacing,
   tiedSetMatchesTally,
-  validEmpoweredSetWinner,
+  empoweredSetTally,
 } from "./format-presentation-compiler-helpers";
 import {
   cloneSnapshot,
@@ -71,6 +72,7 @@ export interface CompileFormatPresentationPrefixInput {
   gameKernel: GameKernel;
   roster: readonly FormatPresentationRosterPlayer[];
   decisions: readonly ViewerDecisionEvent[];
+  empowerRevoteVersion?: EmpowerRevoteVersion;
   formatManifest?: readonly LaunchFormatId[];
   eligiblePlayerIdsByRound?: ReadonlyMap<number, readonly string[]>;
 }
@@ -119,6 +121,7 @@ export function compileFormatPresentationPrefix({
   roster,
   decisions,
   formatManifest,
+  empowerRevoteVersion,
   eligiblePlayerIdsByRound,
 }: CompileFormatPresentationPrefixInput): FormatPresentationCompilation {
   let snapshot = emptySnapshot();
@@ -174,6 +177,7 @@ export function compileFormatPresentationPrefix({
     const failure = applyDecision({
       gameId,
       decision,
+      empowerRevoteVersion: resolveEmpowerRevoteVersion(empowerRevoteVersion),
       formatManifest,
       eligiblePlayerIds,
       eligiblePlayerSet: new Set(eligiblePlayerIds),
@@ -198,6 +202,7 @@ export function compileFormatPresentationPrefix({
 function applyDecision(input: {
   gameId: string;
   decision: ViewerDecisionEvent;
+  empowerRevoteVersion?: EmpowerRevoteVersion;
   formatManifest?: readonly LaunchFormatId[];
   eligiblePlayerIds: readonly string[];
   eligiblePlayerSet: ReadonlySet<string>;
@@ -210,6 +215,7 @@ function applyDecision(input: {
   const {
     gameId,
     decision,
+    empowerRevoteVersion,
     formatManifest,
     eligiblePlayerIds,
     eligiblePlayerSet,
@@ -394,7 +400,8 @@ function applyDecision(input: {
     case "vote.empowered_set": {
       const pending = empower.pendingTally;
       if (!pending) break;
-      if (!validEmpoweredSetWinner(decision, pending, empower)) {
+      const tally = empoweredSetTally(decision, pending, empower, resolveEmpowerRevoteVersion(empowerRevoteVersion));
+      if (!tally) {
         return incomplete(
           cues,
           snapshot,
@@ -403,14 +410,13 @@ function applyDecision(input: {
           "Final Empowered agent does not match the accepted revote state.",
         );
       }
-      const revoteCounts = Object.fromEntries((pending.payload.tied ?? []).map(id => [id, 0]));
-      for (const target of empower.revotes.values()) revoteCounts[target]! += 1;
       snapshot = appendEmpoweredTallyCue({
         gameId,
         decision,
         empoweredId: decision.payload.empowered,
-        counts: decision.payload.method === "manual" ? pending.payload.counts : revoteCounts,
+        counts: tally.counts,
         resolutionMethod: decision.payload.method === "initial" ? undefined : decision.payload.method,
+        countedVotes: tally.countedVotes,
         receipts: empowerReceipts(eligiblePlayerIds, empower),
         snapshot,
         cues,

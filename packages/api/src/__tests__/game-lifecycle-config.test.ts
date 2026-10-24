@@ -12,6 +12,16 @@ describe("game lifecycle engine config", () => {
     expect(() => buildEngineConfigFromGameRecord({ conversationPolicy: { ...policy, messageBytes: -1 } }, 6, 8)).toThrow("Invalid conversation policy");
   });
 
+  test("hydrates frozen revote rules, including existing games that have not started", () => {
+    expect(buildEngineConfigFromGameRecord({}, 6, 8).empowerRevoteVersion).toBe(1);
+    for (const version of [1, 2] as const) {
+      expect(buildEngineConfigFromGameRecord({ empowerRevoteVersion: version }, 6, 8).empowerRevoteVersion).toBe(version);
+    }
+    for (const version of [0, 3, "2", null]) {
+      expect(() => buildEngineConfigFromGameRecord({ empowerRevoteVersion: version }, 6, 8)).toThrow("Unsupported empower revote version");
+    }
+  });
+
   test("bounds API provider request deadlines", () => {
     expect(providerRequestTimeoutMs({})).toBe(45_000);
     expect(providerRequestTimeoutMs({ INFLUENCE_LLM_REQUEST_TIMEOUT_MS: "15000" })).toBe(15_000);

@@ -84,7 +84,7 @@ describe("FormatPresentation", () => {
     expect(revote).toContain("Empower revote");
     expect(revote).toContain("Lyra is Empowered.");
     expect(revote).not.toContain("data-empower-receipt");
-    expect(render({ ...base, resolutionMethod: "wheel" })).toContain("The revote stayed tied. The wheel decided.");
+    expect(render({ ...base, resolutionMethod: "wheel" })).toContain("The vote stayed tied. The wheel decided.");
     const manual = render({ ...base, resolutionMethod: "manual" });
     expect(manual).toContain("Original vote totals shown.");
     expect(manual).not.toContain("Empower revote");

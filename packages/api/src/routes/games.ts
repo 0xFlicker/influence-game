@@ -1,3 +1,4 @@
+import { CURRENT_EMPOWER_REVOTE_VERSION, resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import { creationModelRouting, GameModelRoutingError } from "../services/game-model-routing.js";
 import { DEFAULT_CONVERSATION_POLICY } from "@influence/engine";
 import { isSpectatorHuddleSpeech } from "@influence/engine";
@@ -222,6 +223,7 @@ export function createGameRoutes(db: DrizzleDB) {
       visualMode,
       visualFailurePolicy,
       formatManifest: frozenFormatManifest,
+      empowerRevoteVersion: CURRENT_EMPOWER_REVOTE_VERSION,
     };
 
     const gameId = randomUUID();
@@ -329,6 +331,7 @@ export function createGameRoutes(db: DrizzleDB) {
       visualFailurePolicy: config.visualFailurePolicy === "require_visuals" ? "require_visuals" : "best_effort",
       visualPaused: game.status === "suspended" && Boolean(config.visualPause),
           formatManifest,
+          empowerRevoteVersion: resolveEmpowerRevoteVersion(config.empowerRevoteVersion),
           trackType: game.trackType,
           seasonId: game.seasonId ?? undefined,
           season: game.seasonId ? seasonById.get(game.seasonId) : undefined,
@@ -420,6 +423,7 @@ export function createGameRoutes(db: DrizzleDB) {
       visualFailurePolicy: config.visualFailurePolicy === "require_visuals" ? "require_visuals" : "best_effort",
       visualPaused: game.status === "suspended" && Boolean(config.visualPause),
       formatManifest,
+      empowerRevoteVersion: resolveEmpowerRevoteVersion(config.empowerRevoteVersion),
       seasonId: game.seasonId ?? undefined,
       season: competition
         ? {
