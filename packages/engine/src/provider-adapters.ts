@@ -46,6 +46,9 @@ interface AdapterBackedRuntime extends ProviderRuntimeDescriptor {
   adapter: LlmProviderAdapter;
 }
 
+/** A default for authored prose, not a language detector or an output rejection rule. */
+export const OUTPUT_LANGUAGE_GUIDANCE = "Respond primarily in English, including speech, thinking, explanations and summaries. Brief phrases in other languages are fine when natural to the character or context. Preserve proper names, quoted source text, IDs and the required structured response format.";
+
 export interface ExecuteModelInvocationOptions<TValue, TStructuredValue = unknown> {
   call: ProviderLogicalCallExecution;
   runtimes: readonly LlmProviderRuntime[];
@@ -79,16 +82,15 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
   options: ExecuteModelInvocationOptions<TValue, TStructuredValue>,
 ): Promise<ModelInvocationExecutionResult<TValue>> {
   const withOutputGuidance = (value: ModelInvocation<TStructuredValue>): ModelInvocation<TStructuredValue> => {
-    if (value.result.kind !== "structured") return value;
-    const { audioDelivery: policy, schema } = value.result.artifact;
-    const properties = schema.properties;
+    const artifact = value.result.kind === "structured" ? value.result.artifact : undefined;
+    const policy = artifact?.audioDelivery;
+    const properties = artifact?.schema.properties;
     const hasThinking = properties !== null && typeof properties === "object" && Object.hasOwn(properties, "thinking");
-    const guidance = [policy ? audioDeliveryGuidance(policy.nighttime) : "", hasThinking ? THINKING_CONTENT_GUIDANCE : ""].filter(Boolean).join("\n\n");
-    if (!guidance) return value;
+    const guidance = [OUTPUT_LANGUAGE_GUIDANCE, policy ? audioDeliveryGuidance(policy.nighttime) : "", hasThinking ? THINKING_CONTENT_GUIDANCE : ""].filter(Boolean).join("\n\n");
     const messages = [...value.messages];
     const index = messages.findIndex(message => message.role === "system");
     if (index < 0) messages.unshift({ role: "system", content: guidance });
-    else messages[index] = { ...messages[index]!, content: `${messages[index]!.content}\n\n${guidance}` };
+    else messages[index] = { ...messages[index]!, content: [messages[index]!.content, guidance].filter(Boolean).join("\n\n") };
     return { ...value, messages };
   };
   // Capture renderer-owned spans before the first await; House/agents may prepare another call concurrently.

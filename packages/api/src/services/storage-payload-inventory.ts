@@ -10,6 +10,7 @@ export const STORAGE_PAYLOAD_COLUMNS = [
   {"table": "visual_room_library", "column": "image", "kind": "binary", "primaryKey": ["room_id", "version"]},
   {"table": "agent_content_assets", "column": "bytes", "kind": "binary", "primaryKey": ["hash"]},
   {"table": "game_retrospective_inputs", "column": "input", "kind": "json", "primaryKey": ["game_id"]},
+  {"table": "production_retrospective_retakes", "column": "document", "kind": "json", "primaryKey": ["id"]},
   {"table": "game_checkpoints", "column": "snapshot", "kind": "json", "primaryKey": ["id"]},
   {"table": "provider_attempt_evidence_outbox", "column": "body", "kind": "text", "primaryKey": ["attempt_id"]},
   {"table": "game_postgame_media", "column": "render_input_snapshot", "kind": "json", "primaryKey": ["game_id", "media_type"]},

@@ -1,5 +1,8 @@
 #!/usr/bin/env bun
 /**
+ * New shared model invocations request primarily English authored prose, allowing
+ * natural brief foreign phrases and preserving names, quotes and structured IDs.
+ * This is prompt guidance, not language-based rejection or historical rewriting.
  * Werewolf API playback derives audience-safe House action/result narration and
  * TTS separately from accepted contestant dialogue. Inspect it in the retained
  * API replay; it never changes model observations or the --chatty evidence.

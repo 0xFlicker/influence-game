@@ -150,6 +150,8 @@ export async function runAudioTrack(db: DrizzleDB, provider: AudioProvider = gen
         await tx.update(tracks).set({active: false, updatedAt: new Date()}).where(eq(tracks.id, prior.id));
       }
       await tx.update(tracks).set({ status: "ready", active: true, readyEventSequence: track.throughEventSequence, leaseId: null, leaseExpiresAt: null, updatedAt: new Date(), error: null }).where(guard);
+      await tx.update(schema.productionRetrospectiveRetakes).set({publishedAt: new Date()})
+        .where(and(eq(schema.productionRetrospectiveRetakes.trackId, track.id), sql`${schema.productionRetrospectiveRetakes.publishedAt} IS NULL`));
     });
   } catch (error) {
     await db.update(tracks).set({ status: "failed", leaseId: null, leaseExpiresAt: null, updatedAt: new Date(), error: error instanceof Error ? error.message : "Audio generation failed" }).where(guard);

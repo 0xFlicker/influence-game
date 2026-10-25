@@ -13,6 +13,8 @@ export interface WerewolfWatchMoment {
   chapterId: string;
   sceneId: string;
   mediaKey: string | null;
+  /** Published editorial speech/audio version; canonical history retains the original. */
+  retrospectiveRetakeId?: string;
   /** Accepted public ballots through this moment, including across watch windows. */
   dayBallots?: Array<{voterId: string; targetId: string | null; unavailable: boolean}>;
   /** First eligible pack/hunt appearance each night, calculated across complete history. */

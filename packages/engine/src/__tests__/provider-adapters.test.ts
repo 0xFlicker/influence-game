@@ -9,6 +9,7 @@ import {
   compileOpenAIResponsesRequest,
   createProviderAdapter,
   executeModelInvocation,
+  OUTPUT_LANGUAGE_GUIDANCE,
   normalizeOpenAIResponse,
 } from "../provider-adapters";
 import type { ModelInvocation } from "../model-invocation";
@@ -219,6 +220,7 @@ describe("provider-native adapters", () => {
     const originalHash = contextSourceHash(source);
     const records: ProviderAttemptRecord[] = [];
     const client = { chat: { completions: { create: async (body: { messages: Array<{ content: string }> }) => {
+      expect(body.messages[0]!.content).toContain(OUTPUT_LANGUAGE_GUIDANCE);
       expect(body.messages[0]!.content.includes("Prefer <soft>")).toBe(delivery);
       expect(body.messages[0]!.content.includes(THINKING_CONTENT_GUIDANCE)).toBe(thinking);
       return { id: "resumed", choices: [{ finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({ ...accepted, text: delivery ? "<soft>Hello</soft>" : "Hello" }) } }] };
@@ -238,6 +240,23 @@ describe("provider-native adapters", () => {
     expect(records[0]!.context?.sourceHash).toBe(originalHash);
     expect(source.messages[0]!.content).toBe("Play the game.");
     expect(result.liveOutcome?.invocationMessages?.[0]?.content?.includes(THINKING_CONTENT_GUIDANCE)).toBe(thinking);
+  });
+
+  it("adds English guidance to text-only calls without a system prompt, without rejecting other languages", async () => {
+    const source: ModelInvocation = {messages: [{role: "user", content: "Say hello."}], result: {kind: "text"}, outputTokenLimit: 256};
+    const client = {chat: {completions: {create: async (body: {messages: Array<{role: string; content: string}>}) => {
+      expect(body.messages[0]).toEqual({role: "system", content: OUTPUT_LANGUAGE_GUIDANCE});
+      expect(body.messages[1]).toEqual({role: "user", content: "Say hello."});
+      return {id: "language", choices: [{finish_reason: "stop", message: {role: "assistant", content: "你好"}}]};
+    }}}} as unknown as OpenAI;
+    const result = await executeModelInvocation({
+      call: new ProviderExecutionCoordinator().startCall({actor: {name: "House", role: "house"}, action: "language-test",
+        semantic: {version: 1, kind: "phase_call", phase: Phase.MINGLE, round: 0, canonicalEventSequence: 0, callSlot: 1}}),
+      runtimes: [runtime("katana:grok-4-5", client)], invocation: source, maxAttempts: 1,
+      validate: outcome => ({status: "usable", value: outcome.text}),
+    });
+    expect(result.value).toBe("你好");
+    expect(source.messages).toEqual([{role: "user", content: "Say hello."}]);
   });
 
   it("keeps local requests concurrent and uses the local deadline instead of a hosted action deadline", async () => {

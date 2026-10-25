@@ -59,6 +59,8 @@ Werewolf freezes the effective game-specific strategy at game start: owner notes
 
 The shared `/games/new` creator supports 6–8 Werewolf seats, 1–2 wolves, and optional Seer/Doctor roles. The initial event freezes this setup; agents see those public role counts and only receive actions for their actual assigned role. Archetype pool/fill settings apply to House-filled seats. Visual Mode generates spectator scenes through the existing image renderer; it does not add player reasoning or change original speech. CLI presets remain six/eight seats; `--game ID_OR_SLUG` can report a custom UI-created game without inference.
 
+New shared model invocations request primarily English speech, thinking, explanations and summaries, including retrospectives. Brief foreign phrases remain allowed when natural; names, quoted source text, IDs and exact output schemas are preserved. This is guidance, not a language detector or rejection rule. It does not translate accepted history or alter native reasoning already recorded. The actual dispatched instructions remain visible in private provider evidence.
+
 ## Playback evidence boundaries
 
 Both games reuse the House watch shell and scheduler. Werewolf Thinking requests are opt-in, Omniscient-only and bound to the consumed audience cursor and selected player. Prefetched entries and the live head cannot supply current thinking or cast state. Discussion passes have no playback cues, scrub stops, thinking shots or speech holds, even when Thinking is enabled. Their saved thinking remains available through the debugging API/MCP. Audience switches clear pending reads and restart paused.

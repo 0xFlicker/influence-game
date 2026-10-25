@@ -4078,6 +4078,23 @@ export const gameAudioTracks = pgTable("game_audio_tracks", {
   ...payloadChecks("game_audio_tracks", { voices: [table.voices, "json-gzip"], manifest: [table.manifest, "json-gzip"] }),
 ]);
 
+/** Editorial retakes never replace canonical speeches or provider evidence. */
+export const productionRetrospectiveRetakes = pgTable("production_retrospective_retakes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  gameId: text("game_id").notNull().references(() => games.id, {onDelete: "cascade"}),
+  actorId: text("actor_id").notNull(),
+  sourceEventSequence: integer("source_event_sequence").notNull(),
+  sourceEventHash: text("source_event_hash").notNull(),
+  trackId: uuid("track_id").notNull().unique().references(() => gameAudioTracks.id, {onDelete: "cascade"}),
+  document: payloadColumn("document_object", "json-gzip").notNull().$type<StoredPayload<import("../services/retrospective-retakes.js").RetrospectiveRetakeDocument>>(),
+  publishedAt: timestamp("published_at", {withTimezone: true}),
+  createdAt: timestamp("created_at", {withTimezone: true}).notNull().defaultNow(),
+}, table => [
+  index("retrospective_retakes_source_idx").on(table.gameId, table.sourceEventSequence, table.publishedAt),
+  check("retrospective_retakes_source_check", sql`${table.sourceEventSequence} > 0 AND ${table.sourceEventHash} ~ '^sha256:[0-9a-f]{64}$'`),
+  ...payloadChecks("production_retrospective_retakes", {document: [table.document, "json-gzip"]}),
+]);
+
 export const gameAudioClips = pgTable("game_audio_clips", {
   id: uuid("id").primaryKey().defaultRandom(),
   trackId: uuid("track_id").notNull().references(() => gameAudioTracks.id, { onDelete: "cascade" }),

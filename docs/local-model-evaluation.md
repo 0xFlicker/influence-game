@@ -1,5 +1,7 @@
 # Local Model Evaluation
 
+New shared model calls request primarily English authored prose, including retrospective speech and thinking, while allowing natural brief foreign phrases and preserving names, quotations and structured identifiers. Inspect the actual responses in `--chatty` and private evidence: this is prompt guidance, not language-based validation, and accepted historical output is never translated in place.
+
 Werewolf v11 begins each day with concurrent private `werewolf.speaking_priority`
 requests. Each returns only an integer `priority` from 1–100; no authored thinking,
 speech or delivery tags. Inspect provider evidence for these scheduling calls,

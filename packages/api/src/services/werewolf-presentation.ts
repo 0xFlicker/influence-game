@@ -1,4 +1,5 @@
 import { audioReadySequence } from "./audio-frontier.js";
+import { readRetrospectivePresentation } from "./retrospective-retakes.js";
 import { loadPayloads, readPayload } from "./payload-storage.js";
 import { readyCutoutsByHash, requestCharacterCutouts } from "./character-cutouts.js";
 import { localCharacterArt, type LocalCharacterArt } from "./local-character-art.js";
@@ -119,10 +120,11 @@ export async function readWerewolfWatch(db: DrizzleDB, id: string, audience: Wer
   const ready = await audioReadySequence(db,game.id);
   const events = (await readWerewolfEvents(db, game.id)).filter(event => ready === null || event.sequence <= ready || ready === 0 && event.type === "werewolf.started");
   const rows = await publishedWerewolfScenes(db, game.id, publicationCutoff);
+  const retakes = await readRetrospectivePresentation(db, game.id, events, publicationCutoff);
   const projection = projectWerewolfWatch(events, audience, fromCursor, limit, (staging, cursor, ids) => {
     const {wolfForms} = bindWerewolfScene(rows, game.id, audience, cursor, publicationCutoff, staging);
     return ids.some(id => Boolean(wolfForms[id]));
-  });
+  }, retakes);
   const references = await werewolfReferenceMetadata(db, game.id, events.find(event => event.type === "werewolf.started")?.payload.players);
   const config = JSON.parse(game.config);
   const seats = await db.select({ id: schema.werewolfLobbySeats.id, modelPreference: schema.werewolfLobbySeats.modelPreference })

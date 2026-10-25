@@ -1,4 +1,5 @@
 import {hasLiveAudioTrack} from "./audio-frontier.js";
+import {readRetrospectivePresentation} from "./retrospective-retakes.js";
 import { loadPayloads } from "./payload-storage.js";
 import { and, eq, inArray, or } from "drizzle-orm";
 import { replayWerewolf, werewolfExecutionFinished } from "@influence/engine/werewolf";
@@ -82,12 +83,13 @@ export async function buildWerewolfProductionSourceSnapshot(tx: DrizzleDB | Visu
   if (!allEvents.some(event => event.sequence === throughEventSequence)) throw new WerewolfGameError("Production source prefix is unavailable");
   const events = allEvents.filter(event => event.sequence <= throughEventSequence);
   const publicationCutoff = options.refreshVisuals ? new Date().toISOString() : options.snapshot?.publicationCutoff ?? new Date().toISOString();
+  const retakes = await readRetrospectivePresentation(tx, game.id, events, publicationCutoff);
   const rows = (await publishedWerewolfScenes(tx, game.id, publicationCutoff, true)).filter(row => row.scene.boundarySequence <= throughEventSequence);
   rows.sort((a, b) => b.scene.boundarySequence - a.scene.boundarySequence || b.publication.revision - a.publication.revision || a.scene.id.localeCompare(b.scene.id) || a.publication.id.localeCompare(b.publication.id));
   const projection = projectWerewolfProductionWatch(events, options.audience, (staging, cursor, ids) => {
     const {wolfForms} = bindWerewolfScene(rows, game.id, options.audience, cursor, publicationCutoff, staging);
     return ids.some(id => Boolean(wolfForms[id]));
-  });
+  }, retakes);
   if (options.snapshot && options.snapshot.throughCursor !== projection.latestCursor) throw new WerewolfGameError("Production source cursor changed", 409);
   const references = await werewolfReferenceMetadata(tx, game.id, events.find(event => event.type === "werewolf.started")?.payload.players,
     { availableHashes: options.refreshVisuals ? undefined : options.snapshot?.availableCharacterAssets });
@@ -109,6 +111,7 @@ export async function buildWerewolfProductionSourceSnapshot(tx: DrizzleDB | Visu
   artifacts.sort((a, b) => a.id.localeCompare(b.id));
   if (artifacts.length !== artifactIds.length) throw new WerewolfGameError("Published production imagery is unavailable", 409);
   const sourceHash = sha256StableJson({ gameId: game.id, audience: options.audience, thinking: options.thinking, throughEventSequence, publicationCutoff,
+    ...(retakes.size ? {retakes: [...retakes]} : {}),
     events, thoughts, catalog, references, ...(cutoutReferences.length ? { cutoutReferences } : {}), ...(Object.keys(localArt).length ? { localArt } : {}), publications: rows.map(({ scene, publication, version }) => ({ scene: { id: scene.id, roomId: scene.roomId, boundarySequence: scene.boundarySequence }, publication, version })), artifacts });
   if (options.snapshot && !options.refreshVisuals && options.snapshot.sourceHash !== sourceHash) throw new WerewolfGameError("Production source snapshot changed; refresh the source", 409);
   const snapshot: WerewolfProductionSnapshot = { gameId: game.id, gameKind: "werewolf", audience: options.audience, thinking: options.thinking, throughEventSequence, throughCursor: projection.latestCursor, publicationCutoff, availableCharacterAssets, sourceHash };

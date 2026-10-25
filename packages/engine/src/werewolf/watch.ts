@@ -8,19 +8,21 @@ import {werewolfNightSteps, isWerewolfPlayable, type WerewolfNightAction, type W
 
 /** Server-only staging coordinates never appear in the browser DTO. */
 export type WerewolfWatchStaging = ReturnType<typeof werewolfVisualStaging>;
-export function projectWerewolfWatch(events: readonly WerewolfEvent[], audience: WerewolfAudience, fromCursor = 1, limit = 32, hasWolfForms?: (staging: WerewolfWatchStaging, cursor: number, ids: string[]) => boolean) {
+/** Explicit published presentation, never an input to the canonical reducer. */
+export type WerewolfRetrospectivePresentation = Map<number, {id: string; actorId: string; speech: string}>;
+export function projectWerewolfWatch(events: readonly WerewolfEvent[], audience: WerewolfAudience, fromCursor = 1, limit = 32, hasWolfForms?: (staging: WerewolfWatchStaging, cursor: number, ids: string[]) => boolean, retakes?: WerewolfRetrospectivePresentation) {
   if (!["mystery", "omniscient"].includes(audience) || !Number.isSafeInteger(fromCursor) || fromCursor < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 64) throw new Error("Invalid watch window");
-  return projectWatchHistory(events, audience, fromCursor, limit, hasWolfForms);
+  return projectWatchHistory(events, audience, fromCursor, limit, hasWolfForms, retakes);
 }
 
 /** Producer-only complete projection of an already bounded canonical prefix.
  * The caller materializes permitted media and paginates before serialization. */
-export function projectWerewolfProductionWatch(events: readonly WerewolfEvent[], audience: WerewolfAudience, hasWolfForms?: (staging: WerewolfWatchStaging, cursor: number, ids: string[]) => boolean) {
+export function projectWerewolfProductionWatch(events: readonly WerewolfEvent[], audience: WerewolfAudience, hasWolfForms?: (staging: WerewolfWatchStaging, cursor: number, ids: string[]) => boolean, retakes?: WerewolfRetrospectivePresentation) {
   if (audience !== "mystery" && audience !== "omniscient") throw new Error("Invalid Werewolf audience");
-  return projectWatchHistory(events, audience, 1, Number.MAX_SAFE_INTEGER, hasWolfForms);
+  return projectWatchHistory(events, audience, 1, Number.MAX_SAFE_INTEGER, hasWolfForms, retakes);
 }
 
-function projectWatchHistory(events: readonly WerewolfEvent[], audience: WerewolfAudience, fromCursor: number, limit: number, hasWolfForms?: (staging: WerewolfWatchStaging, cursor: number, ids: string[]) => boolean) {
+function projectWatchHistory(events: readonly WerewolfEvent[], audience: WerewolfAudience, fromCursor: number, limit: number, hasWolfForms?: (staging: WerewolfWatchStaging, cursor: number, ids: string[]) => boolean, retakes?: WerewolfRetrospectivePresentation) {
   let state: WerewolfState | null = null, cursor = 0;
   const moments: Array<WerewolfWatchMoment & { staging: WerewolfWatchStaging }> = [];
   const navigation: WerewolfWatchIndex[] = [];
@@ -30,7 +32,13 @@ function projectWatchHistory(events: readonly WerewolfEvent[], audience: Werewol
   const introducedWolves = new Set<string>();
   let sceneId = "introduction", chapterId = "introduction", packAttempt = 1;
   for (const frame of walkWerewolfHistory(events, audience)) {
-    const { event, before, entry } = frame;
+    const { event, before } = frame;
+    let entry = frame.entry;
+    const retake = retakes?.get(event.sequence);
+    if (retake) {
+      if (event.type !== "werewolf.retrospective_statement_recorded" || entry?.kind !== "speech" || entry.purpose !== "retrospective" || entry.actorId !== retake.actorId) throw new Error("Retake must match its original retrospective speaker");
+      entry = {...entry, text: retake.speech};
+    }
     state = frame.state;
     cursor = frame.cursor;
     if (entry) {
@@ -86,6 +94,7 @@ function projectWatchHistory(events: readonly WerewolfEvent[], audience: Werewol
       }
       if (cursor < fromCursor || cursor >= fromCursor + limit) continue;
       moments.push({ cursor, entry, ...(entry.kind === "ballot" ? {dayBallots: dayBallots.map(ballot => ({...ballot}))} : {}), ...(transformWolfIds.length ? { transformWolfIds } : {}), snapshot: projectWerewolfSnapshot(state, audience, cursor), chapterId, sceneId, mediaKey: null,
+        ...(retake ? {retrospectiveRetakeId: retake.id} : {}),
         ...(nightActions.length ? { night: { actions: nightActions, before: projectWerewolfSnapshot(staging, audience, cursor) } } : {}), staging: visualStaging });
     }
   }

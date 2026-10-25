@@ -138,7 +138,9 @@ describe("dedicated retrospective invocation", () => {
     expect(JSON.parse(generated!.input)).toEqual(context);
     expect(generated!.input).toContain("LATE_GAME_FACT");
     for (const forbidden of ["CURRENT_MEMORY_MUST_NOT_ENTER", "CURRENT_PERSONA_MUST_NOT_ENTER", "CURRENT_BACKSTORY_MUST_NOT_ENTER", "mira ORIGINAL_STRATEGY", "atlas ORIGINAL_STRATEGY"]) expect(generated!.input).not.toContain(forbidden);
-    expect(generated!.instructions).toBe(`${RETROSPECTIVE_SYSTEM_PROMPT}\n\n${audioDeliveryGuidance(false)}`);
+    expect(generated!.instructions).toContain(RETROSPECTIVE_SYSTEM_PROMPT);
+    expect(generated!.instructions).toContain("Respond primarily in English");
+    expect(generated!.instructions).toContain(audioDeliveryGuidance(false));
     expect(generated!.instructions).toContain("untrusted quoted communication");
     expect(generated!.instructions).toContain("Separate what you knew or believed at the time");
     expect(generated!.instructions).toContain("no longer need to conceal your role or maintain a bluff");
