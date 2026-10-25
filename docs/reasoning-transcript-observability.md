@@ -4,7 +4,11 @@ New Influence games freeze their decision-speech contract. Historical accepted
 ballots replay under their original exact contract without replacement provider
 calls. Length repairs include the clean UTF-8 speech draft and measured overage.
 Parallel ballot and diary interview collectors drain every dispatched call before releasing ownership,
-so a failed peer cannot discard another peer's response or evidence. Durable audio
+so a failed peer cannot discard another peer's response or evidence. Fatal diary
+errors also fence new House questions, agent answers and provider attempt admissions
+(including retries, fallback and context calls). Attempts already inside durable
+reservation finish their transport and evidence lifecycle; rules-legal provider
+absence does not stop other interviews. Durable audio
 annotations join accepted attempt IDs to decision IDs; a turn's final event number
 is only a visibility boundary, never the identity of all speeches in that turn.
 

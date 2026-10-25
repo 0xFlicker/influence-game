@@ -12,6 +12,14 @@ report. The failures crossed otherwise passing unit boundaries:
 
 - Diary interviews still used fail-fast parallel batches inside a durable turn.
   Both living-player and jury batches now drain before propagating failure.
+  A follow-up review found that draining a whole interview could start new calls
+  after a sibling's fatal journal failure. Each session now latches fatal errors
+  and fences subsequent House/agent calls and provider attempt admissions while
+  retaining in-flight draining. Retry, fallback and context calls inherit the
+  session fence. Attempts already inside reservation finish normally, and the
+  first fatal error is preserved after every interview settles.
+  Regression tests cover all four question/answer boundaries for living players
+  and jurors, legal provider absence, and a fresh session after failure.
 - The editorial retake CLI omitted the optional local task-budget hook. Its
   existing file journal now participates in that guard when explicitly configured;
   no default spending ceiling was added.
@@ -49,3 +57,12 @@ Local validation on 2026-10-25:
 
 These checks do not establish a completed end-to-end MP4 export or production
 deployment. Existing selections and rendered artifacts were preserved.
+
+The diary admission-fence follow-up passed `bun run test` (3,042 passed,
+5 skipped), all four isolated `bun run test:postgres --shard=N/4` shards
+(2,252 passed), and `bun run check`. Independent focused review passed 35 tests,
+including the original follow-up and internal-retry reproductions. An earlier
+superseded run timed out during render-proof database teardown; the final full
+run passed that cleanup and every test with zero failures. All disposable
+databases were removed. Final logs are `/tmp/diary-fence-final-provider-free.log`,
+`/tmp/diary-fence-final-check.log`, and `/tmp/diary-fence-final-postgres-{1,2,3,4}.log`.

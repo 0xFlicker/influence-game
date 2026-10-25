@@ -19,8 +19,10 @@ import type {
 } from "./game-runner.types";
 import { emptyRecallContinuitySnapshot } from "./context-recall-plan";
 import { transcriptThinkingFor } from "./phases/phase-runner-context";
-import { isProviderFallbackEligible } from "./provider-execution";
+import { isProviderFallbackEligible, withProviderAdmissionGuard } from "./provider-execution";
 import { drainProviderCalls } from "./provider-batch";
+
+type DiaryDispatch = <T>(call: () => Promise<T>) => Promise<T>;
 
 export class DiaryRoom {
   /** Diary room entries: question/answer pairs per agent per phase */
@@ -99,16 +101,45 @@ export class DiaryRoom {
 
     this.logger.logSystem(`--- Diary Room (after ${precedingPhase}) ---`, Phase.DIARY_ROOM);
     const alivePlayers = this.gameState.getAlivePlayers();
+    // Fence new calls after a fatal error without cancelling peers whose
+    // dispatched responses still need to settle and save their evidence.
+    let fatalFailure: { error: unknown } | undefined;
+    const stopDispatch = (error: unknown) => { fatalFailure ??= { error }; };
+    const assertCanDispatch = () => { if (fatalFailure) throw fatalFailure.error; };
+    const dispatch: DiaryDispatch = async call => {
+      assertCanDispatch();
+      try {
+        return await withProviderAdmissionGuard(assertCanDispatch, call);
+      } catch (error) {
+        if (!isProviderFallbackEligible(error)) stopDispatch(error);
+        throw error;
+      }
+    };
+    const drainInterviews = async (calls: Promise<void>[]) => {
+      try {
+        await drainProviderCalls(calls);
+      } catch (error) {
+        throw fatalFailure ? fatalFailure.error : error;
+      }
+    };
 
-    await drainProviderCalls(
+    await drainInterviews(
       alivePlayers.map(async (player) => {
         const agent = this.agents.get(player.id);
         if (!agent) return;
         try {
-          await this.runDiaryInterview(precedingPhase, player.id, player.name, false);
+          await this.runDiaryInterview(precedingPhase, player.id, player.name, false, dispatch);
         } catch (error) {
-          if (!isProviderFallbackEligible(error)) throw error;
-          await this.markFailedReconciliationOpportunity(agent);
+          if (!isProviderFallbackEligible(error)) {
+            stopDispatch(error);
+            throw error;
+          }
+          try {
+            await this.markFailedReconciliationOpportunity(agent);
+          } catch (error) {
+            stopDispatch(error);
+            throw error;
+          }
           console.error(`[DiaryRoom] Interview failed for ${player.name}, skipping:`, error);
         }
       }),
@@ -117,14 +148,17 @@ export class DiaryRoom {
     // During Judgment, also interview active jury members
     if (this.gameState.endgameStage === "judgment") {
       const activeJury = this.contextBuilder.getActiveJury();
-      await drainProviderCalls(
+      await drainInterviews(
         activeJury.map(async (juror) => {
           const agent = this.agents.get(juror.playerId);
           if (!agent) return;
           try {
-            await this.runDiaryInterview(precedingPhase, juror.playerId, juror.playerName, true);
+            await this.runDiaryInterview(precedingPhase, juror.playerId, juror.playerName, true, dispatch);
           } catch (error) {
-            if (!isProviderFallbackEligible(error)) throw error;
+            if (!isProviderFallbackEligible(error)) {
+              stopDispatch(error);
+              throw error;
+            }
             console.error(`[DiaryRoom] Juror interview failed for ${juror.playerName}, skipping:`, error);
           }
         }),
@@ -140,6 +174,7 @@ export class DiaryRoom {
     playerId: UUID,
     playerName: string,
     isJuror: boolean,
+    dispatch: DiaryDispatch,
   ): Promise<void> {
     const maxFollowUps = this.config.maxDiaryFollowUps ?? 1;
     const MAX_QUESTIONS = 1 + maxFollowUps;
@@ -170,7 +205,7 @@ export class DiaryRoom {
     const sessionExchanges: Array<{ question: string; answer: string }> = [];
 
     // First question
-    const firstQuestion = await this.houseInterviewer.generateQuestion(diaryContext);
+    const firstQuestion = await dispatch(() => this.houseInterviewer.generateQuestion(diaryContext));
     this.logger.logDiary(houseLabel, firstQuestion, undefined, undefined, playerId);
 
     const ctx = this.buildAgentDiaryContext(agent, playerId, isJuror, phaseContext);
@@ -181,7 +216,7 @@ export class DiaryRoom {
       playerId,
       exchangeOrdinal: 1,
     };
-    const firstResponse = await agent.getDiaryEntry(ctx, firstQuestion, sessionExchanges);
+    const firstResponse = await dispatch(() => agent.getDiaryEntry(ctx, firstQuestion, sessionExchanges));
     if (firstResponse.providerAbsence) return;
     await this.beforeAcceptedCommit?.();
     const firstTranscriptThinking = transcriptThinkingFor(
@@ -223,7 +258,7 @@ export class DiaryRoom {
 
     // Follow-up loop
     for (let i = 1; i < MAX_QUESTIONS; i++) {
-      const result = await this.houseInterviewer.generateFollowUpOrClose(diaryContext, sessionExchanges);
+      const result = await dispatch(() => this.houseInterviewer.generateFollowUpOrClose(diaryContext, sessionExchanges));
 
       if (result.type === "close") {
         break;
@@ -239,7 +274,7 @@ export class DiaryRoom {
         playerId,
         exchangeOrdinal: i + 1,
       };
-      const followUpResponse = await agent.getDiaryEntry(followUpContext, result.question, sessionExchanges);
+      const followUpResponse = await dispatch(() => agent.getDiaryEntry(followUpContext, result.question, sessionExchanges));
       if (followUpResponse.providerAbsence) break;
       await this.beforeAcceptedCommit?.();
       const followUpTranscriptThinking = transcriptThinkingFor(

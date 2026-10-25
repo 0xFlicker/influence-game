@@ -1,8 +1,18 @@
 import { createHash, randomUUID } from "crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { compileAudioDelivery } from "./audio-delivery";
 import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
 import type { ProviderProfileId } from "./model-catalog";
 import { Phase, type UUID } from "./types";
+
+const providerAdmissionGuard = new AsyncLocalStorage<() => void>();
+
+/** Fence new attempts in a parallel session, including retries and context calls.
+ * Already admitted attempts retain their transport and terminal evidence lifecycle.
+ */
+export function withProviderAdmissionGuard<T>(guard: () => void, call: () => Promise<T>): Promise<T> {
+  return providerAdmissionGuard.run(guard, call);
+}
 
 export const PROVIDER_ATTEMPT_HEADER = "x-influence-provider-attempt-id";
 const INTERNAL_TRANSPORT_HEADERS = new Set([
@@ -861,6 +871,7 @@ export class ProviderLogicalCallExecution {
     let lastError: ProviderAttemptError | null = null;
 
     for (let localAttempt = 1; localAttempt <= maxAttempts; localAttempt++) {
+      providerAdmissionGuard.getStore()?.();
       await options.beforeAttempt?.();
       const localAttemptOrdinal = this.nextAttemptOrdinal++;
       const attemptOrdinal = await this.hooks?.onAllocateAttemptOrdinal?.(
@@ -892,6 +903,7 @@ export class ProviderLogicalCallExecution {
       };
       transportCapture.request = intent.preparedRequest;
 
+      providerAdmissionGuard.getStore()?.();
       await this.hooks?.onReserve?.(intent);
       activeTransportCaptures.set(attemptId, transportCapture);
 

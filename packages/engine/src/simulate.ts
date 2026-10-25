@@ -29,6 +29,9 @@
  * tiebreaks omit thinking. Sealed ballots collect concurrently, then reveal in
  * roster order only after every dispatched call has settled and saved evidence.
  * Diary interview batches likewise drain before a failed sibling releases the turn.
+ * Fatal diary errors fence new House/agent calls and provider attempt admissions
+ * (including retries); already-admitted attempts settle and save their evidence.
+ * rules-legal provider absence still permits sibling interviews to continue.
  * New Werewolf retrospective accounts retain solo-night target facts and actor-private
  * explanation provenance; recovery preserves already-frozen accounts and hashes.
  * New games freeze the speech contract; accepted historical decisions replay

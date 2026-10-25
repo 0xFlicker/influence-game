@@ -7,7 +7,10 @@ receipts; uncertain dispatches remain reserved. Heartbeat locks serialize game
 and gateway writers across processes and recover abandoned locks. Inspect these
 receipts alongside retained API game IDs and sanitized provider evidence. New
 Influence speech retries include the actual clean UTF-8 overage, and all parallel
-calls settle before a failed ballot or diary interview batch releases its owner. Historical accepted
+calls settle before a failed ballot or diary interview batch releases its owner.
+A fatal diary evidence or execution failure blocks further House/agent calls and
+provider attempt admissions in that session, including retries. Already-admitted
+attempts drain and retain their evidence. Historical accepted
 decisions replay without regeneration. Continue using direct House calls and
 typed contracts; do not use `as any` to bypass the decision boundary.
 
