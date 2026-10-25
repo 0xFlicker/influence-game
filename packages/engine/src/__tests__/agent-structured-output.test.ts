@@ -6638,6 +6638,8 @@ describe("final conversational dialogue driver", () => {
     const result = await agent.getLobbyMessage(conversationContext(makeContext(Phase.LOBBY)));
     expect(result.message).toBe(speech.message);
     expect(requests).toHaveLength(2);
+    expect(JSON.stringify(requests[0]?.messages)).toContain("Aim for 192 UTF-8 bytes or fewer");
+    expect(JSON.stringify(requests[0]?.messages)).toContain("hard limit remains 320 UTF-8 bytes");
     const retry = JSON.stringify(requests[1]?.messages);
     expect(retry).toContain(message);
     expect(retry).toContain("324");

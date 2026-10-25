@@ -1,4 +1,5 @@
 import type { LlmProviderRuntime } from "../llm-client";
+import { speechDraftingGuidance } from "../speech-budget";
 import { executeModelInvocation } from "../provider-adapters";
 import { ProviderExecutionCoordinator, type ProviderExecutionHooks } from "../provider-execution";
 import { createExactStructuredOutputArtifact, measureLengthFeedback, type StructuredDomainDecodeResult } from "../structured-output";
@@ -132,7 +133,7 @@ function soloDecisionArtifact(request: Extract<WerewolfRequest, {solo: true}> | 
     audioDelivery: audioDeliveryPolicy(request),
     schema: {type: "object", additionalProperties: false, required: ["targetId", "text", "cue"], properties: {
       targetId: {type: "string", enum: request.legalTargetIds},
-      text: {type: "string", minLength: 1, description: `Explain your chosen move in one short spoken message, at most ${request.messageBytes} UTF-8 bytes. This private aside is shown only to omniscient spectators, never other contestants. ${SPEECH_GUIDANCE}`},
+      text: {type: "string", minLength: 1, description: `Explain your chosen move in one short spoken message, at most ${request.messageBytes} UTF-8 bytes. ${speechDraftingGuidance(request.messageBytes)} This private aside is shown only to omniscient spectators, never other contestants. ${SPEECH_GUIDANCE}`},
       cue: {type: ["string", "null"], minLength: 1, description: "Optional observable acting cue, at most 240 UTF-16 code units. No extra speech."},
     }}, decodeProviderPayload: value => decode(value), decodeAcceptedValue: value => decode(value, true),
   });
@@ -165,7 +166,7 @@ function currentDecisionArtifact(request: Extract<WerewolfRequest, { action: "co
     } catch (error) { return { status: "invalid", message: error instanceof Error ? error.message : "Invalid decision" }; }
   };
   const properties = {
-    text: { type: ["string", "null"], minLength: 1, description: `At most ${request.messageBytes} UTF-8 bytes. Usually 10–35 words, one useful move. Null means silence. ${SPEECH_GUIDANCE}` },
+    text: { type: ["string", "null"], minLength: 1, description: `At most ${request.messageBytes} UTF-8 bytes. ${speechDraftingGuidance(request.messageBytes)} Null means silence. ${SPEECH_GUIDANCE}` },
     cue: { type: ["string", "null"], minLength: 1, description: "Optional observable production cue, at most 240 UTF-16 code units; never extra speech or hidden strategy." },
     thinking: { type: "string", minLength: 1, description: conversation
       ? "Briefly explain what speaking now adds beyond the existing conversation, or why listening is preferable. At most 2000 UTF-16 code units; do not recap the room."

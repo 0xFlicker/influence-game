@@ -302,6 +302,8 @@ describe("Werewolf v9", () => {
     const step = nextWerewolfStep(s); if (step.kind !== "action") throw new Error("No action");
     const artifact = werewolfDecisionArtifact(step.request);
     const payload = { text: "é".repeat(161), cue: null, recipientId: null, replyToContributionId: null, thinking: "A reason" };
+    expect(JSON.stringify(artifact.schema)).toContain("Aim for 192 UTF-8 bytes or fewer");
+    expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify({ ...payload, text: "é".repeat(160) })).status).toBe("valid");
     const invalid = exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify(payload));
     expect(invalid).toMatchObject({ status: "invalid", feedback: { measured: 322, allowed: 320, unit: "utf8_bytes" } });
     for (const text of ["plain", "{}", `\`\`\`json\n${JSON.stringify(payload)}\n\`\`\``, JSON.stringify({ ...payload, text: "fine", extra: true }), JSON.stringify({ text: "fine" })]) expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, text).status).toBe("invalid");

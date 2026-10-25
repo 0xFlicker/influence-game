@@ -1,11 +1,19 @@
 import { expect, test } from "bun:test";
-import { decisionSpeechPolicy, withDecisionSpeech } from "../influence-decision-speech";
+import { decisionSpeechPolicy, withDecisionSpeech, validateDecisionSpeech } from "../influence-decision-speech";
 import { GameState } from "../game-state";
 import { TranscriptLogger } from "../transcript-logger";
 import { Phase } from "../types";
 import { FORMAT_CATALOG, resolveSealedElimRound } from "../formats";
 
 const players = [{ id: "a", name: "Ada" }, { id: "b", name: "Bea" }, { id: "c", name: "Cam" }];
+test("drafting margin does not narrow acceptance or permit multibyte overages", () => {
+  const tool = withDecisionSpeech({ name: "pick", schema: { type: "object", properties: {}, required: [], additionalProperties: false } }, "format-pick");
+  expect(JSON.stringify(tool.schema)).toContain("Aim for 192 UTF-8 bytes or fewer");
+  // Existing legal speech above the soft target must remain valid, including replay.
+  expect(validateDecisionSpeech("format-pick", { message: "a".repeat(320) })).toBeNull();
+  expect(validateDecisionSpeech("format-pick", { message: "🐺".repeat(80) })).toBeNull();
+  expect(validateDecisionSpeech("format-pick", { message: "🐺".repeat(81) })).toContain("exceeds 320");
+});
 test("speech-only decisions do not request thinking; public moves retain it", () => {
   for (const action of ["vote", "empower-revote", "format-pick", "format-tiebreak", "format-two-names-tiebreak", "format-two-names-initial-names", "format-two-names-override", "format-two-names-replacement", "bounce-pointer"]) {
     const tool = withDecisionSpeech({ name: action, schema: { type: "object", properties: { thinking: { type: "string" } }, required: ["thinking"], additionalProperties: false } }, action);

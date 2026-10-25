@@ -1,4 +1,5 @@
 import type { DecisionSchema } from "./model-invocation";
+import { speechDraftingGuidance } from "./speech-budget";
 
 /** Public delivery is separate from the structured fields that decide the game. */
 export const INFLUENCE_BALLOT_ACTIONS = new Set([
@@ -23,7 +24,7 @@ export function withDecisionSpeech(tool: DecisionSchema, action: string): Decisi
   const properties = schema.properties as Record<string, unknown>;
   properties.message = { type: "string", description: policy.ballot
     ? "Your VERY SHORT spoken vote, at most 120 UTF-8 bytes. The chosen name alone is enough. No explanation or private reasoning. Sealed until all ballots are collected."
-    : "Your short public announcement of this decision, at most 320 UTF-8 bytes. Speak to the players, without revealing private reasoning." };
+    : `Your short public announcement of this decision, at most 320 UTF-8 bytes. Speak to the players, without revealing private reasoning. ${speechDraftingGuidance(policy.maxBytes)}` };
   if (!policy.thinking) delete properties.thinking;
   schema.required = [...(schema.required as string[]).filter(key => key !== "message" && (policy.thinking || key !== "thinking")), "message"];
   return { ...tool, schema };
