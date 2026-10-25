@@ -948,3 +948,12 @@ own audio and evidence; PostgreSQL owns relationships, leases and publication.
 The audio-ready prefix is a spectator publication boundary after accepted text,
 not another game event stream. Required live audio gates the next logical turn
 and completion. Historical first-track generation is an explicit Studio action.
+## Local character art publication
+
+A **local character art publication** explicitly replaces one game's displayed
+portrait, full-body cutout and head coordinates after canonical projection. Its
+local manifest binds exact game/player IDs, a publication time and immutable asset
+hashes. Viewer and export source identities include that publication; earlier export
+cutoffs retain earlier art. It never edits frozen contestant identity, game events
+or provider context. This operator-configured filesystem mapping is localhost-only.
+See [character art replacement](docs/deployment/character-art-replacement.md).

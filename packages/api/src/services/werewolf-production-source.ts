@@ -9,7 +9,8 @@ import { buildWerewolfProductionSources } from "@influence/engine/production-mom
 import { schema, type DrizzleDB } from "../db/index.js";
 import { isViewerGame } from "./game-visibility.js";
 import { readWerewolfEvents, WerewolfGameError } from "./werewolf-games.js";
-import { bindWerewolfScene, materializeWerewolfWatch, publishedWerewolfScenes, readWerewolfCharacter } from "./werewolf-presentation.js";
+import { applyLocalWerewolfArt, bindWerewolfScene, materializeWerewolfWatch, publishedWerewolfScenes, readWerewolfCharacter } from "./werewolf-presentation.js";
+import { localCharacterArt, readLocalCharacterArt } from "./local-character-art.js";
 import { readyCutoutsByHash } from "./character-cutouts.js";
 import { readPayload } from "./payload-storage.js";
 import { werewolfReferenceMetadata } from "./werewolf-production.js";
@@ -97,6 +98,7 @@ export async function buildWerewolfProductionSourceSnapshot(tx: DrizzleDB | Visu
     return job?.image ? [{ playerId: ref.profile.id, sourceHash: job.sourceHash, image: job.image }] : [];
   });
   const provenance = projectWerewolfProductionProvenance(events, options.audience);
+  const localArt = await localCharacterArt(game.id, projection.players.map(player => player.id), publicationCutoff, true);
   const thoughts = options.thinking ? (await readWerewolfProductionThinking(tx, game.id, options.audience, projection.latestCursor, { throughEventSequence, includeHidden: true })).entries : [];
   const catalog = assembleProductionCatalog({ gameId: game.id, gameKind: "werewolf", audience: options.audience,
     sources: buildWerewolfProductionSources({ gameId: game.id, audience: options.audience, moments: projection.moments, provenance, thoughts, opening: true }) });
@@ -107,14 +109,14 @@ export async function buildWerewolfProductionSourceSnapshot(tx: DrizzleDB | Visu
   artifacts.sort((a, b) => a.id.localeCompare(b.id));
   if (artifacts.length !== artifactIds.length) throw new WerewolfGameError("Published production imagery is unavailable", 409);
   const sourceHash = sha256StableJson({ gameId: game.id, audience: options.audience, thinking: options.thinking, throughEventSequence, publicationCutoff,
-    events, thoughts, catalog, references, ...(cutoutReferences.length ? { cutoutReferences } : {}), publications: rows.map(({ scene, publication, version }) => ({ scene: { id: scene.id, roomId: scene.roomId, boundarySequence: scene.boundarySequence }, publication, version })), artifacts });
+    events, thoughts, catalog, references, ...(cutoutReferences.length ? { cutoutReferences } : {}), ...(Object.keys(localArt).length ? { localArt } : {}), publications: rows.map(({ scene, publication, version }) => ({ scene: { id: scene.id, roomId: scene.roomId, boundarySequence: scene.boundarySequence }, publication, version })), artifacts });
   if (options.snapshot && !options.refreshVisuals && options.snapshot.sourceHash !== sourceHash) throw new WerewolfGameError("Production source snapshot changed; refresh the source", 409);
   const snapshot: WerewolfProductionSnapshot = { gameId: game.id, gameKind: "werewolf", audience: options.audience, thinking: options.thinking, throughEventSequence, throughCursor: projection.latestCursor, publicationCutoff, availableCharacterAssets, sourceHash };
-  const window = materializeWerewolfWatch(projection, { id: game.id, slug: game.slug, status: game.status, visualPaused: Boolean(pause) }, options.audience, publicationCutoff, rows, references, snapshot);
+  const window = applyLocalWerewolfArt(materializeWerewolfWatch(projection, { id: game.id, slug: game.slug, status: game.status, visualPaused: Boolean(pause) }, options.audience, publicationCutoff, rows, references, snapshot), localArt);
   const permittedMedia = new Set<string>();
   for (const moment of projection.moments) for (const assetId of bindWerewolfScene(rows, game.id, options.audience, moment.cursor, publicationCutoff, moment.staging).permitted) permittedMedia.add(assetId);
   const [episode] = await tx.select({ title: schema.gameEpisodePresentations.title, description: schema.gameEpisodePresentations.description }).from(schema.gameEpisodePresentations).where(eq(schema.gameEpisodePresentations.gameId, game.id));
-  return { snapshot, status: game.status, title: episode?.title ?? "Werewolf", description: episode?.description ?? null, window, provenance, thoughts, catalog, permittedMedia, cutoutReferences };
+  return { snapshot, status: game.status, title: episode?.title ?? "Werewolf", description: episode?.description ?? null, window, provenance, thoughts, catalog, permittedMedia, cutoutReferences, localArt };
 }
 
 /** Source pages carry no thought copy or scene imagery outside their window. */
@@ -160,6 +162,12 @@ export async function readWerewolfProductionCharacter(db: DrizzleDB, id: string,
     const snapshot = options.snapshot;
     const source = await buildWerewolfProductionSourceSnapshot(tx, id, { audience: snapshot?.audience, thinking: snapshot?.thinking, snapshot });
     if (!source.window.players.some(player => player.id === playerId)) throw new WerewolfGameError("Character is not available in this production source", 404);
+    const replacement = source.localArt[playerId];
+    if (replacement) {
+      const asset = await readLocalCharacterArt(source.snapshot.gameId, playerId, replacement.revision, options.image === "body" ? "cutout" : "portrait");
+      if (!asset) throw new WerewolfGameError("Pinned local character art unavailable", 404);
+      return { bytes: new Uint8Array(asset.bytes), contentType: asset.contentType };
+    }
     const cutout = options.image === "body" ? source.cutoutReferences.find(ref => ref.playerId === playerId) : undefined;
     const bytes = cutout ? await readPayload(cutout.image) : await readWerewolfCharacter(tx, source.snapshot.gameId, playerId, options.image, source.snapshot.availableCharacterAssets);
     if (!bytes) throw new WerewolfGameError("Frozen character reference unavailable", 404);

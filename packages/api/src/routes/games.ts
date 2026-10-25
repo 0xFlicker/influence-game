@@ -29,6 +29,7 @@ import { readEpisodePresentations } from "../services/episode-presentation.js";
  */
 
 import { createVisualRoutes } from "./visual.js";
+import { localCharacterArt } from "../services/local-character-art.js";
 import { Hono, type Context } from "hono";
 import { eq, inArray, asc, desc, isNotNull, or, and, ne, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -397,6 +398,7 @@ export function createGameRoutes(db: DrizzleDB) {
       : null;
 
     const episode = (await readEpisodePresentations(db, [game])).get(game.id);
+    const localArt = await localCharacterArt(game.id, watchState.players.map(player => player.id));
     const detail = {
       episode,
       id: game.id,
@@ -418,7 +420,7 @@ export function createGameRoutes(db: DrizzleDB) {
         shielded: player.shielded,
         ...(player.pressureStatus && { pressureStatus: player.pressureStatus }),
         ...(player.exposeScore !== undefined && { exposeScore: player.exposeScore }),
-        ...(player.avatarUrl && { avatarUrl: player.avatarUrl }),
+        ...((localArt[player.id]?.portraitUrl ?? player.avatarUrl) && { avatarUrl: localArt[player.id]?.portraitUrl ?? player.avatarUrl }),
         currentAgent: player.currentAgent,
         ...(player.modelPreference && { modelPreference: player.modelPreference }),
       })),
