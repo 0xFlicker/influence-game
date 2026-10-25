@@ -1,13 +1,30 @@
 import {mkdir, readFile, rename, writeFile} from "node:fs/promises";
 import {resolve, join, dirname} from "node:path";
 import {eq, or} from "drizzle-orm";
-import {createLlmProviderRuntimesFromEnv, executeModelInvocation, prepareRetrospectiveInvocation, ProviderExecutionCoordinator, Phase,
+import {createLlmProviderRuntimesFromEnv, executeModelInvocation, prepareRetrospectiveInvocation, ProviderExecutionCoordinator, withLocalTaskBudget, Phase,
   type ProviderAttemptIntent, type ProviderAttemptRecord} from "@influence/engine";
 import {resolveProviderManifest} from "@influence/engine/model-catalog";
 import {resolveCliApiSession} from "@influence/engine/cli-api-session";
 import {closeDB, createDB, schema} from "../db/index.js";
 import {prepareRetrospectiveRetake, queueRetrospectiveRetake, type RetrospectiveRetakeDocument} from "../services/retrospective-retakes.js";
 import {retryAudioTrack, runAudioTrack} from "../services/audio-tracks.js";
+
+/** Keep editorial evidence durable while honoring an operator's optional shared spending ceiling. */
+export function createRetakeCoordinator(
+  journal: Array<{intent: ProviderAttemptIntent; terminal?: ProviderAttemptRecord}>,
+  save: () => Promise<void>,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  return new ProviderExecutionCoordinator({hooks: withLocalTaskBudget({
+    async onReserve(intent) {journal.push({intent}); await save();},
+    async onTerminal(record) {
+      const attempt = journal.find(attempt => attempt.intent.attemptId === record.attemptId);
+      if (!attempt) throw new Error("Unreserved retake attempt");
+      attempt.terminal = record; await save();
+      return {acceptedAttemptId: record.acceptedValue === undefined ? undefined : record.attemptId};
+    },
+  }, env)});
+}
 
 /** Explicit local operator command. No application-startup or scheduled generation. */
 async function main() {
@@ -71,15 +88,7 @@ async function main() {
       await rename(join(directory, "journal.tmp"), join(directory, "journal.json"));
     };
     await save();
-    const coordinator = new ProviderExecutionCoordinator({hooks: {
-      async onReserve(intent) {journal.push({intent}); await save();},
-      async onTerminal(record) {
-        const attempt = journal.find(attempt => attempt.intent.attemptId === record.attemptId);
-        if (!attempt) throw new Error("Unreserved retake attempt");
-        attempt.terminal = record; await save();
-        return {acceptedAttemptId: record.acceptedValue === undefined ? undefined : record.attemptId};
-      },
-    }});
+    const coordinator = createRetakeCoordinator(journal, save);
     const prepared = prepareRetrospectiveInvocation(state.context, runtimes);
     const result = await executeModelInvocation({
       call: coordinator.startCall({gameId: entry.id, actor: {id: state.actorId, name: state.context.self.name, role: "player"}, action: "retrospective-retake",

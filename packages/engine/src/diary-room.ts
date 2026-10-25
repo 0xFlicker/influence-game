@@ -20,6 +20,7 @@ import type {
 import { emptyRecallContinuitySnapshot } from "./context-recall-plan";
 import { transcriptThinkingFor } from "./phases/phase-runner-context";
 import { isProviderFallbackEligible } from "./provider-execution";
+import { drainProviderCalls } from "./provider-batch";
 
 export class DiaryRoom {
   /** Diary room entries: question/answer pairs per agent per phase */
@@ -99,7 +100,7 @@ export class DiaryRoom {
     this.logger.logSystem(`--- Diary Room (after ${precedingPhase}) ---`, Phase.DIARY_ROOM);
     const alivePlayers = this.gameState.getAlivePlayers();
 
-    await Promise.all(
+    await drainProviderCalls(
       alivePlayers.map(async (player) => {
         const agent = this.agents.get(player.id);
         if (!agent) return;
@@ -116,7 +117,7 @@ export class DiaryRoom {
     // During Judgment, also interview active jury members
     if (this.gameState.endgameStage === "judgment") {
       const activeJury = this.contextBuilder.getActiveJury();
-      await Promise.all(
+      await drainProviderCalls(
         activeJury.map(async (juror) => {
           const agent = this.agents.get(juror.playerId);
           if (!agent) return;

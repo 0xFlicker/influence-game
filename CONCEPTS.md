@@ -705,6 +705,11 @@ Studio labels are reusable flat tags with exact values (`label.smart=true`, `lab
 
 ## Frozen production selection
 
+A source-preview preference is independent of the selected cut, including cuts
+opened from an MCP review link. Disabling cutout generation stops new work while
+previously pinned derivatives remain readable. Hidden-game media stays available
+to authorized producers through protected routes, without public visibility.
+
 A local, checksummed descriptor of exact permitted moment IDs, selected tag values/revisions, accepted source/media boundary, copy, presentation settings and validated local recording evidence. It is a snapshot rather than a persistent cut project. Later tag membership changes do not alter those exact IDs. Export reauthorizes the source and prepares only selected movie payloads; publication and gameplay resume remain separate operations.
 
 ## Production Game MCP

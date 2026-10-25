@@ -15,6 +15,7 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { getPermissionsForUser } from "../db/rbac.js";
 import { createSessionToken, type AuthEnv } from "../middleware/auth.js";
 import { createProductionStudioRoutes } from "../routes/production-studio.js";
+import { createAudioRoutes } from "../routes/audio.js";
 import { createVisualReplayProductionRoutes } from "../routes/visual-replay-production.js";
 import { appendGameEvents } from "../services/game-events.js";
 import { createInitialGameExecutionStateV1, initializeGameExecutionAuthority } from "../services/game-turn-commit.js";
@@ -36,6 +37,7 @@ beforeEach(async () => {
   // Deliberately claim more in the JWT than the database grants.
   token = await createSessionToken("operator", { roles: ["sysop"], permissions: ["manage_roles", "view_admin"] });
   app = new Hono<AuthEnv>(); app.route("/", createVisualReplayProductionRoutes(db)); app.route("/", createProductionStudioRoutes(db));
+  app.route("/", createAudioRoutes(db));
 });
 afterEach(() => { if (originalSecret === undefined) delete process.env.JWT_SECRET; else process.env.JWT_SECRET = originalSecret; });
 const root = (gameId: string) => `/api/admin/production/games/${gameId}`;
@@ -73,6 +75,45 @@ function annotationBody(source: Awaited<ReturnType<typeof readInfluenceProductio
 function descriptorHash(descriptor: Omit<ProductionExportDescriptor, "hash">) {
   return `sha256:${createHash("sha256").update(stableProductionJson(descriptor)).digest("hex")}`;
 }
+
+test("hidden game audio remains producer-only with exact frozen versions and audience boundaries", async () => {
+  const f = await wolf(); await producer();
+  const {runAudioTrack} = await import("../services/audio-tracks.js");
+  const preview = await (await request(`${root(f.id)}/audio`)).json() as {previewHash:string};
+  expect((await request(`${root(f.id)}/audio`,{previewHash:preview.previewHash})).status).toBe(202);
+  const mp3 = await readFile(new URL("../../../web/public/visual/werewolf/opening-v1/door-effects.mp3",import.meta.url));
+  await runAudioTrack(db,async () => ({bytes:mp3,evidence:{fixture:true}}));
+  const source = await buildWerewolfProductionSourceSnapshot(db,f.id,{audience:"omniscient",thinking:true});
+  const publication = await (await request(`${root(f.id)}/audio/manifest?audience=omniscient&thinking=on`)).json() as import("@influence/engine/audio-track").PublishedAudioTrack;
+  const thought = publication.clips.find(clip => clip.watch?.part === "thinking")!;
+  expect(thought).toBeDefined(); expect(thought.url).toStartWith(`${root(f.id)}/audio/`);
+  const ids = source.catalog.moments.map(moment => moment.id);
+  const recordings = publication.clips.filter(clip => ids.includes(clip.momentId)).map(clip => ({momentId:clip.momentId,messageId:clip.momentId,speakerId:clip.speakerId,textHash:clip.textHash,sha256:clip.sha256,durationMs:clip.durationMs,versionId:clip.versionId}));
+  const frozenResponse = await request(`${root(f.id)}/selection`,{snapshot:source.snapshot,audience:"omniscient",thinking:true,
+    selection:{mode:"ids",thinking:true,ids},expectedMomentIds:ids,settings,copy:{},recordings});
+  expect(frozenResponse.status).toBe(200);
+  const frozen = await frozenResponse.json() as ProductionExportDescriptor;
+  await db.update(schema.games).set({hiddenAt:new Date().toISOString()}).where(eq(schema.games.id,f.id));
+  const pinned = await request(`${root(f.id)}/audio/versions`,{audience:"omniscient",thinking:true,versionIds:recordings.map(row => row.versionId)});
+  expect(pinned.status).toBe(200);expect((await pinned.json() as typeof publication).clips).toEqual(publication.clips);
+  expect((await request(`${root(f.id)}/selection/validate`,frozen)).status).toBe(200);
+  const bytes = await request(thought.url);expect(bytes.status).toBe(200);expect(Buffer.from(await bytes.arrayBuffer())).toEqual(mp3);
+  const ranged = await app.request(thought.url,{headers:{Authorization:`Bearer ${token}`,Range:"bytes=2-9"}});
+  expect(ranged.status).toBe(206);expect(Buffer.from(await ranged.arrayBuffer())).toEqual(mp3.subarray(2,10));
+  const publicUrl = thought.url.replace("/api/admin/production/games/","/api/games/");
+  expect((await app.request(publicUrl)).status).toBe(404);
+  expect(await (await app.request(`/api/games/${f.id}/audio?audience=omniscient&thinking=on`)).json()).toBeNull();
+  expect((await app.request(thought.url)).status).toBe(401);
+  expect((await request(thought.url.replace("audience=omniscient","audience=mystery"))).status).toBe(404);
+  expect((await request(thought.url.replace("thinking=on","thinking=off"))).status).toBe(404);
+  await db.insert(schema.games).values({id:"other-audio-game",slug:"other-audio-game",gameKind:"werewolf",status:"completed",config:"{}"});
+  expect((await request(thought.url.replace(f.id,"other-audio-game"))).status).toBe(404);
+  expect((await request(`${root("other-audio-game")}/audio/versions`,{audience:"omniscient",thinking:true,versionIds:[thought.versionId]})).status).toBe(400);
+  await db.delete(schema.userRoles).where(eq(schema.userRoles.userId,"operator"));
+  // The stale JWT still claims Sysop; current database roles must win.
+  expect((await request(thought.url)).status).toBe(403);
+  expect((await request(`${root(f.id)}/audio/versions`,{audience:"omniscient",thinking:true,versionIds:[thought.versionId]})).status).toBe(403);
+},30000);
 
 test("missing frozen character art uses presentation fallback while available body art and the source pin remain exact", async () => {
   await producer();

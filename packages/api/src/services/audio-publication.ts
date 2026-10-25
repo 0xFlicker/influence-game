@@ -8,7 +8,7 @@ import { isViewerGame } from "./game-visibility.js";
 
 export async function readAudioPublication(db: Pick<DrizzleDB,"select">, id: string, audience: ProductionAudience, thinking: boolean, producer = false, versionIds?: readonly string[]): Promise<PublishedAudioTrack | null> {
   const [game] = await db.select().from(schema.games).where(or(eq(schema.games.id, id), eq(schema.games.slug, id)));
-  if (!game || !isViewerGame(game) || (game.gameKind === "werewolf" ? audience === "public" : audience !== "public") || audience === "mystery" && thinking) return null;
+  if (!game || !isViewerGame(producer ? {...game, hiddenAt: null} : game) || (game.gameKind === "werewolf" ? audience === "public" : audience !== "public") || audience === "mystery" && thinking) return null;
   if (versionIds?.length === 0) return null;
   const pinnedTracks = versionIds ? await db.select({trackId: schema.gameAudioClips.trackId}).from(schema.gameAudioVersions)
     .innerJoin(schema.gameAudioClips, eq(schema.gameAudioVersions.clipId, schema.gameAudioClips.id))
@@ -50,11 +50,12 @@ async function readTrackPublication(db: Pick<DrizzleDB,"select">, gameId: string
     const entrySequence = watch?.kind === "influence" && watch.transcriptId ? entrySequences.get(watch.transcriptId) : undefined;
     return [{ momentId: producer ? line.productionMomentId ?? line.momentId : row.clipId, ...(watch && {watch: entrySequence === undefined ? watch : {...watch, entrySequence}}), speakerId: line.speakerId, textHash: createHash("sha256").update(line.text).digest("hex"), versionId: row.version.id,
       sha256: row.version.audio.sha256, durationMs: row.version.durationMs,
-      url: `/api/games/${encodeURIComponent(gameId)}/audio/${row.version.id}?audience=${audience}&thinking=${thinking ? "on" : "off"}` }];
+      url: `${producer ? "/api/admin/production/games" : "/api/games"}/${encodeURIComponent(gameId)}/audio/${row.version.id}?audience=${audience}&thinking=${thinking ? "on" : "off"}` }];
   }) };
 }
-export async function readPublishedAudioBytes(db: DrizzleDB, gameId: string, versionId: string, audience: ProductionAudience, thinking: boolean) {
-  const publication = await readAudioPublication(db, gameId, audience, thinking, false, [versionId]);
+/** Producer access is granted by the calling route's current-role check, never a request flag. */
+export async function readPublishedAudioBytes(db: DrizzleDB, gameId: string, versionId: string, audience: ProductionAudience, thinking: boolean, producer = false) {
+  const publication = await readAudioPublication(db, gameId, audience, thinking, producer, [versionId]);
   if (!publication?.clips.some(clip => clip.versionId === versionId)) return null;
   const [version] = await db.select({ audio: schema.gameAudioVersions.audio }).from(schema.gameAudioVersions).where(eq(schema.gameAudioVersions.id, versionId));
   return version ? readPayload(version.audio) : null;

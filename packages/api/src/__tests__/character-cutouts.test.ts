@@ -5,6 +5,9 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { acceptCutout, claimCutout, cutoutMode, CUTOUT_RECIPE, enqueueCutout, expireCutoutLeases, prepareCutoutDemands, readyCharacterCutoutUrls, readyCutoutsByHash, requestCharacterCutouts, reserveCutout } from "../services/character-cutouts.js";
 import { createCharacterCutoutRoutes } from "../routes/character-cutouts.js";
+import { createVisualReplayProductionRoutes } from "../routes/visual-replay-production.js";
+import { createSessionToken } from "../middleware/auth.js";
+import { grantTestAuthority } from "./rbac-fixtures.js";
 import { storeBinary, storeJson } from "../services/payload-storage.js";
 import { createVisualRoutes } from "../routes/visual.js";
 import { createWerewolfRoutes } from "../routes/werewolf.js";
@@ -26,7 +29,7 @@ beforeEach(async () => {
   await db.insert(schema.games).values({ id: "cutouts-game", slug: "cutouts-game", status: "completed", config: "{}" });
 });
 afterEach(() => {
-  for (const key of ["CHARACTER_CUTOUT_MODE", "CUTOUT_API_URL", "INFLUENCE_DEPLOYMENT_ENVIRONMENT"]) {
+  for (const key of ["CHARACTER_CUTOUT_MODE", "CUTOUT_API_URL", "INFLUENCE_DEPLOYMENT_ENVIRONMENT", "JWT_SECRET"]) {
     if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
   }
 });
@@ -73,6 +76,12 @@ test("playback keeps original until ready; exact binding and hidden-game checks 
   const response = await app.request(ready.p1!);
   expect(response.status).toBe(200);
   expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from(cutout));
+  process.env.CHARACTER_CUTOUT_MODE = "disabled";
+  expect(await requestCharacterCutouts(db, "cutouts-game", sources)).toEqual(ready);
+  expect(Buffer.from(await (await app.request(ready.p1!)).arrayBuffer())).toEqual(Buffer.from(cutout));
+  const existingDemands = await db.select().from(schema.characterCutoutDemands);
+  expect(await requestCharacterCutouts(db, "cutouts-game", { p2: "unprepared-source" })).toEqual({});
+  expect(await db.select().from(schema.characterCutoutDemands)).toEqual(existingDemands);
   expect((await app.request(ready.p1!.replace("cutouts-game", "another-game"))).status).toBe(404);
   await db.update(schema.games).set({ hiddenAt: new Date().toISOString() }).where(eq(schema.games.id, "cutouts-game"));
   expect((await app.request(ready.p1!)).status).toBe(404);
@@ -92,6 +101,33 @@ test("Influence metadata adopts a cutout while fixed snapshots retain their orig
   await acceptCutout(db, job!.id, reservation.token, cutout);
   expect((await read("/api/games/cutouts-game/visual")).fullBodies.p1).toContain("/cutouts/");
   expect((await read("/api/games/cutouts-game/visual?snapshot=%7B%7D")).fullBodies.p1).toBe(before.fullBodies.p1);
+});
+
+test("disabled generation preserves authorized producer cutout reads while hidden games stay private", async () => {
+  const job = await enqueueCutout(db, source);
+  await db.insert(schema.agentContentAssets).values({ hash: job.sourceHash, bytes: await storeBinary(source) });
+  const sources = { p1: `sha256:${job.sourceHash}` };
+  await requestCharacterCutouts(db, "cutouts-game", sources);
+  await prepareCutoutDemands(db);
+  const reserved = (await reserveCutout(db, job.id))!;
+  await claimCutout(db, job.id, reserved.token, CUTOUT_RECIPE);
+  await acceptCutout(db, job.id, reserved.token, cutout);
+  const ready = await readyCharacterCutoutUrls(db, "cutouts-game", sources);
+  const url = ready.p1!.replace("/api/games/", "/api/admin/production/games/");
+  await db.insert(schema.users).values({ id: "cutout-producer" });
+  await grantTestAuthority(db, "cutout-producer", [], "producer");
+  process.env.JWT_SECRET = "cutout-producer-regression";
+  const token = await createSessionToken("cutout-producer");
+  const app = createVisualReplayProductionRoutes(db);
+  process.env.CHARACTER_CUTOUT_MODE = "disabled";
+  await db.update(schema.games).set({ hiddenAt: new Date().toISOString() }).where(eq(schema.games.id, "cutouts-game"));
+  expect((await createCharacterCutoutRoutes(db).request(ready.p1!)).status).toBe(404);
+  expect((await app.request(url)).status).toBe(401);
+  const headers = { Authorization: `Bearer ${token}` };
+  expect((await app.request(url.replace("cutouts-game", "other-game"), { headers })).status).toBe(404);
+  const response = await app.request(url, { headers });
+  expect(response.status).toBe(200);
+  expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from(cutout));
 });
 
 test("failed jobs stop after three leases and viewers do not reset retry budgets", async () => {
@@ -186,6 +222,36 @@ test("Werewolf uses a preexisting ready cutout before and after asynchronous dem
   const [linked] = await db.select().from(schema.characterCutoutDemands);
   expect(linked!.cutoutId).toBe(job.id);
   expect(await readWerewolfWatch(db, "cutouts-game", "mystery", 1, 64, cutoff)).toEqual(watch);
+});
+
+test("disabling generation preserves frozen Werewolf bytes, source hashes and cutoff exclusions", async () => {
+  const { job, player } = await werewolfCutoutFixture();
+  const original = await readWerewolfProductionSource(db, "cutouts-game", { audience: "mystery", thinking: false });
+  const reserved = (await reserveCutout(db, job.id))!;
+  await claimCutout(db, job.id, reserved.token, CUTOUT_RECIPE);
+  await acceptCutout(db, job.id, reserved.token, cutout);
+  const pinned = await readWerewolfProductionSource(db, "cutouts-game", { audience: "mystery", thinking: false });
+  const watch = await readWerewolfWatch(db, "cutouts-game", "mystery", 1, 64, pinned.snapshot.publicationCutoff);
+  const route = createWerewolfRoutes(db);
+  const url = watch.players[0]!.fullBodyReferenceUrl!;
+  const body = async () => {
+    const response = await route.request(url);
+    expect(response.status).toBe(200);
+    return Buffer.from(await response.arrayBuffer());
+  };
+  expect(await body()).toEqual(Buffer.from(cutout));
+  const demands = await db.select().from(schema.characterCutoutDemands);
+  for (const environment of ["disabled", "staging"] as const) {
+    process.env.CHARACTER_CUTOUT_MODE = "disabled";
+    if (environment === "staging") process.env.INFLUENCE_DEPLOYMENT_ENVIRONMENT = "staging";
+    expect(await body()).toEqual(Buffer.from(cutout));
+    const reread = await readWerewolfProductionSource(db, "cutouts-game", { audience: "mystery", thinking: false, snapshot: pinned.snapshot });
+    expect(reread.snapshot).toEqual(pinned.snapshot);
+    expect(await readWerewolfWatch(db, "cutouts-game", "mystery", 1, 64, pinned.snapshot.publicationCutoff)).toEqual(watch);
+    expect((await readWerewolfProductionCharacter(db, "cutouts-game", player.id, { snapshot: pinned.snapshot, image: "body" })).bytes).toEqual(new Uint8Array(cutout));
+    expect((await readWerewolfProductionCharacter(db, "cutouts-game", player.id, { snapshot: original.snapshot, image: "body" })).bytes).toEqual(new Uint8Array(source));
+    expect(await db.select().from(schema.characterCutoutDemands)).toEqual(demands);
+  }
 });
 
 test("staging is disabled even when AWS configuration is present", async () => {

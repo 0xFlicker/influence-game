@@ -5,6 +5,17 @@ Studio and offline exports. Camera focus must not switch the scene to the daytim
 village. Existing encoded movies require a new export to receive this presentation fix;
 accepted game events, selected moment IDs, and frozen audio versions are unchanged.
 
+Changing **Play thinking in Source** also preserves a cut opened from an MCP
+review link: its reviewed recipe, presentation settings, recordings and source
+pin remain in the same workspace. The review link is retained while the separate
+preview preference changes.
+If the review was pinned without thinking, Source settings explains that the
+source excludes thoughts instead of offering an unavailable playback control.
+
+Hidden games retain Producer/Sysop access to generated audio and frozen exports.
+Studio reads their clips through authenticated media routes and verifies the
+bytes before playback; public audio routes remain unavailable for hidden games.
+
 Open **Admin → Production**, choose a completed or validated visually paused Influence or Werewolf game, and open its studio. The library uses bounded metadata pages. A game played without generated imagery remains editable with portraits.
 
 Influence uses the same 20-second House entrance, cast reveal, welcome card and

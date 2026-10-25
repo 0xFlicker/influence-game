@@ -35,8 +35,10 @@ an operator must prove an object is unreferenced before any later pruning.
 ## Environments
 
 `CHARACTER_CUTOUT_MODE=local|aws-batch|disabled` defaults to disabled.
-`INFLUENCE_DEPLOYMENT_ENVIRONMENT=staging` or `NODE_ENV=staging` always disables it,
-including serving previously generated cutouts. AWS mode requires the explicit
+`INFLUENCE_DEPLOYMENT_ENVIRONMENT=staging` or `NODE_ENV=staging` always disables new
+demand and worker dispatch. Existing ready cutouts remain readable through their
+normal authorization and publication-cutoff checks, including frozen exports.
+AWS mode requires the explicit
 `prod` binding and a public HTTPS `CUTOUT_API_URL`. Local mode accepts loopback API
 origins and Docker's `host.docker.internal`. Render-worker Tailscale policy is separate
 and unchanged.
@@ -152,8 +154,8 @@ bun --env-file="$CUTOUT_ENV_FILE" packages/api/src/scripts/backfill-character-cu
 bun --env-file="$CUTOUT_ENV_FILE" packages/api/src/scripts/backfill-character-cutouts.ts retry --env production --demand "$DEMAND_IDS" --wait 900
 ```
 
-Keep mode disabled to roll back presentation/dispatch; originals and accepted game
-state remain available. Do not truncate jobs, reset active leases, or rewrite frozen
+Keep mode disabled to stop new demand and dispatch; existing derivatives, originals
+and accepted game state remain available. Do not truncate jobs, reset active leases, or rewrite frozen
 references to recover a failed derivative.
 
 ## Local Docker validation

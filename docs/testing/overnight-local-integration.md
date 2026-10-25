@@ -21,6 +21,14 @@ House episode naming use the same pre-dispatch hook. Unrelated automatic screeni
 learning, image generation, health probes and House Cuts are disabled in this mode.
 Generation failures retain canonical acceptance and the existing recovery path.
 
+The local retrospective-retake CLI also honors this opt-in ledger for text
+generation, retries and context adaptation. Its explicit editorial model choice
+still requires an allowed game, an allowed provider and sufficient remaining
+currency allowance when `INFLUENCE_LOCAL_TASK_BUDGET` is set. With that variable
+unset, the command retains its ordinary explicit-generation behavior. Retake
+evidence is saved in its new generation directory before dispatch and before
+settling usage; failed terminal evidence persistence retains the reservation.
+
 Gateway and game workers serialize ledger updates through a heartbeat lock with bounded contention retries. A crashed owner's stale lock can be recovered without changing any charge entries. Stop every old local-budget process before upgrading the locking implementation; an abandoned legacy `.lock` file requires operator verification that no old writer remains before removing that file. Never remove the ledger or its reservations to recover a lock. The new lock is a directory maintained by `proper-lockfile`; do not manually remove a live lock.
 
 The ledger maintains independent ceilings of $15 OpenAI, 10,000 Katana credits,

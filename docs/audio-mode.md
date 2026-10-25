@@ -1,5 +1,13 @@
 # Audio Mode implementation
 
+Producer audio reads use authenticated Studio media routes, including for hidden
+games. Public audio routes continue to reject hidden games. Studio and the export
+CLI resolve frozen versions through the same game, audience, recipe and published
+frontier checks; hiding a game does not rewrite its tracks or invalidate a
+producer's frozen selection. Studio fetches protected clips through its current
+administration session, verifies their hashes and disposes playback URLs with the
+source workspace.
+
 House narration in both viewers and the shared replay export now displays the existing House logo and accepted summary text for the exact recorded audio interval. Long summaries use deterministic readable pages; pausing or seeking samples the same recording clock, with no independent overlay timers. Existing text-only House scenes remain available when no recording exists. Werewolf village-vote elimination reveals desaturate the recorded victim during the announcement, while ballot collection and living players retain their color. Live Werewolf room rotations carry the preceding canonical room speaker across waiting-screen remounts, matching saved playback and export sampling.
 
 Implementation is in progress on `codex/agent-voices-audio-mode`, based on

@@ -196,8 +196,9 @@ test("cancellation stops a claimed track before another paid dispatch",async()=>
 test("HTTP ranges recheck audience permissions for every media request",async()=>{
  const {createAudioRoutes}=await import("../routes/audio.js");
  const track=await fixture();await runAudioTrack(db,success);const app=createAudioRoutes(db);
- const full=(await readAudioPublication(db,track.gameId,"omniscient",true,true))!;
- const publicClip=full.clips.find(c=>c.momentId==="speech")!,privateClip=full.clips.find(c=>c.momentId==="thought")!;
+ const full=(await readAudioPublication(db,track.gameId,"omniscient",true))!;
+ const publicClip=(await readAudioPublication(db,track.gameId,"mystery",false))!.clips[0]!;
+ const privateClip=full.clips.find(c=>c.versionId!==publicClip.versionId)!;
  const response=await app.request(publicClip.url,{headers:{Range:"bytes=2-5"}});
  expect(response.status).toBe(206);expect(response.headers.get("content-length")).toBe("4");expect((await response.arrayBuffer()).byteLength).toBe(4);
  expect((await app.request(privateClip.url.replace("omniscient","mystery"))).status).toBe(404);

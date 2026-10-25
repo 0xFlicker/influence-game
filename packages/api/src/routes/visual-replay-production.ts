@@ -1,5 +1,4 @@
 import { loadPayloads } from "../services/payload-storage.js";
-import { cutoutMode } from "../services/character-cutouts.js";
 import { readWerewolfVisualPause, queueWerewolfFormRepair } from "../services/werewolf-visual-policy.js";
 import { setVisualFailurePolicy, resumeVisualGame } from "../services/visual-policy.js";
 import { requirePermission } from "../middleware/auth.js";
@@ -121,7 +120,6 @@ export function createVisualReplayProductionRoutes(db: DrizzleDB) {
     return c.body(new Uint8Array(artifact.image));
   });
   app.get(`${root}/games/:id/cutouts/:cutout`, producer, async c => {
-    if (cutoutMode() === "disabled") return c.notFound();
     const [row] = await loadPayloads(db.select({ image: schema.characterCutouts.image }).from(schema.characterCutoutDemands)
       .innerJoin(schema.characterCutouts, eq(schema.characterCutouts.id, schema.characterCutoutDemands.cutoutId))
       .where(and(eq(schema.characterCutoutDemands.gameId, c.req.param("id")), eq(schema.characterCutoutDemands.id, c.req.param("cutout")), eq(schema.characterCutouts.status, "ready"))));

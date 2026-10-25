@@ -28,6 +28,9 @@
  * Influence decision speech uses strict message fields; ballots, format picks and
  * tiebreaks omit thinking. Sealed ballots collect concurrently, then reveal in
  * roster order only after every dispatched call has settled and saved evidence.
+ * Diary interview batches likewise drain before a failed sibling releases the turn.
+ * New Werewolf retrospective accounts retain solo-night target facts and actor-private
+ * explanation provenance; recovery preserves already-frozen accounts and hashes.
  * New games freeze the speech contract; accepted historical decisions replay
  * without regeneration. Overlong speech retries include clean UTF-8 overage.
  * Native reasoning remains private evidence; no `as any` shortcuts

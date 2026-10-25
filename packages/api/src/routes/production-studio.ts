@@ -1,7 +1,8 @@
 import {productionEditorial} from "../services/production-editorial.js";
 import {completeProductionSource as completeSource, ProductionEditorialInputError} from "../services/production-editorial-source.js";
 import {resumeLiveAudio,LiveAudioBlocked} from "../services/audio-live.js";
-import {readAudioPublication} from "../services/audio-publication.js";
+import {readAudioPublication, readPublishedAudioBytes} from "../services/audio-publication.js";
+import {audioBytesResponse} from "./audio.js";
 import {productionMomentContent} from "../services/production-moment-content.js";
 import { previewAudioTrack, queueAudioBackfill, retryAudioTrack, AudioTrackConflict } from "../services/audio-tracks.js";
 import {createHash} from "node:crypto";
@@ -131,6 +132,13 @@ export function createProductionStudioRoutes(db:DrizzleDB) {
     const publication = await readAudioPublication(db,c.req.param("id"),access.audience,access.thinking,true,body.versionIds as string[]);
     if ((publication?.clips.length ?? 0) !== body.versionIds.length) throw new StudioInputError("Frozen audio version is unavailable for this audience");
     return c.json(publication);
+  });
+  app.get(`${root}/audio/:version`, async c => {
+    const audience = c.req.query("audience"), thinking = c.req.query("thinking"), version = c.req.param("version");
+    if (thinking !== "on" && thinking !== "off") throw new StudioInputError("Invalid audio thinking option");
+    const access = options({audience, thinking: thinking === "on"});
+    if (!/^[a-f0-9-]{36}$/.test(version)) return c.json({error:"Audio not found"},404);
+    return audioBytesResponse(c, await readPublishedAudioBytes(db,c.req.param("id"),version,access.audience,access.thinking,true));
   });
   app.get(`${root}/audio`, async c => {
     const game = await kind(db,c.req.param("id"));

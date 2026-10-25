@@ -27,9 +27,9 @@ export function cutoutMode(env: Record<string, string | undefined> = process.env
 
 /** Only server-selected frozen references enter this queue. No caller-supplied URLs. */
 export async function requestCharacterCutouts(db: DrizzleDB, gameId: string, sources: Record<string, string>): Promise<Record<string, string>> {
-  if (cutoutMode() === "disabled" || !Object.keys(sources).length) return {};
+  if (!Object.keys(sources).length) return {};
   try {
-    await db.insert(demands).values(Object.entries(sources).map(([playerId, sourceKey]) => ({
+    if (cutoutMode() !== "disabled") await db.insert(demands).values(Object.entries(sources).map(([playerId, sourceKey]) => ({
       id: crypto.randomUUID(), gameId, playerId, sourceKey, recipe: CUTOUT_RECIPE,
     }))).onConflictDoNothing();
     return await readyCharacterCutoutUrls(db, gameId, sources);
@@ -40,9 +40,8 @@ export async function requestCharacterCutouts(db: DrizzleDB, gameId: string, sou
   }
 }
 
-/** Read-only pinning uses completion time, so later arrivals cannot change an export. */
+/** Read-only pinning survives disabled generation and excludes arrivals after the cutoff. */
 export async function readyCharacterCutoutUrls(db: Pick<DrizzleDB, "select">, gameId: string, sources: Record<string, string>, before = new Date()) {
-  if (cutoutMode() === "disabled") return {};
   const ready = await db.select({ demand: demands }).from(demands).innerJoin(jobs, eq(demands.cutoutId, jobs.id))
     .where(and(eq(demands.gameId, gameId), eq(demands.recipe, CUTOUT_RECIPE), eq(jobs.status, "ready"), lte(jobs.readyAt, before), lte(demands.createdAt, before)));
   return Object.fromEntries(ready.filter(row => sources[row.demand.playerId] === row.demand.sourceKey)
@@ -50,7 +49,7 @@ export async function readyCharacterCutoutUrls(db: Pick<DrizzleDB, "select">, ga
 }
 
 export async function readyCutoutsByHash(db: Pick<DrizzleDB, "select">, hashes: string[], before: string) {
-  if (cutoutMode() === "disabled" || !hashes.length) return new Map<string, typeof jobs.$inferSelect>();
+  if (!hashes.length) return new Map<string, typeof jobs.$inferSelect>();
   const rows = await db.select().from(jobs).where(and(inArray(jobs.sourceHash, hashes), eq(jobs.recipe, CUTOUT_RECIPE), eq(jobs.status, "ready"), lte(jobs.readyAt, new Date(before))));
   return new Map(rows.map(row => [row.sourceHash, row]));
 }

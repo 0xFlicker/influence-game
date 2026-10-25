@@ -38,7 +38,6 @@ export function createCharacterCutoutRoutes(db: DrizzleDB) {
     }
   });
   app.get("/api/games/:game/cutouts/:id", async c => {
-    if (cutoutMode() === "disabled") return c.notFound();
     const [row] = await db.select({ game: schema.games, job: schema.characterCutouts }).from(schema.characterCutoutDemands)
       .innerJoin(schema.games, eq(schema.games.id, schema.characterCutoutDemands.gameId))
       .innerJoin(schema.characterCutouts, eq(schema.characterCutouts.id, schema.characterCutoutDemands.cutoutId))

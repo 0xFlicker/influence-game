@@ -13,7 +13,7 @@ import { PRODUCTION_LABELS, THINKING_LABELS, SPEECH_LABELS, productionLabelKey, 
 import {decodeProductionReview,type ProductionReview} from "@influence/engine/production-moments/review";
 import { ApiError, apiFetch, resolveApiUrl } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
-import { loadProductionStudioSource, prepareProductionAssets, productionGameRoot, productionLibraryFilters, type LoadedProductionSource, type MomentAnnotation, type ProductionLibraryGame } from "@/lib/production-studio";
+import { loadProductionStudioSource, prepareProductionAssets, prepareProductionAudio, productionGameRoot, productionLibraryFilters, type LoadedProductionSource, type MomentAnnotation, type ProductionLibraryGame } from "@/lib/production-studio";
 import type { CachedAsset } from "@/lib/replay-export/assets";
 import { compilePresentation } from "@/lib/replay-export/presentation";
 import { parseTimingProfile } from "@/lib/replay-export/timing";
@@ -72,7 +72,7 @@ function GameWorkspace({game,review}: {game: ProductionLibraryGame;review?:Produ
   const influenceRecovery = game.capabilities.influenceRecovery && hasPermission("start_game");
   const root = productionGameRoot(game.id), [blocked] = useAdminValue(`access-denied:${root}`, false);
   const audience = review?.audience ?? (game.gameKind === "influence" ? "public" : (params.get("audience") ?? "omniscient") === "omniscient" ? "omniscient" : "mystery");
-  const thinking = review?.thinking ?? (audience !== "mystery" && params.get("thinking") !== "off");
+  const thinking = audience !== "mystery" && review?.thinking !== false && (params.has("thinking") ? params.get("thinking") !== "off" : true);
   const library = productionLibraryFilters(new URLSearchParams(params.get("return") ?? ""));
   const [gamePanel, setGamePanel] = useState<GamePanel | null>(null), [navigation, setNavigation] = useState(false);
   const sourceGeneration = useRef(0);
@@ -94,7 +94,7 @@ function GameWorkspace({game,review}: {game: ProductionLibraryGame;review?:Produ
   const gameActions = <>{availableGamePanels.map(panel => <button key={panel} onClick={() => setGamePanel(panel)}>{panelTitles[panel]}</button>)}</>;
   return <section className={styles.studio} data-production-workspace>
     {editorial && !blocked && <>
-      <MomentWorkspace key={`${game.id}:${audience}`} game={game} audience={audience} thinking={thinking} review={review} readScopeGeneration={() => sourceGeneration.current} identity={identity} gameContent={gameContent} scopeControls={<>{game.gameKind === "werewolf" && <StudioSelect label="Production audience" value={audience} onChange={changeScope} options={[{value:"mystery",label:"Mystery"},{value:"omniscient",label:"Omniscient"}]} />}{audience !== "mystery" && <label className={styles.check}><input aria-label="Play thinking in Source" type="checkbox" checked={thinking} onChange={event => {const query = new URLSearchParams(params); query.delete("review"); query.set("thinking", event.target.checked ? "on" : "off"); query.delete("moment"); router.replace(`/admin/production/games/${encodeURIComponent(game.id)}?${query}`, {scroll:false});}} /> Play thinking in Source</label>}</>} />
+      <MomentWorkspace key={`${game.id}:${audience}`} game={game} audience={audience} thinking={thinking} review={review} readScopeGeneration={() => sourceGeneration.current} identity={identity} gameContent={gameContent} scopeControls={<>{game.gameKind === "werewolf" && <StudioSelect label="Production audience" value={audience} onChange={changeScope} options={[{value:"mystery",label:"Mystery"},{value:"omniscient",label:"Omniscient"}]} />}{audience !== "mystery" && (review?.thinking === false ? <p>This review’s pinned source does not include thinking.</p> : <label className={styles.check}><input aria-label="Play thinking in Source" type="checkbox" checked={thinking} onChange={event => {const query = new URLSearchParams(params); query.set("thinking", event.target.checked ? "on" : "off"); query.delete("moment"); router.replace(`/admin/production/games/${encodeURIComponent(game.id)}?${query}`, {scroll:false});}} /> Play thinking in Source</label>)}</>} />
     </>}
     {(!editorial || blocked) && <><header className={styles.commandBar}>{identity}<div className={styles.commands}>{gameActions}<button onClick={() => setNavigation(true)}>Navigation</button></div></header><div className={styles.sourceProgress}>{blocked ? <p role="alert">Production access changed. Private editing data has been cleared. Refresh to check current permissions.</p> : <p>Use the game production tools available to your current permissions.</p>}</div></>}
     {navigation && <StudioDialog title="The House navigation" onClose={() => setNavigation(false)}><StudioNavigation /></StudioDialog>}
@@ -162,8 +162,9 @@ function MomentWorkspace({game, audience, thinking, review, readScopeGeneration,
       // Prepared queries contain these object URLs. Evict them together so a
       // later visibility toggle cannot revive a revoked cached presentation.
       const filter = {predicate: (query: {queryKey: readonly unknown[]}) => {
-        const resource = String(query.queryKey[2]), recordings = resource.endsWith(":recordings");
-        return query.queryKey[0] === "admin" && query.queryKey[1] === session.scope && resource.startsWith(`${root}/source?`) && (resource.endsWith(":media") || recordings) && query.queryKey[3] === hash;
+        const resource = String(query.queryKey[2]);
+        return query.queryKey[0] === "admin" && query.queryKey[1] === session.scope && resource.startsWith(`${root}/source?`)
+          && [":media",":recordings",":generated-audio"].some(suffix => resource.endsWith(suffix)) && query.queryKey[3] === hash;
       }};
       void client.cancelQueries(filter); client.removeQueries(filter);
       cache.urls.forEach(url => URL.revokeObjectURL(url)); assetCaches.current.delete(hash);
@@ -214,7 +215,7 @@ function MomentWorkspace({game, audience, thinking, review, readScopeGeneration,
     enabled: !!readyPresentation && !blocked && !speechImport && audioPublication.isSuccess, retry: false,staleTime:Infinity,refetchOnWindowFocus:false,
     queryFn: async ({signal}) => attachGeneratedAudio({source: readyPresentation!, selectedIds: preparationIds, publication:audioPublication.data ?? null, signal,
       hash: async text => [...new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(text)))].map(byte => byte.toString(16).padStart(2,"0")).join(""),
-      asset: async clip => ({path: resolveApiUrl(clip.url), sha256: clip.sha256, durationMs: clip.durationMs, mediaType: "audio"})})});
+      asset: clip => prepareProductionAudio(clip, signal, assetCaches.current.get(loaded!.snapshot.sourceHash)!, (url, abort) => session.readMedia(url, abort))})});
   const attachedPresentation = speechImport ? recordings.data?.source ?? null : generatedAudio.data?.source ?? null;
   const selectedRecordings = speechImport ? recordings.data?.recordings : generatedAudio.data?.recordings;
   const assets = useMemo(() => media.data ? {...media.data.assets, ...(speechImport ? recordings.data?.assets : generatedAudio.data?.assets)} : null, [media.data, speechImport, recordings.data, generatedAudio.data]);
