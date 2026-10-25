@@ -1051,6 +1051,7 @@ export function createGameRoutes(db: DrizzleDB) {
         anonymous: row.safeContext?.anonymous === true,
         presentationPurpose: row.safeContext?.presentationPurpose,
         acceptedBallot: row.safeContext?.acceptedBallot,
+        decisionSpeech: row.safeContext?.decisionSpeech,
         visualScene: row.safeContext?.visualScene,
         gameId: row.gameId,
         round: row.round,

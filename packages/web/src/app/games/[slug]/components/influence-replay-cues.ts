@@ -7,7 +7,7 @@ import {voteSceneIdentity} from "./vote-ledger-model";
 import { isInfluenceProductionSocialTranscript } from "@influence/engine/production-moments/influence-source";
 
 export function isFormatSocialTranscriptMessage(
-  message: Pick<TranscriptEntry, "phase" | "presentationPurpose" | "dialogueKind">,
+  message: Pick<TranscriptEntry, "decisionSpeech" | "phase" | "presentationPurpose" | "dialogueKind">,
 ): boolean {
   return isInfluenceProductionSocialTranscript(message);
 }

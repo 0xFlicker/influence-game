@@ -6,8 +6,9 @@ const TIEBREAK_ACTIONS = new Set(["format-tiebreak", "format-two-names-tiebreak"
 
 /** A resolution reveals several decisions; the cue owns which one is thinking. */
 export function influenceThinkingActor(cue: PresentationCue | null, beat: VisualPresentationBeat | null): string | null {
+  if (beat?.kind === "portrait" && (beat.purpose === "Ballot" || beat.thinkingAllowed === false)) return null;
   if (cue?.source === "format") {
-    if (cue.kind === "format_tiebreak") return cue.tiebreakerId;
+    if (cue.kind === "format_tiebreak") return null;
     if (cue.kind === "format_deciding_vote" || cue.voteSummary) return null;
   }
   return beat && "speech" in beat ? beat.speech?.playerId ?? null : null;

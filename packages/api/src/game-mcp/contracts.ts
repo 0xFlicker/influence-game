@@ -1294,6 +1294,7 @@ const safeContextSchema = closedObject(
       items: { type: "string" },
     },
     formalSpeechCorrelationKey: { type: "string" },
+    decisionSpeech: closedObject(["action", "actorId"], { action: { type: "string" }, actorId: { type: "string" }, receiptEntrySequence: { type: "number" } }),
   },
 );
 

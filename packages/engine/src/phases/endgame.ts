@@ -697,9 +697,9 @@ export async function runJudgmentJuryVote(
 
   const votingJury = contextBuilder.getActiveJury();
 
-  for (const juror of votingJury) {
+  const ballotCommits = await Promise.all(votingJury.map(async (juror) => {
     const jurorAgent = agents.get(juror.playerId);
-    if (!jurorAgent) continue;
+    if (!jurorAgent) return null;
 
     const phaseCtx = prepareAgentPhaseContext(ctx, jurorAgent, juror.playerId, Phase.JURY_VOTE, "strategic_decision");
     const timedVote = await withEndgameActionTimeout<TargetDecision>(
@@ -739,44 +739,47 @@ export async function runJudgmentJuryVote(
         ),
       };
     }
-    await assertCanAcceptCommit(ctx);
-    gameState.recordJuryVote(juror.playerId, vote.target, [
-      agentTurnSourcePointer(
-        juror.playerId,
-        "jury-vote",
-        gameState.round,
+    return async () => {
+      await assertCanAcceptCommit(ctx);
+      gameState.recordJuryVote(juror.playerId, vote.target, [
+        agentTurnSourcePointer(
+          juror.playerId,
+          "jury-vote",
+          gameState.round,
+          Phase.JURY_VOTE,
+          undefined,
+          vote.engineFallback ? undefined : vote.decisionId,
+          vote.engineFallback,
+        ),
+      ]);
+      const targetName = gameState.getPlayerName(vote.target);
+      const voteTranscriptThinking = transcriptThinkingFor(jurorAgent, vote.thinking, vote.reasoningContext, vote);
+      logger.logSystem(
+        `${juror.playerName} (juror) votes for: ${targetName}`,
         Phase.JURY_VOTE,
-        undefined,
-        vote.engineFallback ? undefined : vote.decisionId,
-        vote.engineFallback,
-      ),
-    ]);
-    const targetName = gameState.getPlayerName(vote.target);
-    const voteTranscriptThinking = transcriptThinkingFor(jurorAgent, vote.thinking, vote.reasoningContext, vote);
-    logger.logSystem(
-      `${juror.playerName} (juror) votes for: ${targetName}`,
-      Phase.JURY_VOTE,
-      voteTranscriptThinking.thinking,
-      voteTranscriptThinking.reasoningContext,
-      "system_announcement",
-      { voterId: juror.playerId, targetId: vote.target, purpose: "winner" },
-    );
-    logger.emitAgentTurn({
-      phase: Phase.JURY_VOTE,
-      action: "jury-vote",
-      actor: { id: juror.playerId, name: juror.playerName, role: "juror" },
-      visibility: "private",
-      response: {
-        target: { id: vote.target, name: targetName },
-        finalists: finalistIds.map((id) => ({ id, name: gameState.getPlayerName(id) })),
-        ...strategicDecisionResponse(vote),
-      },
-      thinking: vote.thinking,
-      reasoningContext: vote.reasoningContext,
-      scope: "system",
-      text: `${juror.playerName} (juror) votes for: ${targetName}`,
-    });
-  }
+        voteTranscriptThinking.thinking,
+        voteTranscriptThinking.reasoningContext,
+        "system_announcement",
+        { voterId: juror.playerId, targetId: vote.target, purpose: "winner" },
+      );
+      logger.emitAgentTurn({
+        phase: Phase.JURY_VOTE,
+        action: "jury-vote",
+        actor: { id: juror.playerId, name: juror.playerName, role: "juror" },
+        visibility: "private",
+        response: {
+          target: { id: vote.target, name: targetName },
+          finalists: finalistIds.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+          ...strategicDecisionResponse(vote),
+        },
+        thinking: vote.thinking,
+        reasoningContext: vote.reasoningContext,
+        scope: "system",
+        text: `${juror.playerName} (juror) votes for: ${targetName}`,
+      });
+    };
+  }));
+  for (const commit of ballotCommits) await commit?.();
 
   await assertCanAcceptCommit(ctx);
   const { winnerId, method, voteCounts } = gameState.tallyJuryVotes(ctx.random);

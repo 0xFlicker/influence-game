@@ -46,6 +46,7 @@ export interface SealedElimTargetPlayer {
 }
 
 export interface SealedElimModelOutput {
+  message?: string;
   thinking?: string;
   targetId: UUID;
   strategyDelta?: unknown;
@@ -218,6 +219,7 @@ function strategicDecisionMetadata(output: SealedElimModelOutput): StrategicDeci
       ? { strategyCandidateProposed: true }
       : {}),
     ...(decisionId ? { decisionId } : {}),
+    ...(output.message ? { decisionMessage: output.message } : {}),
   };
 }
 

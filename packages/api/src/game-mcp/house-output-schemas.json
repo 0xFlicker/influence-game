@@ -1415,6 +1415,25 @@
                         "decisionId": {
                           "description": "Durable private-decision id for narrative correlation. Optional; forward-path\nonly. Outside product-dialogue digests. Not exposed on match-transcript DTOs.",
                           "type": "string"
+                        },
+                        "decisionSpeech": {
+                          "type": "object",
+                          "properties": {
+                            "action": {
+                              "type": "string"
+                            },
+                            "actorId": {
+                              "type": "string"
+                            },
+                            "receiptEntrySequence": {
+                              "type": "number"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "action",
+                            "actorId"
+                          ]
                         }
                       },
                       "additionalProperties": false,

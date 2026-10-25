@@ -102,6 +102,7 @@ const strategyResultsByCandidate = new WeakMap<object, CompactStrategyApplicatio
 export function strategicDecisionResponse(
   metadata?: StrategicDecisionMetadata,
 ): {
+  message?: string;
   decisionId?: UUID;
   engineFallback?: StrategicDecisionMetadata["engineFallback"];
   strategyResult?: CompactStrategyApplicationResult;
@@ -109,6 +110,7 @@ export function strategicDecisionResponse(
   if (!metadata) return {};
   const strategyResult = strategyResultsByCandidate.get(metadata);
   return {
+    ...(metadata.decisionMessage && !metadata.engineFallback ? { message: metadata.decisionMessage } : {}),
     ...(metadata.decisionId ? { decisionId: metadata.decisionId } : {}),
     ...(metadata.engineFallback ? { engineFallback: metadata.engineFallback } : {}),
     ...(strategyResult ? { strategyResult } : {}),

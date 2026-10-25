@@ -137,6 +137,8 @@ export interface FormatPresentationSnapshot {
 }
 
 interface SpeechCue {
+  /** Accepted delivery attached to a canonical ballot; never determines its target. */
+  spokenMessage?: string;
   /** A separate, fully collected tally stop after a canonical roll call. */
   voteSummary?: boolean;
   /** The director stages bubbles independently from the surrounding image. */

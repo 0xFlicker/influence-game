@@ -216,6 +216,7 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
       entrySequence: row.entrySequence ?? undefined, dialogueKind: row.dialogueKind,
       firstDurableEventSequence: row.firstDurableEventSequence, speakerPlayerId: anonymous ? null : row.speakerPlayerId,
       anonymous, presentationPurpose: row.safeContext?.presentationPurpose, acceptedBallot: row.safeContext?.acceptedBallot,
+        decisionSpeech: row.safeContext?.decisionSpeech,
       ...(retrospective ? { retrospectiveSource: { eventSequence: retrospective.eventSequence, ordinal: retrospective.ordinal } } : {}),
       visualScene: row.safeContext?.visualScene, fromPlayerId, fromPlayerName: fromPlayerId ? frozen.get(fromPlayerId)?.player.name ?? null : null,
       toPlayerIds: stringArray(row.toPlayerIds), ...(row.roomId !== null && { roomId: row.roomId }),

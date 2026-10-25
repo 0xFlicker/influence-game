@@ -39,6 +39,7 @@ type PublicWsRoomMetadata = {
 
 /** Public transcript entry sent to WebSocket clients (matches WsTranscriptEntry in web/lib/api.ts). */
 export interface PublicWsTranscriptEntry {
+  decisionSpeech?: { action: string; actorId: string; receiptEntrySequence?: number };
   dialogueKind?: TranscriptEntry["dialogueKind"] | null;
   firstDurableEventSequence?: number | null;
   speakerPlayerId?: string | null;

@@ -826,7 +826,7 @@ export async function runTribunalVote(
   const tribunalJury = tribunalTieCandidates.length > 1 ? contextBuilder.getActiveJury() : [];
   if (tribunalJury.length > 0) {
     juryTiebreakerVotes = {};
-    for (const juror of tribunalJury) {
+    const juryCommits = await Promise.all(tribunalJury.map(async (juror) => {
       const jurorAgent = agents.get(juror.playerId);
       if (jurorAgent) {
         const phaseCtx = prepareAgentPhaseContext(
@@ -852,39 +852,43 @@ export async function runTribunalVote(
         const acceptedVote = tribunalTieCandidates.includes(vote.target)
           ? vote
           : fallbackEliminationDecision(ctx, juror.playerId, tribunalTieCandidates, "invalid_model_output");
-        juryTiebreakerVotes[juror.playerId] = acceptedVote.target;
-        if (acceptedVote.decisionId || acceptedVote.engineFallback) {
-          juryTiebreakerSourcePointers.push(
-            agentTurnSourcePointer(
-              juror.playerId,
-              "tribunal-jury-tiebreaker-vote",
-              gameState.round,
-              Phase.VOTE,
-              undefined,
-              acceptedVote.engineFallback ? undefined : acceptedVote.decisionId,
-              acceptedVote.engineFallback,
-            ),
-          );
-        }
-        const targetName = gameState.getPlayerName(acceptedVote.target);
-        await assertCanAcceptCommit(ctx);
-        logger.emitAgentTurn({
-          phase: Phase.VOTE,
-          action: "tribunal-jury-tiebreaker-vote",
-          actor: { id: juror.playerId, name: juror.playerName, role: "juror" },
-          visibility: "private",
-          response: {
-            target: { id: acceptedVote.target, name: targetName },
-            stage: "tribunal",
-            ...strategicDecisionResponse(acceptedVote),
-          },
-          thinking: acceptedVote.thinking,
-          reasoningContext: acceptedVote.reasoningContext,
-          scope: "system",
-          text: `${juror.playerName} jury tiebreaker vote -> ${targetName}`,
-        });
+        return async () => {
+          juryTiebreakerVotes![juror.playerId] = acceptedVote.target;
+          if (acceptedVote.decisionId || acceptedVote.engineFallback) {
+            juryTiebreakerSourcePointers.push(
+              agentTurnSourcePointer(
+                juror.playerId,
+                "tribunal-jury-tiebreaker-vote",
+                gameState.round,
+                Phase.VOTE,
+                undefined,
+                acceptedVote.engineFallback ? undefined : acceptedVote.decisionId,
+                acceptedVote.engineFallback,
+              ),
+            );
+          }
+          const targetName = gameState.getPlayerName(acceptedVote.target);
+          await assertCanAcceptCommit(ctx);
+          logger.emitAgentTurn({
+            phase: Phase.VOTE,
+            action: "tribunal-jury-tiebreaker-vote",
+            actor: { id: juror.playerId, name: juror.playerName, role: "juror" },
+            visibility: "private",
+            response: {
+              target: { id: acceptedVote.target, name: targetName },
+              stage: "tribunal",
+              ...strategicDecisionResponse(acceptedVote),
+            },
+            thinking: acceptedVote.thinking,
+            reasoningContext: acceptedVote.reasoningContext,
+            scope: "system",
+            text: `${juror.playerName} jury tiebreaker vote -> ${targetName}`,
+          });
+        };
       }
-    }
+      return null;
+    }));
+    for (const commit of juryCommits) await commit?.();
   }
 
   await assertCanAcceptCommit(ctx);

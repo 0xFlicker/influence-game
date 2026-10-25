@@ -2753,6 +2753,7 @@ export interface TranscriptEntry {
   firstDurableEventSequence?: number | null;
   speakerPlayerId?: string | null;
   presentationPurpose?: "farewell";
+  decisionSpeech?: { action: string; actorId: string; receiptEntrySequence?: number };
   acceptedBallot?: { voterId: string; targetId: string; purpose: "empower" | "eliminate" | "winner" };
   visualScene?: { id: string; roomId: import("@influence/engine/visual-mode").VisualRoomId };
   entrySequence?: number;
@@ -2820,6 +2821,7 @@ export interface WsTranscriptEntry {
   firstDurableEventSequence?: number | null;
   speakerPlayerId?: string | null;
   presentationPurpose?: "farewell";
+  decisionSpeech?: { action: string; actorId: string; receiptEntrySequence?: number };
   acceptedBallot?: { voterId: string; targetId: string; purpose: "empower" | "eliminate" | "winner" };
   visualScene?: { id: string; roomId: import("@influence/engine/visual-mode").VisualRoomId };
   /** Durable game-local dialogue identity. */

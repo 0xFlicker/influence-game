@@ -27,7 +27,7 @@ export type VisualPresentationBeat =
   | WinnerSceneBeat
   | { kind: "portrait-room"; roomNumber: number | null; roomLabel?: string; participants: Array<{id: string; name: string; persona: string; personaKey?: string | null; avatarUrl?: string | null}>; speech: VisualSpeech }
   | { kind: "scene"; sceneId: string; roomId: VisualRoomId; speech: VisualSpeech | null }
-  | { kind: "portrait"; purpose: "Night decision" | "Introduction" | "Retrospective" | "Ballot" | "Diary" | "Farewell" | "Conversation" | "Plea"; ballotPurpose?: "empower" | "council"; caption?: string; roleLabel?: string; player: { headRectangle?: import("@influence/engine/character-portrait").HeadRectangle; fullBodyReferenceUrl?: string | null; id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null }; speech: VisualSpeech }
+  | { kind: "portrait"; thinkingAllowed?: boolean; purpose: "Decision" | "Night decision" | "Introduction" | "Retrospective" | "Ballot" | "Diary" | "Farewell" | "Conversation" | "Plea"; ballotPurpose?: "empower" | "council"; caption?: string; roleLabel?: string; player: { headRectangle?: import("@influence/engine/character-portrait").HeadRectangle; fullBodyReferenceUrl?: string | null; id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null }; speech: VisualSpeech }
   | { kind: "house"; text: string | null; title?: string }
   | { kind: "anonymous"; speech: VisualSpeech };
 

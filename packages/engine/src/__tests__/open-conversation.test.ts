@@ -16,8 +16,49 @@ describe("bounded open conversation", () => {
     expect(() => advanceConversation(state,"b",speech("a"))).toThrow("recipient");
     state = advanceConversation(state,"b",{...speech("c"),replyToContributionId:1});
     expect(state.nextActorId).toBe("c");
-    expect(state.handoffs).toBe(0);
+    expect(state.handoffs).toBe(1);
     expect(validateConversationState(state)).toEqual([]);
+  });
+  test("a redirect schedules the chosen recipient even when someone else has waited longer", () => {
+    const ids = ["a", "b", "c", "d"];
+    let state = {...beginConversation(ids,"seed"),order:ids,nextActorId:"a"};
+    for (const [actor, recipient] of [["a","b"],["b","a"],["a","b"]] as const) {
+      state = advanceConversation(state,actor,speech(recipient));
+    }
+    expect(conversationPrompt(state,ids.map(id=>({id,name:id})),[]).legalRecipientIds).toEqual(["c","d"]);
+    // C would win the fair queue; B explicitly chooses D instead.
+    state = advanceConversation(state,"b",speech("d"));
+    expect(state.nextActorId).toBe("d");
+    expect(state.handoffs).toBe(1);
+    expect(conversationPrompt(state,ids.map(id=>({id,name:id})),[]).redirect).toBeFalse();
+    state = advanceConversation(state,"d",speech("b"));
+    state = advanceConversation(state,"b",speech("d"));
+    expect(() => advanceConversation(state,"d",speech("b"))).toThrow("recipient");
+    expect(validateConversationState(state)).toEqual([]);
+  });
+  test("changing participants resets the pair limit instead of limiting a chain through the room", () => {
+    const ids = ["a", "b", "c", "d"];
+    let state = {...beginConversation(ids,"seed"),nextActorId:"a"};
+    for (const [actor, recipient] of [["a","b"],["b","c"],["c","d"],["d","a"],["a","c"]] as const) {
+      state = advanceConversation(state,actor,speech(recipient));
+      expect(state.nextActorId).toBe(recipient);
+      expect(state.handoffs).toBe(1);
+      expect(conversationPrompt(state,ids.map(id=>({id,name:id})),[]).redirect).toBeFalse();
+      expect(validateConversationState(state)).toEqual([]);
+    }
+  });
+  test("a pass or group address at the pair limit returns to the fair queue", () => {
+    const ids = ["a", "b", "c", "d"];
+    let state = {...beginConversation(ids,"seed"),order:ids,nextActorId:"a"};
+    state = advanceConversation(state,"a",speech("b"));
+    state = advanceConversation(state,"b",speech("a"));
+    state = advanceConversation(state,"a",speech("b"));
+    for (const response of [pass, speech()]) {
+      const next = advanceConversation(state,"b",response);
+      expect(next.nextActorId).toBe("c");
+      expect(next.handoffs).toBe(0);
+      expect(validateConversationState(next)).toEqual([]);
+    }
   });
   test("pairs can alternate without a third-person redirect", () => {
     let state = {...beginConversation(["a","b"],"seed"),nextActorId:"a"};

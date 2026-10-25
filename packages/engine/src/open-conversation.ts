@@ -13,6 +13,7 @@ export interface ConversationState {
   lastOffered: Record<string, number>;
   nextActorId: string;
   previousSpeakerId: string | null;
+  /** Consecutive directed handoffs between the current pair; a new recipient starts a new pair. */
   handoffs: number;
   silentIds: string[];
   unavailableIds: string[];
@@ -72,8 +73,9 @@ export function advanceConversation(previous: ConversationState, actorId: string
   if (text) { state.remainingBytes -= bytes; state.silentIds = []; state.unavailableIds = []; }
   else { if (!state.silentIds.includes(actorId)) state.silentIds.push(actorId); if (response.providerAbsence && !state.unavailableIds.includes(actorId)) state.unavailableIds.push(actorId); }
   state.ended = state.remainingBytes < state.messageBytes || state.silentIds.length === state.order.length;
-  if (text && recipient && (state.order.length === 2 || state.handoffs < state.maxHandoffs)) {
-    state.nextActorId = recipient; state.handoffs = state.order.length === 2 ? 0 : state.handoffs + 1;
+  if (text && recipient) {
+    state.nextActorId = recipient;
+    state.handoffs = state.order.length === 2 ? 0 : recipient === state.previousSpeakerId ? state.handoffs + 1 : 1;
   } else {
     state.nextActorId = [...state.order].sort((a,b) => (state.lastOffered[a] ?? -1) - (state.lastOffered[b] ?? -1))[0]!;
     state.handoffs = 0;

@@ -22,6 +22,7 @@ export function influenceRoomBackground(beat: VisualPresentationBeat, ledger?: V
       : INFLUENCE_ROOMS.mingle[beat.roomNumber - 1] ?? INFLUENCE_ROOMS.lobby;
   }
   if (beat.kind !== "portrait") return undefined;
+  if (beat.purpose === "Decision" || beat.purpose === "Plea") return beat.ballotPurpose === "empower" ? INFLUENCE_ROOMS.empower : INFLUENCE_ROOMS.council;
   if (beat.purpose === "Introduction") return INFLUENCE_ROOMS.lobby;
   if (beat.purpose === "Ballot") return (beat.ballotPurpose ?? ledger?.current.choice) === "empower"
     ? INFLUENCE_ROOMS.empower : INFLUENCE_ROOMS.council;

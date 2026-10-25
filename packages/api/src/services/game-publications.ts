@@ -306,7 +306,7 @@ function publicTranscriptEntry(row: {
   thinking: string | null;
   timestamp: number;
   dialogueKind: PublicWsTranscriptEntry["dialogueKind"];
-  safeContext: { anonymous?: boolean; acceptedBallot?: import("@influence/engine").TranscriptDialogueContext["acceptedBallot"]; presentationPurpose?: "farewell"; visualScene?: import("@influence/engine").TranscriptDialogueContext["visualScene"] } | null;
+  safeContext: { decisionSpeech?: import("@influence/engine").TranscriptDialogueContext["decisionSpeech"]; anonymous?: boolean; acceptedBallot?: import("@influence/engine").TranscriptDialogueContext["acceptedBallot"]; presentationPurpose?: "farewell"; visualScene?: import("@influence/engine").TranscriptDialogueContext["visualScene"] } | null;
 }): PublicWsTranscriptEntry {
   const from = row.safeContext?.anonymous ? "Anonymous" : row.speakerPlayerId
     ?? row.fromPlayerId
@@ -319,6 +319,7 @@ function publicTranscriptEntry(row: {
     ...(!row.safeContext?.anonymous && row.speakerPlayerId && { speakerPlayerId: row.speakerPlayerId }),
     ...(row.safeContext?.anonymous && { anonymous: true }),
     ...(row.entrySequence !== null && { entrySequence: row.entrySequence }),
+    ...(row.safeContext?.decisionSpeech && { decisionSpeech: row.safeContext.decisionSpeech }),
     ...(row.safeContext?.acceptedBallot && { acceptedBallot: row.safeContext.acceptedBallot }),
     ...(row.safeContext?.visualScene && { visualScene: row.safeContext.visualScene }),
     ...(row.safeContext?.presentationPurpose && { presentationPurpose: row.safeContext.presentationPurpose }),

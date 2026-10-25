@@ -1,3 +1,4 @@
+import { INFLUENCE_BALLOT_ACTIONS } from "../influence-decision-speech";
 import type { ViewerDecisionEvent } from "../viewer-decision-events";
 import { assembleProductionCatalog, type InfluenceProductionPresentation, type ProductionSource } from "./index";
 
@@ -7,6 +8,7 @@ export interface InfluenceProductionTranscript {
   entrySequence?: number | null; firstDurableEventSequence?: number | null;
   dialogueKind?: string | null; presentationPurpose?: string;
   anonymous?: boolean; speakerPlayerId?: string | null; fromPlayerId?: string | null;
+  decisionSpeech?: { action: string; actorId: string; receiptEntrySequence?: number };
   acceptedBallot?: { voterId: string; targetId: string; purpose: "empower" | "eliminate" | "winner" };
   thinking?: string | null;
   retrospectiveSource?: { eventSequence: number; ordinal: number };
@@ -31,13 +33,15 @@ export const INFLUENCE_PRODUCTION_PHASE_ORDER = [
 ] as const;
 const FORMAT_AUTHORITY_PHASES = new Set(["VOTE", "FORMAT_MENU", "FORMAT_PICK", "FORMAT_RESOLVE"]);
 
-export function isInfluenceProductionStoryDialogue(message: Pick<InfluenceProductionTranscript, "scope" | "acceptedBallot" | "dialogueKind" | "presentationPurpose" | "anonymous" | "speakerPlayerId" | "fromPlayerId">): boolean {
+export function isInfluenceProductionStoryDialogue(message: Pick<InfluenceProductionTranscript, "decisionSpeech" | "scope" | "acceptedBallot" | "dialogueKind" | "presentationPurpose" | "anonymous" | "speakerPlayerId" | "fromPlayerId">): boolean {
+  if (message.decisionSpeech) return true;
   if (message.scope === "thinking" || message.scope === "diary") return false;
   if (message.acceptedBallot?.purpose === "winner") return false;
   if (message.dialogueKind === "house_summary" || message.presentationPurpose === "farewell" || message.acceptedBallot) return true;
   return message.scope !== "system" && Boolean(message.anonymous || message.speakerPlayerId || message.fromPlayerId);
 }
-export function isInfluenceProductionSocialTranscript(message: Pick<InfluenceProductionTranscript, "phase" | "presentationPurpose" | "dialogueKind">): boolean {
+export function isInfluenceProductionSocialTranscript(message: Pick<InfluenceProductionTranscript, "decisionSpeech" | "phase" | "presentationPurpose" | "dialogueKind">): boolean {
+  if (message.decisionSpeech) return !INFLUENCE_BALLOT_ACTIONS.has(message.decisionSpeech.action) && message.decisionSpeech.action !== "format-ballot";
   return message.dialogueKind === "house_summary" || message.presentationPurpose === "farewell" || !FORMAT_AUTHORITY_PHASES.has(message.phase);
 }
 
@@ -91,6 +95,7 @@ export function buildInfluenceProductionSources(input: {
   for (const message of transcripts) {
     if (transcriptIds.has(String(message.id))) throw new Error("Ambiguous Influence production transcript row");
     transcriptIds.add(String(message.id));
+    if (message.decisionSpeech && message.scope === "system") continue;
     if (!isInfluenceProductionStoryDialogue(message) || input.gameKernel === "format" && !isInfluenceProductionSocialTranscript(message)) continue;
     const token = message.anonymous ? undefined : message.speakerPlayerId ?? message.fromPlayerId ?? undefined;
     const roster = frames.find(frame => frame.round === message.round)?.players ?? [];

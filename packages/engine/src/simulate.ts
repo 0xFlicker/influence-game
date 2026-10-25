@@ -1,5 +1,9 @@
 #!/usr/bin/env bun
 /**
+ * Influence decision speech uses strict message fields; ballots, format picks and
+ * tiebreaks omit thinking. Sealed ballots collect concurrently, then reveal in
+ * roster order. Native reasoning remains private evidence; no `as any` shortcuts
+ * or indirect House calls are permitted.
  * API-backed games default to Public; Unlisted requires --visibility unlisted.
  * Environment variables cannot select Unlisted; local artifacts are not published.
  * See api-simulate.ts for --visibility. This does not change decision trace permissions.
@@ -91,6 +95,9 @@
  * voluntary passes separately from provider-unavailable fallbacks.
  * Werewolf spoken text uses names; UUID leaks fail inside provider retries before
  * acceptance. Structured target IDs remain legal; stored dialogue is unchanged.
+ * Influence Lobby/Mingle/huddles limit pairwise back-and-forth: A → B → A → B
+ * excludes A from B's next recipient choices. B → C schedules C and resets
+ * the pair counter; group addresses and passes return to fair scheduling.
  * Rules v9 use a shared UTF-8 speech budget: 400 bytes per living player,
  * 320 per contribution. Three directed handoffs permit A → B → A → B;
  * the last recipient redirects or passes, and may reference earlier statements.

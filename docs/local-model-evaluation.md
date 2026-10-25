@@ -1,5 +1,7 @@
 # Local Model Evaluation
 
+For Influence runs through `bun run simulate:api`, inspect structured recipients when evaluating conversational responsiveness: A → B → A → B excludes A from B's next recipient choices, but B → C gives C the next opportunity. A new pair resets the exchange counter. Group addresses and passes return to fair scheduling; the shared speech allowance still bounds the conversation.
+
 Werewolf v10 solo night turns (Doctor, Seer and one surviving wolf) request `targetId`, one spoken `text` explanation and nullable `cue`, with no separate required `thinking`. Multi-wolf discussion keeps private thinking. Preserve raw responses and available native reasoning in private evidence; do not invent a missing explanation. Omniscient replay and exports show each Doctor/Seer explanation before its role result, in a distinct room. Mystery and contestant observations never receive these asides. New games freeze v10 and its output policy at creation; existing games keep their saved version. `bun run simulate:werewolf:api` and `bun run simulate:models --game werewolf` use that same API contract. No `as any`; House calls remain direct.
 
 
@@ -574,3 +576,6 @@ bun run simulate:models --report GAME_ID --api-url http://127.0.0.1:3000
 ```
 
 Reports use separate append-only files, retain preferred and actual route counts, failure classes, House versus contestant spend, and explicitly unknown costs. Preserve existing `--chatty` inspection for detailed decisions and Studio/MCP inspection of the real game ID. Follow the direct-House-call and no-`as any` disciplines; simulation is not a second execution implementation.
+
+
+Influence decision tests must return `message` on ballots, format choices, tiebreaks, nominations, vetoes and Safety Bounce pointers. For ballots use a very short line (120 UTF-8 bytes maximum, often just the target name); omit `thinking` on ballots, format choice and tiebreaks. Keep thinking on nominations/replacements, vetoes, pointers and nominee pleas. Inspect accepted public delivery in transcript `decisionSpeech` rows and private/native reasoning in producer evidence. Sealed ballots remain parallel with no cross-voter messages; do not use a paid simulation merely to test this contract.

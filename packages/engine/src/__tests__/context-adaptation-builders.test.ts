@@ -44,7 +44,7 @@ function phase(): PhaseContext {
 }
 
 test("Influence vote compacts rendered recall without changing current legal action or strategy state", async () => {
-  const p = provider({ thinking: "Empower Mira.", empower: "Mira", strategyDelta: null });
+  const p = provider({ message: "Mira.", empower: "Mira", strategyDelta: null });
   const agent = new InfluenceAgent("atlas", "Atlas", "strategic", p.adapter, p.runtime.modelId, "Former teacher", undefined, { providerManifest: [p.runtime], personalityPrompt: "Patient and observant", strategyInstructions: "Protect Mira" });
   const context = phase(); agent.onGameStart(context.gameId!, context.alivePlayers);
   const before = agent.getCompactStrategyState();

@@ -447,7 +447,7 @@ async function resolveSaveOrEliminateRound(
   const aliveIds = alive.map((p) => p.id);
   const ballots: SaveOrEliminateBallot[] = [];
 
-  for (const player of alive) {
+  const ballotCommits = await Promise.all(alive.map(async (player) => {
     const agent = requireAgent(ctx, player.id, "Save-or-Exit ballot");
     const phaseCtx = prepareAgentPhaseContext(
       ctx,
@@ -530,51 +530,54 @@ async function resolveSaveOrEliminateRound(
       }
     }
 
-    ballots.push({ voterId: player.id, polarity, targetId });
-    const targetName = gameState.getPlayerName(targetId);
-    await assertCanAcceptCommit(ctx);
-    gameState.recordFormatBallot({
-      formatId: "save_or_eliminate",
-      voterId: player.id,
-      targetId,
-      polarity,
-    }, [
-      agentTurnSourcePointer(
-        player.id,
-        "format-save-or-eliminate-ballot",
-        gameState.round,
-        Phase.FORMAT_RESOLVE,
-        undefined,
-        strategyMetadata.engineFallback ? undefined : decisionId,
-        strategyMetadata.engineFallback,
-      ),
-    ]);
-    resolveActionStrategyCandidate(
-      agent,
-      strategyMetadata,
-      provenance.decisionSource === "llm",
-    );
-    logger.emitAgentTurn({
-      phase: Phase.FORMAT_RESOLVE,
-      action: "format-ballot",
-      actor: { id: player.id, name: player.name, role: "player" },
-      visibility: "private",
-      response: {
+    return async () => {
+      ballots.push({ voterId: player.id, polarity, targetId });
+      const targetName = gameState.getPlayerName(targetId);
+      await assertCanAcceptCommit(ctx);
+      gameState.recordFormatBallot({
         formatId: "save_or_eliminate",
-        polarity,
+        voterId: player.id,
         targetId,
-        targetName,
-        sealed: true,
-        ...provenance,
-        ...strategicDecisionResponse(strategyMetadata),
-      },
-      thinking,
-      reasoningContext,
-      scope: "system",
-      // Operator/sim visibility: sealed is player-facing only; chatty traces show the ballot.
-      text: `${player.name} sealed ballot: ${polarity === "save" ? "SAVE" : "EXIT"} → ${targetName}`,
-    });
-  }
+        polarity,
+      }, [
+        agentTurnSourcePointer(
+          player.id,
+          "format-save-or-eliminate-ballot",
+          gameState.round,
+          Phase.FORMAT_RESOLVE,
+          undefined,
+          strategyMetadata.engineFallback ? undefined : decisionId,
+          strategyMetadata.engineFallback,
+        ),
+      ]);
+      resolveActionStrategyCandidate(
+        agent,
+        strategyMetadata,
+        provenance.decisionSource === "llm",
+      );
+      logger.emitAgentTurn({
+        phase: Phase.FORMAT_RESOLVE,
+        action: "format-ballot",
+        actor: { id: player.id, name: player.name, role: "player" },
+        visibility: "private",
+        response: {
+          formatId: "save_or_eliminate",
+          polarity,
+          targetId,
+          targetName,
+          sealed: true,
+          ...provenance,
+          ...strategicDecisionResponse(strategyMetadata),
+        },
+        thinking,
+        reasoningContext,
+        scope: "system",
+        // Operator/sim visibility: sealed is player-facing only; chatty traces show the ballot.
+        text: `${player.name} sealed ballot: ${polarity === "save" ? "SAVE" : "EXIT"} → ${targetName}`,
+      });
+    };
+  }));
+  for (const commit of ballotCommits) await commit();
 
   if (ballots.length !== aliveIds.length) {
     throw new Error(`Save-or-Exit incomplete ballots: ${ballots.length}/${aliveIds.length}`);
@@ -1116,7 +1119,7 @@ async function resolveSafetyBounceRound(
   for (const id of board.vulnerable) voteTotals[id] = 0;
   const ballots: Array<{ voterId: UUID; targetId: UUID }> = [];
 
-  for (const player of alive) {
+  const ballotCommits = await Promise.all(alive.map(async (player) => {
     const agent = requireAgent(ctx, player.id, "safety-bounce vote");
     const phaseCtx = prepareAgentPhaseContext(
       ctx,
@@ -1194,50 +1197,53 @@ async function resolveSafetyBounceRound(
       }
     }
 
-    ballots.push({ voterId: player.id, targetId });
-    voteTotals[targetId] = (voteTotals[targetId] ?? 0) + 1;
-    const targetName = gameState.getPlayerName(targetId);
-    await assertCanAcceptCommit(ctx);
-    gameState.recordFormatBallot({
-      formatId: "safety_bounce",
-      voterId: player.id,
-      targetId,
-    }, [
-      agentTurnSourcePointer(
-        player.id,
-        "format-safety-bounce-vote",
-        gameState.round,
-        Phase.FORMAT_RESOLVE,
-        undefined,
-        strategyMetadata.engineFallback ? undefined : decisionId,
-        strategyMetadata.engineFallback,
-      ),
-    ]);
-    resolveActionStrategyCandidate(
-      agent,
-      strategyMetadata,
-      provenance.decisionSource === "llm",
-    );
-    logger.emitAgentTurn({
-      phase: Phase.FORMAT_RESOLVE,
-      action: "format-ballot",
-      actor: { id: player.id, name: player.name, role: "player" },
-      visibility: "private",
-      response: {
+    return async () => {
+      ballots.push({ voterId: player.id, targetId });
+      voteTotals[targetId] = (voteTotals[targetId] ?? 0) + 1;
+      const targetName = gameState.getPlayerName(targetId);
+      await assertCanAcceptCommit(ctx);
+      gameState.recordFormatBallot({
         formatId: "safety_bounce",
+        voterId: player.id,
         targetId,
-        targetName,
-        sealed: true,
-        ...provenance,
-        ...strategicDecisionResponse(strategyMetadata),
-      },
-      thinking,
-      reasoningContext,
-      scope: "system",
-      // Operator/sim visibility: sealed is player-facing only; chatty traces show the ballot.
-      text: `${player.name} sealed ballot: EXIT → ${targetName}`,
-    });
-  }
+      }, [
+        agentTurnSourcePointer(
+          player.id,
+          "format-safety-bounce-vote",
+          gameState.round,
+          Phase.FORMAT_RESOLVE,
+          undefined,
+          strategyMetadata.engineFallback ? undefined : decisionId,
+          strategyMetadata.engineFallback,
+        ),
+      ]);
+      resolveActionStrategyCandidate(
+        agent,
+        strategyMetadata,
+        provenance.decisionSource === "llm",
+      );
+      logger.emitAgentTurn({
+        phase: Phase.FORMAT_RESOLVE,
+        action: "format-ballot",
+        actor: { id: player.id, name: player.name, role: "player" },
+        visibility: "private",
+        response: {
+          formatId: "safety_bounce",
+          targetId,
+          targetName,
+          sealed: true,
+          ...provenance,
+          ...strategicDecisionResponse(strategyMetadata),
+        },
+        thinking,
+        reasoningContext,
+        scope: "system",
+        // Operator/sim visibility: sealed is player-facing only; chatty traces show the ballot.
+        text: `${player.name} sealed ballot: EXIT → ${targetName}`,
+      });
+    };
+  }));
+  for (const commit of ballotCommits) await commit();
 
   if (ballots.length !== aliveIds.length) {
     throw new Error(`Safety Bounce incomplete ballots: ${ballots.length}/${aliveIds.length}`);

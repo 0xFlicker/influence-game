@@ -688,6 +688,7 @@ export type TranscriptSafeContextV1 = {
   formalSpeechCorrelationKey?: string;
   anonymous?: boolean;
   presentationPurpose?: "farewell";
+  decisionSpeech?: import("@influence/engine").TranscriptDialogueContext["decisionSpeech"];
   acceptedBallot?: import("@influence/engine").TranscriptDialogueContext["acceptedBallot"];
   visualScene?: { id: string; roomId: import("@influence/engine/visual-mode").VisualRoomId };
   /**

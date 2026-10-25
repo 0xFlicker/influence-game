@@ -1,3 +1,4 @@
+import { decisionSpeechPolicy } from "./influence-decision-speech";
 /**
  * Influence Game - Transcript Logger
  *
@@ -174,6 +175,37 @@ export class TranscriptLogger {
         : {}),
     };
     this.emitStream(event);
+    if (input.actor.id && typeof response.message === "string" && !response.engineFallback) {
+      this.logDecisionSpeech(input.actor.id, input.action, input.phase, {
+        decisionMessage: response.message, thinking: input.thinking, reasoningContext: input.reasoningContext,
+        decisionId: event.decisionId,
+      }, input.visibility === "private");
+    }
+  }
+
+  /** Ballot speech is evidence for reveal, never appended to contestant dialogue during collection. */
+  logDecisionSpeech(actorId: string, action: string, phase: Phase,
+    decision: { decisionMessage?: string; thinking?: string; reasoningContext?: string; decisionId?: string; engineFallback?: unknown }, sealed = false): void {
+    if (!decision.decisionMessage || decision.engineFallback) return;
+    const policy = decisionSpeechPolicy(action);
+    if (!policy && action !== "format-ballot") return;
+    const receipt = this.transcript.at(-1);
+    const receiptEntrySequence = sealed && receipt?.round === this.gameState.round && receipt.phase === phase
+      && receipt.dialogueContext?.acceptedBallot?.voterId === actorId ? receipt.entrySequence : undefined;
+    const dialogueContext: TranscriptDialogueContext = { version: 1, decisionSpeech: { action, actorId,
+      ...(receiptEntrySequence !== undefined && { receiptEntrySequence }) },
+      ...(decision.decisionId && { decisionId: decision.decisionId }) };
+    if (!sealed) {
+      this.logPublic(actorId, decision.decisionMessage, phase, {
+        dialogueContext, decisionId: decision.decisionId,
+        ...(policy?.thinking && { thinking: decision.thinking, reasoningContext: decision.reasoningContext }),
+      });
+      return;
+    }
+    this.pushDialogueEntry({ round: this.gameState.round, phase, timestamp: Date.now(),
+      from: this.gameState.getPlayerName(actorId), speakerPlayerId: actorId,
+      scope: "system", text: decision.decisionMessage, entrySequence: this.nextDialogueSequence(),
+      dialogueKind: "system_announcement", audiencePlayerIds: [], dialogueContext });
   }
 
   private nextDialogueSequence(): number {

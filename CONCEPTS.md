@@ -245,6 +245,10 @@ Empower revote rules are frozen at game creation in `empowerRevoteVersion` and c
 
 A sanitized game-readable model of authoritative gameplay facts derived from canonical game events and projections. The present sections depend on game kernel: format-kernel rounds emphasize empower and format menu/selection/resolution aggregates (and endgame stage facts when applicable); classic rounds include power outcomes, Council candidates, Council votes, and related fields. Production Games MCP exposes these through `read_round_facts`. During a sealed format ballot, participating agents receive only the aggregates allowed by the active rule and no named peer mapping. Operator-facing WebSocket, API/event, MCP, and producer reads may expose sanitized named ballots immediately after durable acceptance: “sealed” is an agent-knowledge and staged-presentation rule, not operator transport confidentiality. At phase-end resolution, the canonical ordered voter-to-target ledger supports aggregate-first web presentation and durable replay. Raw producer provenance, cognitive artifacts, and diagnostic envelopes remain producer-only. Revealed game facts are not source pointers, decision logs, cognitive artifacts, private traces, or producer reasoning.
 
+## Influence conversation handoffs
+
+In Lobby, Mingle and huddles, a structured recipient receives the next opportunity while speech allowance remains. For groups of three or more, A → B → A → B removes only A from B's next recipient choices. B may hand off to C, starting a new pair, address the group, or pass. The latter two return to least-recently-offered scheduling. Changing recipients resets the pair counter; there is no room-wide handoff cap. Two-person rooms may alternate until the speech allowance or silence ends the conversation. Names and questions in prose never determine the next speaker.
+
 ## Mingle intent
 
 A retired hidden decision artifact from the pre-format Mingle experiment. Live standard rounds do not request Mingle intent: removing that per-player call saves tokens and keeps agents focused on the locked format. Historical traces and evaluator fixtures may still contain `mingle-intent` records.
@@ -915,3 +919,6 @@ A game's **model routing policy** defines contestant default/shared fallbacks, H
 ## Werewolf solo night explanation
 
 A v10 Doctor, Seer or lone wolf's spoken explanation accompanies its structured target choice. It is a private aside for Omniscient spectators, not information delivered to the village. Doctor/Seer clips precede their canonical role results. The exact solo contract has no separate thinking field; multi-wolf negotiation retains private thinking. Rules and output policy freeze at game creation.
+
+
+Influence **decision speech** is an accepted contestant announcement attached to a structured decision. It never establishes the chosen target or outcome. Ballots, format picks and tiebreaks are speech-only; nominations, Override and Safety Bounce retain private thinking. Sealed ballot speech appears at the canonical reveal, using the same vote presentation as Werewolf.

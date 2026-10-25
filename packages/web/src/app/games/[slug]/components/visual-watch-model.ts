@@ -1,3 +1,4 @@
+import { decisionSpeechPolicy } from "@influence/engine/influence-decision-speech";
 import {voteSceneIdentity} from "./vote-ledger-model";
 import type { AcceptedVisualScene } from "@influence/engine/visual-mode";
 import type { GamePlayer, GameWatchReplayFrame, TranscriptEntry } from "@/lib/api";
@@ -23,7 +24,7 @@ function isMingleDialogue(message: TranscriptEntry) {
 
 /** Reserve solo staging from committed transcript metadata, never image load timing. */
 export function isSoloTranscript(message: TranscriptEntry): boolean {
-  return Boolean(!message.anonymous && (message.acceptedBallot || ((message.speakerPlayerId || message.fromPlayerId)
+  return Boolean(!message.anonymous && (message.decisionSpeech || message.acceptedBallot || ((message.speakerPlayerId || message.fromPlayerId)
     && (message.phase === "RETROSPECTIVE" || message.presentationPurpose === "farewell" || message.phase === "INTRODUCTION" || message.scope === "diary" || (!message.visualScene && message.phase !== "LOBBY" && !isMingleDialogue(message))))));
 }
 
@@ -72,7 +73,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
         })).sort((a, b) => (a.placement ?? Infinity) - (b.placement ?? Infinity)) };
     } else if (cue.ballot) {
       const target = players.find((player) => player.id === cue.ballot!.targetId);
-      if (target) portrait(cue.ballot.voterId, target.name, "Ballot", cue.ballot.purpose === "winner" ? "Vote for winner" : cue.ballot.juryTiebreaker ? "Jury tiebreak · Vote to eliminate" : "Vote to eliminate");
+      if (target) portrait(cue.ballot.voterId, cue.spokenMessage ?? target.name, "Ballot", cue.ballot.purpose === "winner" ? "Vote for winner" : cue.ballot.juryTiebreaker ? "Jury tiebreak · Vote to eliminate" : "Vote to eliminate");
     } else {
       const name = players.find((player) => player.id === cue.playerId)?.name ?? "Player";
       beat = { kind: "house", text: `${name} is out.` };
@@ -101,12 +102,12 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
     } else if (cue.visualBallot) {
       const ballot = cue.visualBallot;
       const target = players.find((player) => player.id === ballot.targetId);
-      if (target) portrait(ballot.voterId, target.name, "Ballot", ballot.revote ? "Revote to empower" : "Vote to empower", "empower");
+      if (target) portrait(ballot.voterId, cue.spokenMessage ?? target.name, "Ballot", ballot.revote ? "Revote to empower" : "Vote to empower", "empower");
     } else if (cue.kind === "format_roll_call") {
       const ballot = cue.ballot;
       const target = players.find((player) => player.id === ballot.targetId)?.name;
       const text = ballot.forfeited ? "Ballot forfeited." : target ? target : null;
-      if (text) portrait(ballot.voterId, text, "Ballot", ballot.polarity === "save" ? "Vote to save" : "Vote to eliminate");
+      if (text) portrait(ballot.voterId, cue.spokenMessage ?? text, "Ballot", ballot.polarity === "save" ? "Vote to save" : "Vote to eliminate");
     }
     return { rooms, beat };
   }
@@ -115,10 +116,14 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
   const speakerToken = message.anonymous ? null : message.speakerPlayerId ?? message.fromPlayerId;
   const speaker = resolveTranscriptPlayer(speakerToken, players);
   const speakerId = speaker?.id ?? speakerToken;
-  if (message.acceptedBallot) {
+  if (message.decisionSpeech) {
+    portrait(message.decisionSpeech.actorId, message.text, "Decision", message.decisionSpeech.action === "format-pick" ? "Format choice" : "Decision", message.decisionSpeech.action === "format-pick" ? "empower" : "council");
+    if (beat) (beat as Extract<VisualPresentationBeat, { kind: "portrait" }>).thinkingAllowed = decisionSpeechPolicy(message.decisionSpeech.action)?.thinking ?? false;
+  }
+  else if (message.acceptedBallot) {
     const ballot = message.acceptedBallot;
     const target = players.find((player) => player.id === ballot.targetId);
-    if (target) portrait(ballot.voterId, target.name, "Ballot", ballot.purpose === "winner" ? "Vote for winner" : `Vote to ${ballot.purpose}`, ballot.purpose === "empower" ? "empower" : "council");
+    if (target) portrait(ballot.voterId, cue?.spokenMessage ?? target.name, "Ballot", ballot.purpose === "winner" ? "Vote for winner" : `Vote to ${ballot.purpose}`, ballot.purpose === "empower" ? "empower" : "council");
   }
   else if (message.phase === "RETROSPECTIVE" && speakerId) {
     const prefix = frames.filter(frame => frame.sequence <= (message.firstDurableEventSequence ?? cue?.canonicalSequence ?? 0));

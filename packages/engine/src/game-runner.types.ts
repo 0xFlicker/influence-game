@@ -726,6 +726,8 @@ export type CompactStrategyApplicationResult =
   | CompactStrategyRejected;
 
 export interface StrategicDecisionMetadata extends CompactStrategyCandidate {
+  /** Accepted public delivery; never used to infer the decision. */
+  decisionMessage?: string;
   cue?: import("./visual-mode").PerformanceCue | null;
   /**
    * Engine-only marker that this response came from a model-authored strategic
@@ -1544,6 +1546,7 @@ export type TranscriptDialogueKind =
 export interface TranscriptDialogueContextV1 {
   version: 1;
   presentationPurpose?: "farewell";
+  decisionSpeech?: { action: string; actorId: UUID; receiptEntrySequence?: number };
   acceptedBallot?: { voterId: UUID; targetId: UUID; purpose: "empower" | "eliminate" | "winner" };
   visualScene?: { id: string; roomId: import("./visual-mode").VisualRoomId };
   roomId?: number;

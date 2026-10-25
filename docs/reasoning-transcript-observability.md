@@ -1,5 +1,7 @@
 # Reasoning & Transcript Observability
 
+Influence Lobby, Mingle and huddle handoffs track consecutive exchanges within a pair. After A → B → A → B, only A is removed from B's recipient choices. Choosing C schedules C next and starts a new pair; a pass or group address returns to the least-recently-offered participant. Structured `recipientId` controls scheduling, never names in prose. Private counters and passes remain absent from contestant history; accepted historical dialogue is unchanged.
+
 Werewolf v10 solo night turns (Doctor, Seer and one surviving wolf) request `targetId`, one spoken `text` explanation and nullable `cue`, with no separate required `thinking`. Multi-wolf discussion keeps private thinking. Preserve raw responses and available native reasoning in private evidence; do not invent a missing explanation. Omniscient replay and exports show each Doctor/Seer explanation before its role result, in a distinct room. Mystery and contestant observations never receive these asides. New games freeze v10 and its output policy at creation; existing games keep their saved version. `bun run simulate:werewolf:api` and `bun run simulate:models --game werewolf` use that same API contract. No `as any`; House calls remain direct.
 
 
@@ -777,3 +779,12 @@ Compact strategy uses deterministic field order before becoming context text, in
 House title/description generation now uses its own revision/lease-fenced journal call; summaries, room/huddle assignment and interviews use the injected House runtime. Contestant retrospectives remain contestant work. Native reasoning, strict structured thinking, sanitized successful and failed requests/responses, privacy boundaries and object-storage evidence remain unchanged. Never route a House call directly to a provider or use `as any` to bypass structured contracts.
 
 API simulation games default to public discovery across `simulate:api`, `simulate:werewolf:api`, and `simulate:models`. Use `--visibility unlisted` explicitly to omit a game from public lists; environment configuration cannot opt into unlisted. Mixed-model previews and `requested.json` record the selected visibility. This changes discovery only: private thinking and sanitized provider evidence retain their existing access boundaries.
+
+
+### Influence decision speech
+
+Influence ballots (including revotes, format ballots, Council and endgame/jury votes), Empowered format selection and Empowered tiebreaks request a strict `message` instead of structured `thinking`. Ballot delivery is at most 120 UTF-8 bytes; a target name alone is sufficient. Other decision announcements allow 320 bytes. Native provider reasoning remains private execution evidence; these speech-only actions do not play a thinking clip.
+
+Two Names initial/replacement nominations, Override decisions and Safety Bounce pointers request private thinking plus public speech. Nominee pleas already retain thinking and public speech. Public announcements are logged only after the owning decision is accepted. Engine fallbacks never fabricate contestant speech.
+
+Sealed collection stays private and concurrent. Save-or-Exit, sealed elimination formats, Two Names and Safety Bounce collect the complete ballot batch before committing in roster order. Ballot messages are saved as transcript bodies with small `decisionSpeech` action/actor coordinates, and attached to the canonical reveal in playback. Neither their text nor a spoken name determines a target, tally or result. Decision speech uses solo full-body staging with an avatar fallback and the existing Influence backgrounds; ballot reveals reuse the shared Werewolf vote presentation. Show thinking applies to nominations, vetoes, pointers and pleas, not ballots or tiebreaks.

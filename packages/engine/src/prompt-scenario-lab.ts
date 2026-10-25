@@ -302,7 +302,7 @@ function makeReplayOpenAIStub(
         requests.push(params);
         return action.kind === "vote"
           ? fakeResponsesText({
-              thinking: action.response.thinking ?? "Fixture vote reasoning.",
+              message: action.response.empower,
               empower: action.response.empower,
               strategyDelta: action.response.strategyDelta ?? null,
             })
@@ -349,7 +349,7 @@ function makeChainReplayOpenAIStub(
           });
         }
         return fakeResponsesText({
-            thinking: step.response.thinking ?? "Fixture next-vote reasoning.",
+            message: step.response.empower,
             empower: step.response.empower,
             ...(Object.prototype.hasOwnProperty.call(step.response, "strategy") && {
               strategy: step.response.strategy,
