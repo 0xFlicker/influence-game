@@ -69,9 +69,11 @@ async function assertCompleteExportSource(tx:VisualTransaction,id:string,source:
 function validateRecordingMoments(catalog:ProductionCatalog,ids:readonly string[],recordings:readonly ProductionRecording[]) {
   const selected = new Set(ids);
   for (const recording of recordings) {
-    const [moment] = resolveProductionMomentIds(catalog,[recording.momentId]);
-    if (!selected.has(recording.momentId) || !["speech","thinking","scene","ballot","outcome","result"].includes(moment!.kind) || (moment!.actorId ?? null) !== recording.speakerId)
-      throw new Error("Recording does not match a selected authorized speech moment");
+    resolveProductionMomentIds(catalog,[recording.momentId]);
+    // Playback cues own speech identity; the catalog's actor can be the subject
+    // of House narration. Do not reconstruct audio policy from moment kinds.
+    if (!selected.has(recording.momentId))
+      throw new Error("Recording belongs to a moment outside the selected cut");
   }
 }
 

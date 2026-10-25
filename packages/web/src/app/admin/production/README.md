@@ -35,6 +35,8 @@ The CLI reuses a checked, API-origin-bound app session shared with the API simul
 
 ## Local recordings
 
+Export validation checks that recordings belong to the selected, audience-authorized moments and that generated audio matches its published version. Playback cues own text/speaker matching; export does not maintain a separate allowlist of narratable moment types or equate an action's actor with its narrator.
+
 **Import local recordings** accepts one JSON speech manifest and its audio files. Nothing is uploaded or generated. Each entry uses the existing speech manifest contract:
 
 ```json

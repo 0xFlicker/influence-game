@@ -276,27 +276,62 @@ test("a completed game cannot export a handcrafted descriptor from its previousl
   expect(await response.json()).toEqual({ error: "Export requires the complete accepted game history. Refresh the source." });
 });
 
-test("recordings freeze only against selected authorized speech and its exact actor", async () => {
+test("local recording metadata freezes against selected authorized moments without duplicating playback identity checks", async () => {
   const f = await influence(); await producer();
   const recording = { momentId: f.speech.id, messageId: f.speech.source.kind === "influence-transcript" ? f.speech.source.transcriptId : "",
     speakerId: f.speech.actorId!, textHash: createHash("sha256").update("Accepted original speech").digest("hex"),
     sha256: "a".repeat(64), durationMs: 1200 };
   const body = { snapshot: f.source.snapshot, audience: "public", thinking: true,
     selection: { mode: "ids", thinking: true, ids: [f.speech.id] }, expectedMomentIds: [f.speech.id], settings, copy: {} };
-  for (const invalid of [{ ...recording, momentId: f.thought.id }, { ...recording, speakerId: "echo" }]) {
-    const response = await request(`${root(f.gameId)}/selection`, { ...body, recordings: [invalid] });
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: "Recording does not match a selected authorized speech moment" });
-  }
+  const response = await request(`${root(f.gameId)}/selection`, { ...body, recordings: [{ ...recording, momentId: f.thought.id }] });
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({ error: "Recording belongs to a moment outside the selected cut" });
   const prepared = await request(`${root(f.gameId)}/selection`, { ...body, recordings: [recording] });
   expect(prepared.status).toBe(200);
   const descriptor = await prepared.json() as ProductionExportDescriptor;
   expect(descriptor.recordings).toEqual([recording]);
   expect(descriptor.annotations).toEqual([{ momentId: f.speech.id, tags: {}, revision: 0 }]);
   expect((await request(`${root(f.gameId)}/selection/validate`, descriptor)).status).toBe(200);
-  const { hash: _hash, ...wrongSpeaker } = { ...descriptor, recordings: [{ ...recording, speakerId: "echo" }] };
-  expect((await request(`${root(f.gameId)}/selection/validate`, { ...wrongSpeaker, hash: descriptorHash(wrongSpeaker) })).status).toBe(400);
+  const { hash: _hash, ...outsideCut } = { ...descriptor, recordings: [{ ...recording, momentId: f.thought.id }] };
+  expect((await request(`${root(f.gameId)}/selection/validate`, { ...outsideCut, hash: descriptorHash(outsideCut) })).status).toBe(400);
 });
+
+test("Werewolf House narration freezes and validates without confusing the actor with the speaker", async () => {
+  const f = await wolf(); await producer();
+  const {runAudioTrack} = await import("../services/audio-tracks.js");
+  const preview = await (await request(`${root(f.id)}/audio`)).json() as {previewHash:string};
+  expect((await request(`${root(f.id)}/audio`,{previewHash:preview.previewHash})).status).toBe(202);
+  const mp3 = await readFile(new URL("../../../web/public/visual/werewolf/opening-v1/door-effects.mp3",import.meta.url));
+  await runAudioTrack(db,async()=>({bytes:mp3,evidence:{fixture:true}}));
+  for (const audience of ["omniscient","mystery"] as const) {
+    const thinking = audience === "omniscient";
+    const source = await buildWerewolfProductionSourceSnapshot(db,f.id,{audience,thinking});
+    const ids = source.catalog.moments.map(moment=>moment.id);
+    const publication = await (await request(`${root(f.id)}/audio/manifest?audience=${audience}&thinking=${thinking ? "on":"off"}`)).json() as import("@influence/engine/audio-track").PublishedAudioTrack;
+    const recordings = publication.clips.filter(clip=>ids.includes(clip.momentId)).map(clip=>({momentId:clip.momentId,messageId:clip.momentId,speakerId:clip.speakerId,textHash:clip.textHash,sha256:clip.sha256,durationMs:clip.durationMs,versionId:clip.versionId}));
+    const body = {snapshot:source.snapshot,audience,thinking,selection:{mode:"ids",thinking,ids},expectedMomentIds:ids,settings,copy:{},recordings};
+    if (thinking) {
+      for (const part of ["protect","investigate","hunt","pack_vote"]) {
+        const moment = source.catalog.moments.find(moment=>moment.part.kind===part)!;
+        expect(moment).toBeDefined();
+        expect(recordings.find(recording=>recording.momentId===moment.id)?.speakerId).toBeNull();
+      }
+    }
+    const response = await request(`${root(f.id)}/selection`,body);
+    expect(response.status).toBe(200);
+    const descriptor = await response.json() as ProductionExportDescriptor;
+    expect(descriptor.recordings).toEqual(recordings);
+    expect((await request(`${root(f.id)}/selection/validate`,descriptor)).status).toBe(200);
+    if (thinking) {
+      const action = source.catalog.moments.find(moment=>moment.part.kind==="protect")!;
+      expect(action.actorId).toBeTruthy();
+      const badRecordings = recordings.map(recording=>recording.momentId===action.id ? {...recording,speakerId:action.actorId!}:recording);
+      expect((await request(`${root(f.id)}/selection`,{...body,recordings:badRecordings})).status).toBe(400);
+      const {hash:_hash,...changed} = {...descriptor,recordings:badRecordings};
+      expect((await request(`${root(f.id)}/selection/validate`,{...changed,hash:descriptorHash(changed)})).status).toBe(400);
+    }
+  }
+},30000);
 
 test("Mystery source and handcrafted private keys cannot select or annotate private Werewolf moments", async () => {
   const f = await wolf(); await producer();
