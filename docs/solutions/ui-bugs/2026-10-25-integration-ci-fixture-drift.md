@@ -40,6 +40,9 @@ embedded stage must not push the front speaker outside its clipped container.
 Keep the existing mobile label-overlap and portrait-containment assertions; the
 shared component supplies the same layout to Influence, Werewolf and sampled
 exports without changing canonical history or media identities.
+Restore mocked Happy DOM dimension descriptors in `finally`: its HTMLElement
+prototype is shared across windows, so a short-stage unit fixture can otherwise
+activate typography measurement in unrelated later tests.
 
 Format-viewer fixtures must answer the audio metadata endpoint with JSON `null`
 when there are no recordings. Their generic 404 caused the real voice controller

@@ -118,16 +118,27 @@ test.each([6, 7, 8])("a %s-person room keeps larger mobile portraits and seats l
 });
 
 test("a short narrow portrait stage keeps the front speaker inside its height", () => {
-  Object.defineProperty(dom.HTMLElement.prototype, "clientWidth", {configurable:true, get:()=>390});
-  Object.defineProperty(dom.HTMLElement.prototype, "clientHeight", {configurable:true, get:()=>300});
-  const cast = Array.from({length:8}, (_,index)=>({id:`p${index+1}`,name:`Person ${index+1}`,persona:"social"}));
-  const view = render(<PortraitRoom floorPerspective beat={{kind:"portrait-room",roomNumber:null,participants:cast,speech}}
-    elapsedMs={SCENE_READ_START_MS} readingElapsedMs={SCENE_READ_START_MS} reducedMotion controlsInset={0} />);
-  const speaker = view.container.querySelector<HTMLElement>('[data-active-speaker="true"]')!;
-  expect(Number.parseFloat(speaker.style.top)).toBeGreaterThanOrEqual(0);
-  // Happy DOM has no CSS layout; verify the actual emitted portrait box. The
-  // browser room checks also cover perspective, labels and measured typography.
-  expect(Number.parseFloat(speaker.style.top) + Number.parseFloat(speaker.style.width)).toBeLessThan(300);
+  const prototype = dom.HTMLElement.prototype;
+  const dimensions = new Map(["clientWidth", "clientHeight"].map(key => [key, Object.getOwnPropertyDescriptor(prototype, key)]));
+  try {
+    Object.defineProperty(prototype, "clientWidth", {configurable:true, get:()=>390});
+    Object.defineProperty(prototype, "clientHeight", {configurable:true, get:()=>300});
+    const cast = Array.from({length:8}, (_,index)=>({id:`p${index+1}`,name:`Person ${index+1}`,persona:"social"}));
+    const view = render(<PortraitRoom floorPerspective beat={{kind:"portrait-room",roomNumber:null,participants:cast,speech}}
+      elapsedMs={SCENE_READ_START_MS} readingElapsedMs={SCENE_READ_START_MS} reducedMotion controlsInset={0} />);
+    const speaker = view.container.querySelector<HTMLElement>('[data-active-speaker="true"]')!;
+    expect(Number.parseFloat(speaker.style.top)).toBeGreaterThanOrEqual(0);
+    // Happy DOM has no CSS layout; verify the actual emitted portrait box. The
+    // browser room checks also cover perspective, labels and measured typography.
+    expect(Number.parseFloat(speaker.style.top) + Number.parseFloat(speaker.style.width)).toBeLessThan(300);
+  } finally {
+    cleanup();
+    // Happy DOM shares this prototype across windows and later test files.
+    for (const [key, descriptor] of dimensions) {
+      if (descriptor) Object.defineProperty(prototype, key, descriptor);
+      else Reflect.deleteProperty(prototype, key);
+    }
+  }
 });
 
 test("a speaker jump across the circle rotates the whole ring instead of cutting across it", () => {
