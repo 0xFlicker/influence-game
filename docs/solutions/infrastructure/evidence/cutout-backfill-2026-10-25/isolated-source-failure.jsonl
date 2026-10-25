@@ -1,0 +1,20 @@
+{"environment":"local","recipe":"birefnet-general-58f621f0-rembg2.0.86-r1","command":"run","dryRun":false,"total":1,"counts":{"source-failed":1},"warnings":[],"selected":1,"remaining":false,"rows":[{"gameId":null,"agentProfileId":"3013945a-84d7-4519-866c-386d1888e2b4","playerId":"3013945a-84d7-4519-866c-386d1888e2b4","sourceKey":"http://localhost:3000/api/uploads/local?key=pfp%2Fgenerated%2Fbde0a1fa-ac2c-4630-bf95-1f3b470275eb.webp","demandId":null,"jobId":null,"sourceHash":null,"status":"source-failed","error":"Visual upload is unavailable","attempts":0,"leaseUntil":null,"batchJobId":null,"needsAssociation":true}]}
+[character-cutouts] Source preparation failed {
+  demandId: "e2b1532c-93a9-4100-81be-472f59368eb3",
+  error: 30 |   const parsed = new URL(url, "http://visual.invalid");
+31 |   if (parsed.pathname === "/api/uploads/local") {
+32 |     const key = parsed.searchParams.get("key");
+33 |     if (!key) throw new Error("Visual upload is missing its storage key");
+34 |     const image = await readLocalUpload(key);
+35 |     if (!image) throw new Error("Visual upload is unavailable");
+                               ^
+error: Visual upload is unavailable
+      at readVisualProfileImage (/Users/user/Development/influence-game/packages/api/src/services/visual-game-assets.ts:35:27)
+      at async readCutoutSource (/Users/user/Development/influence-game/packages/api/src/services/character-cutouts.ts:87:19)
+      at async prepareCutoutDemands (/Users/user/Development/influence-game/packages/api/src/services/character-cutouts.ts:98:27)
+      at async enqueueCutoutSelection (/Users/user/Development/influence-game/packages/api/src/services/character-cutout-backfill.ts:114:9)
+      at async main (/Users/user/Development/influence-game/packages/api/src/scripts/backfill-character-cutouts.ts:72:25)
+,
+}
+{"environment":"local","demandIds":["e2b1532c-93a9-4100-81be-472f59368eb3"],"jobIds":[],"progress":{"demands":[{"id":"e2b1532c-93a9-4100-81be-472f59368eb3","jobId":null,"error":"Visual upload is unavailable"}],"jobs":[],"complete":false,"failed":true}}
+{"demands":[{"id":"e2b1532c-93a9-4100-81be-472f59368eb3","jobId":null,"error":"Visual upload is unavailable"}],"jobs":[],"complete":false,"failed":true,"selectionIncomplete":false,"interrupted":false,"waitExpired":false}

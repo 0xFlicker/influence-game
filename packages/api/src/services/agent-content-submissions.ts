@@ -1,3 +1,4 @@
+import { cutoutMode, CUTOUT_RECIPE } from "./character-cutouts.js";
 import { loadPayloads, storeFields } from "./payload-storage.js";
 import { enqueueAgentScreening } from "./agent-screening-queue.js";
 import { parseCharacterHeadPosition } from "@influence/engine/character-portrait";
@@ -92,6 +93,15 @@ export async function recordContentSubmission(tx: Tx, mutation: AgentProfileMuta
       ancestryKnown: prior ? prior.ancestryKnown : true, fingerprint, snapshot: { ...snapshot, assets } }, {"snapshot":"json-gzip"}));
     await tx.insert(schema.agentModerationReviews).values({ id: reviewId, contentRevisionId: revisionId, held: profile.moderationRequired });
   }
+  // Optional derivative demand shares the captured content bytes. A savepoint
+  // prevents an unavailable cutout lane from rejecting ordinary character edits.
+  try {
+    const bodyHash = profile.fullBodyReferenceUrl ? assets[profile.fullBodyReferenceUrl] : null;
+    if (bodyHash && cutoutMode() !== "disabled") await tx.transaction(async savepoint => {
+      await savepoint.insert(schema.characterCutoutDemands).values({ id: randomUUID(), agentProfileId: profile.id,
+        playerId: profile.id, sourceKey: `sha256:${bodyHash}`, recipe: CUTOUT_RECIPE }).onConflictDoNothing();
+    });
+  } catch (error) { console.error("[character-cutouts] Agent demand unavailable", { agentId: profile.id, error }); }
   await enqueueAgentScreening(tx, revisionId!);
   const [saved] = await tx.update(schema.agentProfiles).set({
     latestContentRevisionId: revisionId!,

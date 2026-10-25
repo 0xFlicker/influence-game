@@ -1,0 +1,534 @@
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"game_cognitive_artifacts_actor_agent_profile_id_agent_profiles_id_fk\" will be truncated to \"game_cognitive_artifacts_actor_agent_profile_id_agent_profiles_\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"game_cognitive_artifact_reads_actor_player_id_game_players_id_fk\" will be truncated to \"game_cognitive_artifact_reads_actor_player_id_game_players_id_f\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42701",
+  message: "column \"slug\" of relation \"game_watch_state_summaries\" already exists, skipping",
+  file: "tablecmds.c",
+  line: "7340",
+  routine: "check_for_column_name_collision",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"avatar_generation_requests_agent_profile_id_agent_profiles_id_fk\" will be truncated to \"avatar_generation_requests_agent_profile_id_agent_profiles_id_f\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "00000",
+  message: "constraint \"avatar_generation_requests_agent_profile_id_agent_profiles_id_f\" of relation \"avatar_generation_requests\" does not exist, skipping",
+  file: "tablecmds.c",
+  line: "12283",
+  routine: "ATExecDropConstraint",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "00000",
+  message: "constraint \"avatar_generation_requests_agent_profile_id_fkey\" of relation \"avatar_generation_requests\" does not exist, skipping",
+  file: "tablecmds.c",
+  line: "12283",
+  routine: "ATExecDropConstraint",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "00000",
+  message: "constraint \"avatar_change_events_agent_profile_id_agent_profiles_id_fk\" of relation \"avatar_change_events\" does not exist, skipping",
+  file: "tablecmds.c",
+  line: "12283",
+  routine: "ATExecDropConstraint",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "00000",
+  message: "constraint \"avatar_change_events_agent_profile_id_fkey\" of relation \"avatar_change_events\" does not exist, skipping",
+  file: "tablecmds.c",
+  line: "12283",
+  routine: "ATExecDropConstraint",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "00000",
+  message: "constraint \"avatar_generation_requests_agent_profile_id_fkey\" of relation \"avatar_generation_requests\" does not exist, skipping",
+  file: "tablecmds.c",
+  line: "12283",
+  routine: "ATExecDropConstraint",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "00000",
+  message: "constraint \"avatar_change_events_agent_profile_id_fkey\" of relation \"avatar_change_events\" does not exist, skipping",
+  file: "tablecmds.c",
+  line: "12283",
+  routine: "ATExecDropConstraint",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_competition_ratings_effective_revision_id_agent_revisions_id_fk\" will be truncated to \"agent_competition_ratings_effective_revision_id_agent_revisions\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"competition_rating_events_agent_revision_id_agent_revisions_id_fk\" will be truncated to \"competition_rating_events_agent_revision_id_agent_revisions_id_\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"competition_rating_snapshots_agent_profile_id_agent_profiles_id_fk\" will be truncated to \"competition_rating_snapshots_agent_profile_id_agent_profiles_id\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"competition_rating_snapshots_agent_revision_id_agent_revisions_id_fk\" will be truncated to \"competition_rating_snapshots_agent_revision_id_agent_revisions_\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"competition_receipt_evidence_receipt_id_competition_receipts_id_fk\" will be truncated to \"competition_receipt_evidence_receipt_id_competition_receipts_id\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"season_honors_agent_champion_agent_profile_id_agent_profiles_id_fk\" will be truncated to \"season_honors_agent_champion_agent_profile_id_agent_profiles_id\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "00000",
+  message: "index \"agent_profiles_normalized_name_unique\" does not exist, skipping",
+  file: "tablecmds.c",
+  line: "1317",
+  routine: "DropErrorMsgNonExistent",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_game_evidence_agent_profile_id_agent_profiles_id_fk\" will be truncated to \"agent_learning_game_evidence_agent_profile_id_agent_profiles_id\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_game_evidence_analytical_revision_id_agent_revisions_id_fk\" will be truncated to \"agent_learning_game_evidence_analytical_revision_id_agent_revis\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_moment_evidence_game_evidence_id_agent_learning_game_evidence_id_fk\" will be truncated to \"agent_learning_moment_evidence_game_evidence_id_agent_learning_\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_moment_evidence_agent_profile_id_agent_profiles_id_fk\" will be truncated to \"agent_learning_moment_evidence_agent_profile_id_agent_profiles_\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_moment_evidence_reviewed_player_id_game_players_id_fk\" will be truncated to \"agent_learning_moment_evidence_reviewed_player_id_game_players_\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_applications_review_id_agent_learning_reviews_id_fk\" will be truncated to \"agent_learning_review_applications_review_id_agent_learning_rev\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_applications_prior_revision_id_agent_revisions_id_fk\" will be truncated to \"agent_learning_review_applications_prior_revision_id_agent_revi\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_applications_resulting_revision_id_agent_revisions_id_fk\" will be truncated to \"agent_learning_review_applications_resulting_revision_id_agent_\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_calls_review_id_agent_learning_reviews_id_fk\" will be truncated to \"agent_learning_review_calls_review_id_agent_learning_reviews_id\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_entitlements_dismissed_game_id_games_id_fk\" will be truncated to \"agent_learning_review_entitlements_dismissed_game_id_games_id_f\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_games_review_id_agent_learning_reviews_id_fk\" will be truncated to \"agent_learning_review_games_review_id_agent_learning_reviews_id\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_games_game_evidence_id_agent_learning_game_evidence_id_fk\" will be truncated to \"agent_learning_review_games_game_evidence_id_agent_learning_gam\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_reviews_reviewed_revision_id_agent_revisions_id_fk\" will be truncated to \"agent_learning_reviews_reviewed_revision_id_agent_revisions_id_\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"deployment_recovery_reconciliations_lease_id_deployment_admission_leases_id_fk\" will be truncated to \"deployment_recovery_reconciliations_lease_id_deployment_admissi\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"provider_call_attempts_evidence_manifest_id_game_evidence_manifests_id_fk\" will be truncated to \"provider_call_attempts_evidence_manifest_id_game_evidence_manif\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"provider_health_states_last_attempt_id_provider_call_attempts_id_fk\" will be truncated to \"provider_health_states_last_attempt_id_provider_call_attempts_i\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"provider_health_events_scope_key_provider_health_states_scope_key_fk\" will be truncated to \"provider_health_events_scope_key_provider_health_states_scope_k\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "00000",
+  message: "constraint \"provider_logical_calls_accepted_shape_check\" of relation \"provider_logical_calls\" does not exist, skipping",
+  file: "tablecmds.c",
+  line: "12283",
+  routine: "ATExecDropConstraint",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_failure_diagnostics_review_id_agent_learning_reviews_id_fk\" will be truncated to \"agent_learning_review_failure_diagnostics_review_id_agent_learn\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_failure_diagnostics_call_id_agent_learning_review_calls_id_fk\" will be truncated to \"agent_learning_review_failure_diagnostics_call_id_agent_learnin\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_failure_evidence_outbox_diagnostic_id_agent_learning_review_failure_diagnostics_id_fk\" will be truncated to \"agent_learning_review_failure_evidence_outbox_diagnostic_id_age\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_failure_evidence_outbox_review_id_agent_learning_reviews_id_fk\" will be truncated to \"agent_learning_review_failure_evidence_outbox_review_id_agent_l\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_failure_evidence_outbox_manifest_id_agent_learning_review_failure_manifests_id_fk\" will be truncated to \"agent_learning_review_failure_evidence_outbox_manifest_id_agent\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_failure_manifest_reads_manifest_id_agent_learning_review_failure_manifests_id_fk\" will be truncated to \"agent_learning_review_failure_manifest_reads_manifest_id_agent_\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_failure_manifest_reads_review_id_agent_learning_reviews_id_fk\" will be truncated to \"agent_learning_review_failure_manifest_reads_review_id_agent_le\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_failure_manifest_reads_accessor_user_id_users_id_fk\" will be truncated to \"agent_learning_review_failure_manifest_reads_accessor_user_id_u\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_failure_manifests_diagnostic_id_agent_learning_review_failure_diagnostics_id_fk\" will be truncated to \"agent_learning_review_failure_manifests_diagnostic_id_agent_lea\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_failure_manifests_review_id_agent_learning_reviews_id_fk\" will be truncated to \"agent_learning_review_failure_manifests_review_id_agent_learnin\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_calls_retry_of_attempt_id_agent_learning_review_calls_id_fk\" will be truncated to \"agent_learning_review_calls_retry_of_attempt_id_agent_learning_\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_calls_failure_diagnostic_id_agent_learning_review_failure_diagnostics_id_fk\" will be truncated to \"agent_learning_review_calls_failure_diagnostic_id_agent_learnin\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_reviews_retry_target_attempt_id_agent_learning_review_calls_id_fk\" will be truncated to \"agent_learning_reviews_retry_target_attempt_id_agent_learning_r\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "00000",
+  message: "trigger \"owner_learning_capture_uncaptured_failure_trigger\" for relation \"agent_learning_reviews\" does not exist, skipping",
+  file: "dropcmds.c",
+  line: "528",
+  routine: "does_not_exist_skipping",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "00000",
+  message: "function owner_learning_capture_uncaptured_failure() does not exist, skipping",
+  file: "dropcmds.c",
+  line: "528",
+  routine: "does_not_exist_skipping",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_game_evidence_analytical_revision_id_agent_revisions_id_fk\" will be truncated to \"agent_learning_game_evidence_analytical_revision_id_agent_revis\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_reviews_reviewed_revision_id_agent_revisions_id_fk\" will be truncated to \"agent_learning_reviews_reviewed_revision_id_agent_revisions_id_\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_applications_prior_revision_id_agent_revisions_id_fk\" will be truncated to \"agent_learning_review_applications_prior_revision_id_agent_revi\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42622",
+  message: "identifier \"agent_learning_review_applications_resulting_revision_id_agent_revisions_id_fk\" will be truncated to \"agent_learning_review_applications_resulting_revision_id_agent_\"",
+  file: "scansup.c",
+  line: "99",
+  routine: "truncate_identifier",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42P07",
+  message: "relation \"storage_payload_migration_receipts\" already exists, skipping",
+  file: "parse_utilcmd.c",
+  line: "207",
+  routine: "transformCreateStmt",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42701",
+  message: "column \"query_metadata\" of relation \"storage_payload_migration_receipts\" already exists, skipping",
+  file: "tablecmds.c",
+  line: "7340",
+  routine: "check_for_column_name_collision",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "00000",
+  message: "constraint \"game_evidence_manifests_owner_epoch_game_run_owners_owner_epoch\" of relation \"game_evidence_manifests\" does not exist, skipping",
+  file: "tablecmds.c",
+  line: "12283",
+  routine: "ATExecDropConstraint",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42701",
+  message: "column \"response_audio_object\" of relation \"game_audio_attempts\" already exists, skipping",
+  file: "tablecmds.c",
+  line: "7340",
+  routine: "check_for_column_name_collision",
+}
+Migrations applied successfully.
+12 |   await dst.insert(schema.users).values({id:p.userId}).onConflictDoNothing();
+13 |   await dst.insert(schema.agentProfiles).values({id:p.id,userId:p.userId,name:p.name,personality:p.personality,fullBodyReferenceUrl:p.fullBodyReferenceUrl});
+14 |   const rev = revisions.find(r=>r.id===p.contentRevisionId)!;
+15 |   await dst.insert(schema.agentContentRevisions).values({id:rev.id,agentProfileId:p.id,userId:p.userId,fingerprint:rev.fingerprint,snapshot:rev.snapshot});
+16 |   const snapshot = await readPayload(rev.snapshot);
+17 |   const hashes = Object.values(snapshot.assets as Record<string,string>);
+                             ^
+TypeError: Object.values requires that input parameter not be null or undefined
+      at /private/tmp/cutout-proof-seed.ts:17:25
+
+Bun v1.3.14 (macOS arm64)

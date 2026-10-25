@@ -963,3 +963,7 @@ hashes. Viewer and export source identities include that publication; earlier ex
 cutoffs retain earlier art. It never edits frozen contestant identity, game events
 or provider context. This operator-configured filesystem mapping is localhost-only.
 See [character art replacement](docs/deployment/character-art-replacement.md).
+
+### Character-cutout demand
+
+An optional derivative request owned by either an Agent Profile or a frozen game/player source. Each demand resolves through existing image storage to a SHA-256 + recipe job; multiple demands can share one job. Readiness changes presentation only, never frozen identity or game authority. Failed/absent derivatives keep the original image; exports retain their publication cutoff.

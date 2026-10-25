@@ -1,0 +1,13 @@
+19 |   if (!dbUrl) throw new Error("Production requires an explicit DATABASE_URL");
+20 |   if (values.env === "local") {
+21 |     if (env.INFLUENCE_DEPLOYMENT_ENVIRONMENT || env.NODE_ENV === "production" || !["localhost", "127.0.0.1"].includes(new URL(dbUrl).hostname)) throw new Error("Local target requires a localhost database and local environment");
+22 |   } else if (env.INFLUENCE_DEPLOYMENT_ENVIRONMENT !== "prod") throw new Error("Production requires INFLUENCE_DEPLOYMENT_ENVIRONMENT=prod");
+23 |   const selectors = [values.agent, values.game, values.scope, values.job, values.demand].filter(v => v !== undefined);
+24 |   if (selectors.length !== 1 || !selectors[0]?.trim()) throw new Error("Select exactly one agent, game, scope, job list or demand list");
+                                                                      ^
+error: Select exactly one agent, game, scope, job list or demand list
+      at parseCutoutCommand (/Users/user/Development/influence-game/packages/api/src/scripts/backfill-character-cutouts.ts:24:66)
+      at main (/Users/user/Development/influence-game/packages/api/src/scripts/backfill-character-cutouts.ts:42:19)
+      at /Users/user/Development/influence-game/packages/api/src/scripts/backfill-character-cutouts.ts:133:29
+
+Bun v1.3.14 (macOS arm64)

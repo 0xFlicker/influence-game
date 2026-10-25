@@ -70,39 +70,47 @@ export async function enqueueCutout(db: DrizzleDB, bytes: Buffer) {
   return job;
 }
 
-export async function prepareCutoutDemands(db: DrizzleDB) {
-  const pending = await db.select().from(demands).where(and(isNull(demands.cutoutId), isNull(demands.error)))
-    .orderBy(asc(demands.createdAt)).limit(16);
+/** Shared, server-selected source boundary for inventory and durable preparation. */
+export async function readCutoutSource(db: Pick<DrizzleDB, "select">, demand: { sourceKey: string; gameId: string | null; playerId: string }) {
+  let bytes: Buffer;
+  if (demand.sourceKey.startsWith("sha256:")) {
+    const [source] = await db.select().from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, demand.sourceKey.slice(7)));
+    if (!source) throw new Error("Frozen content asset missing");
+    bytes = await readPayload(source.bytes);
+    if (payloadHash(bytes) !== demand.sourceKey.slice(7)) throw new Error("Frozen content asset hash mismatch");
+  } else if (demand.gameId && demand.sourceKey.startsWith(`/api/games/${demand.gameId}/visual/artifacts/`)) {
+    const id = demand.sourceKey.split("/").at(-1)!;
+    const [source] = await db.select().from(schema.visualArtifacts).where(and(eq(schema.visualArtifacts.id, id), eq(schema.visualArtifacts.gameId, demand.gameId)));
+    if (!source) throw new Error("Frozen visual artifact missing");
+    bytes = await readPayload(source.image);
+  } else {
+    bytes = await readVisualProfileImage(demand.sourceKey, { name: demand.playerId, personaKey: "" });
+  }
+  return bytes;
+}
+
+export async function prepareCutoutDemands(db: DrizzleDB, ids?: string[]) {
+  if (ids && !ids.length) return;
+  const pending = await db.select().from(demands).where(and(eq(demands.recipe, CUTOUT_RECIPE), isNull(demands.cutoutId), isNull(demands.error), ids ? inArray(demands.id, ids) : undefined))
+    .orderBy(asc(demands.createdAt), asc(demands.id)).limit(ids ? ids.length : 16);
   for (const demand of pending) {
     try {
-      let bytes: Buffer;
-      if (demand.sourceKey.startsWith("sha256:")) {
-        const [source] = await db.select().from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, demand.sourceKey.slice(7)));
-        if (!source) throw new Error("Frozen content asset missing");
-        bytes = await readPayload(source.bytes);
-        if (payloadHash(bytes) !== demand.sourceKey.slice(7)) throw new Error("Frozen content asset hash mismatch");
-      } else if (demand.sourceKey.startsWith(`/api/games/${demand.gameId}/visual/artifacts/`)) {
-        const id = demand.sourceKey.split("/").at(-1)!;
-        const [source] = await db.select().from(schema.visualArtifacts).where(and(eq(schema.visualArtifacts.id, id), eq(schema.visualArtifacts.gameId, demand.gameId)));
-        if (!source) throw new Error("Frozen visual artifact missing");
-        bytes = await readPayload(source.image);
-      } else {
-        bytes = await readVisualProfileImage(demand.sourceKey, { name: demand.playerId, personaKey: "" });
-      }
+      const bytes = await readCutoutSource(db, demand);
       const job = await enqueueCutout(db, bytes);
-      await db.update(demands).set({ cutoutId: job.id }).where(eq(demands.id, demand.id));
+      await db.update(demands).set({ cutoutId: job.id }).where(and(eq(demands.id, demand.id), isNull(demands.cutoutId), isNull(demands.error)));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Source preparation failed";
-      await db.update(demands).set({ error: message.slice(0, 1000) }).where(eq(demands.id, demand.id));
+      await db.update(demands).set({ error: message.slice(0, 1000) }).where(and(eq(demands.id, demand.id), isNull(demands.cutoutId), isNull(demands.error)));
       console.error("[character-cutouts] Source preparation failed", { demandId: demand.id, error });
     }
   }
 }
 
-export async function expireCutoutLeases(db: DrizzleDB, now = new Date()) {
+export async function expireCutoutLeases(db: DrizzleDB, now = new Date(), ids?: string[]) {
+  if (ids && !ids.length) return;
   await db.update(jobs).set({ status: sql`CASE WHEN attempts >= 3 THEN 'failed' ELSE 'pending' END`,
     tokenHash: null, leaseUntil: null, error: "Worker did not finish before its lease expired" })
-    .where(and(inArray(jobs.status, ["submitted", "running"]), lt(jobs.leaseUntil, now)));
+    .where(and(inArray(jobs.status, ["submitted", "running"]), lt(jobs.leaseUntil, now), ids ? inArray(jobs.id, ids) : undefined));
 }
 
 /** Atomic fencing happens before SubmitJob, including its ambiguous network outcomes. */

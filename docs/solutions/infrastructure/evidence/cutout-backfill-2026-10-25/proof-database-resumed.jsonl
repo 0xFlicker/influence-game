@@ -1,0 +1,22 @@
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42P06",
+  message: "schema \"drizzle\" already exists, skipping",
+  file: "schemacmds.c",
+  line: "132",
+  routine: "CreateSchemaCommand",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42P07",
+  message: "relation \"__drizzle_migrations\" already exists, skipping",
+  file: "parse_utilcmd.c",
+  line: "207",
+  routine: "transformCreateStmt",
+}
+Migrations applied successfully.
+error: Cannot find module '/Users/user/Development/influence-game/node_modules/drizzle-orm/index.js' from '/private/tmp/cutout-proof-seed.ts'
+
+Bun v1.3.14 (macOS arm64)

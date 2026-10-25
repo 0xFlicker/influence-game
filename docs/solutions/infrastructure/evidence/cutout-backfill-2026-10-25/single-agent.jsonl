@@ -1,0 +1,17 @@
+{"environment":"local","recipe":"birefnet-general-58f621f0-rembg2.0.86-r1","command":"run","dryRun":false,"total":1,"counts":{"ready":1},"warnings":[],"selected":1,"remaining":false,"rows":[{"gameId":null,"agentProfileId":"525f84a1-e1d2-472a-ba4e-ad3f9a9d2a53","playerId":"525f84a1-e1d2-472a-ba4e-ad3f9a9d2a53","sourceKey":"sha256:a8a4300965dd3019d6ffeba4562f477d8be338b2e2298e0485f52306dcd77668","demandId":null,"jobId":"9241b290-bfa9-4ec8-a66f-09e60d8ee0f4","sourceHash":"a8a4300965dd3019d6ffeba4562f477d8be338b2e2298e0485f52306dcd77668","status":"ready","error":null,"attempts":1,"leaseUntil":null,"batchJobId":null,"needsAssociation":true}]}
+{"environment":"local","demandIds":["f0ae97e8-36cf-4f20-b734-5ca86052ad6b"],"jobIds":["9241b290-bfa9-4ec8-a66f-09e60d8ee0f4"],"progress":{"demands":[{"id":"f0ae97e8-36cf-4f20-b734-5ca86052ad6b","jobId":"9241b290-bfa9-4ec8-a66f-09e60d8ee0f4","error":null}],"jobs":[{"id":"9241b290-bfa9-4ec8-a66f-09e60d8ee0f4","sourceHash":"a8a4300965dd3019d6ffeba4562f477d8be338b2e2298e0485f52306dcd77668","status":"ready","attempts":1,"error":null,"leaseUntil":null,"batchJobId":null,"readyAt":"2026-10-25T05:47:15.288Z"}],"complete":true,"failed":false}}
+89 |     }
+90 |     // Print the durable resume handles before any worker launch/wait.
+91 |     emit({ environment: options.environment, demandIds, jobIds, progress: await cutoutProgress(db, demandIds, jobIds) });
+92 |     const deadline = Date.now() + options.wait * 1000;
+93 |     if (options.environment === "local") {
+94 |       server = Bun.serve({ hostname: "0.0.0.0", port, fetch: createCharacterCutoutRoutes(db).fetch });
+                        ^
+error: Failed to start server. Is port 3018 in use?
+ syscall: "listen",
+   errno: 0,
+    code: "EADDRINUSE"
+
+      at main (/Users/user/Development/influence-game/packages/api/src/scripts/backfill-character-cutouts.ts:94:20)
+
+Bun v1.3.14 (macOS arm64)

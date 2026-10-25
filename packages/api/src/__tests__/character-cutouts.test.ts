@@ -197,3 +197,18 @@ test("staging is disabled even when AWS configuration is present", async () => {
   expect(await db.select().from(schema.characterCutoutDemands)).toHaveLength(0);
   expect((await createCharacterCutoutRoutes(db).request("/api/internal/cutouts/test/source")).status).toBe(404);
 });
+
+test("failed derivatives preserve original playback and fixed export references", async () => {
+  await db.insert(schema.visualArtifacts).values({ id: "failed-body", gameId: "cutouts-game", image: await storeBinary(source), contentHash: "source", width: 8, height: 12 });
+  await db.insert(schema.visualGameAssets).values({ gameId: "cutouts-game", profiles: [], cast: [{ id: "p1", name: "Example", referenceArtifactId: "failed-body", performanceInstructions: "", portraitFallback: false }] });
+  const route = createVisualRoutes(db);
+  const read = async (suffix = "") => (await (await route.request(`/api/games/cutouts-game/visual${suffix}`)).json()) as { fullBodies: Record<string, string> };
+  const original = (await read()).fullBodies.p1;
+  await prepareCutoutDemands(db);
+  const [job] = await db.select().from(schema.characterCutouts);
+  for (let i = 0; i < 3; i++) { await reserveCutout(db, job!.id); await expireCutoutLeases(db, new Date(Date.now() + 3600_001)); }
+  expect((await read()).fullBodies.p1).toBe(original);
+  expect((await read("?snapshot=%7B%7D")).fullBodies.p1).toBe(original);
+  const [failed] = await db.select().from(schema.characterCutouts);
+  expect(failed?.status).toBe("failed"); expect(failed?.attempts).toBe(3);
+});

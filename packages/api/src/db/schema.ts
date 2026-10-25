@@ -4031,7 +4031,8 @@ export const characterCutouts = pgTable("character_cutouts", {
 
 export const characterCutoutDemands = pgTable("character_cutout_demands", {
   id: text("id").primaryKey(),
-  gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
+  gameId: text("game_id").references(() => games.id, { onDelete: "cascade" }),
+  agentProfileId: text("agent_profile_id").references(() => agentProfiles.id, { onDelete: "cascade" }),
   playerId: text("player_id").notNull(),
   sourceKey: text("source_key").notNull(),
   recipe: text("recipe").notNull(),
@@ -4040,6 +4041,8 @@ export const characterCutoutDemands = pgTable("character_cutout_demands", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
 }, table => [
   uniqueIndex("character_cutout_demands_source").on(table.gameId, table.playerId, table.sourceKey, table.recipe),
+  uniqueIndex("character_cutout_demands_agent_source").on(table.agentProfileId, table.sourceKey, table.recipe),
+  check("character_cutout_demands_owner", sql`(${table.gameId} IS NULL) <> (${table.agentProfileId} IS NULL)`),
 ]);
 
 /** Voice selection is a presentation preference, separate from character revisions. */

@@ -190,3 +190,7 @@ bun run simulate:models --game werewolf --players 8 --models openai:gpt-6-luna,k
 ```
 
 Removing `--preview` starts a localhost API game and can incur charges. Paid runs require separate authorization.
+
+### Optional character-cutout backfill
+
+Use `bun run cutouts:backfill inventory --env local --scope example-models` to preview reusable agent images and frozen game references. Processing requires an explicit environment and bounded selection; production only queues AWS Batch work. See the [operator commands and rollout prerequisites](docs/deployment/character-cutouts.md).

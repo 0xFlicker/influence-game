@@ -967,6 +967,13 @@
       "when": 1792952785107,
       "tag": "0137_producer_moment_edit_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1792952785108,
+      "tag": "0138_character_cutout_agent_demands",
+      "breakpoints": true
     }
   ]
 }

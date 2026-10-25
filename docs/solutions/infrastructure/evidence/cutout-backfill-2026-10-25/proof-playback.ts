@@ -1,0 +1,24 @@
+import { createDB, closeDB, schema } from "/Users/user/Development/influence-game/packages/api/src/db/index.ts";
+import { eq } from "/Users/user/Development/influence-game/packages/api/node_modules/drizzle-orm/index.js";
+import { readWerewolfWatch } from "/Users/user/Development/influence-game/packages/api/src/services/werewolf-presentation.ts";
+import { createWerewolfRoutes } from "/Users/user/Development/influence-game/packages/api/src/routes/werewolf.ts";
+import { readWerewolfProductionSource, readWerewolfProductionCharacter } from "/Users/user/Development/influence-game/packages/api/src/services/werewolf-production-source.ts";
+import { payloadHash } from "/Users/user/Development/influence-game/packages/api/src/services/payload-storage.ts";
+process.env.CHARACTER_CUTOUT_MODE="local";process.env.CUTOUT_API_URL="http://host.docker.internal:3018";
+const db=createDB(), gameId="19eb77c0-0249-4efb-881f-f9b0465b2a51", playerId="88f9eeec-0fbe-4dd1-96e4-be115f0fc71d";
+const [job]=await db.select().from(schema.characterCutouts).where(eq(schema.characterCutouts.id,"5bb4f0c1-fe93-43e0-a74d-4d90876d098b"));
+const before=new Date(job!.readyAt!.getTime()-1).toISOString(),after=new Date().toISOString();
+const old=await readWerewolfWatch(db,gameId,"mystery",1,64,before),fresh=await readWerewolfWatch(db,gameId,"mystery",1,64,after);
+const app=createWerewolfRoutes(db);
+async function hash(url:string){const response=await app.request(url);if(response.status!==200)throw new Error(`HTTP ${response.status}`);return payloadHash(Buffer.from(await response.arrayBuffer()));}
+const original=await hash(old.players.find(p=>p.id===playerId)!.fullBodyReferenceUrl!);
+const live=await hash(fresh.players.find(p=>p.id===playerId)!.fullBodyReferenceUrl!);
+if(original!==job!.sourceHash||live!==job!.image!.sha256)throw new Error("Playback hash mismatch");
+const source=await readWerewolfProductionSource(db,gameId,{audience:"mystery",thinking:false});
+const character=await readWerewolfProductionCharacter(db,gameId,playerId,{snapshot:source.snapshot,image:"body"});
+const exportHash=payloadHash(Buffer.from(character.bytes));
+if(exportHash!==job!.image!.sha256)throw new Error("Export hash mismatch");
+const reread=await readWerewolfProductionSource(db,gameId,{audience:"mystery",thinking:false,snapshot:source.snapshot});
+if(reread.snapshot.sourceHash!==source.snapshot.sourceHash)throw new Error("Export pin changed");
+console.log(JSON.stringify({gameId,playerId,jobId:job!.id,originalHash:original,liveHash:live,exportHash,pinnedExportStable:true,before,after}));
+await closeDB();
