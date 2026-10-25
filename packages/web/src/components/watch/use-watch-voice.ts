@@ -6,15 +6,9 @@ import type { ProductionAudience } from "@influence/engine/production-moments";
 import { anonymousApiFetch, resolveApiUrl } from "@/lib/api";
 import type { PresentationDirector, WatchCue } from "./watch-director";
 import { narrationWindow } from "./house-narration";
+import { matchesAudioWatch } from "./audio-watch-coordinate";
+export { matchesAudioWatch } from "./audio-watch-coordinate";
 
-export function matchesAudioWatch(saved: AudioWatchCoordinate | undefined, requested: AudioWatchCoordinate) {
-  if (!saved || saved.kind !== requested.kind || saved.actorId !== requested.actorId) return false;
-  if (saved.kind === "werewolf" && requested.kind === "werewolf") return saved.cursor === requested.cursor
-    && (saved.part === "thinking" || saved.action === requested.action);
-  if (saved.kind === "influence" && requested.kind === "influence") return requested.transcriptId && saved.transcriptId
-    ? requested.transcriptId === saved.transcriptId : !saved.transcriptId && saved.eventSequence === requested.eventSequence;
-  return false;
-}
 /** HTML audio follows the existing director clock, including exact in-clip seeks. */
 export function useWatchVoice<C extends WatchCue>({ director, gameId, audience, thinking, coordinate, coordinateForCue, live = false }: {
   director: PresentationDirector<C>; gameId: string; audience: ProductionAudience; thinking: boolean;

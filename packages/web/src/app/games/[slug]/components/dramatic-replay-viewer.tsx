@@ -3,6 +3,7 @@ import type {PresentationCue} from "./types";
 import type {AudioWatchCoordinate} from "@influence/engine/audio-watch";
 import {HouseNarration} from "@/components/watch/house-narration";
 import {useWatchVoice} from "@/components/watch/use-watch-voice";
+import {influenceTranscriptAudioIdentity} from "@/components/watch/audio-watch-coordinate";
 import {useWatchTimeline} from "@/components/watch/use-watch-timeline";
 import {isFormatSocialTranscriptMessage, buildClassicPresentationCues, buildReplayPlayersForCue, classicEliminatedPlayerIds, comparePresentationCues, findCueForAdjacentScene, formatCueScene, formatSnapshotForPresentationCursor, mergeFormatAndSocialCues} from "./influence-replay-cues";
 export {isFormatSocialTranscriptMessage, buildClassicPresentationCues, buildReplayPlayersForCue, comparePresentationCues, findCueForAdjacentScene, formatSnapshotForPresentationCursor} from "./influence-replay-cues";
@@ -304,9 +305,11 @@ function DramaticReplayTheater({
   const coordinateForCue=useCallback((candidate:PresentationCue):AudioWatchCoordinate|null=>{
     if (candidate.source === "opening" || candidate.source === "house" || candidate.voteSummary) return null;
     const message=candidate.source === "classic" ? scenes[candidate.sceneIndex]?.messages[candidate.messageIndex] : formatCueScene(candidate)?.messages[0];
+    const transcriptIdentity=candidate.source === "classic" && message ? influenceTranscriptAudioIdentity(message) : null;
+    if (candidate.source === "classic" && !transcriptIdentity) return null;
     const ballot=candidate.source === "format" ? candidate.visualBallot ?? (candidate.kind === "format_roll_call" ? candidate.ballot : null) : candidate.source === "endgame" ? candidate.ballot : null;
     const actorId=ballot?.voterId ?? (candidate.source === "format" && candidate.kind === "two_names_plea" ? candidate.speakerId : message?.speakerPlayerId ?? message?.fromPlayerId ?? null);
-    return {kind:"influence",...(candidate.source === "classic" && message && {transcriptId:String(message.id)}),eventSequence:candidate.canonicalSequence ?? message?.firstDurableEventSequence ?? 0,actorId,part:"speech"};
+    return {kind:"influence",...transcriptIdentity,eventSequence:candidate.canonicalSequence ?? message?.firstDurableEventSequence ?? 0,actorId,part:"speech"};
   },[scenes]);
   const voice = useWatchVoice({director,gameId:game.id,audience:"public",thinking:preferences.thinking,live,
     coordinate:activeCue ? coordinateForCue(activeCue) : null,coordinateForCue});
