@@ -15,9 +15,13 @@ const MODELS = {
   "Meta Spark": "katana:glm-5-3-flash-private", "Kimi K3": "katana:kimi-k3",
   "DeepSeek Flash": "katana:deepseek-v4-flash", "Grok 4.6": "katana:grok-4-6",
 } as const;
+const VOICES: Record<keyof typeof MODELS, string> = {
+  "GPT Sol": "sal", "Claude Sonnet": "atlas", "Claude Haiku": "iris", "Gemini Pro": "altair",
+  "Meta Spark": "liora", "Kimi K3": "ara", "DeepSeek Flash": "kepler", "Grok 4.6": "sirius",
+};
 type Kind = "werewolf" | "influence";
 type JsonObject = Record<string, unknown>;
-interface Profile { id: string; name: string; modelPreference: ModelPreference; avatarUrl: string; fullBodyReferenceUrl: string }
+interface Profile { id: string; name: string; voiceId: string; modelPreference: ModelPreference; avatarUrl: string; fullBodyReferenceUrl: string }
 interface Game { id: string; slug: string; prepared: boolean; started?: boolean; roster: Profile[]; requested: JsonObject }
 interface Manifest { version: 1; api: string; web: string; games: Partial<Record<Kind, Game>>; pending?: { id: string; method: string; path: string; at: string } }
 interface Routing { policy: GameModelRouting; frozen: boolean; seats: { id: string; name: string; agentProfileId: string | null }[] }
@@ -95,14 +99,17 @@ async function main() {
   async function profiles(): Promise<Profile[]> {
     const rows = await read<unknown>("/api/agent-profiles");
     if (!Array.isArray(rows)) throw new Error("Invalid profile listing");
-    return Object.entries(MODELS).map(([name, catalogId]) => {
+    return Promise.all(Object.entries(MODELS).map(async ([name, catalogId]) => {
       const matching = rows.map(row => object(row, "profile")).filter(row => row.name === name);
       if (matching.length !== 1) throw new Error(`Expected exactly one owned ${name}, found ${matching.length}`);
       const row = matching[0]!, preference = normalizeModelPreference(row.modelPreference);
       if (preference === "default" || preference.catalogId !== (name === "Meta Spark" ? "meta-muse:muse-spark-1.3-contributor" : catalogId)) throw new Error(`${name} preference changed; review the roster before dispatch`);
-      return { id: string(row.id, "profile id"), name, modelPreference: { catalogId, reasoningPolicy: "action-policy" },
+      const id = string(row.id, "profile id"), expectedVoice = VOICES[name as keyof typeof MODELS];
+      const voice = await read<{assignment:{voiceId:string;origin:string}}>(`/api/agent-profiles/${id}/voice`);
+      if (voice.assignment.voiceId !== expectedVoice || voice.assignment.origin !== "selected") throw new Error(`${name} must explicitly select voice ${expectedVoice} before preparing this cast`);
+      return { id, name, voiceId: expectedVoice, modelPreference: { catalogId, reasoningPolicy: "action-policy" },
         avatarUrl: string(row.avatarUrl, `${name} portrait`), fullBodyReferenceUrl: string(row.fullBodyReferenceUrl, `${name} full body`) };
-    });
+    }));
   }
   async function inspect(game: Game) { return read<{ game: { config: string; status: string; gameKind: string } }>(`/api/admin/export-game/${game.id}`); }
   async function routing(game: Game) { return read<Routing>(`/api/model-routing/games/${game.id}`); }
