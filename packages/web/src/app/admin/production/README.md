@@ -24,11 +24,11 @@ Review links open Selected cut with the proposed recipe and music settings. Stud
 
 ## Local export
 
-Start the local API/web stack using the repository's usual development commands and sign in with Producer/Sysop access. Save the downloaded selection beside any optional speech manifest and audio files. From the repository root:
+Start the local API/web stack using the repository's usual development commands and sign in with Producer/Sysop access. Run the Studio command from the `influence-game` repository root. It uses the browser's default Downloads folder for the selection and writes the movie under `.renders/` in the repo. If your browser renamed the file or saved it elsewhere, update `--selection` to its actual path:
 
 ```sh
-bun run replay:export -- <slug> \
-  --selection <slug>-selection.json --output .renders/<slug>.mp4
+bun run replay:export -- \
+  --selection "$HOME/Downloads/<slug>-selection.json" --output .renders/<slug>.mp4
 ```
 
 The CLI reuses a checked, API-origin-bound app session shared with the API simulators. When needed it opens House sign-in; choose **Authorize local CLI** and return to the terminal. Use `--api-base-url http://127.0.0.1:<api-port>` and `--web-base-url http://localhost:<web-port>` for other local ports. `INFLUENCE_API_SESSION_TOKEN` is an optional unattended override. The exporter uses the descriptor's frozen IDs/settings; later predicate edits do not reselect the cut.

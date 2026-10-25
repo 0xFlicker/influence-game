@@ -62,6 +62,7 @@ async function main() {
   if (args.help) {
     console.log(`Export a completed House replay locally. No provider calls or publication.
 Usage: bun run replay:export -- <slug> --output <file.mp4> [options]
+       bun run replay:export -- --selection "$HOME/Downloads/<slug>-selection.json" --output .renders/<slug>.mp4
        bun run replay:export -- --bundle <directory> --output <file.mp4>
 --api-base-url URL       API origin (default http://127.0.0.1:3000)
 --web-base-url URL       House sign-in origin (default http://localhost:3001)
@@ -78,7 +79,9 @@ Usage: bun run replay:export -- <slug> --output <file.mp4> [options]
 --overwrite             Replace output; with a slug, freshly prepare its bundle too
 Production reads reuse a cached Producer/Sysop session; browser sign-in opens when needed.
 INFLUENCE_API_SESSION_TOKEN supplies an explicit session for unattended local tooling.
-Paths are relative to the invoking directory. --bundle uses frozen settings.`);
+Run these commands from the influence-game repository root.
+Paths are relative to the invoking directory. --bundle uses frozen settings.
+Use the actual downloaded filename for --selection if your browser renamed or moved it.`);
     return;
   }
   if (!args.output || !args.output.endsWith(".mp4"))
