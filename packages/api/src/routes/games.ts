@@ -29,7 +29,7 @@ import { readEpisodePresentations } from "../services/episode-presentation.js";
  */
 
 import { createVisualRoutes } from "./visual.js";
-import { localCharacterArt } from "../services/local-character-art.js";
+import { applyLocalCharacterPortraits, localCharacterArt } from "../services/local-character-art.js";
 import { Hono, type Context } from "hono";
 import { eq, inArray, asc, desc, isNotNull, or, and, ne, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -392,13 +392,14 @@ export function createGameRoutes(db: DrizzleDB) {
       .from(schema.gameResults)
       .where(eq(schema.gameResults.gameId, game.id));
 
-    const watchState = await buildGameWatchState(db, game);
+    const canonicalWatchState = await buildGameWatchState(db, game);
+    const localArt = await localCharacterArt(game.id, canonicalWatchState.players.map(player => player.id));
+    const watchState = { ...canonicalWatchState, players: applyLocalCharacterPortraits(canonicalWatchState.players, localArt) };
     const competition = game.seasonId
       ? await getPublicGameCompetitionReceipts(db, game.seasonId, game.id)
       : null;
 
     const episode = (await readEpisodePresentations(db, [game])).get(game.id);
-    const localArt = await localCharacterArt(game.id, watchState.players.map(player => player.id));
     const detail = {
       episode,
       id: game.id,
@@ -420,7 +421,7 @@ export function createGameRoutes(db: DrizzleDB) {
         shielded: player.shielded,
         ...(player.pressureStatus && { pressureStatus: player.pressureStatus }),
         ...(player.exposeScore !== undefined && { exposeScore: player.exposeScore }),
-        ...((localArt[player.id]?.portraitUrl ?? player.avatarUrl) && { avatarUrl: localArt[player.id]?.portraitUrl ?? player.avatarUrl }),
+        ...(player.avatarUrl && { avatarUrl: player.avatarUrl }),
         currentAgent: player.currentAgent,
         ...(player.modelPreference && { modelPreference: player.modelPreference }),
       })),

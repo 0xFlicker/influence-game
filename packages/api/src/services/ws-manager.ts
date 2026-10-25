@@ -15,6 +15,7 @@ import {
   type ViewerDecisionEvent,
 } from "@influence/engine";
 import type { GameWatchState } from "./game-watch-state.js";
+import { applyLocalCharacterPortraits, localCharacterArt } from "./local-character-art.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -112,19 +113,32 @@ const connections = new Map<string, Set<ServerWebSocket<WsConnectionData>>>();
 // Visibility reads are asynchronous; retain publication/snapshot delivery order per game.
 const pendingDeliveries = new Map<string, Promise<void>>();
 
-function deliver(gameId: string, send: () => void): void {
+function deliver(gameId: string, send: () => void | Promise<void>): void {
   const available = viewerAvailable;
-  if (!available) { send(); return; }
+  if (!available && !process.env.INFLUENCE_LOCAL_CHARACTER_ART_MANIFEST) { void send(); return; }
   const pending = (pendingDeliveries.get(gameId) ?? Promise.resolve()).then(async () => {
-    if (await available(gameId)) { send(); return; }
+    if (!available || await available(gameId)) { await send(); return; }
     for (const ws of connections.get(gameId) ?? []) ws.close(1008, "Game unavailable");
   }).catch(error => {
-    console.error(`[ws] Visibility check failed for ${gameId}:`, error);
+    console.error(`[ws] Outbound delivery failed for ${gameId}:`, error);
     for (const ws of connections.get(gameId) ?? []) ws.close(1011, "Game unavailable");
   });
   pendingDeliveries.set(gameId, pending);
   void pending.finally(() => {
     if (pendingDeliveries.get(gameId) === pending) pendingDeliveries.delete(gameId);
+  });
+}
+
+function deliverSnapshotEvent(gameId: string, event: WsRawOutboundEvent, send: (data: string) => void): void {
+  deliver(gameId, () => {
+    if (event.type !== "watch_state" || !process.env.INFLUENCE_LOCAL_CHARACTER_ART_MANIFEST) {
+      send(JSON.stringify(event)); return;
+    }
+    // Resolve local editorial art at the gateway boundary, after canonical state
+    // construction. Keep this asynchronous work in the same per-game delivery queue.
+    return localCharacterArt(gameId, event.state.players.map(player => player.id)).then(art => {
+      send(JSON.stringify({ ...event, state: { ...event.state, players: applyLocalCharacterPortraits(event.state.players, art) } }));
+    });
   });
 }
 
@@ -278,13 +292,13 @@ export function sendGamePublication(
   ws: ServerWebSocket<WsConnectionData>,
   event: WsPublicationEvent,
 ): void {
-  deliver(ws.data.gameId, () => ws.send(JSON.stringify(event)));
+  deliver(ws.data.gameId, () => { ws.send(JSON.stringify(event)); });
 }
 
 /** Broadcast a non-message WsOutboundEvent to all observers of a game. */
 export function broadcastRaw(gameId: string, event: WsRawOutboundEvent): void {
   if (!_server) return;
-  deliver(gameId, () => _server?.publish(gameTopic(gameId), JSON.stringify(event)));
+  deliverSnapshotEvent(gameId, event, data => _server?.publish(gameTopic(gameId), data));
 }
 
 /** Broadcast viewer-safe watch state to all observers of a game. */
@@ -328,7 +342,7 @@ export function sendWatchState(
     state,
     throughPublicationSequence,
   };
-  deliver(ws.data.gameId, () => ws.send(JSON.stringify(outbound)));
+  deliverSnapshotEvent(ws.data.gameId, outbound, data => { ws.send(data); });
 }
 
 /** Get the number of active observers for a game. */

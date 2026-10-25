@@ -77,6 +77,11 @@ watch-window players and nested moment snapshots share the mapping. Selection ha
 after canonical projection, outside contestant observations, reducers and provider
 context. Existing composed scenes remain historical images unless separately rebuilt.
 
+Influence's nested HTTP `watchState`, episode cast previews, and outbound WebSocket
+`watch_state` snapshots also receive the portrait mapping. WebSocket decoration stays
+inside the per-game delivery queue so asynchronous manifest reads cannot reorder
+snapshots and publications. The canonical watch-state object remains unchanged.
+
 This local override is not a production publication system. Production replacements
 need the normal durable object-storage and authorization boundaries; do not enable
 this filesystem manifest on a deployed node.

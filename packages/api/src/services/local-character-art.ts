@@ -13,6 +13,11 @@ export interface LocalCharacterArt {
   revision: string; publishedAt: string; fullBodyUrl: string; portraitUrl: string; head: HeadRectangle;
 }
 
+/** Outbound portrait projection; preserve the canonical input and all non-art fields. */
+export function applyLocalCharacterPortraits<T extends { id: string }>(players: readonly T[], art: Record<string, LocalCharacterArt>): T[] {
+  return players.map(player => art[player.id] ? { ...player, avatarUrl: art[player.id]!.portraitUrl } : player);
+}
+
 /** Explicit local editorial data only. Never consulted by execution or contestant context. */
 async function entries(): Promise<Entry[]> {
   const path = process.env.INFLUENCE_LOCAL_CHARACTER_ART_MANIFEST;

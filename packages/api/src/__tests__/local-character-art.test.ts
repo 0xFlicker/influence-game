@@ -8,7 +8,11 @@ import sharp from "sharp";
 import { completedWerewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
+import type { ServerWebSocket } from "bun";
 import { createSessionToken } from "../middleware/auth.js";
+import { createGameRoutes } from "../routes/games.js";
+import { buildGameWatchState } from "../services/game-watch-state.js";
+import { broadcastRaw, broadcastWatchState, sendWatchState, setServer, type WsConnectionData } from "../services/ws-manager.js";
 import { localCharacterArt, readLocalCharacterArt } from "../services/local-character-art.js";
 import { createLocalCharacterArtRoutes } from "../routes/local-character-art.js";
 import { createVisualRoutes } from "../routes/visual.js";
@@ -34,6 +38,7 @@ beforeEach(async () => {
   await writeFile(join(directory, "art.png"), image);
 });
 afterEach(async () => {
+  setServer({ publish() {} });
   for (const key of keys) { if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; }
   await rm(directory, { recursive: true, force: true });
 });
@@ -102,7 +107,8 @@ test("appending a publication refreshes cache identity while retaining the old v
 });
 
 test("Influence viewer/export art changes while canonical acceptance and old exports remain identical", async () => {
-  const gameId = await insertGame(db, { id: "art-influence", slug: "art-influence", status: "completed", config: {} });
+  const gameId = await insertGame(db, { id: "art-influence", slug: "art-influence", status: "completed",
+    config: { modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" } } });
   await db.insert(schema.gamePlayers).values(["atlas", "echo", "mira", "nyx"].map(id => ({ id, gameId, persona: JSON.stringify({ name: id, personality: "frozen", avatarUrl: `/original/${id}.png` }), agentConfig: "{}" })));
   const ownerEpoch = await insertOwner(db, gameId);
   const events = withRetrospective(withJuryWinner(createResolvedRoundCanonicalEventFixture(gameId), "mira"), 1000);
@@ -124,6 +130,41 @@ test("Influence viewer/export art changes while canonical acceptance and old exp
   expect(viewer.portraits).not.toHaveProperty("echo");
   const frozen = await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, gameId));
   expect(frozen.every(player => JSON.parse(player.persona).avatarUrl === `/original/${player.id}.png`)).toBeTrue();
+  const response = await createGameRoutes(db).request(`/api/games/${gameId}`);
+  expect(response.status).toBe(200);
+  const detail = await response.json() as { players: Array<{ id: string; avatarUrl: string }>; watchState: { players: Array<{ id: string; avatarUrl: string }> }; episode: { cast: Array<{ id: string; avatarUrl: string }> } };
+  for (const cast of [detail.players, detail.watchState.players, detail.episode.cast]) {
+    expect(cast.find(player => player.id === "atlas")?.avatarUrl).toBe(viewer.portraits.atlas);
+    expect(cast.find(player => player.id === "echo")?.avatarUrl).toBe("/original/echo.png");
+  }
+
+  // A later WebSocket snapshot must not restore the frozen PFP over HTTP's art.
+  const [game] = await db.select().from(schema.games).where(eq(schema.games.id, gameId));
+  const canonical = await buildGameWatchState(db, game!);
+  const canonicalBefore = JSON.stringify(canonical);
+  const sent: string[] = [];
+  let complete!: () => void;
+  const delivered = new Promise<void>(resolve => { complete = resolve; });
+  const collect = (data: string) => { sent.push(data); if (sent.length === 3) complete(); };
+  setServer({ publish(_topic, data) { collect(String(data)); } });
+  const ws = { data: { gameId }, send: collect } as unknown as ServerWebSocket<WsConnectionData>;
+  broadcastWatchState(gameId, canonical, 11);
+  broadcastRaw(gameId, { type: "game_status", gameId, status: "suspended", terminal: false, reasonCode: "test" });
+  sendWatchState(ws, canonical, 12);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([delivered, new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error("WebSocket delivery timed out")), 2000); })]);
+  } finally { clearTimeout(timeout); }
+  const messages = sent.map(data => JSON.parse(data));
+  expect(messages.map(message => message.type)).toEqual(["watch_state", "game_status", "watch_state"]);
+  for (const message of [messages[0], messages[2]]) {
+    expect(message.state.players.find((player: { id: string }) => player.id === "atlas").avatarUrl).toBe(viewer.portraits.atlas);
+    expect(message.state.players.find((player: { id: string }) => player.id === "echo").avatarUrl).toBe("/original/echo.png");
+    expect(message.state.eventCursor).toEqual(canonical.eventCursor);
+  }
+  expect(messages[0].throughPublicationSequence).toBe(11);
+  expect(messages[2].throughPublicationSequence).toBe(12);
+  expect(JSON.stringify(canonical)).toBe(canonicalBefore);
 });
 
 test("Werewolf viewer and export replace every Gemini occurrence without mutating frozen events or old pins", async () => {
