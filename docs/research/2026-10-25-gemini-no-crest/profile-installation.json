@@ -1,0 +1,130 @@
+{
+  "installedAt": "2026-10-25T20:03:36.489Z",
+  "agentId": "8590e89f-d12e-436f-8f0b-fa56df9f4e2b",
+  "before": {
+    "avatarUrl": "http://localhost:3000/api/uploads/local?key=pfp%2Fcrops%2F928c00b0d47826b90f908d8e44137fa638a5ae6ac57a744bf989b55989370be6.webp",
+    "fullBodyReferenceUrl": "http://localhost:3000/api/uploads/local?key=pfp%2Fgenerated%2F1c8d3eaf-048f-473c-8278-ce4606be5d3d.webp",
+    "contentRevisionId": "dc5f94e2-4152-4d4c-a32f-6cd178d66b11",
+    "headPosition": {
+      "rect": {
+        "x": 0.351,
+        "y": 0.023,
+        "width": 0.27,
+        "height": 0.19
+      },
+      "sourceUrl": "http://localhost:3000/api/uploads/local?key=pfp%2Fgenerated%2F1c8d3eaf-048f-473c-8278-ce4606be5d3d.webp",
+      "sourceHash": "c367cbbfb4f39886e33f411591f4b164714988793d29fd43152d9a87455e2025",
+      "sourceWidth": 1024,
+      "confirmation": {
+        "at": "2026-10-24T06:58:18.993Z",
+        "userId": "did:privy:cmmvf1cvx00oo0cl24khf79ec"
+      },
+      "sourceHeight": 1536
+    }
+  },
+  "after": {
+    "avatarUrl": "http://127.0.0.1:3000/api/uploads/local?key=pfp%2Fcrops%2F259d78af8fc0cf436c39bebd9925ed09b7d63169d6cee995780b5949954b8c1a.webp",
+    "fullBodyReferenceUrl": "http://127.0.0.1:3000/api/uploads/local?key=pfp%2F2bdbd6b1-62b9-47a1-abf5-572630bc00fd.png",
+    "contentRevisionId": "cbc481ef-3a1d-4d6b-b4b9-94018f421014",
+    "headPosition": {
+      "rect": {
+        "x": 0.427,
+        "y": 0.013,
+        "width": 0.14,
+        "height": 0.122
+      },
+      "sourceUrl": "http://127.0.0.1:3000/api/uploads/local?key=pfp%2F2bdbd6b1-62b9-47a1-abf5-572630bc00fd.png",
+      "sourceHash": "a85dff2140e482f56f0e10406726599e129642f0a9d69bc113674124fe44d04e",
+      "sourceWidth": 1024,
+      "confirmation": {
+        "at": "2026-10-25T20:03:36.406Z",
+        "userId": "did:privy:cmmvf1cvx00oo0cl24khf79ec"
+      },
+      "sourceHeight": 1536
+    },
+    "portraitCrop": {
+      "x": 0.35975,
+      "y": 0.0008000000000000044,
+      "width": 0.27449999999999997,
+      "height": 0.18299999999999997,
+      "sourceUrl": "http://127.0.0.1:3000/api/uploads/local?key=pfp%2F2bdbd6b1-62b9-47a1-abf5-572630bc00fd.png"
+    }
+  },
+  "assets": [
+    {
+      "hash": "259d78af8fc0cf436c39bebd9925ed09b7d63169d6cee995780b5949954b8c1a",
+      "storage": {
+        "key": "payloads/v1/binary/259d78af8fc0cf436c39bebd9925ed09b7d63169d6cee995780b5949954b8c1a",
+        "codec": "binary",
+        "sha256": "259d78af8fc0cf436c39bebd9925ed09b7d63169d6cee995780b5949954b8c1a",
+        "storage": "private-payload-v1",
+        "byteLength": 30370,
+        "storedSha256": "259d78af8fc0cf436c39bebd9925ed09b7d63169d6cee995780b5949954b8c1a",
+        "storedByteLength": 30370
+      },
+      "verifiedByteLength": 30370
+    },
+    {
+      "hash": "a85dff2140e482f56f0e10406726599e129642f0a9d69bc113674124fe44d04e",
+      "storage": {
+        "key": "payloads/v1/binary/a85dff2140e482f56f0e10406726599e129642f0a9d69bc113674124fe44d04e",
+        "codec": "binary",
+        "sha256": "a85dff2140e482f56f0e10406726599e129642f0a9d69bc113674124fe44d04e",
+        "storage": "private-payload-v1",
+        "byteLength": 1296435,
+        "storedSha256": "a85dff2140e482f56f0e10406726599e129642f0a9d69bc113674124fe44d04e",
+        "storedByteLength": 1296435
+      },
+      "verifiedByteLength": 1296435
+    }
+  ],
+  "historicalTables": [
+    "game_events",
+    "werewolf_events",
+    "game_players",
+    "visual_artifacts"
+  ],
+  "historyBefore": [
+    {
+      "rows": 312,
+      "hash": "sha256:c4500c4440ec8aa2fd892955c5991de75d8a3f35df93059389526c0ea10b40c1"
+    },
+    {
+      "rows": 257,
+      "hash": "sha256:758111b873aba5fcf4ac7373e9a8671413e194844ced27ae6a71c6037e1cf614"
+    },
+    {
+      "rows": 16,
+      "hash": "sha256:37802c084c171781bc2709703d131c6da2d355abc7b896c0a536723384213b00"
+    },
+    {
+      "rows": 0,
+      "hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    }
+  ],
+  "historyAfter": [
+    {
+      "rows": 312,
+      "hash": "sha256:c4500c4440ec8aa2fd892955c5991de75d8a3f35df93059389526c0ea10b40c1"
+    },
+    {
+      "rows": 257,
+      "hash": "sha256:758111b873aba5fcf4ac7373e9a8671413e194844ced27ae6a71c6037e1cf614"
+    },
+    {
+      "rows": 16,
+      "hash": "sha256:37802c084c171781bc2709703d131c6da2d355abc7b896c0a536723384213b00"
+    },
+    {
+      "rows": 0,
+      "hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    }
+  ],
+  "priorContentRevisionsUnchanged": 2,
+  "gameIds": [
+    "ddfa4f77-ffd5-4191-85bb-4f4c67b97200",
+    "9437c80e-b028-47f6-83ae-e4bb6b0d2fed",
+    "f1fe7318-72c6-46f4-bb98-e4a4bb54692e",
+    "7362d8ec-52e7-4f93-81e1-3b08c745d4ca"
+  ]
+}

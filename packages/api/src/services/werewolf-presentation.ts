@@ -2,7 +2,6 @@ import { audioReadySequence } from "./audio-frontier.js";
 import { readRetrospectivePresentation } from "./retrospective-retakes.js";
 import { loadPayloads, readPayload } from "./payload-storage.js";
 import { readyCutoutsByHash, requestCharacterCutouts } from "./character-cutouts.js";
-import { localCharacterArt, type LocalCharacterArt } from "./local-character-art.js";
 import { werewolfVisualPause } from "./werewolf-visual-policy.js";
 import { isViewerGame } from "./game-visibility.js";
 import { inArray, and, desc, eq, isNull, lte, or } from "drizzle-orm";
@@ -32,10 +31,14 @@ export async function readWerewolfPresentation(db: DrizzleDB, id: string, audien
   const { scene, permitted } = bindWerewolfScene(rows, game.id, audience, frame.view.cursor, publicationCutoff, frame);
   const root = `/api/werewolf/${encodeURIComponent(game.id)}`;
   const query = `audience=${audience}&cursor=${frame.view.cursor}&publishedBefore=${encodeURIComponent(publicationCutoff)}`;
-  const view = { ...frame.view, players: frame.view.players.map(player => ({ ...player, avatarUrl: `${root}/characters/${encodeURIComponent(player.id)}?${query}`, fullBodyReferenceUrl: references.find(ref => ref.profile.id === player.id)?.kind === "full_body" ? `${root}/characters/${encodeURIComponent(player.id)}?${query}&image=body` : null })) };
-  const art = await localCharacterArt(game.id, view.players.map(player => player.id), publicationCutoff);
+  const view = { ...frame.view, players: frame.view.players.map(player => {
+    const reference = references.find(ref => ref.profile.id === player.id);
+    return { ...player, avatarUrl: `${root}/characters/${encodeURIComponent(player.id)}?${query}`,
+      fullBodyReferenceUrl: reference?.kind === "full_body" ? `${root}/characters/${encodeURIComponent(player.id)}?${query}&image=body` : null,
+      ...(reference?.profile.headPosition ? { headRectangle: reference.profile.headPosition.rect } : {}) };
+  }) };
   const presentation: WerewolfPresentation = { slug: game.slug, status: game.status, latestCursor: frame.latestCursor, publicationCutoff,
-    view: { ...view, players: view.players.map(player => localArtPlayer(player, art)) }, scene };
+    view, scene };
   return { presentation, permitted };
 }
 export async function readWerewolfCharacter(db: Pick<DrizzleDB, "select">, gameId: string, playerId: string, image: "portrait" | "body" = "portrait", availableHashes?: readonly string[], publicationCutoff?: string) {
@@ -131,24 +134,8 @@ export async function readWerewolfWatch(db: DrizzleDB, id: string, audience: Wer
     .from(schema.werewolfLobbySeats).where(eq(schema.werewolfLobbySeats.gameId, game.id));
   const preferences = new Map(seats.map(seat => [seat.id, seat.modelPreference]));
   await requestCharacterCutouts(db, game.id, Object.fromEntries(references.flatMap(ref => ref.bodyHash ? [[ref.profile.id, `sha256:${ref.bodyHash}`]] : [])));
-  const art = await localCharacterArt(game.id, projection.players.map(player => player.id), publicationCutoff);
-  const watch = applyLocalWerewolfArt(materializeWerewolfWatch(projection, { id: game.id, slug: game.slug, status: game.status, visualPaused: game.status === "suspended" && Boolean(werewolfVisualPause(config)) }, audience, publicationCutoff, rows, references), art);
+  const watch = materializeWerewolfWatch(projection, { id: game.id, slug: game.slug, status: game.status, visualPaused: game.status === "suspended" && Boolean(werewolfVisualPause(config)) }, audience, publicationCutoff, rows, references);
   return { ...watch, ...(ready === 0 && {moments:[],navigation:[],playback:[],media:{},latestCursor:0,fromCursor:1,throughCursor:0}), players: watch.players.map(player => ({ ...player, ...gamePlayerModelPreference(config, player.id, preferences.get(player.id)) })) };
-}
-
-function localArtPlayer<T extends { id: string }>(player: T, art: Record<string, LocalCharacterArt>): T {
-  const replacement = art[player.id];
-  return replacement ? { ...player, avatarUrl: replacement.portraitUrl, fullBodyReferenceUrl: replacement.fullBodyUrl, headRectangle: replacement.head } : player;
-}
-
-/** Apply editorial pixels only after audience-safe canonical projection. */
-export function applyLocalWerewolfArt(window: WerewolfWatchWindow, art: Record<string, LocalCharacterArt>): WerewolfWatchWindow {
-  if (!Object.keys(art).length) return window;
-  return { ...window, players: window.players.map(player => localArtPlayer(player, art)),
-    moments: window.moments.map(moment => ({ ...moment,
-      snapshot: { ...moment.snapshot, players: moment.snapshot.players.map(player => localArtPlayer(player, art)) },
-      ...(moment.night ? { night: { ...moment.night, before: { ...moment.night.before, players: moment.night.before.players.map(player => localArtPlayer(player, art)) } } } : {}),
-    })) };
 }
 
 /** Same media binding for live watch and fixed production prefixes. Staging and
@@ -166,6 +153,11 @@ export function materializeWerewolfWatch(projection: ReturnType<typeof projectWe
   const portrait = (id: string) => productionSnapshot && !referenceByPlayer.get(id)?.bundled && !referenceByPlayer.get(id)?.portraitHash
     ? null : character(id);
   const body = (id: string) => referenceByPlayer.get(id)?.kind === "full_body" ? `${character(id)}&image=body` : null;
+  const identity = <T extends { id: string }>(player: T) => {
+    const head = referenceByPlayer.get(player.id)?.profile.headPosition;
+    return { ...player, avatarUrl: portrait(player.id), fullBodyReferenceUrl: body(player.id),
+      ...(head ? { headRectangle: head.rect } : {}) };
+  };
   const moments = projection.moments.map(({staging, ...moment}) => {
     const binding = JSON.stringify(staging);
     let bound = bindings.get(binding);
@@ -177,8 +169,8 @@ export function materializeWerewolfWatch(projection: ReturnType<typeof projectWe
       bindings.set(binding, bound);
     }
     const {mediaKey, wolfForms} = bound;
-    return { ...moment, ...(Object.keys(wolfForms).length ? {wolfForms} : {}), ...(moment.night ? { night: { ...moment.night, before: { ...moment.night.before, players: moment.night.before.players.map(player => ({...player, avatarUrl: portrait(player.id), fullBodyReferenceUrl: body(player.id)})) } } } : {}), mediaKey, snapshot: { ...moment.snapshot, players: moment.snapshot.players.map(player => ({...player, avatarUrl: portrait(player.id), fullBodyReferenceUrl: body(player.id)})) } };
+    return { ...moment, ...(Object.keys(wolfForms).length ? {wolfForms} : {}), ...(moment.night ? { night: { ...moment.night, before: { ...moment.night.before, players: moment.night.before.players.map(identity) } } } : {}), mediaKey, snapshot: { ...moment.snapshot, players: moment.snapshot.players.map(identity) } };
   });
   return { ...projection, slug: game.slug, status: game.status, visualPaused: game.visualPaused, audience, publicationCutoff, moments, media,
-    players: projection.players.map(player => ({...player, avatarUrl: portrait(player.id), fullBodyReferenceUrl: body(player.id)})) };
+    players: projection.players.map(identity) };
 }

@@ -8,7 +8,6 @@ import { readViewerMedia } from "./visual-media-viewer.js";
 import { getPersistedGameEvents } from "./game-event-read-model.js";
 import { readWerewolfCastingPlayers } from "./werewolf-cast.js";
 import { isImportedSyntheticPlayer } from "./public-player-identity.js";
-import { applyLocalCharacterPortraits, localCharacterArt } from "./local-character-art.js";
 
 export interface EpisodeCopy { title: string; description: string }
 export interface EpisodeCast { id: string; name: string; avatarUrl: string | null; personaKey: string | null }
@@ -111,9 +110,6 @@ export async function readEpisodePresentations(db: Pick<DrizzleDB, "select" | "s
     cast.push({ id: p.id, name: persona.name ?? "Agent", avatarUrl: persona.avatarUrl ?? profileAvatar ?? null, personaKey: persona.personaKey ?? null }); castByGame.set(p.gameId, cast);
   }
   for (const [id, cast] of wolfCast) castByGame.set(id, cast);
-  for (const [id, cast] of castByGame) {
-    castByGame.set(id, applyLocalCharacterPortraits(cast, await localCharacterArt(id, cast.map(player => player.id))));
-  }
   const coverByGame = new Map(selectedCovers.filter(c => c.artifact && c.plan.cast.length === (castByGame.get(c.gameId)?.length ?? 0) && c.plan.cast.every(p => castByGame.get(c.gameId)?.some(a => a.id === p.id))).map(c => [c.gameId, `/api/games/${c.gameId}/visual/artifacts/${c.artifact}`]));
   return new Map(games.map(game => { const row = byGame.get(game.id); return [game.id, {
     title: row?.title ?? game.slug, description: row?.description ?? (game.gameKind === "werewolf" ? "A village of agents. A pack hiding in plain sight." : "Meet the cast. Step inside the House."), episodeNumber: numbers.get(game.id) ?? null,

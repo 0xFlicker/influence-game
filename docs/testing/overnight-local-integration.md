@@ -69,9 +69,8 @@ branch and its untracked research assets remain preserved.
 
 The launcher accepts `INFLUENCE_LOCAL_TASK_EVIDENCE_DIR`, or reads a plain absolute
 path from ignored `.overnight-evidence-dir.local`. This keeps the existing budget,
-Gemini art manifest, generated assets, game evidence, and completed videos in their
-original location without copying or overwriting them. The art-manifest environment
-override is also honored. Missing ledger or manifest fails before startup.
+generated assets, game evidence, and completed videos in their original location
+without copying or overwriting them. Missing budget ledger fails before startup.
 
 From this checkout, start only API and viewer in separate persistent terminals:
 
@@ -81,7 +80,9 @@ bash scripts/overnight-local-services.sh web
 ```
 
 The launcher enables `CHARACTER_CUTOUT_MODE=local`; plain startup defaults that
-feature to disabled and therefore omits even already-generated cutouts. The local
-Gemini manifest is needed for the replacement body/portrait. Circular discussion
-portraits stay unchanged. Keep the paid game/audio worker off for viewing completed
-games. The existing database and object-store containers are reused unchanged.
+feature to disabled and therefore omits even already-generated cutouts. Artwork
+comes from ordinary frozen references. The corrected Gemini profile is used by new
+games; the four older demos retain their original identity. See the
+[publication workflow](../deployment/character-art-replacement.md). Keep the paid
+game/audio worker off for viewing completed games. The existing database and
+object-store containers are reused unchanged.

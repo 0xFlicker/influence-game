@@ -3,7 +3,6 @@ import { resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-ru
 import { isSpectatorHuddleSpeech } from "@influence/engine";
 import { loadPayloads } from "./payload-storage.js";
 import { readyCharacterCutoutUrls } from "./character-cutouts.js";
-import { localCharacterArt } from "./local-character-art.js";
 import { LEGACY_FORMAT_MANIFEST, Phase, replayCanonicalEvents, resolveFormatManifest, resolveGameKernel } from "@influence/engine";
 import { validHeadRectangle, type CharacterHeadPosition, type HeadRectangle } from "@influence/engine/character-portrait";
 import { assembleProductionCatalog, type ProductionCatalog } from "@influence/engine/production-moments";
@@ -300,9 +299,6 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
     .map(([id, url]) => [id, url.replace(`/api/games/${encodeURIComponent(game.id)}/cutouts/`, `/api/admin/production/games/${encodeURIComponent(game.id)}/cutouts/`)]));
   const originalBodies = { ...fullBodies };
   Object.assign(fullBodies, cutouts);
-  for (const [id, art] of Object.entries(await localCharacterArt(game.id, [...frozen.keys()], publicationCutoff, true))) {
-    fullBodies[id] = art.fullBodyUrl; portraits[id] = art.portraitUrl; fullBodyHeads[id] = art.head;
-  }
   if (pinnedMedia) {
     for (const [id, url] of Object.entries(pinnedMedia.portraits)) if (!frozen.has(id) || portraits[id] !== url)
       throw new InfluenceProductionSourceError("Pinned portrait is not a frozen reference for this actor");

@@ -1,0 +1,349 @@
+{
+  "verifiedAt": "2026-10-25T20:09:34.948Z",
+  "games": [
+    {
+      "id": "ddfa4f77-ffd5-4191-85bb-4f4c67b97200",
+      "slug": "neat-violet-moon",
+      "kind": "werewolf",
+      "portrait": {
+        "url": "/api/werewolf/ddfa4f77-ffd5-4191-85bb-4f4c67b97200/characters/2d842740-f28a-4eac-ad92-9c76f6a38157?audience=mystery&cursor=1&publishedBefore=2026-10-25T20%3A09%3A33.479Z",
+        "sha256": "928c00b0d47826b90f908d8e44137fa638a5ae6ac57a744bf989b55989370be6",
+        "byteLength": 29200
+      },
+      "body": {
+        "url": "/api/werewolf/ddfa4f77-ffd5-4191-85bb-4f4c67b97200/characters/2d842740-f28a-4eac-ad92-9c76f6a38157?audience=mystery&cursor=1&publishedBefore=2026-10-25T20%3A09%3A33.479Z&image=body",
+        "sha256": "ff2635159c574e0d46e22e90ae10ed9e140ab8ac478ae6bb0a6d4772a5e75d2d",
+        "byteLength": 717571
+      },
+      "headRectangle": {
+        "x": 0.351,
+        "y": 0.023,
+        "width": 0.27,
+        "height": 0.19
+      },
+      "exportBodyHash": "ff2635159c574e0d46e22e90ae10ed9e140ab8ac478ae6bb0a6d4772a5e75d2d",
+      "exportSnapshot": {
+        "gameId": "ddfa4f77-ffd5-4191-85bb-4f4c67b97200",
+        "gameKind": "werewolf",
+        "audience": "mystery",
+        "thinking": false,
+        "throughEventSequence": 116,
+        "throughCursor": 82,
+        "publicationCutoff": "2026-10-25T20:09:33.554Z",
+        "availableCharacterAssets": [
+          "0316200e30d8ed9db9767668238b70af6de0cfb0275b0ec8d7dd5f5a2184d688",
+          "19258b1eef13f7be0af8f7c575c14e3a618abb4e344e2593c09b3e1c9e94b8ab",
+          "43dd33bd5500b50911e1129ceda3ec25a7a5655e964c08a3013afb7814d06c0a",
+          "65543e24aebe7d7d6bd1644f49aadd190f7ef24122454f5c89af73bfef70040d",
+          "89014a936efe8602edb073d29ac4165ad454cdbb80afcccd2fb0770567af4309",
+          "8e46119028ffa8fdd4e3e9bc39bb099f917b49c631a314dffff9711899474491",
+          "928c00b0d47826b90f908d8e44137fa638a5ae6ac57a744bf989b55989370be6",
+          "95ff3a17bea94d7dbb4906d0b2938a8d9750b425fdd28e5d3fa0fe46792de050",
+          "9eab00b90f024f4463716473cc11150e566981ddb838c442c020b1f6c4c432d5",
+          "a70e537b396d99c94781d8da0e03e4f74c16eb282a4418d528a6d754d2f9a2d5",
+          "a8a4300965dd3019d6ffeba4562f477d8be338b2e2298e0485f52306dcd77668",
+          "abee908cc90905fc8aefc9d626594ccd28ee01db420a20b90bbbcf087c814f47",
+          "bcc9766734f5e87692cbc679063d8e9ae4eddbb8879c5a721dc4a1e4a6907304",
+          "c01cfaa3ade5a4ded027509a88498d0cac5c3211a291eb8a17297fc600358fba",
+          "c367cbbfb4f39886e33f411591f4b164714988793d29fd43152d9a87455e2025",
+          "ef6b1921a8f70457ed855d44780040300e610b7d5f3e20b3514fedeaa28b43fe"
+        ],
+        "sourceHash": "sha256:a6d1c4c60d8ddc6a962ae27c83d348fb391a35d57b3d3728f7865ea1e32dad48"
+      },
+      "pinnedReread": true
+    },
+    {
+      "id": "9437c80e-b028-47f6-83ae-e4bb6b0d2fed",
+      "slug": "ultra-violet-quartz",
+      "kind": "influence",
+      "portrait": {
+        "url": "http://localhost:3000/api/uploads/local?key=pfp%2Fcrops%2F928c00b0d47826b90f908d8e44137fa638a5ae6ac57a744bf989b55989370be6.webp",
+        "sha256": "928c00b0d47826b90f908d8e44137fa638a5ae6ac57a744bf989b55989370be6",
+        "byteLength": 29200
+      },
+      "body": {
+        "url": "/api/games/9437c80e-b028-47f6-83ae-e4bb6b0d2fed/cutouts/77f8a40b-981a-43be-8062-07457e7f74df",
+        "sha256": "ff2635159c574e0d46e22e90ae10ed9e140ab8ac478ae6bb0a6d4772a5e75d2d",
+        "byteLength": 717571
+      },
+      "headRectangle": {
+        "x": 0.351,
+        "y": 0.023,
+        "width": 0.27,
+        "height": 0.19
+      },
+      "exportSnapshot": {
+        "gameId": "9437c80e-b028-47f6-83ae-e4bb6b0d2fed",
+        "gameKind": "influence",
+        "audience": "public",
+        "projectionVersion": 3,
+        "throughEventSequence": 85,
+        "throughTurnSequence": 91,
+        "transcriptPrefix": {
+          "maxId": 29512,
+          "maxEntrySequence": 165
+        },
+        "acceptedCutoff": "2026-10-25T20:09:33.951Z",
+        "acceptedSourceHash": "sha256:22befd5ba96ec0ffb01126d8e1d32169994139dc14985f809437927d85beb4bc",
+        "publicationCutoff": "2026-10-25T20:09:33.951Z",
+        "mediaReferences": {
+          "portraits": {},
+          "fullBodies": {
+            "4c76d2f4-9e26-44fb-845c-dabbd43c88a5": "/api/admin/production/games/9437c80e-b028-47f6-83ae-e4bb6b0d2fed/cutouts/7805ad7d-c0c6-41ab-8620-e65517c0a9aa",
+            "895bc864-5ad6-4939-9856-2bf9a4796646": "/api/admin/production/games/9437c80e-b028-47f6-83ae-e4bb6b0d2fed/cutouts/4bf44ec2-495f-419d-9721-3b326527a60b",
+            "41cb9962-877e-4e2b-95d8-52ac4021db5d": "/api/admin/production/games/9437c80e-b028-47f6-83ae-e4bb6b0d2fed/cutouts/83edae7b-f93a-4b14-b0f9-1ccc582ce03e",
+            "8890a6fa-12e4-4775-98a9-4164a48a0b70": "/api/admin/production/games/9437c80e-b028-47f6-83ae-e4bb6b0d2fed/cutouts/77f8a40b-981a-43be-8062-07457e7f74df",
+            "b9b75bec-6271-4631-904b-a98d1063ebfc": "/api/admin/production/games/9437c80e-b028-47f6-83ae-e4bb6b0d2fed/cutouts/547a4dc7-b75a-474e-a1c5-2db0c91179ad",
+            "6331a607-0711-4b79-aac5-30da9191bdea": "/api/admin/production/games/9437c80e-b028-47f6-83ae-e4bb6b0d2fed/cutouts/8ff585c9-005c-48bc-af2e-2932be4a3536",
+            "cfbb40f1-c8dc-4de7-a23d-e9fd80d5ab4c": "/api/admin/production/games/9437c80e-b028-47f6-83ae-e4bb6b0d2fed/cutouts/b37f9acb-1510-44d6-84a1-0a1b142adad7",
+            "635ba55f-d62a-46c5-bde0-56d107ec0087": "/api/admin/production/games/9437c80e-b028-47f6-83ae-e4bb6b0d2fed/cutouts/82993869-cc93-49ff-93f5-20e5aced9b53"
+          },
+          "fullBodyHeads": {
+            "4c76d2f4-9e26-44fb-845c-dabbd43c88a5": {
+              "x": 0.429,
+              "y": 0.016,
+              "width": 0.143,
+              "height": 0.15
+            },
+            "895bc864-5ad6-4939-9856-2bf9a4796646": {
+              "x": 0.443,
+              "y": 0.021,
+              "width": 0.148,
+              "height": 0.142
+            },
+            "41cb9962-877e-4e2b-95d8-52ac4021db5d": {
+              "x": 0.327,
+              "y": 0.039,
+              "width": 0.329,
+              "height": 0.22
+            },
+            "8890a6fa-12e4-4775-98a9-4164a48a0b70": {
+              "x": 0.351,
+              "y": 0.023,
+              "width": 0.27,
+              "height": 0.19
+            },
+            "b9b75bec-6271-4631-904b-a98d1063ebfc": {
+              "x": 0.408,
+              "y": 0.068,
+              "width": 0.143,
+              "height": 0.126
+            },
+            "6331a607-0711-4b79-aac5-30da9191bdea": {
+              "x": 0.383,
+              "y": 0.03,
+              "width": 0.214,
+              "height": 0.143
+            },
+            "cfbb40f1-c8dc-4de7-a23d-e9fd80d5ab4c": {
+              "x": 0.393,
+              "y": 0.016,
+              "width": 0.182,
+              "height": 0.19
+            },
+            "635ba55f-d62a-46c5-bde0-56d107ec0087": {
+              "x": 0.42,
+              "y": 0.021,
+              "width": 0.162,
+              "height": 0.147
+            }
+          },
+          "sceneIds": []
+        },
+        "sourceHash": "sha256:181623ceceb38bc1bc6057653f4c1ff84456ccb86e44fd1a95b8717dc19ce763"
+      },
+      "pinnedReread": true
+    },
+    {
+      "id": "f1fe7318-72c6-46f4-bb98-e4a4bb54692e",
+      "slug": "hard-smoke-rune",
+      "kind": "werewolf",
+      "portrait": {
+        "url": "/api/werewolf/f1fe7318-72c6-46f4-bb98-e4a4bb54692e/characters/eb1d4a66-b0d0-4289-b154-3324fb0d3fce?audience=mystery&cursor=1&publishedBefore=2026-10-25T20%3A09%3A34.093Z",
+        "sha256": "928c00b0d47826b90f908d8e44137fa638a5ae6ac57a744bf989b55989370be6",
+        "byteLength": 29200
+      },
+      "body": {
+        "url": "/api/werewolf/f1fe7318-72c6-46f4-bb98-e4a4bb54692e/characters/eb1d4a66-b0d0-4289-b154-3324fb0d3fce?audience=mystery&cursor=1&publishedBefore=2026-10-25T20%3A09%3A34.093Z&image=body",
+        "sha256": "ff2635159c574e0d46e22e90ae10ed9e140ab8ac478ae6bb0a6d4772a5e75d2d",
+        "byteLength": 717571
+      },
+      "headRectangle": {
+        "x": 0.351,
+        "y": 0.023,
+        "width": 0.27,
+        "height": 0.19
+      },
+      "exportBodyHash": "ff2635159c574e0d46e22e90ae10ed9e140ab8ac478ae6bb0a6d4772a5e75d2d",
+      "exportSnapshot": {
+        "gameId": "f1fe7318-72c6-46f4-bb98-e4a4bb54692e",
+        "gameKind": "werewolf",
+        "audience": "mystery",
+        "thinking": false,
+        "throughEventSequence": 141,
+        "throughCursor": 102,
+        "publicationCutoff": "2026-10-25T20:09:34.168Z",
+        "availableCharacterAssets": [
+          "0316200e30d8ed9db9767668238b70af6de0cfb0275b0ec8d7dd5f5a2184d688",
+          "19258b1eef13f7be0af8f7c575c14e3a618abb4e344e2593c09b3e1c9e94b8ab",
+          "43dd33bd5500b50911e1129ceda3ec25a7a5655e964c08a3013afb7814d06c0a",
+          "65543e24aebe7d7d6bd1644f49aadd190f7ef24122454f5c89af73bfef70040d",
+          "89014a936efe8602edb073d29ac4165ad454cdbb80afcccd2fb0770567af4309",
+          "8e46119028ffa8fdd4e3e9bc39bb099f917b49c631a314dffff9711899474491",
+          "928c00b0d47826b90f908d8e44137fa638a5ae6ac57a744bf989b55989370be6",
+          "95ff3a17bea94d7dbb4906d0b2938a8d9750b425fdd28e5d3fa0fe46792de050",
+          "9eab00b90f024f4463716473cc11150e566981ddb838c442c020b1f6c4c432d5",
+          "a70e537b396d99c94781d8da0e03e4f74c16eb282a4418d528a6d754d2f9a2d5",
+          "a8a4300965dd3019d6ffeba4562f477d8be338b2e2298e0485f52306dcd77668",
+          "abee908cc90905fc8aefc9d626594ccd28ee01db420a20b90bbbcf087c814f47",
+          "bcc9766734f5e87692cbc679063d8e9ae4eddbb8879c5a721dc4a1e4a6907304",
+          "c01cfaa3ade5a4ded027509a88498d0cac5c3211a291eb8a17297fc600358fba",
+          "c367cbbfb4f39886e33f411591f4b164714988793d29fd43152d9a87455e2025",
+          "ef6b1921a8f70457ed855d44780040300e610b7d5f3e20b3514fedeaa28b43fe"
+        ],
+        "sourceHash": "sha256:3f7e7109cc5d8e75e30dd42314cef1f4b223119ea01644f5280a19e363c29f8a"
+      },
+      "pinnedReread": true
+    },
+    {
+      "id": "7362d8ec-52e7-4f93-81e1-3b08c745d4ca",
+      "slug": "bare-sand-nest",
+      "kind": "influence",
+      "portrait": {
+        "url": "http://localhost:3000/api/uploads/local?key=pfp%2Fcrops%2F928c00b0d47826b90f908d8e44137fa638a5ae6ac57a744bf989b55989370be6.webp",
+        "sha256": "928c00b0d47826b90f908d8e44137fa638a5ae6ac57a744bf989b55989370be6",
+        "byteLength": 29200
+      },
+      "body": {
+        "url": "/api/games/7362d8ec-52e7-4f93-81e1-3b08c745d4ca/cutouts/61611f6b-c14b-46b5-932e-a3b98b98bae4",
+        "sha256": "ff2635159c574e0d46e22e90ae10ed9e140ab8ac478ae6bb0a6d4772a5e75d2d",
+        "byteLength": 717571
+      },
+      "headRectangle": {
+        "x": 0.351,
+        "y": 0.023,
+        "width": 0.27,
+        "height": 0.19
+      },
+      "exportSnapshot": {
+        "gameId": "7362d8ec-52e7-4f93-81e1-3b08c745d4ca",
+        "gameKind": "influence",
+        "audience": "public",
+        "projectionVersion": 3,
+        "throughEventSequence": 227,
+        "throughTurnSequence": 303,
+        "transcriptPrefix": {
+          "maxId": 30056,
+          "maxEntrySequence": 472
+        },
+        "acceptedCutoff": "2026-10-25T20:09:34.625Z",
+        "acceptedSourceHash": "sha256:0f4d97c351778414f0b6b42f4c6f19c012ed14177340c656a8a3d884aa69b2c2",
+        "publicationCutoff": "2026-10-25T20:09:34.625Z",
+        "mediaReferences": {
+          "portraits": {},
+          "fullBodies": {
+            "35173da6-1a6b-46ec-9e8c-fa3277e15700": "/api/admin/production/games/7362d8ec-52e7-4f93-81e1-3b08c745d4ca/cutouts/0af8b244-e091-4ae7-acfa-660eb3e35028",
+            "51033973-4d7a-4e71-b3cf-25eb439f4197": "/api/admin/production/games/7362d8ec-52e7-4f93-81e1-3b08c745d4ca/cutouts/3625425f-ce18-45ab-848e-c3a61b792806",
+            "a6e05fd7-dcaa-493b-8845-3b0a49f4526d": "/api/admin/production/games/7362d8ec-52e7-4f93-81e1-3b08c745d4ca/cutouts/164dc528-f6a1-4773-836f-363d60ba498d",
+            "8fb1667c-5f7f-4e73-b48e-b91183dfc306": "/api/admin/production/games/7362d8ec-52e7-4f93-81e1-3b08c745d4ca/cutouts/61611f6b-c14b-46b5-932e-a3b98b98bae4",
+            "12253f01-e273-4321-b003-47731e7070e6": "/api/admin/production/games/7362d8ec-52e7-4f93-81e1-3b08c745d4ca/cutouts/10da9b03-e588-452f-81ae-c09f4b0a8632",
+            "c6e7156a-f117-4381-9824-efbee1432bc0": "/api/admin/production/games/7362d8ec-52e7-4f93-81e1-3b08c745d4ca/cutouts/5a5f4ddb-719a-4d19-947f-255d341a27f6",
+            "9859568c-ba6e-4d75-b995-3c43ab01294e": "/api/admin/production/games/7362d8ec-52e7-4f93-81e1-3b08c745d4ca/cutouts/926bdd37-b6fc-42aa-9671-b01a21207998",
+            "3b529bcc-6e39-4299-94a4-2f5fab77d385": "/api/admin/production/games/7362d8ec-52e7-4f93-81e1-3b08c745d4ca/cutouts/79a2a165-2815-4d44-8520-719c1a1ca8e6"
+          },
+          "fullBodyHeads": {
+            "35173da6-1a6b-46ec-9e8c-fa3277e15700": {
+              "x": 0.429,
+              "y": 0.016,
+              "width": 0.143,
+              "height": 0.15
+            },
+            "51033973-4d7a-4e71-b3cf-25eb439f4197": {
+              "x": 0.443,
+              "y": 0.021,
+              "width": 0.148,
+              "height": 0.142
+            },
+            "a6e05fd7-dcaa-493b-8845-3b0a49f4526d": {
+              "x": 0.327,
+              "y": 0.039,
+              "width": 0.329,
+              "height": 0.22
+            },
+            "8fb1667c-5f7f-4e73-b48e-b91183dfc306": {
+              "x": 0.351,
+              "y": 0.023,
+              "width": 0.27,
+              "height": 0.19
+            },
+            "12253f01-e273-4321-b003-47731e7070e6": {
+              "x": 0.408,
+              "y": 0.068,
+              "width": 0.143,
+              "height": 0.126
+            },
+            "c6e7156a-f117-4381-9824-efbee1432bc0": {
+              "x": 0.383,
+              "y": 0.03,
+              "width": 0.214,
+              "height": 0.143
+            },
+            "9859568c-ba6e-4d75-b995-3c43ab01294e": {
+              "x": 0.393,
+              "y": 0.016,
+              "width": 0.182,
+              "height": 0.19
+            },
+            "3b529bcc-6e39-4299-94a4-2f5fab77d385": {
+              "x": 0.42,
+              "y": 0.021,
+              "width": 0.162,
+              "height": 0.147
+            }
+          },
+          "sceneIds": []
+        },
+        "sourceHash": "sha256:b241e9954a949b757338da5c10cfec51ee2f4c74cbc92f1bdf660eee0131a986"
+      },
+      "pinnedReread": true
+    }
+  ],
+  "historicalUnchanged": true,
+  "removedRoutes": [
+    {
+      "prefix": "/api/games",
+      "status": 404,
+      "note": "Removed route is not found"
+    },
+    {
+      "prefix": "/api/admin/production/games",
+      "status": 401,
+      "note": "Global authentication middleware; route removal verified in source"
+    }
+  ],
+  "cutout": {
+    "id": "edd1c095-2197-45d1-a0cb-b3c0ffa4b61f",
+    "sourceHash": "a85dff2140e482f56f0e10406726599e129642f0a9d69bc113674124fe44d04e",
+    "outputSha256": "c34436d356809c0c515197d218ba8c2b30db6017237d23a40bdd8d2edcbe67f3",
+    "byteLength": 999800,
+    "readyAt": "2026-10-25T20:04:45.178Z"
+  },
+  "profilePortrait": {
+    "url": "http://127.0.0.1:3000/api/uploads/local?key=pfp%2Fcrops%2F259d78af8fc0cf436c39bebd9925ed09b7d63169d6cee995780b5949954b8c1a.webp",
+    "sha256": "259d78af8fc0cf436c39bebd9925ed09b7d63169d6cee995780b5949954b8c1a",
+    "byteLength": 30370
+  },
+  "profileBody": {
+    "url": "http://127.0.0.1:3000/api/uploads/local?key=pfp%2F2bdbd6b1-62b9-47a1-abf5-572630bc00fd.png",
+    "sha256": "a85dff2140e482f56f0e10406726599e129642f0a9d69bc113674124fe44d04e",
+    "byteLength": 1296435
+  },
+  "newWaitingLobby": {
+    "id": "e8008433-8144-46bf-ba6f-82308a9c0b49",
+    "slug": "dark-cyan-oak",
+    "status": "waiting",
+    "profileId": "8590e89f-d12e-436f-8f0b-fa56df9f4e2b",
+    "portraitUrl": "http://127.0.0.1:3000/api/uploads/local?key=pfp%2Fcrops%2F259d78af8fc0cf436c39bebd9925ed09b7d63169d6cee995780b5949954b8c1a.webp",
+    "started": false
+  }
+}

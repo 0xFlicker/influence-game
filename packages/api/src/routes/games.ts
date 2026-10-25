@@ -29,7 +29,6 @@ import { readEpisodePresentations } from "../services/episode-presentation.js";
  */
 
 import { createVisualRoutes } from "./visual.js";
-import { applyLocalCharacterPortraits, localCharacterArt } from "../services/local-character-art.js";
 import { Hono, type Context } from "hono";
 import { eq, inArray, asc, desc, isNotNull, or, and, ne, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -392,9 +391,7 @@ export function createGameRoutes(db: DrizzleDB) {
       .from(schema.gameResults)
       .where(eq(schema.gameResults.gameId, game.id));
 
-    const canonicalWatchState = await buildGameWatchState(db, game);
-    const localArt = await localCharacterArt(game.id, canonicalWatchState.players.map(player => player.id));
-    const watchState = { ...canonicalWatchState, players: applyLocalCharacterPortraits(canonicalWatchState.players, localArt) };
+    const watchState = await buildGameWatchState(db, game);
     const competition = game.seasonId
       ? await getPublicGameCompetitionReceipts(db, game.seasonId, game.id)
       : null;

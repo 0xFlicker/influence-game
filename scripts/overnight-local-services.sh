@@ -11,11 +11,9 @@ export INFLUENCE_LOCAL_UPLOAD_DIR="${INFLUENCE_LOCAL_UPLOAD_DIR:-/Users/user/Dev
 export CHARACTER_CUTOUT_MODE=local
 export CUTOUT_API_URL=http://host.docker.internal:3000
 export INFLUENCE_OWNER_LEARNING_GENERATION_DISABLED=true
-export INFLUENCE_LOCAL_CHARACTER_ART_MANIFEST="${INFLUENCE_LOCAL_CHARACTER_ART_MANIFEST:-$evidence_dir/gemini-male-assets/local-presentation-manifest.json}"
 export POSTGAME_MEDIA_WORKER_TOKEN=local-render-worker
 export POSTGAME_MEDIA_PUBLIC_BASE_URL=http://127.0.0.1:3000
 test -f "$INFLUENCE_LOCAL_TASK_BUDGET"
-test -f "$INFLUENCE_LOCAL_CHARACTER_ART_MANIFEST"
 case "$role" in
   api|worker)
     export PORT=3000 INFLUENCE_API_ROLE=gateway

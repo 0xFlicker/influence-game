@@ -3,7 +3,6 @@ import { startAudioWorker } from "./services/audio-tracks.js";
 import { createHouseShareRoutes } from "./routes/house-share-links.js";
 import { localTaskBudgetPath, localTaskBudgetIdentity } from "@influence/engine";
 import { createCharacterCutoutRoutes } from "./routes/character-cutouts.js";
-import { createLocalCharacterArtRoutes } from "./routes/local-character-art.js";
 import { startCharacterCutoutDispatcher } from "./services/character-cutout-dispatcher.js";
 import { renderExecutionConfig } from "@influence/engine/render-execution-config";
 import { remoteRenderingEnabled, startRenderWakeDispatcher } from "./services/postgame-media-execution.js";
@@ -639,7 +638,6 @@ app.route("/", createGameAssetRoutes(db));
 app.route("/", createCharacterCutoutRoutes(db));
 // Cross-format audio handles its own game visibility and audience checks.
 app.route("/", createAudioRoutes(db));
-app.route("/", createLocalCharacterArtRoutes(db));
 const gameRoutes = createGameRoutes(db);
 app.route("/", gameRoutes);
 

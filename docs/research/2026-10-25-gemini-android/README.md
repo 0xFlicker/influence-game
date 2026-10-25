@@ -1,5 +1,9 @@
 # Gemini Pro masculine android revision
 
+Historical review evidence only. Superseded by the approved no-crest source in
+`../2026-10-25-gemini-no-crest/`. The temporary appearance mapping described below
+has been removed; retained receipts and verification output are not configuration.
+
 Generated with built-in image generation on 2026-10-25; exact prompt is in `prompt.txt`. References: prior Gemini male full-body cutout and Claude Sonnet portrait for manufactured facial construction only. No direct paid provider CLI, game, or speech requests were made for this revision.
 
 `input/gemini-android.png` preserves the generated original. Offline `house-character-cutouts:local` Docker/BiRefNet produced `cutout-output/gemini-android.png` with networking disabled. Existing `stage-character-art.ts` derived the active assets in `published-assets/`: full-body source, transparent cutout, background-backed portrait, and circular portrait. Head crop and full-body framing remain unchanged.
