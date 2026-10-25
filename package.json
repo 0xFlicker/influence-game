@@ -59,7 +59,8 @@
     "storage:verify": "bun run packages/api/src/scripts/migrate-storage-payloads.ts verify",
     "storage:cutover": "bun run packages/api/src/scripts/migrate-storage-payloads.ts cutover",
     "simulate:models": "bun run packages/engine/src/mixed-model-simulate.ts",
-    "audit:models": "bun run scripts/audit-model-catalog.ts"
+    "audit:models": "bun run scripts/audit-model-catalog.ts",
+    "cutouts:backfill": "bun run --cwd packages/api cutouts:backfill"
   },
   "devDependencies": {
     "@clerk/backend": "3.11.7",

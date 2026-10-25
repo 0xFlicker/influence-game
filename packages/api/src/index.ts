@@ -1,5 +1,7 @@
 import { createHouseShareRoutes } from "./routes/house-share-links.js";
 import { localTaskBudgetPath, localTaskBudgetIdentity } from "@influence/engine";
+import { createCharacterCutoutRoutes } from "./routes/character-cutouts.js";
+import { startCharacterCutoutDispatcher } from "./services/character-cutout-dispatcher.js";
 import { renderExecutionConfig } from "@influence/engine/render-execution-config";
 import { remoteRenderingEnabled, startRenderWakeDispatcher } from "./services/postgame-media-execution.js";
 import { startHouseCutWorker } from "./services/house-cut-worker.js";
@@ -449,6 +451,7 @@ async function finishBackgroundRuntimeStartup(
     ? null
     : await startProviderHealthProbeRuntime(db);
   const houseCutWorker = gameExecutionWorker && !localEvaluation ? startHouseCutWorker(db, () => runtimeActivation.canClaimWork()) : null;
+  const characterCutoutDispatcher = gameExecutionWorker ? startCharacterCutoutDispatcher(db, () => runtimeActivation.canClaimWork()) : null;
   const episodeWorker = gameExecutionWorker ? startEpisodeWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const visualMediaWorker = gameExecutionWorker && !localEvaluation ? startVisualMediaWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const ownerLearningApiKey = process.env.OPENAI_API_KEY?.trim();
@@ -519,6 +522,7 @@ async function finishBackgroundRuntimeStartup(
       stopping = true;
       await renderWakeDispatcher?.stop();
       await houseCutWorker?.stop();
+      await characterCutoutDispatcher?.stop();
       await episodeWorker?.stop();
       await visualMediaWorker?.stop();
       await agentScreeningWorker?.stop();
@@ -627,6 +631,7 @@ app.route("/", createWerewolfRoutes(db));
 app.route("/", createWerewolfAdminRoutes(db));
 // Shared assets enforce their own access policy before the Influence-only game guard.
 app.route("/", createGameAssetRoutes(db));
+app.route("/", createCharacterCutoutRoutes(db));
 const gameRoutes = createGameRoutes(db);
 app.route("/", gameRoutes);
 

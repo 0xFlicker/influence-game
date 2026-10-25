@@ -4004,3 +4004,40 @@ export const houseCutJobs = pgTable("house_cut_jobs", {
   ...payloadChecks("house_cut_jobs", { source: [t.source, "json-gzip"], journal: [t.journal, "json-gzip"], publication: [t.publication, "json-gzip"] }),unique("house_cut_game_audience").on(t.gameId, t.audience),
   check("house_cut_audience", sql`${t.audience} IN ('public','mystery','omniscient')`),
   check("house_cut_status", sql`${t.status} IN ('queued','running','ready','failed')`)]);
+
+/** Optional immutable derivatives; never game execution authority. */
+export const characterCutouts = pgTable("character_cutouts", {
+  id: text("id").primaryKey(),
+  sourceHash: text("source_hash").notNull(),
+  recipe: text("recipe").notNull(),
+  source: payloadColumn("source_object", "binary").notNull().$type<StoredPayload<Buffer>>(),
+  image: payloadColumn("image_object", "binary").$type<StoredPayload<Buffer>>(),
+  width: integer("width").notNull(),
+  height: integer("height").notNull(),
+  status: text("status").$type<"pending" | "submitted" | "running" | "ready" | "failed">().notNull().default("pending"),
+  attempts: integer("attempts").notNull().default(0),
+  tokenHash: text("token_hash"),
+  leaseUntil: timestamp("lease_until", { withTimezone: true, mode: "date" }),
+  batchJobId: text("batch_job_id"),
+  error: text("error"),
+  readyAt: timestamp("ready_at", { withTimezone: true, mode: "date" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+}, table => [
+  uniqueIndex("character_cutouts_source_recipe").on(table.sourceHash, table.recipe),
+  index("character_cutouts_status").on(table.status, table.leaseUntil),
+  check("character_cutouts_state", sql`${table.status} IN ('pending','submitted','running','ready','failed') AND (${table.status} <> 'ready' OR ${table.image} IS NOT NULL)`),
+  ...payloadChecks("character_cutouts", { source: [table.source, "binary"], image: [table.image, "binary"] }),
+]);
+
+export const characterCutoutDemands = pgTable("character_cutout_demands", {
+  id: text("id").primaryKey(),
+  gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
+  playerId: text("player_id").notNull(),
+  sourceKey: text("source_key").notNull(),
+  recipe: text("recipe").notNull(),
+  cutoutId: text("cutout_id").references(() => characterCutouts.id),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+}, table => [
+  uniqueIndex("character_cutout_demands_source").on(table.gameId, table.playerId, table.sourceKey, table.recipe),
+]);

@@ -1,6 +1,7 @@
 import { resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import { isSpectatorHuddleSpeech } from "@influence/engine";
 import { loadPayloads } from "./payload-storage.js";
+import { readyCharacterCutoutUrls } from "./character-cutouts.js";
 import { LEGACY_FORMAT_MANIFEST, Phase, replayCanonicalEvents, resolveFormatManifest, resolveGameKernel } from "@influence/engine";
 import { validHeadRectangle, type CharacterHeadPosition, type HeadRectangle } from "@influence/engine/character-portrait";
 import { assembleProductionCatalog, type ProductionCatalog } from "@influence/engine/production-moments";
@@ -291,10 +292,16 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
     if (validHeadRectangle(member.headRectangle)) fullBodyHeads[member.id] = member.headRectangle;
   }
   const portraits = Object.fromEntries(Object.entries(assets[0]?.portraits ?? {}).filter(([id]) => frozen.has(id)).map(([id, artifact]) => [id, artifactUrl(artifact)]));
+  const cutoutSources = Object.fromEntries(Object.entries(fullBodies).map(([id, url]) => [id,
+    url.replace(`/api/admin/production/games/${encodeURIComponent(game.id)}/visual/artifacts/`, `/api/games/${game.id}/visual/artifacts/`)]));
+  const cutouts = Object.fromEntries(Object.entries(await readyCharacterCutoutUrls(db, game.id, cutoutSources, new Date(publicationCutoff)))
+    .map(([id, url]) => [id, url.replace(`/api/games/${encodeURIComponent(game.id)}/cutouts/`, `/api/admin/production/games/${encodeURIComponent(game.id)}/cutouts/`)]));
+  const originalBodies = { ...fullBodies };
+  Object.assign(fullBodies, cutouts);
   if (pinnedMedia) {
     for (const [id, url] of Object.entries(pinnedMedia.portraits)) if (!frozen.has(id) || portraits[id] !== url)
       throw new InfluenceProductionSourceError("Pinned portrait is not a frozen reference for this actor");
-    for (const [id, url] of Object.entries(pinnedMedia.fullBodies)) if (!frozen.has(id) || fullBodies[id] !== url && reference(frozen.get(id)!.persona.fullBodyReferenceUrl) !== url)
+    for (const [id, url] of Object.entries(pinnedMedia.fullBodies)) if (!frozen.has(id) || fullBodies[id] !== url && originalBodies[id] !== url && reference(frozen.get(id)!.persona.fullBodyReferenceUrl) !== url)
       throw new InfluenceProductionSourceError("Pinned fullbody is not a frozen reference for this actor");
     for (const [id, head] of Object.entries(pinnedMedia.fullBodyHeads)) {
       const personaHead = frozen.get(id)?.persona.headPosition as CharacterHeadPosition | undefined;

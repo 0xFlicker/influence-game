@@ -24,8 +24,9 @@ async function fixture(run: () => Promise<void>) {
       const columns = tables.get(entry.table) ?? new Map<string, string>();
       for (const key of entry.primaryKey) columns.set(key, key === "version" ? "integer" : "text");
       // These payloads were introduced after cutover and have never held inline bodies.
-      const column = entry.table === "agent_screenings" || entry.table === "agent_screening_attempts" || (entry.table === "provider_logical_calls" && entry.column === "audio_delivery") ? `${entry.column}_object` : entry.column;
-      columns.set(column, entry.kind === "binary" ? "bytea" : entry.kind === "text" ? "text" : "jsonb");
+      const referenceOnly = entry.table === "character_cutouts" || entry.table === "agent_screenings" || entry.table === "agent_screening_attempts" || (entry.table === "provider_logical_calls" && entry.column === "audio_delivery");
+      const column = referenceOnly ? `${entry.column}_object` : entry.column;
+      columns.set(column, referenceOnly ? "jsonb" : entry.kind === "binary" ? "bytea" : entry.kind === "text" ? "text" : "jsonb");
       tables.set(entry.table, columns);
     }
     for (const [table, columns] of tables) {

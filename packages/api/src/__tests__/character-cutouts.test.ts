@@ -1,0 +1,163 @@
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
+import sharp from "sharp";
+import { schema, type DrizzleDB } from "../db/index.js";
+import { setupTestDB } from "./test-utils.js";
+import { acceptCutout, claimCutout, cutoutMode, CUTOUT_RECIPE, enqueueCutout, expireCutoutLeases, prepareCutoutDemands, readyCharacterCutoutUrls, readyCutoutsByHash, requestCharacterCutouts, reserveCutout } from "../services/character-cutouts.js";
+import { createCharacterCutoutRoutes } from "../routes/character-cutouts.js";
+import { storeBinary, storeJson } from "../services/payload-storage.js";
+import { createVisualRoutes } from "../routes/visual.js";
+import { completedWerewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import { readWerewolfWatch } from "../services/werewolf-presentation.js";
+import { readWerewolfProductionCharacter, readWerewolfProductionSource } from "../services/werewolf-production-source.js";
+
+let db: DrizzleDB;
+let source: Buffer, cutout: Buffer;
+const saved = { ...process.env };
+beforeEach(async () => {
+  db = await setupTestDB();
+  delete process.env.INFLUENCE_DEPLOYMENT_ENVIRONMENT;
+  process.env.CHARACTER_CUTOUT_MODE = "local";
+  process.env.CUTOUT_API_URL = "http://host.docker.internal:3018";
+  source = await sharp({ create: { width: 8, height: 12, channels: 3, background: "red" } }).png().toBuffer();
+  const pixels = Buffer.alloc(8 * 12 * 4, 255); pixels[3] = 0;
+  cutout = await sharp(pixels, { raw: { width: 8, height: 12, channels: 4 } }).png().toBuffer();
+  await db.insert(schema.games).values({ id: "cutouts-game", slug: "cutouts-game", status: "completed", config: "{}" });
+});
+afterEach(() => {
+  for (const key of ["CHARACTER_CUTOUT_MODE", "CUTOUT_API_URL", "INFLUENCE_DEPLOYMENT_ENVIRONMENT"]) {
+    if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
+  }
+});
+
+test("sources deduplicate; duplicate workers and stale leases cannot publish", async () => {
+  const first = await enqueueCutout(db, source), second = await enqueueCutout(db, source);
+  expect(second.id).toBe(first.id);
+  const reservation = (await reserveCutout(db, first.id))!;
+  expect(await reserveCutout(db, first.id)).toBeNull();
+  expect(await claimCutout(db, first.id, "wrong", CUTOUT_RECIPE)).toBeUndefined();
+  expect(await claimCutout(db, first.id, reservation.token, "wrong-recipe")).toBeUndefined();
+  expect(await claimCutout(db, first.id, reservation.token, CUTOUT_RECIPE)).toBeDefined();
+  expect(await claimCutout(db, first.id, reservation.token, CUTOUT_RECIPE)).toBeUndefined();
+  await expect(acceptCutout(db, first.id, reservation.token, source)).rejects.toThrow("RGBA PNG");
+  const wrongDimensions = await sharp(cutout).resize(4, 6).png().toBuffer();
+  await expect(acceptCutout(db, first.id, reservation.token, wrongDimensions)).rejects.toThrow("source dimensions");
+  const opaque = await sharp(source).ensureAlpha().png().toBuffer();
+  await expect(acceptCutout(db, first.id, reservation.token, opaque)).rejects.toThrow("foreground and transparent background");
+  await expireCutoutLeases(db, new Date(Date.now() + 2 * 3600_000));
+  expect(await acceptCutout(db, first.id, reservation.token, cutout)).toBe(false);
+  const retry = (await reserveCutout(db, first.id))!;
+  expect(await claimCutout(db, first.id, reservation.token, CUTOUT_RECIPE)).toBeUndefined();
+  await claimCutout(db, first.id, retry.token, CUTOUT_RECIPE);
+  expect(await acceptCutout(db, first.id, retry.token, cutout)).toBe(true);
+  expect(await acceptCutout(db, first.id, retry.token, cutout)).toBe(false);
+});
+
+test("playback keeps original until ready; exact binding and hidden-game checks protect output", async () => {
+  const job = await enqueueCutout(db, source);
+  await db.insert(schema.agentContentAssets).values({ hash: job.sourceHash, bytes: await storeBinary(source) });
+  const sources = { p1: `sha256:${job.sourceHash}` };
+  expect(await requestCharacterCutouts(db, "cutouts-game", sources)).toEqual({});
+  await prepareCutoutDemands(db);
+  const reservation = (await reserveCutout(db, job.id))!;
+  const app = createCharacterCutoutRoutes(db);
+  const auth = { Authorization: `Bearer ${reservation.token}` };
+  expect((await app.request(`/api/internal/cutouts/${job.id}/source`, { headers: auth })).status).toBe(404);
+  expect(await (await app.request(`/api/internal/cutouts/${job.id}/claim`, { method: "POST", headers: auth, body: JSON.stringify({ recipe: CUTOUT_RECIPE }) })).json()).toEqual({ claimed: true, sourceHash: job.sourceHash });
+  expect(Buffer.from(await (await app.request(`/api/internal/cutouts/${job.id}/source`, { headers: auth })).arrayBuffer())).toEqual(Buffer.from(source));
+  expect((await app.request(`/api/internal/cutouts/${job.id}/result`, { method: "PUT", headers: auth, body: cutout })).status).toBe(200);
+  const ready = await requestCharacterCutouts(db, "cutouts-game", sources);
+  expect(ready.p1).toContain("/cutouts/");
+  expect(await requestCharacterCutouts(db, "cutouts-game", { p1: "changed-source" })).toEqual({});
+  const response = await app.request(ready.p1!);
+  expect(response.status).toBe(200);
+  expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from(cutout));
+  expect((await app.request(ready.p1!.replace("cutouts-game", "another-game"))).status).toBe(404);
+  await db.update(schema.games).set({ hiddenAt: new Date().toISOString() }).where(eq(schema.games.id, "cutouts-game"));
+  expect((await app.request(ready.p1!)).status).toBe(404);
+});
+
+test("Influence metadata adopts a cutout while fixed snapshots retain their original", async () => {
+  await db.insert(schema.visualArtifacts).values({ id: "body-art", gameId: "cutouts-game", image: await storeBinary(source), contentHash: "source", width: 8, height: 12 });
+  await db.insert(schema.visualGameAssets).values({ gameId: "cutouts-game", profiles: [], cast: [{ id: "p1", name: "Example", referenceArtifactId: "body-art", performanceInstructions: "", portraitFallback: false }] });
+  const route = createVisualRoutes(db);
+  const read = async (path: string) => (await (await route.request(path)).json()) as { fullBodies: Record<string, string> };
+  const before = await read("/api/games/cutouts-game/visual");
+  expect(before.fullBodies.p1).toBe("/api/games/cutouts-game/visual/artifacts/body-art");
+  await prepareCutoutDemands(db);
+  const [job] = await db.select().from(schema.characterCutouts);
+  const reservation = (await reserveCutout(db, job!.id))!;
+  await claimCutout(db, job!.id, reservation.token, CUTOUT_RECIPE);
+  await acceptCutout(db, job!.id, reservation.token, cutout);
+  expect((await read("/api/games/cutouts-game/visual")).fullBodies.p1).toContain("/cutouts/");
+  expect((await read("/api/games/cutouts-game/visual?snapshot=%7B%7D")).fullBodies.p1).toBe(before.fullBodies.p1);
+});
+
+test("failed jobs stop after three leases and viewers do not reset retry budgets", async () => {
+  const job = await enqueueCutout(db, source);
+  for (let i = 0; i < 3; i++) {
+    expect(await reserveCutout(db, job.id)).not.toBeNull();
+    await expireCutoutLeases(db, new Date(Date.now() + 2 * 3600_000));
+  }
+  expect(await reserveCutout(db, job.id)).toBeNull();
+  const [failed] = await db.select().from(schema.characterCutouts).where(eq(schema.characterCutouts.id, job.id));
+  expect(failed!.status).toBe("failed"); expect(failed!.attempts).toBe(3);
+});
+
+test("completion cutoff pins both absent and ready cutouts for production exports", async () => {
+  const before = new Date(Date.now() - 1000);
+  const job = await enqueueCutout(db, source);
+  await db.insert(schema.agentContentAssets).values({ hash: job.sourceHash, bytes: await storeBinary(source) });
+  const sources = { p1: `sha256:${job.sourceHash}` };
+  await requestCharacterCutouts(db, "cutouts-game", sources);
+  await prepareCutoutDemands(db);
+  const reserved = (await reserveCutout(db, job.id))!;
+  await claimCutout(db, job.id, reserved.token, CUTOUT_RECIPE);
+  await acceptCutout(db, job.id, reserved.token, cutout);
+  expect(await readyCharacterCutoutUrls(db, "cutouts-game", sources, before)).toEqual({});
+  expect((await readyCutoutsByHash(db, [job.sourceHash], before.toISOString())).size).toBe(0);
+  const after = new Date(Date.now() + 1000);
+  expect((await readyCharacterCutoutUrls(db, "cutouts-game", sources, after)).p1).toContain("/cutouts/");
+  expect((await readyCutoutsByHash(db, [job.sourceHash], after.toISOString())).get(job.sourceHash)?.image?.sha256).toBeDefined();
+});
+
+test("Werewolf playback adopts ready bodies; export refresh pins cutouts without changing portraits", async () => {
+  const job = await enqueueCutout(db, source);
+  const events = await completedWerewolfResultsFixture("saved", "cutouts-game");
+  const started = events[0]!;
+  if (started.type !== "werewolf.started") throw new Error("Expected fixture start");
+  const player = started.payload.players[0]!;
+  player.agentProfileId = "example-profile"; player.contentRevisionId = "example-revision";
+  await db.insert(schema.users).values({ id: "owner" });
+  await db.insert(schema.agentContentRevisions).values({ id: "example-revision", agentProfileId: "example-profile", userId: "owner", fingerprint: "fixture",
+    snapshot: await storeJson({ avatarUrl: "portrait", fullBodyReferenceUrl: "body", assets: { portrait: job.sourceHash, body: job.sourceHash } }) });
+  await db.insert(schema.agentContentAssets).values({ hash: job.sourceHash, bytes: await storeBinary(source) });
+  await db.update(schema.games).set({ gameKind: "werewolf", startedAt: "2026-09-01T00:00:00.000Z" }).where(eq(schema.games.id, "cutouts-game"));
+  await db.insert(schema.werewolfEvents).values(events.map(event => ({ gameId: "cutouts-game", sequence: event.sequence, event })));
+  const watch = await readWerewolfWatch(db, "cutouts-game", "mystery", 1, 64);
+  expect(watch.players[0]!.fullBodyReferenceUrl).toContain("image=body");
+  const pinned = await readWerewolfProductionSource(db, "cutouts-game", { audience: "mystery", thinking: false });
+  await prepareCutoutDemands(db);
+  const reserved = (await reserveCutout(db, job.id))!;
+  await claimCutout(db, job.id, reserved.token, CUTOUT_RECIPE);
+  await acceptCutout(db, job.id, reserved.token, cutout);
+  const live = await readWerewolfWatch(db, "cutouts-game", "mystery", 1, 64);
+  expect(live.players[0]!.fullBodyReferenceUrl).toContain("/cutouts/");
+  expect(live.players[0]!.avatarUrl?.split("?")[0]).toBe(watch.players[0]!.avatarUrl?.split("?")[0]);
+  const reread = await readWerewolfProductionSource(db, "cutouts-game", { audience: "mystery", thinking: false, snapshot: pinned.snapshot });
+  expect(reread.snapshot).toEqual(pinned.snapshot);
+  expect((await readWerewolfProductionCharacter(db, "cutouts-game", player.id, { snapshot: pinned.snapshot, image: "body" })).bytes).toEqual(new Uint8Array(source));
+  const refreshed = await readWerewolfProductionSource(db, "cutouts-game", { audience: "mystery", thinking: false, snapshot: pinned.snapshot, refreshVisuals: true });
+  expect((await readWerewolfProductionCharacter(db, "cutouts-game", player.id, { snapshot: refreshed.snapshot, image: "body" })).bytes).toEqual(new Uint8Array(cutout));
+  expect((await readWerewolfProductionCharacter(db, "cutouts-game", player.id, { snapshot: refreshed.snapshot, image: "portrait" })).bytes).toEqual(new Uint8Array(source));
+});
+
+test("staging is disabled even when AWS configuration is present", async () => {
+  expect(cutoutMode({ CHARACTER_CUTOUT_MODE: "aws-batch", INFLUENCE_DEPLOYMENT_ENVIRONMENT: "staging" })).toBe("disabled");
+  expect(cutoutMode({ CHARACTER_CUTOUT_MODE: "local", NODE_ENV: "staging" })).toBe("disabled");
+  expect(() => cutoutMode({ CHARACTER_CUTOUT_MODE: "local", CUTOUT_API_URL: "http://example.com" })).toThrow("localhost");
+  process.env.INFLUENCE_DEPLOYMENT_ENVIRONMENT = "staging";
+  expect(await requestCharacterCutouts(db, "cutouts-game", { p: "ignored" })).toEqual({});
+  expect(await db.select().from(schema.characterCutoutDemands)).toHaveLength(0);
+  expect((await createCharacterCutoutRoutes(db).request("/api/internal/cutouts/test/source")).status).toBe(404);
+});

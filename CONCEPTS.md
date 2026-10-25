@@ -930,3 +930,11 @@ A v10 Doctor, Seer or lone wolf's spoken explanation accompanies its structured 
 
 
 Influence **decision speech** is an accepted contestant announcement attached to a structured decision. It never establishes the chosen target or outcome. Ballots, format picks and tiebreaks are speech-only; nominations, Override and Safety Bounce retain private thinking. Sealed ballot speech appears at the canonical reveal, using the same vote presentation as Werewolf.
+
+## Character cutout
+
+A **character cutout** is an optional transparent derivative of a frozen full-body
+image, identified by source digest and processing recipe. It changes presentation
+only; portraits, provider references and canonical game history retain their original
+images. Live playback adopts ready cutouts at refresh boundaries. Production exports
+pin availability at their publication cutoff. See [cutout operations](docs/deployment/character-cutouts.md).
