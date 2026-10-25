@@ -1,4 +1,4 @@
-import { compactionOrientation, compactInvocation, contextSourceHash, contextSummaryArtifact, CONTEXT_SUMMARY_INSTRUCTIONS, CONTEXT_MAX_REVISIONS } from "./context-adaptation";
+import { compactionOrientation, compactInvocation, contextSourceHash, contextComponentHashes, contextSummaryArtifact, ContextSourceConflictError, CONTEXT_SUMMARY_INSTRUCTIONS, CONTEXT_MAX_REVISIONS } from "./context-adaptation";
 import type OpenAI from "openai";
 import { DEFAULT_LM_STUDIO_TIMEOUT_MS } from "./local-inference";
 import type {
@@ -115,7 +115,9 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
         if (!original.contextSpans?.length) return;
         const sourceHash = contextSourceHash(original);
         const attempts = await options.call.readContextAttempts();
-        if (attempts.some(attempt => attempt.sourceHash !== sourceHash)) throw new Error("Context source changed under the same logical call");
+        if (attempts.some(attempt => attempt.sourceHash !== sourceHash)) {
+          throw new ContextSourceConflictError([...new Set(attempts.map(attempt => attempt.sourceHash))], sourceHash, contextComponentHashes(original));
+        }
         const revision = attempts.reduce((value, attempt) => Math.max(value, attempt.revision + (attempt.catalogId === runtime.catalogId && attempt.outcome === "context_overflow" ? 1 : 0)), 0);
         if (revision > CONTEXT_MAX_REVISIONS) throw new ProviderUnavailableError("Context adaptation exhausted", "context_overflow");
         context = { sourceHash, revision, maxAttempts: Math.max(1, Math.floor(options.maxAttempts)) };

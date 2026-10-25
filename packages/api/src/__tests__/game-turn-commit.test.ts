@@ -31,6 +31,33 @@ describe("atomic durable game turn commit", () => {
     db = await setupTestDB();
   });
 
+  test("an unavailable turn commits without accepting its failed provider call, and replays safely", async () => {
+    const fixture = await createAuthority(db);
+    const initialIntent = makeIntent(fixture.state, "initial-turn");
+    const initialPlan = await planGameTurn(db, { ownerEpoch: fixture.ownerEpoch, intent: initialIntent });
+    const { state } = await commitGameTurn(db, { ownerEpoch: fixture.ownerEpoch,
+      draft: makeDraft(fixture.state, initialIntent, initialPlan.intentHash) });
+    const logicalCallId = "unavailable-call";
+    const intent = makeIntent(state, "unavailable-turn", logicalCallId);
+    const plan = await planGameTurn(db, { ownerEpoch: fixture.ownerEpoch, intent });
+    await db.insert(schema.providerLogicalCalls).values({ id: logicalCallId, gameId: fixture.gameId,
+      actorId: "atlas", actorName: "Atlas", actorRole: "player", action: "introduction",
+      semanticCoordinate: { version: 1, kind: "durable_turn", turnId: intent.turnId, subcallSlot: 1 },
+      semanticCoordinateHash: "sha256:unavailable-call", gameTurnId: intent.turnId, gameTurnSubcallSlot: 1 });
+    const draft = { ...makeDraft(state, intent, plan.intentHash), canonicalEvents: [], transcriptEntries: [], publications: [] };
+    await expect(commitGameTurn(db, { ownerEpoch: fixture.ownerEpoch,
+      draft: { ...draft, acceptedProviderCallIds: [logicalCallId] } })).rejects.toThrow("has no accepted value");
+    expect((await readGameExecutionState(db, fixture.gameId))?.heads).toEqual(state.heads);
+    const committed = await commitGameTurn(db, { ownerEpoch: fixture.ownerEpoch, draft });
+    expect(committed.state.heads.turnSequence).toBe(state.heads.turnSequence + 1);
+    expect(committed.state.heads.eventSequence).toBe(state.heads.eventSequence);
+    expect(committed.state.heads.dialogueSequence).toBe(state.heads.dialogueSequence);
+    expect((await commitGameTurn(db, { ownerEpoch: fixture.ownerEpoch, draft })).alreadyCommitted).toBe(true);
+    const [call] = await db.select().from(schema.providerLogicalCalls).where(eq(schema.providerLogicalCalls.id, logicalCallId));
+    expect(call?.acceptedAttemptId).toBeNull();
+    expect(call?.gameTurnCommittedAt).toBeNull();
+  });
+
   test("commits facts, dialogue, continuity, cursor, publications, and provider links atomically", async () => {
     const fixture = await createAuthority(db);
     const firstIntent = makeIntent(fixture.state, "turn-1");

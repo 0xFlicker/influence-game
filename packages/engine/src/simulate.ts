@@ -43,6 +43,8 @@
  * never canonical facts or chatty speech. Compactors receive actor, character and pending-task
  * orientation; House tasks retain their own subject/audience boundary. See docs/context-adaptation.md.
  * Keep exact types without `as any` and call House methods directly when wiring turns.
+ * Durable context identity survives JSONB recovery without rewriting saved hashes;
+ * genuine conflicts stop adoption with hashes-only diagnostics and preserve committed play.
  * This runner is Influence-only. Werewolf uses src/werewolf/simulate.ts:
  *   bun run simulate:werewolf --preset two_wolves --seed sample-1 --chatty
  * For a watchable API game plus a no-extra-inference text report, use

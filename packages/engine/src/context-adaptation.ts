@@ -99,6 +99,20 @@ export function contextSourceHash(invocation: ModelInvocation): string {
     result: invocation.result.kind === "text" ? "text" : invocation.result.artifact.schema });
 }
 
+/** An identity conflict is a local integrity fault, never provider exhaustion. */
+export class ContextSourceConflictError extends Error {
+  constructor(readonly expectedHashes: string[], readonly actualHash: string, readonly componentHashes: Record<string, string> = {}) {
+    super(`Context source changed under the same logical call (expected ${expectedHashes.join(", ")}; actual ${actualHash}; components ${JSON.stringify(componentHashes)})`);
+    this.name = "ContextSourceConflictError";
+  }
+}
+
+export function contextComponentHashes(invocation: ModelInvocation): Record<string, string> {
+  return Object.fromEntries(Object.entries({ character: invocation.compactionCharacter ?? null, messages: invocation.messages,
+    spans: invocation.contextSpans ?? [], result: invocation.result.kind === "text" ? "text" : invocation.result.artifact.schema })
+    .map(([key, value]) => [key, hashCanonicalJson(value)]));
+}
+
 export async function compactInvocation<T>(input: {
   invocation: ModelInvocation<T>; call: ProviderLogicalCallExecution; sourceHash: string; revision: number;
   summarize(call: ProviderLogicalCallExecution, text: string, maxCharacters: number): Promise<string>;
