@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
-import { compactInvocation, contextSummaryArtifact } from "../context-adaptation";
+import { compactInvocation, contextSummaryArtifact, ContextSourceConflictError } from "../context-adaptation";
 import { executeModelInvocation } from "../provider-adapters";
 import { classifyProviderError, ProviderExecutionCoordinator, providerLogicalCallId, type ProviderAttemptRecord, type ProviderExecutionHooks } from "../provider-execution";
 import type { ModelInvocation, LlmProviderAdapter } from "../model-invocation";
@@ -73,7 +73,9 @@ describe("context adaptation", () => {
   });
   test("changed frozen source cannot reuse a logical call after overflow", async () => {
     const f = fixture({ crashAfterSummary: true }); await expect(f.run()).rejects.toThrow();
-    await expect(f.run({ ...invocation, messages: [{ role: "user", content: "different" }] })).rejects.toThrow("Context source changed");
+    const dispatched = f.requests.length;
+    await expect(f.run({ ...invocation, messages: [{ role: "user", content: "different" }] })).rejects.toBeInstanceOf(ContextSourceConflictError);
+    expect(f.requests).toHaveLength(dispatched);
   });
   test("changed character context cannot reuse summaries under the same logical call", async () => {
     const f = fixture({ crashAfterSummary: true });

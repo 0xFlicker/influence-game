@@ -349,7 +349,7 @@ export function createStagedAgents(
 function providerResultWasAccepted(result: unknown): boolean {
   if (result === null || result === undefined || typeof result !== "object") return false;
   const record = result as Record<string, unknown>;
-  if (record.providerAbsence === true || record.engineFallback !== undefined) return false;
+  if (record.providerAbsence !== undefined || record.engineFallback !== undefined) return false;
   if (record.decisionSource === "fallback") return false;
   return true;
 }

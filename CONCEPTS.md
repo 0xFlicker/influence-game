@@ -707,6 +707,8 @@ The API runtime authority for live game execution. Before provider dispatch it r
 
 The smallest restartable game transaction. A turn has one immutable intent and deterministic seed, zero or more provider subcalls, scratch effects, and one atomic commit. A crash before commit discards the scratch effects; a crash after commit loads the committed result. Accepted provider values can replay into the same planned turn without another dispatch. Canonical events remain game-fact authority, while the cursor and XState snapshot decide only what work runs next.
 
+The context source identity must survive JSONB recovery byte-for-byte, including JSON embedded in strings. Reconstruct compact strategy in its original field order before serialization. A genuine source conflict marks execution `repair_required` under its owner fence without changing the committed frontier; an unavailable provider result never claims an accepted value.
+
 ## Durable truth read model
 
 An API-side inspection model that reads persisted durable kernel rows, validates canonical event integrity, replays events into the canonical game projection, and reports safe structural execution, planned-turn, publication-backlog, checkpoint, and evidence state. It explains what the durable log proves about a run, but it does not resume execution or expose XState snapshots, continuity bodies, intent participants, provider payloads, or prose.

@@ -1,5 +1,11 @@
 # Game Worker Operations
 
+For repeated `Context source changed under the same logical call` failures, see the
+[JSONB recovery incident and exact-game proof](../solutions/runtime-errors/jsonb-order-changed-context-identity.md).
+The targeted fix requires no migration. A genuine remaining conflict stops automatic
+adoption with execution `repair_required`; committed play remains intact. Use the
+existing fenced drain and verify continuation of the original game after deployment.
+
 The `gateway` role serves HTTP/WebSocket commands and reads. It never claims,
 resumes, or advances a game. The private `game-worker` role uses the **same API
 image digest** and owns execution through renewable, per-game `game_run_owners`
