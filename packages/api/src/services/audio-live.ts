@@ -26,7 +26,7 @@ export async function ensureLiveAudio(db: DrizzleDB, gameId: string, ownerEpoch:
 /** Required post-acceptance boundary. Failure propagates outside projection callbacks. */
 async function generateRequiredLiveAudio(db: DrizzleDB, gameId: string, ownerEpoch: string, signal?: AbortSignal) {
   const tracks = schema.gameAudioTracks, clips = schema.gameAudioClips;
-  const [track] = await db.select().from(tracks).where(and(eq(tracks.gameId, gameId), eq(tracks.mode, "live")));
+  const [track] = await db.select().from(tracks).where(and(eq(tracks.gameId, gameId), eq(tracks.mode, "live"), eq(tracks.active,true)));
   if (!track) throw new LiveAudioBlocked("Audio Mode has no frozen voice track");
   if (track.status === "failed") throw new LiveAudioBlocked(track.error ?? "Required audio is unavailable");
   const source = await readAudioSource(db, gameId, true);
@@ -51,7 +51,7 @@ async function generateRequiredLiveAudio(db: DrizzleDB, gameId: string, ownerEpo
     const [owner] = await tx.select().from(schema.gameRunOwners).where(and(eq(schema.gameRunOwners.gameId, gameId), eq(schema.gameRunOwners.ownerEpoch, ownerEpoch), eq(schema.gameRunOwners.status, "active"))).for("update");
     if (!owner || !owner.expiresAt || Date.parse(owner.expiresAt) <= Date.now()) throw new LiveAudioBlocked("Audio execution owner changed");
     const [current] = await tx.select().from(tracks).where(eq(tracks.id, track.id)).for("update");
-    if (current?.status !== "ready") return;
+    if (current?.status !== "ready" || !current.active) return;
     if (additions.length) await tx.insert(clips).values(additions);
     await tx.update(tracks).set({ manifest, throughEventSequence: source.throughEventSequence,
       status: additions.length ? "queued" : "ready", readyEventSequence: additions.length ? current.readyEventSequence : source.throughEventSequence,
@@ -62,7 +62,7 @@ async function generateRequiredLiveAudio(db: DrizzleDB, gameId: string, ownerEpo
     const [owner] = await db.select({status:schema.gameRunOwners.status,expiresAt:schema.gameRunOwners.expiresAt}).from(schema.gameRunOwners).where(and(eq(schema.gameRunOwners.gameId,gameId),eq(schema.gameRunOwners.ownerEpoch,ownerEpoch)));
     if (owner?.status !== "active" || !owner.expiresAt || Date.parse(owner.expiresAt) <= Date.now()) throw new LiveAudioBlocked("Audio execution owner changed");
     const [current] = await db.select().from(tracks).where(eq(tracks.id, track.id));
-    if (!current || current.status === "failed") throw new LiveAudioBlocked(current?.error ?? "Required audio track unavailable");
+    if (!current || !current.active || current.status === "failed") throw new LiveAudioBlocked(current?.error ?? "Required audio track unavailable");
     if (current.readyEventSequence >= source.throughEventSequence) return;
     await new Promise<void>((resolve, reject) => {
       const abort = () => { clearTimeout(timer); reject(signal?.reason); };
@@ -89,7 +89,7 @@ export async function resumeLiveAudio(db:DrizzleDB,gameId:string,expectedOwnerEp
   await db.transaction(async tx => {
     const [game] = await tx.select().from(schema.games).where(eq(schema.games.id,gameId)).for("update");
     const [owner] = await tx.select().from(schema.gameRunOwners).where(eq(schema.gameRunOwners.gameId,gameId)).orderBy(desc(schema.gameRunOwners.createdAt)).limit(1);
-    const [track] = await tx.select().from(schema.gameAudioTracks).where(and(eq(schema.gameAudioTracks.gameId,gameId),eq(schema.gameAudioTracks.mode,"live"))).for("update");
+    const [track] = await tx.select().from(schema.gameAudioTracks).where(and(eq(schema.gameAudioTracks.gameId,gameId),eq(schema.gameAudioTracks.mode,"live"),eq(schema.gameAudioTracks.active,true))).for("update");
     if (!game || game.status !== "suspended" || owner?.ownerEpoch !== expectedOwnerEpoch || owner.failureReason !== "required_audio_failed" || track?.status !== "ready") throw new LiveAudioBlocked("Audio recovery state changed. Refresh before resuming.");
     await tx.update(schema.games).set({status:"in_progress",endedAt:null}).where(eq(schema.games.id,gameId));
   });

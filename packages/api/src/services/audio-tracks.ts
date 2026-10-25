@@ -19,7 +19,7 @@ export async function previewAudioTrack(db: DrizzleDB, gameId: string) {
   const [game] = await db.select({status:schema.games.status}).from(schema.games).where(eq(schema.games.id,gameId));
   const [owner] = await db.select({epoch:schema.gameRunOwners.ownerEpoch,reason:schema.gameRunOwners.failureReason}).from(schema.gameRunOwners).where(eq(schema.gameRunOwners.gameId,gameId)).orderBy(desc(schema.gameRunOwners.createdAt)).limit(1);
   const resumeOwnerEpoch = game?.status === "suspended" && owner?.reason === "required_audio_failed" && stored?.mode === "live" && stored.status === "ready" ? owner.epoch : null;
-  const existing = existingRows.map(({id,status,active,error,reservedCharacters}) => ({id,status,active,error,reservedCharacters}));
+  const existing = existingRows.map(({id,status,active,error,reservedCharacters,mode}) => ({id,status,active,error,reservedCharacters,retryable:status === "failed" && (mode === "backfill" || active)}));
   return { gameId, source, voices, resumeOwnerEpoch, characters, estimateUsd: audioEstimateUsd(characters), retryBudgetUsd: audioEstimateUsd(characters * 3),
     previewHash: sha256StableJson({ source, voices }), existing };
 }
@@ -51,6 +51,7 @@ export async function retryAudioTrack(db: DrizzleDB, gameId: string, trackId: st
   await db.transaction(async tx => {
     const [track] = await tx.select().from(tracks).where(and(eq(tracks.id, trackId), eq(tracks.gameId, gameId))).for("update");
     if (!track || track.status !== "failed") throw new AudioTrackConflict("Only a failed audio track can be retried");
+    if (track.mode === "live" && !track.active) throw new AudioTrackConflict("A superseded live track cannot be retried");
     const missing = await tx.select().from(clips).where(and(eq(clips.trackId, trackId), sql`${clips.activeVersionId} IS NULL`));
     let characters = 0;
     for (const clip of missing) characters += audioCharacters((await readJson(clip.recipe)).synthesisText) * 3;
@@ -64,7 +65,7 @@ export async function retryAudioTrack(db: DrizzleDB, gameId: string, trackId: st
  * Failed/ambiguous storage never triggers more paid work. Ready clips are reused. */
 export async function runAudioTrack(db: DrizzleDB, provider: AudioProvider = generateXaiAudio, signal?: AbortSignal): Promise<boolean> {
   const track = await db.transaction(async tx => {
-    const [next] = await tx.select().from(tracks).where(sql`${tracks.status} = 'queued' OR (${tracks.status} = 'running' AND ${tracks.leaseExpiresAt} < now())`)
+    const [next] = await tx.select().from(tracks).where(sql`(${tracks.active} OR ${tracks.mode} = 'backfill') AND (${tracks.status} = 'queued' OR (${tracks.status} = 'running' AND ${tracks.leaseExpiresAt} < now()))`)
       .orderBy(asc(tracks.createdAt)).for("update", { skipLocked: true }).limit(1);
     if (!next) return null;
     const [claimed] = await tx.update(tracks).set({ status: "running", leaseId: crypto.randomUUID(), leaseExpiresAt: new Date(Date.now() + 300_000), updatedAt: new Date() }).where(eq(tracks.id, next.id)).returning();

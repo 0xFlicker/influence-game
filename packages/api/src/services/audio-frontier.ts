@@ -9,6 +9,6 @@ export async function audioReadySequence(db: Pick<DrizzleDB, "select">, gameId: 
 }
 
 export async function hasLiveAudioTrack(db: Pick<DrizzleDB,"select">,gameId:string) {
-  const [track]=await db.select({id:schema.gameAudioTracks.id}).from(schema.gameAudioTracks).where(and(eq(schema.gameAudioTracks.gameId,gameId),eq(schema.gameAudioTracks.mode,"live")));
+  const [track]=await db.select({id:schema.gameAudioTracks.id}).from(schema.gameAudioTracks).where(and(eq(schema.gameAudioTracks.gameId,gameId),eq(schema.gameAudioTracks.mode,"live"),eq(schema.gameAudioTracks.active,true)));
   return Boolean(track);
 }

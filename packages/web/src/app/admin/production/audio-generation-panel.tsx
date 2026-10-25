@@ -6,7 +6,7 @@ import { useAdminSession } from "../admin-session";
 interface Preview {
   resumeOwnerEpoch: string | null; previewHash: string; voices: Record<string, VoiceAssignment>; clipCount: number; characters: number;
   estimateUsd: number; retryBudgetUsd: number;
-  tracks: { id: string; status: string; error: string | null }[];
+  tracks: { id: string; status: string; error: string | null; retryable: boolean }[];
 }
 export function AudioGenerationPanel({ root }: { root: string }) {
   const session = useAdminSession(), client = useQueryClient();
@@ -38,7 +38,7 @@ export function AudioGenerationPanel({ root }: { root: string }) {
   return <section aria-label="Generate game audio"><h3>Game audio</h3><p>{data.clipCount} speech and thinking clips. Estimated ${data.estimateUsd.toFixed(3)}, with up to ${data.retryBudgetUsd.toFixed(3)} including retries.</p>
     <p>House: Helios. Player presets: {[...new Set(Object.entries(data.voices).filter(([id]) => id !== "house").map(([, voice]) => voice.voiceId))].join(", ")}.</p>
     <p>Voices freeze when generation starts. Existing clips are kept when retrying.</p>
-    {data.tracks.length ? data.tracks.map(track => <div key={track.id}><p role="status">Audio: {track.status}</p>{track.error && <p role="alert">{track.error}</p>}{track.status === "failed" && <button disabled={busy} onClick={() => void generate(track.id)}>Retry missing clips</button>}</div>)
+    {data.tracks.length ? data.tracks.map(track => <div key={track.id}><p role="status">Audio: {track.status}</p>{track.error && <p role="alert">{track.error}</p>}{track.retryable && <button disabled={busy} onClick={() => void generate(track.id)}>Retry missing clips</button>}</div>)
       : <button disabled={busy || !data.clipCount} onClick={() => void generate()}>{busy ? "Starting…" : "Generate full audio track"}</button>}
     {data.resumeOwnerEpoch && <button disabled={busy} onClick={()=>void resume()}>Resume game with ready audio</button>}
     {error && <p role="alert">{error}</p>}

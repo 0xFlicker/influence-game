@@ -87,7 +87,7 @@ and copy it into a track snapshot; never recompute an existing assignment on rea
 Owner GET/PUT `/api/agent-profiles/:id/voice` provides the stock picker and an
 explicit save. Helios is rejected for players. Automatic choices are persisted
 when a game/track freezes its roster. Missing historical profiles use a stable
-identity fallback. The three operator-approved testing overrides remain listed
+identity fallback. The eight operator-approved testing selections are listed
 in the plan; install them through the owner API before live qualification.
 
 ## Production, playback and historical tracks
@@ -144,6 +144,52 @@ Frozen exports contain exact version IDs, text/speaker hashes and durations;
 server validation rejects substituted versions. Export downloads existing media
 and makes no provider calls. Future producer replacement can append a version
 without changing logical clip identity; that editorial action is not exposed yet.
+
+## Correcting a live cast
+
+The explicit operator selections must exist in `agent_voices` before game start.
+The normal deterministic fallback intentionally does not infer a special mapping
+from an agent's name. The October 25 testing cast uses Sal, Ara, Liora, Atlas,
+Iris, Altair, Kepler and Sirius in the plan's agent order; Helios remains House.
+
+Stop execution and audio workers before correction. Retain interrupted text-call
+reservations and use the existing text recovery workflow separately. Audio must
+be settled: this tool rejects a running track or an unresolved generating clip.
+It never invokes providers, starts services, or automatically resumes a game.
+
+From `packages/api`, with the intended environment's `DATABASE_URL`, prepare one
+JSON request per game containing `gameId` and `selections`, a complete object
+mapping every roster **agent profile ID** to its explicit stock voice ID. Names
+and model names are not accepted as identity substitutes.
+
+```sh
+bun src/scripts/recover-live-audio-voices.ts preview /absolute/path/request.json
+# Add the returned previewHash to the reviewed request, then:
+bun src/scripts/recover-live-audio-voices.ts prepare /absolute/path/request.json
+```
+
+Preview reports the exact cast, original track/owner, replacement count, reusable
+count and estimated cost. Prepare validates that snapshot under game/owner/track
+locks, persists all selections for future games, suspends the current game and
+revokes its owner. It creates an active successor track linked by `predecessorId`.
+Accepted events, transcripts, actions, character gender and images are untouched.
+Old snapshots, clips, versions, attempts, cost reservations and bucket objects are
+retained. The predecessor cannot be retried or published as the current track.
+
+The successor starts failed/held with ready frontier zero. Matching delivery
+recipes reuse verified bytes under fresh clip/version IDs; changed voices create
+pending recipes for both speech and thinking. House Helios therefore needs no
+new synthesis. Voice assignment provenance is excluded only from the reuse
+comparison; text, tags, provider voice and encoding must still match. New version
+URLs and recipe hashes prevent wrong-voice cache reuse.
+
+Inspect the successor, then explicitly use Studio's **Retry missing clips** (or
+the producer retry endpoint/service) to queue generation within the existing
+shared budget guard. When it is ready, explicitly **Resume game with ready audio**
+using the returned owner epoch. Any accepted text beyond the copied track manifest
+is picked up by the normal required-audio gate before another model turn. Reload
+open public viewers and explicitly load the new publication in Studio; a browser
+that already downloaded old media cannot have those bytes remotely recalled.
 
 ## Qualification still required
 

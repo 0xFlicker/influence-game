@@ -235,7 +235,7 @@ export async function completeWerewolfAudioGame(db:DrizzleDB,gameId:string,owner
   await db.transaction(async tx => {
     const owner = await lockWerewolfOwner(tx,gameId,ownerEpoch);
     const state = replayWerewolf(await readWerewolfEvents(tx,gameId));
-    const [track] = await tx.select().from(schema.gameAudioTracks).where(and(eq(schema.gameAudioTracks.gameId,gameId),eq(schema.gameAudioTracks.mode,"live"))).for("update");
+    const [track] = await tx.select().from(schema.gameAudioTracks).where(and(eq(schema.gameAudioTracks.gameId,gameId),eq(schema.gameAudioTracks.mode,"live"),eq(schema.gameAudioTracks.active,true))).for("update");
     if (!werewolfExecutionFinished(state) || track?.status !== "ready" || track.readyEventSequence < state.sequence) throw new Error("Werewolf completion requires its final accepted audio");
     const now = new Date().toISOString();
     await tx.update(schema.gameRunOwners).set({status:"closed",closedAt:now}).where(eq(schema.gameRunOwners.id,owner.id));

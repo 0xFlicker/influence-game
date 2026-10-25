@@ -10,7 +10,7 @@ export async function readAgentVoice(db: Pick<DrizzleDB,"select">, id: string): 
   return assignPlayerVoice(id, agent.gender ?? null);
 }
 /** Preview is read-only; freeze these exact assignments when starting the track. */
-async function gameVoiceRoster(db:Pick<DrizzleDB,"select">,gameId:string) {
+export async function gameVoiceRoster(db:Pick<DrizzleDB,"select">,gameId:string) {
   const players = await db.select({ id: schema.gamePlayers.id, agentId: schema.gamePlayers.agentProfileId }).from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, gameId));
   const [start] = await db.select({event:schema.werewolfEvents.event}).from(schema.werewolfEvents).where(eq(schema.werewolfEvents.gameId,gameId)).orderBy(schema.werewolfEvents.sequence).limit(1);
   if (start?.event.type === "werewolf.started") players.push(...start.event.payload.players.map(player => ({id:player.id,agentId:player.agentProfileId ?? null})));

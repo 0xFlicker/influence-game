@@ -94,13 +94,22 @@ No local voice effects or normalization. Codec conversion remains allowed. Keep 
 | GPT Sol | Sal (`sal`) | Male |
 | Kimi K3 | Ara (`ara`) | Female |
 | Meta Spark | Liora (`liora`) | Female |
+| Claude Sonnet | Atlas (`atlas`) | Male |
+| Claude Haiku | Iris (`iris`) | Female |
+| Gemini Pro | Altair (`altair`) | Male |
+| DeepSeek Flash | Kepler (`kepler`) | Male |
+| Grok 4.6 | Sirius (`sirius`) | Male |
+| The House | Helios (`helios`) | Male |
 
-These explicit selections override the earlier audition assignments and automatic
-defaults for subsequent tests. Kimi K3's saved profile gender is female, already
+The October 25 correction replaces Sonnet's earlier Celeste audition with Atlas;
+his image remains unchanged. These explicit selections apply to both speech and
+thinking and override automatic defaults. They must be persisted by stable agent
+ID before starting a game; a documented mapping alone does not configure it.
+Kimi K3's saved profile gender is female, already
 published through localhost MCP at the operator's request. The current local
 validation `voice-assignments.json` records these choices. Existing audition
 clips/manifests retain their original voice provenance. Profile-level voice
-persistence is still pending implementation.
+persistence is implemented. Use [the live voice correction runbook](../audio-mode.md#correcting-a-live-cast) for an already-frozen game.
 
 ### Deterministic assignment
 
