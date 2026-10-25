@@ -24,6 +24,7 @@ import {
 } from "@remotion/renderer";
 import { probe, runProcess, sha256 } from "./assets";
 import type { ReplayManifest } from "./manifest";
+import { createRenderProgress } from "./progress";
 const webRoot = resolve(import.meta.dir, "../../.."),
   repoRoot = resolve(webRoot, "../..");
 
@@ -171,28 +172,29 @@ export async function renderReplay(
           inputProps,
           timeoutInMilliseconds: 60000,
         });
-        let percent = -1;
         const scheduledAudio = manifest.audio.clips.some(clip => clip.endMs > manifest.range.fromFrame*1000/manifest.fps && clip.startMs < manifest.range.untilFrame*1000/manifest.fps);
-        await renderMedia({
-          composition,
-          serveUrl,
-          inputProps,
-          codec: "h264",
-          audioCodec: "aac",
-          // Layout Artifacts are not audio. Remotion can otherwise synthesize a silent AAC track.
-          muted:!scheduledAudio,
-          outputLocation: partial,
-          concurrency,
-          cancelSignal,
-          timeoutInMilliseconds: 60000,
-          onProgress: (progress) => {
-            const next = Math.floor(progress.progress * 100);
-            if (next !== percent) {
-              percent = next;
-              console.log(`Rendering ${next}%`);
-            }
-          },
-        });
+        const progress = createRenderProgress();
+        let rendered = false;
+        try {
+          await renderMedia({
+            composition,
+            serveUrl,
+            inputProps,
+            codec: "h264",
+            audioCodec: "aac",
+            // Layout Artifacts are not audio. Remotion can otherwise synthesize a silent AAC track.
+            muted:!scheduledAudio,
+            outputLocation: partial,
+            concurrency,
+            cancelSignal,
+            timeoutInMilliseconds: 60000,
+            onProgress: progress.update,
+          });
+          rendered = true;
+        } finally {
+          progress.finish(rendered);
+        }
+        console.log("Checking encoded video and saving receipt…");
         const metadata = await probe(partial, signal),
           video = metadata.streams.find(
             (stream) => stream.codec_type === "video",

@@ -35,6 +35,8 @@ The CLI reuses a checked, API-origin-bound app session shared with the API simul
 
 ## Local recordings
 
+During rendering, the CLI displays one updating progress bar with elapsed time and an approximate remaining time, then labels encoding/muxing and final verification. The estimate uses measured progress and Remotion's recent frame timing; it appears after a short warm-up and can change for more expensive scenes. Redirected output uses occasional plain-text milestones instead of terminal control codes. Rendering progress starts after bundling and layout preparation.
+
 Export validation checks that recordings belong to the selected, audience-authorized moments and that generated audio matches its published version. Playback cues own text/speaker matching; export does not maintain a separate allowlist of narratable moment types or equate an action's actor with its narrator.
 
 **Import local recordings** accepts one JSON speech manifest and its audio files. Nothing is uploaded or generated. Each entry uses the existing speech manifest contract:
