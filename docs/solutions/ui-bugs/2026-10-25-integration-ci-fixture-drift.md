@@ -35,6 +35,8 @@ The Werewolf portrait-room browser check also caught a real layout regression:
 floor-perspective speech was anchored above the front speaker while the rear
 cast's name labels occupied that same area. Reserve the rear row when positioning
 the bubble and move the ring down only as far as the fitted speech requires.
+Bound that movement by the remaining portrait and name space: a narrow 300px
+embedded stage must not push the front speaker outside its clipped container.
 Keep the existing mobile label-overlap and portrait-containment assertions; the
 shared component supplies the same layout to Influence, Werewolf and sampled
 exports without changing canonical history or media identities.
@@ -44,6 +46,9 @@ when there are no recordings. Their generic 404 caused the real voice controller
 to pause playback, cascading into missing bubbles, music and navigation. An
 Empower v2 story also needs its frozen revote version explicitly set; omission
 correctly selects historical v1 behavior.
+Introduction shots use the Lobby room backdrop. Their fullscreen tests should
+decode that declared image and retain geometry checks, rather than requiring the
+former two-image stage backdrop implementation.
 
 Werewolf phase entries are playable House cues. Browser journeys should select
 canonical speech or room-navigation entries instead of assuming cursor 1 is a
@@ -51,3 +56,12 @@ contestant's speech, or that one arrow always bypasses House narration. Public
 fixtures must carry valid frozen provider manifests, since one malformed game
 can make the library request fail for later tests. Scope library actions to the
 intended game card when several fixtures are present.
+
+A subsequent PostgreSQL run exposed a cutout publication race: PostgreSQL saves
+`ready_at` with microseconds, while an immediate JavaScript `new Date()` cutoff
+can still be at the start of that millisecond. An accepted ready cutout was
+therefore occasionally missing from a live read. Use the database clock when no
+cutoff is supplied. Explicit frozen Date cutoffs retain their exact comparison;
+this adds no compatibility path and changes no saved assets or snapshots. A
+deterministic test reproduces the sub-millisecond boundary before checking both
+live visibility and the unchanged frozen cutoff.

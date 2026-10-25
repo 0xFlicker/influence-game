@@ -41,9 +41,11 @@ export async function requestCharacterCutouts(db: DrizzleDB, gameId: string, sou
 }
 
 /** Read-only pinning survives disabled generation and excludes arrivals after the cutoff. */
-export async function readyCharacterCutoutUrls(db: Pick<DrizzleDB, "select">, gameId: string, sources: Record<string, string>, before = new Date()) {
+export async function readyCharacterCutoutUrls(db: Pick<DrizzleDB, "select">, gameId: string, sources: Record<string, string>, before?: Date) {
+  // Live reads share the worker's database clock and sub-millisecond precision.
+  const cutoff = before ?? sql`clock_timestamp()`;
   const ready = await db.select({ demand: demands }).from(demands).innerJoin(jobs, eq(demands.cutoutId, jobs.id))
-    .where(and(eq(demands.gameId, gameId), eq(demands.recipe, CUTOUT_RECIPE), eq(jobs.status, "ready"), lte(jobs.readyAt, before), lte(demands.createdAt, before)));
+    .where(and(eq(demands.gameId, gameId), eq(demands.recipe, CUTOUT_RECIPE), eq(jobs.status, "ready"), lte(jobs.readyAt, cutoff), lte(demands.createdAt, cutoff)));
   return Object.fromEntries(ready.filter(row => sources[row.demand.playerId] === row.demand.sourceKey)
     .map(row => [row.demand.playerId, `/api/games/${encodeURIComponent(gameId)}/cutouts/${row.demand.id}`]));
 }

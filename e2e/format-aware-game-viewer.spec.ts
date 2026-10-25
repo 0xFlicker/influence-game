@@ -687,6 +687,22 @@ test.describe("format-aware game viewer", () => {
     await expect(room.locator("[data-speech-bubble]")).toHaveCSS("opacity", "1");
     await expect(room.getByRole("img", { name: cast[2]!.name })).toHaveAttribute("src", /aggressive.png$/);
     await page.getByRole("button", { name: /Pause/ }).filter({ visible: true }).click();
+    await room.evaluate(element => Object.assign(element.style, { width: "390px", height: "300px", flex: "none" }));
+    await expect.poll(async () => {
+      const bounds = (await room.boundingBox())!;
+      return [Math.round(bounds.width), Math.round(bounds.height)];
+    }).toEqual([390, 300]);
+    await expect.poll(() => room.evaluate(element => {
+      const stage = element.getBoundingClientRect();
+      return [...element.querySelectorAll("[data-room-player] img, [data-room-player] p")].every(child => {
+        const bounds = child.getBoundingClientRect();
+        return bounds.top >= stage.top - 1 && bounds.bottom <= stage.bottom + 1;
+      });
+    })).toBe(true);
+    await room.screenshot({ path: testInfo.outputPath("portrait-mingle-embedded-390x300.png") });
+    await room.evaluate(element => {
+      for (const property of ["width", "height", "flex"]) element.style.removeProperty(property);
+    });
     await page.getByRole("button", { name: "Enter fullscreen", exact: true }).click();
     for (const size of [{ width: 1920, height: 1080 }, { width: 3440, height: 1440 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
       await page.setViewportSize(size);
@@ -895,10 +911,15 @@ test.describe("format-aware game viewer", () => {
         expect(bounds.top).toBeGreaterThanOrEqual(0);
         expect(bounds.bottom).toBeLessThan(bounds.viewport);
         expect(bounds.scroll).toBeLessThanOrEqual(bounds.client + 1);
-        const backdrop = solo.locator("[data-stage-backdrop]");
-        await expect(backdrop.locator("img")).toHaveCount(2);
-        await expect(backdrop.locator("img").first()).toHaveAttribute("src", "/visual/solo-studio-backdrop.webp");
-        await expect.poll(() => backdrop.locator("img").first().evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+        const backdrop = solo.locator("[data-room-backdrop]");
+        await expect(backdrop).toHaveAttribute("data-room-backdrop", "/visual/influence/rooms-v1/lobby.jpg");
+        await expect(backdrop).toHaveCSS("background-image", /url\(.*\/visual\/influence\/rooms-v1\/lobby\.jpg/);
+        expect(await backdrop.evaluate(async element => {
+          const image = new Image();
+          image.src = element.getAttribute("data-room-backdrop")!;
+          await image.decode();
+          return image.naturalWidth;
+        })).toBeGreaterThan(0);
         expect(Math.round((await backdrop.boundingBox())!.width)).toBe(size.width);
         await solo.screenshot({ path: testInfo.outputPath(`solo-edges-${size.width}.png`) });
       }

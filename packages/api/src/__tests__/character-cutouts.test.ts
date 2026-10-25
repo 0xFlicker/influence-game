@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
-import { eq } from "drizzle-orm";
+import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
+import { eq, sql } from "drizzle-orm";
 import sharp from "sharp";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
@@ -128,6 +128,32 @@ test("disabled generation preserves authorized producer cutout reads while hidde
   const response = await app.request(url, { headers });
   expect(response.status).toBe(200);
   expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from(cutout));
+});
+
+test("live cutout reads include an accepted result within the current JavaScript millisecond", async () => {
+  const job = await enqueueCutout(db, source);
+  await db.insert(schema.agentContentAssets).values({ hash: job.sourceHash, bytes: await storeBinary(source) });
+  const sources = { p1: `sha256:${job.sourceHash}` };
+  await requestCharacterCutouts(db, "cutouts-game", sources);
+  await prepareCutoutDemands(db);
+  const reserved = (await reserveCutout(db, job.id))!;
+  expect((await claimCutout(db, job.id, reserved.token, CUTOUT_RECIPE))?.status).toBe("running");
+  expect(await acceptCutout(db, job.id, reserved.token, cutout)).toBe(true);
+  // Keep a half-millisecond that Date cannot represent, safely before the real
+  // acceptance time so the database clock never sees a future fixture result.
+  const [ready] = await db.update(schema.characterCutouts)
+    .set({ readyAt: sql`date_trunc('milliseconds', ready_at) - interval '500 microseconds'` })
+    .where(eq(schema.characterCutouts.id, job.id)).returning();
+  expect(ready!.status).toBe("ready");
+  const [demand] = await db.select().from(schema.characterCutoutDemands);
+  expect(demand!.cutoutId).toBe(job.id);
+  const cutoff = ready!.readyAt!;
+  setSystemTime(cutoff);
+  try {
+    expect((await readyCharacterCutoutUrls(db, "cutouts-game", sources)).p1).toContain("/cutouts/");
+    expect(await readyCharacterCutoutUrls(db, "cutouts-game", sources, cutoff)).toEqual({});
+    expect((await readyCharacterCutoutUrls(db, "cutouts-game", sources, new Date(cutoff.getTime() + 1))).p1).toContain("/cutouts/");
+  } finally { setSystemTime(); }
 });
 
 test("failed jobs stop after three leases and viewers do not reset retry budgets", async () => {

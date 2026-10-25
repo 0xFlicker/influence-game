@@ -130,8 +130,10 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
   const speechFit = useBubbleTypography(frame, beat.speech.text, speechBox, "speech", available < 300);
   const fittedBubbleHeight = speechFit.typography?.height ?? speechBox.height;
   const fittedBubbleWidth = speechFit.typography?.width ?? speechBox.width;
+  // A short embedded stage still needs space for the front portrait and label.
   const centerY = floorPerspective && !beside
-    ? Math.max(restingCenterY, 44 + fittedBubbleHeight + diameter / 2 + speechClearance)
+    ? Math.min(Math.max(restingCenterY, 44 + fittedBubbleHeight + diameter / 2 + speechClearance),
+      Math.max(diameter / 2, available - diameter / 2 - 48))
     : restingCenterY;
   const focus = thinkingFocus(size.width,available,{left:centerX-diameter*.28,top:centerY-diameter*.4,width:diameter*.56,height:diameter*.56},thought?.focus ?? 0,true,reducedMotion);
   const bubble = {...speechBox,width:fittedBubbleWidth,height:fittedBubbleHeight,
