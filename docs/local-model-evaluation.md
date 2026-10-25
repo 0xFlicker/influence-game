@@ -9,6 +9,18 @@ prompt applies to both games and House responses that request thinking. Assess
 this as output quality, not a new acceptance check; preserve imperfect responses
 and native provider reasoning in their existing evidence lanes.
 
+The first eight-model Werewolf tag-validation run exposed overlong Haiku thinking
+and occasional instruction/byte-limit narration. The native field now repeats the
+inner-monologue guidance with a usual 2–4 short-sentence target; repairs remind the
+model not to describe the correction. Check repaired responses and deliberate
+passes as well as first-attempt speech in the next authorized live evaluation.
+Do not mistake passing prompt-contract tests for proof of changed model behavior.
+Werewolf's authored thinking limit remains 2,000 UTF-16 code units of clean text.
+Overlong thinking receives the same repair feedback as speech: the prior draft,
+measured and allowed lengths, exact overage and rejected structured decision.
+The model must shorten the field while preserving intent and other valid choices.
+The provider output budget remains 8,192 tokens. No paid rerun was requested.
+
 Default delivery-tag evaluation: inspect clean speech and thinking in `--chatty`
 and the localhost API transcript, then inspect private provider evidence for the
 original tags. Both audio and non-audio games preserve annotations for later

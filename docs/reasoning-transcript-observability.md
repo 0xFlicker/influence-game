@@ -1,5 +1,14 @@
 # Reasoning & Transcript Observability
 
+The native thinking field repeats the in-character direction and suggests 2–4
+short sentences. Length-repair prompts explicitly keep correction mechanics out
+of authored thoughts and speech. This responds to observed live Haiku verbosity
+and Sonnet repair narration. Werewolf's authored thinking ceiling remains 2,000
+UTF-16 code units after delivery-tag removal. Overlong thinking follows the same
+repair path as speech, supplying the prior draft, measured length, allowance,
+exact overage and rejected structured decision for a shorter complete response.
+Native provider reasoning is not rewritten or filtered.
+
 Requested `thinking` is prompted as a concise, first-person inner monologue in
 character across Influence, Werewolf and the House. It prepares the spoken move
 or explains a silent choice in game terms, without schemas, internal IDs, prompt

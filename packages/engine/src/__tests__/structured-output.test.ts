@@ -6,6 +6,7 @@ import {
   measureLengthFeedback,
 } from "../structured-output";
 import type { ModelInvocation } from "../model-invocation";
+import { THINKING_FIELD_GUIDANCE } from "../thinking-guidance";
 
 interface ProviderPickPayload {
   target: string;
@@ -548,4 +549,36 @@ it("delivery controls do not consume the clean-text allowance or relax machine f
   for (const value of [{ text: "<soft>abc</soft>", target: "Ada" }, { text: "<soft></soft>", target: "Ada" }, { text: "Hi", target: "<soft>Ada</soft>" }, { text: "Hi", target: "Ada", extra: true }]) {
     expect(registry.decodeJsonDocument(artifact, JSON.stringify(value)).status).toBe("invalid");
   }
+});
+
+it.each([false, true])("guides the native thinking field without changing acceptance (delivery=%s)", delivery => {
+  const schema = { type: "object", additionalProperties: false, required: ["thinking", "text"], properties: {
+    thinking: { type: ["string", "null"], maxLength: 2000, description: "Private, hidden from other players." },
+    text: { type: "string", maxLength: 320 },
+  } };
+  const artifact = createExactStructuredOutputArtifact<unknown, unknown>({
+    action: "test.thinking.v1", name: "thinking", schema,
+    ...(delivery && { audioDelivery: { fields: ["thinking", "text"], nighttime: true } }),
+    acceptedValueUsesProviderSchema: true,
+    decodeProviderPayload: value => ({ status: "valid", value }),
+    decodeAcceptedValue: value => ({ status: "valid", value }),
+  });
+  const properties = artifact.providerSchema.properties as Record<string, Record<string, unknown>>;
+  expect(properties.thinking!.description).toContain(THINKING_FIELD_GUIDANCE);
+  expect(properties.thinking!.description).toContain("Private, hidden from other players.");
+  expect(artifact.schema).toEqual(schema);
+  expect(schema.properties.thinking.description).toBe("Private, hidden from other players.");
+  expect(artifact.providerSchema.required).toEqual(["thinking", "text"]);
+  expect(artifact.providerSchema.additionalProperties).toBe(false);
+  const registry = new ExactStructuredOutputRegistry();
+  for (const thinking of [null, "Shortened to fit the byte limit.", "<lower-pitch>I need her vote.</lower-pitch>"]) {
+    expect(registry.decodeJsonDocument(artifact, JSON.stringify({ thinking, text: "Trust me." })).status).toBe("valid");
+  }
+  expect(registry.decodeJsonDocument(artifact, JSON.stringify({ thinking: "x".repeat(2001), text: "Trust me." })).status).toBe("invalid");
+});
+
+it("keeps repair mechanics out of authored thinking and speech", () => {
+  const note = formatLengthRepairNote({ field: "thinking", draft: "Too long", measured: 8, allowed: 4, overage: 4, unit: "utf16_code_units" });
+  expect(note).toContain("do not narrate this length correction or output requirements");
+  expect(note).toContain("preserving its intent and all other valid choices");
 });

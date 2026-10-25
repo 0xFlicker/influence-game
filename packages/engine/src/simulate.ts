@@ -8,6 +8,11 @@
  * speech or a silent choice, using game stakes rather than schemas, IDs, prompt
  * compliance or byte/token arithmetic. This is not a style-based rejection rule;
  * native provider reasoning remains separate, unchanged private evidence.
+ * Native thinking field descriptions suggest 2–4 short sentences; length repairs
+ * remind models not to narrate the correction. Check actual repaired responses
+ * and deliberate passes when evaluating this guidance, not just prompt presence.
+ * Overlong Werewolf thinking uses the same draft-and-overage repair as speech;
+ * its clean-text limit remains 2,000 UTF-16 code units.
  * Thinking prefers higher-pitch by day, lower-pitch at night; night speech softly
  * guides delivery without forced wrapping. No TTS or audio DSP occurs here.
  * Influence decision speech uses strict message fields; ballots, format picks and

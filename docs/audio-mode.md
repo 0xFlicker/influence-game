@@ -92,7 +92,7 @@ sample picker are still pending.
 Connect the frozen stock-voice catalog/House identity, bucket-backed xAI recordings,
 live readiness/suspension, deliberate Studio backfill and the existing shared
 playback/export recording schedule. Use direct House calls and no `as any` casts.
-No audio generation, game creation setting, paid provider call or completion of
+No audio generation, game creation setting or completion of
 those layers is implied by the text-boundary integration.
 
 ## Validation
@@ -120,3 +120,12 @@ hook timeout; rerunning that file alone passed all eight tests and cleanup in
 23.58 seconds. The earlier migration-fixture failure was corrected and passed on
 the full rerun. No paid providers were called. Live qualification remains pending;
 these results do not establish model quality, audio timing or playback/export parity.
+
+The subsequent eight-model Werewolf API qualification completed with 69 accepted
+calls and 81 provider attempts, at an estimated $1.537443. Private annotations and
+clean replay/context checks passed. Overlong and instruction-narrating thinking
+prompted a follow-up: usually 2–4 short in-character sentences directly in the
+native thinking field description, plus a reminder not to narrate length repairs.
+Existing bounds and tolerant tag handling remain unchanged. See the
+[live result](testing/audio-delivery-qualification.md) for recovery, evidence and
+the remaining model-quality check; no audio was generated.

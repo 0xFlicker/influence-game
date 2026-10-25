@@ -4,6 +4,61 @@ This gate qualifies default text generation before the first live Audio Mode
 recording increment. It does not enable Audio Mode, synthesize recordings, alter
 saved voice choices or backfill historical games.
 
+## Werewolf live result — October 24, 2026
+
+One authorized localhost game completed: `e0b67229-61c3-4f46-a283-1e730cf234df`
+(`free-blue-shard`), Werewolf v10, eight model agents, two wolves, no Audio Mode.
+The village won on day two and all eight retrospective statements completed.
+The run used commit `4b02806f`; subsequent prompt refinements below were made
+only after completion. No Influence game or TTS request was started.
+
+- 69 accepted logical calls; 68 private annotation documents (the House episode
+  copy call has no speech/thinking delivery fields); 81 persisted provider attempts.
+- All annotation documents and provider evidence were read back with integrity
+  checks. Saved field text matched accepted clean values. All 81 inspected native
+  requests kept recognized delivery tags out of prior dialogue/context, including
+  repair drafts. Every requested thinking field had the shared prompt guidance.
+- Full replay reads covered 73 Mystery and 78 Omniscient entries, with no delivery
+  tags in their presentation entries. Night speech included authored soft tags;
+  missing nighttime/ordinary thinking pitch received the appropriate saved fallback.
+  The production thinking reader also revalidated all 55 eligible thoughts against
+  accepted values, hashes and canonical actions without another provider dispatch.
+- Twelve rejected attempts: six speech-length failures, four overlong Haiku
+  thinking responses, and two DeepSeek retrospective JSON-document failures.
+  No rejection was caused by delivery tags. The configured GPT Luna recovery
+  accepted one Haiku conversation turn; other accepted contestant calls used
+  their selected models. Original failures and successful responses remain saved.
+- Final recorded estimate: **$1.537443**, with **288.8 Katana credits** also reported
+  by that provider. Dollar totals are static rate-card estimates, not a reconciled
+  invoice; the native credit total is not an additional dollar charge.
+
+Assessment: the tag persistence and context-isolation path passed this Werewolf
+run. Thinking quality needs refinement: Sonnet narrated a length repair and Haiku
+quoted instructions/remaining bytes and exhausted a thinking-length retry series.
+The follow-up puts brief in-character guidance directly on the native thinking
+field (usually 2–4 short sentences), removes the numeric negative example, and
+reminds repairs not to narrate their mechanics. That prompt refinement changes no
+game rules or text filtering. Its model-behavior improvement remains unproven
+until a subsequent authorized live check; do not label this run as evidence for
+the revised prompts or for synthesized audio/playback.
+
+The operator clarified that the authored thinking limit should remain 2,000 UTF-16
+code units; the temporary 8,000-unit increase was reverted without a paid rerun.
+Thinking uses the same length-repair path as speech: the next attempt receives the
+clean rejected draft, measured length, allowed length, exact overage, and rejected
+structured decision, with instructions to shorten the field while preserving its
+intent and other valid choices. Werewolf allows three attempts per model before
+configured recovery. The provider output-token budget remains 8,192.
+
+Follow-up automated validation passed: 231 focused tests; `bun run test` passed
+2,950 tests with five skips; `bun run test:postgres` passed all 2,185 tests;
+`bun run check` passed typechecking and linting. Tests preserve exact field shapes,
+clean-text limits, nullability and acceptance of imperfectly styled thinking.
+
+Private audit snapshots, full provider evidence, the routing report and cost/read
+checks are retained in the task's `audio-implementation-validation/live/`
+artifact directory. Do not commit raw prompts, profile data or provider bodies.
+
 ## Automated evidence
 
 The implementation tests clean accepted fields, private annotation retention,
