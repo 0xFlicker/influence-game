@@ -115,9 +115,9 @@ async function main() {
   async function routing(game: Game) { return read<Routing>(`/api/model-routing/games/${game.id}`); }
   async function checkLedger(id?: string) {
     const ledger = JSON.parse(await readFile(ledgerPath, "utf8")) as LocalTaskLedger;
-    if (ledger.version !== 1 || ledger.limits.openaiUsd > 15 || ledger.limits.katanaCredits > 10000 || ledger.limits.xaiUsd > 15) throw new Error("Ledger exceeds authorized ceilings or is invalid");
+    if (ledger.version !== 1 || ledger.limits.openaiUsd > 15 || ledger.limits.katanaCredits > 10000 || ledger.limits.xaiUsd > 15 || (ledger.limits.metaUsd ?? 0) > 10) throw new Error("Ledger exceeds authorized ceilings or is invalid");
     if (id && !ledger.allowedGameIds.includes(id)) throw new Error("Game is not registered in the shared budget ledger");
-    for (const currency of ["openaiUsd", "katanaCredits", "xaiUsd"] as const) {
+    for (const currency of ["openaiUsd", "katanaCredits", "xaiUsd", "metaUsd"] as const) {
       const committed = ledger.prior[currency] + ledger.entries.filter(entry => entry.currency === currency).reduce((sum, entry) => sum + entry.charged, 0);
       if (!Number.isFinite(committed) || committed >= ledger.limits[currency]) throw new Error(`No ${currency} headroom remains`);
     }

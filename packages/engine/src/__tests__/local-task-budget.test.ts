@@ -7,7 +7,7 @@ import type { ProviderAttemptIntent } from "../provider-execution";
 
 async function fixture(run: (path: string, env: NodeJS.ProcessEnv) => Promise<void>) {
   const dir = await mkdtemp(join(tmpdir(), "local-task-budget-")), path = join(dir, "ledger.json");
-  const ledger: LocalTaskLedger = { version: 1, limits: { openaiUsd: 15, katanaCredits: 10000, xaiUsd: 15 }, prior: { openaiUsd: 0, katanaCredits: 0, xaiUsd: 0 }, allowedGameIds: ["g"], entries: [] };
+  const ledger: LocalTaskLedger = { version: 1, limits: { openaiUsd: 15, katanaCredits: 10000, xaiUsd: 15, metaUsd: 0 }, prior: { openaiUsd: 0, katanaCredits: 0, xaiUsd: 0, metaUsd: 0 }, allowedGameIds: ["g"], entries: [] };
   await writeFile(path, JSON.stringify(ledger));
   try { await run(path, { INFLUENCE_LOCAL_TASK_BUDGET: path }); } finally { await rm(dir, { recursive: true, force: true }); }
 }
@@ -29,8 +29,22 @@ test("blocks unapproved games and unknown models before underlying journal", () 
   const other = intent("other"); other.coordinate.gameId = "outside";
   await expect(hooks.onReserve!(other)).rejects.toThrow("outside");
   await expect(hooks.onReserve!(intent("unknown","openai:unknown"))).rejects.toThrow("unpriced");
-  await expect(hooks.onReserve!(intent("meta","meta-muse:muse-spark-1.3-contributor"))).rejects.toThrow("rejects provider");
+  await expect(hooks.onReserve!(intent("meta","meta-muse:muse-spark-1.3-contributor"))).rejects.toThrow("allowance exhausted");
+  await expect(hooks.onReserve!(intent("other-meta","meta-muse:muse-wonder-1.0"))).rejects.toThrow("rejects provider");
   expect(calls).toBe(0);
+}));
+test("authorized Meta contributor spends only its separate bounded allocation", () => fixture(async(path,env)=>{
+  const ledger=JSON.parse(await readFile(path,"utf8")) as LocalTaskLedger;
+  ledger.limits.metaUsd=0.02;
+  await writeFile(path,JSON.stringify(ledger));
+  const hooks=withLocalTaskBudget({},env);
+  await hooks.onReserve!(intent("meta","meta-muse:muse-spark-1.3-contributor"));
+  const updated=JSON.parse(await readFile(path,"utf8")) as LocalTaskLedger;
+  expect(updated.entries[0]!.currency).toBe("metaUsd");
+  expect(updated.entries[0]!.charged).toBeLessThan(0.02);
+  const large=intent("large","meta-muse:muse-spark-1.3-contributor");
+  (large.preparedRequest.body as Record<string,unknown>).max_output_tokens=100_000;
+  await expect(hooks.onReserve!(large)).rejects.toThrow("metaUsd allowance exhausted");
 }));
 test("audio retries and parallel reservations cannot exceed shared allowance", () => fixture(async(path,env)=>{
   const results=await Promise.allSettled([reserveLocalTaskAudio("a","a".repeat(300000),"g",env),reserveLocalTaskAudio("b","a".repeat(300000),"g",env)]);
