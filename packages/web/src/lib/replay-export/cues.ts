@@ -252,7 +252,14 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
       },
       label: `Round ${cue.round} · ${cue.phase}`,
       speech:
-        spoken && (!ledger || !ledger.complete && !!cue.spokenMessage)
+        message?.dialogueKind === "house_summary"
+          ? {
+              messageId: String(message.id),
+              speakerId: null,
+              speaker: "The House",
+              text: message.text,
+            }
+          : spoken && (!ledger || !ledger.complete && !!cue.spokenMessage)
           ? {
               messageId: message ? String(message.id) : cue.key,
               speakerId: spoken.playerId,

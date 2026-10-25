@@ -190,3 +190,5 @@ Generated versions do not need `--speech-manifest`; imported local recordings
 still do. Preparation never synthesizes missing audio. Missing or changed frozen
 versions fail explicitly. Thinking clips use the same independent thought moments
 and can be excluded without retaining their audio or duration.
+
+Influence House-summary scenes retain the exact accepted transcript ID and text as their recording identity even when their visual beat is a House card or winner scene rather than a player speech bubble. Generated narration still requires one unambiguous line, an exact speaker/text hash match, and matching frozen media integrity; the measured recording drives the shared House caption window.

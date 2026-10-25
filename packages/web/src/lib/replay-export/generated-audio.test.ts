@@ -42,3 +42,42 @@ test("generated House, speech and independent thinking versions reach the shared
  await expect(attachGeneratedAudio({source,selectedIds,publication,hash,asset,frozen:attached.recordings.map((recording,index)=>index?recording:{...recording,durationMs:9})})).rejects.toThrow("changed");
  await expect(attachGeneratedAudio({source,selectedIds,publication:{...publication,clips:publication.clips.map((clip,index)=>index?clip:{...clip,textHash:"wrong"})},hash,asset})).rejects.toThrow("text or speaker");
 });
+
+test("accepted Influence House summaries retain exact audio identity across phase and winner scenes", async () => {
+ const {bindInfluenceProductionPresentation} = await import("./production-presentation");
+ const {buildInfluenceProductionSources} = await import("@influence/engine/production-moments/influence-source");
+ const {selectProductionMoments} = await import("@influence/engine/production-moments");
+ const gameId="house-summary-export";
+ const phases=["LOBBY","FORMAT_MENU","FORMAT_PICK","OPENING_STATEMENTS","ACCUSATION","DEFENSE","PLEA","VOTE","FORMAT_RESOLVE","CLOSING_ARGUMENTS","JURY_VOTE"] as const;
+ const messages: import("../api").TranscriptEntry[]=phases.map((phase,index)=>({
+  id:100+index,gameId,round:1,phase,scope:"system",entrySequence:index+1,
+  dialogueKind:"house_summary",firstDurableEventSequence:index+1,fromPlayerId:null,
+  fromPlayerName:null,toPlayerIds:null,text:`Exact accepted House summary ${index}.`,timestamp:index+1,
+ }));
+ const replay: Extract<import("./source").ReplaySource,{kind:"influence"}>={
+  kind:"influence",game:{id:gameId,slug:gameId,status:"completed",gameKernel:"classic",players:[
+   {id:"a",name:"A",persona:"",status:"alive",shielded:false},
+   {id:"b",name:"B",persona:"",status:"alive",shielded:false},
+  ]},messages,frames:[],thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[],publicationSnapshot:{}},
+ };
+ const catalog=assembleProductionCatalog({gameId,gameKind:"influence",audience:"public",
+  sources:buildInfluenceProductionSources({gameId,gameKernel:"classic",transcripts:messages,frames:[]})});
+ const source=await bindInfluenceProductionPresentation({source:replay,catalog,thoughts:[]});
+ const selectedIds=selectProductionMoments(catalog,{mode:"full",thinking:true}).map(moment=>moment.id);
+ const summaries=source.filter(moment=>moment.segments.some(cue=>cue.source.kind==="influence"));
+ expect(summaries).toHaveLength(phases.length);
+ const publication:PublishedAudioTrack={id:"house-track",clips:summaries.map((moment,index)=>({
+  momentId:moment.id,speakerId:null,textHash:hash(messages[index]!.text),versionId:`house-${index}`,
+  sha256:hash(`audio-${index}`),durationMs:9000+index,url:`/house-${index}.mp3`,
+ }))};
+ const asset=async(clip:PublishedAudioTrack["clips"][number])=>({path:clip.url,sha256:clip.sha256,mediaType:"audio",durationMs:clip.durationMs} as CachedAsset);
+ const attached=await attachGeneratedAudio({source,selectedIds,publication,hash,asset});
+ expect(attached.recordings).toHaveLength(phases.length);
+ expect(attached.recordings.map(r=>r.messageId)).toEqual(messages.map(m=>String(m.id)));
+ for(const [index,moment] of summaries.entries())expect(recordingIdentity(moment.segments[0]!)).toMatchObject({speakerId:null,speaker:"The House",text:messages[index]!.text});
+ const compiled=compilePresentation({source:attached.source,selectedIds,profile:{ending:{holdMs:0},overrides:{}},fps:30,assets:attached.assets,music:false});
+ expect(compiled.audio.clips.filter(clip=>clip.purpose==="speech")).toHaveLength(phases.length);
+ expect(compiled.timeline.filter(cue=>cue.recording).map(cue=>cue.speech!.hideAtMs-cue.speech!.readAtMs)).toEqual(publication.clips.map(clip=>clip.durationMs));
+ await expect(attachGeneratedAudio({source,selectedIds,publication:{...publication,clips:publication.clips.map((clip,index)=>index?clip:{...clip,speakerId:"a"})},hash,asset})).rejects.toThrow("text or speaker");
+ await expect(attachGeneratedAudio({source:source.map(moment=>moment===summaries[0]?{...moment,segments:[...moment.segments,...moment.segments]}:moment),selectedIds,publication,hash,asset})).rejects.toThrow("unambiguous accepted line");
+});
