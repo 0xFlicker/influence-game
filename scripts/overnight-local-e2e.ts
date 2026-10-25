@@ -12,7 +12,7 @@ import { loadProductionReplaySource } from "../packages/web/src/lib/replay-expor
 const MODELS = {
   "GPT Sol": "openai:gpt-6.1-sol", "Claude Sonnet": "katana:claude-sonnet-4-6",
   "Claude Haiku": "katana:claude-haiku-4-5", "Gemini Pro": "katana:gemini-3-1-pro-preview",
-  "Meta Spark": "meta-muse:muse-spark-1.3-contributor", "Kimi K3": "katana:kimi-k3",
+  "Meta Spark": "katana:glm-5-3-flash-private", "Kimi K3": "katana:kimi-k3",
   "DeepSeek Flash": "katana:deepseek-v4-flash", "Grok 4.6": "katana:grok-4-6",
 } as const;
 type Kind = "werewolf" | "influence";
@@ -99,8 +99,8 @@ async function main() {
       const matching = rows.map(row => object(row, "profile")).filter(row => row.name === name);
       if (matching.length !== 1) throw new Error(`Expected exactly one owned ${name}, found ${matching.length}`);
       const row = matching[0]!, preference = normalizeModelPreference(row.modelPreference);
-      if (preference === "default" || preference.catalogId !== catalogId) throw new Error(`${name} preference changed; review the roster before dispatch`);
-      return { id: string(row.id, "profile id"), name, modelPreference: preference,
+      if (preference === "default" || preference.catalogId !== (name === "Meta Spark" ? "meta-muse:muse-spark-1.3-contributor" : catalogId)) throw new Error(`${name} preference changed; review the roster before dispatch`);
+      return { id: string(row.id, "profile id"), name, modelPreference: { catalogId, reasoningPolicy: "action-policy" },
         avatarUrl: string(row.avatarUrl, `${name} portrait`), fullBodyReferenceUrl: string(row.fullBodyReferenceUrl, `${name} full body`) };
     });
   }

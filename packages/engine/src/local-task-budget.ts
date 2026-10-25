@@ -61,7 +61,7 @@ function textReservation(intent: ProviderAttemptIntent): Entry {
   const body = intent.preparedRequest.body as Record<string, unknown>;
   if (!catalogId || !body || typeof body !== "object") throw new Error("Task budget requires a catalog and bounded request");
   const provider = catalogId.split(":")[0];
-  if (!["openai", "katana", "meta-muse"].includes(provider!)) throw new Error(`Task budget rejects provider ${provider}`);
+  if (!["openai", "katana"].includes(provider!)) throw new Error(`Task budget rejects provider ${provider}`);
   const card = modelRateCard(catalogId);
   if (!card) throw new Error(`Task budget rejects unpriced model ${catalogId}`);
   const rows = [card.rates, ...(card.rates.tiers ?? [])];

@@ -19,16 +19,17 @@ function intent(id: string, catalogId = "openai:gpt-6.1-sol"): ProviderAttemptIn
 }
 test("all eight cast models reserve into one ledger with separate currencies", () => fixture(async (path,env) => {
   const hooks = withLocalTaskBudget({},env);
-  for(const [i,id] of ["openai:gpt-6.1-sol","katana:claude-sonnet-4-6","katana:claude-haiku-4-5","katana:gemini-3-1-pro-preview","meta-muse:muse-spark-1.3-contributor","katana:kimi-k3","katana:deepseek-v4-flash","katana:grok-4-6"].entries()) await hooks.onReserve!(intent(String(i),id));
+  for(const [i,id] of ["openai:gpt-6.1-sol","katana:claude-sonnet-4-6","katana:claude-haiku-4-5","katana:gemini-3-1-pro-preview","katana:glm-5-3-flash-private","katana:kimi-k3","katana:deepseek-v4-flash","katana:grok-4-6"].entries()) await hooks.onReserve!(intent(String(i),id));
   const ledger = JSON.parse(await readFile(path,"utf8")) as LocalTaskLedger;
   expect(ledger.entries).toHaveLength(8);
-  expect(ledger.entries.filter(e=>e.currency === "katanaCredits")).toHaveLength(6);
+  expect(ledger.entries.filter(e=>e.currency === "katanaCredits")).toHaveLength(7);
 }));
 test("blocks unapproved games and unknown models before underlying journal", () => fixture(async (_path,env) => {
   let calls = 0; const hooks = withLocalTaskBudget({onReserve:()=>{calls++;}},env);
   const other = intent("other"); other.coordinate.gameId = "outside";
   await expect(hooks.onReserve!(other)).rejects.toThrow("outside");
   await expect(hooks.onReserve!(intent("unknown","openai:unknown"))).rejects.toThrow("unpriced");
+  await expect(hooks.onReserve!(intent("meta","meta-muse:muse-spark-1.3-contributor"))).rejects.toThrow("rejects provider");
   expect(calls).toBe(0);
 }));
 test("audio retries and parallel reservations cannot exceed shared allowance", () => fixture(async(path,env)=>{

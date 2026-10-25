@@ -54,3 +54,5 @@ and Grok 4.6 retain their current saved profile identities and model preferences
 GPT Luna is the House and common recovery route. Existing circular portraits remain
 unchanged. Full-body derivatives must preserve source dimensions and head geometry,
 fall back to the original when unavailable, and be pinned into new export snapshots.
+
+Meta Spark retains its existing character identity and images but uses Katana GLM 5.3 Flash Private for this run. The separate paid Meta API is outside the authorized provider allowances and is rejected by the task guard. Each actual xAI audio dispatch reserves from the shared ledger using its durable attempt ID.

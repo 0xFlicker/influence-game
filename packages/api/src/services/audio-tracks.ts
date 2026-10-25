@@ -1,3 +1,4 @@
+import { reserveLocalTaskAudio } from "@influence/engine";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { readAudioSource, audioRecipe, audioSourceHash } from "./audio-source.js";
@@ -98,7 +99,7 @@ export async function runAudioTrack(db: DrizzleDB, provider: AudioProvider = gen
           return row!.id;
         });
         let result;
-        try { result = await provider(recipe, signal); }
+        try { await reserveLocalTaskAudio(attemptId, recipe.synthesisText, track.gameId); result = await provider(recipe, signal); }
         catch (error) {
           const evidence = await storeJson(error instanceof AudioProviderFailure ? error.evidence : { failure: error instanceof Error ? error.message : "Audio generation failed" });
           await db.transaction(async tx => {
