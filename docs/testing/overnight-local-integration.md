@@ -56,3 +56,5 @@ unchanged. Full-body derivatives must preserve source dimensions and head geomet
 fall back to the original when unavailable, and be pinned into new export snapshots.
 
 Meta Spark retains its existing character identity and images but uses Katana GLM 5.3 Flash Private for this run. The separate paid Meta API is outside the authorized provider allowances and is rejected by the task guard. Each actual xAI audio dispatch reserves from the shared ledger using its durable attempt ID.
+
+The faint rectangle in the supplied Sonnet screenshot came from Werewolf opening CSS (`border` plus rectangular `box-shadow`). Full-body opening shots now retain the same image box with a transparent border and alpha-following shadow. Browser and Remotion share this frame. Portrait fallback styling and all source/cutout pixels remain unchanged.

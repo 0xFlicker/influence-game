@@ -11,7 +11,7 @@ export const OPENING_ASSETS = {
   lantern: `${root}/lantern.mp4`, lanternPoster: `${root}/lantern.jpg`, lanternEffects: `${root}/lantern-effects.mp3`,
   door: `${root}/door.mp4`, doorPoster: `${root}/door.jpg`, doorEffects: `${root}/door-effects.mp3`,
 };
-export interface OpeningPlayer { id: string; name: string; imageUrl: string | null; role?: string }
+export interface OpeningPlayer { id: string; name: string; imageUrl: string | null; fullBody?: boolean; role?: string }
 export interface WerewolfOpeningCue {
   key: string;
   baseDurationMs: number;
@@ -31,7 +31,7 @@ export function werewolfOpening(window: WerewolfWatchWindow, title?: string): We
   const initial = window.moments[0]!.snapshot;
   const players: OpeningPlayer[] = window.players.map(identity => {
     const role = window.audience === "omniscient" ? initial.players.find(p => p.id === identity.id)?.role : undefined;
-    return {id: identity.id, name: identity.name, imageUrl: identity.fullBodyReferenceUrl ?? identity.avatarUrl,
+    return {id: identity.id, name: identity.name, imageUrl: identity.fullBodyReferenceUrl ?? identity.avatarUrl, fullBody: Boolean(identity.fullBodyReferenceUrl),
       ...(role ? {role} : {})};
   });
   const shots: Array<{duration: number; shot: WerewolfOpeningCue["opening"]["shot"]; player?: OpeningPlayer}> = [
