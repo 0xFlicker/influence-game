@@ -2,7 +2,9 @@ import {expect, test} from "bun:test";
 import {renderToStaticMarkup} from "react-dom/server";
 import {HouseNarration, narrationPages, narrationWindow} from "../components/watch/house-narration";
 import {PresentationDirector, type PresentationClock} from "../components/watch/watch-director";
-import {werewolfMomentCues, werewolfWatchPolicy} from "../components/games/werewolf/werewolf-watch-model";
+import {werewolfMomentCues, werewolfWatchPolicy, werewolfCueMoment, werewolfHouseCentered} from "../components/games/werewolf/werewolf-watch-model";
+import {completedCurrentWerewolfFixture} from "@influence/engine/fixtures/werewolf-results";
+import {projectWerewolfProductionWatch} from "@influence/engine/werewolf/watch";
 import {WerewolfContentFrame} from "../components/games/werewolf/werewolf-watch-stage";
 import {villageEliminationFrame} from "../components/games/werewolf/werewolf-vote-outcome";
 import type {WerewolfWatchMoment} from "@influence/engine/werewolf/watch-contract";
@@ -47,4 +49,30 @@ test("village elimination desaturates only the actual recorded outcome, with sta
   if (moment.entry.kind !== "vote") throw new Error("fixture");
   const noExit: WerewolfWatchMoment={...moment,entry:{...moment.entry,result:{...moment.entry.result,eliminatedId:null}}};
   expect(renderToStaticMarkup(<WerewolfContentFrame cue={werewolfMomentCues(noExit).at(-1)!} scene={null} elapsed={1500} reduced/>)).not.toContain("data-village-elimination");
+});
+
+test("House owns backdrop-only scenes and every private action has its own spoken result", async () => {
+  const events = await completedCurrentWerewolfFixture("house-scenes", 11);
+  for (const audience of ["omniscient", "mystery"] as const) {
+    const projected = projectWerewolfProductionWatch(events, audience);
+    for (const row of projected.moments) {
+      const cues = werewolfMomentCues(row);
+      expect(cues.map(cue => cue.baseDurationMs)).toEqual(projected.playback.find(item => item.cursor === row.cursor)?.durationsMs ?? []);
+      for (const cue of cues) {
+        const line = werewolfCueMoment(cue);
+        if (cue.nightAction && !cue.nightDecision) {
+          expect(audience).toBe("omniscient"); expect(line.house).toBe(true); expect(line.speaker).toBe("The House");
+          expect(werewolfWatchPolicy.speech(cue)).not.toBeNull();
+          expect(line.text).toContain(cue.nightAction.kind === "investigate" ? "The result:" : cue.nightAction.kind === "protect" ? "protects" : "hunts");
+        }
+        if (cue.nightDecision) expect(line.house).toBe(false);
+        if (line.house && !cue.ballot && !line.actor && !cue.nightAction) {
+          expect(werewolfHouseCentered(cue)).toBe(true);
+          const html = renderToStaticMarkup(<WerewolfContentFrame cue={cue} scene={null} elapsed={0} reduced/>);
+          expect(html).toContain('data-house-layout="center"');
+          expect(html.match(/data-house-narration="true"/g)).toHaveLength(1);
+        }
+      }
+    }
+  }
 });

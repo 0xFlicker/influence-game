@@ -1,4 +1,4 @@
-import {werewolfHouseSpeech} from "@influence/engine/werewolf/house-speech";
+import {werewolfHouseSpeech, werewolfNightHouseSpeech} from "@influence/engine/werewolf/house-speech";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { compileAudioDelivery, type AudioDeliveryContext } from "@influence/engine/audio-delivery";
 import type { VoiceAssignment } from "@influence/engine/voice-catalog";
@@ -11,6 +11,8 @@ import { sha256StableJson } from "./stable-hash.js";
 
 export interface AudioSourceLine {
   momentId: string;
+  /** Audience-specific delivery may have its own clip identity at one production moment. */
+  productionMomentId?: string;
   watch?: Partial<Record<ProductionAudience, import("@influence/engine/audio-watch").AudioWatchCoordinate>>;
   speakerId: string | null;
   text: string;
@@ -41,7 +43,7 @@ export function audioSourceHash(line: AudioSourceLine) {
 }
 
 /** Read accepted production sources, never raw provider reasoning or contestant context. */
-export async function readAudioSource(db: DrizzleDB, gameId: string, live = false): Promise<AudioSourceManifest> {
+export async function readAudioSource(db: DrizzleDB | Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0], gameId: string, live = false): Promise<AudioSourceManifest> {
   const [game] = await db.select({ kind: schema.games.gameKind }).from(schema.games).where(eq(schema.games.id, gameId));
   if (!game) throw new Error("Audio game not found");
   const lines: AudioSourceLine[] = [];
@@ -56,6 +58,26 @@ export async function readAudioSource(db: DrizzleDB, gameId: string, live = fals
     for (const moment of source.catalog.moments) {
       const position = source.window.moments.find(row => row.cursor === moment.order.anchor);
       const eventSequence = "eventSequence" in moment.source ? moment.source.eventSequence : 0;
+      const actionKind = moment.part.kind;
+      const action = actionKind === "protect" || actionKind === "investigate" || actionKind === "hunt"
+        ? position?.night?.actions.find(action => action.kind === actionKind) : undefined;
+      const house = position && (["scene", "outcome", "result", "pack_vote"].includes(actionKind) || action)
+        ? action ? werewolfNightHouseSpeech(action, position.snapshot.players) : werewolfHouseSpeech(position.entry, position.snapshot.players, position.snapshot.rulesVersion) : null;
+      if (house && position) {
+        const publicMoment = publicMoments.get(moment.id);
+        const publicPosition = publicMoment && mystery.window.moments.find(row => row.cursor === publicMoment.order.anchor);
+        const publicText = publicPosition ? werewolfHouseSpeech(publicPosition.entry, publicPosition.snapshot.players, publicPosition.snapshot.rulesVersion) : null;
+        const coordinate = {kind: "werewolf" as const, cursor: moment.order.anchor, actorId: null, part: "speech" as const, ...(action && {action: action.kind})};
+        const line: AudioSourceLine = {momentId: moment.id, speakerId: null, text: house, synthesisText: compileAudioDelivery(house, "speech").synthesisText,
+          context: "speech", eventSequence, watch: {omniscient: coordinate}, audiences: ["omniscient"]};
+        if (publicText && publicMoment) {
+          const watch = {kind: "werewolf" as const, cursor: publicMoment.order.anchor, actorId: null, part: "speech" as const};
+          if (publicText === house) {line.audiences.unshift("mystery"); line.watch!.mystery = watch;}
+          else lines.push({...line, momentId: `${moment.id}:mystery`, productionMomentId: moment.id, text: publicText, synthesisText: compileAudioDelivery(publicText, "speech").synthesisText, watch: {mystery: watch}, audiences: ["mystery"]});
+        }
+        lines.push(line);
+        continue;
+      }
       let text: string | null | undefined;
       if (moment.kind === "thinking") text = source.thoughts.find(row => row.eventSequence === eventSequence && row.actorId === moment.actorId)?.thinking;
       else if (moment.part.kind === "night-speech") {
@@ -67,7 +89,6 @@ export async function readAudioSource(db: DrizzleDB, gameId: string, live = fals
         if (entry?.kind === "discussion") text = entry.contribution.unavailable ? null : entry.contribution.text;
         else if (entry && "text" in entry && !("unavailable" in entry && entry.unavailable)) text = entry.text;
       }
-      if (position && ["scene","outcome","result"].includes(moment.kind)) text = werewolfHouseSpeech(position.entry,position.snapshot.players,position.snapshot.rulesVersion);
       if (!text?.trim()) continue;
       const thought = moment.kind === "thinking";
       const thoughtAction = source.thoughts.find(row => row.eventSequence === eventSequence && row.actorId === moment.actorId)?.action;

@@ -1,5 +1,6 @@
 import {exportPreviousSpeaker} from "../../lib/replay-export/room-continuity";
 import {HouseNarration, narrationWindow} from "../../components/watch/house-narration";
+import {werewolfHouseCentered} from "../../components/games/werewolf/werewolf-watch-model";
 import {WerewolfOpeningFrame} from "../../components/games/werewolf/werewolf-opening-frame";
 import {InfluenceOpeningFrame} from "../../app/games/[slug]/components/influence-opening-frame";
 import type {OpeningVideoProps} from "../../components/watch/opening-browser-video";
@@ -204,7 +205,7 @@ export function ReplayFrame({
                   />
                 </FitPresentation>
               ) : null}
-              <HouseNarration text={cue.speech?.text ?? ""} window={houseWindow} logoUrl={staticFile("logo.png")} />
+              <HouseNarration centered={picture.kind === "werewolf" && werewolfHouseCentered(picture.cue)} text={cue.speech?.text ?? ""} window={houseWindow} logoUrl={staticFile("logo.png")} />
             </div>
           </div>
         </SampledStageProvider>

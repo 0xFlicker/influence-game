@@ -141,7 +141,7 @@ test("real Werewolf production moments produce a complete frozen audio backfill"
   expect(await queueAudioBackfill(db,gameId,"producer",preview.previewHash)).toBe(id);
   await runAudioTrack(db,success);
   expect((await db.select().from(schema.gameAudioTracks).where(eq(schema.gameAudioTracks.id,id)))[0]!.status).toBe("ready");
-  expect((await readAudioPublication(db,gameId,"omniscient",true))!.clips).toHaveLength(preview.source.lines.length);
+  expect((await readAudioPublication(db,gameId,"omniscient",true))!.clips).toHaveLength(preview.source.lines.filter(line => line.audiences.includes("omniscient")).length);
 }, 30_000);
 
 test("live final audio failure holds the accepted game, retries missing clips and resumes explicitly", async () => {

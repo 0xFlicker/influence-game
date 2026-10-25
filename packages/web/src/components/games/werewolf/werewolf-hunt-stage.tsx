@@ -17,7 +17,7 @@ export function WerewolfHuntStage({ cue, scene, onReady }: { cue: WerewolfWatchC
   const save = werewolfDoctorSave(cue.moment);
   const [failedDoctorUrl, setFailedDoctorUrl] = useState<string | null>(null);
   const doctorUrl = save?.doctor.avatarUrl ?? save?.doctor.fullBodyReferenceUrl;
-  return <div style={{backgroundImage: `linear-gradient(#0008, #000a), url("${WEREWOLF_ROOMS.pack}")`, backgroundSize: "cover", backgroundPosition: "top"}} className="relative flex min-h-0 flex-1 flex-col gap-4 bg-[#101318] p-4 sm:p-5" data-night-hunt>
+  return <div style={{backgroundImage: `linear-gradient(#0008, #000a), url("${WEREWOLF_ROOMS.pack}")`, backgroundSize: "cover", backgroundPosition: "top", paddingBottom: "clamp(112px, 22cqh, 156px)"}} className="relative flex min-h-0 flex-1 flex-col gap-4 bg-[#101318] p-4 sm:p-5" data-night-hunt>
     <div className="relative flex min-h-0 w-full flex-1 items-center justify-center">
     {/* eslint-disable-next-line @next/next/no-img-element -- immutable audience-scoped generated scene */}
     {scene && !failed ? <img src={scene.imageUrl} alt="The pack and their distant target in the moonlit village" className="absolute inset-0 h-full w-full object-contain" onLoad={() => setLoadedUrl(scene.imageUrl)} onError={() => setFailedUrl(scene.imageUrl)} />

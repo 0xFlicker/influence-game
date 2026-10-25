@@ -64,10 +64,10 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
   const identity = data?.players.find(player => player.id === selectedId);
   const person = players.find(player => player.id === selectedId);
   const coordinateForCue=useCallback((candidate:WerewolfPlaybackCue):AudioWatchCoordinate|null=>{
-    if (isOpeningCue(candidate) || candidate.nightAction && !candidate.nightDecision || candidate.ballot?.complete || candidate.ballot && candidate.moment.entry.kind !== "ballot" || candidate.reprise) return null;
+    if (isOpeningCue(candidate) || candidate.ballot?.complete || candidate.ballot && candidate.moment.entry.kind !== "ballot" || candidate.reprise) return null;
     const line=werewolfCueMoment(candidate);
     return {kind:"werewolf",cursor:candidate.moment.cursor,actorId:line.house ? null : line.actor?.id ?? null,part:"speech",
-      ...(candidate.nightDecision && candidate.nightAction && candidate.nightAction.kind !== "hunt" && {action:candidate.nightAction.kind})};
+      ...(candidate.nightAction && {action:candidate.nightAction.kind})};
   },[]);
   const voice = useWatchVoice({director,gameId:data?.gameId ?? "",audience,thinking:audience === "omniscient" && thinking,live:data?.status === "in_progress",onPause:watch.pause,
     coordinate:playbackCue ? coordinateForCue(playbackCue) : null,coordinateForCue});

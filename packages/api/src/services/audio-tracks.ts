@@ -63,9 +63,9 @@ export async function retryAudioTrack(db: DrizzleDB, gameId: string, trackId: st
 
 /** One fenced track, durable dispatch intent, three bounded attempts per clip.
  * Failed/ambiguous storage never triggers more paid work. Ready clips are reused. */
-export async function runAudioTrack(db: DrizzleDB, provider: AudioProvider = generateXaiAudio, signal?: AbortSignal): Promise<boolean> {
+export async function runAudioTrack(db: DrizzleDB, provider: AudioProvider = generateXaiAudio, signal?: AbortSignal, onlyTrackId?: string): Promise<boolean> {
   const track = await db.transaction(async tx => {
-    const [next] = await tx.select().from(tracks).where(sql`(${tracks.active} OR ${tracks.mode} = 'backfill') AND (${tracks.status} = 'queued' OR (${tracks.status} = 'running' AND ${tracks.leaseExpiresAt} < now()))`)
+    const [next] = await tx.select().from(tracks).where(and(onlyTrackId ? eq(tracks.id, onlyTrackId) : undefined, sql`(${tracks.active} OR ${tracks.mode} = 'backfill') AND (${tracks.status} = 'queued' OR (${tracks.status} = 'running' AND ${tracks.leaseExpiresAt} < now()))`))
       .orderBy(asc(tracks.createdAt)).for("update", { skipLocked: true }).limit(1);
     if (!next) return null;
     const [claimed] = await tx.update(tracks).set({ status: "running", leaseId: crypto.randomUUID(), leaseExpiresAt: new Date(Date.now() + 300_000), updatedAt: new Date() }).where(eq(tracks.id, next.id)).returning();
@@ -143,6 +143,12 @@ export async function runAudioTrack(db: DrizzleDB, provider: AudioProvider = gen
       await fence(tx);
       const [missing] = await tx.select({ id: clips.id }).from(clips).where(and(eq(clips.trackId, track.id), sql`${clips.activeVersionId} IS NULL`)).limit(1);
       if (missing) throw new Error("Audio track still has missing clips");
+      if (track.mode === "backfill" && track.predecessorId) {
+        const [game] = await tx.select({status: schema.games.status}).from(schema.games).where(eq(schema.games.id, track.gameId)).for("update");
+        const [prior] = await tx.select().from(tracks).where(and(eq(tracks.gameId, track.gameId), eq(tracks.active, true))).for("update");
+        if (game?.status !== "completed" || prior?.id !== track.predecessorId) throw new AudioTrackConflict("Audio refresh predecessor changed");
+        await tx.update(tracks).set({active: false, updatedAt: new Date()}).where(eq(tracks.id, prior.id));
+      }
       await tx.update(tracks).set({ status: "ready", active: true, readyEventSequence: track.throughEventSequence, leaseId: null, leaseExpiresAt: null, updatedAt: new Date(), error: null }).where(guard);
     });
   } catch (error) {

@@ -110,7 +110,7 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
     })) : [];
     return [...opening, ...werewolfCues(source.windows).map((cue): ExportCue => {
       const line = werewolfCueMoment(cue);
-      const spoken = line.spoken && (!cue.ballot || cue.moment.entry.kind === "ballot") && (!cue.nightAction || cue.nightDecision === true);
+      const spoken = line.spoken && (!cue.ballot || cue.moment.entry.kind === "ballot");
       return {
         timing: {
           key: cue.key,

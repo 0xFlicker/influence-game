@@ -833,3 +833,6 @@ evidence, while visible text and future contestant context stay clean. TTS
 reserved-character estimates are separate from gameplay token usage. Inspect
 Studio Audio status and the private `game_audio_attempts` evidence for failures;
 see [Audio Mode](audio-mode.md) for explicit retry/resume boundaries.
+## Werewolf House playback announcements
+
+Werewolf action/result narration is derived presentation from canonical audience projections. It does not add contestant observations, thinking, provider turns, or canonical transcript events. Pack results, Doctor/Seer scenes and hunts have separate House TTS coordinates; the role's accepted private explanation keeps its original player coordinate. Mystery audio is generated from the Mystery projection, including its own dawn text when Omniscient reveals a save. No prose parsing, `as any`, or indirect House decision calls are introduced.

@@ -626,3 +626,6 @@ For an authorized audio qualification, create a localhost API game with
 execution worker first. Inspect gameplay calls and TTS attempts separately.
 Audio failure preserves the accepted text and pauses before the next logical
 turn. Existing games gain audio only through explicit Studio generation.
+## Inspecting Werewolf House narration
+
+In a retained localhost API game, inspect `/games/<slug>/replay?audience=omniscient` for spoken pack results, Doctor/Seer actions, hunt outcomes, vote results and the House ending summary. Compare Mystery playback to verify that private night details stay hidden. Audio Mode uses the frozen House voice. Existing complete tracks can be previewed and refreshed with `packages/api/src/scripts/refresh-werewolf-house-audio.ts` as documented in `docs/werewolf.md`; gameplay and contestant recordings remain unchanged. Continue retaining `--chatty` and private provider evidence; the presentation copy does not replace it.

@@ -33,7 +33,7 @@ export async function readAudioPublication(db: Pick<DrizzleDB,"select">, id: str
     if (!line) return [];
     const watch = line.watch?.[audience];
     const entrySequence = watch?.kind === "influence" && watch.transcriptId ? entrySequences.get(watch.transcriptId) : undefined;
-    return [{ momentId: producer ? line.momentId : row.clipId, ...(watch && {watch: entrySequence === undefined ? watch : {...watch, entrySequence}}), speakerId: line.speakerId, textHash: createHash("sha256").update(line.text).digest("hex"), versionId: row.version.id,
+    return [{ momentId: producer ? line.productionMomentId ?? line.momentId : row.clipId, ...(watch && {watch: entrySequence === undefined ? watch : {...watch, entrySequence}}), speakerId: line.speakerId, textHash: createHash("sha256").update(line.text).digest("hex"), versionId: row.version.id,
       sha256: row.version.audio.sha256, durationMs: row.version.durationMs,
       url: `/api/games/${encodeURIComponent(game.id)}/audio/${row.version.id}?audience=${audience}&thinking=${thinking ? "on" : "off"}` }];
   }) };

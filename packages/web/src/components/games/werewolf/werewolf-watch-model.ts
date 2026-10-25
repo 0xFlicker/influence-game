@@ -1,4 +1,5 @@
 import {werewolfNightSteps, isWerewolfPlayable, type WerewolfNightAction, type WerewolfWatchMoment, type WerewolfWatchWindow} from "@influence/engine/werewolf/watch-contract";
+import {werewolfNightHouseSpeech, werewolfHouseDuration} from "@influence/engine/werewolf/house-speech";
 import type {WatchPolicy} from "@/components/watch/watch-director";
 import {replayMoment} from "./replay-moment";
 import {SCENE_SPEECH_START_MS, SCENE_READ_START_MS, SCENE_EXIT_HOLD_MS} from "@/app/games/[slug]/components/scene-speech-timing";
@@ -20,7 +21,10 @@ export const werewolfWatchPolicy: WatchPolicy<WerewolfWatchCue> = {
     if (cue?.nightDecision) return {showAtMs: SOLO_SPEECH_START_MS, readAtMs: SOLO_READ_START_MS,
       hideAtMs: cue.baseDurationMs - SOLO_EXIT_MS, hiddenAtMs: cue.baseDurationMs};
     if (cue?.ballot && (cue.moment.entry.kind !== "ballot" || cue.moment.entry.text === null)) return null;
-    if (cue && !cue.nightAction && !cue.ballot && werewolfCueMoment(cue).house) return {showAtMs:0,readAtMs:0,hideAtMs:cue.baseDurationMs,hiddenAtMs:cue.baseDurationMs};
+    if (cue && !cue.ballot && werewolfCueMoment(cue).house) {
+      const lead = cue.transformation?.durationMs ?? 0;
+      return {showAtMs:lead,readAtMs:lead,hideAtMs:cue.baseDurationMs,hiddenAtMs:cue.baseDurationMs};
+    }
     if (!cue || !["speech", "discussion", "conversation", "ballot", "proposal"].includes(cue.moment.entry.kind)) return null;
     if (cue.moment.entry.kind === "ballot" || cue.moment.entry.kind === "speech" && cue.moment.entry.purpose === "retrospective") return {
       showAtMs: SOLO_SPEECH_START_MS, readAtMs: SOLO_READ_START_MS,
@@ -84,7 +88,7 @@ export function werewolfMomentCues(moment: WerewolfWatchMoment): WerewolfWatchCu
   };
   if (moment.night) return [...werewolfNightSteps(moment.night.actions).map(({action: nightAction, decision}): WerewolfWatchCue => ({ ...result,
     key: `${key}:${nightAction.kind}${decision ? ":decision" : ""}`,
-    baseDurationMs: decision && nightAction.kind !== "hunt" && nightAction.speech ? soloPresentationDurationMs(nightAction.speech.text) : 5000,
+    baseDurationMs: decision && nightAction.kind !== "hunt" && nightAction.speech ? soloPresentationDurationMs(nightAction.speech.text) : werewolfHouseDuration(werewolfNightHouseSpeech(nightAction, moment.snapshot.players)),
     nightAction, nightDecision: decision,
     moment: { ...moment, snapshot: moment.night!.before },
   })).map(cue => cue.nightAction?.kind === "hunt" ? transform(cue) : cue), result];
@@ -153,6 +157,7 @@ export function werewolfDoctorSave(moment: WerewolfWatchMoment) {
 /** The role's accepted explanation precedes its result; never derive speech from the outcome. */
 export function werewolfCueMoment(cue: WerewolfWatchCue) {
   const moment = replayMoment({...cue.moment.snapshot, entries: [cue.moment.entry]});
+  if (cue.nightAction && !cue.nightDecision) return {...moment, house: true, actor: undefined, speaker: "The House", text: werewolfNightHouseSpeech(cue.nightAction, cue.moment.snapshot.players), spoken: true, details: []};
   if (!cue.nightDecision) return moment;
   const action = cue.nightAction;
   if (!action || action.kind === "hunt" || !action.speech) throw new Error("Night decision clip requires accepted speech");
@@ -160,4 +165,9 @@ export function werewolfCueMoment(cue: WerewolfWatchCue) {
   if (!actor) throw new Error("Night decision actor is absent");
   return {...moment, house:false, actor, actorId: actor.id, speaker: actor.name, text: action.speech.text, spoken: true,
     title: `Night ${cue.moment.snapshot.day} · ${action.kind === "protect" ? "Doctor" : "Seer"}`, details: []};
+}
+
+/** Backdrop-only beats give the House the stage; character/action shots keep captions. */
+export function werewolfHouseCentered(cue: WerewolfWatchCue) {
+  return !cue.nightAction && !cue.ballot && !werewolfCueMoment(cue).actor;
 }

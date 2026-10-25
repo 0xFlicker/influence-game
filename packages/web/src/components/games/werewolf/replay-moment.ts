@@ -1,4 +1,4 @@
-import {werewolfHouseSpeech} from "@influence/engine/werewolf/house-speech";
+import {werewolfHouseSpeech, werewolfHouseDuration} from "@influence/engine/werewolf/house-speech";
 import { werewolfOutcomeTitle } from "@influence/engine/werewolf/results-contract";
 import type { WerewolfView } from "@influence/engine/werewolf/observation";
 import { sceneSpeechDurationMs } from "@/app/games/[slug]/components/scene-speech-timing";
@@ -30,7 +30,7 @@ export function replayMoment(view: WerewolfView) {
   const retrospective = entry?.kind === "speech" && entry.purpose === "retrospective";
   const part = retrospective && actor && view.outcome ? [view.outcome.winnerIds.includes(actor.id) ? "Winner" : view.outcome.faction === null ? "Draw" : "Defeated faction",
     actor.elimination ? `${actor.elimination.kind === "night" ? "Died at night" : "Voted out"} · Day ${actor.elimination.day}` : "Survived"].join(" · ") : null;
-  const speaker = actor ? `${actor.name}${(view.audience === "omniscient" || retrospective) && actor.role ? ` · ${actor.role}` : ""}` : "The House";
+  const speaker = houseSpeech ? "The House" : actor ? `${actor.name}${(view.audience === "omniscient" || retrospective) && actor.role ? ` · ${actor.role}` : ""}` : "The House";
   const silentDecision = entry && (entry.kind === "conversation" || entry.kind === "ballot" || entry.kind === "proposal") && entry.text === null;
-  return { title, text, actor, speaker, house:houseSpeech !== null, spoken, cue, pack, details, retrospective, part, duration: houseSpeech ? 4200 : retrospective || entry?.kind === "ballot" && spoken ? soloPresentationDurationMs(text) : silentDecision ? SILENT_BALLOT_DURATION_MS : spoken ? sceneSpeechDurationMs(text) : actorId && entry?.kind !== "night" && entry?.kind !== "vote" ? 2200 : 4200 };
+  return { title, text, actor, speaker, house:houseSpeech !== null, spoken, cue, pack, details, retrospective, part, duration: houseSpeech ? werewolfHouseDuration(houseSpeech) : retrospective || entry?.kind === "ballot" && spoken ? soloPresentationDurationMs(text) : silentDecision ? SILENT_BALLOT_DURATION_MS : spoken ? sceneSpeechDurationMs(text) : actorId && entry?.kind !== "night" && entry?.kind !== "vote" ? 2200 : 4200 };
 }

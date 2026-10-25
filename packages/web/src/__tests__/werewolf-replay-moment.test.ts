@@ -17,11 +17,13 @@ test("v9 result copy describes majority and proposal outcomes without replaying 
   ] };
   const ballotResult = replayMoment(v9View);
   expect(ballotResult.title).toBe("Day 1 · Public vote result");
-  expect(ballotResult.text).toBe("No majority. Nobody is eliminated.");
+  expect(ballotResult.text).toContain("required 5 votes. Nobody is eliminated.");
   expect(ballotResult.details.some(detail => detail.includes("→"))).toBe(false);
   const packResult = replayMoment({ ...v9View, entries: [{ ...packVote, result: { ...packVote.result, targetId: null, endReason: "attempt_limit" as const } }] });
   expect(packResult.title).toBe("Pack proposal result");
-  expect(packResult.text).toBe("No agreement. No attack tonight.");
+  expect(packResult.text).toContain("fails to agree. No attack tonight.");
+  expect(packResult.house).toBe(true);
+  expect(packResult.spoken).toBe(true);
 
   const legacyBallot = replayMoment({ ...historical, entries: [vote] });
   expect(legacyBallot.title).toContain("Vote after thread");

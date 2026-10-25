@@ -1,5 +1,8 @@
 #!/usr/bin/env bun
 /**
+ * Werewolf API playback derives audience-safe House action/result narration and
+ * TTS separately from accepted contestant dialogue. Inspect it in the retained
+ * API replay; it never changes model observations or the --chatty evidence.
  * Werewolf v11 surveys living players in parallel for silent 1–100 speaking
  * priorities before each day. Scores affect only normal speaking order; seeded
  * ties and durable journal replay preserve recovery. No thinking/audio is authored
