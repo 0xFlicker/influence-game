@@ -4,6 +4,10 @@
  * speech/thinking and later contestant context are clean; sanitized annotations
  * stay in private provider evidence and API journal bucket references. Inspect
  * --chatty against private requests/responses; tag presence alone is never a retry.
+ * Requested thinking is guided toward in-character inner monologue that prepares
+ * speech or a silent choice, using game stakes rather than schemas, IDs, prompt
+ * compliance or byte/token arithmetic. This is not a style-based rejection rule;
+ * native provider reasoning remains separate, unchanged private evidence.
  * Thinking prefers higher-pitch by day, lower-pitch at night; night speech softly
  * guides delivery without forced wrapping. No TTS or audio DSP occurs here.
  * Influence decision speech uses strict message fields; ballots, format picks and

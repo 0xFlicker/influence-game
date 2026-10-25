@@ -1,5 +1,6 @@
 import { compactionOrientation, compactInvocation, contextSourceHash, contextComponentHashes, contextSummaryArtifact, ContextSourceConflictError, CONTEXT_SUMMARY_INSTRUCTIONS, CONTEXT_MAX_REVISIONS } from "./context-adaptation";
 import { audioDeliveryGuidance } from "./audio-delivery";
+import { THINKING_CONTENT_GUIDANCE } from "./thinking-guidance";
 import type OpenAI from "openai";
 import { DEFAULT_LM_STUDIO_TIMEOUT_MS } from "./local-inference";
 import type {
@@ -77,10 +78,13 @@ export interface ModelInvocationExecutionResult<TValue>
 export async function executeModelInvocation<TValue, TStructuredValue = unknown>(
   options: ExecuteModelInvocationOptions<TValue, TStructuredValue>,
 ): Promise<ModelInvocationExecutionResult<TValue>> {
-  const withDelivery = (value: ModelInvocation<TStructuredValue>): ModelInvocation<TStructuredValue> => {
-    const policy = value.result.kind === "structured" ? value.result.artifact.audioDelivery : undefined;
-    if (!policy) return value;
-    const guidance = audioDeliveryGuidance(policy.nighttime);
+  const withOutputGuidance = (value: ModelInvocation<TStructuredValue>): ModelInvocation<TStructuredValue> => {
+    if (value.result.kind !== "structured") return value;
+    const { audioDelivery: policy, schema } = value.result.artifact;
+    const properties = schema.properties;
+    const hasThinking = properties !== null && typeof properties === "object" && Object.hasOwn(properties, "thinking");
+    const guidance = [policy ? audioDeliveryGuidance(policy.nighttime) : "", hasThinking ? THINKING_CONTENT_GUIDANCE : ""].filter(Boolean).join("\n\n");
+    if (!guidance) return value;
     const messages = [...value.messages];
     const index = messages.findIndex(message => message.role === "system");
     if (index < 0) messages.unshift({ role: "system", content: guidance });
@@ -150,9 +154,9 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
         });
       };
       const compile = (attemptOrdinal: number): ProviderNativeRequest => {
-        // Delivery policy is attempt-specific production guidance, like length repair.
+        // Thinking style and delivery policy guide this attempt, like length repair.
         // It must not change the frozen gameplay context hash during recovery.
-        const semanticCall = withRepair(withDelivery(current ?? invocation()));
+        const semanticCall = withRepair(withOutputGuidance(current ?? invocation()));
         const prepared = adapterRuntime.adapter.compile(
           semanticCall,
           adapterRuntime,
@@ -184,7 +188,7 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
         dispatch: async ({ attemptOrdinal, requestOptions }) => {
           const key = `${runtime.catalogId}:${attemptOrdinal}`;
           const compiled = compiledByAttempt.get(key);
-          const semanticCall = compiled?.invocation ?? withRepair(withDelivery(invocation()));
+          const semanticCall = compiled?.invocation ?? withRepair(withOutputGuidance(invocation()));
           const prepared = compiled?.request ?? adapterRuntime.adapter.compile(
             semanticCall,
             adapterRuntime,

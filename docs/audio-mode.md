@@ -4,6 +4,14 @@ Implementation is in progress on `codex/agent-voices-audio-mode`, based on
 `codex/peragent-model-selection`. The [approved plan](plans/2026-10-24-001-feat-agent-voices-and-audio-mode-plan.md)
 owns the complete product scope. Audio Mode is not yet available in game creation.
 
+Every response that requests `thinking`, including House decisions and both games,
+receives shared guidance for a concise, in-character inner monologue. It sets up
+the spoken message or silent choice through motives, suspicions and game stakes.
+Game rules are welcome; schema/ID commentary, prompt compliance and byte/token
+arithmetic are not. This is prompt guidance, not a content filter or retry rule.
+Speech-only responses do not acquire thinking. Existing delivery-tag preferences
+and missing-pitch treatment remain in effect.
+
 ## Delivery compiler
 
 `@influence/engine/audio-delivery` supplies the shared, provider-free text contract:

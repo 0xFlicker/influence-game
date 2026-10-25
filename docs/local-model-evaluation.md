@@ -1,5 +1,14 @@
 # Local Model Evaluation
 
+When evaluating `thinking` in `--chatty` or Show thinking, look for an in-character
+inner monologue that sets up the speech or silent decision. For example, “The
+round is almost over, and I can say enough to bring it to a close,” rather than
+calculating remaining bytes. Rules, stakes and suspicions belong here; JSON,
+internal IDs, prompt compliance and implementation commentary do not. The shared
+prompt applies to both games and House responses that request thinking. Assess
+this as output quality, not a new acceptance check; preserve imperfect responses
+and native provider reasoning in their existing evidence lanes.
+
 Default delivery-tag evaluation: inspect clean speech and thinking in `--chatty`
 and the localhost API transcript, then inspect private provider evidence for the
 original tags. Both audio and non-audio games preserve annotations for later

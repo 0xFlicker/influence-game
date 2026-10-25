@@ -1,5 +1,13 @@
 # Reasoning & Transcript Observability
 
+Requested `thinking` is prompted as a concise, first-person inner monologue in
+character across Influence, Werewolf and the House. It prepares the spoken move
+or explains a silent choice in game terms, without schemas, internal IDs, prompt
+compliance, implementation details or byte/token arithmetic. This changes prompt
+guidance only: no style-based rejection, retry or censorship is added. Native
+provider reasoning stays separate and is retained as before. Speech-only turns
+still request no thinking.
+
 Delivery tags are now optional default production guidance in both audio and
 non-audio games. Declared speech/thinking fields are cleaned before exact schema
 and gameplay validation; length limits count visible text. Canonical dialogue,

@@ -1,4 +1,5 @@
 import { contextSourceHash } from "../context-adaptation";
+import { THINKING_CONTENT_GUIDANCE } from "../thinking-guidance";
 import { describe, expect, it } from "bun:test";
 import type OpenAI from "openai";
 import type { LlmProviderRuntime } from "../llm-client";
@@ -196,19 +197,31 @@ describe("provider-native adapters", () => {
     expect(messages.at(-1)?.content).toContain("preserving its intent");
   });
 
-  it("adds production guidance without changing a pending call's frozen gameplay context", async () => {
-    const artifact = createExactStructuredOutputArtifact<{ text: string }, { text: string }>({
-      action: "test.delivery-recovery.v1", name: "speech", audioDelivery: { fields: ["text"], nighttime: true },
-      schema: { type: "object", additionalProperties: false, required: ["text"], properties: { text: { type: "string" } } },
-      decodeProviderPayload: value => ({ status: "valid", value }), decodeAcceptedValue: value => ({ status: "valid", value: value as { text: string } }),
+  it.each([
+    { thinking: true, delivery: true },
+    { thinking: true, delivery: false },
+    { thinking: false, delivery: true },
+    { thinking: false, delivery: false },
+  ])("adds requested output guidance without changing frozen gameplay context: %j", async ({ thinking, delivery }) => {
+    type Output = { text: string; thinking?: string };
+    // Style instructions are not new rejection criteria, even when ignored.
+    const thought = "I must return JSON within 350 bytes.";
+    const accepted: Output = { text: "Hello", ...(thinking && { thinking: thought }) };
+    const artifact = createExactStructuredOutputArtifact<Output, Output>({
+      action: "test.delivery-recovery.v1", name: "speech",
+      ...(delivery && { audioDelivery: { fields: ["text", "thinking"], nighttime: true } }),
+      schema: { type: "object", additionalProperties: false, required: thinking ? ["text", "thinking"] : ["text"],
+        properties: { text: { type: "string" }, ...(thinking && { thinking: { type: ["string", "null"] } }) } },
+      decodeProviderPayload: value => ({ status: "valid", value }), decodeAcceptedValue: value => ({ status: "valid", value: value as Output }),
     });
-    const source: ModelInvocation<{ text: string }> = { messages: [{ role: "system", content: "Play the game." }, { role: "user", content: "Saved history" }],
+    const source: ModelInvocation<Output> = { messages: [{ role: "system", content: "Play the game." }, { role: "user", content: "Saved history" }],
       contextSpans: [{ text: "Saved history", format: "text" }], result: { kind: "structured", artifact }, outputTokenLimit: 256 };
     const originalHash = contextSourceHash(source);
     const records: ProviderAttemptRecord[] = [];
     const client = { chat: { completions: { create: async (body: { messages: Array<{ content: string }> }) => {
-      expect(body.messages[0]!.content).toContain("Prefer <soft>");
-      return { id: "resumed", choices: [{ finish_reason: "stop", message: { role: "assistant", content: '{"text":"<soft>Hello</soft>"}' } }] };
+      expect(body.messages[0]!.content.includes("Prefer <soft>")).toBe(delivery);
+      expect(body.messages[0]!.content.includes(THINKING_CONTENT_GUIDANCE)).toBe(thinking);
+      return { id: "resumed", choices: [{ finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({ ...accepted, text: delivery ? "<soft>Hello</soft>" : "Hello" }) } }] };
     } } } } as unknown as OpenAI;
     const coordinator = new ProviderExecutionCoordinator({ hooks: {
       onReadContextAttempts: async () => [{ catalogId: "katana:grok-4-5", sourceHash: originalHash, revision: 0, outcome: "transport_timeout" }],
@@ -220,10 +233,11 @@ describe("provider-native adapters", () => {
       runtimes: [runtime("katana:grok-4-5", client)], invocation: source, maxAttempts: 2,
       validate: (_outcome, value) => value ? { status: "usable", value } : { status: "unusable", kind: "malformed_output", message: "missing" },
     });
-    expect(result.value).toEqual({ text: "Hello" });
+    expect(result.value).toEqual(accepted);
+    expect(records).toHaveLength(1);
     expect(records[0]!.context?.sourceHash).toBe(originalHash);
     expect(source.messages[0]!.content).toBe("Play the game.");
-    expect(result.liveOutcome?.invocationMessages?.[0]?.content).toContain("Prefer <soft>");
+    expect(result.liveOutcome?.invocationMessages?.[0]?.content?.includes(THINKING_CONTENT_GUIDANCE)).toBe(thinking);
   });
 
   it("keeps local requests concurrent and uses the local deadline instead of a hosted action deadline", async () => {
