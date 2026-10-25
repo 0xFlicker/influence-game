@@ -1,4 +1,5 @@
 "use client";
+import {werewolfPortraitRoom, werewolfBackdrop} from "./werewolf-room-presentation";
 import {HouseNarration, type NarrationWindow} from "@/components/watch/house-narration";
 import {WerewolfVoteOutcome} from "./werewolf-vote-outcome";
 import {WerewolfTransformationStage} from "./werewolf-transformation-stage";
@@ -73,7 +74,7 @@ export function WerewolfContentFrame({cue, scene, elapsed, reduced, navigationRe
   const sceneElapsed = Math.max(0, elapsed - lead);
   const readingElapsed = Math.max(0, readingTime - lead);
   const text = cue.moment.entry.kind === "ballot" ? moment.spoken ? moment.text : "" : cue.ballot ? cue.moment.snapshot.players.find(p => p.id === cue.ballot?.current.targetId)?.name ?? "" : moment.text;
-  const backgroundUrl = cue.nightAction?.kind === "protect" ? WEREWOLF_ROOMS.doctor : cue.nightAction?.kind === "investigate" ? WEREWOLF_ROOMS.seer : moment.pack ? WEREWOLF_ROOMS.pack : WEREWOLF_ROOMS.village;
+  const backgroundUrl = werewolfBackdrop(cue);
   const beat: Extract<VisualPresentationBeat, {kind:"portrait"}> | null = actor ? {
     kind:"portrait", purpose: cue.nightDecision ? "Night decision" : moment.retrospective ? "Retrospective" : cue.ballot ? "Ballot" : cue.moment.chapterId === "introduction" ? "Introduction" : moment.spoken ? "Conversation" : "Farewell",
     caption: cue.nightDecision ? "Tonight’s choice" : moment.retrospective ? `Retrospective · ${moment.part ?? "Contestant"}` : cue.ballot ? "Vote to eliminate" : cue.moment.chapterId === "introduction" ? "Introduction" : moment.spoken ? moment.pack ? "Pack conversation" : "Conversation" : "",
@@ -81,14 +82,7 @@ export function WerewolfContentFrame({cue, scene, elapsed, reduced, navigationRe
     player: {...actor, persona: ""},
     speech: {id:cue.key, playerId:actor.id, speaker:actor.name, text, portrait:{avatarUrl:actor.avatarUrl, persona:""}},
   } : null;
-  const room: Extract<VisualPresentationBeat, {kind:"portrait-room"}> | null = beat && moment.spoken && !moment.retrospective &&
-    (cue.moment.entry.kind === "discussion" || cue.moment.entry.kind === "conversation" || cue.moment.entry.kind === "proposal" || cue.moment.entry.kind === "speech" && moment.pack) ? {
-      kind: "portrait-room", roomNumber: null,
-      roomLabel: moment.pack ? `Night ${cue.moment.snapshot.day} · Pack conversation` : `Day ${cue.moment.snapshot.day} · Village conversation`,
-      participants: cue.moment.snapshot.players.filter(player => player.alive && (!moment.pack || player.role === "werewolf"))
-        .map(player => ({id: player.id, name: player.name, avatarUrl: player.avatarUrl, personaKey: player.personaKey, persona: ""})),
-      speech: {...beat.speech, speaker: moment.speaker},
-    } : null;
+  const room = werewolfPortraitRoom(cue);
   const previousMoment = previousCue ? werewolfCueMoment(previousCue) : null;
   const previousEntry = previousCue?.moment.entry;
   const previousRoomSpeech = previousEntry && previousMoment?.spoken && !previousMoment.retrospective

@@ -270,7 +270,7 @@ function assembleWerewolfParts(source: Extract<ProductionSource, { kind: "werewo
     case "conversation": if (!entry.unavailable && entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, true, entry.actorId); break;
     // The spoken vote and its collection into the ledger share one replay cue.
     case "ballot": emit({ kind: "ballot", voterId: entry.actorId, purpose: "day", juryTiebreaker: false, revote: false }, "ballot", 2, true, entry.actorId); break;
-    case "proposal": if (audience === "omniscient" && !entry.unavailable && entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, false, entry.actorId); break;
+    case "proposal": if (audience === "omniscient" && !entry.unavailable && entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, true, entry.actorId); break;
     case "vote": {
       if ((source.rulesVersion ?? 8) >= 9) { emit({ kind: "tally" }, "tally", 0); emit({ kind: "outcome" }, "outcome", 1); break; }
       const rank = (b: { targetId: string | null; unavailable: boolean }) => b.targetId ? 0 : b.unavailable ? 1 : 2;

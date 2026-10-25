@@ -2,15 +2,20 @@
 set -euo pipefail
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 role="${1:-}"
-export INFLUENCE_LOCAL_TASK_BUDGET="${INFLUENCE_LOCAL_TASK_BUDGET:-$repo_dir/../evidence/spend-ledger.json}"
+evidence_dir="${INFLUENCE_LOCAL_TASK_EVIDENCE_DIR:-$repo_dir/../evidence}"
+if [[ -z "${INFLUENCE_LOCAL_TASK_EVIDENCE_DIR:-}" && -f "$repo_dir/.overnight-evidence-dir.local" ]]; then
+  evidence_dir="$(cat "$repo_dir/.overnight-evidence-dir.local")"
+fi
+export INFLUENCE_LOCAL_TASK_BUDGET="${INFLUENCE_LOCAL_TASK_BUDGET:-$evidence_dir/spend-ledger.json}"
 export INFLUENCE_LOCAL_UPLOAD_DIR="${INFLUENCE_LOCAL_UPLOAD_DIR:-/Users/user/Development/influence-game/packages/api/.local-uploads}"
 export CHARACTER_CUTOUT_MODE=local
 export CUTOUT_API_URL=http://host.docker.internal:3000
 export INFLUENCE_OWNER_LEARNING_GENERATION_DISABLED=true
-export INFLUENCE_LOCAL_CHARACTER_ART_MANIFEST="$repo_dir/../evidence/gemini-male-assets/local-presentation-manifest.json"
+export INFLUENCE_LOCAL_CHARACTER_ART_MANIFEST="${INFLUENCE_LOCAL_CHARACTER_ART_MANIFEST:-$evidence_dir/gemini-male-assets/local-presentation-manifest.json}"
 export POSTGAME_MEDIA_WORKER_TOKEN=local-render-worker
 export POSTGAME_MEDIA_PUBLIC_BASE_URL=http://127.0.0.1:3000
 test -f "$INFLUENCE_LOCAL_TASK_BUDGET"
+test -f "$INFLUENCE_LOCAL_CHARACTER_ART_MANIFEST"
 case "$role" in
   api|worker)
     export PORT=3000 INFLUENCE_API_ROLE=gateway

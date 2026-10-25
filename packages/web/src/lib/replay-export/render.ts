@@ -151,6 +151,8 @@ export async function renderReplay(
   overwrite: boolean,
   signal: AbortSignal,
 ) {
+  const concurrency = Number(process.env.REPLAY_RENDER_CONCURRENCY ?? 1);
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 8) throw new Error("REPLAY_RENDER_CONCURRENCY must be an integer from 1 to 8");
   await mkdir(dirname(output), { recursive: true });
   const partial = join(dirname(output), `.${crypto.randomUUID()}.mp4`);
   const cleanupOnExit = () => rmSync(partial, { force: true });
@@ -180,7 +182,7 @@ export async function renderReplay(
           // Layout Artifacts are not audio. Remotion can otherwise synthesize a silent AAC track.
           muted:!scheduledAudio,
           outputLocation: partial,
-          concurrency: 1,
+          concurrency,
           cancelSignal,
           timeoutInMilliseconds: 60000,
           onProgress: (progress) => {

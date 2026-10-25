@@ -19,6 +19,8 @@ export interface TimingInput {
   thinking: string | null;
   /** Silent framing position for an independently selected thought. */
   sourceElapsedMs?: number;
+  /** Settle the room turn before starting a standalone thought close-up. */
+  thinkingEstablishMs?: number;
   recording?: SpeechRecording;
   thinkingRecording?: SpeechRecording;
 }
@@ -164,6 +166,7 @@ export function compileTiming(
         settings.conversationGapMs ?? 0,
       );
     } else if (input.kind === "thinking") {
+      if (input.thinkingEstablishMs) add("establish",0,input.sourceElapsedMs ?? input.thinkingEstablishMs,settings.establishingHoldMs ?? input.thinkingEstablishMs * motion);
       addThought();
     } else {
       addThought();

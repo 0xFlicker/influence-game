@@ -1,0 +1,17 @@
+{
+  "recipe": "birefnet-general-58f621f0-rembg2.0.86-r1",
+  "load_seconds": 2.707795875998272,
+  "cpu_max": "200000 100000",
+  "memory_max": "17179869184",
+  "images": [
+    {
+      "name": "gemini",
+      "seconds": 18.704891175999364,
+      "source_sha256": "62f2ba1f2143dbc614d684aab7b3f61a6c3599069a126cf5a62f89f5499b7a93",
+      "output_sha256": "94e162b88ae096a986b194e89e1491103749f4ea50028c702ac785bee3d28252",
+      "bytes": 997268
+    }
+  ],
+  "peak_rss_bytes": 9562611712,
+  "cgroup_peak_bytes": 9476689920
+}

@@ -55,7 +55,8 @@ export type ExportPicture =
       roleLabel?: string;
       scene: AcceptedVisualScene | null;
       sourceElapsedMs: number;
-      room?: {number: number | null; label?: string; players: Extract<VisualPresentationBeat, {kind:"portrait-room"}>["participants"]};
+      backgroundUrl?: string;
+      room?: {number: number | null; label?: string; backgroundUrl?: string; floorPerspective?: boolean; players: Extract<VisualPresentationBeat, {kind:"portrait-room"}>["participants"]};
     }
   | {kind: "werewolf-opening"; cue: WerewolfOpeningCue}
   | ({kind: "influence-opening"; cue: InfluenceOpeningCue} & ReturnType<typeof influenceCastArt>)

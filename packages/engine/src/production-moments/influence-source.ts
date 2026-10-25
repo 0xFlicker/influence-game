@@ -14,7 +14,7 @@ export interface InfluenceProductionTranscript {
   retrospectiveSource?: { eventSequence: number; ordinal: number };
 }
 export interface InfluenceProductionFrame {
-  sequence: number; timestamp: number; round: number; phase: string;
+  sequence: number; timestamp: number; round: number; phase: string; eventType?: string;
   players: readonly { id: string; name?: string; status?: string }[];
   viewerDecisionEvent?: ViewerDecisionEvent;
   /** Producer-only accepted sealed slot. Public watch frames remain unchanged. */
@@ -117,6 +117,7 @@ export function buildInfluenceProductionSources(input: {
   const initialEmpower = new Map<string, number>(), revotes = new Map<string, number>(), formatBallots = new Map<string, number>();
   const eliminationBallots = new Map<string, number>(), winnerBallots = new Map<string, number>(), councilBallots = new Map<string, number>();
   let round = -1, pendingEmpower = false;
+  let acceptedWinnerId: string | undefined;
   let pendingEndgameExit: { round: number; playerId: string } | null = null;
   const format = (event: ViewerDecisionEvent, presentation: InfluenceProductionPresentation, phase = event.phase ?? "INIT") => append({ kind: "influence-event", eventSequence: event.sequence, presentation, order: { anchor: 0, offset: 0 } }, event.round, phase, event.sequence, "format");
   const tally = (event: ViewerDecisionEvent, purpose: "empower" | "format" | "eliminate" | "winner", juryTiebreaker = false, revote = false, lane: SourceRow["lane"] = "format", phase = event.phase ?? "INIT") => append({ kind: "influence-event", eventSequence: event.sequence, presentation: { kind: "ballot_tally", purpose, juryTiebreaker, revote }, order: { anchor: 0, offset: 0 } }, event.round, phase, event.sequence, lane);
@@ -140,7 +141,14 @@ export function buildInfluenceProductionSources(input: {
       if (accepted.has(sealed.voterId)) throw new Error("Ambiguous accepted sealed ballot provenance");
       accepted.set(sealed.voterId, frame.sequence);
     }
+    if (frame.eventType === "retrospective.completed") {
+      const survivors = frame.players.filter(player => player.status === "alive");
+      const winnerId = acceptedWinnerId ?? (survivors.length === 1 ? survivors[0]!.id : undefined);
+      if (winnerId) append({kind:"influence-event",eventSequence:frame.sequence,
+        presentation:{kind:"endgame_winner",actorId:winnerId},order:{anchor:0,offset:0}},frame.round,"RETROSPECTIVE",frame.sequence,"endgame");
+    }
     if (!event) continue;
+    if (event.type === "jury.winner_determined") acceptedWinnerId = event.payload.winnerId;
     if (event.type === "vote.cast" || event.type === "vote.empower_revote_cast") {
       const accepted = event.type === "vote.cast" ? initialEmpower : revotes;
       if (accepted.has(event.payload.voterId)) throw new Error("Ambiguous accepted Empower ballot provenance");

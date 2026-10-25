@@ -1,0 +1,17 @@
+{
+  "recipe": "birefnet-general-58f621f0-rembg2.0.86-r1",
+  "load_seconds": 9.7761312549992,
+  "cpu_max": "200000 100000",
+  "memory_max": "17179869184",
+  "images": [
+    {
+      "name": "gemini-android",
+      "seconds": 26.34133171900612,
+      "source_sha256": "7d0f7e9044c93d0120f010615c3e36e198b1d05aeecfb90993a846327358ba2e",
+      "output_sha256": "f482398b8cd4881fda68e7ddafc9b56a652a7fc1109fcf16e8d87fcc5d059d8d",
+      "bytes": 903478
+    }
+  ],
+  "peak_rss_bytes": 9598566400,
+  "cgroup_peak_bytes": 9502674944
+}

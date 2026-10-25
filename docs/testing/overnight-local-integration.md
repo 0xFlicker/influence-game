@@ -22,8 +22,8 @@ learning, image generation, health probes and House Cuts are disabled in this mo
 Generation failures retain canonical acceptance and the existing recovery path.
 
 The ledger maintains independent ceilings of $15 OpenAI, 10,000 Katana credits,
-and $15 xAI. Meta Contributor text is conservatively charged against the same
-OpenAI-dollar pool, so its inclusion cannot increase the combined text allowance.
+and $15 xAI. The user subsequently authorized a separate $10 Meta API cap; native Meta
+Contributor text is charged against that independent pool.
 Prior-task holds are explicit and must be reconciled from retained evidence.
 Never delete, reset or reduce a ledger to enable another request.
 
@@ -55,8 +55,33 @@ GPT Luna is the House and common recovery route. Existing circular portraits rem
 unchanged. Full-body derivatives must preserve source dimensions and head geometry,
 fall back to the original when unavailable, and be pinned into new export snapshots.
 
-Meta Spark retains its existing character identity and images but uses Katana GLM 5.3 Flash Private for this run. The separate paid Meta API is outside the authorized provider allowances and is rejected by the task guard. Each actual xAI audio dispatch reserves from the shared ledger using its durable attempt ID.
+The final clean games use native Meta `muse-spark-1.3-contributor`. GLM is prohibited for these runs; prior debug-game substitutions remain historical evidence. Each actual xAI audio dispatch reserves from the shared ledger using its durable attempt ID.
 
 The faint rectangle in the supplied Sonnet screenshot came from Werewolf opening CSS (`border` plus rectangular `box-shadow`). Full-body opening shots now retain the same image box with a transparent border and alpha-following shadow. Browser and Remotion share this frame. Portrait fallback styling and all source/cutout pixels remain unchanged.
 
 The corrected explicit voice cast is Sol=sal, Sonnet=atlas, Haiku=iris, Gemini=altair, Meta=liora, Kimi=ara, DeepSeek=kepler, Grok=sirius, House=helios. The harness checks persisted selected profile assignments before creating a lobby, preventing automatic seeded defaults from silently substituting for the approved audition choices. Existing games require the voice-correction recovery operation; profile edits alone do not change frozen tracks.
+
+## Returning to the development checkout
+
+The integrated development checkout is `/Users/user/Development/influence-game`
+on `codex/overnight-local-integration`. The original `codex/peragent-model-selection`
+branch and its untracked research assets remain preserved.
+
+The launcher accepts `INFLUENCE_LOCAL_TASK_EVIDENCE_DIR`, or reads a plain absolute
+path from ignored `.overnight-evidence-dir.local`. This keeps the existing budget,
+Gemini art manifest, generated assets, game evidence, and completed videos in their
+original location without copying or overwriting them. The art-manifest environment
+override is also honored. Missing ledger or manifest fails before startup.
+
+From this checkout, start only API and viewer in separate persistent terminals:
+
+```sh
+bash scripts/overnight-local-services.sh api
+bash scripts/overnight-local-services.sh web
+```
+
+The launcher enables `CHARACTER_CUTOUT_MODE=local`; plain startup defaults that
+feature to disabled and therefore omits even already-generated cutouts. The local
+Gemini manifest is needed for the replacement body/portrait. Circular discussion
+portraits stay unchanged. Keep the paid game/audio worker off for viewing completed
+games. The existing database and object-store containers are reused unchanged.

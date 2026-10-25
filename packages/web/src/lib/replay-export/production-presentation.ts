@@ -150,5 +150,12 @@ export async function bindWerewolfProductionPresentation(input: {
     return matches;
   };
   // Validate the complete binding before selecting; handcrafted private/cross-game catalogs cannot hide behind omission.
-  return validated.map(moment => ({id:moment.id,segments:segmentsFor(moment).map(cue => ({...cue,momentId:moment.id}))}));
+  const bound = validated.map(moment => ({id:moment.id,segments:segmentsFor(moment).map(cue => ({...cue,momentId:moment.id}))}));
+  // The viewer's completed-retrospective reprise is presentation, not another
+  // accepted result or another narration. Keep it with the final retrospective.
+  const closing = base.find(cue => cue.picture.kind === "werewolf" && cue.picture.cue.reprise);
+  const last = bound.at(-1);
+  if (closing && last && validated.at(-1)?.purpose === "retrospective") last.segments.push({...closing,momentId:last.id,
+    speech:null,timing:{...closing.timing,key:`${last.id}:closing`,speech:null,thinking:null}});
+  return bound;
 }

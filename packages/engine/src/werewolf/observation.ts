@@ -39,7 +39,7 @@ export interface WerewolfView {
   conversation?: WerewolfState["conversation"];
   /** Audience-local cursor; private action counts/coordinates never leave the server. */
   cursor: number;
-  players: Array<{ id: string; name: string; avatarUrl: string | null; fullBodyReferenceUrl?: string | null; personaKey: string | null; alive: boolean; role?: WerewolfRole; elimination?: { day: number; kind: "night" | "vote" } | null }>;
+  players: Array<{ id: string; name: string; avatarUrl: string | null; fullBodyReferenceUrl?: string | null; headRectangle?: import("../character-portrait").HeadRectangle; personaKey: string | null; alive: boolean; role?: WerewolfRole; elimination?: { day: number; kind: "night" | "vote" } | null }>;
   entries: WerewolfPublicEntry[];
   outcome: WerewolfOutcome | null;
 }

@@ -1,4 +1,5 @@
 /** Opt-in local browser proof using an already prepared bundle; no providers or API reads. */
+import {exportRoomContext, exportPreviousSpeaker} from "../lib/replay-export/room-continuity";
 import { resolve, join } from "node:path";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import {
@@ -50,6 +51,7 @@ await withPreparedReplay(
       });
     const selected = new Map<string, number>();
     const thinkingFrames = new Map<string, number>();
+    const roomFrames = new Map<string, number>();
     for (const [index, cue] of manifest.cues.entries()) {
       const picture = cue.picture;
       const kind =
@@ -66,7 +68,7 @@ await withPreparedReplay(
       const interval = manifest.timeline[index]!;
       if (interval.thought) {
         const thought = interval.thought;
-        const treatment = (picture.kind === "werewolf" || picture.kind === "thinking") && picture.scene
+        const treatment = picture.kind === "thinking" && picture.room ? picture.gameKind === "werewolf" ? picture.room.label?.includes("Pack") ? "pack-room" : "village-room" : "influence-room" : (picture.kind === "werewolf" || picture.kind === "thinking") && picture.scene
           ? "scene" : picture.kind === "influence" && picture.beat?.kind === "scene"
             ? "scene" : "portrait";
         for (const [phase, offset] of [
@@ -78,6 +80,14 @@ await withPreparedReplay(
           const frame = Math.ceil((interval.startMs + thought.insertAt + offset) * manifest.fps / 1000) - manifest.range.fromFrame;
           if (frame >= 0 && frame + 1 < composition.durationInFrames && !thinkingFrames.has(key))
             thinkingFrames.set(key, frame);
+        }
+      }
+      const room = exportRoomContext(cue);
+      if (room && exportPreviousSpeaker(cue, manifest.cues[index-1]) && exportPreviousSpeaker(cue,manifest.cues[index-1]) !== room.actorId) {
+        const name = picture.kind === "thinking" && picture.room?.label?.includes("Pack") ? "pack" : "village";
+        for (const [phase,ms] of [["start",0],["middle",325],["settled",650]] as const) {
+          const key = `room-turn-${name}-${phase}`;
+          if (!roomFrames.has(key)) roomFrames.set(key,Math.ceil((interval.startMs+ms)*manifest.fps/1000)-manifest.range.fromFrame);
         }
       }
       const reading = interval.segments.find(
@@ -124,7 +134,7 @@ await withPreparedReplay(
           );
       }
     }
-    const samples = [...selected].slice(0, 14).concat([...thinkingFrames]),
+    const samples = [...selected].slice(0, 14).concat([...thinkingFrames], [...roomFrames]),
       hashes = new Map<number, string>();
     const browser = await openBrowser("chrome");
     try {

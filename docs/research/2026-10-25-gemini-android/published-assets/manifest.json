@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "published": false,
+  "sourceInputs": {
+    "source": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/full-body-source.png",
+    "cutout": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/cutout-output/gemini-android.png"
+  },
+  "headPosition": {
+    "sourceUrl": "full-body.png",
+    "sourceHash": "9ffead37c34a535630ad3eea07c249a51a9d6199996b77155ee5ae3cc82d055f",
+    "sourceWidth": 1024,
+    "sourceHeight": 1536,
+    "rect": {
+      "x": 0.4248046875,
+      "y": 0.022786458333333332,
+      "width": 0.13671875,
+      "height": 0.17252604166666666
+    }
+  },
+  "portraitCrop": {
+    "sourceUrl": "full-body.png",
+    "x": 0.299072265625,
+    "y": 0.005533854166666667,
+    "width": 0.38818359375,
+    "height": 0.2587890625
+  },
+  "portraitPixels": {
+    "left": 306,
+    "top": 9,
+    "width": 398,
+    "height": 398
+  },
+  "assets": {
+    "full-body.png": {
+      "sha256": "9ffead37c34a535630ad3eea07c249a51a9d6199996b77155ee5ae3cc82d055f",
+      "byteLength": 1120853
+    },
+    "cutout.png": {
+      "sha256": "f482398b8cd4881fda68e7ddafc9b56a652a7fc1109fcf16e8d87fcc5d059d8d",
+      "byteLength": 903478
+    },
+    "portrait.webp": {
+      "sha256": "2ca87a89396453e1ebd92e57762fd3cdd00af416df4a70f958728d0c629271f8",
+      "byteLength": 26866
+    },
+    "portrait-circle.png": {
+      "sha256": "eeec101cddee27212af1015f9c1a4304aa1bab99711162c7e2825c0e54cca97f",
+      "byteLength": 184905
+    }
+  },
+  "publicationNote": "Upload under new immutable keys. Replace sourceUrl with the uploaded full-body URL in both coordinate records; let the submission service assign confirmation. Keep existing game-start references unchanged."
+}

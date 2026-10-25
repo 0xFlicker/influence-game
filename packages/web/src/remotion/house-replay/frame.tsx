@@ -1,3 +1,4 @@
+import {exportPreviousSpeaker} from "../../lib/replay-export/room-continuity";
 import {HouseNarration, narrationWindow} from "../../components/watch/house-narration";
 import {WerewolfOpeningFrame} from "../../components/games/werewolf/werewolf-opening-frame";
 import {InfluenceOpeningFrame} from "../../app/games/[slug]/components/influence-opening-frame";
@@ -156,7 +157,7 @@ export function ReplayFrame({
                   },
                 }
               : {}),
-            previousSpeaker: previous?.speech?.speakerId ?? null,
+            previousSpeaker: exportPreviousSpeaker(cue, previous),
             firstInScene:
               !scene ||
               scene.id !== previousScene?.id ||
@@ -254,11 +255,13 @@ function ThinkingFrame({picture, elapsedMs, reduced}: {
   const actor = picture.actor;
   if (picture.room) return <PortraitRoom beat={{kind:"portrait-room",roomNumber:picture.room.number,roomLabel:picture.room.label,
     participants:picture.room.players,speech:{id:actor.id,playerId:actor.id,speaker:actor.name,text:""}}}
+    backgroundUrl={picture.room.backgroundUrl} floorPerspective={picture.room.floorPerspective}
     hideSpeech elapsedMs={elapsedMs} readingElapsedMs={elapsedMs} reducedMotion={reduced} controlsInset={0} />;
   if (picture.scene) return <VisualSceneView scene={picture.scene} speech={null}
     focusPlayerId={actor.id} focusActor={actor} elapsedMs={elapsedMs} reducedMotion={reduced} controlsInset={0} />;
   return <SoloPresentation beat={{kind:"portrait", purpose:"Conversation", player:actor,
     roleLabel:picture.roleLabel, speech:{id:actor.id, playerId:actor.id, speaker:actor.name, text:""}}}
+    backgroundUrl={picture.backgroundUrl} reserveSpeechSpace
     hideSpeech elapsedMs={elapsedMs} imageOpacity={1} reducedMotion={reduced} controlsInset={0} />;
 }
 

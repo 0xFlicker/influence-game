@@ -1,0 +1,147 @@
+[
+  {
+    "name": "Grok 4.6",
+    "id": "3013945a-84d7-4519-866c-386d1888e2b4",
+    "ok": true,
+    "failures": [],
+    "modelPreference": {
+      "catalogId": "katana:grok-4-6",
+      "reasoningPolicy": "action-policy"
+    },
+    "revision": {
+      "revisionId": "3055d2eb-696f-4c1c-a041-b6135ddd5555",
+      "ordinal": 3,
+      "active": true
+    },
+    "contentRevisionId": "1b27353d-004e-403c-9434-01b98145b235"
+  },
+  {
+    "name": "DeepSeek Flash",
+    "id": "c2d3db5b-1409-4e69-8a0e-2ce84fbb54f1",
+    "ok": true,
+    "failures": [],
+    "modelPreference": {
+      "catalogId": "katana:deepseek-v4-flash",
+      "reasoningPolicy": "action-policy"
+    },
+    "revision": {
+      "revisionId": "26d5fa1e-74e7-40a8-b02d-f7140ace1de6",
+      "ordinal": 3,
+      "active": true
+    },
+    "contentRevisionId": "18f6b553-293d-42a7-bb91-e2fa11aaa636"
+  },
+  {
+    "name": "Kimi K3",
+    "id": "7968a255-6e2e-4367-bcd6-5f2570dfa2e7",
+    "ok": true,
+    "failures": [],
+    "modelPreference": {
+      "catalogId": "katana:kimi-k3",
+      "reasoningPolicy": "action-policy"
+    },
+    "revision": {
+      "revisionId": "5e0d5388-73c6-44f0-8a1f-ab5dc7fc82c6",
+      "ordinal": 3,
+      "active": true
+    },
+    "contentRevisionId": "ede322e3-0c36-4d3b-a2c7-738c12bb2524"
+  },
+  {
+    "name": "Claude Haiku",
+    "id": "525f84a1-e1d2-472a-ba4e-ad3f9a9d2a53",
+    "ok": true,
+    "failures": [],
+    "modelPreference": {
+      "catalogId": "katana:claude-haiku-4-5",
+      "reasoningPolicy": "action-policy"
+    },
+    "revision": {
+      "revisionId": "29ce8f07-d747-427a-8266-91c90045de79",
+      "ordinal": 3,
+      "active": true
+    },
+    "contentRevisionId": "c7c7a8a4-783f-4252-9757-f7def11f0cf0"
+  },
+  {
+    "name": "Claude Sonnet",
+    "id": "98b07560-c4fe-4517-b1bd-916de9f4269e",
+    "ok": true,
+    "failures": [],
+    "modelPreference": {
+      "catalogId": "katana:claude-sonnet-4-6",
+      "reasoningPolicy": "action-policy"
+    },
+    "revision": {
+      "revisionId": "4c6a88cb-6f2c-454f-8660-d6884616cffd",
+      "ordinal": 3,
+      "active": true
+    },
+    "contentRevisionId": "9cda66af-8b2e-43dd-85ce-1e614f49abfa"
+  },
+  {
+    "name": "GPT Sol",
+    "id": "e33f7c5d-2c80-49fa-bbb4-8c463d119f29",
+    "ok": true,
+    "failures": [],
+    "modelPreference": {
+      "catalogId": "openai:gpt-6.1-sol",
+      "reasoningPolicy": "action-policy"
+    },
+    "revision": {
+      "revisionId": "45ebdd80-9e43-444c-987e-3e8354e1995a",
+      "ordinal": 3,
+      "active": true
+    },
+    "contentRevisionId": "3511c54d-47e7-4b87-8ba5-737d08af9baf"
+  },
+  {
+    "name": "GPT Luna",
+    "id": "24523d91-8af4-4042-9450-371512a7e011",
+    "ok": true,
+    "failures": [],
+    "modelPreference": {
+      "catalogId": "openai:gpt-6-luna",
+      "reasoningPolicy": "action-policy"
+    },
+    "revision": {
+      "revisionId": "14c7c1ea-7d46-4ae0-9285-ce93e780527d",
+      "ordinal": 2,
+      "active": true
+    },
+    "contentRevisionId": "caa09def-7bcc-4ae8-a0fb-f67e6c0b8ddf"
+  },
+  {
+    "name": "Gemini Pro",
+    "id": "8590e89f-d12e-436f-8f0b-fa56df9f4e2b",
+    "ok": true,
+    "failures": [],
+    "modelPreference": {
+      "catalogId": "katana:gemini-3-1-pro-preview",
+      "reasoningPolicy": "action-policy"
+    },
+    "revision": {
+      "revisionId": "94fbdcfa-cead-4ea6-becd-187ef155c192",
+      "ordinal": 3,
+      "active": true
+    },
+    "contentRevisionId": "dc5f94e2-4152-4d4c-a32f-6cd178d66b11"
+  },
+  {
+    "name": "Meta Spark",
+    "id": "50578159-9666-4157-a6c7-7d3566ceafa1",
+    "ok": true,
+    "failures": [],
+    "modelPreference": {
+      "catalogId": "meta-muse:muse-spark-1.3-contributor",
+      "reasoningPolicy": "action-policy"
+    },
+    "revision": {
+      "revisionId": "020b86c1-d132-43b7-a9aa-a6005401e75d",
+      "ordinal": 3,
+      "active": true
+    },
+    "contentRevisionId": "d9f2c32c-e412-49ed-81d2-ee9f4165f68b",
+    "mediaVerification": "Matched normalized localhost URLs, exact source hash/dimensions and rectangle; server confirmation present."
+  }
+]
