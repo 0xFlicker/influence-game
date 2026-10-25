@@ -14,6 +14,8 @@ The workspace entry point is `/admin/production`. The bounded library links to `
 
 Source/audience/thinking, inspected moment, scene/version, source/cut view and return filters are reflected in the route. Source history stays pinned. File handles, credentials and audio object URLs are never serialized into a selection descriptor.
 
+Player owns the preview clock. Keep its composition `inputProps` stable across playhead updates: replacing that object restarts Remotion's clock and causes voice/music to rewind as they resynchronize. The browser proof measures sustained unmuted playback with a real recording, checks wall-clock progress and rejects backward audio jumps; frame advancement alone is insufficient.
+
 ## MCP proposals
 
 Producer MCP clients can read the same catalog with `read_production_moments`, patch shared tags with `update_production_moment_tags`, and call `preview_production_cut` to create a review link. Writes require explicit `producer:edit` consent in addition to `producer`; existing connections need a scope upgrade. Smart may mean interesting or relevant thinking, including mistakes worth showing. Silent discussion passes remain outside playback even with thinking enabled.

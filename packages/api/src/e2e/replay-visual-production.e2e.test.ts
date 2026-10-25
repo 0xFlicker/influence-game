@@ -1635,9 +1635,9 @@ test("MCP proposed cut opens exact Studio recipe, verifies voice and music, free
   const args={gameIdOrSlug:studioFixture.influence.id,audience:"public",thinking:true};
   const source=await rpc("read_production_moments",{...args,kind:"thinking",limit:100}),thought=source.moments.find((row:{momentId:string})=>row.momentId!==studioFixture.influence.thoughtId)!;
   await rpc("update_production_moment_tags",{...args,snapshot:source.snapshot,momentId:thought.momentId,expectedRevision:thought.revision,set:{"label.smart":"true"},remove:[]});
-  const fixtureAudio=Bun.spawnSync(["ffmpeg","-v","error","-f","lavfi","-i","sine=frequency=440:duration=0.5","-f","mp3","pipe:1"]);expect(fixtureAudio.exitCode).toBe(0);
+  const fixtureAudio=Bun.spawnSync(["ffmpeg","-v","error","-f","lavfi","-i","sine=frequency=440:duration=12","-f","mp3","pipe:1"]);expect(fixtureAudio.exitCode).toBe(0);
   const audioPreview=await previewAudioTrack(database.db,studioFixture.influence.id),track=await queueAudioBackfill(database.db,studioFixture.influence.id,userId,audioPreview.previewHash);
-  await runAudioTrack(database.db,async()=>({bytes:fixtureAudio.stdout,durationMs:500,evidence:{fixture:true}}),undefined,track);
+  await runAudioTrack(database.db,async()=>({bytes:fixtureAudio.stdout,durationMs:12000,evidence:{fixture:true}}),undefined,track);
   const recipe={mode:"recipe",thinking:true,base:"empty",policies:{thinking:{mode:"any",labels:["smart"]},speech:{mode:"none"}}};
   const cut=await rpc("preview_production_cut",{...args,snapshot:source.snapshot,recipe,music:true,volume:.3,limit:100});expect(cut.audio.missing).toBe(0);expect(cut.audio.mismatched).toBe(0);
   const ids=cut.moments.map((row:{momentId:string})=>row.momentId);
@@ -1647,7 +1647,26 @@ test("MCP proposed cut opens exact Studio recipe, verifies voice and music, free
     expect(await page.$eval('[data-preview-view]',node=>node.getAttribute('data-preview-view'))).toBe("cut");
     expect(await page.$$eval('[data-moment-id]',nodes=>nodes.map(node=>node.getAttribute('data-moment-id')))).toEqual(ids);
     await openStudioDialog(page,"Presentation");expect(await page.evaluate("Array.from(document.querySelectorAll('label')).find(label=>label.textContent?.trim()==='Music')?.querySelector('input')?.checked")).toBe(true);await closeStudioDialog(page);
-    await clickStudioButton(page,"Play");await page.waitForFunction("Number(document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame')) > 0");await clickStudioButton(page,"Pause");expect(await currentKeyboardFrame(page)).toBeGreaterThan(0);
+    await clickStudioButton(page,"Unmute");await clickStudioButton(page,"Play");
+    await page.waitForFunction("Array.from(document.querySelectorAll('audio')).some(audio => audio.currentSrc.includes('/api/games/') && !audio.paused && audio.currentTime > 0.5)");
+    const clock = await page.evaluate(`(async () => {
+      const voice = Array.from(document.querySelectorAll('audio')).find(audio => audio.currentSrc.includes('/api/games/'));
+      const frame = () => Number(document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame'));
+      const start = performance.now(), firstFrame = frame(), source = voice.currentSrc;
+      let previous = voice.currentTime, rewinds = 0;
+      while (performance.now() - start < 6000) {
+        await new Promise(resolve => setTimeout(resolve, 40));
+        if (voice.currentSrc !== source || !voice.isConnected) throw new Error("Voice fixture ended before the clock sample");
+        if (voice.currentTime < previous - 0.1) rewinds++;
+        previous = voice.currentTime;
+      }
+      return {wallSeconds:(performance.now()-start)/1000,timelineSeconds:(frame()-firstFrame)/30,rewinds};
+    })()`) as {wallSeconds:number;timelineSeconds:number;rewinds:number};
+    await clickStudioButton(page,"Pause");
+    console.info("STUDIO_VOICE_CLOCK",JSON.stringify(clock));
+    expect(clock.rewinds).toBe(0);
+    expect(clock.timelineSeconds/clock.wallSeconds).toBeGreaterThan(.9);
+    expect(clock.timelineSeconds/clock.wallSeconds).toBeLessThan(1.1);
     const responsePromise=page.waitForResponse(r=>r.url().endsWith('/selection') && r.request().method()==="POST");
     await openStudioDialog(page,"Export selected cut");await clickStudioButton(page,"Download selected export");const response=await responsePromise;expect(response.status()).toBe(200);
     const descriptor=await response.json() as ProductionExportDescriptor;expect(descriptor.momentIds).toEqual(ids);expect(descriptor.settings.music).toBe(true);expect(descriptor.recordings.length).toBe(ids.length);await closeStudioDialog(page);
