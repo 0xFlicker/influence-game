@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import type { ProductionAudience } from "@influence/engine/production-moments";
 import type { PublishedAudioTrack } from "@influence/engine/audio-track";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -13,6 +13,17 @@ export async function readAudioPublication(db: Pick<DrizzleDB,"select">, id: str
   if (!track?.manifest || track.mode !== "live" && track.status !== "ready") return null;
   const manifest = await readJson(track.manifest);
   const permitted = new Map(manifest.lines.filter(line => line.eventSequence <= track.readyEventSequence && line.audiences.includes(audience) && (thinking || !line.context.endsWith("thinking"))).map(line => [line.momentId, line]));
+  // Resolve live dialogue identity only in the read projection. Changing saved
+  // sources or recipes here would invalidate existing tracks.
+  const transcriptIds = [...new Set([...permitted.values()].flatMap(line => {
+    const watch = line.watch?.[audience];
+    if (watch?.kind !== "influence" || !watch.transcriptId || !/^[1-9]\d*$/.test(watch.transcriptId)) return [];
+    const id = Number(watch.transcriptId);
+    return Number.isSafeInteger(id) && id <= 2_147_483_647 ? [id] : [];
+  }))];
+  const transcripts = transcriptIds.length ? await db.select({ id: schema.transcripts.id, entrySequence: schema.transcripts.entrySequence })
+    .from(schema.transcripts).where(and(eq(schema.transcripts.gameId, game.id), inArray(schema.transcripts.id, transcriptIds))) : [];
+  const entrySequences = new Map(transcripts.flatMap(row => row.entrySequence === null ? [] : [[String(row.id), row.entrySequence] as const]));
   const rows = await db.select({ clipId:schema.gameAudioClips.id, momentId: schema.gameAudioClips.momentId, version: schema.gameAudioVersions }).from(schema.gameAudioClips)
     .innerJoin(schema.gameAudioVersions, eq(schema.gameAudioClips.activeVersionId, schema.gameAudioVersions.id)).where(eq(schema.gameAudioClips.trackId, track.id));
   const order = new Map(manifest.lines.map((line,index)=>[line.momentId,index]));
@@ -20,7 +31,9 @@ export async function readAudioPublication(db: Pick<DrizzleDB,"select">, id: str
   return { id: track.id, clips: rows.flatMap(row => {
     const line = permitted.get(row.momentId);
     if (!line) return [];
-    return [{ momentId: producer ? line.momentId : row.clipId, ...(line.watch?.[audience] && {watch:line.watch[audience]}), speakerId: line.speakerId, textHash: createHash("sha256").update(line.text).digest("hex"), versionId: row.version.id,
+    const watch = line.watch?.[audience];
+    const entrySequence = watch?.kind === "influence" && watch.transcriptId ? entrySequences.get(watch.transcriptId) : undefined;
+    return [{ momentId: producer ? line.momentId : row.clipId, ...(watch && {watch: entrySequence === undefined ? watch : {...watch, entrySequence}}), speakerId: line.speakerId, textHash: createHash("sha256").update(line.text).digest("hex"), versionId: row.version.id,
       sha256: row.version.audio.sha256, durationMs: row.version.durationMs,
       url: `/api/games/${encodeURIComponent(game.id)}/audio/${row.version.id}?audience=${audience}&thinking=${thinking ? "on" : "off"}` }];
   }) };

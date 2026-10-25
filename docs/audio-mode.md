@@ -193,6 +193,21 @@ is picked up by the normal required-audio gate before another model turn. Reload
 open public viewers and explicitly load the new publication in Studio; a browser
 that already downloaded old media cannot have those bytes remotely recalled.
 
+## Live Influence audio coordinates
+
+Published transcript-derived clips include both the saved database `transcriptId`
+and, when available, the durable game-local `entrySequence`. Live websocket
+dialogue uses synthetic message IDs, so it binds audio through `entrySequence`;
+saved replay and export retain their real transcript IDs. House announcements,
+speech and thinking use the same identity mapping. Event-only clips keep their
+event coordinates.
+
+The API enriches this read projection from game-scoped transcript rows. It never
+changes stored manifests, source/recipe hashes, version IDs or audio bytes.
+Existing active tracks therefore gain the coordinate on their next publication
+read without regeneration or a database migration. Reload the serving API and
+the updated web matcher; game/TTS workers need no restart for this change.
+
 ## Qualification still required
 
 The implementation's mock-provider checks do not establish xAI pronunciation,

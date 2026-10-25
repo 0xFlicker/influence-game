@@ -27,6 +27,50 @@ async function fixture() {
   return track!;
 }
 const success: AudioProvider = async recipe => ({ bytes: new TextEncoder().encode(`mock MP3 ${recipe.synthesisText}`), durationMs: 1234, evidence: { status: 200 } });
+test("existing Influence audio gains game-local live coordinates without changing stored evidence", async () => {
+  const gameId = "audio-live-coordinates", otherGameId = "audio-other-game";
+  await db.insert(schema.games).values([gameId, otherGameId].map(id => ({ id, slug: id, gameKind: "influence" as const, status: "in_progress" as const, config: '{"visibility":"public"}' })));
+  const entries = await db.insert(schema.transcripts).values([
+    { gameId, entrySequence: 11, text: "Player speech" },
+    { gameId, entrySequence: 12, text: "House announcement" },
+    { gameId, entrySequence: null, text: "Legacy speech" },
+    { gameId: otherGameId, entrySequence: 99, text: "Other game" },
+  ].map(row => ({ ...row, round: 1, phase: "lobby", timestamp: Date.now() }))).returning();
+  const voices = { house: HOUSE_VOICE, player: assignPlayerVoice("agent", "female", "ara") };
+  const source: AudioSourceManifest = { version: 1, gameId, throughEventSequence: 20, lines: [
+    { momentId: "speech", transcriptId: String(entries[0]!.id), speakerId: "player", context: "speech" },
+    { momentId: "thought", transcriptId: String(entries[0]!.id), speakerId: "player", context: "thinking" },
+    { momentId: "house", transcriptId: String(entries[1]!.id), speakerId: "house", context: "speech" },
+    { momentId: "legacy", transcriptId: String(entries[2]!.id), speakerId: "player", context: "speech" },
+    { momentId: "foreign", transcriptId: String(entries[3]!.id), speakerId: "player", context: "speech" },
+    { momentId: "event", speakerId: "house", context: "speech" },
+  ].map(({ transcriptId, ...line }) => ({ ...line, context: line.context as "speech" | "thinking", text: line.momentId, synthesisText: line.momentId,
+    eventSequence: 10, audiences: ["public"], watch: { public: { kind: "influence", ...(transcriptId && { transcriptId }), eventSequence: 10,
+      actorId: line.speakerId === "house" ? null : line.speakerId, part: line.context as "speech" | "thinking" } } })) };
+  const [track] = await db.insert(schema.gameAudioTracks).values({ gameId, mode: "backfill", voices: await storeJson(voices), manifest: await storeJson(source), budgetUsd: 1, throughEventSequence: 20 }).returning();
+  for (const line of source.lines) {
+    const recipe = audioRecipe(line, line.speakerId === "house" ? voices.house : voices.player);
+    await db.insert(schema.gameAudioClips).values({ trackId: track!.id, momentId: line.momentId, sourceHash: audioSourceHash(line), recipeHash: sha256StableJson(recipe), recipe: await storeJson(recipe) });
+  }
+  await runAudioTrack(db, success);
+  await db.update(schema.gameAudioTracks).set({ mode: "live" }).where(eq(schema.gameAudioTracks.id, track!.id));
+  const before = { tracks: await db.select().from(schema.gameAudioTracks), clips: await db.select().from(schema.gameAudioClips), versions: await db.select().from(schema.gameAudioVersions) };
+  const bytes = await Promise.all(before.versions.map(version => readPayload(version.audio)));
+  const publication = await readAudioPublication(db, gameId, "public", true, true);
+  expect(publication!.clips).toHaveLength(6);
+  for (const [index, line] of source.lines.entries()) {
+    expect(publication!.clips[index]!.watch).toEqual({ ...line.watch!.public!, ...(index < 3 && { entrySequence: index === 2 ? 12 : 11 }) });
+  }
+  expect((await readAudioPublication(db, gameId, "public", false, true))!.clips.map(clip => clip.momentId)).toEqual(["speech", "house", "legacy", "foreign", "event"]);
+  expect(await readAudioPublication(db, gameId, "omniscient", true)).toBeNull();
+  for (const clip of publication!.clips) {
+    const index = before.versions.findIndex(version => version.id === clip.versionId);
+    expect(clip.sha256).toBe(before.versions[index]!.audio.sha256);
+    expect(await readPublishedAudioBytes(db, gameId, clip.versionId, "public", true)).toEqual(bytes[index]!);
+  }
+  expect({ tracks: await db.select().from(schema.gameAudioTracks), clips: await db.select().from(schema.gameAudioClips), versions: await db.select().from(schema.gameAudioVersions) }).toEqual(before);
+  expect(await readPayload(track!.manifest!)).toEqual(await readPayload(before.tracks[0]!.manifest!));
+});
 test("complete tracks publish durable bytes with audience and thinking filtering", async () => {
   const track = await fixture();
   expect(await readAudioPublication(db, track.gameId, "omniscient", true)).toBeNull();
