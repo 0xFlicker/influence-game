@@ -245,6 +245,7 @@
                   "rulesVersion": {
                     "enum": [
                       10,
+                      11,
                       7,
                       8,
                       9
@@ -479,6 +480,7 @@
                     "rulesVersion": {
                       "enum": [
                         10,
+                        11,
                         7,
                         8,
                         9
@@ -1371,6 +1373,25 @@
                           "const": "farewell",
                           "type": "string"
                         },
+                        "decisionSpeech": {
+                          "type": "object",
+                          "properties": {
+                            "action": {
+                              "type": "string"
+                            },
+                            "actorId": {
+                              "type": "string"
+                            },
+                            "receiptEntrySequence": {
+                              "type": "number"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "action",
+                            "actorId"
+                          ]
+                        },
                         "acceptedBallot": {
                           "type": "object",
                           "properties": {
@@ -1415,25 +1436,6 @@
                         "decisionId": {
                           "description": "Durable private-decision id for narrative correlation. Optional; forward-path\nonly. Outside product-dialogue digests. Not exposed on match-transcript DTOs.",
                           "type": "string"
-                        },
-                        "decisionSpeech": {
-                          "type": "object",
-                          "properties": {
-                            "action": {
-                              "type": "string"
-                            },
-                            "actorId": {
-                              "type": "string"
-                            },
-                            "receiptEntrySequence": {
-                              "type": "number"
-                            }
-                          },
-                          "additionalProperties": false,
-                          "required": [
-                            "action",
-                            "actorId"
-                          ]
                         }
                       },
                       "additionalProperties": false,
@@ -6199,6 +6201,7 @@
           "pack_talk",
           "protect",
           "public_vote",
+          "speaking_priority",
           "vote"
         ],
         "type": "string"
@@ -6548,6 +6551,7 @@
                       "rulesVersion": {
                         "enum": [
                           10,
+                          11,
                           7,
                           8,
                           9

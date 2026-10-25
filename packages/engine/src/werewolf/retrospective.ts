@@ -13,6 +13,7 @@ function werewolfFact(event: WerewolfEvent): unknown {
     case "werewolf.phase_started": return { phase: event.payload.phase, day: event.payload.day };
     case "werewolf.action_accepted": {
       const { actorId, action, decision, fallback } = event.payload;
+      if (decision.kind === "speaking_priority") throw new RetrospectiveContractError("Private scheduling decisions do not belong in retrospective context");
       return { actorId, action, unavailable: fallback !== null, ...(decision.kind === "target" || decision.kind === "spoken_target" ? { targetId: decision.targetId, ...(decision.kind === "spoken_target" ? { passed: decision.text === null } : {}) }
         : { passed: decision.text === null, ...(decision.kind === "opening" ? { recipientIds: decision.recipientIds } : {}), ...(decision.kind === "conversation" ? { recipientId: decision.recipientId, replyToContributionId: decision.replyToContributionId } : {}) }) };
     }
@@ -50,9 +51,10 @@ export function compileWerewolfRetrospective(events: readonly WerewolfEvent[]) {
   let state: WerewolfState | null = null;
   for (const event of prefix) {
     state = applyWerewolfEvent(state, event);
+    if (event.type === "werewolf.action_accepted" && event.payload.action === "speaking_priority") continue;
     appendRetrospectiveSection(input.sections, `day:${state.day}/${state.phase}`, event.sequence,
       `${event.type} ${canonicalJson(werewolfFact(event))}`);
-    if (event.type === "werewolf.action_accepted" && event.payload.decision.kind !== "target" && event.payload.decision.text !== null) {
+    if (event.type === "werewolf.action_accepted" && event.payload.decision.kind !== "target" && event.payload.decision.kind !== "speaking_priority" && event.payload.decision.text !== null) {
       const packOnly = event.payload.action === "pack_talk" || event.payload.action === "pack_propose";
       input.dialogue.push({ eventSequence: event.sequence, source: { kind: "canonical_event", sequence: event.sequence },
         actorId: event.payload.actorId, scope: packOnly ? "pack" : "public",

@@ -67,11 +67,12 @@ export async function completedWerewolfResultsFixture(...args: Parameters<typeof
 }
 
 /** Current public conversation/ballot contracts, including a complete retrospective. */
-export async function completedCurrentWerewolfFixture(gameId: string, rulesVersion: 9 | 10 = 9, setup?: import("../werewolf/types").WerewolfSetup) {
+export async function completedCurrentWerewolfFixture(gameId: string, rulesVersion: 9 | 10 | 11 = 9, setup?: import("../werewolf/types").WerewolfSetup) {
   const players = Array.from({ length: 6 }, (_, index) => ({ id: `${gameId}-p${index}`, name: `Player ${index}`, personality: "Fixture", backstory: "", strategy: "", avatarUrl: null }));
   const events = [startWerewolf(gameId, players, {...currentConfig("one_wolf", 1, setup), rulesVersion}, `${gameId}-seed`)];
   const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request, observation }) {
     if ("solo" in request && request.solo) return {kind: "solo_target", targetId: request.legalTargetIds[0]!, text: `My ${request.action} choice tonight.`, cue: null};
+    if (request.action === "speaking_priority") return { kind: "speaking_priority", priority: 50 };
     if (request.action === "conversation") return { kind: "conversation", text: observation.board.entries.some(entry => entry.kind === "conversation") ? null : "Which claim should we test?", cue: null, recipientId: null, replyToContributionId: null };
     if (request.action === "pack_propose") return { kind: "spoken_target", targetId: request.legalTargetIds[0]!, text: "My proposal.", cue: null, thinking: "Fixture" };
     if (request.action === "public_vote") return { kind: "spoken_target", targetId: null, text: "I abstain.", cue: null, thinking: "Fixture" };

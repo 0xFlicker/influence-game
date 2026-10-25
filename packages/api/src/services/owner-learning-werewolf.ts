@@ -62,7 +62,7 @@ export async function projectWerewolfReviewEvidence(db: DrizzleDB, selection: Ow
     let state: WerewolfState | null = null;
     const decisions: WerewolfReviewDecision[] = [];
     for (const event of events) {
-      if (event.type === "werewolf.action_accepted" && event.payload.actorId === selected.playerId) {
+      if (event.type === "werewolf.action_accepted" && event.payload.actorId === selected.playerId && event.payload.action !== "speaking_priority") {
         if (!state) throw new Error("Werewolf review is missing its initial state");
         const knownAtDecision = observeWerewolf(state, selected.playerId);
         const turn = planned.get(event.sequence);

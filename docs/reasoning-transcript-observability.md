@@ -1,5 +1,13 @@
 # Reasoning & Transcript Observability
 
+Werewolf v11 begins each day with concurrent private `werewolf.speaking_priority`
+requests. Each returns only an integer `priority` from 1–100; no authored thinking,
+speech or delivery tags. Inspect provider evidence for these scheduling calls,
+not Show thinking or dialogue. Higher scores speak earlier; seeded ties, preserved
+accepted responses and owner-fenced partial-batch recovery make completion timing
+irrelevant. Existing frozen v7–v10 games keep their schedules. No paid rerun was
+performed for this change.
+
 The native thinking field repeats the in-character direction and suggests 2–4
 short sentences. Length-repair prompts explicitly keep correction mechanics out
 of authored thoughts and speech. This responds to observed live Haiku verbosity

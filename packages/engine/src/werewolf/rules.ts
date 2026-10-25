@@ -3,16 +3,16 @@ import * as legacy from "./legacy-rules";
 import * as current from "./rules-v9";
 import type { WerewolfConfig, WerewolfEvent, WerewolfEventData, WerewolfPlayer, WerewolfPreset, WerewolfSetup, WerewolfState, WerewolfRequest, WerewolfAcceptedAction } from "./types";
 export { WEREWOLF_PRESETS, WEREWOLF_MAX_RECIPIENTS, WEREWOLF_PACK_ATTEMPTS, WEREWOLF_RULES as LEGACY_WEREWOLF_RULES, werewolfDayInitiative } from "./legacy-rules";
-export { WEREWOLF_RULES_V9, WEREWOLF_RULES_V9 as WEREWOLF_RULES, DEFAULT_DISCUSSION_POLICY } from "./rules-v9";
+export { WEREWOLF_RULES_V9, WEREWOLF_RULES_V11, WEREWOLF_RULES_V11 as WEREWOLF_RULES, DEFAULT_DISCUSSION_POLICY } from "./rules-v9";
 export const legacyWerewolfConfig = legacy.werewolfConfig;
 export class WerewolfRulesVersionError extends Error {
-  constructor() { super("This game uses an unsupported Werewolf rules version. Supported versions are v7, v8, v9 and v10."); }
+  constructor() { super("This game uses an unsupported Werewolf rules version. Supported versions are v7, v8, v9, v10 and v11."); }
 }
 export function werewolfConfig(preset: WerewolfPreset, maxDays = 10, setup?: WerewolfSetup): WerewolfConfig {
-  return { ...legacy.werewolfConfig(preset, maxDays, setup), rulesVersion: 10, discussionPolicy: { ...current.DEFAULT_DISCUSSION_POLICY } };
+  return { ...legacy.werewolfConfig(preset, maxDays, setup), rulesVersion: 11, discussionPolicy: { ...current.DEFAULT_DISCUSSION_POLICY } };
 }
 export function assignWerewolfRoles(players: readonly WerewolfPlayer[], config: WerewolfConfig, seed: string) {
-  if (config.rulesVersion === 9 || config.rulesVersion === 10) return current.assignRoles(players, config, seed);
+  if (config.rulesVersion === 9 || config.rulesVersion === 10 || config.rulesVersion === 11) return current.assignRoles(players, config, seed);
   return legacy.assignWerewolfRoles(players, config, seed);
 }
 export function startWerewolf(gameId: string, players: WerewolfPlayer[], config: WerewolfConfig, seed: string): WerewolfEvent {
@@ -23,10 +23,17 @@ export function nextWerewolfStep(state: WerewolfState) { return state.config.rul
 export function werewolfActionPlans(state: WerewolfState) {
   if (state.config.rulesVersion < 9) return legacy.werewolfActionPlans(state);
   const step = current.nextStep(state);
+  if (step.kind === "action" && step.request.action === "speaking_priority") {
+    const completed = new Set(state.actions.filter(action => action.action === "speaking_priority").map(action => action.actorId));
+    return state.conversation!.order.filter(id => !completed.has(id)).map((actorId, index) => ({
+      sequence: state.sequence + index + 1,
+      request: { actorId, action: "speaking_priority" as const, legalTargetIds: [] },
+    }));
+  }
   return step.kind === "action" ? [{ sequence: state.sequence + 1, request: step.request }] : [];
 }
 export function validateWerewolfAction(request: WerewolfRequest, action: WerewolfAcceptedAction) {
-  if ("solo" in request && request.solo || ["conversation", "public_vote", "pack_propose"].includes(request.action)) current.validateAction(request, action);
+  if ("solo" in request && request.solo || ["speaking_priority", "conversation", "public_vote", "pack_propose"].includes(request.action)) current.validateAction(request, action);
   else legacy.validateWerewolfAction(request, action);
 }
 export function werewolfPackOrder(state: WerewolfState) { return state.config.rulesVersion >= 9 ? current.packOrder(state) : legacy.werewolfPackOrder(state); }
@@ -34,7 +41,7 @@ export function werewolfVoteMode(state: WerewolfState) { return state.config.rul
 export function werewolfTurnReminder(state: WerewolfState, actorId: string) { return state.config.rulesVersion >= 9 ? null : legacy.werewolfTurnReminder(state, actorId); }
 export function applyWerewolfEvent(previous: WerewolfState | null, event: WerewolfEvent): WerewolfState {
   const version = previous?.config.rulesVersion ?? (event.type === "werewolf.started" ? event.payload.config.rulesVersion : null);
-  if (version === 9 || version === 10) return current.applyEvent(previous, event);
+  if (version === 9 || version === 10 || version === 11) return current.applyEvent(previous, event);
   if (version !== 7 && version !== 8) throw new WerewolfRulesVersionError();
   return legacy.applyWerewolfEvent(previous, event);
 }

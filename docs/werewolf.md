@@ -36,15 +36,45 @@ These night explanations are private asides for Omniscient spectators, not villa
 
 Nonvisual Werewolf uses five generated environment plates: the daytime village hall, the nighttime pack lair, the Doctor's herbal room, the Seer's sanctuary and a torchlit outdoor tribunal square for public ballots. Room plates cover the stage and stay top-aligned outside the thinking camera transform. Dawn/results retain the village setting; private role result screens retain their respective rooms. Influence uses the same shallow portrait-circle geometry with its own classical room plates (see `docs/influence-room-backgrounds.md`). Asset provenance and full prompts are in `packages/web/public/visual/werewolf/rooms-v1/README.md` and `packages/web/public/visual/werewolf/votes-v1/README.md`.
 
-## Current rules version 10
+## Current rules version 11
 
-Fresh games use v10. The rules version and discussion policy are frozen when the game is created, including waiting lobbies; starting a lobby does not upgrade them. Existing v7/v8/v9 games retain their original action contracts. V10 keeps the v9 discussion and voting rules. Daytime consists of one seeded, byte-bounded conversation followed by one public sequential ballot. Discussion begins with 400 UTF-8 bytes per living player; accepted speech alone consumes bytes, and a turn is offered only when the full 320-byte message allowance remains. A complete sweep of silence also closes discussion. Opportunities are fair but not guaranteed per player. Directed recipients receive the next opportunity for at most three handoffs; the last turn must redirect or pass. Canonical contribution ordinals, recipients, reply references and remaining-byte counts are structured data, never derived from prose.
+Fresh games use v11. The rules version and discussion policy are frozen when the game is created, including waiting lobbies; starting a lobby does not upgrade them. Existing v7/v8/v9/v10 games retain their original action contracts. V10 keeps the v9 discussion and voting rules. V11 orders normal speaking opportunities by a private daily priority survey. Daytime consists of one byte-bounded conversation followed by one public sequential ballot. Discussion begins with 400 UTF-8 bytes per living player; accepted speech alone consumes bytes, and a turn is offered only when the full 320-byte message allowance remains. A complete sweep of silence also closes discussion. Opportunities are fair but not guaranteed per player. Directed recipients receive the next opportunity for at most three handoffs; the last turn must redirect or pass. Canonical contribution ordinals, recipients, reply references and remaining-byte counts are structured data, never derived from prose.
 
 Each living player then votes exactly once in seeded order, publicly, with an optional message. Later voters observe earlier ballots and messages. Elimination requires `floor(livingPlayers / 2) + 1` votes for one target; abstentions do not reduce the threshold. A shortfall ends the day without elimination. There is no plurality, runoff, or return to discussion. Accepted messages and votes are committed before dispatching the next actor.
 
 Two living wolves make combined speech-and-target proposals for up to three full exchanges, ending as soon as current proposals agree. With two wolves the maximum is six individual decisions, not a forced six. A lone wolf selects a target directly. A completed attack proposal is private to wolves and Omniscient viewers. Each new config freezes `bytesPerLivingPlayer`, `messageBytes`, and `maxHandoffs`; replay does not depend on later tuning.
 
 For v9/v10 actor contracts, retry feedback, exact native schemas, provider journal recovery, and API read integration, see `rules-v9.ts`, `agent.ts`, `observation.ts`, and the focused engine/API tests. Historical v7/v8 replays retain their own reducer semantics; do not apply v9 results or reveal timing to those records.
+
+## Daily speaking priority (v11)
+
+At the start of every day, after night resolution and before dialogue, each living
+player returns exact JSON `{ "priority": 75 }`: one integer from 1 through 100,
+with no authored thinking, speech, cue or delivery metadata. Agents assess their
+urgency from their own current knowledge; for example, a Seer with an actionable
+investigation can request an early turn. No role is automatically given priority.
+
+Prepare all requests against the same start-of-day board, preserving each actor's
+private observation, and dispatch model calls in parallel. Each uses that actor's
+frozen model routing and normal three-attempt provider policy. Accepted responses
+remain journaled independently. Commit in a fixed seeded order only after the
+batch settles; the existing owner/sequence fences recover partial commits without
+redispatching accepted model calls. Exhausted providers produce a marked unavailable
+priority of 1, not fabricated speech. Cancellation and persistence failures still
+propagate.
+
+Sort normal speaking order by descending priority. Ties retain the seeded daily
+discussion order; completion timing never decides order. Directed handoffs, fair
+rotation after offers, speech-byte accounting and the independently seeded public
+vote order remain unchanged. The survey consumes no discussion bytes. Recompute
+priorities each day for survivors only. Scores live in canonical private actions
+and provider evidence, not contestant context, transcript, Show thinking, audio,
+retrospective context or owner-learning moments. No new bucket body or migration
+is needed: the existing provider evidence and accepted-value storage is reused.
+
+V7–v10 histories keep their original schedules and frozen request contracts. This
+change does not upgrade existing waiting games. Provider-free and local PostgreSQL
+checks qualify scheduling, privacy and crash recovery; no new paid game was run.
 
 ## Historical rules version 8
 
@@ -123,7 +153,7 @@ Each action has a stable `werewolf_action` semantic coordinate keyed by its next
 
 Daytime discussion reserves exactly one action coordinate and freezes that speaker’s current observation. Its accepted `werewolf.action_accepted` event immediately adds one public contribution and advances the thread state. Only then can the next player dispatch. Recovery reuses a provider result accepted before an interrupted commit, without another call or changed context. Public history positions count only public entries; private pack activity cannot leak through internal event coordinates. Original speech and cues are never rewritten.
 
-In historical v8, pack ballots retain the frozen batch mechanism after sequential proposals. `werewolf.pack_vote_resolved` records the attempt, individual ballots, unanimous target or null, and agreement/attempt-limit end reason. Only that event reveals ballots to wolves and advances the Omniscient timeline; Mystery is unchanged. Existing v7 and v8 games remain available in replay and Production Studio with unchanged results and historical reveal behavior. Fresh games use v10. Experimental v1–v6 logs remain unsupported. No SQL migration is required for the version change.
+In historical v8, pack ballots retain the frozen batch mechanism after sequential proposals. `werewolf.pack_vote_resolved` records the attempt, individual ballots, unanimous target or null, and agreement/attempt-limit end reason. Only that event reveals ballots to wolves and advances the Omniscient timeline; Mystery is unchanged. Existing v7 and v8 games remain available in replay and Production Studio with unchanged results and historical reveal behavior. Fresh games use v11. Experimental v1–v6 logs remain unsupported. No SQL migration is required for the version change.
 
 Daytime vote checkpoints dispatch every living player's sealed decision concurrently. All slots are prepared before dispatch, every accepted result remains in the durable provider journal, and one canonical resolution reveals the full ledger. Restart after a partial commitment reuses those accepted values without redispatch. Concurrent dispatch changes ballot latency, not ballot counts. Ordered threads add opener-answer calls as described above.
 

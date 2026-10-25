@@ -173,7 +173,7 @@ test("CLI creates a v10 API Werewolf game and reports the public majority ballot
     expect(games[0]!.maxPlayers).toBe(6);
     const publicView = (await (await fetch(`${servers.apiUrl}/api/werewolf/${games[0]!.slug}/presentation?audience=mystery`)).json() as { view: WerewolfPresentation["view"] }).view;
     const ballotIndex = publicView.entries.findLastIndex(entry => entry.kind === "ballot");
-    expect(publicView.rulesVersion).toBe(10);
+    expect(publicView.rulesVersion).toBe(11);
     expect(publicView.entries.filter(entry => entry.kind === "ballot")).toHaveLength(publicView.players.filter(player => player.alive || player.elimination?.kind === "vote").length);
     // Retrospective speech may follow the canonical result in completed replay.
     expect(publicView.entries.some(entry => entry.kind === "result")).toBe(true);
@@ -284,7 +284,7 @@ test("owner edits a game-specific strategy, creates Werewolf, and watches both v
     await page.waitForSelector('button[aria-label="Remove Arden Vale from cast"]');
     const [waiting] = await database.db.select().from(schema.games).where(eq(schema.games.slug, slug));
     expect(waiting!.status).toBe("waiting");
-    expect(JSON.parse(waiting!.config ?? "{}")).toMatchObject({ rulesVersion: 10 });
+    expect(JSON.parse(waiting!.config ?? "{}")).toMatchObject({ rulesVersion: 11 });
     expect(await database.db.select().from(schema.werewolfEvents).where(eq(schema.werewolfEvents.gameId, waiting!.id))).toHaveLength(0);
     await page.goto(`${servers.webUrl}/games`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector('select[aria-label="Game type"]');

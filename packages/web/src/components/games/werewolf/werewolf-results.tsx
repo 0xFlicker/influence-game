@@ -67,7 +67,7 @@ function Portrait({src,name}: {src: string; name: string}) {
   return <div className={styles.portrait}>{failed ? <span aria-label={`${name}, portrait unavailable`}>{name.slice(0,1)}</span> : <Image unoptimized width={56} height={56} src={resolveApiUrl(src)} alt={name} loading="lazy" onError={() => setFailed(true)} />}</div>;
 }
 
-function RecapItem({item,name,slug,rulesVersion}: {item: WerewolfResultRecap; name: (id: string) => string; slug: string; rulesVersion: 7 | 8 | 9 | 10}) {
+function RecapItem({item,name,slug,rulesVersion}: {item: WerewolfResultRecap; name: (id: string) => string; slug: string; rulesVersion: 7 | 8 | 9 | 10 | 11}) {
   const label = item.kind === "night" ? `Night ${item.day}` : rulesVersion >= 9 ? `Day ${item.day} · Public vote` : item.result.voteMode === "plurality" ? `Day ${item.day} · Final vote` : `Day ${item.day} · Vote after thread ${item.result.thread}`;
   const outcome = item.kind === "night"
     ? item.result.killedId ? `${name(item.result.killedId)} was eliminated` : item.result.attackTargetId && item.result.attackTargetId === item.result.protectedId ? `${name(item.result.attackTargetId)} was protected` : item.noAttackReason === "no_agreement" ? "The pack did not agree. No attack." : "No attack. Nobody was eliminated."

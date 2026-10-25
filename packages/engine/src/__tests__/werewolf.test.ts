@@ -379,6 +379,7 @@ describe("Werewolf exact decision contracts", () => {
     for (const event of ctx.events) {
       if (event.type !== "werewolf.action_accepted") continue;
       expect(event.payload.fallback).toBe("provider_unavailable");
+      if (event.payload.decision.kind === "speaking_priority") continue;
       if (event.payload.decision.kind !== "target") expect(event.payload.decision.text).toBeNull();
       else if (event.payload.action === "vote") expect(event.payload.decision.targetId).toBeNull();
       else {

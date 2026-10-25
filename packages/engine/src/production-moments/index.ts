@@ -65,7 +65,7 @@ export type ProductionSource =
     })
   | (OrderedProductionSource & {
       kind: "werewolf-event"; eventSequence: number; entry: WerewolfPublicEntry;
-      rulesVersion?: 7 | 8 | 9 | 10;
+      rulesVersion?: 7 | 8 | 9 | 10 | 11;
       nightActions?: readonly WerewolfNightAction[];
     })
   | (OrderedProductionSource & {

@@ -3,7 +3,7 @@ import type {WerewolfPublicEntry} from "./observation";
 import {werewolfNightSteps, type WerewolfNightAction} from "./watch-contract";
 
 /** Compact presentation metadata only. No private text, choices or scene bodies. */
-export function werewolfStepDurations(entry: WerewolfPublicEntry, players: readonly {id: string; name: string}[], actions: readonly WerewolfNightAction[], rulesVersion: 7 | 8 | 9 | 10 = 8): number[] {
+export function werewolfStepDurations(entry: WerewolfPublicEntry, players: readonly {id: string; name: string}[], actions: readonly WerewolfNightAction[], rulesVersion: 7 | 8 | 9 | 10 | 11 = 8): number[] {
   if (entry.kind === "speech") return [entry.purpose === "retrospective" ? soloPresentationDurationMs(entry.text ?? "Pass") : sceneSpeechDurationMs(entry.text ?? "Pass")];
   if (entry.kind === "discussion") return [sceneSpeechDurationMs(entry.contribution.text ?? "Pass")];
   if (entry.kind === "ballot") return [entry.text === null ? SILENT_BALLOT_DURATION_MS : soloPresentationDurationMs(entry.text)];

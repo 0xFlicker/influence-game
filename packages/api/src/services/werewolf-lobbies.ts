@@ -97,7 +97,7 @@ export async function startWerewolfLobby(db: DrizzleDB, id: string) {
     const config = JSON.parse(game.config);
 
     const rules = werewolfConfig(config.preset, config.maxDays, config.setup);
-    if (![7, 8, 9, 10].includes(config.rulesVersion)) throw new WerewolfGameError("Unsupported frozen Werewolf rules version");
+    if (![7, 8, 9, 10, 11].includes(config.rulesVersion)) throw new WerewolfGameError("Unsupported frozen Werewolf rules version");
     rules.rulesVersion = config.rulesVersion;
     if (config.rulesVersion < 9) delete rules.discussionPolicy;
     else if (config.discussionPolicy) rules.discussionPolicy = config.discussionPolicy;

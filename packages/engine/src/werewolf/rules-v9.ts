@@ -13,6 +13,8 @@ Day discussion has a shared UTF-8 speech byte allowance, visible in the observat
 A structured recipient receives the next opportunity when handoffs remain. After three directed handoffs, if you speak, address someone other than the preceding speaker or the room; passing remains valid. References to earlier statements remain legal and do not schedule speakers. On the penultimate turn, if you speak, close your point instead of asking for a further direct answer from the final speaker. See the turn-specific instructions. Original accepted speech is published before anyone else acts; no future speech exists yet. Unspoken opportunities are private: your history contains spoken contributions only, and does not tell you who was offered a turn or chose to pass.
 After discussion, everyone votes exactly once in a published seeded order. Submit the target you want eliminated, or null to abstain, together with optional speech. A vote is against its target, never an endorsement or a vote to save them. Each voter sees all earlier votes, speeches, totals and remaining voters. Votes cannot change. More than half of ALL living players must vote for the same target to eliminate them; abstentions never lower this threshold. Everyone gets their ballot before resolution even if a majority is already secured. Otherwise no one is eliminated. The day ends either way: no plurality, runoff, trial or extra discussion.
 Death removes all gameplay speech, voting and night actions. No whispers, jury, empowerment, resurrection or death speeches. The village wins when no wolves remain; wolves win at parity or greater. Check victory after the complete night or day resolution. The day limit is a draw if neither faction has won. After the outcome all original contestants speak once in a separate retrospective which cannot change the result.`;
+export const WEREWOLF_RULES_V11 = `${WEREWOLF_RULES_V9}
+At the start of each day, before discussion, every living player privately submits an integer speaking priority from 1 to 100. These silent requests run independently in parallel. Higher priorities receive earlier normal speaking opportunities; tied priorities use a seeded daily order. Directed replies still work during discussion. Priorities are private scheduling data, not dialogue or evidence of anyone's role. The voting order remains independently seeded.`;
 const same = (a: unknown, b: unknown) => hashCanonicalJson(a) === hashCanonicalJson(b);
 const bytes = (text: string) => new TextEncoder().encode(text).length;
 function shuffled(ids: string[], seed: string, purpose: string, day: number) {
@@ -74,10 +76,10 @@ export function nextStep(state: WerewolfState): WerewolfStep {
     const result = packResult(state);
     if (result) return { kind: "event", event: { type: "werewolf.pack_vote_resolved", payload: result } };
     const order = packOrder(state);
-    request = { actorId: order[n % order.length]!, action: "pack_propose", legalTargetIds: state.aliveIds.filter(id => state.roles[id] !== "werewolf"), messageBytes: state.config.discussionPolicy!.messageBytes, targetRequired: order.length === 1, ...(state.config.rulesVersion === 10 && order.length === 1 ? {solo: true as const} : {}) };
+    request = { actorId: order[n % order.length]!, action: "pack_propose", legalTargetIds: state.aliveIds.filter(id => state.roles[id] !== "werewolf"), messageBytes: state.config.discussionPolicy!.messageBytes, targetRequired: order.length === 1, ...(state.config.rulesVersion >= 10 && order.length === 1 ? {solo: true as const} : {}) };
   }
   if (state.phase === "night" && !state.resolved) {
-    const solo = state.config.rulesVersion === 10 ? {solo: true as const, messageBytes: state.config.discussionPolicy!.messageBytes} : {};
+    const solo = state.config.rulesVersion >= 10 ? {solo: true as const, messageBytes: state.config.discussionPolicy!.messageBytes} : {};
     const requests = state.aliveIds.flatMap<WerewolfRequest>(id => state.roles[id] === "doctor" ? [{ actorId: id, action: "protect" as const, ...solo, legalTargetIds: state.aliveIds.filter(x => x !== state.previousProtection) }]
       : state.roles[id] === "seer" ? [{ actorId: id, action: "investigate" as const, ...solo, legalTargetIds: state.aliveIds.filter(x => x !== id) }] : []);
     request = requests[n];
@@ -92,6 +94,9 @@ export function nextStep(state: WerewolfState): WerewolfStep {
   }
   if (state.phase === "day") {
     const c = state.conversation!;
+    if (state.config.rulesVersion >= 11 && n < state.aliveIds.length) return { kind: "action", request: {
+      actorId: c.order[n]!, action: "speaking_priority", legalTargetIds: [],
+    } };
     if (!c.ended) request = { actorId: c.nextActorId, action: "conversation", legalTargetIds: [], messageBytes: c.messageBytes,
       legalRecipientIds: state.aliveIds.filter(id => id !== c.nextActorId && !(c.handoffsUsed === c.maxHandoffs && id === c.previousSpeakerId)),
       legalReplyIds: state.history.flatMap(e => e.kind === "conversation" && e.text !== null ? [e.id] : []) };
@@ -108,6 +113,12 @@ export function nextStep(state: WerewolfState): WerewolfStep {
 export function validateAction(request: WerewolfRequest, action: WerewolfAcceptedAction) {
   const { decision: d, fallback, ...actual } = action;
   if (!same(actual, request) || fallback !== null && fallback !== "provider_unavailable") throw new Error("Action does not match its frozen slot");
+  if (request.action === "speaking_priority") {
+    if (d.kind !== "speaking_priority" || !same(Object.keys(d).sort(), ["kind", "priority"])
+      || !Number.isInteger(d.priority) || d.priority < 1 || d.priority > 100
+      || fallback !== null && d.priority !== 1) throw new Error("Speaking priority must be an integer from 1 to 100; unavailable actors use 1");
+    return;
+  }
   if (!("messageBytes" in request)) throw new Error("Missing speech byte limit");
   if (d.kind !== "conversation" && d.kind !== "spoken_target" && d.kind !== "solo_target") throw new Error("Invalid v9 decision kind");
   if (d.text !== null && (typeof d.text !== "string" || !d.text.trim() || bytes(d.text) > request.messageBytes)) throw new Error("Speech exceeds its UTF-8 byte allowance or is blank");
@@ -153,7 +164,7 @@ export function applyEvent(previous: WerewolfState | null, event: WerewolfEvent)
   if (expected.kind === "complete") throw new Error("Werewolf is already complete");
   if (expected.kind === "action") {
     if (event.type !== "werewolf.action_accepted") throw new Error("Missing Werewolf action");
-    if ("solo" in expected.request && expected.request.solo || ["conversation", "public_vote", "pack_propose"].includes(expected.request.action)) validateAction(expected.request, event.payload);
+    if ("solo" in expected.request && expected.request.solo || ["speaking_priority", "conversation", "public_vote", "pack_propose"].includes(expected.request.action)) validateAction(expected.request, event.payload);
     else legacy.validateWerewolfAction(expected.request, event.payload);
   } else if (!same(expected.event, { type: event.type, payload: event.payload })) throw new Error("Rule event contradicts accepted prefix");
   const state = structuredClone(previous); state.sequence = event.sequence;
@@ -176,6 +187,16 @@ export function applyEvent(previous: WerewolfState | null, event: WerewolfEvent)
         break;
       }
       state.actions.push(structuredClone(action));
+      if (action.action === "speaking_priority" && state.actions.length === state.aliveIds.length) {
+        const priorities = new Map(state.actions.map(a => {
+          if (a.decision.kind !== "speaking_priority") throw new Error("Missing daily speaking priority");
+          return [a.actorId, a.decision.priority] as const;
+        }));
+        // Stable sort retains the seeded daily order for tied priorities.
+        const c = state.conversation!;
+        c.order.sort((a, b) => priorities.get(b)! - priorities.get(a)!);
+        c.nextActorId = c.order[0]!;
+      }
       if (action.action === "public_vote" && d.kind === "spoken_target") {
         const result = dayResult(state);
         state.history.push({ kind: "ballot", day: state.day, actorId: action.actorId, targetId: d.targetId, text: d.text, cue: d.cue, unavailable: action.fallback !== null,

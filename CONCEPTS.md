@@ -359,9 +359,13 @@ A match-assigned role: Werewolf, Villager, Seer, or Doctor. Wolves belong to the
 
 ## Werewolf public conversation
 
-Current v9 daytime conversation is an open, sequential floor governed by a frozen UTF-8 output allowance. Accepted speech consumes shared bytes; passes do not. Recipient IDs and reply contribution ordinals are structured canonical fields. The scheduler may direct up to three consecutive handoffs, after which the next speaker redirects or passes. A reference to an earlier contribution does not schedule its author. The byte allowance can end discussion before every living player gets an opportunity.
+Current daytime conversation (v9 onward) is an open, sequential floor governed by a frozen UTF-8 output allowance. Accepted speech consumes shared bytes; passes do not. Recipient IDs and reply contribution ordinals are structured canonical fields. The scheduler may direct up to three consecutive handoffs, after which the next speaker redirects or passes. A reference to an earlier contribution does not schedule its author. The byte allowance can end discussion before every living player gets an opportunity.
 
-An unspoken opportunity is private to execution and debugging. Contestants see only spoken contributions, using contiguous speech references mapped back to canonical IDs on acceptance; scheduler queues, offer counts and pass identities are not player evidence. A saved pass thought is an optional Omniscient replay shot, with camera focus and return but no speech.
+An unspoken opportunity is private to execution and debugging. Contestants see only spoken contributions, using contiguous speech references mapped back to canonical IDs on acceptance; scheduler queues, offer counts and pass identities are not player evidence. Passes remain skipped in playback even with Show thinking; their thoughts stay available for debugging.
+
+## Werewolf daily speaking priority
+
+Starting in v11, each living player privately returns one integer from 1 to 100 before daytime discussion. Requests run in parallel against the same start-of-day board with actor-private knowledge. Descending scores establish normal speaking order; ties preserve the seeded daily order. This silent scheduling action has no thinking, speech, production cue or audio, consumes no discussion bytes, and is excluded from contestant history and retrospective/learning context. Directed replies and the separate seeded ballot order are unchanged. Provider-unavailable entries are explicitly marked and receive priority 1.
 
 ## Werewolf public day ballot
 

@@ -24,6 +24,7 @@ async function fixture(preset: "one_wolf" | "two_wolves" = "two_wolves") {
 }
 const agent:WerewolfAgent={ prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}){
   if ("solo" in request && request.solo) return {kind:"solo_target",targetId:request.legalTargetIds[0]!,text:"My choice for tonight.",cue:null};
+  if(request.action==="speaking_priority")return {kind:"speaking_priority",priority:50};
   if(request.action==="conversation")return {kind:"conversation",text:"Fixture contribution",cue:null,recipientId:null,replyToContributionId:null};
   if(request.action==="pack_propose" || request.action==="public_vote")return {kind:"spoken_target",targetId:request.legalTargetIds[0]!,text:"Fixture contribution",cue:null,thinking:"Fixture"};
   if(request.legalTargetIds.length)return {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Fixture"};

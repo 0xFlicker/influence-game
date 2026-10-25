@@ -4,7 +4,7 @@ export type WerewolfRole = "werewolf" | "villager" | "seer" | "doctor";
 export type WerewolfFaction = "village" | "wolves";
 export type WerewolfPreset = "one_wolf" | "two_wolves";
 export type WerewolfPhase = "introduction" | "pack" | "night" | "day" | "vote" | "retrospective" | "complete";
-export type WerewolfAction = "introduce" | "pack_talk" | "attack" | "investigate" | "protect" | "open_thread" | "discuss" | "vote" | "conversation" | "public_vote" | "pack_propose";
+export type WerewolfAction = "speaking_priority" | "introduce" | "pack_talk" | "attack" | "investigate" | "protect" | "open_thread" | "discuss" | "vote" | "conversation" | "public_vote" | "pack_propose";
 export type WerewolfVoteMode = "majority" | "plurality";
 
 export interface WerewolfPlayer {
@@ -22,7 +22,7 @@ export interface WerewolfPlayer {
 export interface WerewolfSetup { playerCount: 6 | 7 | 8; wolves: 1 | 2; seer: boolean; doctor: boolean }
 
 export interface WerewolfConfig {
-  rulesVersion: 7 | 8 | 9 | 10;
+  rulesVersion: 7 | 8 | 9 | 10 | 11;
   preset: WerewolfPreset;
   setup?: WerewolfSetup;
   maxDays: number;
@@ -31,6 +31,7 @@ export interface WerewolfConfig {
 }
 
 export type WerewolfDecision =
+  | { kind: "speaking_priority"; priority: number }
   | { kind: "opening"; text: string | null; cue: string | null; recipientIds: string[] }
   | { kind: "speech"; text: string | null; cue: string | null }
   | { kind: "conversation"; text: string | null; cue: string | null; recipientId: string | null; replyToContributionId: number | null }

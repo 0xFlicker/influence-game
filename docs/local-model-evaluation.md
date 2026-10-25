@@ -1,5 +1,13 @@
 # Local Model Evaluation
 
+Werewolf v11 begins each day with concurrent private `werewolf.speaking_priority`
+requests. Each returns only an integer `priority` from 1–100; no authored thinking,
+speech or delivery tags. Inspect provider evidence for these scheduling calls,
+not Show thinking or dialogue. Higher scores speak earlier; seeded ties, preserved
+accepted responses and owner-fenced partial-batch recovery make completion timing
+irrelevant. Existing frozen v7–v10 games keep their schedules. No paid rerun was
+performed for this change.
+
 When evaluating `thinking` in `--chatty` or Show thinking, look for an in-character
 inner monologue that sets up the speech or silent decision. For example, “The
 round is almost over, and I can say enough to bring it to a close,” rather than

@@ -23,7 +23,7 @@ export function werewolfThinkingActions(events: readonly WerewolfEvent[], cursor
     state = applyWerewolfEvent(state, event);
     const position = projectWerewolfView(state, "omniscient").cursor;
     if (position > cursor) break;
-    if (event.type === "werewolf.action_accepted" && event.payload.fallback === null) pending.push({ event, day: state.day });
+    if (event.type === "werewolf.action_accepted" && event.payload.fallback === null && event.payload.action !== "speaking_priority") pending.push({ event, day: state.day });
     for (let i = 0; i < pending.length;) {
       const item = pending[i]!;
       const action = item.event.payload.action;

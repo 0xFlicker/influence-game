@@ -28,7 +28,7 @@ for (const request of soloRequests) test(`${request.action}: exact solo contract
 });
 
 test("v10 freezes solo night slots, retains messages and hides them from all other contestants and Mystery", async () => {
-  expect(werewolfConfig("one_wolf").rulesVersion).toBe(10);
+  expect(werewolfConfig("one_wolf").rulesVersion).toBe(11);
   const events = await completedCurrentWerewolfFixture("v10-solo", 10, {playerCount: 6, wolves: 1, seer: true, doctor: true});
   let state: WerewolfState | null = null;
   const soloEvents: WerewolfEvent[] = [];

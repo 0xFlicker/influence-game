@@ -1,5 +1,9 @@
 #!/usr/bin/env bun
 /**
+ * Werewolf v11 surveys living players in parallel for silent 1–100 speaking
+ * priorities before each day. Scores affect only normal speaking order; seeded
+ * ties and durable journal replay preserve recovery. No thinking/audio is authored
+ * for these calls; inspect private evidence rather than dialogue/Show thinking.
  * Delivery tags are prompted by default, including non-audio games. Accepted
  * speech/thinking and later contestant context are clean; sanitized annotations
  * stay in private provider evidence and API journal bucket references. Inspect
