@@ -1,5 +1,6 @@
 import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
+import { createHash } from "node:crypto";
 import { modelRateCard } from "./model-route-metadata";
 import type { ProviderAttemptIntent, ProviderAttemptRecord, ProviderExecutionHooks } from "./provider-execution";
 
@@ -13,7 +14,12 @@ const finite = (value: number) => Number.isFinite(value) && value >= 0;
 export function localTaskBudgetPath(env: NodeJS.ProcessEnv = process.env): string | undefined {
   const path = env.INFLUENCE_LOCAL_TASK_BUDGET;
   if (path && env.NODE_ENV === "production") throw new Error("Local task budget cannot run in production");
-  return path;
+  return path ? resolve(path) : undefined;
+}
+
+export function localTaskBudgetIdentity(env: NodeJS.ProcessEnv = process.env): string | null {
+  const path = localTaskBudgetPath(env);
+  return path ? createHash("sha256").update(path).digest("hex") : null;
 }
 
 /** Cross-process lock, atomic replacement, and fail-closed persistence before dispatch. */
@@ -77,15 +83,19 @@ async function settleText(path: string, record: ProviderAttemptRecord) {
     const entry = ledger.entries.find(e => e.id === record.attemptId);
     if (!entry || entry.state === "settled") return;
     const accounting = record.accounting, usage = accounting?.usage;
-    if (!usage || usage.promptTokens === undefined || usage.completionTokens === undefined) return; // Unknown remains charged in full.
-    if (![usage.promptTokens, usage.completionTokens, usage.reasoningTokens ?? 0].every(finite)) throw new Error("Invalid task usage");
-    const usd = (usage.promptTokens * entry.inputRate! + Math.max(usage.completionTokens, usage.reasoningTokens ?? 0) * entry.outputRate!) / 1_000_000;
     const actual = (accounting?.actualCostMicrousd ?? 0) / 1_000_000;
     if (!finite(actual)) throw new Error("Invalid task receipt");
+    const native = entry.currency === "katanaCredits" && accounting?.providerNativeUnit === "katana_credit" ? Number(accounting.providerNativeAmount) : 0;
+    if (!finite(native)) throw new Error("Invalid Katana credit receipt");
+    if (!usage || usage.promptTokens === undefined || usage.completionTokens === undefined) {
+      // Missing tokens never erase a known provider charge or release the reservation.
+      entry.charged = Math.max(entry.charged, entry.currency === "katanaCredits" ? actual / CREDIT_USD : actual, native);
+      return;
+    }
+    if (![usage.promptTokens, usage.completionTokens, usage.reasoningTokens ?? 0].every(finite)) throw new Error("Invalid task usage");
+    const usd = (usage.promptTokens * entry.inputRate! + Math.max(usage.completionTokens, usage.reasoningTokens ?? 0) * entry.outputRate!) / 1_000_000;
     let charged = Math.max(usd, actual);
     if (entry.currency === "katanaCredits") {
-      const native = accounting?.providerNativeUnit === "katana_credit" ? Number(accounting.providerNativeAmount) : 0;
-      if (!finite(native)) throw new Error("Invalid Katana credit receipt");
       charged = Math.max(Math.ceil(charged / CREDIT_USD * 10) / 10 + 0.1, native);
     }
     entry.charged = charged;
@@ -103,10 +113,10 @@ export function withLocalTaskBudget(base: ProviderExecutionHooks, env: NodeJS.Pr
 }
 
 /** Charge every TTS dispatch, including retries and uncertain responses, in full. */
-export async function reserveLocalTaskAudio(id: string, text: string, env: NodeJS.ProcessEnv = process.env) {
+export async function reserveLocalTaskAudio(id: string, text: string, gameId: string, env: NodeJS.ProcessEnv = process.env) {
   const path = localTaskBudgetPath(env);
   if (!path) return;
   // UTF-8 bytes conservatively cover character billing, including all delivery markup.
   const amount = Buffer.byteLength(text) * 30 / 1_000_000;
-  await reserve(path, { id, catalogId: "xai:tts", currency: "xaiUsd", reserved: amount, charged: amount, state: "reserved" });
+  await reserve(path, { id, gameId, catalogId: "xai:tts", currency: "xaiUsd", reserved: amount, charged: amount, state: "reserved" });
 }

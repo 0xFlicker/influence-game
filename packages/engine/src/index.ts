@@ -799,7 +799,7 @@ export { DEFAULT_CONVERSATION_POLICY } from "./conversation-policy";
 export { conversationPolicy, beginConversation, isSpectatorHuddleSpeech, huddleSessionId } from "./open-conversation";
 
 export { withEvaluationBudget } from "./evaluation-budget";
-export { withLocalTaskBudget, localTaskBudgetPath, reserveLocalTaskAudio } from "./local-task-budget";
+export { withLocalTaskBudget, localTaskBudgetPath, localTaskBudgetIdentity, reserveLocalTaskAudio } from "./local-task-budget";
 
 export * from "./game-model-routing";
 

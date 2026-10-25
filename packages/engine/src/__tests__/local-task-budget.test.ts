@@ -32,14 +32,25 @@ test("blocks unapproved games and unknown models before underlying journal", () 
   expect(calls).toBe(0);
 }));
 test("audio retries and parallel reservations cannot exceed shared allowance", () => fixture(async(path,env)=>{
-  const results=await Promise.allSettled([reserveLocalTaskAudio("a","a".repeat(300000),env),reserveLocalTaskAudio("b","a".repeat(300000),env)]);
+  const results=await Promise.allSettled([reserveLocalTaskAudio("a","a".repeat(300000),"g",env),reserveLocalTaskAudio("b","a".repeat(300000),"g",env)]);
   expect(results.filter(r=>r.status==="fulfilled")).toHaveLength(1);
   const ledger=JSON.parse(await readFile(path,"utf8")) as LocalTaskLedger;
   expect(ledger.entries[0]!.charged).toBe(9);
+}));
+test("audio cannot spend for unrelated queued games", () => fixture(async(_path,env)=>{
+  await expect(reserveLocalTaskAudio("old-track", "hello", "unrelated", env)).rejects.toThrow("outside");
 }));
 test("failed evidence persistence retains the entire reservation", () => fixture(async(path,env)=>{
   const hooks=withLocalTaskBudget({onTerminal:()=>{throw Error("storage failed");}},env), request=intent("a");
   await hooks.onReserve!(request);
   await expect(hooks.onTerminal!({...request,completedAt:new Date().toISOString(),latencyMs:1,outcome:{kind:"usable"},disposition:"accepted",accounting:{usage:{promptTokens:5,completionTokens:10}}})).rejects.toThrow("storage failed");
   expect(JSON.parse(await readFile(path,"utf8")).entries[0].state).toBe("reserved");
+}));
+test("incomplete usage retains larger native charges", () => fixture(async(path,env)=>{
+  const hooks=withLocalTaskBudget({},env),request=intent("native","katana:deepseek-v4-flash");
+  await hooks.onReserve!(request);
+  await hooks.onTerminal!({...request,completedAt:new Date().toISOString(),latencyMs:1,outcome:{kind:"usable"},disposition:"accepted",accounting:{usage:{},actualCostMicrousd:520000,providerNativeUnit:"katana_credit",providerNativeAmount:"100"}});
+  const entry=JSON.parse(await readFile(path,"utf8")).entries[0];
+  expect(entry.charged).toBeGreaterThanOrEqual(100);
+  expect(entry.state).toBe("reserved");
 }));

@@ -1,5 +1,5 @@
 import { createHouseShareRoutes } from "./routes/house-share-links.js";
-import { localTaskBudgetPath } from "@influence/engine";
+import { localTaskBudgetPath, localTaskBudgetIdentity } from "@influence/engine";
 import { renderExecutionConfig } from "@influence/engine/render-execution-config";
 import { remoteRenderingEnabled, startRenderWakeDispatcher } from "./services/postgame-media-execution.js";
 import { startHouseCutWorker } from "./services/house-cut-worker.js";
@@ -573,6 +573,7 @@ const healthResponse = () => ({
     imageDigest: process.env.INFLUENCE_API_IMAGE_DIGEST ?? null,
   },
   runtimeRole: apiRuntimeRole,
+  localTaskBudgetId: localTaskBudgetIdentity(),
   timestamp: new Date().toISOString(),
 });
 app.get("/health", (c) => c.json(healthResponse()));

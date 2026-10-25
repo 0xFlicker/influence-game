@@ -3,7 +3,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { resolveCliApiSession } from "../packages/engine/src/cli-api-session";
 import { normalizeGameModelRouting, normalizeModelPreference, type GameModelRouting, type ModelPreference } from "../packages/engine/src/game-model-routing";
 import { updateLocalTaskLedger, type LocalTaskLedger } from "../packages/engine/src/local-task-budget";
@@ -45,15 +45,17 @@ async function main() {
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
     kind: { type: "string" }, "api-url": { type: "string", default: "http://127.0.0.1:3000" },
     "web-url": { type: "string", default: "http://localhost:3001" },
+    "worker-url": { type: "string", default: "http://127.0.0.1:3002" },
     out: { type: "string", default: resolve(import.meta.dir, "../../evidence/games") },
     ledger: { type: "string", default: resolve(import.meta.dir, "../../evidence/spend-ledger.json") },
     "allow-paid-start": { type: "boolean", default: false }, help: { type: "boolean", default: false },
   } });
   if (values.help || !positionals[0]) {
-    console.log("Commands: profiles | prepare --kind werewolf|influence | start --kind KIND --allow-paid-start | status | evidence --kind KIND\nOptional --api-url, --web-url, --out, --ledger. Prepare creates waiting games only. Start can spend provider credits. No command retries uncertain mutations. Evidence includes private accepted thinking; keep output local."); return;
+    console.log("Commands: profiles | prepare --kind werewolf|influence | start --kind KIND --allow-paid-start | status | evidence --kind KIND\nOptional --api-url, --web-url, --worker-url, --out, --ledger. Prepare creates waiting games only. Start verifies API/worker budget identities and can spend provider credits. No command retries uncertain mutations. Evidence includes private accepted thinking; keep output local."); return;
   }
   if (positionals.length !== 1 || !["profiles", "prepare", "start", "status", "evidence"].includes(positionals[0])) throw new Error("Unknown command; use --help");
   const command = positionals[0], api = origin(values["api-url"]!), web = origin(values["web-url"]!);
+  const worker = origin(values["worker-url"]!);
   const out = resolve(values.out!), manifestPath = resolve(out, "manifest.json"), ledgerPath = resolve(values.ledger!);
   if (values.kind !== undefined && !["werewolf", "influence"].includes(values.kind)) throw new Error("Choose --kind werewolf or influence");
   const kind = values.kind as Kind | undefined;
@@ -113,6 +115,18 @@ async function main() {
       if (!Number.isFinite(committed) || committed >= ledger.limits[currency]) throw new Error(`No ${currency} headroom remains`);
     }
   }
+  async function checkRunningBudget() {
+    const expected = createHash("sha256").update(resolve(ledgerPath)).digest("hex");
+    const services = await Promise.all([api, worker].map(async service => {
+      const response = await fetch(`${service}/health`, { redirect: "error", signal: AbortSignal.timeout(10_000) });
+      if (!response.ok) throw new Error(`Local service health unavailable (${response.status}) at ${service}`);
+      const health = object(await response.json(), "local service health");
+      if (health.status !== "ok" || health.localTaskBudgetId !== expected) throw new Error(`Local service ${service} is not using this task's shared budget ledger`);
+      return health;
+    }));
+    if (services[1]!.runtimeRole !== "game-worker") throw new Error("Configured worker service does not have the game-worker runtime role");
+    await save(resolve(out, `start-health-${new Date().toISOString().replaceAll(":", "-")}.json`), { api, worker, budgetId: expected, services });
+  }
   if (command === "profiles") {
     const roster = await profiles(); await save(resolve(out, "roster.json"), roster);
     console.log(JSON.stringify(roster.map(({ id, name, modelPreference }) => ({ id, name, modelPreference })), null, 2)); return;
@@ -153,6 +167,7 @@ async function main() {
     const game = manifest.games[kind!];
     if (!game?.prepared) throw new Error("Prepare and inspect this game first");
     await checkLedger(game.id);
+    await checkRunningBudget();
     const exported = await inspect(game), config = object(JSON.parse(exported.game.config), "frozen config");
     if (game.started || exported.game.status !== "waiting") throw new Error("Game already started or not waiting; inspect its state instead of redispatching start");
     if (config.audioMode !== true) throw new Error("Audio Mode is not enabled");
