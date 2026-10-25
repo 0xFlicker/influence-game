@@ -6,7 +6,7 @@ import type { ProviderAttemptIntent, ProviderAttemptRecord, ProviderExecutionHoo
 
 type Currency = "openaiUsd" | "katanaCredits" | "xaiUsd" | "metaUsd";
 type Entry = { id: string; currency: Currency; reserved: number; charged: number; state: "reserved" | "settled"; catalogId: string; gameId?: string; inputRate?: number; outputRate?: number };
-export interface LocalTaskLedger { version: 1; limits: Record<Currency, number>; prior: Record<Currency, number>; allowedGameIds: string[]; entries: Entry[] }
+export interface LocalTaskLedger { version: 1; limits: Record<Currency, number>; prior: Record<Currency, number>; allowedGameIds: string[]; entries: Entry[]; perGameLimits?: Record<string,Partial<Record<Currency,number>>> }
 const queues = new Map<string, Promise<void>>();
 const CREDIT_USD = 0.0052;
 const finite = (value: number) => Number.isFinite(value) && value >= 0;
@@ -55,6 +55,12 @@ async function reserve(path: string, entry: Entry) {
     if (ledger.entries.some(e => e.id === entry.id)) return;
     const committed = ledger.prior[entry.currency] + ledger.entries.filter(e => e.currency === entry.currency).reduce((sum, e) => sum + e.charged, 0);
     if (committed + entry.reserved > ledger.limits[entry.currency]) throw new Error(`Local task ${entry.currency} allowance exhausted before dispatch`);
+    const gameLimit = entry.gameId ? ledger.perGameLimits?.[entry.gameId]?.[entry.currency] : undefined;
+    if (gameLimit !== undefined) {
+      if (!finite(gameLimit)) throw new Error("Invalid per-game task allowance");
+      const gameCommitted = ledger.entries.filter(e => e.gameId === entry.gameId && e.currency === entry.currency).reduce((sum,e) => sum+e.charged,0);
+      if (gameCommitted+entry.reserved > gameLimit) throw new Error(`Local game ${entry.currency} allowance exhausted before dispatch`);
+    }
     ledger.entries.push(entry);
   });
 }

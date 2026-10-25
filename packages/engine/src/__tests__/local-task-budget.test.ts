@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { reserveLocalTaskAudio, withLocalTaskBudget, type LocalTaskLedger } from "../local-task-budget";
+import { reserveLocalTaskAudio, withLocalTaskBudget, updateLocalTaskLedger, type LocalTaskLedger } from "../local-task-budget";
 import type { ProviderAttemptIntent } from "../provider-execution";
 
 async function fixture(run: (path: string, env: NodeJS.ProcessEnv) => Promise<void>) {
@@ -54,6 +54,11 @@ test("audio retries and parallel reservations cannot exceed shared allowance", (
 }));
 test("audio cannot spend for unrelated queued games", () => fixture(async(_path,env)=>{
   await expect(reserveLocalTaskAudio("old-track", "hello", "unrelated", env)).rejects.toThrow("outside");
+}));
+test("per-game audio allocations preserve the other game's budget", () => fixture(async(path,env)=>{
+  await updateLocalTaskLedger(path,ledger=>{ledger.perGameLimits={g:{xaiUsd:0.001}};});
+  await expect(reserveLocalTaskAudio("too-large","hello ".repeat(20),"g",env)).rejects.toThrow("Local game xaiUsd allowance exhausted");
+  expect(JSON.parse(await readFile(path,"utf8")).entries).toHaveLength(0);
 }));
 test("failed evidence persistence retains the entire reservation", () => fixture(async(path,env)=>{
   const hooks=withLocalTaskBudget({onTerminal:()=>{throw Error("storage failed");}},env), request=intent("a");

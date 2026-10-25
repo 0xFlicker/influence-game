@@ -143,9 +143,9 @@ async function main() {
     if (manifest.games[kind!]) throw new Error("This kind already has a saved game; inspect it instead of creating a duplicate");
     const roster = await profiles();
     const policy = normalizeGameModelRouting({ version: 1, defaultManifest: [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "action-policy" }],
-      houseManifest: [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "action-policy" }], defaultModelMaxFallbackCalls: 24, excludedCatalogIds: [], overrides: {} });
+      houseManifest: [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "action-policy" }], defaultModelMaxFallbackCalls: 96, excludedCatalogIds: ["katana:glm-5-3-flash-private"], overrides: {} });
     const requested = kind === "werewolf"
-      ? { preset: "two_wolves", setup: { playerCount: 8, wolves: 2, seer: true, doctor: true }, maxDays: 10, visibility: "public", audioMode: true, visualMode: false, modelRouting: policy }
+      ? { preset: "two_wolves", setup: { playerCount: 8, wolves: 2, seer: true, doctor: true }, maxDays: 5, visibility: "public", audioMode: true, visualMode: false, modelRouting: policy }
       : { playerCount: 8, visibility: "public", audioMode: true, visualMode: false, modelRouting: policy };
     await mutate<{ id: string; slug: string }>(kind === "werewolf" ? "/api/werewolf/lobbies" : "/api/games", requested, "POST", created => {
       manifest.games[kind!] = { id: string(created.id, "created game id"), slug: string(created.slug, "created slug"), prepared: false, roster, requested };
