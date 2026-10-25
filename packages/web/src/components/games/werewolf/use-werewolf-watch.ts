@@ -215,6 +215,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
   };
   return {...clock, previousCue, nextCue, timingCues, seekTiming, openingCue, openingCount: opening.current.length, seekOpening, data, active, media, preparing, error, follow, holding, seek, navigationRevision, activeStep, scrubPosition: openingCue ? opening.current.findIndex(c => c.key === openingCue.key) : opening.current.length + gameScrubPosition, scrubCount: opening.current.length + scrubStops.length,
     retry: () => void seek(target.current,playIntent.current,false,awaitingInitialCue.current),
+    pause: () => {playIntent.current = false;setFollow(false);director.pause();},
     toggle: () => { playIntent.current = !playIntent.current; setFollow(playIntent.current); if (!playIntent.current) director.pause(); else if (!preparing) director.play(); },
     previous: () => {
       const current = director.getSnapshot().cursor;

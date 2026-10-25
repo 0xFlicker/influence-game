@@ -94,6 +94,13 @@ in the plan; install them through the owner API before live qualification.
 
 ## Production, playback and historical tracks
 
+Browser-blocked or interrupted voice playback pauses the viewer without an enable-audio
+prompt. The ordinary Play control (including its keyboard shortcut) retries voice
+audio in the user gesture and resumes the existing position in both games. The voice
+element is retained across cues; stale playback attempts cannot pause a later cue or
+restart playback after the user pauses. Actual load/playback failures remain visible
+and use the same Play control to retry.
+
 Migration `0132_audio_tracks.sql` adds profile preferences, logical tracks/clips,
 append-only versions and dispatch attempts. The existing private bucket stores
 voice snapshots, manifests, recipes, request/response evidence and MP3 bytes.

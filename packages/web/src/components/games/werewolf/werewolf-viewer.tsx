@@ -69,7 +69,7 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
     return {kind:"werewolf",cursor:candidate.moment.cursor,actorId:line.house ? null : line.actor?.id ?? null,part:"speech",
       ...(candidate.nightDecision && candidate.nightAction && candidate.nightAction.kind !== "hunt" && {action:candidate.nightAction.kind})};
   },[]);
-  const voice = useWatchVoice({director,gameId:data?.gameId ?? "",audience,thinking:audience === "omniscient" && thinking,live:data?.status === "in_progress",
+  const voice = useWatchVoice({director,gameId:data?.gameId ?? "",audience,thinking:audience === "omniscient" && thinking,live:data?.status === "in_progress",onPause:watch.pause,
     coordinate:playbackCue ? coordinateForCue(playbackCue) : null,coordinateForCue});
   const ambient = useWatchMusic({navigationRevision:watch.navigationRevision, section: watch.openingCue ? null : werewolfMusic(active), playing: watch.follow && !watch.openingCue,
     muted: preferences.musicMuted, volume: preferences.musicVolume * (voice.speaking && !voice.muted ? .35 : 1), preparing: watch.preparing,
@@ -77,7 +77,7 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
   const openingAudio = useOpeningAudio({cue:watch.openingCue, elapsedMs:watch.elapsed, playing:snapshot.isPlaying && !watch.preparing && !watch.holding,
     muted:preferences.musicMuted, volume:preferences.musicVolume * (voice.speaking && !voice.muted ? .35 : 1), speed:snapshot.speed});
   const music = watch.openingCue ? openingAudio : ambient;
-  const toggle = () => {if (watch.follow) music.suspend(); else if (!preferences.musicMuted) music.unlock(); watch.toggle();};
+  const toggle = () => {if (watch.follow) music.suspend(); else {voice.resume();if (!preferences.musicMuted) music.unlock();} watch.toggle();};
   const seek = (position: number) => { music.suspend(); void watch.seek(position); };
   const adjacent = (direction: -1 | 1, kind: "scene" | "chapter") => {
     if (watch.openingCue) {music.suspend(); if (direction === 1 && snapshot.cursor === watch.openingCount - 1) void watch.seek(1); else void watch.seekOpening(snapshot.cursor + direction); return;}
@@ -112,7 +112,7 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
     mobileCast={<div className="shrink-0 xl:hidden"><MobileContextPanel model={cast} onSelectPlayer={id => {setSelected(id);setInspecting(true);}} /><button className="px-3 py-1 text-xs text-white/60" onClick={() => setInspecting(true)}>Player info</button></div>}
     inspector={<div role={inspecting ? "dialog" : undefined} aria-modal={inspecting || undefined} aria-label={inspecting ? "Player information" : undefined} className={inspecting ? "fixed inset-3 z-50 flex min-h-0 flex-col bg-black xl:static" : "hidden min-h-0 xl:block"}>{inspecting && <button className="shrink-0 p-3 text-right text-sm text-white/70 xl:hidden" onClick={() => setInspecting(false)}>Close player info</button>}{inspect}</div>}
     theater={<section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-white/10 bg-black/45">
-      {voice.error && <div role="alert">{voice.error} <button onClick={voice.unlock}>Enable voice audio</button></div>}
+      {voice.error && <div role="alert">{voice.error}</div>}
       {watch.error && <div role="alert" className="shrink-0 p-2 text-xs text-amber-100">{watch.error} <button onClick={watch.retry}>Retry</button></div>}
       {stopError && <p role="alert" className="shrink-0 p-2 text-xs text-amber-100">{stopError}</p>}
       {(data?.status === "cancelled" || data?.status === "suspended") && <p role="status" className="shrink-0 p-2 text-xs text-amber-100">{data.status === "cancelled" ? "An operator stopped this game." : data.visualPaused ? "Paused for visual repair. An operator must resume the game." : "This game stopped after an execution error."} Committed play remains available.</p>}

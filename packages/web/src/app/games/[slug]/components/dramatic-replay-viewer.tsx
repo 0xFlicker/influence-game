@@ -311,13 +311,13 @@ function DramaticReplayTheater({
     const actorId=ballot?.voterId ?? (candidate.source === "format" && candidate.kind === "two_names_plea" ? candidate.speakerId : message?.speakerPlayerId ?? message?.fromPlayerId ?? null);
     return {kind:"influence",...transcriptIdentity,eventSequence:candidate.canonicalSequence ?? message?.firstDurableEventSequence ?? 0,actorId,part:"speech"};
   },[scenes]);
-  const voice = useWatchVoice({director,gameId:game.id,audience:"public",thinking:preferences.thinking,live,
+  const [playRequested, setPlayRequested] = useState(true);
+  const voice = useWatchVoice({director,gameId:game.id,audience:"public",thinking:preferences.thinking,live,onPause:() => setPlayRequested(false),
     coordinate:activeCue ? coordinateForCue(activeCue) : null,coordinateForCue});
   const currentStateEntry = Boolean(live && formatCue && directorSnapshot.hydrationWatermark !== null
     && formatCue.canonicalSequence <= directorSnapshot.hydrationWatermark);
   const isPlaying = directorSnapshot.isPlaying;
   const speed = directorSnapshot.speed;
-  const [playRequested, setPlayRequested] = useState(true);
   const musicSection = influenceMusic(game.id, revealedWinners[Math.min(directorSnapshot.cursor, presentationCues.length - 1)] ?? activeCue, currentMessage);
   const closingMusic = !live && musicSection?.continueAtEnd === true && activeCue !== null
     && directorSnapshot.cursor === presentationCues.length - 1
@@ -479,6 +479,7 @@ function DramaticReplayTheater({
   const togglePlay = () => {
     if (transportPlaying) pausePresentation();
     else {
+      voice.resume();
       if (!preferences.musicMuted) unlockMusic();
       setPlayRequested(true); director.play();
     }
@@ -783,7 +784,7 @@ function DramaticReplayTheater({
         }`}
       >
         {shared?.cue && presentationCues.length > 0 && !presentationCues.some(cue => cue.key === shared.cue) && <p role="alert">This replay moment is no longer available.</p>}
-        {voice.error && <div role="alert">{voice.error} <button onClick={voice.unlock}>Enable voice audio</button></div>}
+        {voice.error && <div role="alert">{voice.error}</div>}
         {voice.available && <label className="text-xs">Voice volume <input aria-label="Voice volume" type="range" min="0" max="1" step="0.05" value={voice.muted ? 0 : voice.volume} onChange={event => {voice.setMuted(false);voice.setVolume(Number(event.target.value));}} /></label>}
         <WatchTransport getShareHref={() => {
           const cue = director.getActiveCue();
