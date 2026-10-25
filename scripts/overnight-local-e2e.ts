@@ -12,7 +12,7 @@ import { loadProductionReplaySource } from "../packages/web/src/lib/replay-expor
 const MODELS = {
   "GPT Sol": "openai:gpt-6.1-sol", "Claude Sonnet": "katana:claude-sonnet-4-6",
   "Claude Haiku": "katana:claude-haiku-4-5", "Gemini Pro": "katana:gemini-3-1-pro-preview",
-  "Meta Spark": "katana:glm-5-3-flash-private", "Kimi K3": "katana:kimi-k3",
+  "Meta Spark": "meta-muse:muse-spark-1.3-contributor", "Kimi K3": "katana:kimi-k3",
   "DeepSeek Flash": "katana:deepseek-v4-flash", "Grok 4.6": "katana:grok-4-6",
 } as const;
 const VOICES: Record<keyof typeof MODELS, string> = {
