@@ -6,6 +6,7 @@ import {
 } from "@influence/engine/fixtures/format-kernel-viewer";
 import {
   createPresentationDirector,
+  influencePresentationPolicy,
   type PresentationAnimationControlAdapter,
   type PresentationClock,
 } from "../app/games/[slug]/components/influence-presentation-director";
@@ -15,6 +16,7 @@ import { soloPresentationDurationMs, soloPresentationMotion, SOLO_EXIT_MS, SOLO_
 import { sceneSpeechDurationMs, sceneSpeechOpacity, SCENE_SPEECH_START_MS, SCENE_READ_START_MS, SCENE_EXIT_HOLD_MS } from "../app/games/[slug]/components/scene-speech-timing";
 import { VISUAL_SPEECH_FADE_MS } from "@influence/engine/visual-speech";
 import { houseSegmentMotion } from "../app/games/[slug]/components/house-segment";
+import {compileTiming} from "../lib/replay-export/timing";
 
 class FakeClock implements PresentationClock {
   nowMs = 0;
@@ -520,6 +522,23 @@ it("keeps House animation on the shared clock through pause, speed, reconnect an
   clock.tick(825);
   expect(director.getActiveCue()?.key).toBe("next");
   director.dispose();
+});
+
+it("House summaries use the same measured speech interval in live playback and exports",()=>{
+ const clock=new FakeClock(),director=createPresentationDirector({clock,followTail:true});
+ const summary={...cue("house-summary",15,1,"classic"),houseSummary:true,baseDurationMs:4200};
+ director.load([summary]);director.setRecordings(summary.key,{speechMs:9299.583});
+ expect(director.getRecordedDuration(summary.key)).toBe(9299.583);
+ director.seekTimeline(0,2000);expect(director.getAudioPosition()).toEqual({part:"speech",offsetMs:2000});
+ director.pause();clock.tick(5000);expect(director.getAudioPosition()?.offsetMs).toBe(2000);
+ director.play();clock.tick(7300);expect(director.getSnapshot().waitingAtTail).toBe(true);
+ expect(director.getAudioPosition()).toBeNull();
+ director.seekTimeline(0,0);expect(director.getAudioPosition()?.offsetMs).toBe(0);
+ const [exported]=compileTiming([{key:summary.key,kind:"speech",baseDurationMs:summary.baseDurationMs,
+  speech:influencePresentationPolicy.speech(summary),thinking:null,recording:{assetId:"saved-house",durationMs:9299.583}}],{ending:"finish-score",overrides:{}},30);
+ expect(exported?.recording).toEqual({assetId:"saved-house",durationMs:9299.583,startMs:0});
+ expect(exported?.endMs).toBe(director.getRecordedDuration(summary.key)!);
+ director.dispose();
 });
 
 it("expired House narration stays faded at the live tail until a new cue arrives", () => {

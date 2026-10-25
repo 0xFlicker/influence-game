@@ -257,3 +257,5 @@ the remaining model-quality check; no audio was generated.
 Live playback can receive recorded durations before saved thinking text. The director captures the current content position before inserting that text into its timing cache, preserving the camera entrance instead of advancing to the thought boundary. Speech and thinking still use their measured recording durations; paused and exact-seek positions remain on the shared clock.
 
 Influence live WebSocket messages have negative UI IDs. Audio binding uses their durable game-local `entrySequence`, not those synthetic IDs; completed replays keep exact persisted transcript-ID matching. Transcript lookups never widen to event-only matching, because one event can contain several contributions. Older event-only format clips retain their existing event/actor binding.
+
+House summary cues in Influence expose a full-cue speech interval even though they have no contestant speech bubble. The shared director/export policy replaces that interval with the saved narration duration, enabling synchronized House audio and captions without changing silent room-title bridges.
