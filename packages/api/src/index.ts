@@ -636,6 +636,8 @@ app.route("/", createWerewolfAdminRoutes(db));
 // Shared assets enforce their own access policy before the Influence-only game guard.
 app.route("/", createGameAssetRoutes(db));
 app.route("/", createCharacterCutoutRoutes(db));
+// Cross-format audio handles its own game visibility and audience checks.
+app.route("/", createAudioRoutes(db));
 const gameRoutes = createGameRoutes(db);
 app.route("/", gameRoutes);
 
@@ -667,7 +669,6 @@ app.route("/", agentProfileRoutes);
 app.route("/", createAnonymousAgentCreationRoutes(db));
 app.route("/", createVisualReplayProductionRoutes(db));
 app.route("/",createProductionStudioRoutes(db));
-app.route("/",createAudioRoutes(db));
 app.route("/", createModerationRoutes(db));
 app.route("/", createAccountInferenceRoutes(db));
 
