@@ -66,6 +66,20 @@ function frame(moment: WerewolfWatchMoment, scene: AcceptedVisualScene | null = 
 function roomIds(container: HTMLElement) {
   return [...container.querySelectorAll("[data-room-player]")].map(element => element.getAttribute("data-room-player"));
 }
+test("live Werewolf room derives its orbit predecessor after a waiting-screen remount", () => {
+  const before=discussion();
+  if(before.entry.kind!=="discussion") throw new Error("fixture");
+  const after: WerewolfWatchMoment={...before,cursor:21,entry:{...before.entry,contribution:{...before.entry.contribution,actorId:"a",text:"I suspect Larry."}}};
+  const previousCue=werewolfMomentCues(before)[0]!,cue=werewolfMomentCues(after)[0]!;
+  const draw=(elapsed:number,previous=previousCue)=><WerewolfContentFrame cue={cue} previousCue={previous} scene={null} elapsed={elapsed} reduced={false}/>;
+  const outgoing=render(frame(before));outgoing.unmount();
+  const view=render(draw(0));
+  const position=()=>view.container.querySelector<HTMLElement>('[data-room-player="a"]')!.style.transform;
+  const start=position();view.rerender(draw(325));const middle=position();view.rerender(draw(650));const end=position();
+  expect(start).not.toBe(middle);expect(middle).not.toBe(end);
+  view.rerender(draw(325));expect(position()).toBe(middle);
+  view.rerender(draw(0,{...previousCue,moment:{...before,entry:{...before.entry,day:1}}}));expect(position()).toBe(end);
+});
 test("village conversation uses the living prefix cast and follows speaker changes without remounting", () => {
   const moment = discussion();
   const ready = mock();

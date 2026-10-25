@@ -1,5 +1,7 @@
 # Audio Mode implementation
 
+House narration in both viewers and the shared replay export now displays the existing House logo and accepted summary text for the exact recorded audio interval. Long summaries use deterministic readable pages; pausing or seeking samples the same recording clock, with no independent overlay timers. Existing text-only House scenes remain available when no recording exists. Werewolf village-vote elimination reveals desaturate the recorded victim during the announcement, while ballot collection and living players retain their color. Live Werewolf room rotations carry the preceding canonical room speaker across waiting-screen remounts, matching saved playback and export sampling.
+
 Implementation is in progress on `codex/agent-voices-audio-mode`, based on
 `codex/peragent-model-selection`. The [approved plan](plans/2026-10-24-001-feat-agent-voices-and-audio-mode-plan.md)
 owns the complete product scope. Audio Mode is available as an independent, default-off game creation option for both games.

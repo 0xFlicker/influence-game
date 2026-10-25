@@ -5,6 +5,7 @@ import type { AudioWatchCoordinate } from "@influence/engine/audio-watch";
 import type { ProductionAudience } from "@influence/engine/production-moments";
 import { anonymousApiFetch, resolveApiUrl } from "@/lib/api";
 import type { PresentationDirector, WatchCue } from "./watch-director";
+import { narrationWindow } from "./house-narration";
 
 export function matchesAudioWatch(saved: AudioWatchCoordinate | undefined, requested: AudioWatchCoordinate) {
   if (!saved || saved.kind !== requested.kind || saved.actorId !== requested.actorId) return false;
@@ -107,6 +108,10 @@ export function useWatchVoice<C extends WatchCue>({ director, gameId, audience, 
     sample();
     return () => {disposed=true;cancelAnimationFrame(frame);audio.onwaiting=null;audio.oncanplay=null;audio.onerror=null;stop();audio.removeAttribute("src");audio.load();if (player.current===audio) player.current=null;};
   },[director,activeKey,clips]);
-  return {available:!!data?.clips.length,muted,volume,speaking,error: error ?? metadataError ?? null,setMuted,setVolume,
+  const houseNarrationAvailable = speech.some(clip => clip.speakerId === null);
+  const position = director.getAudioPosition();
+  const houseNarration = houseNarrationAvailable && position?.part === "speech" && !director.getSnapshot().waitingAtTail
+    ? narrationWindow(position.offsetMs, speechMs) : null;
+  return {available:!!data?.clips.length,houseNarrationAvailable,houseNarration,muted,volume,speaking,error: error ?? metadataError ?? null,setMuted,setVolume,
     unlock:() => {setError(null);setRetry(value => value+1);if (player.current) void player.current.play().then(() => director.play(),() => setError("Voice audio remains blocked by the browser."));else director.play();}};
 }

@@ -5,7 +5,7 @@ import type {WerewolfWatchCue} from "./werewolf-watch-model";
 import {nightClawFrame} from "./werewolf-night-motion";
 
 /** The accent is part of the recorded death outcome, never a standalone flash frame. */
-export function WerewolfNightOutcome({cue, elapsed, reduced}: {cue: WerewolfWatchCue; elapsed: number; reduced: boolean}) {
+export function WerewolfNightOutcome({cue, elapsed, reduced, hideCaption = false}: {cue: WerewolfWatchCue; elapsed: number; reduced: boolean; hideCaption?: boolean}) {
   const entry = cue.moment.entry;
   if (entry.kind !== "night" || !entry.killedId) throw new Error("Night elimination requires a recorded victim");
   const victim = cue.moment.snapshot.players.find(player => player.id === entry.killedId)!;
@@ -23,6 +23,6 @@ export function WerewolfNightOutcome({cue, elapsed, reduced}: {cue: WerewolfWatc
         </g>)}
       </svg>
     </div>
-    <div className="shrink-0"><p className="text-xs uppercase tracking-[.2em] text-rose-200/70">At dawn</p><h2 className="mt-2 text-xl font-semibold sm:text-2xl">{victim.name} died during the night.</h2></div>
+    {!hideCaption && <div className="shrink-0"><p className="text-xs uppercase tracking-[.2em] text-rose-200/70">At dawn</p><h2 className="mt-2 text-xl font-semibold sm:text-2xl">{victim.name} died during the night.</h2></div>}
   </section>;
 }

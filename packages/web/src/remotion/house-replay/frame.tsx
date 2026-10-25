@@ -1,3 +1,4 @@
+import {HouseNarration, narrationWindow} from "../../components/watch/house-narration";
 import {WerewolfOpeningFrame} from "../../components/games/werewolf/werewolf-opening-frame";
 import {InfluenceOpeningFrame} from "../../app/games/[slug]/components/influence-opening-frame";
 import type {OpeningVideoProps} from "../../components/watch/opening-browser-video";
@@ -113,6 +114,9 @@ export function ReplayFrame({
     [data],
   );
   const picture = cue.picture;
+  const recording = data.timeline[index]!.recording;
+  const houseAudio = cue.speech?.speakerId === null && recording;
+  const houseWindow = houseAudio ? narrationWindow(timeMs - recording.startMs, recording.durationMs) : null;
   const stage = useRef<HTMLDivElement>(null);
   const thinkingActor = picture.kind === "werewolf" ? picture.cue.moment.snapshot.players.find(player => player.id === cue.speech?.speakerId) : null;
   useLayoutEffect(() => {
@@ -169,6 +173,7 @@ export function ReplayFrame({
             >
               {picture.kind === "influence-opening" ? <InfluenceOpeningFrame {...picture} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} video={renderOpeningVideo} /> : picture.kind === "thinking" ? <ThinkingFrame picture={picture} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} /> : picture.kind === "werewolf-opening" ? <WerewolfOpeningFrame cue={picture.cue} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} video={renderOpeningVideo} /> : picture.kind === "werewolf" ? (
                 <WerewolfContentFrame
+                  hideHouseCaption={Boolean(houseAudio)}
                   cue={picture.cue}
                   previousCue={previous?.picture.kind === "werewolf" && !previous.picture.scene ? previous.picture.cue : undefined}
                   nextCue={nextPicture?.kind === "werewolf" && !nextPicture.scene ? nextPicture.cue : undefined}
@@ -178,6 +183,7 @@ export function ReplayFrame({
                 />
               ) : picture.beat ? (
                 <VisualPresentationFrame
+                  hideHouseNarration={Boolean(houseAudio)}
                   beat={picture.beat}
                   rooms={picture.rooms}
                   elapsedMs={sample.elapsedMs}
@@ -197,6 +203,7 @@ export function ReplayFrame({
                   />
                 </FitPresentation>
               ) : null}
+              <HouseNarration text={cue.speech?.text ?? ""} window={houseWindow} logoUrl={staticFile("logo.png")} />
             </div>
           </div>
         </SampledStageProvider>
