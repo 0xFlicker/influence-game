@@ -14,6 +14,7 @@
     "./cli-session-contract": "./src/cli-session-contract.ts",
     "./house-participation": "./src/house-participation.ts",
     "./production-moments": "./src/production-moments/index.ts",
+    "./production-moments/review": "./src/production-moments/review.ts",
     "./production-moments/settings": "./src/production-moments/settings.ts",
     "./production-moments/export": "./src/production-moments/export.ts",
     "./production-moments/recordings": "./src/production-moments/recordings.ts",

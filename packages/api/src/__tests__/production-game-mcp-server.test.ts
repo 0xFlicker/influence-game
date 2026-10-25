@@ -807,7 +807,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       resource: GAMES_AUTH.resource,
       needsProducerRole: true,
     })).resolves.toEqual({
-      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "moderation:read", "moderation:write", "assets:manage"],
+      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "moderation:read", "moderation:write", "assets:manage"],
       hasProducerRole: false, hasModerationRole: false, hasRetrospectiveRecoveryAccess: false,
     });
     await expect(resolveEligibility({
@@ -825,7 +825,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       resource: GAMES_AUTH.resource,
       needsProducerRole: false,
     })).resolves.toEqual({
-      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "moderation:read", "moderation:write", "assets:manage"],
+      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "moderation:read", "moderation:write", "assets:manage"],
       hasProducerRole: false, hasModerationRole: false, hasRetrospectiveRecoveryAccess: false,
     });
     await expect(resolveEligibility({
@@ -882,6 +882,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "read_cognitive_artifact",
       "get_rules",
       "search_rules",
+      "read_production_moments",
+      "preview_production_cut",
       "read_producer_season_diagnostics",
       "read_producer_visual_production",
       "inspect_durable_run",

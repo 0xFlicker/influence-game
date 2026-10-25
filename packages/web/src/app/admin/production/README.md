@@ -14,6 +14,12 @@ The workspace entry point is `/admin/production`. The bounded library links to `
 
 Source/audience/thinking, inspected moment, scene/version, source/cut view and return filters are reflected in the route. Source history stays pinned. File handles, credentials and audio object URLs are never serialized into a selection descriptor.
 
+## MCP proposals
+
+Producer MCP clients can read the same catalog with `read_production_moments`, patch shared tags with `update_production_moment_tags`, and call `preview_production_cut` to create a review link. Writes require explicit `producer:edit` consent in addition to `producer`; existing connections need a scope upgrade. Smart may mean interesting or relevant thinking, including mistakes worth showing. Silent discussion passes remain outside playback even with thinking enabled.
+
+Review links open Selected cut with the proposed recipe and music settings. Studio recomputes the proposal fingerprint and reports changed source/tags before allowing export. The voice summary reports existing recording coverage; it does not generate audio. The link is not an export or an authorization grant. Operators can adjust labels, review the revised cut and freeze it through the existing flow. See [MCP contract](../../../../../../docs/game-mcp-production-oauth.md#producer-moment-editing-and-cut-review).
+
 ## Local export
 
 Start the local API/web stack using the repository's usual development commands and sign in with Producer/Sysop access. Save the downloaded selection beside any optional speech manifest and audio files. From the repository root:

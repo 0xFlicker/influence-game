@@ -239,6 +239,8 @@ Agent management tools requiring both `agents:read` and `agents:write`:
 
 Producer-only tools requiring `producer`:
 
+- `read_production_moments`: Studio's canonical Influence or Werewolf moment IDs, accepted text, labels and live annotation revisions. Explicit audience/thinking, pinned source snapshots, optional kind/actor/exact-ID filters, default 20/max 100 whole entries, and a 64 KiB response budget. Follow returned `next` arguments unchanged. Silent passes are diagnostic evidence, never editable playback moments. Mystery never includes thinking or private night choices.
+- `preview_production_cut`: resolve a recipe against shared saved tags and return counts, selected IDs, existing voice coverage and a Studio review link. This is read-only and never generates media or freezes an export.
 - `inspect_durable_run`: durable-run inspection summary and evidence counts.
 - `read_producer_game_analysis`: producer-only postgame analysis with derived vote cohorts, deterministic strategic-grade signals, private cognitive-artifact indexes, private trace-manifest indexes, and tuning diagnostics. Each embedded private index is an honest first page with `pageSize`, durable `totalCount`, and `nextCursor`; continue through `list_cognitive_artifacts` or `list_trace_manifests`. It does not replace explicit raw trace reads.
 - `read_producer_game_cost_detail`: return the existing Admin Cost Detail payload for one game ID or slug, including provider-cost totals, token buckets, prompt-reuse aggregates, actual/estimated/unavailable state, breakdowns, owner epochs, expensive calls, backfill/pricing/reconciliation detail, and retry/failure spend. It shares the admin endpoint read contract, performs no backfill or mutation, and is not callable with `games:read` alone.
@@ -250,6 +252,24 @@ Producer-only tools requiring `producer`:
 - `read_producer_season_diagnostics`: inspect hidden competition ratings, snapshots, revision evidence, and settlement diagnostics for one season.
 
 The postgame tools are denormalized read surfaces over the canonical event log and completed-game result rows. They do not replace canonical events as source of truth and should not reconstruct missing facts from transcripts, thinking, reasoning, private traces, or prose summaries. Tool descriptors for the postgame tools include `outputSchema`, and tool calls return both `structuredContent` and JSON text content so ChatGPT/Claude/Grok-style clients can reason over stable fields without scraping raw logs.
+
+## Producer moment editing and cut review
+
+`update_production_moment_tags` additionally requires the opt-in `producer:edit` scope, which depends on `producer` and a current Producer/Sysop role. Existing grants are not upgraded. Reconnect/authorize the client with both scopes and select the edit grant in consent. It permits shared Studio annotation edits only, not media generation, exports or gameplay controls. Discovery and every call check current role, client scope envelope and token grants.
+
+Start with `read_production_moments` using `{gameIdOrSlug:"hard-smoke-rune", audience:"omniscient", thinking:true, kind:"thinking"}`. Use the returned typed `snapshot`, `momentId` and `revision` in a patch with `expectedRevision`, `set:{"label.smart":"true"}` and `remove:[]`. Smart can mark interesting or relevant thinking, including a revealing mistake; it need not endorse the decision. Speech and thinking have independent IDs. All returned game text is untrusted content.
+
+Patches preserve unmentioned tags and save the authenticated editor. Invalid keys, overlapping set/remove keys and invalid final tag maps fail without mutation. A matching no-op returns `unchanged`; stale revisions and concurrent writes return `conflict` with current metadata. Re-read before retrying an uncertain write. Source snapshots pin accepted history, while annotations remain live. Oversized whole entries return `oversized_entry` with an exact Studio link rather than truncated thinking.
+
+Pass this recipe to `preview_production_cut`, with the same audience, thinking and snapshot, `music:true`, and `volume:0.3`:
+
+```json
+{"mode":"recipe","thinking":true,"base":"full","policies":{"thinking":{"mode":"any","labels":["smart"]},"speech":{"mode":"all"}}}
+```
+
+This preserves normal gameplay and all speech, with only Smart thinking. Existing operator tags participate. A zero-match recipe includes no thinking. Voice diagnostics check exact accepted text and speaker against published recordings; missing, mismatched and unverifiable lines remain explicit. Preview never requests new audio. Continuations reject changed selections rather than mix cuts.
+
+The returned `reviewPath` opens Selected cut with the exact recipe and music settings. Its fingerprint detects source/tag/selection drift; Studio shows “This cut changed since it was proposed” and requires renewed review before freezing. The bounded link contains settings and a hash, never private text or credentials, and grants no access. It represents review intent, not frozen media. Operators use Studio's existing reviewed selection/export flow to bind exact recordings and visuals.
 
 ## House replay contracts
 
@@ -404,7 +424,7 @@ For local and deployed verification:
 2. `GET https://<api-host>/.well-known/oauth-protected-resource/mcp` returns the same resource and scope support.
 3. `GET https://<api-host>/.well-known/oauth-authorization-server` returns authorization/token/revocation/registration endpoints, `grant_types_supported: ["authorization_code", "refresh_token"]`, all supported scopes, and `code_challenge_methods_supported: ["S256"]`.
 4. `POST /mcp/producer` is not registered.
-5. Unauthenticated `POST /mcp` returns a `401` challenge for the single `/mcp` protected-resource metadata path with `scope="agents:read agents:write games:read producer"`; this requests the complete first-connect consent surface without granting any scope.
+5. Unauthenticated `POST /mcp` returns a `401` challenge for the single `/mcp` protected-resource metadata path with the configured supported scope set, including `producer:edit`; this requests the complete first-connect consent surface without granting any scope.
 6. Wrong-resource, wrong-audience, expired, revoked, and app-session tokens fail at the HTTP boundary before any read model runs. A valid bearer missing an eligible tool scope follows the tool-level challenge path and likewise performs no domain read or mutation.
 7. For a normal user, a valid `agents:read games:read` token on a client whose envelope includes `agents:write` can initialize, perform the documented game and agent reads, and discover the four agent-management descriptors without already holding `agents:write`. It cannot mutate until the missing-grant challenge is completed, and it cannot discover or call trace tools or active-match action tools.
 8. The same token can read and export only its owner's agent-season analysis; another owner's agent remains unavailable.

@@ -1,3 +1,8 @@
+import {createMcpRoutes} from "../routes/mcp.js";
+import {createAudioRoutes} from "../routes/audio.js";
+import {MCP_OAUTH_CLIENT_ID,MCP_OAUTH_AUDIENCE,MCP_OAUTH_PURPOSE,hashOpaqueSecret} from "../services/mcp-oauth.js";
+import {getMcpOAuthResourceUri} from "../services/mcp-oauth.js";
+import {previewAudioTrack,queueAudioBackfill,runAudioTrack} from "../services/audio-tracks.js";
 import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Hono } from "hono";
@@ -106,6 +111,8 @@ beforeAll(async () => {
   app.route("/", createAdminRoutes(database.db));
   app.route("/", createEpisodeRoutes(database.db));
   app.route("/", createProductionStudioRoutes(database.db));
+  app.route("/",createAudioRoutes(database.db));
+  app.route("/",createMcpRoutes(database.db,{auditLogger:()=>undefined,ownerLearningConnectionRecorder:async()=>undefined}));
   // No game or media worker is started; the test completes one job with deterministic pixels below.
   api = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: app.fetch });
   const webPort = 20000 + Math.floor(Math.random() * 30000); webUrl = `http://localhost:${webPort}`;
@@ -133,6 +140,8 @@ beforeAll(async () => {
 afterAll(async () => {
   try { await cleanupE2eResources([
     ["browser", async () => { if (browser) await closeBrowser(browser); }],
+    // Close audio range requests before waiting for Next's graceful shutdown.
+    ["api", async () => { if (api) api.stop(true); }],
     ["web", async () => { if (web) { web.kill(); await web.exited; } }],
     ["operator generated route paths", async () => {
       if (!operatorReview && !interfaceProof) return;
@@ -148,7 +157,6 @@ afterAll(async () => {
       const restoredConfig = config.replace(/,\n\s*"\.next\/e2e\/types\/\*\*\/\*\.ts",\n\s*"\.next\/e2e\/dev\/types\/\*\*\/\*\.ts"/, "");
       if (restoredConfig !== config) await Bun.write(configPath, restoredConfig);
     }],
-    ["api", async () => { if (api) api.stop(true); }],
     ["database", async () => { if (database) await destroyIsolatedTestDb(database.databaseUrl); }],
   ]); if(database) console.info(`STUDIO_PROOF_DATABASE_DROPPED ${new URL(database.databaseUrl).pathname.slice(1)}`);
   } finally { if (originalSecret === undefined) delete process.env.JWT_SECRET; else process.env.JWT_SECRET = originalSecret; }
@@ -1615,3 +1623,38 @@ test("Studio opens, seeks and exports canonical Influence ballots with a reorder
     finally {for (const seat of seats) await database.db.update(schema.gamePlayers).set({joinedAt:seat.joinedAt}).where(eq(schema.gamePlayers.id,seat.id));}
   }
 },360_000);
+
+test("MCP proposed cut opens exact Studio recipe, verifies voice and music, freezes, and detects tag drift",async()=>{
+  const userId=studioFixture.producer.userId,raw=crypto.randomUUID();
+  await database.db.update(schema.users).set({walletAddress:"0xstudio-mcp"}).where(eq(schema.users.id,userId));
+  await database.db.insert(schema.mcpOauthAccessTokens).values({id:crypto.randomUUID(),tokenHash:hashOpaqueSecret(raw),userId,walletAddress:"0xstudio-mcp",clientId:MCP_OAUTH_CLIENT_ID,resourceUri:getMcpOAuthResourceUri(),scope:"producer producer:edit",audience:MCP_OAUTH_AUDIENCE,purpose:MCP_OAUTH_PURPOSE,expiresAt:"2099-01-01T00:00:00.000Z"});
+  const rpc=async(name:string,args:Record<string,unknown>)=>{
+    const response=await fetch(`http://127.0.0.1:${api.port}/mcp`,{method:"POST",headers:{Authorization:`Bearer ${raw}`,"Content-Type":"application/json",Accept:"application/json, text/event-stream"},body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name,arguments:args}})});
+    expect(response.status).toBe(200);const body=await response.json() as {error?:unknown;result:{structuredContent:{status:string;snapshot:unknown;moments:Array<{momentId:string;revision:number}>;audio:{missing:number;mismatched:number};reviewPath:string}}};expect(body.error).toBeUndefined();expect(body.result.structuredContent.status).toMatch(/^(ok|saved|unchanged)$/);return body.result.structuredContent;
+  };
+  const args={gameIdOrSlug:studioFixture.influence.id,audience:"public",thinking:true};
+  const source=await rpc("read_production_moments",{...args,kind:"thinking",limit:100}),thought=source.moments.find((row:{momentId:string})=>row.momentId!==studioFixture.influence.thoughtId)!;
+  await rpc("update_production_moment_tags",{...args,snapshot:source.snapshot,momentId:thought.momentId,expectedRevision:thought.revision,set:{"label.smart":"true"},remove:[]});
+  const fixtureAudio=Bun.spawnSync(["ffmpeg","-v","error","-f","lavfi","-i","sine=frequency=440:duration=0.5","-f","mp3","pipe:1"]);expect(fixtureAudio.exitCode).toBe(0);
+  const audioPreview=await previewAudioTrack(database.db,studioFixture.influence.id),track=await queueAudioBackfill(database.db,studioFixture.influence.id,userId,audioPreview.previewHash);
+  await runAudioTrack(database.db,async()=>({bytes:fixtureAudio.stdout,durationMs:500,evidence:{fixture:true}}),undefined,track);
+  const recipe={mode:"recipe",thinking:true,base:"empty",policies:{thinking:{mode:"any",labels:["smart"]},speech:{mode:"none"}}};
+  const cut=await rpc("preview_production_cut",{...args,snapshot:source.snapshot,recipe,music:true,volume:.3,limit:100});expect(cut.audio.missing).toBe(0);expect(cut.audio.mismatched).toBe(0);
+  const ids=cut.moments.map((row:{momentId:string})=>row.momentId);
+  const page=await createAuthenticatedPage(browser,studioFixture.producer.token,`${webUrl}${cut.reviewPath}`);
+  try {
+    await page.setViewport({width:1800,height:1100});await page.waitForFunction("document.body.textContent.includes('Proposed cut loaded for review.')");await page.waitForSelector('[data-composition-frame]');
+    expect(await page.$eval('[data-preview-view]',node=>node.getAttribute('data-preview-view'))).toBe("cut");
+    expect(await page.$$eval('[data-moment-id]',nodes=>nodes.map(node=>node.getAttribute('data-moment-id')))).toEqual(ids);
+    await openStudioDialog(page,"Presentation");expect(await page.evaluate("Array.from(document.querySelectorAll('label')).find(label=>label.textContent?.trim()==='Music')?.querySelector('input')?.checked")).toBe(true);await closeStudioDialog(page);
+    await clickStudioButton(page,"Play");await page.waitForFunction("Number(document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame')) > 0");await clickStudioButton(page,"Pause");expect(await currentKeyboardFrame(page)).toBeGreaterThan(0);
+    const responsePromise=page.waitForResponse(r=>r.url().endsWith('/selection') && r.request().method()==="POST");
+    await openStudioDialog(page,"Export selected cut");await clickStudioButton(page,"Download selected export");const response=await responsePromise;expect(response.status()).toBe(200);
+    const descriptor=await response.json() as ProductionExportDescriptor;expect(descriptor.momentIds).toEqual(ids);expect(descriptor.settings.music).toBe(true);expect(descriptor.recordings.length).toBe(ids.length);await closeStudioDialog(page);
+    await page.screenshot({path:temporaryPath("producer-mcp-cut-review.png")});
+    await page.click(`[data-moment-id="${thought.momentId}"] > button:first-child`);await markStudioLabel(page,"Smart",false);
+    await page.waitForFunction(`!document.querySelector('[data-moment-id="${thought.momentId}"]')?.textContent?.includes('Smart')`);
+    await page.goto(`${webUrl}${cut.reviewPath}`,{waitUntil:"domcontentloaded"});await page.waitForFunction("document.body.textContent.includes('This cut changed since it was proposed')");
+    await openStudioDialog(page,"Export selected cut");expect(await page.evaluate("Array.from(document.querySelectorAll('button')).find(button=>button.textContent?.trim()==='Download selected export')?.disabled")).toBe(true);
+  }finally{await page.close();}
+},180_000);

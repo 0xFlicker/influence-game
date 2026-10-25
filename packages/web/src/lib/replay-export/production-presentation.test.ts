@@ -56,7 +56,13 @@ test("v9 Studio binds each spoken public ballot once, retaining speech and priva
     expect(full.cues.filter(cue => cue.picture.kind === "werewolf" && cue.picture.cue.moment.entry.kind === "ballot")).toHaveLength(entries.length);
     if (audience === "omniscient") {
       expect(input.thoughts.map(thought => thought.action)).toEqual(expect.arrayContaining(["conversation", "public_vote", "pack_propose"]));
-      expect(input.catalog.moments.filter(moment => moment.kind === "thinking")).toHaveLength(input.thoughts.length);
+      const silentCursors = new Set(input.source.windows.flatMap(window => window.moments)
+        .filter(moment => moment.entry.kind === "conversation" && !moment.entry.text)
+        .map(moment => moment.cursor));
+      expect(silentCursors.size).toBeGreaterThan(0);
+      const editableThoughts = input.catalog.moments.filter(moment => moment.kind === "thinking");
+      expect(editableThoughts.map(moment => moment.order.anchor)).toEqual(input.thoughts.filter(thought => !silentCursors.has(thought.cursor)).map(thought => thought.cursor));
+      expect(editableThoughts.some(moment => silentCursors.has(moment.order.anchor))).toBe(false);
     } else expect(input.catalog.moments.some(moment => moment.kind === "thinking")).toBe(false);
   }
 });

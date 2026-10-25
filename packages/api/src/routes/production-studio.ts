@@ -1,3 +1,5 @@
+import {productionEditorial} from "../services/production-editorial.js";
+import {completeProductionSource as completeSource, ProductionEditorialInputError} from "../services/production-editorial-source.js";
 import {resumeLiveAudio,LiveAudioBlocked} from "../services/audio-live.js";
 import {readAudioPublication} from "../services/audio-publication.js";
 import { previewAudioTrack, queueAudioBackfill, retryAudioTrack, AudioTrackConflict } from "../services/audio-tracks.js";
@@ -13,8 +15,8 @@ import {schema,type DrizzleDB} from "../db/index.js";
 import {getPermissionsForUser} from "../db/rbac.js";
 import {requireAuth,type AuthEnv} from "../middleware/auth.js";
 import {AnnotationConflict,decodeAnnotationReplacement,readMomentAnnotations,replaceMomentAnnotation,resolveAnnotatedSelection} from "../services/production-annotations.js";
-import {buildInfluenceProductionSourceSnapshot,decodeInfluenceProductionSnapshot,readInfluenceProductionSource,InfluenceProductionSourceError} from "../services/influence-production-source.js";
-import {buildWerewolfProductionSourceSnapshot,decodeWerewolfProductionSnapshot,readWerewolfProductionSource,readWerewolfProductionMedia,readWerewolfProductionCharacter} from "../services/werewolf-production-source.js";
+import {decodeInfluenceProductionSnapshot,readInfluenceProductionSource,InfluenceProductionSourceError} from "../services/influence-production-source.js";
+import {decodeWerewolfProductionSnapshot,readWerewolfProductionSource,readWerewolfProductionMedia,readWerewolfProductionCharacter} from "../services/werewolf-production-source.js";
 import {readProductionScenes,readProductionScene} from "../services/production-scenes.js";
 import {readProductionRecovery} from "../services/production-recovery.js";
 import {ReplayVisualError} from "../services/visual-replay-production.js";
@@ -51,16 +53,7 @@ async function kind(db:Pick<DrizzleDB,"select">,id:string) {
   if (!game) throw new WerewolfGameError("Production game not found",404);
   return game;
 }
-async function completeSource(tx:VisualTransaction,id:string,body:Record<string,unknown>) {
-  const game = await kind(tx,id), access = options(body);
-  if (game.gameKind === "werewolf") {
-    if (access.audience === "public") throw new StudioInputError("Werewolf requires Mystery or Omniscient audience");
-    return buildWerewolfProductionSourceSnapshot(tx,game.id,{audience:access.audience,thinking:access.thinking,
-      snapshot:body.snapshot === undefined ? undefined : decodeWerewolfProductionSnapshot(body.snapshot)});
-  }
-  if (access.audience !== "public") throw new StudioInputError("Influence uses its public audience");
-  return buildInfluenceProductionSourceSnapshot(tx,game.id,{snapshot:body.snapshot === undefined ? undefined : decodeInfluenceProductionSnapshot(body.snapshot)});
-}
+
 function descriptorHash(value:Omit<ProductionExportDescriptor,"hash">) {
   return `sha256:${createHash("sha256").update(stableProductionJson(value)).digest("hex")}`;
 }
@@ -109,9 +102,14 @@ export function createProductionStudioRoutes(db:DrizzleDB) {
     if (error instanceof AnnotationConflict) return c.json({error:error.message,current:error.current},409);
     if (error instanceof WerewolfGameError) return c.json({error:error.message},error.status);
     if (error instanceof ReplayVisualError) return c.json({error:error.message,code:error.code},error.status);
-    if (error instanceof StudioInputError || error instanceof InfluenceProductionSourceError) return c.json({error:error.message},400);
+    if (error instanceof ProductionEditorialInputError || error instanceof StudioInputError || error instanceof InfluenceProductionSourceError) return c.json({error:error.message},400);
     console.error("[production-studio]",error);
     return c.json({error:"Production request failed. Refresh to check saved state."},500);
+  });
+  app.post(`${root}/cut-preview`,async c => {
+    const body=object(await c.req.json());fields(body,["audience","thinking","snapshot","recipe","music","volume"]);
+    const result=await productionEditorial(db,c.get("user").id,"preview_production_cut",{...body,gameIdOrSlug:c.req.param("id"),limit:1});
+    return c.json(result,result.status === "ok" ? 200:400);
   });
   app.get(`${root}/audio/manifest`, async c => {
     const access=options({audience:c.req.query("audience"),thinking:c.req.query("thinking")==="on"});

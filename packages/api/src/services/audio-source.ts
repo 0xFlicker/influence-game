@@ -1,3 +1,4 @@
+import {productionMomentContent} from "./production-moment-content.js";
 import {werewolfHouseSpeech, werewolfNightHouseSpeech} from "@influence/engine/werewolf/house-speech";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { compileAudioDelivery, type AudioDeliveryContext } from "@influence/engine/audio-delivery";
@@ -78,17 +79,7 @@ export async function readAudioSource(db: DrizzleDB | Parameters<Parameters<Driz
         lines.push(line);
         continue;
       }
-      let text: string | null | undefined;
-      if (moment.kind === "thinking") text = source.thoughts.find(row => row.eventSequence === eventSequence && row.actorId === moment.actorId)?.thinking;
-      else if (moment.part.kind === "night-speech") {
-        const action = moment.part.action;
-        const night = position?.night?.actions.find(row => row.kind === action && "actorId" in row && row.actorId === moment.actorId);
-        if (night && night.kind !== "hunt") text = night.speech?.text;
-      } else if (moment.kind === "speech" || moment.kind === "ballot") {
-        const entry = position?.entry;
-        if (entry?.kind === "discussion") text = entry.contribution.unavailable ? null : entry.contribution.text;
-        else if (entry && "text" in entry && !("unavailable" in entry && entry.unavailable)) text = entry.text;
-      }
+      const {text} = productionMomentContent(source, moment);
       if (!text?.trim()) continue;
       const thought = moment.kind === "thinking";
       const thoughtAction = source.thoughts.find(row => row.eventSequence === eventSequence && row.actorId === moment.actorId)?.action;
@@ -119,11 +110,7 @@ export async function readAudioSource(db: DrizzleDB | Parameters<Parameters<Driz
         const ballot = message.acceptedBallot, receipt = message.entrySequence;
         message = source.messages.find(row => row.round === transcript!.round && row.phase === transcript!.phase && row.decisionSpeech?.actorId === ballot.voterId && receipt !== undefined && row.decisionSpeech.receiptEntrySequence === receipt);
       }
-      const event = frame?.viewerDecisionEvent;
-      const text = moment.kind === "thinking" ? ref.kind === "influence-event"
-        ? source.acceptedThoughts.find(row => row.eventSequence === ref.eventSequence && row.actorId === moment.actorId)?.thinking : message?.thinking
-        : event?.type === "format.two_names_plea_recorded" && presentation?.kind === "two_names_plea" && event.payload.status === "accepted" ? event.payload.text
-        : ["speech", "scene", "ballot"].includes(moment.kind) ? message?.text : undefined;
+      const {text} = productionMomentContent(source, moment);
       if (!text?.trim()) continue;
       const context = moment.kind === "thinking" ? "thinking" : "speech";
       lines.push({ ...(message?.firstDurableEventSequence != null && {annotationSequence:message.firstDurableEventSequence}), momentId: moment.id, speakerId: moment.actorId ?? null, text,

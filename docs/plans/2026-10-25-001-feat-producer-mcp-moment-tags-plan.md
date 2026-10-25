@@ -1,13 +1,17 @@
 ---
 title: Producer MCP moment tags and operator cut review
 type: feat
-status: proposed
+status: implemented
 date: 2026-10-25
 ---
 
 # Producer MCP moment tags and operator cut review
 
 ## Outcome
+
+Implemented locally on 2026-10-25. After explicit producer:edit authorization, the MCP tools saved 19 Smart thinking annotations for `hard-smoke-rune` and returned the Omniscient/all-speech/music review link. The preview selected 128 moments and verified 122 existing spoken recordings; the two remaining flagged ballots are silent abstentions. The actual Chrome Studio review loaded the matching fingerprint and a 28:45 cut. Private source snapshots, rationale and write receipts are retained under `.renders/producer-mcp/`. Operator review/export remains the next user action.
+
+Validation: provider-free baseline 2,997 passed / 5 skipped; PostgreSQL baseline 2,224 passed; typecheck/lint passed. The isolated browser proof passed MCP tagging, exact review settings, actual playback, frozen fixture recording membership and changed-tag export protection. Its database and child services were cleaned up. Browser teardown closes audio requests before waiting for the web server to exit.
 
 An agent can review accepted production moments, mark selected thinking as **Smart**, and hand an operator a Studio link that opens the proposed cut: full Omniscient gameplay, all speech, Smart thinking, existing voice recordings and music. The operator can play the cut, revise labels or rules, and use the existing frozen-selection/export workflow.
 
@@ -152,7 +156,7 @@ A review URL is untrusted navigation state and never authorization or proof of h
 - **Operator flow:** in the isolated real Studio browser harness, write Smart through MCP, open the returned link, verify the same moment membership, play the cut with deterministic existing voice/music fixtures, edit a label and exercise drift/review protection. Freeze through the existing UI and verify exporter membership/recording settings match. No live provider credentials.
 - **Schema/transport:** discovery and invocation match; exact schemas reject unknown fields and malformed values; tools are usable through real HTTP MCP, not only internal method calls.
 - Use `setupTestDB()` for all shared-Postgres tests, with no same-database parallel execution. Browser harnesses own and clean their isolated databases/processes. Run focused tests, then required `bun run test`, `bun run test:postgres` and `bun run check`; run applicable classified browser proof and migration policy checks before merge.
-- After deployment to localhost and an explicit `producer:edit` grant, perform the real `hard-smoke-rune` curation when requested, preserve the chosen IDs/receipts and return the operator review link. The present planning request does not itself tag that game or run an export.
+- After deployment to localhost and an explicit `producer:edit` grant, perform the real `hard-smoke-rune` curation when requested, preserve the chosen IDs/receipts and return the operator review link. Completed under the subsequent implementation and localhost tag-edit authorization; no real-game export was run.
 
 ## Completion boundary
 
