@@ -1,3 +1,4 @@
+import { freezeLiveAudio, ensureLiveAudio, pauseLiveAudio, LiveAudioBlocked } from "./audio-live.js";
 import { resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import { actorProviderManifest, gameModelPolicy, sealGameModelRouting } from "@influence/engine";
 import { conversationPolicy } from "@influence/engine";
@@ -825,6 +826,7 @@ async function startGameWithOwner(
     ...(privateTraceSink && { privateTraceSink }),
     tokenTracker,
     durableTurnStore: createDurableGameRunnerStore(db, { gameId, ownerEpoch }, {
+      ...(gameConfig.audioMode === true && { requiredAfterCommit: () => ensureLiveAudio(db, gameId, ownerEpoch) }),
       onCommitted: async (result) => {
         await reconcileAcceptedActionsForLifecycle(db, {
           gameId,
@@ -852,6 +854,7 @@ async function startGameWithOwner(
   // Close the owner-claim-to-runner-init crash window before returning to the
   // request or startup reconciler. This is idempotent for adopted games and
   // commits the explicit roster bootstrap for a new game.
+  if (gameConfig.audioMode === true) await freezeLiveAudio(db, gameId);
   await runner.prepareDurableExecution();
 
   // Run game asynchronously
@@ -976,6 +979,7 @@ async function runGameAsync(
 ): Promise<void> {
   let clearMemoryOnExit = false;
   try {
+    if (gameConfig.audioMode === true && ownerEpoch) await ensureLiveAudio(db, gameId, ownerEpoch);
     await runner.run();
     if (!ownerEpoch) {
       throw new Error(`Durable completion owner is required for game ${gameId}`);
@@ -987,6 +991,7 @@ async function runGameAsync(
     await publishCurrentWatchState(db, gameId, "completion", refresh?.watchState);
     await reconcilePostgameMediaAfterCompletion(db, gameId);
   } catch (err) {
+    if (err instanceof LiveAudioBlocked && ownerEpoch) { await pauseLiveAudio(db, gameId, ownerEpoch); return; }
     if (err instanceof ContextSourceConflictError && ownerEpoch && !runner.aborted) {
       console.error(`[game-lifecycle] Context integrity conflict for ${gameId}:`, err.message);
       if (await markDurableContextConflict(db, gameId, ownerEpoch)) {

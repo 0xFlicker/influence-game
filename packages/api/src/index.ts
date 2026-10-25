@@ -1,3 +1,5 @@
+import { createAudioRoutes } from "./routes/audio.js";
+import { startAudioWorker } from "./services/audio-tracks.js";
 import { createHouseShareRoutes } from "./routes/house-share-links.js";
 import { localTaskBudgetPath, localTaskBudgetIdentity } from "@influence/engine";
 import { createCharacterCutoutRoutes } from "./routes/character-cutouts.js";
@@ -452,6 +454,7 @@ async function finishBackgroundRuntimeStartup(
     : await startProviderHealthProbeRuntime(db);
   const houseCutWorker = gameExecutionWorker && !localEvaluation ? startHouseCutWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const characterCutoutDispatcher = gameExecutionWorker ? startCharacterCutoutDispatcher(db, () => runtimeActivation.canClaimWork()) : null;
+  const audioWorker = gameExecutionWorker ? startAudioWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const episodeWorker = gameExecutionWorker ? startEpisodeWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const visualMediaWorker = gameExecutionWorker && !localEvaluation ? startVisualMediaWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const ownerLearningApiKey = process.env.OPENAI_API_KEY?.trim();
@@ -521,6 +524,7 @@ async function finishBackgroundRuntimeStartup(
     async stop() {
       stopping = true;
       await renderWakeDispatcher?.stop();
+      await audioWorker?.stop();
       await houseCutWorker?.stop();
       await characterCutoutDispatcher?.stop();
       await episodeWorker?.stop();
@@ -663,6 +667,7 @@ app.route("/", agentProfileRoutes);
 app.route("/", createAnonymousAgentCreationRoutes(db));
 app.route("/", createVisualReplayProductionRoutes(db));
 app.route("/",createProductionStudioRoutes(db));
+app.route("/",createAudioRoutes(db));
 app.route("/", createModerationRoutes(db));
 app.route("/", createAccountInferenceRoutes(db));
 

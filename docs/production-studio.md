@@ -106,3 +106,20 @@ Exact logs, artifacts, scope limits and current task checklist are recorded in [
 Fresh completed Influence and Werewolf sources include every accepted retrospective speech after the competitive result. These are ordinary **speech** moments marked **Retrospective**, with canonical actor, speaker ordinal and event reference in the inspector. Tag them individually or give all final speeches the same tag to make a retrospective-only cut. Including the result remains a separate selection choice; the editor never adds it between speakers.
 
 The owning source reader verifies the full completion proof and exact speech provenance. A failed or running epilogue remains watchable through replay/inspection/recovery, but cannot create a completed export. Full exports include the accepted epilogue, while frozen selected exports retain only their reviewed IDs, text, source/media versions and recording hashes. Later tags and published visuals cannot expand that selection. See [retrospective runtime](game-retrospective-runtime.md) and [local export](local-replay-export.md).
+
+
+## Audio tracks
+
+The Recordings panel can preview and explicitly queue a completed game's first
+xAI track, or retry missing clips without replacing accepted audio. It shows a
+character-based estimate and bounded retry allowance before dispatch. Audio Mode
+games use voices frozen at game start; historical first tracks use the reviewed
+current choices. Helios is the House voice. No custom voice creation or DSP is
+performed.
+
+Newly ready audio does not alter an open cut: choose **Load ready audio into this
+preview**. Thinking remains independently selectable. Generated recordings pin
+version IDs, text hashes, speaker identity and measured durations in the same
+export descriptor used by local recordings. A suspended Audio Mode game stays
+paused after successful retry until **Resume game with ready audio** is selected.
+See [Audio Mode](audio-mode.md) for worker configuration and qualification limits.

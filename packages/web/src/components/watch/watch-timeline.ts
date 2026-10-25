@@ -2,10 +2,12 @@ import {compileTiming, type CompiledTiming} from "@/lib/replay-export/timing";
 import type {WatchCue} from "./watch-director";
 
 export const WATCH_FPS = 30;
-export function compileWatchTimeline(cues: readonly WatchCue[], thinking: (key: string) => string | null): CompiledTiming[] {
+export function compileWatchTimeline(cues: readonly WatchCue[], thinking: (key: string) => string | null, recordedDuration?: (key:string) => number | null): CompiledTiming[] {
   return compileTiming(cues.flatMap(cue => {
     const text = thinking(cue.key);
     if (cue.thinkingOnly && !text?.trim()) return [];
+    const recorded = recordedDuration?.(cue.key);
+    if (recorded != null) return [{...cue,baseDurationMs:recorded,kind:"scene" as const,speech:null,thinking:null}];
     return [{...cue, kind: cue.thinkingOnly ? "thinking" as const : "scene" as const, speech: null, thinking: text}];
   }), {ending: "finish-score", overrides: {}}, WATCH_FPS);
 }

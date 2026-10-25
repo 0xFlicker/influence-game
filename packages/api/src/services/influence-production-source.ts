@@ -1,3 +1,4 @@
+import {hasLiveAudioTrack} from "./audio-frontier.js";
 import { resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import { isSpectatorHuddleSpeech } from "@influence/engine";
 import { loadPayloads } from "./payload-storage.js";
@@ -118,14 +119,14 @@ function stringArray(value: string | null): string[] | null {
 /** Caller owns a repeatable-read transaction when composing annotations/selection.
  * Read the complete accepted prefix before enumerating or paging its presentation.
  * This service never returns native provider evidence, media bytes, or game config. */
-export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrSlug: string, options: InfluenceProductionSourceOptions = {}) {
+export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrSlug: string, options: InfluenceProductionSourceOptions = {}, acceptedLivePrefix = false) {
   if (options.refreshVisuals && !options.snapshot) throw new InfluenceProductionSourceError("Refreshing visuals requires the pinned source snapshot");
   const supplied = options.snapshot ? decodeInfluenceProductionSnapshot(options.snapshot) : undefined;
   const [game] = await db.select({ id: schema.games.id, slug: schema.games.slug, kind: schema.games.gameKind,
     status: schema.games.status, config: schema.games.config, gameKernel: schema.games.gameKernel })
     .from(schema.games).where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug))).limit(1);
   if (!game || game.kind !== "influence") throw new InfluenceProductionSourceError("Influence game not found");
-  if (game.status !== "completed" && (game.status !== "suspended" || !await readInfluenceVisualPause(db, game.id)))
+  if (!acceptedLivePrefix && game.status !== "completed" && (game.status !== "suspended" || !await readInfluenceVisualPause(db, game.id) && !await hasLiveAudioTrack(db,game.id)))
     throw new InfluenceProductionSourceError("Production preview requires a completed game or a validated visual pause");
   if (supplied && supplied.gameId !== game.id) throw new InfluenceProductionSourceError("Production snapshot belongs to another game");
   const config = record(JSON.parse(game.config));
@@ -189,7 +190,7 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
       ...(typeof persona.personaKey === "string" && { personaKey: persona.personaKey }), ...(reference(persona.avatarUrl) && { avatarUrl: reference(persona.avatarUrl) }),
     } }];
   }));
-  const allFrames = await getGameWatchReplayFrames(db, game.id);
+  const allFrames = await getGameWatchReplayFrames(db, game.id, {}, true);
   const acceptedEnvelopes = new Map(history.events.filter(event => event.sequence <= throughEventSequence).map(event => [event.sequence, event.envelope]));
   const frames = (allFrames ?? []).filter(frame => frame.sequence <= throughEventSequence).map(frame => {
     const event = acceptedEnvelopes.get(frame.sequence);

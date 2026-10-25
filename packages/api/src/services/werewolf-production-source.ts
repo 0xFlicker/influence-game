@@ -1,3 +1,4 @@
+import {hasLiveAudioTrack} from "./audio-frontier.js";
 import { loadPayloads } from "./payload-storage.js";
 import { and, eq, inArray, or } from "drizzle-orm";
 import { replayWerewolf, werewolfExecutionFinished } from "@influence/engine/werewolf";
@@ -62,7 +63,7 @@ function validateOptions(options: WerewolfProductionSourceOptions) {
 /** Complete metadata-only source under the caller's repeatable-read transaction.
  * Routes must authorize the producer separately; a snapshot is never authority.
  * Canonical history is reduced before source paging or editorial selection. */
-export async function buildWerewolfProductionSourceSnapshot(tx: DrizzleDB | VisualTransaction, id: string, options: WerewolfProductionSourceOptions) {
+export async function buildWerewolfProductionSourceSnapshot(tx: DrizzleDB | VisualTransaction, id: string, options: WerewolfProductionSourceOptions, acceptedLivePrefix = false) {
   validateOptions(options);
   // Validate the old pin before requesting newer published visuals. Narrative
   // source history remains exactly the old accepted boundary.
@@ -71,7 +72,7 @@ export async function buildWerewolfProductionSourceSnapshot(tx: DrizzleDB | Visu
   if (!game || !isViewerGame({ ...game, hiddenAt: null })) throw new WerewolfGameError("Game not found", 404);
   if (!game.startedAt) throw new WerewolfGameError("This game has not started. Open its casting lobby.");
   const pause = game.status === "suspended" ? await readWerewolfVisualPause(tx, game.id) : null;
-  if (game.status !== "completed" && !pause) throw new WerewolfGameError("Production preview requires a completed game or a validated visual pause");
+  if (!acceptedLivePrefix && game.status !== "completed" && !pause && !(game.status === "suspended" && await hasLiveAudioTrack(tx,game.id))) throw new WerewolfGameError("Production preview requires a completed game or a validated visual pause");
   const allEvents = await readWerewolfEvents(tx, game.id);
   const accepted = replayWerewolf(allEvents);
   if (game.status === "completed" && !werewolfExecutionFinished(accepted)) throw new WerewolfGameError("Completed game has no retrospective completion proof");

@@ -1,3 +1,5 @@
+import { attachGeneratedAudio } from "../lib/replay-export/generated-audio";
+import type { PublishedAudioTrack } from "@influence/engine/audio-track";
 import { prepareReplayBundle } from "../lib/replay-export/prepare";
 import { renderReplay } from "../lib/replay-export/render";
 import { parseArgs } from "node:util";
@@ -103,7 +105,7 @@ Paths are relative to the invoking directory. --bundle uses frozen settings.`);
     const {hash,...frozen} = descriptor;
     if (hash !== `sha256:${sha256(stableProductionJson(frozen))}`) throw new Error("Frozen selection checksum mismatch");
     if (!descriptor.momentIds.length) throw new Error("Selected cut is empty; tag moments before exporting");
-    if (descriptor.recordings.length && !args["speech-manifest"]) throw new Error("This frozen cut requires its local --speech-manifest and audio files");
+    if (descriptor.recordings.some(recording => !recording.versionId) && !args["speech-manifest"]) throw new Error("This frozen cut requires its local --speech-manifest and audio files");
     if (!descriptor.recordings.length && args["speech-manifest"]) throw new Error("Import recordings into the studio before freezing this cut");
   }
   const output = resolveInput(args.output),
@@ -212,7 +214,7 @@ Paths are relative to the invoking directory. --bundle uses frozen settings.`);
           : selectProductionMoments(loaded.catalog,{mode:"full",thinking:args.thinking === "on"}).map(moment => moment.id);
         if (descriptor && selectedIds.some((id,index) => id !== descriptor.momentIds[index])) throw new Error("Frozen IDs must preserve source order");
         const selected = new Set(selectedIds),permittedSpeech = moments.flatMap(moment => moment.segments);
-        const selectedMoments = moments.filter(moment => selected.has(moment.id));
+        let selectedMoments = moments.filter(moment => selected.has(moment.id));
         const assets = new ReplayAssets(
           preparationDir,
           join(webRoot, "public"),
@@ -222,6 +224,12 @@ Paths are relative to the invoking directory. --bundle uses frozen settings.`);
         );
         if (args["speech-manifest"])
           await attachSpeech(resolveInput(args["speech-manifest"]),selectedMoments.flatMap(moment => moment.segments),assets,permittedSpeech,descriptor?.recordings);
+        if (!args["speech-manifest"]) {
+          const publication = await read<PublishedAudioTrack | null>(`/api/admin/production/games/${encodeURIComponent(entry.id)}/audio/manifest?audience=${audience}&thinking=${thinking ? "on" : "off"}`);
+          const attached = await attachGeneratedAudio({source:selectedMoments, selectedIds, publication, hash:sha256, frozen:descriptor?.recordings, signal:abort.signal,
+            asset:async clip => {const key = await assets.cache(clip.url);return {...assets.table[key]!,path:key};}});
+          selectedMoments = attached.source;
+        }
         const profile = descriptor?.settings.profile ?? parseTimingProfile(args.timing ? JSON.parse(await readFile(resolveInput(args.timing),"utf8")) : {});
         const music = descriptor?.settings.music ?? args.music !== "off",volume = descriptor?.settings.volume ?? (args.volume === undefined ? .3 : Number(args.volume));
         const frozenMoments:PresentationMoment[] = [];

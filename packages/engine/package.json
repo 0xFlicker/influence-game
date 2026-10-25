@@ -72,7 +72,10 @@
     "./werewolf/visual-scenes": "./src/werewolf/visual-scenes.ts",
     "./render-execution-config": "./src/render-execution-config.ts",
     "./game-model-routing": "./src/game-model-routing.ts",
-    "./model-route-metadata": "./src/model-route-metadata.ts"
+    "./model-route-metadata": "./src/model-route-metadata.ts",
+    "./audio-track": "./src/audio-track.ts",
+    "./audio-watch": "./src/audio-watch.ts",
+    "./werewolf/house-speech": "./src/werewolf/house-speech.ts"
   },
   "scripts": {
     "simulate:werewolf": "bun run src/werewolf/simulate.ts",

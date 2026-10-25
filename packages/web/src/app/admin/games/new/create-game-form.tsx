@@ -150,6 +150,7 @@ export function moveProviderRouteEntry(
 // ---------------------------------------------------------------------------
 
 interface FormState {
+  audioMode: boolean;
   visualMode: boolean;
   visualFailurePolicy: "best_effort" | "require_visuals";
   playerCount: CreateGameParams["playerCount"];
@@ -162,6 +163,7 @@ interface FormState {
 }
 
 const DEFAULT_STATE: FormState = {
+  audioMode: false,
   visualMode: false,
   visualFailurePolicy: "best_effort",
   playerCount: 6,
@@ -777,7 +779,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
       };
       if (isWerewolf) {
         const { slug } = await createWerewolfLobby({ preset: village.wolves === 1 ? "one_wolf" : "two_wolves", setup: village, maxDays,
-          visibility: form.visibility, modelRouting: params.modelRouting!, personaPool: form.personaPool, fillStrategy: form.fillStrategy, visualMode: form.visualMode, visualFailurePolicy: form.visualFailurePolicy });
+          visibility: form.visibility, modelRouting: params.modelRouting!, personaPool: form.personaPool, fillStrategy: form.fillStrategy, audioMode: form.audioMode, visualMode: form.visualMode, visualFailurePolicy: form.visualFailurePolicy });
         router.push(`/games/${slug}`);
       } else {
         const { slug } = await createGame(params);
@@ -928,6 +930,10 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
 
       {/* Game Mode */}
       <SectionCard title="Game Mode">
+        <label className="flex items-start gap-3">
+          <input type="checkbox" checked={form.audioMode} onChange={event => set("audioMode", event.target.checked)} />
+          <span>Audio Mode<span className="block text-sm text-gray-400">Speak character dialogue, thinking and House announcements. The game waits for required audio.</span></span>
+        </label>
         <label className="mb-5 flex items-start gap-3">
           <input type="checkbox" checked={form.visualMode} onChange={(event) => set("visualMode", event.target.checked)} className="mt-1" />
           <span>Visual Mode<span className="block text-sm text-white/50">{isWerewolf ? "Automatically generate village and private pack scenes during play. Uses the House image pipeline and adds image-generation cost and preparation time. Choose whether failed visuals use character art or pause for repair in Production." : "Generated rooms, agent image context and performance cues. Models without image support are automatically skipped. Adds image-generation cost and scene preparation time. Portraits and speech bubbles are available in every game. Fixed when the game is created."}</span></span>

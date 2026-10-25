@@ -4041,3 +4041,87 @@ export const characterCutoutDemands = pgTable("character_cutout_demands", {
 }, table => [
   uniqueIndex("character_cutout_demands_source").on(table.gameId, table.playerId, table.sourceKey, table.recipe),
 ]);
+
+/** Voice selection is a presentation preference, separate from character revisions. */
+export const agentVoices = pgTable("agent_voices", {
+  agentProfileId: text("agent_profile_id").primaryKey().references(() => agentProfiles.id, { onDelete: "cascade" }),
+  assignment: jsonb("assignment").notNull().$type<import("@influence/engine/voice-catalog").VoiceAssignment>(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const gameAudioTracks = pgTable("game_audio_tracks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
+  mode: text("mode").notNull().$type<"live" | "backfill">(),
+  status: text("status").notNull().default("queued").$type<"queued" | "running" | "failed" | "ready">(),
+  active: boolean("active").notNull().default(false),
+  predecessorId: uuid("predecessor_id").references(():AnyPgColumn => gameAudioTracks.id),
+  budgetUsd: doublePrecision("budget_usd").notNull(),
+  reservedCharacters: integer("reserved_characters").notNull().default(0),
+  voices: payloadColumn("voices_object", "json-gzip").notNull().$type<StoredPayload<Record<string, import("@influence/engine/voice-catalog").VoiceAssignment>>>(),
+  manifest: payloadColumn("manifest_object", "json-gzip").$type<StoredPayload<import("../services/audio-source.js").AudioSourceManifest>>(),
+  throughEventSequence: integer("through_event_sequence").notNull().default(0),
+  readyEventSequence: integer("ready_event_sequence").notNull().default(0),
+  leaseId: uuid("lease_id"),
+  leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+  error: text("error"),
+  createdById: text("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [
+  index("audio_tracks_game_idx").on(table.gameId),
+  uniqueIndex("audio_tracks_active_unique").on(table.gameId).where(sql`${table.active}`),
+  check("audio_tracks_budget",sql`${table.budgetUsd} >= 0 and ${table.budgetUsd} < 'Infinity'::float8`),
+  check("audio_tracks_characters",sql`${table.reservedCharacters} >= 0`),
+  check("audio_tracks_mode", sql`${table.mode} in ('live','backfill')`),
+  check("audio_tracks_status", sql`${table.status} in ('queued','running','failed','ready')`),
+  ...payloadChecks("game_audio_tracks", { voices: [table.voices, "json-gzip"], manifest: [table.manifest, "json-gzip"] }),
+]);
+
+export const gameAudioClips = pgTable("game_audio_clips", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  trackId: uuid("track_id").notNull().references(() => gameAudioTracks.id, { onDelete: "cascade" }),
+  momentId: text("moment_id").notNull(),
+  sourceHash: text("source_hash").notNull(),
+  recipeHash: text("recipe_hash").notNull(),
+  recipe: payloadColumn("recipe_object", "json-gzip").notNull().$type<StoredPayload<import("../services/audio-source.js").AudioClipRecipe>>(),
+  activeVersionId: uuid("active_version_id"),
+  attempts: integer("attempts").notNull().default(0),
+  status: text("status").notNull().default("pending").$type<"pending" | "generating" | "failed" | "ready">(),
+  error: text("error"),
+}, table => [
+  unique("audio_clips_moment_unique").on(table.trackId, table.momentId),
+  foreignKey({name:"audio_clip_active_version",columns:[table.id,table.activeVersionId],foreignColumns:[gameAudioVersions.clipId,gameAudioVersions.id]}),
+  check("audio_clips_status", sql`${table.status} in ('pending','generating','failed','ready')`),
+  ...payloadChecks("game_audio_clips", { recipe: [table.recipe, "json-gzip"] }),
+]);
+
+/** Append-only artifact versions; logical clip identity does not depend on content hashes. */
+export const gameAudioVersions = pgTable("game_audio_versions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clipId: uuid("clip_id").notNull().references(():AnyPgColumn => gameAudioClips.id, { onDelete: "cascade" }),
+  recipeHash: text("recipe_hash").notNull(),
+  audio: payloadColumn("audio_object", "binary").notNull().$type<StoredPayload<Buffer>>(),
+  durationMs: doublePrecision("duration_ms").notNull(),
+  contentType: text("content_type").notNull().default("audio/mpeg"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [
+  ...payloadChecks("game_audio_versions", { audio: [table.audio, "binary"] }),
+  unique("audio_versions_clip_id").on(table.clipId,table.id),
+  check("audio_versions_duration", sql`${table.durationMs} > 0 and ${table.durationMs} < 'Infinity'::float8`),
+]);
+
+export const gameAudioAttempts = pgTable("game_audio_attempts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clipId: uuid("clip_id").notNull().references(():AnyPgColumn => gameAudioClips.id, { onDelete: "cascade" }),
+  leaseId: uuid("lease_id").notNull(),
+  status: text("status").notNull().$type<"dispatched" | "failed" | "succeeded">(),
+  billableCharacters: integer("billable_characters").notNull(),
+  evidence: payloadColumn("evidence_object", "json-gzip").$type<StoredPayload<Record<string, unknown>>>(),
+  responseAudio:payloadColumn("response_audio_object","binary").$type<StoredPayload<Buffer>>(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [
+  ...payloadChecks("game_audio_attempts", { evidence: [table.evidence, "json-gzip"], responseAudio:[table.responseAudio,"binary"] }),
+  check("audio_attempts_characters",sql`${table.billableCharacters} >= 0`),
+  check("audio_attempts_status", sql`${table.status} in ('dispatched','failed','succeeded')`),
+]);

@@ -47,6 +47,8 @@
  * thinking and available native reasoning. Artifact write errors stop execution;
  * pending requests and completed attempts remain available in the journal snapshot.
  * Paid Werewolf evaluation uses simulate:werewolf:api for durable app-visible games.
+ * Audio Mode is API-owned: audioMode:true freezes voices and gates accepted turns on
+ * bucket-backed TTS. TTS attempts/cost estimates remain separate from gameplay traces.
  * Discussion passes stay in private/debug evidence, not contestant observations;
  * model-facing references count speech only. Replay skips passes even with
  * Show thinking enabled; saved pass thoughts remain in debug evidence. Technical byte

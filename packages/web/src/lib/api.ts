@@ -456,6 +456,7 @@ export type GameWatchStateSummary = Omit<GameWatchState, "players" | "schemaVers
 
 export interface CreateGameParams {
   modelRouting?: GameModelRouting;
+  audioMode?: boolean;
   visualMode?: boolean;
   visualFailurePolicy?: "best_effort" | "require_visuals";
   playerCount: CreateGamePlayerCount;
@@ -520,6 +521,7 @@ export function backfillEpisodes(gameIds: string[], regenerate: boolean, preview
 
 export interface GameSummary {
   episode?: EpisodePresentation;
+  audioMode?: boolean;
   visualMode?: boolean;
   visualFailurePolicy?: "best_effort" | "require_visuals";
   visualPaused?: boolean;
@@ -2778,6 +2780,7 @@ export interface TranscriptEntry {
 
 export interface GameDetail {
   episode?: EpisodePresentation;
+  audioMode?: boolean;
   visualMode?: boolean;
   visualFailurePolicy?: "best_effort" | "require_visuals";
   visualPaused?: boolean;

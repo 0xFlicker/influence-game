@@ -20,6 +20,7 @@ export const werewolfWatchPolicy: WatchPolicy<WerewolfWatchCue> = {
     if (cue?.nightDecision) return {showAtMs: SOLO_SPEECH_START_MS, readAtMs: SOLO_READ_START_MS,
       hideAtMs: cue.baseDurationMs - SOLO_EXIT_MS, hiddenAtMs: cue.baseDurationMs};
     if (cue?.ballot && (cue.moment.entry.kind !== "ballot" || cue.moment.entry.text === null)) return null;
+    if (cue && !cue.nightAction && !cue.ballot && werewolfCueMoment(cue).house) return {showAtMs:0,readAtMs:0,hideAtMs:cue.baseDurationMs,hiddenAtMs:cue.baseDurationMs};
     if (!cue || !["speech", "discussion", "conversation", "ballot", "proposal"].includes(cue.moment.entry.kind)) return null;
     if (cue.moment.entry.kind === "ballot" || cue.moment.entry.kind === "speech" && cue.moment.entry.purpose === "retrospective") return {
       showAtMs: SOLO_SPEECH_START_MS, readAtMs: SOLO_READ_START_MS,
@@ -157,6 +158,6 @@ export function werewolfCueMoment(cue: WerewolfWatchCue) {
   if (!action || action.kind === "hunt" || !action.speech) throw new Error("Night decision clip requires accepted speech");
   const actor = cue.moment.snapshot.players.find(player => player.id === action.actorId);
   if (!actor) throw new Error("Night decision actor is absent");
-  return {...moment, actor, actorId: actor.id, speaker: actor.name, text: action.speech.text, spoken: true,
+  return {...moment, house:false, actor, actorId: actor.id, speaker: actor.name, text: action.speech.text, spoken: true,
     title: `Night ${cue.moment.snapshot.day} · ${action.kind === "protect" ? "Doctor" : "Seer"}`, details: []};
 }

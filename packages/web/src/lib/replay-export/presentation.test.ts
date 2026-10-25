@@ -12,7 +12,7 @@ async function fixture() {
   const window = {...projectWerewolfWatch(events,"omniscient",1,64),slug:"moment-pictures",status:"completed" as const,
     audience:"omniscient" as const,publicationCutoff:"2026-10-09T00:00:00.000Z",media:{}};
   const cues = buildExportCues({kind:"werewolf",windows:[window],thoughts:[]});
-  const speech = cues.find(cue => cue.speech)!;
+  const speech = cues.find(cue => cue.speech?.speakerId)!;
   const thought = thinkingSegment(speech,"thought","Only this selected thought.");
   return {speech,thought,cues};
 }

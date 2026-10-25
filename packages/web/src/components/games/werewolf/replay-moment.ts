@@ -1,3 +1,4 @@
+import {werewolfHouseSpeech} from "@influence/engine/werewolf/house-speech";
 import { werewolfOutcomeTitle } from "@influence/engine/werewolf/results-contract";
 import type { WerewolfView } from "@influence/engine/werewolf/observation";
 import { sceneSpeechDurationMs } from "@/app/games/[slug]/components/scene-speech-timing";
@@ -23,11 +24,13 @@ export function replayMoment(view: WerewolfView) {
     case "vote": title = view.rulesVersion >= 9 ? `Day ${entry.day} · Public vote result` : `Day ${entry.day} · Vote after thread ${entry.result.thread}`; actorId = entry.result.eliminatedId; text = actorId ? `${name(actorId)} is eliminated.` : view.rulesVersion >= 9 ? "No majority. Nobody is eliminated." : entry.result.dayEnded ? "No unique vote leader. Nobody is eliminated." : "No majority. Discussion continues."; details.push(entry.result.voteMode === "plurality" ? "Final ballot: unique most votes wins; ties spare everyone." : `Majority required: ${entry.result.requiredVotes} of ${entry.result.ballots.length} living players.`, ...(view.rulesVersion >= 9 ? [] : entry.result.ballots.map(b => `${name(b.voterId)} → ${b.targetId ? name(b.targetId) : b.unavailable ? "Abstain (unavailable)" : "Abstain (hear more)"}`))); break;
     case "result": title = "Game result"; text = werewolfOutcomeTitle(entry.outcome); details.push(...view.players.map(p => `${p.name} · ${p.role ?? "Unknown role"}${entry.outcome.winnerIds.includes(p.id) ? " · Winner" : ""}`)); break;
   }
+  const houseSpeech = entry ? werewolfHouseSpeech(entry,view.players,view.rulesVersion) : null;
+  if (houseSpeech) {text=houseSpeech;spoken=true;}
   const actor = view.players.find(p => p.id === actorId);
   const retrospective = entry?.kind === "speech" && entry.purpose === "retrospective";
   const part = retrospective && actor && view.outcome ? [view.outcome.winnerIds.includes(actor.id) ? "Winner" : view.outcome.faction === null ? "Draw" : "Defeated faction",
     actor.elimination ? `${actor.elimination.kind === "night" ? "Died at night" : "Voted out"} · Day ${actor.elimination.day}` : "Survived"].join(" · ") : null;
   const speaker = actor ? `${actor.name}${(view.audience === "omniscient" || retrospective) && actor.role ? ` · ${actor.role}` : ""}` : "The House";
   const silentDecision = entry && (entry.kind === "conversation" || entry.kind === "ballot" || entry.kind === "proposal") && entry.text === null;
-  return { title, text, actor, speaker, spoken, cue, pack, details, retrospective, part, duration: retrospective || entry?.kind === "ballot" && spoken ? soloPresentationDurationMs(text) : silentDecision ? SILENT_BALLOT_DURATION_MS : spoken ? sceneSpeechDurationMs(text) : actorId && entry?.kind !== "night" && entry?.kind !== "vote" ? 2200 : 4200 };
+  return { title, text, actor, speaker, house:houseSpeech !== null, spoken, cue, pack, details, retrospective, part, duration: houseSpeech ? 4200 : retrospective || entry?.kind === "ballot" && spoken ? soloPresentationDurationMs(text) : silentDecision ? SILENT_BALLOT_DURATION_MS : spoken ? sceneSpeechDurationMs(text) : actorId && entry?.kind !== "night" && entry?.kind !== "vote" ? 2200 : 4200 };
 }

@@ -117,6 +117,7 @@ export async function bindWerewolfProductionPresentation(input: {
       if (cue.picture.kind !== "werewolf") return false;
       const picture = cue.picture.cue;
       switch (moment.part.kind) {
+        case "scene": return picture.moment.entry.kind === "phase";
         case "speech": return Boolean(cue.speech) && !picture.ballot && !picture.nightAction;
         case "ballot": return !picture.ballot?.complete && picture.ballot?.current.voterId === moment.actorId;
         case "tally": return picture.ballot?.complete === true;

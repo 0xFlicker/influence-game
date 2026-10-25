@@ -824,3 +824,12 @@ Influence ballots (including revotes, format ballots, Council and endgame/jury v
 Two Names initial/replacement nominations, Override decisions and Safety Bounce pointers request private thinking plus public speech. Nominee pleas already retain thinking and public speech. Public announcements are logged only after the owning decision is accepted. Engine fallbacks never fabricate contestant speech.
 
 Sealed collection stays private and concurrent. Save-or-Exit, sealed elimination formats, Two Names and Safety Bounce collect the complete ballot batch before committing in roster order. Ballot messages are saved as transcript bodies with small `decisionSpeech` action/actor coordinates, and attached to the canonical reveal in playback. Neither their text nor a spoken name determines a target, tally or result. Decision speech uses solo full-body staging with an avatar fallback and the existing Influence backgrounds; ballot reveals reuse the shared Werewolf vote presentation. Show thinking applies to nominations, vetoes, pointers and pleas, not ballots or tiebreaks.
+
+
+Audio Mode adds separate bucket-backed TTS attempts and clip/version records.
+It consumes only accepted production speech and saved spectator thinking; native
+provider reasoning is never synthesized. Thought tags remain private delivery
+evidence, while visible text and future contestant context stay clean. TTS
+reserved-character estimates are separate from gameplay token usage. Inspect
+Studio Audio status and the private `game_audio_attempts` evidence for failures;
+see [Audio Mode](audio-mode.md) for explicit retry/resume boundaries.

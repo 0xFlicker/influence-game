@@ -118,10 +118,10 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
             ? cue.ballot.complete
               ? "tally"
               : "ballot"
-            : spoken
-              ? "speech"
-              : cue.moment.entry.kind === "result"
-                ? "result"
+            : cue.moment.entry.kind === "result"
+              ? "result"
+              : spoken
+                ? "speech"
                 : "scene",
           speech: werewolfWatchPolicy.speech(cue),
           thinking: null,
@@ -138,7 +138,7 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
         speech: spoken
           ? {
               messageId: cue.key,
-              speakerId: line.actor?.id ?? null,
+              speakerId: line.house ? null : line.actor?.id ?? null,
               speaker: line.speaker,
               text: line.text,
             }
@@ -252,7 +252,7 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
       },
       label: `Round ${cue.round} · ${cue.phase}`,
       speech:
-        spoken && !ledger
+        spoken && (!ledger || !ledger.complete && !!cue.spokenMessage)
           ? {
               messageId: message ? String(message.id) : cue.key,
               speakerId: spoken.playerId,

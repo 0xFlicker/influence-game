@@ -938,3 +938,13 @@ image, identified by source digest and processing recipe. It changes presentatio
 only; portraits, provider references and canonical game history retain their original
 images. Live playback adopts ready cutouts at refresh boundaries. Production exports
 pin availability at their publication cutoff. See [cutout operations](docs/deployment/character-cutouts.md).
+
+### Audio tracks and ready prefixes
+
+An Audio Mode game freezes a House/cast voice snapshot at start. An audio track
+owns logical production-moment clips; each clip can have multiple artifact
+versions. Recipes and content hashes describe provenance, not identity. Buckets
+own audio and evidence; PostgreSQL owns relationships, leases and publication.
+The audio-ready prefix is a spectator publication boundary after accepted text,
+not another game event stream. Required live audio gates the next logical turn
+and completion. Historical first-track generation is an explicit Studio action.

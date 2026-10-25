@@ -1,3 +1,4 @@
+import {freezeLiveVoices} from "./audio-voices.js";
 import { sealRosterModelRouting, GameModelRoutingError } from "./game-model-routing.js";
 import { queueEpisodeCopy } from "./episode-presentation.js";
 import { releaseWerewolfOwner } from "./werewolf-games.js";
@@ -701,6 +702,7 @@ async function transitionWaitingGameToInProgress(
         "invalid_state",
       );
 
+      if (JSON.parse(game.config).audioMode === true) await freezeLiveVoices(tx,gameId);
       await queueEpisodeCopy(tx, gameId);
 
       if (options.owner) {

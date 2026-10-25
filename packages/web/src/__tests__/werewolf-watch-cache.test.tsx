@@ -44,7 +44,7 @@ function fixture(speeches: number[], latestCursor = 128, status = "cancelled") {
         cursor,
         entry: speechAt.has(cursor)
           ? { kind: "speech", day: 1, actorId: "p", audience: "public", text: `Speech ${cursor}`, cue: null }
-          : { kind: "phase", day: 1, phase: "day" },
+          : {kind: "conversation", day: 1, id: cursor, actorId: "p", text: null, cue: null, recipientId: null, replyToContributionId: null, unavailable: false, remainingBytes: 2000},
         snapshot: { gameId: "g", rulesVersion: 8, preset: "one_wolf", audience: "mystery", day: 1, maxDays: 5, phase: "day", discussion: null, cursor, players, outcome: null },
         chapterId: "day:1", sceneId: `scene:${cursor}`, mediaKey: null,
       };

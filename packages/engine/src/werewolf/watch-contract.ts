@@ -32,7 +32,7 @@ export interface WerewolfWatchWindow {
   media: Record<string, AcceptedVisualScene>;
 }
 export function isWerewolfPlayable(entry: WerewolfPublicEntry): boolean {
-  if (entry.kind === "phase") return false;
+  if (entry.kind === "phase") return true;
   if (entry.kind === "speech") return Boolean(entry.text?.trim());
   if (entry.kind === "discussion") return !entry.contribution.unavailable && Boolean(entry.contribution.text?.trim());
   if (entry.kind === "ballot") return true;

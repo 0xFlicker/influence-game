@@ -347,3 +347,28 @@ test("browser/export fixture seeds real API sources, independent selections and 
   expect((await request(`${root(fixture.werewolf.id)}/source?audience=omniscient&thinking=on`, undefined, fixture.producer.token)).status).toBe(200);
   expect((await request(`${root(fixture.pausedInfluence.id)}/source?audience=public&thinking=on`, undefined, fixture.producer.token)).status).toBe(200);
 });
+
+test("Studio backfill requires producer authority and freezes only verified generated recording versions",async()=>{
+  const {runAudioTrack}=await import("../services/audio-tracks.js");
+  const f=await influence("studio-audio");
+  expect((await request(`${root(f.gameId)}/audio`)).status).toBe(403);
+  await producer();
+  const previewResponse=await request(`${root(f.gameId)}/audio`);expect(previewResponse.status).toBe(200);
+  const preview=await previewResponse.json() as {previewHash:string;clipCount:number;estimateUsd:number};
+  expect(preview.clipCount).toBeGreaterThan(1);expect(preview.estimateUsd).toBeGreaterThan(0);
+  const queued=await request(`${root(f.gameId)}/audio`,{previewHash:preview.previewHash});expect(queued.status).toBe(202);
+  const mp3=await readFile(new URL("../../../web/public/visual/werewolf/opening-v1/door-effects.mp3",import.meta.url));
+  // Real container/probe and bucket paths, with no paid synthesis.
+  await runAudioTrack(db,async()=>({bytes:mp3,evidence:{fixture:true}}));
+  const publicationResponse=await request(`${root(f.gameId)}/audio/manifest?audience=public&thinking=on`);
+  const publication=await publicationResponse.json() as import("@influence/engine/audio-track").PublishedAudioTrack;
+  const clip=publication.clips.find(clip=>clip.momentId===f.thought.id)!;
+  expect(clip).toBeDefined();expect(clip.durationMs).toBeGreaterThan(0);
+  const recording={momentId:clip.momentId,messageId:clip.momentId,speakerId:clip.speakerId,textHash:clip.textHash,sha256:clip.sha256,durationMs:clip.durationMs,versionId:clip.versionId};
+  const body={snapshot:f.source.snapshot,audience:"public",thinking:true,selection:{mode:"ids",thinking:true,ids:[f.thought.id]},settings,copy:{},expectedMomentIds:[f.thought.id],recordings:[recording]};
+  const frozen=await request(`${root(f.gameId)}/selection`,body);
+  expect(frozen.status).toBe(200);
+  expect((await request(`${root(f.gameId)}/selection`,{...body,recordings:[{...recording,durationMs:1}]})).status).toBe(400);
+  const thoughtOff=await request(`${root(f.gameId)}/audio/manifest?audience=public&thinking=off`);
+  expect((await thoughtOff.json() as typeof publication).clips.some(row=>row.versionId===clip.versionId)).toBe(false);
+});

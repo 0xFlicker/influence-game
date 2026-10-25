@@ -150,6 +150,9 @@ describe("AgentForm draft recovery", () => {
 });
 
 async function renderForm(requireChange: boolean, onSubmit: (params: AgentProfileWriteParams) => Promise<void> = async () => {}, emptyText = false, initialOverrides: Partial<SavedAgent> = {}): Promise<RenderResult> {
+  const fetcher=globalThis.fetch;
+  globalThis.fetch=Object.assign(async (input:RequestInfo|URL,init?:RequestInit) => String(input).endsWith("/voice")
+    ? Response.json({assignment:{voiceId:"ara"},voices:[{id:"ara",name:"Ara",gender:"female"}]}) : fetcher(input,init),{preconnect:originalFetch.preconnect}) as typeof fetch;
   let mounted!: RenderResult;
   await act(async () => {
     mounted = render(

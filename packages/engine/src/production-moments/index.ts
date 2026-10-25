@@ -264,7 +264,7 @@ function assembleWerewolfParts(source: Extract<ProductionSource, { kind: "werewo
   if (audience === "mystery" && (entry.kind === "pack_vote" || entry.kind === "speech" && entry.audience === "pack")) return;
   if (source.nightActions?.length && entry.kind !== "night") throw new Error("Night staging requires a resolved night source");
   switch (entry.kind) {
-    case "phase": break;
+    case "phase": emit({kind:"scene"},"scene",0); break;
     case "speech": if (entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, true, entry.actorId); break;
     case "discussion": if (!entry.contribution.unavailable && entry.contribution.text?.trim()) emit({ kind: "speech" }, "speech", 1, true, entry.contribution.actorId); break;
     case "conversation": if (!entry.unavailable && entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, true, entry.actorId); break;

@@ -6,6 +6,7 @@ export interface SpeechAttachment {
 export interface ProductionRecording {
   momentId:string;messageId:string;speakerId:string|null;textHash:string;sha256:string;durationMs:number;
   alignment?:SpeechAlignment[];
+  versionId?:string;
 }
 const hash = (value:unknown):value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 function spans(value:unknown):SpeechAlignment[] {
@@ -51,11 +52,12 @@ export function decodeProductionRecordings(value:unknown):ProductionRecording[] 
   return value.map(item => {
     if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("Invalid frozen recording");
     const entry = item as ProductionRecording;
-    if (Object.keys(entry).some(key => !["momentId","messageId","speakerId","textHash","sha256","durationMs","alignment"].includes(key))
+    if (Object.keys(entry).some(key => !["momentId","messageId","speakerId","textHash","sha256","durationMs","alignment","versionId"].includes(key))
       || typeof entry.momentId !== "string" || !entry.momentId || entry.momentId.length > 8192
       || typeof entry.messageId !== "string" || !entry.messageId || entry.messageId.length > 8192
       || entry.speakerId !== null && (typeof entry.speakerId !== "string" || !entry.speakerId || entry.speakerId.length > 200)
       || !hash(entry.textHash) || !hash(entry.sha256) || !Number.isFinite(entry.durationMs) || entry.durationMs <= 0 || entry.durationMs > 86400000
+      || entry.versionId !== undefined && (typeof entry.versionId !== "string" || !/^[a-f0-9-]{36}$/.test(entry.versionId))
       || seen.has(entry.momentId)) throw new Error("Invalid or duplicate frozen recording");
     seen.add(entry.momentId);
     const alignment = entry.alignment === undefined ? undefined : spans(entry.alignment);

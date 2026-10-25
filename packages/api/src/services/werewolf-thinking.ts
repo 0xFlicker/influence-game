@@ -1,3 +1,4 @@
+import { audioReadySequence } from "./audio-frontier.js";
 import { loadPayloads, Hydrated } from "./payload-storage.js";
 import { isViewerGame } from "./game-visibility.js";
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
@@ -27,7 +28,9 @@ export async function readWerewolfProductionThinking(db: Pick<DrizzleDB, "select
   const [game] = await db.select({ id: schema.games.id, config: schema.games.config, hiddenAt: schema.games.hiddenAt, startedAt: schema.games.startedAt }).from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), options.includeHidden ? undefined : isNull(schema.games.hiddenAt), or(eq(schema.games.id, id), eq(schema.games.slug, id))));
   if (!game || !isViewerGame(options.includeHidden ? { ...game, hiddenAt: null } : game)) throw new WerewolfGameError("Game not found", 404);
   if (!game.startedAt) throw new WerewolfGameError("This game has not started. Open its casting lobby.");
-  const allEvents = await readWerewolfEvents(db, game.id);
+  const ready = options.includeHidden ? null : await audioReadySequence(db,game.id);
+  if (ready === 0) return {cursor:0,entries:[]};
+  const allEvents = (await readWerewolfEvents(db, game.id)).filter(event => ready === null || event.sequence <= ready);
   if (options.throughEventSequence !== undefined && (!Number.isSafeInteger(options.throughEventSequence) || options.throughEventSequence < 1 || !allEvents.some(event => event.sequence === options.throughEventSequence))) throw new WerewolfGameError("Invalid production thinking prefix");
   const events = options.throughEventSequence === undefined ? allEvents : allEvents.filter(event => event.sequence <= options.throughEventSequence!);
   const frame = projectWerewolfPresentation(events, "omniscient", cursor);

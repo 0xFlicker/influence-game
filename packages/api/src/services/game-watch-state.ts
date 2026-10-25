@@ -1,3 +1,4 @@
+import { audioReadySequence } from "./audio-frontier.js";
 import {
   applyCanonicalEvent,
   buildPostVotePressureProjection,
@@ -232,11 +233,17 @@ export async function buildGameWatchState(
   game: GameRow,
 ): Promise<GameWatchState> {
   const shouldLoadResult = game.status === "completed" || game.status === "cancelled";
-  const [players, result, persistedEvents] = await Promise.all([
+  let [players, result, persistedEvents] = await Promise.all([
     loadPlayerIdentities(db, game.id, parseConfig(game.config)),
     shouldLoadResult ? loadTerminalResult(db, game.id) : Promise.resolve(null),
     getPersistedGameEvents(db, game.id),
   ]);
+  const audioReady = await audioReadySequence(db, game.id);
+  if (audioReady !== null && persistedEvents.events.some(event => event.sequence > audioReady)) {
+    const events = persistedEvents.events.filter(event => event.sequence <= audioReady);
+    persistedEvents = {...persistedEvents, events, eventCount:events.length, persistedHead:events.at(-1)};
+    result = null; game = {...game,status:game.status === "completed" ? "in_progress" : game.status};
+  }
   const config = parseConfig(game.config);
   const maxRounds = numberFromConfig(config.maxRounds, 10);
   const kernel = resolveGameKernel({
@@ -314,6 +321,7 @@ export async function getGameWatchReplayFrames(
   db: GameWatchDB,
   idOrSlug: string,
   options: GameWatchReplayFrameOptions = {},
+  acceptedLivePrefix = false,
 ): Promise<GameWatchReplayFrame[] | null> {
   const afterSequence = options.afterSequence ?? 0;
   if (options.limit !== undefined && (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 256)) throw new Error("limit must be an integer from 1 to 256");
@@ -337,6 +345,8 @@ export async function getGameWatchReplayFrames(
     loadPlayerIdentities(db, game.id, parseConfig(game.config)),
     getPersistedGameEvents(db, game.id),
   ]);
+  const audioReady = acceptedLivePrefix ? null : await audioReadySequence(db,game.id);
+  if (audioReady !== null) persistedEvents.events = persistedEvents.events.filter(event => event.sequence <= audioReady);
   if (persistedEvents.events.length === 0) return [];
 
   const frames: GameWatchReplayFrame[] = [];

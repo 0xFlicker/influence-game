@@ -1,4 +1,7 @@
 "use client";
+import type {PresentationCue} from "./types";
+import type {AudioWatchCoordinate} from "@influence/engine/audio-watch";
+import {useWatchVoice} from "@/components/watch/use-watch-voice";
 import {useWatchTimeline} from "@/components/watch/use-watch-timeline";
 import {isFormatSocialTranscriptMessage, buildClassicPresentationCues, buildReplayPlayersForCue, classicEliminatedPlayerIds, comparePresentationCues, findCueForAdjacentScene, formatCueScene, formatSnapshotForPresentationCursor, mergeFormatAndSocialCues} from "./influence-replay-cues";
 export {isFormatSocialTranscriptMessage, buildClassicPresentationCues, buildReplayPlayersForCue, comparePresentationCues, findCueForAdjacentScene, formatSnapshotForPresentationCursor} from "./influence-replay-cues";
@@ -297,6 +300,15 @@ function DramaticReplayTheater({
     if (!result.ok) return null;
     return activeCue ? influenceThinkingText(result.intelligence.thinking.cards, activeCue, thinkingActor, messageId) : null;
   }, [anonymous, game.slug, thinkingActor, thoughtSequence, thoughtRound, thoughtPhase, messageThought, messageId, entrySequence, classicThought, activeCue]);
+  const coordinateForCue=useCallback((candidate:PresentationCue):AudioWatchCoordinate|null=>{
+    if (candidate.source === "opening" || candidate.source === "house" || candidate.voteSummary) return null;
+    const message=candidate.source === "classic" ? scenes[candidate.sceneIndex]?.messages[candidate.messageIndex] : formatCueScene(candidate)?.messages[0];
+    const ballot=candidate.source === "format" ? candidate.visualBallot ?? (candidate.kind === "format_roll_call" ? candidate.ballot : null) : candidate.source === "endgame" ? candidate.ballot : null;
+    const actorId=ballot?.voterId ?? (candidate.source === "format" && candidate.kind === "two_names_plea" ? candidate.speakerId : message?.speakerPlayerId ?? message?.fromPlayerId ?? null);
+    return {kind:"influence",...(candidate.source === "classic" && message && {transcriptId:String(message.id)}),eventSequence:candidate.canonicalSequence ?? message?.firstDurableEventSequence ?? 0,actorId,part:"speech"};
+  },[scenes]);
+  const voice = useWatchVoice({director,gameId:game.id,audience:"public",thinking:preferences.thinking,live,
+    coordinate:activeCue ? coordinateForCue(activeCue) : null,coordinateForCue});
   const currentStateEntry = Boolean(live && formatCue && directorSnapshot.hydrationWatermark !== null
     && formatCue.canonicalSequence <= directorSnapshot.hydrationWatermark);
   const isPlaying = directorSnapshot.isPlaying;
@@ -309,7 +321,7 @@ function DramaticReplayTheater({
   const preparing = live && presentationHydrationStatus !== "ready";
   const ambient = useWatchMusic({
     section:musicSection, playing:(isPlaying || closingMusic) && !openingCue,
-    muted:preferences.musicMuted, volume:preferences.musicVolume, preparing,
+    muted:preferences.musicMuted, volume:preferences.musicVolume * (voice.speaking && !voice.muted ? .35 : 1), preparing,
     holding:directorSnapshot.waitingAtTail, live, navigationRevision:director.getNavigationRevision(),
   });
   const transportPlaying = isPlaying || closingMusic && (ambient.status === "playing" || ambient.status === "loading");
@@ -766,6 +778,8 @@ function DramaticReplayTheater({
         }`}
       >
         {shared?.cue && presentationCues.length > 0 && !presentationCues.some(cue => cue.key === shared.cue) && <p role="alert">This replay moment is no longer available.</p>}
+        {voice.error && <div role="alert">{voice.error} <button onClick={voice.unlock}>Enable voice audio</button></div>}
+        {voice.available && <label className="text-xs">Voice volume <input aria-label="Voice volume" type="range" min="0" max="1" step="0.05" value={voice.muted ? 0 : voice.volume} onChange={event => {voice.setMuted(false);voice.setVolume(Number(event.target.value));}} /></label>}
         <WatchTransport getShareHref={() => {
           const cue = director.getActiveCue();
           const href = cue?.canonicalSequence != null ? gameReplaySequenceHref(game.slug, cue.canonicalSequence) : gameReplayHref(game.slug);

@@ -2,7 +2,7 @@
 
 Implementation is in progress on `codex/agent-voices-audio-mode`, based on
 `codex/peragent-model-selection`. The [approved plan](plans/2026-10-24-001-feat-agent-voices-and-audio-mode-plan.md)
-owns the complete product scope. Audio Mode is not yet available in game creation.
+owns the complete product scope. Audio Mode is available as an independent, default-off game creation option for both games.
 
 Every response that requests `thinking`, including House decisions and both games,
 receives shared guidance for a concise, in-character inner monologue. It sets up
@@ -84,16 +84,77 @@ non-binary/unspecified uses the full player pool. Explicit selection can cross
 labels, and reset returns to the deterministic policy. No name, image, live catalog
 order or random delivery effect enters selection. Persist the returned assignment
 and copy it into a track snapshot; never recompute an existing assignment on reads.
-This is a tested contract only: profile persistence, API/MCP selection and the
-sample picker are still pending.
+Owner GET/PUT `/api/agent-profiles/:id/voice` provides the stock picker and an
+explicit save. Helios is rejected for players. Automatic choices are persisted
+when a game/track freezes its roster. Missing historical profiles use a stable
+identity fallback. The three operator-approved testing overrides remain listed
+in the plan; install them through the owner API before live qualification.
 
-## Remaining integration
+## Production, playback and historical tracks
 
-Connect the frozen stock-voice catalog/House identity, bucket-backed xAI recordings,
-live readiness/suspension, deliberate Studio backfill and the existing shared
-playback/export recording schedule. Use direct House calls and no `as any` casts.
-No audio generation, game creation setting or completion of
-those layers is implied by the text-boundary integration.
+Migration `0132_audio_tracks.sql` adds profile preferences, logical tracks/clips,
+append-only versions and dispatch attempts. The existing private bucket stores
+voice snapshots, manifests, recipes, request/response evidence and MP3 bytes.
+Database rows contain identifiers, hashes, lengths, status, leases and duration.
+The payload inventory includes all new body columns. A delivered response is
+uploaded and verified before probing; an invalid MP3 remains private evidence.
+No existing historical audio is regenerated or moved by this migration.
+
+The execution worker polls queued tracks. Each required clip has up to three
+attempts for explicit retryable provider responses. Unknown dispatch outcomes,
+transport failures and evidence/storage failures stop paid work for operator
+inspection. Expired leases cannot accept another worker's artifacts. An explicit
+retry preserves ready clips and reserves another bounded allowance for gaps.
+Estimates use $15 per million input characters, including tags conservatively;
+reserved characters are an upper spending estimate, not an invoice.
+
+Production uses xAI native MP3 (44.1 kHz, 192 kbps). `ffprobe` measures the returned
+container. There is no normalization, pitch/speed filtering, reverb or other DSP.
+The worker requires `XAI_API_KEY`, the existing private-payload bucket settings,
+and `ffprobe` on PATH. It follows normal execution-worker activation/drain rules.
+
+Audio Mode freezes voices in the game-start transaction. After text acceptance,
+the runtime builds eligible production moments and waits for verified audio
+before the next logical turn. Viewer reads stop at the ready prefix. Werewolf
+shows an empty waiting window while its first announcement is being produced.
+Audio failure preserves accepted gameplay and suspends execution; terminal
+completion also waits. Influence's required gate is outside the optional,
+error-swallowing projection callback. Neither game receives audio, tags or URLs
+in contestant context.
+
+Studio's Recordings panel previews the full-track count, frozen voices and price.
+For an originally non-audio completed game, Generate full audio track explicitly
+queues its first track; reopening Studio never generates it. Ready tracks publish
+automatically. Retry missing clips uses the same frozen recipes. For a suspended
+live game, finish retrying and then choose Resume game with ready audio. That
+separate operation checks the exact failed owner and never clears an unrelated
+suspension. Source-preparation failures require diagnosis before resuming.
+
+Public playback uses the existing director clock and measured clip durations,
+including thinking, pause/speed, buffering and in-clip seeks. Show thinking and
+Werewolf audience choices filter playable references. Voice mute/volume is
+separate from music; music ducks during audible speech. Autoplay rejection has
+an explicit enable action. House phase/night/vote/result announcements derive
+from canonical Werewolf fields, not parsed prose.
+
+Studio pins its audio publication. Load ready audio into this preview explicitly
+adopts newly completed work; polling a generation job never changes the cut.
+Generated speech and thinking bind to the shared recording/timing compiler.
+Frozen exports contain exact version IDs, text/speaker hashes and durations;
+server validation rejects substituted versions. Export downloads existing media
+and makes no provider calls. Future producer replacement can append a version
+without changing logical clip identity; that editorial action is not exposed yet.
+
+## Qualification still required
+
+The implementation's mock-provider checks do not establish xAI pronunciation,
+audible browser/export alignment, mobile autoplay or production storage setup.
+Run the separately budgeted localhost API qualification after applying migration
+0132 and the approved model-agent voice assignments. No paid provider calls were
+made in this workflow implementation increment. The owner picker currently lists
+presets; reusable stock sample previews still need to be published. Very long
+historical speech beyond xAI's single-request limit needs segmented production
+before it can be qualified; ordinary current game output bounds are much smaller.
 
 ## Validation
 

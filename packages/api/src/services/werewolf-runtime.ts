@@ -1,3 +1,4 @@
+import { freezeLiveAudio, ensureLiveAudio, pauseLiveAudio, LiveAudioBlocked } from "./audio-live.js";
 import { actorProviderManifest, type GameModelRouting } from "@influence/engine";
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity, RetrospectiveExecutionError, ProviderUnavailableError } from "@influence/engine";
 import { pauseRetrospectiveExecution } from "./game-retrospective-recovery.js";
@@ -9,7 +10,7 @@ import { runWerewolf, replayWerewolf, WerewolfModelAgent, withEvaluationBudget, 
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createApiProviderExecutionHooks } from "./provider-call-journal.js";
 import { renewGameRunOwner } from "./game-ownership.js";
-import { createWerewolfStore, releaseWerewolfOwner } from "./werewolf-games.js";
+import { createWerewolfStore, completeWerewolfAudioGame, releaseWerewolfOwner } from "./werewolf-games.js";
 
 const active = new Map<string, { controller: AbortController; promise: Promise<void> }>();
 export const isWerewolfRunning = (gameId: string) => active.has(gameId);
@@ -59,7 +60,7 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
     });
   }, 30_000);
   heartbeat.unref();
-  const store = createWerewolfStore(db, gameId, ownerEpoch);
+  const store = createWerewolfStore(db, gameId, ownerEpoch, config.audioMode === true);
   let recoverVisuals = async () => {};
   if (config.visualMode === true) {
     const prepareTurn = store.prepare!;
@@ -82,9 +83,21 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
       await prepareScene(state, request);
     };
   }
-  const promise = recoverVisuals().then(() => runWerewolf(store, agent, controller.signal))
-    .then(() => {})
+  if (config.audioMode === true) {
+    await freezeLiveAudio(db, gameId);
+    const append = store.append;
+    store.append = async (event, retrospectiveInput) => {
+      await append(event, retrospectiveInput);
+      await ensureLiveAudio(db, gameId, ownerEpoch, controller.signal);
+    };
+  }
+  const promise = recoverVisuals().then(async () => {
+    if (config.audioMode === true && (await store.read()).length) await ensureLiveAudio(db, gameId, ownerEpoch, controller.signal);
+    return runWerewolf(store, agent, controller.signal);
+  })
+    .then(async () => { if (config.audioMode === true) await completeWerewolfAudioGame(db,gameId,ownerEpoch); })
     .catch(async (error) => {
+      if (error instanceof LiveAudioBlocked) { await pauseLiveAudio(db, gameId, ownerEpoch); return; }
       if (error instanceof RetrospectiveExecutionError && !controller.signal.aborted && !heartbeatFailure) {
         await pauseRetrospectiveExecution(db, gameId, ownerEpoch, error);
         return;

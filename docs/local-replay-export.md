@@ -179,3 +179,14 @@ Refresh validation on 2026-10-08: prepared and then overwrote a fresh `hazy-ruby
 For fresh completed games, full movies render gameplay, the competitive result and all accepted final speeches. Studio can freeze a retrospective-only cut by tagging its ordinary speech moments; result inclusion is independent. Original solo portraits, canonical part/outcome labels, captions, reading timing and optional exact-identity recordings use the same shared sampled frame as replay and Studio.
 
 Export requires a completed retrospective proof. Existing games without captured statements cannot gain one through export; reads perform no generation or historical adaptation. Frozen bundles pin text, moment IDs, source heads, media versions and recording hashes. Offline sampling and encoding use those exact bytes and IDs without re-evaluating current tags or fetching newer source history.
+
+
+## Generated game audio
+
+A Studio-frozen cut with generated audio carries version IDs in `recordings`.
+`export:replay` fetches its authorized existing MP3 versions and verifies text,
+speaker, content hash and measured duration before compiling the shared schedule.
+Generated versions do not need `--speech-manifest`; imported local recordings
+still do. Preparation never synthesizes missing audio. Missing or changed frozen
+versions fail explicitly. Thinking clips use the same independent thought moments
+and can be excluded without retaining their audio or duration.

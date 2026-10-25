@@ -1,3 +1,4 @@
+import { audioReadySequence } from "./audio-frontier.js";
 import { loadPayloads } from "./payload-storage.js";
 import { requestCharacterCutouts } from "./character-cutouts.js";
 import { werewolfVisualPause } from "./werewolf-visual-policy.js";
@@ -19,8 +20,10 @@ export async function readWerewolfPresentation(db: DrizzleDB, id: string, audien
   const [game] = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), isNull(schema.games.hiddenAt), or(eq(schema.games.id, id), eq(schema.games.slug, id))));
   if (!game || !isViewerGame(game)) throw new WerewolfGameError("Game not found", 404);
   if (!game.startedAt) throw new WerewolfGameError("This game has not started. Open its casting lobby.");
-  const events = await readWerewolfEvents(db, game.id);
-  const frame = projectWerewolfPresentation(events, audience, cursor);
+  const ready = await audioReadySequence(db,game.id);
+  const events = (await readWerewolfEvents(db, game.id)).filter(event => ready === null || event.sequence <= ready || ready === 0 && event.type === "werewolf.started");
+  const frame = projectWerewolfPresentation(events, audience, ready === 0 ? 0 : cursor);
+  if (ready === 0) {frame.view={...frame.view,entries:[],cursor:0};frame.latestCursor=0;}
   const rows = await publishedWerewolfScenes(db, game.id, publicationCutoff);
   const references = await werewolfReferenceMetadata(db, game.id, events.find(event => event.type === "werewolf.started")?.payload.players);
   const cutouts = await requestCharacterCutouts(db, game.id, Object.fromEntries(references.flatMap(ref => ref.bodyHash ? [[ref.profile.id, `sha256:${ref.bodyHash}`]] : [])));
@@ -104,7 +107,8 @@ export async function readWerewolfWatch(db: DrizzleDB, id: string, audience: Wer
   const [game] = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), isNull(schema.games.hiddenAt), or(eq(schema.games.id, id), eq(schema.games.slug, id))));
   if (!game || !isViewerGame(game)) throw new WerewolfGameError("Game not found", 404);
   if (!game.startedAt) throw new WerewolfGameError("This game has not started. Open its casting lobby.");
-  const events = await readWerewolfEvents(db, game.id);
+  const ready = await audioReadySequence(db,game.id);
+  const events = (await readWerewolfEvents(db, game.id)).filter(event => ready === null || event.sequence <= ready || ready === 0 && event.type === "werewolf.started");
   const rows = await publishedWerewolfScenes(db, game.id, publicationCutoff);
   const projection = projectWerewolfWatch(events, audience, fromCursor, limit, (staging, cursor, ids) => {
     const {wolfForms} = bindWerewolfScene(rows, game.id, audience, cursor, publicationCutoff, staging);
@@ -117,7 +121,7 @@ export async function readWerewolfWatch(db: DrizzleDB, id: string, audience: Wer
   const preferences = new Map(seats.map(seat => [seat.id, seat.modelPreference]));
   const cutouts = await requestCharacterCutouts(db, game.id, Object.fromEntries(references.flatMap(ref => ref.bodyHash ? [[ref.profile.id, `sha256:${ref.bodyHash}`]] : [])));
   const watch = materializeWerewolfWatch(projection, { id: game.id, slug: game.slug, status: game.status, visualPaused: game.status === "suspended" && Boolean(werewolfVisualPause(config)) }, audience, publicationCutoff, rows, references, undefined, cutouts);
-  return { ...watch, players: watch.players.map(player => ({ ...player, ...gamePlayerModelPreference(config, player.id, preferences.get(player.id)) })) };
+  return { ...watch, ...(ready === 0 && {moments:[],navigation:[],playback:[],media:{},latestCursor:0,fromCursor:1,throughCursor:0}), players: watch.players.map(player => ({ ...player, ...gamePlayerModelPreference(config, player.id, preferences.get(player.id)) })) };
 }
 
 /** Same media binding for live watch and fixed production prefixes. Staging and

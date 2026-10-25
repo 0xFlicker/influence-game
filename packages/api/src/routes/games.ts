@@ -1,3 +1,4 @@
+import { audioReadySequence } from "../services/audio-frontier.js";
 import { CURRENT_EMPOWER_REVOTE_VERSION, resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import { creationModelRouting, GameModelRoutingError } from "../services/game-model-routing.js";
 import { DEFAULT_CONVERSATION_POLICY } from "@influence/engine";
@@ -162,6 +163,7 @@ export function createGameRoutes(db: DrizzleDB) {
       maxRounds,
       visibility,
       formatManifest,
+      audioMode = false,
       visualMode = false,
       visualFailurePolicy = "best_effort",
     } = body;
@@ -181,6 +183,7 @@ export function createGameRoutes(db: DrizzleDB) {
 
     try { parseGameVisibility(visibility); } catch { return c.json({ error: "Game visibility must be public or unlisted" }, 400); }
     if (!["best_effort", "require_visuals"].includes(visualFailurePolicy)) return c.json({ error: "Invalid visualFailurePolicy" }, 400);
+    if (typeof audioMode !== "boolean") return c.json({ error: "audioMode must be a boolean" }, 400);
     if (typeof visualMode !== "boolean") return c.json({ error: "visualMode must be a boolean" }, 400);
     const minPlayers = MIN_NEW_GAME_PLAYERS;
     const maxPlayers = playerCount ?? MAX_NEW_GAME_PLAYERS;
@@ -220,6 +223,7 @@ export function createGameRoutes(db: DrizzleDB) {
       fillStrategy: fillStrategy ?? "balanced",
       visibility: parseGameVisibility(visibility),
       slotType: "all_ai",
+      audioMode,
       visualMode,
       visualFailurePolicy,
       formatManifest: frozenFormatManifest,
@@ -327,6 +331,7 @@ export function createGameRoutes(db: DrizzleDB) {
           eliminatedPlayers: watchState.counts.eliminatedPlayers,
           modelLabel: modelLabelFromConfig(config),
           visibility: config.visibility ?? "public",
+      audioMode: config.audioMode === true,
       visualMode: config.visualMode === true,
       visualFailurePolicy: config.visualFailurePolicy === "require_visuals" ? "require_visuals" : "best_effort",
       visualPaused: game.status === "suspended" && Boolean(config.visualPause),
@@ -419,6 +424,7 @@ export function createGameRoutes(db: DrizzleDB) {
       })),
       modelLabel: modelLabelFromConfig(config),
       visibility: config.visibility ?? "public",
+      audioMode: config.audioMode === true,
       visualMode: config.visualMode === true,
       visualFailurePolicy: config.visualFailurePolicy === "require_visuals" ? "require_visuals" : "best_effort",
       visualPaused: game.status === "suspended" && Boolean(config.visualPause),
@@ -1015,11 +1021,13 @@ export function createGameRoutes(db: DrizzleDB) {
       }
     }
 
+    const audioReady = await audioReadySequence(db,gameId);
     const query = db
       .select()
       .from(schema.transcripts)
       .where(and(
         eq(schema.transcripts.gameId, gameId),
+        audioReady === null ? undefined : sql`${schema.transcripts.firstDurableEventSequence} <= ${audioReady}`,
         // Filter before pagination so private/legacy huddle rows cannot end a page early.
         or(ne(schema.transcripts.scope, "huddle"), and(
           eq(schema.transcripts.dialogueKind, "huddle_speech"),

@@ -1,3 +1,4 @@
+import {freezeLiveVoices} from "./audio-voices.js";
 import { authorizedModelPreference, sealRosterModelRouting, creationModelRouting } from "./game-model-routing.js";
 import { queueEpisodeCopy, readEpisodePresentations } from "./episode-presentation.js";
 import { parseGameVisibility } from "@influence/engine/game-visibility";
@@ -18,7 +19,7 @@ import { hasEligibleAgentContent } from "./agent-content-eligibility.js";
 import { createWerewolfHousePlayers, freezeWerewolfRoster, WerewolfGameError } from "./werewolf-games.js";
 
 type Tx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
-export async function createWerewolfLobby(db: DrizzleDB, userId: string, input: { visibility?: unknown; preset: WerewolfPreset; providerManifest?: unknown; modelRouting?: unknown; maxDays?: number; setup?: WerewolfSetup; personaPool?: unknown; fillStrategy?: unknown; visualMode?: boolean; visualFailurePolicy?: unknown }) {
+export async function createWerewolfLobby(db: DrizzleDB, userId: string, input: { visibility?: unknown; preset: WerewolfPreset; providerManifest?: unknown; modelRouting?: unknown; maxDays?: number; setup?: WerewolfSetup; personaPool?: unknown; fillStrategy?: unknown; audioMode?: boolean; visualMode?: boolean; visualFailurePolicy?: unknown }) {
   let visibility;
   try { visibility = parseGameVisibility(input.visibility); } catch { throw new WerewolfGameError("Game visibility must be public or unlisted", 400); }
   if (!enabledGameKinds().includes("werewolf")) throw new WerewolfGameError("Werewolf creation is unavailable.", 403);
@@ -27,13 +28,14 @@ export async function createWerewolfLobby(db: DrizzleDB, userId: string, input: 
   catch (error) { throw new WerewolfGameError(error instanceof Error ? error.message : "Invalid village configuration", 400); }
   const casting = normalizeWerewolfCasting(input);
   if (input.visualFailurePolicy !== undefined && input.visualFailurePolicy !== "best_effort" && input.visualFailurePolicy !== "require_visuals") throw new WerewolfGameError("Invalid visual failure policy", 400);
+  if (input.audioMode !== undefined && typeof input.audioMode !== "boolean") throw new WerewolfGameError("Audio Mode must be on or off", 400);
   if (input.visualMode !== undefined && typeof input.visualMode !== "boolean") throw new WerewolfGameError("Visual Mode must be on or off", 400);
   const modelRouting = await creationModelRouting(db, userId, { modelRouting: input.modelRouting, providerManifest: input.providerManifest });
   const id = randomUUID();
   const slug = await generateUniqueSlug(async candidate => (await db.select({ id: schema.games.id }).from(schema.games).where(eq(schema.games.slug, candidate))).length > 0);
   const count = rules.setup?.playerCount ?? WEREWOLF_PRESETS[input.preset].players;
   await db.insert(schema.games).values({ id, slug, gameKind: "werewolf", gameKernel: null, createdById: userId, status: "waiting", trackType: "custom", minPlayers: count, maxPlayers: count,
-    config: JSON.stringify({ preset: input.preset, setup: rules.setup, ...casting, visualMode: input.visualMode ?? false, visualFailurePolicy: input.visualFailurePolicy ?? "best_effort", maxDays: rules.maxDays, rulesVersion: rules.rulesVersion, discussionPolicy: rules.discussionPolicy, modelRouting, serviceTier: "flex", visibility }) });
+    config: JSON.stringify({ preset: input.preset, setup: rules.setup, ...casting, audioMode: input.audioMode ?? false, visualMode: input.visualMode ?? false, visualFailurePolicy: input.visualFailurePolicy ?? "best_effort", maxDays: rules.maxDays, rulesVersion: rules.rulesVersion, discussionPolicy: rules.discussionPolicy, modelRouting, serviceTier: "flex", visibility }) });
   return { id, slug };
 }
 
@@ -108,6 +110,7 @@ export async function startWerewolfLobby(db: DrizzleDB, id: string) {
     const event = startWerewolf(game.id, players, rules, randomUUID());
     await tx.insert(schema.werewolfEvents).values({ gameId: game.id, sequence: event.sequence, event });
     await tx.update(schema.games).set({ status: "in_progress", startedAt: new Date().toISOString(), config: JSON.stringify({ ...sealedConfig, rulesVersion: rules.rulesVersion }) }).where(eq(schema.games.id, game.id));
+    if (config.audioMode === true) await freezeLiveVoices(tx,game.id);
     await queueEpisodeCopy(tx, game.id);
     return { id: game.id, slug: game.slug };
   });

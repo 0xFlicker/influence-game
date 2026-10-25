@@ -618,3 +618,11 @@ Reports use separate append-only files, retain preferred and actual route counts
 
 
 Influence decision tests must return `message` on ballots, format choices, tiebreaks, nominations, vetoes and Safety Bounce pointers. For ballots use a very short line (120 UTF-8 bytes maximum, often just the target name); omit `thinking` on ballots, format choice and tiebreaks. Keep thinking on nominations/replacements, vetoes, pointers and nominee pleas. Inspect accepted public delivery in transcript `decisionSpeech` rows and private/native reasoning in producer evidence. Sealed ballots remain parallel with no cross-voter messages; do not use a paid simulation merely to test this contract.
+
+
+For an authorized audio qualification, create a localhost API game with
+`audioMode: true` (independent of `visualMode`). Apply migration 0132, configure
+`XAI_API_KEY` and private bucket access, and make `ffprobe` available to the
+execution worker first. Inspect gameplay calls and TTS attempts separately.
+Audio failure preserves the accepted text and pauses before the next logical
+turn. Existing games gain audio only through explicit Studio generation.
