@@ -30,7 +30,8 @@ export function thinkingPicture(cue: ExportCue, actorId = cue.speech?.speakerId)
     return {kind:"thinking",gameKind:"werewolf",actor:{id:actor.id,name:actor.name,persona:"",
       avatarUrl:actor.avatarUrl,fullBodyReferenceUrl:actor.fullBodyReferenceUrl,
       personaKey:actor.personaKey,headRectangle:actor.headRectangle}, roleLabel:picture.cue.moment.snapshot.audience === "omniscient" ? actor.role ?? undefined : undefined,
-      scene:picture.scene,sourceElapsedMs,backgroundUrl:werewolfBackdrop(picture.cue),
+      // Ballots use the voting set even when their accepted action has village imagery.
+      scene:picture.cue.ballot ? null : picture.scene,sourceElapsedMs,backgroundUrl:werewolfBackdrop(picture.cue),
       ...(!picture.scene && room && {room:{number:room.roomNumber,label:room.roomLabel,players:room.participants,backgroundUrl:werewolfBackdrop(picture.cue),floorPerspective:true}})};
   }
   if (picture.kind !== "influence") throw new Error("This presentation cannot own a thought");

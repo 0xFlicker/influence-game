@@ -1,5 +1,6 @@
 import {expect,test} from "bun:test";
 import {Phase} from "@influence/engine";
+import type {AcceptedVisualScene} from "@influence/engine/visual-mode";
 import {completedCurrentWerewolfFixture,completedWerewolfResultsFixture,werewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
 import {projectWerewolfWatch,projectWerewolfProductionProvenance} from "@influence/engine/werewolf/watch";
 import {werewolfThinkingActions} from "@influence/engine/werewolf/thinking";
@@ -11,8 +12,10 @@ import {buildInfluenceProductionSources} from "@influence/engine/production-mome
 import {createFormatKernelViewerScenario,FORMAT_KERNEL_VIEWER_SCENARIO_IDS} from "@influence/engine/fixtures/format-kernel-viewer";
 import type {GameWatchReplayFrame,TranscriptEntry,ViewerDecisionEvent} from "../api";
 import {buildExportCues} from "./cues";
-import {compilePresentation} from "./presentation";
+import {compilePresentation, thinkingPicture} from "./presentation";
 import {parseTimingProfile} from "./timing";
+import {werewolfBackdrop} from "../../components/games/werewolf/werewolf-room-presentation";
+import {WEREWOLF_ROOMS} from "../../components/games/werewolf/werewolf-rooms";
 
 async function fixture(audience:"mystery"|"omniscient", current = false) {
   const events = current ? await completedCurrentWerewolfFixture("production-binding") : await completedWerewolfResultsFixture("saved", "production-binding");
@@ -41,6 +44,29 @@ async function fixture(audience:"mystery"|"omniscient", current = false) {
   return {source,provenance,thoughts,catalog,base};
 }
 const settings = {profile:parseTimingProfile({ending:{holdMs:0}}),fps:30,assets:{},music:false};
+test("Studio voting thoughts keep the ballot backdrop through their close-up", async () => {
+  const input = await fixture("omniscient", true);
+  const moments = await bindWerewolfProductionPresentation(input);
+  const votingThoughts = input.thoughts.filter(thought => thought.action === "public_vote");
+  const villageScene: AcceptedVisualScene = {id:"accepted-village",roomId:"lobby",version:1,imageUrl:"/accepted-village.png",annotatedImageUrl:"/accepted-village-annotated.png",participantIds:[],anchors:[]};
+  expect(votingThoughts.length).toBeGreaterThan(0);
+  for (const thought of votingThoughts) {
+    const moment = input.catalog.moments.find(moment => moment.source.kind === "werewolf-action" && moment.source.eventSequence === thought.eventSequence);
+    const closeUp = moments.find(row => row.id === moment?.id)?.segments[0];
+    const ballot = input.base.find(cue => cue.source.kind === "werewolf" && cue.source.cursor === thought.cursor
+      && cue.picture.kind === "werewolf" && cue.picture.cue.ballot?.current.voterId === thought.actorId);
+    if (closeUp?.picture.kind !== "thinking" || ballot?.picture.kind !== "werewolf") throw new Error("Voting fixture must bind both thought and ballot shots");
+    expect(closeUp.picture.backgroundUrl).toBe(WEREWOLF_ROOMS.vote);
+    expect(closeUp.picture.backgroundUrl).toBe(werewolfBackdrop(ballot.picture.cue));
+    const withGeneratedVillage = thinkingPicture({...ballot,picture:{...ballot.picture,scene:villageScene}}, thought.actorId);
+    expect(withGeneratedVillage.scene).toBeNull();
+    expect(withGeneratedVillage.backgroundUrl).toBe(WEREWOLF_ROOMS.vote);
+  }
+  const conversation = input.base.find(cue => cue.picture.kind === "werewolf" && cue.picture.cue.moment.entry.kind === "conversation");
+  if (conversation?.picture.kind !== "werewolf") throw new Error("Fixture must retain ordinary village conversation");
+  expect(werewolfBackdrop(conversation.picture.cue)).toBe(WEREWOLF_ROOMS.village);
+  expect(thinkingPicture({...conversation,picture:{...conversation.picture,scene:villageScene}},conversation.speech!.speakerId!).scene).toBe(villageScene);
+});
 test("a frozen pre-audio cut binds its original catalog without new House speech or closing reprise", async () => {
   const input=await fixture("omniscient",true);
   const catalog={...assembleProductionCatalog({gameId:input.catalog.gameId,gameKind:"werewolf",audience:"omniscient",werewolfCatalogVersion:1,

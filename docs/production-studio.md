@@ -1,5 +1,10 @@
 # Production Studio
 
+Werewolf ballot shots and their thinking close-ups share the voting backdrop in
+Studio and offline exports. Camera focus must not switch the scene to the daytime
+village. Existing encoded movies require a new export to receive this presentation fix;
+accepted game events, selected moment IDs, and frozen audio versions are unchanged.
+
 Open **Admin → Production**, choose a completed or validated visually paused Influence or Werewolf game, and open its studio. The library uses bounded metadata pages. A game played without generated imagery remains editable with portraits.
 
 Influence uses the same 20-second House entrance, cast reveal, welcome card and

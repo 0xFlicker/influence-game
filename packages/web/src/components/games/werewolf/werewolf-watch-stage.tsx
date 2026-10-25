@@ -15,7 +15,6 @@ import {VisualSceneView} from "@/app/games/[slug]/components/visual-scene-view";
 import {PortraitRoom} from "@/app/games/[slug]/components/portrait-room";
 import {VotePresentation} from "@/app/games/[slug]/components/vote-presentation";
 import type {VisualPresentationBeat} from "@/app/games/[slug]/components/visual-presentation";
-import {WEREWOLF_ROOMS} from "./werewolf-rooms";
 import {RoomBackdrop} from "@/app/games/[slug]/components/stage-backdrop";
 import {werewolfCueMoment, werewolfHouseCentered, type WerewolfWatchCue} from "./werewolf-watch-model";
 import {replayMoment} from "./replay-moment";
@@ -94,7 +93,7 @@ export function WerewolfContentFrame({cue, scene, elapsed, reduced, navigationRe
   if (!cue.ballot && cue.moment.entry.kind === "vote" && cue.moment.entry.result.eliminatedId) return <WerewolfVoteOutcome cue={cue} elapsed={elapsed} reduced={reduced} hideCaption={hideHouseCaption} onReady={onReady} />;
   if (cue.nightAction?.kind === "hunt") return <WerewolfHuntStage cue={cue} scene={timedOut ? null : scene} onReady={onReady ?? ignoreReadiness} />;
   if (cue.nightAction && !cue.nightDecision) return <WerewolfRoleStage action={cue.nightAction} players={cue.moment.snapshot.players} />;
-  if (cue.ballot && beat) return <VotePresentation backgroundUrl={WEREWOLF_ROOMS.vote} beat={beat} ledger={cue.ballot}
+  if (cue.ballot && beat) return <VotePresentation backgroundUrl={backgroundUrl} beat={beat} ledger={cue.ballot}
     roster={cue.moment.snapshot.players.map(p => ({id:p.id, name:p.name, persona:"", avatarUrl:p.avatarUrl ?? undefined}))}
     elapsedMs={sceneElapsed} readingElapsedMs={readingElapsed} reducedMotion={reduced}
     paused={paused} staticSpeech={cue.moment.entry.kind !== "ballot"} silent={cue.moment.entry.kind === "ballot" ? !moment.spoken : cue.ballot.current.targetId === null} onImageReady={() => onReady?.(true)} />;
