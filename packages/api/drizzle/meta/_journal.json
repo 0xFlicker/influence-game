@@ -939,6 +939,13 @@
       "when": 1792191933918,
       "tag": "0134_character_cutout_completion",
       "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1792191933919,
+      "tag": "0135_audio_response_retention",
+      "breakpoints": true
     }
   ]
 }
