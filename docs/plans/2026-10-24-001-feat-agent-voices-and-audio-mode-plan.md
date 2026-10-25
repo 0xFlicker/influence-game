@@ -1,16 +1,22 @@
 ---
 title: Agent voices and Audio Mode requirements and implementation plan
 type: feat
-status: draft
+status: in_progress
 date: 2026-10-24
-scope: research and planning only
+scope: implementation authorized
 ---
 
 # Agent voices and Audio Mode
 
 Give Influence and Werewolf a consistent spoken cast using xAI TTS, with one recognizable House voice across all games. The first iteration offers a sample-based stock-voice picker for existing saved agents, with deterministic defaults. Custom voice creation/update, delivery customization and character-generation integration remain deferred. Helios is initially approved for the House and reserved from player selection. Audio Mode produces recordings as accepted text becomes available and holds live presentation until they are ready. Public playback, Production Studio and export share speech, thinking treatment, timing and mix.
 
-This is research and planning only: no application code, game backfills, profile mutations or infrastructure changes are authorized here. The operator separately authorized up to **$10 of xAI audition generation**, with receipts and cost visibility. Repository findings initially describe checkout `e5026925`; implementation must build on **`codex/peragent-model-selection`**, inspected at `3830edace6308184a2dfc01568544cf0dfecf30b`, including its migrations and engine changes. Approvals restore a preset-only user picker, replace earlier stacked nighttime/thinking proposals with the explicit treatment matrix below, and include default agent-authored speech tags even when Audio Mode is off. Historical audition notes describe experiments, not current requirements.
+The operator approved this plan, requested its commit and authorized implementation on October 24. Work proceeds on **`codex/agent-voices-audio-mode`**, based on **`codex/peragent-model-selection`** at `3830edace6308184a2dfc01568544cf0dfecf30b`, including its migrations and engine changes. The prior research-only boundary describes the audition history, not the current implementation authorization. The separate **$10 xAI audition allowance** retains receipts and cost visibility; implementation does not automatically backfill games or mutate saved profiles. Approvals restore a preset-only user picker, specify flexible context guidance/fallbacks below, and include default agent-authored speech/thinking tags even when Audio Mode is off. Historical audition notes describe experiments, not current requirements.
+
+## Implementation progress
+
+- Plan committed as `3e7ed105` on the feature branch.
+- First implementation increment: shared delivery normalizer/compiler and prompt-guidance builder, with provider-free coverage. See [implementation notes](../audio-mode.md).
+- Still pending: accepted annotation persistence and clean-text integration across both engines/read models; default prompt activation; voices/picker; xAI recording/storage; live readiness/suspension; Studio backfill; playback/export integration. The compiler alone does not deliver Audio Mode.
 
 ## Confirmed requirements
 

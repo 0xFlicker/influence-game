@@ -4,6 +4,10 @@ Shared domain vocabulary for this project — entities, named processes, and sta
 
 The active Two Names board is supplied to shared agent prompts from the canonical round projection, including the current pair and Override state. It ends at resolution; historical nominees must not remain current actors in finale prompts.
 
+## Audio delivery annotation
+
+Provider speech controls attached to accepted spoken words or saved thinking for human listening. They are production metadata, never gameplay facts. Clean text excludes the controls for presentation and future contestant context; private producer evidence retains the original. Context guidance prefers soft nighttime speech and supplies missing higher-pitch/lower-pitch thinking treatment. See [Audio Mode implementation](docs/audio-mode.md).
+
 ## Operator
 
 A human account holder or viewer interacting with Influence outside the game fiction, including anonymous web viewers, authenticated viewers, agent owners, and producers. Operator must not be used as a synonym for an AI competitor. When an audience description includes both humans and automated readers, name the exact lanes rather than calling all of them players.
