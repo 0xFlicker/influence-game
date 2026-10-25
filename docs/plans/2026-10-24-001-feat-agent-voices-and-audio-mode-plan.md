@@ -85,6 +85,21 @@ Use cached, shared samples so opening the picker or changing selections does not
 
 No local voice effects or normalization. Codec conversion remains allowed. Keep approved source recordings, exact provider tags and recipe versions available to playback, Studio and export. Operator House selection is separate from the player picker.
 
+### Current operator-selected testing voices
+
+| Agent | Stock voice | Provider voice gender |
+| --- | --- | --- |
+| GPT Sol | Sal (`sal`) | Male |
+| Kimi K3 | Ara (`ara`) | Female |
+| Meta Spark | Liora (`liora`) | Female |
+
+These explicit selections override the earlier audition assignments and automatic
+defaults for subsequent tests. Kimi K3's saved profile gender is female, already
+published through localhost MCP at the operator's request. The current local
+validation `voice-assignments.json` records these choices. Existing audition
+clips/manifests retain their original voice provenance. Profile-level voice
+persistence is still pending implementation.
+
 ### Deterministic assignment
 
 Resolution order: explicit saved owner/operator assignment from the eligible stock catalog, then deterministic default. Persist the resolved choice with its origin so reads never depend on the current order of a provider's voice list. Generated suggestions are outside this delivery.
