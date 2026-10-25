@@ -1648,9 +1648,10 @@ test("MCP proposed cut opens exact Studio recipe, verifies voice and music, free
     expect(await page.$$eval('[data-moment-id]',nodes=>nodes.map(node=>node.getAttribute('data-moment-id')))).toEqual(ids);
     await openStudioDialog(page,"Presentation");expect(await page.evaluate("Array.from(document.querySelectorAll('label')).find(label=>label.textContent?.trim()==='Music')?.querySelector('input')?.checked")).toBe(true);await closeStudioDialog(page);
     await clickStudioButton(page,"Unmute");await clickStudioButton(page,"Play");
-    await page.waitForFunction("Array.from(document.querySelectorAll('audio')).some(audio => audio.currentSrc.includes('/api/games/') && !audio.paused && audio.currentTime > 0.5)");
+    // Studio verifies authenticated recording bytes before playing a local blob URL.
+    await page.waitForFunction("Array.from(document.querySelectorAll('audio')).some(audio => audio.currentSrc.startsWith('blob:') && !audio.paused && audio.currentTime > 0.5)");
     const clock = await page.evaluate(`(async () => {
-      const voice = Array.from(document.querySelectorAll('audio')).find(audio => audio.currentSrc.includes('/api/games/'));
+      const voice = Array.from(document.querySelectorAll('audio')).find(audio => audio.currentSrc.startsWith('blob:') && !audio.paused);
       const frame = () => Number(document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame'));
       const start = performance.now(), firstFrame = frame(), source = voice.currentSrc;
       let previous = voice.currentTime, rewinds = 0;

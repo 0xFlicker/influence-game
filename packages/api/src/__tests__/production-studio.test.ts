@@ -69,6 +69,10 @@ async function wolf() {
   return { id, events };
 }
 async function producer() { await grantTestAuthority(db, "operator", [], "producer"); }
+async function expectReadyAudio(gameId: string) {
+  const [track] = await db.select().from(schema.gameAudioTracks).where(eq(schema.gameAudioTracks.gameId, gameId));
+  expect(track?.status, track?.error ?? "Audio track was not published").toBe("ready");
+}
 function annotationBody(source: Awaited<ReturnType<typeof readInfluenceProductionSource>>, revision: number, tags: Record<string, string>) {
   return { snapshot: source.snapshot, audience: "public", thinking: true, expectedRevision: revision, tags };
 }
@@ -83,6 +87,7 @@ test("hidden game audio remains producer-only with exact frozen versions and aud
   expect((await request(`${root(f.id)}/audio`,{previewHash:preview.previewHash})).status).toBe(202);
   const mp3 = await readFile(new URL("../../../web/public/visual/werewolf/opening-v1/door-effects.mp3",import.meta.url));
   await runAudioTrack(db,async () => ({bytes:mp3,evidence:{fixture:true}}));
+  await expectReadyAudio(f.id);
   const source = await buildWerewolfProductionSourceSnapshot(db,f.id,{audience:"omniscient",thinking:true});
   const publication = await (await request(`${root(f.id)}/audio/manifest?audience=omniscient&thinking=on`)).json() as import("@influence/engine/audio-track").PublishedAudioTrack;
   const thought = publication.clips.find(clip => clip.watch?.part === "thinking")!;
@@ -344,6 +349,7 @@ test("Werewolf House narration freezes and validates without confusing the actor
   expect((await request(`${root(f.id)}/audio`,{previewHash:preview.previewHash})).status).toBe(202);
   const mp3 = await readFile(new URL("../../../web/public/visual/werewolf/opening-v1/door-effects.mp3",import.meta.url));
   await runAudioTrack(db,async()=>({bytes:mp3,evidence:{fixture:true}}));
+  await expectReadyAudio(f.id);
   for (const audience of ["omniscient","mystery"] as const) {
     const thinking = audience === "omniscient";
     const source = await buildWerewolfProductionSourceSnapshot(db,f.id,{audience,thinking});
@@ -445,6 +451,7 @@ test("Studio backfill requires producer authority and freezes only verified gene
   const mp3=await readFile(new URL("../../../web/public/visual/werewolf/opening-v1/door-effects.mp3",import.meta.url));
   // Real container/probe and bucket paths, with no paid synthesis.
   await runAudioTrack(db,async()=>({bytes:mp3,evidence:{fixture:true}}));
+  await expectReadyAudio(f.gameId);
   const publicationResponse=await request(`${root(f.gameId)}/audio/manifest?audience=public&thinking=on`);
   const publication=await publicationResponse.json() as import("@influence/engine/audio-track").PublishedAudioTrack;
   const clip=publication.clips.find(clip=>clip.momentId===f.thought.id)!;

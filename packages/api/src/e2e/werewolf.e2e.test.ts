@@ -91,7 +91,7 @@ async function checkFailedPackNegotiations() {
     const omni = await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/presentation?audience=omniscient`)).json() as WerewolfPresentation;
     const finalPack = omni.view.entries.findIndex(entry=>entry.kind==="pack_vote" && entry.result.attempt===3);
     expect(finalPack).toBeGreaterThan(0);
-    await seekWatch(page,finalPack+1);await watchText(page,"No agreement. No attack tonight.");
+    await seekWatch(page,finalPack+1);await watchText(page,"The pack fails to agree. No attack tonight.");
     await page.setViewport({width:390,height:844});await page.screenshot({path:"/tmp/werewolf-pack-ballots-mobile.png"});
     expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
     await page.goto(`${servers.webUrl}/games/${game.slug}/replay?audience=mystery`,{waitUntil:'domcontentloaded'});
@@ -458,9 +458,12 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
       await viewer.goto(`${servers.webUrl}/games/${game.slug}/replay?audience=mystery`, { waitUntil: "domcontentloaded" });
       await skipWerewolfOpening(viewer);
       await pauseWerewolf(viewer);
+      const presentation = await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/presentation?audience=mystery`)).json() as WerewolfPresentation;
+      const introduction = presentation.view.entries.findIndex(entry => entry.kind === "speech" && entry.audience === "public" && Boolean(entry.text));
+      expect(introduction).toBeGreaterThanOrEqual(0);
+      await seekWatch(viewer, introduction + 1);
       await viewer.waitForSelector('[data-solo-image]');
       expect(await viewer.$('[aria-label="Current room"]')).toBeNull();
-      const presentation = await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/presentation?audience=mystery`)).json() as WerewolfPresentation;
       const opening = presentation.view.entries.findIndex(entry => entry.kind === "discussion" && entry.contribution.text === "Who can explain their suspicion?");
       expect(opening).toBeGreaterThan(0);
       await seekWatch(viewer, opening + 1);
@@ -1329,7 +1332,7 @@ test("doctor, seer, hunt and outcome are separate scrub stops only for Omniscien
     await page.setViewport({width:390,height:844});
     expect(await page.evaluate("document.documentElement.scrollWidth <= innerWidth")).toBe(true);
     await page.screenshot({path:"/tmp/werewolf-doctor-mobile.png"});
-    await page.evaluate("document.activeElement?.blur()"); await page.keyboard.press("ArrowRight");
+    await page.click('button[aria-label="Next scene"]');
     await page.waitForSelector('[data-night-role="investigate"]');
     const seer = await page.$eval('[data-night-role]',element=>element.textContent);
     const nightEntry = omni.view.entries[cursor-1]!;
@@ -1343,7 +1346,7 @@ test("doctor, seer, hunt and outcome are separate scrub stops only for Omniscien
     expect(await page.$eval('[data-night-role]',element=>element.textContent)).toBe(seer);
     await page.setViewport({width:1440,height:1000});
     await page.screenshot({path:"/tmp/werewolf-seer-wide.png"});
-    await page.evaluate("document.activeElement?.blur()"); await page.keyboard.press("ArrowRight");
+    await page.click('button[aria-label="Next scene"]');
     await page.waitForSelector('[data-night-hunt]');
     await watchText(page,"was saved by the Doctor.");
     expect(await page.$eval('[data-doctor-save]',element=>element.textContent)).toContain("Doctor");
@@ -1353,7 +1356,7 @@ test("doctor, seer, hunt and outcome are separate scrub stops only for Omniscien
     const saveFits = await page.$eval('[data-doctor-save]',element => { const card=element.getBoundingClientRect(), stage=element.closest('[data-night-hunt]')!.getBoundingClientRect(); return card.bottom <= stage.bottom && card.left >= stage.left && card.right <= stage.right; });
     expect(saveFits).toBe(true);
     await page.screenshot({path:"/tmp/werewolf-hunt-mobile.png"});
-    await page.evaluate("document.activeElement?.blur()"); await page.keyboard.press("ArrowRight");
+    await page.click('button[aria-label="Next scene"]');
     await page.waitForFunction("!document.querySelector('[data-night-hunt]')");
     const outcome = await page.$eval('[data-werewolf-stage]',element=>element.textContent);
     await seekWatch(page,cursor,2); await page.waitForSelector('[data-night-hunt]');
@@ -1448,6 +1451,7 @@ test("published wolf forms transform each night including a lone survivor and ni
   const projection=projectWerewolfWatch(events,"omniscient",1,64);
   const soloNight=Array.from({length:projection.latestCursor},(_,i)=>projectWerewolfWatch(events,"omniscient",i+1,1).moments[0]!).find(moment=>moment.night?.actions.some(action=>action.kind === "hunt" && action.wolfIds.length === 1))!;
   const entrance=projection.moments.find(moment=>moment.transformWolfIds)!;
+  const packEntrance=projection.navigation.find(entry=>entry.sceneId===entrance.sceneId)!;
   const previous=projection.moments.findLast(moment=>moment.cursor<entrance.cursor&&isWerewolfPlayable(moment.entry))!;
   const death=projection.moments.find(moment=>moment.entry.kind === "night" && moment.entry.killedId)!;
   const page=await browser.newPage();
@@ -1472,17 +1476,20 @@ test("published wolf forms transform each night including a lone survivor and ni
     await seekWatch(page,entrance.cursor,0,false);
     expect(await page.$('[data-wolf-transformation]')).not.toBeNull();
     expect(await page.$eval('[data-werewolf-stage]',node=>Number(node.getAttribute('data-elapsed')))).toBe(0);
-    // Next and Previous land on the same entrance as the timeline while preserving pause.
+    // Room navigation includes the House night cue before the pack transforms.
     await page.click('button[aria-label="Next scene"]');
     await page.waitForFunction("!document.querySelector('[data-wolf-transformation]')");
     await page.click('button[aria-label="Previous room or scene"]');
-    await page.waitForSelector('[data-wolf-transformation]');
+    await page.waitForSelector(`[data-werewolf-stage][data-cursor="${packEntrance.cursor}"]`);
     expect(await page.$('button[aria-label="Play replay"]')).not.toBeNull();
     await page.click('button[aria-label="Previous room or scene"]');
-    await page.waitForFunction("!document.querySelector('[data-wolf-transformation]')");
+    await page.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]').dataset.cursor)<${packEntrance.cursor}`);
     await page.click('button[aria-label="Next scene"]');
-    await page.waitForSelector('[data-wolf-transformation]');
+    await page.waitForSelector(`[data-werewolf-stage][data-cursor="${packEntrance.cursor}"]`);
     expect(await page.$eval('[data-werewolf-stage]',node=>Number(node.getAttribute('data-elapsed')))).toBe(0);
+    await page.click('button[aria-label="Play replay"]');
+    await page.waitForSelector('[data-wolf-transformation]');
+    await pauseWerewolf(page);
     await page.screenshot({path:"/tmp/werewolf-after-transform-seek.png"});
     await page.click('button[aria-label="Play replay"]');
     await watchText(page,"SECRET_PACK");
@@ -1641,7 +1648,7 @@ test("Decisions inspector keeps Mystery public and Omniscient thinking independe
 test("v9 abstentions keep their meaning in results and their original speech in Studio", async () => {
   const id = "browser-v9-abstention-studio";
   const events = await completedCurrentWerewolfFixture(id);
-  await database.db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"completed",startedAt:new Date().toISOString(),config:"{}"});
+  await database.db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"completed",startedAt:new Date().toISOString(),config:JSON.stringify({providerManifest:[{catalogId:"openai:gpt-6-luna"}]})});
   await database.db.insert(schema.werewolfEvents).values(events.map(event => ({gameId:id,sequence:event.sequence,event})));
   const page = await createAuthenticatedPage(browser,admin.jwt,`${servers.webUrl}/games/${id}/results`);
   try {
@@ -1756,7 +1763,7 @@ test("failed Werewolf game can be hidden from the public game card and restored"
   try {
     await rejectOptionalAnalytics(page);
     await page.waitForSelector(`a[href="/games/${id}"]`);
-    await click(page,"Hide");
+    await page.locator(`article:has(a[href="/games/${id}"]) button`).filter(button => button.textContent?.trim() === "Hide").click();
     await page.waitForSelector('dialog[open][aria-label="Hide game"]');
     const response = page.waitForResponse(r => r.url().endsWith(`/api/admin/werewolf/${id}/visibility`) && r.request().method() === "PATCH");
     await page.evaluate(`Array.from(document.querySelectorAll('dialog[open] button')).find(b => b.textContent.trim() === 'Hide').click()`);

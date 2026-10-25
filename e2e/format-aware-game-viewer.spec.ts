@@ -323,7 +323,7 @@ test.describe("format-aware game viewer", () => {
     await expect(page.getByRole("button", {name:"Play replay",exact:true})).toBeVisible();
   });
 
-  test("Influence scrubber seeks individual frames and native drags preserve pause", async ({page}) => {
+  test("Influence scrubber seeks individual frames and native drags preserve pause", async ({page}, testInfo) => {
     const slug = "frame-scrubber-fixture";
     await installDeterministicFormatGame(page, {slug, scenarioId:"save_or_eliminate_clear", status:"completed"});
     await page.goto(viewerUrl(`/games/${slug}/replay`));
@@ -350,10 +350,10 @@ test.describe("format-aware game viewer", () => {
     expect(Number(frame)).toBeGreaterThan(count * .6);
     await page.waitForTimeout(100);
     await expect(slider).toHaveValue(frame);
-    await page.screenshot({path:"/tmp/influence-frame-scrubber.png"});
+    await page.screenshot({path:testInfo.outputPath("influence-frame-scrubber.png")});
   });
 
-  test("captured thinking isolates the speaker before speech on the shared clock", async ({page}) => {
+  test("captured thinking isolates the speaker before speech on the shared clock", async ({page}, testInfo) => {
     const slug = "thinking-presentation-fixture";
     const scenario = createFormatKernelViewerScenario("two_names_declined");
     const fixture = await installDeterministicFormatGame(page, {slug, scenarioId:"two_names_declined", status:"in_progress", initialDecisionCount:0});
@@ -389,7 +389,7 @@ test.describe("format-aware game viewer", () => {
     const focused = await page.locator('[data-thinking-camera]').getAttribute('style');
     await page.waitForTimeout(150);
     expect(await page.locator('[data-thinking-camera]').getAttribute('style')).toBe(focused);
-    await page.screenshot({path:"/tmp/influence-thinking-focus.png"});
+    await page.screenshot({path:testInfo.outputPath("influence-thinking-focus.png")});
     await page.setViewportSize({width:390,height:844});
     await expect(thought).toContainText("One precise question");
     await expect.poll(() => page.evaluate(() => {
@@ -397,7 +397,7 @@ test.describe("format-aware game viewer", () => {
       const stage=document.querySelector('[data-solo-image]')!.getBoundingClientRect();
       return box.left>=stage.left && box.right<=stage.right && box.bottom<=stage.bottom;
     })).toBe(true);
-    await page.screenshot({path:"/tmp/influence-mobile-thinking.png"});
+    await page.screenshot({path:testInfo.outputPath("influence-mobile-thinking.png")});
     await playbackKey(page,"ArrowRight");
     await expect(thought).toHaveCount(0);
     await expect(page.locator('[data-thinking-camera]')).toHaveCSS('transform','matrix(1, 0, 0, 1, 0, 0)');
@@ -462,7 +462,7 @@ test.describe("format-aware game viewer", () => {
     await expect(page.getByRole("button", { name: "Pause replay", exact: true })).toBeVisible();
   });
 
-  test("content-fitted bubbles keep the same frame across all speech pages", async ({page}) => {
+  test("content-fitted bubbles keep the same frame across all speech pages", async ({page}, testInfo) => {
     await page.setViewportSize({width:1600,height:1000});
     const slug="bubble-pages-fixture", scenario=createFormatKernelViewerScenario("two_names_declined");
     const fixture=await installDeterministicFormatGame(page,{slug,scenarioId:"two_names_declined",status:"in_progress",initialDecisionCount:0});
@@ -476,12 +476,12 @@ test.describe("format-aware game viewer", () => {
     const first=await bubble.boundingBox();
     const pageLabel=await bubble.locator('[aria-label^="Page "]').getAttribute("aria-label");
     expect(pageLabel).toMatch(/Page 1 of /);
-    await page.screenshot({path:"/tmp/bubble-fit-page-1.png"});
+    await page.screenshot({path:testInfo.outputPath("bubble-fit-page-1.png")});
     await playbackKey(page,"4");await playbackKey(page,"Space");
     await expect(bubble.locator('[aria-label^="Page "]')).not.toHaveAttribute("aria-label",pageLabel!);
     await playbackKey(page,"Space");
     expect(await bubble.boundingBox()).toEqual(first);
-    await page.screenshot({path:"/tmp/bubble-fit-page-2.png"});
+    await page.screenshot({path:testInfo.outputPath("bubble-fit-page-2.png")});
   });
 
   test("fullscreen portrait player preserves speech through fallback, rotation and exit", async ({ page }) => {
@@ -1101,7 +1101,7 @@ test.describe("format-aware game viewer", () => {
       { ...meta, sequence: 9, type: "vote.empower_revote_cast", payload: { voterId: "rex", target: "lyra" } },
       { ...meta, sequence: 10, type: "vote.empowered_set", payload: { empowered: "lyra", method: "revote" } },
     ];
-    await installDeterministicFormatGame(page, { slug, scenarioId: "majority_elimination_tie", status: "completed", decisions });
+    await installDeterministicFormatGame(page, { slug, scenarioId: "majority_elimination_tie", status: "completed", decisions, empowerRevoteVersion: 2 });
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await skipOpening(page);
     await expect(page.getByRole("region", { name: "Ballot: Atlas" }).locator("blockquote").locator("..")).toHaveCSS("opacity", "1");

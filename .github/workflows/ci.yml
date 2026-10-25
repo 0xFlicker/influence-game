@@ -122,6 +122,10 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # Studio audio fixtures exercise real container validation and duration probing.
+      - name: Install audio test dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
       - name: Run automatically discovered API test shard serially
         run: bun run test:postgres --shard=${{ matrix.shard }}/4
 
