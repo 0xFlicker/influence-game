@@ -238,3 +238,5 @@ native thinking field description, plus a reminder not to narrate length repairs
 Existing bounds and tolerant tag handling remain unchanged. See the
 [live result](testing/audio-delivery-qualification.md) for recovery, evidence and
 the remaining model-quality check; no audio was generated.
+
+Live playback can receive recorded durations before saved thinking text. The director captures the current content position before inserting that text into its timing cache, preserving the camera entrance instead of advancing to the thought boundary. Speech and thinking still use their measured recording durations; paused and exact-seek positions remain on the shared clock.

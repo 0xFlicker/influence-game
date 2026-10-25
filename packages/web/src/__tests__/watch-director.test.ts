@@ -181,3 +181,22 @@ test("recorded speech and thinking share measured durations, exact seeks, speed 
  expect(director.getAudioPosition()).toEqual({part:"speech",offsetMs:1000});
  director.dispose();
 });
+
+test("late thinking text preserves the recorded cue's camera entrance clock",()=>{
+ const clock=new Clock(),director=new PresentationDirector({clock,policy:speechPolicy});
+ director.load([{key:"one",cursor:1,baseDurationMs:4000}]);
+ director.setRecordings("one",{speechMs:2000,thinkingMs:1000});
+ director.play();clock.tick(40);
+ expect(director.getElapsedBaseMs()).toBe(40);
+ director.setThinking("one","A thought loaded after the recording metadata.");
+ expect(director.getTimelineElapsedBaseMs()).toBe(40);
+ expect(director.getElapsedBaseMs()).toBe(40);
+ clock.tick(210);expect(director.getElapsedBaseMs()).toBe(250);
+ director.pause();clock.tick(1000);expect(director.getElapsedBaseMs()).toBe(250);
+ director.play();clock.tick(250);expect(director.getElapsedBaseMs()).toBe(500);
+ expect(director.getAudioPosition()).toBeNull();
+ clock.tick(1300);expect(director.getAudioPosition()).toEqual({part:"thinking",offsetMs:0});
+ director.seekTimeline(0,4750,true);
+ expect(director.getAudioPosition()).toEqual({part:"speech",offsetMs:500});
+ director.dispose();
+});

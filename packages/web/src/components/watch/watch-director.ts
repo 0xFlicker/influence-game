@@ -216,10 +216,16 @@ export class PresentationDirector<C extends WatchCue> {
     if (key !== this.getActiveCue()?.key) return;
     this.setThinkingPending(key, false);
     const normalized = text?.trim() || null;
-    if (this.thinkingEnabled) this.thoughts.set(key, normalized);
-    if ((!normalized && !this.thought) || this.thought?.text === normalized) { this.exactSeek = null; return; }
+    if ((!normalized && !this.thought) || this.thought?.text === normalized) {
+      if (this.thinkingEnabled) this.thoughts.set(key, normalized);
+      this.exactSeek = null; return;
+    }
     this.captureRemainingTime(); this.clearTimer();
+    // Recorded duration reads the thought cache. Capture the old position before
+    // extending that duration, otherwise late text jumps straight to insertAt
+    // and skips the camera's establishing motion in live playback.
     const contentElapsed = this.getElapsedBaseMs();
+    if (this.thinkingEnabled) this.thoughts.set(key, normalized);
     const speech = this.policy.speech(this.getActiveCue());
     const timing = this.recordedTiming(this.getActiveCue(),normalized)?.thought ?? thoughtTiming(normalized, speech);
     this.thought = timing ? {key, ...timing} : null;
