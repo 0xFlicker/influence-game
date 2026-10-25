@@ -937,7 +937,9 @@ A **character cutout** is an optional transparent derivative of a frozen full-bo
 image, identified by source digest and processing recipe. It changes presentation
 only; portraits, provider references and canonical game history retain their original
 images. Live playback adopts ready cutouts at refresh boundaries. Production exports
-pin availability at their publication cutoff. See [cutout operations](docs/deployment/character-cutouts.md).
+pin availability at their publication cutoff. Werewolf live windows also pin
+character bytes by source hash and cutoff, independent of asynchronous demand
+association. See [cutout operations](docs/deployment/character-cutouts.md).
 
 ### Audio tracks and ready prefixes
 

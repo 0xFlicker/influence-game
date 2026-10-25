@@ -7,6 +7,7 @@ import { acceptCutout, claimCutout, cutoutMode, CUTOUT_RECIPE, enqueueCutout, ex
 import { createCharacterCutoutRoutes } from "../routes/character-cutouts.js";
 import { storeBinary, storeJson } from "../services/payload-storage.js";
 import { createVisualRoutes } from "../routes/visual.js";
+import { createWerewolfRoutes } from "../routes/werewolf.js";
 import { completedWerewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { readWerewolfWatch } from "../services/werewolf-presentation.js";
 import { readWerewolfProductionCharacter, readWerewolfProductionSource } from "../services/werewolf-production-source.js";
@@ -121,7 +122,7 @@ test("completion cutoff pins both absent and ready cutouts for production export
   expect((await readyCutoutsByHash(db, [job.sourceHash], after.toISOString())).get(job.sourceHash)?.image?.sha256).toBeDefined();
 });
 
-test("Werewolf playback adopts ready bodies; export refresh pins cutouts without changing portraits", async () => {
+async function werewolfCutoutFixture() {
   const job = await enqueueCutout(db, source);
   const events = await completedWerewolfResultsFixture("saved", "cutouts-game");
   const started = events[0]!;
@@ -134,15 +135,31 @@ test("Werewolf playback adopts ready bodies; export refresh pins cutouts without
   await db.insert(schema.agentContentAssets).values({ hash: job.sourceHash, bytes: await storeBinary(source) });
   await db.update(schema.games).set({ gameKind: "werewolf", startedAt: "2026-09-01T00:00:00.000Z" }).where(eq(schema.games.id, "cutouts-game"));
   await db.insert(schema.werewolfEvents).values(events.map(event => ({ gameId: "cutouts-game", sequence: event.sequence, event })));
-  const watch = await readWerewolfWatch(db, "cutouts-game", "mystery", 1, 64);
+  return { job, player };
+}
+
+test("Werewolf fixed windows and character bytes stay pinned while a fresh cutoff adopts ready cutouts", async () => {
+  const { job, player } = await werewolfCutoutFixture();
+  const cutoff = new Date(Date.now() - 2000).toISOString();
+  const watch = await readWerewolfWatch(db, "cutouts-game", "mystery", 1, 64, cutoff);
   expect(watch.players[0]!.fullBodyReferenceUrl).toContain("image=body");
+  const route = createWerewolfRoutes(db);
+  const body = async (url: string) => {
+    const response = await route.request(url);
+    expect(response.status).toBe(200);
+    return Buffer.from(await response.arrayBuffer());
+  };
+  expect(await body(watch.players[0]!.fullBodyReferenceUrl!)).toEqual(Buffer.from(source));
   const pinned = await readWerewolfProductionSource(db, "cutouts-game", { audience: "mystery", thinking: false });
   await prepareCutoutDemands(db);
   const reserved = (await reserveCutout(db, job.id))!;
   await claimCutout(db, job.id, reserved.token, CUTOUT_RECIPE);
   await acceptCutout(db, job.id, reserved.token, cutout);
-  const live = await readWerewolfWatch(db, "cutouts-game", "mystery", 1, 64);
-  expect(live.players[0]!.fullBodyReferenceUrl).toContain("/cutouts/");
+  expect(await readWerewolfWatch(db, "cutouts-game", "mystery", 1, 64, cutoff)).toEqual(watch);
+  expect(await body(watch.players[0]!.fullBodyReferenceUrl!)).toEqual(Buffer.from(source));
+  const live = await readWerewolfWatch(db, "cutouts-game", "mystery", 1, 64, new Date(Date.now() + 1000).toISOString());
+  expect(await body(live.players[0]!.fullBodyReferenceUrl!)).toEqual(Buffer.from(cutout));
+  expect(await body(live.players[0]!.avatarUrl!)).toEqual(Buffer.from(source));
   expect(live.players[0]!.avatarUrl?.split("?")[0]).toBe(watch.players[0]!.avatarUrl?.split("?")[0]);
   const reread = await readWerewolfProductionSource(db, "cutouts-game", { audience: "mystery", thinking: false, snapshot: pinned.snapshot });
   expect(reread.snapshot).toEqual(pinned.snapshot);
@@ -150,6 +167,25 @@ test("Werewolf playback adopts ready bodies; export refresh pins cutouts without
   const refreshed = await readWerewolfProductionSource(db, "cutouts-game", { audience: "mystery", thinking: false, snapshot: pinned.snapshot, refreshVisuals: true });
   expect((await readWerewolfProductionCharacter(db, "cutouts-game", player.id, { snapshot: refreshed.snapshot, image: "body" })).bytes).toEqual(new Uint8Array(cutout));
   expect((await readWerewolfProductionCharacter(db, "cutouts-game", player.id, { snapshot: refreshed.snapshot, image: "portrait" })).bytes).toEqual(new Uint8Array(source));
+});
+
+test("Werewolf uses a preexisting ready cutout before and after asynchronous demand association", async () => {
+  const { job } = await werewolfCutoutFixture();
+  const reserved = (await reserveCutout(db, job.id))!;
+  await claimCutout(db, job.id, reserved.token, CUTOUT_RECIPE);
+  await acceptCutout(db, job.id, reserved.token, cutout);
+  const cutoff = new Date(Date.now() + 1000).toISOString();
+  const watch = await readWerewolfWatch(db, "cutouts-game", "mystery", 1, 64, cutoff);
+  const [pending] = await db.select().from(schema.characterCutoutDemands);
+  expect(pending!.cutoutId).toBeNull();
+  const route = createWerewolfRoutes(db);
+  const response = await route.request(watch.players[0]!.fullBodyReferenceUrl!);
+  expect(response.status).toBe(200);
+  expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from(cutout));
+  await prepareCutoutDemands(db);
+  const [linked] = await db.select().from(schema.characterCutoutDemands);
+  expect(linked!.cutoutId).toBe(job.id);
+  expect(await readWerewolfWatch(db, "cutouts-game", "mystery", 1, 64, cutoff)).toEqual(watch);
 });
 
 test("staging is disabled even when AWS configuration is present", async () => {

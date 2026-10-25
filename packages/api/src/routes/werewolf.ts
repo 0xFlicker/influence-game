@@ -99,7 +99,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
       }
       if (player) {
         if (!presentation.view.players.some(p => p.id === player)) return c.json({ error: "Character not found" }, 404);
-        const bytes = await readWerewolfCharacter(db, presentation.view.gameId, player, c.req.query("image") === "body" ? "body" : "portrait");
+        const bytes = await readWerewolfCharacter(db, presentation.view.gameId, player, c.req.query("image") === "body" ? "body" : "portrait", undefined, presentation.publicationCutoff);
         if (!bytes) return c.json({ error: "Frozen character reference unavailable" }, 404);
         // Frozen references may be JPEG/WebP as well as PNG. Browsers decode the bytes.
         c.header("Content-Type", bytes[0] === 0xff ? "image/jpeg" : bytes.toString("ascii", 0, 4) === "RIFF" ? "image/webp" : "image/png");

@@ -7,6 +7,11 @@ frozen full-body references; it continues displaying the original while work is
 missing, pending or failed. Current Agent Profile edits never select historical
 game art. Studio and export snapshots pin the completed cutout or original available
 at their publication cutoff; later arrivals require an explicit visual refresh.
+Werewolf live windows also pin character bytes to their publication cutoff. Their
+character URLs resolve ready derivatives by frozen source hash, so asynchronous
+demand association cannot change an existing moment or briefly hide an already
+ready cutout. A new publication cutoff adopts newly completed derivatives; the
+viewer retains its strict committed-moment equality check.
 
 PostgreSQL owns demand, leases, retries and source-to-result relationships. The
 existing private payload bucket owns source bytes and finished PNGs. Jobs deduplicate
