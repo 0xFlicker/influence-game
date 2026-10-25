@@ -66,7 +66,7 @@ export function portraitRoomTransitionSeats(width: number, count: number, previo
 }
 
 /** Saved audience membership supplies the cast; asset availability never changes the game. */
-export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion, controlsInset, speechPresentation, onImageReady, backgroundUrl, floorPerspective = false, hideSpeech = false }: {
+export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion, controlsInset, speechPresentation, onImageReady, backgroundUrl, floorPerspective = false, hideSpeech = false, previousSpeakerId }: {
   beat: Extract<VisualPresentationBeat, { kind: "portrait-room" }>;
   elapsedMs: number; readingElapsedMs: number; reducedMotion: boolean; controlsInset: number;
   speechPresentation?: "solo" | "scene";
@@ -75,6 +75,8 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
   backgroundUrl?: string;
   /** A shallow ring aligned with a furnished environment’s floor plane. */
   floorPerspective?: boolean;
+  /** Canonical predecessor survives live waiting-room unmounts. Null means a new room. */
+  previousSpeakerId?: string | null;
 }) {
   const sampled = useSampledStage();
   const frame = useRef<HTMLElement>(null);
@@ -97,7 +99,7 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
   }, []);
   const [speakers,setSpeakers]=useState({current:beat.speech.playerId,previous:beat.speech.playerId});
   if(speakers.current!==beat.speech.playerId)setSpeakers({current:beat.speech.playerId,previous:speakers.current});
-  const previousSpeaker=sampled ? sampled.previousSpeaker : speakers.previous;
+  const previousSpeaker=sampled ? sampled.previousSpeaker : previousSpeakerId !== undefined ? previousSpeakerId : speakers.previous;
   const speakerIndex = beat.participants.findIndex(player => player.id === beat.speech.playerId);
   const available = Math.max(0, size.height - controlsInset);
   const beside = available < 340 && size.width >= 600;
