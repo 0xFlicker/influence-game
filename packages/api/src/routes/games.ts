@@ -1,3 +1,4 @@
+import { CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION } from "@influence/engine/influence-decision-speech";
 import { audioReadySequence } from "../services/audio-frontier.js";
 import { CURRENT_EMPOWER_REVOTE_VERSION, resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import { creationModelRouting, GameModelRoutingError } from "../services/game-model-routing.js";
@@ -228,6 +229,7 @@ export function createGameRoutes(db: DrizzleDB) {
       visualFailurePolicy,
       formatManifest: frozenFormatManifest,
       empowerRevoteVersion: CURRENT_EMPOWER_REVOTE_VERSION,
+      decisionContractVersion: CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION,
     };
 
     const gameId = randomUUID();

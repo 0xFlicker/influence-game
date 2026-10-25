@@ -51,9 +51,12 @@ mapping; retain those files as evidence and create a fresh export from frozen as
 Do not weaken source-hash validation or committed-playback equality checks to make
 an obsolete snapshot pass.
 
-Werewolf source identity now includes the confirmed head geometry from its immutable
-content revision. Earlier snapshots that omitted this geometry also fail closed
-instead of silently changing an existing export; create a new source selection.
+New Werewolf source identities include confirmed head geometry from the immutable
+content revision and an explicit projection version. Earlier descriptors resolve
+their original catalog/reference contract only when its complete original hash
+matches; omitted head geometry stays omitted. They do not acquire today's geometry
+or cutouts. Missing historical inputs still fail closed; do not substitute current
+profile data or rewrite the descriptor hash.
 
 ## Production publication
 

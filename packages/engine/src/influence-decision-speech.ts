@@ -1,6 +1,16 @@
 import type { DecisionSchema } from "./model-invocation";
 import { speechDraftingGuidance } from "./speech-budget";
 
+/** New games freeze v2; unversioned accepted history spans both earlier contracts. */
+export type InfluenceDecisionContractVersion = 1 | 2;
+export const CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION: InfluenceDecisionContractVersion = 2;
+
+export function resolveInfluenceDecisionContractVersion(value: unknown): InfluenceDecisionContractVersion {
+  if (value === undefined) return 1;
+  if (value === 1 || value === 2) return value;
+  throw new Error(`Unsupported Influence decision contract version: ${String(value)}`);
+}
+
 /** Public delivery is separate from the structured fields that decide the game. */
 export const INFLUENCE_BALLOT_ACTIONS = new Set([
   "vote", "empower-revote", "council-vote", "elimination-vote", "endgame-elimination-vote", "reckoning-vote",

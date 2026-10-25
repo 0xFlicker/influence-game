@@ -6769,6 +6769,73 @@ function conversationContext(ctx: PhaseContext, moving = false): PhaseContext {
 
 
 describe("Influence decision delivery boundary", () => {
+  const historicalThinkingVote = { empower: "mira-id", thinking: "Keep my ally in control.", strategyDelta: null };
+  const historicalSpeechVote = { empower: "mira-id", message: "Mira.", strategyDelta: null };
+  for (const value of [historicalThinkingVote, historicalSpeechVote]) {
+    it(`replays an exact historical accepted shape without dispatch: ${JSON.stringify(value)}`, async () => {
+      const requests: Array<Record<string, unknown>> = [];
+      const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", makeOpenAIStub(requests),
+        "gpt-5-nano", undefined, undefined, { decisionContractVersion: 1,
+          providerExecutionHooks: { onReadAccepted: () => ({ attemptId: "historical-vote", attemptOrdinal: 1,
+            catalogId: "openai:gpt-5-nano", value }) },
+        });
+      agent.onGameStart("game-1", makeContext().alivePlayers);
+      const result = await agent.getVotes(makeContext());
+      expect(result.empowerTarget).toBe("mira-id");
+      expect(result.thinking).toBe("thinking" in value ? value.thinking : undefined);
+      expect(result.decisionMessage).toBe("message" in value ? value.message : undefined);
+      expect(requests).toEqual([]);
+    });
+  }
+  for (const [version, value] of [
+    [2, historicalThinkingVote], [2, { empower: "mira-id", strategyDelta: null }],
+    [1, { empower: "mira-id", strategyDelta: null }],
+    [1, { ...historicalThinkingVote, extra: true }],
+    [1, { ...historicalThinkingVote, empower: "unknown-id" }],
+    [1, { ...historicalThinkingVote, message: "" }],
+  ] as const) {
+    it(`rejects corrupted accepted v${version} without regenerating: ${JSON.stringify(value)}`, async () => {
+      const requests: Array<Record<string, unknown>> = [];
+      const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", makeOpenAIStub(requests),
+        "gpt-5-nano", undefined, undefined, { decisionContractVersion: version,
+          providerExecutionHooks: { onReadAccepted: () => ({ attemptId: "historical-vote", attemptOrdinal: 1,
+            catalogId: "openai:gpt-5-nano", value }) },
+        });
+      agent.onGameStart("game-1", makeContext().alivePlayers);
+      await expect(agent.getVotes(makeContext())).rejects.toBeInstanceOf(ProviderAcceptedValueIntegrityError);
+      expect(requests).toEqual([]);
+    });
+  }
+  it("still requires current exact speech on fresh dispatch for historical games", async () => {
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic",
+      makeToolOpenAIStub([], "cast_votes", { ...historicalThinkingVote, empower: "Mira" }),
+      "gpt-5-nano", undefined, undefined, { decisionContractVersion: 1, structuredCallMaxAttempts: 1 });
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    await expect(agent.getVotes(makeContext())).rejects.toBeInstanceOf(ProviderAttemptError);
+  });
+
+  it.each(["x".repeat(121), "界".repeat(41)])("repairs clean ballot bytes while preserving the rejected decision: %s", async draft => {
+    const requests: Array<Record<string, unknown>> = [];
+    const attempts: ProviderAttemptRecord[] = [];
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic",
+      makeToolSequenceOpenAIStub(requests, [
+        { toolName: "cast_votes", args: { empower: "Mira", message: `<soft>${draft}</soft>`, strategyDelta: null } },
+        { toolName: "cast_votes", args: { empower: "Mira", message: "Mira.", strategyDelta: null } },
+      ]), "gpt-5-nano", undefined, undefined, {
+        providerExecutionHooks: { onTerminal: record => { attempts.push(record); } },
+      });
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    expect(await agent.getVotes(makeContext())).toMatchObject({ empowerTarget: "mira-id", decisionMessage: "Mira." });
+    expect(attempts[0]?.lengthFeedback).toMatchObject({ field: "message", draft,
+      measured: Buffer.byteLength(draft, "utf8"), allowed: 120, unit: "utf8_bytes",
+      rejectedDecision: { empower: "Mira", message: draft, strategyDelta: null },
+    });
+    const retry = JSON.stringify(requests[1]!.messages);
+    expect(retry).toContain("Your previous draft for message was rejected");
+    expect(retry).toContain(draft);
+    expect(retry).not.toContain(`<soft>${draft}</soft>`);
+    expect(attempts[0]?.acceptedValue).toBeUndefined();
+  });
   for (const extra of [{}, { message: "" }, { message: "   " }, { message: "界".repeat(41) }, { message: "Mira", thinking: "Unrequested thought" }, { message: "Mira", extra: true }]) {
     it(`rejects invalid ballot speech before acceptance: ${JSON.stringify(extra)}`, async () => {
       const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic",

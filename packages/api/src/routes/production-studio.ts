@@ -2,6 +2,7 @@ import {productionEditorial} from "../services/production-editorial.js";
 import {completeProductionSource as completeSource, ProductionEditorialInputError} from "../services/production-editorial-source.js";
 import {resumeLiveAudio,LiveAudioBlocked} from "../services/audio-live.js";
 import {readAudioPublication} from "../services/audio-publication.js";
+import {productionMomentContent} from "../services/production-moment-content.js";
 import { previewAudioTrack, queueAudioBackfill, retryAudioTrack, AudioTrackConflict } from "../services/audio-tracks.js";
 import {createHash} from "node:crypto";
 import {Hono} from "hono";
@@ -77,14 +78,19 @@ function validateRecordingMoments(catalog:ProductionCatalog,ids:readonly string[
   }
 }
 
-async function validateGeneratedRecordings(db:Pick<DrizzleDB,"select">,catalog:ProductionCatalog,recordings:readonly ProductionRecording[]) {
+async function validateGeneratedRecordings(db:Pick<DrizzleDB,"select">,source:Awaited<ReturnType<typeof completeSource>>,recordings:readonly ProductionRecording[]) {
+  const catalog = source.catalog;
   const generated = recordings.filter(recording => recording.versionId);
   if (!generated.length) return;
-  const track = await readAudioPublication(db,catalog.gameId,catalog.audience,catalog.audience !== "mystery",true);
+  const track = await readAudioPublication(db,catalog.gameId,catalog.audience,catalog.audience !== "mystery",true,generated.map(recording => recording.versionId!));
   for (const recording of generated) {
     const clip = track?.clips.find(clip => clip.momentId === recording.momentId && clip.versionId === recording.versionId);
     if (!clip || clip.speakerId !== recording.speakerId || clip.textHash !== recording.textHash || clip.sha256 !== recording.sha256 || clip.durationMs !== recording.durationMs)
       throw new StudioInputError("Generated recording does not match its authorized stored version");
+    const moment = catalog.moments.find(moment => moment.id === recording.momentId);
+    const content = moment && productionMomentContent(source, moment);
+    if (!content?.text || content.speakerId !== recording.speakerId || createHash("sha256").update(content.text).digest("hex") !== recording.textHash)
+      throw new StudioInputError("Generated recording does not match its frozen source text");
   }
 }
 
@@ -116,6 +122,15 @@ export function createProductionStudioRoutes(db:DrizzleDB) {
   app.get(`${root}/audio/manifest`, async c => {
     const access=options({audience:c.req.query("audience"),thinking:c.req.query("thinking")==="on"});
     return c.json(await readAudioPublication(db,c.req.param("id"),access.audience,access.thinking,true));
+  });
+  app.post(`${root}/audio/versions`, async c => {
+    const body = object(await c.req.json()); fields(body,["audience","thinking","versionIds"]);
+    const access = options(body);
+    if (!Array.isArray(body.versionIds) || body.versionIds.length > 50000 || new Set(body.versionIds).size !== body.versionIds.length
+      || body.versionIds.some(id => typeof id !== "string" || !/^[a-f0-9-]{36}$/.test(id))) throw new StudioInputError("Invalid frozen audio versions");
+    const publication = await readAudioPublication(db,c.req.param("id"),access.audience,access.thinking,true,body.versionIds as string[]);
+    if ((publication?.clips.length ?? 0) !== body.versionIds.length) throw new StudioInputError("Frozen audio version is unavailable for this audience");
+    return c.json(publication);
   });
   app.get(`${root}/audio`, async c => {
     const game = await kind(db,c.req.param("id"));
@@ -222,7 +237,7 @@ export function createProductionStudioRoutes(db:DrizzleDB) {
           resolved = await resolveAnnotatedSelection(tx,source.catalog,selection);
           for (const id of Object.keys(settings.profile.overrides)) resolveProductionMomentIds(source.catalog,[id]);
           validateRecordingMoments(source.catalog,resolved.momentIds,recordings);
-          await validateGeneratedRecordings(tx,source.catalog,recordings);
+          await validateGeneratedRecordings(tx,source,recordings);
         } catch (error) {throw new StudioInputError(error instanceof Error ? error.message : "Invalid selection");}
         if (resolved.momentIds.length !== expectedMomentIds.length || resolved.momentIds.some((id,index) => id !== expectedMomentIds[index]))
           throw new WerewolfGameError("Saved tags changed this cut. Refresh tags and review the cut before exporting.",409);
@@ -245,7 +260,7 @@ export function createProductionStudioRoutes(db:DrizzleDB) {
       await assertCompleteExportSource(tx,c.req.param("id"),source,{audience:descriptor.audience,
         thinking:typeof descriptor.sourceSnapshot.thinking === "boolean" ? descriptor.sourceSnapshot.thinking : descriptor.selection.thinking});
       let moments;
-      try {moments = resolveProductionMomentIds(source.catalog,descriptor.momentIds);validateRecordingMoments(source.catalog,descriptor.momentIds,descriptor.recordings);await validateGeneratedRecordings(tx,source.catalog,descriptor.recordings);}
+      try {moments = resolveProductionMomentIds(source.catalog,descriptor.momentIds);validateRecordingMoments(source.catalog,descriptor.momentIds,descriptor.recordings);await validateGeneratedRecordings(tx,source,descriptor.recordings);}
       catch (error) {throw new StudioInputError(error instanceof Error ? error.message : "Invalid frozen moment");}
       if (moments.some((moment,index) => moment.id !== descriptor.momentIds[index])) throw new StudioInputError("Frozen selection must preserve source order");
       return {valid:true,hash,momentIds:descriptor.momentIds};

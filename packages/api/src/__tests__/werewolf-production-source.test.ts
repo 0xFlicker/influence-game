@@ -12,10 +12,34 @@ import { setupTestDB } from "./test-utils.js";
 import { buildWerewolfProductionSourceSnapshot, decodeWerewolfProductionSnapshot, readWerewolfProductionCatalog, readWerewolfProductionCharacter, readWerewolfProductionMedia, readWerewolfProductionSource } from "../services/werewolf-production-source.js";
 import { readWerewolfWatch } from "../services/werewolf-presentation.js";
 import { sha256StableJson } from "../services/stable-hash.js";
-import { WEREWOLF_AUTO_PUBLISHER } from "../services/werewolf-production.js";
+import { WEREWOLF_AUTO_PUBLISHER, werewolfReferenceMetadata } from "../services/werewolf-production.js";
+import originMainSource from "./fixtures/werewolf-production-origin-main.json";
+import type {WerewolfEvent} from "@influence/engine/werewolf/types";
 
 let db: DrizzleDB;
 beforeEach(async () => { db = await setupTestDB(); });
+
+test("literal origin/main source descriptor reproduces its historical catalog without rewriting its hash", async () => {
+  // Captured with origin/main 0bcc1079's catalog and source builder, not the
+  // version resolver under test. Keep this literal evidence stable across upgrades.
+  const snapshot=decodeWerewolfProductionSnapshot(originMainSource.snapshot),id=snapshot.gameId;
+  await db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"completed",startedAt:"2026-09-01T00:00:00.000Z",config:'{"visibility":"public"}'});
+  await db.insert(schema.werewolfEvents).values((originMainSource.events as WerewolfEvent[]).map(event=>({gameId:id,sequence:event.sequence,event})));
+  const historical=await buildWerewolfProductionSourceSnapshot(db,id,{audience:snapshot.audience,thinking:true,snapshot});
+  expect(historical.snapshot).toEqual(snapshot);
+  expect(JSON.stringify(historical.catalog.moments)).toBe(JSON.stringify(originMainSource.catalog.moments));
+  expect(historical.catalog.werewolfCatalogVersion).toBe(1);
+  expect((await readWerewolfProductionSource(db,id,{audience:snapshot.audience,thinking:true,snapshot})).snapshot).toEqual(snapshot);
+  const upgraded=await buildWerewolfProductionSourceSnapshot(db,id,{audience:snapshot.audience,thinking:true});
+  expect(upgraded.snapshot.projectionVersion).toBe(1);
+  expect(upgraded.snapshot.sourceHash).not.toBe(snapshot.sourceHash);
+  expect((await buildWerewolfProductionSourceSnapshot(db,id,{audience:snapshot.audience,thinking:true,snapshot})).catalog).toEqual(historical.catalog);
+  const refreshed=await buildWerewolfProductionSourceSnapshot(db,id,{audience:snapshot.audience,thinking:true,snapshot,refreshVisuals:true});
+  expect(refreshed.snapshot.projectionVersion).toBe(1);
+  expect(refreshed.snapshot.catalogVersion).toBe(1);
+  expect(refreshed.catalog).toEqual(historical.catalog);
+  expect((await buildWerewolfProductionSourceSnapshot(db,id,{audience:snapshot.audience,thinking:true,snapshot:refreshed.snapshot})).snapshot).toEqual(refreshed.snapshot);
+});
 
 async function fixture() {
   const id = "production-werewolf";
@@ -24,6 +48,35 @@ async function fixture() {
   await db.insert(schema.werewolfEvents).values(events.map(event => ({ gameId: id, sequence: event.sequence, event })));
   return { id, events };
 }
+
+test("pre-versioned source hashes retain their exact catalog through the projection upgrade", async () => {
+  const id="historical-source-contract",events=await completedCurrentWerewolfFixture(id,9);
+  await db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"completed",startedAt:"2026-09-01T00:00:00.000Z",config:'{"visibility":"public"}'});
+  await db.insert(schema.werewolfEvents).values(events.map(event=>({gameId:id,sequence:event.sequence,event})));
+  const source=await buildWerewolfProductionSourceSnapshot(db,id,{audience:"omniscient",thinking:true});
+  expect(source.snapshot.projectionVersion).toBe(1);
+  const references=await werewolfReferenceMetadata(db,id,events.find(event=>event.type==="werewolf.started")!.payload.players);
+  const {projectionVersion:_version,...pin}=source.snapshot;
+  // Original pre-audio, first audio, and integration proposal-default contracts.
+  // Reproduce their persisted hash shape, independently of the upgraded resolver.
+  for(const version of [1,2,3] as const) {
+    const moments=source.catalog.moments.filter(moment=>version!==1 || moment.part.kind!=="scene").map(moment=>{
+      const entry=source.window.moments.find(row=>row.cursor===moment.order.anchor)?.entry;
+      return version<3 && entry?.kind==="proposal" && moment.kind==="speech" ? {...moment,defaultIncluded:false}:moment;
+    });
+    const catalog={gameId:id,gameKind:"werewolf" as const,audience:"omniscient" as const,moments};
+    const snapshot={...pin,sourceHash:sha256StableJson({gameId:id,audience:"omniscient",thinking:true,throughEventSequence:pin.throughEventSequence,
+      publicationCutoff:pin.publicationCutoff,events,thoughts:source.thoughts,catalog,references,publications:[],artifacts:[]})};
+    const historical=await buildWerewolfProductionSourceSnapshot(db,id,{audience:"omniscient",thinking:true,snapshot});
+    expect(historical.snapshot).toEqual(snapshot);
+    expect(historical.catalog.moments).toEqual(moments);
+    expect((await readWerewolfProductionSource(db,id,{audience:"omniscient",thinking:true,snapshot})).snapshot).toEqual(snapshot);
+    await expect(buildWerewolfProductionSourceSnapshot(db,id,{audience:"omniscient",thinking:true,snapshot:{...snapshot,sourceHash:`sha256:${"a".repeat(64)}`}})).rejects.toThrow("snapshot changed");
+    // A caller cannot relabel an old hash as the current projection.
+    await expect(buildWerewolfProductionSourceSnapshot(db,id,{audience:"omniscient",thinking:true,snapshot:{...snapshot,projectionVersion:1}})).rejects.toThrow("snapshot changed");
+  }
+  expect(await buildWerewolfProductionSourceSnapshot(db,id,{audience:"omniscient",thinking:true,snapshot:source.snapshot})).toEqual(source);
+});
 
 test("production Studio source reads fresh v9 history without applying legacy thread rules", async () => {
   const id = "production-werewolf-v9", events = await completedCurrentWerewolfFixture(id);
@@ -155,7 +208,7 @@ test("snapshot decoder is exact and restored missing frozen character assets req
   const player = started.payload.players[0]!;
   player.agentProfileId = "frozen-profile"; player.contentRevisionId = "frozen-revision";
   await db.insert(schema.users).values({ id: "owner" });
-  await db.insert(schema.agentContentRevisions).values(await storeFields({ id: "frozen-revision", agentProfileId: "frozen-profile", userId: "owner", fingerprint: "fixture", snapshot: { avatarUrl: "frozen-portrait", fullBodyReferenceUrl: "frozen-body", assets: { "frozen-portrait": "portrait-hash", "frozen-body": "body-hash" } } }, {"snapshot":"json-gzip"}));
+  await db.insert(schema.agentContentRevisions).values(await storeFields({ id: "frozen-revision", agentProfileId: "frozen-profile", userId: "owner", fingerprint: "fixture", snapshot: { avatarUrl: "frozen-portrait", fullBodyReferenceUrl: "frozen-body", headPosition: {sourceUrl:"frozen-body",sourceHash:"body-hash",sourceWidth:100,sourceHeight:200,rect:{x:0.2,y:0.1,width:0.3,height:0.2},confirmation:{userId:"owner",at:"2026-09-01T00:00:00.000Z"}}, assets: { "frozen-portrait": "portrait-hash", "frozen-body": "body-hash" } } }, {"snapshot":"json-gzip"}));
   await db.insert(schema.agentContentAssets).values(await storeFields({ hash: "portrait-hash", bytes: Buffer.from("portrait") }, {"bytes":"binary"}));
   await db.insert(schema.games).values({ id, slug: id, gameKind: "werewolf", status: "completed", startedAt: "2026-09-01T00:00:00.000Z", config: "{}" });
   await db.insert(schema.werewolfEvents).values(events.map(event => ({ gameId: id, sequence: event.sequence, event })));
@@ -175,5 +228,19 @@ test("snapshot decoder is exact and restored missing frozen character assets req
   expect(refreshed.snapshot.availableCharacterAssets).toEqual(["body-hash", "portrait-hash"]);
   expect(refreshed.window.players[0]!.fullBodyReferenceUrl).toContain("image=body");
   expect((await readWerewolfProductionCharacter(db, id, player.id, { snapshot: refreshed.snapshot, image: "body" })).bytes).toEqual(new Uint8Array(Buffer.from("body")));
+  // A descriptor frozen before head geometry joined the hash keeps its original
+  // framing even though the same immutable revision contains confirmed geometry.
+  const complete=await buildWerewolfProductionSourceSnapshot(db,id,{audience:"mystery",thinking:false,snapshot:refreshed.snapshot});
+  const refs=await werewolfReferenceMetadata(db,id,started.payload.players);
+  expect(refs[0]!.profile.headPosition).toBeDefined();
+  const oldRefs=refs.map(ref=>{const {headPosition:_head,...profile}=ref.profile;return {...ref,profile};});
+  const {werewolfCatalogVersion:_catalogVersion,...catalog}=complete.catalog;
+  const {projectionVersion:_projectionVersion,...oldPin}=complete.snapshot;
+  const legacy={...oldPin,sourceHash:sha256StableJson({gameId:id,audience:"mystery",thinking:false,throughEventSequence:oldPin.throughEventSequence,
+    publicationCutoff:oldPin.publicationCutoff,events,thoughts:[],catalog,references:oldRefs,publications:[],artifacts:[]})};
+  const historical=await buildWerewolfProductionSourceSnapshot(db,id,{audience:"mystery",thinking:false,snapshot:legacy});
+  expect(historical.snapshot).toEqual(legacy);
+  expect(historical.window.players[0]!.headRectangle).toBeUndefined();
+  expect((await readWerewolfProductionCharacter(db,id,player.id,{snapshot:legacy,image:"body"})).bytes).toEqual(new Uint8Array(Buffer.from("body")));
   await expect(readWerewolfProductionSource(db, id, { audience: "mystery", thinking: false, snapshot: { ...pinned.snapshot, availableCharacterAssets: ["arbitrary-ref"] } })).rejects.toThrow("immutable game-start");
 });

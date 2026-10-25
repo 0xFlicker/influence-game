@@ -51,6 +51,11 @@ async function fixture(run: () => Promise<void>) {
 async function cutover() { for (const statement of migration.split("--> statement-breakpoint")) await client.unsafe(statement); }
 
 describe("existing payload migration", () => {
+  test("inventory resolves every payload column against the actual migrated schema", async () => {
+    const inventory = await inventoryPayloads(client);
+    expect(inventory).toHaveLength(STORAGE_PAYLOAD_COLUMNS.length);
+    expect(inventory.every(row => row.state === "cut_over")).toBe(true);
+  });
   test("copies resumably and cuts over all columns without losing bytes or rows", async () => fixture(async () => {
     const [before] = await client`SELECT encode(sha256(convert_to(input::text,'UTF8')),'hex') AS hash FROM game_retrospective_inputs`;
     await copyPayloads(client);

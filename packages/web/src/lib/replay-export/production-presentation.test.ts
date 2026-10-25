@@ -41,6 +41,28 @@ async function fixture(audience:"mystery"|"omniscient", current = false) {
   return {source,provenance,thoughts,catalog,base};
 }
 const settings = {profile:parseTimingProfile({ending:{holdMs:0}}),fps:30,assets:{},music:false};
+test("a frozen pre-audio cut binds its original catalog without new House speech or closing reprise", async () => {
+  const input=await fixture("omniscient",true);
+  const catalog={...assembleProductionCatalog({gameId:input.catalog.gameId,gameKind:"werewolf",audience:"omniscient",werewolfCatalogVersion:1,
+    sources:buildWerewolfProductionSources({gameId:input.catalog.gameId,audience:"omniscient",moments:input.source.windows.flatMap(window=>window.moments),
+      provenance:input.provenance,thoughts:input.thoughts,opening:true,legacyPassThoughts:true})}),werewolfCatalogVersion:1 as const,werewolfLegacyPassThoughts:true as const};
+  const frozenIds=catalog.moments.filter(moment=>moment.defaultIncluded && moment.kind!=="thinking").map(moment=>moment.id);
+  const historical=await bindWerewolfProductionPresentation({...input,catalog});
+  const before=compilePresentation({...settings,source:historical,selectedIds:frozenIds});
+  expect(before.cues.some(cue=>cue.speech?.speakerId===null)).toBe(false);
+  expect(before.cues.some(cue=>cue.picture.kind==="werewolf" && cue.picture.cue.reprise)).toBe(false);
+  expect(catalog.moments.some(moment=>moment.part.kind==="scene")).toBe(false);
+  // Discovering/compiling the current contract cannot mutate the frozen cut.
+  await bindWerewolfProductionPresentation(input);
+  const after=compilePresentation({...settings,source:await bindWerewolfProductionPresentation({...input,catalog}),selectedIds:frozenIds});
+  expect(after).toEqual(before);
+  expect(after.momentIds).toEqual(frozenIds);
+  const historicalPass=catalog.moments.find(moment=>moment.kind==="thinking" && !input.catalog.moments.some(current=>current.id===moment.id));
+  expect(historicalPass).toBeDefined();
+  const exactOldCut=compilePresentation({...settings,source:historical,selectedIds:[historicalPass!.id]});
+  expect(exactOldCut.momentIds).toEqual([historicalPass!.id]);
+  expect(exactOldCut.cues[0]!.picture.kind).toBe("thinking");
+});
 test("v9 Studio binds each spoken public ballot once, retaining speech and private action thoughts", async () => {
   for (const audience of ["mystery", "omniscient"] as const) {
     const input = await fixture(audience, true);

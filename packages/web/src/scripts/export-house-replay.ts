@@ -228,7 +228,15 @@ Use the actual downloaded filename for --selection if your browser renamed or mo
         if (args["speech-manifest"])
           await attachSpeech(resolveInput(args["speech-manifest"]),selectedMoments.flatMap(moment => moment.segments),assets,permittedSpeech,descriptor?.recordings);
         if (!args["speech-manifest"]) {
-          const publication = await read<PublishedAudioTrack | null>(`/api/admin/production/games/${encodeURIComponent(entry.id)}/audio/manifest?audience=${audience}&thinking=${thinking ? "on" : "off"}`);
+          let publication: PublishedAudioTrack | null;
+          if (descriptor) {
+            const response = await fetch(new URL(`/api/admin/production/games/${encodeURIComponent(entry.id)}/audio/versions`,api),{
+              method:"POST",redirect:"error",signal:AbortSignal.any([abort.signal,AbortSignal.timeout(60000)]),
+              headers:{"Content-Type":"application/json",...(token ? {Authorization:`Bearer ${token}`} : {})},
+              body:JSON.stringify({audience,thinking,versionIds:descriptor.recordings.flatMap(recording => recording.versionId ? [recording.versionId] : [])})});
+            if (!response.ok) throw new Error(`Frozen audio versions unavailable (${response.status}): ${await response.text()}`);
+            publication = await response.json() as PublishedAudioTrack | null;
+          } else publication = await read<PublishedAudioTrack | null>(`/api/admin/production/games/${encodeURIComponent(entry.id)}/audio/manifest?audience=${audience}&thinking=${thinking ? "on" : "off"}`);
           const attached = await attachGeneratedAudio({source:selectedMoments, selectedIds, publication, hash:sha256, frozen:descriptor?.recordings, signal:abort.signal,
             asset:async clip => {const key = await assets.cache(clip.url);return {...assets.table[key]!,path:key};}});
           selectedMoments = attached.source;

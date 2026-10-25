@@ -98,7 +98,7 @@ export interface ExportCue {
   alignment?: import("./speech").SpeechAlignment[];
 }
 
-export function buildExportCues(source: ReplaySource): ExportCue[] {
+export function buildExportCues(source: ReplaySource, options: {werewolfCatalogVersion?: 1 | 2 | 3} = {}): ExportCue[] {
   if (source.kind === "werewolf") {
     const media = Object.assign(
       {},
@@ -108,7 +108,7 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
       timing:{key:cue.key, baseDurationMs:cue.baseDurationMs, kind:"opening", speech:null, thinking:null},
       picture:{kind:"werewolf-opening",cue}, source:{kind:"opening"}, label:"Opening", speech:null, music:null,
     })) : [];
-    return [...opening, ...werewolfCues(source.windows).map((cue): ExportCue => {
+    return [...opening, ...werewolfCues(source.windows,options.werewolfCatalogVersion !== 1).map((cue): ExportCue => {
       const line = werewolfCueMoment(cue);
       const spoken = line.spoken && (!cue.ballot || cue.moment.entry.kind === "ballot");
       return {

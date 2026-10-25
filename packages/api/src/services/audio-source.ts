@@ -1,6 +1,7 @@
 import {productionMomentContent} from "./production-moment-content.js";
+import { providerAcceptedDecisionId } from "@influence/engine";
 import {werewolfHouseSpeech, werewolfNightHouseSpeech} from "@influence/engine/werewolf/house-speech";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, lte, or, sql } from "drizzle-orm";
 import { compileAudioDelivery, type AudioDeliveryContext } from "@influence/engine/audio-delivery";
 import type { VoiceAssignment } from "@influence/engine/voice-catalog";
 import type { ProductionAudience } from "@influence/engine/production-moments";
@@ -48,6 +49,9 @@ export async function readAudioSource(db: DrizzleDB | Parameters<Parameters<Driz
   const [game] = await db.select({ kind: schema.games.gameKind }).from(schema.games).where(eq(schema.games.id, gameId));
   if (!game) throw new Error("Audio game not found");
   const lines: AudioSourceLine[] = [];
+  // Private provenance is used only while binding annotations; it is not a new
+  // export field and does not change historical source or recipe hashes.
+  const decisionByMoment = new Map<string, string>();
   let throughEventSequence: number;
   if (game.kind === "werewolf") {
     const events = await db.select({event:schema.werewolfEvents.event}).from(schema.werewolfEvents).where(eq(schema.werewolfEvents.gameId,gameId)).orderBy(schema.werewolfEvents.sequence);
@@ -94,6 +98,16 @@ export async function readAudioSource(db: DrizzleDB | Parameters<Parameters<Driz
     }
   } else {
     const source = await buildInfluenceProductionSourceSnapshot(db, gameId, {}, live);
+    const [transcripts, cognition] = await Promise.all([
+      db.select({id: schema.transcripts.id, context: schema.transcripts.safeContext}).from(schema.transcripts).where(eq(schema.transcripts.gameId, gameId)),
+      db.select({sequence: schema.gameCognitiveArtifacts.eventSequence, actorId: schema.gameCognitiveArtifacts.actorPlayerId,
+        decisionId: schema.gameCognitiveArtifacts.decisionId}).from(schema.gameCognitiveArtifacts).where(and(eq(schema.gameCognitiveArtifacts.gameId, gameId), eq(schema.gameCognitiveArtifacts.artifactType, "thinking"),
+          eq(schema.gameCognitiveArtifacts.visibilityStatus, "active"), eq(schema.gameCognitiveArtifacts.redactionStatus, "active"),
+          lte(schema.gameCognitiveArtifacts.eventSequence, source.snapshot.throughEventSequence),
+          sql`${schema.gameCognitiveArtifacts.createdAt}::timestamptz <= ${source.snapshot.acceptedCutoff}::timestamptz`,
+          or(eq(schema.gameCognitiveArtifacts.actorRole, "player"), eq(schema.gameCognitiveArtifacts.actorRole, "juror")))),
+    ]);
+    const transcriptDecisions = new Map(transcripts.map(row => [row.id, row.context?.decisionId]));
     throughEventSequence = source.snapshot.throughEventSequence;
     for (const moment of source.catalog.moments) {
       const ref = moment.source;
@@ -113,6 +127,13 @@ export async function readAudioSource(db: DrizzleDB | Parameters<Parameters<Driz
       const {text} = productionMomentContent(source, moment);
       if (!text?.trim()) continue;
       const context = moment.kind === "thinking" ? "thinking" : "speech";
+      const decisionMessage = message?.acceptedBallot ? source.messages.find(row => row.round === message!.round && row.phase === message!.phase
+        && row.decisionSpeech?.actorId === message!.acceptedBallot!.voterId && row.decisionSpeech.receiptEntrySequence === message!.entrySequence) : message;
+      const decisionId = decisionMessage ? transcriptDecisions.get(Number(decisionMessage.id)) : undefined;
+      const decisions = new Set(decisionId ? [decisionId] : ref.kind === "influence-event"
+        ? cognition.filter(row => row.sequence === ref.eventSequence && row.actorId === moment.actorId).flatMap(row => row.decisionId ? [row.decisionId] : []) : []);
+      if (decisions.size > 1) throw new Error("Ambiguous accepted audio decision provenance");
+      if (decisions.size === 1) decisionByMoment.set(moment.id, [...decisions][0]!);
       lines.push({ ...(message?.firstDurableEventSequence != null && {annotationSequence:message.firstDurableEventSequence}), momentId: moment.id, speakerId: moment.actorId ?? null, text,
         synthesisText: compileAudioDelivery(text, context).synthesisText, context,
         watch: {public:{kind:"influence",...(ref.kind === "influence-transcript" && {transcriptId:ref.transcriptId}),eventSequence:"eventSequence" in ref ? ref.eventSequence : message?.firstDurableEventSequence ?? 0,actorId:moment.actorId ?? null,part:context}},
@@ -120,15 +141,19 @@ export async function readAudioSource(db: DrizzleDB | Parameters<Parameters<Driz
     }
   }
   const calls = await db.select({ actorId: schema.providerLogicalCalls.actorId, sequence: schema.providerLogicalCalls.canonicalEventSequence,
+    acceptedAttemptId: schema.providerLogicalCalls.acceptedAttemptId, turnId: schema.providerLogicalCalls.gameTurnId, committedAt: schema.providerLogicalCalls.gameTurnCommittedAt,
     semantic: schema.providerLogicalCalls.semanticCoordinate, delivery: schema.providerLogicalCalls.audioDelivery })
     .from(schema.providerLogicalCalls).where(and(eq(schema.providerLogicalCalls.gameId, gameId), isNotNull(schema.providerLogicalCalls.acceptedAttemptId), isNotNull(schema.providerLogicalCalls.audioDelivery)));
   for (const call of calls) {
     const semantic = call.semantic;
     const sequence = semantic && typeof semantic === "object" && "kind" in semantic && semantic.kind === "werewolf_action" && "eventSequence" in semantic
       ? semantic.eventSequence : call.sequence;
-    if (typeof sequence !== "number" || sequence > throughEventSequence || !call.delivery) continue;
+    if (!call.delivery || call.turnId && !call.committedAt) continue;
     const delivery = await readJson(call.delivery);
-    for (const line of lines.filter(line => (line.annotationSequence ?? line.eventSequence) === sequence && line.speakerId === call.actorId)) {
+    const acceptedDecision = call.acceptedAttemptId ? providerAcceptedDecisionId(call.acceptedAttemptId) : null;
+    for (const line of lines.filter(line => line.speakerId === call.actorId && (decisionByMoment.has(line.momentId)
+      ? decisionByMoment.get(line.momentId) === acceptedDecision
+      : !call.turnId && typeof sequence === "number" && sequence <= throughEventSequence && (line.annotationSequence ?? line.eventSequence) === sequence))) {
       const fields = delivery.fields.filter(field => field.delivery.cleanText === line.text && field.delivery.context === line.context);
       if (fields.length > 1 && new Set(fields.map(field => field.delivery.synthesisText)).size > 1) throw new Error("Ambiguous accepted audio annotations");
       if (fields[0]) line.synthesisText = fields[0].delivery.synthesisText;

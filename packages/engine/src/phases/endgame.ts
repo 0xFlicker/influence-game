@@ -1,3 +1,4 @@
+import { drainProviderCalls } from "../provider-batch";
 import type { JudgmentSpeechProvenance } from "../canonical-events";
 import {
   commitAcceptedFormalSpeech,
@@ -100,7 +101,7 @@ export async function runReckoningPlea(
   const housePlea = "I have no further plea.";
 
   // Generate concurrently, then commit in stable roster order.
-  const generated = await Promise.all(
+  const generated = await drainProviderCalls(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.PLEA, "ordinary_speech");
@@ -171,7 +172,7 @@ export async function runTribunalAccusation(
 
   // Generate concurrently; commit + target-map updates happen in stable roster order
   // so one-defense-per-accused context is deterministic under timing permutations.
-  const generated = await Promise.all(
+  const generated = await drainProviderCalls(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.ACCUSATION, "ordinary_speech");
@@ -326,7 +327,7 @@ export async function runTribunalDefense(
 
   // Only accused players defend; generate concurrently, commit in stable roster order.
   const accused = alivePlayers.filter((player) => accusations.has(player.id));
-  const generated = await Promise.all(
+  const generated = await drainProviderCalls(
     accused.map(async (player) => {
       const accusation = accusations.get(player.id)!;
       const agent = agents.get(player.id)!;
@@ -416,7 +417,7 @@ export async function runJudgmentOpening(
   const finalists = gameState.getAlivePlayers();
   const houseOpening = "I will let my game speak for itself.";
 
-  const generated = await Promise.all(
+  const generated = await drainProviderCalls(
     finalists.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.OPENING_STATEMENTS, "ordinary_speech");
@@ -624,7 +625,7 @@ export async function runJudgmentClosing(
   const finalists = gameState.getAlivePlayers();
   const houseClosing = "Vote for the game you respect most.";
 
-  const generated = await Promise.all(
+  const generated = await drainProviderCalls(
     finalists.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.CLOSING_ARGUMENTS, "ordinary_speech");
@@ -697,7 +698,7 @@ export async function runJudgmentJuryVote(
 
   const votingJury = contextBuilder.getActiveJury();
 
-  const ballotCommits = await Promise.all(votingJury.map(async (juror) => {
+  const ballotCommits = await drainProviderCalls(votingJury.map(async (juror) => {
     const jurorAgent = agents.get(juror.playerId);
     if (!jurorAgent) return null;
 

@@ -6,10 +6,24 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { readJson, readPayload } from "./payload-storage.js";
 import { isViewerGame } from "./game-visibility.js";
 
-export async function readAudioPublication(db: Pick<DrizzleDB,"select">, id: string, audience: ProductionAudience, thinking: boolean, producer = false): Promise<PublishedAudioTrack | null> {
+export async function readAudioPublication(db: Pick<DrizzleDB,"select">, id: string, audience: ProductionAudience, thinking: boolean, producer = false, versionIds?: readonly string[]): Promise<PublishedAudioTrack | null> {
   const [game] = await db.select().from(schema.games).where(or(eq(schema.games.id, id), eq(schema.games.slug, id)));
   if (!game || !isViewerGame(game) || (game.gameKind === "werewolf" ? audience === "public" : audience !== "public") || audience === "mystery" && thinking) return null;
-  const [track] = await db.select().from(schema.gameAudioTracks).where(and(eq(schema.gameAudioTracks.gameId, game.id), eq(schema.gameAudioTracks.active, true)));
+  if (versionIds?.length === 0) return null;
+  const pinnedTracks = versionIds ? await db.select({trackId: schema.gameAudioClips.trackId}).from(schema.gameAudioVersions)
+    .innerJoin(schema.gameAudioClips, eq(schema.gameAudioVersions.clipId, schema.gameAudioClips.id))
+    .where(inArray(schema.gameAudioVersions.id, [...versionIds])) : null;
+  if (pinnedTracks?.length === 0) return null;
+  const tracks = await db.select().from(schema.gameAudioTracks).where(and(eq(schema.gameAudioTracks.gameId, game.id),
+    pinnedTracks ? inArray(schema.gameAudioTracks.id, [...new Set(pinnedTracks.map(row => row.trackId))]) : eq(schema.gameAudioTracks.active, true)));
+  const publications = await Promise.all(tracks.map(track => readTrackPublication(db, game.id, track, audience, thinking, producer, versionIds)));
+  const visible = publications.filter((publication): publication is PublishedAudioTrack => publication !== null);
+  return visible.length ? {id: visible[0]!.id, clips: visible.flatMap(publication => publication.clips)} : null;
+}
+
+/** A historical ready frontier is publication authority even after a successor becomes active. */
+async function readTrackPublication(db: Pick<DrizzleDB,"select">, gameId: string, track: typeof schema.gameAudioTracks.$inferSelect,
+  audience: ProductionAudience, thinking: boolean, producer: boolean, versionIds?: readonly string[]): Promise<PublishedAudioTrack | null> {
   if (!track?.manifest || track.mode !== "live" && track.status !== "ready") return null;
   const manifest = await readJson(track.manifest);
   const permitted = new Map(manifest.lines.filter(line => line.eventSequence <= track.readyEventSequence && line.audiences.includes(audience) && (thinking || !line.context.endsWith("thinking"))).map(line => [line.momentId, line]));
@@ -22,10 +36,11 @@ export async function readAudioPublication(db: Pick<DrizzleDB,"select">, id: str
     return Number.isSafeInteger(id) && id <= 2_147_483_647 ? [id] : [];
   }))];
   const transcripts = transcriptIds.length ? await db.select({ id: schema.transcripts.id, entrySequence: schema.transcripts.entrySequence })
-    .from(schema.transcripts).where(and(eq(schema.transcripts.gameId, game.id), inArray(schema.transcripts.id, transcriptIds))) : [];
+    .from(schema.transcripts).where(and(eq(schema.transcripts.gameId, gameId), inArray(schema.transcripts.id, transcriptIds))) : [];
   const entrySequences = new Map(transcripts.flatMap(row => row.entrySequence === null ? [] : [[String(row.id), row.entrySequence] as const]));
   const rows = await db.select({ clipId:schema.gameAudioClips.id, momentId: schema.gameAudioClips.momentId, version: schema.gameAudioVersions }).from(schema.gameAudioClips)
-    .innerJoin(schema.gameAudioVersions, eq(schema.gameAudioClips.activeVersionId, schema.gameAudioVersions.id)).where(eq(schema.gameAudioClips.trackId, track.id));
+    .innerJoin(schema.gameAudioVersions, versionIds ? and(eq(schema.gameAudioClips.id, schema.gameAudioVersions.clipId), eq(schema.gameAudioClips.recipeHash, schema.gameAudioVersions.recipeHash)) : eq(schema.gameAudioClips.activeVersionId, schema.gameAudioVersions.id))
+    .where(and(eq(schema.gameAudioClips.trackId, track.id), versionIds ? inArray(schema.gameAudioVersions.id, [...versionIds]) : undefined));
   const order = new Map(manifest.lines.map((line,index)=>[line.momentId,index]));
   rows.sort((a,b)=>(order.get(a.momentId) ?? 0)-(order.get(b.momentId) ?? 0));
   return { id: track.id, clips: rows.flatMap(row => {
@@ -35,11 +50,11 @@ export async function readAudioPublication(db: Pick<DrizzleDB,"select">, id: str
     const entrySequence = watch?.kind === "influence" && watch.transcriptId ? entrySequences.get(watch.transcriptId) : undefined;
     return [{ momentId: producer ? line.productionMomentId ?? line.momentId : row.clipId, ...(watch && {watch: entrySequence === undefined ? watch : {...watch, entrySequence}}), speakerId: line.speakerId, textHash: createHash("sha256").update(line.text).digest("hex"), versionId: row.version.id,
       sha256: row.version.audio.sha256, durationMs: row.version.durationMs,
-      url: `/api/games/${encodeURIComponent(game.id)}/audio/${row.version.id}?audience=${audience}&thinking=${thinking ? "on" : "off"}` }];
+      url: `/api/games/${encodeURIComponent(gameId)}/audio/${row.version.id}?audience=${audience}&thinking=${thinking ? "on" : "off"}` }];
   }) };
 }
 export async function readPublishedAudioBytes(db: DrizzleDB, gameId: string, versionId: string, audience: ProductionAudience, thinking: boolean) {
-  const publication = await readAudioPublication(db, gameId, audience, thinking);
+  const publication = await readAudioPublication(db, gameId, audience, thinking, false, [versionId]);
   if (!publication?.clips.some(clip => clip.versionId === versionId)) return null;
   const [version] = await db.select({ audio: schema.gameAudioVersions.audio }).from(schema.gameAudioVersions).where(eq(schema.gameAudioVersions.id, versionId));
   return version ? readPayload(version.audio) : null;

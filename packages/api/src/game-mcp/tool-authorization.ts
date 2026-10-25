@@ -161,7 +161,7 @@ const OWNER_LEARNING_WRITE_TOOLS = [
 
 const PRODUCER_TOOLS = [
   "read_production_moments", "preview_production_cut",
-  "read_game_model_routing", "set_game_model_routing",
+  "read_game_model_routing",
   "read_producer_visual_production",
   "read_producer_season_diagnostics",
   "inspect_durable_run",
@@ -175,6 +175,7 @@ const PRODUCER_TOOLS = [
 ] as const;
 
 export type GameMcpToolName =
+  | "set_game_model_routing"
   | "update_production_moment_tags"
   | "resume_game_retrospective"
   | "read_moderation" | "act_on_moderation"
@@ -226,6 +227,7 @@ const OWNER_LEARNING_WRITE_ALTERNATIVE: GameMcpToolScopeAlternative = {
 };
 
 export const GAME_MCP_TOOL_ACCESS = {
+  set_game_model_routing: {name:"set_game_model_routing",scopeAlternatives:[{requiredScopes:["producer","producer:routing"],catalogBaselineScopes:["producer"],clientEnvelopeScopes:["producer","producer:routing"],requiredRole:"producer"}]},
   update_production_moment_tags: {name:"update_production_moment_tags",scopeAlternatives:[{requiredScopes:["producer","producer:edit"],catalogBaselineScopes:["producer"],clientEnvelopeScopes:["producer","producer:edit"],requiredRole:"producer"}]},
   resume_game_retrospective: { name: "resume_game_retrospective", scopeAlternatives: [RETROSPECTIVE_RECOVERY_ALTERNATIVE] },
   read_moderation: { name: "read_moderation", scopeAlternatives: [{ requiredRole: "moderator", requiredScopes: ["moderation:read"], catalogBaselineScopes: ["moderation:read"], clientEnvelopeScopes: ["moderation:read"] }] },

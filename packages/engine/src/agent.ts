@@ -1,4 +1,4 @@
-import { withDecisionSpeech, validateDecisionSpeech, decisionSpeechPolicy } from "./influence-decision-speech";
+import { CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION, type InfluenceDecisionContractVersion, withDecisionSpeech, validateDecisionSpeech, decisionSpeechPolicy } from "./influence-decision-speech";
 import { speechDraftingGuidance } from "./speech-budget";
 import type { DecisionSchema } from "./model-invocation";
 import { measureLengthFeedback } from "./structured-output";
@@ -1281,6 +1281,8 @@ interface AgentMemory {
 }
 
 export interface InfluenceAgentOptions {
+  /** Frozen replay contract; new agents default to the current strict speech contract. */
+  decisionContractVersion?: InfluenceDecisionContractVersion;
   /** Optional producer/debug trace sink for raw model-call evidence. */
   privateTraceSink?: PrivateTraceSink;
   /** Hosted OpenAI Responses API reasoning summary mode. OpenAI-compatible local providers stay on chat completions. */
@@ -1723,6 +1725,7 @@ export class InfluenceAgent implements IAgent {
   private readonly promptCacheLineage?: string;
   private readonly evaluationFailFast: boolean;
   private readonly structuredCallMaxAttempts?: number;
+  private readonly decisionContractVersion: InfluenceDecisionContractVersion;
   private readonly providerExecution: ProviderExecutionCoordinator;
   private readonly providerManifest: readonly LlmProviderRuntime[];
   private readonly responseProviderRuntime = new WeakMap<object, LlmProviderRuntime>();
@@ -1766,6 +1769,7 @@ export class InfluenceAgent implements IAgent {
     this.promptCacheLineage = options.promptCacheLineage;
     this.evaluationFailFast = options.evaluationFailFast ?? false;
     this.structuredCallMaxAttempts = options.structuredCallMaxAttempts;
+    this.decisionContractVersion = options.decisionContractVersion ?? CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION;
     this.providerExecution = new ProviderExecutionCoordinator({
       hooks: options.providerExecutionHooks,
     });
@@ -6268,9 +6272,16 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     }
     const validateStrategyBoundary = (
       value: unknown,
+      requireSpeech = true,
     ): StructuredDomainDecodeResult<unknown> => {
-      const speechIssue = validateDecisionSpeech(action, value);
-      if (speechIssue) return { status: "invalid", message: speechIssue };
+      const speechIssue = requireSpeech ? validateDecisionSpeech(action, value) : null;
+      if (speechIssue) {
+        const policy = decisionSpeechPolicy(action);
+        const message = value && typeof value === "object" && "message" in value ? value.message : undefined;
+        const feedback = policy && typeof message === "string"
+          ? measureLengthFeedback(message, "message", policy.maxBytes, "utf8_bytes") : undefined;
+        return { status: "invalid", message: speechIssue, ...(feedback && { feedback }) };
+      }
       const boundary = this.strategyBoundaryForCall(options);
       if (boundary) {
         if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -6286,11 +6297,14 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       }
       return { status: "valid", value };
     };
+    const historicalDomainSchema = this.withStrategyCandidateSchema(tool.schema, options);
     const domainSchema = structuredClone(requestTool.schema);
     if (options?.visual) {
-      const properties = domainSchema.properties as Record<string, unknown>;
-      delete properties.cue;
-      domainSchema.required = (domainSchema.required as string[]).filter((key) => key !== "cue");
+      for (const schema of [domainSchema, historicalDomainSchema]) {
+        const properties = schema.properties as Record<string, unknown>;
+        delete properties.cue;
+        schema.required = (schema.required as string[]).filter((key) => key !== "cue");
+      }
     }
     const decodeWithCue = <T,>(value: unknown, decode: (value: unknown) => StructuredDomainDecodeResult<T>): StructuredDomainDecodeResult<T> => {
       if (!options?.visual) return decode(value);
@@ -6303,7 +6317,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       return { status: "valid", value: Object.assign({}, decoded.value, { cue }) };
     };
     const artifact = createExactStructuredOutputArtifact<TProviderValue, TDomainValue>({
-      action: `agent-tool.${action}.${options?.visual ? "visual." : ""}v1`,
+      action: `agent-tool.${action}.${options?.visual ? "visual." : ""}v${decisionSpeechPolicy(action) ? 2 : 1}`,
       name: requestTool.name,
       schema: {
         ...(requestTool.description && { description: requestTool.description }),
@@ -6318,9 +6332,15 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
         return decodeWithCue(value, (payload) => semanticDecoder.decodeProvider(payload as TProviderValue));
       },
       decodeAcceptedValue: (value) => {
-        const strategy = validateStrategyBoundary(value);
+        // Unversioned games contain both pre-speech and speech-era accepted values.
+        // Only recovery may select the exact pre-speech schema; live output never does.
+        const historical = this.decisionContractVersion === 1 && decisionSpeechPolicy(action)
+          && value !== null && typeof value === "object" && !Object.hasOwn(value, "message");
+        const strategy = validateStrategyBoundary(value, !historical);
         if (strategy.status === "invalid") return strategy;
-        return decodeWithCue(value, (payload) => semanticDecoder.decodeAccepted(payload, domainSchema));
+        return decodeWithCue(value, (payload) => semanticDecoder.decodeAccepted(
+          payload, historical ? historicalDomainSchema : domainSchema,
+        ));
       },
     });
     const providerCall = this.startProviderCall(options);

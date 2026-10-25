@@ -1,6 +1,7 @@
 "use client";
 import { AudioGenerationPanel } from "./audio-generation-panel";
 import { attachGeneratedAudio } from "../../../lib/replay-export/generated-audio";
+import { productionMediaIds } from "./production-media-selection";
 import type { PublishedAudioTrack } from "@influence/engine/audio-track";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -189,28 +190,29 @@ function MomentWorkspace({game, audience, thinking, review, readScopeGeneration,
   const selectedKey = JSON.stringify(selectedIds);
   const stableSelectedIds = useMemo(() => JSON.parse(selectedKey) as string[], [selectedKey]);
   const playableIds = useMemo(() => view === "source" ? loaded?.catalog.moments.filter(moment => thinking || moment.kind !== "thinking").map(moment => moment.id) ?? [] : stableSelectedIds, [view, loaded, stableSelectedIds, thinking]);
-  const media = useQuery({queryKey: ["admin", session.scope, `${scope}:media`, loaded?.snapshot.sourceHash, JSON.stringify(playableIds)], enabled: Boolean(loaded) && !blocked, staleTime: Infinity, retry: false, refetchOnWindowFocus: false, queryFn: ({signal}) => {
+  const preparationIds = useMemo(() => productionMediaIds(playableIds, stableSelectedIds), [playableIds, stableSelectedIds]);
+  const media = useQuery({queryKey: ["admin", session.scope, `${scope}:media`, loaded?.snapshot.sourceHash, JSON.stringify(preparationIds)], enabled: Boolean(loaded) && !blocked, staleTime: Infinity, retry: false, refetchOnWindowFocus: false, queryFn: ({signal}) => {
     const hash = loaded!.snapshot.sourceHash;
     let cache = assetCaches.current.get(hash);
     if (!cache) {cache = {assets: new Map(), urls: new Map()}; assetCaches.current.set(hash, cache);}
-    return prepareProductionAssets(loaded!.presentation.filter(moment => playableIds.includes(moment.id)).flatMap(moment => moment.segments), signal, cache.assets, {read: (url, abort) => session.readMedia(url, abort), urls: cache.urls});
+    return prepareProductionAssets(loaded!.presentation.filter(moment => preparationIds.includes(moment.id)).flatMap(moment => moment.segments), signal, cache.assets, {read: (url, abort) => session.readMedia(url, abort), urls: cache.urls});
   }});
   const readyPresentation = useMemo(() => {
     if (!loaded || !media.data) return null;
     let offset = 0;
     return loaded.presentation.map(moment => {
-      if (!playableIds.includes(moment.id)) return moment;
+      if (!preparationIds.includes(moment.id)) return moment;
       const segments = media.data.cues.slice(offset, offset + moment.segments.length); offset += moment.segments.length;
       return {...moment, segments};
     });
-  }, [loaded, media.data, playableIds]);
-  const recordings = useQuery({queryKey: ["admin", session.scope, `${scope}:recordings`, loaded?.snapshot.sourceHash, speechImport?.id, JSON.stringify(playableIds)], enabled: !!speechImport && !!readyPresentation && !blocked, staleTime: Infinity, retry: false, refetchOnWindowFocus: false, queryFn: ({signal}) => prepareBrowserSpeech(speechImport!.value, readyPresentation!, playableIds, signal)});
+  }, [loaded, media.data, preparationIds]);
+  const recordings = useQuery({queryKey: ["admin", session.scope, `${scope}:recordings`, loaded?.snapshot.sourceHash, speechImport?.id, JSON.stringify(preparationIds)], enabled: !!speechImport && !!readyPresentation && !blocked, staleTime: Infinity, retry: false, refetchOnWindowFocus: false, queryFn: ({signal}) => prepareBrowserSpeech(speechImport!.value, readyPresentation!, preparationIds, signal)});
   const audioPublication = useQuery({queryKey:["admin",session.scope,`${scope}:audio-publication`,loaded?.snapshot.sourceHash],
     enabled:!!loaded && !blocked,retry:false,staleTime:Infinity,refetchOnWindowFocus:false,
     queryFn:({signal})=>session.read<PublishedAudioTrack|null>(`${root}/audio/manifest?audience=${audience}&thinking=${sourceThinking ? "on" : "off"}`,signal)});
-  const generatedAudio = useQuery<Awaited<ReturnType<typeof attachGeneratedAudio>>>({queryKey: ["admin", session.scope, `${scope}:generated-audio`, loaded?.snapshot.sourceHash, JSON.stringify(playableIds),audioPublication.dataUpdatedAt],
+  const generatedAudio = useQuery<Awaited<ReturnType<typeof attachGeneratedAudio>>>({queryKey: ["admin", session.scope, `${scope}:generated-audio`, loaded?.snapshot.sourceHash, JSON.stringify(preparationIds),audioPublication.dataUpdatedAt],
     enabled: !!readyPresentation && !blocked && !speechImport && audioPublication.isSuccess, retry: false,staleTime:Infinity,refetchOnWindowFocus:false,
-    queryFn: async ({signal}) => attachGeneratedAudio({source: readyPresentation!, selectedIds: playableIds, publication:audioPublication.data ?? null, signal,
+    queryFn: async ({signal}) => attachGeneratedAudio({source: readyPresentation!, selectedIds: preparationIds, publication:audioPublication.data ?? null, signal,
       hash: async text => [...new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(text)))].map(byte => byte.toString(16).padStart(2,"0")).join(""),
       asset: async clip => ({path: resolveApiUrl(clip.url), sha256: clip.sha256, durationMs: clip.durationMs, mediaType: "audio"})})});
   const attachedPresentation = speechImport ? recordings.data?.source ?? null : generatedAudio.data?.source ?? null;

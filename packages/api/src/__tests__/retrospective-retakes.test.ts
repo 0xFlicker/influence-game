@@ -5,7 +5,7 @@ import {schema, type DrizzleDB} from "../db/index.js";
 import {setupTestDB} from "./test-utils.js";
 import {previewAudioTrack, queueAudioBackfill, runAudioTrack, retryAudioTrack} from "../services/audio-tracks.js";
 import {prepareRetrospectiveRetake, queueRetrospectiveRetake, readRetrospectivePresentation} from "../services/retrospective-retakes.js";
-import {readAudioPublication} from "../services/audio-publication.js";
+import {readAudioPublication, readPublishedAudioBytes} from "../services/audio-publication.js";
 import {readWerewolfWatch} from "../services/werewolf-presentation.js";
 import {buildWerewolfProductionSourceSnapshot} from "../services/werewolf-production-source.js";
 import {readJson} from "../services/payload-storage.js";
@@ -36,6 +36,7 @@ test("retake publishes speech and one new recording together, retaining canonica
   const originalRows = await db.select().from(schema.werewolfEvents);
   const oldVersions = await db.select().from(schema.gameAudioVersions);
   const pin = await buildWerewolfProductionSourceSnapshot(db, f.gameId, {audience: "omniscient", thinking: true});
+  const frozenAudio = (await readAudioPublication(db,f.gameId,"omniscient",true,true))!;
   const receipt = await queueRetrospectiveRetake(db, f.request);
   expect(receipt.generatedClips).toBe(1);
   expect(await readRetrospectivePresentation(db, f.gameId, f.events, new Date().toISOString())).toHaveLength(0);
@@ -59,6 +60,11 @@ test("retake publishes speech and one new recording together, retaining canonica
   expect(historical.window).toEqual(pin.window);
   expect(await db.select().from(schema.werewolfEvents)).toEqual(originalRows);
   for (const version of oldVersions) expect((await db.select().from(schema.gameAudioVersions).where(eq(schema.gameAudioVersions.id, version.id)))[0]).toEqual(version);
+  const restored = (await readAudioPublication(db,f.gameId,"omniscient",true,true,frozenAudio.clips.map(clip=>clip.versionId)))!;
+  expect(restored).toEqual(frozenAudio);
+  for (const clip of frozenAudio.clips) expect(await readPublishedAudioBytes(db,f.gameId,clip.versionId,"omniscient",true)).not.toBeNull();
+  const privateClip = frozenAudio.clips.find(clip=>clip.watch?.part === "thinking");
+  if (privateClip) expect(await readPublishedAudioBytes(db,f.gameId,privateClip.versionId,"mystery",false)).toBeNull();
   const [saved] = await db.select().from(schema.productionRetrospectiveRetakes);
   expect(await readJson(saved!.document)).toEqual(f.request.document);
   await expect(queueRetrospectiveRetake(db, f.request)).rejects.toThrow("source changed");

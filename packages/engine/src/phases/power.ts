@@ -1,3 +1,4 @@
+import { drainProviderCalls } from "../provider-batch";
 import type { UUID, PowerAction } from "../types";
 import { Phase } from "../types";
 import type { CandidateChoiceRequest, PowerActionDecision, PowerLobbyExposure } from "../game-runner.types";
@@ -101,7 +102,7 @@ async function runPowerLobbyMessages(
     Phase.POWER,
   );
 
-  await Promise.all(
+  await drainProviderCalls(
     gameState.getAlivePlayers().map(async (player) => {
       const agent = agents.get(player.id);
       if (!agent?.getPowerLobbyMessage) return;

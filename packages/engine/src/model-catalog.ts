@@ -19,6 +19,8 @@ export interface ModelRequestCapabilities {
   supportsPromptCacheRetention: boolean;
   supportsStructuredOutput: boolean;
   supportsTools: boolean;
+  /** Audited hosted OpenAI capacity support; absent for unknown/historical metadata. */
+  supportsFlexProcessing?: boolean;
 }
 
 export interface ProviderProfile {

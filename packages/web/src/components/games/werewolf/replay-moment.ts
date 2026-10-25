@@ -6,7 +6,7 @@ import { soloPresentationDurationMs } from "@/app/games/[slug]/components/solo-p
 import { SILENT_BALLOT_DURATION_MS } from "@influence/engine/visual-speech";
 
 /** Presentation language comes from typed accepted entries, never parsed dialogue. */
-export function replayMoment(view: WerewolfView) {
+export function replayMoment(view: WerewolfView, houseNarration = true) {
   const entry = view.entries.at(-1);
   const name = (id: string | null) => view.players.find(p => p.id === id)?.name ?? "Nobody";
   let title = "Meet the village", text = "", actorId: string | null = null, cue: string | null = null;
@@ -24,7 +24,7 @@ export function replayMoment(view: WerewolfView) {
     case "vote": title = view.rulesVersion >= 9 ? `Day ${entry.day} · Public vote result` : `Day ${entry.day} · Vote after thread ${entry.result.thread}`; actorId = entry.result.eliminatedId; text = actorId ? `${name(actorId)} is eliminated.` : view.rulesVersion >= 9 ? "No majority. Nobody is eliminated." : entry.result.dayEnded ? "No unique vote leader. Nobody is eliminated." : "No majority. Discussion continues."; details.push(entry.result.voteMode === "plurality" ? "Final ballot: unique most votes wins; ties spare everyone." : `Majority required: ${entry.result.requiredVotes} of ${entry.result.ballots.length} living players.`, ...(view.rulesVersion >= 9 ? [] : entry.result.ballots.map(b => `${name(b.voterId)} → ${b.targetId ? name(b.targetId) : b.unavailable ? "Abstain (unavailable)" : "Abstain (hear more)"}`))); break;
     case "result": title = "Game result"; text = werewolfOutcomeTitle(entry.outcome); details.push(...view.players.map(p => `${p.name} · ${p.role ?? "Unknown role"}${entry.outcome.winnerIds.includes(p.id) ? " · Winner" : ""}`)); break;
   }
-  const houseSpeech = entry ? werewolfHouseSpeech(entry,view.players,view.rulesVersion) : null;
+  const houseSpeech = entry && houseNarration ? werewolfHouseSpeech(entry,view.players,view.rulesVersion) : null;
   if (houseSpeech) {text=houseSpeech;spoken=true;}
   const actor = view.players.find(p => p.id === actorId);
   const retrospective = entry?.kind === "speech" && entry.purpose === "retrospective";

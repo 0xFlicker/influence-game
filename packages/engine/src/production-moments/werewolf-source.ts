@@ -13,6 +13,8 @@ export function buildWerewolfProductionSources(input: {
   provenance: readonly { cursor: number; eventSequence: number }[];
   thoughts: readonly WerewolfProductionThought[];
   opening: boolean;
+  /** Only reconstruct an exact pre-versioned export; live catalogs omit passes. */
+  legacyPassThoughts?: boolean;
 }): ProductionSource[] {
   const refs = new Map<number, number>();
   for (const row of input.provenance) {
@@ -33,8 +35,8 @@ export function buildWerewolfProductionSources(input: {
     if (!eventSequence) throw new Error("Werewolf production row lacks accepted provenance");
     cursors.add(moment.cursor);
     // Silent/unavailable discussion turns remain diagnostic evidence, never editable playback moments.
-    if (!isWerewolfPlayable(moment.entry)) continue;
-    const actorId = moment.entry.kind === "speech" || moment.entry.kind === "conversation" || moment.entry.kind === "ballot" || moment.entry.kind === "proposal" ? moment.entry.actorId : moment.entry.kind === "discussion" ? moment.entry.contribution.actorId : undefined;
+    if (!isWerewolfPlayable(moment.entry) && !input.legacyPassThoughts) continue;
+    const actorId = !isWerewolfPlayable(moment.entry) ? undefined : moment.entry.kind === "speech" || moment.entry.kind === "conversation" || moment.entry.kind === "ballot" || moment.entry.kind === "proposal" ? moment.entry.actorId : moment.entry.kind === "discussion" ? moment.entry.contribution.actorId : undefined;
     const thoughts = thoughtsByCursor.get(moment.cursor) ?? [];
     for (const [index, thought] of thoughts.entries()) {
       if (thought.eventSequence > eventSequence) throw new Error("Werewolf thought cannot reveal before its accepted action");

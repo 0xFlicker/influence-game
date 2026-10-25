@@ -1,11 +1,12 @@
-import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { createHash } from "node:crypto";
+import { lock } from "proper-lockfile";
 import { modelRateCard } from "./model-route-metadata";
 import type { ProviderAttemptIntent, ProviderAttemptRecord, ProviderExecutionHooks } from "./provider-execution";
 
 type Currency = "openaiUsd" | "katanaCredits" | "xaiUsd" | "metaUsd";
-type Entry = { id: string; currency: Currency; reserved: number; charged: number; state: "reserved" | "settled"; catalogId: string; gameId?: string; inputRate?: number; outputRate?: number };
+type Entry = { id: string; currency: Currency; reserved: number; charged: number; state: "reserved" | "settled" | "not_dispatched"; catalogId: string; gameId?: string; inputRate?: number; outputRate?: number };
 export interface LocalTaskLedger { version: 1; limits: Record<Currency, number>; prior: Record<Currency, number>; allowedGameIds: string[]; entries: Entry[]; perGameLimits?: Record<string,Partial<Record<Currency,number>>> }
 const queues = new Map<string, Promise<void>>();
 const CREDIT_USD = 0.0052;
@@ -27,7 +28,10 @@ export async function updateLocalTaskLedger(path: string, mutate: (ledger: Local
   const previous = queues.get(path) ?? Promise.resolve();
   const pending = previous.then(async () => {
     await mkdir(dirname(path), { recursive: true });
-    const lock = await open(`${path}.lock`, "wx");
+    // A maintained heartbeat lock serializes separate gateway/game workers and
+    // recovers abandoned locks after a crash. A compromised owner fails closed.
+    const release = await lock(path, { realpath: false, stale: 10_000, update: 2_000,
+      retries: { retries: 80, minTimeout: 50, maxTimeout: 250, randomize: true } });
     try {
       const ledger = JSON.parse(await readFile(path, "utf8")) as LocalTaskLedger;
       if (ledger.version !== 1 || !Array.isArray(ledger.entries) || !Array.isArray(ledger.allowedGameIds)) throw new Error("Invalid local task ledger");
@@ -42,7 +46,7 @@ export async function updateLocalTaskLedger(path: string, mutate: (ledger: Local
       const temporary = `${path}.${process.pid}.tmp`;
       await writeFile(temporary, JSON.stringify(ledger, null, 2), { mode: 0o600 });
       await rename(temporary, path);
-    } finally { await lock.close(); await unlink(`${path}.lock`); }
+    } finally { await release(); }
   });
   const settled = pending.then(() => {}, () => {});
   queues.set(path, settled);
@@ -50,9 +54,12 @@ export async function updateLocalTaskLedger(path: string, mutate: (ledger: Local
 }
 
 async function reserve(path: string, entry: Entry) {
+  let created = false;
   await updateLocalTaskLedger(path, ledger => {
     if (entry.gameId && !ledger.allowedGameIds.includes(entry.gameId)) throw new Error("Game is outside the authorized local task budget");
-    if (ledger.entries.some(e => e.id === entry.id)) return;
+    const existing = ledger.entries.find(e => e.id === entry.id);
+    if (existing?.state === "not_dispatched") throw new Error("Rejected local task attempt requires a new attempt ID");
+    if (existing) return;
     const committed = ledger.prior[entry.currency] + ledger.entries.filter(e => e.currency === entry.currency).reduce((sum, e) => sum + e.charged, 0);
     if (committed + entry.reserved > ledger.limits[entry.currency]) throw new Error(`Local task ${entry.currency} allowance exhausted before dispatch`);
     const gameLimit = entry.gameId ? ledger.perGameLimits?.[entry.gameId]?.[entry.currency] : undefined;
@@ -62,6 +69,18 @@ async function reserve(path: string, entry: Entry) {
       if (gameCommitted+entry.reserved > gameLimit) throw new Error(`Local game ${entry.currency} allowance exhausted before dispatch`);
     }
     ledger.entries.push(entry);
+    created = true;
+  });
+  return created;
+}
+
+/** onReserve has rejected before the coordinator can dispatch. Retain the receipt. */
+async function rejectAdmission(path: string, id: string) {
+  await updateLocalTaskLedger(path, ledger => {
+    const entry = ledger.entries.find(entry => entry.id === id);
+    if (!entry || entry.state !== "reserved") throw new Error("Local task admission reservation changed before rejection");
+    entry.state = "not_dispatched";
+    entry.charged = 0;
   });
 }
 
@@ -91,6 +110,7 @@ async function settleText(path: string, record: ProviderAttemptRecord) {
   await updateLocalTaskLedger(path, ledger => {
     const entry = ledger.entries.find(e => e.id === record.attemptId);
     if (!entry || entry.state === "settled") return;
+    if (entry.state === "not_dispatched") throw new Error("Undispatched local task attempt cannot have a provider receipt");
     const accounting = record.accounting, usage = accounting?.usage;
     const actual = (accounting?.actualCostMicrousd ?? 0) / 1_000_000;
     if (!finite(actual)) throw new Error("Invalid task receipt");
@@ -116,7 +136,16 @@ export function withLocalTaskBudget(base: ProviderExecutionHooks, env: NodeJS.Pr
   const path = localTaskBudgetPath(env);
   if (!path) return base;
   return { ...base,
-    onReserve: async intent => { await reserve(path, textReservation(intent)); await base.onReserve?.(intent); },
+    onReserve: async intent => {
+      const created = await reserve(path, textReservation(intent));
+      try { await base.onReserve?.(intent); }
+      catch (error) {
+        // A pre-existing hold may describe an uncertain dispatch. Only this
+        // invocation's new reservation is proven safe to release.
+        if (created) await rejectAdmission(path, intent.attemptId);
+        throw error;
+      }
+    },
     onTerminal: async record => { const result = await base.onTerminal?.(record); await settleText(path, record); return result; },
   };
 }

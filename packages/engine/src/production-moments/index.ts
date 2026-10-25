@@ -97,6 +97,9 @@ export interface ProductionCatalog {
   gameKind: ProductionGameKind;
   audience: ProductionAudience;
   moments: ProductionMoment[];
+  /** Resolved historical Werewolf catalog contract; source hash verification owns this value. */
+  werewolfCatalogVersion?: 1 | 2 | 3;
+  werewolfLegacyPassThoughts?: true;
 }
 
 function nonempty(value: unknown, label: string): asserts value is string {
@@ -189,8 +192,10 @@ function sourceReference(source: ProductionSource): ProductionSourceReference {
 export function assembleProductionCatalog(input: {
   gameId: string; gameKind: ProductionGameKind; audience: ProductionAudience;
   sources: readonly ProductionSource[];
+  werewolfCatalogVersion?: 1 | 2 | 3;
 }): ProductionCatalog {
   nonempty(input.gameId, "game ID");
+  if (input.werewolfCatalogVersion !== undefined && (input.gameKind !== "werewolf" || ![1,2,3].includes(input.werewolfCatalogVersion))) throw new Error("Invalid historical Werewolf catalog version");
   if (input.gameKind === "influence" ? input.audience !== "public" : input.gameKind !== "werewolf" || !["mystery", "omniscient"].includes(input.audience)) throw new Error("Invalid production game audience");
   const moments: ProductionMoment[] = [];
   const seen = new Map<string, ProductionSourceOrder>();
@@ -251,7 +256,7 @@ export function assembleProductionCatalog(input: {
         if (!["introduce", "discuss", "open_thread", "pack_talk", "attack", "protect", "investigate", "vote", "conversation", "public_vote", "pack_propose"].includes(source.action)) throw new Error("Unsupported Werewolf thinking action");
         if (input.audience === "omniscient") thought(source.thinking, source.defaultThinking, source.actorId);
         break;
-      case "werewolf-event": assembleWerewolfParts(source, input.audience, emit); break;
+      case "werewolf-event": assembleWerewolfParts(source, input.audience, emit, input.werewolfCatalogVersion ?? 3); break;
     }
   }
   moments.sort((a, b) => a.order.anchor - b.order.anchor || a.order.offset - b.order.offset || a.semanticOrder - b.semanticOrder || a.id.localeCompare(b.id));
@@ -259,18 +264,18 @@ export function assembleProductionCatalog(input: {
 }
 
 function assembleWerewolfParts(source: Extract<ProductionSource, { kind: "werewolf-event" }>, audience: ProductionAudience,
-  emit: (part: ProductionMomentPart, kind: ProductionMomentKind, order: number, full?: boolean, actorId?: string) => void) {
+  emit: (part: ProductionMomentPart, kind: ProductionMomentKind, order: number, full?: boolean, actorId?: string) => void, version: 1 | 2 | 3) {
   const entry = source.entry;
   if (audience === "mystery" && (entry.kind === "pack_vote" || entry.kind === "speech" && entry.audience === "pack")) return;
   if (source.nightActions?.length && entry.kind !== "night") throw new Error("Night staging requires a resolved night source");
   switch (entry.kind) {
-    case "phase": emit({kind:"scene"},"scene",0); break;
+    case "phase": if (version >= 2) emit({kind:"scene"},"scene",0); break;
     case "speech": if (entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, true, entry.actorId); break;
     case "discussion": if (!entry.contribution.unavailable && entry.contribution.text?.trim()) emit({ kind: "speech" }, "speech", 1, true, entry.contribution.actorId); break;
     case "conversation": if (!entry.unavailable && entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, true, entry.actorId); break;
     // The spoken vote and its collection into the ledger share one replay cue.
     case "ballot": emit({ kind: "ballot", voterId: entry.actorId, purpose: "day", juryTiebreaker: false, revote: false }, "ballot", 2, true, entry.actorId); break;
-    case "proposal": if (audience === "omniscient" && !entry.unavailable && entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, true, entry.actorId); break;
+    case "proposal": if (audience === "omniscient" && !entry.unavailable && entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, version >= 3, entry.actorId); break;
     case "vote": {
       if ((source.rulesVersion ?? 8) >= 9) { emit({ kind: "tally" }, "tally", 0); emit({ kind: "outcome" }, "outcome", 1); break; }
       const rank = (b: { targetId: string | null; unavailable: boolean }) => b.targetId ? 0 : b.unavailable ? 1 : 2;

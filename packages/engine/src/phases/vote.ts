@@ -1,3 +1,4 @@
+import { drainProviderCalls } from "../provider-batch";
 import { tallyEmpowerRevote } from "../empower-revote-rules";
 import type { UUID } from "../types";
 import { Phase } from "../types";
@@ -135,7 +136,7 @@ export async function collectEmpowerVoteBatch(
 ): Promise<EmpowerVoteBatchItem[]> {
   const { gameState, agents } = ctx;
   const alivePlayers = gameState.getAlivePlayers();
-  return Promise.all(alivePlayers.map(async (player) => {
+  return drainProviderCalls(alivePlayers.map(async (player) => {
     const agent = agents.get(player.id)!;
     const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.VOTE, "strategic_decision");
     const legalTargets = alivePlayers
@@ -249,7 +250,7 @@ export async function collectEmpowerRevoteBatch(
   const { gameState, agents } = ctx;
   const originalVotes = originalEmpowerVotesForRound(ctx);
   const reVoters = gameState.getAlivePlayers().filter((player) => !tied.includes(player.id));
-  return Promise.all(reVoters.map(async (player) => {
+  return drainProviderCalls(reVoters.map(async (player) => {
     const agent = agents.get(player.id)!;
     const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.VOTE, "strategic_decision");
     const originalVote = originalVotes.get(player.id) ?? { empowerTarget: tied[0]! };
@@ -414,7 +415,7 @@ export async function runVotePhase(
   logger.logSystem("=== VOTE PHASE ===", Phase.VOTE);
   const alivePlayers = gameState.getAlivePlayers();
 
-  await Promise.all(
+  await drainProviderCalls(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.VOTE, "strategic_decision");
@@ -527,7 +528,7 @@ export async function runVotePhase(
       gameState.clearEmpowerVote(rv.id);
     }
     if (reVoters.length > 0) {
-      await Promise.all(
+      await drainProviderCalls(
         reVoters.map(async (player) => {
           const agent = agents.get(player.id)!;
           const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.VOTE, "strategic_decision");
@@ -677,7 +678,7 @@ export async function runReckoningVote(
   logger.logSystem("=== RECKONING: ELIMINATION VOTE ===", Phase.VOTE);
   const alivePlayers = gameState.getAlivePlayers();
 
-  await Promise.all(
+  await drainProviderCalls(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.VOTE, "strategic_decision");
@@ -762,7 +763,7 @@ export async function runTribunalVote(
   logger.logSystem("=== TRIBUNAL: ELIMINATION VOTE ===", Phase.VOTE);
   const alivePlayers = gameState.getAlivePlayers();
 
-  await Promise.all(
+  await drainProviderCalls(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.VOTE, "strategic_decision");
@@ -826,7 +827,7 @@ export async function runTribunalVote(
   const tribunalJury = tribunalTieCandidates.length > 1 ? contextBuilder.getActiveJury() : [];
   if (tribunalJury.length > 0) {
     juryTiebreakerVotes = {};
-    const juryCommits = await Promise.all(tribunalJury.map(async (juror) => {
+    const juryCommits = await drainProviderCalls(tribunalJury.map(async (juror) => {
       const jurorAgent = agents.get(juror.playerId);
       if (jurorAgent) {
         const phaseCtx = prepareAgentPhaseContext(

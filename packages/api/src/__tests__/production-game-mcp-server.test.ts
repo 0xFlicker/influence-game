@@ -167,6 +167,17 @@ async function listToolDescriptors(
 }
 
 describe("ProductionGameMcpJsonRpcServer", () => {
+  test("model routing writes require separately consented routing scope and current producer role", () => {
+    const eligibility: GameMcpEligibilitySnapshot = {clientScopes: ["producer", "producer:routing"], hasProducerRole: true};
+    expect(resolveGameMcpToolAccess("read_game_model_routing", PRODUCER_AUTH, eligibility).invocationAllowed).toBe(true);
+    expect(resolveGameMcpToolAccess("set_game_model_routing", PRODUCER_AUTH, eligibility)).toMatchObject({catalogEligible: true, grantSatisfied: false, invocationAllowed: false});
+    const editorial = {...PRODUCER_AUTH, scopes: ["producer", "producer:edit"] as GameMcpAuthContext["scopes"]};
+    expect(resolveGameMcpToolAccess("set_game_model_routing", editorial, eligibility).invocationAllowed).toBe(false);
+    const routing = {...PRODUCER_AUTH, scope: "producer producer:routing", scopes: ["producer", "producer:routing"] as GameMcpAuthContext["scopes"]};
+    expect(resolveGameMcpToolAccess("set_game_model_routing", routing, eligibility).invocationAllowed).toBe(true);
+    expect(resolveGameMcpToolAccess("set_game_model_routing", routing, {...eligibility, hasProducerRole: false}).invocationAllowed).toBe(false);
+    expect(resolveGameMcpToolAccess("set_game_model_routing", routing, {...eligibility, clientScopes: ["producer"]}).invocationAllowed).toBe(false);
+  });
   test("keeps current grants separate from live catalog eligibility", () => {
     const auth = {
       ...GAMES_AUTH,
@@ -807,7 +818,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       resource: GAMES_AUTH.resource,
       needsProducerRole: true,
     })).resolves.toEqual({
-      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "moderation:read", "moderation:write", "assets:manage"],
+      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:routing", "moderation:read", "moderation:write", "assets:manage"],
       hasProducerRole: false, hasModerationRole: false, hasRetrospectiveRecoveryAccess: false,
     });
     await expect(resolveEligibility({
@@ -825,7 +836,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       resource: GAMES_AUTH.resource,
       needsProducerRole: false,
     })).resolves.toEqual({
-      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "moderation:read", "moderation:write", "assets:manage"],
+      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:routing", "moderation:read", "moderation:write", "assets:manage"],
       hasProducerRole: false, hasModerationRole: false, hasRetrospectiveRecoveryAccess: false,
     });
     await expect(resolveEligibility({
@@ -857,7 +868,6 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const tools = ((response?.result as { tools: unknown[] }).tools);
     expect(tools.map((tool) => (tool as { name: string }).name)).toEqual([
       "read_game_model_routing",
-      "set_game_model_routing",
       "list_games",
       "read_game",
       "read_game_results",
@@ -1516,7 +1526,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       expect(tool.securitySchemes).toEqual([{ type: "oauth2", scopes: ["producer"] }]);
       expect(tool._meta.securitySchemes).toEqual(tool.securitySchemes);
       expect(tool.annotations).toEqual({
-        readOnlyHint: tool.name !== "set_game_model_routing",
+        readOnlyHint: true,
         openWorldHint: false,
         destructiveHint: false,
       });

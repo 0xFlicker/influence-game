@@ -633,7 +633,7 @@ export class ProductionGameMcpJsonRpcServer {
         return content(await saveModelPreference(this.requireManagementDb(), auth.userId, requiredString(args, "agentId"), args.modelPreference));
       }
       if (name === "read_game_model_routing" || name === "set_game_model_routing") {
-        requireScopes(auth, ["producer"]);
+        requireScopes(auth, name === "set_game_model_routing" ? ["producer", "producer:routing"] : ["producer"]);
         return content(await readGameModelRouting(this.requireManagementDb(), auth.userId, requiredString(args, "gameIdOrSlug"), name === "set_game_model_routing" ? args.policy : undefined));
       }
       if (name === "update_agent") {
@@ -820,7 +820,7 @@ function productionGameMcpTools(
   if (producerEligible) tools.push(...(["read_game_model_routing", "set_game_model_routing"] as const).map(name => tool({ name,
     description: "Read or replace contestant default, House route, fallback caps, exclusions and cast overrides. Requires admin/sysop; edits only while waiting. Read first and preserve unmodified settings.",
     properties: { gameIdOrSlug: { type: "string" }, ...(name === "set_game_model_routing" ? { policy: { type: "object" } } : {}) },
-    required: name === "set_game_model_routing" ? ["gameIdOrSlug", "policy"] : ["gameIdOrSlug"], scopes: ["producer"], readOnlyHint: name === "read_game_model_routing" })));
+    required: name === "set_game_model_routing" ? ["gameIdOrSlug", "policy"] : ["gameIdOrSlug"], scopes: name === "set_game_model_routing" ? ["producer", "producer:routing"] : ["producer"], readOnlyHint: name === "read_game_model_routing" })));
 
 
   if (sharedGameReadVariant) {

@@ -9,6 +9,8 @@ import {SILENT_BALLOT_DURATION_MS} from "@/app/games/[slug]/components/vote-pres
 import type {RevealedVote, VoteLedgerState} from "@/app/games/[slug]/components/vote-ledger-model";
 import {WOLF_TRANSFORM_MS, WOLF_STAGGER_MS, NIGHT_CLAW_MS} from "./werewolf-night-motion";
 export interface WerewolfWatchCue { key: string; baseDurationMs: number; moment: WerewolfWatchMoment; transformation?: {wolfIds: string[]; durationMs: number}; nightAction?: WerewolfNightAction; nightDecision?: boolean; ballot?: VoteLedgerState;
+  /** Frozen pre-audio production projection. Public/current playback leaves this absent. */
+  houseNarration?: false;
   /** Playback-only reprise of the result after the final retrospective. */
   reprise?: boolean }
 export const werewolfWatchPolicy: WatchPolicy<WerewolfWatchCue> = {
@@ -48,14 +50,14 @@ export function contiguousWerewolfWindows(windows: readonly WerewolfWatchWindow[
   }
   return group.length && group[0]!.fromCursor <= cursor && cursor <= end ? group : [];
 }
-export function werewolfCues(windows: readonly WerewolfWatchWindow[]): WerewolfWatchCue[] {
+export function werewolfCues(windows: readonly WerewolfWatchWindow[], houseNarration = true): WerewolfWatchCue[] {
   const moments = new Map<number, WerewolfWatchMoment>();
   for (const window of windows) for (const moment of window.moments) {
     const existing = moments.get(moment.cursor);
     if (existing && JSON.stringify(existing) !== JSON.stringify(moment)) throw new Error("Committed Werewolf playback changed at an existing position");
     moments.set(moment.cursor, moment);
   }
-  const cues = [...moments.values()].sort((a,b) => a.cursor - b.cursor).filter(m => isWerewolfPlayable(m.entry)).flatMap(werewolfMomentCues);
+  const cues = [...moments.values()].sort((a,b) => a.cursor - b.cursor).filter(m => isWerewolfPlayable(m.entry)).flatMap(moment => werewolfMomentCues(moment,houseNarration));
   const last = cues.at(-1);
   const outcome = last?.moment.snapshot.outcome;
   const latest = windows.reduce<WerewolfWatchWindow | undefined>((chosen, window) =>
@@ -69,17 +71,17 @@ export function werewolfCues(windows: readonly WerewolfWatchWindow[]): WerewolfW
     const moment: WerewolfWatchMoment = {...last.moment, chapterId: "ending", sceneId: "ending",
       transformWolfIds: undefined, wolfForms: undefined, night: undefined,
       entry: {kind: "result", day: last.moment.entry.day, outcome}};
-    const [result] = werewolfMomentCues(moment);
+    const [result] = werewolfMomentCues(moment,houseNarration);
     if (result) cues.push({...result, key: `${result.key}:reprise`, reprise: true});
   }
   return cues;
 }
 
 /** Public ballots use their committed prefix; legacy sealed receipts reveal only after resolution. */
-export function werewolfMomentCues(moment: WerewolfWatchMoment): WerewolfWatchCue[] {
+export function werewolfMomentCues(moment: WerewolfWatchMoment, houseNarration = true): WerewolfWatchCue[] {
   const key = `${moment.snapshot.gameId}:${moment.snapshot.audience}:${moment.cursor}`;
   if (!isWerewolfPlayable(moment.entry)) return [];
-  const result: WerewolfWatchCue = {key, baseDurationMs: replayMoment({...moment.snapshot, entries: [moment.entry]}).duration, moment};
+  const result: WerewolfWatchCue = {key, baseDurationMs: replayMoment({...moment.snapshot, entries: [moment.entry]},houseNarration).duration, moment,...(!houseNarration && {houseNarration:false})};
   const wolfIds = moment.transformWolfIds ?? [];
   const transform = (cue: WerewolfWatchCue): WerewolfWatchCue => {
     if (!wolfIds.some(id => moment.wolfForms?.[id])) return cue;
@@ -88,7 +90,7 @@ export function werewolfMomentCues(moment: WerewolfWatchMoment): WerewolfWatchCu
   };
   if (moment.night) return [...werewolfNightSteps(moment.night.actions).map(({action: nightAction, decision}): WerewolfWatchCue => ({ ...result,
     key: `${key}:${nightAction.kind}${decision ? ":decision" : ""}`,
-    baseDurationMs: decision && nightAction.kind !== "hunt" && nightAction.speech ? soloPresentationDurationMs(nightAction.speech.text) : werewolfHouseDuration(werewolfNightHouseSpeech(nightAction, moment.snapshot.players)),
+    baseDurationMs: decision && nightAction.kind !== "hunt" && nightAction.speech ? soloPresentationDurationMs(nightAction.speech.text) : houseNarration ? werewolfHouseDuration(werewolfNightHouseSpeech(nightAction, moment.snapshot.players)) : 5000,
     nightAction, nightDecision: decision,
     moment: { ...moment, snapshot: moment.night!.before },
   })).map(cue => cue.nightAction?.kind === "hunt" ? transform(cue) : cue), result];
@@ -156,8 +158,8 @@ export function werewolfDoctorSave(moment: WerewolfWatchMoment) {
 
 /** The role's accepted explanation precedes its result; never derive speech from the outcome. */
 export function werewolfCueMoment(cue: WerewolfWatchCue) {
-  const moment = replayMoment({...cue.moment.snapshot, entries: [cue.moment.entry]});
-  if (cue.nightAction && !cue.nightDecision) return {...moment, house: true, actor: undefined, speaker: "The House", text: werewolfNightHouseSpeech(cue.nightAction, cue.moment.snapshot.players), spoken: true, details: []};
+  const moment = replayMoment({...cue.moment.snapshot, entries: [cue.moment.entry]},cue.houseNarration !== false);
+  if (cue.nightAction && !cue.nightDecision && cue.houseNarration !== false) return {...moment, house: true, actor: undefined, speaker: "The House", text: werewolfNightHouseSpeech(cue.nightAction, cue.moment.snapshot.players), spoken: true, details: []};
   if (!cue.nightDecision) return moment;
   const action = cue.nightAction;
   if (!action || action.kind === "hunt" || !action.speech) throw new Error("Night decision clip requires accepted speech");

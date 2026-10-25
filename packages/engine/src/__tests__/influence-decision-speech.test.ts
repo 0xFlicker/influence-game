@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { decisionSpeechPolicy, withDecisionSpeech, validateDecisionSpeech } from "../influence-decision-speech";
+import { CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION, resolveInfluenceDecisionContractVersion, decisionSpeechPolicy, withDecisionSpeech, validateDecisionSpeech } from "../influence-decision-speech";
 import { GameState } from "../game-state";
 import { TranscriptLogger } from "../transcript-logger";
 import { Phase } from "../types";
@@ -58,6 +58,37 @@ test("sealed collection runs concurrently, then commits in roster order", async 
   releases.get("a")!();
   await run;
   expect(committed).toEqual(["a", "b", "c"]);
+});
+
+test("a failed sealed call drains its siblings before the owning turn can exit", async () => {
+  const releases = players.map(() => Promise.withResolvers<void>());
+  const completed: string[] = [], committed: string[] = [];
+  const failure = new Error("Accepted evidence upload failed");
+  let exited = false;
+  const run = resolveSealedElimRound({ registration: FORMAT_CATALOG.majority_elimination,
+    traceAction: "format-majority-elimination-ballot", participants: players,
+    collectDecision: async (player, targetId) => {
+      await releases[players.indexOf(player)]!.promise;
+      if (player.id === "b") throw failure;
+      // Represents terminal evidence persistence, which requires the turn's owner.
+      expect(exited).toBe(false);
+      completed.push(player.id);
+      return { targetId, decision: {} };
+    },
+    recordAcceptedBallot: async ({ ballot }) => { committed.push(ballot.voterId); },
+    breakTie: async ids => ({ resolution: { kind: "clear", eliminatedId: ids[0]!, tiedSet: [...ids] }, evidence: null }),
+  }).finally(() => { exited = true; });
+  const rejected = run.catch(error => error);
+  releases[1]!.resolve();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(exited).toBe(false);
+  releases[2]!.resolve();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(exited).toBe(false);
+  releases[0]!.resolve();
+  expect(await rejected).toBe(failure);
+  expect(completed).toEqual(["c", "a"]);
+  expect(committed).toEqual([]);
 });
 
 import { MockAgent } from "./mock-agent";
@@ -119,4 +150,12 @@ test("ballot speech links to its exact classic receipt", () => {
   expect(logger.transcript[1]!.dialogueContext?.decisionSpeech?.receiptEntrySequence).toBe(logger.transcript[0]!.entrySequence);
   logger.logDecisionSpeech("c", "vote", Phase.VOTE, { decisionMessage: "Ada." }, true);
   expect(logger.transcript[2]!.dialogueContext?.decisionSpeech?.receiptEntrySequence).toBeUndefined();
+});
+
+
+test("new games freeze speech v2 and only unversioned records select historical replay", () => {
+  expect(CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION).toBe(2);
+  expect(resolveInfluenceDecisionContractVersion(undefined)).toBe(1);
+  for (const version of [1, 2] as const) expect(resolveInfluenceDecisionContractVersion(version)).toBe(version);
+  for (const value of [null, 0, 3, "2"]) expect(() => resolveInfluenceDecisionContractVersion(value)).toThrow("Unsupported Influence decision contract version");
 });

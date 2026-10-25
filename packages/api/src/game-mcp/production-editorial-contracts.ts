@@ -9,7 +9,7 @@ const audience={type:"string",enum:["public","mystery","omniscient"]};
 const tags={type:"object",maxProperties:32,additionalProperties:{type:"string",minLength:1,maxLength:256}};
 const rectangle=object({x:{type:"number"},y:{type:"number"},width:{type:"number"},height:{type:"number"}});
 export const snapshotSchema={oneOf:[
-  object({gameId:id,gameKind:{const:"werewolf"},audience:{enum:["mystery","omniscient"]},thinking:bool,throughEventSequence:integer,throughCursor:integer,publicationCutoff:text,availableCharacterAssets:strings,sourceHash:hash}),
+  object({gameId:id,gameKind:{const:"werewolf"},audience:{enum:["mystery","omniscient"]},thinking:bool,throughEventSequence:integer,throughCursor:integer,publicationCutoff:text,availableCharacterAssets:strings,sourceHash:hash,projectionVersion:{const:1},catalogVersion:{enum:[1,2,3]},legacyPassThoughts:{const:true}},["gameId","gameKind","audience","thinking","throughEventSequence","throughCursor","publicationCutoff","availableCharacterAssets","sourceHash"]),
   object({gameId:id,gameKind:{const:"influence"},audience:{const:"public"},projectionVersion:{const:3},throughEventSequence:integer,throughTurnSequence:{anyOf:[integer,{type:"null"}]},transcriptPrefix:object({maxId:integer,maxEntrySequence:integer}),acceptedCutoff:text,acceptedSourceHash:hash,publicationCutoff:text,sourceHash:hash,mediaReferences:object({portraits:{type:"object",additionalProperties:text},fullBodies:{type:"object",additionalProperties:text},fullBodyHeads:{type:"object",additionalProperties:rectangle},sceneIds:strings})}),
 ]};
 const policy={oneOf:[object({mode:{enum:["all","none"]}}),object({mode:{const:"any"},labels:{type:"array",uniqueItems:true,maxItems:4,items:{enum:Object.keys(PRODUCTION_LABELS)}}})]};

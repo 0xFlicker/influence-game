@@ -123,3 +123,36 @@ version IDs, text hashes, speaker identity and measured durations in the same
 export descriptor used by local recordings. A suspended Audio Mode game stays
 paused after successful retry until **Resume game with ready audio** is selected.
 See [Audio Mode](audio-mode.md) for worker configuration and qualification limits.
+
+## Frozen source and recording authority
+
+New Werewolf snapshots carry `projectionVersion: 1` inside the source hash.
+Unversioned descriptors resolve the finite historical catalog/reference contracts
+by an exact full-hash match. This preserves the pre-audio catalog, phase-scene and
+proposal-default changes, original head geometry availability and original cutout
+selection. The verified catalog contract travels with every source page and drives
+both Studio binding and CLI compilation. Existing selected IDs are never reselected
+or expanded. An explicit visual refresh records the verified historical catalog
+contract in the new versioned snapshot; it does not upgrade cut membership.
+Historical pass-thinking IDs can be reconstructed only under their
+verified old hash; current catalogs, live playback and contestant history still
+omit passes.
+
+An exact source hash cannot recover a deleted temporary appearance mapping or an
+old rendering compiler that was never retained or versioned. Keep original offline
+bundles/movies for those cases. Missing or changed historical inputs fail closed;
+never replace their hashes with new ones. Source contract versioning preserves the
+recorded inputs and membership; it is not a promise of pixel-identical encoding
+across unpinned browser/codec versions.
+
+A frozen export's generated recordings resolve by their original version IDs and
+published track frontier, including after a retake, House refresh or voice recovery
+publishes a successor. Source text, speaker, media hash and duration must still
+match. Old unpublished copies, foreign-game versions and private audio outside the
+selected audience remain unavailable. The CLI reads these exact versions before
+fetching their original URLs; it does not regenerate audio.
+
+The Source preview's thinking switch, filters and view do not change the selected
+cut's recordings or media. Preparation covers the union of preview and selected
+cut moments. A thinking segment retained in the cut therefore keeps its measured
+recording and timing even while the Source preview hides thinking.

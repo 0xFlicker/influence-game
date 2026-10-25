@@ -1,5 +1,16 @@
 # Local Model Evaluation
 
+Provider parameters follow frozen model capabilities: non-reasoning models omit
+reasoning summaries and models without Flex support use their supported tier.
+Local task-budget admission rejections retain zero-charge `not_dispatched`
+receipts; uncertain dispatches remain reserved. Heartbeat locks serialize game
+and gateway writers across processes and recover abandoned locks. Inspect these
+receipts alongside retained API game IDs and sanitized provider evidence. New
+Influence speech retries include the actual clean UTF-8 overage, and all parallel
+calls settle before a failed ballot batch releases its owner. Historical accepted
+decisions replay without regeneration. Continue using direct House calls and
+typed contracts; do not use `as any` to bypass the decision boundary.
+
 New shared model calls request primarily English authored prose, including retrospective speech and thinking, while allowing natural brief foreign phrases and preserving names, quotations and structured identifiers. Inspect the actual responses in `--chatty` and private evidence: this is prompt guidance, not language-based validation, and accepted historical output is never translated in place.
 
 Werewolf v11 begins each day with concurrent private `werewolf.speaking_priority`

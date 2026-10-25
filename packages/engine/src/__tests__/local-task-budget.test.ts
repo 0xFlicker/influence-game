@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { reserveLocalTaskAudio, withLocalTaskBudget, updateLocalTaskLedger, type LocalTaskLedger } from "../local-task-budget";
 import type { ProviderAttemptIntent } from "../provider-execution";
+import { ProviderCircuitOpenError, ProviderCallBudgetExhaustedError, ProviderJournalEntryExhaustedError } from "../provider-execution";
 
 async function fixture(run: (path: string, env: NodeJS.ProcessEnv) => Promise<void>) {
   const dir = await mkdtemp(join(tmpdir(), "local-task-budget-")), path = join(dir, "ledger.json");
@@ -74,3 +75,80 @@ test("incomplete usage retains larger native charges", () => fixture(async(path,
   expect(entry.charged).toBeGreaterThanOrEqual(100);
   expect(entry.state).toBe("reserved");
 }));
+
+test("definitively rejected journal admissions retain zero-charge receipts", () => fixture(async (path, env) => {
+  for (const [index, error] of [
+    new ProviderCircuitOpenError("openai:gpt-6-luna", "entry:openai:gpt-6-luna", 1, false),
+    new ProviderCallBudgetExhaustedError("openai:gpt-6-luna", 2, 2),
+    new ProviderJournalEntryExhaustedError("openai:gpt-6-luna"),
+  ].entries()) {
+    const hooks = withLocalTaskBudget({ onReserve: () => { throw error; } }, env);
+    await expect(hooks.onReserve!(intent(`rejected-${index}`))).rejects.toBe(error);
+  }
+  const ledger = JSON.parse(await readFile(path, "utf8")) as LocalTaskLedger;
+  expect(ledger.entries).toHaveLength(3);
+  expect(ledger.entries.every(entry => entry.state === "not_dispatched" && entry.charged === 0 && entry.reserved > 0)).toBe(true);
+  // A retry must receive a new reservation; the zero-charge receipt cannot be reused.
+  await expect(withLocalTaskBudget({}, env).onReserve!(intent("rejected-0"))).rejects.toThrow("new attempt ID");
+}));
+
+test("a rejected duplicate admission never refunds an uncertain prior dispatch", () => fixture(async (path, env) => {
+  const request = intent("uncertain");
+  await withLocalTaskBudget({}, env).onReserve!(request);
+  const before = JSON.parse(await readFile(path, "utf8")) as LocalTaskLedger;
+  const hooks = withLocalTaskBudget({ onReserve: () => { throw new Error("owner changed"); } }, env);
+  await expect(hooks.onReserve!(request)).rejects.toThrow("owner changed");
+  expect(JSON.parse(await readFile(path, "utf8"))).toEqual(before);
+}));
+
+const budgetModule = new URL("../local-task-budget.ts", import.meta.url).pathname;
+
+test("independent processes serialize reservations without losing updates or exceeding the allowance", () => fixture(async (path) => {
+  await updateLocalTaskLedger(path, ledger => { ledger.limits.xaiUsd = 1; });
+  const script = `
+    import { reserveLocalTaskAudio, updateLocalTaskLedger } from ${JSON.stringify(budgetModule)};
+    const [path, id] = process.argv.slice(1);
+    await updateLocalTaskLedger(path, () => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100); });
+    try { await reserveLocalTaskAudio(id, 'a'.repeat(10000), 'g', { INFLUENCE_LOCAL_TASK_BUDGET: path }); console.log('reserved'); }
+    catch (error) { if (!error.message.includes('allowance exhausted')) throw error; console.log('exhausted'); }
+  `;
+  const children = Array.from({ length: 5 }, (_, i) => Bun.spawn([process.execPath, "-e", script, path, `process-${i}`], { stdout: "pipe", stderr: "pipe" }));
+  try {
+    const results = await Promise.all(children.map(async child => ({
+      output: (await new Response(child.stdout).text()).trim(), stderr: await new Response(child.stderr).text(), exit: await child.exited,
+    })));
+    expect(results.every(result => result.exit === 0 && result.stderr === "")).toBe(true);
+    expect(results.filter(result => result.output === "reserved")).toHaveLength(3);
+    expect(results.filter(result => result.output === "exhausted")).toHaveLength(2);
+    const ledger = JSON.parse(await readFile(path, "utf8")) as LocalTaskLedger;
+    expect(ledger.entries).toHaveLength(3);
+    expect(ledger.entries.reduce((total, entry) => total + entry.charged, 0)).toBeCloseTo(0.9);
+  } finally { for (const child of children) child.kill(); await Promise.all(children.map(child => child.exited)); }
+}), 15_000);
+
+test("crashed lock owners recover without releasing uncertain charge reservations", () => fixture(async (path, env) => {
+  await reserveLocalTaskAudio("uncertain-audio", "hello", "g", env);
+  const before = JSON.parse(await readFile(path, "utf8")) as LocalTaskLedger;
+  const script = `
+    import { writeSync } from 'node:fs';
+    import { updateLocalTaskLedger } from ${JSON.stringify(budgetModule)};
+    await updateLocalTaskLedger(process.argv[1], () => { writeSync(1, 'locked'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 30000); });
+  `;
+  const child = Bun.spawn([process.execPath, "-e", script, path], { stdout: "pipe", stderr: "pipe" });
+  try {
+    const reader = child.stdout.getReader();
+    const message = await reader.read();
+    expect(new TextDecoder().decode(message.value)).toBe("locked");
+    reader.releaseLock();
+    child.kill("SIGKILL");
+    await child.exited;
+    // Advance only the dead lock's age, avoiding a ten-second test sleep.
+    const expired = new Date(Date.now() - 11_000);
+    await utimes(`${path}.lock`, expired, expired);
+    await reserveLocalTaskAudio("after-crash", "hello", "g", env);
+    const ledger = JSON.parse(await readFile(path, "utf8")) as LocalTaskLedger;
+    expect(ledger.entries).toHaveLength(2);
+    expect(ledger.entries[0]).toEqual(before.entries[0]);
+    expect(ledger.entries.every(entry => entry.state === "reserved" && entry.charged > 0)).toBe(true);
+  } finally { child.kill(); await child.exited; }
+}), 15_000);

@@ -801,6 +801,7 @@ describe("Game REST API", () => {
       const config = JSON.parse(game.config);
       expect(config.maxRounds).toBeGreaterThanOrEqual(10);
       expect(config.empowerRevoteVersion).toBe(2);
+    expect(config.decisionContractVersion).toBe(2);
       expect(config.formatManifest).toEqual([
         "save_or_eliminate",
         "vote_bomb",

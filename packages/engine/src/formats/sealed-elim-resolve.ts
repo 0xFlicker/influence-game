@@ -1,3 +1,4 @@
+import { drainProviderCalls } from "../provider-batch";
 import type { UUID } from "../types";
 import type { SealedElimRegistration } from "./catalog";
 import type {
@@ -144,7 +145,7 @@ export async function resolveSealedElimRound<TDecision, TTieEvidence>(
   const forfeitedVoterIds: UUID[] = [];
   const legalTargetIdsByVoter = new Map<UUID, readonly UUID[]>();
 
-  const collectedBallots = await Promise.all(options.participants.map(async (participant) => {
+  const collectedBallots = await drainProviderCalls(options.participants.map(async (participant) => {
     const legalTargetIds = options.legalTargetIdsFor?.(participant, aliveIds)
       ?? aliveIds.filter((id) => id !== participant.id);
     legalTargetIdsByVoter.set(participant.id, legalTargetIds);

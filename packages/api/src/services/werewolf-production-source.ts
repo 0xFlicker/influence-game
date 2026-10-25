@@ -5,7 +5,7 @@ import { and, eq, inArray, or } from "drizzle-orm";
 import { replayWerewolf, werewolfExecutionFinished } from "@influence/engine/werewolf";
 import type { WerewolfAudience } from "@influence/engine/werewolf/observation";
 import { projectWerewolfProductionProvenance, projectWerewolfProductionWatch } from "@influence/engine/werewolf/watch";
-import { assembleProductionCatalog } from "@influence/engine/production-moments";
+import { assembleProductionCatalog, type ProductionCatalog } from "@influence/engine/production-moments";
 import { buildWerewolfProductionSources } from "@influence/engine/production-moments/werewolf-source";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { isViewerGame } from "./game-visibility.js";
@@ -20,6 +20,11 @@ import { sha256StableJson } from "./stable-hash.js";
 import type { VisualTransaction } from "./visual-execution-boundary.js";
 
 export interface WerewolfProductionSnapshot {
+  /** First explicitly versioned source contract. Absent only on historical descriptors. */
+  projectionVersion?: 1;
+  /** Visual refresh retains the verified historical moment contract. */
+  catalogVersion?: 1 | 2 | 3;
+  legacyPassThoughts?: true;
   gameId: string;
   gameKind: "werewolf";
   audience: WerewolfAudience;
@@ -42,13 +47,16 @@ export function decodeWerewolfProductionSnapshot(value: unknown): WerewolfProduc
   if (!value || typeof value !== "object" || Array.isArray(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new WerewolfGameError("Invalid production source snapshot");
   const snapshot = value as Record<string, unknown>;
   const keys = ["gameId", "gameKind", "audience", "thinking", "throughEventSequence", "throughCursor", "publicationCutoff", "availableCharacterAssets", "sourceHash"];
-  if (Object.keys(snapshot).some(key => !keys.includes(key)) || Object.keys(snapshot).length !== keys.length
+  if (Object.keys(snapshot).some(key => !["projectionVersion","catalogVersion","legacyPassThoughts"].includes(key) && !keys.includes(key)) || keys.some(key => !Object.hasOwn(snapshot,key))
+    || Object.hasOwn(snapshot,"projectionVersion") && snapshot.projectionVersion !== 1
+    || Object.hasOwn(snapshot,"catalogVersion") && (snapshot.projectionVersion !== 1 || ![1,2,3].includes(Number(snapshot.catalogVersion)) || typeof snapshot.catalogVersion !== "number")
+    || Object.hasOwn(snapshot,"legacyPassThoughts") && (snapshot.projectionVersion !== 1 || snapshot.legacyPassThoughts !== true)
     || typeof snapshot.gameId !== "string" || !snapshot.gameId || snapshot.gameId.length > 200 || snapshot.gameKind !== "werewolf" || (snapshot.audience !== "mystery" && snapshot.audience !== "omniscient") || typeof snapshot.thinking !== "boolean" || (snapshot.audience === "mystery" && snapshot.thinking)
     || typeof snapshot.throughEventSequence !== "number" || !Number.isSafeInteger(snapshot.throughEventSequence) || snapshot.throughEventSequence < 1 || typeof snapshot.throughCursor !== "number" || !Number.isSafeInteger(snapshot.throughCursor) || snapshot.throughCursor < 1
     || typeof snapshot.publicationCutoff !== "string" || !Number.isFinite(Date.parse(snapshot.publicationCutoff)) || new Date(snapshot.publicationCutoff).toISOString() !== snapshot.publicationCutoff
     || Date.parse(snapshot.publicationCutoff) > Date.now() || !Array.isArray(snapshot.availableCharacterAssets) || snapshot.availableCharacterAssets.length > 64 || snapshot.availableCharacterAssets.some(hash => typeof hash !== "string" || !hash || hash.length > 128) || new Set(snapshot.availableCharacterAssets).size !== snapshot.availableCharacterAssets.length
     || typeof snapshot.sourceHash !== "string" || !/^sha256:[a-f0-9]{64}$/.test(snapshot.sourceHash)) throw new WerewolfGameError("Invalid production source snapshot");
-  return { gameId: snapshot.gameId, gameKind: snapshot.gameKind, audience: snapshot.audience, thinking: snapshot.thinking, throughEventSequence: snapshot.throughEventSequence, throughCursor: snapshot.throughCursor, publicationCutoff: snapshot.publicationCutoff, availableCharacterAssets: snapshot.availableCharacterAssets as string[], sourceHash: snapshot.sourceHash };
+  return { ...(snapshot.projectionVersion === 1 && {projectionVersion:1 as const}), ...(snapshot.catalogVersion !== undefined && {catalogVersion:snapshot.catalogVersion as 1|2|3}), ...(snapshot.legacyPassThoughts === true && {legacyPassThoughts:true as const}), gameId: snapshot.gameId, gameKind: snapshot.gameKind, audience: snapshot.audience, thinking: snapshot.thinking, throughEventSequence: snapshot.throughEventSequence, throughCursor: snapshot.throughCursor, publicationCutoff: snapshot.publicationCutoff, availableCharacterAssets: snapshot.availableCharacterAssets as string[], sourceHash: snapshot.sourceHash };
 }
 
 function validateOptions(options: WerewolfProductionSourceOptions) {
@@ -90,29 +98,58 @@ export async function buildWerewolfProductionSourceSnapshot(tx: DrizzleDB | Visu
     return ids.some(id => Boolean(wolfForms[id]));
   }, retakes);
   if (options.snapshot && options.snapshot.throughCursor !== projection.latestCursor) throw new WerewolfGameError("Production source cursor changed", 409);
-  const references = await werewolfReferenceMetadata(tx, game.id, events.find(event => event.type === "werewolf.started")?.payload.players,
+  let references = await werewolfReferenceMetadata(tx, game.id, events.find(event => event.type === "werewolf.started")?.payload.players,
     { availableHashes: options.refreshVisuals ? undefined : options.snapshot?.availableCharacterAssets });
   const availableCharacterAssets = [...new Set(references.flatMap(ref => [ref.bodyHash, ref.portraitHash].filter((hash): hash is string => hash !== null)))].sort();
   const readyCutouts = await readyCutoutsByHash(tx, references.flatMap(ref => ref.bodyHash ? [ref.bodyHash] : []), publicationCutoff);
-  const cutoutReferences = references.flatMap(ref => {
+  let cutoutReferences = references.flatMap(ref => {
     const job = ref.bodyHash ? readyCutouts.get(ref.bodyHash) : undefined;
     return job?.image ? [{ playerId: ref.profile.id, sourceHash: job.sourceHash, image: job.image }] : [];
   });
   const provenance = projectWerewolfProductionProvenance(events, options.audience);
   const thoughts = options.thinking ? (await readWerewolfProductionThinking(tx, game.id, options.audience, projection.latestCursor, { throughEventSequence, includeHidden: true })).entries : [];
-  const catalog = assembleProductionCatalog({ gameId: game.id, gameKind: "werewolf", audience: options.audience,
-    sources: buildWerewolfProductionSources({ gameId: game.id, audience: options.audience, moments: projection.moments, provenance, thoughts, opening: true }) });
+  const sourceInput = { gameId: game.id, audience: options.audience, moments: projection.moments, provenance, thoughts, opening: true };
+  const sources = buildWerewolfProductionSources(sourceInput);
+  const assemble = (werewolfCatalogVersion: 1 | 2 | 3, legacyPassThoughts = false) => assembleProductionCatalog({gameId:game.id, gameKind:"werewolf", audience:options.audience,
+    sources:legacyPassThoughts ? buildWerewolfProductionSources({...sourceInput,legacyPassThoughts:true}) : sources, werewolfCatalogVersion});
+  const original: {catalog:ProductionCatalog} | null = options.refreshVisuals ? await buildWerewolfProductionSourceSnapshot(tx, id, {...options,refreshVisuals:false}) : null;
+  let catalogVersion: 1 | 2 | 3 = original?.catalog.werewolfCatalogVersion ?? options.snapshot?.catalogVersion ?? 3;
+  let legacyPassThoughts = original?.catalog.werewolfLegacyPassThoughts ?? options.snapshot?.legacyPassThoughts ?? false;
+  let catalog = assemble(catalogVersion,legacyPassThoughts);
   const artifactIds = [...new Set(rows.flatMap(({ version }) => [version.imageArtifactId, version.annotatedArtifactId, ...version.plan.cast.map(member => member.referenceArtifactId),
     ...(version.shots ? [...version.shots.groups, ...(version.shots.overview ? [version.shots.overview] : [])].flatMap(shot => [shot.imageArtifactId, shot.annotatedArtifactId]) : [])]))];
   const artifacts = artifactIds.length ? await tx.select({ id: schema.visualArtifacts.id, contentHash: schema.visualArtifacts.contentHash }).from(schema.visualArtifacts)
     .where(and(eq(schema.visualArtifacts.gameId, game.id), inArray(schema.visualArtifacts.id, artifactIds))) : [];
   artifacts.sort((a, b) => a.id.localeCompare(b.id));
   if (artifacts.length !== artifactIds.length) throw new WerewolfGameError("Published production imagery is unavailable", 409);
-  const sourceHash = sha256StableJson({ gameId: game.id, audience: options.audience, thinking: options.thinking, throughEventSequence, publicationCutoff,
+  const projectionVersion = !options.snapshot || options.refreshVisuals ? 1 : options.snapshot.projectionVersion;
+  const contract = {...(projectionVersion && {projectionVersion}),
+    ...(projectionVersion && (catalogVersion !== 3 || options.snapshot?.catalogVersion !== undefined) && {catalogVersion}),
+    ...(projectionVersion && legacyPassThoughts && {legacyPassThoughts:true as const})};
+  const hashProjection = (candidateCatalog: typeof catalog, candidateReferences: typeof references, candidateCutouts: typeof cutoutReferences) => sha256StableJson({
+    ...contract, gameId: game.id, audience: options.audience, thinking: options.thinking, throughEventSequence, publicationCutoff,
     ...(retakes.size ? {retakes: [...retakes]} : {}),
-    events, thoughts, catalog, references, ...(cutoutReferences.length ? { cutoutReferences } : {}), publications: rows.map(({ scene, publication, version }) => ({ scene: { id: scene.id, roomId: scene.roomId, boundarySequence: scene.boundarySequence }, publication, version })), artifacts });
+    events, thoughts, catalog:candidateCatalog, references:candidateReferences, ...(candidateCutouts.length ? { cutoutReferences:candidateCutouts } : {}), publications: rows.map(({ scene, publication, version }) => ({ scene: { id: scene.id, roomId: scene.roomId, boundarySequence: scene.boundarySequence }, publication, version })), artifacts });
+  let sourceHash = hashProjection(catalog,references,cutoutReferences);
+  // Older descriptors did not record a projection version. Identify only the
+  // finite contracts that actually shipped, using their complete original hash.
+  // No data, reference, source hash or selection is repaired to make a pin pass.
+  if (options.snapshot && !options.refreshVisuals && !projectionVersion && options.snapshot.sourceHash !== sourceHash) {
+    const originalReferences = references.map(ref => {const {headPosition:_head,...profile}=ref.profile; return {...ref,profile};});
+    historical: for (const version of [3,2,1] as const) for (const passes of [false,true]) {
+      const candidate = assemble(version,passes);
+      for (const refs of [references,originalReferences]) for (const cutouts of [cutoutReferences,[]]) {
+        const hash = hashProjection(candidate,refs,cutouts);
+        if (hash !== options.snapshot.sourceHash) continue;
+        catalog=candidate;catalogVersion=version;legacyPassThoughts=passes;references=refs;cutoutReferences=cutouts;sourceHash=hash;
+        break historical;
+      }
+    }
+  }
   if (options.snapshot && !options.refreshVisuals && options.snapshot.sourceHash !== sourceHash) throw new WerewolfGameError("Production source snapshot changed; refresh the source", 409);
-  const snapshot: WerewolfProductionSnapshot = { gameId: game.id, gameKind: "werewolf", audience: options.audience, thinking: options.thinking, throughEventSequence, throughCursor: projection.latestCursor, publicationCutoff, availableCharacterAssets, sourceHash };
+  const snapshot: WerewolfProductionSnapshot = { ...contract, gameId: game.id, gameKind: "werewolf", audience: options.audience, thinking: options.thinking, throughEventSequence, throughCursor: projection.latestCursor, publicationCutoff, availableCharacterAssets, sourceHash };
+  // Transport the verified catalog contract; it was not a field in old hashes.
+  catalog = {...catalog,werewolfCatalogVersion:catalogVersion,...(legacyPassThoughts && {werewolfLegacyPassThoughts:true as const})};
   const window = materializeWerewolfWatch(projection, { id: game.id, slug: game.slug, status: game.status, visualPaused: Boolean(pause) }, options.audience, publicationCutoff, rows, references, snapshot);
   const permittedMedia = new Set<string>();
   for (const moment of projection.moments) for (const assetId of bindWerewolfScene(rows, game.id, options.audience, moment.cursor, publicationCutoff, moment.staging).permitted) permittedMedia.add(assetId);

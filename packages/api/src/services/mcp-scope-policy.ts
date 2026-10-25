@@ -5,6 +5,7 @@ export const MCP_OAUTH_SCOPE_VALUES = [
   "games:resume",
   "producer",
   "producer:edit",
+  "producer:routing",
   "moderation:read",
   "moderation:write",
   "assets:manage",
@@ -26,6 +27,11 @@ export interface McpOAuthScopeDefinition {
 }
 
 export const MCP_OAUTH_SCOPE_DEFINITIONS: Record<McpOAuthScope, McpOAuthScopeDefinition> = {
+  "producer:routing": {
+    scope: "producer:routing", label: "Edit waiting-game model routing",
+    description: "Change waiting-game models, fallback limits, exclusions and cast overrides using your current admin or sysop permission.",
+    group: "developer", defaultSelected: false, requiredScopes: ["producer"], requiredRole: "producer",
+  },
   "agents:read": {
     scope: "agents:read",
     label: "Read agents",

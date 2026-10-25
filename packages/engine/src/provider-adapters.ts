@@ -663,7 +663,8 @@ export function compileOpenAIResponsesRequest(
     ? inputMessages[0].content
     : inputMessages.flatMap(responseInputItems);
   const reasoningEffort = requestedReasoningEffort(invocation, runtime);
-  const summary = invocation.reasoning?.summary ?? runtime.openAIReasoningSummary;
+  const summary = runtime.modelCapabilities.supportsReasoningEffort
+    ? invocation.reasoning?.summary ?? runtime.openAIReasoningSummary : undefined;
   const body: Record<string, unknown> = {
     model: runtime.modelId,
     input,

@@ -1,3 +1,4 @@
+import { drainProviderCalls } from "../provider-batch";
 /**
  * Sequester format kernel phase handlers:
  * menu → pick → format mingle → catalog-dispatched resolution.
@@ -447,7 +448,7 @@ async function resolveSaveOrEliminateRound(
   const aliveIds = alive.map((p) => p.id);
   const ballots: SaveOrEliminateBallot[] = [];
 
-  const ballotCommits = await Promise.all(alive.map(async (player) => {
+  const ballotCommits = await drainProviderCalls(alive.map(async (player) => {
     const agent = requireAgent(ctx, player.id, "Save-or-Exit ballot");
     const phaseCtx = prepareAgentPhaseContext(
       ctx,
@@ -1119,7 +1120,7 @@ async function resolveSafetyBounceRound(
   for (const id of board.vulnerable) voteTotals[id] = 0;
   const ballots: Array<{ voterId: UUID; targetId: UUID }> = [];
 
-  const ballotCommits = await Promise.all(alive.map(async (player) => {
+  const ballotCommits = await drainProviderCalls(alive.map(async (player) => {
     const agent = requireAgent(ctx, player.id, "safety-bounce vote");
     const phaseCtx = prepareAgentPhaseContext(
       ctx,

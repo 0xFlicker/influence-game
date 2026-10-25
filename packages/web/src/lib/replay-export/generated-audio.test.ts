@@ -8,6 +8,7 @@ import {buildWerewolfProductionSources} from "@influence/engine/production-momen
 import type {PublishedAudioTrack} from "@influence/engine/audio-track";
 import {bindWerewolfProductionPresentation} from "./production-presentation";
 import {attachGeneratedAudio,recordingIdentity} from "./generated-audio";
+import {productionMediaIds} from "../../app/admin/production/production-media-selection";
 import {compilePresentation} from "./presentation";
 import type {CachedAsset} from "./assets";
 const hash=(text:string)=>createHash("sha256").update(text).digest("hex");
@@ -34,6 +35,13 @@ test("generated House, speech and independent thinking versions reach the shared
  const selectedIds=eligible.map(moment=>moment.id);
  const asset=async(clip:PublishedAudioTrack["clips"][number])=>({path:clip.url,sha256:clip.sha256,mediaType:"audio",durationMs:clip.durationMs} as CachedAsset);
  const attached=await attachGeneratedAudio({source,selectedIds,publication,hash,asset});
+ // Source playback can hide thinking while the selected export retains it.
+ const previewIds=source.filter(moment=>moment.segments[0]?.picture.kind!=="thinking").map(moment=>moment.id);
+ const sourceView=await attachGeneratedAudio({source,selectedIds:productionMediaIds(previewIds,selectedIds),publication,hash,asset});
+ expect(sourceView.recordings.filter(row=>selectedIds.includes(row.momentId))).toEqual(attached.recordings);
+ const sourceCut=compilePresentation({source:sourceView.source,selectedIds,profile:{ending:{holdMs:0},overrides:{}},fps:30,assets:sourceView.assets,music:false});
+ const cutView=compilePresentation({source:attached.source,selectedIds,profile:{ending:{holdMs:0},overrides:{}},fps:30,assets:attached.assets,music:false});
+ expect(sourceCut.audio).toEqual(cutView.audio);
  expect(attached.recordings).toHaveLength(eligible.length);
  const compiled=compilePresentation({source:attached.source,selectedIds,profile:{ending:{holdMs:0},overrides:{}},fps:30,assets:attached.assets,music:false});
  expect(compiled.audio.clips.filter(clip=>clip.purpose==="speech")).toHaveLength(eligible.length);

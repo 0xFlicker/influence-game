@@ -21,6 +21,8 @@ House episode naming use the same pre-dispatch hook. Unrelated automatic screeni
 learning, image generation, health probes and House Cuts are disabled in this mode.
 Generation failures retain canonical acceptance and the existing recovery path.
 
+Gateway and game workers serialize ledger updates through a heartbeat lock with bounded contention retries. A crashed owner's stale lock can be recovered without changing any charge entries. Stop every old local-budget process before upgrading the locking implementation; an abandoned legacy `.lock` file requires operator verification that no old writer remains before removing that file. Never remove the ledger or its reservations to recover a lock. The new lock is a directory maintained by `proper-lockfile`; do not manually remove a live lock.
+
 The ledger maintains independent ceilings of $15 OpenAI, 10,000 Katana credits,
 and $15 xAI. The user subsequently authorized a separate $10 Meta API cap; native Meta
 Contributor text is charged against that independent pool.
@@ -36,6 +38,8 @@ rounding upward and retaining native credit receipts. TTS charges every dispatch
 at $30 per million UTF-8 bytes, conservatively above its published $15 per million
 characters, including markup, retries and uncertain outcomes. No refunds are
 assumed for TTS. This is an admission guard and upper-bound ledger, not an invoice.
+
+If the durable journal rejects a newly reserved attempt before dispatch (for example, a cooldown or exhausted fallback allowance), retain its reservation receipt as `not_dispatched` with zero charged. This is the only automatic admission refund. Existing reservations, uncertain provider outcomes, and failed evidence persistence keep their holds; a rejected attempt ID cannot be reused to dispatch without a fresh reservation.
 
 Focused guard validation:
 

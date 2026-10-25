@@ -154,6 +154,14 @@ server validation rejects substituted versions. Export downloads existing media
 and makes no provider calls. Future producer replacement can append a version
 without changing logical clip identity; that editorial action is not exposed yet.
 
+Pinned version reads use the original track's published ready frontier, even after
+a successor becomes active. Retakes, House refresh and voice recovery keep the
+old version URLs and exact bytes readable. Copies in an unpublished successor are
+not publications. Exact-version reads still check game, audience, thinking access
+and recipe identity; selection validation also checks the frozen source's text and
+speaker. The export CLI requests the descriptor's versions rather than resolving
+them through today's active manifest.
+
 ## Correcting a live cast
 
 The explicit operator selections must exist in `agent_voices` before game start.
@@ -201,6 +209,12 @@ open public viewers and explicitly load the new publication in Studio; a browser
 that already downloaded old media cannot have those bytes remotely recalled.
 
 ## Live Influence audio coordinates
+
+Durable Influence delivery annotations bind through the accepted speech's
+`decisionId` and `acceptedAttempt` to its provider subcall. The final turn event
+watermark cannot identify individual decisions in a multi-player sealed turn.
+This join keeps separate ballot and speech annotations attached to their accepted
+sources without changing canonical events or stored provider evidence.
 
 Published transcript-derived clips include both the saved database `transcriptId`
 and, when available, the durable game-local `entrySequence`. Live websocket

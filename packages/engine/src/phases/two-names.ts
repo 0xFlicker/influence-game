@@ -1,3 +1,4 @@
+import { drainProviderCalls } from "../provider-batch";
 import type {
   CanonicalSourcePointer,
   FormatResolutionPayload,
@@ -453,7 +454,7 @@ export async function runTwoNamesBallots(ctx: PhaseRunnerContext): Promise<void>
   const current = projection(ctx);
   const finalists = current.finalistPlayerIds;
   if (!finalists) throw new Error("Two Names ballots require final nominees");
-  const ballotCommits = await Promise.all(current.eligibleVoterIds.map(async (voterId) => {
+  const ballotCommits = await drainProviderCalls(current.eligibleVoterIds.map(async (voterId) => {
     const voter = requireAgent(ctx, voterId, "Two Names ballot");
     const phaseCtx = prepareAgentPhaseContext(
       ctx,

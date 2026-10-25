@@ -1,5 +1,13 @@
 # Reasoning & Transcript Observability
 
+New Influence games freeze their decision-speech contract. Historical accepted
+ballots replay under their original exact contract without replacement provider
+calls. Length repairs include the clean UTF-8 speech draft and measured overage.
+Parallel ballot collectors drain every dispatched call before releasing ownership,
+so a failed peer cannot discard another peer's response or evidence. Durable audio
+annotations join accepted attempt IDs to decision IDs; a turn's final event number
+is only a visibility boundary, never the identity of all speeches in that turn.
+
 Werewolf v11 begins each day with concurrent private `werewolf.speaking_priority`
 requests. Each returns only an integer `priority` from 1–100; no authored thinking,
 speech or delivery tags. Inspect provider evidence for these scheduling calls,

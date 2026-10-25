@@ -1,0 +1,1376 @@
+{
+  "originCommit": "0bcc1079",
+  "events": [
+    {
+      "type": "werewolf.started",
+      "gameId": "origin-main-production-golden",
+      "sequence": 1,
+      "payload": {
+        "config": {
+          "rulesVersion": 9,
+          "preset": "one_wolf",
+          "maxDays": 1,
+          "discussionPolicy": {
+            "bytesPerLivingPlayer": 400,
+            "messageBytes": 320,
+            "maxHandoffs": 3
+          }
+        },
+        "seed": "origin-main-production-golden-seed",
+        "players": [
+          {
+            "id": "origin-main-production-golden-p0",
+            "name": "Player 0",
+            "personality": "Fixture",
+            "backstory": "",
+            "strategy": "",
+            "avatarUrl": null
+          },
+          {
+            "id": "origin-main-production-golden-p1",
+            "name": "Player 1",
+            "personality": "Fixture",
+            "backstory": "",
+            "strategy": "",
+            "avatarUrl": null
+          },
+          {
+            "id": "origin-main-production-golden-p2",
+            "name": "Player 2",
+            "personality": "Fixture",
+            "backstory": "",
+            "strategy": "",
+            "avatarUrl": null
+          },
+          {
+            "id": "origin-main-production-golden-p3",
+            "name": "Player 3",
+            "personality": "Fixture",
+            "backstory": "",
+            "strategy": "",
+            "avatarUrl": null
+          },
+          {
+            "id": "origin-main-production-golden-p4",
+            "name": "Player 4",
+            "personality": "Fixture",
+            "backstory": "",
+            "strategy": "",
+            "avatarUrl": null
+          },
+          {
+            "id": "origin-main-production-golden-p5",
+            "name": "Player 5",
+            "personality": "Fixture",
+            "backstory": "",
+            "strategy": "",
+            "avatarUrl": null
+          }
+        ],
+        "roles": {
+          "origin-main-production-golden-p3": "werewolf",
+          "origin-main-production-golden-p1": "seer",
+          "origin-main-production-golden-p0": "villager",
+          "origin-main-production-golden-p4": "villager",
+          "origin-main-production-golden-p2": "villager",
+          "origin-main-production-golden-p5": "villager"
+        }
+      }
+    },
+    {
+      "type": "werewolf.action_accepted",
+      "payload": {
+        "actorId": "origin-main-production-golden-p0",
+        "action": "introduce",
+        "legalTargetIds": [],
+        "decision": {
+          "kind": "speech",
+          "text": "A brief introduction.",
+          "cue": null
+        },
+        "fallback": null
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 2
+    },
+    {
+      "type": "werewolf.action_accepted",
+      "payload": {
+        "actorId": "origin-main-production-golden-p1",
+        "action": "introduce",
+        "legalTargetIds": [],
+        "decision": {
+          "kind": "speech",
+          "text": "A brief introduction.",
+          "cue": null
+        },
+        "fallback": null
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 3
+    },
+    {
+      "type": "werewolf.action_accepted",
+      "payload": {
+        "actorId": "origin-main-production-golden-p2",
+        "action": "introduce",
+        "legalTargetIds": [],
+        "decision": {
+          "kind": "speech",
+          "text": "A brief introduction.",
+          "cue": null
+        },
+        "fallback": null
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 4
+    },
+    {
+      "type": "werewolf.action_accepted",
+      "payload": {
+        "actorId": "origin-main-production-golden-p3",
+        "action": "introduce",
+        "legalTargetIds": [],
+        "decision": {
+          "kind": "speech",
+          "text": "A brief introduction.",
+          "cue": null
+        },
+        "fallback": null
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 5
+    },
+    {
+      "type": "werewolf.action_accepted",
+      "payload": {
+        "actorId": "origin-main-production-golden-p4",
+        "action": "introduce",
+        "legalTargetIds": [],
+        "decision": {
+          "kind": "speech",
+          "text": "A brief introduction.",
+          "cue": null
+        },
+        "fallback": null
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 6
+    },
+    {
+      "type": "werewolf.action_accepted",
+      "payload": {
+        "actorId": "origin-main-production-golden-p5",
+        "action": "introduce",
+        "legalTargetIds": [],
+        "decision": {
+          "kind": "speech",
+          "text": "A brief introduction.",
+          "cue": null
+        },
+        "fallback": null
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 7
+    },
+    {
+      "type": "werewolf.phase_started",
+      "payload": {
+        "phase": "pack",
+        "day": 1
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 8
+    },
+    {
+      "type": "werewolf.action_accepted",
+      "payload": {
+        "actorId": "origin-main-production-golden-p3",
+        "action": "pack_propose",
+        "legalTargetIds": [
+          "origin-main-production-golden-p0",
+          "origin-main-production-golden-p1",
+          "origin-main-production-golden-p2",
+          "origin-main-production-golden-p4",
+          "origin-main-production-golden-p5"
+        ],
+        "messageBytes": 320,
+        "targetRequired": true,
+        "decision": {
+          "kind": "spoken_target",
+          "targetId": "origin-main-production-golden-p0",
+          "text": "My proposal.",
+          "cue": null,
+          "thinking": "Fixture"
+        },
+        "fallback": null
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 9
+    },
+    {
+      "type": "werewolf.pack_vote_resolved",
+      "payload": {
+        "attempt": 1,
+        "ballots": [
+          {
+            "voterId": "origin-main-production-golden-p3",
+            "targetId": "origin-main-production-golden-p0"
+          }
+        ],
+        "targetId": "origin-main-production-golden-p0",
+        "endReason": "agreed"
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 10
+    },
+    {
+      "type": "werewolf.phase_started",
+      "payload": {
+        "phase": "night",
+        "day": 1
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 11
+    },
+    {
+      "type": "werewolf.action_accepted",
+      "payload": {
+        "actorId": "origin-main-production-golden-p1",
+        "action": "investigate",
+        "legalTargetIds": [
+          "origin-main-production-golden-p0",
+          "origin-main-production-golden-p2",
+          "origin-main-production-golden-p3",
+          "origin-main-production-golden-p4",
+          "origin-main-production-golden-p5"
+        ],
+        "decision": {
+          "kind": "target",
+          "targetId": "origin-main-production-golden-p0",
+          "thinking": "Fixture"
+        },
+        "fallback": null
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 12
+    },
+    {
+      "type": "werewolf.night_resolved",
+      "payload": {
+        "attackTargetId": "origin-main-production-golden-p0",
+        "protectedId": null,
+        "killedId": "origin-main-production-golden-p0",
+        "investigation": {
+          "seerId": "origin-main-production-golden-p1",
+          "targetId": "origin-main-production-golden-p0",
+          "isWolf": false
+        }
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 13
+    },
+    {
+      "type": "werewolf.phase_started",
+      "payload": {
+        "phase": "day",
+        "day": 1
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 14
+    },
+    {
+      "type": "werewolf.action_accepted",
+      "payload": {
+        "actorId": "origin-main-production-golden-p1",
+        "action": "conversation",
+        "legalTargetIds": [],
+        "messageBytes": 320,
+        "legalRecipientIds": [
+          "origin-main-production-golden-p2",
+          "origin-main-production-golden-p3",
+          "origin-main-production-golden-p4",
+          "origin-main-production-golden-p5"
+        ],
+        "legalReplyIds": [],
+        "decision": {
+          "kind": "conversation",
+          "text": "Which claim should we test?",
+          "cue": null,
+          "recipientId": null,
+          "replyToContributionId": null
+        },
+        "fallback": null
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 15
+    },
+    {
+      "type": "werewolf.action_accepted",
+      "payload": {
+        "actorId": "origin-main-production-golden-p2",
+        "action": "conversation",
+        "legalTargetIds": [],
+        "messageBytes": 320,
+        "legalRecipientIds": [
+          "origin-main-production-golden-p1",
+          "origin-main-production-golden-p3",
+          "origin-main-production-golden-p4",
+          "origin-main-production-golden-p5"
+        ],
+        "legalReplyIds": [
+          1
+        ],
+        "decision": {
+          "kind": "conversation",
+          "text": null,
+          "cue": null,
+          "recipientId": null,
+          "replyToContributionId": null
+        },
+        "fallback": null
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 16
+    },
+    {
+      "type": "werewolf.action_accepted",
+      "payload": {
+        "actorId": "origin-main-production-golden-p5",
+        "action": "conversation",
+        "legalTargetIds": [],
+        "messageBytes": 320,
+        "legalRecipientIds": [
+          "origin-main-production-golden-p1",
+          "origin-main-production-golden-p2",
+          "origin-main-production-golden-p3",
+          "origin-main-production-golden-p4"
+        ],
+        "legalReplyIds": [
+          1
+        ],
+        "decision": {
+          "kind": "conversation",
+          "text": null,
+          "cue": null,
+          "recipientId": null,
+          "replyToContributionId": null
+        },
+        "fallback": null
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 17
+    },
+    {
+      "type": "werewolf.action_accepted",
+      "payload": {
+        "actorId": "origin-main-production-golden-p3",
+        "action": "conversation",
+        "legalTargetIds": [],
+        "messageBytes": 320,
+        "legalRecipientIds": [
+          "origin-main-production-golden-p1",
+          "origin-main-production-golden-p2",
+          "origin-main-production-golden-p4",
+          "origin-main-production-golden-p5"
+        ],
+        "legalReplyIds": [
+          1
+        ],
+        "decision": {
+          "kind": "conversation",
+          "text": null,
+          "cue": null,
+          "recipientId": null,
+          "replyToContributionId": null
+        },
+        "fallback": null
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 18
+    },
+    {
+      "type": "werewolf.action_accepted",
+      "payload": {
+        "actorId": "origin-main-production-golden-p4",
+        "action": "conversation",
+        "legalTargetIds": [],
+        "messageBytes": 320,
+        "legalRecipientIds": [
+          "origin-main-production-golden-p1",
+          "origin-main-production-golden-p2",
+          "origin-main-production-golden-p3",
+          "origin-main-production-golden-p5"
+        ],
+        "legalReplyIds": [
+          1
+        ],
+        "decision": {
+          "kind": "conversation",
+          "text": null,
+          "cue": null,
+          "recipientId": null,
+          "replyToContributionId": null
+        },
+        "fallback": null
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 19
+    },
+    {
+      "type": "werewolf.action_accepted",
+      "payload": {
+        "actorId": "origin-main-production-golden-p1",
+        "action": "conversation",
+        "legalTargetIds": [],
+        "messageBytes": 320,
+        "legalRecipientIds": [
+          "origin-main-production-golden-p2",
+          "origin-main-production-golden-p3",
+          "origin-main-production-golden-p4",
+          "origin-main-production-golden-p5"
+        ],
+        "legalReplyIds": [
+          1
+        ],
+        "decision": {
+          "kind": "conversation",
+          "text": null,
+          "cue": null,
+          "recipientId": null,
+          "replyToContributionId": null
+        },
+        "fallback": null
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 20
+    },
+    {
+      "type": "werewolf.phase_started",
+      "payload": {
+        "phase": "vote",
+        "day": 1
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 21
+    },
+    {
+      "type": "werewolf.action_accepted",
+      "payload": {
+        "actorId": "origin-main-production-golden-p3",
+        "action": "public_vote",
+        "legalTargetIds": [
+          "origin-main-production-golden-p1",
+          "origin-main-production-golden-p2",
+          "origin-main-production-golden-p4",
+          "origin-main-production-golden-p5"
+        ],
+        "messageBytes": 320,
+        "decision": {
+          "kind": "spoken_target",
+          "targetId": null,
+          "text": "I abstain.",
+          "cue": null,
+          "thinking": "Fixture"
+        },
+        "fallback": null
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 22
+    },
+    {
+      "type": "werewolf.action_accepted",
+      "payload": {
+        "actorId": "origin-main-production-golden-p1",
+        "action": "public_vote",
+        "legalTargetIds": [
+          "origin-main-production-golden-p2",
+          "origin-main-production-golden-p3",
+          "origin-main-production-golden-p4",
+          "origin-main-production-golden-p5"
+        ],
+        "messageBytes": 320,
+        "decision": {
+          "kind": "spoken_target",
+          "targetId": null,
+          "text": "I abstain.",
+          "cue": null,
+          "thinking": "Fixture"
+        },
+        "fallback": null
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 23
+    },
+    {
+      "type": "werewolf.action_accepted",
+      "payload": {
+        "actorId": "origin-main-production-golden-p2",
+        "action": "public_vote",
+        "legalTargetIds": [
+          "origin-main-production-golden-p1",
+          "origin-main-production-golden-p3",
+          "origin-main-production-golden-p4",
+          "origin-main-production-golden-p5"
+        ],
+        "messageBytes": 320,
+        "decision": {
+          "kind": "spoken_target",
+          "targetId": null,
+          "text": "I abstain.",
+          "cue": null,
+          "thinking": "Fixture"
+        },
+        "fallback": null
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 24
+    },
+    {
+      "type": "werewolf.action_accepted",
+      "payload": {
+        "actorId": "origin-main-production-golden-p4",
+        "action": "public_vote",
+        "legalTargetIds": [
+          "origin-main-production-golden-p1",
+          "origin-main-production-golden-p2",
+          "origin-main-production-golden-p3",
+          "origin-main-production-golden-p5"
+        ],
+        "messageBytes": 320,
+        "decision": {
+          "kind": "spoken_target",
+          "targetId": null,
+          "text": "I abstain.",
+          "cue": null,
+          "thinking": "Fixture"
+        },
+        "fallback": null
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 25
+    },
+    {
+      "type": "werewolf.action_accepted",
+      "payload": {
+        "actorId": "origin-main-production-golden-p5",
+        "action": "public_vote",
+        "legalTargetIds": [
+          "origin-main-production-golden-p1",
+          "origin-main-production-golden-p2",
+          "origin-main-production-golden-p3",
+          "origin-main-production-golden-p4"
+        ],
+        "messageBytes": 320,
+        "decision": {
+          "kind": "spoken_target",
+          "targetId": null,
+          "text": "I abstain.",
+          "cue": null,
+          "thinking": "Fixture"
+        },
+        "fallback": null
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 26
+    },
+    {
+      "type": "werewolf.day_vote_resolved",
+      "payload": {
+        "thread": 1,
+        "voteMode": "majority",
+        "ballots": [
+          {
+            "voterId": "origin-main-production-golden-p3",
+            "targetId": null,
+            "unavailable": false
+          },
+          {
+            "voterId": "origin-main-production-golden-p1",
+            "targetId": null,
+            "unavailable": false
+          },
+          {
+            "voterId": "origin-main-production-golden-p2",
+            "targetId": null,
+            "unavailable": false
+          },
+          {
+            "voterId": "origin-main-production-golden-p4",
+            "targetId": null,
+            "unavailable": false
+          },
+          {
+            "voterId": "origin-main-production-golden-p5",
+            "targetId": null,
+            "unavailable": false
+          }
+        ],
+        "totals": {
+          "origin-main-production-golden-p1": 0,
+          "origin-main-production-golden-p2": 0,
+          "origin-main-production-golden-p3": 0,
+          "origin-main-production-golden-p4": 0,
+          "origin-main-production-golden-p5": 0
+        },
+        "requiredVotes": 3,
+        "dayEnded": true,
+        "eliminatedId": null
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 27
+    },
+    {
+      "type": "werewolf.completed",
+      "payload": {
+        "faction": null,
+        "winnerIds": [],
+        "reason": "day_limit"
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 28
+    },
+    {
+      "type": "werewolf.retrospective_started",
+      "payload": {
+        "version": 1,
+        "promptVersion": "retrospective.v1",
+        "outcome": {
+          "gameId": "origin-main-production-golden",
+          "gameKind": "werewolf",
+          "eventSequence": 28,
+          "eventHash": "sha256:23089c4e82c13e6d48021b8ae63b049c176003948e3da917cafd81b3d3c16122"
+        },
+        "inputHash": "sha256:dd4cb7a02d7c839883f1831ca5ace7c400610b44f83211656a9a86c147533df4",
+        "speakerIds": [
+          "origin-main-production-golden-p0",
+          "origin-main-production-golden-p5",
+          "origin-main-production-golden-p3",
+          "origin-main-production-golden-p4",
+          "origin-main-production-golden-p2",
+          "origin-main-production-golden-p1"
+        ],
+        "definitionHash": "sha256:d9bb80c08a4915ddbe33d652a72a99b12b5bb654f7c27ec1337f171669ee458f"
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 29
+    },
+    {
+      "type": "werewolf.retrospective_statement_recorded",
+      "payload": {
+        "version": 1,
+        "definitionHash": "sha256:d9bb80c08a4915ddbe33d652a72a99b12b5bb654f7c27ec1337f171669ee458f",
+        "actorId": "origin-main-production-golden-p0",
+        "ordinal": 0,
+        "priorStatementsHash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "requestHash": "sha256:e42ee4f057aca15f829def1aaca2537cd9cbedf8df3f147a8c70de657d05b257",
+        "speech": "Player 0: I have seen the complete game and heard 0 earlier final statements. This is my final reflection.",
+        "providerLogicalCallId": "sha256:60c5dc0e9cd5065282d602f982949e6962f7305a48e40ca51d995fd9b29faff7"
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 30
+    },
+    {
+      "type": "werewolf.retrospective_statement_recorded",
+      "payload": {
+        "version": 1,
+        "definitionHash": "sha256:d9bb80c08a4915ddbe33d652a72a99b12b5bb654f7c27ec1337f171669ee458f",
+        "actorId": "origin-main-production-golden-p5",
+        "ordinal": 1,
+        "priorStatementsHash": "sha256:6dafada562787115f1e5ae5557999f53c74c216b13e57574913e452029ed0846",
+        "requestHash": "sha256:e4a937e35225f1a60be714a685eebc37e3d5720fc63e0e1820e34085c9d83ea3",
+        "speech": "Player 5: I have seen the complete game and heard 1 earlier final statements. This is my final reflection.",
+        "providerLogicalCallId": "sha256:7d8f93d560d48c345d076ee2a523da3addf28284799d659eb310b0cfb62b1c49"
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 31
+    },
+    {
+      "type": "werewolf.retrospective_statement_recorded",
+      "payload": {
+        "version": 1,
+        "definitionHash": "sha256:d9bb80c08a4915ddbe33d652a72a99b12b5bb654f7c27ec1337f171669ee458f",
+        "actorId": "origin-main-production-golden-p3",
+        "ordinal": 2,
+        "priorStatementsHash": "sha256:3840e2a7cbc8d473c08fabbe1a4f9ea5522b3680ce451a3527abcafb5cd0ca4e",
+        "requestHash": "sha256:d495e17d05adb1ab66cd46611a8ca37eb6d01cb34c0d6066136af8492fea2478",
+        "speech": "Player 3: I have seen the complete game and heard 2 earlier final statements. This is my final reflection.",
+        "providerLogicalCallId": "sha256:797d6aace851d12665253ebf7c0a84b69487d3549e3148281eb6159dec6384af"
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 32
+    },
+    {
+      "type": "werewolf.retrospective_statement_recorded",
+      "payload": {
+        "version": 1,
+        "definitionHash": "sha256:d9bb80c08a4915ddbe33d652a72a99b12b5bb654f7c27ec1337f171669ee458f",
+        "actorId": "origin-main-production-golden-p4",
+        "ordinal": 3,
+        "priorStatementsHash": "sha256:b1c7fdb792d27151187cfd4303e3bf46b90b79ecbd1f804308ceecf09a4fc0a1",
+        "requestHash": "sha256:9b456cfd14bd94f2d835e61cab7d7ee82fedab55869ca92f7de14b66ac55c9a4",
+        "speech": "Player 4: I have seen the complete game and heard 3 earlier final statements. This is my final reflection.",
+        "providerLogicalCallId": "sha256:51b37b3d3335ee1dfc6e75320a64c873ef4e3afb2576c65ca95483c29bfba782"
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 33
+    },
+    {
+      "type": "werewolf.retrospective_statement_recorded",
+      "payload": {
+        "version": 1,
+        "definitionHash": "sha256:d9bb80c08a4915ddbe33d652a72a99b12b5bb654f7c27ec1337f171669ee458f",
+        "actorId": "origin-main-production-golden-p2",
+        "ordinal": 4,
+        "priorStatementsHash": "sha256:5656a4f9ee313e56df587dbb9875420bdd72aa5a42985aa6add3d53e89517ee6",
+        "requestHash": "sha256:54bb201cbdd7f05c2d2b14d271d0b3571abc2261ad789e67399aff020ea25f06",
+        "speech": "Player 2: I have seen the complete game and heard 4 earlier final statements. This is my final reflection.",
+        "providerLogicalCallId": "sha256:65cb1c4fd82a31335db5f5d2ec6deadfaab4db484bf367ec800a64d3c4d58bbe"
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 34
+    },
+    {
+      "type": "werewolf.retrospective_statement_recorded",
+      "payload": {
+        "version": 1,
+        "definitionHash": "sha256:d9bb80c08a4915ddbe33d652a72a99b12b5bb654f7c27ec1337f171669ee458f",
+        "actorId": "origin-main-production-golden-p1",
+        "ordinal": 5,
+        "priorStatementsHash": "sha256:5597236264f8afbf59c0601a08213cd8553eac306af6bd0e6f9d2a4aae7deb91",
+        "requestHash": "sha256:48e3c5cd68e772aeb62d9a0110c334b96df073014da1040900cf8c504665658e",
+        "speech": "Player 1: I have seen the complete game and heard 5 earlier final statements. This is my final reflection.",
+        "providerLogicalCallId": "sha256:75e86c43e4abcec355a0f60570c54d8ee1972dc2467c06ca5b9b9d29a9d7f474"
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 35
+    },
+    {
+      "type": "werewolf.retrospective_completed",
+      "payload": {
+        "version": 1,
+        "definitionHash": "sha256:d9bb80c08a4915ddbe33d652a72a99b12b5bb654f7c27ec1337f171669ee458f",
+        "statementCount": 6,
+        "statementsHash": "sha256:2e1f758a3e03daedbabffc96799dd453f3379b3d5f08ec78cd23eb7b423f8655"
+      },
+      "gameId": "origin-main-production-golden",
+      "sequence": 36
+    }
+  ],
+  "catalog": {
+    "gameId": "origin-main-production-golden",
+    "gameKind": "werewolf",
+    "audience": "omniscient",
+    "moments": [
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22opening%22%2C%22werewolf%22%5D%2C%5B%22opening%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22opening%22%2C%22werewolf%22%5D",
+        "source": {
+          "kind": "opening",
+          "gameKind": "werewolf"
+        },
+        "part": {
+          "kind": "opening"
+        },
+        "kind": "opening",
+        "order": {
+          "anchor": 0,
+          "offset": 0
+        },
+        "semanticOrder": 0,
+        "defaultIncluded": true
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C2%5D%2C%5B%22speech%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C2%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 2
+        },
+        "part": {
+          "kind": "speech"
+        },
+        "kind": "speech",
+        "order": {
+          "anchor": 2,
+          "offset": 0
+        },
+        "semanticOrder": 1,
+        "defaultIncluded": true,
+        "actorId": "origin-main-production-golden-p0"
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C3%5D%2C%5B%22speech%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C3%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 3
+        },
+        "part": {
+          "kind": "speech"
+        },
+        "kind": "speech",
+        "order": {
+          "anchor": 3,
+          "offset": 0
+        },
+        "semanticOrder": 1,
+        "defaultIncluded": true,
+        "actorId": "origin-main-production-golden-p1"
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C4%5D%2C%5B%22speech%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C4%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 4
+        },
+        "part": {
+          "kind": "speech"
+        },
+        "kind": "speech",
+        "order": {
+          "anchor": 4,
+          "offset": 0
+        },
+        "semanticOrder": 1,
+        "defaultIncluded": true,
+        "actorId": "origin-main-production-golden-p2"
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C5%5D%2C%5B%22speech%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C5%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 5
+        },
+        "part": {
+          "kind": "speech"
+        },
+        "kind": "speech",
+        "order": {
+          "anchor": 5,
+          "offset": 0
+        },
+        "semanticOrder": 1,
+        "defaultIncluded": true,
+        "actorId": "origin-main-production-golden-p3"
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C6%5D%2C%5B%22speech%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C6%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 6
+        },
+        "part": {
+          "kind": "speech"
+        },
+        "kind": "speech",
+        "order": {
+          "anchor": 6,
+          "offset": 0
+        },
+        "semanticOrder": 1,
+        "defaultIncluded": true,
+        "actorId": "origin-main-production-golden-p4"
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C7%5D%2C%5B%22speech%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C7%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 7
+        },
+        "part": {
+          "kind": "speech"
+        },
+        "kind": "speech",
+        "order": {
+          "anchor": 7,
+          "offset": 0
+        },
+        "semanticOrder": 1,
+        "defaultIncluded": true,
+        "actorId": "origin-main-production-golden-p5"
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C9%5D%2C%5B%22speech%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C9%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 9
+        },
+        "part": {
+          "kind": "speech"
+        },
+        "kind": "speech",
+        "order": {
+          "anchor": 9,
+          "offset": 0
+        },
+        "semanticOrder": 1,
+        "defaultIncluded": false,
+        "actorId": "origin-main-production-golden-p3"
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C10%5D%2C%5B%22ballot%22%2C%22origin-main-production-golden-p3%22%2C%22pack%22%2Cfalse%2Cfalse%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C10%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 10
+        },
+        "part": {
+          "kind": "ballot",
+          "voterId": "origin-main-production-golden-p3",
+          "purpose": "pack",
+          "juryTiebreaker": false,
+          "revote": false
+        },
+        "kind": "ballot",
+        "order": {
+          "anchor": 10,
+          "offset": 0
+        },
+        "semanticOrder": 0,
+        "defaultIncluded": false,
+        "actorId": "origin-main-production-golden-p3"
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C10%5D%2C%5B%22pack_vote%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C10%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 10
+        },
+        "part": {
+          "kind": "pack_vote"
+        },
+        "kind": "tally",
+        "order": {
+          "anchor": 10,
+          "offset": 0
+        },
+        "semanticOrder": 1,
+        "defaultIncluded": true
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-action%22%2C12%5D%2C%5B%22thinking%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-action%22%2C12%5D",
+        "source": {
+          "kind": "werewolf-action",
+          "eventSequence": 12
+        },
+        "part": {
+          "kind": "thinking"
+        },
+        "kind": "thinking",
+        "order": {
+          "anchor": 11,
+          "offset": 0
+        },
+        "semanticOrder": 0,
+        "defaultIncluded": false,
+        "actorId": "origin-main-production-golden-p1"
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C13%5D%2C%5B%22investigate%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C13%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 13
+        },
+        "part": {
+          "kind": "investigate"
+        },
+        "kind": "action",
+        "order": {
+          "anchor": 11,
+          "offset": 1
+        },
+        "semanticOrder": 0,
+        "defaultIncluded": true,
+        "actorId": "origin-main-production-golden-p1"
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C13%5D%2C%5B%22hunt%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C13%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 13
+        },
+        "part": {
+          "kind": "hunt"
+        },
+        "kind": "action",
+        "order": {
+          "anchor": 11,
+          "offset": 1
+        },
+        "semanticOrder": 1,
+        "defaultIncluded": true
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C13%5D%2C%5B%22outcome%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C13%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 13
+        },
+        "part": {
+          "kind": "outcome"
+        },
+        "kind": "outcome",
+        "order": {
+          "anchor": 11,
+          "offset": 1
+        },
+        "semanticOrder": 2,
+        "defaultIncluded": true
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C15%5D%2C%5B%22speech%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C15%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 15
+        },
+        "part": {
+          "kind": "speech"
+        },
+        "kind": "speech",
+        "order": {
+          "anchor": 13,
+          "offset": 0
+        },
+        "semanticOrder": 1,
+        "defaultIncluded": true,
+        "actorId": "origin-main-production-golden-p1"
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C22%5D%2C%5B%22ballot%22%2C%22origin-main-production-golden-p3%22%2C%22day%22%2Cfalse%2Cfalse%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C22%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 22
+        },
+        "part": {
+          "kind": "ballot",
+          "voterId": "origin-main-production-golden-p3",
+          "purpose": "day",
+          "juryTiebreaker": false,
+          "revote": false
+        },
+        "kind": "ballot",
+        "order": {
+          "anchor": 20,
+          "offset": 0
+        },
+        "semanticOrder": 2,
+        "defaultIncluded": true,
+        "actorId": "origin-main-production-golden-p3"
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C23%5D%2C%5B%22ballot%22%2C%22origin-main-production-golden-p1%22%2C%22day%22%2Cfalse%2Cfalse%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C23%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 23
+        },
+        "part": {
+          "kind": "ballot",
+          "voterId": "origin-main-production-golden-p1",
+          "purpose": "day",
+          "juryTiebreaker": false,
+          "revote": false
+        },
+        "kind": "ballot",
+        "order": {
+          "anchor": 21,
+          "offset": 0
+        },
+        "semanticOrder": 2,
+        "defaultIncluded": true,
+        "actorId": "origin-main-production-golden-p1"
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C24%5D%2C%5B%22ballot%22%2C%22origin-main-production-golden-p2%22%2C%22day%22%2Cfalse%2Cfalse%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C24%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 24
+        },
+        "part": {
+          "kind": "ballot",
+          "voterId": "origin-main-production-golden-p2",
+          "purpose": "day",
+          "juryTiebreaker": false,
+          "revote": false
+        },
+        "kind": "ballot",
+        "order": {
+          "anchor": 22,
+          "offset": 0
+        },
+        "semanticOrder": 2,
+        "defaultIncluded": true,
+        "actorId": "origin-main-production-golden-p2"
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C25%5D%2C%5B%22ballot%22%2C%22origin-main-production-golden-p4%22%2C%22day%22%2Cfalse%2Cfalse%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C25%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 25
+        },
+        "part": {
+          "kind": "ballot",
+          "voterId": "origin-main-production-golden-p4",
+          "purpose": "day",
+          "juryTiebreaker": false,
+          "revote": false
+        },
+        "kind": "ballot",
+        "order": {
+          "anchor": 23,
+          "offset": 0
+        },
+        "semanticOrder": 2,
+        "defaultIncluded": true,
+        "actorId": "origin-main-production-golden-p4"
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C26%5D%2C%5B%22ballot%22%2C%22origin-main-production-golden-p5%22%2C%22day%22%2Cfalse%2Cfalse%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C26%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 26
+        },
+        "part": {
+          "kind": "ballot",
+          "voterId": "origin-main-production-golden-p5",
+          "purpose": "day",
+          "juryTiebreaker": false,
+          "revote": false
+        },
+        "kind": "ballot",
+        "order": {
+          "anchor": 24,
+          "offset": 0
+        },
+        "semanticOrder": 2,
+        "defaultIncluded": true,
+        "actorId": "origin-main-production-golden-p5"
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C27%5D%2C%5B%22tally%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C27%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 27
+        },
+        "part": {
+          "kind": "tally"
+        },
+        "kind": "tally",
+        "order": {
+          "anchor": 25,
+          "offset": 0
+        },
+        "semanticOrder": 0,
+        "defaultIncluded": true
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C27%5D%2C%5B%22outcome%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C27%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 27
+        },
+        "part": {
+          "kind": "outcome"
+        },
+        "kind": "outcome",
+        "order": {
+          "anchor": 25,
+          "offset": 0
+        },
+        "semanticOrder": 1,
+        "defaultIncluded": true
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C28%5D%2C%5B%22result%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C28%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 28
+        },
+        "part": {
+          "kind": "result"
+        },
+        "kind": "result",
+        "order": {
+          "anchor": 26,
+          "offset": 0
+        },
+        "semanticOrder": 0,
+        "defaultIncluded": true
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C30%5D%2C%5B%22speech%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C30%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 30
+        },
+        "part": {
+          "kind": "speech"
+        },
+        "kind": "speech",
+        "order": {
+          "anchor": 27,
+          "offset": 0
+        },
+        "semanticOrder": 1,
+        "defaultIncluded": true,
+        "actorId": "origin-main-production-golden-p0",
+        "purpose": "retrospective",
+        "retrospectiveSource": {
+          "eventSequence": 30,
+          "ordinal": 0
+        }
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C31%5D%2C%5B%22speech%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C31%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 31
+        },
+        "part": {
+          "kind": "speech"
+        },
+        "kind": "speech",
+        "order": {
+          "anchor": 28,
+          "offset": 0
+        },
+        "semanticOrder": 1,
+        "defaultIncluded": true,
+        "actorId": "origin-main-production-golden-p5",
+        "purpose": "retrospective",
+        "retrospectiveSource": {
+          "eventSequence": 31,
+          "ordinal": 1
+        }
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C32%5D%2C%5B%22speech%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C32%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 32
+        },
+        "part": {
+          "kind": "speech"
+        },
+        "kind": "speech",
+        "order": {
+          "anchor": 29,
+          "offset": 0
+        },
+        "semanticOrder": 1,
+        "defaultIncluded": true,
+        "actorId": "origin-main-production-golden-p3",
+        "purpose": "retrospective",
+        "retrospectiveSource": {
+          "eventSequence": 32,
+          "ordinal": 2
+        }
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C33%5D%2C%5B%22speech%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C33%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 33
+        },
+        "part": {
+          "kind": "speech"
+        },
+        "kind": "speech",
+        "order": {
+          "anchor": 30,
+          "offset": 0
+        },
+        "semanticOrder": 1,
+        "defaultIncluded": true,
+        "actorId": "origin-main-production-golden-p4",
+        "purpose": "retrospective",
+        "retrospectiveSource": {
+          "eventSequence": 33,
+          "ordinal": 3
+        }
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C34%5D%2C%5B%22speech%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C34%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 34
+        },
+        "part": {
+          "kind": "speech"
+        },
+        "kind": "speech",
+        "order": {
+          "anchor": 31,
+          "offset": 0
+        },
+        "semanticOrder": 1,
+        "defaultIncluded": true,
+        "actorId": "origin-main-production-golden-p2",
+        "purpose": "retrospective",
+        "retrospectiveSource": {
+          "eventSequence": 34,
+          "ordinal": 4
+        }
+      },
+      {
+        "id": "pm1:%5B%22origin-main-production-golden%22%2C%5B%22werewolf-event%22%2C35%5D%2C%5B%22speech%22%5D%5D",
+        "sourceKey": "ps1:%5B%22origin-main-production-golden%22%2C%22werewolf-event%22%2C35%5D",
+        "source": {
+          "kind": "werewolf-event",
+          "eventSequence": 35
+        },
+        "part": {
+          "kind": "speech"
+        },
+        "kind": "speech",
+        "order": {
+          "anchor": 32,
+          "offset": 0
+        },
+        "semanticOrder": 1,
+        "defaultIncluded": true,
+        "actorId": "origin-main-production-golden-p1",
+        "purpose": "retrospective",
+        "retrospectiveSource": {
+          "eventSequence": 35,
+          "ordinal": 5
+        }
+      }
+    ]
+  },
+  "snapshot": {
+    "gameId": "origin-main-production-golden",
+    "gameKind": "werewolf",
+    "audience": "omniscient",
+    "thinking": true,
+    "throughEventSequence": 36,
+    "throughCursor": 32,
+    "publicationCutoff": "2026-10-24T00:00:00.000Z",
+    "availableCharacterAssets": [],
+    "sourceHash": "sha256:10a88f44b37d7039dff82996c14f97cd1055a2390d4971095ce28e2fcdcf4330"
+  }
+}

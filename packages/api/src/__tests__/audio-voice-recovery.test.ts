@@ -84,6 +84,8 @@ for (const gameKind of ["influence","werewolf"] as const) test(`${gameKind} voic
   const publication=(await readAudioPublication(db,gameId,audience,true))!;
   expect(publication.id).toBe(repaired.trackId);expect(publication.clips).toHaveLength(3);
   expect(publication.clips.some(clip=>oldVersions.some(version=>version.id===clip.versionId))).toBe(false);
+  const historical=await readAudioPublication(db,gameId,audience,true,false,oldVersions.map(version=>version.id));
+  expect(historical?.clips.map(clip=>clip.versionId).sort()).toEqual(oldVersions.map(version=>version.id).sort());
   await resumeLiveAudio(db,gameId,epoch);
   expect((await db.select().from(schema.games))[0]!.status).toBe("in_progress");
   for (const voice of await db.select().from(schema.agentVoices)) expect(voice.assignment.voiceId).toBe("sal");

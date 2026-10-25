@@ -322,6 +322,15 @@ test("Werewolf House narration freezes and validates without confusing the actor
     const descriptor = await response.json() as ProductionExportDescriptor;
     expect(descriptor.recordings).toEqual(recordings);
     expect((await request(`${root(f.id)}/selection/validate`,descriptor)).status).toBe(200);
+    // Active track discovery may move, while the exported version remains published.
+    await db.update(schema.gameAudioTracks).set({active:false}).where(eq(schema.gameAudioTracks.id,publication.id));
+    expect((await request(`${root(f.id)}/selection/validate`,descriptor)).status).toBe(200);
+    const versions={audience,thinking,versionIds:recordings.map(recording=>recording.versionId)};
+    const pinnedResponse=await request(`${root(f.id)}/audio/versions`,versions);
+    expect(pinnedResponse.status).toBe(200);
+    expect((await pinnedResponse.json() as typeof publication).clips.map(clip=>clip.versionId)).toEqual(recordings.map(recording=>recording.versionId));
+    expect((await request(`${root(f.id)}/audio/versions`,{...versions,audience:"public"})).status).toBe(400);
+    await db.update(schema.gameAudioTracks).set({active:true}).where(eq(schema.gameAudioTracks.id,publication.id));
     if (thinking) {
       const action = source.catalog.moments.find(moment=>moment.part.kind==="protect")!;
       expect(action.actorId).toBeTruthy();

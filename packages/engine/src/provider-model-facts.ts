@@ -26,7 +26,8 @@ interface OpenAIModelRow extends Omit<ProviderModelFacts, "checkedAt" | "paramet
 const openaiRows = openai.models as Record<string, OpenAIModelRow>;
 export const OPENAI_MODEL_FACTS: Readonly<Record<string, ProviderModelFacts>> = Object.fromEntries(
   Object.entries(openaiRows).flatMap(([id, row]) => [id, ...row.aliases].map(alias => [alias, {
-    ...row, checkedAt: openai.checkedAt, parameters: [],
+    ...row, capabilities: { ...row.capabilities, supportsFlexProcessing: Boolean(row.flexPricing) },
+    checkedAt: openai.checkedAt, parameters: [],
   }])),
 );
 

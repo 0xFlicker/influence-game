@@ -1,3 +1,4 @@
+import { CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION } from "@influence/engine/influence-decision-speech";
 import { CURRENT_EMPOWER_REVOTE_VERSION } from "@influence/engine/empower-revote-rules";
 import { gameModelPolicy } from "@influence/engine";
 import { DEFAULT_CONVERSATION_POLICY } from "@influence/engine";
@@ -276,6 +277,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       slotType: "mixed",
       formatManifest: [...DEFAULT_FORMAT_MANIFEST],
       empowerRevoteVersion: CURRENT_EMPOWER_REVOTE_VERSION,
+      decisionContractVersion: CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION,
     };
 
     const user = c.get("user");

@@ -27,7 +27,10 @@
  * guides delivery without forced wrapping. No TTS or audio DSP occurs here.
  * Influence decision speech uses strict message fields; ballots, format picks and
  * tiebreaks omit thinking. Sealed ballots collect concurrently, then reveal in
- * roster order. Native reasoning remains private evidence; no `as any` shortcuts
+ * roster order only after every dispatched call has settled and saved evidence.
+ * New games freeze the speech contract; accepted historical decisions replay
+ * without regeneration. Overlong speech retries include clean UTF-8 overage.
+ * Native reasoning remains private evidence; no `as any` shortcuts
  * or indirect House calls are permitted.
  * API-backed games default to Public; Unlisted requires --visibility unlisted.
  * Environment variables cannot select Unlisted; local artifacts are not published.

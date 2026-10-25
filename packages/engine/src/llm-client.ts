@@ -447,11 +447,14 @@ export function createLlmProviderRuntimesFromEnv(
       modelCapabilities: entry.model.capabilities,
       reasoningPolicy: entry.reasoningPolicy,
       allowedReasoningEfforts: entry.model.allowedReasoningEfforts,
-      ...(config.openAIReasoningSummary && {
+      ...(config.openAIReasoningSummary && entry.model.capabilities.supportsReasoningEffort && {
         openAIReasoningSummary: config.openAIReasoningSummary,
       }),
       ...(config.openAIServiceTier && {
-        openAIServiceTier: entry.modelId === "gpt-6-luna" ? "flex" : config.openAIServiceTier,
+        openAIServiceTier: entry.modelId === "gpt-6-luna" ? "flex"
+          : config.openAIServiceTier === "flex" && (entry.model.capabilities.supportsFlexProcessing === false
+            || !entry.model.capabilities.supportsReasoningEffort) ? "auto"
+          : config.openAIServiceTier,
       }),
       position: entry.position,
       role: entry.role,

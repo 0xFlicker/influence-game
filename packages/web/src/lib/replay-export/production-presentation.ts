@@ -75,9 +75,11 @@ export async function bindWerewolfProductionPresentation(input: {
     source.windows.forEach(assertMysteryWindow);
     assertNoPrivateFields(source.thoughts); assertNoPrivateFields(input.thoughts);
   }
-  const base = buildExportCues(source);
+  const base = buildExportCues(source,{werewolfCatalogVersion:catalog.werewolfCatalogVersion});
   const expected = assembleProductionCatalog({gameId:window.gameId,gameKind:"werewolf",audience:window.audience,
+    werewolfCatalogVersion:catalog.werewolfCatalogVersion,
     sources:buildWerewolfProductionSources({gameId:window.gameId,audience:window.audience,
+      legacyPassThoughts:catalog.werewolfLegacyPassThoughts,
       moments:source.windows.flatMap(page => page.moments),provenance:input.provenance,thoughts:input.thoughts,
       opening:base.some(cue => cue.picture.kind === "werewolf-opening")})});
   const validated = resolveProductionMomentIds(expected,catalog.moments.map(moment => moment.id));
@@ -155,7 +157,7 @@ export async function bindWerewolfProductionPresentation(input: {
   // accepted result or another narration. Keep it with the final retrospective.
   const closing = base.find(cue => cue.picture.kind === "werewolf" && cue.picture.cue.reprise);
   const last = bound.at(-1);
-  if (closing && last && validated.at(-1)?.purpose === "retrospective") last.segments.push({...closing,momentId:last.id,
+  if (catalog.werewolfCatalogVersion !== 1 && closing && last && validated.at(-1)?.purpose === "retrospective") last.segments.push({...closing,momentId:last.id,
     speech:null,timing:{...closing.timing,key:`${last.id}:closing`,speech:null,thinking:null}});
   return bound;
 }

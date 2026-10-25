@@ -18,7 +18,7 @@ export function productionMomentContent(source:EditorialSource,moment:Production
       const entry=position?.entry;
       if (entry?.kind === "discussion") text=entry.contribution.unavailable ? null : entry.contribution.text;
       else if (entry && "text" in entry && !("unavailable" in entry && entry.unavailable)) text=entry.text;
-    } else if (position) {
+    } else if (position && source.catalog.werewolfCatalogVersion !== 1) {
       speakerId=null;
       const action=position.night?.actions.find(row=>row.kind===moment.part.kind);
       if (action && ["protect","investigate","hunt"].includes(moment.part.kind)) text=werewolfNightHouseSpeech(action,position.snapshot.players);
