@@ -1,4 +1,4 @@
-import { actorProviderManifest, modelRateCard } from "@influence/engine";
+import { actorProviderManifest, modelRateCard, withLocalTaskBudget } from "@influence/engine";
 import { storeJson, Hydrated, loadPayloads, storeFields } from "./payload-storage.js";
 import { assertWerewolfProviderTurn } from "./werewolf-games.js";
 import { ProviderJournalEntryExhaustedError, retrospectiveAttemptsPerModel } from "@influence/engine";
@@ -1384,7 +1384,7 @@ export function createApiProviderExecutionHooks(
   db: DrizzleDB,
   options: CreateApiProviderExecutionHooksOptions,
 ): ProviderExecutionHooks {
-  return {
+  return withLocalTaskBudget({
     onReadLengthFeedback: (coordinate) => readLengthFeedback(db, options, coordinate),
     onReadAccepted: (coordinate) => readAcceptedResult(db, options, coordinate),
     onReadContextAttempts: async (coordinate) => {
@@ -1430,7 +1430,7 @@ export function createApiProviderExecutionHooks(
         ? { acceptedAttemptId: journaled.attempt.id }
         : undefined;
     },
-  };
+  });
 }
 
 export async function reconcileProviderAttemptSpend(

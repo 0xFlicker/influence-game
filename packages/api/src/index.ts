@@ -1,4 +1,5 @@
 import { createHouseShareRoutes } from "./routes/house-share-links.js";
+import { localTaskBudgetPath } from "@influence/engine";
 import { renderExecutionConfig } from "@influence/engine/render-execution-config";
 import { remoteRenderingEnabled, startRenderWakeDispatcher } from "./services/postgame-media-execution.js";
 import { startHouseCutWorker } from "./services/house-cut-worker.js";
@@ -443,22 +444,23 @@ async function finishBackgroundRuntimeStartup(
     }
   }
 
-  const providerHealthProbeRuntime = activationFence
+  const localEvaluation = Boolean(localTaskBudgetPath());
+  const providerHealthProbeRuntime = activationFence || localEvaluation
     ? null
     : await startProviderHealthProbeRuntime(db);
-  const houseCutWorker = gameExecutionWorker ? startHouseCutWorker(db, () => runtimeActivation.canClaimWork()) : null;
+  const houseCutWorker = gameExecutionWorker && !localEvaluation ? startHouseCutWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const episodeWorker = gameExecutionWorker ? startEpisodeWorker(db, () => runtimeActivation.canClaimWork()) : null;
-  const visualMediaWorker = gameExecutionWorker ? startVisualMediaWorker(db, () => runtimeActivation.canClaimWork()) : null;
+  const visualMediaWorker = gameExecutionWorker && !localEvaluation ? startVisualMediaWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const ownerLearningApiKey = process.env.OPENAI_API_KEY?.trim();
   // The existing mock-runner lane must never dispatch real screening requests.
-  const agentScreeningWorker = gameExecutionWorker && ownerLearningApiKey && process.env.INFLUENCE_API_TEST_MOCK_RUNNER !== "true"
+  const agentScreeningWorker = gameExecutionWorker && !localEvaluation && ownerLearningApiKey && process.env.INFLUENCE_API_TEST_MOCK_RUNNER !== "true"
     ? startAgentScreeningWorker(db, createAgentScreeningProvider(ownerLearningApiKey), () => runtimeActivation.canClaimWork()) : null;
   if (gameExecutionWorker && !ownerLearningApiKey) console.warn("[agent-screening] OPENAI_API_KEY missing; shadow work remains pending");
   assertNotAborted();
   const ownerLearningFailureReconciliation = startOwnerLearningFailureReconciliationLoop(db, {
     canClaimWork: () => runtimeActivation.canClaimWork(),
   });
-  const ownerLearningWorker = ownerLearningApiKey && ownerLearningGenerationEnabled()
+  const ownerLearningWorker = !localEvaluation && ownerLearningApiKey && ownerLearningGenerationEnabled()
     ? startOwnerLearningWorkerLoop(db, {
         provider: createOwnerLearningOpenAIProvider({ apiKey: ownerLearningApiKey }),
         cursorSecret: process.env.JWT_SECRET,
