@@ -15,6 +15,42 @@ export type AudioWrappingTag = typeof AUDIO_WRAPPING_TAGS[number];
 export type AudioInlineTag = typeof AUDIO_INLINE_TAGS[number];
 export type AudioDeliveryContext = "speech" | "night-speech" | "thinking" | "night-thinking";
 
+/** Explicit schema-owned field paths; * visits array items only, never arbitrary object keys. */
+export interface AudioDeliveryPolicy { fields: readonly string[]; nighttime: boolean }
+export interface AcceptedAudioDelivery {
+  version: typeof AUDIO_DELIVERY_VERSION;
+  fields: Array<{ path: string[]; delivery: CompiledAudioDelivery }>;
+}
+
+/** Clean only declared presentation fields. IDs, targets and other decision
+ * fields remain untouched and subject to the original exact schema validation.
+ */
+export function normalizeAudioPayload(value: unknown, policy: AudioDeliveryPolicy): {
+  value: unknown; audioDelivery: AcceptedAudioDelivery;
+} {
+  const result: AcceptedAudioDelivery = { version: AUDIO_DELIVERY_VERSION, fields: [] };
+  const visit = (node: unknown, segments: readonly string[], path: string[]): unknown => {
+    const [segment, ...remaining] = segments;
+    if (segment === undefined) {
+      if (typeof node !== "string") return node;
+      const thinking = path.at(-1) === "thinking";
+      const context = thinking ? policy.nighttime ? "night-thinking" : "thinking"
+        : policy.nighttime ? "night-speech" : "speech";
+      const delivery = compileAudioDelivery(node, context);
+      result.fields.push({ path, delivery });
+      return delivery.cleanText;
+    }
+    if (segment === "*") return Array.isArray(node)
+      ? node.map((item, index) => visit(item, remaining, [...path, String(index)])) : node;
+    if (!node || typeof node !== "object" || Array.isArray(node) || !Object.hasOwn(node, segment)) return node;
+    const record = node as Record<string, unknown>;
+    return { ...record, [segment]: visit(record[segment], remaining, [...path, segment]) };
+  };
+  let clean = value;
+  for (const field of policy.fields) clean = visit(clean, field.split("."), []);
+  return { value: clean, audioDelivery: result };
+}
+
 /** All offsets are UTF-16 code units, matching JS strings and existing alignment contracts. */
 export interface AudioTextSpan {
   sourceStart: number;
@@ -213,6 +249,6 @@ export function audioDeliveryGuidance(nighttime: boolean): string {
     nighttime
       ? "Prefer <soft> around nighttime speech and <lower-pitch> around nighttime thinking; other tags and mixtures are welcome."
       : "Prefer <higher-pitch> around thinking; other tags and mixtures are welcome.",
-    "Use tags sparingly. Preserve the exact requested JSON shape. Do not put tags in IDs, targets, votes or other machine-interpreted fields.",
+    "Use tags sparingly and only in requested speech/thinking fields. Never add a thinking field when it is absent from the schema. Preserve the exact requested JSON shape. Do not put tags in IDs, targets, votes or other machine-interpreted fields.",
   ].join("\n");
 }

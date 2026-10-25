@@ -1,3 +1,4 @@
+import { normalizeAudioPayload } from "../audio-delivery";
 import { describe, expect, it } from "bun:test";
 import { APIUserAbortError } from "openai";
 import {
@@ -980,10 +981,16 @@ describe("ProviderExecutionCoordinator", () => {
         },
         maxAttempts: 1,
         dispatch: async () => value,
-        validate: (response) => ({ status: "usable", value: response }),
+        validate: (response) => ({ status: "usable", value: response, audioDelivery: normalizeAudioPayload(
+          { thinking: `<soft>${response.text}</soft>` }, { fields: ["thinking"], nighttime: false }).audioDelivery }),
       })).toBe(value);
 
       expect(records).toHaveLength(1);
+      expect(JSON.stringify(records[0]!.audioDelivery)).not.toContain(secret);
+      const delivery = records[0]!.audioDelivery!.fields[0]!.delivery;
+      expect(delivery.cleanText).toBe("provider reflected [REDACTED]");
+      expect(delivery.sourceMap.at(-1)?.textEnd).toBe(delivery.cleanText.length);
+      expect(delivery.synthesisText).toBe("<higher-pitch><soft>provider reflected [REDACTED]</soft></higher-pitch>");
       expect(JSON.stringify(records[0]?.acceptedValue)).not.toContain(secret);
       expect(records[0]?.acceptedValue).toMatchObject({
         text: "provider reflected [REDACTED]",

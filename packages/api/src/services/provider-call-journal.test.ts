@@ -1,6 +1,8 @@
+import { normalizeAudioPayload } from "@influence/engine/audio-delivery";
+import { testPayloadStore } from "../__tests__/payload-test-store.js";
 import { getProviderFailureDetail } from "./provider-failure-read-model.js";
 import { randomUUID } from "node:crypto";
-import { loadPayloads, storeFields } from "./payload-storage.js";
+import { loadPayloads, storeFields, storeJson, setPayloadObjectStoreForTests } from "./payload-storage.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { and, eq, sql } from "drizzle-orm";
 import {
@@ -396,6 +398,59 @@ describe("provider call journal", () => {
     await expect(hooks.onAllocateAttemptOrdinal?.({ ...intent.coordinate, actor: { role: "player", name: "Intruder", id: "intruder" } })).rejects.toThrow("another responsibility");
     await db.update(schema.gameEpisodePresentations).set({ leaseUntil: new Date(0).toISOString() }).where(eq(schema.gameEpisodePresentations.gameId, gameId));
     await expect(hooks.onReadAccepted?.(intent.coordinate)).rejects.toThrow("lease expired");
+  });
+
+  test("accepted delivery is a separate durable bucket document and never enters recovery", async () => {
+    const gameId = await insertGame(db), ownerEpoch = await insertOwner(db, gameId);
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    const intent = makeIntent(gameId, ownerEpoch);
+    await allocateAndReserve(hooks, intent);
+    const normalized = normalizeAudioPayload({ message: "<soft>Trust Ada.</soft>", thinking: "Check her vote." },
+      { fields: ["message", "thinking"], nighttime: true });
+    const record = makeRecord(intent, { outcome: { kind: "usable" }, disposition: "accepted",
+      acceptedValue: normalized.value, audioDelivery: normalized.audioDelivery });
+    await hooks.onTerminal?.(record);
+    await hooks.onTerminal?.(record);
+    const [row] = await db.select().from(schema.providerLogicalCalls).where(eq(schema.providerLogicalCalls.gameId, gameId));
+    expect(row!.audioDelivery).toMatchObject({ storage: "private-payload-v1", codec: "json-gzip" });
+    expect(JSON.stringify(row!.audioDelivery)).not.toContain("Trust Ada");
+    const [hydrated] = await loadPayloads([row!]);
+    expect(hydrated!.audioDelivery).toEqual(normalized.audioDelivery);
+    const ref = row!.audioDelivery!;
+    // Production corruption must not turn gameplay recovery into an audio read.
+    const bytes = testPayloadStore.objects.get(ref.key)!;
+    testPayloadStore.objects.delete(ref.key);
+    try {
+      const restored = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+      const replay = await restored.onReadAccepted?.(intent.coordinate);
+      expect(replay?.value).toEqual({ message: "Trust Ada.", thinking: "Check her vote." });
+      expect(JSON.stringify(replay)).not.toContain("<soft>");
+      await expect(loadPayloads([row!])).rejects.toThrow("Test payload missing");
+    } finally { testPayloadStore.objects.set(ref.key, bytes); }
+    await expect(hooks.onTerminal?.({ ...record, audioDelivery: { version: 1, fields: [] } })).rejects.toThrow();
+  });
+
+  test("annotation upload failure cannot publish a partial accepted result", async () => {
+    const gameId = await insertGame(db), ownerEpoch = await insertOwner(db, gameId);
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    const intent = makeIntent(gameId, ownerEpoch);
+    await allocateAndReserve(hooks, intent);
+    const normalized = normalizeAudioPayload({ message: "<soft>Wait.</soft>" }, { fields: ["message"], nighttime: true });
+    const ref = await storeJson(normalized.audioDelivery);
+    testPayloadStore.objects.delete(ref.key);
+    setPayloadObjectStoreForTests({
+      get: key => testPayloadStore.get(key),
+      putIfAbsent: (key, bytes) => {
+        if (key === ref.key) throw new Error("Annotation storage unavailable");
+        return testPayloadStore.putIfAbsent(key, bytes);
+      },
+    });
+    try {
+      await expect(hooks.onTerminal?.(makeRecord(intent, { outcome: { kind: "usable" }, disposition: "accepted",
+        acceptedValue: normalized.value, audioDelivery: normalized.audioDelivery }))).rejects.toThrow("Annotation storage unavailable");
+      const [row] = await db.select().from(schema.providerLogicalCalls).where(eq(schema.providerLogicalCalls.gameId, gameId));
+      expect(row).toMatchObject({ acceptedAttemptId: null, acceptedValue: null, audioDelivery: null });
+    } finally { setPayloadObjectStoreForTests(testPayloadStore); }
   });
 
   test("context overflow survives restart, fences the rejected revision, and permits an adapted request", async () => {

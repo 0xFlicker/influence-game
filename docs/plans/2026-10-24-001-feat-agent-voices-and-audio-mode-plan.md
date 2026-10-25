@@ -16,7 +16,10 @@ The operator approved this plan, requested its commit and authorized implementat
 
 - Plan committed as `3e7ed105` on the feature branch.
 - First implementation increment: shared delivery normalizer/compiler and prompt-guidance builder, with provider-free coverage. See [implementation notes](../audio-mode.md).
-- Still pending: accepted annotation persistence and clean-text integration across both engines/read models; default prompt activation; voices/picker; xAI recording/storage; live readiness/suspension; Studio backfill; playback/export integration. The compiler alone does not deliver Audio Mode.
+- Second increment: clean structured speech/thinking acceptance, private bucket-backed annotation persistence and default tag prompting across both games, House and retrospectives. Repair/recovery and owner-learning paths retain clean context.
+- Frozen catalog and deterministic assignment contract added with Helios exclusion and declared-gender matching; no saved profiles are changed.
+- Next validation gate: [default delivery-tag qualification](../testing/audio-delivery-qualification.md). Both eight-agent rosters have been dry-run through the multi-model CLI; no paid full-game test or TTS generation has run for this increment.
+- Still pending: voice persistence/picker; xAI recording/storage; live readiness/suspension; Studio backfill; playback/export integration. The compiler alone does not deliver Audio Mode.
 
 ## Confirmed requirements
 

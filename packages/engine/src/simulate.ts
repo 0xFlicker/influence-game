@@ -1,5 +1,11 @@
 #!/usr/bin/env bun
 /**
+ * Delivery tags are prompted by default, including non-audio games. Accepted
+ * speech/thinking and later contestant context are clean; sanitized annotations
+ * stay in private provider evidence and API journal bucket references. Inspect
+ * --chatty against private requests/responses; tag presence alone is never a retry.
+ * Thinking prefers higher-pitch by day, lower-pitch at night; night speech softly
+ * guides delivery without forced wrapping. No TTS or audio DSP occurs here.
  * Influence decision speech uses strict message fields; ballots, format picks and
  * tiebreaks omit thinking. Sealed ballots collect concurrently, then reveal in
  * roster order. Native reasoning remains private evidence; no `as any` shortcuts

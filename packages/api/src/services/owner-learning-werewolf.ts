@@ -52,7 +52,8 @@ export async function projectWerewolfReviewEvidence(db: DrizzleDB, selection: Ow
     const [events, turns, calls, gameRows] = await loadPayloads(Promise.all([
       readWerewolfEvents(db, selected.gameId),
       db.select().from(schema.werewolfTurns).where(eq(schema.werewolfTurns.gameId, selected.gameId)),
-      db.select().from(schema.providerLogicalCalls).where(and(eq(schema.providerLogicalCalls.gameId, selected.gameId),
+      db.select({ action: schema.providerLogicalCalls.action, semanticCoordinate: schema.providerLogicalCalls.semanticCoordinate,
+        acceptedValue: schema.providerLogicalCalls.acceptedValue, acceptedValueSha256: schema.providerLogicalCalls.acceptedValueSha256 }).from(schema.providerLogicalCalls).where(and(eq(schema.providerLogicalCalls.gameId, selected.gameId),
         eq(schema.providerLogicalCalls.actorId, selected.playerId), isNotNull(schema.providerLogicalCalls.acceptedAttemptId))),
       db.select({ config: schema.games.config }).from(schema.games).where(eq(schema.games.id, selected.gameId)),
     ]));

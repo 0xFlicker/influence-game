@@ -2,6 +2,7 @@ import Ajv, {
   type ErrorObject,
   type ValidateFunction,
 } from "ajv";
+import { normalizeAudioPayload, type AudioDeliveryPolicy, type AcceptedAudioDelivery } from "./audio-delivery";
 import type { LengthFeedback } from "./provider-execution";
 
 export type StructuredDomainDecodeResult<TValue> =
@@ -30,6 +31,7 @@ export interface ExactStructuredOutputArtifactInput<TProviderPayload, TValue> {
   acceptedValueUsesProviderSchema?: boolean;
   /** Preserve opaque optional performance metadata separately from exact gameplay validation. */
   optionalPerformanceCue?: boolean;
+  audioDelivery?: AudioDeliveryPolicy;
 }
 
 const EXACT_STRUCTURED_OUTPUT_ARTIFACT = Symbol("exact-structured-output-artifact");
@@ -39,6 +41,8 @@ export interface ExactStructuredOutputArtifact<TValue> {
   readonly action: string;
   readonly name: string;
   readonly schema: Readonly<Record<string, unknown>>;
+  /** Native schema keeps the exact shape; clean-text length limits run after tag extraction. */
+  readonly providerSchema: Readonly<Record<string, unknown>>;
   readonly decodeProviderPayload: (
     payload: unknown,
   ) => StructuredDomainDecodeResult<TValue>;
@@ -47,6 +51,7 @@ export interface ExactStructuredOutputArtifact<TValue> {
   ) => StructuredDomainDecodeResult<TValue>;
   readonly acceptedValueUsesProviderSchema: boolean;
   readonly optionalPerformanceCue: boolean;
+  readonly audioDelivery?: AudioDeliveryPolicy;
 }
 
 export interface StructuredOutputValidationIssue {
@@ -58,7 +63,7 @@ export interface StructuredOutputValidationIssue {
 }
 
 export type ExactStructuredOutputResult<TValue> =
-  | { status: "valid"; value: TValue }
+  | { status: "valid"; value: TValue; audioDelivery?: AcceptedAudioDelivery }
   | {
       status: "invalid";
       kind: "undecodable_document" | "schema_mismatch" | "semantic_mismatch";
@@ -167,6 +172,34 @@ function requireIdentity(label: "action" | "name", value: string): string {
   return normalized;
 }
 
+/** Provider token constraints cannot count visible characters inside tagged strings.
+ * Keep every structural constraint; enforce the original lengths on clean text locally.
+ */
+function deliveryProviderSchema(schema: Record<string, unknown>, policy?: AudioDeliveryPolicy): Record<string, unknown> {
+  if (!policy) return schema;
+  const result = structuredClone(schema);
+  const visit = (node: unknown, path: string[]): void => {
+    if (!node || typeof node !== "object" || Array.isArray(node)) return;
+    const record = node as Record<string, unknown>;
+    for (const branch of ["anyOf", "oneOf", "allOf"]) {
+      const alternatives = record[branch];
+      if (Array.isArray(alternatives)) for (const alternative of alternatives) visit(alternative, path);
+    }
+    if (!path.length) {
+      if (typeof record.maxLength === "number") {
+        record.description = `${typeof record.description === "string" ? record.description + " " : ""}At most ${record.maxLength} visible characters, excluding delivery tags.`;
+        delete record.maxLength;
+      }
+      return;
+    }
+    const [field, ...rest] = path;
+    if (field === "*") visit(record.items, rest);
+    else if (record.properties && typeof record.properties === "object") visit((record.properties as Record<string, unknown>)[field!], rest);
+  };
+  for (const path of policy.fields) visit(result, path.split("."));
+  return result;
+}
+
 /**
  * Creates one immutable schema/decoder artifact and compiles its schema once.
  * Ajv strict-mode compilation errors are programming defects and propagate.
@@ -180,10 +213,12 @@ export function createExactStructuredOutputArtifact<TProviderPayload, TValue>(
     action: requireIdentity("action", input.action),
     name: requireIdentity("name", input.name),
     schema,
+    providerSchema: deepFreeze(deliveryProviderSchema(schema, input.audioDelivery)),
     decodeProviderPayload: (payload: unknown) => input.decodeProviderPayload(payload as TProviderPayload),
     decodeAcceptedValue: input.decodeAcceptedValue,
     acceptedValueUsesProviderSchema: input.acceptedValueUsesProviderSchema ?? false,
     optionalPerformanceCue: input.optionalPerformanceCue ?? false,
+    ...(input.audioDelivery && { audioDelivery: deepFreeze(structuredClone(input.audioDelivery)) }),
   });
   compiledValidators.set(artifact, ajv.compile(schema));
   providerNormalizers.set(artifact, compileProviderNormalizer(schema));
@@ -315,6 +350,13 @@ export class ExactStructuredOutputRegistry {
     representation: "provider" | "accepted",
     rejectedDecision?: unknown,
   ): ExactStructuredOutputResult<TValue> {
+    const audio = representation === "provider" && artifact.audioDelivery
+      ? normalizeAudioPayload(value, artifact.audioDelivery) : undefined;
+    if (audio) {
+      value = audio.value;
+      // Repair prompts are future model context, not private provider evidence.
+      rejectedDecision = audio.value;
+    }
     if (
       representation === "provider"
       || artifact.acceptedValueUsesProviderSchema
@@ -327,7 +369,9 @@ export class ExactStructuredOutputRegistry {
     const decode = representation === "provider"
       ? artifact.decodeProviderPayload
       : artifact.decodeAcceptedValue;
-    const result = semanticResult(decode(value));
+    const decoded = semanticResult(decode(value));
+    const result = decoded.status === "valid" && audio
+      ? { ...decoded, audioDelivery: audio.audioDelivery } : decoded;
     return representation === "provider" && result.status === "invalid" && result.feedback && isDecisionRecord(rejectedDecision)
       ? { ...result, feedback: { ...result.feedback, rejectedDecision } }
       : result;

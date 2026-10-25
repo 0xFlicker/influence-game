@@ -1824,6 +1824,7 @@ export const providerLogicalCalls = pgTable("provider_logical_calls", {
   acceptedCatalogId: text("accepted_catalog_id"),
   acceptedValue: payloadColumn("accepted_value_object", "json-gzip").$type<StoredPayload<unknown>>(),
   acceptedValueSha256: text("accepted_value_sha256"),
+  audioDelivery: payloadColumn("audio_delivery_object", "json-gzip").$type<StoredPayload<import("@influence/engine/audio-delivery").AcceptedAudioDelivery>>(),
   acceptedAt: text("accepted_at"),
   canonicalEventSequence: integer("canonical_event_sequence"),
   canonicalCommittedAt: text("canonical_committed_at"),
@@ -1833,7 +1834,8 @@ export const providerLogicalCalls = pgTable("provider_logical_calls", {
   createdAt: text("created_at").notNull().default(sql`now()::text`),
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 }, (table) => [
-  ...payloadChecks("provider_logical_calls", { acceptedValue: [table.acceptedValue, "json-gzip"] }),
+  ...payloadChecks("provider_logical_calls", { acceptedValue: [table.acceptedValue, "json-gzip"], audioDelivery: [table.audioDelivery, "json-gzip"] }),
+  check("provider_logical_calls_audio_delivery_accepted", sql`${table.audioDelivery} IS NULL OR ${table.acceptedAttemptId} IS NOT NULL`),
   uniqueIndex("provider_logical_calls_id_game_unique").on(table.id, table.gameId),
   index("provider_logical_calls_game_idx").on(table.gameId, table.createdAt),
   uniqueIndex("provider_logical_calls_turn_slot_unique")

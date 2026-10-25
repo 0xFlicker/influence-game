@@ -1,5 +1,15 @@
 # Local Model Evaluation
 
+Default delivery-tag evaluation: inspect clean speech and thinking in `--chatty`
+and the localhost API transcript, then inspect private provider evidence for the
+original tags. Both audio and non-audio games preserve annotations for later
+production; no TTS call is made by text acceptance. Check that the next actor's
+prompt and length-repair feedback quote clean dialogue, while system guidance
+contains the permitted tag vocabulary. Tagged thinking is valid and must not
+trigger a retry by itself. Use direct House calls and no `as any` casts; paid
+full-game validation still runs through the localhost API with retained game IDs.
+
+
 For Influence runs through `bun run simulate:api`, inspect structured recipients when evaluating conversational responsiveness: A → B → A → B excludes A from B's next recipient choices, but B → C gives C the next opportunity. A new pair resets the exchange counter. Group addresses and passes return to fair scheduling; the shared speech allowance still bounds the conversation.
 
 Werewolf v10 solo night turns (Doctor, Seer and one surviving wolf) request `targetId`, one spoken `text` explanation and nullable `cue`, with no separate required `thinking`. Multi-wolf discussion keeps private thinking. Preserve raw responses and available native reasoning in private evidence; do not invent a missing explanation. Omniscient replay and exports show each Doctor/Seer explanation before its role result, in a distinct room. Mystery and contestant observations never receive these asides. New games freeze v10 and its output policy at creation; existing games keep their saved version. `bun run simulate:werewolf:api` and `bun run simulate:models --game werewolf` use that same API contract. No `as any`; House calls remain direct.

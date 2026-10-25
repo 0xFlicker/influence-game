@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   AUDIO_INLINE_TAGS, AUDIO_WRAPPING_TAGS, audioDeliveryGuidance,
-  compileAudioDelivery, normalizeAudioDelivery, type AudioDeliveryContext,
+  compileAudioDelivery, normalizeAudioDelivery, normalizeAudioPayload, type AudioDeliveryContext,
 } from "../audio-delivery";
 
 describe("audio delivery normalization", () => {
@@ -164,4 +164,16 @@ describe("context-specific delivery compilation", () => {
     expect(audioDeliveryGuidance(true)).toContain("other tags and mixtures are welcome");
     expect(audioDeliveryGuidance(false)).toContain("Do not put tags in IDs, targets, votes");
   });
+});
+
+
+test("schema-owned paths clean nested speech without interpreting decision fields", () => {
+  const original = { target: "<soft>Ada</soft>", thinking: "<emphasis>Be careful.</emphasis>",
+    whispers: [{ to: "Ada", text: "<soft>Hello.</soft>" }], strategy: { note: "unchanged" } };
+  const result = normalizeAudioPayload(original, { fields: ["thinking", "whispers.*.text"], nighttime: true });
+  expect(result.value).toEqual({ ...original, thinking: "Be careful.", whispers: [{ to: "Ada", text: "Hello." }] });
+  expect(original.whispers[0]!.text).toBe("<soft>Hello.</soft>");
+  expect(result.audioDelivery.fields.map(field => field.path)).toEqual([["thinking"], ["whispers", "0", "text"]]);
+  expect(result.audioDelivery.fields[0]!.delivery.synthesisText).toBe("<lower-pitch><emphasis>Be careful.</emphasis></lower-pitch>");
+  expect(result.audioDelivery.fields[1]!.delivery.context).toBe("night-speech");
 });

@@ -2,7 +2,7 @@ import { actorProviderManifest, modelRateCard } from "@influence/engine";
 import { storeJson, Hydrated, loadPayloads, storeFields } from "./payload-storage.js";
 import { assertWerewolfProviderTurn } from "./werewolf-games.js";
 import { ProviderJournalEntryExhaustedError, retrospectiveAttemptsPerModel } from "@influence/engine";
-import { and, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, eq, getTableColumns, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { createHash, randomUUID } from "crypto";
 import {
   assertGameTurnIntentV1,
@@ -42,7 +42,9 @@ import {
 } from "./provider-health.js";
 
 type AttemptRow = typeof schema.providerCallAttempts.$inferSelect;
-type LogicalCallRow = Hydrated<typeof schema.providerLogicalCalls.$inferSelect>;
+// Gameplay recovery must not fetch private production documents.
+const { audioDelivery: _audioDelivery, ...logicalCallColumns } = getTableColumns(schema.providerLogicalCalls);
+type LogicalCallRow = Hydrated<Omit<typeof schema.providerLogicalCalls.$inferSelect, "audioDelivery">>;
 type EvidenceOutboxRow = Hydrated<typeof schema.providerAttemptEvidenceOutbox.$inferSelect>;
 
 export interface ProviderEvidenceReconciliationDependencies {
@@ -399,7 +401,7 @@ async function allocateAttemptOrdinal(
       updatedAt: now,
     }).onConflictDoNothing({ target: schema.providerLogicalCalls.id });
 
-    const existing = (await loadPayloads(tx.select().from(schema.providerLogicalCalls)
+    const existing = (await loadPayloads(tx.select(logicalCallColumns).from(schema.providerLogicalCalls)
       .where(eq(schema.providerLogicalCalls.id, callId))))[0];
     if (!existing || stableJson(logicalCallIdentityFromRow(existing))
       !== stableJson(logicalCallIdentity(coordinate, options.gameId))) {
@@ -482,7 +484,7 @@ async function reserveAttempt(
       }
     }
     const fallbackBudgetKey = await assertProviderDispatchPolicy(tx, options, intent);
-    const existingCall = (await loadPayloads(tx.select().from(schema.providerLogicalCalls)
+    const existingCall = (await loadPayloads(tx.select(logicalCallColumns).from(schema.providerLogicalCalls)
       .where(eq(schema.providerLogicalCalls.id, callId))))[0];
     if (!existingCall) {
       throw new Error("Provider attempt ordinal was not allocated");
@@ -537,7 +539,7 @@ async function readAcceptedResult(
   return db.transaction(async (tx) => {
     await assertActiveOwner(tx, options);
     await assertDurableTurnSubcall(tx, options, coordinate, "replay");
-    const call = (await loadPayloads(tx.select().from(schema.providerLogicalCalls)
+    const call = (await loadPayloads(tx.select(logicalCallColumns).from(schema.providerLogicalCalls)
       .where(eq(schema.providerLogicalCalls.id, callId))))[0];
     if (!call?.acceptedAttemptId) return undefined;
     if (
@@ -655,7 +657,7 @@ async function terminalizeAttempt(
   if (record.outcome.kind === "usable" && record.acceptedValue === undefined) {
     throw new Error("Usable provider attempt lacks its accepted value");
   }
-  if (record.outcome.kind !== "usable" && record.acceptedValue !== undefined) {
+  if (record.outcome.kind !== "usable" && (record.acceptedValue !== undefined || record.audioDelivery !== undefined)) {
     throw new Error("Failed provider attempt cannot carry an accepted value");
   }
 
@@ -680,7 +682,7 @@ async function terminalizeAttempt(
     `);
     const existing = (await loadPayloads(tx.select({
       attempt: schema.providerCallAttempts,
-      logicalCall: schema.providerLogicalCalls,
+      logicalCall: logicalCallColumns,
     }).from(schema.providerCallAttempts).innerJoin(
       schema.providerLogicalCalls,
       eq(schema.providerCallAttempts.logicalCallId, schema.providerLogicalCalls.id),
@@ -763,6 +765,7 @@ async function terminalizeAttempt(
         acceptedCatalogId,
         acceptedValue: await storeJson(record.acceptedValue),
         acceptedValueSha256: sha256StableJson(record.acceptedValue),
+        audioDelivery: record.audioDelivery ? await storeJson(record.audioDelivery) : null,
         acceptedAt: record.completedAt,
         rateLimitOutcome: sql`CASE
           WHEN ${schema.providerLogicalCalls.rateLimitCount} > 0
@@ -774,7 +777,7 @@ async function terminalizeAttempt(
       }).where(and(
         eq(schema.providerLogicalCalls.id, callId),
         sql`(${schema.providerLogicalCalls.acceptedAttemptId} IS NULL OR ${schema.providerLogicalCalls.acceptedAttemptId} = ${attemptId})`,
-      )).returning());
+      )).returning(logicalCallColumns));
       if (accepted.length === 0) {
         throw new Error("Provider logical call acceptance fence rejected the attempt");
       }
@@ -804,7 +807,7 @@ async function terminalizeAttempt(
         updatedAt: record.completedAt,
       }).where(eq(schema.providerLogicalCalls.id, callId));
     }
-    const logicalCall = (await loadPayloads(tx.select().from(schema.providerLogicalCalls)
+    const logicalCall = (await loadPayloads(tx.select(logicalCallColumns).from(schema.providerLogicalCalls)
       .where(eq(schema.providerLogicalCalls.id, callId))))[0];
     if (!logicalCall) throw new Error("Provider logical call disappeared during terminalization");
     const health = await recordProviderHealthOutcomeInTransaction(tx, {
@@ -1437,7 +1440,7 @@ export async function reconcileProviderAttemptSpend(
 ): Promise<ProviderSpendReconciliationResult> {
   const rows = await loadPayloads(db.select({
     attempt: schema.providerCallAttempts,
-    logicalCall: schema.providerLogicalCalls,
+    logicalCall: logicalCallColumns,
   }).from(schema.providerCallAttempts)
     .innerJoin(
       schema.providerLogicalCalls,

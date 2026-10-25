@@ -1,4 +1,5 @@
 import { compactionOrientation, compactInvocation, contextSourceHash, contextComponentHashes, contextSummaryArtifact, ContextSourceConflictError, CONTEXT_SUMMARY_INSTRUCTIONS, CONTEXT_MAX_REVISIONS } from "./context-adaptation";
+import { audioDeliveryGuidance } from "./audio-delivery";
 import type OpenAI from "openai";
 import { DEFAULT_LM_STUDIO_TIMEOUT_MS } from "./local-inference";
 import type {
@@ -76,6 +77,16 @@ export interface ModelInvocationExecutionResult<TValue>
 export async function executeModelInvocation<TValue, TStructuredValue = unknown>(
   options: ExecuteModelInvocationOptions<TValue, TStructuredValue>,
 ): Promise<ModelInvocationExecutionResult<TValue>> {
+  const withDelivery = (value: ModelInvocation<TStructuredValue>): ModelInvocation<TStructuredValue> => {
+    const policy = value.result.kind === "structured" ? value.result.artifact.audioDelivery : undefined;
+    if (!policy) return value;
+    const guidance = audioDeliveryGuidance(policy.nighttime);
+    const messages = [...value.messages];
+    const index = messages.findIndex(message => message.role === "system");
+    if (index < 0) messages.unshift({ role: "system", content: guidance });
+    else messages[index] = { ...messages[index]!, content: `${messages[index]!.content}\n\n${guidance}` };
+    return { ...value, messages };
+  };
   // Capture renderer-owned spans before the first await; House/agents may prepare another call concurrently.
   const initialInvocation = typeof options.invocation === "function" ? options.invocation() : options.invocation;
   const contextSpans = initialInvocation.contextSpans?.map(span => ({ ...span }));
@@ -139,7 +150,9 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
         });
       };
       const compile = (attemptOrdinal: number): ProviderNativeRequest => {
-        const semanticCall = withRepair(current ?? invocation());
+        // Delivery policy is attempt-specific production guidance, like length repair.
+        // It must not change the frozen gameplay context hash during recovery.
+        const semanticCall = withRepair(withDelivery(current ?? invocation()));
         const prepared = adapterRuntime.adapter.compile(
           semanticCall,
           adapterRuntime,
@@ -171,7 +184,7 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
         dispatch: async ({ attemptOrdinal, requestOptions }) => {
           const key = `${runtime.catalogId}:${attemptOrdinal}`;
           const compiled = compiledByAttempt.get(key);
-          const semanticCall = compiled?.invocation ?? withRepair(invocation());
+          const semanticCall = compiled?.invocation ?? withRepair(withDelivery(invocation()));
           const prepared = compiled?.request ?? adapterRuntime.adapter.compile(
             semanticCall,
             adapterRuntime,
@@ -188,7 +201,8 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
                 : requestOptions.signal ?? requestSignal,
             }),
           });
-          if (context?.revision) outcome.invocationMessages = semanticCall.messages;
+          // Traces must reflect the actual guidance/repair/context sent to the provider.
+          outcome.invocationMessages = semanticCall.messages;
           invocationByOutcome.set(outcome, {
             invocation: semanticCall,
           });
@@ -219,7 +233,8 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
           const validation = options.validate(outcome, decoded.value);
           if (validation.status === "unusable" && validation.feedback) latestLengthFeedback = validation.feedback;
           if (validation.status === "usable") liveAcceptedOutcome = outcome;
-          return validation;
+          return validation.status === "usable" && decoded.audioDelivery
+            ? { ...validation, audioDelivery: decoded.audioDelivery } : validation;
         },
         classifyError: (error, signal) =>
           adapterRuntime.adapter.classifyError(error, signal),
@@ -414,7 +429,7 @@ export class KatanaProviderAdapter extends OpenAICompatibleAdapter {
     // the semantic artifact intact; only translate the native wire schema.
     const nativeInvocation = runtime.modelId.startsWith("claude-") && invocation.result.kind === "structured"
       ? { ...invocation, result: { ...invocation.result, artifact: { ...invocation.result.artifact,
-          schema: claudeEnumSchema(invocation.result.artifact.schema),
+          providerSchema: claudeEnumSchema(invocation.result.artifact.providerSchema),
         } } }
       : invocation;
     return {
@@ -677,7 +692,7 @@ export function compileOpenAIResponsesRequest(
         type: "json_schema",
         name: artifact.name,
         strict: true,
-        schema: artifact.schema,
+        schema: artifact.providerSchema,
       },
     };
   }
@@ -710,7 +725,7 @@ export function compileChatCompletionsRequest(
 
   if (invocation.result.kind === "structured") {
     const artifact = invocation.result.artifact;
-    body.response_format = chatJsonSchemaFormat(artifact.name, artifact.schema);
+    body.response_format = chatJsonSchemaFormat(artifact.name, artifact.providerSchema);
   }
   return body as unknown as ChatCompletionCreateParamsNonStreaming;
 }

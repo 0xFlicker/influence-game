@@ -6777,3 +6777,28 @@ describe("Influence decision delivery boundary", () => {
     });
   }
 });
+
+
+it("keeps annotated jury speech private while accepting clean dialogue and thinking", async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  const records: ProviderAttemptRecord[] = [];
+  const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic",
+    makeToolOpenAIStub(requests, "ask_jury_question", {
+      target: "Mira", question: "<emphasis>Why</emphasis> should I trust you?",
+      thinking: "<higher-pitch><higher-pitch>Check her promise.</higher-pitch></higher-pitch>",
+    }), "gpt-5-nano", undefined, undefined,
+    { structuredCallMaxAttempts: 1, providerExecutionHooks: { onTerminal: record => { records.push(record); } } });
+  const ctx = makeContext(Phase.JURY_QUESTIONS);
+  agent.onGameStart(ctx.gameId, ctx.alivePlayers);
+  const answer = await agent.getJuryQuestion(ctx, ["mira-id", "vera-id"]);
+  expect(answer).toMatchObject({ targetFinalistId: "mira-id", question: "Why should I trust you?", thinking: "Check her promise." });
+  expect(records).toHaveLength(1);
+  expect(JSON.stringify(records[0]!.acceptedValue)).not.toContain("<emphasis>");
+  expect(records[0]!.audioDelivery?.fields.find(field => field.path[0] === "question")?.delivery.synthesisText)
+    .toBe("<emphasis>Why</emphasis> should I trust you?");
+  expect(records[0]!.audioDelivery?.fields.find(field => field.path[0] === "thinking")?.delivery.synthesisText)
+    .toBe("<higher-pitch>Check her promise.</higher-pitch>");
+  expect(JSON.stringify(records[0]!.rawResponse)).toContain("<emphasis>");
+  const messages = requests[0]!.messages as Array<{ role: string; content: string }>;
+  expect(messages.find(message => message.role === "system")?.content).toContain("Prefer <higher-pitch>");
+});

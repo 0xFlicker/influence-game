@@ -527,3 +527,25 @@ describe("nullable provider values", () => {
       .toEqual({ status: "valid", value: { kind: "optional", target: null } });
   });
 });
+
+
+it("delivery controls do not consume the clean-text allowance or relax machine fields", () => {
+  const artifact = createExactStructuredOutputArtifact<{ text: string; target: string }, { text: string; target: string }>({
+    action: "test.delivery.v1", name: "delivery", audioDelivery: { fields: ["text"], nighttime: false },
+    schema: { type: "object", additionalProperties: false, required: ["text", "target"], properties: {
+      text: { type: "string", minLength: 1, maxLength: 2 }, target: { type: "string", enum: ["Ada"], maxLength: 3 },
+    } },
+    decodeProviderPayload: value => ({ status: "valid", value }),
+    decodeAcceptedValue: value => ({ status: "valid", value: value as { text: string; target: string } }),
+  });
+  expect(artifact.providerSchema).toMatchObject({ additionalProperties: false, required: ["text", "target"], properties: {
+    text: { type: "string", minLength: 1, description: "At most 2 visible characters, excluding delivery tags." },
+    target: { type: "string", enum: ["Ada"], maxLength: 3 },
+  } });
+  expect((artifact.providerSchema.properties as Record<string, Record<string, unknown>>).text).not.toHaveProperty("maxLength");
+  const registry = new ExactStructuredOutputRegistry();
+  expect(registry.decodeJsonDocument(artifact, JSON.stringify({ text: "<soft>😀a</soft>", target: "Ada" }))).toMatchObject({ status: "valid", value: { text: "😀a", target: "Ada" } });
+  for (const value of [{ text: "<soft>abc</soft>", target: "Ada" }, { text: "<soft></soft>", target: "Ada" }, { text: "Hi", target: "<soft>Ada</soft>" }, { text: "Hi", target: "Ada", extra: true }]) {
+    expect(registry.decodeJsonDocument(artifact, JSON.stringify(value)).status).toBe("invalid");
+  }
+});

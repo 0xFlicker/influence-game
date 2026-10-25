@@ -1,3 +1,4 @@
+import { contextSourceHash } from "../context-adaptation";
 import { describe, expect, it } from "bun:test";
 import type OpenAI from "openai";
 import type { LlmProviderRuntime } from "../llm-client";
@@ -193,6 +194,36 @@ describe("provider-native adapters", () => {
     expect(messages.at(-1)?.content).toContain('"oversized draft"');
     expect(messages.at(-1)?.content).toContain("measured 15 unicode_code_points, allowed 3 (over by 12)");
     expect(messages.at(-1)?.content).toContain("preserving its intent");
+  });
+
+  it("adds production guidance without changing a pending call's frozen gameplay context", async () => {
+    const artifact = createExactStructuredOutputArtifact<{ text: string }, { text: string }>({
+      action: "test.delivery-recovery.v1", name: "speech", audioDelivery: { fields: ["text"], nighttime: true },
+      schema: { type: "object", additionalProperties: false, required: ["text"], properties: { text: { type: "string" } } },
+      decodeProviderPayload: value => ({ status: "valid", value }), decodeAcceptedValue: value => ({ status: "valid", value: value as { text: string } }),
+    });
+    const source: ModelInvocation<{ text: string }> = { messages: [{ role: "system", content: "Play the game." }, { role: "user", content: "Saved history" }],
+      contextSpans: [{ text: "Saved history", format: "text" }], result: { kind: "structured", artifact }, outputTokenLimit: 256 };
+    const originalHash = contextSourceHash(source);
+    const records: ProviderAttemptRecord[] = [];
+    const client = { chat: { completions: { create: async (body: { messages: Array<{ content: string }> }) => {
+      expect(body.messages[0]!.content).toContain("Prefer <soft>");
+      return { id: "resumed", choices: [{ finish_reason: "stop", message: { role: "assistant", content: '{"text":"<soft>Hello</soft>"}' } }] };
+    } } } } as unknown as OpenAI;
+    const coordinator = new ProviderExecutionCoordinator({ hooks: {
+      onReadContextAttempts: async () => [{ catalogId: "katana:grok-4-5", sourceHash: originalHash, revision: 0, outcome: "transport_timeout" }],
+      onTerminal: record => { records.push(record); },
+    } });
+    const result = await executeModelInvocation({
+      call: coordinator.startCall({ actor: { name: "Dax", role: "player" }, action: artifact.action,
+        semantic: { version: 1, kind: "phase_call", phase: Phase.MINGLE, round: 0, canonicalEventSequence: 0, callSlot: 1 } }),
+      runtimes: [runtime("katana:grok-4-5", client)], invocation: source, maxAttempts: 2,
+      validate: (_outcome, value) => value ? { status: "usable", value } : { status: "unusable", kind: "malformed_output", message: "missing" },
+    });
+    expect(result.value).toEqual({ text: "Hello" });
+    expect(records[0]!.context?.sourceHash).toBe(originalHash);
+    expect(source.messages[0]!.content).toBe("Play the game.");
+    expect(result.liveOutcome?.invocationMessages?.[0]?.content).toContain("Prefer <soft>");
   });
 
   it("keeps local requests concurrent and uses the local deadline instead of a hosted action deadline", async () => {

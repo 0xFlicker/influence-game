@@ -21,7 +21,8 @@ owns the complete product scope. Audio Mode is not yet available in game creatio
   error. Their words remain. Unknown brackets remain literal text; this parser
   is not an HTML sanitizer and must never be used with raw HTML rendering.
 - `audioDeliveryGuidance` prepares the default prompt directions for both audio
-  and non-audio games. It is not connected to model invocation yet.
+  and non-audio games. Structured Influence, Werewolf, House narration and
+  retrospective invocations now include it by default.
 
 The vocabulary is pinned to the [xAI tag reference](https://docs.x.ai/developers/model-capabilities/audio/text-to-speech#speech-tags)
 checked on October 24, 2026. This is text transformation only: no audio DSP,
@@ -32,19 +33,59 @@ existing private bucket/payload infrastructure; store relational references and
 hashes in PostgreSQL. Only `cleanText` may enter presentation and future agent
 context. Source-to-text mappings do not establish audio timestamps.
 
-## Next integration boundary
+## Accepted annotations and clean context
 
-Before enabling tag guidance, persist accepted annotations atomically with the
-owning turn and use clean text throughout both games' observations, self-history,
-summaries, thinking presentation, transcripts and public read models. Preserve
-the existing exact schemas, gameplay semantic validation, provider journal and
-private raw evidence. Do not enable prompting piecemeal before these boundaries
-are proven. Use direct House calls and no `as any` casts.
+The exact structured-output registry normalizes only schema-declared presentation
+paths before applying the original clean-text schema and semantic validation.
+IDs, targets, votes and gameplay structure are untouched. Native schemas retain
+that exact structure; delivery-bearing strings describe their visible-character
+limits instead of enforcing them against raw tag characters. Local validation
+still enforces every original length limit. Length-repair prompts quote clean text.
 
-Then connect the frozen stock-voice catalog/House identity, bucket-backed xAI
-recordings, live readiness/suspension, deliberate Studio backfill and the existing
-shared playback/export recording schedule. No production integration, provider
-spend or completion of those layers is implied by the compiler tests.
+Both games persist clean accepted values and use those values for canonical
+history, subsequent observations, self-history, summaries and public projections.
+The provider coordinator retains sanitized source annotations separately; any
+credential redaction recompiles source maps. Private traces show the actual prompt
+including delivery guidance. Like repair instructions, delivery guidance is added
+after frozen gameplay context hashing/compaction, so enabling it does not invalidate
+an interrupted logical call's unchanged context. Existing accepted history is not rewritten.
+
+`provider_logical_calls.audio_delivery_object` is a private `json-gzip` bucket
+reference with verified hashes and lengths. The document holds compiler version,
+explicit field paths (including nested whispers), source text, normalized spans
+and the context-specific synthesis rendition. Journal acceptance commits this
+reference together with the clean accepted result; failed uploads cannot publish
+a partial acceptance. The existing payload inventory/garbage collector covers
+unreferenced uploads. Annotation retention does not depend on debug trace retention.
+Gameplay recovery and owner learning do not fetch these production documents.
+
+Document offsets address the clean provider field before any existing domain
+trimming or field renaming. Recording attachment must match that field to its
+accepted production moment and account for the domain's whitespace normalization;
+source maps alone neither identify a replay moment nor establish timestamps.
+Thinking context is supplied by typed Werewolf action metadata, never inferred
+from dialogue. Night speech is not forcibly wrapped.
+
+## Stock voice identity contract
+
+`@influence/engine/voice-catalog` freezes the audition's 28 stock voices and their
+provider gender labels. Helios is reserved globally for the House; the remaining
+27 are eligible for players. Version 1 hashes a namespaced stable character ID
+using the engine's FNV-1a convention. Declared male/female gender narrows the pool;
+non-binary/unspecified uses the full player pool. Explicit selection can cross
+labels, and reset returns to the deterministic policy. No name, image, live catalog
+order or random delivery effect enters selection. Persist the returned assignment
+and copy it into a track snapshot; never recompute an existing assignment on reads.
+This is a tested contract only: profile persistence, API/MCP selection and the
+sample picker are still pending.
+
+## Remaining integration
+
+Connect the frozen stock-voice catalog/House identity, bucket-backed xAI recordings,
+live readiness/suspension, deliberate Studio backfill and the existing shared
+playback/export recording schedule. Use direct House calls and no `as any` casts.
+No audio generation, game creation setting, paid provider call or completion of
+those layers is implied by the text-boundary integration.
 
 ## Validation
 
@@ -53,10 +94,21 @@ contract. It covers supported vocabulary, mixed and malformed tags, duplicate
 nesting, word preservation, Unicode/source mapping, long text/deep nesting,
 nighttime prompt preference, context-specific fallback and idempotence. These are
 provider-free tests; audible quality and browser/export alignment need their own
-qualification when the recording integration lands.
+qualification when the recording integration lands. The next text-generation
+gate is documented in [default delivery-tag qualification](testing/audio-delivery-qualification.md).
 
 Initial increment validation (October 24): 53 focused compiler tests passed;
 `bun run test` passed 2,934 tests with five skips; `bun run test:postgres` passed
 2,183 tests; `bun run check` passed. The provider-free suite required loopback
 access outside the sandbox for its existing local-server/child-process tests.
 No paid providers were called during this implementation increment.
+
+
+Second increment validation (October 24): the provider-free baseline passed 2,944
+tests with five skips; the final House follow-up/prompt refinement also passed its
+65 focused tests. `bun run check` passed. The PostgreSQL rerun passed 2,185 tests
+but returned nonzero for an isolated staging-render fixture's cleanup
+hook timeout; rerunning that file alone passed all eight tests and cleanup in
+23.58 seconds. The earlier migration-fixture failure was corrected and passed on
+the full rerun. No paid providers were called. Live qualification remains pending;
+these results do not establish model quality, audio timing or playback/export parity.

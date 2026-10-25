@@ -290,5 +290,6 @@ function decodeSpeech(value: unknown): StructuredDomainDecodeResult<Retrospectiv
 const speechSchema = objectSchema({ speech });
 export const retrospectiveSpeechArtifact = createExactStructuredOutputArtifact<RetrospectiveSpeechV1, RetrospectiveSpeechV1>({
   action: "retrospective-statement", name: "submit_retrospective", schema: speechSchema,
+  audioDelivery: { fields: ["speech"], nighttime: false },
   decodeProviderPayload: decodeSpeech, decodeAcceptedValue: decodeSpeech, acceptedValueUsesProviderSchema: true,
 });

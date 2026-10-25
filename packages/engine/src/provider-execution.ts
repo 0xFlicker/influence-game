@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "crypto";
+import { compileAudioDelivery } from "./audio-delivery";
 import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
 import type { ProviderProfileId } from "./model-catalog";
 import { Phase, type UUID } from "./types";
@@ -391,6 +392,8 @@ export interface ProviderAttemptIntent {
 }
 
 export interface ProviderAttemptRecord extends ProviderAttemptIntent {
+  /** Private production metadata, never returned as the accepted gameplay value. */
+  audioDelivery?: import("./audio-delivery").AcceptedAudioDelivery;
   completedAt: string;
   latencyMs: number;
   outcome: ProviderAttemptOutcome;
@@ -445,7 +448,7 @@ export interface ProviderExecutionHooks {
 }
 
 export type ProviderCandidateValidation<T> =
-  | { status: "usable"; value: T }
+  | { status: "usable"; value: T; audioDelivery?: import("./audio-delivery").AcceptedAudioDelivery }
   | {
       status: "unusable";
       kind: ProviderAttemptFailureKind;
@@ -984,6 +987,17 @@ export class ProviderLogicalCallExecution {
             completedAt: new Date(completedAtMs).toISOString(),
             latencyMs: Math.max(0, Math.round(completedAtMs - startedAtMs)),
             outcome: { kind: "usable" },
+            ...(validation.audioDelivery && { audioDelivery: {
+              version: validation.audioDelivery.version,
+              fields: validation.audioDelivery.fields.map(field => ({
+                path: field.path,
+                // Redaction changes offsets: rebuild the document from sanitized source.
+                delivery: compileAudioDelivery(
+                  String(sanitizeProviderEvidence(field.delivery.sourceText, transportCapture.credentialValues)),
+                  field.delivery.context,
+                ),
+              })),
+            } }),
             ...(accounting && { accounting }),
             ...(requestId && { requestId }),
             rawResponse: transportCapture.response ?? {

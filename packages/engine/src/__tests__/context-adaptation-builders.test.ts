@@ -1,3 +1,4 @@
+import { audioDeliveryGuidance } from "../audio-delivery";
 import { expect, test } from "bun:test";
 import { InfluenceAgent } from "../agent";
 import { LLMHouseInterviewer } from "../house-interviewer";
@@ -101,7 +102,9 @@ test("House interview compacts only the subject's provided history and preserves
   const orientation = summaryOrientation(p.requests);
   expect(orientation.actor.role).toBe("house");
   expect(orientation.characterContext).toBeNull();
-  expect(orientation.pendingAction.messages[0]).toEqual(p.requests[0]!.messages[0]);
+  expect(p.requests[0]!.messages[0]).toEqual({ ...orientation.pendingAction.messages[0],
+    content: `${orientation.pendingAction.messages[0].content}\n\n${audioDeliveryGuidance(false)}` });
+  expect(JSON.stringify(orientation)).not.toContain("Delivery tags are optional");
   expect(JSON.stringify(orientation.pendingAction.messages)).toContain("Atlas");
   expect(JSON.stringify(orientation.pendingAction.messages)).toContain("complete information boundary");
 });

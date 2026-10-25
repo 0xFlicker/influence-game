@@ -1,5 +1,16 @@
 # Reasoning & Transcript Observability
 
+Delivery tags are now optional default production guidance in both audio and
+non-audio games. Declared speech/thinking fields are cleaned before exact schema
+and gameplay validation; length limits count visible text. Canonical dialogue,
+saved thinking and subsequent contestant context contain clean strings. Native
+responses stay private; sanitized annotations have an independent bucket reference
+on the accepted provider logical call, committed with its accepted value. Private
+prompt traces include the actual tag guidance. Night speech prefers soft without
+forced wrapping; thinking adds missing higher-pitch by day or lower-pitch at night.
+No local audio effects or synthesis run at this boundary. See [Audio Mode](audio-mode.md).
+Keep direct House calls and no `as any` shortcuts.
+
 Influence Lobby, Mingle and huddle handoffs track consecutive exchanges within a pair. After A → B → A → B, only A is removed from B's recipient choices. Choosing C schedules C next and starts a new pair; a pass or group address returns to the least-recently-offered participant. Structured `recipientId` controls scheduling, never names in prose. Private counters and passes remain absent from contestant history; accepted historical dialogue is unchanged.
 
 Werewolf v10 solo night turns (Doctor, Seer and one surviving wolf) request `targetId`, one spoken `text` explanation and nullable `cue`, with no separate required `thinking`. Multi-wolf discussion keeps private thinking. Preserve raw responses and available native reasoning in private evidence; do not invent a missing explanation. Omniscient replay and exports show each Doctor/Seer explanation before its role result, in a distinct room. Mystery and contestant observations never receive these asides. New games freeze v10 and its output policy at creation; existing games keep their saved version. `bun run simulate:werewolf:api` and `bun run simulate:models --game werewolf` use that same API contract. No `as any`; House calls remain direct.

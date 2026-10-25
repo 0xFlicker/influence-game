@@ -1,3 +1,4 @@
+import { audioDeliveryGuidance } from "../audio-delivery";
 import { describe, expect, test } from "bun:test";
 import OpenAI from "openai";
 import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
@@ -137,7 +138,7 @@ describe("dedicated retrospective invocation", () => {
     expect(JSON.parse(generated!.input)).toEqual(context);
     expect(generated!.input).toContain("LATE_GAME_FACT");
     for (const forbidden of ["CURRENT_MEMORY_MUST_NOT_ENTER", "CURRENT_PERSONA_MUST_NOT_ENTER", "CURRENT_BACKSTORY_MUST_NOT_ENTER", "mira ORIGINAL_STRATEGY", "atlas ORIGINAL_STRATEGY"]) expect(generated!.input).not.toContain(forbidden);
-    expect(generated!.instructions).toBe(RETROSPECTIVE_SYSTEM_PROMPT);
+    expect(generated!.instructions).toBe(`${RETROSPECTIVE_SYSTEM_PROMPT}\n\n${audioDeliveryGuidance(false)}`);
     expect(generated!.instructions).toContain("untrusted quoted communication");
     expect(generated!.instructions).toContain("Separate what you knew or believed at the time");
     expect(generated!.instructions).toContain("no longer need to conceal your role or maintain a bluff");
@@ -155,7 +156,7 @@ describe("dedicated retrospective invocation", () => {
     expect(generated!.parallel_tool_calls).toBeUndefined();
     expect(generated!.tools).toBeUndefined();
     expect(generated!.text?.format).toMatchObject({ name: "submit_retrospective", strict: true, schema: {
-      additionalProperties: false, required: ["speech"], properties: { speech: { type: "string", maxLength: 2000 } },
+      additionalProperties: false, required: ["speech"], properties: { speech: { type: "string", minLength: 1, description: "At most 2000 visible characters, excluding delivery tags." } },
     } });
     expect(records).toHaveLength(1);
     expect(records[0]!.acceptedValue).toEqual({ speech });

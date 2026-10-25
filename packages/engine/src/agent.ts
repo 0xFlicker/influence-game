@@ -6162,6 +6162,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
         name: responseFormat.json_schema.name,
         schema: responseFormat.json_schema.schema,
         optionalPerformanceCue: Boolean(options?.visual),
+        audioDelivery: { fields: ["message", "thinking"], nighttime: false },
         decodeProviderPayload: (payload) =>
           this.decodeExactAgentResponsePayload(payload, options),
         decodeAcceptedValue: (value) =>
@@ -6308,6 +6309,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       },
       acceptedValueUsesProviderSchema: false,
       optionalPerformanceCue: Boolean(options?.visual),
+      audioDelivery: { fields: ["message", "thinking", "question", "accusation", "whispers.*.text"], nighttime: false },
       decodeProviderPayload: (value) => {
         const strategy = validateStrategyBoundary(value);
         if (strategy.status === "invalid") return strategy;

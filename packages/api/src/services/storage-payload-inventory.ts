@@ -30,6 +30,7 @@ export const STORAGE_PAYLOAD_COLUMNS = [
   {"table": "game_turns", "column": "intent", "kind": "json", "primaryKey": ["id"]},
   {"table": "game_turns", "column": "commit_result", "kind": "json", "primaryKey": ["id"]},
   {"table": "provider_logical_calls", "column": "accepted_value", "kind": "json", "primaryKey": ["id"]},
+  {"table": "provider_logical_calls", "column": "audio_delivery", "kind": "json", "primaryKey": ["id"]},
   {"table": "agent_revisions", "column": "behavior_snapshot", "kind": "json", "primaryKey": ["id"]},
   {"table": "agent_revisions", "column": "effective_runtime_snapshot", "kind": "json", "primaryKey": ["id"]},
   {"table": "account_text_operations", "column": "result", "kind": "json", "primaryKey": ["id"]},

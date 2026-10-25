@@ -132,7 +132,7 @@ describe("retrospective contracts", () => {
       expect(exactStructuredOutputRegistry.decodeAcceptedValue(retrospectiveSpeechArtifact, value).status).toBe("invalid");
     }
     const value = { speech: "  My exact speech.  " };
-    expect(exactStructuredOutputRegistry.decodeProviderPayload(retrospectiveSpeechArtifact, value)).toEqual({ status: "valid", value });
+    expect(exactStructuredOutputRegistry.decodeProviderPayload(retrospectiveSpeechArtifact, value)).toMatchObject({ status: "valid", value, audioDelivery: { fields: [{ path: ["speech"], delivery: { cleanText: value.speech } }] } });
   });
 });
 

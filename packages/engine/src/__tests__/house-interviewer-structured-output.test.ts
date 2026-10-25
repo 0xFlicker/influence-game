@@ -1035,7 +1035,7 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
       makeOpenAIStub(requests, [{
         content: JSON.stringify({
           decision: "follow_up",
-          text: "You called Nyx trustworthy. What did she do to earn that?",
+          text: "You called Nyx <emphasis>trustworthy</emphasis>. What did she do to earn that?",
         }),
       }]),
       luna.modelId,
@@ -1153,7 +1153,7 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
       makeOpenAIStub(requests, [{
         content: JSON.stringify({
           decision: "close",
-          text: "The House has heard enough.",
+          text: "<soft>The House has heard enough.</soft>",
         }),
       }]),
       "test-model",
@@ -1409,7 +1409,7 @@ describe("LLMHouseInterviewer authored House summaries", () => {
         max_output_tokens: 8192,
         reasoning: { effort: "medium" },
         text: { format: { strict: true, schema: { properties: {
-          publicSummary: { maxLength: beatClass === "ordinary" ? 180 : 360 },
+          publicSummary: { description: `At most ${beatClass === "ordinary" ? 180 : 360} UTF-16 code units. At most ${beatClass === "ordinary" ? 180 : 360} visible characters, excluding delivery tags.` },
           privateNarrativeNotebook: { maxLength: 1200 },
         } } } },
       });
@@ -1496,7 +1496,7 @@ describe("LLMHouseInterviewer authored House summaries", () => {
       additionalProperties: false,
       required: ["publicSummary", "privateNarrativeNotebook"],
       properties: {
-        publicSummary: { type: ["string", "null"], minLength: 1, maxLength: 180, description: "At most 180 UTF-16 code units." },
+        publicSummary: { type: ["string", "null"], minLength: 1, description: "At most 180 UTF-16 code units. At most 180 visible characters, excluding delivery tags." },
         privateNarrativeNotebook: { type: ["string", "null"], minLength: 1, maxLength: 1200, description: "At most 1200 UTF-16 code units." },
       },
     });

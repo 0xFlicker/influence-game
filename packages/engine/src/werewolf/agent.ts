@@ -14,6 +14,10 @@ import { RetrospectiveContractError, type RetrospectiveSpeechV1 } from "../retro
 const SPEECH_GUIDANCE = "In spoken text, refer to players only by their character names. Never include player IDs, UUIDs, or other internal identifiers, even when quoting an earlier message. IDs belong only in structured targetId and recipientIds choices, not dialogue.";
 const UUID_IN_SPEECH = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
 
+function audioDeliveryPolicy(request: WerewolfRequest) {
+  return { fields: ["text", "thinking"], nighttime: ["pack_talk", "pack_propose", "attack", "protect", "investigate"].includes(request.action) };
+}
+
 /** Model evidence is journaled separately from the rules decision and never enters player observations. */
 export type WerewolfModelDecision = (Exclude<WerewolfDecision, {kind: "solo_target"}> & {thinking: string}) | Extract<WerewolfDecision, {kind: "solo_target"}>;
 export function werewolfGameplayDecision(value: WerewolfModelDecision): WerewolfDecision {
@@ -55,6 +59,7 @@ export function werewolfDecisionArtifact(request: WerewolfRequest, conversationR
   };
   return createExactStructuredOutputArtifact<unknown, WerewolfModelDecision>({
     action: `werewolf.${request.action}.${request.action === "vote" ? "v4" : target ? "v2" : opening ? "v2" : "v5"}`, name: `werewolf_${request.action}`,
+    audioDelivery: audioDeliveryPolicy(request),
     schema: {
       type: "object", additionalProperties: false,
       required: target ? ["targetId", "thinking"] : opening ? ["text", "cue", "recipientIds", "thinking"] : ["text", "cue", "thinking"],
@@ -104,6 +109,7 @@ function soloDecisionArtifact(request: Extract<WerewolfRequest, {solo: true}> | 
   };
   return createExactStructuredOutputArtifact<unknown, WerewolfModelDecision>({
     action: `werewolf.${request.action}.solo.v10`, name: `werewolf_${request.action}`,
+    audioDelivery: audioDeliveryPolicy(request),
     schema: {type: "object", additionalProperties: false, required: ["targetId", "text", "cue"], properties: {
       targetId: {type: "string", enum: request.legalTargetIds},
       text: {type: "string", minLength: 1, description: `Explain your chosen move in one short spoken message, at most ${request.messageBytes} UTF-8 bytes. This private aside is shown only to omniscient spectators, never other contestants. ${SPEECH_GUIDANCE}`},
@@ -147,7 +153,7 @@ function currentDecisionArtifact(request: Extract<WerewolfRequest, { action: "co
     ...(conversation ? { recipientId: nullable(request.legalRecipientIds), replyToContributionId: { type: ["integer", "null"], enum: [...(references?.keys() ?? request.legalReplyIds), null], description: "Visible contribution reference only. Never selects the next speaker." } }
       : { targetId: request.action === "public_vote" ? { ...nullable(request.legalTargetIds), description: "ID of the player you want ELIMINATED. This is a vote against them, never support or endorsement. Null abstains. Any spoken vote announcement must name this same player." } : { type: "string", enum: request.legalTargetIds } }),
   };
-  return createExactStructuredOutputArtifact<unknown, WerewolfModelDecision>({ action: `werewolf.${request.action}.v9`, name: `werewolf_${request.action}`, schema: { type: "object", additionalProperties: false, properties, required: Object.keys(properties) },
+  return createExactStructuredOutputArtifact<unknown, WerewolfModelDecision>({ action: `werewolf.${request.action}.v9`, name: `werewolf_${request.action}`, audioDelivery: audioDeliveryPolicy(request), schema: { type: "object", additionalProperties: false, properties, required: Object.keys(properties) },
     decodeProviderPayload: value => decode(value), decodeAcceptedValue: value => decode(value, true) });
 }
 

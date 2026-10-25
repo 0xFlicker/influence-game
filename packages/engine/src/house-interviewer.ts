@@ -106,10 +106,13 @@ function houseStructuredRecordArtifact<TValue = Record<string, unknown>>(
     decoder
       ? decoder.decodeAccepted(value)
       : decodeProvider(value);
+  const deliveryFields = ["question", "text", "publicSummary", "summary"].filter(field =>
+    schema.properties !== null && typeof schema.properties === "object" && Object.hasOwn(schema.properties, field));
   return createExactStructuredOutputArtifact<Record<string, unknown>, TValue>({
     action,
     name,
     schema,
+    ...(deliveryFields.length && { audioDelivery: { fields: deliveryFields, nighttime: false } }),
     decodeProviderPayload: decodeProvider,
     decodeAcceptedValue: decodeAccepted,
   });
@@ -493,6 +496,7 @@ function createHouseSummaryArtifact(beatClass: HouseBeatClass) {
   return createExactStructuredOutputArtifact({
     action: "house.house-audience-summary.v3",
     name: "house_audience_summary_v3",
+    audioDelivery: { fields: ["publicSummary"], nighttime: false },
     schema: houseSummarySchema(maxPublicSummaryCharacters),
     decodeProviderPayload: decode,
     decodeAcceptedValue: decode,
