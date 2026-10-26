@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { ClerkAPIResponseError } from "@clerk/nextjs/errors";
+import { ClerkAPIResponseError } from "@clerk/react/errors";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -8,6 +8,8 @@ import {
   beginClerkClientTrustEmailCode,
   runClerkPasswordAttempt,
   runClerkProtectAttempt,
+  resumeMatchingClerkSession,
+  verifiedSessionEmail,
   sendClerkClientTrustEmailCode,
   verifyClerkClientTrustEmailCode,
 } from "../components/clerk-password-flow";
@@ -462,14 +464,14 @@ describe("unified authentication wrapper", () => {
       },
     };
 
-    expect(await runClerkPasswordAttempt({
+    await expect(runClerkPasswordAttempt({
       signIn,
       emailAddress: "submitted@example.test",
       password: "wrong",
       continueSignIn: async () => {
         continued = true;
       },
-    })).toBe("provider_error");
+    })).rejects.toThrow("Password is incorrect.");
     expect(continued).toBeFalse();
   });
 
@@ -491,6 +493,58 @@ describe("unified authentication wrapper", () => {
       password: "secret",
       continueSignIn: async () => {},
     })).rejects.toThrow("Sign-in could not finish. Reload and try again.");
+  });
+
+  it("recovers session_exists by exchanging only the submitted verified identity", async () => {
+    const calls: string[] = [];
+    const session = {
+      status: "active",
+      user: { primaryEmailAddress: { emailAddress: "owner@example.test", verification: { status: "verified" } } },
+    };
+    const outcome = await runClerkPasswordAttempt({
+      signIn: { password: async () => ({ error: clerkApiResponseError("session_exists", "You're already signed in.") }) },
+      emailAddress: "OWNER@example.test",
+      password: "unused-by-clerk",
+      continueSignIn: async () => { calls.push("unexpected-new-session"); },
+      resumeSessionExists: () => resumeMatchingClerkSession({
+        session,
+        emailAddress: " OWNER@example.test ",
+        exchange: async () => { calls.push("exchange-existing-token"); },
+      }),
+    });
+    expect(outcome).toBe("continued");
+    expect(calls).toEqual(["exchange-existing-token"]);
+  });
+
+  it("does not recover a different, unverified, or inactive identity", async () => {
+    let exchanged = false;
+    for (const [status, emailAddress, verificationStatus] of [
+      ["active", "someone-else@example.test", "verified"],
+      ["active", "owner@example.test", "unverified"],
+      ["pending", "owner@example.test", "verified"],
+    ]) {
+      const session = { status, user: { primaryEmailAddress: { emailAddress, verification: { status: verificationStatus } } } };
+      expect(await resumeMatchingClerkSession({
+        session, emailAddress: "owner@example.test",
+        exchange: async () => { exchanged = true; },
+      })).toBeFalse();
+    }
+    expect(verifiedSessionEmail(null)).toBeNull();
+    expect(exchanged).toBeFalse();
+  });
+
+  it("surfaces session_exists without a matching identity and preserves exchange errors", async () => {
+    const signIn = { password: async () => ({ error: clerkApiResponseError("session_exists", "You're already signed in.") }) };
+    const input = { signIn, emailAddress: "owner@example.test", password: "secret", continueSignIn: async () => {} };
+    await expect(runClerkPasswordAttempt({ ...input, resumeSessionExists: async () => false })).rejects.toThrow("already has a sign-in session");
+    await expect(runClerkPasswordAttempt({ ...input, resumeSessionExists: async () => { throw new Error("House is unavailable"); } })).rejects.toThrow("House is unavailable");
+  });
+
+  it("surfaces non-field provider errors instead of leaving Signing in displayed", async () => {
+    await expect(runClerkPasswordAttempt({
+      signIn: { password: async () => ({ error: clerkApiResponseError("rate_limit_exceeded", "Too many attempts. Try again later.") }) },
+      emailAddress: "owner@example.test", password: "secret", continueSignIn: async () => {},
+    })).rejects.toThrow("Too many attempts. Try again later.");
   });
 
   it("re-runs password verification after an Influence exchange failure", async () => {

@@ -18,7 +18,7 @@
     "replay:export": "bun run src/scripts/export-house-replay.ts"
   },
   "dependencies": {
-    "@clerk/nextjs": "7.5.20",
+    "@clerk/react": "6.12.5",
     "@clerk/shared": "4.25.5",
     "@farcaster/miniapp-sdk": "^0.3.0",
     "@floating-ui/react": "^0.26.28",

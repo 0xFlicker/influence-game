@@ -1,6 +1,6 @@
 # Managed authentication provider setup
 
-Last reviewed: 2026-07-19
+Last reviewed: 2026-10-26
 
 ## What Clerk owns
 
@@ -15,7 +15,7 @@ primary email, and resolves the Clerk subject through
 `authentication_credentials` to the existing `users.id`. Never authorize from
 an email or verification flag supplied by the browser.
 
-The web app uses Clerk custom-flow hooks from `@clerk/nextjs` so the existing
+The web app uses Clerk custom-flow hooks from `@clerk/react` so the existing
 OAuth authorization request stays mounted during login. Clerk's hosted sign-in
 pages and Account Portal are not used. The custom flow also completes Clerk's
 email-code Client Trust challenge if an environment enables it, so a clean
@@ -25,12 +25,38 @@ Pinned packages:
 
 | Package | Location | Version |
 | --- | --- | --- |
-| `@clerk/nextjs` | `packages/web` | `7.5.20` |
+| `@clerk/react` | `packages/web` | `6.12.5` |
 | `@clerk/backend` | `packages/api` | `3.11.7` |
 | `@clerk/testing` | repository root | `2.2.10` |
 
 Upgrade the three packages together and rerun both layered-auth test lanes
 before accepting a new version.
+
+### Session completion and recovery
+
+Clerk is a browser credential provider; the House API owns application sessions.
+Use the React adapter, not the Next.js adapter: the latter inserts a cache
+invalidation server action before session activation. A failed action can leave
+`finalize()` waiting before the House token exchange runs. No Clerk server-side
+authentication or Next.js middleware participates in this architecture.
+
+After a reload, an active session with a verified primary email offers an explicit
+**Continue as…** action. It exchanges the existing assertion without creating a
+second Clerk sign-in. A `session_exists` response also resumes only when the active
+session's verified primary email matches the submitted email. This browser check
+selects the intended identity; the API still verifies the token and resolves the
+credential. Recovery never creates a House account automatically: an unlinked
+identity goes through the existing setup and current legal-consent flow.
+
+Provider errors must reach the form even when they are not field errors. After
+30 seconds without completion, show a reload recovery screen rather than an
+indefinite disabled form. Do not release the pending operation and race another
+submission against it. Keep the `clerk-captcha` container mounted across form
+steps for environments using Clerk's legacy CAPTCHA challenge.
+
+Regression coverage includes matched/mismatched session recovery, unverified and
+inactive sessions, provider errors, rendered recovery with legal consent, stalled
+operations, and cancellation before a late provider token reaches the API.
 
 ## Rollout modes
 

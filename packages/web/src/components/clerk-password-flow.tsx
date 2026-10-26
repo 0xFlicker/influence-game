@@ -1,7 +1,7 @@
 "use client";
 
-import { useClerk, useSession, useSignIn, useSignUp } from "@clerk/nextjs";
-import { isClerkAPIResponseError } from "@clerk/nextjs/errors";
+import { useClerk, useSession, useSignIn, useSignUp } from "@clerk/react";
+import { isClerkAPIResponseError } from "@clerk/react/errors";
 import { executeProtectCheck } from "@clerk/shared/internal/clerk-js/protectCheck";
 import {
   useCallback,
@@ -58,6 +58,37 @@ type FlowStep =
 type ClerkOperationResult = {
   error: unknown | null;
 };
+
+type ClerkRecoverySession = {
+  status: string;
+  user: {
+    primaryEmailAddress: {
+      emailAddress: string;
+      verification: { status: string | null } | null;
+    } | null;
+  };
+};
+
+export function verifiedSessionEmail(session: ClerkRecoverySession | null | undefined): string | null {
+  const primaryEmail = session?.user.primaryEmailAddress;
+  return session?.status === "active" && primaryEmail?.verification?.status === "verified"
+    ? primaryEmail.emailAddress
+    : null;
+}
+
+/** Only resume the submitted identity; the API still verifies the session token. */
+export async function resumeMatchingClerkSession({
+  session, emailAddress, exchange,
+}: {
+  session: ClerkRecoverySession | null | undefined;
+  emailAddress: string;
+  exchange: () => Promise<void>;
+}): Promise<boolean> {
+  const verifiedEmail = verifiedSessionEmail(session);
+  if (!verifiedEmail || verifiedEmail.toLowerCase() !== emailAddress.trim().toLowerCase()) return false;
+  await exchange();
+  return true;
+}
 
 type ClerkExistingSessionResource = {
   existingSession?: { sessionId: string } | null;
@@ -132,15 +163,21 @@ export async function runClerkPasswordAttempt<T extends ClerkPasswordResource>({
   emailAddress,
   password,
   continueSignIn,
+  resumeSessionExists,
 }: {
   signIn: T;
   emailAddress: string;
   password: string;
   continueSignIn: (signIn: T) => Promise<void>;
-}): Promise<"continued" | "account_missing" | "provider_error"> {
+  resumeSessionExists?: () => Promise<boolean>;
+}): Promise<"continued" | "account_missing"> {
   const result = await signIn.password({ emailAddress, password });
   if (clerkResultHasCode(result, "form_identifier_not_found")) {
     return "account_missing";
+  }
+  if (clerkResultHasCode(result, "session_exists")) {
+    if (await resumeSessionExists?.()) return "continued";
+    throw new Error("This browser already has a sign-in session. Continue with the verified account if shown, or reload and use a separate browser profile for another account.");
   }
   const submittedAccountAlreadyHasSession =
     clerkResultHasCode(result, "identifier_already_signed_in")
@@ -149,7 +186,7 @@ export async function runClerkPasswordAttempt<T extends ClerkPasswordResource>({
     if (clerkResultHasCode(result, "identifier_already_signed_in")) {
       throw new Error("Sign-in could not finish. Reload and try again.");
     }
-    return "provider_error";
+    throw new Error(clerkErrorMessage(result, "Could not sign in. Try again.") ?? "Could not sign in. Try again.");
   }
   await continueSignIn(signIn);
   return "continued";
@@ -348,6 +385,7 @@ export function ClerkPasswordFlow({
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [localBusy, setLocalBusy] = useState(false);
+  const [operationStalled, setOperationStalled] = useState(false);
   const [managedToken, setManagedToken] = useState<string | null>(null);
   const [pendingInfluenceSession, setPendingInfluenceSession] = useState<InfluenceSessionResult | null>(null);
   const [supportId, setSupportId] = useState<string | null>(null);
@@ -360,6 +398,15 @@ export function ClerkPasswordFlow({
   const providerBusy =
     signInFetchStatus === "fetching" || signUpFetchStatus === "fetching";
   const busy = localBusy || providerBusy;
+  const recoveryEmail = verifiedSessionEmail(clerkSession);
+
+  // Do not race a second authentication against an unresolved provider operation.
+  // Offer a page reload, which discards the old operation before recovery.
+  useEffect(() => {
+    if (!busy) return;
+    const timer = setTimeout(() => setOperationStalled(true), 30_000);
+    return () => clearTimeout(timer);
+  }, [busy]);
   const getActiveClerkToken = useCallback(async (): Promise<string> => {
     await Promise.resolve();
     const token = await clerk.session?.getToken();
@@ -372,9 +419,9 @@ export function ClerkPasswordFlow({
   }, [clerk]);
 
   useEffect(() => {
-    if (presentation !== "inline") return;
+    if (presentation !== "inline" && !operationStalled) return;
     (error ? errorRef.current : headingRef.current)?.focus();
-  }, [error, presentation, step]);
+  }, [error, presentation, step, operationStalled]);
 
   useEffect(() => {
     setEmail(initialEmail);
@@ -404,31 +451,6 @@ export function ClerkPasswordFlow({
     setStep("link_confirmation");
     setStatus("Your verified email/password sign-in is ready to link.");
   }, [clerkSession, intent]);
-
-  useEffect(() => {
-    if (
-      resumedCompletionRef.current
-      || currentSignupOwnsCompletionRef.current
-      || (
-        intent !== "sign_in"
-        && intent !== "create_account"
-        && intent !== "link_password"
-      )
-      || signUp.status !== "complete"
-    ) {
-      return;
-    }
-    resumedCompletionRef.current = true;
-    void getActiveClerkToken()
-      .then((token) => {
-        setManagedToken(token);
-        setStep(intent === "link_password" ? "link_confirmation" : "setup_incomplete");
-        setStatus("Your verified email/password setup is ready to finish.");
-      })
-      .catch(() => {
-        resumedCompletionRef.current = false;
-      });
-  }, [getActiveClerkToken, intent, signUp.status]);
 
   async function finalizeSignIn(): Promise<string> {
     const result = await signInRef.current.finalize();
@@ -507,7 +529,8 @@ export function ClerkPasswordFlow({
     return false;
   }
 
-  async function exchangeAfterVerification(token: string): Promise<void> {
+  async function exchangeAfterVerification(token: string, recoverSession = false): Promise<void> {
+    if (!isAuthenticationAttemptCurrent(attempt)) return;
     setManagedToken(token);
     if (intent === "link_password") {
       setStep("link_confirmation");
@@ -536,8 +559,10 @@ export function ClerkPasswordFlow({
         return;
       }
       if (
-        intent === "create_account"
-        || (intent === "sign_in" && currentSignupOwnsCompletionRef.current)
+        !recoverSession && (
+          intent === "create_account"
+          || (intent === "sign_in" && currentSignupOwnsCompletionRef.current)
+        )
       ) {
         await completeInfluenceSession(
           () => createManagedAuthentication(token, correlationId),
@@ -557,6 +582,7 @@ export function ClerkPasswordFlow({
     if (localBusy || providerBusy || busyRef.current) return;
     busyRef.current = true;
     setLocalBusy(true);
+    setOperationStalled(false);
     setError(null);
     setStatus(progress);
     try {
@@ -632,6 +658,11 @@ export function ClerkPasswordFlow({
       emailAddress: email.trim(),
       password,
       continueSignIn,
+      resumeSessionExists: () => resumeMatchingClerkSession({
+        session: clerk.session,
+        emailAddress: email,
+        exchange: recoverClerkSession,
+      }),
     });
     if (outcome === "account_missing") {
       setAcceptedLegalTerms(false);
@@ -639,6 +670,15 @@ export function ClerkPasswordFlow({
       setStatus("");
       setStep("account_creation_offer");
     }
+  }
+
+  async function recoverClerkSession(): Promise<void> {
+    if (!verifiedSessionEmail(clerk.session)) {
+      throw new Error("Your verified session is no longer available. Reload and sign in again.");
+    }
+    // Recovery exchanges an existing credential; new House accounts still go
+    // through setup_incomplete and explicit current Terms acceptance.
+    await exchangeAfterVerification(await getActiveClerkToken(), true);
   }
 
   async function beginClerkAccountCreation(): Promise<void> {
@@ -938,6 +978,20 @@ export function ClerkPasswordFlow({
     (message): message is string => Boolean(message),
   );
   const flowError = error && !fieldErrorMessages.includes(error) ? error : null;
+
+  if (busy && operationStalled) {
+    return (
+      <FlowPanel heading="Sign-in is taking too long" headingRef={headingRef}>
+        <p role="alert" className="influence-copy text-sm">
+          We haven’t received confirmation that this step finished. Reload to
+          reconnect, then continue with your verified account if it is shown.
+        </p>
+        <button type="button" className="influence-button-primary min-h-11 w-full rounded-lg px-4 py-2 text-sm" onClick={() => window.location.reload()}>
+          Reload sign-in
+        </button>
+      </FlowPanel>
+    );
+  }
 
   if (
     mode === "existing-only"
@@ -1365,6 +1419,14 @@ export function ClerkPasswordFlow({
 
   return (
     <FlowPanel heading={title} headingRef={headingRef}>
+      {(isSignIn || isCreateAccount) && recoveryEmail && !reversePrivyToken && (
+        <div className="space-y-3">
+          <p className="influence-copy text-sm">Your email is already verified. Continue to finish signing in to The House.</p>
+          <button type="button" disabled={busy} className="influence-button-primary min-h-11 w-full rounded-lg px-4 py-2 text-sm" onClick={() => void run(recoverClerkSession, "Finishing sign-in…")}>
+            Continue as {recoveryEmail}
+          </button>
+        </div>
+      )}
       <form
         className="space-y-4"
         onSubmit={(event) => {
@@ -1464,6 +1526,7 @@ function FlowPanel({
         {heading}
       </h2>
       {children}
+      <div id="clerk-captcha" />
     </div>
   );
 }
