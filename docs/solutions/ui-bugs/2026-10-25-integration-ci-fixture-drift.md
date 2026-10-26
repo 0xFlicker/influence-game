@@ -52,6 +52,10 @@ correctly selects historical v1 behavior.
 Introduction shots use the Lobby room backdrop. Their fullscreen tests should
 decode that declared image and retain geometry checks, rather than requiring the
 former two-image stage backdrop implementation.
+After fullscreen or viewport changes, poll the bubble and speaker geometry in
+one browser evaluation. The DOM can have its new width before ResizeObserver
+updates the portrait layout; sampling that transient state produced an 18px
+centering error in CI. Keep the original 2px alignment tolerance.
 
 Werewolf phase entries are playable House cues. Browser journeys should select
 canonical speech or room-navigation entries instead of assuming cursor 1 is a
@@ -59,6 +63,11 @@ contestant's speech, or that one arrow always bypasses House narration. Public
 fixtures must carry valid frozen provider manifests, since one malformed game
 can make the library request fail for later tests. Scope library actions to the
 intended game card when several fixtures are present.
+The wolf-transformation timing story needs its own browser context. Earlier
+stories deliberately persist Show thinking; those saved thoughts add time to the
+viewer timeline, while this story's seeks use speech-only timings. In CI a
+5250ms thought shifted the requested frame into the preceding House cue. Isolate
+the story's preferences rather than adjusting otherwise-correct seek arithmetic.
 
 A subsequent PostgreSQL run exposed a cutout publication race: PostgreSQL saves
 `ready_at` with microseconds, while an immediate JavaScript `new Date()` cutoff

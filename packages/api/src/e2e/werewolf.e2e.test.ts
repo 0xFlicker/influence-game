@@ -1454,7 +1454,9 @@ test("published wolf forms transform each night including a lone survivor and ni
   const packEntrance=projection.navigation.find(entry=>entry.sceneId===entrance.sceneId)!;
   const previous=projection.moments.findLast(moment=>moment.cursor<entrance.cursor&&isWerewolfPlayable(moment.entry))!;
   const death=projection.moments.find(moment=>moment.entry.kind === "night" && moment.entry.killedId)!;
-  const page=await browser.newPage();
+  // This visual timing proof uses the default speech-only timeline, independently
+  // of the persisted Show thinking preference exercised by earlier stories.
+  const context=await browser.createBrowserContext(), page=await context.newPage();
   const errors:string[]=[];page.on("pageerror",error=>errors.push(String(error)));
   try {
     await page.setViewport({width:1440,height:1000});
@@ -1531,7 +1533,7 @@ test("published wolf forms transform each night including a lone survivor and ni
     await page.goto(`${servers.webUrl}/games/${id}/replay?audience=mystery`,{waitUntil:"domcontentloaded"});await pauseWerewolf(page);
     expect(await page.$('[data-wolf-transformation]')).toBeNull();
     expect(errors).toEqual([]);
-  } finally {await page.close();}
+  } finally {await context.close();}
 },90_000);
 
 test("Decisions inspector keeps Mystery public and Omniscient thinking independent of stage preferences", async () => {

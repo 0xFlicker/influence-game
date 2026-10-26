@@ -713,11 +713,15 @@ test.describe("format-aware game viewer", () => {
         const rect = image.getBoundingClientRect();
         return rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight;
       }))).toBe(true);
-      const bounds = await bubble.boundingBox();
       if (size.height >= 600) {
-        const speaker = await room.locator('[data-active-speaker="true"]').boundingBox();
-        expect(Math.abs(bounds!.x + bounds!.width / 2 - speaker!.x - speaker!.width / 2)).toBeLessThan(2);
+        // The DOM resizes before ResizeObserver updates the portrait layout.
+        await expect.poll(() => room.evaluate(element => {
+          const bubble = element.querySelector("[data-speech-bubble]")!.getBoundingClientRect();
+          const speaker = element.querySelector('[data-active-speaker="true"]')!.getBoundingClientRect();
+          return Math.abs(bubble.x + bubble.width / 2 - speaker.x - speaker.width / 2);
+        })).toBeLessThan(2);
       }
+      const bounds = await bubble.boundingBox();
       expect(bounds!.y).toBeGreaterThanOrEqual(0);
       expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(size.height - 120);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
