@@ -802,6 +802,7 @@ export { withEvaluationBudget } from "./evaluation-budget";
 export { withLocalTaskBudget, localTaskBudgetPath, localTaskBudgetIdentity, reserveLocalTaskAudio } from "./local-task-budget";
 
 export * from "./game-model-routing";
+export * from "./claude-routing";
 
 export * from "./model-route-metadata";
 

@@ -7,6 +7,7 @@ const ledgerQueues = new Map<string, Promise<void>>();
 const MILLION = 1_000_000;
 const INPUT_FRAMING_TOKEN_RESERVE = 16_384;
 const PRICES: Record<string, { input: number; output: number }> = {
+  "anthropic:claude-haiku-5-5": { input: 0.625, output: 2.5 }, // highest prompt tier, 5m cache writes, all thinking included
   "openai:gpt-6-luna": { input: 0.25, output: 0.75 }, // long-context cache-write tier, no cache discount
   "meta-muse:muse-spark-1.3-contributor": { input: 0.10, output: 0.20 },
   // Twice Katana's published $1.38/$2.75 rates (2026-10-19), with no cache discount.

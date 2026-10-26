@@ -28,6 +28,16 @@ test("profile ownership and current role, not token claims, govern model choices
   expect((await creationModelRouting(db, "owner", {})).defaultManifest[0]!.catalogId).toBe("openai:gpt-6-luna");
 });
 
+test("new Claude settings cannot bypass native-family policy through legacy manifests or cast overrides", async () => {
+  const old = { catalogId: "katana:claude-sonnet-4-6" };
+  for (const config of [{ providerManifest: [old] }, { modelSelection: old },
+    { modelRouting: { ...gameModelPolicy({}), overrides: { seat: old } } }]) {
+    await expect(creationModelRouting(db, "admin", config)).rejects.toThrow("anthropic:claude-sonnet-5-5");
+  }
+  await expect(saveModelPreference(db, "owner", "character", { catalogId: "katana:claude-haiku-4-5" })).rejects.toThrow("anthropic:claude-haiku-5-5");
+  expect((await creationModelRouting(db, "admin", { providerManifest: [{ catalogId: "anthropic:claude-sonnet-5-5" }] })).defaultManifest[0]!.catalogId).toBe("anthropic:claude-sonnet-5-5");
+});
+
 test("enrollment preference stays fixed after edits and an explicit admin Default override wins", async () => {
   const policy = gameModelPolicy({});
   await saveModelPreference(db, "owner", "character", { catalogId: "katana:deepseek-v4-flash" });

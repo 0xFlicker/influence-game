@@ -1,7 +1,7 @@
 {
   "name": "@influence/engine",
   "version": "0.8.1",
-  "description": "Influence game engine \u2014 core game logic, state machine, agents",
+  "description": "Influence game engine — core game logic, state machine, agents",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
@@ -98,6 +98,7 @@
     "check": "bun run typecheck && bun run lint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.3.0",
     "@influence/prompt-lab-protocol": "workspace:*",
     "ajv": "^8.17.1",
     "openai": "^4.77.0",

@@ -1,5 +1,5 @@
 import { and, eq, or, inArray, sql } from "drizzle-orm";
-import { summarizeModelRouting, actorProviderManifest, assertModelEntitlement, contestantManifest, gameModelPolicy, normalizeGameModelRouting, normalizeModelPreference, sealGameModelRouting, type ModelPreference } from "@influence/engine";
+import { summarizeModelRouting, actorProviderManifest, assertCurrentGameModelRouting, assertModelEntitlement, contestantManifest, gameModelPolicy, normalizeGameModelRouting, normalizeModelPreference, sealGameModelRouting, type ModelPreference } from "@influence/engine";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { userHasAnyRole } from "../db/rbac.js";
 
@@ -25,6 +25,7 @@ export async function creationModelRouting(db: Pick<DrizzleDB, "select">, userId
   if (config.serviceTier !== undefined && config.serviceTier !== "flex" && config.serviceTier !== "auto") throw new GameModelRoutingError("Invalid service tier");
   if (config.modelRouting && typeof config.modelRouting === "object" && ("contestants" in config.modelRouting || "frozenRoutes" in config.modelRouting)) throw new GameModelRoutingError("Clients cannot supply sealed model assignments");
   const policy = modelInput(() => gameModelPolicy(config));
+  modelInput(() => assertCurrentGameModelRouting(policy));
   return policy;
 }
 

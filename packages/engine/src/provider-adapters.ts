@@ -2,6 +2,8 @@ import { compactionOrientation, compactInvocation, contextSourceHash, contextCom
 import { audioDeliveryGuidance } from "./audio-delivery";
 import { THINKING_CONTENT_GUIDANCE } from "./thinking-guidance";
 import type OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
+import { AnthropicProviderAdapter } from "./anthropic-provider-adapter";
 import { DEFAULT_LM_STUDIO_TIMEOUT_MS } from "./local-inference";
 import type {
   ChatCompletion,
@@ -622,8 +624,13 @@ class ProviderNativeDecodeError extends Error {
 
 export function createProviderAdapter(
   providerProfileId: ProviderRuntimeDescriptor["providerProfileId"],
-  client: OpenAI,
+  client: OpenAI | Anthropic,
 ): LlmProviderAdapter {
+  if (client instanceof Anthropic) {
+    if (providerProfileId !== "anthropic") throw new Error("Native Anthropic client requires the Anthropic profile");
+    return new AnthropicProviderAdapter(client);
+  }
+  if (providerProfileId === "anthropic") throw new Error("Anthropic requires its native SDK client");
   if (providerProfileId === "openai") return new OpenAIProviderAdapter(client);
   if (providerProfileId === "katana") return new KatanaProviderAdapter(client);
   if (providerProfileId === "meta-muse") return new MetaMuseProviderAdapter(client);
@@ -631,7 +638,7 @@ export function createProviderAdapter(
 }
 
 export function isLlmProviderAdapter(
-  value: OpenAI | LlmProviderAdapter,
+  value: OpenAI | Anthropic | LlmProviderAdapter,
 ): value is LlmProviderAdapter {
   const candidate = value as Partial<LlmProviderAdapter>;
   return (

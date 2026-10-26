@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import { lmStudioTimeoutMs } from "./local-inference";
 import {
   PROVIDER_PROFILES,
@@ -15,8 +16,8 @@ import type { LlmProviderAdapter } from "./model-invocation";
 export type OpenAIReasoningSummaryMode = "auto" | "concise" | "detailed";
 export type OpenAIRequestServiceTier = "flex" | "auto";
 
-export interface LlmClientConfig {
-  client: OpenAI;
+export interface LlmClientConfig<Client extends OpenAI | Anthropic = OpenAI | Anthropic> {
+  client: Client;
   apiKeySource: string;
   baseURL?: string;
   baseURLSource?: string;
@@ -315,11 +316,27 @@ export function normalizeOpenAIRequestServiceTier(value: unknown): OpenAIRequest
   return null;
 }
 
+export function createLlmClientFromEnv(env?: NodeJS.ProcessEnv, options?: Omit<CreateLlmClientOptions, "providerProfileId"> & { providerProfileId?: Exclude<ProviderProfileId, "anthropic"> }): LlmClientConfig<OpenAI> | null;
+export function createLlmClientFromEnv(env: NodeJS.ProcessEnv, options: CreateLlmClientOptions & { providerProfileId: "anthropic" }): LlmClientConfig<Anthropic> | null;
+export function createLlmClientFromEnv(env: NodeJS.ProcessEnv, options: CreateLlmClientOptions): LlmClientConfig | null;
 export function createLlmClientFromEnv(
   env: NodeJS.ProcessEnv = process.env,
   options: CreateLlmClientOptions = {},
 ): LlmClientConfig | null {
   const explicitProfileId = options.providerProfileId;
+  if (explicitProfileId === "anthropic") {
+    const apiKey = env.ANTHROPIC_API_KEY?.trim();
+    if (!apiKey) return null;
+    return {
+      client: new Anthropic({ apiKey, baseURL: "https://api.anthropic.com", maxRetries: 0,
+        ...(options.timeout !== undefined && { timeout: options.timeout }),
+        defaultHeaders: { "anthropic-version": "2026-10-21",
+          ...(env.ANTHROPIC_WORKSPACE_ID?.trim() && { "anthropic-workspace-id": env.ANTHROPIC_WORKSPACE_ID.trim() }) },
+        fetch: createProviderEvidenceFetch(fetch, [apiKey]), logLevel: "off" }),
+      apiKeySource: "ANTHROPIC_API_KEY", providerLabel: "Anthropic", providerProfileId: "anthropic",
+      flexProcessingEnabled: false,
+    };
+  }
   const katanaKey = env.API_KAT_IMGNAI_KEY?.trim();
   const katanaSecret = env.API_KAT_IMGNAI_SECRET?.trim();
   const explicitKatana = explicitProfileId === "katana";

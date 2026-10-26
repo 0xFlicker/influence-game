@@ -429,7 +429,7 @@ export const exactStructuredOutputRegistry = new ExactStructuredOutputRegistry()
  * container or choose between multiple candidates, even if only one fits the
  * schema. Native reasoning is not an input to this decoder.
  */
-function parseStructuredDocument(document: string): unknown {
+export function parseStructuredDocument(document: string): unknown {
   try {
     return JSON.parse(document);
   } catch (error) {

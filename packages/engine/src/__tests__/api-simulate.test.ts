@@ -8,6 +8,13 @@ import {
 import { computeMaxRounds, MAX_NEW_GAME_PLAYERS, MIN_NEW_GAME_PLAYERS } from "../types";
 
 describe("API-backed simulation config", () => {
+  it("routes the Anthropic convenience flag to native Haiku 5.5", () => {
+    const args = parseArgs(["--provider", "anthropic"], {});
+    expect(args.provider).toBe("anthropic");
+    expect(catalogIdFromProviderAndModel(args.provider, args.model)).toBe("anthropic:claude-haiku-5-5");
+    expect(catalogIdFromProviderAndModel("anthropic", "claude-sonnet-5-5")).toBe("anthropic:claude-sonnet-5-5");
+  });
+
   it("defaults new API simulation games to the shared six-player minimum", () => {
     const args = parseArgs([], {});
 

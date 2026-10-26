@@ -1,5 +1,6 @@
 import openai from "./openai-catalog-snapshot.json";
 import katana from "./katana-catalog-snapshot.json";
+import anthropic from "./anthropic-catalog-snapshot.json";
 import type { ModelRequestCapabilities, ModelReasoningEffort } from "./model-catalog";
 import type { ModelPricing } from "./token-tracker";
 
@@ -51,6 +52,20 @@ export const KATANA_MODEL_FACTS: Readonly<Record<string, ProviderModelFacts>> = 
   }),
 );
 
+export const ANTHROPIC_MODEL_FACTS: Readonly<Record<string, ProviderModelFacts>> = Object.fromEntries(
+  Object.entries(anthropic.models).map(([id, row]) => [id, {
+    source: anthropic.source, checkedAt: anthropic.checkedAt,
+    contextTokens: row.contextTokens, outputTokens: row.outputTokens,
+    pricing: row.pricing, allowedReasoningEfforts: row.adaptive ? ["low", "medium", "high"] : [],
+    parameters: ["max_tokens", "output_config", "thinking", "cache_control"],
+    capabilities: { supportsImageInput: true, supportsStructuredOutput: true, supportsTools: true,
+      supportsReasoningEffort: row.adaptive, supportsToolReasoningEffort: false,
+      usesMaxCompletionTokens: false, supportsTemperature: false, supportsOpenAIResponses: false,
+      supportsPromptCacheRetention: false,
+      anthropic: { apiVersion: "2026-10-21", thinking: row.adaptive ? "adaptive" : "disabled" } },
+  }]),
+);
+
 // https://dev.meta.ai/docs/models and /docs/protocols/responses, checked 2026-10-23.
 const museCapabilities: ModelRequestCapabilities = {
   supportsImageInput: true, supportsReasoningEffort: true, supportsToolReasoningEffort: true,
@@ -70,5 +85,6 @@ export const META_MODEL_FACTS: Readonly<Record<string, ProviderModelFacts>> = Ob
 
 export function providerModelFacts(provider: string, model: string): ProviderModelFacts | undefined {
   return (provider === "openai" ? OPENAI_MODEL_FACTS : provider === "katana" ? KATANA_MODEL_FACTS
+    : provider === "anthropic" ? ANTHROPIC_MODEL_FACTS
     : provider === "meta-muse" ? META_MODEL_FACTS : {})[model];
 }

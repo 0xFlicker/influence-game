@@ -1106,6 +1106,15 @@ describe("provider cost accounting", () => {
     expect(rows[0]).toMatchObject({ costSource: "unavailable", estimatedCostMicrousd: null, promptTokens: 1000, completionTokens: 500, safeMetadata: { rateCard: null } });
   });
 
+  test("unexpected Anthropic cache or service tiers cannot borrow frozen Standard prices", async () => {
+    const db = await setupTestDB(), gameId = await insertGame(db), ownerEpoch = await insertOwner(db, gameId);
+    const base = attemptSpendInput(gameId, ownerEpoch, "native-unsupported-tier", {usage: {promptTokens: 1000, completionTokens: 100}, effectiveServiceTier: "unsupported-anthropic-pricing"});
+    await recordProviderSpendForAttempt(db, {...base, providerProfileId: "anthropic", catalogId: "anthropic:claude-haiku-5-5", modelName: "claude-haiku-5-5",
+      rateCard: {version: "2026-10-25", catalogId: "anthropic:claude-haiku-5-5", serviceTier: "standard", source: "fixture", rates: {inputPer1M: 0.1, cachedInputPer1M: 0.01, outputPer1M: 0.5}} });
+    const [row] = await db.select().from(schema.gameProviderSpendEntries).where(eq(schema.gameProviderSpendEntries.gameId, gameId));
+    expect(row).toMatchObject({costSource: "unavailable", estimatedCostMicrousd: null, promptTokens: 1000, completionTokens: 100});
+  });
+
   test("prices Katana Grok 4.5 and GLM 5.2 attempts when router cost is absent", async () => {
     const db = await setupTestDB();
     const gameId = await insertGame(db);
