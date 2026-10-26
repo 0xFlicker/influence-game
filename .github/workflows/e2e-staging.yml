@@ -39,7 +39,8 @@ jobs:
   e2e:
     name: Run E2E Tests
     if: ${{ github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
+    # Playwright 1.58.2 does not support Ubuntu 26.04 selected by ubuntu-latest.
+    runs-on: ubuntu-24.04
     env:
       CANDIDATE_SHA: ${{ inputs.candidate_sha }}
       API_DIGEST: ${{ inputs.api_digest }}
