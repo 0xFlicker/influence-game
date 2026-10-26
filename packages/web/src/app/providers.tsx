@@ -12,7 +12,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { ClerkProvider, useClerk } from "@clerk/nextjs";
+import { ClerkProvider, useClerk } from "@clerk/react";
 import { usePathname } from "next/navigation";
 import { AuthenticationWrapper } from "@/components/authentication-wrapper";
 import { isLayeredAuthE2EAdapterEnabled } from "@/lib/e2e-layered-auth";
