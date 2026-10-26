@@ -85,7 +85,8 @@ def run_job(session):
     def request(path, data=None, method="GET", content_type="application/json"):
         req = urllib.request.Request(base + "/api/internal/cutouts/" + job + path,
                                      data=data, method=method,
-                                     headers={"Authorization": "Bearer " + token, "Content-Type": content_type})
+                                     headers={"Authorization": "Bearer " + token, "Content-Type": content_type,
+                                              "User-Agent": "HouseCharacterCutouts/1.0"})
         with urllib.request.urlopen(req, timeout=120) as response:
             return response.read()
     claim = json.loads(request("/claim", json.dumps({"recipe": RECIPE}).encode(), "POST"))

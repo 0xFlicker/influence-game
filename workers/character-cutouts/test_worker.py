@@ -1,8 +1,10 @@
+import io
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from worker import cgroup_metrics
+from worker import cgroup_metrics, run_job
 
 
 class CgroupMetricsTest(unittest.TestCase):
@@ -29,6 +31,17 @@ class CgroupMetricsTest(unittest.TestCase):
 
     def test_unexposed_diagnostics_are_explicitly_unavailable(self):
         self.assertEqual(self.metrics({}), {"cpu_max": None, "memory_max": None, "cgroup_peak_bytes": None})
+
+
+class WorkerRequestTest(unittest.TestCase):
+    def test_claim_identifies_service_and_keeps_capability_auth(self):
+        env = {"CUTOUT_API_URL": "https://thehouse.game", "CUTOUT_JOB_ID": "test-job", "CUTOUT_JOB_TOKEN": "test-token"}
+        with patch.dict("os.environ", env), patch("worker.urllib.request.urlopen", return_value=io.BytesIO(b'{"claimed":false}')) as request:
+            run_job(None)
+        req = request.call_args.args[0]
+        self.assertEqual(req.get_header("User-agent"), "HouseCharacterCutouts/1.0")
+        self.assertEqual(req.get_header("Authorization"), "Bearer test-token")
+        self.assertEqual(req.full_url, "https://thehouse.game/api/internal/cutouts/test-job/claim")
 
 
 if __name__ == "__main__":
