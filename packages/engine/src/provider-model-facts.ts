@@ -1,6 +1,7 @@
 import openai from "./openai-catalog-snapshot.json";
 import katana from "./katana-catalog-snapshot.json";
 import anthropic from "./anthropic-catalog-snapshot.json";
+import { XAI_MODEL_FACTS } from "./xai-model-facts";
 import type { ModelRequestCapabilities, ModelReasoningEffort } from "./model-catalog";
 import type { ModelPricing } from "./token-tracker";
 
@@ -86,5 +87,6 @@ export const META_MODEL_FACTS: Readonly<Record<string, ProviderModelFacts>> = Ob
 export function providerModelFacts(provider: string, model: string): ProviderModelFacts | undefined {
   return (provider === "openai" ? OPENAI_MODEL_FACTS : provider === "katana" ? KATANA_MODEL_FACTS
     : provider === "anthropic" ? ANTHROPIC_MODEL_FACTS
+    : provider === "xai" ? XAI_MODEL_FACTS
     : provider === "meta-muse" ? META_MODEL_FACTS : {})[model];
 }

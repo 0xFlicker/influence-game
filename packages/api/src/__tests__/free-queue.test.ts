@@ -295,7 +295,7 @@ describe("free queue season admission", () => {
     });
     expect(gameConfig.modelRouting.defaultManifest).toEqual([
       gameConfig.modelRouting.defaultManifest[0],
-      { catalogId: "katana:grok-4-6", reasoningPolicy: "action-policy", maxCallsPerGame: 24 },
+      { catalogId: "xai:grok-4.6", reasoningPolicy: "action-policy", maxCallsPerGame: 24 },
     ]);
     expect(gameConfig.visualMode).toBe(false);
     expect(gameConfig).not.toHaveProperty("visualFailurePolicy");

@@ -426,6 +426,69 @@ export class OpenAIProviderAdapter extends OpenAICompatibleAdapter {
   }
 }
 
+/** Native xAI Responses. The coordinator owns validation, retries and recovery. */
+export class XaiProviderAdapter extends OpenAICompatibleAdapter {
+  readonly id = "xai";
+
+  override validate(invocation: ModelInvocation, runtime: ProviderRuntimeDescriptor) {
+    const base = super.validate(invocation, runtime);
+    if (!base.compatible) return base;
+    if (invocation.messages.some(message => message.role === "tool" || message.toolCalls?.length)) {
+      return { compatible: false, reason: "xAI decision calls do not accept tool history" };
+    }
+    return { compatible: true };
+  }
+
+  compile(invocation: ModelInvocation, runtime: ProviderRuntimeDescriptor): ProviderNativeRequest {
+    const compatibility = this.validate(invocation, runtime);
+    if (!compatibility.compatible) throw new Error(compatibility.reason);
+    const effort = requestedReasoningEffort(invocation, runtime);
+    return { transport: "xai.responses", body: {
+      model: runtime.modelId,
+      input: invocation.messages.flatMap(responseInputItems),
+      max_output_tokens: invocation.outputTokenLimit,
+      store: false,
+      include: ["reasoning.encrypted_content"],
+      ...(effort && { reasoning: { effort } }),
+      ...(invocation.result.kind === "structured" && { text: { format: {
+        type: "json_schema", name: invocation.result.artifact.name, strict: true,
+        schema: invocation.result.artifact.providerSchema,
+      } } }),
+    } };
+  }
+
+  async dispatch(request: ProviderNativeRequest, options: Parameters<LlmProviderAdapter["dispatch"]>[1]): Promise<ProviderModelOutcome> {
+    const response = await this.client.responses.create(request.body as ResponseCreateParamsNonStreaming, options);
+    const accounting = xaiAccountingFromResponse(response);
+    const terminal = classifyResponsesTerminalOutcome(response);
+    if (terminal) throw new XaiNativeOutcomeError(terminal, response, accounting);
+    try {
+      if (response.status !== "completed" || !Array.isArray(response.output)
+        || response.output.some(item => item.type !== "message" && item.type !== "reasoning")) {
+        throw new Error("Unexpected xAI response envelope");
+      }
+      const outcome = normalizeOpenAIResponse(response, undefined, "xai.responses");
+      if (outcome.toolCalls.length) throw new Error("Unexpected xAI tool call");
+      return { ...outcome, accounting };
+    } catch {
+      throw new XaiNativeOutcomeError({ kind: "malformed_output", message: "xai_response_decode_failed", retryable: false }, response, accounting);
+    }
+  }
+}
+
+/** Output tokens already include reasoning; retain raw ticks as exact evidence. */
+function xaiAccountingFromResponse(response: unknown): ProviderAttemptAccountingFacts | undefined {
+  const accounting = accountingFromResponse(response);
+  if (!accounting) return undefined;
+  const ticks = asRecord(asRecord(response).usage).cost_in_usd_ticks;
+  return { ...accounting,
+    ...(typeof ticks === "number" && Number.isSafeInteger(ticks) && ticks >= 0 && {
+      actualCostMicrousd: Math.round(ticks / 10_000), actualCostSource: "provider_actual" as const,
+      providerNativeUnit: "xai_usd_ticks", providerNativeAmount: String(ticks),
+    }),
+  };
+}
+
 export class KatanaProviderAdapter extends OpenAICompatibleAdapter {
   readonly id = "katana";
 
@@ -604,6 +667,13 @@ class ProviderNativeOutcomeError extends Error {
   }
 }
 
+class XaiNativeOutcomeError extends ProviderNativeOutcomeError {
+  constructor(outcome: ProviderAttemptFailureOutcome, nativeResponse: unknown,
+    readonly accounting: ProviderAttemptAccountingFacts | undefined) {
+    super(outcome, nativeResponse);
+  }
+}
+
 class ProviderNativeDecodeError extends Error {
   readonly outcome: ProviderAttemptFailureOutcome = {
     kind: "undecodable_structured_output",
@@ -634,6 +704,7 @@ export function createProviderAdapter(
   if (providerProfileId === "openai") return new OpenAIProviderAdapter(client);
   if (providerProfileId === "katana") return new KatanaProviderAdapter(client);
   if (providerProfileId === "meta-muse") return new MetaMuseProviderAdapter(client);
+  if (providerProfileId === "xai") return new XaiProviderAdapter(client);
   return new OpenAICompatibleChatAdapter(client);
 }
 

@@ -6,6 +6,7 @@ import {
   MODEL_CATALOG, FREE_MODEL_CATALOG_IDS, PROVIDER_PROFILES,
   modelCatalogEntryById,
   preferredClaudeCatalogId,
+  isKatanaGrokSelection,
   type ProviderProfileId,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
@@ -17,6 +18,7 @@ function providerConfigured(
 ): boolean {
   if (providerProfileId === "openai") return Boolean(env.OPENAI_API_KEY?.trim());
   if (providerProfileId === "anthropic") return Boolean(env.ANTHROPIC_API_KEY?.trim());
+  if (providerProfileId === "xai") return Boolean(env.XAI_API_KEY?.trim());
   if (providerProfileId === "katana") {
     return Boolean(
       env.API_KAT_IMGNAI_KEY?.trim()
@@ -127,6 +129,7 @@ export async function providerModelInventory(env: NodeJS.ProcessEnv, privileged:
     }
     const catalog = [...catalogById.values()].filter(entry => entry.capabilities.supportsStructuredOutput
       && preferredClaudeCatalogId(entry.id) === entry.id
+      && !isKatanaGrokSelection(entry.id)
       && (privileged || FREE_MODEL_CATALOG_IDS.some(id => id === entry.id)));
     const models = catalog.map((entry) => {
       const configured = providerConfigured(entry.providerProfileId, env);

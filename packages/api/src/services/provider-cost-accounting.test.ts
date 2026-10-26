@@ -87,6 +87,25 @@ function attemptSpendInput(
 }
 
 describe("provider cost accounting", () => {
+  test("native xAI bills failed attempts once and never prices unknown tiers from a frozen default card", async () => {
+    const db = await setupTestDB(), gameId = await insertGame(db), ownerEpoch = await insertOwner(db, gameId);
+    const route = { providerProfileId: "xai", catalogId: "xai:grok-4.6", modelName: "grok-4.6", transport: "xai.responses" };
+    const actual = { ...attemptSpendInput(gameId, ownerEpoch, "xai-failed", {
+      usage: { promptTokens: 1000, cachedTokens: 900, completionTokens: 70, reasoningTokens: 50, totalTokens: 1070 },
+      actualCostMicrousd: 480, actualCostSource: "provider_actual" as const,
+      providerNativeUnit: "xai_usd_ticks", providerNativeAmount: "4800000",
+    }), ...route, outcomeKind: "malformed_output" as const };
+    await recordProviderSpendForAttempt(db, actual);
+    await recordProviderSpendForAttempt(db, actual);
+    await recordProviderSpendForAttempt(db, { ...attemptSpendInput(gameId, ownerEpoch, "xai-unknown-tier", {
+      usage: { promptTokens: 1000, completionTokens: 70 }, effectiveServiceTier: "priority",
+    }), ...route, rateCard: { version: "2026-10-26", catalogId: route.catalogId, serviceTier: "default", source: "fixture",
+      rates: { inputPer1M: 2, cachedInputPer1M: 0.5, outputPer1M: 6 } } });
+    const rows = await db.select().from(schema.gameProviderSpendEntries).where(eq(schema.gameProviderSpendEntries.gameId, gameId));
+    expect(rows).toHaveLength(2);
+    expect(rows.find(row => row.actualCostMicrousd === 480)).toMatchObject({ callStatus: "failed", costSource: "provider_actual", completionTokens: 70, reasoningTokens: 50, providerNativeUnit: "xai_usd_ticks", providerNativeAmount: "4800000" });
+    expect(rows.find(row => row.sourceKey.endsWith("xai-unknown-tier"))).toMatchObject({ costSource: "unavailable", estimatedCostMicrousd: null });
+  });
   test("prices owner-learning Luna receipts by the proven effective tier", () => {
     const tokenReceipt = {
       inputTokens: 10_000,

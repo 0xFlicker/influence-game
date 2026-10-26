@@ -324,6 +324,18 @@ export function createLlmClientFromEnv(
   options: CreateLlmClientOptions = {},
 ): LlmClientConfig | null {
   const explicitProfileId = options.providerProfileId;
+  if (explicitProfileId === "xai") {
+    const apiKey = env.XAI_API_KEY?.trim();
+    if (!apiKey) return null;
+    const baseURL = "https://api.x.ai/v1";
+    return {
+      client: new OpenAI({ apiKey, baseURL, maxRetries: 0,
+        ...(options.timeout !== undefined && { timeout: options.timeout }),
+        fetch: createProviderEvidenceFetch(fetch, [apiKey]) }),
+      apiKeySource: "XAI_API_KEY", baseURL, baseURLSource: "xai-profile",
+      providerLabel: "xAI", providerProfileId: "xai", flexProcessingEnabled: false,
+    };
+  }
   if (explicitProfileId === "anthropic") {
     const apiKey = env.ANTHROPIC_API_KEY?.trim();
     if (!apiKey) return null;

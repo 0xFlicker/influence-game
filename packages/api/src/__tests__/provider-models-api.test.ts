@@ -15,6 +15,14 @@ beforeAll(() => {
 });
 
 describe("provider model inventory", () => {
+  test("xAI discovery exposes audited native equivalents and never revives Katana Grok", async () => {
+    const inventory = await providerModelInventory({ XAI_API_KEY: "fixture", API_KAT_IMGNAI_KEY: "fixture", API_KAT_IMGNAI_SECRET: "fixture" }, true,
+      async provider => provider === "xai" ? ["grok-4.3", "grok-4.6", "grok-imagine-image", "grok-future"] : ["grok-4-3", "grok-future"]);
+    expect(inventory.models.find(model => model.catalogId === "xai:grok-4.3")).toMatchObject({ configured: true, available: true });
+    expect(inventory.models.find(model => model.catalogId === "xai:grok-4.5")).toMatchObject({ configured: true, available: false });
+    expect(inventory.models.some(model => model.catalogId.startsWith("katana:grok-"))).toBe(false);
+    expect(inventory.models.some(model => model.catalogId.includes("grok-future") || model.catalogId.includes("grok-imagine"))).toBe(false);
+  });
   test("even operator discovery offers only the current native Claude families", async () => {
     const inventory = await providerModelInventory({ ANTHROPIC_API_KEY: "fixture", API_KAT_IMGNAI_KEY: "fixture", API_KAT_IMGNAI_SECRET: "fixture" }, true,
       async provider => provider === "anthropic" ? ["claude-haiku-5-5", "claude-sonnet-4-6", "claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1"]
@@ -123,7 +131,7 @@ describe("provider model inventory", () => {
       .toMatchObject({ configured: true, available: true, allowedReasoningPolicies: ["action-policy", "low", "medium", "high"] });
     expect(body.models.find((model) => model.catalogId === "openai:gpt-5.6-luna"))
       .toMatchObject({ configured: true, available: true });
-    expect(body.models.find((model) => model.catalogId === "katana:grok-4-5"))
+    expect(body.models.find((model) => model.catalogId === "xai:grok-4.5"))
       .toMatchObject({ configured: false, available: null, allowedReasoningPolicies: ["action-policy", "low", "medium", "high"] });
     expect(body.models.find((model) => model.catalogId === "katana:glm-5-2"))
       .toMatchObject({ configured: false, allowedReasoningPolicies: ["action-policy"] });
@@ -216,7 +224,7 @@ describe("provider model inventory", () => {
     ]);
     expect(body.models.find((model) => model.catalogId === "openai:gpt-5.6-luna"))
       .toMatchObject({ configured: true, available: true });
-    expect(body.models.find((model) => model.catalogId === "katana:grok-4-5"))
+    expect(body.models.find((model) => model.catalogId === "katana:glm-5-2"))
       .toMatchObject({ configured: true, available: null });
   });
 
@@ -286,8 +294,7 @@ describe("provider model inventory", () => {
     };
 
     expect(body.status).toBe("complete");
-    expect(body.models.find((model) => model.catalogId === "katana:grok-4-5"))
-      .toMatchObject({ configured: true, available: true });
+    expect(body.models.find((model) => model.catalogId === "katana:grok-4-5")).toBeUndefined();
     expect(body.models.find((model) => model.catalogId === "katana:glm-5-2"))
       .toMatchObject({ configured: true, available: false });
   });

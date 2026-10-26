@@ -1,5 +1,11 @@
 #!/usr/bin/env bun
 /**
+ * Native xAI selects xai:grok-4.3/4.5/4.6 or xai:grok-4.20-multi-agent-0309
+ * with XAI_API_KEY. Mutable Katana Grok selections migrate at the same generation;
+ * frozen historical games retain Katana. Use the localhost API for paid evaluation.
+ * Preserve native encrypted reasoning and exact billing ticks in private evidence.
+ * xAI max_output_tokens bounds visible output, not reasoning; current local budget
+ * guards reject this provider pending a verified total spending bound.
  * Native Anthropic uses anthropic:claude-haiku-5-5 and ANTHROPIC_API_KEY. Paid
  * New game selections use native Haiku/Sonnet/Opus 5.5 or Fable 5.1; frozen
  * historical games keep their original provider routes and evidence.
@@ -179,10 +185,10 @@
  *   bun run simulate -- --variant mingle --house-summaries
  *   bun run simulate -- --variant mingle --rich-producer
  *   bun run simulate -- --variant mingle --chatty --reasoning-summary auto
- *   bun run simulate -- --model-catalog katana:grok-4-3 --reasoning-policy high
+ *   bun run simulate:api -- --provider xai --model grok-4.3 --reasoning-policy high
  *   bun run simulate -- --provider-entry openai:gpt-6-luna,reasoning=action-policy \
  *     --provider-entry katana:glm-5-2,reasoning=action-policy,max-calls=24 \
- *     --provider-entry katana:grok-4-5,reasoning=medium,max-calls=12
+ *     --provider-entry xai:grok-4.5,reasoning=medium,max-calls=12
  *
  * OPERATOR-ONLY format-kernel proof. Implementing agents document these commands
  * but must not run or wait on them. Start from the reported branch/HEAD with a

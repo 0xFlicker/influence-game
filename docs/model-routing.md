@@ -1,5 +1,11 @@
 # Character and House models
 
+Grok selections use native xAI at the same model generation. Migration 0141
+converts mutable character and unsealed waiting-game selections; frozen games
+retain Katana. The new-game fallback is `xai:grok-4.6` with 24 calls. Native xAI
+requires audited facts; discovery cannot enable arbitrary model IDs. See
+[native xAI](native-xai.md) for mapping, pricing, credentials and release checks.
+
 Characters have one operational `modelPreference`, shared across Influence and Werewolf. It is independent of strategy text and moderation revisions. Free choices are native Anthropic Haiku 5.5 (`anthropic:claude-haiku-5-5`), OpenAI GPT-6 Luna (Flex), Katana DeepSeek Flash (`deepseek-v4-flash`), and Meta Muse 1.3 Contributor (`muse-spark-1.3-contributor`), alongside Default. GLM Flash was removed from free selection after another minimal Katana inference returned HTTP 502 with no output on October 25, 2026 (America/Denver). Admins/sysops can choose any text model ID understood by a configured adapter. Discovery is advisory, not paid qualification. Unknown capability claims and prices remain labelled as unknown or inferred. Native Anthropic requires audited capability facts; see [its setup and contract](native-anthropic.md).
 
 Edit a character's preference in its editor. Admin creation has separate contestant and House routes. In the admin game list, **Models** opens cast overrides, shared contestant fallbacks, House fallbacks, and exclusions. An explicit Default override selects the game default; removing the override restores the enrollment preference. The short best-effort explanation needs no consent checkbox. Subscription billing and media-model selection are outside this setting.
