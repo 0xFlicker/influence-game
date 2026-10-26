@@ -198,3 +198,8 @@ Removing `--preview` starts a localhost API game and can incur charges. Paid run
 ### Optional character-cutout backfill
 
 Use `bun run cutouts:backfill inventory --env local --scope example-models` to preview reusable agent images and frozen game references. Processing requires an explicit environment and bounded selection; production only queues AWS Batch work. See the [operator commands and rollout prerequisites](docs/deployment/character-cutouts.md).
+
+Claude selections for new games use native Haiku/Sonnet/Opus 5.5 or Fable 5.1.
+Migration `0140_native_claude_selections` upgrades mutable preferences and waiting
+games; frozen games and private provider evidence retain their original routes.
+See [native Anthropic](docs/native-anthropic.md) for cutover details.

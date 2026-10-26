@@ -862,3 +862,8 @@ The shared resolver is `packages/engine/src/game-model-routing.ts`. New games st
 Explicit preferences precede the entire contestant route, including the default model, with duplicates removed. `defaultModelMaxFallbackCalls` controls the default's shared fallback allowance (24 by default); primary calls and House allowances remain separate. Retryable `Retry-After` responses trigger immediate failover and durable model-scoped cooldowns. Migration `0130_provider_route_cooldowns` adds the health reason/event values. Apply normal migrations before running the updated API; never rewrite a stopped game's sealed routes or context hashes to adopt these defaults.
 
 Use `bun run simulate:models ... --preview` for an offline assignment check and `--report <game-id>` to save the admin routing report from the localhost API. Actual simulation dispatch remains opt-in and paid. See [model routing](docs/model-routing.md), [evaluation examples](docs/local-model-evaluation.md), and the [cutover mapping](docs/deployment/game-model-routing-cutover.md). Required checks remain `bun run test`, `bun run test:postgres`, and `bun run check`.
+
+Claude selections for new games use native Haiku/Sonnet/Opus 5.5 or Fable 5.1.
+Migration `0140_native_claude_selections` upgrades mutable preferences and waiting
+games; frozen games and private provider evidence retain their original routes.
+See [native Anthropic](docs/native-anthropic.md) for cutover details.

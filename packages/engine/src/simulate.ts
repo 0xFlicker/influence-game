@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 /**
  * Native Anthropic uses anthropic:claude-haiku-5-5 and ANTHROPIC_API_KEY. Paid
+ * New game selections use native Haiku/Sonnet/Opus 5.5 or Fable 5.1; frozen
+ * historical games keep their original provider routes and evidence.
  * evaluation stays on the localhost API, with contestant and House manifests
  * explicit and a shared anthropicUsd local-task allowance. Preserve all original
  * requests, responses, native thinking/signatures, usage, and failures in private

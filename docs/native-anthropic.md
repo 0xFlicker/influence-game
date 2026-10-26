@@ -8,8 +8,10 @@ Federation is deferred for both Anthropic and OpenAI.
 
 Select `anthropic:claude-haiku-5-5` for a character, cast override, contestant
 manifest, or House manifest. Haiku 5.5 joins the existing free-account choices.
-The global default and stored Katana selections remain unchanged. The other
-12 audited Claude IDs are operator choices; newly discovered IDs require an
+The global default remains unchanged. Current Claude selections use native
+Haiku 5.5, Sonnet 5.5, Opus 5.5, or Fable 5.1; older native and Katana Claude
+routes are unavailable for new selections. Historical catalog entries remain
+readable for frozen games and accounting. Newly discovered IDs require an
 audited facts entry before native routing. Discovery paginates but makes no
 inference requests. See [catalog research](research/2026-10-25-anthropic-native-provider/README.md).
 
@@ -76,9 +78,17 @@ evaluation candidates.
 
 ## Deployment
 
-Deploy the engine dependency and API/worker changes together. Confirm the gateway
-and worker runtime environments both receive the Doppler key before selecting a
-native route. No database migration, issuer registration, new bucket, or feature
-flag is required. The SDK was installed with a package-specific command-line
+Deploy the engine dependency and API/worker changes together using the normal
+coordinated release and drain old writers before cutover. Confirm the gateway
+and worker runtime environments both receive the Doppler key before applying
+migration `0140_native_claude_selections`. It upgrades character preferences and
+unsealed waiting-game selections (including House routes, overrides, exclusions,
+and both games’ enrollment snapshots) within each Claude family. When multiple
+versions collapse to one route, the first entry and its reasoning/budget win;
+removed fallback entries do not add allowance to the retained route. Started,
+suspended, completed, and already-sealed games retain their actual routes.
+Exclusions also follow the family upgrade. If a selected and excluded version
+collapse to the same family, the explicit selection wins and the conflicting
+exclusion is removed so the waiting game can still start. No issuer registration, new bucket, or feature flag is required. The SDK was installed with a package-specific command-line
 release-age override after inspecting its archive and integrity; the repository's
 seven-day dependency waiting period remains configured for ordinary installs.

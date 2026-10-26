@@ -84,3 +84,8 @@ Katana's 0.1-credit increment/minimum at the documented USD reference produces a
 Rate cards are provider-qualified and captured on attempts before dispatch. Terminal receipts retain their version/source, unsuccessful billable attempts, and separate provider-reported versus estimated costs. An unknown route retains usage with an unknown price; it never borrows Luna pricing. This last behavior fixes an existing reporting bug.
 
 See [cutover](deployment/game-model-routing-cutover.md), [simulation usage](local-model-evaluation.md), and the [House character proposal](plans/house-character-model-assignments.md).
+
+Claude selections for new games use native Haiku/Sonnet/Opus 5.5 or Fable 5.1.
+Migration `0140_native_claude_selections` upgrades mutable preferences and waiting
+games; frozen games and private provider evidence retain their original routes.
+See [native Anthropic](native-anthropic.md) for cutover details.

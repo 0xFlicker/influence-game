@@ -15,6 +15,15 @@ beforeAll(() => {
 });
 
 describe("provider model inventory", () => {
+  test("even operator discovery offers only the current native Claude families", async () => {
+    const inventory = await providerModelInventory({ ANTHROPIC_API_KEY: "fixture", API_KAT_IMGNAI_KEY: "fixture", API_KAT_IMGNAI_SECRET: "fixture" }, true,
+      async provider => provider === "anthropic" ? ["claude-haiku-5-5", "claude-sonnet-4-6", "claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1"]
+        : ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8", "claude-fable-5-1", "deepseek-v4-flash"]);
+    expect(inventory.models.filter(model => model.modelId.startsWith("claude-")).map(model => model.catalogId).sort()).toEqual([
+      "anthropic:claude-fable-5-1", "anthropic:claude-haiku-5-5", "anthropic:claude-opus-5-5", "anthropic:claude-sonnet-5-5",
+    ]);
+    expect(inventory.models.some(model => model.catalogId === "katana:deepseek-v4-flash")).toBe(true);
+  });
   test("ordinary users receive free Haiku alongside existing choices, without premium Claude or GLM", async () => {
     const inventory = await providerModelInventory({ ANTHROPIC_API_KEY: "fixture", OPENAI_API_KEY: "fixture", API_KAT_IMGNAI_KEY: "fixture", API_KAT_IMGNAI_SECRET: "fixture", META_MUSE_API_KEY: "fixture" }, false,
       async provider => provider === "anthropic" ? ["claude-haiku-5-5", "claude-sonnet-5-5"] : provider === "openai" ? ["gpt-6-luna"] : provider === "katana" ? ["glm-5-3-flash-private", "deepseek-v4-flash"] : ["muse-spark-1.3-contributor"]);

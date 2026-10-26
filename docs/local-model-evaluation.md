@@ -659,3 +659,8 @@ turn. Existing games gain audio only through explicit Studio generation.
 ## Inspecting Werewolf House narration
 
 In a retained localhost API game, inspect `/games/<slug>/replay?audience=omniscient` for spoken pack results, Doctor/Seer actions, hunt outcomes, vote results and the House ending summary. Compare Mystery playback to verify that private night details stay hidden. Audio Mode uses the frozen House voice. Existing complete tracks can be previewed and refreshed with `packages/api/src/scripts/refresh-werewolf-house-audio.ts` as documented in `docs/werewolf.md`; gameplay and contestant recordings remain unchanged. Continue retaining `--chatty` and private provider evidence; the presentation copy does not replace it.
+
+Claude selections for new games use native Haiku/Sonnet/Opus 5.5 or Fable 5.1.
+Migration `0140_native_claude_selections` upgrades mutable preferences and waiting
+games; frozen games and private provider evidence retain their original routes.
+See [native Anthropic](native-anthropic.md) for cutover details.

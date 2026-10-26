@@ -5,6 +5,7 @@ import {
   MODEL_REASONING_POLICIES,
   MODEL_CATALOG, FREE_MODEL_CATALOG_IDS, PROVIDER_PROFILES,
   modelCatalogEntryById,
+  preferredClaudeCatalogId,
   type ProviderProfileId,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
@@ -125,6 +126,7 @@ export async function providerModelInventory(env: NodeJS.ProcessEnv, privileged:
       }
     }
     const catalog = [...catalogById.values()].filter(entry => entry.capabilities.supportsStructuredOutput
+      && preferredClaudeCatalogId(entry.id) === entry.id
       && (privileged || FREE_MODEL_CATALOG_IDS.some(id => id === entry.id)));
     const models = catalog.map((entry) => {
       const configured = providerConfigured(entry.providerProfileId, env);
