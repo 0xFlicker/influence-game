@@ -536,7 +536,7 @@ describe("unified authentication wrapper", () => {
   it("surfaces session_exists without a matching identity and preserves exchange errors", async () => {
     const signIn = { password: async () => ({ error: clerkApiResponseError("session_exists", "You're already signed in.") }) };
     const input = { signIn, emailAddress: "owner@example.test", password: "secret", continueSignIn: async () => {} };
-    await expect(runClerkPasswordAttempt({ ...input, resumeSessionExists: async () => false })).rejects.toThrow("already has a sign-in session");
+    await expect(runClerkPasswordAttempt({ ...input, resumeSessionExists: async () => false })).rejects.toThrow("Reload to choose an account");
     await expect(runClerkPasswordAttempt({ ...input, resumeSessionExists: async () => { throw new Error("House is unavailable"); } })).rejects.toThrow("House is unavailable");
   });
 

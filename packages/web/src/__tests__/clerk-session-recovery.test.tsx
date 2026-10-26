@@ -18,6 +18,8 @@ let completed: boolean;
 let current: boolean;
 let accountMissing: boolean;
 let getToken: () => Promise<string>;
+let providerCalls: string[];
+let signOutFails: boolean;
 
 beforeEach(() => {
   dom = new Window({ url: "http://localhost/games" });
@@ -25,6 +27,8 @@ beforeEach(() => {
   Object.defineProperty(globalThis, "document", { configurable: true, value: dom.document });
   Object.defineProperty(globalThis, "navigator", { configurable: true, value: dom.navigator });
   requests = [];
+  providerCalls = [];
+  signOutFails = false;
   completed = false;
   current = true;
   accountMissing = false;
@@ -48,20 +52,27 @@ afterEach(() => {
   setApiBase("");
 });
 
-function mountRecovery(newSignup = false, passwordErrorCode = "session_exists") {
+function mountRecovery(newSignup = false, passwordErrorCode = "session_exists", showExistingSession = true) {
   const session = {
+    id: "session-owner",
     status: "active",
     user: { primaryEmailAddress: { emailAddress: "owner@example.test", verification: { status: "verified" } } },
     getToken: () => getToken(),
   };
   const signInSnapshot = {
-    signIn: { password: async () => ({ error: new ClerkAPIResponseError("Provider rejected request", {
+    signIn: {
+      reset: async () => { providerCalls.push("reset-sign-in"); return { error: null }; },
+      password: async () => {
+        providerCalls.push("password");
+        if (passwordErrorCode === "session_exists") clerk.session = session;
+        return { error: new ClerkAPIResponseError("Provider rejected request", {
       status: 400, data: [{ code: passwordErrorCode, message: "Provider rejected request" }],
-    }) }) },
+    }) }; } },
     errors: { fields: {} }, fetchStatus: "idle",
   };
   // A completed signup must not force account creation before the API resolves identity.
   const signUp = {
+    reset: async () => { providerCalls.push("reset-sign-up"); signUp.status = "missing_requirements"; return { error: null }; },
     status: newSignup ? "missing_requirements" : "complete",
     password: async () => ({ error: null }),
     verifications: {
@@ -77,9 +88,15 @@ function mountRecovery(newSignup = false, passwordErrorCode = "session_exists") 
   const clerk = {
     loaded: true,
     isSignedIn: true,
-    session: newSignup ? null : session,
+    session: newSignup || !showExistingSession ? null : session,
+    signOut: async ({ sessionId }: { sessionId: string }) => {
+      providerCalls.push(`sign-out:${sessionId}`);
+      if (signOutFails) throw new Error("Could not switch accounts. Try again.");
+      clerk.session = null;
+      clerk.__internal_lastEmittedResources.session = null;
+    },
     addListener: () => () => {},
-    __internal_lastEmittedResources: { session: newSignup ? null : session },
+    __internal_lastEmittedResources: { session: newSignup || !showExistingSession ? null : session },
     __internal_state: {
       signInSignal: () => signInSnapshot,
       signUpSignal: () => signUpSnapshot,
@@ -128,14 +145,14 @@ describe("rendered Clerk session recovery", () => {
   });
 
   test("the production session_exists response completes login for the submitted identity", async () => {
-    const view = mountRecovery();
+    const view = mountRecovery(false, "session_exists", false);
     await act(async () => { fireEvent.submit(view.getByRole("button", { name: "Sign in with email" }).closest("form")!); });
     expect(completed).toBeTrue();
     expect(requests).toEqual(["/api/auth/managed/exchange"]);
   });
 
   test("a non-field password error clears the progress text and restores submission", async () => {
-    const view = mountRecovery(false, "rate_limit_exceeded");
+    const view = mountRecovery(false, "rate_limit_exceeded", false);
     await act(async () => { fireEvent.submit(view.getByRole("button", { name: "Sign in with email" }).closest("form")!); });
     expect(view.getByRole("alert").textContent).toBe("Provider rejected request");
     expect(view.getByRole("status").textContent).toBe("");
@@ -147,11 +164,36 @@ describe("rendered Clerk session recovery", () => {
   test("reload recovery exchanges a verified session without password or server action", async () => {
     const view = mountRecovery();
     expect(view.container.querySelectorAll("#clerk-captcha").length).toBe(1);
+    expect(view.queryByLabelText("Email")).toBeNull();
+    expect(view.queryByLabelText("Password")).toBeNull();
+    expect(view.queryByRole("button", { name: "Continue with Privy" })).toBeNull();
+    expect(view.getByRole("button", { name: "Use another account" })).toBeDefined();
     expect(requests).toEqual([]);
     await act(async () => { fireEvent.click(view.getByRole("button", { name: "Continue as owner@example.test" })); });
     expect(completed).toBeTrue();
     expect(requests).toEqual(["/api/auth/managed/exchange"]);
     expect(view.getByRole("status").textContent).toBe("Signed in.");
+  });
+
+  test("Use another account signs out the selected session and shows an empty form", async () => {
+    const view = mountRecovery();
+    await act(async () => { fireEvent.click(view.getByRole("button", { name: "Use another account" })); });
+    expect(providerCalls).toEqual(["sign-out:session-owner", "reset-sign-in", "reset-sign-up"]);
+    expect((view.getByLabelText("Email") as HTMLInputElement).value).toBe("");
+    expect((view.getByLabelText("Password") as HTMLInputElement).value).toBe("");
+    expect(view.queryByRole("button", { name: "Continue as owner@example.test" })).toBeNull();
+    expect(view.getByRole("button", { name: "Continue with Privy" })).toBeDefined();
+    expect(requests).toEqual([]);
+  });
+
+  test("a failed account switch keeps recovery available and displays the error", async () => {
+    signOutFails = true;
+    const view = mountRecovery();
+    await act(async () => { fireEvent.click(view.getByRole("button", { name: "Use another account" })); });
+    expect(view.getByRole("alert").textContent).toBe("Could not switch accounts. Try again.");
+    expect(view.queryByLabelText("Password")).toBeNull();
+    expect(view.getByRole("button", { name: "Use another account" }).hasAttribute("disabled")).toBeFalse();
+    expect(providerCalls).toEqual(["sign-out:session-owner"]);
   });
 
   test("a verified provider identity still needs consent before creating a House account", async () => {
@@ -178,7 +220,7 @@ describe("rendered Clerk session recovery", () => {
       expect(expire).toBeDefined();
       await act(async () => { expire?.(); });
       expect(view.getByRole("button", { name: "Reload sign-in" }).hasAttribute("disabled")).toBeFalse();
-      expect(view.getByRole("alert").textContent).toContain("haven’t received confirmation");
+      expect(view.getByRole("alert").textContent).toContain("Reload to try again");
       expect(requests).toEqual([]);
       expect(completed).toBeFalse();
     } finally {

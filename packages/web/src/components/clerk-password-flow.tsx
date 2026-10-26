@@ -177,7 +177,7 @@ export async function runClerkPasswordAttempt<T extends ClerkPasswordResource>({
   }
   if (clerkResultHasCode(result, "session_exists")) {
     if (await resumeSessionExists?.()) return "continued";
-    throw new Error("This browser already has a sign-in session. Continue with the verified account if shown, or reload and use a separate browser profile for another account.");
+    throw new Error("An account is already signed in. Reload to choose an account.");
   }
   const submittedAccountAlreadyHasSession =
     clerkResultHasCode(result, "identifier_already_signed_in")
@@ -386,6 +386,7 @@ export function ClerkPasswordFlow({
   const [status, setStatus] = useState("");
   const [localBusy, setLocalBusy] = useState(false);
   const [operationStalled, setOperationStalled] = useState(false);
+  const [credentialsStarted, setCredentialsStarted] = useState(false);
   const [managedToken, setManagedToken] = useState<string | null>(null);
   const [pendingInfluenceSession, setPendingInfluenceSession] = useState<InfluenceSessionResult | null>(null);
   const [supportId, setSupportId] = useState<string | null>(null);
@@ -652,6 +653,11 @@ export function ClerkPasswordFlow({
   }
 
   async function attemptPasswordSignIn(): Promise<void> {
+    if (await resumeMatchingClerkSession({
+      session: clerk.session,
+      emailAddress: email,
+      exchange: recoverClerkSession,
+    })) return;
     const currentSignIn = signInRef.current;
     const outcome = await runClerkPasswordAttempt({
       signIn: currentSignIn,
@@ -679,6 +685,26 @@ export function ClerkPasswordFlow({
     // Recovery exchanges an existing credential; new House accounts still go
     // through setup_incomplete and explicit current Terms acceptance.
     await exchangeAfterVerification(await getActiveClerkToken(), true);
+  }
+
+  async function switchAccount(): Promise<void> {
+    await run(async () => {
+      const session = clerk.session;
+      if (session) await clerk.signOut({ sessionId: session.id });
+      for (const resource of [signInRef.current, signUpRef.current]) {
+        const result = await resource.reset();
+        const message = clerkErrorMessage(result, "Could not switch accounts. Try again.");
+        if (message) throw new Error(message);
+      }
+      setEmail("");
+      setPassword("");
+      setCode("");
+      setManagedToken(null);
+      setAcceptedLegalTerms(false);
+      currentSignupOwnsCompletionRef.current = false;
+      setCredentialsStarted(true);
+      setStatus("");
+    }, "Switching accounts…");
   }
 
   async function beginClerkAccountCreation(): Promise<void> {
@@ -712,6 +738,7 @@ export function ClerkPasswordFlow({
   }
 
   async function submitCredentials(): Promise<void> {
+    setCredentialsStarted(true);
     if (intent === "reset_password") {
       await run(async () => {
         const created = await signIn.create({ identifier: email.trim() });
@@ -983,8 +1010,7 @@ export function ClerkPasswordFlow({
     return (
       <FlowPanel heading="Sign-in is taking too long" headingRef={headingRef}>
         <p role="alert" className="influence-copy text-sm">
-          We haven’t received confirmation that this step finished. Reload to
-          reconnect, then continue with your verified account if it is shown.
+          We couldn’t finish signing you in. Reload to try again.
         </p>
         <button type="button" className="influence-button-primary min-h-11 w-full rounded-lg px-4 py-2 text-sm" onClick={() => window.location.reload()}>
           Reload sign-in
@@ -1417,16 +1443,22 @@ export function ClerkPasswordFlow({
         ? "Add email/password"
         : "Create account";
 
+  if ((isSignIn || isCreateAccount) && recoveryEmail && !reversePrivyToken && !credentialsStarted) {
+    return (
+      <FlowPanel heading="Continue to The House" headingRef={headingRef}>
+        <button type="button" disabled={busy} className="influence-button-primary min-h-11 w-full break-words rounded-lg px-4 py-2 text-sm" onClick={() => void run(recoverClerkSession, "Signing in…")}>
+          Continue as {recoveryEmail}
+        </button>
+        <button type="button" disabled={busy} className="influence-link text-sm" onClick={() => void switchAccount()}>
+          Use another account
+        </button>
+        <FlowMessages error={flowError} status={status} errorRef={errorRef} />
+      </FlowPanel>
+    );
+  }
+
   return (
     <FlowPanel heading={title} headingRef={headingRef}>
-      {(isSignIn || isCreateAccount) && recoveryEmail && !reversePrivyToken && (
-        <div className="space-y-3">
-          <p className="influence-copy text-sm">Your email is already verified. Continue to finish signing in to The House.</p>
-          <button type="button" disabled={busy} className="influence-button-primary min-h-11 w-full rounded-lg px-4 py-2 text-sm" onClick={() => void run(recoverClerkSession, "Finishing sign-in…")}>
-            Continue as {recoveryEmail}
-          </button>
-        </div>
-      )}
       <form
         className="space-y-4"
         onSubmit={(event) => {

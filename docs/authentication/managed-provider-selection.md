@@ -41,8 +41,12 @@ invalidation server action before session activation. A failed action can leave
 authentication or Next.js middleware participates in this architecture.
 
 After a reload, an active session with a verified primary email offers an explicit
-**Continue as…** action. It exchanges the existing assertion without creating a
-second Clerk sign-in. A `session_exists` response also resumes only when the active
+**Continue as…** action on a dedicated account-choice screen, without a parallel
+password form or explanatory banner. **Use another account** signs out that Clerk
+session, resets the provider attempts, and opens an empty credentials form.
+Submitting credentials for the already-verified identity resumes it automatically.
+Recovery exchanges the existing assertion without creating a second Clerk sign-in.
+A `session_exists` response also resumes only when the active
 session's verified primary email matches the submitted email. This browser check
 selects the intended identity; the API still verifies the token and resolves the
 credential. Recovery never creates a House account automatically: an unlinked
