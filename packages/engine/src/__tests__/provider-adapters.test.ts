@@ -1,3 +1,5 @@
+import { contextSourceHash } from "../context-adaptation";
+import { THINKING_CONTENT_GUIDANCE } from "../thinking-guidance";
 import { describe, expect, it } from "bun:test";
 import type OpenAI from "openai";
 import type { LlmProviderRuntime } from "../llm-client";
@@ -7,6 +9,7 @@ import {
   compileOpenAIResponsesRequest,
   createProviderAdapter,
   executeModelInvocation,
+  OUTPUT_LANGUAGE_GUIDANCE,
   normalizeOpenAIResponse,
 } from "../provider-adapters";
 import type { ModelInvocation } from "../model-invocation";
@@ -18,7 +21,7 @@ import {
   ProviderExecutionCoordinator,
   type ProviderAttemptRecord,
 } from "../provider-execution";
-import { createExactStructuredOutputArtifact } from "../structured-output";
+import { createExactStructuredOutputArtifact, validateExactStructuredValue } from "../structured-output";
 
 const voteArtifact = createExactStructuredOutputArtifact<
   { target: string },
@@ -89,8 +92,19 @@ const structuredInvocation: ModelInvocation<{ targetPlayerId: string }> = {
   outputTokenLimit: 256,
 };
 
+it("adaptive effort respects a model's frozen reasoning limits", () => {
+  for (const [catalogId, expected] of [["openai:gpt-5-pro", "high"], ["openai:gpt-5.5-pro", "medium"]] as const) {
+    const model = modelCatalogEntryById(catalogId)!;
+    const body = compileOpenAIResponsesRequest({ ...structuredInvocation, reasoning: { effort: "low" } }, {
+      catalogId, modelId: model.modelId, providerProfileId: "openai", modelCapabilities: model.capabilities,
+      reasoningPolicy: "action-policy", allowedReasoningEfforts: model.allowedReasoningEfforts,
+    });
+    expect(body.reasoning?.effort).toBe(expected);
+  }
+});
+
 function runtime(
-  catalogId: "openai:gpt-5.6-luna" | "openai:gpt-6-luna" | "katana:grok-4-5" | "katana:grok-4-6" | "katana:glm-5-2" | "meta-muse:muse-spark-1.3-contributor",
+  catalogId: "katana:claude-opus-4-7" | "openai:gpt-5.6-luna" | "openai:gpt-6-luna" | "katana:grok-4-5" | "katana:grok-4-6" | "katana:glm-5-2" | "meta-muse:muse-spark-1.3-contributor",
   client: OpenAI,
   position = 0,
 ): LlmProviderRuntime {
@@ -184,6 +198,67 @@ describe("provider-native adapters", () => {
     expect(messages.at(-1)?.content).toContain("preserving its intent");
   });
 
+  it.each([
+    { thinking: true, delivery: true },
+    { thinking: true, delivery: false },
+    { thinking: false, delivery: true },
+    { thinking: false, delivery: false },
+  ])("adds requested output guidance without changing frozen gameplay context: %j", async ({ thinking, delivery }) => {
+    type Output = { text: string; thinking?: string };
+    // Style instructions are not new rejection criteria, even when ignored.
+    const thought = "I must return JSON within 350 bytes.";
+    const accepted: Output = { text: "Hello", ...(thinking && { thinking: thought }) };
+    const artifact = createExactStructuredOutputArtifact<Output, Output>({
+      action: "test.delivery-recovery.v1", name: "speech",
+      ...(delivery && { audioDelivery: { fields: ["text", "thinking"], nighttime: true } }),
+      schema: { type: "object", additionalProperties: false, required: thinking ? ["text", "thinking"] : ["text"],
+        properties: { text: { type: "string" }, ...(thinking && { thinking: { type: ["string", "null"] } }) } },
+      decodeProviderPayload: value => ({ status: "valid", value }), decodeAcceptedValue: value => ({ status: "valid", value: value as Output }),
+    });
+    const source: ModelInvocation<Output> = { messages: [{ role: "system", content: "Play the game." }, { role: "user", content: "Saved history" }],
+      contextSpans: [{ text: "Saved history", format: "text" }], result: { kind: "structured", artifact }, outputTokenLimit: 256 };
+    const originalHash = contextSourceHash(source);
+    const records: ProviderAttemptRecord[] = [];
+    const client = { chat: { completions: { create: async (body: { messages: Array<{ content: string }> }) => {
+      expect(body.messages[0]!.content).toContain(OUTPUT_LANGUAGE_GUIDANCE);
+      expect(body.messages[0]!.content.includes("Prefer <soft>")).toBe(delivery);
+      expect(body.messages[0]!.content.includes(THINKING_CONTENT_GUIDANCE)).toBe(thinking);
+      return { id: "resumed", choices: [{ finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({ ...accepted, text: delivery ? "<soft>Hello</soft>" : "Hello" }) } }] };
+    } } } } as unknown as OpenAI;
+    const coordinator = new ProviderExecutionCoordinator({ hooks: {
+      onReadContextAttempts: async () => [{ catalogId: "katana:grok-4-5", sourceHash: originalHash, revision: 0, outcome: "transport_timeout" }],
+      onTerminal: record => { records.push(record); },
+    } });
+    const result = await executeModelInvocation({
+      call: coordinator.startCall({ actor: { name: "Dax", role: "player" }, action: artifact.action,
+        semantic: { version: 1, kind: "phase_call", phase: Phase.MINGLE, round: 0, canonicalEventSequence: 0, callSlot: 1 } }),
+      runtimes: [runtime("katana:grok-4-5", client)], invocation: source, maxAttempts: 2,
+      validate: (_outcome, value) => value ? { status: "usable", value } : { status: "unusable", kind: "malformed_output", message: "missing" },
+    });
+    expect(result.value).toEqual(accepted);
+    expect(records).toHaveLength(1);
+    expect(records[0]!.context?.sourceHash).toBe(originalHash);
+    expect(source.messages[0]!.content).toBe("Play the game.");
+    expect(result.liveOutcome?.invocationMessages?.[0]?.content?.includes(THINKING_CONTENT_GUIDANCE)).toBe(thinking);
+  });
+
+  it("adds English guidance to text-only calls without a system prompt, without rejecting other languages", async () => {
+    const source: ModelInvocation = {messages: [{role: "user", content: "Say hello."}], result: {kind: "text"}, outputTokenLimit: 256};
+    const client = {chat: {completions: {create: async (body: {messages: Array<{role: string; content: string}>}) => {
+      expect(body.messages[0]).toEqual({role: "system", content: OUTPUT_LANGUAGE_GUIDANCE});
+      expect(body.messages[1]).toEqual({role: "user", content: "Say hello."});
+      return {id: "language", choices: [{finish_reason: "stop", message: {role: "assistant", content: "你好"}}]};
+    }}}} as unknown as OpenAI;
+    const result = await executeModelInvocation({
+      call: new ProviderExecutionCoordinator().startCall({actor: {name: "House", role: "house"}, action: "language-test",
+        semantic: {version: 1, kind: "phase_call", phase: Phase.MINGLE, round: 0, canonicalEventSequence: 0, callSlot: 1}}),
+      runtimes: [runtime("katana:grok-4-5", client)], invocation: source, maxAttempts: 1,
+      validate: outcome => ({status: "usable", value: outcome.text}),
+    });
+    expect(result.value).toBe("你好");
+    expect(source.messages).toEqual([{role: "user", content: "Say hello."}]);
+  });
+
   it("keeps local requests concurrent and uses the local deadline instead of a hosted action deadline", async () => {
     const signals: AbortSignal[] = [];
     const releases: (() => void)[] = [];
@@ -262,11 +337,33 @@ describe("provider-native adapters", () => {
     expect(await executeVoteInvocation(jsonSchemaRuntime)).toEqual({ target: "Atlas" });
   });
 
-  it("rejects prose recovery and wrapper envelopes in native JSON-schema responses", async () => {
+  it.each([
+    '```json\n{"target":"Atlas"}\n```',
+    'Before {"target":"Atlas"} after',
+    'Rewrite within the byte allowance.{"target":"Atlas"}<｜end▁of▁sentence｜>',
+  ])("accepts wrapped JSON and preserves the original provider evidence: %s", async (content) => {
+    const records: ProviderAttemptRecord[] = [];
+    const client = { chat: { completions: { create: async () => ({
+      choices: [{ finish_reason: "stop", message: { role: "assistant", content } }],
+    }) } } } as unknown as OpenAI;
+    const coordinator = new ProviderExecutionCoordinator({
+      wait: async () => {},
+      hooks: { onTerminal: record => { records.push(record); } },
+    });
+    expect(await executeVoteInvocation(runtime("katana:glm-5-2", client), { coordinator })).toEqual({ target: "Atlas" });
+    expect(records).toHaveLength(1);
+    expect(records[0]?.acceptedValue).toEqual({ target: "Atlas" });
+    expect(records[0]?.rawResponse?.body).toMatchObject({
+      choices: [{ message: { content } }],
+    });
+  });
+
+  it("rejects plain prose, ambiguous JSON and schema wrapper envelopes", async () => {
     const cases = [
       ["plain text", "undecodable_structured_output"],
-      ["```json\n{\"target\":\"Atlas\"}\n```", "undecodable_structured_output"],
-      ["Before {\"target\":\"Atlas\"} after", "undecodable_structured_output"],
+      ['```json\n{"target":"Atlas",}\n```', "undecodable_structured_output"],
+      ['Before {"target":"Atlas"} after {"target":"Blair"}', "undecodable_structured_output"],
+      ['```json\n{"target":"Atlas","extra":true}\n```', "malformed_output"],
       ['{"arguments":{"target":"Atlas"}}', "malformed_output"],
       ['{"toolName":"cast_vote","target":"Atlas"}', "malformed_output"],
       ["{}", "malformed_output"],
@@ -763,7 +860,7 @@ describe("provider-native adapters", () => {
     expect(body.tool_choice).toBeUndefined();
     expect(body.store).toBe(false);
     expect(body.service_tier).toBeUndefined();
-    expect(body.temperature).toBeUndefined();
+    expect(body.temperature).toBe(invocation.temperature);
     expect(body.tools).toBeUndefined();
     expect(body.text).toMatchObject({format: {type: "json_schema", name: "cast_vote", strict: true}});
     const request = meta.adapter.compile(invocation, meta);
@@ -838,6 +935,30 @@ describe("provider-native adapters", () => {
 
 
 describe("nullable normalization across native transports", () => {
+  it("compiles Claude nullable enums without changing the allowed values or semantic schema", () => {
+    const schema = { type: "object", additionalProperties: false, required: ["recipient", "reply", "room"], properties: {
+      recipient: { type: ["string", "null"], enum: [null, "milo"] },
+      reply: { type: ["integer", "null"], enum: [null] },
+      room: { type: ["integer", "null"], enum: [null, 1, 2] },
+    } };
+    const artifact = createExactStructuredOutputArtifact({ action: "nullable-enum", name: "conversation_turn", schema,
+      decodeProviderPayload: value => ({ status: "valid", value }), decodeAcceptedValue: value => ({ status: "valid", value }) });
+    const model = runtime("katana:claude-opus-4-7", {} as OpenAI);
+    const request = model.adapter.compile({ ...invocation, result: { kind: "structured", artifact } }, model);
+    const native = (request.body as { response_format: { json_schema: { schema: Record<string, unknown> } } }).response_format.json_schema.schema;
+    expect(native).toMatchObject({ properties: {
+      recipient: { anyOf: [{ type: "string", enum: ["milo"] }, { type: "null", enum: [null] }] },
+      reply: { anyOf: [{ type: "null", enum: [null] }] },
+    } });
+    expect(artifact.schema).toEqual(schema);
+    for (const recipient of [null, "milo", "other", 1]) for (const reply of [null, 1, "1"]) for (const room of [null, 1, 2, 3, "1"]) {
+      const value = { recipient, reply, room };
+      expect(validateExactStructuredValue(native, value, "native").status).toBe(validateExactStructuredValue(schema, value, "semantic").status);
+    }
+    for (const invalid of [{}, { recipient: null, reply: null }, { recipient: null, reply: null, room: null, extra: true }]) {
+      expect(validateExactStructuredValue(native, invalid, "native").status).toBe("invalid");
+    }
+  });
   it.each(["responses-structured", "chat-structured"])(
     "normalizes within the attempt and preserves native evidence for %s", async (mode) => {
       const artifact = createExactStructuredOutputArtifact<{ target: string | null }, { target: string | null }>({
@@ -941,7 +1062,7 @@ describe("vision invocation contracts", () => {
   });
 
   it("rejects unsupported vision instead of silently dropping image context", () => {
-    const unsupported = runtime("katana:grok-4-5", client);
+    const unsupported = runtime("katana:glm-5-2", client);
     expect(unsupported.adapter.validate(visual, unsupported).compatible).toBe(false);
     expect(() => compileChatCompletionsRequest(visual, unsupported)).toThrow("image inputs are unsupported");
   });

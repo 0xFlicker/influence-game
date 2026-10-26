@@ -1,3 +1,5 @@
+import { drainProviderCalls } from "../provider-batch";
+import { tallyEmpowerRevote } from "../empower-revote-rules";
 import type { UUID } from "../types";
 import { Phase } from "../types";
 import type { EmpowerRevoteAction, IAgent, TargetDecision } from "../game-runner.types";
@@ -134,7 +136,7 @@ export async function collectEmpowerVoteBatch(
 ): Promise<EmpowerVoteBatchItem[]> {
   const { gameState, agents } = ctx;
   const alivePlayers = gameState.getAlivePlayers();
-  return Promise.all(alivePlayers.map(async (player) => {
+  return drainProviderCalls(alivePlayers.map(async (player) => {
     const agent = agents.get(player.id)!;
     const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.VOTE, "strategic_decision");
     const legalTargets = alivePlayers
@@ -248,7 +250,7 @@ export async function collectEmpowerRevoteBatch(
   const { gameState, agents } = ctx;
   const originalVotes = originalEmpowerVotesForRound(ctx);
   const reVoters = gameState.getAlivePlayers().filter((player) => !tied.includes(player.id));
-  return Promise.all(reVoters.map(async (player) => {
+  return drainProviderCalls(reVoters.map(async (player) => {
     const agent = agents.get(player.id)!;
     const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.VOTE, "strategic_decision");
     const originalVote = originalVotes.get(player.id) ?? { empowerTarget: tied[0]! };
@@ -340,11 +342,16 @@ export async function resolveEmpowerRevote(
   tied: readonly UUID[],
   random: () => number = Math.random,
 ): Promise<UUID> {
-  const counts: Record<UUID, number> = {};
-  for (const id of tied) counts[id] = 0;
-  for (const target of Object.values(ctx.gameState.currentVoteTally.empowerVotes)) {
-    if (target in counts) counts[target] = (counts[target] ?? 0) + 1;
+  const revotes = new Map<UUID, UUID>();
+  for (const event of ctx.gameState.getCanonicalEvents()) {
+    if (event.type === "vote.empower_revote_cast" && event.round === ctx.gameState.round) {
+      revotes.set(event.payload.voterId, event.payload.target);
+    }
   }
+  const { counts } = tallyEmpowerRevote(
+    ctx.gameState.empowerRevoteVersion, tied,
+    new Map(Object.entries(ctx.gameState.currentVoteTally.empowerVotes)), revotes,
+  );
   const max = Math.max(...Object.values(counts), 0);
   const finalists = tied.filter((id) => counts[id] === max);
   const empoweredId = finalists.length === 1
@@ -408,7 +415,7 @@ export async function runVotePhase(
   logger.logSystem("=== VOTE PHASE ===", Phase.VOTE);
   const alivePlayers = gameState.getAlivePlayers();
 
-  await Promise.all(
+  await drainProviderCalls(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.VOTE, "strategic_decision");
@@ -521,7 +528,7 @@ export async function runVotePhase(
       gameState.clearEmpowerVote(rv.id);
     }
     if (reVoters.length > 0) {
-      await Promise.all(
+      await drainProviderCalls(
         reVoters.map(async (player) => {
           const agent = agents.get(player.id)!;
           const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.VOTE, "strategic_decision");
@@ -610,29 +617,7 @@ export async function runVotePhase(
       );
     }
 
-    const reVoteCounts: Record<UUID, number> = {};
-    for (const id of tied) reVoteCounts[id] = 0;
-    for (const voter of reVoters) {
-      const target = gameState.currentVoteTally.empowerVotes[voter.id];
-      if (target && target in reVoteCounts) {
-        reVoteCounts[target] = (reVoteCounts[target] ?? 0) + 1;
-      }
-    }
-
-    const maxReVotes = Math.max(...Object.values(reVoteCounts), 0);
-    const reVoteTied = tied.filter((id) => reVoteCounts[id] === maxReVotes);
-
-    if (reVoteTied.length === 1) {
-      empoweredId = reVoteTied[0]!;
-      logger.logSystem(`Re-vote resolved: ${gameState.getPlayerName(empoweredId)} empowered`, Phase.VOTE);
-      await assertCanAcceptCommit(ctx);
-      gameState.setEmpowered(empoweredId, "revote");
-    } else {
-      empoweredId = reVoteTied[Math.floor(Math.random() * reVoteTied.length)]!;
-      logger.logSystem(`Re-vote still tied! THE WHEEL decides: ${gameState.getPlayerName(empoweredId)} empowered`, Phase.VOTE);
-      await assertCanAcceptCommit(ctx);
-      gameState.setEmpowered(empoweredId, "wheel");
-    }
+    empoweredId = await resolveEmpowerRevote(ctx, tied, ctx.random);
   }
 
   contextBuilder.revealVoteLedgerEntries(
@@ -693,7 +678,7 @@ export async function runReckoningVote(
   logger.logSystem("=== RECKONING: ELIMINATION VOTE ===", Phase.VOTE);
   const alivePlayers = gameState.getAlivePlayers();
 
-  await Promise.all(
+  await drainProviderCalls(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.VOTE, "strategic_decision");
@@ -778,7 +763,7 @@ export async function runTribunalVote(
   logger.logSystem("=== TRIBUNAL: ELIMINATION VOTE ===", Phase.VOTE);
   const alivePlayers = gameState.getAlivePlayers();
 
-  await Promise.all(
+  await drainProviderCalls(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.VOTE, "strategic_decision");
@@ -842,7 +827,7 @@ export async function runTribunalVote(
   const tribunalJury = tribunalTieCandidates.length > 1 ? contextBuilder.getActiveJury() : [];
   if (tribunalJury.length > 0) {
     juryTiebreakerVotes = {};
-    for (const juror of tribunalJury) {
+    const juryCommits = await drainProviderCalls(tribunalJury.map(async (juror) => {
       const jurorAgent = agents.get(juror.playerId);
       if (jurorAgent) {
         const phaseCtx = prepareAgentPhaseContext(
@@ -868,39 +853,43 @@ export async function runTribunalVote(
         const acceptedVote = tribunalTieCandidates.includes(vote.target)
           ? vote
           : fallbackEliminationDecision(ctx, juror.playerId, tribunalTieCandidates, "invalid_model_output");
-        juryTiebreakerVotes[juror.playerId] = acceptedVote.target;
-        if (acceptedVote.decisionId || acceptedVote.engineFallback) {
-          juryTiebreakerSourcePointers.push(
-            agentTurnSourcePointer(
-              juror.playerId,
-              "tribunal-jury-tiebreaker-vote",
-              gameState.round,
-              Phase.VOTE,
-              undefined,
-              acceptedVote.engineFallback ? undefined : acceptedVote.decisionId,
-              acceptedVote.engineFallback,
-            ),
-          );
-        }
-        const targetName = gameState.getPlayerName(acceptedVote.target);
-        await assertCanAcceptCommit(ctx);
-        logger.emitAgentTurn({
-          phase: Phase.VOTE,
-          action: "tribunal-jury-tiebreaker-vote",
-          actor: { id: juror.playerId, name: juror.playerName, role: "juror" },
-          visibility: "private",
-          response: {
-            target: { id: acceptedVote.target, name: targetName },
-            stage: "tribunal",
-            ...strategicDecisionResponse(acceptedVote),
-          },
-          thinking: acceptedVote.thinking,
-          reasoningContext: acceptedVote.reasoningContext,
-          scope: "system",
-          text: `${juror.playerName} jury tiebreaker vote -> ${targetName}`,
-        });
+        return async () => {
+          juryTiebreakerVotes![juror.playerId] = acceptedVote.target;
+          if (acceptedVote.decisionId || acceptedVote.engineFallback) {
+            juryTiebreakerSourcePointers.push(
+              agentTurnSourcePointer(
+                juror.playerId,
+                "tribunal-jury-tiebreaker-vote",
+                gameState.round,
+                Phase.VOTE,
+                undefined,
+                acceptedVote.engineFallback ? undefined : acceptedVote.decisionId,
+                acceptedVote.engineFallback,
+              ),
+            );
+          }
+          const targetName = gameState.getPlayerName(acceptedVote.target);
+          await assertCanAcceptCommit(ctx);
+          logger.emitAgentTurn({
+            phase: Phase.VOTE,
+            action: "tribunal-jury-tiebreaker-vote",
+            actor: { id: juror.playerId, name: juror.playerName, role: "juror" },
+            visibility: "private",
+            response: {
+              target: { id: acceptedVote.target, name: targetName },
+              stage: "tribunal",
+              ...strategicDecisionResponse(acceptedVote),
+            },
+            thinking: acceptedVote.thinking,
+            reasoningContext: acceptedVote.reasoningContext,
+            scope: "system",
+            text: `${juror.playerName} jury tiebreaker vote -> ${targetName}`,
+          });
+        };
       }
-    }
+      return null;
+    }));
+    for (const commit of juryCommits) await commit?.();
   }
 
   await assertCanAcceptCommit(ctx);

@@ -1,8 +1,12 @@
-import { loadPayloads, storeFields } from "./payload-storage.js";
+import { normalizeAudioPayload } from "@influence/engine/audio-delivery";
+import { testPayloadStore } from "../__tests__/payload-test-store.js";
+import { getProviderFailureDetail } from "./provider-failure-read-model.js";
+import { randomUUID } from "node:crypto";
+import { loadPayloads, storeFields, storeJson, setPayloadObjectStoreForTests } from "./payload-storage.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { and, eq, sql } from "drizzle-orm";
 import {
-  Phase,
+  Phase, normalizeGameModelRouting, sealGameModelRouting,
   ProviderAttemptError,
   ProviderCallBudgetExhaustedError,
   ProviderCircuitOpenError,
@@ -39,7 +43,6 @@ import {
 import { backfillGameCostAccounting } from "./provider-cost-accounting.js";
 import { appendGameEvents } from "./game-events.js";
 import { sha256StableJson } from "./stable-hash.js";
-
 import { cloneCompactStrategyState, createOpeningStrategyState, contextSourceHash, executeModelInvocation,
   modelCatalogEntryById, classifyProviderError, type LlmProviderRuntime, type ModelInvocation } from "@influence/engine";
 
@@ -322,6 +325,132 @@ describe("provider call journal", () => {
     expect(attempts).toHaveLength(4);
     expect(new Set(attempts.map(attempt => attempt.contextSourceHash)).size).toBe(1);
     expect(new Set(attempts.map(attempt => attempt.ownerEpoch)).size).toBe(2);
+  });
+
+  test("contestants share fallback caps, House has its own cap, and primary/replay consume no recovery allowance", async () => {
+    const gameId = await insertGame(db), ownerEpoch = await insertOwner(db, gameId);
+    const policy = normalizeGameModelRouting({ version: 1,
+      defaultManifest: [{ catalogId: "openai:gpt-6-luna" }, { catalogId: "katana:glm-5-2", maxCallsPerGame: 1 }],
+      houseManifest: [{ catalogId: "meta-muse:muse-spark-1.3-contributor" }, { catalogId: "katana:glm-5-2", maxCallsPerGame: 1 }],
+      overrides: {}, excludedCatalogIds: [] });
+    const modelRouting = sealGameModelRouting(policy, [{ id: "primary", preference: { catalogId: "katana:glm-5-2" } }, { id: "a" }, { id: "b" }]);
+    await db.update(schema.games).set({ config: JSON.stringify({ modelRouting }) }).where(eq(schema.games.id, gameId));
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    const intent = (id: string, role: "player" | "house" = "player") => { const value = makeIntent(gameId, ownerEpoch); value.coordinate.actor = { id, name: id, role }; value.attemptId += `-${id}`; return value; };
+    const primary = intent("primary"); await allocateAndReserve(hooks, primary);
+    await hooks.onTerminal?.(makeRecord(primary, { outcome: { kind: "usable" }, disposition: "accepted", acceptedValue: { target: "Bea" } }));
+    expect(await hooks.onReadAccepted?.(primary.coordinate)).toMatchObject({ value: { target: "Bea" } });
+    const a = intent("a"); await allocateAndReserve(hooks, a);
+    const b = intent("b");
+    await expect(allocateAndReserve(hooks, b)).rejects.toBeInstanceOf(ProviderCallBudgetExhaustedError);
+    const house = intent("house", "house"); await allocateAndReserve(hooks, house);
+    const resumed = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    // The uncommitted contestant reservation still consumes the allowance after reload.
+    await expect(allocateAndReserve(resumed, { ...intent("b"), attemptOrdinal: 2 })).rejects.toBeInstanceOf(ProviderCallBudgetExhaustedError);
+    const attempts = await db.select().from(schema.providerCallAttempts).where(eq(schema.providerCallAttempts.gameId, gameId));
+    expect(attempts.map(row => row.fallbackBudgetKey).sort()).toEqual([null, "contestants:katana:glm-5-2", "house:katana:glm-5-2"].sort());
+    expect(attempts.every(row => row.rateCard?.catalogId === "katana:glm-5-2")).toBe(true);
+    const detail = await getProviderFailureDetail(db, gameId);
+    expect(detail.budgets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: "contestants", catalogId: "katana:glm-5-2", role: "primary", usedCalls: 1, maxCallsPerGame: null }),
+      expect.objectContaining({ scope: "contestants", catalogId: "katana:glm-5-2", role: "fallback", usedCalls: 1, remainingCalls: 0 }),
+      expect.objectContaining({ scope: "house", catalogId: "katana:glm-5-2", role: "fallback", usedCalls: 1, remainingCalls: 0 }),
+    ]));
+  });
+
+  test("the game default has a shared fallback cap without charging default-primary calls", async () => {
+    const gameId = await insertGame(db), ownerEpoch = await insertOwner(db, gameId);
+    const policy = normalizeGameModelRouting({ version: 1,
+      defaultManifest: [{ catalogId: "katana:glm-5-2" }], defaultModelMaxFallbackCalls: 1,
+      houseManifest: [{ catalogId: "openai:gpt-6-luna" }], overrides: {}, excludedCatalogIds: [] });
+    const modelRouting = sealGameModelRouting(policy, [{ id: "default" },
+      ...["a", "b"].map(id => ({ id, preference: { catalogId: "openai:gpt-6-luna" } }))]);
+    await db.update(schema.games).set({ config: JSON.stringify({ modelRouting }) }).where(eq(schema.games.id, gameId));
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    const intent = (id: string) => {
+      const value = makeIntent(gameId, ownerEpoch);
+      value.coordinate.actor = { id, name: id, role: "player" };
+      value.attemptId += `-${id}`;
+      return value;
+    };
+    await allocateAndReserve(hooks, intent("default"));
+    await allocateAndReserve(hooks, intent("a"));
+    await expect(allocateAndReserve(hooks, intent("b"))).rejects.toBeInstanceOf(ProviderCallBudgetExhaustedError);
+    const rows = await db.select().from(schema.providerCallAttempts).where(eq(schema.providerCallAttempts.gameId, gameId));
+    expect(rows.map(row => row.fallbackBudgetKey).sort()).toEqual([null, "contestants:katana:glm-5-2"].sort());
+  });
+
+  test("episode naming uses independent House authority and rejects expired or misused leases", async () => {
+    const gameId = await insertGame(db), lease = randomUUID();
+    const policy = normalizeGameModelRouting({ version: 1,
+      defaultManifest: [{ catalogId: "openai:gpt-6-luna" }],
+      houseManifest: [{ catalogId: "katana:glm-5-2" }], overrides: {}, excludedCatalogIds: [] });
+    await db.update(schema.games).set({ config: JSON.stringify({ modelRouting: policy }) }).where(eq(schema.games.id, gameId));
+    await db.insert(schema.gameEpisodePresentations).values({ gameId, status: "generating", revision: 3, leaseToken: lease, leaseUntil: new Date(Date.now() + 60_000).toISOString() });
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch: lease, episodeLease: { revision: 3 } });
+    const intent = makeIntent(gameId, lease);
+    intent.coordinate.actor = { role: "house", name: "The House" };
+    intent.coordinate.action = "house.episode_copy";
+    intent.coordinate.semantic = { version: 1, kind: "episode_copy", revision: 3 };
+    await allocateAndReserve(hooks, intent);
+    await hooks.onTerminal?.(makeRecord(intent, { outcome: { kind: "usable" }, disposition: "accepted", acceptedValue: { title: "Eight Voices", description: "Meet the cast." } }));
+    expect(await hooks.onReadAccepted?.(intent.coordinate)).toMatchObject({ value: { title: "Eight Voices" } });
+    await expect(hooks.onAllocateAttemptOrdinal?.({ ...intent.coordinate, actor: { role: "player", name: "Intruder", id: "intruder" } })).rejects.toThrow("another responsibility");
+    await db.update(schema.gameEpisodePresentations).set({ leaseUntil: new Date(0).toISOString() }).where(eq(schema.gameEpisodePresentations.gameId, gameId));
+    await expect(hooks.onReadAccepted?.(intent.coordinate)).rejects.toThrow("lease expired");
+  });
+
+  test("accepted delivery is a separate durable bucket document and never enters recovery", async () => {
+    const gameId = await insertGame(db), ownerEpoch = await insertOwner(db, gameId);
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    const intent = makeIntent(gameId, ownerEpoch);
+    await allocateAndReserve(hooks, intent);
+    const normalized = normalizeAudioPayload({ message: "<soft>Trust Ada.</soft>", thinking: "Check her vote." },
+      { fields: ["message", "thinking"], nighttime: true });
+    const record = makeRecord(intent, { outcome: { kind: "usable" }, disposition: "accepted",
+      acceptedValue: normalized.value, audioDelivery: normalized.audioDelivery });
+    await hooks.onTerminal?.(record);
+    await hooks.onTerminal?.(record);
+    const [row] = await db.select().from(schema.providerLogicalCalls).where(eq(schema.providerLogicalCalls.gameId, gameId));
+    expect(row!.audioDelivery).toMatchObject({ storage: "private-payload-v1", codec: "json-gzip" });
+    expect(JSON.stringify(row!.audioDelivery)).not.toContain("Trust Ada");
+    const [hydrated] = await loadPayloads([row!]);
+    expect(hydrated!.audioDelivery).toEqual(normalized.audioDelivery);
+    const ref = row!.audioDelivery!;
+    // Production corruption must not turn gameplay recovery into an audio read.
+    const bytes = testPayloadStore.objects.get(ref.key)!;
+    testPayloadStore.objects.delete(ref.key);
+    try {
+      const restored = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+      const replay = await restored.onReadAccepted?.(intent.coordinate);
+      expect(replay?.value).toEqual({ message: "Trust Ada.", thinking: "Check her vote." });
+      expect(JSON.stringify(replay)).not.toContain("<soft>");
+      await expect(loadPayloads([row!])).rejects.toThrow("Test payload missing");
+    } finally { testPayloadStore.objects.set(ref.key, bytes); }
+    await expect(hooks.onTerminal?.({ ...record, audioDelivery: { version: 1, fields: [] } })).rejects.toThrow();
+  });
+
+  test("annotation upload failure cannot publish a partial accepted result", async () => {
+    const gameId = await insertGame(db), ownerEpoch = await insertOwner(db, gameId);
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    const intent = makeIntent(gameId, ownerEpoch);
+    await allocateAndReserve(hooks, intent);
+    const normalized = normalizeAudioPayload({ message: "<soft>Wait.</soft>" }, { fields: ["message"], nighttime: true });
+    const ref = await storeJson(normalized.audioDelivery);
+    testPayloadStore.objects.delete(ref.key);
+    setPayloadObjectStoreForTests({
+      get: key => testPayloadStore.get(key),
+      putIfAbsent: (key, bytes) => {
+        if (key === ref.key) throw new Error("Annotation storage unavailable");
+        return testPayloadStore.putIfAbsent(key, bytes);
+      },
+    });
+    try {
+      await expect(hooks.onTerminal?.(makeRecord(intent, { outcome: { kind: "usable" }, disposition: "accepted",
+        acceptedValue: normalized.value, audioDelivery: normalized.audioDelivery }))).rejects.toThrow("Annotation storage unavailable");
+      const [row] = await db.select().from(schema.providerLogicalCalls).where(eq(schema.providerLogicalCalls.gameId, gameId));
+      expect(row).toMatchObject({ acceptedAttemptId: null, acceptedValue: null, audioDelivery: null });
+    } finally { setPayloadObjectStoreForTests(testPayloadStore); }
   });
 
   test("context overflow survives restart, fences the rejected revision, and permits an adapted request", async () => {
@@ -1803,9 +1932,9 @@ describe("provider call journal", () => {
       gameId,
       callStatus: "succeeded",
       costSource: "static_estimate",
-      estimatedCostMicrousd: 175,
-      pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-08-24",
+      estimatedCostMicrousd: 520,
+      pricingSourceId: "https://kat.imgnai.com/v1/models/text",
+      rateCardVersion: "2026-10-23",
       providerNativeUnit: "katana_credit",
       providerNativeAmount: "0.1",
       promptTokens: 100,

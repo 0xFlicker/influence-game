@@ -62,6 +62,7 @@ import type {
   RoomAllocation,
   MingleCoordinationReceiptRecord,
 } from "./types";
+import { CURRENT_EMPOWER_REVOTE_VERSION, resolveEmpowerRevoteVersion, type EmpowerRevoteVersion } from "./empower-revote-rules";
 import { Phase, PlayerStatus } from "./types";
 
 export function createUUID(): UUID {
@@ -69,6 +70,7 @@ export function createUUID(): UUID {
 }
 
 export interface GameStateOptions {
+  empowerRevoteVersion?: EmpowerRevoteVersion;
   gameId?: UUID;
   now?: () => number;
   formatManifest?: readonly LaunchFormatId[];
@@ -216,6 +218,7 @@ function responsesForLineageVersion(
 
 export class GameState {
   readonly gameId: UUID;
+  readonly empowerRevoteVersion: EmpowerRevoteVersion;
   readonly formatManifest: readonly LaunchFormatId[];
   private readonly canonicalEvents = new CanonicalEventLog();
   private readonly now: () => number;
@@ -270,6 +273,7 @@ export class GameState {
   } | null = null;
 
   constructor(players: { id: UUID; name: string }[], options: GameStateOptions = {}) {
+    this.empowerRevoteVersion = resolveEmpowerRevoteVersion(options.empowerRevoteVersion ?? CURRENT_EMPOWER_REVOTE_VERSION);
     this.gameId = options.gameId ?? createUUID();
     this.formatManifest = resolveFormatManifest(options.formatManifest);
     this.now = options.now ?? Date.now;
@@ -290,6 +294,7 @@ export class GameState {
         shielded: player.shielded,
       })),
       formatManifest: [...this.formatManifest],
+      empowerRevoteVersion: this.empowerRevoteVersion,
     }, { phase: Phase.INIT, visibility: "system" });
   }
 
@@ -303,6 +308,7 @@ export class GameState {
     const state = new GameState(players, {
       gameId: projection.gameId,
       formatManifest: projection.formatManifest,
+      empowerRevoteVersion: projection.empowerRevoteVersion,
       ...options,
     });
     state.canonicalEvents.replaceAll(events);

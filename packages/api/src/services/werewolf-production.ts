@@ -1,4 +1,5 @@
 import { loadPayloads } from "./payload-storage.js";
+import { validHeadRectangle, type CharacterHeadPosition } from "@influence/engine/character-portrait";
 import { readWerewolfVisualPause } from "./werewolf-visual-policy.js";
 import { visualFailurePolicy } from "./visual-policy.js";
 import { werewolfSceneInventory } from "@influence/engine/werewolf/visual-scenes";
@@ -48,8 +49,12 @@ export async function werewolfReferenceMetadata(db: Pick<DrizzleDB, "select">, g
     const body = bodyHash && available.has(bodyHash) ? bodyHash : null;
     const portrait = portraitHash && available.has(portraitHash) ? portraitHash : null;
     const kind = bundled ? "portrait" : body ? "full_body" : portrait ? "portrait" : "missing";
+    const head = snapshot?.headPosition as CharacterHeadPosition | undefined;
+    const headPosition = kind === "full_body" && head?.confirmation && head.sourceUrl === snapshot?.fullBodyReferenceUrl
+      && head.sourceHash === body && validHeadRectangle(head.rect) ? head : undefined;
     const profile: FrozenVisualProfile = { id: player.id, name: player.name, personaKey: player.personaKey ?? "", avatarUrl: null,
       fullBodyReferenceUrl: kind === "full_body" ? String(snapshot!.fullBodyReferenceUrl) : null,
+      ...(headPosition ? { headPosition } : {}),
       performanceInstructions: typeof snapshot?.performanceInstructions === "string" ? snapshot.performanceInstructions : "" };
     return { profile, kind, bodyHash: body, portraitHash: portrait, bundled };
   });

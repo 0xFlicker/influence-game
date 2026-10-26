@@ -44,7 +44,7 @@ function fixture(speeches: number[], latestCursor = 128, status = "cancelled") {
         cursor,
         entry: speechAt.has(cursor)
           ? { kind: "speech", day: 1, actorId: "p", audience: "public", text: `Speech ${cursor}`, cue: null }
-          : { kind: "phase", day: 1, phase: "day" },
+          : {kind: "conversation", day: 1, id: cursor, actorId: "p", text: null, cue: null, recipientId: null, replyToContributionId: null, unavailable: false, remainingBytes: 2000},
         snapshot: { gameId: "g", rulesVersion: 8, preset: "one_wolf", audience: "mystery", day: 1, maxDays: 5, phase: "day", discussion: null, cursor, players, outcome: null },
         chapterId: "day:1", sceneId: `scene:${cursor}`, mediaKey: null,
       };
@@ -62,6 +62,18 @@ function fixture(speeches: number[], latestCursor = 128, status = "cancelled") {
 }
 
 const useFixtureWatch = () => useWerewolfWatch("g", "mystery", "2026-10-06T00:00:00.000Z", 1);
+
+test("audio interruption clears play intent and one normal toggle resumes", async () => {
+  fixture([1, 2], 2);
+  const view = renderHook(useFixtureWatch);
+  await waitFor(() => expect(view.result.current.preparing).toBe(false));
+  act(() => view.result.current.pause());
+  expect(view.result.current.follow).toBe(false);
+  expect(view.result.current.snapshot.isPlaying).toBe(false);
+  act(() => view.result.current.toggle());
+  expect(view.result.current.follow).toBe(true);
+  expect(view.result.current.snapshot.isPlaying).toBe(true);
+});
 
 test("background visibility preserves playback intent and an explicit pause stays paused on return", async () => {
   fixture([1, 2], 2);

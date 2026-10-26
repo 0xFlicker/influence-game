@@ -6,6 +6,7 @@
 
 // Core types
 export * from "./types";
+export * from "./empower-revote-rules";
 export * from "./retrospective";
 export * from "./retrospective-progress";
 export * from "./retrospective-failure";
@@ -798,4 +799,11 @@ export { DEFAULT_CONVERSATION_POLICY } from "./conversation-policy";
 export { conversationPolicy, beginConversation, isSpectatorHuddleSpeech, huddleSessionId } from "./open-conversation";
 
 export { withEvaluationBudget } from "./evaluation-budget";
+export { withLocalTaskBudget, localTaskBudgetPath, localTaskBudgetIdentity, reserveLocalTaskAudio } from "./local-task-budget";
+
+export * from "./game-model-routing";
+
+export * from "./model-route-metadata";
+
+export * from "./model-routing-report";
 export { ContextSourceConflictError, contextSourceHash } from "./context-adaptation";

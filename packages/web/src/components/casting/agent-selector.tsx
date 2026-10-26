@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { getAuthToken, listAgents, type SavedAgent } from "@/lib/api";
 import { resolveAgentAvatarUrl } from "@/components/agent-avatar";
 import { getPersonaLabel } from "@/lib/personas";
+import { AgentModelLabel, agentModelLabel } from "@/components/agent-model-label";
 import "./agent-selector.css";
 
 interface AgentSelectorProps {
@@ -41,7 +42,7 @@ export function AgentSelector({ description, createHref, onClose, onSelect, excl
   const [error, setError] = useState<string | null>(null);
   const selectedAgent = agents.find(agent => agent.id === selectedAgentId && !excludedIds.includes(agent.id));
   const query = search.trim().toLocaleLowerCase();
-  const visibleAgents = agents.filter(agent => `${agent.name} ${getPersonaLabel(agent.personaKey)}`.toLocaleLowerCase().includes(query));
+  const visibleAgents = agents.filter(agent => `${agent.name} ${getPersonaLabel(agent.personaKey)} ${agentModelLabel(agent.modelPreference) ?? ""}`.toLocaleLowerCase().includes(query));
 
   useEffect(() => {
     let active = true;
@@ -133,7 +134,7 @@ export function AgentSelector({ description, createHref, onClose, onSelect, excl
                       {visibleAgents.map(agent => <label key={agent.id} className="agent-selector-card" data-selected={selectedAgentId === agent.id}>
                         <input type="radio" name="agent" value={agent.id} checked={selectedAgentId === agent.id} aria-label={agent.name} disabled={excludedIds.includes(agent.id)} onChange={() => { setSelectedAgentId(agent.id); setError(null); }} />
                         <span className="agent-selector-portrait"><Image src={resolveAgentAvatarUrl(agent.avatarUrl, agent.personaKey ?? "", agent.name, agent.personaKey)} alt="" fill sizes="(max-width: 639px) 42vw, 190px" unoptimized /><span className="agent-selector-check" aria-hidden="true">{selectedAgentId === agent.id ? "✓" : "＋"}</span></span>
-                        <span className="agent-selector-card-copy"><span className="agent-selector-role">{getPersonaLabel(agent.personaKey)}</span><strong>{agent.name}</strong><span className="agent-selector-record">{excludedIds.includes(agent.id) ? "Already in your cast" : gameKind === "werewolf" ? (agent.werewolfStrategyStyle?.trim() ? "Werewolf strategy ready" : "Werewolf archetype strategy") : agent.gamesPlayed ? `${agent.gamesWon} ${agent.gamesWon === 1 ? "win" : "wins"} / ${agent.gamesPlayed} ${agent.gamesPlayed === 1 ? "game" : "games"}` : "First appearance"}</span></span>
+                        <span className="agent-selector-card-copy"><span className="agent-selector-role">{getPersonaLabel(agent.personaKey)}</span><strong>{agent.name}</strong><AgentModelLabel preference={agent.modelPreference} className="text-xs text-text-secondary break-all" /><span className="agent-selector-record">{excludedIds.includes(agent.id) ? "Already in your cast" : gameKind === "werewolf" ? (agent.werewolfStrategyStyle?.trim() ? "Werewolf strategy ready" : "Werewolf archetype strategy") : agent.gamesPlayed ? `${agent.gamesWon} ${agent.gamesWon === 1 ? "win" : "wins"} / ${agent.gamesPlayed} ${agent.gamesPlayed === 1 ? "game" : "games"}` : "First appearance"}</span></span>
                       </label>)}
                     </div>}
                 </fieldset>}

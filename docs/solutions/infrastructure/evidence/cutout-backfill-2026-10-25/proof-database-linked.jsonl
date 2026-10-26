@@ -1,0 +1,20 @@
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42P06",
+  message: "schema \"drizzle\" already exists, skipping",
+  file: "schemacmds.c",
+  line: "132",
+  routine: "CreateSchemaCommand",
+}
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42P07",
+  message: "relation \"__drizzle_migrations\" already exists, skipping",
+  file: "parse_utilcmd.c",
+  line: "207",
+  routine: "transformCreateStmt",
+}
+Migrations applied successfully.
+{"database":"influence_cutout_proof_20261025","copiedProfiles":[{"id":"98b07560-c4fe-4517-b1bd-916de9f4269e","name":"Claude Sonnet"},{"id":"7968a255-6e2e-4367-bcd6-5f2570dfa2e7","name":"Kimi K3"},{"id":"c2d3db5b-1409-4e69-8a0e-2ce84fbb54f1","name":"DeepSeek Flash"},{"id":"3013945a-84d7-4519-866c-386d1888e2b4","name":"Grok 4.6"},{"id":"50578159-9666-4157-a6c7-7d3566ceafa1","name":"Meta Spark"},{"id":"24523d91-8af4-4042-9450-371512a7e011","name":"GPT Luna"},{"id":"e33f7c5d-2c80-49fa-bbb4-8c463d119f29","name":"GPT Sol"},{"id":"525f84a1-e1d2-472a-ba4e-ad3f9a9d2a53","name":"Claude Haiku"},{"id":"8590e89f-d12e-436f-8f0b-fa56df9f4e2b","name":"Gemini Pro"}],"sourceDatabaseUnchanged":true}

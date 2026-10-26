@@ -408,11 +408,15 @@ test.describe("local public player identity", () => {
         await page.route("**/api/games", route => route.fulfill({ json: [{ ...base, id: "card-influence", slug: "card-influence", alivePlayers: full.has("influence") ? 6 : 1 }] }));
         await page.route("**/api/werewolf", route => route.fulfill({ json: [{ ...base, id: "card-werewolf", slug: "card-werewolf", gameKind: "werewolf", joinedPlayers: full.has("werewolf") ? 6 : 1 }] }));
         for (const kind of ["influence", "werewolf"]) for (const action of ["fill", "start", "stop", "hide"]) {
-          const root = kind === "werewolf" && action !== "hide" ? "werewolf" : "games";
-          await page.route(`**/api/${root}/card-${kind}/${action}`, route => {
+          const path = kind === "werewolf" && action === "hide"
+            ? "/api/admin/werewolf/card-werewolf/visibility"
+            : `/api/${kind === "werewolf" ? "werewolf" : "games"}/card-${kind}/${action}`;
+          await page.route(`**${path}`, route => {
+            expect(route.request().method()).toBe(action === "hide" ? "PATCH" : "POST");
+            if (kind === "werewolf" && action === "hide") expect(route.request().postDataJSON()).toEqual({ hidden: true });
             actions.push(`${kind}:${action}`);
             if (action === "fill") full.add(kind);
-            return route.fulfill({ json: { status: "ok" } });
+            return route.fulfill({ json: kind === "werewolf" && action === "hide" ? { hidden: true } : { status: "ok" } });
           });
         }
         await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });

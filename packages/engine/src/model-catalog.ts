@@ -1,3 +1,5 @@
+import { normalizeGameModelRouting, type GameModelRouting } from "./game-model-routing";
+import { modelRouteMetadata } from "./model-route-metadata";
 import type { OpenAIReasoningSummaryMode } from "./llm-client";
 
 export { DEFAULT_MODEL_CATALOG_ID, DEFAULT_MODEL_ID } from "./model-defaults";
@@ -17,6 +19,8 @@ export interface ModelRequestCapabilities {
   supportsPromptCacheRetention: boolean;
   supportsStructuredOutput: boolean;
   supportsTools: boolean;
+  /** Audited hosted OpenAI capacity support; absent for unknown/historical metadata. */
+  supportsFlexProcessing?: boolean;
 }
 
 export interface ProviderProfile {
@@ -37,6 +41,12 @@ export interface ModelCatalogEntry {
   allowedReasoningEfforts: readonly ModelReasoningEffort[];
   capabilities: ModelRequestCapabilities;
   notes?: string;
+  capabilityEvidence?: "documented" | "inferred";
+}
+
+export interface ResolvedModelCatalogEntry extends ModelCatalogEntry {
+  capabilityEvidence: "documented" | "inferred";
+  metadata: ReturnType<typeof modelRouteMetadata>;
 }
 
 export interface ResolvedModelSelection {
@@ -149,22 +159,11 @@ const KATANA_GROK_CAPABILITIES: ModelRequestCapabilities = {
   supportsTools: true,
 };
 
-const KATANA_GENERAL_CAPABILITIES: ModelRequestCapabilities = {
-  ...STANDARD_CHAT_CAPABILITIES,
-  supportsStructuredOutput: true,
-  supportsTools: true,
-};
-
-const KATANA_JSON_SCHEMA_ONLY_CAPABILITIES: ModelRequestCapabilities = {
-  ...KATANA_GENERAL_CAPABILITIES,
-  supportsTools: false,
-};
-
 // Meta Muse dispatches through its own Responses adapter; the
 // supportsOpenAIResponses flag stays false because it gates hosted-OpenAI
-// byte-budget behavior. Image input stays unclaimed until verified on Meta.
+// byte-budget behavior. Meta documents image input; the Responses adapter preserves it.
 const META_MUSE_CAPABILITIES: ModelRequestCapabilities = {
-  supportsImageInput: false,
+  supportsImageInput: true,
   supportsReasoningEffort: true,
   supportsToolReasoningEffort: true,
   usesMaxCompletionTokens: true,
@@ -175,191 +174,180 @@ const META_MUSE_CAPABILITIES: ModelRequestCapabilities = {
   supportsTools: true,
 };
 
-export const MODEL_CATALOG: readonly ModelCatalogEntry[] = [
+type ModelDefinition = Omit<ModelCatalogEntry, "capabilities" | "allowedReasoningEfforts">;
+
+const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
   {
-    id: "openai:gpt-5-nano",
-    providerProfileId: "openai",
-    modelId: "gpt-5-nano",
-    displayName: "OpenAI gpt-5-nano",
-    evaluationStatus: "game-ready",
-    defaultReasoningPolicy: "action-policy",
-    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
-    capabilities: OPENAI_GPT5_CAPABILITIES,
+    "id": "katana:glm-5-3-flash-private",
+    "providerProfileId": "katana",
+    "modelId": "glm-5-3-flash-private",
+    "displayName": "GLM Flash",
+    "evaluationStatus": "game-ready",
+    "defaultReasoningPolicy": "action-policy"
   },
   {
-    id: "openai:gpt-5-mini",
-    providerProfileId: "openai",
-    modelId: "gpt-5-mini",
-    displayName: "OpenAI gpt-5-mini",
-    evaluationStatus: "game-ready",
-    defaultReasoningPolicy: "action-policy",
-    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
-    capabilities: OPENAI_GPT5_CAPABILITIES,
+    "id": "katana:deepseek-v4-flash",
+    "providerProfileId": "katana",
+    "modelId": "deepseek-v4-flash",
+    "displayName": "DeepSeek Flash",
+    "evaluationStatus": "game-ready",
+    "defaultReasoningPolicy": "action-policy"
   },
   {
-    id: "openai:gpt-5.4-nano",
-    providerProfileId: "openai",
-    modelId: "gpt-5.4-nano",
-    displayName: "OpenAI gpt-5.4-nano",
-    evaluationStatus: "game-ready",
-    defaultReasoningPolicy: "action-policy",
-    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
-    capabilities: OPENAI_GPT54_CAPABILITIES,
+    "id": "openai:gpt-5-nano",
+    "providerProfileId": "openai",
+    "modelId": "gpt-5-nano",
+    "displayName": "OpenAI gpt-5-nano",
+    "evaluationStatus": "game-ready",
+    "defaultReasoningPolicy": "action-policy"
   },
   {
-    id: "openai:gpt-5.4-mini",
-    providerProfileId: "openai",
-    modelId: "gpt-5.4-mini",
-    displayName: "OpenAI gpt-5.4-mini",
-    evaluationStatus: "game-ready",
-    defaultReasoningPolicy: "action-policy",
-    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
-    capabilities: OPENAI_GPT54_CAPABILITIES,
+    "id": "openai:gpt-5-mini",
+    "providerProfileId": "openai",
+    "modelId": "gpt-5-mini",
+    "displayName": "OpenAI gpt-5-mini",
+    "evaluationStatus": "game-ready",
+    "defaultReasoningPolicy": "action-policy"
   },
   {
-    id: "openai:gpt-5.6-luna",
-    providerProfileId: "openai",
-    modelId: "gpt-5.6-luna",
-    displayName: "OpenAI gpt-5.6-luna",
-    evaluationStatus: "game-ready",
-    defaultReasoningPolicy: "action-policy",
-    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
-    capabilities: { ...OPENAI_GPT56_CAPABILITIES, supportsImageInput: true },
-    notes: "GPT-5.6 Luna — prior cost-sensitive high-volume tier.",
+    "id": "openai:gpt-5.4-nano",
+    "providerProfileId": "openai",
+    "modelId": "gpt-5.4-nano",
+    "displayName": "OpenAI gpt-5.4-nano",
+    "evaluationStatus": "game-ready",
+    "defaultReasoningPolicy": "action-policy"
   },
   {
-    id: "openai:gpt-6-luna",
-    providerProfileId: "openai",
-    modelId: "gpt-6-luna",
-    displayName: "OpenAI gpt-6-luna",
-    evaluationStatus: "game-ready",
-    defaultReasoningPolicy: "action-policy",
-    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
-    // Reasoning with function tools requires Responses; cache options match GPT-5.6.
-    // https://developers.openai.com/api/docs/models/gpt-6-luna
-    capabilities: { ...OPENAI_GPT56_CAPABILITIES, supportsImageInput: true },
-    notes: "Product baseline. GPT-6 Luna — text and image input with structured decisions through Responses.",
+    "id": "openai:gpt-5.4-mini",
+    "providerProfileId": "openai",
+    "modelId": "gpt-5.4-mini",
+    "displayName": "OpenAI gpt-5.4-mini",
+    "evaluationStatus": "game-ready",
+    "defaultReasoningPolicy": "action-policy"
   },
   {
-    id: "katana:grok-4-6",
-    providerProfileId: "katana",
-    modelId: "grok-4-6",
-    displayName: "xAI Grok 4.6",
-    evaluationStatus: "game-ready",
-    defaultReasoningPolicy: "action-policy",
-    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
-    capabilities: { ...KATANA_GROK_CAPABILITIES, supportsImageInput: true },
-    notes: "Verified image-input and structured scene-awareness support through Katana.",
+    "id": "openai:gpt-5.6-luna",
+    "providerProfileId": "openai",
+    "modelId": "gpt-5.6-luna",
+    "displayName": "OpenAI gpt-5.6-luna",
+    "evaluationStatus": "game-ready",
+    "defaultReasoningPolicy": "action-policy"
   },
   {
-    id: "katana:grok-4-3",
-    providerProfileId: "katana",
-    modelId: "grok-4-3",
-    displayName: "xAI Grok 4.3",
-    evaluationStatus: "game-ready",
-    defaultReasoningPolicy: "action-policy",
-    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
-    capabilities: KATANA_GROK_CAPABILITIES,
-    notes: "Initial router-backed Grok candidate for low/medium/high reasoning evaluation.",
+    "id": "openai:gpt-6-luna",
+    "providerProfileId": "openai",
+    "modelId": "gpt-6-luna",
+    "displayName": "OpenAI gpt-6-luna",
+    "evaluationStatus": "game-ready",
+    "defaultReasoningPolicy": "action-policy"
   },
   {
-    id: "katana:grok-4-5",
-    providerProfileId: "katana",
-    modelId: "grok-4-5",
-    displayName: "xAI Grok 4.5",
-    evaluationStatus: "game-ready",
-    defaultReasoningPolicy: "action-policy",
-    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
-    capabilities: KATANA_GROK_CAPABILITIES,
-    notes: "Approved secondary fallback for provider-resilient Influence games.",
+    "id": "openai:gpt-6.1-sol",
+    "providerProfileId": "openai",
+    "modelId": "gpt-6.1-sol",
+    "displayName": "OpenAI gpt-6.1-sol",
+    "evaluationStatus": "evaluation-candidate",
+    "defaultReasoningPolicy": "action-policy"
   },
   {
-    id: "katana:grok-4-20-multi-agent",
-    providerProfileId: "katana",
-    modelId: "grok-4-20-multi-agent",
-    displayName: "xAI Grok multi-agent",
-    evaluationStatus: "evaluation-candidate",
-    defaultReasoningPolicy: "action-policy",
-    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
-    capabilities: KATANA_GROK_CAPABILITIES,
-    notes: "Back-burner record; not selectable until evaluated for Influence games.",
+    "id": "katana:grok-4-6",
+    "providerProfileId": "katana",
+    "modelId": "grok-4-6",
+    "displayName": "xAI Grok 4.6",
+    "evaluationStatus": "game-ready",
+    "defaultReasoningPolicy": "action-policy"
   },
   {
-    id: "katana:q-naifu-a3b",
-    providerProfileId: "katana",
-    modelId: "q-naifu-a3b",
-    displayName: "Katana q-naifu-a3b",
-    evaluationStatus: "disabled",
-    defaultReasoningPolicy: "action-policy",
-    allowedReasoningEfforts: [],
-    capabilities: KATANA_JSON_SCHEMA_ONLY_CAPABILITIES,
-    notes: "Failed local API-backed Influence evaluation: JSON Schema transport worked, but core vote/revote/strategy decisions were repeatedly empty or semantically invalid and advanced via fallbacks.",
+    "id": "katana:grok-4-3",
+    "providerProfileId": "katana",
+    "modelId": "grok-4-3",
+    "displayName": "xAI Grok 4.3",
+    "evaluationStatus": "game-ready",
+    "defaultReasoningPolicy": "action-policy"
   },
   {
-    id: "katana:glm-5-2",
-    providerProfileId: "katana",
-    modelId: "glm-5-2",
-    displayName: "Katana GLM 5.2",
-    evaluationStatus: "game-ready",
-    defaultReasoningPolicy: "action-policy",
-    allowedReasoningEfforts: [],
-    capabilities: KATANA_GENERAL_CAPABILITIES,
-    notes: "Approved low-cost tertiary fallback for provider-resilient Influence games.",
+    "id": "katana:grok-4-5",
+    "providerProfileId": "katana",
+    "modelId": "grok-4-5",
+    "displayName": "xAI Grok 4.5",
+    "evaluationStatus": "game-ready",
+    "defaultReasoningPolicy": "action-policy"
   },
   {
-    id: "meta-muse:muse-spark-1.3",
-    providerProfileId: "meta-muse",
-    modelId: "muse-spark-1.3",
-    displayName: "Meta Muse Spark 1.3",
-    evaluationStatus: "game-ready",
-    defaultReasoningPolicy: "action-policy",
-    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
-    capabilities: META_MUSE_CAPABILITIES,
-    notes: "Standard tier: prompts and completions are not used to train Meta models.",
+    "id": "katana:grok-4-20-multi-agent",
+    "providerProfileId": "katana",
+    "modelId": "grok-4-20-multi-agent",
+    "displayName": "xAI Grok multi-agent",
+    "evaluationStatus": "evaluation-candidate",
+    "defaultReasoningPolicy": "action-policy"
   },
   {
-    id: "meta-muse:muse-spark-1.3-contributor",
-    providerProfileId: "meta-muse",
-    modelId: "muse-spark-1.3-contributor",
-    displayName: "Meta Muse Spark 1.3 Contributor",
-    evaluationStatus: "game-ready",
-    defaultReasoningPolicy: "action-policy",
-    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
-    capabilities: META_MUSE_CAPABILITIES,
-    notes: "Contributor tier: ~95% cheaper; Meta may train on prompts and completions. Disclosed in the Privacy Policy; never send sensitive or personal information.",
+    "id": "katana:q-naifu-a3b",
+    "providerProfileId": "katana",
+    "modelId": "q-naifu-a3b",
+    "displayName": "Katana q-naifu-a3b",
+    "evaluationStatus": "disabled",
+    "defaultReasoningPolicy": "action-policy",
+    "notes": "Failed local API-backed Influence evaluation: JSON Schema transport worked, but core vote/revote/strategy decisions were repeatedly empty or semantically invalid and advanced via fallbacks."
   },
   {
-    id: "meta-muse:muse-wonder-1.0",
-    providerProfileId: "meta-muse",
-    modelId: "muse-wonder-1.0",
-    displayName: "Meta Muse Wonder 1.0",
-    evaluationStatus: "game-ready",
-    defaultReasoningPolicy: "action-policy",
-    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
-    capabilities: META_MUSE_CAPABILITIES,
-    notes: "Standard tier only; premium pricing ($4/$20 per 1M). Use manifest call caps.",
+    "id": "katana:glm-5-2",
+    "providerProfileId": "katana",
+    "modelId": "glm-5-2",
+    "displayName": "Katana GLM 5.2",
+    "evaluationStatus": "game-ready",
+    "defaultReasoningPolicy": "action-policy"
   },
+  {
+    "id": "meta-muse:muse-spark-1.3",
+    "providerProfileId": "meta-muse",
+    "modelId": "muse-spark-1.3",
+    "displayName": "Meta Muse Spark 1.3",
+    "evaluationStatus": "game-ready",
+    "defaultReasoningPolicy": "action-policy"
+  },
+  {
+    "id": "meta-muse:muse-spark-1.3-contributor",
+    "providerProfileId": "meta-muse",
+    "modelId": "muse-spark-1.3-contributor",
+    "displayName": "Meta Muse Spark 1.3 Contributor",
+    "evaluationStatus": "game-ready",
+    "defaultReasoningPolicy": "action-policy"
+  },
+  {
+    "id": "meta-muse:muse-wonder-1.0",
+    "providerProfileId": "meta-muse",
+    "modelId": "muse-wonder-1.0",
+    "displayName": "Meta Muse Wonder 1.0",
+    "evaluationStatus": "game-ready",
+    "defaultReasoningPolicy": "action-policy"
+  }
 ];
 
+export const MODEL_CATALOG: readonly ResolvedModelCatalogEntry[] = MODEL_DEFINITIONS.map(resolveCatalogMetadata);
 const MODEL_BY_ID = new Map(MODEL_CATALOG.map((entry) => [entry.id, entry]));
 const MODEL_BY_PROVIDER_AND_MODEL = new Map(
   MODEL_CATALOG.map((entry) => [`${entry.providerProfileId}:${entry.modelId}`, entry]),
 );
 
+// Discovery lists every provider product, not just game decision models. Apply
+// this at catalog resolution so exact IDs cannot bypass the same restriction.
+// Image-input text models remain eligible; these are non-decision model families.
+const NON_DECISION_MODEL_ID = /(?:embedding|whisper|dall-e|tts|segmentation|(?:^|\/)sam-|muse-image|muse-video|muse-voice|(?:chat)?gpt-image|image-gen|realtime|audio|transcribe|moderation|search-api|(?:^|\/)sora(?:-|$)|(?:^|\/)gpt-live(?:-|$))/i;
+
 function dynamicOpenAICompatibleCatalogEntry(catalogId: string): ModelCatalogEntry | undefined {
   const [profileId, ...modelParts] = catalogId.split(":");
-  // meta-muse is static-only: its model list mixes text models with image,
-  // voice, and segmentation models that must never become game LLMs.
   if (
     profileId !== "openai"
     && profileId !== "katana"
     && profileId !== "lm-studio"
     && profileId !== "custom-openai-compatible"
+    && profileId !== "meta-muse"
   ) {
     return undefined;
   }
   const modelId = modelParts.join(":").trim();
-  if (!modelId || modelId.includes(":")) return undefined;
+  if (!modelId || modelId.includes(":") || modelId.length > 200 || !/^[a-zA-Z0-9][a-zA-Z0-9._/-]*$/.test(modelId) || NON_DECISION_MODEL_ID.test(modelId)) return undefined;
   const providerProfileId = profileId;
   const label = providerProfileId === "openai"
     ? "OpenAI"
@@ -373,14 +361,14 @@ function dynamicOpenAICompatibleCatalogEntry(catalogId: string): ModelCatalogEnt
     providerProfileId,
     modelId,
     displayName: `${label} ${modelId}`,
-    evaluationStatus: "game-ready",
+    evaluationStatus: "evaluation-candidate",
     defaultReasoningPolicy: "action-policy",
-    allowedReasoningEfforts: inferModelCapabilities(modelId, providerProfileId)
+    allowedReasoningEfforts: inferUnlistedModelCapabilities(modelId, providerProfileId)
       .supportsReasoningEffort
       ? MODEL_REASONING_EFFORTS
       : [],
-    capabilities: inferModelCapabilities(modelId, providerProfileId),
-    notes: `Dynamic ${label} text-model selection for local API-backed evaluation.`,
+    capabilities: inferUnlistedModelCapabilities(modelId, providerProfileId),
+    capabilityEvidence: "inferred",
   };
 }
 
@@ -457,9 +445,6 @@ export function normalizeProviderManifest(value: unknown): GameProviderManifest 
     const model = modelCatalogEntryById(selection.catalogId);
     if (!model) {
       return providerManifestError(`entry ${index + 1} references unknown model ${selection.catalogId}`);
-    }
-    if (model.evaluationStatus !== "game-ready") {
-      return providerManifestError(`model ${selection.catalogId} is not game-ready`);
     }
     if (!model.capabilities.supportsStructuredOutput) {
       return providerManifestError(`model ${selection.catalogId} is incompatible with Influence decisions`);
@@ -538,8 +523,25 @@ export function parseProviderManifestEntry(value: string): GameProviderManifestE
   return entry;
 }
 
-export function modelCatalogEntryById(catalogId: string): ModelCatalogEntry | undefined {
-  return MODEL_BY_ID.get(catalogId) ?? dynamicOpenAICompatibleCatalogEntry(catalogId);
+/** Resolve audited facts once, before any API, UI or runtime consumer reads a model. */
+function resolveCatalogMetadata(entry: ModelDefinition & Partial<Pick<ModelCatalogEntry, "capabilities" | "allowedReasoningEfforts">>): ResolvedModelCatalogEntry {
+  const metadata = modelRouteMetadata(entry.id);
+  const documented = metadata.documented;
+  if (documented) return { ...entry, metadata, capabilityEvidence: "documented", capabilities: { ...documented.capabilities },
+    allowedReasoningEfforts: documented.allowedReasoningEfforts };
+  if (!entry.capabilities || !entry.allowedReasoningEfforts) throw new Error(`Missing audited model facts: ${entry.id}`);
+  // Unknown modalities may be attempted through the strict adapter; they are
+  // not presented as documented support in the catalog.
+  return { ...entry, metadata, allowedReasoningEfforts: entry.allowedReasoningEfforts, capabilityEvidence: entry.capabilityEvidence ?? "inferred",
+    capabilities: entry.capabilityEvidence === "inferred" ? { ...entry.capabilities, supportsImageInput: true } : entry.capabilities };
+}
+
+export function modelCatalogEntryById(catalogId: string): ResolvedModelCatalogEntry | undefined {
+  const known = MODEL_BY_ID.get(catalogId);
+  if (known) return known;
+  const entry = dynamicOpenAICompatibleCatalogEntry(catalogId);
+  const resolved = entry ? resolveCatalogMetadata(entry) : undefined;
+  return resolved;
 }
 
 export function providerProfileById(profileId: ProviderProfileId): ProviderProfile {
@@ -557,8 +559,11 @@ export function inferModelCapabilities(
   modelId: string,
   providerProfileId: ProviderProfileId = "openai",
 ): ModelRequestCapabilities {
-  const catalogEntry = MODEL_BY_PROVIDER_AND_MODEL.get(`${providerProfileId}:${modelId}`);
-  if (catalogEntry) return catalogEntry.capabilities;
+  return modelCatalogEntryById(`${providerProfileId}:${modelId}`)?.capabilities
+    ?? inferUnlistedModelCapabilities(modelId, providerProfileId);
+}
+
+function inferUnlistedModelCapabilities(modelId: string, providerProfileId: ProviderProfileId): ModelRequestCapabilities {
   if (providerProfileId === "katana" && modelId.startsWith("grok-")) return KATANA_GROK_CAPABILITIES;
   if (providerProfileId === "meta-muse" && modelId.startsWith("muse-")) return META_MUSE_CAPABILITIES;
   if (/^gpt-5\.[6-9]/.test(modelId)) return OPENAI_GPT56_CAPABILITIES;
@@ -636,8 +641,16 @@ export function resolveProviderManifest(
 
 /** Read the new manifest authority, falling back only for pre-migration stored games. */
 export function resolveProviderManifestFromGameConfig(
-  config: { providerManifest?: unknown; modelSelection?: unknown },
+  config: { providerManifest?: unknown; modelSelection?: unknown; modelRouting?: unknown },
 ): ResolvedProviderManifestEntry[] {
+  if (config.modelRouting !== undefined) {
+    const frozen = config.modelRouting as GameModelRouting;
+    if (frozen.contestants) {
+      if (!frozen.frozenRoutes?.default.length) throw new Error("Missing frozen default model runtime");
+      return frozen.frozenRoutes.default;
+    }
+    return resolveProviderManifest(normalizeGameModelRouting(config.modelRouting).defaultManifest);
+  }
   if (config.providerManifest !== undefined) {
     const manifest = resolveProviderManifest(config.providerManifest);
     if (config.modelSelection !== undefined) {
@@ -658,7 +671,7 @@ export function resolveProviderManifestFromGameConfig(
   }
   const legacySelection = normalizeGameModelSelection(config.modelSelection);
   if (!legacySelection) {
-    throw new Error("Game provider manifest is required");
+    throw new Error(config.modelSelection !== undefined ? "Invalid model selection" : "Game provider manifest is required");
   }
   return resolveProviderManifest([legacySelection]);
 }

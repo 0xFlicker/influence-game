@@ -1,3 +1,4 @@
+import {werewolfPortraitRoom, werewolfBackdrop} from "../../components/games/werewolf/werewolf-room-presentation";
 import type {ExportCue, ExportPicture} from "./cues";
 import {compileTiming, type TimingProfile, type CompiledTiming} from "./timing";
 import {compileAudio, type AudioSchedule} from "./audio";
@@ -25,10 +26,13 @@ export function thinkingPicture(cue: ExportCue, actorId = cue.speech?.speakerId)
   if (picture.kind === "werewolf") {
     const actor = picture.cue.moment.snapshot.players.find(player => player.id === actorId);
     if (!actor) throw new Error(`Thinking actor is absent from source roster: ${actorId}`);
+    const room = werewolfPortraitRoom(picture.cue);
     return {kind:"thinking",gameKind:"werewolf",actor:{id:actor.id,name:actor.name,persona:"",
       avatarUrl:actor.avatarUrl,fullBodyReferenceUrl:actor.fullBodyReferenceUrl,
-      personaKey:actor.personaKey}, roleLabel:picture.cue.moment.snapshot.audience === "omniscient" ? actor.role ?? undefined : undefined,
-      scene:picture.scene,sourceElapsedMs};
+      personaKey:actor.personaKey,headRectangle:actor.headRectangle}, roleLabel:picture.cue.moment.snapshot.audience === "omniscient" ? actor.role ?? undefined : undefined,
+      // Ballots use the voting set even when their accepted action has village imagery.
+      scene:picture.cue.ballot ? null : picture.scene,sourceElapsedMs,backgroundUrl:werewolfBackdrop(picture.cue),
+      ...(!picture.scene && room && {room:{number:room.roomNumber,label:room.roomLabel,players:room.participants,backgroundUrl:werewolfBackdrop(picture.cue),floorPerspective:true}})};
   }
   if (picture.kind !== "influence") throw new Error("This presentation cannot own a thought");
   const beat = picture.beat;
@@ -45,7 +49,7 @@ export function thinkingSegment(cue: ExportCue, id: string, text: string, actorI
   if (!text.trim()) throw new Error(`Empty thinking moment: ${id}`);
   const picture = thinkingPicture(cue, actorId);
   return {momentId:id,label:cue.label,source:cue.source,picture,speech:null,music:cue.music,
-    timing:{key:id,kind:"thinking",baseDurationMs:1,speech:null,thinking:text,sourceElapsedMs:picture.sourceElapsedMs}};
+    timing:{key:id,kind:"thinking",baseDurationMs:1,speech:null,thinking:text,sourceElapsedMs:picture.sourceElapsedMs,...(picture.room && {thinkingEstablishMs:650})}};
 }
 
 /** The complete game-owned source is projected before this presentation-only selection. */

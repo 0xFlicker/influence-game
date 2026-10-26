@@ -82,7 +82,7 @@ test("Flex capacity failures receive only one standard-tier retry, preserving pr
   expect(failing.calls()).toBe(3);
 });
 
-for (const output of ['not JSON', '{}', 'prefix {"selectedKeys":[]}', '```json\n{"selectedKeys":[]}\n```', '{"selectedKeys":[],"extra":true}', '{"selectedKeys":["made-up"]}']) {
+for (const output of ['not JSON', '{}', 'prefix {"selectedKeys":[],"extra":true}', '```json\n{"selectedKeys":[],}\n```', '{"selectedKeys":[],"extra":true}', '{"selectedKeys":["made-up"]}']) {
   test(`final selector retries malformed output and never accepts it: ${output}`, async () => {
     const { CUT_SELECTION_SCHEMA, validateCutSelection } = await import("../house-cuts/selection");
     const { cutFixtureReports } = await import("../house-cuts/fixtures");

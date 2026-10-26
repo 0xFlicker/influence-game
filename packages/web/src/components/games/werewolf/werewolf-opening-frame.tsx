@@ -30,7 +30,7 @@ export function WerewolfOpeningFrame({cue, elapsedMs, reduced = false, playing =
         <h1>{shot.title === "Werewolf" ? <span className="sr-only">Werewolf</span> : shot.title}</h1><span className={styles.rule} />
       </div>}
       {shot.shot === "cast" && shot.player && <div className={styles.cast} style={{opacity:frame.textOpacity}}>
-        <div className={styles.portrait}>{shot.player.imageUrl && failedImage !== shot.player.imageUrl ? <img src={shot.player.imageUrl} alt={shot.player.name} onError={() => setFailedImage(shot.player?.imageUrl ?? null)} /> : <span>{shot.player.name}</span>}</div>
+        <div className={styles.portrait}>{shot.player.imageUrl && failedImage !== shot.player.imageUrl ? <img className={shot.player.fullBody ? styles.fullBody : undefined} src={shot.player.imageUrl} alt={shot.player.name} onError={() => setFailedImage(shot.player?.imageUrl ?? null)} /> : <span>{shot.player.name}</span>}</div>
         <div className={styles.name}><p>THE CAST</p><h2>{shot.player.name}</h2><span className={styles.role}>{shot.player.role ?? ""}</span></div>
       </div>}
     </div>

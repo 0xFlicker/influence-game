@@ -52,3 +52,24 @@ budget.
 Exercise actual MCP HTTP serialization for each released version, including
 paginated replay, completed results and Omniscient-only proposals. A passing
 engine projector test alone cannot catch a stale external JSON schema.
+
+## Daily priority batches (v11)
+
+A Seer with a wolf read could reach the floor too late under the seeded v9/v10
+order. V11 adds a private integer-only priority survey before discussion, using
+parallel provider calls and fixed-order durable commitments. Keep the start-of-day
+observation unchanged as individual priorities commit; otherwise recovery rejects
+remaining prepared calls due to changed observation hashes. Apply the descending
+priority order only once all living actors have committed, keeping the original
+seeded order for ties. No survey entry belongs in playback or future agent context.
+Reuse the sealed-batch recovery path and test an interruption after the first
+commit, owner replacement and no provider redispatch. Public votes remain serial.
+
+V11 verification (2026-10-24): the provider-free baseline passed 2,957 tests
+with five skips, and the final priority-specific suite passed eight tests,
+including malformed-output exhaustion. The full PostgreSQL run passed 2,183
+of 2,187 tests, including priority-batch owner recovery with no redispatch.
+Three visual tests needed their scripted agent to return priorities, and one
+MCP test had loaded the pre-generation schema; after the fixture update, a
+fresh run of both affected files passed all 45 tests, including v11 MCP replay.
+Typechecking/linting passed. No paid game or provider qualification was run.

@@ -150,6 +150,12 @@ function usePrefersReducedMotion(): boolean {
 }
 
 function speechBoundaries(cue: PresentationCue | null) {
+  if (cue?.source === "classic" && cue.houseSummary) return {
+    showAtMs:0,readAtMs:0,hideAtMs:cue.baseDurationMs,hiddenAtMs:cue.baseDurationMs,
+  };
+  if (cue && voteSceneIdentity(cue) && !cue.voteSummary && cue.spokenMessage) return {
+    showAtMs:SOLO_SPEECH_START_MS,readAtMs:SOLO_READ_START_MS,hideAtMs:cue.baseDurationMs-SOLO_EXIT_MS,hiddenAtMs:cue.baseDurationMs,
+  };
   if (!cue?.speechPresentation || voteSceneIdentity(cue)) return null;
   const solo = cue.speechPresentation === "solo";
   const hideAtMs = cue.baseDurationMs - (solo ? SOLO_EXIT_MS : SCENE_EXIT_HOLD_MS + VISUAL_SPEECH_FADE_MS);

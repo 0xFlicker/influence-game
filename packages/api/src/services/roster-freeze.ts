@@ -20,6 +20,7 @@ type PlayerRow = typeof schema.gamePlayers.$inferSelect;
 
 export type RosterFreezeErrorCode = "invalid_state" | "rated_roster_invalid";
 export type RosterFreezeErrorReason =
+  | "model_incompatible"
   | "game_not_found"
   | "game_not_waiting"
   | "not_enough_players"

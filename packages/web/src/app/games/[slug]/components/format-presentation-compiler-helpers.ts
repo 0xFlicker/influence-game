@@ -1,3 +1,4 @@
+import { tallyEmpowerRevote, type EmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import type { PhaseKey, ViewerDecisionEvent } from "@/lib/api";
 import {
   applyFormatTiebreak,
@@ -273,6 +274,7 @@ export function appendEmpoweredTallyCue(input: {
   counts: Readonly<Record<string, number>>;
   receipts: readonly FormatEmpowerVoteReceipt[];
   resolutionMethod?: "revote" | "wheel" | "manual";
+  countedVotes?: readonly { voterId: string; targetId: string }[];
   snapshot: FormatPresentationSnapshot;
   cues: FormatPresentationCue[];
 }): FormatPresentationSnapshot {
@@ -298,6 +300,7 @@ export function appendEmpoweredTallyCue(input: {
     counts: { ...input.counts },
     receipts: input.receipts.map((receipt) => ({ ...receipt })),
     resolutionMethod: input.resolutionMethod,
+    countedVotes: input.countedVotes,
   });
   return snapshot;
 }
@@ -363,32 +366,35 @@ export function resolvedEmpoweredMatchesTally(
     && leaders[0] === decision.payload.empowered;
 }
 
-export function validEmpoweredSetWinner(
+export function empoweredSetTally(
   decision: Extract<ViewerDecisionEvent, { type: "vote.empowered_set" }>,
   pending: EmpowerTallyDecision,
   empower: EmpowerPresentationAccumulator,
-): boolean {
+  version: EmpowerRevoteVersion,
+): { counts: Record<string, number>; countedVotes: { voterId: string; targetId: string }[] } | null {
   const tied = pending.payload.tied;
-  if (!tied?.includes(decision.payload.empowered)) return false;
-  if (decision.payload.method === "manual") return true;
-  if (decision.payload.method === "initial") return false;
+  if (!tied?.includes(decision.payload.empowered)) return null;
+  if (decision.payload.method === "manual") return {
+    counts: { ...pending.payload.counts },
+    countedVotes: [...empower.initialVotes].map(([voterId, targetId]) => ({ voterId, targetId })),
+  };
+  if (decision.payload.method === "initial") return null;
 
   const expectedRevoters = [...empower.initialVotes.keys()].filter(
     (voterId) => !tied.includes(voterId),
   );
-  if (!sameMembers([...empower.revotes.keys()], expectedRevoters)) return false;
-  if (!sameMembers([...empower.clearedVotes], expectedRevoters)) return false;
-  const revoteCounts = Object.fromEntries(tied.map((id) => [id, 0]));
+  if (!sameMembers([...empower.revotes.keys()], expectedRevoters)) return null;
+  if (!sameMembers([...empower.clearedVotes], expectedRevoters)) return null;
   for (const targetId of empower.revotes.values()) {
-    if (!(targetId in revoteCounts)) return false;
-    revoteCounts[targetId] = (revoteCounts[targetId] ?? 0) + 1;
+    if (!tied.includes(targetId)) return null;
   }
-  const highest = Math.max(...Object.values(revoteCounts), 0);
-  const finalists = tied.filter((id) => revoteCounts[id] === highest);
-
-  return decision.payload.method === "revote"
+  const tally = tallyEmpowerRevote(version, tied, empower.activeVotes, empower.revotes);
+  const highest = Math.max(...Object.values(tally.counts), 0);
+  const finalists = tied.filter((id) => tally.counts[id] === highest);
+  const matches = decision.payload.method === "revote"
     ? finalists.length === 1 && finalists[0] === decision.payload.empowered
-    : finalists.includes(decision.payload.empowered);
+    : finalists.length > 1 && finalists.includes(decision.payload.empowered);
+  return matches ? tally : null;
 }
 
 export function latestSnapshot(

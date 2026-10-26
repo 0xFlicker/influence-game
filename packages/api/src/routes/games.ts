@@ -1,3 +1,7 @@
+import { CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION } from "@influence/engine/influence-decision-speech";
+import { audioReadySequence } from "../services/audio-frontier.js";
+import { CURRENT_EMPOWER_REVOTE_VERSION, resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
+import { creationModelRouting, GameModelRoutingError } from "../services/game-model-routing.js";
 import { DEFAULT_CONVERSATION_POLICY } from "@influence/engine";
 import { isSpectatorHuddleSpeech } from "@influence/engine";
 import { readHouseParticipation } from "../services/house-participation.js";
@@ -94,9 +98,6 @@ import {
   MAX_NEW_GAME_PLAYERS,
   MIN_NEW_GAME_PLAYERS,
   getHousePersonaDetails,
-  normalizeGameModelSelection,
-  normalizeProviderManifest,
-  normalizeOpenAIRequestServiceTier,
   pickAgentNames,
   pickArchetypes,
   resolveFormatManifest,
@@ -155,16 +156,15 @@ export function createGameRoutes(db: DrizzleDB) {
 
     if (body.gameKind !== undefined && body.gameKind !== "influence") return c.json({ error: "Create Werewolf games through /api/werewolf" }, 400);
 
+    if (body.modelTier !== undefined || body.modelCatalogId !== undefined) return c.json({ error: "Invalid model selection" }, 400);
     const {
       playerCount,
-      providerManifest,
-      modelSelection,
       personaPool,
       fillStrategy,
       maxRounds,
       visibility,
-      serviceTier,
       formatManifest,
+      audioMode = false,
       visualMode = false,
       visualFailurePolicy = "best_effort",
     } = body;
@@ -184,6 +184,7 @@ export function createGameRoutes(db: DrizzleDB) {
 
     try { parseGameVisibility(visibility); } catch { return c.json({ error: "Game visibility must be public or unlisted" }, 400); }
     if (!["best_effort", "require_visuals"].includes(visualFailurePolicy)) return c.json({ error: "Invalid visualFailurePolicy" }, 400);
+    if (typeof audioMode !== "boolean") return c.json({ error: "audioMode must be a boolean" }, 400);
     if (typeof visualMode !== "boolean") return c.json({ error: "visualMode must be a boolean" }, 400);
     const minPlayers = MIN_NEW_GAME_PLAYERS;
     const maxPlayers = playerCount ?? MAX_NEW_GAME_PLAYERS;
@@ -194,41 +195,12 @@ export function createGameRoutes(db: DrizzleDB) {
         ? Math.max(10, (maxPlayers - 4) + 3 + 2)
         : maxRounds;
 
-    const normalizedServiceTier = serviceTier == null
-      ? "flex"
-      : normalizeOpenAIRequestServiceTier(serviceTier);
-    if (!normalizedServiceTier) {
-      return c.json({ error: "Invalid service tier" }, 400);
-    }
-    let frozenProviderManifest;
-    try {
-      if (providerManifest !== undefined) {
-        frozenProviderManifest = normalizeProviderManifest(providerManifest);
-      } else {
-        const normalizedModelSelection = normalizeGameModelSelection(modelSelection);
-        if (!normalizedModelSelection) {
-          return c.json({ error: "Invalid model selection" }, 400);
-        }
-        // Preserve the established single-selection error contract while old
-        // clients remain in the bounded blue/green restoration window.
-        const legacyResolvedSelection = resolveModelSelection(normalizedModelSelection);
-        if (legacyResolvedSelection.model.evaluationStatus !== "game-ready") {
-          return c.json({ error: "Model is not game-ready" }, 400);
-        }
-        frozenProviderManifest = normalizeProviderManifest([normalizedModelSelection]);
-      }
-    } catch (error) {
-      return c.json({
-        error: error instanceof Error ? error.message : "Invalid provider manifest",
-      }, 400);
-    }
-    const unsupportedVisualModels = visualMode ? frozenProviderManifest
-      .map((selection) => resolveModelSelection(selection).model)
-      .filter((model) => !model.capabilities.supportsImageInput) : [];
-    if (unsupportedVisualModels.length) {
-      return c.json({ error: `Visual Mode cannot provide image context to: ${unsupportedVisualModels.map((model) => model.displayName).join(", ")}. Select image-capable models for every provider slot, or turn off Visual Mode; portrait and speech-bubble playback remains available.` }, 400);
-    }
-    const resolvedModelSelection = resolveModelSelection(frozenProviderManifest[0]);
+    let modelRouting;
+    try { modelRouting = await creationModelRouting(db, c.get("user")!.id, body); }
+    catch (error) { return c.json({ error: error instanceof Error ? error.message : "Invalid model settings" }, error instanceof GameModelRoutingError ? error.status : 400); }
+    const frozenProviderManifest = modelRouting.defaultManifest;
+    const primary = resolveModelSelection(frozenProviderManifest[0]);
+    if (visualMode && !primary.model.capabilities.supportsImageInput) return c.json({ error: "The default contestant model cannot receive image context" }, 400);
 
     let frozenFormatManifest;
     try {
@@ -245,24 +217,19 @@ export function createGameRoutes(db: DrizzleDB) {
       maxRounds: computedMaxRounds,
       minPlayers,
       maxPlayers,
-      modelSelection: {
-        catalogId: resolvedModelSelection.catalogId,
-        reasoningPolicy: resolvedModelSelection.reasoningPolicy,
-      },
-      providerManifest: frozenProviderManifest,
+      modelRouting,
+      serviceTier: body.serviceTier ?? "flex",
       retrospectiveForecast: forecastRetrospectiveBudget("influence", maxPlayers, frozenProviderManifest),
-      ...(frozenProviderManifest.some((entry) => (
-        resolveModelSelection(entry).model.providerProfileId === "openai"
-      )) && {
-        serviceTier: normalizedServiceTier,
-      }),
       personaPool: personaPool ?? [],
       fillStrategy: fillStrategy ?? "balanced",
       visibility: parseGameVisibility(visibility),
       slotType: "all_ai",
+      audioMode,
       visualMode,
       visualFailurePolicy,
       formatManifest: frozenFormatManifest,
+      empowerRevoteVersion: CURRENT_EMPOWER_REVOTE_VERSION,
+      decisionContractVersion: CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION,
     };
 
     const gameId = randomUUID();
@@ -366,10 +333,12 @@ export function createGameRoutes(db: DrizzleDB) {
           eliminatedPlayers: watchState.counts.eliminatedPlayers,
           modelLabel: modelLabelFromConfig(config),
           visibility: config.visibility ?? "public",
+      audioMode: config.audioMode === true,
       visualMode: config.visualMode === true,
       visualFailurePolicy: config.visualFailurePolicy === "require_visuals" ? "require_visuals" : "best_effort",
       visualPaused: game.status === "suspended" && Boolean(config.visualPause),
           formatManifest,
+          empowerRevoteVersion: resolveEmpowerRevoteVersion(config.empowerRevoteVersion),
           trackType: game.trackType,
           seasonId: game.seasonId ?? undefined,
           season: game.seasonId ? seasonById.get(game.seasonId) : undefined,
@@ -453,13 +422,16 @@ export function createGameRoutes(db: DrizzleDB) {
         ...(player.exposeScore !== undefined && { exposeScore: player.exposeScore }),
         ...(player.avatarUrl && { avatarUrl: player.avatarUrl }),
         currentAgent: player.currentAgent,
+        ...(player.modelPreference && { modelPreference: player.modelPreference }),
       })),
       modelLabel: modelLabelFromConfig(config),
       visibility: config.visibility ?? "public",
+      audioMode: config.audioMode === true,
       visualMode: config.visualMode === true,
       visualFailurePolicy: config.visualFailurePolicy === "require_visuals" ? "require_visuals" : "best_effort",
       visualPaused: game.status === "suspended" && Boolean(config.visualPause),
       formatManifest,
+      empowerRevoteVersion: resolveEmpowerRevoteVersion(config.empowerRevoteVersion),
       seasonId: game.seasonId ?? undefined,
       season: competition
         ? {
@@ -613,7 +585,7 @@ export function createGameRoutes(db: DrizzleDB) {
 
     const config = JSON.parse(game.config);
     const resolvedModelSelection = resolveProviderManifestFromGameConfig(config)[0]!;
-    const agentModel = resolvedModelSelection.modelId;
+
 
     // Create final House players synchronously from deterministic archetypes.
     const addedPlayers: Array<{ id: string; name: string; archetype: string }> = [];
@@ -656,7 +628,7 @@ export function createGameRoutes(db: DrizzleDB) {
           };
 
           const agentCfg = {
-            model: agentModel,
+            ...(!config.modelRouting && { model: resolvedModelSelection.modelId }),
             temperature: 0.9,
           };
 
@@ -1051,11 +1023,13 @@ export function createGameRoutes(db: DrizzleDB) {
       }
     }
 
+    const audioReady = await audioReadySequence(db,gameId);
     const query = db
       .select()
       .from(schema.transcripts)
       .where(and(
         eq(schema.transcripts.gameId, gameId),
+        audioReady === null ? undefined : sql`${schema.transcripts.firstDurableEventSequence} <= ${audioReady}`,
         // Filter before pagination so private/legacy huddle rows cannot end a page early.
         or(ne(schema.transcripts.scope, "huddle"), and(
           eq(schema.transcripts.dialogueKind, "huddle_speech"),
@@ -1087,6 +1061,7 @@ export function createGameRoutes(db: DrizzleDB) {
         anonymous: row.safeContext?.anonymous === true,
         presentationPurpose: row.safeContext?.presentationPurpose,
         acceptedBallot: row.safeContext?.acceptedBallot,
+        decisionSpeech: row.safeContext?.decisionSpeech,
         visualScene: row.safeContext?.visualScene,
         gameId: row.gameId,
         round: row.round,

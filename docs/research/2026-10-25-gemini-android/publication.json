@@ -1,0 +1,112 @@
+{
+  "publishedAt": "2026-10-25T15:12:29.242Z",
+  "mode": "localhost editorial revision only",
+  "manifest": "/Users/user/Documents/Codex/2026-10-24/task/evidence/gemini-male-assets/local-presentation-manifest.json",
+  "previousManifestSha256": "10f47b00fb0787d3176ed2ca3d0b35785037ec51e339184579e59ae371b25223",
+  "manifestSha256": "06bb6b1eafd4eb2af40db2cb61ce4b349e99bbdae8e98d67b97c3d44bbf0ac3c",
+  "added": [
+    {
+      "gameId": "ddfa4f77-ffd5-4191-85bb-4f4c67b97200",
+      "playerId": "2d842740-f28a-4eac-ad92-9c76f6a38157",
+      "publishedAt": "2026-10-25T15:12:29.242Z",
+      "head": {
+        "x": 0.4248046875,
+        "y": 0.022786458333333332,
+        "width": 0.13671875,
+        "height": 0.17252604166666666
+      },
+      "assets": {
+        "body": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/full-body.png",
+          "sha256": "9ffead37c34a535630ad3eea07c249a51a9d6199996b77155ee5ae3cc82d055f"
+        },
+        "cutout": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/cutout.png",
+          "sha256": "f482398b8cd4881fda68e7ddafc9b56a652a7fc1109fcf16e8d87fcc5d059d8d"
+        },
+        "portrait": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/portrait.webp",
+          "sha256": "2ca87a89396453e1ebd92e57762fd3cdd00af416df4a70f958728d0c629271f8"
+        }
+      }
+    },
+    {
+      "gameId": "9437c80e-b028-47f6-83ae-e4bb6b0d2fed",
+      "playerId": "8890a6fa-12e4-4775-98a9-4164a48a0b70",
+      "publishedAt": "2026-10-25T15:12:29.242Z",
+      "head": {
+        "x": 0.4248046875,
+        "y": 0.022786458333333332,
+        "width": 0.13671875,
+        "height": 0.17252604166666666
+      },
+      "assets": {
+        "body": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/full-body.png",
+          "sha256": "9ffead37c34a535630ad3eea07c249a51a9d6199996b77155ee5ae3cc82d055f"
+        },
+        "cutout": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/cutout.png",
+          "sha256": "f482398b8cd4881fda68e7ddafc9b56a652a7fc1109fcf16e8d87fcc5d059d8d"
+        },
+        "portrait": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/portrait.webp",
+          "sha256": "2ca87a89396453e1ebd92e57762fd3cdd00af416df4a70f958728d0c629271f8"
+        }
+      }
+    },
+    {
+      "gameId": "f1fe7318-72c6-46f4-bb98-e4a4bb54692e",
+      "playerId": "eb1d4a66-b0d0-4289-b154-3324fb0d3fce",
+      "publishedAt": "2026-10-25T15:12:29.242Z",
+      "head": {
+        "x": 0.4248046875,
+        "y": 0.022786458333333332,
+        "width": 0.13671875,
+        "height": 0.17252604166666666
+      },
+      "assets": {
+        "body": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/full-body.png",
+          "sha256": "9ffead37c34a535630ad3eea07c249a51a9d6199996b77155ee5ae3cc82d055f"
+        },
+        "cutout": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/cutout.png",
+          "sha256": "f482398b8cd4881fda68e7ddafc9b56a652a7fc1109fcf16e8d87fcc5d059d8d"
+        },
+        "portrait": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/portrait.webp",
+          "sha256": "2ca87a89396453e1ebd92e57762fd3cdd00af416df4a70f958728d0c629271f8"
+        }
+      }
+    },
+    {
+      "gameId": "7362d8ec-52e7-4f93-81e1-3b08c745d4ca",
+      "playerId": "8fb1667c-5f7f-4e73-b48e-b91183dfc306",
+      "publishedAt": "2026-10-25T15:12:29.242Z",
+      "head": {
+        "x": 0.4248046875,
+        "y": 0.022786458333333332,
+        "width": 0.13671875,
+        "height": 0.17252604166666666
+      },
+      "assets": {
+        "body": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/full-body.png",
+          "sha256": "9ffead37c34a535630ad3eea07c249a51a9d6199996b77155ee5ae3cc82d055f"
+        },
+        "cutout": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/cutout.png",
+          "sha256": "f482398b8cd4881fda68e7ddafc9b56a652a7fc1109fcf16e8d87fcc5d059d8d"
+        },
+        "portrait": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/portrait.webp",
+          "sha256": "2ca87a89396453e1ebd92e57762fd3cdd00af416df4a70f958728d0c629271f8"
+        }
+      }
+    }
+  ],
+  "canonicalHistoryChanged": false,
+  "originalAssetsPreserved": true,
+  "agentProfileChanged": false
+}

@@ -1,3 +1,4 @@
+import { drainProviderCalls } from "../provider-batch";
 import { Phase } from "../types";
 import { ProviderUnavailableError } from "../provider-execution";
 import {
@@ -172,7 +173,7 @@ export async function runCouncilPhase(
   const normalVoters = alivePlayers.filter(
     (p) => p.id !== empoweredId && p.id !== candidates[0] && p.id !== candidates[1],
   );
-  await Promise.all(normalVoters.map(castCouncilVote));
+  await drainProviderCalls(normalVoters.map(castCouncilVote));
 
   const [c1Votes, c2Votes] = normalCouncilVoteCounts(gameState.currentCouncilTally.votes, candidates, empoweredId);
   const empoweredPlayer = alivePlayers.find((p) => p.id === empoweredId);

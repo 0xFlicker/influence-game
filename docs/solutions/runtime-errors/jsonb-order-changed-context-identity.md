@@ -91,3 +91,5 @@ requires no SQL migration. Release matching gateway/worker images through the
 [normal fenced handoff](../../deployment/game-worker-operations.md#drain-contract),
 then verify the existing game advances from its saved frontier. Do not rewrite its
 hashes, clear provider evidence, recreate the game or bypass the integrity guard.
+
+Related earlier integration incident: [void-fawn-edge investigation](../../plans/2026-10-23-void-fawn-edge-fixes.md).

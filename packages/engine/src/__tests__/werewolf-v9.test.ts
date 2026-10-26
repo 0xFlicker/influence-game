@@ -15,6 +15,7 @@ import type { WerewolfDecision, WerewolfEvent, WerewolfState } from "../werewolf
 
 function setup(two = false, bytesPerLivingPlayer = 400) {
   const config = werewolfConfig(two ? "two_wolves" : "one_wolf", 10);
+  config.rulesVersion = 9;
   config.discussionPolicy!.bytesPerLivingPlayer = bytesPerLivingPlayer;
   const players = Array.from({ length: two ? 8 : 6 }, (_, i) => ({ id: `p${i}`, name: `Player ${i}`, personality: "Curious", backstory: "", strategy: "Reason carefully", avatarUrl: null }));
   const events = [startWerewolf("v9-test", players, config, "v9-seed")];
@@ -285,7 +286,13 @@ describe("Werewolf v9", () => {
     const next = nextWerewolfStep(s); if (next.kind !== "action") throw new Error("No action");
     const artifact = werewolfDecisionArtifact(next.request);
     const valid = { text: "A short point.", cue: null, thinking: "A reason", ...(phase === "day" ? { recipientId: null, replyToContributionId: null } : { targetId: next.request.legalTargetIds[0] }) };
-    for (const raw of ["plain prose", "{}", `prefix ${JSON.stringify(valid)}`, `\`\`\`json\n${JSON.stringify(valid)}\n\`\`\``, JSON.stringify({ ...valid, extra: true }), JSON.stringify({ text: "missing fields" }), JSON.stringify({ ...valid, ...(phase === "day" ? { recipientId: "unknown" } : { targetId: "unknown" }) })]) {
+    for (const wrapped of [`prefix ${JSON.stringify(valid)}`, `\`\`\`json\n${JSON.stringify(valid)}\n\`\`\``]) {
+      expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, wrapped)).toEqual(
+        exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify(valid)),
+      );
+      expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, wrapped).status).toBe("valid");
+    }
+    for (const raw of ["plain prose", "{}", `prefix ${JSON.stringify({ ...valid, extra: true })}`, `\`\`\`json\n${JSON.stringify({ ...valid, extra: true })}\n\`\`\``, JSON.stringify({ ...valid, extra: true }), JSON.stringify({ text: "missing fields" }), JSON.stringify({ ...valid, ...(phase === "day" ? { recipientId: "unknown" } : { targetId: "unknown" }) })]) {
       expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, raw).status).toBe("invalid");
     }
     expect(c.state()).toEqual(s);
@@ -295,6 +302,8 @@ describe("Werewolf v9", () => {
     const step = nextWerewolfStep(s); if (step.kind !== "action") throw new Error("No action");
     const artifact = werewolfDecisionArtifact(step.request);
     const payload = { text: "é".repeat(161), cue: null, recipientId: null, replyToContributionId: null, thinking: "A reason" };
+    expect(JSON.stringify(artifact.schema)).toContain("Aim for 192 UTF-8 bytes or fewer");
+    expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify({ ...payload, text: "é".repeat(160) })).status).toBe("valid");
     const invalid = exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify(payload));
     expect(invalid).toMatchObject({ status: "invalid", feedback: { measured: 322, allowed: 320, unit: "utf8_bytes" } });
     for (const text of ["plain", "{}", `\`\`\`json\n${JSON.stringify(payload)}\n\`\`\``, JSON.stringify({ ...payload, text: "fine", extra: true }), JSON.stringify({ text: "fine" })]) expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, text).status).toBe("invalid");

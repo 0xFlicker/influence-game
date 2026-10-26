@@ -42,14 +42,18 @@ export async function loadProductionReplaySource(read:ReadReplayJson,input:Produ
   const root = `/api/admin/production/games/${encodeURIComponent(input.gameId)}/source`;
   const moments = new Map<string,ProductionCatalog["moments"][number]>(),annotations = new Map<string,ProductionAnnotation>();
   let snapshot = input.snapshot,status:"completed"|"suspended" = "completed",title:string|undefined;
+  let werewolfCatalogVersion: ProductionCatalog["werewolfCatalogVersion"];
+  let werewolfLegacyPassThoughts: ProductionCatalog["werewolfLegacyPassThoughts"];
   const header = (page:PageHeader,first:boolean) => {
     if (page.snapshot.gameId !== input.gameId || page.snapshot.gameKind !== input.gameKind || page.snapshot.audience !== input.audience
       || page.catalog.gameId !== input.gameId || page.catalog.gameKind !== input.gameKind || page.catalog.audience !== input.audience)
       throw new Error("Source does not match this editing scope");
     if (snapshot && !(input.refreshVisuals && first) && snapshot.sourceHash !== page.snapshot.sourceHash) throw new Error("Fixed source changed while loading");
     if (!/^sha256:[a-f0-9]{64}$/.test(page.snapshot.sourceHash) || !["completed","suspended"].includes(page.status)) throw new Error("Invalid production source snapshot");
-    snapshot = page.snapshot;if (first) {status = page.status;title = page.title;}
+    snapshot = page.snapshot;if (first) {status = page.status;title = page.title;werewolfCatalogVersion = page.catalog.werewolfCatalogVersion;werewolfLegacyPassThoughts = page.catalog.werewolfLegacyPassThoughts;}
     else if (status !== page.status) throw new Error("Game status changed while loading its fixed source");
+    if (werewolfCatalogVersion !== page.catalog.werewolfCatalogVersion) throw new Error("Production catalog version changed while loading");
+    if (werewolfLegacyPassThoughts !== page.catalog.werewolfLegacyPassThoughts) throw new Error("Production catalog version changed while loading");
     for (const moment of page.catalog.moments) {
       if (moments.has(moment.id)) throw new Error("Repeated production catalog page");
       moments.set(moment.id,moment);
@@ -105,6 +109,6 @@ export async function loadProductionReplaySource(read:ReadReplayJson,input:Produ
     source = {kind:"influence",game,messages,frames,visual:{...visual,scenes,bindings},thoughts:{}};
   }
   if (!snapshot) throw new Error("Missing fixed source snapshot");
-  return {snapshot,status,title,source,catalog:{gameId:input.gameId,gameKind:input.gameKind,audience:input.audience,moments:[...moments.values()]},
+  return {snapshot,status,title,source,catalog:{gameId:input.gameId,gameKind:input.gameKind,audience:input.audience,moments:[...moments.values()],...(werewolfCatalogVersion !== undefined && {werewolfCatalogVersion}),...(werewolfLegacyPassThoughts && {werewolfLegacyPassThoughts})},
     provenance,thoughts,acceptedThoughts,annotations:[...annotations.values()]};
 }

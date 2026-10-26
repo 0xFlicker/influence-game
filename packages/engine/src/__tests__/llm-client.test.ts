@@ -11,6 +11,37 @@ import {
 import { resolveProviderManifest } from "../model-catalog";
 
 describe("LLM client env config", () => {
+  it("compiles non-reasoning OpenAI routes without reasoning or unsupported Flex", () => {
+    for (const modelId of ["gpt-4.1", "gpt-4.1-mini", "gpt-4o"]) {
+      const manifest = structuredClone(resolveProviderManifest([{ catalogId: `openai:${modelId}` }]));
+      const runtime = createLlmProviderRuntimesFromEnv(manifest, { OPENAI_API_KEY: "fixture" })![0]!;
+      expect(runtime.modelCapabilities.supportsFlexProcessing).toBe(false);
+      expect(runtime.openAIReasoningSummary).toBeUndefined();
+      expect(runtime.openAIServiceTier).toBe("auto");
+      // Even an action explicitly requesting a summary must honor the model.
+      const request = runtime.adapter.compile({ messages: [{ role: "user", content: "Fixture" }],
+        result: { kind: "text" }, outputTokenLimit: 32, reasoning: { effort: "low", summary: "auto" } }, runtime);
+      expect(request.transport).toBe("openai.responses");
+      expect(request.body).not.toHaveProperty("reasoning");
+      expect(request.body).toHaveProperty("service_tier", "auto");
+      // Existing frozen non-reasoning routes already identify the incompatible lane.
+      delete manifest[0]!.model.capabilities.supportsFlexProcessing;
+      expect(createLlmProviderRuntimesFromEnv(manifest, { OPENAI_API_KEY: "fixture" })![0]!.openAIServiceTier).toBe("auto");
+    }
+  });
+
+  it("uses frozen Flex eligibility while retaining mandatory Luna Flex", () => {
+    const manifest = resolveProviderManifest([{ catalogId: "openai:gpt-5-mini" }]);
+    expect(manifest[0]!.model.capabilities.supportsFlexProcessing).toBe(true);
+    const runtime = createLlmProviderRuntimesFromEnv(manifest, { OPENAI_API_KEY: "fixture" })![0]!;
+    expect(runtime.openAIServiceTier).toBe("flex");
+    expect(runtime.openAIReasoningSummary).toBe("auto");
+    // Frozen historical records lacking this newer capability retain their selected tier.
+    const historical = structuredClone(manifest);
+    delete historical[0]!.model.capabilities.supportsFlexProcessing;
+    expect(createLlmProviderRuntimesFromEnv(historical, { OPENAI_API_KEY: "fixture" })![0]!.openAIServiceTier).toBe("flex");
+  });
+
   it("returns null when no provider is configured", () => {
     expect(createLlmClientFromEnv({})).toBeNull();
   });
@@ -36,6 +67,26 @@ describe("LLM client env config", () => {
     );
 
     expect(config?.client.maxRetries).toBe(0);
+  });
+
+  it("coordinated Luna stays Flex with no hidden Standard retry after a 429", async () => {
+    const original = globalThis.fetch;
+    const tiers: unknown[] = [];
+    globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : input instanceof Request ? await input.json() : {};
+      tiers.push(body.service_tier);
+      return Response.json({ error: { message: "No Flex capacity", type: "rate_limit_error" } }, { status: 429 });
+    }, { preconnect: original.preconnect });
+    try {
+      const runtimes = createLlmProviderRuntimesFromEnv(resolveProviderManifest([
+        { catalogId: "openai:gpt-5-mini" }, { catalogId: "openai:gpt-6-luna", maxCallsPerGame: 2 },
+      ]), { OPENAI_API_KEY: "fixture" }, { openAIServiceTier: "auto" })!;
+      const luna = runtimes[1]!;
+      expect(luna.openAIServiceTier).toBe("flex");
+      const request = luna.adapter.compile({ messages: [{ role: "user", content: "Fixture" }], result: { kind: "text" }, outputTokenLimit: 32 }, luna);
+      await expect(luna.adapter.dispatch(request, { maxRetries: 0, headers: {} })).rejects.toThrow();
+      expect(tiers).toEqual(["flex"]);
+    } finally { globalThis.fetch = original; }
   });
 
   it("uses a local dummy API key for LM Studio-compatible endpoints", () => {

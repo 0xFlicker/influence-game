@@ -278,7 +278,7 @@ describe("provider health probes", () => {
 
     await db.update(schema.providerHealthStates).set({
       cooldownUntil: new Date(Date.now() - 1_000).toISOString(),
-    }).where(eq(schema.providerHealthStates.scopeKey, "provider:openai"));
+    }).where(eq(schema.providerHealthStates.scopeKey, "entry:openai:gpt-5.6-luna"));
     let calls = 0;
     expect(await probeDueTransientProviderHealth(db, {
       runProbe: async () => {

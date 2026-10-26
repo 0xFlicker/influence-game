@@ -23,9 +23,10 @@ async function fixture(run: () => Promise<void>) {
     for (const entry of STORAGE_PAYLOAD_COLUMNS) {
       const columns = tables.get(entry.table) ?? new Map<string, string>();
       for (const key of entry.primaryKey) columns.set(key, key === "version" ? "integer" : "text");
-      // Screening tables were introduced after cutover and have never held inline bodies.
-      const column = entry.table === "agent_screenings" || entry.table === "agent_screening_attempts" ? `${entry.column}_object` : entry.column;
-      columns.set(column, entry.kind === "binary" ? "bytea" : entry.kind === "text" ? "text" : "jsonb");
+      // These payloads were introduced after cutover and have never held inline bodies.
+      const bucketOnly = entry.table === "character_cutouts" || entry.table === "production_retrospective_retakes" || entry.table.startsWith("game_audio_") || entry.table === "agent_screenings" || entry.table === "agent_screening_attempts" || (entry.table === "provider_logical_calls" && entry.column === "audio_delivery");
+      const column = bucketOnly ? `${entry.column}_object` : entry.column;
+      columns.set(column, bucketOnly ? "jsonb" : entry.kind === "binary" ? "bytea" : entry.kind === "text" ? "text" : "jsonb");
       tables.set(entry.table, columns);
     }
     for (const [table, columns] of tables) {
@@ -50,6 +51,11 @@ async function fixture(run: () => Promise<void>) {
 async function cutover() { for (const statement of migration.split("--> statement-breakpoint")) await client.unsafe(statement); }
 
 describe("existing payload migration", () => {
+  test("inventory resolves every payload column against the actual migrated schema", async () => {
+    const inventory = await inventoryPayloads(client);
+    expect(inventory).toHaveLength(STORAGE_PAYLOAD_COLUMNS.length);
+    expect(inventory.every(row => row.state === "cut_over")).toBe(true);
+  });
   test("copies resumably and cuts over all columns without losing bytes or rows", async () => fixture(async () => {
     const [before] = await client`SELECT encode(sha256(convert_to(input::text,'UTF8')),'hex') AS hash FROM game_retrospective_inputs`;
     await copyPayloads(client);

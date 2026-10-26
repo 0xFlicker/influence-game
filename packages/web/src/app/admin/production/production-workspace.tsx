@@ -1,4 +1,8 @@
 "use client";
+import { AudioGenerationPanel } from "./audio-generation-panel";
+import { attachGeneratedAudio } from "../../../lib/replay-export/generated-audio";
+import { productionMediaIds } from "./production-media-selection";
+import type { PublishedAudioTrack } from "@influence/engine/audio-track";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
@@ -6,9 +10,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ProductionPresentationSettings } from "@influence/engine/production-moments/settings";
 import { ProductionSceneInspector } from "./production-scenes";
 import { PRODUCTION_LABELS, THINKING_LABELS, SPEECH_LABELS, productionLabelKey, selectProductionMoments, validateProductionTags, type ProductionMoment, type ProductionRecipe, type ProductionMomentKind } from "@influence/engine/production-moments";
-import { ApiError, resolveApiUrl } from "@/lib/api";
+import {decodeProductionReview,type ProductionReview} from "@influence/engine/production-moments/review";
+import { ApiError, apiFetch, resolveApiUrl } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
-import { loadProductionStudioSource, prepareProductionAssets, productionGameRoot, productionLibraryFilters, type LoadedProductionSource, type MomentAnnotation, type ProductionLibraryGame } from "@/lib/production-studio";
+import { loadProductionStudioSource, prepareProductionAssets, prepareProductionAudio, productionGameRoot, productionLibraryFilters, type LoadedProductionSource, type MomentAnnotation, type ProductionLibraryGame } from "@/lib/production-studio";
 import type { CachedAsset } from "@/lib/replay-export/assets";
 import { compilePresentation } from "@/lib/replay-export/presentation";
 import { parseTimingProfile } from "@/lib/replay-export/timing";
@@ -47,12 +52,16 @@ function geometry(ratio: string, longest: number) {const short = Math.round(long
 function momentName(cue: ExportCue | undefined) {return cue?.picture.kind === "thinking" ? cue.picture.actor.name : cue?.speech?.speaker ?? cue?.label;}
 
 export function ProductionWorkspace({gameId}: {gameId: string}) {
+  const params=useSearchParams();
+  const review=useMemo(()=>{try {const raw=params.get("review");return {value:raw ? decodeProductionReview(raw):undefined,error:null};}catch(error){return {value:undefined,error:message(error)};}},[params]);
   const metadata = useAdminRead<ProductionLibraryGame>(productionGameRoot(gameId));
+  if(review.error) return <p role="alert">{review.error}</p>;
   if (!metadata.data) return <div>{metadata.error ? <p role="alert">{metadata.error}</p> : <p role="status">Loading game production capabilities…</p>}<Link href="/admin/production">← Production library</Link></div>;
-  return <GameWorkspace key={gameId} game={metadata.data} />;
+  if(review.value && (metadata.data.gameKind === "influence" ? review.value.audience !== "public" : review.value.audience === "public")) return <p role="alert">Review audience does not match this game. Request a new cut preview.</p>;
+  return <GameWorkspace key={`${gameId}:${params.get("review") ?? ""}`} game={metadata.data} review={review.value} />;
 }
 
-function GameWorkspace({game}: {game: ProductionLibraryGame}) {
+function GameWorkspace({game,review}: {game: ProductionLibraryGame;review?:ProductionReview}) {
   const params = useSearchParams(), router = useRouter(), session = useAdminSession(), client = useQueryClient();
   const { roles, hasPermission } = usePermissions();
   const producer = roles.includes("producer") || roles.includes("sysop");
@@ -62,8 +71,8 @@ function GameWorkspace({game}: {game: ProductionLibraryGame}) {
   const visualRead = game.capabilities.visualRead && (game.gameKind === "influence" ? hasPermission("view_admin") || producer && game.status === "completed" : producer);
   const influenceRecovery = game.capabilities.influenceRecovery && hasPermission("start_game");
   const root = productionGameRoot(game.id), [blocked] = useAdminValue(`access-denied:${root}`, false);
-  const audience = game.gameKind === "influence" ? "public" : (params.get("audience") ?? "omniscient") === "omniscient" ? "omniscient" : "mystery";
-  const thinking = audience !== "mystery" && params.get("thinking") !== "off";
+  const audience = review?.audience ?? (game.gameKind === "influence" ? "public" : (params.get("audience") ?? "omniscient") === "omniscient" ? "omniscient" : "mystery");
+  const thinking = audience !== "mystery" && review?.thinking !== false && (params.has("thinking") ? params.get("thinking") !== "off" : true);
   const library = productionLibraryFilters(new URLSearchParams(params.get("return") ?? ""));
   const [gamePanel, setGamePanel] = useState<GamePanel | null>(null), [navigation, setNavigation] = useState(false);
   const sourceGeneration = useRef(0);
@@ -73,7 +82,7 @@ function GameWorkspace({game}: {game: ProductionLibraryGame}) {
     session.clearMatching(key => key.startsWith("draft:") && key.includes(root));
     const filter = {predicate: (query: {queryKey: readonly unknown[]}) => query.queryKey[0] === "admin" && query.queryKey[1] === session.scope && String(query.queryKey[2]).startsWith(`${root}/source`)};
     void client.cancelQueries(filter); client.removeQueries(filter);
-    const query = new URLSearchParams(params); query.set("audience", next); query.delete("moment"); query.delete("scene"); query.delete("version"); query.delete("thinking"); router.replace(`/admin/production/games/${encodeURIComponent(game.id)}?${query}`);
+    const query = new URLSearchParams(params); query.delete("review"); query.set("audience", next); query.delete("moment"); query.delete("scene"); query.delete("version"); query.delete("thinking"); router.replace(`/admin/production/games/${encodeURIComponent(game.id)}?${query}`);
   }
   const identity = <div className={styles.identity}><Link href={`/admin/production?${library}`} aria-label="Back to production library">←</Link><div><h1>{game.title ?? game.slug}</h1><p>{game.gameKind === "werewolf" ? "Werewolf" : "Influence"} · {game.status === "suspended" ? "Paused accepted prefix" : game.status === "completed" ? "Completed episode" : `Game visual operations · ${game.status.replaceAll("_", " ")}`}</p></div></div>;
   const gameContent: GamePanelContent = {
@@ -85,7 +94,7 @@ function GameWorkspace({game}: {game: ProductionLibraryGame}) {
   const gameActions = <>{availableGamePanels.map(panel => <button key={panel} onClick={() => setGamePanel(panel)}>{panelTitles[panel]}</button>)}</>;
   return <section className={styles.studio} data-production-workspace>
     {editorial && !blocked && <>
-      <MomentWorkspace key={`${game.id}:${audience}`} game={game} audience={audience} thinking={thinking} readScopeGeneration={() => sourceGeneration.current} identity={identity} gameContent={gameContent} scopeControls={<>{game.gameKind === "werewolf" && <StudioSelect label="Production audience" value={audience} onChange={changeScope} options={[{value:"mystery",label:"Mystery"},{value:"omniscient",label:"Omniscient"}]} />}{audience !== "mystery" && <label className={styles.check}><input aria-label="Play thinking in Source" type="checkbox" checked={thinking} onChange={event => {const query = new URLSearchParams(params); query.set("thinking", event.target.checked ? "on" : "off"); query.delete("moment"); router.replace(`/admin/production/games/${encodeURIComponent(game.id)}?${query}`, {scroll:false});}} /> Play thinking in Source</label>}</>} />
+      <MomentWorkspace key={`${game.id}:${audience}`} game={game} audience={audience} thinking={thinking} review={review} readScopeGeneration={() => sourceGeneration.current} identity={identity} gameContent={gameContent} scopeControls={<>{game.gameKind === "werewolf" && <StudioSelect label="Production audience" value={audience} onChange={changeScope} options={[{value:"mystery",label:"Mystery"},{value:"omniscient",label:"Omniscient"}]} />}{audience !== "mystery" && (review?.thinking === false ? <p>This review’s pinned source does not include thinking.</p> : <label className={styles.check}><input aria-label="Play thinking in Source" type="checkbox" checked={thinking} onChange={event => {const query = new URLSearchParams(params); query.set("thinking", event.target.checked ? "on" : "off"); query.delete("moment"); router.replace(`/admin/production/games/${encodeURIComponent(game.id)}?${query}`, {scroll:false});}} /> Play thinking in Source</label>)}</>} />
     </>}
     {(!editorial || blocked) && <><header className={styles.commandBar}>{identity}<div className={styles.commands}>{gameActions}<button onClick={() => setNavigation(true)}>Navigation</button></div></header><div className={styles.sourceProgress}>{blocked ? <p role="alert">Production access changed. Private editing data has been cleared. Refresh to check current permissions.</p> : <p>Use the game production tools available to your current permissions.</p>}</div></>}
     {navigation && <StudioDialog title="The House navigation" onClose={() => setNavigation(false)}><StudioNavigation /></StudioDialog>}
@@ -93,15 +102,15 @@ function GameWorkspace({game}: {game: ProductionLibraryGame}) {
   </section>;
 }
 
-function MomentWorkspace({game, audience, thinking, readScopeGeneration, identity, scopeControls, gameContent}: {game: ProductionLibraryGame; audience: "public" | "mystery" | "omniscient"; thinking: boolean; readScopeGeneration: () => number; identity: ReactNode; scopeControls: ReactNode; gameContent: GamePanelContent}) {
+function MomentWorkspace({game, audience, thinking, review, readScopeGeneration, identity, scopeControls, gameContent}: {review?:ProductionReview;game: ProductionLibraryGame; audience: "public" | "mystery" | "omniscient"; thinking: boolean; readScopeGeneration: () => number; identity: ReactNode; scopeControls: ReactNode; gameContent: GamePanelContent}) {
   const params = useSearchParams(), router = useRouter(), session = useAdminSession(), client = useQueryClient();
   // Load the complete authorized catalog once. Thinking visibility selects
   // from that pin; it must not request newer history or published visuals.
-  const sourceThinking = audience !== "mystery";
+  const sourceThinking = review?.thinking ?? audience !== "mystery";
   const root = productionGameRoot(game.id), scope = `${root}/source?audience=${audience}&thinking=${sourceThinking ? "on" : "off"}`;
   const [blocked] = useAdminValue(`access-denied:${root}`, false);
-  const [settings, setSettings] = useState(initialSettings), [saved, setSaved] = useState<Record<string, MomentAnnotation>>({});
-  const [selection, setSelection] = useState<ProductionRecipe>(() => initialRecipe(sourceThinking));
+  const [settings, setSettings] = useState(()=>({...initialSettings,...(review ? {music:review.music,volume:review.volume}:{})})), [saved, setSaved] = useState<Record<string, MomentAnnotation>>({});
+  const [selection, setSelection] = useState<ProductionRecipe>(() => review?.recipe ?? initialRecipe(sourceThinking));
   const [notice, setNotice] = useState<string | null>(null), [refreshing, setRefreshing] = useState(false);
   const [exportCommand, setExportCommand] = useState<string | null>(null);
   const [panel, setPanel] = useState<keyof typeof panelTitles | null>(null);
@@ -153,8 +162,9 @@ function MomentWorkspace({game, audience, thinking, readScopeGeneration, identit
       // Prepared queries contain these object URLs. Evict them together so a
       // later visibility toggle cannot revive a revoked cached presentation.
       const filter = {predicate: (query: {queryKey: readonly unknown[]}) => {
-        const resource = String(query.queryKey[2]), recordings = resource.endsWith(":recordings");
-        return query.queryKey[0] === "admin" && query.queryKey[1] === session.scope && resource.startsWith(`${root}/source?`) && (resource.endsWith(":media") || recordings) && query.queryKey[3] === hash;
+        const resource = String(query.queryKey[2]);
+        return query.queryKey[0] === "admin" && query.queryKey[1] === session.scope && resource.startsWith(`${root}/source?`)
+          && [":media",":recordings",":generated-audio"].some(suffix => resource.endsWith(suffix)) && query.queryKey[3] === hash;
       }};
       void client.cancelQueries(filter); client.removeQueries(filter);
       cache.urls.forEach(url => URL.revokeObjectURL(url)); assetCaches.current.delete(hash);
@@ -171,32 +181,46 @@ function MomentWorkspace({game, audience, thinking, readScopeGeneration, identit
     };
   }, [client, root, session.scope]);
   const annotations = useMemo(() => Object.fromEntries([...(loaded?.annotations ?? []), ...Object.values(saved)].map(annotation => [annotation.momentId, annotation.tags])), [loaded, saved]);
-  const view = params.get("view") === "cut" ? "cut" : "source";
+  const reviewCheck=useQuery({queryKey:["admin",session.scope,`${scope}:review`,loaded?.snapshot.sourceHash,review?.fingerprint],enabled:!!review && !!loaded && !blocked,retry:false,refetchOnWindowFocus:false,staleTime:Infinity,queryFn:({signal})=>session.read<{fingerprint:string;audio:{eligible:number;covered:number;missing:number;mismatched:number;unverifiable:number}}>(`${root}/cut-preview`,signal,()=>apiFetch(`${root}/cut-preview`,{method:"POST",signal,body:JSON.stringify({audience,thinking:sourceThinking,snapshot:loaded!.snapshot,recipe:review!.recipe,music:review!.music,volume:review!.volume})}))});
+  const reviewPending=!!review && !reviewCheck.data;
+  const reviewChanged=!!reviewCheck.data && reviewCheck.data.fingerprint!==review?.fingerprint;
+  useEffect(()=>{if(reviewChanged)setCutNeedsReview(true);},[reviewChanged]);
+  const view = params.get("view") === "cut" || review && !params.has("view") ? "cut" : "source";
   let selectionError: string | null = null, selectedIds: string[] = [];
   try {if (loaded) selectedIds = selectProductionMoments(loaded.catalog, selection, annotations).map(moment => moment.id);} catch (error) {selectionError = message(error);}
   const selectedKey = JSON.stringify(selectedIds);
   const stableSelectedIds = useMemo(() => JSON.parse(selectedKey) as string[], [selectedKey]);
   const playableIds = useMemo(() => view === "source" ? loaded?.catalog.moments.filter(moment => thinking || moment.kind !== "thinking").map(moment => moment.id) ?? [] : stableSelectedIds, [view, loaded, stableSelectedIds, thinking]);
-  const media = useQuery({queryKey: ["admin", session.scope, `${scope}:media`, loaded?.snapshot.sourceHash, JSON.stringify(playableIds)], enabled: Boolean(loaded) && !blocked, staleTime: Infinity, retry: false, refetchOnWindowFocus: false, queryFn: ({signal}) => {
+  const preparationIds = useMemo(() => productionMediaIds(playableIds, stableSelectedIds), [playableIds, stableSelectedIds]);
+  const media = useQuery({queryKey: ["admin", session.scope, `${scope}:media`, loaded?.snapshot.sourceHash, JSON.stringify(preparationIds)], enabled: Boolean(loaded) && !blocked, staleTime: Infinity, retry: false, refetchOnWindowFocus: false, queryFn: ({signal}) => {
     const hash = loaded!.snapshot.sourceHash;
     let cache = assetCaches.current.get(hash);
     if (!cache) {cache = {assets: new Map(), urls: new Map()}; assetCaches.current.set(hash, cache);}
-    return prepareProductionAssets(loaded!.presentation.filter(moment => playableIds.includes(moment.id)).flatMap(moment => moment.segments), signal, cache.assets, {read: (url, abort) => session.readMedia(url, abort), urls: cache.urls});
+    return prepareProductionAssets(loaded!.presentation.filter(moment => preparationIds.includes(moment.id)).flatMap(moment => moment.segments), signal, cache.assets, {read: (url, abort) => session.readMedia(url, abort), urls: cache.urls});
   }});
   const readyPresentation = useMemo(() => {
     if (!loaded || !media.data) return null;
     let offset = 0;
     return loaded.presentation.map(moment => {
-      if (!playableIds.includes(moment.id)) return moment;
+      if (!preparationIds.includes(moment.id)) return moment;
       const segments = media.data.cues.slice(offset, offset + moment.segments.length); offset += moment.segments.length;
       return {...moment, segments};
     });
-  }, [loaded, media.data, playableIds]);
-  const recordings = useQuery({queryKey: ["admin", session.scope, `${scope}:recordings`, loaded?.snapshot.sourceHash, speechImport?.id, JSON.stringify(playableIds)], enabled: !!speechImport && !!readyPresentation && !blocked, staleTime: Infinity, retry: false, refetchOnWindowFocus: false, queryFn: ({signal}) => prepareBrowserSpeech(speechImport!.value, readyPresentation!, playableIds, signal)});
-  const attachedPresentation = speechImport ? recordings.data?.source ?? null : readyPresentation;
-  const assets = useMemo(() => media.data ? {...media.data.assets, ...(speechImport ? recordings.data?.assets : {})} : null, [media.data, speechImport, recordings.data]);
+  }, [loaded, media.data, preparationIds]);
+  const recordings = useQuery({queryKey: ["admin", session.scope, `${scope}:recordings`, loaded?.snapshot.sourceHash, speechImport?.id, JSON.stringify(preparationIds)], enabled: !!speechImport && !!readyPresentation && !blocked, staleTime: Infinity, retry: false, refetchOnWindowFocus: false, queryFn: ({signal}) => prepareBrowserSpeech(speechImport!.value, readyPresentation!, preparationIds, signal)});
+  const audioPublication = useQuery({queryKey:["admin",session.scope,`${scope}:audio-publication`,loaded?.snapshot.sourceHash],
+    enabled:!!loaded && !blocked,retry:false,staleTime:Infinity,refetchOnWindowFocus:false,
+    queryFn:({signal})=>session.read<PublishedAudioTrack|null>(`${root}/audio/manifest?audience=${audience}&thinking=${sourceThinking ? "on" : "off"}`,signal)});
+  const generatedAudio = useQuery<Awaited<ReturnType<typeof attachGeneratedAudio>>>({queryKey: ["admin", session.scope, `${scope}:generated-audio`, loaded?.snapshot.sourceHash, JSON.stringify(preparationIds),audioPublication.dataUpdatedAt],
+    enabled: !!readyPresentation && !blocked && !speechImport && audioPublication.isSuccess, retry: false,staleTime:Infinity,refetchOnWindowFocus:false,
+    queryFn: async ({signal}) => attachGeneratedAudio({source: readyPresentation!, selectedIds: preparationIds, publication:audioPublication.data ?? null, signal,
+      hash: async text => [...new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(text)))].map(byte => byte.toString(16).padStart(2,"0")).join(""),
+      asset: clip => prepareProductionAudio(clip, signal, assetCaches.current.get(loaded!.snapshot.sourceHash)!, (url, abort) => session.readMedia(url, abort))})});
+  const attachedPresentation = speechImport ? recordings.data?.source ?? null : generatedAudio.data?.source ?? null;
+  const selectedRecordings = speechImport ? recordings.data?.recordings : generatedAudio.data?.recordings;
+  const assets = useMemo(() => media.data ? {...media.data.assets, ...(speechImport ? recordings.data?.assets : generatedAudio.data?.assets)} : null, [media.data, speechImport, recordings.data, generatedAudio.data]);
   const all = useMemo(() => attachedPresentation && assets ? compilePresentation({source: attachedPresentation, selectedIds: playableIds, profile: settings.profile, fps: settings.fps, assets, music: settings.music, volume: settings.volume}) : null, [attachedPresentation, playableIds, assets, settings]);
-  const base = useMemo<ReplayManifest | null>(() => loaded && all && assets ? {schema: "house.replay-export", version: 2, game: {id: game.id, slug: game.slug, kind: game.gameKind, ...(audience !== "public" ? {audience} : {})}, ...settings, thinking: view === "source" ? thinking : sourceThinking, cues: all.cues, timeline: all.timeline, audio: all.audio, assets, staticFiles: {}, boundary: {eventSequence: loaded.snapshot.throughEventSequence, cursor: loaded.snapshot.throughCursor, publicationCutoff: loaded.snapshot.publicationCutoff}, range: {fromFrame: 0, untilFrame: Math.ceil(all.audio.durationMs * settings.fps / 1000)}, revision: `${loaded.snapshot.sourceHash}:${speechImport?.id ?? "no-recordings"}`, dirty: false} : null, [loaded, all, assets, settings, game.id, game.slug, game.gameKind, audience, thinking, sourceThinking, view, speechImport]);
+  const base = useMemo<ReplayManifest | null>(() => loaded && all && assets ? {schema: "house.replay-export", version: 2, game: {id: game.id, slug: game.slug, kind: game.gameKind, ...(audience !== "public" ? {audience} : {})}, ...settings, thinking: view === "source" ? thinking : sourceThinking, cues: all.cues, timeline: all.timeline, audio: all.audio, assets, staticFiles: {}, boundary: {eventSequence: loaded.snapshot.throughEventSequence, cursor: loaded.snapshot.throughCursor, publicationCutoff: loaded.snapshot.publicationCutoff}, range: {fromFrame: 0, untilFrame: Math.ceil(all.audio.durationMs * settings.fps / 1000)}, revision: `${loaded.snapshot.sourceHash}:${speechImport?.id ?? selectedRecordings?.map(r => r.sha256).join(":") ?? "no-recordings"}`, dirty: false} : null, [loaded, all, assets, settings, game.id, game.slug, game.gameKind, audience, thinking, sourceThinking, view, speechImport, selectedRecordings]);
   const visibleMoments = useMemo(() => loaded?.catalog.moments ?? [], [loaded]);
   const inspected = visibleMoments.find(moment => moment.id === (following ? activeId : pinnedId)) ?? visibleMoments.find(moment => moment.id === params.get("moment")) ?? visibleMoments[0];
   const presentationById = useMemo(() => new Map(loaded?.presentation.map(moment => [moment.id, moment]) ?? []), [loaded]);
@@ -257,18 +281,18 @@ function MomentWorkspace({game, audience, thinking, readScopeGeneration, identit
     } catch (error) {if (alive.current) setNotice(message(error));} finally {if (alive.current) setRefreshing(false);}
   }
   async function freeze(retryExact = false) {
-    if (!retryExact && (!loaded || !selectedIds.length || selectionError || cutConflict || cutNeedsReview || !base)) return;
+    if (!retryExact && (!loaded || !selectedIds.length || selectionError || cutConflict || cutNeedsReview || reviewPending || !base)) return;
     if (retryExact && selectionOperation?.phase !== "unknown") return;
     preview.current?.pauseAndRetainAnchor(); setNotice(null);
     try {
-      const input = retryExact ? selectionOperation!.body : {snapshot: loaded!.snapshot, audience, thinking: sourceThinking, selection, expectedMomentIds: stableSelectedIds, recordings: recordings.data?.recordings.filter(recording => stableSelectedIds.includes(recording.momentId)) ?? [], settings, copy: {title: loaded!.title ?? game.title ?? game.slug}};
+      const input = retryExact ? selectionOperation!.body : {snapshot: loaded!.snapshot, audience, thinking: sourceThinking, selection, expectedMomentIds: stableSelectedIds, recordings: selectedRecordings?.filter(recording => stableSelectedIds.includes(recording.momentId)) ?? [], settings, copy: {title: loaded!.title ?? game.title ?? game.slug}};
       const descriptor = await session.execute<Record<string, unknown>>(selectionOperationKey, `${root}/selection`, input);
       if (!descriptor || !alive.current) return;
       const url = URL.createObjectURL(new Blob([JSON.stringify(descriptor, null, 2)], {type: "application/json"}));
       const link = document.createElement("a"); link.href = url; link.download = `${game.slug}-selection.json`; link.click(); URL.revokeObjectURL(url);
-      const hasRecordings = Array.isArray(descriptor.recordings) && descriptor.recordings.length > 0;
+      const hasRecordings = Boolean(speechImport && Array.isArray(descriptor.recordings) && descriptor.recordings.length > 0);
       const apiOrigin = new URL(resolveApiUrl("/api/auth/me"), window.location.origin).origin;
-      setExportCommand(`bun run replay:export -- --selection ${game.slug}-selection.json --api-base-url ${apiOrigin} --web-base-url ${window.location.origin}${hasRecordings ? " --speech-manifest your-speech-manifest.json" : ""} --output .renders/${game.slug}.mp4`);
+      setExportCommand(`bun run replay:export -- --selection "$HOME/Downloads/${game.slug}-selection.json" --api-base-url ${apiOrigin} --web-base-url ${window.location.origin}${hasRecordings ? " --speech-manifest your-speech-manifest.json" : ""} --output .renders/${game.slug}.mp4`);
       setNotice("Frozen selected IDs downloaded. Run the local command shown in Export to encode the movie.");
     } catch (error) {if (alive.current) {if (error instanceof ApiError && error.status === 409) setCutConflict(true); setNotice(message(error));}}
   }
@@ -320,7 +344,8 @@ function MomentWorkspace({game, audience, thinking, readScopeGeneration, identit
   return <div className={styles.editingWorkspace} data-studio-shortcuts onKeyDown={handleShortcut} onPointerDown={event => capturedPointers.current.set(event.pointerId,Array.from(event.currentTarget.querySelectorAll('[role="separator"],[role="slider"]')))} onPointerUp={event => capturedPointers.current.delete(event.pointerId)} onPointerCancel={event => capturedPointers.current.delete(event.pointerId)} onGotPointerCapture={event => {if (event.target instanceof Element) capturedPointers.current.set(event.pointerId,[event.target]);}} onLostPointerCapture={event => capturedPointers.current.delete(event.pointerId)}>
     {header}
     {!loaded ? <div className={styles.sourceProgress}>{query.error ? <><p role="alert">{message(query.error)} <button onClick={() => void query.refetch()}>Retry source</button></p><button onClick={() => openPanel("scene")}>Scene versions…</button></> : <p role="status">Loading the complete accepted source prefix and media metadata…</p>}</div> : base && attachedPresentation && all ? <ProductionPreview ref={preview} compiled={all} onActiveMomentChange={onActiveMomentChange} readAnchor={readAnchor} onAnchorChange={retainAnchor} playback={playback} onPlaybackChange={setPlayback} base={base} source={visiblePresentation!} selectedIds={stableSelectedIds} view={view} onViewChange={changeView} renderLayout={renderLayout} onOpenHints={() => openPanel("keyboard")} characterShortcuts={characterShortcuts} keyboardAvailable={keyboardAvailable} emptyLabel={selectionError ?? "No moments match these type and label choices. Label source moments or change Cut rules."} /> : renderLayout(
-      <section className={styles.monitor} aria-label="Playable preview"><div className={styles.sectionHeading}><h2>{view === "source" ? "Source preview" : "Selected cut"}</h2></div><div className={styles.monitorStage}><div className={styles.empty}>{recordings.error ? <p role="alert">{message(recordings.error)} <button onClick={() => void recordings.refetch()}>Retry local recordings</button></p> : media.error ? <p role="alert">{message(media.error)} <button onClick={() => void media.refetch()}>Retry selected media</button></p> : <p role="status">Preparing media for {view === "source" ? "source preview" : "selected cut"}…</p>}</div></div></section>, <section className={styles.timelinePanel}><p className={styles.statusLine}>Preparing the intended preview. Seek to a moment to retain its position.</p></section>)}
+      <section className={styles.monitor} aria-label="Playable preview"><div className={styles.sectionHeading}><h2>{view === "source" ? "Source preview" : "Selected cut"}</h2></div><div className={styles.monitorStage}><div className={styles.empty}>{audioPublication.error ? <p role="alert">{message(audioPublication.error)} <button onClick={()=>void audioPublication.refetch()}>Retry game audio</button></p> : generatedAudio.error ? <p role="alert">{message(generatedAudio.error)} <button onClick={() => void generatedAudio.refetch()}>Retry game audio</button></p> : recordings.error ? <p role="alert">{message(recordings.error)} <button onClick={() => void recordings.refetch()}>Retry local recordings</button></p> : media.error ? <p role="alert">{message(media.error)} <button onClick={() => void media.refetch()}>Retry selected media</button></p> : <p role="status">Preparing media for {view === "source" ? "source preview" : "selected cut"}…</p>}</div></div></section>, <section className={styles.timelinePanel}><p className={styles.statusLine}>Preparing the intended preview. Seek to a moment to retain its position.</p></section>)}
+    {review && <div className={styles.statusLine} role={reviewChanged || reviewCheck.error ? "alert":"status"}>{reviewCheck.error ? `Could not verify this proposed cut: ${message(reviewCheck.error)}. Refresh to retry.` : reviewPending ? "Checking proposed cut…" : reviewChanged ? "This cut changed since it was proposed. Review the current cut before exporting." : "Proposed cut loaded for review."}{reviewCheck.data && ` Voice: ${reviewCheck.data.audio.covered}/${reviewCheck.data.audio.eligible} verified lines; ${reviewCheck.data.audio.missing} missing, ${reviewCheck.data.audio.mismatched} mismatched, ${reviewCheck.data.audio.unverifiable} unverified.`}</div>}
     {notice && <div className={styles.statusLine} role="status" title={notice}>{notice}</div>}
     {panel && <StudioDialog title={panelTitles[panel]} sidebar={sidebar} onClose={() => setPanel(null)}>
       {panel === "tools" && tools}
@@ -334,11 +359,11 @@ function MomentWorkspace({game, audience, thinking, readScopeGeneration, identit
         {(["readingRate","thinkingRate","conversationGapMs","motionScale"] as const).map(key => <label key={key} className={styles.settingField}><span>{{readingRate:"Speech reading rate",thinkingRate:"Thought reading rate",conversationGapMs:"Conversation gap",motionScale:"Motion scale"}[key]}</span><small>{key === "conversationGapMs" ? "Milliseconds between conversations" : key === "motionScale" ? "Camera and fade duration multiplier" : "1× is the game default; higher reads faster"}</small><div><input aria-label={key} type="number" min={key === "conversationGapMs" ? 0 : .1} step={key === "conversationGapMs" ? 50 : .1} value={settings.profile[key] ?? ""} placeholder={key === "conversationGapMs" ? "Game default" : "1.0"} onChange={event => setTiming(key,event.target.value)} /><span>{key === "conversationGapMs" ? "ms" : "×"}</span><button onClick={() => setTiming(key,"")}>Reset</button></div></label>)}
       </div></>}
       {panel === "cut" && <><StudioCutRules recipe={selection} onChange={next => edit(() => setSelection(next))} kinds={[...new Set(visibleMoments.map(moment => moment.kind))] as ProductionMomentKind[]} />{selectionError && <p role="alert" className={styles.warning}>{selectionError}</p>}<p className={styles.dialogIntro}>{recipeSummary(selection)}. {selectedIds.length} moments in this cut · {clock(cutDuration,settings.fps)}.</p><div className={styles.actions}><button disabled={!!selectionError} className={styles.primary} onClick={() => {changeView("cut"); setPanel(null);}}>Watch selected cut</button><button disabled={refreshing} onClick={() => void refreshTags()}>Refresh saved tags</button>{cutNeedsReview && <button onClick={() => {changeView("cut"); setCutNeedsReview(false); setPanel(null);}}>Review refreshed cut</button>}</div></>}
-      {panel === "recordings" && <><p className={styles.dialogIntro}>Choose an existing speech manifest and its audio files together. Speaker, text and alignment must match accepted speech exactly. Audio stays in this browser; use the same files for local export.</p><label className={styles.settingField}>Speech manifest and audio<input aria-label="Import local recordings" type="file" multiple accept=".json,audio/*,.wav,.mp3,.m4a,.ogg" disabled={importing} onChange={event => {const files=[...(event.target.files ?? [])]; event.target.value=""; if (files.length) void importRecordings(files);}} /></label>{importing && <p role="status">Validating the complete permitted speech manifest…</p>}{speechImport && <><p>{speechImport.value.bindings.size} recording references imported. No audio is uploaded.</p><button onClick={() => edit(() => setSpeechImport(null))}>Remove local recordings</button></>}</>}
-      {panel === "export" && <><p className={styles.dialogIntro}>{selectedIds.length} saved moments · {ratio} · {clock(cutDuration,settings.fps)}. Export uses the reviewed presentation and pinned visuals.</p><div className={styles.settingsGrid}><StudioSelect label="Output size" value={String(Math.max(settings.width,settings.height))} onChange={value => edit(() => setSettings({...settings,...geometry(ratio,Number(value))}))} options={[{value:"640",label:"640 pixels · draft"},{value:"1280",label:"1280 pixels · HD"},{value:"1920",label:"1920 pixels · full HD"}]} /><StudioSelect label="Frames per second" value={String(settings.fps)} onChange={value => edit(() => setSettings({...settings,fps:Number(value)}))} options={[{value:"24",label:"24 fps"},{value:"30",label:"30 fps"},{value:"60",label:"60 fps"}]} /></div><div className={styles.exportSummary}><strong>{settings.width} × {settings.height} / {settings.fps} fps</strong><p>The downloaded JSON freezes exact moments, visuals and presentation settings. Run local export against the source API; browser sign-in opens when needed. A prepared bundle renders offline.</p>{exportCommand && <code>{exportCommand}</code>}</div>
+      {panel === "recordings" && <><AudioGenerationPanel root={root} /><button onClick={()=>edit(()=>{void audioPublication.refetch();})}>Load ready audio into this preview</button>{audioPublication.error && <p role="alert">{audioPublication.error.message}</p>}<p className={styles.dialogIntro}>Choose an existing speech manifest and its audio files together. Speaker, text and alignment must match accepted speech exactly. Audio stays in this browser; use the same files for local export.</p><label className={styles.settingField}>Speech manifest and audio<input aria-label="Import local recordings" type="file" multiple accept=".json,audio/*,.wav,.mp3,.m4a,.ogg" disabled={importing} onChange={event => {const files=[...(event.target.files ?? [])]; event.target.value=""; if (files.length) void importRecordings(files);}} /></label>{importing && <p role="status">Validating the complete permitted speech manifest…</p>}{speechImport && <><p>{speechImport.value.bindings.size} recording references imported. No audio is uploaded.</p><button onClick={() => edit(() => setSpeechImport(null))}>Remove local recordings</button></>}</>}
+      {panel === "export" && <><p className={styles.dialogIntro}>{selectedIds.length} saved moments · {ratio} · {clock(cutDuration,settings.fps)}. Export uses the reviewed presentation and pinned visuals.</p><div className={styles.settingsGrid}><StudioSelect label="Output size" value={String(Math.max(settings.width,settings.height))} onChange={value => edit(() => setSettings({...settings,...geometry(ratio,Number(value))}))} options={[{value:"640",label:"640 pixels · draft"},{value:"1280",label:"1280 pixels · HD"},{value:"1920",label:"1920 pixels · full HD"}]} /><StudioSelect label="Frames per second" value={String(settings.fps)} onChange={value => edit(() => setSettings({...settings,fps:Number(value)}))} options={[{value:"24",label:"24 fps"},{value:"30",label:"30 fps"},{value:"60",label:"60 fps"}]} /></div><div className={styles.exportSummary}><strong>{settings.width} × {settings.height} / {settings.fps} fps</strong><p>Download the selection, then run the command below from the <strong>influence-game repository root</strong>. It reads the selection from Downloads and saves the movie in <code>.renders/</code>. If your browser renamed the file or saved it elsewhere, update <code>--selection</code> to its actual path. Browser sign-in opens when needed.</p>{exportCommand && <code>{exportCommand}</code>}</div>
         {game.status === "suspended" && <p className={styles.warning}>Paused games preview a fixed accepted prefix. Local export requires a completed game.</p>}{view !== "cut" && <button onClick={() => changeView("cut")}>Watch selected cut</button>}{cutConflict && <p role="alert" className={styles.warning}>Saved tags changed after this cut was reviewed. Refresh saved tags and review the refreshed cut before downloading.</p>}{cutNeedsReview && <button onClick={() => {changeView("cut"); setCutNeedsReview(false); setPanel(null);}}>Review refreshed cut</button>}{(cutConflict || cutNeedsReview) && <button disabled={refreshing} onClick={() => void refreshTags()}>Refresh saved tags</button>}{selectionError && <p role="alert" className={styles.warning}>{selectionError}</p>}
         {selectionOperation?.phase === "unknown" && <div role="alert" className={styles.warning}><strong>Export response unavailable</strong><p>Your exact request is retained. Retry it before starting another export; later cut changes do not replace this request.</p><button onClick={() => void freeze(true)}>Retry exact export request</button></div>}
-        <button className={styles.primary} disabled={view !== "cut" || !base || !selectedIds.length || !!selectionError || cutConflict || cutNeedsReview || game.status !== "completed" || selectionOperation?.phase === "submitting" || selectionOperation?.phase === "unknown"} onClick={() => void freeze()}>{selectionOperation?.phase === "submitting" ? "Freezing selection…" : "Download selected export"}</button>
+        <button className={styles.primary} disabled={view !== "cut" || !base || !selectedIds.length || !!selectionError || cutConflict || cutNeedsReview || reviewPending || game.status !== "completed" || selectionOperation?.phase === "submitting" || selectionOperation?.phase === "unknown"} onClick={() => void freeze()}>{selectionOperation?.phase === "submitting" ? "Freezing selection…" : "Download selected export"}</button>
       </>}
       {panel === "scene" && <><ProductionSceneInspector game={game} source={loaded ?? undefined} audience={audience} contextSceneId={contextSceneId} onOpenGameTools={() => openPanel("recovery")} /><div className={styles.actions}><button disabled={!loaded || refreshing} onClick={() => void refreshPublished()}>Refresh published visuals</button></div><p className={styles.dialogIntro}>Publishing and gameplay resume are separate. Refresh explicitly to use published visuals at the same source boundary.</p></>}
       {gamePanels.some(key => key === panel) && (gameContent[panel as GamePanel] ?? <p>These tools are unavailable with your current permissions.</p>)}

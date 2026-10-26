@@ -166,7 +166,7 @@ test("an exact cast binding beats a newer room image with other participants", (
   expect(bound.rooms.find(room => room.roomId === "lobby")?.participantIds).toEqual(["a"]);
 });
 
-test.each(["two_names_used_tie", "majority_elimination_tie", "even_votes_tie", "safety_bounce_tie"] as const)("%s keeps tie-break thinking out of regular voting and loads it once before the deciding choice", async scenarioId => {
+test.each(["two_names_used_tie", "majority_elimination_tie", "even_votes_tie", "safety_bounce_tie"] as const)("%s never requests thinking playback for ballots or the empowered tiebreak", async scenarioId => {
   const {influenceThinkingActor, influenceThinkingText} = await import("../app/games/[slug]/components/influence-thinking");
   const scenario = createFormatKernelViewerScenario(scenarioId);
   const players: GamePlayer[] = scenario.roster.map(p => ({...p,persona:"",status:"alive",shielded:false}));
@@ -179,7 +179,7 @@ test.each(["two_names_used_tie", "majority_elimination_tie", "even_votes_tie", "
   const cards = [card,{...card,id:"regular",action:"format-ballot",text:"My regular ballot"},
     {...card,id:"foreign",actorPlayerId:"other",text:"Another actor's thought"},
     {...card,id:"earlier",eventSequence:tie.canonicalSequence - 1,text:"An earlier tie"}];
-  expect(influenceThinkingActor(tie, visualWatchPresentation(data,tie,null,players).beat)).toBe(tie.tiebreakerId);
+  expect(influenceThinkingActor(tie, visualWatchPresentation(data,tie,null,players).beat)).toBeNull();
   expect(influenceThinkingText(cards,tie,tie.tiebreakerId)).toBe(card.text);
   expect(influenceThinkingActor(deciding,visualWatchPresentation(data,deciding,null,players).beat)).toBeNull();
   for (const cue of paceVisualBallots(cues,players).filter(cue => cue.kind === "format_roll_call")) {
@@ -269,4 +269,60 @@ test("huddle speech uses only its frozen audience in portrait rooms and keeps a 
     {id: "changed", roomId: "mingle-2", version: 2, afterDialogueSequence: 3, imageUrl: "/changed.png", participantIds: ["a", "c"], anchors: []},
   ]};
   expect(visualWatchPresentation(saved, null, {...huddle, visualScene: {id: "pair", roomId: "mingle-2"}}, peers).beat).toMatchObject({kind: "scene", sceneId: "pair"});
+});
+
+
+test("Influence decisions use solo full bodies or avatars, backgrounds, and action-specific thinking", async () => {
+  const { influenceRoomBackground, INFLUENCE_ROOMS } = await import("../app/games/[slug]/components/influence-rooms");
+  const { influenceThinkingActor } = await import("../app/games/[slug]/components/influence-thinking");
+  const { isFormatSocialTranscriptMessage } = await import("../app/games/[slug]/components/influence-replay-cues");
+  for (const action of ["format-pick", "format-tiebreak", "format-two-names-initial-names", "format-two-names-override", "format-two-names-replacement", "bounce-pointer"]) {
+    const spoken: TranscriptEntry = { ...message, phase: action === "format-pick" ? "FORMAT_PICK" : "FORMAT_RESOLVE", decisionSpeech: { action, actorId: "a" } };
+    expect(isFormatSocialTranscriptMessage(spoken)).toBe(true);
+    expect(transcriptPresentationDurationMs(spoken)).toBe(soloPresentationDurationMs(spoken.text));
+    for (const fullBodies of [{ a: "/body.png" }, {}] as Record<string, string>[]) {
+      const beat = visualWatchPresentation({ ...data, fullBodies }, null, spoken, [player]).beat!;
+      expect(beat).toMatchObject({ kind: "portrait", purpose: "Decision", speech: { text: spoken.text }, player: { avatarUrl: "/frozen.png", fullBodyReferenceUrl: fullBodies.a } });
+      expect(influenceRoomBackground(beat)).toBe(action === "format-pick" ? INFLUENCE_ROOMS.empower : INFLUENCE_ROOMS.council);
+      expect(influenceThinkingActor(null, beat)).toBe(["format-pick", "format-tiebreak"].includes(action) ? null : "a");
+    }
+  }
+});
+
+test("accepted ballot speech attaches once at canonical reveal without determining the vote", async () => {
+  const { composeInfluencePresentation } = await import("../app/games/[slug]/components/influence-presentation");
+  const { buildStoryScenes } = await import("../app/games/[slug]/components/house-story");
+  const { influenceThinkingActor } = await import("../app/games/[slug]/components/influence-thinking");
+  const scenario = createFormatKernelViewerScenario("majority_elimination_tie");
+  const players: GamePlayer[] = scenario.roster.map(p => ({ ...p, persona: "", status: "alive", shielded: false }));
+  const compilation = compileFormatPresentationPrefix({ gameId: "g", gameKernel: "format", roster: scenario.roster, decisions: scenario.decisions });
+  const ballot = compilation.cues.find(cue => cue.kind === "format_roll_call");
+  if (ballot?.kind !== "format_roll_call") throw new Error("Fixture needs a ballot");
+  const speech: TranscriptEntry = { ...message, round: ballot.round, phase: ballot.phase, scope: "system", text: "My choice is final.", decisionSpeech: { action: "format-ballot", actorId: ballot.ballot.voterId } };
+  const scenes = buildStoryScenes([speech]);
+  const cues = composeInfluencePresentation("g", compilation.cues, players, scenes);
+  const delivered = cues.filter(cue => cue.source === "format" && cue.kind === "format_roll_call" && cue.ballot.voterId === ballot.ballot.voterId && !cue.voteSummary);
+  expect(delivered).toHaveLength(1);
+  const cue = delivered[0]!;
+  const beat = visualWatchPresentation(data, cue, null, players).beat!;
+  expect(beat).toMatchObject({ kind: "portrait", purpose: "Ballot", speech: { text: speech.text } });
+  expect(cue).toMatchObject({ ballot: ballot.ballot });
+  expect(influenceThinkingActor(cue, beat)).toBeNull();
+  expect(composeInfluencePresentation("g", [], players, scenes)).toEqual([]);
+});
+
+test("a classic fallback ballot never borrows a later revote's speech", async () => {
+  const { composeInfluencePresentation } = await import("../app/games/[slug]/components/influence-presentation");
+  const { buildStoryScenes } = await import("../app/games/[slug]/components/house-story");
+  const { buildClassicPresentationCues } = await import("../app/games/[slug]/components/influence-replay-cues");
+  const receipt: TranscriptEntry = { ...message, scope: "system", phase: "VOTE", acceptedBallot: { voterId: "a", targetId: "a", purpose: "empower" }, entrySequence: 1 };
+  const revote = { ...receipt, id: 11, entrySequence: 2 };
+  const speech: TranscriptEntry = { ...message, id: 12, scope: "system", phase: "VOTE", entrySequence: 3,
+    text: "Ada, this time.", decisionSpeech: { actorId: "a", action: "empower-revote", receiptEntrySequence: 2 } };
+  const scenes = buildStoryScenes([receipt, revote, speech]);
+  const cues = composeInfluencePresentation("g", buildClassicPresentationCues(scenes, [], [player]), [player], scenes);
+  const portraits = cues.filter(cue => cue.source === "classic" && !cue.voteSummary);
+  expect(portraits).toHaveLength(2);
+  expect(portraits[0]!.spokenMessage).toBeUndefined();
+  expect(portraits[1]!.spokenMessage).toBe(speech.text);
 });

@@ -11,11 +11,11 @@ import type { VisualPresentationBeat } from "./visual-presentation";
 import { layoutSoloPresentation } from "./solo-presentation-layout";
 import { soloPresentationMotion } from "./solo-presentation-timing";
 import { SCENE_SPEECH_START_MS, sceneSpeechOpacity } from "./scene-speech-timing";
-import { SOLO_STUDIO_BACKDROP, StageBackdrop } from "./stage-backdrop";
+import { SOLO_STUDIO_BACKDROP, StageBackdrop, RoomBackdrop } from "./stage-backdrop";
 import backdropStyles from "./stage-backdrop.module.css";
 
 /** Frozen character art, never a generated talking-head clip or an inferred crop. */
-export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs, paused = false, reducedMotion = false, controlsInset = 0, speechPresentation = "solo", imageOpacity, onImageReady, hideSpeech = false, staticSpeech = false }: {
+export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs, paused = false, reducedMotion = false, controlsInset = 0, speechPresentation = "solo", imageOpacity, onImageReady, backgroundUrl, hideSpeech = false, reserveSpeechSpace = !hideSpeech, staticSpeech = false }: {
   beat: Extract<VisualPresentationBeat, { kind: "portrait" }>;
   elapsedMs: number;
   readingElapsedMs?: number;
@@ -26,6 +26,9 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
   /** The ballot collection takes over these exact pixels at the end of its reveal. */
   imageOpacity?: number;
   hideSpeech?: boolean;
+  /** Keep the character anchored when hiding only the outgoing speech bubble. */
+  reserveSpeechSpace?: boolean;
+  backgroundUrl?: string;
   /** Canonical ballot labels are short receipt facts, not timed dialogue pages. */
   staticSpeech?: boolean;
   onImageReady?: (source: string | null) => void;
@@ -53,7 +56,7 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
   }, []);
   const thought = useSceneThinking();
   const geometry = layoutSoloPresentation(size.width, size.height, loaded.source === source ? loaded.width : 0,
-    loaded.source === source ? loaded.height : 0, Boolean(fullBody), controlsInset, 440, player.headRectangle, !hideSpeech);
+    loaded.source === source ? loaded.height : 0, Boolean(fullBody), controlsInset, 440, player.headRectangle, reserveSpeechSpace);
   const headRect = validHeadRectangle(player.headRectangle) ? player.headRectangle : {x:.4, y:.04, width:.2, height:.16};
   const available = Math.max(0, size.height - controlsInset);
   const face = fullBody ? headRect : {x:.24,y:.12,width:.52,height:.52};
@@ -69,8 +72,9 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
   const tailLeft = Math.max(16, Math.min(bubble.width - 16, geometry.bubble.left + geometry.tailLeft - bubble.left));
   return <section ref={frame} aria-label={`${beat.purpose}: ${player.name}`} data-solo-image={fullBody ? "full-body" : "portrait"}
     className="relative min-h-0 w-full flex-1 overflow-hidden bg-black">
+    {/* Keep the backdrop filling the stage when the thinking camera shifts the character. */}
+    {backgroundUrl ? <RoomBackdrop source={backgroundUrl} /> : <StageBackdrop source={SOLO_STUDIO_BACKDROP} />}
     <div data-thinking-camera className="absolute inset-0" style={focus.mediaStyle}>
-    <StageBackdrop source={SOLO_STUDIO_BACKDROP} />
     {/* eslint-disable-next-line @next/next/no-img-element -- frozen game image, with a static portrait only when full-body art is unavailable */}
     <img data-solo-portrait key={source} src={source} alt={player.name}
       onLoad={event => {

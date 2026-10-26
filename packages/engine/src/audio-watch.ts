@@ -1,0 +1,4 @@
+/** Presentation coordinates only; never carried into a contestant observation. */
+export type AudioWatchCoordinate =
+  | { kind: "werewolf"; cursor: number; action?: "protect" | "investigate" | "hunt"; actorId: string | null; part: "speech" | "thinking" }
+  | { kind: "influence"; transcriptId?: string; entrySequence?: number; eventSequence: number; actorId: string | null; part: "speech" | "thinking" };

@@ -1,3 +1,4 @@
+import { drainProviderCalls } from "../provider-batch";
 import { Phase } from "../types";
 import {
   assertCanAcceptCommit,
@@ -19,7 +20,7 @@ export async function runRumorPhase(
   logger.logSystem("=== RUMOR PHASE ===", Phase.RUMOR);
   const alivePlayers = gameState.getAlivePlayers();
 
-  const rumors = await Promise.all(
+  const rumors = await drainProviderCalls(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.RUMOR, "ordinary_speech");

@@ -1,5 +1,22 @@
 # Game retrospective runtime
 
+## Editorial retakes on localhost
+
+A Producer/Sysop can record a fresh statement for one contestant in a completed Werewolf game with a ready voice track. This is a presentation revision: the accepted event, original speech, provider evidence, outcome and later contestants' original contexts remain unchanged. The new request uses the original speaker's frozen game account and only the earlier canonical retrospective statements. It uses the selected model explicitly, the strict retrospective speech contract, and the shared primarily-English guidance.
+
+Run `packages/api/src/scripts/retake-werewolf-retrospective.ts` with Bun and an explicit localhost `DATABASE_URL`, the normal private-storage/provider environment, and a current localhost Producer/Sysop CLI session:
+
+```sh
+bun packages/api/src/scripts/retake-werewolf-retrospective.ts preview GAME ACTOR
+bun packages/api/src/scripts/retake-werewolf-retrospective.ts generate GAME ACTOR CATALOG_ID NEW_DIRECTORY
+bun packages/api/src/scripts/retake-werewolf-retrospective.ts queue GAME NEW_DIRECTORY
+bun packages/api/src/scripts/retake-werewolf-retrospective.ts run TRACK_ID
+```
+
+Generation requires a new private directory and durably journals provider attempts before continuing. Inspect `retake.json` before queueing. Queueing verifies the preview against the current source and active audio track, stores the context, statement and sanitized journal in private object storage, and creates a successor track with one pending clip. All other recordings reuse their verified immutable objects and original delivery recipes. PostgreSQL stores the source binding, document reference and publication metadata; migration `0136_retrospective_retakes.sql` must precede the new reader/writer deployment.
+
+Text and audio publish in the same transaction only when the successor track is ready. A failed recording keeps the old presentation active and can be retried with `run TRACK_ID`. A pending or failed successor blocks another retake until it is resolved. Replay and Studio read the latest published retake at their publication cutoff; older pinned source reads retain their original speech. Revision provenance stays in metadata and is not added to the viewer caption. Canonical event and diagnostic reads still report the original statement. This command is local operator tooling; it does not add a regeneration MCP tool or change the planned moment-tagging MCP contract.
+
 RT-04 connects Influence's existing runner to the [frozen context](game-retrospective-context.md) and [strict statement invocation](game-retrospective-invocation.md). RT-05 connects Werewolf to its own validated post-outcome stage, RT-06 makes its full completion proof the settlement boundary, and RT-07 exposes the canonical outcome while execution continues. Replay choreography, recovery and export work continue in the [implementation plan](plans/2026-10-10-004-feat-game-retrospectives-implementation-plan.md).
 
 ## Influence execution
@@ -12,6 +29,8 @@ The completion turn validates the complete roster proof, commits `retrospective.
 
 Initialization stores the private dossier in `game_retrospective_inputs` inside the same owner-fenced transaction as its canonical definition. The writer validates the canonical source, game kind, definition hash and exact input binding; size does not reject initialization. A later failure rolls back both records. Resumption reads the immutable input and accepted prefix. Fresh statement dispatch always goes through the sealed manifest with normal retry/fallback traversal (no capacity admission gate), and accepted provider replay uses no transport.
 
+Influence's living-player and jury diary batches drain every dispatched interview before propagating a sibling failure. The durable turn therefore retains its scratch state and provider bindings until outstanding provider calls and evidence writes settle, including when one terminal write fails.
+
 Product dialogue and canonical events have independent sequence spaces. The API store captures the original outcome's owning committed turn and its dialogue head. Each original dialogue entry uses its persisted owning-turn event boundary, capped at the original outcome. Local runs bind dialogue at explicit completed phase boundaries; a supplied phase-boundary resume capsule binds its existing dialogue to that checkpoint. No current read head or transcript prose invents a source relationship. Formal speech writers now supply exact dialogue pointers; validation reuses their structured display formatter for presentation labels.
 
 An exact round limit can stop an Influence evaluation before any competitive outcome exists. Such a bounded run has no retrospective and cannot provide the new competitive completion proof. Normal API runs retain their existing player-scaled completion floor. This does not manufacture a winner or draw for partial evaluations.
@@ -23,6 +42,8 @@ Existing rules-v7 games retain their stored configuration, canonical history and
 Fresh games use rules v8. `werewolf.completed` freezes the competitive outcome and enters the retrospective phase. The same runner freezes the complete roster, atomically stores the private input with `werewolf.retrospective_started`, then prepares one exact request and full-context hash in `werewolf_turns` before each statement. The shared provider journal validates that slot under the current owner fence; accepted replay uses its existing value without another count or generation request.
 
 Only retrospective events can follow the v8 outcome. Each statement adds a public speech entry with explicit retrospective purpose and ordinal. Dead speakers retain their original identity without changing the alive set, roles, opening cursor or earlier gameplay. The final full-roster proof closes the existing owner and catalog execution and queues the existing Cuts/media work. Outcome with an unfinished tail remains adoptable; required speech failure has no gameplay fallback. Completed production sources, trailers and learning input validate the version-specific finished-execution boundary, including v7 games without retrospectives. Previously frozen production prefixes retain their exact source boundary when the whole execution is complete.
+
+The current Werewolf retrospective projection records v10/v11 solo targets and their actor-only private explanation audience. A `private` quote must name exactly its actor as the audience. These asides remain postgame revelations to other speakers. For an existing retrospective, compilation compares the entire reconstructed definition against the saved definition and can reproduce the original projection, including its original speaker perspective. It never substitutes corrected current data into a historical input or prepared context hash. If neither recognized projection matches, compilation reports an integrity error; saved inputs, events, accepted statements and hashes are never rewritten.
 
 ## Local proof and remaining integration
 

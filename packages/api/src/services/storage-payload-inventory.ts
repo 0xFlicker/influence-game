@@ -1,5 +1,7 @@
 /** Exhaustive body-column cutover registry. Every entry migrates existing rows. */
 export const STORAGE_PAYLOAD_COLUMNS = [
+  {"table": "character_cutouts", "column": "source", "kind": "binary", "primaryKey": ["id"]},
+  {"table": "character_cutouts", "column": "image", "kind": "binary", "primaryKey": ["id"]},
   {"table": "agent_screenings", "column": "result", "kind": "json", "primaryKey": ["id"]},
   {"table": "agent_screening_attempts", "column": "request", "kind": "json", "primaryKey": ["id"]},
   {"table": "agent_screening_attempts", "column": "response", "kind": "json", "primaryKey": ["id"]},
@@ -8,6 +10,7 @@ export const STORAGE_PAYLOAD_COLUMNS = [
   {"table": "visual_room_library", "column": "image", "kind": "binary", "primaryKey": ["room_id", "version"]},
   {"table": "agent_content_assets", "column": "bytes", "kind": "binary", "primaryKey": ["hash"]},
   {"table": "game_retrospective_inputs", "column": "input", "kind": "json", "primaryKey": ["game_id"]},
+  {"table": "production_retrospective_retakes", "column": "document", "kind": "json", "primaryKey": ["id"]},
   {"table": "game_checkpoints", "column": "snapshot", "kind": "json", "primaryKey": ["id"]},
   {"table": "provider_attempt_evidence_outbox", "column": "body", "kind": "text", "primaryKey": ["attempt_id"]},
   {"table": "game_postgame_media", "column": "render_input_snapshot", "kind": "json", "primaryKey": ["game_id", "media_type"]},
@@ -30,11 +33,18 @@ export const STORAGE_PAYLOAD_COLUMNS = [
   {"table": "game_turns", "column": "intent", "kind": "json", "primaryKey": ["id"]},
   {"table": "game_turns", "column": "commit_result", "kind": "json", "primaryKey": ["id"]},
   {"table": "provider_logical_calls", "column": "accepted_value", "kind": "json", "primaryKey": ["id"]},
+  {"table": "provider_logical_calls", "column": "audio_delivery", "kind": "json", "primaryKey": ["id"]},
   {"table": "agent_revisions", "column": "behavior_snapshot", "kind": "json", "primaryKey": ["id"]},
   {"table": "agent_revisions", "column": "effective_runtime_snapshot", "kind": "json", "primaryKey": ["id"]},
   {"table": "account_text_operations", "column": "result", "kind": "json", "primaryKey": ["id"]},
   {"table": "anonymous_text_operations", "column": "result", "kind": "json", "primaryKey": ["id"]},
   {"table": "visual_media_requests", "column": "input", "kind": "json", "primaryKey": ["id"]},
   {"table": "provider_health_probe_evidence", "column": "record", "kind": "json", "primaryKey": ["id"]},
+  {"table": "game_audio_tracks", "column": "voices", "kind": "json", "primaryKey": ["id"]},
+  {"table": "game_audio_tracks", "column": "manifest", "kind": "json", "primaryKey": ["id"]},
+  {"table": "game_audio_clips", "column": "recipe", "kind": "json", "primaryKey": ["id"]},
+  {"table": "game_audio_versions", "column": "audio", "kind": "binary", "primaryKey": ["id"]},
+  {"table": "game_audio_attempts", "column": "evidence", "kind": "json", "primaryKey": ["id"]},
+  {"table":"game_audio_attempts","column":"response_audio","kind":"binary","primaryKey":["id"]},
 ] as const;
 export type StoragePayloadColumn = typeof STORAGE_PAYLOAD_COLUMNS[number];

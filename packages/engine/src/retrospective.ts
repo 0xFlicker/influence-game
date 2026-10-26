@@ -34,7 +34,7 @@ export interface RetrospectiveInputV1 {
     eventSequence: number;
     source: { kind: "canonical_event" | "transcript_entry"; sequence: number };
     actorId: string;
-    scope: "public" | "mingle" | "huddle" | "whisper" | "pack" | "alliance";
+    scope: "public" | "private" | "mingle" | "huddle" | "whisper" | "pack" | "alliance";
     /** null means the source does not disclose the original audience. */
     audiencePlayerIds: string[] | null;
     text: string;
@@ -143,7 +143,7 @@ const inputSchema = objectSchema({
   }) },
   dialogue: { type: "array", items: objectSchema({ eventSequence: sequence,
     source: objectSchema({ kind: { enum: ["canonical_event", "transcript_entry"] }, sequence }), actorId: id,
-    scope: { enum: ["public", "mingle", "huddle", "whisper", "pack", "alliance"] },
+    scope: { enum: ["public", "private", "mingle", "huddle", "whisper", "pack", "alliance"] },
     audiencePlayerIds: { anyOf: [{ type: "null" }, { type: "array", uniqueItems: true, items: id }] }, text: id }) },
 });
 
@@ -158,6 +158,10 @@ function assertShape<T>(schema: Readonly<Record<string, unknown>>, value: unknow
 
 export function assertRetrospectiveInput(value: unknown): asserts value is RetrospectiveInputV1 {
   assertShape<RetrospectiveInputV1>(inputSchema, value, "Retrospective input");
+  if (value.dialogue.some(entry => entry.scope === "private"
+    && (entry.audiencePlayerIds?.length !== 1 || entry.audiencePlayerIds[0] !== entry.actorId))) {
+    throw new RetrospectiveContractError("Private retrospective dialogue requires its actor-only audience");
+  }
   let next = 1;
   for (const section of value.sections) {
     if (section.fromEventSequence !== next || section.throughEventSequence < next) {
@@ -290,5 +294,6 @@ function decodeSpeech(value: unknown): StructuredDomainDecodeResult<Retrospectiv
 const speechSchema = objectSchema({ speech });
 export const retrospectiveSpeechArtifact = createExactStructuredOutputArtifact<RetrospectiveSpeechV1, RetrospectiveSpeechV1>({
   action: "retrospective-statement", name: "submit_retrospective", schema: speechSchema,
+  audioDelivery: { fields: ["speech"], nighttime: false },
   decodeProviderPayload: decodeSpeech, decodeAcceptedValue: decodeSpeech, acceptedValueUsesProviderSchema: true,
 });

@@ -169,26 +169,29 @@ export async function assertProviderDispatchHealthInTransaction(
   }
 }
 
-async function loadDispatchState(
-  tx: DrizzleTransaction,
-  scope: ProviderHealthScope,
-): Promise<HealthRow> {
-  await tx.insert(schema.providerHealthStates).values(scope).onConflictDoNothing({
-    target: schema.providerHealthStates.scopeKey,
-  });
-  const row = (await tx.select().from(schema.providerHealthStates)
-    .where(eq(schema.providerHealthStates.scopeKey, scope.scopeKey))
-    .limit(1)
-    .for("share"))[0];
-  if (!row) throw new Error("Provider health state disappeared");
-  if (
-    row.scopeKind !== scope.scopeKind
-    || row.providerProfileId !== scope.providerProfileId
-    || row.catalogId !== scope.catalogId
-  ) {
+async function loadDispatchState(tx: DrizzleTransaction, scope: ProviderHealthScope): Promise<HealthRow> {
+  await tx.insert(schema.providerHealthStates).values(scope).onConflictDoNothing({ target: schema.providerHealthStates.scopeKey });
+  await expireRouteCooldown(tx, scope);
+  const [row] = await tx.select().from(schema.providerHealthStates).where(eq(schema.providerHealthStates.scopeKey, scope.scopeKey)).for("share");
+  if (!row || row.scopeKind !== scope.scopeKind || row.providerProfileId !== scope.providerProfileId || row.catalogId !== scope.catalogId) {
     throw new Error("Provider health scope has conflicting immutable identity");
   }
   return row;
+}
+
+async function expireRouteCooldown(tx: DrizzleTransaction, scope: ProviderHealthScope): Promise<void> {
+  if (scope.scopeKind === "entry") {
+    const now = await databaseNow(tx);
+    // Conditional UPDATE before the shared read avoids lock upgrades between
+    // concurrent admissions. Healthy routes retain parallel shared readers.
+    const [expired] = await tx.update(schema.providerHealthStates).set({ state: "closed", reason: null,
+      revision: sql`${schema.providerHealthStates.revision} + 1`, consecutiveFailureCount: 0,
+      windowStartedAt: null, openedAt: null, cooldownUntil: null, updatedAt: now })
+      .where(and(eq(schema.providerHealthStates.scopeKey, scope.scopeKey), eq(schema.providerHealthStates.state, "open"),
+        sql`${schema.providerHealthStates.reason} IN ('service_error', 'transport_timeout', 'transport_error', 'rate_limit')`,
+        sql`${schema.providerHealthStates.cooldownUntil}::timestamptz <= ${now}::timestamptz`)).returning();
+    if (expired) await appendHealthEvent(tx, expired, "cooldown_expired", "open");
+  }
 }
 
 export async function recordProviderHealthOutcomeInTransaction(
@@ -209,24 +212,27 @@ export async function recordProviderHealthOutcomeInTransaction(
 }> {
   const now = await databaseNow(tx);
   if (input.outcome.kind === "usable") {
-    const scope = providerHealthProviderScope(input.providerProfileId);
-    const row = await loadEffectiveState(tx, scope, now);
-    if (row.state !== "closed" || row.consecutiveFailureCount === 0) return {};
-    const updated = await updateHealthState(tx, row, {
-      consecutiveFailureCount: 0,
-      windowStartedAt: null,
-      lastSuccessAt: now,
-      updatedAt: now,
-    });
-    await appendHealthEvent(tx, updated, "success_recorded", row.state, {
-      attemptId: input.attemptId,
-    });
+    const scopes = [providerHealthProviderScope(input.providerProfileId),
+      ...(input.catalogId ? [providerHealthEntryScope(input.providerProfileId, input.catalogId)] : [])];
+    for (const scope of scopes) {
+      const row = await loadExistingState(tx, scope.scopeKey);
+      if (!row || row.state !== "closed" || row.consecutiveFailureCount === 0) continue;
+      const updated = await updateHealthState(tx, row, {
+        consecutiveFailureCount: 0,
+        windowStartedAt: null,
+        lastSuccessAt: now,
+        updatedAt: now,
+      });
+      await appendHealthEvent(tx, updated, "success_recorded", row.state, {
+        attemptId: input.attemptId,
+      });
+    }
     return {};
   }
 
-  const reason = breakerReason(input.outcome.kind);
+  const reason = input.outcome.kind === "rate_limit" && input.outcome.retryAfterMs ? "rate_limit" : breakerReason(input.outcome.kind);
   if (!reason) return {};
-  const scope = reason === "configuration" && input.catalogId
+  const scope = reason !== "authentication" && input.catalogId
     ? providerHealthEntryScope(input.providerProfileId, input.catalogId)
     : providerHealthProviderScope(input.providerProfileId);
   const row = await loadEffectiveState(tx, scope, now);
@@ -249,6 +255,7 @@ export async function recordProviderHealthOutcomeInTransaction(
   }
 
   const immediate = reason === "authentication" || reason === "configuration";
+  const retryAfterMs = input.outcome.retryAfterMs;
   const windowActive = row.windowStartedAt !== null
     && Date.parse(now) - Date.parse(row.windowStartedAt) <= policy.transientWindowMs;
   const nextCount = immediate
@@ -256,7 +263,7 @@ export async function recordProviderHealthOutcomeInTransaction(
     : windowActive
       ? row.consecutiveFailureCount + 1
       : 1;
-  const opens = immediate || nextCount >= policy.transientFailureThreshold;
+  const opens = immediate || Boolean(retryAfterMs) || nextCount >= policy.transientFailureThreshold;
   const nextRevision = row.revision + 1;
   const updated = await updateHealthState(tx, row, {
     state: opens ? "open" : "closed",
@@ -266,7 +273,7 @@ export async function recordProviderHealthOutcomeInTransaction(
     windowStartedAt: immediate ? now : windowActive ? row.windowStartedAt : now,
     openedAt: opens ? now : null,
     cooldownUntil: opens && !immediate
-      ? new Date(Date.parse(now) + policy.transientCooldownMs).toISOString()
+      ? new Date(Date.parse(now) + (retryAfterMs ?? policy.transientCooldownMs)).toISOString()
       : null,
     lastFailureAt: now,
     lastAttemptId: input.attemptId,
@@ -310,9 +317,9 @@ export async function getProviderCircuitForOutcomeInTransaction(
   haltManifest: boolean;
 } | undefined> {
   if (input.outcome.kind === "usable") return undefined;
-  const reason = breakerReason(input.outcome.kind);
+  const reason = input.outcome.kind === "rate_limit" && input.outcome.retryAfterMs ? "rate_limit" : breakerReason(input.outcome.kind);
   if (!reason) return undefined;
-  const scope = reason === "configuration" && input.catalogId
+  const scope = reason !== "authentication" && input.catalogId
     ? providerHealthEntryScope(input.providerProfileId, input.catalogId)
     : providerHealthProviderScope(input.providerProfileId);
   const row = await loadEffectiveState(tx, scope, await databaseNow(tx));
@@ -360,6 +367,7 @@ export async function checkDailyProviderAdmissionInTransaction(
     providerHealthEntryScope(primary.providerProfile.id, primary.catalogId),
   ];
   for (const scope of scopes) {
+    await expireRouteCooldown(tx, scope);
     const row = await loadEffectiveState(tx, scope, now);
     if (row.state === "closed") continue;
     return {
@@ -476,10 +484,13 @@ export async function completeProviderHealthProbe(
     }
     const nextReason = input.outcome.kind === "usable"
       ? null
-      : breakerReason(input.outcome.kind) ?? row.reason;
+      : (input.outcome.kind === "rate_limit" && input.outcome.retryAfterMs
+        ? "rate_limit" : breakerReason(input.outcome.kind)) ?? row.reason;
     const transient = nextReason === "service_error"
       || nextReason === "transport_timeout"
-      || nextReason === "transport_error";
+      || nextReason === "transport_error" || nextReason === "rate_limit";
+    const cooldownMs = input.outcome.kind === "usable"
+      ? 0 : input.outcome.retryAfterMs ?? policy.transientCooldownMs;
     const updated = await updateHealthState(tx, row, {
       state: succeeded ? "closed" : "open",
       reason: nextReason,
@@ -488,7 +499,7 @@ export async function completeProviderHealthProbe(
       windowStartedAt: succeeded ? null : row.windowStartedAt ?? now,
       openedAt: succeeded ? null : row.openedAt ?? now,
       cooldownUntil: !succeeded && transient
-        ? new Date(Date.parse(now) + policy.transientCooldownMs).toISOString()
+        ? new Date(Date.parse(now) + cooldownMs).toISOString()
         : null,
       lastFailureAt: succeeded ? row.lastFailureAt : now,
       lastSuccessAt: succeeded ? now : row.lastSuccessAt,

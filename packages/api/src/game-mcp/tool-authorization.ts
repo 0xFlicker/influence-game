@@ -124,6 +124,7 @@ const GAME_READ_TOOLS = [
 ] as const;
 
 const AGENT_READ_TOOLS = [
+  "read_model_catalog",
   "list_archetypes",
   "list_agents",
   "get_agent",
@@ -135,6 +136,7 @@ const AGENT_READ_TOOLS = [
 ] as const;
 
 const AGENT_WRITE_TOOLS = [
+  "set_agent_model",
   "generate_agent_visual_reference",
   "crop_agent_portrait",
   "create_agent",
@@ -158,6 +160,8 @@ const OWNER_LEARNING_WRITE_TOOLS = [
 ] as const;
 
 const PRODUCER_TOOLS = [
+  "read_production_moments", "preview_production_cut",
+  "read_game_model_routing",
   "read_producer_visual_production",
   "read_producer_season_diagnostics",
   "inspect_durable_run",
@@ -171,6 +175,8 @@ const PRODUCER_TOOLS = [
 ] as const;
 
 export type GameMcpToolName =
+  | "set_game_model_routing"
+  | "update_production_moment_tags"
   | "resume_game_retrospective"
   | "read_moderation" | "act_on_moderation"
   | typeof SHARED_GAME_READ_TOOLS[number]
@@ -221,6 +227,8 @@ const OWNER_LEARNING_WRITE_ALTERNATIVE: GameMcpToolScopeAlternative = {
 };
 
 export const GAME_MCP_TOOL_ACCESS = {
+  set_game_model_routing: {name:"set_game_model_routing",scopeAlternatives:[{requiredScopes:["producer","producer:routing"],catalogBaselineScopes:["producer"],clientEnvelopeScopes:["producer","producer:routing"],requiredRole:"producer"}]},
+  update_production_moment_tags: {name:"update_production_moment_tags",scopeAlternatives:[{requiredScopes:["producer","producer:edit"],catalogBaselineScopes:["producer"],clientEnvelopeScopes:["producer","producer:edit"],requiredRole:"producer"}]},
   resume_game_retrospective: { name: "resume_game_retrospective", scopeAlternatives: [RETROSPECTIVE_RECOVERY_ALTERNATIVE] },
   read_moderation: { name: "read_moderation", scopeAlternatives: [{ requiredRole: "moderator", requiredScopes: ["moderation:read"], catalogBaselineScopes: ["moderation:read"], clientEnvelopeScopes: ["moderation:read"] }] },
   act_on_moderation: { name: "act_on_moderation", scopeAlternatives: [{ requiredRole: "moderator", requiredScopes: ["moderation:read", "moderation:write"], catalogBaselineScopes: ["moderation:read"], clientEnvelopeScopes: ["moderation:read", "moderation:write"] }] },

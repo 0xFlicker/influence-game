@@ -1,3 +1,6 @@
+import {exportPreviousSpeaker} from "../../lib/replay-export/room-continuity";
+import {HouseNarration, narrationWindow} from "../../components/watch/house-narration";
+import {werewolfHouseCentered} from "../../components/games/werewolf/werewolf-watch-model";
 import {WerewolfOpeningFrame} from "../../components/games/werewolf/werewolf-opening-frame";
 import {InfluenceOpeningFrame} from "../../app/games/[slug]/components/influence-opening-frame";
 import type {OpeningVideoProps} from "../../components/watch/opening-browser-video";
@@ -97,6 +100,7 @@ export function ReplayFrame({
     cue = data.cues[index]!;
   const sample = sampleTiming(data.timeline[index]!, timeMs);
   const previous = data.cues[index - 1];
+  const nextPicture = data.cues[index + 1]?.picture;
   const scene = sceneFor(cue),
     previousScene = sceneFor(previous);
   const images = useMemo(
@@ -112,6 +116,9 @@ export function ReplayFrame({
     [data],
   );
   const picture = cue.picture;
+  const recording = data.timeline[index]!.recording;
+  const houseAudio = cue.speech?.speakerId === null && recording;
+  const houseWindow = houseAudio ? narrationWindow(timeMs - recording.startMs, recording.durationMs) : null;
   const stage = useRef<HTMLDivElement>(null);
   const thinkingActor = picture.kind === "werewolf" ? picture.cue.moment.snapshot.players.find(player => player.id === cue.speech?.speakerId) : null;
   useLayoutEffect(() => {
@@ -151,7 +158,7 @@ export function ReplayFrame({
                   },
                 }
               : {}),
-            previousSpeaker: previous?.speech?.speakerId ?? null,
+            previousSpeaker: exportPreviousSpeaker(cue, previous),
             firstInScene:
               !scene ||
               scene.id !== previousScene?.id ||
@@ -168,13 +175,17 @@ export function ReplayFrame({
             >
               {picture.kind === "influence-opening" ? <InfluenceOpeningFrame {...picture} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} video={renderOpeningVideo} /> : picture.kind === "thinking" ? <ThinkingFrame picture={picture} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} /> : picture.kind === "werewolf-opening" ? <WerewolfOpeningFrame cue={picture.cue} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} video={renderOpeningVideo} /> : picture.kind === "werewolf" ? (
                 <WerewolfContentFrame
+                  hideHouseCaption={Boolean(houseAudio)}
                   cue={picture.cue}
+                  previousCue={previous?.picture.kind === "werewolf" && !previous.picture.scene ? previous.picture.cue : undefined}
+                  nextCue={nextPicture?.kind === "werewolf" && !nextPicture.scene ? nextPicture.cue : undefined}
                   scene={picture.scene}
                   elapsed={sample.elapsedMs}
                   reduced={data.reducedMotion}
                 />
               ) : picture.beat ? (
                 <VisualPresentationFrame
+                  hideHouseNarration={Boolean(houseAudio)}
                   beat={picture.beat}
                   rooms={picture.rooms}
                   elapsedMs={sample.elapsedMs}
@@ -194,6 +205,7 @@ export function ReplayFrame({
                   />
                 </FitPresentation>
               ) : null}
+              <HouseNarration centered={picture.kind === "werewolf" && werewolfHouseCentered(picture.cue)} text={cue.speech?.text ?? ""} window={houseWindow} logoUrl={staticFile("logo.png")} />
             </div>
           </div>
         </SampledStageProvider>
@@ -244,11 +256,13 @@ function ThinkingFrame({picture, elapsedMs, reduced}: {
   const actor = picture.actor;
   if (picture.room) return <PortraitRoom beat={{kind:"portrait-room",roomNumber:picture.room.number,roomLabel:picture.room.label,
     participants:picture.room.players,speech:{id:actor.id,playerId:actor.id,speaker:actor.name,text:""}}}
+    backgroundUrl={picture.room.backgroundUrl} floorPerspective={picture.room.floorPerspective}
     hideSpeech elapsedMs={elapsedMs} readingElapsedMs={elapsedMs} reducedMotion={reduced} controlsInset={0} />;
   if (picture.scene) return <VisualSceneView scene={picture.scene} speech={null}
     focusPlayerId={actor.id} focusActor={actor} elapsedMs={elapsedMs} reducedMotion={reduced} controlsInset={0} />;
   return <SoloPresentation beat={{kind:"portrait", purpose:"Conversation", player:actor,
     roleLabel:picture.roleLabel, speech:{id:actor.id, playerId:actor.id, speaker:actor.name, text:""}}}
+    backgroundUrl={picture.backgroundUrl} reserveSpeechSpace
     hideSpeech elapsedMs={elapsedMs} imageOpacity={1} reducedMotion={reduced} controlsInset={0} />;
 }
 

@@ -4,7 +4,7 @@ import {
   werewolfWatchPolicy,
   type WerewolfWatchCue,
 } from "../../components/games/werewolf/werewolf-watch-model";
-import { replayMoment } from "../../components/games/werewolf/replay-moment";
+import { werewolfCueMoment } from "../../components/games/werewolf/werewolf-watch-model";
 import { werewolfMusic } from "../../components/games/werewolf/werewolf-music";
 import {
   buildClassicPresentationCues,
@@ -55,7 +55,8 @@ export type ExportPicture =
       roleLabel?: string;
       scene: AcceptedVisualScene | null;
       sourceElapsedMs: number;
-      room?: {number: number | null; label?: string; players: Extract<VisualPresentationBeat, {kind:"portrait-room"}>["participants"]};
+      backgroundUrl?: string;
+      room?: {number: number | null; label?: string; backgroundUrl?: string; floorPerspective?: boolean; players: Extract<VisualPresentationBeat, {kind:"portrait-room"}>["participants"]};
     }
   | {kind: "werewolf-opening"; cue: WerewolfOpeningCue}
   | ({kind: "influence-opening"; cue: InfluenceOpeningCue} & ReturnType<typeof influenceCastArt>)
@@ -97,7 +98,7 @@ export interface ExportCue {
   alignment?: import("./speech").SpeechAlignment[];
 }
 
-export function buildExportCues(source: ReplaySource): ExportCue[] {
+export function buildExportCues(source: ReplaySource, options: {werewolfCatalogVersion?: 1 | 2 | 3} = {}): ExportCue[] {
   if (source.kind === "werewolf") {
     const media = Object.assign(
       {},
@@ -107,12 +108,9 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
       timing:{key:cue.key, baseDurationMs:cue.baseDurationMs, kind:"opening", speech:null, thinking:null},
       picture:{kind:"werewolf-opening",cue}, source:{kind:"opening"}, label:"Opening", speech:null, music:null,
     })) : [];
-    return [...opening, ...werewolfCues(source.windows).map((cue): ExportCue => {
-      const line = replayMoment({
-        ...cue.moment.snapshot,
-        entries: [cue.moment.entry],
-      });
-      const spoken = line.spoken && (!cue.ballot || cue.moment.entry.kind === "ballot") && !cue.nightAction;
+    return [...opening, ...werewolfCues(source.windows,options.werewolfCatalogVersion !== 1).map((cue): ExportCue => {
+      const line = werewolfCueMoment(cue);
+      const spoken = line.spoken && (!cue.ballot || cue.moment.entry.kind === "ballot");
       return {
         timing: {
           key: cue.key,
@@ -121,10 +119,10 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
             ? cue.ballot.complete
               ? "tally"
               : "ballot"
-            : spoken
-              ? "speech"
-              : cue.moment.entry.kind === "result"
-                ? "result"
+            : cue.moment.entry.kind === "result"
+              ? "result"
+              : spoken
+                ? "speech"
                 : "scene",
           speech: werewolfWatchPolicy.speech(cue),
           thinking: null,
@@ -140,8 +138,8 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
         label: line.title,
         speech: spoken
           ? {
-              messageId: `${cue.moment.snapshot.gameId}:${cue.moment.snapshot.audience}:${cue.moment.cursor}`,
-              speakerId: line.actor?.id ?? null,
+              messageId: cue.key,
+              speakerId: line.house ? null : line.actor?.id ?? null,
               speaker: line.speaker,
               text: line.text,
             }
@@ -166,6 +164,7 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
     gameId: game.id,
     gameKernel: game.gameKernel ?? "classic",
     formatManifest: game.formatManifest,
+    empowerRevoteVersion: game.empowerRevoteVersion,
     roster,
     decisions: formatPresentationDecisionsFromFrames(frames),
     eligiblePlayerIdsByRound: formatPresentationEligibilityFromFrames(frames),
@@ -254,7 +253,14 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
       },
       label: `Round ${cue.round} · ${cue.phase}`,
       speech:
-        spoken && !ledger
+        message?.dialogueKind === "house_summary"
+          ? {
+              messageId: String(message.id),
+              speakerId: null,
+              speaker: "The House",
+              text: message.text,
+            }
+          : spoken && (!ledger || !ledger.complete && !!cue.spokenMessage)
           ? {
               messageId: message ? String(message.id) : cue.key,
               speakerId: spoken.playerId,

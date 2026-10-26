@@ -73,7 +73,7 @@ async function readInfluenceProductionSceneCatalog(db:DrizzleDB,gameId:string,sl
   const prior = new Map<VisualRoomId, string>();
   let unsupported = 0;
   for (const row of dialogue) {
-    if (!row.sequence || !row.speaker || row.scope === "diary" || row.scope === "thinking" || row.context?.acceptedBallot || row.context?.presentationPurpose === "farewell") continue;
+    if (!row.sequence || !row.speaker || row.scope === "diary" || row.scope === "thinking" || row.context?.acceptedBallot || row.context?.decisionSpeech || row.context?.presentationPurpose === "farewell") continue;
     if ([Phase.MINGLE, Phase.MINGLE_I, Phase.POST_VOTE_MINGLE, Phase.FORMAT_MINGLE].includes(row.phase as Phase) && row.context?.roomId == null) { unsupported++; continue; }
     const prefix = events.events.filter(event => event.sequence <= row.baseEvents).map(event => event.envelope);
     if (!prefix.length || prefix.at(-1)!.sequence !== row.baseEvents) { unsupported++; continue; }

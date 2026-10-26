@@ -15,6 +15,7 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { getPermissionsForUser } from "../db/rbac.js";
 import { createSessionToken, type AuthEnv } from "../middleware/auth.js";
 import { createProductionStudioRoutes } from "../routes/production-studio.js";
+import { createAudioRoutes } from "../routes/audio.js";
 import { createVisualReplayProductionRoutes } from "../routes/visual-replay-production.js";
 import { appendGameEvents } from "../services/game-events.js";
 import { createInitialGameExecutionStateV1, initializeGameExecutionAuthority } from "../services/game-turn-commit.js";
@@ -36,6 +37,7 @@ beforeEach(async () => {
   // Deliberately claim more in the JWT than the database grants.
   token = await createSessionToken("operator", { roles: ["sysop"], permissions: ["manage_roles", "view_admin"] });
   app = new Hono<AuthEnv>(); app.route("/", createVisualReplayProductionRoutes(db)); app.route("/", createProductionStudioRoutes(db));
+  app.route("/", createAudioRoutes(db));
 });
 afterEach(() => { if (originalSecret === undefined) delete process.env.JWT_SECRET; else process.env.JWT_SECRET = originalSecret; });
 const root = (gameId: string) => `/api/admin/production/games/${gameId}`;
@@ -67,12 +69,56 @@ async function wolf() {
   return { id, events };
 }
 async function producer() { await grantTestAuthority(db, "operator", [], "producer"); }
+async function expectReadyAudio(gameId: string) {
+  const [track] = await db.select().from(schema.gameAudioTracks).where(eq(schema.gameAudioTracks.gameId, gameId));
+  expect(track?.status, track?.error ?? "Audio track was not published").toBe("ready");
+}
 function annotationBody(source: Awaited<ReturnType<typeof readInfluenceProductionSource>>, revision: number, tags: Record<string, string>) {
   return { snapshot: source.snapshot, audience: "public", thinking: true, expectedRevision: revision, tags };
 }
 function descriptorHash(descriptor: Omit<ProductionExportDescriptor, "hash">) {
   return `sha256:${createHash("sha256").update(stableProductionJson(descriptor)).digest("hex")}`;
 }
+
+test("hidden game audio remains producer-only with exact frozen versions and audience boundaries", async () => {
+  const f = await wolf(); await producer();
+  const {runAudioTrack} = await import("../services/audio-tracks.js");
+  const preview = await (await request(`${root(f.id)}/audio`)).json() as {previewHash:string};
+  expect((await request(`${root(f.id)}/audio`,{previewHash:preview.previewHash})).status).toBe(202);
+  const mp3 = await readFile(new URL("../../../web/public/visual/werewolf/opening-v1/door-effects.mp3",import.meta.url));
+  await runAudioTrack(db,async () => ({bytes:mp3,evidence:{fixture:true}}));
+  await expectReadyAudio(f.id);
+  const source = await buildWerewolfProductionSourceSnapshot(db,f.id,{audience:"omniscient",thinking:true});
+  const publication = await (await request(`${root(f.id)}/audio/manifest?audience=omniscient&thinking=on`)).json() as import("@influence/engine/audio-track").PublishedAudioTrack;
+  const thought = publication.clips.find(clip => clip.watch?.part === "thinking")!;
+  expect(thought).toBeDefined(); expect(thought.url).toStartWith(`${root(f.id)}/audio/`);
+  const ids = source.catalog.moments.map(moment => moment.id);
+  const recordings = publication.clips.filter(clip => ids.includes(clip.momentId)).map(clip => ({momentId:clip.momentId,messageId:clip.momentId,speakerId:clip.speakerId,textHash:clip.textHash,sha256:clip.sha256,durationMs:clip.durationMs,versionId:clip.versionId}));
+  const frozenResponse = await request(`${root(f.id)}/selection`,{snapshot:source.snapshot,audience:"omniscient",thinking:true,
+    selection:{mode:"ids",thinking:true,ids},expectedMomentIds:ids,settings,copy:{},recordings});
+  expect(frozenResponse.status).toBe(200);
+  const frozen = await frozenResponse.json() as ProductionExportDescriptor;
+  await db.update(schema.games).set({hiddenAt:new Date().toISOString()}).where(eq(schema.games.id,f.id));
+  const pinned = await request(`${root(f.id)}/audio/versions`,{audience:"omniscient",thinking:true,versionIds:recordings.map(row => row.versionId)});
+  expect(pinned.status).toBe(200);expect((await pinned.json() as typeof publication).clips).toEqual(publication.clips);
+  expect((await request(`${root(f.id)}/selection/validate`,frozen)).status).toBe(200);
+  const bytes = await request(thought.url);expect(bytes.status).toBe(200);expect(Buffer.from(await bytes.arrayBuffer())).toEqual(mp3);
+  const ranged = await app.request(thought.url,{headers:{Authorization:`Bearer ${token}`,Range:"bytes=2-9"}});
+  expect(ranged.status).toBe(206);expect(Buffer.from(await ranged.arrayBuffer())).toEqual(mp3.subarray(2,10));
+  const publicUrl = thought.url.replace("/api/admin/production/games/","/api/games/");
+  expect((await app.request(publicUrl)).status).toBe(404);
+  expect(await (await app.request(`/api/games/${f.id}/audio?audience=omniscient&thinking=on`)).json()).toBeNull();
+  expect((await app.request(thought.url)).status).toBe(401);
+  expect((await request(thought.url.replace("audience=omniscient","audience=mystery"))).status).toBe(404);
+  expect((await request(thought.url.replace("thinking=on","thinking=off"))).status).toBe(404);
+  await db.insert(schema.games).values({id:"other-audio-game",slug:"other-audio-game",gameKind:"werewolf",status:"completed",config:"{}"});
+  expect((await request(thought.url.replace(f.id,"other-audio-game"))).status).toBe(404);
+  expect((await request(`${root("other-audio-game")}/audio/versions`,{audience:"omniscient",thinking:true,versionIds:[thought.versionId]})).status).toBe(400);
+  await db.delete(schema.userRoles).where(eq(schema.userRoles.userId,"operator"));
+  // The stale JWT still claims Sysop; current database roles must win.
+  expect((await request(thought.url)).status).toBe(403);
+  expect((await request(`${root(f.id)}/audio/versions`,{audience:"omniscient",thinking:true,versionIds:[thought.versionId]})).status).toBe(403);
+},30000);
 
 test("missing frozen character art uses presentation fallback while available body art and the source pin remain exact", async () => {
   await producer();
@@ -276,27 +322,72 @@ test("a completed game cannot export a handcrafted descriptor from its previousl
   expect(await response.json()).toEqual({ error: "Export requires the complete accepted game history. Refresh the source." });
 });
 
-test("recordings freeze only against selected authorized speech and its exact actor", async () => {
+test("local recording metadata freezes against selected authorized moments without duplicating playback identity checks", async () => {
   const f = await influence(); await producer();
   const recording = { momentId: f.speech.id, messageId: f.speech.source.kind === "influence-transcript" ? f.speech.source.transcriptId : "",
     speakerId: f.speech.actorId!, textHash: createHash("sha256").update("Accepted original speech").digest("hex"),
     sha256: "a".repeat(64), durationMs: 1200 };
   const body = { snapshot: f.source.snapshot, audience: "public", thinking: true,
     selection: { mode: "ids", thinking: true, ids: [f.speech.id] }, expectedMomentIds: [f.speech.id], settings, copy: {} };
-  for (const invalid of [{ ...recording, momentId: f.thought.id }, { ...recording, speakerId: "echo" }]) {
-    const response = await request(`${root(f.gameId)}/selection`, { ...body, recordings: [invalid] });
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: "Recording does not match a selected authorized speech moment" });
-  }
+  const response = await request(`${root(f.gameId)}/selection`, { ...body, recordings: [{ ...recording, momentId: f.thought.id }] });
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({ error: "Recording belongs to a moment outside the selected cut" });
   const prepared = await request(`${root(f.gameId)}/selection`, { ...body, recordings: [recording] });
   expect(prepared.status).toBe(200);
   const descriptor = await prepared.json() as ProductionExportDescriptor;
   expect(descriptor.recordings).toEqual([recording]);
   expect(descriptor.annotations).toEqual([{ momentId: f.speech.id, tags: {}, revision: 0 }]);
   expect((await request(`${root(f.gameId)}/selection/validate`, descriptor)).status).toBe(200);
-  const { hash: _hash, ...wrongSpeaker } = { ...descriptor, recordings: [{ ...recording, speakerId: "echo" }] };
-  expect((await request(`${root(f.gameId)}/selection/validate`, { ...wrongSpeaker, hash: descriptorHash(wrongSpeaker) })).status).toBe(400);
+  const { hash: _hash, ...outsideCut } = { ...descriptor, recordings: [{ ...recording, momentId: f.thought.id }] };
+  expect((await request(`${root(f.gameId)}/selection/validate`, { ...outsideCut, hash: descriptorHash(outsideCut) })).status).toBe(400);
 });
+
+test("Werewolf House narration freezes and validates without confusing the actor with the speaker", async () => {
+  const f = await wolf(); await producer();
+  const {runAudioTrack} = await import("../services/audio-tracks.js");
+  const preview = await (await request(`${root(f.id)}/audio`)).json() as {previewHash:string};
+  expect((await request(`${root(f.id)}/audio`,{previewHash:preview.previewHash})).status).toBe(202);
+  const mp3 = await readFile(new URL("../../../web/public/visual/werewolf/opening-v1/door-effects.mp3",import.meta.url));
+  await runAudioTrack(db,async()=>({bytes:mp3,evidence:{fixture:true}}));
+  await expectReadyAudio(f.id);
+  for (const audience of ["omniscient","mystery"] as const) {
+    const thinking = audience === "omniscient";
+    const source = await buildWerewolfProductionSourceSnapshot(db,f.id,{audience,thinking});
+    const ids = source.catalog.moments.map(moment=>moment.id);
+    const publication = await (await request(`${root(f.id)}/audio/manifest?audience=${audience}&thinking=${thinking ? "on":"off"}`)).json() as import("@influence/engine/audio-track").PublishedAudioTrack;
+    const recordings = publication.clips.filter(clip=>ids.includes(clip.momentId)).map(clip=>({momentId:clip.momentId,messageId:clip.momentId,speakerId:clip.speakerId,textHash:clip.textHash,sha256:clip.sha256,durationMs:clip.durationMs,versionId:clip.versionId}));
+    const body = {snapshot:source.snapshot,audience,thinking,selection:{mode:"ids",thinking,ids},expectedMomentIds:ids,settings,copy:{},recordings};
+    if (thinking) {
+      for (const part of ["protect","investigate","hunt","pack_vote"]) {
+        const moment = source.catalog.moments.find(moment=>moment.part.kind===part)!;
+        expect(moment).toBeDefined();
+        expect(recordings.find(recording=>recording.momentId===moment.id)?.speakerId).toBeNull();
+      }
+    }
+    const response = await request(`${root(f.id)}/selection`,body);
+    expect(response.status).toBe(200);
+    const descriptor = await response.json() as ProductionExportDescriptor;
+    expect(descriptor.recordings).toEqual(recordings);
+    expect((await request(`${root(f.id)}/selection/validate`,descriptor)).status).toBe(200);
+    // Active track discovery may move, while the exported version remains published.
+    await db.update(schema.gameAudioTracks).set({active:false}).where(eq(schema.gameAudioTracks.id,publication.id));
+    expect((await request(`${root(f.id)}/selection/validate`,descriptor)).status).toBe(200);
+    const versions={audience,thinking,versionIds:recordings.map(recording=>recording.versionId)};
+    const pinnedResponse=await request(`${root(f.id)}/audio/versions`,versions);
+    expect(pinnedResponse.status).toBe(200);
+    expect((await pinnedResponse.json() as typeof publication).clips.map(clip=>clip.versionId)).toEqual(recordings.map(recording=>recording.versionId));
+    expect((await request(`${root(f.id)}/audio/versions`,{...versions,audience:"public"})).status).toBe(400);
+    await db.update(schema.gameAudioTracks).set({active:true}).where(eq(schema.gameAudioTracks.id,publication.id));
+    if (thinking) {
+      const action = source.catalog.moments.find(moment=>moment.part.kind==="protect")!;
+      expect(action.actorId).toBeTruthy();
+      const badRecordings = recordings.map(recording=>recording.momentId===action.id ? {...recording,speakerId:action.actorId!}:recording);
+      expect((await request(`${root(f.id)}/selection`,{...body,recordings:badRecordings})).status).toBe(400);
+      const {hash:_hash,...changed} = {...descriptor,recordings:badRecordings};
+      expect((await request(`${root(f.id)}/selection/validate`,{...changed,hash:descriptorHash(changed)})).status).toBe(400);
+    }
+  }
+},30000);
 
 test("Mystery source and handcrafted private keys cannot select or annotate private Werewolf moments", async () => {
   const f = await wolf(); await producer();
@@ -346,4 +437,30 @@ test("browser/export fixture seeds real API sources, independent selections and 
   expect((await request(`${root(fixture.werewolf.id)}/source?audience=mystery&thinking=off`, undefined, fixture.producer.token)).status).toBe(200);
   expect((await request(`${root(fixture.werewolf.id)}/source?audience=omniscient&thinking=on`, undefined, fixture.producer.token)).status).toBe(200);
   expect((await request(`${root(fixture.pausedInfluence.id)}/source?audience=public&thinking=on`, undefined, fixture.producer.token)).status).toBe(200);
+});
+
+test("Studio backfill requires producer authority and freezes only verified generated recording versions",async()=>{
+  const {runAudioTrack}=await import("../services/audio-tracks.js");
+  const f=await influence("studio-audio");
+  expect((await request(`${root(f.gameId)}/audio`)).status).toBe(403);
+  await producer();
+  const previewResponse=await request(`${root(f.gameId)}/audio`);expect(previewResponse.status).toBe(200);
+  const preview=await previewResponse.json() as {previewHash:string;clipCount:number;estimateUsd:number};
+  expect(preview.clipCount).toBeGreaterThan(1);expect(preview.estimateUsd).toBeGreaterThan(0);
+  const queued=await request(`${root(f.gameId)}/audio`,{previewHash:preview.previewHash});expect(queued.status).toBe(202);
+  const mp3=await readFile(new URL("../../../web/public/visual/werewolf/opening-v1/door-effects.mp3",import.meta.url));
+  // Real container/probe and bucket paths, with no paid synthesis.
+  await runAudioTrack(db,async()=>({bytes:mp3,evidence:{fixture:true}}));
+  await expectReadyAudio(f.gameId);
+  const publicationResponse=await request(`${root(f.gameId)}/audio/manifest?audience=public&thinking=on`);
+  const publication=await publicationResponse.json() as import("@influence/engine/audio-track").PublishedAudioTrack;
+  const clip=publication.clips.find(clip=>clip.momentId===f.thought.id)!;
+  expect(clip).toBeDefined();expect(clip.durationMs).toBeGreaterThan(0);
+  const recording={momentId:clip.momentId,messageId:clip.momentId,speakerId:clip.speakerId,textHash:clip.textHash,sha256:clip.sha256,durationMs:clip.durationMs,versionId:clip.versionId};
+  const body={snapshot:f.source.snapshot,audience:"public",thinking:true,selection:{mode:"ids",thinking:true,ids:[f.thought.id]},settings,copy:{},expectedMomentIds:[f.thought.id],recordings:[recording]};
+  const frozen=await request(`${root(f.gameId)}/selection`,body);
+  expect(frozen.status).toBe(200);
+  expect((await request(`${root(f.gameId)}/selection`,{...body,recordings:[{...recording,durationMs:1}]})).status).toBe(400);
+  const thoughtOff=await request(`${root(f.gameId)}/audio/manifest?audience=public&thinking=off`);
+  expect((await thoughtOff.json() as typeof publication).clips.some(row=>row.versionId===clip.versionId)).toBe(false);
 });

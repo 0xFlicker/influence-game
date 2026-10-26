@@ -1,3 +1,5 @@
+import {readAgentVoice} from "../services/audio-voices.js";
+import {assignPlayerVoice,isPlayerVoiceId,PLAYER_VOICES} from "@influence/engine/voice-catalog";
 import { generationContacts } from "../services/generation-admission-error.js";
 import { randomUUID } from "node:crypto";
 import { allocateGeneratedAgentName, updateGeneratedProfileNameReferences } from "../services/generated-agent-names.js";
@@ -74,6 +76,20 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
   app.onError((error,c)=>{
     if(error instanceof GenerationAdmissionError) return c.json({error:error.message,code:error.code,contacts:generationContacts},error.status);
     console.error('[agent-profiles]',error); return c.json({error:'Agent request failed'},500);
+  });
+  app.get("/api/agent-profiles/:id/voice",requireAuth(db),async c => {
+    const [agent] = await db.select({id:schema.agentProfiles.id}).from(schema.agentProfiles).where(and(eq(schema.agentProfiles.id,c.req.param("id")),eq(schema.agentProfiles.userId,c.get("user").id)));
+    if (!agent) return c.json({error:"Agent not found"},404);
+    return c.json({assignment:await readAgentVoice(db,agent.id),voices:PLAYER_VOICES});
+  });
+  app.put("/api/agent-profiles/:id/voice",requireAuth(db),async c => {
+    const body = await parseJsonBody(c,"PUT /api/agent-profiles/:id/voice");
+    if (!body || Object.keys(body).length !== 1 || !isPlayerVoiceId(body.voiceId)) return c.json({error:"Choose a player stock voice"},400);
+    const [agent] = await db.select().from(schema.agentProfiles).where(and(eq(schema.agentProfiles.id,c.req.param("id")),eq(schema.agentProfiles.userId,c.get("user").id)));
+    if (!agent) return c.json({error:"Agent not found"},404);
+    const assignment = assignPlayerVoice(agent.id,agent.gender ?? null,body.voiceId);
+    await db.insert(schema.agentVoices).values({agentProfileId:agent.id,assignment}).onConflictDoUpdate({target:schema.agentVoices.agentProfileId,set:{assignment,updatedAt:new Date()}});
+    return c.json({assignment});
   });
   app.post("/api/agent-profiles/edit-assistant", requireAuth(db), async (c) => {
     const body = await parseJsonBody(c, "POST /api/agent-profiles/edit-assistant");
@@ -384,6 +400,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         avatarChangeSource: "web_upload",
         ...(avatarGenerationRequestId && { avatarGenerationRequestId }),
       }, {
+        modelPreference: body.modelPreference,
         name: body.name,
         backstory: body.backstory,
         personality: body.personality,
@@ -591,6 +608,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
           avatarGenerationRequestId: body.avatarGenerationRequestId,
         }),
       }, profileId, {
+        modelPreference: body.modelPreference,
         name: body.name,
         backstory: body.backstory,
         personality: body.personality,
@@ -695,6 +713,7 @@ function agentProfileErrorResponse(
     retryable: error.retryable,
     ...(error.details && { details: error.details }),
   };
+  if (error.statusCode === 403) return c.json(body, 403);
   if (error.statusCode === 404) return c.json(body, 404);
   if (error.statusCode === 409) return c.json(body, 409);
   return c.json(body, 400);

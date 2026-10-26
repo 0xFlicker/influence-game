@@ -1,5 +1,8 @@
 "use client";
+import {AgentVoicePicker} from "./agent-voice-picker";
 
+import { ModelPreferencePicker } from "@/components/model-preference-picker";
+import type { ModelPreference } from "@influence/engine/game-model-routing";
 import { defaultWerewolfStrategy } from "@influence/engine/werewolf/strategy";
 
 import { characterEditFields, VISUAL_FIELDS, type CharacterEditCommand, type CharacterField } from "@influence/engine/agent-creation-assistant";
@@ -59,6 +62,7 @@ interface AgentFormProps {
 }
 
 interface EditorSnapshot {
+  modelPreference?: ModelPreference;
   visualDesign?: string | null;
   portraitCrop?: SavedAgent["portraitCrop"];
   headPosition?: SavedAgent["headPosition"];
@@ -112,7 +116,8 @@ function isUuid(value: string): boolean {
 }
 
 function sameSnapshot(left: EditorSnapshot, right: EditorSnapshot): boolean {
-  return left.name === right.name
+  return JSON.stringify(left.modelPreference ?? "default") === JSON.stringify(right.modelPreference ?? "default")
+    && left.name === right.name
     && (left.visualDesign ?? null) === (right.visualDesign ?? null)
     && JSON.stringify(left.headPosition ?? null) === JSON.stringify(right.headPosition ?? null)
     && JSON.stringify(left.headSuggestion ?? null) === JSON.stringify(right.headSuggestion ?? null)
@@ -189,6 +194,7 @@ export function AgentForm({
   const initialWerewolfStrategy = (comparingWerewolf ? strategyComparison?.initialWorking : undefined) ?? initial?.werewolfStrategyStyle ?? "";
   const initialPersona = initial ? initial.personaKey : "strategic";
   const initialSnapshot = useMemo<EditorSnapshot>(() => ({
+    modelPreference: initial?.modelPreference ?? "default",
     visualDesign: initial?.visualDesign ?? null,
     portraitCrop: initial?.portraitCrop ?? null,
     headPosition: initial?.headPosition ?? null,
@@ -212,6 +218,7 @@ export function AgentForm({
   const [name, setName] = useState(initialSnapshot.name);
   const [backstory, setBackstory] = useState(initialSnapshot.backstory);
   const [personality, setPersonality] = useState(initialSnapshot.personality);
+  const [modelPreference, setModelPreference] = useState<ModelPreference>(initialSnapshot.modelPreference ?? "default");
   const [strategyStyle, setStrategyStyle] = useState(initialSnapshot.strategyStyle);
   const [werewolfStrategyStyle, setWerewolfStrategyStyle] = useState(initialSnapshot.werewolfStrategyStyle);
   const [performanceInstructions, setPerformanceInstructions] = useState(initialSnapshot.performanceInstructions);
@@ -295,6 +302,7 @@ export function AgentForm({
     ? isAvatarCompletionPending(draftAvatarCompletion)
     : false;
   const currentSnapshot: EditorSnapshot = useMemo(() => ({
+    modelPreference,
     visualDesign,
     portraitCrop,
     headPosition,
@@ -309,7 +317,7 @@ export function AgentForm({
     personaKey,
     gender,
     explicitAvatarUrl,
-  }), [visualDesign, portraitCrop, headPosition, headSuggestion, backstory, explicitAvatarUrl, gender, name, personaKey, personality, strategyStyle, werewolfStrategyStyle, performanceInstructions, fullBodyReferenceUrl]);
+  }), [modelPreference, visualDesign, portraitCrop, headPosition, headSuggestion, backstory, explicitAvatarUrl, gender, name, personaKey, personality, strategyStyle, werewolfStrategyStyle, performanceInstructions, fullBodyReferenceUrl]);
   const dirty = !sameSnapshot(currentSnapshot, initialSnapshot);
   const anonymousDraftKey = `influence:agent-editor:${DRAFT_VERSION}:anonymous:${draftScope}`;
   const draftStorageKey = draftOwner
@@ -453,6 +461,7 @@ export function AgentForm({
     setPersonality(pendingRestore.current.personality);
     setStrategyStyle(pendingRestore.current.strategyStyle);
     setWerewolfStrategyStyle(pendingRestore.current.werewolfStrategyStyle);
+    setModelPreference(pendingRestore.current.modelPreference ?? "default");
     setPerformanceInstructions(pendingRestore.current.performanceInstructions);
     setFullBodyReferenceUrl(pendingRestore.current.fullBodyReferenceUrl);
     setPersonaKey(pendingRestore.current.personaKey);
@@ -704,6 +713,7 @@ export function AgentForm({
     setSaveError(null);
     try {
       const params: AgentProfileWriteParams = {
+        modelPreference,
         name: name.trim(),
         personality: personality.trim(),
         backstory: backstory.trim(),
@@ -830,6 +840,9 @@ export function AgentForm({
         </section>
       )}
 
+      {!publicPreview && <section className="mb-6">
+        <ModelPreferencePicker value={modelPreference} onChange={setModelPreference} disabled={submitting} />
+      </section>}
       <div hidden={!guided} className={guided ? "contents" : "hidden"}>
         <AgentCreationChat
           anonymous={anonymous} anonymousUsed={anonymousUsed}
@@ -947,6 +960,7 @@ export function AgentForm({
       </div>
 
       {!guided && headConfirmationRequired && <p role="status" className="text-sm text-amber-200">Confirm the head and portrait before saving this new full-body image. <button type="button" className="underline" onClick={() => setPortraitEditorSource(fullBodyReferenceUrl)}>Review character images</button>. Save draft keeps your work in this tab.</p>}
+      {initial && <AgentVoicePicker key={initial.id} agentId={initial.id} />}
       {portraitEditorSource && <CharacterPortraitEditor key={portraitEditorSource} fullScreen={guided} sourceUrl={portraitEditorSource} initialCrop={portraitCrop} initialHead={headPosition ?? headSuggestion} confirmHead={portraitEditorSource === fullBodyReferenceUrl} name={name} onClose={() => setPortraitEditorSource(null)} onPendingChange={setUploading} onFailure={() => setUnfinishedReplacement(true)} onApply={(result) => { setExplicitAvatarUrl(result.avatarUrl); setPortraitCrop(result.portraitCrop); if (portraitEditorSource === fullBodyReferenceUrl) { setHeadPosition(result.headPosition); setHeadSuggestion(null); } setUnfinishedReplacement(false); setReferenceError(null); }} />}
       {!guided && (generationBusy || uploading) && <p role="status" className="mt-4 text-sm text-white/60">Preparation is in progress. Save draft keeps changes in this tab; it does not update your Agent.</p>}
       {generationNotice && <p role="status" className="mt-4 text-sm text-amber-200">{generationNotice}</p>}

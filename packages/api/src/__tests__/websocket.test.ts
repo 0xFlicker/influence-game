@@ -682,6 +682,32 @@ describe("WebSocket Manager", () => {
       totalRounds: 1,
     });
   });
+
+  test("async visibility checks preserve snapshot and publication order per game", async () => {
+    const deliveries: string[] = [];
+    const gates: Array<(visible: boolean) => void> = [];
+    setServer({ publish(_topic, data) { deliveries.push(String(data)); } }, () => new Promise(resolve => gates.push(resolve)));
+    const { ws } = createMockWs("ordered-visibility");
+    ws.send = (data) => { deliveries.push(String(data)); return 1; };
+    const state = watchStateFixture(ws.data.gameId, 11);
+    const original = JSON.stringify(state);
+    sendWatchState(ws, state, 18);
+    broadcastGamePublication({ type: "publication", gameId: ws.data.gameId,
+      publicationSequence: 19, turnSequence: 1, payload: { type: "game_over", totalRounds: 2 } });
+    broadcastWatchState(ws.data.gameId, state, 19);
+    await Bun.sleep(0);
+    expect(gates).toHaveLength(1);
+    expect(deliveries).toEqual([]);
+    for (let i = 0; i < 3; i++) {
+      gates[i]!(true);
+      await Bun.sleep(0);
+      expect(deliveries).toHaveLength(i + 1);
+    }
+    expect(deliveries.map(data => JSON.parse(data).type)).toEqual(["watch_state", "publication", "watch_state"]);
+    expect(deliveries.map(data => JSON.parse(data).throughPublicationSequence ?? JSON.parse(data).publicationSequence)).toEqual([18, 19, 19]);
+    expect(JSON.stringify(state)).toBe(original);
+    setServer({ publish() {} });
+  });
 });
 
 function watchStateFixture(gameId: string, sequence: number): GameWatchState {

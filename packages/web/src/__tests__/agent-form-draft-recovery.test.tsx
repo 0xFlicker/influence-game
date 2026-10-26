@@ -15,6 +15,8 @@ const originalHTMLElement = globalThis.HTMLElement;
 const originalNode = globalThis.Node;
 const originalEvent = globalThis.Event;
 const originalInputEvent = globalThis.InputEvent;
+const floatingGlobals = ["getComputedStyle", "requestAnimationFrame", "cancelAnimationFrame", "ResizeObserver"] as const;
+const floatingDescriptors = new Map(floatingGlobals.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
 const auth = { account: { id: "user-1" } } as InfluenceAuthState;
 const draftScope = "review:agent-1:review-1";
 const draftKey = `influence:agent-editor:4:user-1:${draftScope}`;
@@ -36,6 +38,9 @@ beforeEach(() => {
   Object.defineProperty(globalThis, "Node", { configurable: true, value: domWindow.Node });
   Object.defineProperty(globalThis, "Event", { configurable: true, value: domWindow.Event });
   Object.defineProperty(globalThis, "InputEvent", { configurable: true, value: domWindow.InputEvent });
+  for (const key of floatingGlobals) Object.defineProperty(globalThis, key, {
+    configurable: true, value: key === "ResizeObserver" ? domWindow[key] : domWindow[key].bind(domWindow),
+  });
   domWindow.sessionStorage.setItem(draftKey, JSON.stringify({
     version: 4,
     savedAt: "2026-08-28T20:00:00.000Z",
@@ -58,9 +63,63 @@ afterEach(() => {
   Object.defineProperty(globalThis, "Node", { configurable: true, value: originalNode });
   Object.defineProperty(globalThis, "Event", { configurable: true, value: originalEvent });
   Object.defineProperty(globalThis, "InputEvent", { configurable: true, value: originalInputEvent });
+  for (const key of floatingGlobals) {
+    const descriptor = floatingDescriptors.get(key);
+    if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+    else Reflect.deleteProperty(globalThis, key);
+  }
 });
 
 describe("AgentForm draft recovery", () => {
+  test("discards an unsaved model selection with the form", async () => {
+    domWindow.sessionStorage.removeItem(draftKey);
+    const submissions: AgentProfileWriteParams[] = [];
+    const mounted = await renderForm(false, async params => { submissions.push(params); });
+    const picker = mounted.getByRole("combobox", { name: "Preferred model" });
+    fireEvent.focus(picker);
+    fireEvent.input(picker, { target: { value: "DeepSeek" } });
+    await waitFor(() => expect(mounted.getByRole("option", { name: /DeepSeek Flash/ })).toBeTruthy());
+    fireEvent.click(mounted.getByRole("option", { name: /DeepSeek Flash/ }));
+    fireEvent.click(mounted.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(mounted.getByRole("button", { name: "Discard" })).toBeTruthy());
+    fireEvent.click(mounted.getByRole("button", { name: "Discard" }));
+    expect(submissions).toHaveLength(0);
+    expect(domWindow.sessionStorage.getItem(draftKey)).toBeNull();
+    mounted.unmount();
+    const reopened = await renderForm(false);
+    expect((reopened.getByRole("combobox", { name: "Preferred model" }) as HTMLInputElement).value).toBe("Default — Let the House decide");
+  });
+
+  test("keeps model selection in the draft until Save and retains it after a failed save", async () => {
+    domWindow.sessionStorage.removeItem(draftKey);
+    const requests: string[] = [];
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      requests.push(String(url));
+      return Response.json({});
+    }) as typeof fetch;
+    const submissions: AgentProfileWriteParams[] = [];
+    const mounted = await renderForm(false, async params => {
+      submissions.push(params);
+      if (submissions.length === 1) throw new Error("Save failed");
+    });
+    const picker = mounted.getByRole("combobox", { name: "Preferred model" }) as HTMLInputElement;
+    fireEvent.focus(picker);
+    fireEvent.input(picker, { target: { value: "DeepSeek" } });
+    await waitFor(() => expect(mounted.getByRole("option", { name: /DeepSeek Flash/ })).toBeTruthy());
+    fireEvent.click(mounted.getByRole("option", { name: /DeepSeek Flash/ }));
+    expect(picker.value).toBe("DeepSeek Flash");
+    expect(submissions).toHaveLength(0);
+    expect(requests).toHaveLength(0);
+    fireEvent.click(mounted.getByRole("button", { name: "Save strategy update" }));
+    await waitFor(() => expect(mounted.getByText("Save failed")).toBeTruthy());
+    expect(submissions[0]?.modelPreference).toEqual({ catalogId: "katana:deepseek-v4-flash" });
+    expect(submissions[0]?.strategyStyle).toBe(proposal);
+    expect(picker.value).toBe("DeepSeek Flash");
+    fireEvent.click(mounted.getByRole("button", { name: "Save strategy update" }));
+    await waitFor(() => expect(submissions).toHaveLength(2));
+    expect(submissions[1]?.modelPreference).toEqual(submissions[0]?.modelPreference);
+  });
+
   test("applies a review draft without destabilizing Strategy status", async () => {
     const mounted = await renderForm(true);
     expect(mounted.getByLabelText("Saved local draft")).not.toBeNull();
@@ -91,6 +150,9 @@ describe("AgentForm draft recovery", () => {
 });
 
 async function renderForm(requireChange: boolean, onSubmit: (params: AgentProfileWriteParams) => Promise<void> = async () => {}, emptyText = false, initialOverrides: Partial<SavedAgent> = {}): Promise<RenderResult> {
+  const fetcher=globalThis.fetch;
+  globalThis.fetch=Object.assign(async (input:RequestInfo|URL,init?:RequestInit) => String(input).endsWith("/voice")
+    ? Response.json({assignment:{voiceId:"ara"},voices:[{id:"ara",name:"Ara",gender:"female"}]}) : fetcher(input,init),{preconnect:originalFetch.preconnect}) as typeof fetch;
   let mounted!: RenderResult;
   await act(async () => {
     mounted = render(

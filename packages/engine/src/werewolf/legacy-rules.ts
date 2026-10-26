@@ -193,7 +193,7 @@ function advanceRespondent(state: WerewolfState, d: WerewolfDiscussion): void {
 
 function acceptDiscussion(state: WerewolfState, action: WerewolfAcceptedAction): void {
   const d = state.discussion;
-  if (!d || d.ended || action.decision.kind === "target") throw new Error("Missing discussion turn");
+  if (!d || d.ended || (action.decision.kind === "target" || action.decision.kind === "speaking_priority")) throw new Error("Missing discussion turn");
   const { text, cue } = action.decision;
   if (action.decision.kind === "opening" && text !== null) {
     d.recipientIds = [...action.decision.recipientIds];
@@ -286,6 +286,7 @@ export function nextWerewolfStep(state: WerewolfState): WerewolfStep {
 
 export function validateWerewolfAction(request: WerewolfRequest, action: WerewolfAcceptedAction): void {
   const { decision: d, fallback, ...acceptedRequest } = action;
+  if (d.kind === "speaking_priority") throw new Error("Speaking priority requires Werewolf v11");
   if (!same(request, acceptedRequest)) throw new Error("Werewolf action does not match the current action slot");
   if (fallback !== null && fallback !== "provider_unavailable") throw new Error("Invalid Werewolf fallback");
   if (request.legalTargetIds.length) {

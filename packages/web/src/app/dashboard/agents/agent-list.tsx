@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { AvatarCompletion, SavedAgent } from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
 import { AgentAvatarPreview } from "@/components/agent-avatar-preview";
+import { AgentModelLabel } from "@/components/agent-model-label";
 import { isAvatarCompletionPending, isAvatarCompletionUnavailable } from "./avatar-completion";
 
 interface AgentListProps {
@@ -72,14 +73,16 @@ export function AgentList({
                   gamesPlayed={agent.gamesPlayed}
                   gamesWon={agent.gamesWon}
                   size="10"
+                  modelPreference={agent.modelPreference}
                 />
 
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                     <h3 className="text-text-primary font-medium text-sm truncate">{agent.name}</h3>
                     {persona && (
                       <span className="influence-copy-muted text-xs shrink-0">{persona.name}</span>
                     )}
+                    <AgentModelLabel preference={agent.modelPreference} className="text-xs text-text-secondary break-all" />
                   </div>
                   <p className="influence-copy text-xs mt-0.5 line-clamp-1">{agent.backstory}</p>
                   <div className="mt-1.5">

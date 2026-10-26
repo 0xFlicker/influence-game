@@ -1,3 +1,4 @@
+import { drainProviderCalls } from "../provider-batch";
 import type {
   CanonicalSourcePointer,
   FormatResolutionPayload,
@@ -145,6 +146,7 @@ export async function runTwoNamesSetup(ctx: PhaseRunnerContext): Promise<void> {
     )],
   );
   resolveActionStrategyCandidate(empoweredAgent, decision, decision.decisionSource === "llm");
+  logger.logDecisionSpeech(empoweredId, "format-two-names-initial-names", Phase.FORMAT_PICK, decision);
   logger.logSystem(
     `${gameState.getPlayerName(empoweredId)} nominates: ${nomineeIds.map((id) => gameState.getPlayerName(id)).join(" and ")}.`,
     Phase.FORMAT_PICK,
@@ -258,6 +260,7 @@ export async function runTwoNamesOverrideTransition(
     await assertCanAcceptCommit(ctx);
     gameState.recordTwoNamesOverrideDeclined(holderId, initial, [overridePointer]);
     resolveActionStrategyCandidate(holder, overrideDecision, overrideDecision.decisionSource === "llm");
+    logger.logDecisionSpeech(holderId, "format-two-names-override", Phase.FORMAT_MINGLE, overrideDecision);
     logger.logSystem(`${gameState.getPlayerName(holderId)} declines Override.`, Phase.FORMAT_MINGLE);
     return "declined";
   }
@@ -343,6 +346,8 @@ export async function runTwoNamesOverrideTransition(
   });
   resolveActionStrategyCandidate(holder, overrideDecision, overrideDecision.decisionSource === "llm");
   resolveActionStrategyCandidate(empowered, replacementDecision, replacementDecision.decisionSource === "llm");
+  logger.logDecisionSpeech(holderId, "format-two-names-override", Phase.FORMAT_MINGLE, overrideDecision);
+  logger.logDecisionSpeech(empoweredId, "format-two-names-replacement", Phase.FORMAT_MINGLE, replacementDecision);
   logger.logSystem(
     `${gameState.getPlayerName(holderId)} removes ${gameState.getPlayerName(removedNomineeId)}.`,
     Phase.FORMAT_MINGLE,
@@ -449,7 +454,7 @@ export async function runTwoNamesBallots(ctx: PhaseRunnerContext): Promise<void>
   const current = projection(ctx);
   const finalists = current.finalistPlayerIds;
   if (!finalists) throw new Error("Two Names ballots require final nominees");
-  for (const voterId of current.eligibleVoterIds) {
+  const ballotCommits = await drainProviderCalls(current.eligibleVoterIds.map(async (voterId) => {
     const voter = requireAgent(ctx, voterId, "Two Names ballot");
     const phaseCtx = prepareAgentPhaseContext(
       ctx,
@@ -495,39 +500,42 @@ export async function runTwoNamesBallots(ctx: PhaseRunnerContext): Promise<void>
         };
       }
     }
-    await assertCanAcceptCommit(ctx);
-    gameState.recordFormatBallot({
-      formatId: "two_names",
-      voterId,
-      targetId,
-    }, [pointer(
-      voterId,
-      "format-two-names-ballot",
-      Phase.FORMAT_RESOLVE,
-      gameState.round,
-      decision,
-    )]);
-    resolveActionStrategyCandidate(voter, decision, decision.decisionSource === "llm");
-    logger.emitAgentTurn({
-      phase: Phase.FORMAT_RESOLVE,
-      action: "format-ballot",
-      actor: { id: voterId, name: gameState.getPlayerName(voterId), role: "player" },
-      visibility: "private",
-      response: {
+    return async () => {
+      await assertCanAcceptCommit(ctx);
+      gameState.recordFormatBallot({
         formatId: "two_names",
+        voterId,
         targetId,
-        targetName: gameState.getPlayerName(targetId),
-        sealed: true,
-        decisionSource: decision.decisionSource,
-        fallbackReason: decision.fallbackReason,
-        ...strategicDecisionResponse(decision),
-      },
-      thinking: decision.thinking,
-      reasoningContext: decision.reasoningContext,
-      scope: "system",
-      text: `${gameState.getPlayerName(voterId)} sealed ballot: EXIT → ${gameState.getPlayerName(targetId)}`,
-    });
-  }
+      }, [pointer(
+        voterId,
+        "format-two-names-ballot",
+        Phase.FORMAT_RESOLVE,
+        gameState.round,
+        decision,
+      )]);
+      resolveActionStrategyCandidate(voter, decision, decision.decisionSource === "llm");
+      logger.emitAgentTurn({
+        phase: Phase.FORMAT_RESOLVE,
+        action: "format-ballot",
+        actor: { id: voterId, name: gameState.getPlayerName(voterId), role: "player" },
+        visibility: "private",
+        response: {
+          formatId: "two_names",
+          targetId,
+          targetName: gameState.getPlayerName(targetId),
+          sealed: true,
+          decisionSource: decision.decisionSource,
+          fallbackReason: decision.fallbackReason,
+          ...strategicDecisionResponse(decision),
+        },
+        thinking: decision.thinking,
+        reasoningContext: decision.reasoningContext,
+        scope: "system",
+        text: `${gameState.getPlayerName(voterId)} sealed ballot: EXIT → ${gameState.getPlayerName(targetId)}`,
+      });
+    };
+  }));
+  for (const commit of ballotCommits) await commit();
 }
 
 export async function runTwoNamesResolution(
@@ -596,6 +604,7 @@ export async function runTwoNamesResolution(
       decision,
     )];
     resolveActionStrategyCandidate(empowered, decision, decision.decisionSource === "llm");
+    ctx.logger.logDecisionSpeech(empoweredId, "format-two-names-tiebreak", Phase.FORMAT_RESOLVE, decision);
   }
   if (!eliminatedId) throw new Error("Two Names resolution produced no eliminated finalist");
   const score = computeTwoNamesTallies(finalists, current.eligibleVoterIds, current.ballots);

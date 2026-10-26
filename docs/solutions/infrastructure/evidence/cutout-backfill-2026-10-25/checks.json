@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-25",
+  "checks": {
+    "providerFree": {
+      "pass": 2999,
+      "skip": 5,
+      "fail": 0
+    },
+    "postgres": {
+      "pass": 2233,
+      "fail": 0
+    },
+    "focused": {
+      "pass": 17,
+      "fail": 0,
+      "assertions": 113
+    },
+    "check": "passed",
+    "migrationCompatibility": "passed",
+    "diffCheck": "passed"
+  },
+  "localLogs": [
+    {
+      "path": "/tmp/cutout-provider-free.log",
+      "sha256": "a1fef2b5496cf20f88a427c1a5bfc1c99784338789b44514b57f9a8986455796"
+    },
+    {
+      "path": "/tmp/cutout-postgres.log",
+      "sha256": "80eae82aa7f0511221474246bd8189f0afa592b1a70ad9ad2353b1e547421e5f"
+    },
+    {
+      "path": "/tmp/cutout-focused-final.log",
+      "sha256": "32fc9f3dbdec3c45ad3808a309aba785989b2453c21934029188e15086bdc7b5"
+    },
+    {
+      "path": "/tmp/cutout-check-reviewed.log",
+      "sha256": "79acc1d79cf9ebf66d180663ae88895900b7151d855c0bde02dbc0f06d9fb63b"
+    }
+  ]
+}

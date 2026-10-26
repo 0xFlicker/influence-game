@@ -8,6 +8,24 @@ import { werewolfThinkingActions } from "../werewolf/thinking";
 import { projectWerewolfProductionProvenance, projectWerewolfWatch } from "../werewolf/watch";
 import { Phase } from "../types";
 import type { ViewerDecisionEvent } from "../viewer-decision-events";
+import type { WerewolfWatchMoment } from "../werewolf/watch-contract";
+
+test("silent and unavailable Werewolf discussion evidence never becomes editable playback thinking", async () => {
+  const events = await werewolfResultsFixture("saved", "silent-source");
+  const base = projectWerewolfWatch(events, "omniscient", 1, 64).moments[0]!;
+  const moments: WerewolfWatchMoment[] = [null, "Unavailable speech", "Accepted speech"].map((text, index) => ({
+    ...base, cursor: index + 1,
+    entry: {kind: "discussion", day: 1, contribution: {thread: 1, openerId: "a", stage: "reply", recipientIds: [], replyToTurn: null, nextSpeakerId: null, turn: index + 1, publicHistoryPosition: index + 1, actorId: "a", text, cue: null, unavailable: index === 1}},
+  }));
+  const sources = buildWerewolfProductionSources({gameId: "silent-source", audience: "omniscient", moments,
+    provenance: moments.map(moment => ({cursor: moment.cursor, eventSequence: moment.cursor})),
+    thoughts: moments.map(moment => ({cursor: moment.cursor, eventSequence: moment.cursor, actorId: "a", day: 1, action: "discuss", thinking: `Evidence ${moment.cursor}`})), opening: false});
+  const catalog = assembleProductionCatalog({gameId: "silent-source", gameKind: "werewolf", audience: "omniscient", sources});
+  expect(catalog.moments.map(moment => moment.kind)).toEqual(["thinking", "speech"]);
+  expect(catalog.moments.every(moment => moment.order.anchor === 3)).toBeTrue();
+  expect(JSON.stringify(sources)).not.toContain("Evidence 1");
+  expect(JSON.stringify(sources)).not.toContain("Evidence 2");
+});
 
 test("retrospectives are ordinary speech moments with canonical provenance and independent explicit cuts", async () => {
   const events = await completedWerewolfResultsFixture("village", "rt11-wolf");

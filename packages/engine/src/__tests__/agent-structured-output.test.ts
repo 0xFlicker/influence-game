@@ -1,4 +1,4 @@
-import { beginConversation, conversationPrompt } from "../open-conversation";
+import { advanceConversation, beginConversation, conversationPrompt } from "../open-conversation";
 import { ContextBuilder } from "../context-builder";
 import { GameState } from "../game-state";
 import { TranscriptLogger } from "../transcript-logger";
@@ -120,7 +120,7 @@ describe("Mingle prompt and tool vocabulary guard (no current Whisper leakage)",
 
 function makeOpenAIStub(requests: Array<Record<string, unknown>>): OpenAI {
   return makeToolOpenAIStub(requests, "cast_votes", {
-    thinking: "I empower my ally Mira because she is loyal and a strong format chooser.",
+    message: "Mira.",
     empower: "Mira",
     strategyDelta: null,
   });
@@ -374,7 +374,7 @@ function makeJsonFallbackRetryStub(requests: Array<Record<string, unknown>>): Op
         const content = requests.length === 1
           ? ""
           : JSON.stringify({
-              thinking: "Retry with enough room to choose targets.",
+              message: "Mira.",
               empower: "Mira",
               strategyDelta: null,
             });
@@ -417,7 +417,7 @@ function makeJsonFallbackRetryStub(requests: Array<Record<string, unknown>>): Op
                 message: {
                   role: "assistant",
                   content: JSON.stringify({
-                    thinking: "Retry with enough room to choose targets.",
+                    message: "Mira.",
                     empower: "Mira",
                     strategyDelta: null,
                   }),
@@ -506,7 +506,7 @@ describe("sealed-elim agent decision surface", () => {
       "Atlas",
       "strategic",
       makeToolOpenAIStub(requests, "highest_count_ballot", {
-        thinking: "Put my vote on the clearest threat.",
+        message: "Mira.",
         target: "Vera",
         strategyDelta: "Keep Vera as the standing target after committing this vote.",
       }),
@@ -559,7 +559,7 @@ describe("sealed-elim agent decision surface", () => {
     expect(tool.strict).toBe(true);
     expect(tool.schema?.additionalProperties).toBe(false);
     expect(tool.schema?.required).toEqual(
-      expect.arrayContaining(["thinking", "target", "strategyDelta"]),
+      expect.arrayContaining(["message", "target", "strategyDelta"]),
     );
     expect(tool.schema?.required).not.toContain("decisionLog");
     expect(tool.schema?.properties?.target?.enum).toEqual(["Mira", "Vera"]);
@@ -584,7 +584,7 @@ describe("sealed-elim agent decision surface", () => {
       "Atlas",
       "strategic",
       makeToolOpenAIStub(requests, "even_votes_ballot", {
-        thinking: "Flip Vera from odd safety to even danger.",
+        message: "Mira.",
         target: "Vera",
         strategyDelta: "Put Vera onto the lethal highest even total.",
       }),
@@ -664,7 +664,7 @@ describe("sealed-elim agent decision surface", () => {
         "Atlas",
         "strategic",
         makeToolOpenAIStub(requests, scenario.toolName, {
-          thinking: "The board changed enough to require a replacement plan.",
+          message: "Mira.",
           target: "Mira",
           strategy: "Use Mira as a bridge while treating Vera as the next direct threat.",
         }),
@@ -698,21 +698,21 @@ describe("sealed-elim agent decision surface", () => {
         {
           toolName: "highest_count_ballot",
           args: {
-            thinking: "Try an illegal target.",
+            message: "Mira.",
             target: "Nobody",
           },
         },
         {
           toolName: "short_list_ballot",
           args: {
-            thinking: "Try an illegal target.",
+            message: "Mira.",
             target: "Nobody",
           },
         },
         {
           toolName: "even_votes_ballot",
           args: {
-            thinking: "Try an illegal target.",
+            message: "Mira.",
             target: "Nobody",
           },
         },
@@ -799,23 +799,23 @@ describe("Two Names agent decision surface", () => {
       makeToolSequenceOpenAIStub(requests, [
         {
           toolName: "two_names_initial_names",
-          args: { thinking: "Name the pair.", first: "Mira", second: "Vera", strategyDelta: null },
+          args: { message: "Here is my decision.", thinking: "Name the pair.", first: "Mira", second: "Vera", strategyDelta: null },
         },
         {
           toolName: "two_names_override",
-          args: { thinking: "Use it.", useOverride: true, removed: "Vera", strategyDelta: null },
+          args: { message: "Here is my decision.", thinking: "Use it.", useOverride: true, removed: "Vera", strategyDelta: null },
         },
         {
           toolName: "two_names_replacement",
-          args: { thinking: "Bring in Nyx.", target: "Nyx", strategyDelta: null },
+          args: { message: "Here is my decision.", thinking: "Bring in Nyx.", target: "Nyx", strategyDelta: null },
         },
         {
           toolName: "two_names_ballot",
-          args: { thinking: "Exit Mira.", target: "Mira", strategyDelta: null },
+          args: { message: "Mira.", target: "Mira", strategyDelta: null },
         },
         {
           toolName: "two_names_tiebreak",
-          args: { thinking: "Break against Nyx.", target: "Nyx", strategyDelta: null },
+          args: { message: "Mira.", target: "Nyx", strategyDelta: null },
         },
       ]),
       "gpt-5-nano",
@@ -869,15 +869,15 @@ describe("Two Names agent decision surface", () => {
       makeToolSequenceOpenAIStub(requests, [
         {
           toolName: "two_names_initial_names",
-          args: { thinking: "Duplicate.", first: "Mira", second: "Mira", strategyDelta: null },
+          args: { message: "Here is my decision.", thinking: "Duplicate.", first: "Mira", second: "Mira", strategyDelta: null },
         },
         {
           toolName: "two_names_override",
-          args: { thinking: "Contradict.", useOverride: false, removed: "Mira", strategyDelta: null },
+          args: { message: "Here is my decision.", thinking: "Contradict.", useOverride: false, removed: "Mira", strategyDelta: null },
         },
         {
           toolName: "two_names_ballot",
-          args: { thinking: "Illegal.", target: "Sage", strategyDelta: null },
+          args: { message: "Mira.", target: "Sage", strategyDelta: null },
         },
       ]),
       "gpt-5-nano",
@@ -933,7 +933,7 @@ describe("InfluenceAgent structured output mode", () => {
       "Atlas",
       "strategic",
       makeToolOpenAIStub(requests, "cast_votes", {
-        thinking: "Mira remains the best chooser, so the current plan still applies.",
+        message: "Mira.",
         empower: "Mira",
         strategyDelta: null,
       }),
@@ -967,7 +967,7 @@ describe("InfluenceAgent structured output mode", () => {
       "Atlas",
       "strategic",
       makeToolOpenAIStub(requests, "cast_votes", {
-        thinking: "Mira remains the best chooser, so the current plan still applies.",
+        message: "Mira.",
         empower: "Mira",
         strategyDelta: "null",
       }),
@@ -1002,7 +1002,7 @@ describe("InfluenceAgent structured output mode", () => {
       "Atlas",
       "strategic",
       makeToolOpenAIStub(requests, "cast_votes", {
-        thinking: "Mira is the most predictable chooser.",
+        message: "Mira.",
         empower: "Mira",
         strategyDelta: "x".repeat(COMPACT_STRATEGY_LIMITS.strategyDeltaCharacters + 1),
       }),
@@ -1035,7 +1035,7 @@ describe("InfluenceAgent structured output mode", () => {
       "Atlas",
       "strategic",
       makeToolOpenAIStub(requests, "cast_votes", {
-        thinking: "Try to take the chooser seat myself.",
+        message: "Mira.",
         empower: "Atlas",
         strategyDelta: "Keep Mira close while I control the format.",
       }),
@@ -1059,7 +1059,7 @@ describe("InfluenceAgent structured output mode", () => {
       "Atlas",
       "strategic",
       makeToolOpenAIStub(requests, "cast_votes", {
-        thinking: "The eviction changed the board; Mira is now my best bridge.",
+        message: "Mira.",
         empower: "Mira",
         strategy: "Rebuild around Mira while testing whether Vera is isolated.",
       }),
@@ -1100,7 +1100,7 @@ describe("InfluenceAgent structured output mode", () => {
       "Atlas",
       "strategic",
       makeToolOpenAIStub(requests, "cast_votes", {
-        thinking: "Mira remains the safest chooser.",
+        message: "Mira.",
         empower: "Mira",
       }),
       "gpt-5-nano",
@@ -1561,7 +1561,7 @@ describe("InfluenceAgent structured output mode", () => {
         {
           toolName: "pick_round_format",
           args: {
-            thinking: "The Short List fits the board.",
+            message: "Mira.",
             formatId: "short_list",
             strategyDelta: null,
           },
@@ -1569,7 +1569,7 @@ describe("InfluenceAgent structured output mode", () => {
         {
           toolName: "save_or_exit_ballot",
           args: {
-            thinking: "Send Mira out.",
+            message: "Mira.",
             polarity: "exit",
             target: "Mira",
             strategyDelta: null,
@@ -1588,7 +1588,7 @@ describe("InfluenceAgent structured output mode", () => {
         {
           toolName: "council_vote",
           args: {
-            thinking: "Choose Mira to exit.",
+            message: "Mira.",
             target: "Mira",
             strategyDelta: null,
           },
@@ -1596,7 +1596,7 @@ describe("InfluenceAgent structured output mode", () => {
         {
           toolName: "exit_vote",
           args: {
-            thinking: "Choose Vera to exit.",
+            message: "Mira.",
             target: "Vera",
             strategyDelta: null,
           },
@@ -1666,7 +1666,7 @@ describe("InfluenceAgent structured output mode", () => {
       "Atlas",
       "strategic",
       makeToolOpenAIStub([], "save_or_exit_ballot", {
-        thinking: "Choose the exit side.",
+        message: "Mira.",
         polarity: "exit",
         target: "Mira",
         strategyDelta: null,
@@ -1787,7 +1787,7 @@ describe("InfluenceAgent structured output mode", () => {
         {
           toolName: "pick_round_format",
           args: {
-            thinking: "The Short List gives me the best leverage.",
+            message: "Mira.",
             formatId: "short_list",
             strategyDelta: "Pick The Short List to make vote placement matter.",
           },
@@ -1795,7 +1795,7 @@ describe("InfluenceAgent structured output mode", () => {
         {
           toolName: "save_or_exit_ballot",
           args: {
-            thinking: "Bank social capital with Mira.",
+            message: "Mira.",
             polarity: "save",
             target: "Mira",
             strategyDelta: "Save Mira to reinforce our working relationship.",
@@ -1804,14 +1804,14 @@ describe("InfluenceAgent structured output mode", () => {
         {
           toolName: "short_list_ballot",
           args: {
-            thinking: "Load Vera while avoiding a stray kill on Mira.",
+            message: "Mira.",
             target: "Vera",
             strategyDelta: "Load Vera and keep Mira at zero.",
           },
         },
         {
           toolName: "bounce_pointer",
-          args: {
+          args: { message: "Here is my decision.",
             thinking: "Point to Vera because she is the only useful unclassified target.",
             target: "Vera",
             strategyDelta: "Make Vera vulnerable through the public bounce.",
@@ -1820,7 +1820,7 @@ describe("InfluenceAgent structured output mode", () => {
         {
           toolName: "safety_bounce_vote",
           args: {
-            thinking: "Mira is the more dangerous vulnerable player.",
+            message: "Mira.",
             target: "Mira",
             strategyDelta: "Vote Mira out from the vulnerable pool.",
           },
@@ -1828,7 +1828,7 @@ describe("InfluenceAgent structured output mode", () => {
         {
           toolName: "format_tiebreak",
           args: {
-            thinking: "Vera is the stronger long-term threat.",
+            message: "Mira.",
             target: "Vera",
             strategyDelta: "Break the tie against Vera.",
           },
@@ -1985,7 +1985,7 @@ describe("InfluenceAgent structured output mode", () => {
       makeToolSequenceOpenAIStub(requests, [
         {
           toolName: "bounce_pointer",
-          args: {
+          args: { message: "Here is my decision.",
             thinking: "Use the stated consequence.",
             target: "Vera",
             strategyDelta: null,
@@ -1993,7 +1993,7 @@ describe("InfluenceAgent structured output mode", () => {
         },
         {
           toolName: "bounce_pointer",
-          args: {
+          args: { message: "Here is my decision.",
             thinking: "Use the stated consequence.",
             target: "Vera",
             strategyDelta: null,
@@ -2068,27 +2068,27 @@ describe("InfluenceAgent structured output mode", () => {
       makeToolSequenceOpenAIStub(requests, [
         {
           toolName: "pick_round_format",
-          args: { thinking: "Invent a format.", formatId: "classic" },
+          args: { message: "Mira.", formatId: "classic" },
         },
         {
           toolName: "save_or_exit_ballot",
-          args: { thinking: "Malformed ballot.", polarity: "banish", target: "Nobody" },
+          args: { message: "Mira.", polarity: "banish", target: "Nobody" },
         },
         {
           toolName: "short_list_ballot",
-          args: { thinking: "Malformed target.", target: "Nobody" },
+          args: { message: "Mira.", target: "Nobody" },
         },
         {
           toolName: "bounce_pointer",
-          args: { thinking: "Point to a classified player.", target: "Mira" },
+          args: { message: "Here is my decision.", thinking: "Point to a classified player.", target: "Mira" },
         },
         {
           toolName: "safety_bounce_vote",
-          args: { thinking: "Vote outside the pool.", target: "Atlas" },
+          args: { message: "Mira.", target: "Atlas" },
         },
         {
           toolName: "format_tiebreak",
-          args: { thinking: "Pick outside the tie.", target: "Atlas" },
+          args: { message: "Mira.", target: "Atlas" },
         },
       ]),
       "gpt-5-nano",
@@ -2169,7 +2169,7 @@ describe("InfluenceAgent structured output mode", () => {
       "Atlas",
       "strategic",
       makeToolOpenAIStub(requests, "cast_votes", {
-        thinking: "I want the format chooser seat myself.",
+        message: "Mira.",
         empower: "Atlas",
       }),
       "gpt-5-nano",
@@ -2190,7 +2190,7 @@ describe("InfluenceAgent structured output mode", () => {
       "Atlas",
       "strategic",
       makeToolOpenAIStub(requests, "pick_round_format", {
-        thinking: "The Short List best fits the current coalition.",
+        message: "Mira.",
         formatId: "short_list",
         strategyDelta: null,
       }),
@@ -2333,7 +2333,7 @@ describe("InfluenceAgent structured output mode", () => {
         {
           toolName: "restricted_history_ballot",
           args: {
-            thinking: "Vera is unavailable because I targeted her before.",
+            message: "Mira.",
             target: "Mira",
             strategyDelta: null,
           },
@@ -2504,7 +2504,8 @@ describe("InfluenceAgent structured output mode", () => {
 
     expect(votes).toEqual({
       empowerTarget: "mira-id",
-      thinking: expect.any(String),
+      thinking: undefined,
+      decisionMessage: "Mira.",
       strategyDelta: null,
     });
     expect(schemaFormat(requests[0]).name).toBe("cast_votes");
@@ -2557,7 +2558,7 @@ describe("InfluenceAgent structured output mode", () => {
         requests,
         "cast_votes",
         {
-          thinking: "I empower Mira as format chooser.",
+          message: "Mira.",
           empower: "Mira",
           strategyDelta: "Reward Mira and pressure Vera as the next coalition test.",
         },
@@ -2588,7 +2589,6 @@ describe("InfluenceAgent structured output mode", () => {
       round: 1,
       model: { name: "gpt-5-nano" },
       toolName: "cast_votes",
-      emittedThinking: "I empower Mira as format chooser.",
       providerReasoningSummary: {
         provider: "openai_responses",
         mode: "auto",
@@ -2599,14 +2599,15 @@ describe("InfluenceAgent structured output mode", () => {
         submittedValue: "Reward Mira and pressure Vera as the next coalition test.",
       },
     });
+    expect(trace.emittedThinking).toBeUndefined();
     expect(trace.prompt.messages).toHaveLength(2);
     expect(trace.prompt.messages[0]).toMatchObject({ role: "system" });
     expect(trace.prompt.messages[1]).toMatchObject({ role: "user" });
     expect(trace.response.finishReason).toBe("completed");
     expect(trace.response.toolCalls).toBeUndefined();
-    expect(trace.response.content).toContain("I empower Mira");
+    expect(trace.response.content).toContain('"message":"Mira."');
     expect(trace.toolArguments).toMatchObject({
-      thinking: "I empower Mira as format chooser.",
+      message: "Mira.",
       empower: "mira-id",
       strategyDelta: "Reward Mira and pressure Vera as the next coalition test.",
     });
@@ -2625,7 +2626,7 @@ describe("InfluenceAgent structured output mode", () => {
         requests,
         "cast_votes",
         {
-          thinking: "I should push Vera now.",
+          message: "Mira.",
           empower: "Mira",
           strategyDelta: null,
         },
@@ -2746,7 +2747,7 @@ describe("InfluenceAgent structured output mode", () => {
         {
           name: "cast_votes",
           args: {
-          thinking: "Mira is safer to empower and Vera is the pressure target.",
+          message: "Mira.",
           empower: "Mira",
           strategyDelta: "Use vote pressure to test Vera while rewarding Mira.",
           },
@@ -2768,7 +2769,8 @@ describe("InfluenceAgent structured output mode", () => {
 
     expect(votes).toEqual({
       empowerTarget: "mira-id",
-      thinking: "Mira is safer to empower and Vera is the pressure target.",
+      thinking: undefined,
+      decisionMessage: "Mira.",
       strategyDelta: "Use vote pressure to test Vera while rewarding Mira.",
       decisionId: expect.any(String),
       reasoningContext: "OpenAI reasoning summary (auto): OpenAI summary: Atlas weighed vote pressure against coalition risk.",
@@ -2815,7 +2817,7 @@ describe("InfluenceAgent structured output mode", () => {
       "Atlas",
       "strategic",
       makeToolOpenAIStub(requests, "cast_votes", {
-        thinking: "Mira is safer to empower and Vera is the pressure target.",
+        message: "Mira.",
         empower: "Mira",
         strategyDelta: "Use vote pressure to test Vera while rewarding Mira.",
       }),
@@ -2929,7 +2931,8 @@ describe("InfluenceAgent structured output mode", () => {
 
     expect(votes).toEqual({
       empowerTarget: "mira-id",
-      thinking: expect.any(String),
+      thinking: undefined,
+      decisionMessage: "Mira.",
       strategyDelta: null,
     });
     expect(requests[0]?.tool_choice).toBeUndefined();
@@ -2945,8 +2948,10 @@ describe("InfluenceAgent structured output mode", () => {
     // Agents must still be able to emit their internal reasoning (populates `thinking:`
     // in --chatty and the `thinking` on TranscriptEntry) even on local models. The raw
     // server reasoning_content (if any) goes only to the separate `reasoningContext`.
-    expect(tools[0]!.schema.properties.thinking).toBeDefined();
-    expect(tools[0]!.schema.required).toContain("thinking");
+    expect(tools[0]!.schema.properties.thinking).toBeUndefined();
+    expect(tools[0]!.schema.properties.message).toBeDefined();
+    expect(tools[0]!.schema.required).not.toContain("thinking");
+    expect(tools[0]!.schema.required).toContain("message");
   });
 
   it("runs JSON schema retries through the common retry handler", async () => {
@@ -2967,7 +2972,8 @@ describe("InfluenceAgent structured output mode", () => {
 
     expect(votes).toEqual({
       empowerTarget: "mira-id",
-      thinking: "Retry with enough room to choose targets.",
+      thinking: undefined,
+      decisionMessage: "Mira.",
       strategyDelta: null,
     });
     expect(requests).toHaveLength(2);
@@ -2987,7 +2993,7 @@ describe("InfluenceAgent structured output mode", () => {
         {
           toolName: "cast_votes",
           args: {
-            thinking: "Reward Mira and pressure Vera.",
+            message: "Mira.",
             empower: "Mira",
             decisionLog: "Rewarded Mira and pressured Vera as the current coalition test.",
           },
@@ -3021,7 +3027,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(powerPrompt).not.toContain(receipt);
   });
 
-  it("preserves thinking and native reasoning for empower revotes", async () => {
+  it("keeps revote speech and native reasoning without structured thinking", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -3031,7 +3037,7 @@ describe("InfluenceAgent structured output mode", () => {
         requests,
         "cast_empower_revote",
         {
-          thinking: "Mira is the better tie-break because she is less likely to panic.",
+          message: "Mira.",
           empower: "Mira",
           strategyDelta: null,
         },
@@ -3052,7 +3058,8 @@ describe("InfluenceAgent structured output mode", () => {
 
     expect(revote).toEqual({
       empowerTarget: "mira-id",
-      thinking: "Mira is the better tie-break because she is less likely to panic.",
+      thinking: undefined,
+      decisionMessage: "Mira.",
       reasoningContext: "Hidden local reasoning for the empower revote.",
       strategyDelta: null,
     });
@@ -4238,7 +4245,7 @@ describe("InfluenceAgent structured output mode", () => {
       "Atlas",
       "strategic",
       makeToolOpenAIStub(requests, "council_vote", {
-        thinking: "Mira is the better exit.",
+        message: "Mira.",
         target: "Mira",
         strategyDelta: null,
       }),
@@ -4285,7 +4292,7 @@ describe("InfluenceAgent structured output mode", () => {
       "Atlas",
       "strategic",
       makeToolOpenAIStub(requests, "council_vote", {
-        thinking: "I want to vote, but the choice field is malformed.",
+        message: "Mira.",
       }),
       "gpt-5-nano",
       undefined,
@@ -4859,7 +4866,7 @@ describe("InfluenceAgent structured output mode", () => {
   });
 
   */
-  it("preserves thinking and native reasoning for endgame elimination votes", async () => {
+  it("keeps endgame vote speech and native reasoning without structured thinking", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -4869,7 +4876,7 @@ describe("InfluenceAgent structured output mode", () => {
         requests,
         "exit_vote",
         {
-          thinking: "Vera has too much social cover to let through.",
+          message: "Mira.",
           target: "Vera",
           strategyDelta: "Cut Vera because her endgame cover is too strong.",
         },
@@ -4886,7 +4893,8 @@ describe("InfluenceAgent structured output mode", () => {
 
     expect(vote).toEqual({
       target: "vera-id",
-      thinking: "Vera has too much social cover to let through.",
+      thinking: undefined,
+      decisionMessage: "Mira.",
       reasoningContext: "Hidden local reasoning for direct elimination.",
       strategyDelta: "Cut Vera because her endgame cover is too strong.",
     });
@@ -4907,7 +4915,7 @@ describe("InfluenceAgent structured output mode", () => {
       "Atlas",
       "strategic",
       makeToolOpenAIStub(requests, "exit_vote", {
-        thinking: "The endgame record points at Vera.",
+        message: "Mira.",
         target: "Vera",
         strategyDelta: null,
       }),
@@ -5136,7 +5144,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(question).not.toContain("cast a Council vote");
   });
 
-  it("preserves thinking and native reasoning for jury votes", async () => {
+  it("keeps jury vote speech and native reasoning without structured thinking", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -5146,7 +5154,7 @@ describe("InfluenceAgent structured output mode", () => {
         requests,
         "jury_vote",
         {
-          thinking: "Vera owned her betrayal and made the sharper case.",
+          message: "Mira.",
           winner: "Vera",
         },
         "Hidden local reasoning for the winner vote.",
@@ -5162,7 +5170,8 @@ describe("InfluenceAgent structured output mode", () => {
 
     expect(vote).toEqual({
       target: "vera-id",
-      thinking: "Vera owned her betrayal and made the sharper case.",
+      thinking: undefined,
+      decisionMessage: "Mira.",
       reasoningContext: "Hidden local reasoning for the winner vote.",
     });
     const tools = [schemaFormat(requests[0])] as unknown as Array<{
@@ -5773,7 +5782,7 @@ describe("player continuity capsule capture and hydration (R12)", () => {
         {
           toolName: "cast_votes",
           args: {
-            thinking: "Empower Mira",
+            message: "Mira.",
             empower: "Mira",
             strategyDelta: null,
           },
@@ -6076,7 +6085,7 @@ describe("U4 selective context recall rendering", () => {
       "Atlas",
       "strategic",
       makeToolOpenAIStub(requests, "exit_vote", {
-        thinking: "Board says Vera is the live threat.",
+        message: "Mira.",
         target: "Vera",
         strategyDelta: null,
       }),
@@ -6146,7 +6155,7 @@ describe("U4 selective context recall rendering", () => {
       "Atlas",
       "strategic",
       makeToolOpenAIStub(requests, "exit_vote", {
-        thinking: "Board overrides stale packet.",
+        message: "Mira.",
         target: "Vera",
         strategyDelta: null,
       }),
@@ -6302,7 +6311,7 @@ describe("The Short List coordination guidance", () => {
         { toolName: "conversation_turn", args: { recipientId: null, replyToContributionId: null, ...{ thinking: "Coordinate.", message: null, noReply: true, gotoRoomId: null, gotoPlayerName: null, strategyDelta: null } } },
         { toolName: "take_alliance_action", args: { thinking: "Wait for a commitment.", decision: { action: "pass" }, strategyDelta: null } },
         { toolName: "conversation_turn", args: { recipientId: null, replyToContributionId: null, ...{ thinking: "Discuss placements.", message: "Let's compare our planned votes.", noReply: false, strategyDelta: null } } },
-        { toolName: "short_list_ballot", args: { thinking: "Place my ballot.", target: players.find((other) => other.id !== player.id)!.name, strategyDelta: null } },
+        { toolName: "short_list_ballot", args: { message: "Mira.", target: players.find((other) => other.id !== player.id)!.name, strategyDelta: null } },
       ]), "gpt-5-nano");
       agent.onGameStart("game-1", players);
       const ctx: PhaseContext = {
@@ -6385,7 +6394,7 @@ describe("Two Names canonical prompt board", () => {
   it("explains unselected nominees only in the initial nomination request", async () => {
     const { builder } = harness();
     const requests: Array<Record<string, unknown>> = [];
-    const agent = new InfluenceAgent("atlas", "Atlas", "strategic", makeToolOpenAIStub(requests, "two_names_initial_names", {
+    const agent = new InfluenceAgent("atlas", "Atlas", "strategic", makeToolOpenAIStub(requests, "two_names_initial_names", { message: "Here is my decision.",
       thinking: "Select two.", first: "Mira", second: "Vera", strategyDelta: null,
     }), "gpt-5-nano");
     agent.onGameStart("prompt-board", players);
@@ -6431,7 +6440,7 @@ describe("Two Names canonical prompt board", () => {
     state.recordTwoNamesMingleCompleted("initial_names", ["mira", "vera"]);
     const ctx = builder.buildPhaseContext(holderId, Phase.FORMAT_MINGLE);
     const requests: Array<Record<string, unknown>> = [];
-    const agent = new InfluenceAgent(holderId, ctx.selfName, "strategic", makeToolOpenAIStub(requests, "two_names_override", {
+    const agent = new InfluenceAgent(holderId, ctx.selfName, "strategic", makeToolOpenAIStub(requests, "two_names_override", { message: "Here is my decision.",
       thinking: "Consider the replacement.", useOverride: false, removed: null, strategyDelta: null,
     }), "gpt-5-nano");
     agent.onGameStart(ctx.gameId, players);
@@ -6448,7 +6457,7 @@ describe("Two Names canonical prompt board", () => {
     if (removedId) {
       const pending = builder.buildPhaseContext("atlas", Phase.FORMAT_MINGLE, { twoNamesReplacementRemovedId: removedId });
       const requests: Array<Record<string, unknown>> = [];
-      const agent = new InfluenceAgent("atlas", "Atlas", "strategic", makeToolOpenAIStub(requests, "two_names_replacement", {
+      const agent = new InfluenceAgent("atlas", "Atlas", "strategic", makeToolOpenAIStub(requests, "two_names_replacement", { message: "Here is my decision.",
         thinking: "Name a replacement.", target: "Sage", strategyDelta: null,
       }), "gpt-5-nano");
       agent.onGameStart(pending.gameId, players);
@@ -6503,7 +6512,7 @@ describe("Two Names canonical prompt board", () => {
         const pending = builder.buildPhaseContext("atlas", Phase.FORMAT_MINGLE, { twoNamesReplacementRemovedId: "mira" });
         expect(pending.twoNamesBoard).toMatchObject({ currentNomineeIds: ["vera"], replacementPending: true, pairFinal: false, eligibleVoterIds: [] });
         const requests: Array<Record<string, unknown>> = [];
-        const agent = new InfluenceAgent("atlas", "Atlas", "strategic", makeToolOpenAIStub(requests, "two_names_replacement", {
+        const agent = new InfluenceAgent("atlas", "Atlas", "strategic", makeToolOpenAIStub(requests, "two_names_replacement", { message: "Here is my decision.",
           thinking: "Replace Mira.", target: "Sage", strategyDelta: null,
         }), "gpt-5-nano");
         agent.onGameStart(pending.gameId, players);
@@ -6525,6 +6534,26 @@ describe("Two Names canonical prompt board", () => {
 });
 
 describe("final conversational dialogue driver", () => {
+  it("offers and follows another recipient at the pair limit through the structured agent contract", async () => {
+    const ctx = makeContext(Phase.LOBBY);
+    const ids = ctx.alivePlayers.map(p => p.id);
+    let state = {...beginConversation(ids,"handoff"),nextActorId:"mira-id"};
+    for (const [actor,recipientId] of [["mira-id","atlas-id"],["atlas-id","mira-id"],["mira-id","atlas-id"]] as const) {
+      state = advanceConversation(state,actor,{message:"Your turn.",recipientId});
+    }
+    ctx.conversation = conversationPrompt(state,ctx.alivePlayers,[]);
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent("atlas-id","Atlas","strategic",makeToolOpenAIStub(requests,"conversation_turn",{
+      thinking:"Bring Vera in.",message:"Vera, what do you think?",noReply:false,
+      recipientId:"vera-id",replyToContributionId:null,strategyDelta:null,
+    }),"gpt-5.6-luna");
+    agent.onGameStart(ctx.gameId,ctx.alivePlayers);
+    const response = await agent.getLobbyMessage(ctx);
+    expect(requests).toHaveLength(1);
+    expect(ctx.conversation.legalRecipientIds).toEqual(["vera-id"]);
+    expect(JSON.stringify(requests[0]?.messages)).toContain("Choose another participant to give them the next opportunity");
+    expect(advanceConversation(state,ctx.selfId,response).nextActorId).toBe("vera-id");
+  });
   const heading = "# CONSTITUTION.md";
   const speech = { thinking: "Keep the pitch direct.", message: "Mira, back my vote and I'll back yours.", strategyDelta: null };
   const mingle = { ...speech, noReply: false, gotoRoomId: null, gotoPlayerName: null };
@@ -6609,6 +6638,8 @@ describe("final conversational dialogue driver", () => {
     const result = await agent.getLobbyMessage(conversationContext(makeContext(Phase.LOBBY)));
     expect(result.message).toBe(speech.message);
     expect(requests).toHaveLength(2);
+    expect(JSON.stringify(requests[0]?.messages)).toContain("Aim for 192 UTF-8 bytes or fewer");
+    expect(JSON.stringify(requests[0]?.messages)).toContain("hard limit remains 320 UTF-8 bytes");
     const retry = JSON.stringify(requests[1]?.messages);
     expect(retry).toContain(message);
     expect(retry).toContain("324");
@@ -6735,3 +6766,108 @@ function conversationContext(ctx: PhaseContext, moving = false): PhaseContext {
  const participants = ctx.roomMates ? ctx.alivePlayers.filter(p => ctx.roomMates!.includes(p.name)) : ctx.alivePlayers;
  return {...ctx, conversation: conversationPrompt({...beginConversation(participants.map(p=>p.id), "prompt-fixture"), nextActorId:ctx.selfId}, participants, [], moving ? participants.length < 2 ? "only" : "optional" : "none")};
 }
+
+
+describe("Influence decision delivery boundary", () => {
+  const historicalThinkingVote = { empower: "mira-id", thinking: "Keep my ally in control.", strategyDelta: null };
+  const historicalSpeechVote = { empower: "mira-id", message: "Mira.", strategyDelta: null };
+  for (const value of [historicalThinkingVote, historicalSpeechVote]) {
+    it(`replays an exact historical accepted shape without dispatch: ${JSON.stringify(value)}`, async () => {
+      const requests: Array<Record<string, unknown>> = [];
+      const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", makeOpenAIStub(requests),
+        "gpt-5-nano", undefined, undefined, { decisionContractVersion: 1,
+          providerExecutionHooks: { onReadAccepted: () => ({ attemptId: "historical-vote", attemptOrdinal: 1,
+            catalogId: "openai:gpt-5-nano", value }) },
+        });
+      agent.onGameStart("game-1", makeContext().alivePlayers);
+      const result = await agent.getVotes(makeContext());
+      expect(result.empowerTarget).toBe("mira-id");
+      expect(result.thinking).toBe("thinking" in value ? value.thinking : undefined);
+      expect(result.decisionMessage).toBe("message" in value ? value.message : undefined);
+      expect(requests).toEqual([]);
+    });
+  }
+  for (const [version, value] of [
+    [2, historicalThinkingVote], [2, { empower: "mira-id", strategyDelta: null }],
+    [1, { empower: "mira-id", strategyDelta: null }],
+    [1, { ...historicalThinkingVote, extra: true }],
+    [1, { ...historicalThinkingVote, empower: "unknown-id" }],
+    [1, { ...historicalThinkingVote, message: "" }],
+  ] as const) {
+    it(`rejects corrupted accepted v${version} without regenerating: ${JSON.stringify(value)}`, async () => {
+      const requests: Array<Record<string, unknown>> = [];
+      const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", makeOpenAIStub(requests),
+        "gpt-5-nano", undefined, undefined, { decisionContractVersion: version,
+          providerExecutionHooks: { onReadAccepted: () => ({ attemptId: "historical-vote", attemptOrdinal: 1,
+            catalogId: "openai:gpt-5-nano", value }) },
+        });
+      agent.onGameStart("game-1", makeContext().alivePlayers);
+      await expect(agent.getVotes(makeContext())).rejects.toBeInstanceOf(ProviderAcceptedValueIntegrityError);
+      expect(requests).toEqual([]);
+    });
+  }
+  it("still requires current exact speech on fresh dispatch for historical games", async () => {
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic",
+      makeToolOpenAIStub([], "cast_votes", { ...historicalThinkingVote, empower: "Mira" }),
+      "gpt-5-nano", undefined, undefined, { decisionContractVersion: 1, structuredCallMaxAttempts: 1 });
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    await expect(agent.getVotes(makeContext())).rejects.toBeInstanceOf(ProviderAttemptError);
+  });
+
+  it.each(["x".repeat(121), "界".repeat(41)])("repairs clean ballot bytes while preserving the rejected decision: %s", async draft => {
+    const requests: Array<Record<string, unknown>> = [];
+    const attempts: ProviderAttemptRecord[] = [];
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic",
+      makeToolSequenceOpenAIStub(requests, [
+        { toolName: "cast_votes", args: { empower: "Mira", message: `<soft>${draft}</soft>`, strategyDelta: null } },
+        { toolName: "cast_votes", args: { empower: "Mira", message: "Mira.", strategyDelta: null } },
+      ]), "gpt-5-nano", undefined, undefined, {
+        providerExecutionHooks: { onTerminal: record => { attempts.push(record); } },
+      });
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    expect(await agent.getVotes(makeContext())).toMatchObject({ empowerTarget: "mira-id", decisionMessage: "Mira." });
+    expect(attempts[0]?.lengthFeedback).toMatchObject({ field: "message", draft,
+      measured: Buffer.byteLength(draft, "utf8"), allowed: 120, unit: "utf8_bytes",
+      rejectedDecision: { empower: "Mira", message: draft, strategyDelta: null },
+    });
+    const retry = JSON.stringify(requests[1]!.messages);
+    expect(retry).toContain("Your previous draft for message was rejected");
+    expect(retry).toContain(draft);
+    expect(retry).not.toContain(`<soft>${draft}</soft>`);
+    expect(attempts[0]?.acceptedValue).toBeUndefined();
+  });
+  for (const extra of [{}, { message: "" }, { message: "   " }, { message: "界".repeat(41) }, { message: "Mira", thinking: "Unrequested thought" }, { message: "Mira", extra: true }]) {
+    it(`rejects invalid ballot speech before acceptance: ${JSON.stringify(extra)}`, async () => {
+      const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic",
+        makeToolOpenAIStub([], "cast_votes", { empower: "Mira", strategyDelta: null, ...extra }),
+        "gpt-5-nano", undefined, undefined, { structuredCallMaxAttempts: 1 });
+      agent.onGameStart("game-1", makeContext().alivePlayers);
+      await expect(agent.getVotes(makeContext())).rejects.toBeInstanceOf(ProviderAttemptError);
+    });
+  }
+});
+
+
+it("keeps annotated jury speech private while accepting clean dialogue and thinking", async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  const records: ProviderAttemptRecord[] = [];
+  const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic",
+    makeToolOpenAIStub(requests, "ask_jury_question", {
+      target: "Mira", question: "<emphasis>Why</emphasis> should I trust you?",
+      thinking: "<higher-pitch><higher-pitch>Check her promise.</higher-pitch></higher-pitch>",
+    }), "gpt-5-nano", undefined, undefined,
+    { structuredCallMaxAttempts: 1, providerExecutionHooks: { onTerminal: record => { records.push(record); } } });
+  const ctx = makeContext(Phase.JURY_QUESTIONS);
+  agent.onGameStart(ctx.gameId, ctx.alivePlayers);
+  const answer = await agent.getJuryQuestion(ctx, ["mira-id", "vera-id"]);
+  expect(answer).toMatchObject({ targetFinalistId: "mira-id", question: "Why should I trust you?", thinking: "Check her promise." });
+  expect(records).toHaveLength(1);
+  expect(JSON.stringify(records[0]!.acceptedValue)).not.toContain("<emphasis>");
+  expect(records[0]!.audioDelivery?.fields.find(field => field.path[0] === "question")?.delivery.synthesisText)
+    .toBe("<emphasis>Why</emphasis> should I trust you?");
+  expect(records[0]!.audioDelivery?.fields.find(field => field.path[0] === "thinking")?.delivery.synthesisText)
+    .toBe("<higher-pitch>Check her promise.</higher-pitch>");
+  expect(JSON.stringify(records[0]!.rawResponse)).toContain("<emphasis>");
+  const messages = requests[0]!.messages as Array<{ role: string; content: string }>;
+  expect(messages.find(message => message.role === "system")?.content).toContain("Prefer <higher-pitch>");
+});

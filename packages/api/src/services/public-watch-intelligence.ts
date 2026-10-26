@@ -1,3 +1,4 @@
+import {audioReadySequence} from "./audio-frontier.js";
 import { Hydrated, loadPayloads } from "./payload-storage.js";
 import {
   and,
@@ -152,6 +153,9 @@ export async function getPublicWatchIntelligence(
       error: "Game not found",
     };
   }
+
+  const audioReady = await audioReadySequence(db,watchState.gameId);
+  if (audioReady !== null) params = {...params,throughEventSequence:Math.min(params.throughEventSequence ?? audioReady,audioReady)};
 
   const selectedPlayer = params.actorPlayerId
     ? watchState.players.find((player) => player.id === params.actorPlayerId)

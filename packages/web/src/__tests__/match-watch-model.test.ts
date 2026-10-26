@@ -209,6 +209,26 @@ function replayFrame(
 }
 
 describe("match watch model", () => {
+  it("retains saved model selections through watch hydration and live/replay cast cards", () => {
+    const preference = { catalogId: "katana:gemma-4-31b" };
+    const state = watchState({ players: baseGame().players.map((player, index) => ({
+      ...player, ...(index === 0 ? { modelPreference: preference } : {}),
+    })) });
+    const game = applyWatchStateToGameDetail(baseGame(), state);
+    expect(game.players[0]?.modelPreference).toEqual(preference);
+    for (const live of [true, false]) {
+      for (const withFrame of [true, false]) {
+        const model = buildMatchWatchModel({ game, messages: [], live,
+          playbackState: { round: 1, phase: "MINGLE", canonicalSequence: 1, players: game.players, visibleMessages: [] },
+          replayFrames: withFrame ? [replayFrame(state.players)] : [],
+        });
+        expect(model.players.find(card => card.player.id === "p1")?.player.modelPreference).toEqual(preference);
+        expect(model.players.find(card => card.player.id === "p2")?.player.modelPreference).toBeUndefined();
+      }
+    }
+    const cleared = applyWatchStateToGameDetail(game, watchState({ players: baseGame().players }));
+    expect(cleared.players[0]?.modelPreference).toBeUndefined();
+  });
   it("accepts a projected edge-smoke-dusk classic decision in a v3 replay frame", () => {
     const edgePowerEvent = createEdgeSmokeDuskEvents("edge-smoke-dusk-web-proof").find(
       (event) => event.type === "power.action_set",

@@ -154,3 +154,49 @@ test("shared offsets inside an unloaded thought wait and restore the exact thoug
  expect(director.getSnapshot().speed).toBe(2);
  director.seekTimeline(0,0);expect(director.getTimelineElapsedBaseMs()).toBe(0);
 });
+
+test("recorded speech and thinking share measured durations, exact seeks, speed and buffering",()=>{
+ const clock=new Clock(),director=new PresentationDirector({clock,policy:speechPolicy});
+ director.load([{key:"one",cursor:1,baseDurationMs:4000},{key:"two",cursor:2,baseDurationMs:4000}]);
+ director.setThinking("one","I should reveal the wolf.");
+ director.setRecordings("one",{speechMs:2000,thinkingMs:1000});
+ director.setRecordings("two",{speechMs:6000});
+ // Thinking: 1300 entrance + 1000 recorded reading + 1150 return. Speech: 800 lead + 2000 + 500 exit.
+ expect(director.getRecordedDuration("one")).toBe(6750);
+ expect(director.getRecordedDuration("two")).toBe(7300);
+ director.seekTimeline(0,2050,true);
+ expect(director.getAudioPosition()).toEqual({part:"thinking",offsetMs:250});
+ director.play();director.setSpeed(2);clock.tick(100);
+ expect(director.getAudioPosition()).toEqual({part:"thinking",offsetMs:450});
+ director.setAudioPending(true);clock.tick(5000);
+ expect(director.getAudioPosition()).toEqual({part:"thinking",offsetMs:450});
+ director.setAudioPending(false);director.pause();
+ director.seekTimeline(0,4750,true);
+ expect(director.getAudioPosition()).toEqual({part:"speech",offsetMs:500});
+ director.setThinkingEnabled(false);
+ director.seekTimeline(0,1300);
+ expect(director.getRecordedDuration("one")).toBe(3300);
+ expect(director.getAudioPosition()).toEqual({part:"speech",offsetMs:500});
+ director.seekTimeline(1,1800);
+ expect(director.getAudioPosition()).toEqual({part:"speech",offsetMs:1000});
+ director.dispose();
+});
+
+test("late thinking text preserves the recorded cue's camera entrance clock",()=>{
+ const clock=new Clock(),director=new PresentationDirector({clock,policy:speechPolicy});
+ director.load([{key:"one",cursor:1,baseDurationMs:4000}]);
+ director.setRecordings("one",{speechMs:2000,thinkingMs:1000});
+ director.play();clock.tick(40);
+ expect(director.getElapsedBaseMs()).toBe(40);
+ director.setThinking("one","A thought loaded after the recording metadata.");
+ expect(director.getTimelineElapsedBaseMs()).toBe(40);
+ expect(director.getElapsedBaseMs()).toBe(40);
+ clock.tick(210);expect(director.getElapsedBaseMs()).toBe(250);
+ director.pause();clock.tick(1000);expect(director.getElapsedBaseMs()).toBe(250);
+ director.play();clock.tick(250);expect(director.getElapsedBaseMs()).toBe(500);
+ expect(director.getAudioPosition()).toBeNull();
+ clock.tick(1300);expect(director.getAudioPosition()).toEqual({part:"thinking",offsetMs:0});
+ director.seekTimeline(0,4750,true);
+ expect(director.getAudioPosition()).toEqual({part:"speech",offsetMs:500});
+ director.dispose();
+});

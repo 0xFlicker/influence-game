@@ -29,6 +29,27 @@ describe("GameWatchState", () => {
     db = await setupTestDB();
   });
 
+  test("watch and replay expose saved model choices, honor overrides and hide Default", async () => {
+    const gameId = await insertGame(db, { status: "in_progress", config: gameConfig({
+      modelRouting: { overrides: { echo: { catalogId: "katana:kimi-k3", reasoningPolicy: "high" }, mira: "default" } },
+    }) });
+    await insertFixturePlayers(db, gameId);
+    await db.update(schema.gamePlayers).set({ modelPreference: { catalogId: "katana:glm-5-3-flash-private" } }).where(eq(schema.gamePlayers.id, "atlas"));
+    await db.update(schema.gamePlayers).set({ modelPreference: { catalogId: "katana:deepseek-v4-flash" } }).where(eq(schema.gamePlayers.id, "mira"));
+    await db.update(schema.agentProfiles).set({ modelPreference: { catalogId: "openai:gpt-6-luna" } });
+    const assertChoices = (players: NonNullable<Awaited<ReturnType<typeof getGameWatchState>>>["players"]) => {
+      expect(players.find(p => p.id === "atlas")?.modelPreference).toEqual({ catalogId: "katana:glm-5-3-flash-private" });
+      expect(players.find(p => p.id === "echo")?.modelPreference).toEqual({ catalogId: "katana:kimi-k3" });
+      expect(players.find(p => p.id === "mira")).not.toHaveProperty("modelPreference");
+      expect(players.find(p => p.id === "nyx")).not.toHaveProperty("modelPreference");
+    };
+    assertChoices((await getGameWatchState(db, gameId))!.players);
+    const ownerEpoch = await insertOwner(db, gameId);
+    await appendGameEvents(db, { gameId, ownerEpoch, events: createResolvedRoundCanonicalEventFixture(gameId) });
+    assertChoices((await getGameWatchState(db, gameId))!.players);
+    for (const frame of (await getGameWatchReplayFrames(db, gameId))!) assertChoices(frame.players);
+  });
+
   test("presentation frames retain retrospective completion before the final END boundary", async () => {
     const gameId = await insertGame(db, { slug: "watch-retrospective-ending", status: "completed", config: gameConfig() });
     await insertFixturePlayers(db, gameId);

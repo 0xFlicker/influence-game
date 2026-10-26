@@ -6,6 +6,7 @@ import {
   measureLengthFeedback,
 } from "../structured-output";
 import type { ModelInvocation } from "../model-invocation";
+import { THINKING_FIELD_GUIDANCE } from "../thinking-guidance";
 
 interface ProviderPickPayload {
   target: string;
@@ -179,7 +180,26 @@ describe("exact structured output", () => {
     });
   });
 
-  it("rejects non-document, fenced, embedded, labeled, wrapped, array, and trailing forms", () => {
+  it("unwraps one complete JSON value without changing quoted braces or escaped strings", () => {
+    const registry = new ExactStructuredOutputRegistry();
+    const artifact = pickArtifact();
+    const payload = { target: "Blair", rationale: 'Braces { [ ] } and a quote " and backslash \\ stay literal.', metadata: { confidence: "high" } };
+    const valid = JSON.stringify(payload);
+    for (const document of [
+      `\`\`\`json\n${valid}\n\`\`\``,
+      `\`\`\`\n${valid}\n\`\`\``,
+      `Here is the result:\n\`\`\`JSON\r\n${valid}\r\n\`\`\`\nDone.`,
+      `result=${valid}`,
+      `<result>${valid}</result>`,
+      `Rewrite within the byte allowance.${valid}<｜end▁of▁sentence｜>`,
+    ]) {
+      expect(registry.decodeJsonDocument(artifact, document)).toEqual({
+        status: "valid", value: { targetPlayerId: "player-blair", rationale: payload.rationale, confidence: "high" },
+      });
+    }
+  });
+
+  it("rejects broken, ambiguous, schema-wrapped and wrong-shaped values without searching nested objects", () => {
     const registry = new ExactStructuredOutputRegistry();
     const artifact = pickArtifact();
     const valid = JSON.stringify({
@@ -189,18 +209,53 @@ describe("exact structured output", () => {
     });
     const invalidDocuments = [
       "plain text",
-      `\`\`\`json\n${valid}\n\`\`\``,
-      `Here is the result: ${valid}`,
-      `result=${valid}`,
+      `${valid} then ${valid}`,
+      `Example: {} Answer: ${valid}`,
+      `${valid} trailing {`,
+      `} ${valid}`,
+      `\`\`\`json\n${valid}\n\`\`\`\n\`\`\`json\n${valid}\n\`\`\``,
+      `{"broken": ${valid}`,
+      `{"{ ${valid}`,
+      `{broken: ${valid}}`,
+      `prefix {"target":"Blair",} suffix`,
+      `prefix [${valid}} suffix`,
+      `prefix {"rationale":"unterminated ${valid}`,
       JSON.stringify({ arguments: JSON.parse(valid) }),
       JSON.stringify({ pick_target: JSON.parse(valid) }),
       JSON.stringify([JSON.parse(valid)]),
-      `${valid}\ntrailing`,
+      JSON.stringify(valid),
+      `prefix ${JSON.stringify({ arguments: JSON.parse(valid) })} suffix`,
     ];
 
     for (const document of invalidDocuments) {
       expect(registry.decodeJsonDocument(artifact, document).status).toBe("invalid");
     }
+  });
+
+  it("still checks schema and domain rules after unwrapping", () => {
+    const registry = new ExactStructuredOutputRegistry();
+    const artifact = pickArtifact();
+    for (const [payload, kind] of [
+      [{}, "schema_mismatch"],
+      [{ target: "Blair", rationale: "ok" }, "schema_mismatch"],
+      [{ target: "Blair", rationale: "ok", metadata: { confidence: "high" }, extra: true }, "schema_mismatch"],
+      [{ target: "Unknown", rationale: "ok", metadata: { confidence: "high" } }, "semantic_mismatch"],
+    ] as const) {
+      expect(registry.decodeJsonDocument(artifact, `\`\`\`json\n${JSON.stringify(payload)}\n\`\`\``)).toMatchObject({ status: "invalid", kind });
+    }
+  });
+
+  it("unwraps arrays only when the invocation schema permits an array", () => {
+    const artifact = createExactStructuredOutputArtifact<string[], string[]>({
+      action: "test.array.v1", name: "array",
+      schema: { type: "array", items: { type: "string" }, minItems: 1 },
+      decodeProviderPayload: value => ({ status: "valid", value }),
+      decodeAcceptedValue: value => Array.isArray(value) && value.every(item => typeof item === "string")
+        ? { status: "valid", value } : { status: "invalid", message: "Expected strings" },
+    });
+    const registry = new ExactStructuredOutputRegistry();
+    expect(registry.decodeJsonDocument(artifact, '```json\n["a", "b"]\n```')).toEqual({ status: "valid", value: ["a", "b"] });
+    expect(registry.decodeJsonDocument(artifact, 'prefix ["a", {}]')).toMatchObject({ status: "invalid", kind: "schema_mismatch" });
   });
 
   it("rejects structural and semantic gaps without mutating candidates", () => {
@@ -472,4 +527,58 @@ describe("nullable provider values", () => {
     expect(registry.decodeProviderPayload(contract, { kind: "optional", target: "null" }))
       .toEqual({ status: "valid", value: { kind: "optional", target: null } });
   });
+});
+
+
+it("delivery controls do not consume the clean-text allowance or relax machine fields", () => {
+  const artifact = createExactStructuredOutputArtifact<{ text: string; target: string }, { text: string; target: string }>({
+    action: "test.delivery.v1", name: "delivery", audioDelivery: { fields: ["text"], nighttime: false },
+    schema: { type: "object", additionalProperties: false, required: ["text", "target"], properties: {
+      text: { type: "string", minLength: 1, maxLength: 2 }, target: { type: "string", enum: ["Ada"], maxLength: 3 },
+    } },
+    decodeProviderPayload: value => ({ status: "valid", value }),
+    decodeAcceptedValue: value => ({ status: "valid", value: value as { text: string; target: string } }),
+  });
+  expect(artifact.providerSchema).toMatchObject({ additionalProperties: false, required: ["text", "target"], properties: {
+    text: { type: "string", minLength: 1, description: "At most 2 visible characters, excluding delivery tags." },
+    target: { type: "string", enum: ["Ada"], maxLength: 3 },
+  } });
+  expect((artifact.providerSchema.properties as Record<string, Record<string, unknown>>).text).not.toHaveProperty("maxLength");
+  const registry = new ExactStructuredOutputRegistry();
+  expect(registry.decodeJsonDocument(artifact, JSON.stringify({ text: "<soft>😀a</soft>", target: "Ada" }))).toMatchObject({ status: "valid", value: { text: "😀a", target: "Ada" } });
+  for (const value of [{ text: "<soft>abc</soft>", target: "Ada" }, { text: "<soft></soft>", target: "Ada" }, { text: "Hi", target: "<soft>Ada</soft>" }, { text: "Hi", target: "Ada", extra: true }]) {
+    expect(registry.decodeJsonDocument(artifact, JSON.stringify(value)).status).toBe("invalid");
+  }
+});
+
+it.each([false, true])("guides the native thinking field without changing acceptance (delivery=%s)", delivery => {
+  const schema = { type: "object", additionalProperties: false, required: ["thinking", "text"], properties: {
+    thinking: { type: ["string", "null"], maxLength: 2000, description: "Private, hidden from other players." },
+    text: { type: "string", maxLength: 320 },
+  } };
+  const artifact = createExactStructuredOutputArtifact<unknown, unknown>({
+    action: "test.thinking.v1", name: "thinking", schema,
+    ...(delivery && { audioDelivery: { fields: ["thinking", "text"], nighttime: true } }),
+    acceptedValueUsesProviderSchema: true,
+    decodeProviderPayload: value => ({ status: "valid", value }),
+    decodeAcceptedValue: value => ({ status: "valid", value }),
+  });
+  const properties = artifact.providerSchema.properties as Record<string, Record<string, unknown>>;
+  expect(properties.thinking!.description).toContain(THINKING_FIELD_GUIDANCE);
+  expect(properties.thinking!.description).toContain("Private, hidden from other players.");
+  expect(artifact.schema).toEqual(schema);
+  expect(schema.properties.thinking.description).toBe("Private, hidden from other players.");
+  expect(artifact.providerSchema.required).toEqual(["thinking", "text"]);
+  expect(artifact.providerSchema.additionalProperties).toBe(false);
+  const registry = new ExactStructuredOutputRegistry();
+  for (const thinking of [null, "Shortened to fit the byte limit.", "<lower-pitch>I need her vote.</lower-pitch>"]) {
+    expect(registry.decodeJsonDocument(artifact, JSON.stringify({ thinking, text: "Trust me." })).status).toBe("valid");
+  }
+  expect(registry.decodeJsonDocument(artifact, JSON.stringify({ thinking: "x".repeat(2001), text: "Trust me." })).status).toBe("invalid");
+});
+
+it("keeps repair mechanics out of authored thinking and speech", () => {
+  const note = formatLengthRepairNote({ field: "thinking", draft: "Too long", measured: 8, allowed: 4, overage: 4, unit: "utf16_code_units" });
+  expect(note).toContain("do not narrate this length correction or output requirements");
+  expect(note).toContain("preserving its intent and all other valid choices");
 });

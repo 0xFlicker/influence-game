@@ -1,4 +1,6 @@
 import { compactionOrientation, compactInvocation, contextSourceHash, contextComponentHashes, contextSummaryArtifact, ContextSourceConflictError, CONTEXT_SUMMARY_INSTRUCTIONS, CONTEXT_MAX_REVISIONS } from "./context-adaptation";
+import { audioDeliveryGuidance } from "./audio-delivery";
+import { THINKING_CONTENT_GUIDANCE } from "./thinking-guidance";
 import type OpenAI from "openai";
 import { DEFAULT_LM_STUDIO_TIMEOUT_MS } from "./local-inference";
 import type {
@@ -44,6 +46,9 @@ interface AdapterBackedRuntime extends ProviderRuntimeDescriptor {
   adapter: LlmProviderAdapter;
 }
 
+/** A default for authored prose, not a language detector or an output rejection rule. */
+export const OUTPUT_LANGUAGE_GUIDANCE = "Respond primarily in English, including speech, thinking, explanations and summaries. Brief phrases in other languages are fine when natural to the character or context. Preserve proper names, quoted source text, IDs and the required structured response format.";
+
 export interface ExecuteModelInvocationOptions<TValue, TStructuredValue = unknown> {
   call: ProviderLogicalCallExecution;
   runtimes: readonly LlmProviderRuntime[];
@@ -76,6 +81,18 @@ export interface ModelInvocationExecutionResult<TValue>
 export async function executeModelInvocation<TValue, TStructuredValue = unknown>(
   options: ExecuteModelInvocationOptions<TValue, TStructuredValue>,
 ): Promise<ModelInvocationExecutionResult<TValue>> {
+  const withOutputGuidance = (value: ModelInvocation<TStructuredValue>): ModelInvocation<TStructuredValue> => {
+    const artifact = value.result.kind === "structured" ? value.result.artifact : undefined;
+    const policy = artifact?.audioDelivery;
+    const properties = artifact?.schema.properties;
+    const hasThinking = properties !== null && typeof properties === "object" && Object.hasOwn(properties, "thinking");
+    const guidance = [OUTPUT_LANGUAGE_GUIDANCE, policy ? audioDeliveryGuidance(policy.nighttime) : "", hasThinking ? THINKING_CONTENT_GUIDANCE : ""].filter(Boolean).join("\n\n");
+    const messages = [...value.messages];
+    const index = messages.findIndex(message => message.role === "system");
+    if (index < 0) messages.unshift({ role: "system", content: guidance });
+    else messages[index] = { ...messages[index]!, content: [messages[index]!.content, guidance].filter(Boolean).join("\n\n") };
+    return { ...value, messages };
+  };
   // Capture renderer-owned spans before the first await; House/agents may prepare another call concurrently.
   const initialInvocation = typeof options.invocation === "function" ? options.invocation() : options.invocation;
   const contextSpans = initialInvocation.contextSpans?.map(span => ({ ...span }));
@@ -139,7 +156,9 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
         });
       };
       const compile = (attemptOrdinal: number): ProviderNativeRequest => {
-        const semanticCall = withRepair(current ?? invocation());
+        // Thinking style and delivery policy guide this attempt, like length repair.
+        // It must not change the frozen gameplay context hash during recovery.
+        const semanticCall = withRepair(withOutputGuidance(current ?? invocation()));
         const prepared = adapterRuntime.adapter.compile(
           semanticCall,
           adapterRuntime,
@@ -171,7 +190,7 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
         dispatch: async ({ attemptOrdinal, requestOptions }) => {
           const key = `${runtime.catalogId}:${attemptOrdinal}`;
           const compiled = compiledByAttempt.get(key);
-          const semanticCall = compiled?.invocation ?? withRepair(invocation());
+          const semanticCall = compiled?.invocation ?? withRepair(withOutputGuidance(invocation()));
           const prepared = compiled?.request ?? adapterRuntime.adapter.compile(
             semanticCall,
             adapterRuntime,
@@ -188,7 +207,8 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
                 : requestOptions.signal ?? requestSignal,
             }),
           });
-          if (context?.revision) outcome.invocationMessages = semanticCall.messages;
+          // Traces must reflect the actual guidance/repair/context sent to the provider.
+          outcome.invocationMessages = semanticCall.messages;
           invocationByOutcome.set(outcome, {
             invocation: semanticCall,
           });
@@ -219,7 +239,8 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
           const validation = options.validate(outcome, decoded.value);
           if (validation.status === "unusable" && validation.feedback) latestLengthFeedback = validation.feedback;
           if (validation.status === "usable") liveAcceptedOutcome = outcome;
-          return validation;
+          return validation.status === "usable" && decoded.audioDelivery
+            ? { ...validation, audioDelivery: decoded.audioDelivery } : validation;
         },
         classifyError: (error, signal) =>
           adapterRuntime.adapter.classifyError(error, signal),
@@ -410,9 +431,16 @@ export class KatanaProviderAdapter extends OpenAICompatibleAdapter {
     invocation: ModelInvocation,
     runtime: ProviderRuntimeDescriptor,
   ): ProviderNativeRequest {
+    // Claude's gateway rejects nullable enums expressed as type arrays. Keep
+    // the semantic artifact intact; only translate the native wire schema.
+    const nativeInvocation = runtime.modelId.startsWith("claude-") && invocation.result.kind === "structured"
+      ? { ...invocation, result: { ...invocation.result, artifact: { ...invocation.result.artifact,
+          providerSchema: claudeEnumSchema(invocation.result.artifact.providerSchema),
+        } } }
+      : invocation;
     return {
       transport: "katana.chat_completions",
-      body: compileChatCompletionsRequest(invocation, runtime),
+      body: compileChatCompletionsRequest(nativeInvocation, runtime),
     };
   }
 
@@ -432,6 +460,46 @@ export class KatanaProviderAdapter extends OpenAICompatibleAdapter {
       throw new ProviderNativeDecodeError(response);
     }
   }
+}
+
+/** Preserve exact enum membership while giving each branch a single type. */
+function claudeEnumSchema(schema: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  const result: Record<string, unknown> = structuredClone(schema);
+  // Traverse schema positions only; enum/default/const values are data.
+  for (const key of ["properties", "$defs", "definitions", "patternProperties"]) {
+    const children = result[key];
+    if (children && typeof children === "object" && !Array.isArray(children)) {
+      result[key] = Object.fromEntries(Object.entries(children).map(([name, child]) => [name,
+        child && typeof child === "object" && !Array.isArray(child) ? claudeEnumSchema(child) : child]));
+    }
+  }
+  for (const key of ["items", "additionalProperties"]) {
+    const child = result[key];
+    if (child && typeof child === "object" && !Array.isArray(child)) result[key] = claudeEnumSchema(child as Record<string, unknown>);
+  }
+  for (const key of ["anyOf", "oneOf", "allOf"]) {
+    if (Array.isArray(result[key])) result[key] = result[key].map(child => claudeEnumSchema(child));
+  }
+  if (Array.isArray(result.type) && result.type.includes("null") && Array.isArray(result.enum)) {
+    const types = result.type as string[];
+    const values = result.enum;
+    const branches = types.flatMap(type => {
+      const allowed = values.filter(value => type === "null" ? value === null
+        : type === "integer" ? typeof value === "number" && Number.isInteger(value)
+        : type === "array" ? Array.isArray(value)
+        : type === "object" ? value !== null && typeof value === "object" && !Array.isArray(value)
+        : typeof value === type && value !== null);
+      return allowed.length ? [{ type, enum: allowed }] : [];
+    });
+    if (branches.length) {
+      delete result.type;
+      delete result.enum;
+      // Existing anyOf still applies conjunctively with this enum restriction.
+      if (result.anyOf) result.allOf = [...(Array.isArray(result.allOf) ? result.allOf : []), { anyOf: branches }];
+      else result.anyOf = branches;
+    }
+  }
+  return result;
 }
 
 /**
@@ -595,7 +663,8 @@ export function compileOpenAIResponsesRequest(
     ? inputMessages[0].content
     : inputMessages.flatMap(responseInputItems);
   const reasoningEffort = requestedReasoningEffort(invocation, runtime);
-  const summary = invocation.reasoning?.summary ?? runtime.openAIReasoningSummary;
+  const summary = runtime.modelCapabilities.supportsReasoningEffort
+    ? invocation.reasoning?.summary ?? runtime.openAIReasoningSummary : undefined;
   const body: Record<string, unknown> = {
     model: runtime.modelId,
     input,
@@ -630,7 +699,7 @@ export function compileOpenAIResponsesRequest(
         type: "json_schema",
         name: artifact.name,
         strict: true,
-        schema: artifact.schema,
+        schema: artifact.providerSchema,
       },
     };
   }
@@ -663,7 +732,7 @@ export function compileChatCompletionsRequest(
 
   if (invocation.result.kind === "structured") {
     const artifact = invocation.result.artifact;
-    body.response_format = chatJsonSchemaFormat(artifact.name, artifact.schema);
+    body.response_format = chatJsonSchemaFormat(artifact.name, artifact.providerSchema);
   }
   return body as unknown as ChatCompletionCreateParamsNonStreaming;
 }
@@ -693,7 +762,12 @@ function requestedReasoningEffort(
   ) {
     return runtime.reasoningPolicy;
   }
-  return invocation.reasoning?.effort;
+  const requested = invocation.reasoning?.effort;
+  const allowed = runtime.allowedReasoningEfforts;
+  if (!requested || !allowed || allowed.includes(requested)) return requested;
+  // Adaptive actions can request low on a model whose minimum is medium/high.
+  // Use the least supported effort; do not dispatch a known-invalid parameter.
+  return allowed[0];
 }
 
 function chatMessage(message: ModelInvocationMessage): ChatCompletionMessageParam {

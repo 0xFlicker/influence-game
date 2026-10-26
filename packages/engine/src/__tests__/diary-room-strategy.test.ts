@@ -123,7 +123,7 @@ function createDiaryHarness(options: {
     options.beforeAcceptedCommit,
   );
   diary.lastEliminatedName = "Nova";
-  return { agent, diary, house, logger, playerId };
+  return { agent, diary, house, logger, playerId, gameState };
 }
 
 describe("post-eviction diary compact strategy", () => {
@@ -566,13 +566,12 @@ describe("post-eviction diary compact strategy", () => {
   });
 
   it("does not mutate survivor strategy during a juror interview", async () => {
-    const { agent, diary, playerId } = createDiaryHarness({ maxFollowUps: 0 });
+    const { agent, diary, playerId, gameState } = createDiaryHarness({ maxFollowUps: 0 });
     agent.answers.push({ message: "From jury, Vera has the best case.", thinking: "Jury read.", strategy: "This must be ignored." });
-    const runInterview = diary as unknown as {
-      runDiaryInterview(phase: Phase, id: UUID, name: string, isJuror: boolean): Promise<void>;
-    };
+    gameState.eliminatePlayer(playerId);
+    gameState.setEndgameStage("judgment");
 
-    await runInterview.runDiaryInterview(Phase.OPENING_STATEMENTS, playerId, agent.name, true);
+    await diary.runDiaryRoom(Phase.FORMAT_RESOLVE);
 
     expect(agent.boundaries).toEqual([]);
     expect(agent.getCompactStrategyState()).toEqual(ACTIVE_STATE);

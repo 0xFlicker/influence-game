@@ -1,3 +1,6 @@
+import {freezeLiveVoices} from "./audio-voices.js";
+import { audioReadySequence } from "./audio-frontier.js";
+import { creationModelRouting, sealRosterModelRouting } from "./game-model-routing.js";
 import { loadPayloads } from "./payload-storage.js";
 import type { WerewolfHouseCharacter } from "../db/werewolf-schema.js";
 import { queueEpisodeCopy } from "./episode-presentation.js";
@@ -9,7 +12,7 @@ import { parseGameVisibility } from "@influence/engine/game-visibility";
 import { enabledGameKinds } from "@influence/engine/game-availability";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
-import { DEFAULT_MODEL_CATALOG_ID, getHousePersonaDetails, normalizeProviderManifest, pickAgentNames, HOUSE_PERSONA_KEYS, resolveModelSelection, assertRetrospectiveInputBinding, materializeRetrospectiveContext, providerLogicalCallId } from "@influence/engine";
+import { getHousePersonaDetails, pickAgentNames, HOUSE_PERSONA_KEYS, assertRetrospectiveInputBinding, materializeRetrospectiveContext, providerLogicalCallId } from "@influence/engine";
 import type { ProviderLogicalCallCoordinate } from "@influence/engine";
 import { applyWerewolfEvent, resolveWerewolfStrategy, werewolfActionPlans, observeWerewolf, projectWerewolfView, replayWerewolf, startWerewolf, werewolfConfig, WEREWOLF_PRESETS, werewolfExecutionFinished, compileWerewolfRetrospective } from "@influence/engine/werewolf";
 import type { WerewolfAudience, WerewolfEvent, WerewolfPlayer, WerewolfPreset, WerewolfStore, WerewolfVoteProgress } from "@influence/engine/werewolf";
@@ -31,16 +34,6 @@ export async function readWerewolfEvents(db: Pick<DrizzleDB, "select">, gameId: 
     if (row.event.gameId !== row.gameId || row.event.sequence !== row.sequence) throw new Error("Corrupt Werewolf event envelope");
   }
   return rows.map((row) => row.event);
-}
-
-export function validateWerewolfModels(input?: unknown) {
-  let providerManifest;
-  try { providerManifest = normalizeProviderManifest(input ?? [{ catalogId: DEFAULT_MODEL_CATALOG_ID }]); }
-  catch (error) { throw new WerewolfGameError(error instanceof Error ? error.message : "Invalid provider manifest", 400); }
-  for (const selection of providerManifest) {
-    if (resolveModelSelection(selection).model.evaluationStatus !== "game-ready") throw new WerewolfGameError("Model is not available", 400);
-  }
-  return providerManifest;
 }
 
 export function normalizeWerewolfCasting(input: { personaPool?: unknown; fillStrategy?: unknown }) {
@@ -94,8 +87,9 @@ export function createWerewolfHousePlayers(existing: Array<Pick<WerewolfPlayer, 
 
 /** Starting is one transaction: freeze character + selected game strategy, roles, and model policy. */
 export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
-  visibility?: unknown; preset: WerewolfPreset; agentProfileIds: string[]; providerManifest?: unknown; maxDays?: number;
+  audioMode?: boolean; visibility?: unknown; preset: WerewolfPreset; agentProfileIds: string[]; providerManifest?: unknown; modelRouting?: unknown; maxDays?: number;
 }) {
+  if (input.audioMode !== undefined && typeof input.audioMode !== "boolean") throw new WerewolfGameError("Audio Mode must be on or off", 400);
   let visibility;
   try { visibility = parseGameVisibility(input.visibility); } catch { throw new WerewolfGameError("Game visibility must be public or unlisted", 400); }
   if (!enabledGameKinds().includes("werewolf")) throw new WerewolfGameError("Werewolf creation is unavailable.", 403);
@@ -105,7 +99,8 @@ export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
     || new Set(input.agentProfileIds).size !== input.agentProfileIds.length || input.agentProfileIds.length > count) {
     throw new WerewolfGameError("Choose distinct owned characters within the seat limit", 400);
   }
-  const providerManifest = validateWerewolfModels(input.providerManifest);
+  const modelRouting = await creationModelRouting(db, userId, { modelRouting: input.modelRouting, providerManifest: input.providerManifest });
+  const providerManifest = modelRouting.defaultManifest;
   const gameId = randomUUID();
   const slug = await generateUniqueSlug(async (candidate) => (await db.select({ id: schema.games.id }).from(schema.games).where(eq(schema.games.slug, candidate))).length > 0);
   await db.transaction(async (tx) => {
@@ -115,12 +110,21 @@ export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
       .where(and(inArray(schema.agentProfiles.id, input.agentProfileIds), eq(schema.agentProfiles.userId, userId))).orderBy(asc(schema.agentProfiles.id)).for("update") : [];
     if (profiles.length !== input.agentProfileIds.length) throw new WerewolfGameError("A selected character is unavailable", 403);
     const players = await freezeWerewolfRoster(tx, input.agentProfileIds.map(agentProfileId => ({ id: randomUUID(), agentProfileId })), count);
+    const sealedConfig = await sealRosterModelRouting(tx, { modelRouting }, players.map(player => ({ id: player.id, agentProfileId: player.agentProfileId,
+      modelPreference: profiles.find(profile => profile.id === player.agentProfileId)?.modelPreference ?? "default" })));
     const rules = werewolfConfig(input.preset, input.maxDays ?? 10);
     const initial = startWerewolf(gameId, players, rules, randomUUID());
     await tx.insert(schema.games).values({ id: gameId, slug, gameKind: "werewolf", gameKernel: null,
       createdById: userId, status: "in_progress", trackType: "custom", minPlayers: count, maxPlayers: count,
-      startedAt: new Date().toISOString(), config: JSON.stringify({ providerManifest, retrospectiveForecast: forecastRetrospectiveBudget("werewolf", count, providerManifest), serviceTier: "flex", visibility, rulesVersion: rules.rulesVersion, preset: input.preset }) });
+      startedAt: new Date().toISOString(), config: JSON.stringify({ ...sealedConfig, audioMode: input.audioMode ?? false, retrospectiveForecast: forecastRetrospectiveBudget("werewolf", count, providerManifest), serviceTier: "flex", visibility, rulesVersion: rules.rulesVersion, preset: input.preset }) });
+    // Immediate creation has the same enrollment evidence as a lobby start.
+    await tx.insert(schema.werewolfLobbySeats).values(players.map(({ id, agentProfileId, contentRevisionId: _revision, ...houseCharacter }) => ({
+      id, gameId, agentProfileId: agentProfileId ?? null,
+      modelPreference: profiles.find(profile => profile.id === agentProfileId)?.modelPreference ?? "default",
+      houseCharacter: agentProfileId ? null : houseCharacter,
+    })));
     await tx.insert(schema.werewolfEvents).values({ gameId, sequence: initial.sequence, event: initial });
+    if (input.audioMode === true) await freezeLiveVoices(tx,gameId);
     await queueEpisodeCopy(tx, gameId);
   });
   return { id: gameId, slug };
@@ -138,7 +142,7 @@ export async function claimWerewolfGame(db: DrizzleDB, gameId: string, processId
     let state;
     try {
       state = replayWerewolf(await readWerewolfEvents(tx, gameId));
-      if (werewolfExecutionFinished(state)) throw new Error("Completed Werewolf has an active catalog status");
+      if (werewolfExecutionFinished(state) && JSON.parse(game.config).audioMode !== true) throw new Error("Completed Werewolf has an active catalog status");
     } catch (error) {
       await tx.update(schema.games).set({ status: "suspended" }).where(eq(schema.games.id, gameId));
       if (owner) await tx.update(schema.gameRunOwners).set({ status: "revoked", revokedAt: now.toISOString(), failureReason: "werewolf_log_invalid" }).where(eq(schema.gameRunOwners.id, owner.id));
@@ -161,7 +165,7 @@ export async function lockWerewolfOwner(tx: Tx, gameId: string, ownerEpoch: stri
   return owner;
 }
 
-export function createWerewolfStore(db: DrizzleDB, gameId: string, ownerEpoch: string): WerewolfStore {
+export function createWerewolfStore(db: DrizzleDB, gameId: string, ownerEpoch: string, deferCompletion = false): WerewolfStore {
   return {
     read: () => readWerewolfEvents(db, gameId),
     readRetrospectiveInput: async () => (await loadPayloads(db.select().from(schema.gameRetrospectiveInputs)
@@ -216,14 +220,29 @@ export function createWerewolfStore(db: DrizzleDB, gameId: string, ownerEpoch: s
       }
       await tx.insert(schema.werewolfEvents).values({ gameId, sequence: event.sequence, event });
       await tx.update(schema.gameRunOwners).set({ lastPersistedEventSequence: event.sequence,
-        ...(werewolfExecutionFinished(next) ? { status: "closed" as const, closedAt: new Date().toISOString() } : {}) }).where(eq(schema.gameRunOwners.id, owner.id));
-      if (werewolfExecutionFinished(next)) {
+        ...(werewolfExecutionFinished(next) && !deferCompletion ? { status: "closed" as const, closedAt: new Date().toISOString() } : {}) }).where(eq(schema.gameRunOwners.id, owner.id));
+      if (werewolfExecutionFinished(next) && !deferCompletion) {
         await tx.update(schema.games).set({ status: "completed", endedAt: new Date().toISOString() }).where(eq(schema.games.id, gameId));
         await queueHouseCuts(tx, gameId);
         await ensureWaitingPostgameMediaRow(tx, gameId);
       }
     }),
   };
+}
+
+/** Completion follows the final required audio boundary, including process recovery. */
+export async function completeWerewolfAudioGame(db:DrizzleDB,gameId:string,ownerEpoch:string) {
+  await db.transaction(async tx => {
+    const owner = await lockWerewolfOwner(tx,gameId,ownerEpoch);
+    const state = replayWerewolf(await readWerewolfEvents(tx,gameId));
+    const [track] = await tx.select().from(schema.gameAudioTracks).where(and(eq(schema.gameAudioTracks.gameId,gameId),eq(schema.gameAudioTracks.mode,"live"),eq(schema.gameAudioTracks.active,true))).for("update");
+    if (!werewolfExecutionFinished(state) || track?.status !== "ready" || track.readyEventSequence < state.sequence) throw new Error("Werewolf completion requires its final accepted audio");
+    const now = new Date().toISOString();
+    await tx.update(schema.gameRunOwners).set({status:"closed",closedAt:now}).where(eq(schema.gameRunOwners.id,owner.id));
+    await tx.update(schema.games).set({status:"completed",endedAt:now}).where(eq(schema.games.id,gameId));
+    await queueHouseCuts(tx,gameId);
+    await ensureWaitingPostgameMediaRow(tx,gameId);
+  });
 }
 
 async function readWerewolfRetrospectiveContext(db: Pick<DrizzleDB, "select">, gameId: string, state: ReturnType<typeof replayWerewolf>) {
@@ -274,10 +293,12 @@ export async function releaseWerewolfOwner(db: DrizzleDB, gameId: string, ownerE
 /** Counts only durable accepted decisions, without loading choices or private reasoning.
  * Keep this beside the spectator view, never inside a contestant observation or replay. */
 export async function readWerewolfLiveView(db: DrizzleDB, gameId: string, audience: WerewolfAudience, running: boolean) {
-  const state = replayWerewolf(await readWerewolfEvents(db, gameId));
+  const ready = await audioReadySequence(db,gameId);
+  const state = replayWerewolf((await readWerewolfEvents(db, gameId)).filter(event => ready === null || event.sequence <= ready || ready === 0 && event.type === "werewolf.started"));
   const view = projectWerewolfView(state, audience);
+  if (ready === 0) return {view:{...view,entries:[],cursor:0},voteProgress:null};
   let voteProgress: WerewolfVoteProgress | null = null;
-  if (running && state.config.rulesVersion === 9 && state.phase === "vote" && !state.resolved) {
+  if (running && state.config.rulesVersion >= 9 && state.phase === "vote" && !state.resolved) {
     voteProgress = { kind: "day_vote", day: state.day, thread: 1, total: state.aliveIds.length,
       ready: state.actions.length, voteMode: "majority", requiredVotes: Math.floor(state.aliveIds.length / 2) + 1 };
   }
@@ -301,8 +322,10 @@ export async function readWerewolfLiveView(db: DrizzleDB, gameId: string, audien
 
 /** Replay positions are public-entry counts, never private event sequences. */
 export async function readWerewolfView(db: DrizzleDB, gameId: string, audience: WerewolfAudience, cursor?: number) {
-  const events = await readWerewolfEvents(db, gameId);
+  const ready = await audioReadySequence(db,gameId);
+  const events = (await readWerewolfEvents(db, gameId)).filter(event => ready === null || event.sequence <= ready || ready === 0 && event.type === "werewolf.started");
   if (!events.length) throw new WerewolfGameError("Werewolf game not found", 404);
+  if (ready === 0) return {...projectWerewolfView(replayWerewolf(events),audience),entries:[],cursor:0};
   if (cursor === undefined) return projectWerewolfView(replayWerewolf(events), audience);
   if (!Number.isSafeInteger(cursor) || cursor < 0) throw new WerewolfGameError("Invalid replay position", 400);
   let state = replayWerewolf([events[0]!]);

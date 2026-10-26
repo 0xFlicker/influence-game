@@ -1,5 +1,8 @@
+import {hasLiveAudioTrack} from "./audio-frontier.js";
+import { resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import { isSpectatorHuddleSpeech } from "@influence/engine";
 import { loadPayloads } from "./payload-storage.js";
+import { readyCharacterCutoutUrls } from "./character-cutouts.js";
 import { LEGACY_FORMAT_MANIFEST, Phase, replayCanonicalEvents, resolveFormatManifest, resolveGameKernel } from "@influence/engine";
 import { validHeadRectangle, type CharacterHeadPosition, type HeadRectangle } from "@influence/engine/character-portrait";
 import { assembleProductionCatalog, type ProductionCatalog } from "@influence/engine/production-moments";
@@ -116,14 +119,14 @@ function stringArray(value: string | null): string[] | null {
 /** Caller owns a repeatable-read transaction when composing annotations/selection.
  * Read the complete accepted prefix before enumerating or paging its presentation.
  * This service never returns native provider evidence, media bytes, or game config. */
-export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrSlug: string, options: InfluenceProductionSourceOptions = {}) {
+export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrSlug: string, options: InfluenceProductionSourceOptions = {}, acceptedLivePrefix = false) {
   if (options.refreshVisuals && !options.snapshot) throw new InfluenceProductionSourceError("Refreshing visuals requires the pinned source snapshot");
   const supplied = options.snapshot ? decodeInfluenceProductionSnapshot(options.snapshot) : undefined;
   const [game] = await db.select({ id: schema.games.id, slug: schema.games.slug, kind: schema.games.gameKind,
     status: schema.games.status, config: schema.games.config, gameKernel: schema.games.gameKernel })
     .from(schema.games).where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug))).limit(1);
   if (!game || game.kind !== "influence") throw new InfluenceProductionSourceError("Influence game not found");
-  if (game.status !== "completed" && (game.status !== "suspended" || !await readInfluenceVisualPause(db, game.id)))
+  if (!acceptedLivePrefix && game.status !== "completed" && (game.status !== "suspended" || !await readInfluenceVisualPause(db, game.id) && !await hasLiveAudioTrack(db,game.id)))
     throw new InfluenceProductionSourceError("Production preview requires a completed game or a validated visual pause");
   if (supplied && supplied.gameId !== game.id) throw new InfluenceProductionSourceError("Production snapshot belongs to another game");
   const config = record(JSON.parse(game.config));
@@ -187,7 +190,7 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
       ...(typeof persona.personaKey === "string" && { personaKey: persona.personaKey }), ...(reference(persona.avatarUrl) && { avatarUrl: reference(persona.avatarUrl) }),
     } }];
   }));
-  const allFrames = await getGameWatchReplayFrames(db, game.id);
+  const allFrames = await getGameWatchReplayFrames(db, game.id, {}, true);
   const acceptedEnvelopes = new Map(history.events.filter(event => event.sequence <= throughEventSequence).map(event => [event.sequence, event.envelope]));
   const frames = (allFrames ?? []).filter(frame => frame.sequence <= throughEventSequence).map(frame => {
     const event = acceptedEnvelopes.get(frame.sequence);
@@ -215,6 +218,7 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
       entrySequence: row.entrySequence ?? undefined, dialogueKind: row.dialogueKind,
       firstDurableEventSequence: row.firstDurableEventSequence, speakerPlayerId: anonymous ? null : row.speakerPlayerId,
       anonymous, presentationPurpose: row.safeContext?.presentationPurpose, acceptedBallot: row.safeContext?.acceptedBallot,
+        decisionSpeech: row.safeContext?.decisionSpeech,
       ...(retrospective ? { retrospectiveSource: { eventSequence: retrospective.eventSequence, ordinal: retrospective.ordinal } } : {}),
       visualScene: row.safeContext?.visualScene, fromPlayerId, fromPlayerName: fromPlayerId ? frozen.get(fromPlayerId)?.player.name ?? null : null,
       toPlayerIds: stringArray(row.toPlayerIds), ...(row.roomId !== null && { roomId: row.roomId }),
@@ -289,10 +293,16 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
     if (validHeadRectangle(member.headRectangle)) fullBodyHeads[member.id] = member.headRectangle;
   }
   const portraits = Object.fromEntries(Object.entries(assets[0]?.portraits ?? {}).filter(([id]) => frozen.has(id)).map(([id, artifact]) => [id, artifactUrl(artifact)]));
+  const cutoutSources = Object.fromEntries(Object.entries(fullBodies).map(([id, url]) => [id,
+    url.replace(`/api/admin/production/games/${encodeURIComponent(game.id)}/visual/artifacts/`, `/api/games/${game.id}/visual/artifacts/`)]));
+  const cutouts = Object.fromEntries(Object.entries(await readyCharacterCutoutUrls(db, game.id, cutoutSources, new Date(publicationCutoff)))
+    .map(([id, url]) => [id, url.replace(`/api/games/${encodeURIComponent(game.id)}/cutouts/`, `/api/admin/production/games/${encodeURIComponent(game.id)}/cutouts/`)]));
+  const originalBodies = { ...fullBodies };
+  Object.assign(fullBodies, cutouts);
   if (pinnedMedia) {
     for (const [id, url] of Object.entries(pinnedMedia.portraits)) if (!frozen.has(id) || portraits[id] !== url)
       throw new InfluenceProductionSourceError("Pinned portrait is not a frozen reference for this actor");
-    for (const [id, url] of Object.entries(pinnedMedia.fullBodies)) if (!frozen.has(id) || fullBodies[id] !== url && reference(frozen.get(id)!.persona.fullBodyReferenceUrl) !== url)
+    for (const [id, url] of Object.entries(pinnedMedia.fullBodies)) if (!frozen.has(id) || fullBodies[id] !== url && originalBodies[id] !== url && reference(frozen.get(id)!.persona.fullBodyReferenceUrl) !== url)
       throw new InfluenceProductionSourceError("Pinned fullbody is not a frozen reference for this actor");
     for (const [id, head] of Object.entries(pinnedMedia.fullBodyHeads)) {
       const personaHead = frozen.get(id)?.persona.headPosition as CharacterHeadPosition | undefined;
@@ -312,6 +322,8 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
     return { ...seat.player, status: final?.status === "eliminated" ? "eliminated" as const : "alive" as const, shielded: final?.shielded ?? false };
   });
   const exportGame = { id: game.id, slug: game.slug, status: game.status, players, gameKernel,
+    // Preserve historical pinned source hashes: an absent version already means v1.
+    ...(config.empowerRevoteVersion === undefined ? {} : { empowerRevoteVersion: resolveEmpowerRevoteVersion(config.empowerRevoteVersion) }),
     formatManifest: resolveFormatManifest(config.formatManifest ?? LEGACY_FORMAT_MANIFEST) };
   const acceptedBoundary = { gameId: game.id, gameKind: "influence" as const, audience: "public" as const, projectionVersion: 3 as const,
     throughEventSequence, throughTurnSequence, transcriptPrefix, acceptedCutoff };

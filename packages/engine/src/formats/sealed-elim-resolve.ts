@@ -1,3 +1,4 @@
+import { drainProviderCalls } from "../provider-batch";
 import type { UUID } from "../types";
 import type { SealedElimRegistration } from "./catalog";
 import type {
@@ -144,7 +145,7 @@ export async function resolveSealedElimRound<TDecision, TTieEvidence>(
   const forfeitedVoterIds: UUID[] = [];
   const legalTargetIdsByVoter = new Map<UUID, readonly UUID[]>();
 
-  for (const participant of options.participants) {
+  const collectedBallots = await drainProviderCalls(options.participants.map(async (participant) => {
     const legalTargetIds = options.legalTargetIdsFor?.(participant, aliveIds)
       ?? aliveIds.filter((id) => id !== participant.id);
     legalTargetIdsByVoter.set(participant.id, legalTargetIds);
@@ -156,9 +157,10 @@ export async function resolveSealedElimRound<TDecision, TTieEvidence>(
       ) {
         throw new Error(`${options.registration.id} requires at least one legal target`);
       }
-      forfeitedVoterIds.push(participant.id);
-      await options.recordForfeitedBallot(participant);
-      continue;
+      return async () => {
+        forfeitedVoterIds.push(participant.id);
+        await options.recordForfeitedBallot!(participant);
+      };
     }
     const collected = await options.collectDecision(
       participant,
@@ -174,14 +176,17 @@ export async function resolveSealedElimRound<TDecision, TTieEvidence>(
       voterId: participant.id,
       targetId: legal ? collected.targetId : fallbackTargetId,
     };
-    ballots.push(ballot);
-    await options.recordAcceptedBallot({
-      ballot,
-      decision: collected.decision,
-      repairedInvalidTarget: !legal,
-      traceAction: options.traceAction,
-    });
-  }
+    return async () => {
+      ballots.push(ballot);
+      await options.recordAcceptedBallot({
+        ballot,
+        decision: collected.decision,
+        repairedInvalidTarget: !legal,
+        traceAction: options.traceAction,
+      });
+    };
+  }));
+  for (const commit of collectedBallots) await commit();
 
   await options.beforeScore?.();
   const scored = scoreSealedElimBallots(options.registration, aliveIds, ballots, {

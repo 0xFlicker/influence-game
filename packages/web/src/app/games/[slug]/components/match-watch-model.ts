@@ -230,6 +230,7 @@ export function applyWatchStateToGameDetail(
         ? { avatarUrl: player.avatarUrl ?? existing?.avatarUrl }
         : {}),
       ...currentAgentPatch(player, existing?.currentAgent),
+      ...(player.modelPreference && { modelPreference: player.modelPreference }),
     };
   });
 
@@ -745,6 +746,7 @@ function applyReplayFrameToPlayers(
       ...(framePlayer.pressureStatus ? { pressureStatus: framePlayer.pressureStatus } : {}),
       ...(framePlayer.exposeScore !== undefined ? { exposeScore: framePlayer.exposeScore } : {}),
       ...currentAgentPatch(framePlayer, player.currentAgent),
+      modelPreference: framePlayer.modelPreference,
     };
   });
 }
@@ -800,6 +802,7 @@ function clearPressureFields(player: GamePlayer): GamePlayer {
     shielded: player.shielded,
     ...(player.avatarUrl ? { avatarUrl: player.avatarUrl } : {}),
     ...(player.currentAgent !== undefined ? { currentAgent: player.currentAgent } : {}),
+    ...(player.modelPreference && { modelPreference: player.modelPreference }),
   };
 }
 

@@ -323,7 +323,7 @@ test.describe("format-aware game viewer", () => {
     await expect(page.getByRole("button", {name:"Play replay",exact:true})).toBeVisible();
   });
 
-  test("Influence scrubber seeks individual frames and native drags preserve pause", async ({page}) => {
+  test("Influence scrubber seeks individual frames and native drags preserve pause", async ({page}, testInfo) => {
     const slug = "frame-scrubber-fixture";
     await installDeterministicFormatGame(page, {slug, scenarioId:"save_or_eliminate_clear", status:"completed"});
     await page.goto(viewerUrl(`/games/${slug}/replay`));
@@ -350,10 +350,10 @@ test.describe("format-aware game viewer", () => {
     expect(Number(frame)).toBeGreaterThan(count * .6);
     await page.waitForTimeout(100);
     await expect(slider).toHaveValue(frame);
-    await page.screenshot({path:"/tmp/influence-frame-scrubber.png"});
+    await page.screenshot({path:testInfo.outputPath("influence-frame-scrubber.png")});
   });
 
-  test("captured thinking isolates the speaker before speech on the shared clock", async ({page}) => {
+  test("captured thinking isolates the speaker before speech on the shared clock", async ({page}, testInfo) => {
     const slug = "thinking-presentation-fixture";
     const scenario = createFormatKernelViewerScenario("two_names_declined");
     const fixture = await installDeterministicFormatGame(page, {slug, scenarioId:"two_names_declined", status:"in_progress", initialDecisionCount:0});
@@ -389,7 +389,7 @@ test.describe("format-aware game viewer", () => {
     const focused = await page.locator('[data-thinking-camera]').getAttribute('style');
     await page.waitForTimeout(150);
     expect(await page.locator('[data-thinking-camera]').getAttribute('style')).toBe(focused);
-    await page.screenshot({path:"/tmp/influence-thinking-focus.png"});
+    await page.screenshot({path:testInfo.outputPath("influence-thinking-focus.png")});
     await page.setViewportSize({width:390,height:844});
     await expect(thought).toContainText("One precise question");
     await expect.poll(() => page.evaluate(() => {
@@ -397,7 +397,7 @@ test.describe("format-aware game viewer", () => {
       const stage=document.querySelector('[data-solo-image]')!.getBoundingClientRect();
       return box.left>=stage.left && box.right<=stage.right && box.bottom<=stage.bottom;
     })).toBe(true);
-    await page.screenshot({path:"/tmp/influence-mobile-thinking.png"});
+    await page.screenshot({path:testInfo.outputPath("influence-mobile-thinking.png")});
     await playbackKey(page,"ArrowRight");
     await expect(thought).toHaveCount(0);
     await expect(page.locator('[data-thinking-camera]')).toHaveCSS('transform','matrix(1, 0, 0, 1, 0, 0)');
@@ -462,7 +462,7 @@ test.describe("format-aware game viewer", () => {
     await expect(page.getByRole("button", { name: "Pause replay", exact: true })).toBeVisible();
   });
 
-  test("content-fitted bubbles keep the same frame across all speech pages", async ({page}) => {
+  test("content-fitted bubbles keep the same frame across all speech pages", async ({page}, testInfo) => {
     await page.setViewportSize({width:1600,height:1000});
     const slug="bubble-pages-fixture", scenario=createFormatKernelViewerScenario("two_names_declined");
     const fixture=await installDeterministicFormatGame(page,{slug,scenarioId:"two_names_declined",status:"in_progress",initialDecisionCount:0});
@@ -476,12 +476,12 @@ test.describe("format-aware game viewer", () => {
     const first=await bubble.boundingBox();
     const pageLabel=await bubble.locator('[aria-label^="Page "]').getAttribute("aria-label");
     expect(pageLabel).toMatch(/Page 1 of /);
-    await page.screenshot({path:"/tmp/bubble-fit-page-1.png"});
+    await page.screenshot({path:testInfo.outputPath("bubble-fit-page-1.png")});
     await playbackKey(page,"4");await playbackKey(page,"Space");
     await expect(bubble.locator('[aria-label^="Page "]')).not.toHaveAttribute("aria-label",pageLabel!);
     await playbackKey(page,"Space");
     expect(await bubble.boundingBox()).toEqual(first);
-    await page.screenshot({path:"/tmp/bubble-fit-page-2.png"});
+    await page.screenshot({path:testInfo.outputPath("bubble-fit-page-2.png")});
   });
 
   test("fullscreen portrait player preserves speech through fallback, rotation and exit", async ({ page }) => {
@@ -678,6 +678,7 @@ test.describe("format-aware game viewer", () => {
     const say = (index: number, sequence: number) => fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: { entrySequence: sequence, round: 1, phase: "FORMAT_MINGLE", from: cast[index]!.id, scope: "mingle", to: cast.filter((_, seat) => seat !== index).map(player => player.id), roomId: 2, text: index ? "We can make this room work together." : "Who wants to make a plan?", timestamp: Date.now() } }));
     say(0, 1);
     const room = page.getByRole("region", { name: "Mingle room 2" });
+    await expect(room.locator("[data-room-backdrop]")).toHaveAttribute("data-room-backdrop", "/visual/influence/rooms-v1/mingle-2.jpg");
     await expect(room.locator("[data-room-player]")).toHaveCount(3);
     await expect(room.locator('[data-active-speaker="true"]')).toHaveAttribute("data-room-player", cast[0]!.id);
     await expect(room.locator("[data-speech-bubble]")).toHaveCSS("opacity", "1");
@@ -686,6 +687,22 @@ test.describe("format-aware game viewer", () => {
     await expect(room.locator("[data-speech-bubble]")).toHaveCSS("opacity", "1");
     await expect(room.getByRole("img", { name: cast[2]!.name })).toHaveAttribute("src", /aggressive.png$/);
     await page.getByRole("button", { name: /Pause/ }).filter({ visible: true }).click();
+    await room.evaluate(element => Object.assign(element.style, { width: "390px", height: "300px", flex: "none" }));
+    await expect.poll(async () => {
+      const bounds = (await room.boundingBox())!;
+      return [Math.round(bounds.width), Math.round(bounds.height)];
+    }).toEqual([390, 300]);
+    await expect.poll(() => room.evaluate(element => {
+      const stage = element.getBoundingClientRect();
+      return [...element.querySelectorAll("[data-room-player] img, [data-room-player] p")].every(child => {
+        const bounds = child.getBoundingClientRect();
+        return bounds.top >= stage.top - 1 && bounds.bottom <= stage.bottom + 1;
+      });
+    })).toBe(true);
+    await room.screenshot({ path: testInfo.outputPath("portrait-mingle-embedded-390x300.png") });
+    await room.evaluate(element => {
+      for (const property of ["width", "height", "flex"]) element.style.removeProperty(property);
+    });
     await page.getByRole("button", { name: "Enter fullscreen", exact: true }).click();
     for (const size of [{ width: 1920, height: 1080 }, { width: 3440, height: 1440 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
       await page.setViewportSize(size);
@@ -696,6 +713,14 @@ test.describe("format-aware game viewer", () => {
         const rect = image.getBoundingClientRect();
         return rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight;
       }))).toBe(true);
+      if (size.height >= 600) {
+        // The DOM resizes before ResizeObserver updates the portrait layout.
+        await expect.poll(() => room.evaluate(element => {
+          const bubble = element.querySelector("[data-speech-bubble]")!.getBoundingClientRect();
+          const speaker = element.querySelector('[data-active-speaker="true"]')!.getBoundingClientRect();
+          return Math.abs(bubble.x + bubble.width / 2 - speaker.x - speaker.width / 2);
+        })).toBeLessThan(2);
+      }
       const bounds = await bubble.boundingBox();
       expect(bounds!.y).toBeGreaterThanOrEqual(0);
       expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(size.height - 120);
@@ -890,10 +915,15 @@ test.describe("format-aware game viewer", () => {
         expect(bounds.top).toBeGreaterThanOrEqual(0);
         expect(bounds.bottom).toBeLessThan(bounds.viewport);
         expect(bounds.scroll).toBeLessThanOrEqual(bounds.client + 1);
-        const backdrop = solo.locator("[data-stage-backdrop]");
-        await expect(backdrop.locator("img")).toHaveCount(2);
-        await expect(backdrop.locator("img").first()).toHaveAttribute("src", "/visual/solo-studio-backdrop.webp");
-        await expect.poll(() => backdrop.locator("img").first().evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+        const backdrop = solo.locator("[data-room-backdrop]");
+        await expect(backdrop).toHaveAttribute("data-room-backdrop", "/visual/influence/rooms-v1/lobby.jpg");
+        await expect(backdrop).toHaveCSS("background-image", /url\(.*\/visual\/influence\/rooms-v1\/lobby\.jpg/);
+        expect(await backdrop.evaluate(async element => {
+          const image = new Image();
+          image.src = element.getAttribute("data-room-backdrop")!;
+          await image.decode();
+          return image.naturalWidth;
+        })).toBeGreaterThan(0);
         expect(Math.round((await backdrop.boundingBox())!.width)).toBe(size.width);
         await solo.screenshot({ path: testInfo.outputPath(`solo-edges-${size.width}.png`) });
       }
@@ -1096,7 +1126,7 @@ test.describe("format-aware game viewer", () => {
       { ...meta, sequence: 9, type: "vote.empower_revote_cast", payload: { voterId: "rex", target: "lyra" } },
       { ...meta, sequence: 10, type: "vote.empowered_set", payload: { empowered: "lyra", method: "revote" } },
     ];
-    await installDeterministicFormatGame(page, { slug, scenarioId: "majority_elimination_tie", status: "completed", decisions });
+    await installDeterministicFormatGame(page, { slug, scenarioId: "majority_elimination_tie", status: "completed", decisions, empowerRevoteVersion: 2 });
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await skipOpening(page);
     await expect(page.getByRole("region", { name: "Ballot: Atlas" }).locator("blockquote").locator("..")).toHaveCSS("opacity", "1");

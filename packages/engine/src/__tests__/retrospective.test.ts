@@ -123,7 +123,7 @@ describe("retrospective contracts", () => {
   });
 
   test("native output and journal replay reject malformed speech without permissive parsing", () => {
-    const invalid = ["Plain text", '```json\n{"speech":"Hello"}\n```', 'prefix {"speech":"Hello"}', "{}",
+    const invalid = ["Plain text", '```json\n{"speech":"Hello",}\n```', 'prefix {"speech":"Hello"} {"speech":"Other"}', "{}",
       '{"speech":null}', '{"speech":"  "}', '{"speech":"ok","actorId":"atlas"}',
       JSON.stringify({ speech: "x".repeat(RETROSPECTIVE_MAX_SPEECH_CHARACTERS + 1) })];
     for (const document of invalid) expect(exactStructuredOutputRegistry.decodeJsonDocument(retrospectiveSpeechArtifact, document).status).toBe("invalid");
@@ -132,7 +132,7 @@ describe("retrospective contracts", () => {
       expect(exactStructuredOutputRegistry.decodeAcceptedValue(retrospectiveSpeechArtifact, value).status).toBe("invalid");
     }
     const value = { speech: "  My exact speech.  " };
-    expect(exactStructuredOutputRegistry.decodeProviderPayload(retrospectiveSpeechArtifact, value)).toEqual({ status: "valid", value });
+    expect(exactStructuredOutputRegistry.decodeProviderPayload(retrospectiveSpeechArtifact, value)).toMatchObject({ status: "valid", value, audioDelivery: { fields: [{ path: ["speech"], delivery: { cleanText: value.speech } }] } });
   });
 });
 

@@ -14,18 +14,30 @@ The workspace entry point is `/admin/production`. The bounded library links to `
 
 Source/audience/thinking, inspected moment, scene/version, source/cut view and return filters are reflected in the route. Source history stays pinned. File handles, credentials and audio object URLs are never serialized into a selection descriptor.
 
+Player owns the preview clock. Keep its composition `inputProps` stable across playhead updates: replacing that object restarts Remotion's clock and causes voice/music to rewind as they resynchronize. The browser proof measures sustained unmuted playback with a real recording, checks wall-clock progress and rejects backward audio jumps; frame advancement alone is insufficient.
+
+## MCP proposals
+
+Producer MCP clients can read the same catalog with `read_production_moments`, patch shared tags with `update_production_moment_tags`, and call `preview_production_cut` to create a review link. Writes require explicit `producer:edit` consent in addition to `producer`; existing connections need a scope upgrade. Smart may mean interesting or relevant thinking, including mistakes worth showing. Silent discussion passes remain outside playback even with thinking enabled.
+
+Review links open Selected cut with the proposed recipe and music settings. Studio recomputes the proposal fingerprint and reports changed source/tags before allowing export. The voice summary reports existing recording coverage; it does not generate audio. The link is not an export or an authorization grant. Operators can adjust labels, review the revised cut and freeze it through the existing flow. See [MCP contract](../../../../../../docs/game-mcp-production-oauth.md#producer-moment-editing-and-cut-review).
+
 ## Local export
 
-Start the local API/web stack using the repository's usual development commands and sign in with Producer/Sysop access. Save the downloaded selection beside any optional speech manifest and audio files. From the repository root:
+Start the local API/web stack using the repository's usual development commands and sign in with Producer/Sysop access. Run the Studio command from the `influence-game` repository root. It uses the browser's default Downloads folder for the selection and writes the movie under `.renders/` in the repo. If your browser renamed the file or saved it elsewhere, update `--selection` to its actual path:
 
 ```sh
-bun run replay:export -- <slug> \
-  --selection <slug>-selection.json --output .renders/<slug>.mp4
+bun run replay:export -- \
+  --selection "$HOME/Downloads/<slug>-selection.json" --output .renders/<slug>.mp4
 ```
 
 The CLI reuses a checked, API-origin-bound app session shared with the API simulators. When needed it opens House sign-in; choose **Authorize local CLI** and return to the terminal. Use `--api-base-url http://127.0.0.1:<api-port>` and `--web-base-url http://localhost:<web-port>` for other local ports. `INFLUENCE_API_SESSION_TOKEN` is an optional unattended override. The exporter uses the descriptor's frozen IDs/settings; later predicate edits do not reselect the cut.
 
 ## Local recordings
+
+During rendering, the CLI displays one updating progress bar with elapsed time and an approximate remaining time, then labels encoding/muxing and final verification. The estimate uses measured progress and Remotion's recent frame timing; it appears after a short warm-up and can change for more expensive scenes. Redirected output uses occasional plain-text milestones instead of terminal control codes. Rendering progress starts after bundling and layout preparation.
+
+Export validation checks that recordings belong to the selected, audience-authorized moments and that generated audio matches its published version. Playback cues own text/speaker matching; export does not maintain a separate allowlist of narratable moment types or equate an action's actor with its narrator.
 
 **Import local recordings** accepts one JSON speech manifest and its audio files. Nothing is uploaded or generated. Each entry uses the existing speech manifest contract:
 

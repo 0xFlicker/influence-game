@@ -132,7 +132,7 @@ describe("Werewolf ordered recipient threads", () => {
       { ...valid, text: null }, { text: valid.text, cue: null }, { ...valid, actorId: request.actorId }, { ...valid, thinking: "" },
       { ...valid, text: "x".repeat(301) }, { ...valid, cue: "" }, {}];
     for (const payload of invalid) expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify({ thinking: "Private thinking", ...payload })).status).toBe("invalid");
-    for (const payload of ["hello", "{}", `prefix ${JSON.stringify(valid)}`, '```json\n'+JSON.stringify(valid)+'\n```']) expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, payload).status).toBe("invalid");
+    for (const payload of ["hello", "{}", `prefix ${JSON.stringify({ ...valid, extra: true })}`, '```json\n'+JSON.stringify({ ...valid, extra: true })+'\n```']) expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, payload).status).toBe("invalid");
     const before = structuredClone(ctx.events);
     await expect(advanceWerewolf(ctx.store, { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async () => ({ kind: "opening", ...valid, recipientIds: [request.actorId] }) })).rejects.toThrow("recipients");
     expect(ctx.events).toEqual(before);

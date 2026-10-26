@@ -1,17 +1,69 @@
 #!/usr/bin/env bun
 /**
- * API-backed House visibility is Public or Unlisted; local artifacts are not published.
+ * New shared model invocations request primarily English authored prose, allowing
+ * natural brief foreign phrases and preserving names, quotes and structured IDs.
+ * This is prompt guidance, not language-based rejection or historical rewriting.
+ * Werewolf API playback derives audience-safe House action/result narration and
+ * TTS separately from accepted contestant dialogue. Inspect it in the retained
+ * API replay; it never changes model observations or the --chatty evidence.
+ * Werewolf v11 surveys living players in parallel for silent 1–100 speaking
+ * priorities before each day. Scores affect only normal speaking order; seeded
+ * ties and durable journal replay preserve recovery. No thinking/audio is authored
+ * for these calls; inspect private evidence rather than dialogue/Show thinking.
+ * Delivery tags are prompted by default, including non-audio games. Accepted
+ * speech/thinking and later contestant context are clean; sanitized annotations
+ * stay in private provider evidence and API journal bucket references. Inspect
+ * --chatty against private requests/responses; tag presence alone is never a retry.
+ * Requested thinking is guided toward in-character inner monologue that prepares
+ * speech or a silent choice, using game stakes rather than schemas, IDs, prompt
+ * compliance or byte/token arithmetic. This is not a style-based rejection rule;
+ * native provider reasoning remains separate, unchanged private evidence.
+ * Native thinking field descriptions suggest 2–4 short sentences; length repairs
+ * remind models not to narrate the correction. Check actual repaired responses
+ * and deliberate passes when evaluating this guidance, not just prompt presence.
+ * Overlong Werewolf thinking uses the same draft-and-overage repair as speech;
+ * its clean-text limit remains 2,000 UTF-16 code units.
+ * Thinking prefers higher-pitch by day, lower-pitch at night; night speech softly
+ * guides delivery without forced wrapping. No TTS or audio DSP occurs here.
+ * Influence decision speech uses strict message fields; ballots, format picks and
+ * tiebreaks omit thinking. Sealed ballots collect concurrently, then reveal in
+ * roster order only after every dispatched call has settled and saved evidence.
+ * Diary interview batches likewise drain before a failed sibling releases the turn.
+ * Fatal diary errors fence new House/agent calls and provider attempt admissions
+ * (including retries); already-admitted attempts settle and save their evidence.
+ * rules-legal provider absence still permits sibling interviews to continue.
+ * New Werewolf retrospective accounts retain solo-night target facts and actor-private
+ * explanation provenance; recovery preserves already-frozen accounts and hashes.
+ * New games freeze the speech contract; accepted historical decisions replay
+ * without regeneration. Overlong speech retries include clean UTF-8 overage.
+ * Native reasoning remains private evidence; no `as any` shortcuts
+ * or indirect House calls are permitted.
+ * API-backed games default to Public; Unlisted requires --visibility unlisted.
+ * Environment variables cannot select Unlisted; local artifacts are not published.
  * See api-simulate.ts for --visibility. This does not change decision trace permissions.
+ * Per-character API simulations use mixed-model-simulate.ts (root simulate:models).
+ * --preview is offline; --models assigns seats, --provider-entry remains a fallback chain.
+ * --house-entry configures independent House text work. Luna remains Flex.
+ * Explicit seats try their preference, then the full common route without duplicates.
+ * Roster policy.defaultModelMaxFallbackCalls bounds default-model recovery (24 by default).
+ * Retry-After cools the failed model while permitted fallbacks proceed immediately.
+ * Actual paid runs require authorization and retain API IDs and durable evidence.
+ * No direct House provider calls or `as any` invocation shortcuts.
  * Influence Game — Batch Simulation Runner
  *
  * Runs multiple game simulations and outputs structured analysis.
  * New decisions use native JSON Schema (Responses text.format or Chat Completions
  * response_format), without tool-choice modes. LM Studio remains best effort.
+ * Shared decoding unwraps a single complete JSON container from fences or surrounding
+ * text, then enforces the unchanged schema and domain rules. It never repairs broken
+ * JSON or selects among candidates; original responses remain in private evidence.
  * Completed-game playback/Studio formats and private historical evidence stay readable.
  * Preserve all sanitized provider attempts, including successful structured
  * thinking and available native reasoning. Artifact write errors stop execution;
  * pending requests and completed attempts remain available in the journal snapshot.
  * Paid Werewolf evaluation uses simulate:werewolf:api for durable app-visible games.
+ * Audio Mode is API-owned: audioMode:true freezes voices and gates accepted turns on
+ * bucket-backed TTS. TTS attempts/cost estimates remain separate from gameplay traces.
  * Discussion passes stay in private/debug evidence, not contestant observations;
  * model-facing references count speech only. Replay skips passes even with
  * Show thinking enabled; saved pass thoughts remain in debug evidence. Technical byte
@@ -61,7 +113,8 @@
  * introductions and pack chat. Mystery readback keeps dialogue roles hidden.
  * The standalone command is provider-free unless --model-catalog is explicit. Its canonical
  * JSON and --chatty records contain private roles, strategies, and thinking.
- * Werewolf model turns now require thinking, including speech/pass. API games journal
+ * Werewolf v10 solo night turns request a target, explanation and cue without thinking.
+ * Other gameplay turns retain thinking, including speech/pass. API games journal
  * it separately from gameplay speech and expose it only through an Omniscient toggle,
  * bound to the replay cursor (sealed choices wait for resolution). Mystery never gets it.
  * Native provider reasoning traces remain separate diagnostics. Standalone canonical
@@ -80,6 +133,9 @@
  * voluntary passes separately from provider-unavailable fallbacks.
  * Werewolf spoken text uses names; UUID leaks fail inside provider retries before
  * acceptance. Structured target IDs remain legal; stored dialogue is unchanged.
+ * Influence Lobby/Mingle/huddles limit pairwise back-and-forth: A → B → A → B
+ * excludes A from B's next recipient choices. B → C schedules C and resets
+ * the pair counter; group addresses and passes return to fair scheduling.
  * Rules v9 use a shared UTF-8 speech budget: 400 bytes per living player,
  * 320 per contribution. Three directed handoffs permit A → B → A → B;
  * the last recipient redirects or passes, and may reference earlier statements.
@@ -154,6 +210,9 @@
  * Two Names requires at least five living players and proves nominations,
  * Override/replacement branching, ordered pleas, finalist ballots, and tiebreak.
  * New Override draws exclude Empowered; both nominees remain eligible.
+ * Game creation freezes empowerRevoteVersion: v2 counts only new revote ballots;
+ * existing unversioned games use v1 active ballots. Recovery and playback use the
+ * frozen version, never infer rules from winners, and preserve accepted outcomes.
  * The Short List gives every player shared coordination guidance in social,
  * huddle, diary, and ballot prompts. Inspect specific voter-to-target commitments,
  * projected totals, and defections against canonical ballots. Resolved-round

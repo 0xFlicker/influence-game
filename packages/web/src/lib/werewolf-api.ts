@@ -13,8 +13,8 @@ export const listWerewolfGames = () => apiFetch<WerewolfGameSummary[]>("/api/wer
 export interface CreateWerewolfParams {
   visibility: import("./api").GameVisibility;
   preset: WerewolfPreset; setup: import("@influence/engine/werewolf/types").WerewolfSetup;
-  maxDays: number; providerManifest: import("./api").GameProviderManifestEntry[];
-  personaPool: import("./api").PersonaKey[]; fillStrategy: "balanced" | "random"; visualMode: boolean; visualFailurePolicy?: "best_effort" | "require_visuals";
+  maxDays: number; modelRouting?: import("@influence/engine/game-model-routing").GameModelRouting; providerManifest?: import("./api").GameProviderManifestEntry[];
+  personaPool: import("./api").PersonaKey[]; fillStrategy: "balanced" | "random"; audioMode?: boolean; visualMode: boolean; visualFailurePolicy?: "best_effort" | "require_visuals";
 }
 export const createWerewolfLobby = (params: CreateWerewolfParams) =>
   apiFetch<{ id: string; slug: string }>("/api/werewolf/lobbies", { method: "POST", body: JSON.stringify(params) });
@@ -27,6 +27,10 @@ export const leaveWerewolfLobby = (id: string, playerId: string) => apiFetch(`/a
 export const fillWerewolfLobby = (id: string) => apiFetch(`/api/werewolf/${encodeURIComponent(id)}/fill`, { method: "POST" });
 export const startWerewolfLobby = (id: string) => apiFetch(`/api/werewolf/${encodeURIComponent(id)}/start`, { method: "POST" });
 export const stopWerewolf = (id: string) => apiFetch(`/api/werewolf/${encodeURIComponent(id)}/stop`, { method: "POST" });
+export const setWerewolfHidden = (id: string, hidden: boolean) => apiFetch<{hidden: boolean}>(
+  `/api/admin/werewolf/${encodeURIComponent(id)}/visibility`,
+  {method: "PATCH", body: JSON.stringify({hidden})},
+);
 
 export async function getWerewolfPresentation(slug: string, audience: WerewolfAudience, cursor: number | null, signal?: AbortSignal, publishedBefore?: string): Promise<WerewolfPresentation> {
   const data = await apiFetch<WerewolfPresentation>(`/api/werewolf/${encodeURIComponent(slug)}/presentation?audience=${audience}${cursor === null ? "" : `&cursor=${cursor}`}${publishedBefore ? `&publishedBefore=${encodeURIComponent(publishedBefore)}` : ""}`, { cache: "no-store", signal });

@@ -74,6 +74,7 @@ export interface FormatPresentationRosterPlayer {
   personaKey?: string;
   avatarUrl?: string;
   currentAgent?: GamePlayer["currentAgent"];
+  modelPreference?: GamePlayer["modelPreference"];
 }
 
 export type FormatPresentationBallot =
@@ -136,6 +137,8 @@ export interface FormatPresentationSnapshot {
 }
 
 interface SpeechCue {
+  /** Accepted delivery attached to a canonical ballot; never determines its target. */
+  spokenMessage?: string;
   /** A separate, fully collected tally stop after a canonical roll call. */
   voteSummary?: boolean;
   /** The director stages bubbles independently from the surrounding image. */
@@ -161,6 +164,7 @@ export type FormatPresentationCue =
       counts: Record<string, number>;
       receipts: FormatEmpowerVoteReceipt[];
       resolutionMethod?: "revote" | "wheel" | "manual";
+      countedVotes?: readonly { voterId: string; targetId: string }[];
     })
   | (FormatPresentationCueBase & {
       kind: "empowered_tie";

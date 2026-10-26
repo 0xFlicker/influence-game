@@ -61,6 +61,12 @@ async function advanceRetrospective(store: WerewolfStore, agent: WerewolfAgent, 
 }
 
 export function werewolfFallback(state: WerewolfState, request: WerewolfRequest): WerewolfDecision {
+  if (request.action === "speaking_priority") return { kind: "speaking_priority", priority: 1 };
+  if ("solo" in request && request.solo) {
+    const random = seededRandom(hashCanonicalJson({ seed: state.seed, purpose: "fallback", sequence: state.sequence + 1 }));
+    const choices = [...request.legalTargetIds].sort();
+    return {kind: "solo_target", targetId: choices[Math.floor(random() * choices.length)]!, text: null, cue: null};
+  }
   if (request.action === "conversation") return { kind: "conversation", text: null, cue: null, recipientId: null, replyToContributionId: null };
   if (request.action === "public_vote") return { kind: "spoken_target", text: null, cue: null, targetId: null, thinking: "" };
   if (request.action === "pack_propose") {
@@ -77,8 +83,8 @@ export function werewolfFallback(state: WerewolfState, request: WerewolfRequest)
   return { kind: "target", targetId: choices[Math.floor(random() * choices.length)]!, thinking: "" };
 }
 
-/** Concurrent sealed ballots use one frozen observation. Private commitments recover separately;
- * the deterministic reveal publishes the complete batch as one public entry. */
+/** Concurrent priority surveys and historical sealed ballots freeze observations before dispatch.
+ * Private commitments recover separately; only historical ballots have a public reveal. */
 export async function advanceWerewolf(store: WerewolfStore, agent: WerewolfAgent, signal?: AbortSignal): Promise<WerewolfState> {
   signal?.throwIfAborted();
   const events = await store.read();
@@ -87,7 +93,7 @@ export async function advanceWerewolf(store: WerewolfStore, agent: WerewolfAgent
   if (state.outcome) return advanceRetrospective(store, agent, events, state, signal);
   const step = nextWerewolfStep(state);
   if (step.kind === "complete") return state;
-  if (step.kind === "action" && (step.request.action === "attack" || step.request.action === "vote")) {
+  if (step.kind === "action" && (step.request.action === "attack" || step.request.action === "vote" || step.request.action === "speaking_priority")) {
     const plans = werewolfActionPlans(state);
     for (const plan of plans) await store.prepare?.(state, plan.request, plan.sequence);
     signal?.throwIfAborted();

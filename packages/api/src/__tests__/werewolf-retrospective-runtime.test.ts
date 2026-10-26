@@ -21,6 +21,7 @@ const scripted: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospec
 test.each(["first", "final"] as const)("%s retrospective response survives owner change before event commit", async slot => {
   const db = await setupTestDB();
   await db.insert(schema.users).values({ id: "rt05-owner" });
+  await grantTestAuthority(db, "rt05-owner", [], "admin");
   const game = await createWerewolfGame(db, "rt05-owner", { preset: "one_wolf", agentProfileIds: [], maxDays: 1, providerManifest: [{ catalogId: "openai:gpt-5-nano" }] });
   await pinWerewolfRulesVersion(db, game.id, 8);
   const claim = await claimWerewolfGame(db, game.id);

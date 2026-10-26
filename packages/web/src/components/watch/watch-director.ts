@@ -1,3 +1,4 @@
+import {compileTiming, sampleTiming} from "../../lib/replay-export/timing";
 /** One shared clock; game adapters own interpretation, ordering and speech timing. */
 import {thoughtTiming, thoughtContentTime, thoughtSpeechBoundaries, sampleThought, type ThoughtTiming, type SpeechBoundaries} from "./thinking-timing";
 export type {SpeechBoundaries} from "./thinking-timing";
@@ -140,6 +141,55 @@ export class PresentationDirector<C extends WatchCue> {
   private thought: (ThoughtTiming & {key: string}) | null = null;
   private thoughts = new Map<string, string | null>();
   private thinkingEnabled = true;
+  private recordings = new Map<string, {speechMs?:number;thinkingMs?:number}>();
+  private audioPending = false;
+  setAudioPending(pending:boolean) {
+    if (this.audioPending === pending) return;
+    this.captureRemainingTime(); this.clearTimer(); this.audioPending = pending; this.ensureTimer();
+  }
+  setRecordings(key:string, recording:{speechMs?:number;thinkingMs?:number}) {
+    const old = this.recordings.get(key);
+    if (old?.speechMs === recording.speechMs && old?.thinkingMs === recording.thinkingMs) return;
+    for (const value of Object.values(recording)) if (!Number.isFinite(value) || value <= 0) throw new Error("Invalid recorded duration");
+    const active = this.getActiveCue()?.key === key;
+    const elapsed = active ? this.getTimelineElapsedBaseMs() : 0;
+    if (active) { this.captureRemainingTime(); this.clearTimer(); }
+    this.recordings.set(key,recording);
+    if (active) {
+      const timing = this.recordedTiming(this.getActiveCue(),this.getThinkingText(key));
+      this.thought = timing?.thought ? {key,...timing.thought} : null;
+      this.remainingBaseMs = Math.max(0,this.activeDurationMs()-elapsed); this.ensureTimer();
+    }
+    for (const listener of this.listeners) listener();
+  }
+  private recordedTiming(cue:C|null,text:string|null) {
+    const recording = cue && this.recordings.get(cue.key);
+    if (!cue || !recording || !recording.speechMs && !recording.thinkingMs) return null;
+    const speech = this.policy.speech(cue);
+    return compileTiming([{key:cue.key,baseDurationMs:cue.thinkingOnly ? 0 : cue.baseDurationMs,
+      kind:cue.thinkingOnly ? "thinking" : speech ? "speech" : "scene",speech,thinking:text,
+      ...(speech && recording.speechMs && {recording:{assetId:"speech",durationMs:recording.speechMs}}),
+      ...(text && recording.thinkingMs && (cue.thinkingOnly ? {recording:{assetId:"thinking",durationMs:recording.thinkingMs}} : {thinkingRecording:{assetId:"thinking",durationMs:recording.thinkingMs}})),
+    }],{ending:"finish-score",overrides:{}},30)[0]!;
+  }
+  getRecordedDuration(key:string) {
+    const cue = this.state.cues.find(cue => cue.key === key);
+    return cue ? this.recordedTiming(cue,this.getThinkingText(key))?.endMs ?? null : null;
+  }
+  getAudioPosition() {
+    const cue = this.getActiveCue(), recording = cue && this.recordings.get(cue.key);
+    if (!cue || !recording) return null;
+    const timing = this.recordedTiming(cue,this.getThinkingText(cue.key));
+    if (!timing) return null;
+    const elapsed = this.getTimelineElapsedBaseMs();
+    if (timing.thought && recording.thinkingMs) {
+      const start = timing.thought.insertAt + timing.thought.readAtMs;
+      if (elapsed >= start && elapsed < start+recording.thinkingMs) return {part:"thinking" as const,offsetMs:elapsed-start};
+    }
+    if (timing.recording && recording.speechMs && !cue.thinkingOnly && elapsed >= timing.recording.startMs && elapsed < timing.recording.startMs+recording.speechMs)
+      return {part:"speech" as const,offsetMs:elapsed-timing.recording.startMs};
+    return null;
+  }
   private exactSeek: {elapsedMs: number; hadThought: boolean} | null = null;
 
   getThinkingText(key: string): string | null { return this.thinkingEnabled ? this.thoughts.get(key) ?? null : null; }
@@ -166,12 +216,18 @@ export class PresentationDirector<C extends WatchCue> {
     if (key !== this.getActiveCue()?.key) return;
     this.setThinkingPending(key, false);
     const normalized = text?.trim() || null;
-    if (this.thinkingEnabled) this.thoughts.set(key, normalized);
-    if ((!normalized && !this.thought) || this.thought?.text === normalized) { this.exactSeek = null; return; }
+    if ((!normalized && !this.thought) || this.thought?.text === normalized) {
+      if (this.thinkingEnabled) this.thoughts.set(key, normalized);
+      this.exactSeek = null; return;
+    }
     this.captureRemainingTime(); this.clearTimer();
+    // Recorded duration reads the thought cache. Capture the old position before
+    // extending that duration, otherwise late text jumps straight to insertAt
+    // and skips the camera's establishing motion in live playback.
     const contentElapsed = this.getElapsedBaseMs();
+    if (this.thinkingEnabled) this.thoughts.set(key, normalized);
     const speech = this.policy.speech(this.getActiveCue());
-    const timing = thoughtTiming(normalized, speech);
+    const timing = this.recordedTiming(this.getActiveCue(),normalized)?.thought ?? thoughtTiming(normalized, speech);
     this.thought = timing ? {key, ...timing} : null;
     this.manualTransition = null; this.exitReadingPositionMs = null;
     const seek = this.exactSeek;
@@ -190,11 +246,15 @@ export class PresentationDirector<C extends WatchCue> {
   }
 
   private contentTime(elapsed: number): number {
-    return thoughtContentTime(elapsed, this.thought);
+    const cue = this.getActiveCue();
+    const timing = this.recordedTiming(cue,cue ? this.getThinkingText(cue.key) : null);
+    return timing ? sampleTiming(timing,elapsed).elapsedMs : thoughtContentTime(elapsed, this.thought);
   }
 
   private speechBoundaries() {
-    return thoughtSpeechBoundaries(this.policy.speech(this.getActiveCue()), this.thought);
+    const cue = this.getActiveCue();
+    const timing = this.recordedTiming(cue,cue ? this.getThinkingText(cue.key) : null);
+    return timing ? timing.speech : thoughtSpeechBoundaries(this.policy.speech(cue), this.thought);
   }
 
 
@@ -265,6 +325,8 @@ export class PresentationDirector<C extends WatchCue> {
     };
   };
 
+  getCues(): readonly C[] { return this.state.cues; }
+
   getActiveCue(): C | null {
     return this.state.cues[this.state.cursor] ?? null;
   }
@@ -327,7 +389,7 @@ export class PresentationDirector<C extends WatchCue> {
       nextCursor = firstNewIndex;
       this.exitReadingPositionMs = null;
       this.waitingAtHydrationWatermark = false;
-      this.remainingBaseMs = cueDurationMs(nextCues[nextCursor]);
+      this.remainingBaseMs = this.recordedTiming(nextCues[nextCursor] ?? null,this.getThinkingText(nextCues[nextCursor]!.key))?.endMs ?? cueDurationMs(nextCues[nextCursor]);
       this.apply({ type: "set_waiting_at_tail", waitingAtTail: false });
     }
     if (retimed) this.clearTimer();
@@ -583,7 +645,8 @@ export class PresentationDirector<C extends WatchCue> {
   }
 
   private activeDurationMs(): number {
-    return cueDurationMs(this.state.cues[this.state.cursor]) + (this.thought?.duration ?? 0);
+    const cue = this.getActiveCue();
+    return this.recordedTiming(cue,cue ? this.getThinkingText(cue.key) : null)?.endMs ?? cueDurationMs(cue ?? undefined) + (this.thought?.duration ?? 0);
   }
 
   private ensureTimer(): void {
@@ -591,6 +654,7 @@ export class PresentationDirector<C extends WatchCue> {
       this.disposed
       || !this.ready
       || this.thinkingPending
+      || this.audioPending
       || this.timerId !== null
       || (!this.state.isPlaying && !this.manualTransition)
       || this.state.waitingAtTail
@@ -653,7 +717,7 @@ export class PresentationDirector<C extends WatchCue> {
       // A zero-speech thought shot must wait for its saved text before its timer
       // can advance. The view releases this fence on success, absence or error.
       this.thinkingPending = Boolean(cue?.thinkingOnly && this.thinkingEnabled && !this.thoughts.has(cue.key));
-      const timing = cue ? thoughtTiming(this.getThinkingText(cue.key), this.policy.speech(cue)) : null;
+      const timing = cue ? this.recordedTiming(cue,this.getThinkingText(cue.key))?.thought ?? thoughtTiming(this.getThinkingText(cue.key), this.policy.speech(cue)) : null;
       this.thought = timing && cue ? {key: cue.key, ...timing} : null;
     }
     this.state = next;

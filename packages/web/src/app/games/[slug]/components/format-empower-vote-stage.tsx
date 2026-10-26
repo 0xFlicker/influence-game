@@ -7,6 +7,7 @@ export function FormatEmpowerVoteStage({
   roster,
   tiedPlayerIds = [],
   resolutionMethod,
+  countedVotes,
   receipts,
 }: {
   empoweredId: string | null;
@@ -14,12 +15,17 @@ export function FormatEmpowerVoteStage({
   roster: readonly FormatPresentationRosterPlayer[];
   tiedPlayerIds?: readonly string[];
   resolutionMethod?: "revote" | "wheel" | "manual";
+  countedVotes?: readonly { voterId: string; targetId: string }[];
   receipts: readonly FormatEmpowerVoteReceipt[];
 }) {
   const names = new Map(roster.map((player) => [player.id, player.name]));
   const isRevote = resolutionMethod === "revote" || resolutionMethod === "wheel";
   const orderedCounts = roster.filter((player) => player.id in counts);
   const hasRevoters = orderedCounts.some(player => !tiedPlayerIds.includes(player.id));
+  const ledgerVotes = countedVotes ?? receipts.flatMap(receipt => {
+    const targetId = isRevote ? receipt.revoteTargetId : receipt.targetId;
+    return targetId ? [{ voterId: receipt.voterId, targetId }] : [];
+  });
 
   return (
     <section
@@ -42,7 +48,7 @@ export function FormatEmpowerVoteStage({
             ? `${playerName(empoweredId, names)} is Empowered.`
             : `${tiedPlayerIds.map(id => playerName(id, names)).join(" · ")} are tied. ${hasRevoters ? "The other players revote between them." : "A tiebreak will decide who is Empowered."}`}
         </p>
-        {resolutionMethod === "wheel" && <p className="mt-2 text-sm text-amber-200">The revote stayed tied. The wheel decided.</p>}
+        {resolutionMethod === "wheel" && <p className="mt-2 text-sm text-amber-200">The vote stayed tied. The wheel decided.</p>}
         {resolutionMethod === "manual" && <p className="mt-2 text-sm text-amber-200">Manual decision · Original vote totals shown.</p>}
       </div>
 
@@ -74,10 +80,8 @@ export function FormatEmpowerVoteStage({
       </dl>
       <div className="mt-6 rounded-xl border border-white/10 bg-black/30 p-3">
         <VoteLedger title={isRevote ? "Empower revote" : "Empower vote"} roster={roster}
-          votes={receipts.flatMap(receipt => {
-            const targetId = isRevote ? receipt.revoteTargetId : receipt.targetId;
-            return targetId ? [{ voterId: receipt.voterId, targetId, choice: "empower" as const }] : [];
-          })} total={isRevote ? receipts.filter(receipt => receipt.revoteTargetId).length : receipts.length} />
+          votes={ledgerVotes.map(vote => ({ ...vote, choice: "empower" as const }))}
+          total={ledgerVotes.length} />
       </div>
     </section>
   );

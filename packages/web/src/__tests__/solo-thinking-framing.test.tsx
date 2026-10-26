@@ -107,6 +107,9 @@ for (const speechPresentation of ["solo","scene"] as const) for (const [width,he
     expect(view.container.querySelector("[data-in-scene-thinking]")).not.toBeNull();
     expect(rectangle()).toEqual(reserved);
     expect(camera()).not.toBe(normal);
+    const backdrop = view.container.querySelector("[data-stage-backdrop]")!;
+    expect(backdrop.closest("[data-thinking-camera]")).toBeNull();
+    expect(backdrop.parentElement).toBe(view.container.querySelector("[data-solo-image]"));
     expect(view.container.querySelector("[data-speech-bubble]")).toBeNull();
     thinking.mockReturnValue(null);
     view.rerender(content(100000));

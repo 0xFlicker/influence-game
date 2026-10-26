@@ -1,5 +1,69 @@
 # Local Model Evaluation
 
+Provider parameters follow frozen model capabilities: non-reasoning models omit
+reasoning summaries and models without Flex support use their supported tier.
+Local task-budget admission rejections retain zero-charge `not_dispatched`
+receipts; uncertain dispatches remain reserved. Heartbeat locks serialize game
+and gateway writers across processes and recover abandoned locks. Inspect these
+receipts alongside retained API game IDs and sanitized provider evidence. New
+Influence speech retries include the actual clean UTF-8 overage, and all parallel
+calls settle before a failed ballot or diary interview batch releases its owner.
+A fatal diary evidence or execution failure blocks further House/agent calls and
+provider attempt admissions in that session, including retries. Already-admitted
+attempts drain and retain their evidence. Historical accepted
+decisions replay without regeneration. Continue using direct House calls and
+typed contracts; do not use `as any` to bypass the decision boundary.
+
+Inspect solo-night targets and actor-private explanation provenance in newly frozen
+Werewolf retrospective accounts. Existing frozen inputs and recovery hashes are
+preserved. Editorial retake generation also honors `INFLUENCE_LOCAL_TASK_BUDGET`
+when explicitly configured; leaving it unset adds no spending ceiling.
+
+New shared model calls request primarily English authored prose, including retrospective speech and thinking, while allowing natural brief foreign phrases and preserving names, quotations and structured identifiers. Inspect the actual responses in `--chatty` and private evidence: this is prompt guidance, not language-based validation, and accepted historical output is never translated in place.
+
+Werewolf v11 begins each day with concurrent private `werewolf.speaking_priority`
+requests. Each returns only an integer `priority` from 1–100; no authored thinking,
+speech or delivery tags. Inspect provider evidence for these scheduling calls,
+not Show thinking or dialogue. Higher scores speak earlier; seeded ties, preserved
+accepted responses and owner-fenced partial-batch recovery make completion timing
+irrelevant. Existing frozen v7–v10 games keep their schedules. No paid rerun was
+performed for this change.
+
+When evaluating `thinking` in `--chatty` or Show thinking, look for an in-character
+inner monologue that sets up the speech or silent decision. For example, “The
+round is almost over, and I can say enough to bring it to a close,” rather than
+calculating remaining bytes. Rules, stakes and suspicions belong here; JSON,
+internal IDs, prompt compliance and implementation commentary do not. The shared
+prompt applies to both games and House responses that request thinking. Assess
+this as output quality, not a new acceptance check; preserve imperfect responses
+and native provider reasoning in their existing evidence lanes.
+
+The first eight-model Werewolf tag-validation run exposed overlong Haiku thinking
+and occasional instruction/byte-limit narration. The native field now repeats the
+inner-monologue guidance with a usual 2–4 short-sentence target; repairs remind the
+model not to describe the correction. Check repaired responses and deliberate
+passes as well as first-attempt speech in the next authorized live evaluation.
+Do not mistake passing prompt-contract tests for proof of changed model behavior.
+Werewolf's authored thinking limit remains 2,000 UTF-16 code units of clean text.
+Overlong thinking receives the same repair feedback as speech: the prior draft,
+measured and allowed lengths, exact overage and rejected structured decision.
+The model must shorten the field while preserving intent and other valid choices.
+The provider output budget remains 8,192 tokens. No paid rerun was requested.
+
+Default delivery-tag evaluation: inspect clean speech and thinking in `--chatty`
+and the localhost API transcript, then inspect private provider evidence for the
+original tags. Both audio and non-audio games preserve annotations for later
+production; no TTS call is made by text acceptance. Check that the next actor's
+prompt and length-repair feedback quote clean dialogue, while system guidance
+contains the permitted tag vocabulary. Tagged thinking is valid and must not
+trigger a retry by itself. Use direct House calls and no `as any` casts; paid
+full-game validation still runs through the localhost API with retained game IDs.
+
+
+For Influence runs through `bun run simulate:api`, inspect structured recipients when evaluating conversational responsiveness: A → B → A → B excludes A from B's next recipient choices, but B → C gives C the next opportunity. A new pair resets the exchange counter. Group addresses and passes return to fair scheduling; the shared speech allowance still bounds the conversation.
+
+Werewolf v10 solo night turns (Doctor, Seer and one surviving wolf) request `targetId`, one spoken `text` explanation and nullable `cue`, with no separate required `thinking`. Multi-wolf discussion keeps private thinking. Preserve raw responses and available native reasoning in private evidence; do not invent a missing explanation. Omniscient replay and exports show each Doctor/Seer explanation before its role result, in a distinct room. Mystery and contestant observations never receive these asides. New games freeze v10 and its output policy at creation; existing games keep their saved version. `bun run simulate:werewolf:api` and `bun run simulate:models --game werewolf` use that same API contract. No `as any`; House calls remain direct.
+
 Recovery identity can be checked without paid inference: run `bun docs/solutions/runtime-errors/durable-context-recovery-probe.ts /absolute/path/to/authorized-private-capture.json`. The [fixture contract and incident proof](solutions/runtime-errors/jsonb-order-changed-context-identity.md) restore the saved pending turn and stop before dispatch or commit. JSONB key order alone must not change its source hash; genuine changes remain errors. Preserve private attempts, exact types without `as any`, and direct House calls.
 
 Retrospectives remain speech-only. The prompt distinguishes beliefs and information available during play from facts revealed after the game, and invites one or two concrete moments rather than a mandatory success/failure recap. Werewolf speakers receive a named canonical reference for their own ballots and night choices, starting role/faction, known pack members, and investigations available before elimination. Death-night checks remain in the revealed account but are excluded from usable in-game knowledge. Fallback actions are marked unavailable; dialogue and earlier final statements cannot establish facts or motives. No private thinking, rationale, or event-reference output is requested. Existing frozen game accounts and accepted speeches are unchanged. The retrospective also receives a named postgame summary of winners, survivors, actual night/day eliminations, and vote tallies/abstentions. It checks earlier final statements against these canonical facts. Winners can include dead teammates. Knowledge differences remain explicit without supplying stock before-and-after phrases; the output remains speech-only.
@@ -81,9 +145,9 @@ All new player, House, Werewolf, and retrospective calls use provider-native JSO
 
 Player and House requests share a provider-independent system context that identifies Influence as a fictional, text-only social-strategy competition among AI characters. It defines targeting, elimination, survival, and format names as voting/removal mechanics rather than physical harm. When reviewing captured prompts, require this context on both hosted and local request shapes; do not treat it as permission to retry a provider `invalid_prompt` rejection unchanged.
 
-Player speech uses the same exact `AgentResponse` contract across hosted and local providers. The provider must return one complete JSON document matching the invocation schema; plain text, fenced or embedded JSON, wrapper objects, extra fields, missing fields, and an empty `message` are structured-output failures and cannot become accepted speech or strategy. The accepted typed value is revalidated when a durable provider call is replayed. When a local server returns native reasoning metadata such as LM Studio's `reasoning_content`, the engine stores that value separately as transcript `reasoningContext`; it never substitutes for the required `thinking` field or public `message`.
+Player speech uses the same exact `AgentResponse` contract across hosted and local providers. The provider must return one complete JSON document matching the invocation schema; plain text, broken or ambiguous wrapped JSON, schema wrapper objects, extra fields, missing fields, and an empty `message` are structured-output failures and cannot become accepted speech or strategy. The accepted typed value is revalidated when a durable provider call is replayed. When a local server returns native reasoning metadata such as LM Studio's `reasoning_content`, the engine stores that value separately as transcript `reasoningContext`; it never substitutes for the required `thinking` field or public `message`.
 
-Every decision requires a complete top-level JSON document matching its exact schema and domain rules. Tool calls, tool-name or `arguments` wrappers, Markdown fences, JSON embedded in prose, and missing or additional fields are typed failures under the shared retry policy. The engine never extracts decisions from prose or native reasoning. Feedback-informed length retries retain the rejected document, exact size, and allowed size. Existing completed game records and evidence remain readable in the player, Studio, API, and MCP; this changes future inference only and does not promise in-progress upgrade continuity.
+Every decision requires a complete top-level JSON document matching its exact schema and domain rules. Shared decoding first parses the whole response; if that fails, it can unwrap exactly one complete JSON object or array from Markdown fences or surrounding text. The unchanged schema and domain checks still apply. Multiple containers, broken JSON, tool calls, tool-name or `arguments` wrappers, and missing or additional fields remain typed failures. The engine never repairs syntax, searches inside malformed containers, or derives decisions from prose or native reasoning. Original responses remain unchanged in private evidence. Feedback-informed length retries retain the rejected document, exact size, and allowed size. Existing completed game records and evidence remain readable in the player, Studio, API, and MCP; this changes future inference only and does not promise in-progress upgrade continuity.
 
 Alliance-action provider requests keep the root object exact and put the action-specific fields under a required closed `decision` union. A response opportunity therefore exposes only its currently legal non-term actions plus a complete `counter` branch when countering is available; proposer opportunities expose exact `propose`, request-handle-bound `amend`, and `pass` branches. After names and request-local handles resolve, the accepted journal value remains the flat canonical ID-based alliance action. Huddle fact items use a nested `anyOf` of closed fact variants so the same exact schema works with hosted OpenAI and compatible fallback providers.
 
@@ -292,6 +356,8 @@ The server is read-only and scans the simulation corpus on demand. It addresses 
 
 When validating the OAuth-gated path, keep the same corpus but launch the token bridge instead of the direct server. Assign the signed-in wallet the `producer` role, set `INFLUENCE_MCP_INTROSPECTION_SECRET` for both API and bridge, run `bun run mcp:game:login` from `packages/engine`, then run `bun run mcp:game:oauth -- docs/simulations`. The helper saves the one-hour token to `~/.influence-game/mcp-token.json`; set `INFLUENCE_MCP_TOKEN_FILE` if a connected MCP client needs a different path. The bridge uses a producer-capable OAuth token for trusted local validation.
 
+For Empower revotes, inspect the frozen `empowerRevoteVersion` in game config / `game.roster_initialized` alongside `vote.empower_revote_cast` and `vote.empowered_set`. New games use version 2: only new ballots from that round count. Existing unversioned games use version 1: active ballots, including uncleared initial votes targeting tied candidates, count. Recovery preserves the game’s version for every later round. The viewer uses the same version, never winner-based inference, and shows a wheel only when the recorded method is `wheel`. No paid simulation is required to test these rules.
+
 For live or completed API-backed games you own seats in, start with the match-completeness tools under `games:read`: `read_match_manifest` reports independent lane status (canonical facts, authorized dialogue, optional owned cognition) and typed `nextReads` (preferring `read_owned_match_narrative` for token-efficient strategy analysis); `read_owned_match_narrative` groups authorized dialogue with owned strategy (default `strategic`/`compact`; use `full_cognition` for raw thinking); `read_match_transcript` pages owner-unified dialogue through the durable watermark or terminal boundary; `read_owned_match_cognition` pages owned thinking/strategy only when you need the ungrouped timeline. Producers use `read_producer_match_narrative` under `producer` for multi-seat product dialogue + cognition (not private traces). Do not treat transcript, cognition, or narrative prose as board-fact authority, and never reconstruct missing history from private traces. Local simulation artifacts (`game-N.txt`, turns JSONL, `--chatty`) remain first-class for model evaluation and still surface thinking / reasoningContext for human review.
 
 For a producer-side accepted-action check, work from indexes toward raw content: `inspect_durable_run` for the trusted prefix and prompt-reuse coverage/watermark, `list_trace_manifests` for linkage counts and a concrete `decisionId`/`eventSequence`, `read_producer_match_narrative` for the minimal `{seq,type}` citation, and producer `filter_events` for the exact canonical envelope. Use `read_trace_content` only for the selected manifest and cap `maxBytes`. A nonzero prompt-reuse watermark proves that linked accepted actions reached the rollup; `coverage: "partial"` is still expected when speech, reflection, intent, pass, rejection, timeout, fallback, repair, or legacy calls remain unlinked. Aggregate reuse and first-break math do not change.
@@ -490,7 +556,7 @@ Creation-time Speed-run/Live and phase timing presets have been removed. API sim
 
 ### House game visibility
 
-Influence and Werewolf share **Public** (listed; anyone can watch) and **Unlisted** (absent from public discovery; anyone with the link can watch). Public is the default. Both support anonymous casting/replay/media reads; joining and operator actions retain their existing permissions. API simulation launchers accept `--visibility public|unlisted` (or `INFLUENCE_API_SIM_VISIBILITY`). Completion preserves the selection. Unlisted pages use `noindex`; links can still be forwarded.
+Influence and Werewolf share **Public** (listed; anyone can watch) and **Unlisted** (absent from public discovery; anyone with the link can watch). Public is the default. Both support anonymous casting/replay/media reads; joining and operator actions retain their existing permissions. All API simulation launchers (`simulate:api`, `simulate:werewolf:api`, and `simulate:models`) default to public. Unlisted creation requires the explicit `--visibility unlisted` CLI flag; `INFLUENCE_API_SIM_VISIBILITY` no longer overrides this default. Completion preserves the selection. Unlisted pages use `noindex`; links can still be forwarded.
 
 Private game visibility has been removed. Hidden is a separate moderation control that blocks normal viewer routes and subsequent stream delivery. Audience/cursor/publication rules, raw evidence, owner learning and production permissions are unchanged. Retired or invalid stored visibility is rejected rather than silently made public. No operator database rows are automatically converted.
 
@@ -551,3 +617,37 @@ bun run simulate:api -- --players 8 --games 1 --model-catalog openai:gpt-6-luna 
 Use the localhost CLI browser login or a private `INFLUENCE_API_SESSION_TOKEN`; never publish the credential. On the API process, set an explicitly authorized `INFLUENCE_EVALUATION_BUDGET_USD` and a fresh private `INFLUENCE_EVALUATION_BUDGET_LEDGER` path for the evaluation. All concurrent test games share that ledger. The guard reserves pessimistically and also records usage-based estimates; report both without claiming an estimate is a provider invoice.
 
 Default conversations allow 320 UTF-8 bytes per message and 400 bytes per participant. Ordinary Mingle has two conversation rounds and one simultaneous move. Inspect saved thinking, replies, voluntary passes versus provider absences, unoffered players, latest movement intent, next-decision recall and full-game duration. Huddles generate speech and private strategy, not typed tactical outcomes. Their existence is private from nonparticipants, while spectators can watch room playback with saved structured thinking under Show thinking; passes stay skipped. Save sanitized requests/responses, retries, errors and all available reasoning; never replace a failed run's artifacts with a corrected run. Keep direct House calls and exact types, without `as any`.
+
+## Mixed contestant models and separate House
+
+`bun run simulate:models` (repository root) supports Influence and Werewolf through the localhost API. `--models` is an ordered comma-separated list with exactly one provider-qualified ID (or `default`) per seat. `--roster path.json` instead accepts `{ seats: [{ id, agentProfileId?, preference }], policy }`, where `preference` is `"default"` or `{ catalogId, reasoningPolicy? }` and `policy` is the documented `GameModelRouting` object. A supplied profile must be owned by the authenticated operator.
+
+```sh
+bun run simulate:models --game influence --players 8 --models openai:gpt-6-luna,katana:glm-5-3-flash-private,katana:deepseek-v4-flash,meta-muse:muse-spark-1.3-contributor,openai:gpt-5-mini,katana:grok-4-6,katana:q-naifu-a3b,custom-openai-compatible:experimental --provider-entry openai:gpt-6-luna --provider-entry katana:grok-4-6,max-calls=24 --house-entry meta-muse:muse-spark-1.3-contributor --house-entry openai:gpt-6-luna,max-calls=12 --preview
+```
+
+Preview is entirely offline and prints resolved assignments, fallback chains and dated/unknown metadata. It does not assert provider availability or quality. Repeated `--provider-entry` still defines the common fallback chain, never the seat list; `--house-entry` independently defines the House chain. Roster files carry their own complete policy. Luna stays Flex.
+
+An explicit seat preference tries its model before the full common route, with duplicates removed. In the example, Kimi would try Kimi → Luna → Grok. Luna's fallback allowance is 24 shared contestant calls by default; set `policy.defaultModelMaxFallbackCalls` in a roster file to change it. Grok retains the explicit 24-call cap. House accounting is separate. A valid future `Retry-After` skips the failed model until its cooldown expires while allowing the next route immediately; it does not impose a matching sleep on the game.
+
+Only after separately authorizing paid execution, omit `--preview`. The runner saves requested policy, game ID/slug and final seat mapping before start under a unique `packages/engine/docs/simulations/mixed-*` directory. It refuses non-local API origins and stops before starting if artifact persistence fails. The API worker retains its canonical random seed/config and full sanitized attempt evidence in the existing durable journal/object store. Keep those API records: JSON reports alone are not a complete replay backup.
+
+```sh
+bun run simulate:models --report GAME_ID --api-url http://127.0.0.1:3000
+```
+
+Reports use separate append-only files, retain preferred and actual route counts, failure classes, House versus contestant spend, and explicitly unknown costs. Preserve existing `--chatty` inspection for detailed decisions and Studio/MCP inspection of the real game ID. Follow the direct-House-call and no-`as any` disciplines; simulation is not a second execution implementation.
+
+
+Influence decision tests must return `message` on ballots, format choices, tiebreaks, nominations, vetoes and Safety Bounce pointers. For ballots use a very short line (120 UTF-8 bytes maximum, often just the target name); omit `thinking` on ballots, format choice and tiebreaks. Keep thinking on nominations/replacements, vetoes, pointers and nominee pleas. Inspect accepted public delivery in transcript `decisionSpeech` rows and private/native reasoning in producer evidence. Sealed ballots remain parallel with no cross-voter messages; do not use a paid simulation merely to test this contract.
+
+
+For an authorized audio qualification, create a localhost API game with
+`audioMode: true` (independent of `visualMode`). Apply migration 0132, configure
+`XAI_API_KEY` and private bucket access, and make `ffprobe` available to the
+execution worker first. Inspect gameplay calls and TTS attempts separately.
+Audio failure preserves the accepted text and pauses before the next logical
+turn. Existing games gain audio only through explicit Studio generation.
+## Inspecting Werewolf House narration
+
+In a retained localhost API game, inspect `/games/<slug>/replay?audience=omniscient` for spoken pack results, Doctor/Seer actions, hunt outcomes, vote results and the House ending summary. Compare Mystery playback to verify that private night details stay hidden. Audio Mode uses the frozen House voice. Existing complete tracks can be previewed and refreshed with `packages/api/src/scripts/refresh-werewolf-house-audio.ts` as documented in `docs/werewolf.md`; gameplay and contestant recordings remain unchanged. Continue retaining `--chatty` and private provider evidence; the presentation copy does not replace it.

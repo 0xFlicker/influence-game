@@ -35,7 +35,7 @@ At a material actor-coordinate boundary, compile one bounded omniscient narratio
 
 Make one provider call with an exact schema containing required nullable `publicSummary` and `privateNarrativeNotebook` fields. The schema routes public and private creative output and preserves typed failure; it does not assert that the prose is true.
 
-Publish a non-null summary exactly as authored after only shape, non-empty, control-character, and existing beat-length validation. A non-null notebook replaces the entire bounded opaque snapshot; null preserves the previous snapshot. Non-JSON, embedded/fenced JSON, `{}`, missing or extra fields, refusal, and exhaustion publish nothing and preserve the notebook. Do not synthesize a fallback summary.
+Publish a non-null summary exactly as authored after only shape, non-empty, control-character, and existing beat-length validation. A non-null notebook replaces the entire bounded opaque snapshot; null preserves the previous snapshot. Non-JSON, broken or ambiguous wrapped JSON, `{}`, missing or extra fields, refusal, and exhaustion publish nothing and preserve the notebook. Do not synthesize a fallback summary.
 
 ## Authority boundary
 

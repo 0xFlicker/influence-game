@@ -4,6 +4,8 @@ export const MCP_OAUTH_SCOPE_VALUES = [
   "games:read",
   "games:resume",
   "producer",
+  "producer:edit",
+  "producer:routing",
   "moderation:read",
   "moderation:write",
   "assets:manage",
@@ -25,6 +27,11 @@ export interface McpOAuthScopeDefinition {
 }
 
 export const MCP_OAUTH_SCOPE_DEFINITIONS: Record<McpOAuthScope, McpOAuthScopeDefinition> = {
+  "producer:routing": {
+    scope: "producer:routing", label: "Edit waiting-game model routing",
+    description: "Change waiting-game models, fallback limits, exclusions and cast overrides using your current admin or sysop permission.",
+    group: "developer", defaultSelected: false, requiredScopes: ["producer"], requiredRole: "producer",
+  },
   "agents:read": {
     scope: "agents:read",
     label: "Read agents",
@@ -63,10 +70,11 @@ export const MCP_OAUTH_SCOPE_DEFINITIONS: Record<McpOAuthScope, McpOAuthScopeDef
     description: "Upload, update, replace, and delete game images using your current producer or sysop permission.",
     group: "assets", defaultSelected: false, requiredScopes: [], requiredPermission: "manage_game_assets",
   },
+  "producer:edit": {scope:"producer:edit",label:"Edit production moment tags",description:"Save shared Studio moment tags for operator cut review. Does not render, publish or change gameplay.",group:"developer",defaultSelected:false,requiredScopes:["producer"],requiredRole:"producer"},
   producer: {
     scope: "producer",
     label: "Developer access",
-    description: "Inspect global game state, producer evidence, and private reasoning traces.",
+    description: "Inspect global game state, producer evidence, private reasoning traces, Studio moments and cut previews.",
     group: "developer",
     defaultSelected: false,
     requiredScopes: [],

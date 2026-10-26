@@ -1,4 +1,5 @@
 import type { ProductionCatalog } from "@influence/engine/production-moments";
+import type { PublishedAudioClip } from "@influence/engine/audio-track";
 import type { CachedAsset } from "./replay-export/assets";
 import type { ExportCue } from "./replay-export/cues";
 import { resolveApiUrl, type GameStatus } from "./api";
@@ -43,6 +44,24 @@ export function productionLibraryFilters(params: URLSearchParams): URLSearchPara
     if (value && value.length <= 200) result.set(key, value);
   }
   return result;
+}
+
+/** Protected audio uses the same authenticated reads and source-scoped URL disposal as imagery. */
+export async function prepareProductionAudio(clip: PublishedAudioClip, signal: AbortSignal,
+  cache: {assets: Map<string, CachedAsset>; urls: Map<string, string>},
+  read: (url: string, signal: AbortSignal) => Promise<Blob>): Promise<CachedAsset> {
+  signal.throwIfAborted();
+  const cached = cache.assets.get(clip.url);
+  if (cached) return cached;
+  const blob = await read(clip.url, signal);
+  const bytes = await blob.arrayBuffer();
+  const sha256 = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map(byte => byte.toString(16).padStart(2,"0")).join("");
+  signal.throwIfAborted();
+  if (sha256 !== clip.sha256) throw new Error("Generated audio failed integrity validation");
+  const path = URL.createObjectURL(blob);
+  const asset: CachedAsset = {path, sha256, durationMs: clip.durationMs, mediaType: "audio"};
+  cache.urls.set(clip.url, path); cache.assets.set(clip.url, asset);
+  return asset;
 }
 
 /** Preparation is browser-owned metadata only. Playback remains in Remotion. */

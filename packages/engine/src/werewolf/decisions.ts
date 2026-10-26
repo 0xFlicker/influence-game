@@ -40,7 +40,7 @@ export function projectWerewolfDecisions(
       result: entry.targetId ? `Voted for ${name(entry.targetId)}.` : "Abstained.",
     });
     if (entry.kind === "vote") {
-      if (state.config.rulesVersion === 9) continue;
+      if (state.config.rulesVersion >= 9) continue;
       const ballot = entry.result.ballots.find(ballot => ballot.voterId === actorId);
       if (ballot) entries.push({
         cursor, day: entry.day, actorId, action: "vote", targetId: ballot.targetId, unavailable: ballot.unavailable,
@@ -62,7 +62,7 @@ export function projectWerewolfDecisions(
     }
     if (entry.kind === "night" && before) {
       for (const action of before.actions) {
-        if (action.actorId !== actorId || action.decision.kind !== "target") continue;
+        if (action.actorId !== actorId || (action.decision.kind !== "target" && action.decision.kind !== "solo_target")) continue;
         const targetId = action.decision.targetId;
         if (action.action === "protect") {
           const saved = targetId !== null && targetId === entry.attackTargetId && targetId === entry.protectedId && entry.killedId === null;

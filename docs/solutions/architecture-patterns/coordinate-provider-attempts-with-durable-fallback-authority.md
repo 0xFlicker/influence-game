@@ -94,9 +94,9 @@ Validate provider payloads and accepted domain values as separate representation
 
 ### Treat systemic provider health as separate durable authority
 
-Request-specific refusal and rate limiting remain call-scoped. Authentication failures open provider health immediately; unsupported configuration can open only the affected entry; repeated service or transport failures open after a bounded threshold. Ambiguous 4xx responses stay call-scoped without corroboration.
+Request-specific refusal and rate limiting without a valid future `Retry-After` remain call-scoped. Authentication failures open provider health immediately; unsupported configuration can open only the affected entry. Retryable failures with `Retry-After` immediately cool down that model and advance to the next permitted route. Repeated service or transport failures without the header open the model's circuit after a bounded threshold. Other models on that provider remain usable. Ambiguous 4xx responses stay call-scoped without corroboration.
 
-Persist revisioned health state and use one expiring probe lease. Closing requires a successful probe against the current revision. A failed probe leaves the circuit open and stores its sanitized evidence; there is no blind force-close. An open Daily primary pauses new Daily claims, while running games continue through their permitted manifest or engine behavior.
+Persist revisioned health state. Dispatch admission automatically closes an expired transient model cooldown and records `cooldown_expired`; this permits a subsequent ordinary request, not an extra paid probe. Authentication/configuration circuits still require a successful probe against the current revision using one expiring lease. A failed probe leaves the circuit open and stores its sanitized evidence. An open Daily primary pauses new Daily claims, while running games continue through their permitted manifest or engine behavior.
 
 ### Preserve the existing private authority split
 

@@ -1090,6 +1090,22 @@ describe("provider cost accounting", () => {
     });
   });
 
+  test("terminal receipts retain unknown pricing even when later projection has a known rate", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const input = attemptSpendInput(gameId, ownerEpoch, "unknown-price-snapshot", {
+      usage: { promptTokens: 1000, completionTokens: 500, totalTokens: 1500 },
+    });
+    await recordProviderSpendForAttempt(db, { ...input, rateCard: null });
+    // A later catalog refresh/projector replay must not invent historical cost.
+    await recordProviderSpendForAttempt(db, input);
+    await backfillGameCostAccounting(db, gameId);
+    const rows = await db.select().from(schema.gameProviderSpendEntries).where(eq(schema.gameProviderSpendEntries.gameId, gameId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ costSource: "unavailable", estimatedCostMicrousd: null, promptTokens: 1000, completionTokens: 500, safeMetadata: { rateCard: null } });
+  });
+
   test("prices Katana Grok 4.5 and GLM 5.2 attempts when router cost is absent", async () => {
     const db = await setupTestDB();
     const gameId = await insertGame(db);
@@ -1121,15 +1137,15 @@ describe("provider cost accounting", () => {
     const byModel = new Map(rows.map((row) => [row.modelName, row]));
     expect(byModel.get("grok-4-5")).toMatchObject({
       costSource: "static_estimate",
-      estimatedCostMicrousd: 5_050,
-      pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-08-24",
+      estimatedCostMicrousd: 5_200,
+      pricingSourceId: "https://kat.imgnai.com/v1/models/text",
+      rateCardVersion: "2026-10-23",
     });
     expect(byModel.get("glm-5-2")).toMatchObject({
       costSource: "static_estimate",
-      estimatedCostMicrousd: 2_521,
-      pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-08-24",
+      estimatedCostMicrousd: 3_640,
+      pricingSourceId: "https://kat.imgnai.com/v1/models/text",
+      rateCardVersion: "2026-10-23",
     });
 
     const detail = await getGameCostDetail(db, gameId);

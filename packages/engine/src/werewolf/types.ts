@@ -4,7 +4,7 @@ export type WerewolfRole = "werewolf" | "villager" | "seer" | "doctor";
 export type WerewolfFaction = "village" | "wolves";
 export type WerewolfPreset = "one_wolf" | "two_wolves";
 export type WerewolfPhase = "introduction" | "pack" | "night" | "day" | "vote" | "retrospective" | "complete";
-export type WerewolfAction = "introduce" | "pack_talk" | "attack" | "investigate" | "protect" | "open_thread" | "discuss" | "vote" | "conversation" | "public_vote" | "pack_propose";
+export type WerewolfAction = "speaking_priority" | "introduce" | "pack_talk" | "attack" | "investigate" | "protect" | "open_thread" | "discuss" | "vote" | "conversation" | "public_vote" | "pack_propose";
 export type WerewolfVoteMode = "majority" | "plurality";
 
 export interface WerewolfPlayer {
@@ -22,7 +22,7 @@ export interface WerewolfPlayer {
 export interface WerewolfSetup { playerCount: 6 | 7 | 8; wolves: 1 | 2; seer: boolean; doctor: boolean }
 
 export interface WerewolfConfig {
-  rulesVersion: 7 | 8 | 9;
+  rulesVersion: 7 | 8 | 9 | 10 | 11;
   preset: WerewolfPreset;
   setup?: WerewolfSetup;
   maxDays: number;
@@ -31,10 +31,12 @@ export interface WerewolfConfig {
 }
 
 export type WerewolfDecision =
+  | { kind: "speaking_priority"; priority: number }
   | { kind: "opening"; text: string | null; cue: string | null; recipientIds: string[] }
   | { kind: "speech"; text: string | null; cue: string | null }
   | { kind: "conversation"; text: string | null; cue: string | null; recipientId: string | null; replyToContributionId: number | null }
   | { kind: "spoken_target"; targetId: string | null; text: string | null; cue: string | null; thinking: string }
+  | { kind: "solo_target"; targetId: string | null; text: string | null; cue: string | null }
   | { kind: "target"; targetId: string | null; thinking: string };
 
 export type WerewolfRequest = {
@@ -45,7 +47,8 @@ export type WerewolfRequest = {
   | { action: "vote"; voteMode: WerewolfVoteMode }
   | { action: "conversation"; legalRecipientIds: string[]; legalReplyIds: number[]; messageBytes: number }
   | { action: "public_vote"; messageBytes: number }
-  | { action: "pack_propose"; messageBytes: number; targetRequired: boolean }
+  | { action: "pack_propose"; messageBytes: number; targetRequired: boolean; solo?: true }
+  | { action: "protect" | "investigate"; solo: true; messageBytes: number }
   | { action: Exclude<WerewolfAction, "open_thread" | "vote" | "conversation" | "public_vote" | "pack_propose"> }
 );
 

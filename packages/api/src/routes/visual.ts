@@ -1,4 +1,5 @@
 import { loadPayloads } from "../services/payload-storage.js";
+import { requestCharacterCutouts } from "../services/character-cutouts.js";
 import { isViewerGame } from "../services/game-visibility.js";
 import { readVisualReviewSources } from "../services/visual-shot-review.js";
 import { validHeadRectangle, type CharacterHeadPosition, type HeadRectangle } from "@influence/engine/character-portrait";
@@ -64,9 +65,13 @@ export function createVisualRoutes(db: DrizzleDB) {
       } catch { return c.json({ error: "Invalid publication snapshot" }, 400); }
     }
     const viewerMedia = await readViewerMedia(db, game.id, snapshot);
+    // Fixed export snapshots retain their original references. Live playback can
+    // adopt a completed derivative on its next metadata refresh.
+    if (!rawSnapshot) Object.assign(fullBodies, await requestCharacterCutouts(db, game.id, fullBodies));
+    const portraits = Object.fromEntries(Object.entries(assets[0]?.portraits ?? {}).map(([id, artifact]) => [id, url(artifact)]));
     return c.json({ enabled: enabled || viewerMedia.scenes.length > 0, status: game.status !== "completed" && rows.some(row => row.status === "preparing") ? "preparing" : null,
       fullBodies, fullBodyHeads,
-      portraits: Object.fromEntries(Object.entries(assets[0]?.portraits ?? {}).map(([id, artifact]) => [id, url(artifact)])),
+      portraits,
       ...viewerMedia,
     });
   });

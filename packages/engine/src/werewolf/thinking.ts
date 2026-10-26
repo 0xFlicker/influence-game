@@ -23,13 +23,13 @@ export function werewolfThinkingActions(events: readonly WerewolfEvent[], cursor
     state = applyWerewolfEvent(state, event);
     const position = projectWerewolfView(state, "omniscient").cursor;
     if (position > cursor) break;
-    if (event.type === "werewolf.action_accepted" && event.payload.fallback === null) pending.push({ event, day: state.day });
+    if (event.type === "werewolf.action_accepted" && event.payload.fallback === null && event.payload.action !== "speaking_priority") pending.push({ event, day: state.day });
     for (let i = 0; i < pending.length;) {
       const item = pending[i]!;
       const action = item.event.payload.action;
       const lastEntry = state.history.at(-1);
       const ready = action === "public_vote" ? lastEntry?.kind === "ballot" && lastEntry.actorId === item.event.payload.actorId
-        : item.event.payload.decision.kind !== "target" ? position > previousCursor
+        : (item.event.payload.decision.kind !== "target" && item.event.payload.decision.kind !== "solo_target" || action === "pack_propose") ? position > previousCursor
         : action === "vote" ? event.type === "werewolf.day_vote_resolved"
         : action === "attack" && state.phase === "pack" ? event.type === "werewolf.pack_vote_resolved"
         : event.type === "werewolf.night_resolved";

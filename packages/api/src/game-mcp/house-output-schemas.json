@@ -145,6 +145,16 @@
                   "day": {
                     "type": "number"
                   },
+                  "conversation": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/definitions/WerewolfConversationState"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "phase": {
                     "enum": [
                       "complete",
@@ -161,16 +171,6 @@
                   },
                   "gameId": {
                     "type": "string"
-                  },
-                  "conversation": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/definitions/WerewolfConversationState"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
                   },
                   "outcome": {
                     "anyOf": [
@@ -244,6 +244,8 @@
                   },
                   "rulesVersion": {
                     "enum": [
+                      10,
+                      11,
                       7,
                       8,
                       9
@@ -378,6 +380,16 @@
                     "day": {
                       "type": "number"
                     },
+                    "conversation": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/definitions/WerewolfConversationState"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "phase": {
                       "enum": [
                         "complete",
@@ -394,16 +406,6 @@
                     },
                     "gameId": {
                       "type": "string"
-                    },
-                    "conversation": {
-                      "anyOf": [
-                        {
-                          "$ref": "#/definitions/WerewolfConversationState"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
                     },
                     "outcome": {
                       "anyOf": [
@@ -477,6 +479,8 @@
                     },
                     "rulesVersion": {
                       "enum": [
+                        10,
+                        11,
                         7,
                         8,
                         9
@@ -1369,15 +1373,32 @@
                           "const": "farewell",
                           "type": "string"
                         },
+                        "decisionSpeech": {
+                          "type": "object",
+                          "properties": {
+                            "action": {
+                              "type": "string"
+                            },
+                            "actorId": {
+                              "type": "string"
+                            },
+                            "receiptEntrySequence": {
+                              "type": "number"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "action",
+                            "actorId"
+                          ]
+                        },
                         "acceptedBallot": {
                           "type": "object",
                           "properties": {
                             "voterId": {
-                              "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                               "type": "string"
                             },
                             "targetId": {
-                              "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                               "type": "string"
                             },
                             "purpose": {
@@ -1952,39 +1973,6 @@
           "position"
         ]
       },
-      "WerewolfSetup": {
-        "type": "object",
-        "properties": {
-          "playerCount": {
-            "enum": [
-              6,
-              7,
-              8
-            ],
-            "type": "number"
-          },
-          "wolves": {
-            "enum": [
-              1,
-              2
-            ],
-            "type": "number"
-          },
-          "seer": {
-            "type": "boolean"
-          },
-          "doctor": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "doctor",
-          "playerCount",
-          "seer",
-          "wolves"
-        ]
-      },
       "WerewolfConversationState": {
         "type": "object",
         "properties": {
@@ -2085,6 +2073,39 @@
         "additionalProperties": {
           "type": "number"
         }
+      },
+      "WerewolfSetup": {
+        "type": "object",
+        "properties": {
+          "playerCount": {
+            "enum": [
+              6,
+              7,
+              8
+            ],
+            "type": "number"
+          },
+          "wolves": {
+            "enum": [
+              1,
+              2
+            ],
+            "type": "number"
+          },
+          "seer": {
+            "type": "boolean"
+          },
+          "doctor": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "doctor",
+          "playerCount",
+          "seer",
+          "wolves"
+        ]
       },
       "WerewolfOutcome": {
         "type": "object",
@@ -2898,7 +2919,6 @@
                 "$ref": "#/definitions/Record<string,string>"
               },
               "eliminatedId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               }
             },
@@ -2991,7 +3011,6 @@
                 "$ref": "#/definitions/Record<string,string>"
               },
               "winnerId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               }
             },
@@ -3081,7 +3100,6 @@
                   "type": "object",
                   "properties": {
                     "id": {
-                      "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                       "type": "string"
                     },
                     "name": {
@@ -3207,7 +3225,6 @@
             "type": "object",
             "properties": {
               "playerId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "playerName": {
@@ -3292,11 +3309,9 @@
             "type": "object",
             "properties": {
               "voterId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "empowerTarget": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "exposeTarget": {
@@ -3387,7 +3402,6 @@
                 "$ref": "#/definitions/Record<string,number>"
               },
               "empowered": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "tied": {
@@ -3496,11 +3510,9 @@
             "type": "object",
             "properties": {
               "voterId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "target": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               }
             },
@@ -3582,7 +3594,6 @@
             "type": "object",
             "properties": {
               "voterId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               }
             },
@@ -3663,7 +3674,6 @@
             "type": "object",
             "properties": {
               "empowered": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "method": {
@@ -3754,7 +3764,6 @@
             "type": "object",
             "properties": {
               "empoweredId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "offeredFormatIds": {
@@ -3867,7 +3876,6 @@
             "type": "object",
             "properties": {
               "empoweredId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "formatId": {
@@ -3964,7 +3972,6 @@
             "type": "object",
             "properties": {
               "empoweredId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "initialNomineeIds": {
@@ -3981,7 +3988,6 @@
                 "maxItems": 2
               },
               "overrideHolderId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               }
             },
@@ -4162,7 +4168,6 @@
             "type": "object",
             "properties": {
               "overrideHolderId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "finalistPlayerIds": {
@@ -4257,11 +4262,9 @@
             "type": "object",
             "properties": {
               "overrideHolderId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "removedNomineeId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               }
             },
@@ -4343,11 +4346,9 @@
             "type": "object",
             "properties": {
               "empoweredId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "replacementNomineeId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "finalistPlayerIds": {
@@ -4443,7 +4444,6 @@
             "type": "object",
             "properties": {
               "speakerId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "ordinal": {
@@ -4562,11 +4562,9 @@
                 "$ref": "#/definitions/LaunchFormatId"
               },
               "voterId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "targetId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "polarity": {
@@ -4668,7 +4666,6 @@
                 "const": "restricted_history"
               },
               "voterId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "reason": {
@@ -4755,7 +4752,6 @@
             "type": "object",
             "properties": {
               "starterId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               }
             },
@@ -4836,11 +4832,9 @@
             "type": "object",
             "properties": {
               "actorId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "targetId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "classification": {
@@ -4933,11 +4927,9 @@
                 "$ref": "#/definitions/LaunchFormatId"
               },
               "empoweredId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "eliminatedId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "resolutionKind": {
@@ -5045,7 +5037,6 @@
                 "const": "public_chain"
               },
               "starterId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "safePlayerIds": {
@@ -5094,7 +5085,6 @@
                 "maxItems": 2
               },
               "overrideHolderId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "overrideAction": {
@@ -5241,7 +5231,6 @@
             "$ref": "#/definitions/PowerActionType"
           },
           "target": {
-            "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
             "type": "string"
           }
         },
@@ -5447,11 +5436,9 @@
             "type": "object",
             "properties": {
               "voterId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "target": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               }
             },
@@ -5533,7 +5520,6 @@
             "type": "object",
             "properties": {
               "empoweredId": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "candidates": {
@@ -5562,7 +5548,6 @@
                 ]
               },
               "eliminated": {
-                "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
                 "type": "string"
               },
               "method": {
@@ -6216,6 +6201,7 @@
           "pack_talk",
           "protect",
           "public_vote",
+          "speaking_priority",
           "vote"
         ],
         "type": "string"
@@ -6564,6 +6550,8 @@
                       },
                       "rulesVersion": {
                         "enum": [
+                          10,
+                          11,
                           7,
                           8,
                           9
@@ -7167,7 +7155,6 @@
         "type": "object",
         "properties": {
           "id": {
-            "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
             "type": "string"
           },
           "name": {
@@ -7199,7 +7186,6 @@
             "type": "string"
           },
           "id": {
-            "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
             "type": "string"
           },
           "name": {

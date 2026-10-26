@@ -20,7 +20,7 @@ describe("replay timing", () => {
   });
   test("thinking camera, reading and return finish before speech and voice", () => {
     const cue = compileTiming([{...speech,thinking:"A thought",recording:{assetId:"voice",durationMs:1500}}],parseTimingProfile(),30)[0]!;
-    expect(cue.endMs).toBe(11250);
+    expect(cue.endMs).toBe(8750);
     expect(sampleTiming(cue,950).elapsedMs).toBe(500);
     expect(sampleTiming(cue,950).thought?.focus).toBeCloseTo(.5);
     expect(sampleTiming(cue,2000).thought?.opacity).toBe(1);
@@ -87,4 +87,18 @@ describe("replay timing", () => {
     times.toReversed().forEach((t) => sampleTiming(cue, t));
     expect(times.map((t) => sampleTiming(cue, t))).toEqual(first);
   });
+});
+
+test("recorded thinking owns its reading interval and shares the movie clock", () => {
+  const [cue] = compileTiming([{key:"thought-audio",kind:"thinking",baseDurationMs:1,speech:null,thinking:"I need to tell them.",sourceElapsedMs:650,
+    recording:{assetId:"thought.mp3",durationMs:1234}}],parseTimingProfile(),30);
+  expect(cue!.thought!.hideAtMs-cue!.thought!.readAtMs).toBe(1234);
+  expect(cue!.recording!.startMs).toBe(cue!.startMs+cue!.thought!.readAtMs);
+  expect(cue!.endMs).toBe(cue!.thought!.duration);
+});
+
+test("recorded speech duration replaces the silent reading estimate", () => {
+  const [cue] = compileTiming([{key:"short-recording",kind:"speech",baseDurationMs:12000,speech:{showAtMs:500,readAtMs:1000,hideAtMs:11000,hiddenAtMs:11500},thinking:null,
+    recording:{assetId:"speech.mp3",durationMs:2000}}],parseTimingProfile(),30);
+  expect(cue!.speech!.hideAtMs-cue!.speech!.readAtMs).toBe(2000);
 });

@@ -1,3 +1,5 @@
+import { audioDeliveryGuidance } from "../audio-delivery";
+import { OUTPUT_LANGUAGE_GUIDANCE } from "../provider-adapters";
 import { expect, test } from "bun:test";
 import { InfluenceAgent } from "../agent";
 import { LLMHouseInterviewer } from "../house-interviewer";
@@ -44,7 +46,7 @@ function phase(): PhaseContext {
 }
 
 test("Influence vote compacts rendered recall without changing current legal action or strategy state", async () => {
-  const p = provider({ thinking: "Empower Mira.", empower: "Mira", strategyDelta: null });
+  const p = provider({ message: "Mira.", empower: "Mira", strategyDelta: null });
   const agent = new InfluenceAgent("atlas", "Atlas", "strategic", p.adapter, p.runtime.modelId, "Former teacher", undefined, { providerManifest: [p.runtime], personalityPrompt: "Patient and observant", strategyInstructions: "Protect Mira" });
   const context = phase(); agent.onGameStart(context.gameId!, context.alivePlayers);
   const before = agent.getCompactStrategyState();
@@ -101,7 +103,9 @@ test("House interview compacts only the subject's provided history and preserves
   const orientation = summaryOrientation(p.requests);
   expect(orientation.actor.role).toBe("house");
   expect(orientation.characterContext).toBeNull();
-  expect(orientation.pendingAction.messages[0]).toEqual(p.requests[0]!.messages[0]);
+  expect(p.requests[0]!.messages[0]).toEqual({ ...orientation.pendingAction.messages[0],
+    content: `${orientation.pendingAction.messages[0].content}\n\n${OUTPUT_LANGUAGE_GUIDANCE}\n\n${audioDeliveryGuidance(false)}` });
+  expect(JSON.stringify(orientation)).not.toContain("Delivery tags are optional");
   expect(JSON.stringify(orientation.pendingAction.messages)).toContain("Atlas");
   expect(JSON.stringify(orientation.pendingAction.messages)).toContain("complete information boundary");
 });

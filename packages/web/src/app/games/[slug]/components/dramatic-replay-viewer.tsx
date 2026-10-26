@@ -1,4 +1,9 @@
 "use client";
+import type {PresentationCue} from "./types";
+import type {AudioWatchCoordinate} from "@influence/engine/audio-watch";
+import {HouseNarration} from "@/components/watch/house-narration";
+import {useWatchVoice} from "@/components/watch/use-watch-voice";
+import {influenceTranscriptAudioIdentity} from "@/components/watch/audio-watch-coordinate";
 import {useWatchTimeline} from "@/components/watch/use-watch-timeline";
 import {isFormatSocialTranscriptMessage, buildClassicPresentationCues, buildReplayPlayersForCue, classicEliminatedPlayerIds, comparePresentationCues, findCueForAdjacentScene, formatCueScene, formatSnapshotForPresentationCursor, mergeFormatAndSocialCues} from "./influence-replay-cues";
 export {isFormatSocialTranscriptMessage, buildClassicPresentationCues, buildReplayPlayersForCue, comparePresentationCues, findCueForAdjacentScene, formatSnapshotForPresentationCursor} from "./influence-replay-cues";
@@ -124,6 +129,7 @@ function DramaticReplayTheater({
       personaKey: player.personaKey,
       avatarUrl: player.avatarUrl,
       currentAgent: player.currentAgent,
+      modelPreference: player.modelPreference,
     })),
     [players],
   );
@@ -137,6 +143,7 @@ function DramaticReplayTheater({
       gameId: game.id,
       gameKernel: game.gameKernel ?? game.watchState?.gameKernel ?? "classic",
       formatManifest: game.formatManifest,
+      empowerRevoteVersion: game.empowerRevoteVersion,
       roster: formatRoster,
       decisions: formatPresentationDecisionsFromFrames(replayFrames),
       eligiblePlayerIdsByRound: formatPresentationEligibilityFromFrames(replayFrames),
@@ -145,6 +152,7 @@ function DramaticReplayTheater({
       formatRoster,
       game.gameKernel,
       game.formatManifest,
+      game.empowerRevoteVersion,
       game.id,
       game.watchState?.gameKernel,
       replayFrames,
@@ -294,11 +302,22 @@ function DramaticReplayTheater({
     if (!result.ok) return null;
     return activeCue ? influenceThinkingText(result.intelligence.thinking.cards, activeCue, thinkingActor, messageId) : null;
   }, [anonymous, game.slug, thinkingActor, thoughtSequence, thoughtRound, thoughtPhase, messageThought, messageId, entrySequence, classicThought, activeCue]);
+  const coordinateForCue=useCallback((candidate:PresentationCue):AudioWatchCoordinate|null=>{
+    if (candidate.source === "opening" || candidate.source === "house" || candidate.voteSummary) return null;
+    const message=candidate.source === "classic" ? scenes[candidate.sceneIndex]?.messages[candidate.messageIndex] : formatCueScene(candidate)?.messages[0];
+    const transcriptIdentity=candidate.source === "classic" && message ? influenceTranscriptAudioIdentity(message) : null;
+    if (candidate.source === "classic" && !transcriptIdentity) return null;
+    const ballot=candidate.source === "format" ? candidate.visualBallot ?? (candidate.kind === "format_roll_call" ? candidate.ballot : null) : candidate.source === "endgame" ? candidate.ballot : null;
+    const actorId=ballot?.voterId ?? (candidate.source === "format" && candidate.kind === "two_names_plea" ? candidate.speakerId : message?.speakerPlayerId ?? message?.fromPlayerId ?? null);
+    return {kind:"influence",...transcriptIdentity,eventSequence:candidate.canonicalSequence ?? message?.firstDurableEventSequence ?? 0,actorId,part:"speech"};
+  },[scenes]);
+  const [playRequested, setPlayRequested] = useState(true);
+  const voice = useWatchVoice({director,gameId:game.id,audience:"public",thinking:preferences.thinking,live,onPause:() => setPlayRequested(false),
+    coordinate:activeCue ? coordinateForCue(activeCue) : null,coordinateForCue});
   const currentStateEntry = Boolean(live && formatCue && directorSnapshot.hydrationWatermark !== null
     && formatCue.canonicalSequence <= directorSnapshot.hydrationWatermark);
   const isPlaying = directorSnapshot.isPlaying;
   const speed = directorSnapshot.speed;
-  const [playRequested, setPlayRequested] = useState(true);
   const musicSection = influenceMusic(game.id, revealedWinners[Math.min(directorSnapshot.cursor, presentationCues.length - 1)] ?? activeCue, currentMessage);
   const closingMusic = !live && musicSection?.continueAtEnd === true && activeCue !== null
     && directorSnapshot.cursor === presentationCues.length - 1
@@ -306,7 +325,7 @@ function DramaticReplayTheater({
   const preparing = live && presentationHydrationStatus !== "ready";
   const ambient = useWatchMusic({
     section:musicSection, playing:(isPlaying || closingMusic) && !openingCue,
-    muted:preferences.musicMuted, volume:preferences.musicVolume, preparing,
+    muted:preferences.musicMuted, volume:preferences.musicVolume * (voice.speaking && !voice.muted ? .35 : 1), preparing,
     holding:directorSnapshot.waitingAtTail, live, navigationRevision:director.getNavigationRevision(),
   });
   const transportPlaying = isPlaying || closingMusic && (ambient.status === "playing" || ambient.status === "loading");
@@ -425,7 +444,8 @@ function DramaticReplayTheater({
     presentationHydrationStatus,
   ]);
   const isTwoNamesPresentation = formatCue?.after.activeFormatId === "two_names";
-  const usesFullHeightContent = Boolean(openingCue) || fullscreen || formatCue?.kind === "two_names_plea" || visual.beat !== null;
+  const isEmpowerPresentation = formatCue?.kind === "empowered_tally" || formatCue?.kind === "empowered_tie";
+  const usesFullHeightContent = Boolean(openingCue) || fullscreen || isEmpowerPresentation || formatCue?.kind === "two_names_plea" || visual.beat !== null;
   const isSoloPresentation = visual.beat?.kind === "portrait" || visual.beat?.kind === "nominee-selection";
   const isRoomPresentation = visual.beat?.kind === "scene" || visual.beat?.kind === "portrait-room" || visual.beat?.kind === "safety-bounce" || visual.beat?.kind === "winner";
   useEffect(() => {
@@ -459,6 +479,7 @@ function DramaticReplayTheater({
   const togglePlay = () => {
     if (transportPlaying) pausePresentation();
     else {
+      voice.resume();
       if (!preferences.musicMuted) unlockMusic();
       setPlayRequested(true); director.play();
     }
@@ -722,11 +743,11 @@ function DramaticReplayTheater({
           {formatCompilationNotice ? (
             <div className="mb-3 shrink-0">{formatCompilationNotice}</div>
           ) : null}
-          {visual?.beat ? <VisualPresentation fullscreen={fullscreen} director={director} retainTail={!live} currentStateEntry={currentStateEntry} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion}
+          {visual?.beat ? <VisualPresentation hideHouseNarration={voice.houseNarrationAvailable} fullscreen={fullscreen} director={director} retainTail={!live} currentStateEntry={currentStateEntry} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion}
             voteLedger={voteLedgers[directorSnapshot.cursor] ?? null} roster={formatRoster.map(player => ({ ...player, avatarUrl: visualData?.portraits[player.id] ?? player.avatarUrl }))} /> : <>
           {formatCue && (
             <div className={`min-h-0 flex-1 ${formatCue.kind === "two_names_plea" ? "h-full" : ""}`}>
-              <FitPresentation enabled={fullscreen}><FormatPresentation
+              <FitPresentation enabled={fullscreen || isEmpowerPresentation}><FormatPresentation
                 cue={formatCue}
                 roster={formatRoster}
                 currentStateEntry={Boolean(
@@ -743,6 +764,7 @@ function DramaticReplayTheater({
 
         </div>
         </WatchThinking>}
+        <HouseNarration text={currentMessage?.text ?? ""} window={voice.houseNarration} bottom={fullscreen ? 140 : 16} />
       </div>
 
       {live && !fullscreen && directorSnapshot.waitingAtTail && (
@@ -762,6 +784,8 @@ function DramaticReplayTheater({
         }`}
       >
         {shared?.cue && presentationCues.length > 0 && !presentationCues.some(cue => cue.key === shared.cue) && <p role="alert">This replay moment is no longer available.</p>}
+        {voice.error && <div role="alert">{voice.error}</div>}
+        {voice.available && <label className="text-xs">Voice volume <input aria-label="Voice volume" type="range" min="0" max="1" step="0.05" value={voice.muted ? 0 : voice.volume} onChange={event => {voice.setMuted(false);voice.setVolume(Number(event.target.value));}} /></label>}
         <WatchTransport getShareHref={() => {
           const cue = director.getActiveCue();
           const href = cue?.canonicalSequence != null ? gameReplaySequenceHref(game.slug, cue.canonicalSequence) : gameReplayHref(game.slug);

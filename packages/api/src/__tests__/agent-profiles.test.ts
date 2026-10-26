@@ -678,6 +678,61 @@ describe("Agent Profile API", () => {
   // =========================================================================
 
   describe("PATCH /api/agent-profiles/:id", () => {
+    test("saves model preference with profile edits and leaves it unchanged when omitted", async () => {
+      const created = await app.request("/api/agent-profiles", jsonReq({ name: "Model Casey", personality: "Careful." }, tokenB));
+      const { id } = await created.json() as { id: string };
+      const modelPreference = { catalogId: "katana:deepseek-v4-flash" };
+      const saved = await app.request(`/api/agent-profiles/${id}`, jsonReq({ name: "Model Casey Updated", modelPreference }, tokenB, "PATCH"));
+      expect(saved.status).toBe(200);
+      expect(await saved.json()).toMatchObject({ name: "Model Casey Updated", modelPreference });
+      const edited = await app.request(`/api/agent-profiles/${id}`, jsonReq({ backstory: "Patient." }, tokenB, "PATCH"));
+      expect(edited.status).toBe(200);
+      expect(await edited.json()).toMatchObject({ modelPreference });
+      const reset = await app.request(`/api/agent-profiles/${id}`, jsonReq({ modelPreference: "default" }, tokenB, "PATCH"));
+      expect(reset.status).toBe(200);
+      expect(await reset.json()).toMatchObject({ modelPreference: "default" });
+    });
+
+    test("rejects an unauthorized model without saving other edits, but allows admins", async () => {
+      const created = await app.request("/api/agent-profiles", jsonReq({ name: "Model Access Casey", personality: "Careful." }, tokenB));
+      const { id } = await created.json() as { id: string };
+      const modelPreference = { catalogId: "openai:gpt-5.4" };
+      const rejected = await app.request(`/api/agent-profiles/${id}`, jsonReq({ name: "Should Not Save", modelPreference }, tokenB, "PATCH"));
+      expect(rejected.status).toBe(403);
+      const [stored] = await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, id));
+      expect(stored).toMatchObject({ name: "Model Access Casey", modelPreference: "default" });
+      await grantTestAuthority(db, USER_B_ID, [], "admin");
+      const saved = await app.request(`/api/agent-profiles/${id}`, jsonReq({ modelPreference }, tokenB, "PATCH"));
+      expect(saved.status).toBe(200);
+      expect(await saved.json()).toMatchObject({ modelPreference });
+    });
+
+    test("rolls back a model change when the content save fails", async () => {
+      const created = await app.request("/api/agent-profiles", jsonReq({ name: "Atomic Casey", personality: "Careful." }, tokenB));
+      const original = await created.json() as { id: string; profileRevisionId: string };
+      const updated = await app.request(`/api/agent-profiles/${original.id}`, jsonReq({ strategyStyle: "New strategy." }, tokenB, "PATCH"));
+      expect(updated.status).toBe(200);
+      const failed = await app.request(`/api/agent-profiles/${original.id}`, jsonReq({
+        strategyStyle: "Stale strategy.", expectedRevisionId: original.profileRevisionId,
+        modelPreference: { catalogId: "katana:deepseek-v4-flash" },
+      }, tokenB, "PATCH"));
+      expect(failed.status).toBe(409);
+      const [stored] = await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, original.id));
+      expect(stored).toMatchObject({ strategyStyle: "New strategy.", modelPreference: "default" });
+    });
+
+    test("saves operational model preference while character corrections remain held", async () => {
+      const created = await app.request("/api/agent-profiles", jsonReq({ name: "Held Model Casey", personality: "Original." }, tokenB));
+      const { id } = await created.json() as { id: string };
+      await db.update(schema.agentProfiles).set({ moderationRequired: true }).where(eq(schema.agentProfiles.id, id));
+      const modelPreference = { catalogId: "katana:deepseek-v4-flash" };
+      const saved = await app.request(`/api/agent-profiles/${id}`, jsonReq({ personality: "Correction.", modelPreference }, tokenB, "PATCH"));
+      expect(saved.status).toBe(200);
+      expect(await saved.json()).toMatchObject({ modelPreference, personality: "Original.", receipt: { publication: "held" } });
+      const [stored] = await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, id));
+      expect(stored).toMatchObject({ modelPreference, personality: "Original.", moderationRequired: true });
+    });
+
     test("rejects stale edits without overwriting newer strategy and accepts an exact response-loss replay", async () => {
       const createRes = await app.request("/api/agent-profiles", jsonReq({
         name: "Concurrency Casey",

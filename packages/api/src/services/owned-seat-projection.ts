@@ -1,7 +1,8 @@
+import { authorizedModelPreference } from "./game-model-routing.js";
 import { Hydrated } from "./payload-storage.js";
 import { randomUUID } from "node:crypto";
 import {
-  resolveProviderManifestFromGameConfig,
+  resolveProviderManifestFromGameConfig, resolveProviderManifest, contestantManifest, gameModelPolicy,
 } from "@influence/engine";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
@@ -20,6 +21,7 @@ type ProfileRow = typeof schema.agentProfiles.$inferSelect;
 
 export type OwnedSeatProjectionErrorCode = "invalid_state" | "rated_roster_invalid";
 export type OwnedSeatProjectionErrorReason =
+  | "model_incompatible"
   | "game_not_found"
   | "game_not_waiting"
   | "season_not_active"
@@ -144,7 +146,18 @@ export async function projectOwnedSeatInTransaction(
 
   const gameConfig = parseGameConfig(input.game.config);
   const temperature = normalizeTemperature(input.overrides?.temperature);
-  const resolvedModelSelection = resolveProviderManifestFromGameConfig(gameConfig)[0]!;
+  const [existingSeat] = await tx.select().from(schema.gamePlayers).where(and(eq(schema.gamePlayers.gameId, input.game.id), eq(schema.gamePlayers.agentProfileId, profile.id)));
+  const policy = gameConfig.modelRouting ? gameModelPolicy(gameConfig) : null;
+  const preference = existingSeat?.modelPreference ?? profile.modelPreference;
+  const resolvedModelSelection = (() => {
+    try {
+      return policy
+        ? resolveProviderManifest(contestantManifest(policy, (existingSeat ? policy.overrides[existingSeat.id] : undefined) ?? preference, JSON.parse(input.game.config).visualMode === true))[0]!
+        : resolveProviderManifestFromGameConfig(gameConfig)[0]!;
+    } catch (error) {
+      throw projectionError(error instanceof Error ? error.message : "Character model is incompatible with this game", "rated_roster_invalid", "model_incompatible");
+    }
+  })();
   const modelSelection = {
     catalogId: resolvedModelSelection.catalogId,
     reasoningPolicy: resolvedModelSelection.reasoningPolicy,
@@ -166,7 +179,7 @@ export async function projectOwnedSeatInTransaction(
     performanceInstructions: profile.performanceInstructions,
   });
   const agentConfig = JSON.stringify({
-    model: effectiveRuntimeSnapshot.model,
+    ...(!policy && { model: effectiveRuntimeSnapshot.model }),
     temperature: effectiveRuntimeSnapshot.temperature,
   });
   const resolvedRevision = await resolveGameEffectiveAgentRevisionInTransaction(tx, {
@@ -254,6 +267,9 @@ export async function admitOwnedSeatInTransaction(
     gameId: game.id,
     agentId: input.agentProfileId,
   });
+  let modelPreference;
+  try { modelPreference = await authorizedModelPreference(tx, input.userId, projection.profile.modelPreference); }
+  catch (error) { throw projectionError(error instanceof Error ? error.message : "Model access denied", "rated_roster_invalid", "model_incompatible"); }
   const seat = (await tx.insert(schema.gamePlayers).values({
     id: input.playerId ?? randomUUID(),
     gameId: game.id,
@@ -262,6 +278,7 @@ export async function admitOwnedSeatInTransaction(
     agentRevisionId: projection.revision.id,
     persona: projection.persona,
     agentConfig: projection.agentConfig,
+    modelPreference,
   }).returning())[0];
   if (!seat) throw new Error("Owned seat insert returned no row");
   return { game, seat, projection, replayed: false };
@@ -579,10 +596,11 @@ function personaName(persona: string): string {
   );
 }
 
-function parseGameConfig(value: string): { providerManifest?: unknown; modelSelection?: unknown } {
+function parseGameConfig(value: string): { providerManifest?: unknown; modelSelection?: unknown; modelRouting?: unknown } {
   try {
     const parsed = JSON.parse(value) as Record<string, unknown>;
     return {
+      modelRouting: parsed.modelRouting,
       providerManifest: parsed.providerManifest,
       modelSelection: parsed.modelSelection,
     };

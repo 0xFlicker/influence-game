@@ -6,19 +6,25 @@ import type {AcceptedVisualScene} from "@influence/engine/visual-mode";
 import {WerewolfContentFrame} from "../components/games/werewolf/werewolf-watch-stage";
 import {werewolfMomentCues} from "../components/games/werewolf/werewolf-watch-model";
 import {SCENE_READ_START_MS} from "../app/games/[slug]/components/scene-speech-timing";
-import {SOLO_READ_START_MS} from "../app/games/[slug]/components/solo-presentation-timing";
+import {SOLO_IMAGE_FADE_MS, SOLO_READ_START_MS} from "../app/games/[slug]/components/solo-presentation-timing";
 
 const globals = ["window", "document", "navigator", "Element", "HTMLElement", "Node", "Event", "ResizeObserver", "getComputedStyle"] as const;
 const original = new Map(globals.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
 let dom: Window;
+let dimensions: Map<string, PropertyDescriptor | undefined>;
 beforeEach(() => {
   dom = new Window({url: "http://localhost"});
+  dimensions = new Map(["clientWidth", "clientHeight"].map(key => [key, Object.getOwnPropertyDescriptor(dom.HTMLElement.prototype, key)]));
   Object.defineProperty(dom.document, "fonts", {value: {ready: Promise.resolve()}});
   for (const key of globals) Object.defineProperty(globalThis, key, {configurable: true, value: key === "window" ? dom : key === "getComputedStyle" ? dom.getComputedStyle.bind(dom) : dom[key]});
 });
 afterEach(async () => {
   await act(async () => {});
   cleanup();
+  for (const [key, descriptor] of dimensions) {
+    if (descriptor) Object.defineProperty(dom.HTMLElement.prototype, key, descriptor);
+    else Reflect.deleteProperty(dom.HTMLElement.prototype, key);
+  }
   dom.close();
   for (const key of globals) {
     const descriptor = original.get(key);
@@ -60,6 +66,20 @@ function frame(moment: WerewolfWatchMoment, scene: AcceptedVisualScene | null = 
 function roomIds(container: HTMLElement) {
   return [...container.querySelectorAll("[data-room-player]")].map(element => element.getAttribute("data-room-player"));
 }
+test("live Werewolf room derives its orbit predecessor after a waiting-screen remount", () => {
+  const before=discussion();
+  if(before.entry.kind!=="discussion") throw new Error("fixture");
+  const after: WerewolfWatchMoment={...before,cursor:21,entry:{...before.entry,contribution:{...before.entry.contribution,actorId:"a",text:"I suspect Larry."}}};
+  const previousCue=werewolfMomentCues(before)[0]!,cue=werewolfMomentCues(after)[0]!;
+  const draw=(elapsed:number,previous=previousCue)=><WerewolfContentFrame cue={cue} previousCue={previous} scene={null} elapsed={elapsed} reduced={false}/>;
+  const outgoing=render(frame(before));outgoing.unmount();
+  const view=render(draw(0));
+  const position=()=>view.container.querySelector<HTMLElement>('[data-room-player="a"]')!.style.transform;
+  const start=position();view.rerender(draw(325));const middle=position();view.rerender(draw(650));const end=position();
+  expect(start).not.toBe(middle);expect(middle).not.toBe(end);
+  view.rerender(draw(325));expect(position()).toBe(middle);
+  view.rerender(draw(0,{...previousCue,moment:{...before,entry:{...before.entry,day:1}}}));expect(position()).toBe(end);
+});
 test("village conversation uses the living prefix cast and follows speaker changes without remounting", () => {
   const moment = discussion();
   const ready = mock();
@@ -187,4 +207,71 @@ test("pack proposal speech has no target banner", () => {
   expect(view.getByText("Let's choose Arden.")).not.toBeNull();
   expect(view.queryByText("Proposed target: Arden")).toBeNull();
   expect(view.container.querySelector("[data-werewolf-canonical-details]")).toBeNull();
+});
+
+test("solo role clips use frozen full-body art and their room before revealing the result", () => {
+  const base = discussion();
+  const before = {...base.snapshot, rulesVersion: 10 as const, audience: "omniscient" as const, phase: "night" as const,
+    players: base.snapshot.players.map(p => ({...p, role: p.id === "a" ? "doctor" as const : "seer" as const, fullBodyReferenceUrl: `/${p.id}-full.png`}))};
+  const moment: WerewolfWatchMoment = {...base, snapshot: before,
+    entry: {kind: "night", day: 2, killedId: null, protectedId: "a", attackTargetId: null, investigation: {seerId:"b", targetId:"d", isWolf:true}},
+    night: {before, actions: [
+      {kind:"protect", actorId:"a", targetId:"a", speech:{text:"I need to survive to protect the village tomorrow.", cue:null}},
+      {kind:"investigate", actorId:"b", targetId:"d", isWolf:true, speech:{text:"Larry's claim needs checking tonight.", cue:null}},
+    ]}};
+  const cues = werewolfMomentCues(moment);
+  expect(cues).toHaveLength(5);
+  for (const [index, actor, room] of [[0,"a","doctor-room"], [2,"b","seer-room"]] as const) {
+    const {container, rerender, unmount} = render(<WerewolfContentFrame cue={cues[index]!} scene={null} elapsed={SOLO_READ_START_MS} reduced />);
+    expect(container.querySelector('[data-solo-image]')?.getAttribute('data-solo-image')).toBe("full-body");
+    expect(container.querySelector('[data-solo-portrait]')?.getAttribute('src')).toBe(`/${actor}-full.png`);
+    expect(container.querySelector('[data-room-backdrop]')?.getAttribute('data-room-backdrop')).toContain(room);
+    expect(container.querySelector('[data-thinking-camera] [data-room-backdrop]')).toBeNull();
+    expect(container.querySelector('[data-investigation-result]')).toBeNull();
+    rerender(<WerewolfContentFrame cue={cues[index+1]!} scene={null} elapsed={0} reduced />);
+    expect(container.querySelector('[data-night-role]')).not.toBeNull();
+    expect(container.querySelector('[data-speech-bubble]')).toBeNull();
+    if (actor === "b") expect(container.querySelector('[data-investigation-result]')?.textContent).toBe("Werewolf");
+    unmount();
+  }
+});
+
+
+test.each([1440, 800])("full-body solo shots stay anchored through the dissolve at %i px", width => {
+  Object.defineProperty(dom.HTMLElement.prototype, "clientWidth", {configurable: true, get: () => width});
+  Object.defineProperty(dom.HTMLElement.prototype, "clientHeight", {configurable: true, get: () => width === 1440 ? 900 : 1100});
+  const source = discussion();
+  source.chapterId = "introduction";
+  source.snapshot.players = source.snapshot.players.map(player => ({...player,fullBodyReferenceUrl:`/${player.id}-full.png`}));
+  const make = (id: string, cursor: number) => werewolfMomentCues({...source,cursor,
+    entry:{kind:"speech",day:0,actorId:id,audience:"public",text:`Hello from ${id}.`,cue:null}})[0]!;
+  const a = make("a",1), b = make("b",2);
+  const shot = (cue: typeof a, elapsed: number, previousCue?: typeof a, nextCue?: typeof a, reduced = false, paused = false) =>
+    <WerewolfContentFrame cue={cue} previousCue={previousCue} nextCue={nextCue} scene={null} elapsed={elapsed} reduced={reduced} paused={paused} />;
+  const view = render(shot(a,0,undefined,b));
+  const first = view.container.querySelector<HTMLImageElement>('[data-solo-portrait]')!;
+  expect(first.style.opacity).toBe("0");
+  Object.defineProperties(first, {naturalWidth:{value:800}, naturalHeight:{value:1200}});
+  fireEvent.load(first);
+  const geometry = () => [first.style.left, first.style.top, first.style.width, first.style.height];
+  const anchoredGeometry = geometry();
+  view.rerender(shot(a,SOLO_IMAGE_FADE_MS / 2,undefined,b));
+  expect(first.style.opacity).toBe("0.5");
+  view.rerender(shot(a,a.baseDurationMs - 1,undefined,b));
+  expect(first.style.opacity).toBe("1");
+  view.rerender(shot(b,0,a));
+  expect(view.container.querySelector('[data-solo-layer="outgoing"] [data-solo-portrait]')).toBe(first);
+  expect(geometry()).toEqual(anchoredGeometry);
+  expect(view.container.querySelector<HTMLElement>('[data-solo-layer="outgoing"]')?.style.opacity).toBe("1");
+  expect(view.container.querySelector<HTMLElement>('[data-solo-layer="current"]')?.style.opacity).toBe("0");
+  view.rerender(shot(b,SOLO_IMAGE_FADE_MS / 2,a,undefined,false,true));
+  expect(view.container.querySelector<HTMLElement>('[data-solo-layer="current"]')?.style.opacity).toBe("0.5");
+  expect(view.container.querySelector('[data-solo-layer="outgoing"] [data-speech-bubble]')).toBeNull();
+  view.rerender(shot(b,SOLO_IMAGE_FADE_MS,a));
+  expect(view.container.querySelector('[data-solo-layer="outgoing"]')).toBeNull();
+  view.rerender(shot(b,b.baseDurationMs - SOLO_IMAGE_FADE_MS / 2,a));
+  expect(view.container.querySelector<HTMLImageElement>('[data-solo-portrait]')?.style.opacity).toBe("0.5");
+  view.rerender(shot(b,0,a,undefined,true));
+  expect(view.container.querySelector('[data-solo-layer="outgoing"]')).toBeNull();
+  expect(view.container.querySelector<HTMLImageElement>('[data-solo-portrait]')?.style.opacity).toBe("1");
 });

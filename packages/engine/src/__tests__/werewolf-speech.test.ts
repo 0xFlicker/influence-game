@@ -107,8 +107,78 @@ test("all conversation surfaces require exact non-empty thinking, including pass
       expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify(invalid)).status).toBe("invalid");
       expect(exactStructuredOutputRegistry.decodeAcceptedValue(artifact, { ...invalid, kind: action === "open_thread" ? "opening" : "speech" }).status).toBe("invalid");
     }
-    for (const invalid of ["hello", `prefix ${JSON.stringify(valid)}`, `\`\`\`json\n${JSON.stringify(valid)}\n\`\`\``]) {
+    for (const invalid of ["hello", `prefix ${JSON.stringify({ ...valid, extra: true })}`, `\`\`\`json\n${JSON.stringify({ ...valid, extra: true })}\n\`\`\``]) {
       expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, invalid).status).toBe("invalid");
     }
+  }
+});
+
+test("default tag guidance produces clean canonical history and next-player context", async () => {
+  const players = Array.from({ length: 6 }, (_, index) => ({ id: `p${index}`, name: `Player ${index}`,
+    personality: "Careful", backstory: "", strategy: "", avatarUrl: null }));
+  const events = [startWerewolf("tag-game", players, werewolfConfig("one_wolf"), "tag-seed")];
+  const store = { read: async () => events, append: async (event: (typeof events)[number]) => { events.push(event); } };
+  const records: import("../provider-execution").ProviderAttemptRecord[] = [];
+  const requests: Array<{ messages: Array<{ role: string; content: string }> }> = [];
+  const client = new OpenAI({ apiKey: "fixture", baseURL: "http://fixture.invalid/v1", maxRetries: 0,
+    fetch: async (_url, init) => {
+      requests.push(JSON.parse(String(init?.body)));
+      return Response.json({ id: `tag-${requests.length}`, object: "chat.completion", created: 0, model: "glm-5-2",
+        choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
+          text: "<emphasis>Watch the votes.</emphasis>", cue: null, thinking: "<soft>Stay alert.</soft>",
+        }) } }], usage: { prompt_tokens: 20, completion_tokens: 20, total_tokens: 40 } });
+    },
+  });
+  const model = modelCatalogEntryById("katana:glm-5-2")!;
+  const runtime: LlmProviderRuntime = { adapter: createProviderAdapter("katana", client), catalogId: model.id,
+    providerProfileId: "katana", modelId: model.modelId, modelCapabilities: model.capabilities,
+    reasoningPolicy: "medium", position: 0, role: "primary" };
+  const agent = new WerewolfModelAgent({ runtimes: [runtime], hooks: { onTerminal: record => { records.push(record); } } });
+  await advanceWerewolf(store, agent);
+  const state = await advanceWerewolf(store, agent);
+  expect(state.history.filter(entry => entry.kind === "speech").map(entry => entry.text)).toEqual(["Watch the votes.", "Watch the votes."]);
+  expect(JSON.stringify(events)).not.toContain("<emphasis>");
+  expect(records).toHaveLength(2);
+  expect(records[0]!.audioDelivery?.fields.find(field => field.path[0] === "thinking")?.delivery.synthesisText)
+    .toBe("<higher-pitch><soft>Stay alert.</soft></higher-pitch>");
+  const nextContext = requests[1]!.messages.filter(message => message.role !== "system").map(message => message.content).join("\n");
+  expect(nextContext).toContain("Watch the votes.");
+  expect(nextContext).not.toContain("<emphasis>");
+  expect(requests[0]!.messages.find(message => message.role === "system")?.content).toContain("Prefer <higher-pitch>");
+});
+
+test("night speech is optional soft while thinking has a lower-pitch fallback, and repair context is clean", () => {
+  const artifact = werewolfDecisionArtifact({ actorId: "p0", action: "pack_talk", legalTargetIds: [] });
+  const result = exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify({
+    text: "<emphasis>Choose carefully.</emphasis>", thinking: "<soft>Stay hidden.</soft>", cue: null,
+  }));
+  expect(result.status).toBe("valid");
+  if (result.status !== "valid") throw new Error("Expected valid speech");
+  expect(result.audioDelivery?.fields.find(field => field.path[0] === "text")?.delivery.synthesisText).toBe("<emphasis>Choose carefully.</emphasis>");
+  expect(result.audioDelivery?.fields.find(field => field.path[0] === "thinking")?.delivery.synthesisText).toBe("<lower-pitch><soft>Stay hidden.</soft></lower-pitch>");
+  const oversized = exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify({ text: `<soft>${"A".repeat(301)}</soft>`, thinking: "Consider it.", cue: null }));
+  expect(oversized).toMatchObject({ status: "invalid", feedback: { measured: 301, rejectedDecision: { text: "A".repeat(301) } } });
+});
+
+test("current conversation, ballots, pack proposals and solo nights apply clean UTF-8 limits", () => {
+  const cases: Array<{ request: import("../werewolf/types").WerewolfRequest; extra: Record<string, unknown>; night: boolean; thinking: boolean }> = [
+    { request: { actorId: "a", action: "conversation", legalTargetIds: [], legalRecipientIds: ["b"], legalReplyIds: [], messageBytes: 4 }, extra: { recipientId: null, replyToContributionId: null }, night: false, thinking: true },
+    { request: { actorId: "a", action: "public_vote", legalTargetIds: ["b"], messageBytes: 4 }, extra: { targetId: "b" }, night: false, thinking: true },
+    { request: { actorId: "a", action: "pack_propose", legalTargetIds: ["b"], messageBytes: 4, targetRequired: true }, extra: { targetId: "b" }, night: true, thinking: true },
+    ...(["protect", "investigate", "pack_propose"] as const).map(action => ({
+      request: { actorId: "a", action, solo: true as const, legalTargetIds: ["b"], messageBytes: 4, targetRequired: true },
+      extra: { targetId: "b" }, night: true, thinking: false,
+    })),
+  ];
+  for (const { request, extra, night, thinking } of cases) {
+    const artifact = werewolfDecisionArtifact(request);
+    const body = { text: "<soft>éé</soft>", cue: null, ...extra, ...(thinking && { thinking: "<emphasis>Consider it.</emphasis>" }) };
+    const result = exactStructuredOutputRegistry.decodeProviderPayload(artifact, body);
+    expect(result).toMatchObject({ status: "valid", value: { text: "éé" } });
+    if (result.status !== "valid") throw new Error(`Invalid ${request.action}`);
+    expect(result.audioDelivery?.fields.find(field => field.path[0] === "text")?.delivery.context).toBe(night ? "night-speech" : "speech");
+    if (thinking) expect(result.audioDelivery?.fields.find(field => field.path[0] === "thinking")?.delivery.fallbackTag).toBe(night ? "lower-pitch" : "higher-pitch");
+    expect(exactStructuredOutputRegistry.decodeProviderPayload(artifact, { ...body, text: "<soft>ééa</soft>" })).toMatchObject({ status: "invalid", feedback: { measured: 5, allowed: 4 } });
+    expect(exactStructuredOutputRegistry.decodeProviderPayload(artifact, { ...body, extra: true }).status).toBe("invalid");
   }
 });

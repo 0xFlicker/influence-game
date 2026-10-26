@@ -1,3 +1,5 @@
+import type { EmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
+import type { ModelPreference, GameModelRouting } from "@influence/engine/game-model-routing";
 import { analyticsOperation, measureProductRequest } from "@/lib/product-analytics";
 import type { HouseParticipation } from "@influence/engine/house-participation";
 import type { AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
@@ -380,6 +382,7 @@ export interface GameWatchProjectionState {
 }
 
 export interface GameWatchPlayer {
+  modelPreference?: ModelPreference;
   id: string;
   name: string;
   persona: string;
@@ -452,10 +455,12 @@ export interface GameWatchReplayFrame {
 export type GameWatchStateSummary = Omit<GameWatchState, "players" | "schemaVersion" | "retrospective"> & { schemaVersion: 4 | 6 };
 
 export interface CreateGameParams {
+  modelRouting?: GameModelRouting;
+  audioMode?: boolean;
   visualMode?: boolean;
   visualFailurePolicy?: "best_effort" | "require_visuals";
   playerCount: CreateGamePlayerCount;
-  providerManifest: GameProviderManifestEntry[];
+  providerManifest?: GameProviderManifestEntry[];
   personaPool: PersonaKey[];
   fillStrategy: FillStrategy;
   maxRounds: number | "auto";
@@ -474,30 +479,25 @@ export interface GameProviderManifestEntry extends GameModelSelection {
   maxCallsPerGame?: number;
 }
 
-export interface ProviderModelInventoryEntry {
+export interface ProviderModelInventoryEntry extends Pick<
+  import("@influence/engine/model-catalog").ResolvedModelCatalogEntry,
+  "providerProfileId" | "modelId" | "displayName" | "defaultReasoningPolicy" | "capabilities" | "capabilityEvidence" | "metadata"
+> {
   catalogId: string;
-  providerProfileId: "openai" | "katana" | "meta-muse" | "lm-studio" | "custom-openai-compatible";
-  modelId: string;
-  displayName: string;
   configured: boolean;
   available: boolean | null;
-  defaultReasoningPolicy: ModelReasoningPolicy;
   allowedReasoningPolicies: ModelReasoningPolicy[];
-  capabilities: {
-    supportsReasoningEffort: boolean;
-    supportsToolReasoningEffort: boolean;
-    usesMaxCompletionTokens: boolean;
-    supportsTemperature: boolean;
-    supportsOpenAIResponses: boolean;
-    supportsStructuredOutput: boolean;
-    supportsTools: boolean;
-    supportsImageInput: boolean;
-  };
+  experimental: boolean;
   notes: string | null;
 }
 
 export interface ProviderModelInventory {
-  status: "complete" | "unavailable";
+  status: "complete" | "partial" | "unavailable";
+  providers: Array<{
+    providerProfileId: ProviderModelInventoryEntry["providerProfileId"];
+    displayName: string;
+    status: "complete" | "unavailable";
+  }>;
   models: ProviderModelInventoryEntry[];
 }
 
@@ -521,6 +521,7 @@ export function backfillEpisodes(gameIds: string[], regenerate: boolean, preview
 
 export interface GameSummary {
   episode?: EpisodePresentation;
+  audioMode?: boolean;
   visualMode?: boolean;
   visualFailurePolicy?: "best_effort" | "require_visuals";
   visualPaused?: boolean;
@@ -536,6 +537,8 @@ export interface GameSummary {
   eliminatedPlayers: number;
   modelLabel: string;
   visibility: GameVisibility;
+  /** Missing historical versions use v1. */
+  empowerRevoteVersion?: EmpowerRevoteVersion;
   /** Frozen game configuration; absent only on historical/mock payloads. */
   formatManifest?: EngineLaunchFormatId[];
   trackType?: TrackType;
@@ -683,6 +686,7 @@ export interface AdminProviderFailureDetail {
 }
 
 export interface AdminProviderFailureBudget {
+  scope?: "contestants" | "house";
   catalogId: string;
   providerProfileId: string;
   modelName: string;
@@ -2060,6 +2064,7 @@ export async function getPlayerGames(): Promise<PlayerGameResult[]> {
 export type AgentContentSnapshot = Pick<SavedAgent, "name" | "personality" | "personaKey" | "gender" | "backstory" | "strategyStyle" | "werewolfStrategyStyle" | "performanceInstructions" | "visualDesign" | "avatarUrl" | "fullBodyReferenceUrl" | "portraitCrop" | "headPosition">;
 
 export interface SavedAgent {
+  modelPreference?: ModelPreference;
   ownerContent?: {
     published: AgentContentSnapshot | null;
     submitted: { revisionId: string; content: AgentContentSnapshot; disposition: "allowed" | "rejected" | null; held: boolean; status: string | null } | null;
@@ -2128,6 +2133,7 @@ export interface AgentMutationReceipt {
 }
 
 export interface AgentProfileWriteParams {
+  modelPreference?: ModelPreference;
   submissionId?: string;
   expectedContentRevisionId?: string | null;
   visualDesign?: string | null;
@@ -2685,6 +2691,8 @@ export type PhaseKey = `${EnginePhase}` | "SUSPENDED";
 export type PlayerState = "alive" | "eliminated" | "unknown";
 
 export interface GamePlayer {
+  /** Selection saved for this game; not per-turn fallback attribution. */
+  modelPreference?: ModelPreference;
   id: string;
   name: string;
   persona: string;
@@ -2747,6 +2755,7 @@ export interface TranscriptEntry {
   firstDurableEventSequence?: number | null;
   speakerPlayerId?: string | null;
   presentationPurpose?: "farewell";
+  decisionSpeech?: { action: string; actorId: string; receiptEntrySequence?: number };
   acceptedBallot?: { voterId: string; targetId: string; purpose: "empower" | "eliminate" | "winner" };
   visualScene?: { id: string; roomId: import("@influence/engine/visual-mode").VisualRoomId };
   entrySequence?: number;
@@ -2771,6 +2780,7 @@ export interface TranscriptEntry {
 
 export interface GameDetail {
   episode?: EpisodePresentation;
+  audioMode?: boolean;
   visualMode?: boolean;
   visualFailurePolicy?: "best_effort" | "require_visuals";
   visualPaused?: boolean;
@@ -2789,6 +2799,8 @@ export interface GameDetail {
   players: GamePlayer[];
   modelLabel: string;
   visibility: GameVisibility;
+  /** Missing historical versions use v1. */
+  empowerRevoteVersion?: EmpowerRevoteVersion;
   /** Frozen game configuration; absent only on historical/mock payloads. */
   formatManifest?: EngineLaunchFormatId[];
   seasonId?: string;
@@ -2812,6 +2824,7 @@ export interface WsTranscriptEntry {
   firstDurableEventSequence?: number | null;
   speakerPlayerId?: string | null;
   presentationPurpose?: "farewell";
+  decisionSpeech?: { action: string; actorId: string; receiptEntrySequence?: number };
   acceptedBallot?: { voterId: string; targetId: string; purpose: "empower" | "eliminate" | "winner" };
   visualScene?: { id: string; roomId: import("@influence/engine/visual-mode").VisualRoomId };
   /** Durable game-local dialogue identity. */
@@ -3200,6 +3213,7 @@ export async function getAdminOwnerLearningFailureContent(
 }
 
 export interface AdminAgent {
+  modelPreference?: ModelPreference;
   id: string;
   userId: string;
   name: string;

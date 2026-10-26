@@ -90,7 +90,7 @@ export function parseArgs(
     serviceTier: normalizeServiceTier(env.INFLUENCE_OPENAI_SERVICE_TIER) ?? "flex",
     reasoningPolicy: normalizeReasoningPolicy(env.INFLUENCE_API_SIM_REASONING_POLICY) ?? undefined,
     maxRounds: envMaxRounds ?? 5,
-    visibility: parseVisibility(env.INFLUENCE_API_SIM_VISIBILITY) ?? "public",
+    visibility: "public",
     waitForAdvance: env.INFLUENCE_API_SIM_WAIT_FOR_ADVANCE !== "false",
     advanceTimeoutMs: readPositiveInt(env.INFLUENCE_API_SIM_ADVANCE_TIMEOUT_MS, 120_000),
     pollIntervalMs: readPositiveInt(env.INFLUENCE_API_SIM_POLL_INTERVAL_MS, 3_000),
@@ -384,6 +384,7 @@ function printHelp(): void {
   bun run simulate:api -- --standard  # opt out of hosted OpenAI Flex
 
 Defaults:
+  --visibility public (use --visibility unlisted explicitly to omit public discovery)
   --max-rounds scales with player count for short API smoke games (6 players -> 7)
 
 Auth:

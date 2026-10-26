@@ -1,4 +1,5 @@
 import type { Page, WebSocketRoute } from "@playwright/test";
+import type { EmpowerRevoteVersion } from "../packages/engine/src/empower-revote-rules";
 import type { GameWatchState, GameWatchPlayer } from "../packages/web/src/lib/api";
 import { retrospectiveProgress } from "../packages/engine/src/retrospective-progress";
 import { buildCompletedGameResults } from "../packages/engine/src/completed-game-results";
@@ -32,6 +33,7 @@ export async function installDeterministicFormatGame(
     roster?: ReturnType<typeof createFormatKernelViewerScenario>["roster"];
     historicalCatchUp?: boolean;
     frameResponseDelayMs?: number;
+    empowerRevoteVersion?: EmpowerRevoteVersion;
   },
 ): Promise<{
   sockets: WebSocketRoute[];
@@ -49,11 +51,16 @@ export async function installDeterministicFormatGame(
     options.status,
     scenario.roster,
     currentDecisions(),
+    options.empowerRevoteVersion,
   );
 
   await page.route(`**/api/game-entries/${options.slug}`, route => fulfillJson(route,{id:options.slug,slug:options.slug,gameKind:"influence"}));
   await page.route(gameApiPattern(options.slug), async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/audio")) {
+      await fulfillJson(route, null);
+      return;
+    }
     if (url.pathname.endsWith("/replay-watch-frames")) {
       const afterSequence = Number(url.searchParams.get("afterSequence") ?? 0);
       if (options.frameResponseDelayMs) await new Promise((resolve) => setTimeout(resolve, options.frameResponseDelayMs));
@@ -124,6 +131,10 @@ export async function installDeterministicClassicGame(
   await page.route(`**/api/game-entries/${options.slug}`, route => fulfillJson(route,{id:options.slug,slug:options.slug,gameKind:"influence"}));
   await page.route(gameApiPattern(options.slug), async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/audio")) {
+      await fulfillJson(route, null);
+      return;
+    }
     if (url.pathname.endsWith("/visual")) {
       await fulfillJson(route, { enabled: false, status: null, portraits: {}, fullBodies: {}, scenes: [] });
       return;
@@ -156,6 +167,10 @@ export async function installDeterministicCompletedClassicGame(
   await page.route(`**/api/game-entries/${slug}`, route => fulfillJson(route,{id:slug,slug,gameKind:"influence"}));
   await page.route(gameApiPattern(slug), async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/audio")) {
+      await fulfillJson(route, null);
+      return;
+    }
     if (url.pathname.endsWith("/visual")) {
       await fulfillJson(route, { enabled: false, status: null, portraits: {}, fullBodies: {}, scenes: [] });
       return;
@@ -198,6 +213,7 @@ function buildDeterministicFormatGame(
   status: DeterministicGameStatus,
   roster: readonly { id: string; name: string }[],
   decisions: ReturnType<typeof createFormatKernelViewerScenario>["decisions"],
+  empowerRevoteVersion?: EmpowerRevoteVersion,
 ) {
   const lastDecision = decisions.at(-1);
   const players = deterministicFormatPlayers(roster, decisions);
@@ -209,6 +225,7 @@ function buildDeterministicFormatGame(
     status,
     gameKernel: "format",
     gameKernelSource: "stored",
+    ...(empowerRevoteVersion === undefined ? {} : { empowerRevoteVersion }),
     currentRound: 2,
     maxRounds: 9,
     currentPhase,

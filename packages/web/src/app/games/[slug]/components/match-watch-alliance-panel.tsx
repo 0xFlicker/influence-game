@@ -204,6 +204,7 @@ function allianceMemberAvatarSource(
     persona: member.persona ?? member.personaKey ?? member.name,
     personaKey: member.personaKey,
     avatarUrl: member.avatarUrl,
+    modelPreference: member.modelPreference,
   };
 }
 

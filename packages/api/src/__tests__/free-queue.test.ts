@@ -286,20 +286,22 @@ describe("free queue season admission", () => {
     expect(game?.maxPlayers).toBe(12);
     const gameConfig = JSON.parse(game!.config);
     expect(gameConfig.minPlayers).toBe(6);
+    expect(gameConfig.empowerRevoteVersion).toBe(2);
+    expect(gameConfig.decisionContractVersion).toBe(2);
     expect(gameConfig.maxPlayers).toBe(12);
-    expect(gameConfig.modelSelection).toEqual({
+    expect(gameConfig.modelRouting.defaultManifest[0]).toEqual({
       catalogId: "openai:gpt-6-luna",
       reasoningPolicy: "action-policy",
     });
-    expect(gameConfig.providerManifest).toEqual([
-      gameConfig.modelSelection,
+    expect(gameConfig.modelRouting.defaultManifest).toEqual([
+      gameConfig.modelRouting.defaultManifest[0],
       { catalogId: "katana:grok-4-6", reasoningPolicy: "action-policy", maxCallsPerGame: 24 },
     ]);
     expect(gameConfig.visualMode).toBe(false);
     expect(gameConfig).not.toHaveProperty("visualFailurePolicy");
     expect(gameConfig).not.toHaveProperty("modelTier");
-    expect(seats.filter((seat) => seat.userId === null).map((seat) => JSON.parse(seat.agentConfig).model))
-      .toEqual(Array(10).fill("gpt-6-luna"));
+    expect(seats.filter((seat) => seat.userId === null).map((seat) => seat.modelPreference))
+      .toEqual(Array(10).fill("default"));
     const statusResponse = await app.request("/api/free-queue", {
       headers: { Authorization: `Bearer ${token}` },
     });

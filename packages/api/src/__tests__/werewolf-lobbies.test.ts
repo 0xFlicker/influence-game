@@ -1,3 +1,4 @@
+import { grantTestAuthority } from "./rbac-fixtures.js";
 import { afterAll, beforeEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -16,7 +17,7 @@ process.env.JWT_SECRET = "werewolf-lobby-test-secret";
 afterAll(() => { if (oldSecret === undefined) delete process.env.JWT_SECRET; else process.env.JWT_SECRET = oldSecret; });
 let db: DrizzleDB;
 beforeEach(async () => { db = await setupTestDB(); await db.insert(schema.users).values([{ id: "owner" }, { id: "guest" }]); });
-const create = () => createWerewolfLobby(db, "owner", { preset: "one_wolf", providerManifest: [{ catalogId: DEFAULT_MODEL_CATALOG_ID }] });
+const create = () => createWerewolfLobby(db, "owner", { preset: "one_wolf" });
 async function profile(id: string, userId = "owner", name = id) {
   await db.insert(schema.agentProfiles).values({ id, userId, name, personality: "PRIVATE_PERSONALITY", strategyStyle: "INFLUENCE_ONLY", werewolfStrategyStyle: "PRIVATE_WEREWOLF_STRATEGY", personaKey: "observer" });
   return id;
@@ -159,7 +160,7 @@ test("lobby creation and start have separate permission gates, while ordinary au
 });
 
 
-test("an older waiting lobby adopts the current rules version without losing config fields", async () => {
+test("an older waiting lobby preserves its frozen rules version and config fields", async () => {
   const game = await create();
   const [waiting] = await db.select().from(schema.games).where(eq(schema.games.id, game.id));
   // Represent a lobby persisted before the deployment upgraded Werewolf rules.
@@ -175,13 +176,15 @@ test("an older waiting lobby adopts the current rules version without losing con
   if (event.type !== "werewolf.started") throw new Error("Expected canonical start event");
   const currentVersion = werewolfConfig("one_wolf").rulesVersion;
   expect(currentVersion).not.toBe(olderConfig.rulesVersion);
-  expect(event.payload.config.rulesVersion).toBe(currentVersion);
+  expect(event.payload.config.rulesVersion).toBe(olderConfig.rulesVersion);
   const [started] = await db.select().from(schema.games).where(eq(schema.games.id, game.id));
   expect(started!.status).toBe("in_progress");
-  expect(JSON.parse(started!.config)).toEqual({ ...olderConfig, rulesVersion: event.payload.config.rulesVersion });
+  expect(JSON.parse(started!.config)).toMatchObject(olderConfig);
+  expect(Object.keys(JSON.parse(started!.config).modelRouting.contestants)).toHaveLength(6);
 });
 
 test("custom setup, provider policy, casting and visuals survive lobby start", async () => {
+  await grantTestAuthority(db, "owner", [], "admin");
   const setup = {playerCount:7 as const,wolves:2 as const,seer:false,doctor:true};
   const g = await createWerewolfLobby(db,"owner",{preset:"two_wolves",setup,visualMode:true,personaPool:["observer","aggressive"],fillStrategy:"balanced",providerManifest:[{catalogId:DEFAULT_MODEL_CATALOG_ID,reasoningPolicy:"low"}]});
   expect((await readWerewolfLobby(db,g.id)).playerCount).toBe(7);
@@ -196,7 +199,7 @@ test("custom setup, provider policy, casting and visuals survive lobby start", a
   expect(roles).not.toContain("seer");
   expect(roles.filter(r=>r==="doctor")).toHaveLength(1);
   const [row] = await db.select().from(schema.games).where(eq(schema.games.id,g.id));
-  expect(JSON.parse(row!.config)).toMatchObject({visualMode:true,providerManifest:[{catalogId:DEFAULT_MODEL_CATALOG_ID,reasoningPolicy:"low"}]});
+  expect(JSON.parse(row!.config)).toMatchObject({visualMode:true,modelRouting:{defaultManifest:[{catalogId:DEFAULT_MODEL_CATALOG_ID,reasoningPolicy:"low"}]}});
 });
 
 test("disabled Werewolf rejects creation and discovery but leaves existing game reads available",async()=>{

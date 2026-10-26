@@ -1,9 +1,10 @@
 import type {WerewolfView, WerewolfPublicEntry, WerewolfAudience} from "./observation";
 import type {AcceptedVisualScene} from "../visual-mode";
-export interface WerewolfWatchIdentity { id: string; name: string; avatarUrl: string | null; fullBodyReferenceUrl?: string | null; personaKey: string | null; personality: string; backstory: string }
+import type {ModelPreference} from "../game-model-routing";
+export interface WerewolfWatchIdentity { id: string; name: string; avatarUrl: string | null; fullBodyReferenceUrl?: string | null; headRectangle?: import("../character-portrait").HeadRectangle; personaKey: string | null; personality: string; backstory: string; modelPreference?: ModelPreference }
 export type WerewolfNightAction =
-  | { kind: "protect"; actorId: string; targetId: string }
-  | { kind: "investigate"; actorId: string; targetId: string; isWolf: boolean }
+  | { kind: "protect"; actorId: string; targetId: string; speech?: {text: string; cue: string | null} }
+  | { kind: "investigate"; actorId: string; targetId: string; isWolf: boolean; speech?: {text: string; cue: string | null} }
   | { kind: "hunt"; wolfIds: string[]; targetId: string };
 export interface WerewolfWatchMoment {
   cursor: number;
@@ -12,6 +13,8 @@ export interface WerewolfWatchMoment {
   chapterId: string;
   sceneId: string;
   mediaKey: string | null;
+  /** Published editorial speech/audio version; canonical history retains the original. */
+  retrospectiveRetakeId?: string;
   /** Accepted public ballots through this moment, including across watch windows. */
   dayBallots?: Array<{voterId: string; targetId: string | null; unavailable: boolean}>;
   /** First eligible pack/hunt appearance each night, calculated across complete history. */
@@ -31,10 +34,18 @@ export interface WerewolfWatchWindow {
   media: Record<string, AcceptedVisualScene>;
 }
 export function isWerewolfPlayable(entry: WerewolfPublicEntry): boolean {
-  if (entry.kind === "phase") return false;
+  if (entry.kind === "phase") return true;
   if (entry.kind === "speech") return Boolean(entry.text?.trim());
   if (entry.kind === "discussion") return !entry.contribution.unavailable && Boolean(entry.contribution.text?.trim());
   if (entry.kind === "ballot") return true;
   if (entry.kind === "conversation" || entry.kind === "proposal") return !entry.unavailable && Boolean(entry.text?.trim());
   return true;
+}
+
+/** Shared expansion keeps server timing, navigation and browser scenes aligned. */
+export function werewolfNightSteps(actions: readonly WerewolfNightAction[]) {
+  return actions.flatMap(action => [
+    ...(action.kind !== "hunt" && action.speech ? [{action, decision: true}] : []),
+    {action, decision: false},
+  ]);
 }

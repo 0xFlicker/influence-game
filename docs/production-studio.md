@@ -1,5 +1,21 @@
 # Production Studio
 
+Werewolf ballot shots and their thinking close-ups share the voting backdrop in
+Studio and offline exports. Camera focus must not switch the scene to the daytime
+village. Existing encoded movies require a new export to receive this presentation fix;
+accepted game events, selected moment IDs, and frozen audio versions are unchanged.
+
+Changing **Play thinking in Source** also preserves a cut opened from an MCP
+review link: its reviewed recipe, presentation settings, recordings and source
+pin remain in the same workspace. The review link is retained while the separate
+preview preference changes.
+If the review was pinned without thinking, Source settings explains that the
+source excludes thoughts instead of offering an unavailable playback control.
+
+Hidden games retain Producer/Sysop access to generated audio and frozen exports.
+Studio reads their clips through authenticated media routes and verifies the
+bytes before playback; public audio routes remain unavailable for hidden games.
+
 Open **Admin → Production**, choose a completed or validated visually paused Influence or Werewolf game, and open its studio. The library uses bounded metadata pages. A game played without generated imagery remains editable with portraits.
 
 Influence uses the same 20-second House entrance, cast reveal, welcome card and
@@ -106,3 +122,53 @@ Exact logs, artifacts, scope limits and current task checklist are recorded in [
 Fresh completed Influence and Werewolf sources include every accepted retrospective speech after the competitive result. These are ordinary **speech** moments marked **Retrospective**, with canonical actor, speaker ordinal and event reference in the inspector. Tag them individually or give all final speeches the same tag to make a retrospective-only cut. Including the result remains a separate selection choice; the editor never adds it between speakers.
 
 The owning source reader verifies the full completion proof and exact speech provenance. A failed or running epilogue remains watchable through replay/inspection/recovery, but cannot create a completed export. Full exports include the accepted epilogue, while frozen selected exports retain only their reviewed IDs, text, source/media versions and recording hashes. Later tags and published visuals cannot expand that selection. See [retrospective runtime](game-retrospective-runtime.md) and [local export](local-replay-export.md).
+
+
+## Audio tracks
+
+The Recordings panel can preview and explicitly queue a completed game's first
+xAI track, or retry missing clips without replacing accepted audio. It shows a
+character-based estimate and bounded retry allowance before dispatch. Audio Mode
+games use voices frozen at game start; historical first tracks use the reviewed
+current choices. Helios is the House voice. No custom voice creation or DSP is
+performed.
+
+Newly ready audio does not alter an open cut: choose **Load ready audio into this
+preview**. Thinking remains independently selectable. Generated recordings pin
+version IDs, text hashes, speaker identity and measured durations in the same
+export descriptor used by local recordings. A suspended Audio Mode game stays
+paused after successful retry until **Resume game with ready audio** is selected.
+See [Audio Mode](audio-mode.md) for worker configuration and qualification limits.
+
+## Frozen source and recording authority
+
+New Werewolf snapshots carry `projectionVersion: 1` inside the source hash.
+Unversioned descriptors resolve the finite historical catalog/reference contracts
+by an exact full-hash match. This preserves the pre-audio catalog, phase-scene and
+proposal-default changes, original head geometry availability and original cutout
+selection. The verified catalog contract travels with every source page and drives
+both Studio binding and CLI compilation. Existing selected IDs are never reselected
+or expanded. An explicit visual refresh records the verified historical catalog
+contract in the new versioned snapshot; it does not upgrade cut membership.
+Historical pass-thinking IDs can be reconstructed only under their
+verified old hash; current catalogs, live playback and contestant history still
+omit passes.
+
+An exact source hash cannot recover a deleted temporary appearance mapping or an
+old rendering compiler that was never retained or versioned. Keep original offline
+bundles/movies for those cases. Missing or changed historical inputs fail closed;
+never replace their hashes with new ones. Source contract versioning preserves the
+recorded inputs and membership; it is not a promise of pixel-identical encoding
+across unpinned browser/codec versions.
+
+A frozen export's generated recordings resolve by their original version IDs and
+published track frontier, including after a retake, House refresh or voice recovery
+publishes a successor. Source text, speaker, media hash and duration must still
+match. Old unpublished copies, foreign-game versions and private audio outside the
+selected audience remain unavailable. The CLI reads these exact versions before
+fetching their original URLs; it does not regenerate audio.
+
+The Source preview's thinking switch, filters and view do not change the selected
+cut's recordings or media. Preparation covers the union of preview and selected
+cut moments. A thinking segment retained in the cut therefore keeps its measured
+recording and timing even while the Source preview hides thinking.

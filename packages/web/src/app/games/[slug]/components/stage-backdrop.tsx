@@ -45,3 +45,8 @@ export function StageBackdrop({ source, left = source, right = source, frame, pa
     })}
   </div>;
 }
+
+export function RoomBackdrop({source}: {source: string}) {
+  return <div aria-hidden="true" data-room-backdrop={source} className="pointer-events-none absolute inset-0 bg-cover bg-top"
+    style={{backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,.12), rgba(0,0,0,.42)), url("${source}")`}} />;
+}

@@ -1,0 +1,107 @@
+{
+  "publishedAt": "2026-10-25T15:31:01.917Z",
+  "added": [
+    {
+      "gameId": "ddfa4f77-ffd5-4191-85bb-4f4c67b97200",
+      "playerId": "2d842740-f28a-4eac-ad92-9c76f6a38157",
+      "publishedAt": "2026-10-25T15:31:01.917Z",
+      "head": {
+        "x": 0.427,
+        "y": 0.013,
+        "width": 0.14,
+        "height": 0.122
+      },
+      "assets": {
+        "body": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-no-crest/published-assets/full-body.png",
+          "sha256": "a85dff2140e482f56f0e10406726599e129642f0a9d69bc113674124fe44d04e"
+        },
+        "cutout": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-no-crest/published-assets/cutout.png",
+          "sha256": "94e162b88ae096a986b194e89e1491103749f4ea50028c702ac785bee3d28252"
+        },
+        "portrait": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-no-crest/published-assets/portrait.webp",
+          "sha256": "259d78af8fc0cf436c39bebd9925ed09b7d63169d6cee995780b5949954b8c1a"
+        }
+      }
+    },
+    {
+      "gameId": "9437c80e-b028-47f6-83ae-e4bb6b0d2fed",
+      "playerId": "8890a6fa-12e4-4775-98a9-4164a48a0b70",
+      "publishedAt": "2026-10-25T15:31:01.917Z",
+      "head": {
+        "x": 0.427,
+        "y": 0.013,
+        "width": 0.14,
+        "height": 0.122
+      },
+      "assets": {
+        "body": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-no-crest/published-assets/full-body.png",
+          "sha256": "a85dff2140e482f56f0e10406726599e129642f0a9d69bc113674124fe44d04e"
+        },
+        "cutout": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-no-crest/published-assets/cutout.png",
+          "sha256": "94e162b88ae096a986b194e89e1491103749f4ea50028c702ac785bee3d28252"
+        },
+        "portrait": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-no-crest/published-assets/portrait.webp",
+          "sha256": "259d78af8fc0cf436c39bebd9925ed09b7d63169d6cee995780b5949954b8c1a"
+        }
+      }
+    },
+    {
+      "gameId": "f1fe7318-72c6-46f4-bb98-e4a4bb54692e",
+      "playerId": "eb1d4a66-b0d0-4289-b154-3324fb0d3fce",
+      "publishedAt": "2026-10-25T15:31:01.917Z",
+      "head": {
+        "x": 0.427,
+        "y": 0.013,
+        "width": 0.14,
+        "height": 0.122
+      },
+      "assets": {
+        "body": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-no-crest/published-assets/full-body.png",
+          "sha256": "a85dff2140e482f56f0e10406726599e129642f0a9d69bc113674124fe44d04e"
+        },
+        "cutout": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-no-crest/published-assets/cutout.png",
+          "sha256": "94e162b88ae096a986b194e89e1491103749f4ea50028c702ac785bee3d28252"
+        },
+        "portrait": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-no-crest/published-assets/portrait.webp",
+          "sha256": "259d78af8fc0cf436c39bebd9925ed09b7d63169d6cee995780b5949954b8c1a"
+        }
+      }
+    },
+    {
+      "gameId": "7362d8ec-52e7-4f93-81e1-3b08c745d4ca",
+      "playerId": "8fb1667c-5f7f-4e73-b48e-b91183dfc306",
+      "publishedAt": "2026-10-25T15:31:01.917Z",
+      "head": {
+        "x": 0.427,
+        "y": 0.013,
+        "width": 0.14,
+        "height": 0.122
+      },
+      "assets": {
+        "body": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-no-crest/published-assets/full-body.png",
+          "sha256": "a85dff2140e482f56f0e10406726599e129642f0a9d69bc113674124fe44d04e"
+        },
+        "cutout": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-no-crest/published-assets/cutout.png",
+          "sha256": "94e162b88ae096a986b194e89e1491103749f4ea50028c702ac785bee3d28252"
+        },
+        "portrait": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-no-crest/published-assets/portrait.webp",
+          "sha256": "259d78af8fc0cf436c39bebd9925ed09b7d63169d6cee995780b5949954b8c1a"
+        }
+      }
+    }
+  ],
+  "originalsPreserved": true,
+  "profileChanged": false
+}

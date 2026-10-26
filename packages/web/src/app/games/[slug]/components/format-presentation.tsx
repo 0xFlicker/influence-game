@@ -24,6 +24,7 @@ export function FormatPresentation({
         empoweredId={cue.kind === "empowered_tally" ? cue.empoweredId : null}
         tiedPlayerIds={cue.kind === "empowered_tie" ? cue.tiedPlayerIds : []}
         resolutionMethod={cue.kind === "empowered_tally" ? cue.resolutionMethod : undefined}
+        countedVotes={cue.kind === "empowered_tally" ? cue.countedVotes : undefined}
         counts={cue.counts}
         receipts={cue.receipts}
         roster={roster}

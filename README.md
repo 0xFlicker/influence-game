@@ -168,7 +168,7 @@ Creation-time Speed-run/Live and phase timing presets have been removed. API sim
 
 ### House game visibility
 
-Influence and Werewolf share **Public** (listed; anyone can watch) and **Unlisted** (absent from public discovery; anyone with the link can watch). Public is the default. Both support anonymous casting/replay/media reads; joining and operator actions retain their existing permissions. API simulation launchers accept `--visibility public|unlisted` (or `INFLUENCE_API_SIM_VISIBILITY`). Completion preserves the selection. Unlisted pages use `noindex`; links can still be forwarded.
+Influence and Werewolf share **Public** (listed; anyone can watch) and **Unlisted** (absent from public discovery; anyone with the link can watch). Public is the default. Both support anonymous casting/replay/media reads; joining and operator actions retain their existing permissions. All API simulation launchers (`simulate:api`, `simulate:werewolf:api`, and `simulate:models`) default to public. Unlisted creation requires the explicit `--visibility unlisted` CLI flag; `INFLUENCE_API_SIM_VISIBILITY` no longer overrides this default. Completion preserves the selection. Unlisted pages use `noindex`; links can still be forwarded.
 
 Private game visibility has been removed. Hidden is a separate moderation control that blocks normal viewer routes and subsequent stream delivery. Audience/cursor/publication rules, raw evidence, owner learning and production permissions are unchanged. Retired or invalid stored visibility is rejected rather than silently made public. No operator database rows are automatically converted.
 
@@ -176,3 +176,21 @@ Private game visibility has been removed. Hidden is a separate moderation contro
 Influence Lobby, Mingle and private alliance huddles now use bounded open conversations (320 UTF-8 bytes per speech, 400 per participant). Two ordinary room rounds have one simultaneous movement checkpoint. Passes stay in private evidence and are skipped by playback; spoken huddles use the normal Show thinking toggle. Full-game evaluation uses `bun run simulate:api -- --players 6 --games 1 --model-catalog meta-muse:muse-spark-1.3-contributor --visibility unlisted` against localhost, with explicit spend authorization and the API-side evaluation ledger. See [local evaluation](docs/local-model-evaluation.md) and [observability](docs/reasoning-transcript-observability.md) for preserved provider evidence and participant-only recall. Keep direct House calls and exact types; no `as any`.
 
 New game decisions use exact native JSON Schema responses across OpenAI, Muse, and Katana. Local LM Studio support is best effort. Completed games remain readable in playback and Studio; sanitized inference evidence, thinking, reasoning, retries, and usage are retained. See [model evaluation](docs/local-model-evaluation.md).
+
+### Mixed-model games
+
+Characters can choose Default or a free model; admins/sysops can select experimental exact IDs. Game creation separates contestant and House routes with explicit fallback caps. See [model routing](docs/model-routing.md) for the policy and controls.
+
+An explicit preference falls back through the game default and then the remaining configured models, skipping duplicates. The default's shared recovery allowance is editable before start. Provider retry windows cool down the failed model while the next permitted model can run immediately; Luna stays Flex.
+
+Preview an eight-model roster without authentication, API requests, or generation:
+
+```sh
+bun run simulate:models --game werewolf --players 8 --models openai:gpt-6-luna,katana:glm-5-3-flash-private,katana:deepseek-v4-flash,meta-muse:muse-spark-1.3-contributor,openai:gpt-5-mini,katana:grok-4-6,katana:q-naifu-a3b,custom-openai-compatible:experimental --house-entry openai:gpt-6-luna --preview
+```
+
+Removing `--preview` starts a localhost API game and can incur charges. Paid runs require separate authorization.
+
+### Optional character-cutout backfill
+
+Use `bun run cutouts:backfill inventory --env local --scope example-models` to preview reusable agent images and frozen game references. Processing requires an explicit environment and bounded selection; production only queues AWS Batch work. See the [operator commands and rollout prerequisites](docs/deployment/character-cutouts.md).

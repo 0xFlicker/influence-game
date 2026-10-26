@@ -167,6 +167,17 @@ async function listToolDescriptors(
 }
 
 describe("ProductionGameMcpJsonRpcServer", () => {
+  test("model routing writes require separately consented routing scope and current producer role", () => {
+    const eligibility: GameMcpEligibilitySnapshot = {clientScopes: ["producer", "producer:routing"], hasProducerRole: true};
+    expect(resolveGameMcpToolAccess("read_game_model_routing", PRODUCER_AUTH, eligibility).invocationAllowed).toBe(true);
+    expect(resolveGameMcpToolAccess("set_game_model_routing", PRODUCER_AUTH, eligibility)).toMatchObject({catalogEligible: true, grantSatisfied: false, invocationAllowed: false});
+    const editorial = {...PRODUCER_AUTH, scopes: ["producer", "producer:edit"] as GameMcpAuthContext["scopes"]};
+    expect(resolveGameMcpToolAccess("set_game_model_routing", editorial, eligibility).invocationAllowed).toBe(false);
+    const routing = {...PRODUCER_AUTH, scope: "producer producer:routing", scopes: ["producer", "producer:routing"] as GameMcpAuthContext["scopes"]};
+    expect(resolveGameMcpToolAccess("set_game_model_routing", routing, eligibility).invocationAllowed).toBe(true);
+    expect(resolveGameMcpToolAccess("set_game_model_routing", routing, {...eligibility, hasProducerRole: false}).invocationAllowed).toBe(false);
+    expect(resolveGameMcpToolAccess("set_game_model_routing", routing, {...eligibility, clientScopes: ["producer"]}).invocationAllowed).toBe(false);
+  });
   test("keeps current grants separate from live catalog eligibility", () => {
     const auth = {
       ...GAMES_AUTH,
@@ -233,6 +244,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const fullEnvelopeNames = fullEnvelopeTools.map((tool) => tool.name);
 
     expect(fullEnvelopeNames).toEqual([
+      "read_model_catalog",
+      "set_agent_model",
       "list_archetypes",
       "list_agents",
       "get_agent",
@@ -646,7 +659,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
   test("returns non-mutating scoped challenges for every eligible agent mutation", async () => {
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
 
-    for (const name of ["generate_agent_visual_reference", "crop_agent_portrait", "create_agent", "update_agent", "join_queue", "leave_queue"]) {
+    for (const name of ["set_agent_model", "generate_agent_visual_reference", "crop_agent_portrait", "create_agent", "update_agent", "join_queue", "leave_queue"]) {
       const response = await server.handle({
         jsonrpc: "2.0",
         id: name,
@@ -805,7 +818,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       resource: GAMES_AUTH.resource,
       needsProducerRole: true,
     })).resolves.toEqual({
-      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "moderation:read", "moderation:write", "assets:manage"],
+      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:routing", "moderation:read", "moderation:write", "assets:manage"],
       hasProducerRole: false, hasModerationRole: false, hasRetrospectiveRecoveryAccess: false,
     });
     await expect(resolveEligibility({
@@ -823,7 +836,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       resource: GAMES_AUTH.resource,
       needsProducerRole: false,
     })).resolves.toEqual({
-      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "moderation:read", "moderation:write", "assets:manage"],
+      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:routing", "moderation:read", "moderation:write", "assets:manage"],
       hasProducerRole: false, hasModerationRole: false, hasRetrospectiveRecoveryAccess: false,
     });
     await expect(resolveEligibility({
@@ -854,6 +867,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(response?.error).toBeUndefined();
     const tools = ((response?.result as { tools: unknown[] }).tools);
     expect(tools.map((tool) => (tool as { name: string }).name)).toEqual([
+      "read_game_model_routing",
       "list_games",
       "read_game",
       "read_game_results",
@@ -878,6 +892,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "read_cognitive_artifact",
       "get_rules",
       "search_rules",
+      "read_production_moments",
+      "preview_production_cut",
       "read_producer_season_diagnostics",
       "read_producer_visual_production",
       "inspect_durable_run",
@@ -1323,6 +1339,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "read_owned_match_narrative",
       "get_rules",
       "search_rules",
+      "read_model_catalog",
+      "set_agent_model",
       "list_archetypes",
       "list_agents",
       "get_agent",
@@ -1428,10 +1446,11 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         : ["list_learning_review_inputs", "list_open_learning_reviews", "read_learning_review", "preflight_learning_review"]
             .includes(tool.name)
           ? ["agents:read", "games:read"]
-          : ["generate_agent_visual_reference", "crop_agent_portrait", "create_agent", "update_agent", "join_queue", "leave_queue"]
+          : ["set_agent_model", "generate_agent_visual_reference", "crop_agent_portrait", "create_agent", "update_agent", "join_queue", "leave_queue"]
           .includes(tool.name)
         ? ["agents:read", "agents:write"]
         : [
+              "read_model_catalog",
               "list_archetypes",
               "list_agents",
               "get_agent",

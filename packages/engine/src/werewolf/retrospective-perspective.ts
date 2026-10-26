@@ -71,8 +71,10 @@ export function assertWerewolfRetrospectivePerspective(value: unknown): asserts 
   }
 }
 
-/** Derived only from canonical events; motives and dialogue never become knowledge. */
-export function werewolfRetrospectivePerspective(events: readonly WerewolfEvent[], state: WerewolfState, actorId: string): WerewolfRetrospectivePerspective {
+/** Derived only from canonical events; motives and dialogue never become knowledge.
+ * Projection v1 is reserved for an exact historical frozen-definition match.
+ */
+export function werewolfRetrospectivePerspective(events: readonly WerewolfEvent[], state: WerewolfState, actorId: string, projectionVersion: 1 | 2 = 2): WerewolfRetrospectivePerspective {
   const player = (id: string): NamedPlayer => {
     const found = state.players.find(p => p.id === id);
     if (!found) throw new RetrospectiveContractError("Retrospective target is outside the roster");
@@ -93,7 +95,7 @@ export function werewolfRetrospectivePerspective(events: readonly WerewolfEvent[
     if (event.type === "werewolf.phase_started") day = event.payload.day;
     if (event.type === "werewolf.action_accepted" && event.payload.actorId === actorId) {
       const { decision, action, fallback } = event.payload;
-      if (decision.kind === "target" || decision.kind === "spoken_target") perspective.ownRecordedActions.push({
+      if (decision.kind === "target" || decision.kind === "spoken_target" || projectionVersion === 2 && decision.kind === "solo_target") perspective.ownRecordedActions.push({
         eventSequence: event.sequence, day, action, target: decision.targetId === null ? null : player(decision.targetId), unavailable: fallback !== null,
       });
     }

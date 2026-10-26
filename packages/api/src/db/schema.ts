@@ -459,6 +459,7 @@ export const agentProfiles = pgTable("agent_profiles", {
   name: text("name").notNull(),
   backstory: text("backstory"), // Rich character backstory
   personality: text("personality").notNull(), // Personality prompt / description
+  modelPreference: jsonb("model_preference").$type<import("@influence/engine").ModelPreference>().notNull().default("default"),
   strategyStyle: text("strategy_style"), // Influence strategy only
   werewolfStrategyStyle: text("werewolf_strategy_style"),
   personaKey: text("persona_key"), // Archetype key (honest, strategic, etc.)
@@ -629,6 +630,7 @@ export const gamePlayers = pgTable("game_players", {
   agentProfileId: text("agent_profile_id").references(() => agentProfiles.id),
   agentRevisionId: text("agent_revision_id").references(() => agentRevisions.id, { onDelete: "restrict" }),
   persona: text("persona").notNull(), // JSON: { name, personality, strategyHints }
+  modelPreference: jsonb("model_preference").$type<import("@influence/engine").ModelPreference>().notNull().default("default"),
   agentConfig: text("agent_config").notNull(), // JSON: { model, temperature, etc. }
   joinedAt: text("joined_at")
     .notNull()
@@ -686,6 +688,7 @@ export type TranscriptSafeContextV1 = {
   formalSpeechCorrelationKey?: string;
   anonymous?: boolean;
   presentationPurpose?: "farewell";
+  decisionSpeech?: import("@influence/engine").TranscriptDialogueContext["decisionSpeech"];
   acceptedBallot?: import("@influence/engine").TranscriptDialogueContext["acceptedBallot"];
   visualScene?: { id: string; roomId: import("@influence/engine/visual-mode").VisualRoomId };
   /**
@@ -1685,6 +1688,8 @@ export const gameEvidenceManifests = pgTable("game_evidence_manifests", {
     .references(() => games.id),
   ownerEpoch: text("owner_epoch")
     .notNull(),
+  authorityKind: text("authority_kind").$type<"game" | "episode_copy">().notNull().default("game"),
+  gameOwnerEpoch: text("game_owner_epoch").generatedAlwaysAs(sql`CASE WHEN authority_kind = 'game' THEN owner_epoch END`),
   eventSequence: integer("event_sequence"),
   decisionId: text("decision_id"),
   evidenceType: text("evidence_type").notNull(),
@@ -1702,6 +1707,7 @@ export const gameEvidenceManifests = pgTable("game_evidence_manifests", {
     .notNull()
     .default(sql`now()::text`),
 }, (table) => [
+  check("game_evidence_manifests_authority_kind_check", sql`${table.authorityKind} IN ('game', 'episode_copy')`),
   index("game_evidence_manifests_game_id_idx").on(table.gameId),
   index("game_evidence_manifests_event_sequence_idx").on(table.gameId, table.eventSequence),
   index("game_evidence_manifests_game_owner_decision_id_idx").on(
@@ -1711,12 +1717,12 @@ export const gameEvidenceManifests = pgTable("game_evidence_manifests", {
   ),
   foreignKey({
     name: "game_evidence_owner_epoch_fk",
-    columns: [table.ownerEpoch],
+    columns: [table.gameOwnerEpoch],
     foreignColumns: [gameRunOwners.ownerEpoch],
   }),
   foreignKey({
     name: "game_evidence_manifests_game_owner_fk",
-    columns: [table.gameId, table.ownerEpoch],
+    columns: [table.gameId, table.gameOwnerEpoch],
     foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
   }),
   foreignKey({
@@ -1777,12 +1783,14 @@ export type ProviderAttemptSpendProjectionState =
 export type ProviderHealthScopeKind = "provider" | "entry";
 export type ProviderHealthState = "closed" | "open" | "probing";
 export type ProviderHealthReason =
+  | "rate_limit"
   | "authentication"
   | "configuration"
   | "service_error"
   | "transport_timeout"
   | "transport_error";
 export type ProviderHealthEventKind =
+  | "cooldown_expired"
   | "failure_recorded"
   | "success_recorded"
   | "opened"
@@ -1793,6 +1801,7 @@ export type ProviderHealthEventKind =
 
 /** One stable semantic logical call. Its id is a deterministic coordinate hash. */
 export const providerLogicalCalls = pgTable("provider_logical_calls", {
+  preferredCatalogId: text("preferred_catalog_id"),
   id: text("id").primaryKey(),
   gameId: text("game_id")
     .notNull()
@@ -1815,6 +1824,7 @@ export const providerLogicalCalls = pgTable("provider_logical_calls", {
   acceptedCatalogId: text("accepted_catalog_id"),
   acceptedValue: payloadColumn("accepted_value_object", "json-gzip").$type<StoredPayload<unknown>>(),
   acceptedValueSha256: text("accepted_value_sha256"),
+  audioDelivery: payloadColumn("audio_delivery_object", "json-gzip").$type<StoredPayload<import("@influence/engine/audio-delivery").AcceptedAudioDelivery>>(),
   acceptedAt: text("accepted_at"),
   canonicalEventSequence: integer("canonical_event_sequence"),
   canonicalCommittedAt: text("canonical_committed_at"),
@@ -1824,7 +1834,8 @@ export const providerLogicalCalls = pgTable("provider_logical_calls", {
   createdAt: text("created_at").notNull().default(sql`now()::text`),
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 }, (table) => [
-  ...payloadChecks("provider_logical_calls", { acceptedValue: [table.acceptedValue, "json-gzip"] }),
+  ...payloadChecks("provider_logical_calls", { acceptedValue: [table.acceptedValue, "json-gzip"], audioDelivery: [table.audioDelivery, "json-gzip"] }),
+  check("provider_logical_calls_audio_delivery_accepted", sql`${table.audioDelivery} IS NULL OR ${table.acceptedAttemptId} IS NOT NULL`),
   uniqueIndex("provider_logical_calls_id_game_unique").on(table.id, table.gameId),
   index("provider_logical_calls_game_idx").on(table.gameId, table.createdAt),
   uniqueIndex("provider_logical_calls_turn_slot_unique")
@@ -1903,6 +1914,8 @@ export const providerCallAttempts = pgTable("provider_call_attempts", {
     .notNull()
     .references(() => games.id),
   ownerEpoch: text("owner_epoch").notNull(),
+  authorityKind: text("authority_kind").$type<"game" | "episode_copy">().notNull().default("game"),
+  gameOwnerEpoch: text("game_owner_epoch").generatedAlwaysAs(sql`CASE WHEN authority_kind = 'game' THEN owner_epoch END`),
   attemptOrdinal: integer("attempt_ordinal").notNull(),
   transportAttemptId: text("transport_attempt_id").notNull(),
   contextSourceHash: text("context_source_hash"),
@@ -1913,6 +1926,8 @@ export const providerCallAttempts = pgTable("provider_call_attempts", {
   transport: text("request_shape").notNull(),
   providerProfileId: text("provider_profile_id").notNull(),
   catalogId: text("catalog_id"),
+  fallbackBudgetKey: text("fallback_budget_key"),
+  rateCard: jsonb("rate_card").$type<import("@influence/engine").ModelRateCard>(),
   modelName: text("model_name").notNull(),
   startedAt: text("started_at").notNull(),
   indeterminateAt: text("indeterminate_at"),
@@ -1940,12 +1955,14 @@ export const providerCallAttempts = pgTable("provider_call_attempts", {
   createdAt: text("created_at").notNull().default(sql`now()::text`),
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 }, (table) => [
+  check("provider_call_attempts_authority_kind_check", sql`${table.authorityKind} IN ('game', 'episode_copy')`),
   uniqueIndex("provider_call_attempts_id_game_unique").on(table.id, table.gameId),
   uniqueIndex("provider_call_attempts_call_ordinal_unique")
     .on(table.logicalCallId, table.attemptOrdinal),
   uniqueIndex("provider_call_attempts_transport_id_unique")
     .on(table.transportAttemptId),
   index("provider_call_attempts_game_idx").on(table.gameId, table.createdAt),
+  index("provider_attempt_fallback_budget_idx").on(table.gameId, table.fallbackBudgetKey).where(sql`${table.fallbackBudgetKey} IS NOT NULL`),
   index("provider_call_attempts_game_catalog_idx")
     .on(table.gameId, table.catalogId),
   index("provider_call_attempts_projection_idx")
@@ -1959,7 +1976,7 @@ export const providerCallAttempts = pgTable("provider_call_attempts", {
   }),
   foreignKey({
     name: "provider_call_attempts_game_owner_fk",
-    columns: [table.gameId, table.ownerEpoch],
+    columns: [table.gameId, table.gameOwnerEpoch],
     foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
   }),
   check("provider_call_attempts_context_check", sql`(${table.contextSourceHash} IS NULL AND ${table.contextRevision} IS NULL) OR (${table.contextSourceHash} IS NOT NULL AND ${table.contextRevision} IS NOT NULL AND ${table.contextSourceHash} ~ '^sha256:[a-f0-9]{64}$' AND ${table.contextRevision} BETWEEN 0 AND 3)`),
@@ -2040,6 +2057,8 @@ export const providerAttemptEvidenceOutbox = pgTable("provider_attempt_evidence_
   logicalCallId: text("logical_call_id").notNull(),
   gameId: text("game_id").notNull(),
   ownerEpoch: text("owner_epoch").notNull(),
+  authorityKind: text("authority_kind").$type<"game" | "episode_copy">().notNull().default("game"),
+  gameOwnerEpoch: text("game_owner_epoch").generatedAlwaysAs(sql`CASE WHEN authority_kind = 'game' THEN owner_epoch END`),
   body: payloadColumn("body_object", "text-gzip").notNull().$type<StoredPayload<string>>(),
   bodySha256: text("body_sha256").notNull(),
   byteLength: integer("byte_length").notNull(),
@@ -2055,6 +2074,7 @@ export const providerAttemptEvidenceOutbox = pgTable("provider_attempt_evidence_
   createdAt: text("created_at").notNull().default(sql`now()::text`),
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 }, (table) => [
+  check("provider_attempt_evidence_outbox_authority_kind_check", sql`${table.authorityKind} IN ('game', 'episode_copy')`),
   ...payloadChecks("provider_attempt_evidence_outbox", { body: [table.body, "text-gzip"] }),
   index("provider_attempt_evidence_outbox_ready_idx")
     .on(table.nextReconciliationAt, table.claimExpiresAt, table.createdAt),
@@ -2070,7 +2090,7 @@ export const providerAttemptEvidenceOutbox = pgTable("provider_attempt_evidence_
   }),
   foreignKey({
     name: "provider_attempt_evidence_outbox_game_owner_fk",
-    columns: [table.gameId, table.ownerEpoch],
+    columns: [table.gameId, table.gameOwnerEpoch],
     foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
   }),
   check(
@@ -2118,7 +2138,7 @@ export const providerHealthStates = pgTable("provider_health_states", {
   index("provider_health_states_catalog_idx").on(table.catalogId, table.state),
   check("provider_health_states_scope_check", sql`${table.scopeKind} IN ('provider', 'entry')`),
   check("provider_health_states_state_check", sql`${table.state} IN ('closed', 'open', 'probing')`),
-  check("provider_health_states_reason_check", sql`${table.reason} IS NULL OR ${table.reason} IN ('authentication', 'configuration', 'service_error', 'transport_timeout', 'transport_error')`),
+  check("provider_health_states_reason_check", sql`${table.reason} IS NULL OR ${table.reason} IN ('authentication', 'configuration', 'service_error', 'transport_timeout', 'transport_error', 'rate_limit')`),
   check("provider_health_states_counts_check", sql`${table.revision} > 0 AND ${table.consecutiveFailureCount} >= 0`),
   check("provider_health_states_scope_shape_check", sql`
     (${table.scopeKind} = 'provider' AND ${table.catalogId} IS NULL)
@@ -2177,12 +2197,12 @@ export const providerHealthEvents = pgTable("provider_health_events", {
   createdAt: text("created_at").notNull().default(sql`now()::text`),
 }, (table) => [
   index("provider_health_events_scope_idx").on(table.scopeKey, table.createdAt),
-  check("provider_health_events_kind_check", sql`${table.eventKind} IN ('failure_recorded', 'success_recorded', 'opened', 'probe_started', 'probe_expired', 'probe_succeeded', 'probe_failed')`),
+  check("provider_health_events_kind_check", sql`${table.eventKind} IN ('failure_recorded', 'success_recorded', 'opened', 'probe_started', 'probe_expired', 'probe_succeeded', 'probe_failed', 'cooldown_expired')`),
   check("provider_health_events_state_check", sql`
     (${table.fromState} IS NULL OR ${table.fromState} IN ('closed', 'open', 'probing'))
     AND ${table.toState} IN ('closed', 'open', 'probing')
   `),
-  check("provider_health_events_reason_check", sql`${table.reason} IS NULL OR ${table.reason} IN ('authentication', 'configuration', 'service_error', 'transport_timeout', 'transport_error')`),
+  check("provider_health_events_reason_check", sql`${table.reason} IS NULL OR ${table.reason} IN ('authentication', 'configuration', 'service_error', 'transport_timeout', 'transport_error', 'rate_limit')`),
   check("provider_health_events_revision_check", sql`${table.revision} > 0`),
 ]);
 
@@ -3984,3 +4004,144 @@ export const houseCutJobs = pgTable("house_cut_jobs", {
   ...payloadChecks("house_cut_jobs", { source: [t.source, "json-gzip"], journal: [t.journal, "json-gzip"], publication: [t.publication, "json-gzip"] }),unique("house_cut_game_audience").on(t.gameId, t.audience),
   check("house_cut_audience", sql`${t.audience} IN ('public','mystery','omniscient')`),
   check("house_cut_status", sql`${t.status} IN ('queued','running','ready','failed')`)]);
+
+/** Optional immutable derivatives; never game execution authority. */
+export const characterCutouts = pgTable("character_cutouts", {
+  id: text("id").primaryKey(),
+  sourceHash: text("source_hash").notNull(),
+  recipe: text("recipe").notNull(),
+  source: payloadColumn("source_object", "binary").notNull().$type<StoredPayload<Buffer>>(),
+  image: payloadColumn("image_object", "binary").$type<StoredPayload<Buffer>>(),
+  width: integer("width").notNull(),
+  height: integer("height").notNull(),
+  status: text("status").$type<"pending" | "submitted" | "running" | "ready" | "failed">().notNull().default("pending"),
+  attempts: integer("attempts").notNull().default(0),
+  tokenHash: text("token_hash"),
+  leaseUntil: timestamp("lease_until", { withTimezone: true, mode: "date" }),
+  batchJobId: text("batch_job_id"),
+  error: text("error"),
+  readyAt: timestamp("ready_at", { withTimezone: true, mode: "date" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+}, table => [
+  uniqueIndex("character_cutouts_source_recipe").on(table.sourceHash, table.recipe),
+  index("character_cutouts_status").on(table.status, table.leaseUntil),
+  check("character_cutouts_state", sql`${table.status} IN ('pending','submitted','running','ready','failed') AND (${table.status} <> 'ready' OR ${table.image} IS NOT NULL)`),
+  ...payloadChecks("character_cutouts", { source: [table.source, "binary"], image: [table.image, "binary"] }),
+]);
+
+export const characterCutoutDemands = pgTable("character_cutout_demands", {
+  id: text("id").primaryKey(),
+  gameId: text("game_id").references(() => games.id, { onDelete: "cascade" }),
+  agentProfileId: text("agent_profile_id").references(() => agentProfiles.id, { onDelete: "cascade" }),
+  playerId: text("player_id").notNull(),
+  sourceKey: text("source_key").notNull(),
+  recipe: text("recipe").notNull(),
+  cutoutId: text("cutout_id").references(() => characterCutouts.id),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+}, table => [
+  uniqueIndex("character_cutout_demands_source").on(table.gameId, table.playerId, table.sourceKey, table.recipe),
+  uniqueIndex("character_cutout_demands_agent_source").on(table.agentProfileId, table.sourceKey, table.recipe),
+  check("character_cutout_demands_owner", sql`(${table.gameId} IS NULL) <> (${table.agentProfileId} IS NULL)`),
+]);
+
+/** Voice selection is a presentation preference, separate from character revisions. */
+export const agentVoices = pgTable("agent_voices", {
+  agentProfileId: text("agent_profile_id").primaryKey().references(() => agentProfiles.id, { onDelete: "cascade" }),
+  assignment: jsonb("assignment").notNull().$type<import("@influence/engine/voice-catalog").VoiceAssignment>(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const gameAudioTracks = pgTable("game_audio_tracks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
+  mode: text("mode").notNull().$type<"live" | "backfill">(),
+  status: text("status").notNull().default("queued").$type<"queued" | "running" | "failed" | "ready">(),
+  active: boolean("active").notNull().default(false),
+  predecessorId: uuid("predecessor_id").references(():AnyPgColumn => gameAudioTracks.id),
+  budgetUsd: doublePrecision("budget_usd").notNull(),
+  reservedCharacters: integer("reserved_characters").notNull().default(0),
+  voices: payloadColumn("voices_object", "json-gzip").notNull().$type<StoredPayload<Record<string, import("@influence/engine/voice-catalog").VoiceAssignment>>>(),
+  manifest: payloadColumn("manifest_object", "json-gzip").$type<StoredPayload<import("../services/audio-source.js").AudioSourceManifest>>(),
+  throughEventSequence: integer("through_event_sequence").notNull().default(0),
+  readyEventSequence: integer("ready_event_sequence").notNull().default(0),
+  leaseId: uuid("lease_id"),
+  leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+  error: text("error"),
+  createdById: text("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [
+  index("audio_tracks_game_idx").on(table.gameId),
+  uniqueIndex("audio_tracks_active_unique").on(table.gameId).where(sql`${table.active}`),
+  check("audio_tracks_budget",sql`${table.budgetUsd} >= 0 and ${table.budgetUsd} < 'Infinity'::float8`),
+  check("audio_tracks_characters",sql`${table.reservedCharacters} >= 0`),
+  check("audio_tracks_mode", sql`${table.mode} in ('live','backfill')`),
+  check("audio_tracks_status", sql`${table.status} in ('queued','running','failed','ready')`),
+  ...payloadChecks("game_audio_tracks", { voices: [table.voices, "json-gzip"], manifest: [table.manifest, "json-gzip"] }),
+]);
+
+/** Editorial retakes never replace canonical speeches or provider evidence. */
+export const productionRetrospectiveRetakes = pgTable("production_retrospective_retakes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  gameId: text("game_id").notNull().references(() => games.id, {onDelete: "cascade"}),
+  actorId: text("actor_id").notNull(),
+  sourceEventSequence: integer("source_event_sequence").notNull(),
+  sourceEventHash: text("source_event_hash").notNull(),
+  trackId: uuid("track_id").notNull().unique().references(() => gameAudioTracks.id, {onDelete: "cascade"}),
+  document: payloadColumn("document_object", "json-gzip").notNull().$type<StoredPayload<import("../services/retrospective-retakes.js").RetrospectiveRetakeDocument>>(),
+  publishedAt: timestamp("published_at", {withTimezone: true}),
+  createdAt: timestamp("created_at", {withTimezone: true}).notNull().defaultNow(),
+}, table => [
+  index("retrospective_retakes_source_idx").on(table.gameId, table.sourceEventSequence, table.publishedAt),
+  check("retrospective_retakes_source_check", sql`${table.sourceEventSequence} > 0 AND ${table.sourceEventHash} ~ '^sha256:[0-9a-f]{64}$'`),
+  ...payloadChecks("production_retrospective_retakes", {document: [table.document, "json-gzip"]}),
+]);
+
+export const gameAudioClips = pgTable("game_audio_clips", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  trackId: uuid("track_id").notNull().references(() => gameAudioTracks.id, { onDelete: "cascade" }),
+  momentId: text("moment_id").notNull(),
+  sourceHash: text("source_hash").notNull(),
+  recipeHash: text("recipe_hash").notNull(),
+  recipe: payloadColumn("recipe_object", "json-gzip").notNull().$type<StoredPayload<import("../services/audio-source.js").AudioClipRecipe>>(),
+  activeVersionId: uuid("active_version_id"),
+  attempts: integer("attempts").notNull().default(0),
+  status: text("status").notNull().default("pending").$type<"pending" | "generating" | "failed" | "ready">(),
+  error: text("error"),
+}, table => [
+  unique("audio_clips_moment_unique").on(table.trackId, table.momentId),
+  foreignKey({name:"audio_clip_active_version",columns:[table.id,table.activeVersionId],foreignColumns:[gameAudioVersions.clipId,gameAudioVersions.id]}),
+  check("audio_clips_status", sql`${table.status} in ('pending','generating','failed','ready')`),
+  ...payloadChecks("game_audio_clips", { recipe: [table.recipe, "json-gzip"] }),
+]);
+
+/** Append-only artifact versions; logical clip identity does not depend on content hashes. */
+export const gameAudioVersions = pgTable("game_audio_versions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clipId: uuid("clip_id").notNull().references(():AnyPgColumn => gameAudioClips.id, { onDelete: "cascade" }),
+  recipeHash: text("recipe_hash").notNull(),
+  audio: payloadColumn("audio_object", "binary").notNull().$type<StoredPayload<Buffer>>(),
+  durationMs: doublePrecision("duration_ms").notNull(),
+  contentType: text("content_type").notNull().default("audio/mpeg"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [
+  ...payloadChecks("game_audio_versions", { audio: [table.audio, "binary"] }),
+  unique("audio_versions_clip_id").on(table.clipId,table.id),
+  check("audio_versions_duration", sql`${table.durationMs} > 0 and ${table.durationMs} < 'Infinity'::float8`),
+]);
+
+export const gameAudioAttempts = pgTable("game_audio_attempts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clipId: uuid("clip_id").notNull().references(():AnyPgColumn => gameAudioClips.id, { onDelete: "cascade" }),
+  leaseId: uuid("lease_id").notNull(),
+  status: text("status").notNull().$type<"dispatched" | "failed" | "succeeded">(),
+  billableCharacters: integer("billable_characters").notNull(),
+  evidence: payloadColumn("evidence_object", "json-gzip").$type<StoredPayload<Record<string, unknown>>>(),
+  responseAudio:payloadColumn("response_audio_object","binary").$type<StoredPayload<Buffer>>(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [
+  ...payloadChecks("game_audio_attempts", { evidence: [table.evidence, "json-gzip"], responseAudio:[table.responseAudio,"binary"] }),
+  check("audio_attempts_characters",sql`${table.billableCharacters} >= 0`),
+  check("audio_attempts_status", sql`${table.status} in ('dispatched','failed','succeeded')`),
+]);

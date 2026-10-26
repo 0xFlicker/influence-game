@@ -78,7 +78,7 @@ describe("U2 product dialogue watermark at checkpoints", () => {
     });
     await insertCanonicalEventRows(db, gameId, ownerEpoch, events);
 
-    const firstProjection = [productEntry(1, "hello"), productEntry(2, "world")];
+    const firstProjection = [productEntry(1, "hello", { dialogueContext: { version: 1, decisionSpeech: { action: "format-pick", actorId: "atlas-id" } } }), productEntry(2, "world")];
     const midSequence = Math.min(3, events.length);
     const midEvents = events.slice(0, midSequence);
     const midCapsule = createCheckpointCapsule(midEvents, "phase_boundary");
@@ -114,12 +114,14 @@ describe("U2 product dialogue watermark at checkpoints", () => {
     expect(stateAfterFirst!.prefixDigest).toBe(computePrefixDigest(firstProjection));
 
     const rowsAfterFirst = await db.select({
+      safeContext: schema.transcripts.safeContext,
       entrySequence: schema.transcripts.entrySequence,
       text: schema.transcripts.text,
     }).from(schema.transcripts)
       .where(eq(schema.transcripts.gameId, gameId))
       .orderBy(asc(schema.transcripts.entrySequence));
     expect(rowsAfterFirst.map((r) => r.text)).toEqual(["hello", "world"]);
+    expect(rowsAfterFirst[0]!.safeContext?.decisionSpeech).toEqual({ action: "format-pick", actorId: "atlas-id" });
 
     // Later boundary with one new row — only sequence 3 inserts.
     const fullProjection = [...firstProjection, productEntry(3, "again")];

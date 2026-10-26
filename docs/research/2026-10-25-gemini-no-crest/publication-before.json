@@ -1,0 +1,205 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "gameId": "ddfa4f77-ffd5-4191-85bb-4f4c67b97200",
+      "playerId": "2d842740-f28a-4eac-ad92-9c76f6a38157",
+      "publishedAt": "2026-10-25T06:37:59.047Z",
+      "head": {
+        "x": 0.4248046875,
+        "y": 0.022786458333333332,
+        "width": 0.13671875,
+        "height": 0.17252604166666666
+      },
+      "assets": {
+        "body": {
+          "path": "/Users/user/Documents/Codex/2026-10-24/task/evidence/gemini-male-assets/full-body.png",
+          "sha256": "e31496f84a6ab87e757b22cd80dcbe419db61bfe4ea7902539a31aeb9258bb87"
+        },
+        "cutout": {
+          "path": "/Users/user/Documents/Codex/2026-10-24/task/evidence/gemini-male-assets/cutout.png",
+          "sha256": "6b24805e34740d8b6677edc473b1c0c20a8ee41a682759b168a82c8aaf11c5d1"
+        },
+        "portrait": {
+          "path": "/Users/user/Documents/Codex/2026-10-24/task/evidence/gemini-male-assets/portrait.webp",
+          "sha256": "d247a5ddd4f834198287d4cca3844e0814155e55f7483208c8e5bddacec6b46e"
+        }
+      }
+    },
+    {
+      "gameId": "9437c80e-b028-47f6-83ae-e4bb6b0d2fed",
+      "playerId": "8890a6fa-12e4-4775-98a9-4164a48a0b70",
+      "publishedAt": "2026-10-25T06:37:59.047Z",
+      "head": {
+        "x": 0.4248046875,
+        "y": 0.022786458333333332,
+        "width": 0.13671875,
+        "height": 0.17252604166666666
+      },
+      "assets": {
+        "body": {
+          "path": "/Users/user/Documents/Codex/2026-10-24/task/evidence/gemini-male-assets/full-body.png",
+          "sha256": "e31496f84a6ab87e757b22cd80dcbe419db61bfe4ea7902539a31aeb9258bb87"
+        },
+        "cutout": {
+          "path": "/Users/user/Documents/Codex/2026-10-24/task/evidence/gemini-male-assets/cutout.png",
+          "sha256": "6b24805e34740d8b6677edc473b1c0c20a8ee41a682759b168a82c8aaf11c5d1"
+        },
+        "portrait": {
+          "path": "/Users/user/Documents/Codex/2026-10-24/task/evidence/gemini-male-assets/portrait.webp",
+          "sha256": "d247a5ddd4f834198287d4cca3844e0814155e55f7483208c8e5bddacec6b46e"
+        }
+      }
+    },
+    {
+      "gameId": "f1fe7318-72c6-46f4-bb98-e4a4bb54692e",
+      "playerId": "eb1d4a66-b0d0-4289-b154-3324fb0d3fce",
+      "publishedAt": "2026-10-25T06:55:27.987Z",
+      "head": {
+        "x": 0.4248046875,
+        "y": 0.022786458333333332,
+        "width": 0.13671875,
+        "height": 0.17252604166666666
+      },
+      "assets": {
+        "body": {
+          "path": "/Users/user/Documents/Codex/2026-10-24/task/evidence/gemini-male-assets/full-body.png",
+          "sha256": "e31496f84a6ab87e757b22cd80dcbe419db61bfe4ea7902539a31aeb9258bb87"
+        },
+        "cutout": {
+          "path": "/Users/user/Documents/Codex/2026-10-24/task/evidence/gemini-male-assets/cutout.png",
+          "sha256": "6b24805e34740d8b6677edc473b1c0c20a8ee41a682759b168a82c8aaf11c5d1"
+        },
+        "portrait": {
+          "path": "/Users/user/Documents/Codex/2026-10-24/task/evidence/gemini-male-assets/portrait.webp",
+          "sha256": "d247a5ddd4f834198287d4cca3844e0814155e55f7483208c8e5bddacec6b46e"
+        }
+      }
+    },
+    {
+      "gameId": "7362d8ec-52e7-4f93-81e1-3b08c745d4ca",
+      "playerId": "8fb1667c-5f7f-4e73-b48e-b91183dfc306",
+      "publishedAt": "2026-10-25T06:55:27.988Z",
+      "head": {
+        "x": 0.4248046875,
+        "y": 0.022786458333333332,
+        "width": 0.13671875,
+        "height": 0.17252604166666666
+      },
+      "assets": {
+        "body": {
+          "path": "/Users/user/Documents/Codex/2026-10-24/task/evidence/gemini-male-assets/full-body.png",
+          "sha256": "e31496f84a6ab87e757b22cd80dcbe419db61bfe4ea7902539a31aeb9258bb87"
+        },
+        "cutout": {
+          "path": "/Users/user/Documents/Codex/2026-10-24/task/evidence/gemini-male-assets/cutout.png",
+          "sha256": "6b24805e34740d8b6677edc473b1c0c20a8ee41a682759b168a82c8aaf11c5d1"
+        },
+        "portrait": {
+          "path": "/Users/user/Documents/Codex/2026-10-24/task/evidence/gemini-male-assets/portrait.webp",
+          "sha256": "d247a5ddd4f834198287d4cca3844e0814155e55f7483208c8e5bddacec6b46e"
+        }
+      }
+    },
+    {
+      "gameId": "ddfa4f77-ffd5-4191-85bb-4f4c67b97200",
+      "playerId": "2d842740-f28a-4eac-ad92-9c76f6a38157",
+      "publishedAt": "2026-10-25T15:12:29.242Z",
+      "head": {
+        "x": 0.4248046875,
+        "y": 0.022786458333333332,
+        "width": 0.13671875,
+        "height": 0.17252604166666666
+      },
+      "assets": {
+        "body": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/full-body.png",
+          "sha256": "9ffead37c34a535630ad3eea07c249a51a9d6199996b77155ee5ae3cc82d055f"
+        },
+        "cutout": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/cutout.png",
+          "sha256": "f482398b8cd4881fda68e7ddafc9b56a652a7fc1109fcf16e8d87fcc5d059d8d"
+        },
+        "portrait": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/portrait.webp",
+          "sha256": "2ca87a89396453e1ebd92e57762fd3cdd00af416df4a70f958728d0c629271f8"
+        }
+      }
+    },
+    {
+      "gameId": "9437c80e-b028-47f6-83ae-e4bb6b0d2fed",
+      "playerId": "8890a6fa-12e4-4775-98a9-4164a48a0b70",
+      "publishedAt": "2026-10-25T15:12:29.242Z",
+      "head": {
+        "x": 0.4248046875,
+        "y": 0.022786458333333332,
+        "width": 0.13671875,
+        "height": 0.17252604166666666
+      },
+      "assets": {
+        "body": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/full-body.png",
+          "sha256": "9ffead37c34a535630ad3eea07c249a51a9d6199996b77155ee5ae3cc82d055f"
+        },
+        "cutout": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/cutout.png",
+          "sha256": "f482398b8cd4881fda68e7ddafc9b56a652a7fc1109fcf16e8d87fcc5d059d8d"
+        },
+        "portrait": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/portrait.webp",
+          "sha256": "2ca87a89396453e1ebd92e57762fd3cdd00af416df4a70f958728d0c629271f8"
+        }
+      }
+    },
+    {
+      "gameId": "f1fe7318-72c6-46f4-bb98-e4a4bb54692e",
+      "playerId": "eb1d4a66-b0d0-4289-b154-3324fb0d3fce",
+      "publishedAt": "2026-10-25T15:12:29.242Z",
+      "head": {
+        "x": 0.4248046875,
+        "y": 0.022786458333333332,
+        "width": 0.13671875,
+        "height": 0.17252604166666666
+      },
+      "assets": {
+        "body": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/full-body.png",
+          "sha256": "9ffead37c34a535630ad3eea07c249a51a9d6199996b77155ee5ae3cc82d055f"
+        },
+        "cutout": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/cutout.png",
+          "sha256": "f482398b8cd4881fda68e7ddafc9b56a652a7fc1109fcf16e8d87fcc5d059d8d"
+        },
+        "portrait": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/portrait.webp",
+          "sha256": "2ca87a89396453e1ebd92e57762fd3cdd00af416df4a70f958728d0c629271f8"
+        }
+      }
+    },
+    {
+      "gameId": "7362d8ec-52e7-4f93-81e1-3b08c745d4ca",
+      "playerId": "8fb1667c-5f7f-4e73-b48e-b91183dfc306",
+      "publishedAt": "2026-10-25T15:12:29.242Z",
+      "head": {
+        "x": 0.4248046875,
+        "y": 0.022786458333333332,
+        "width": 0.13671875,
+        "height": 0.17252604166666666
+      },
+      "assets": {
+        "body": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/full-body.png",
+          "sha256": "9ffead37c34a535630ad3eea07c249a51a9d6199996b77155ee5ae3cc82d055f"
+        },
+        "cutout": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/cutout.png",
+          "sha256": "f482398b8cd4881fda68e7ddafc9b56a652a7fc1109fcf16e8d87fcc5d059d8d"
+        },
+        "portrait": {
+          "path": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-android/published-assets/portrait.webp",
+          "sha256": "2ca87a89396453e1ebd92e57762fd3cdd00af416df4a70f958728d0c629271f8"
+        }
+      }
+    }
+  ]
+}

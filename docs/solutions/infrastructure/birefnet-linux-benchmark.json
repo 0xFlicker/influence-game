@@ -1,0 +1,73 @@
+{
+  "recipe": "birefnet-general-58f621f0-rembg2.0.86-r1",
+  "load_seconds": 2.614143583999976,
+  "cpu_max": "200000 100000",
+  "memory_max": "17179869184",
+  "images": [
+    {
+      "name": "claude-haiku",
+      "seconds": 20.735321177000003,
+      "source_sha256": "a8a4300965dd3019d6ffeba4562f477d8be338b2e2298e0485f52306dcd77668",
+      "output_sha256": "5bd2917bc85bc3af9150555f572838292841cefecb82b0282a3c5010e05799a1",
+      "bytes": 1192063
+    },
+    {
+      "name": "claude-sonnet",
+      "seconds": 23.044907886000033,
+      "source_sha256": "a70e537b396d99c94781d8da0e03e4f74c16eb282a4418d528a6d754d2f9a2d5",
+      "output_sha256": "16aafbaa7ef2a8fe383b17dafadf6d0480f1e29b1e6342916f910b1f7000b280",
+      "bytes": 1072674
+    },
+    {
+      "name": "deepseek-flash",
+      "seconds": 21.72130130200003,
+      "source_sha256": "bcc9766734f5e87692cbc679063d8e9ae4eddbb8879c5a721dc4a1e4a6907304",
+      "output_sha256": "e39d451cee89e5e0e497efbaafbca183b27267763711705aaa390aa18506776f",
+      "bytes": 796932
+    },
+    {
+      "name": "gemini-pro",
+      "seconds": 18.333453467000027,
+      "source_sha256": "c367cbbfb4f39886e33f411591f4b164714988793d29fd43152d9a87455e2025",
+      "output_sha256": "ff2635159c574e0d46e22e90ae10ed9e140ab8ac478ae6bb0a6d4772a5e75d2d",
+      "bytes": 717571
+    },
+    {
+      "name": "gpt-luna",
+      "seconds": 18.771595133000062,
+      "source_sha256": "9b009326165829b099aad5e4629ed40ec475d8b8b9bfcd3ba2aaa55bbe08bd0f",
+      "output_sha256": "c48cff69a4882fb09f83d250f4888f3e41cd1b3d9f4d0c7cc1b86f5f4cb3502e",
+      "bytes": 709951
+    },
+    {
+      "name": "gpt-sol",
+      "seconds": 20.024008633999983,
+      "source_sha256": "c01cfaa3ade5a4ded027509a88498d0cac5c3211a291eb8a17297fc600358fba",
+      "output_sha256": "c51fe1d31e24f24ebe8d2f7342cd1b42eb13357832d93905c6106f6e02c8f0b3",
+      "bytes": 959064
+    },
+    {
+      "name": "grok-4-6",
+      "seconds": 20.83717901,
+      "source_sha256": "abee908cc90905fc8aefc9d626594ccd28ee01db420a20b90bbbcf087c814f47",
+      "output_sha256": "56012c2511bca3b748a579273bc925943a4d1956ac9d6058a729823f7aa980fb",
+      "bytes": 692378
+    },
+    {
+      "name": "kimi-k3",
+      "seconds": 22.710440718999962,
+      "source_sha256": "43dd33bd5500b50911e1129ceda3ec25a7a5655e964c08a3013afb7814d06c0a",
+      "output_sha256": "b743c9b9c25e4de4c10e14721c1b60ff85bbf13415efc0f20d80b82435d83529",
+      "bytes": 798046
+    },
+    {
+      "name": "meta-spark",
+      "seconds": 19.659856800000057,
+      "source_sha256": "95ff3a17bea94d7dbb4906d0b2938a8d9750b425fdd28e5d3fa0fe46792de050",
+      "output_sha256": "504be6d949f1c24df9b15669f989ae86847970958a1744d7508e94d357a62c94",
+      "bytes": 689839
+    }
+  ],
+  "peak_rss_bytes": 14730784768,
+  "cgroup_peak_bytes": 14642794496
+}

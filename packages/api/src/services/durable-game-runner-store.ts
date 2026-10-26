@@ -57,6 +57,7 @@ export function createDurableGameRunnerStore(
   db: DrizzleDB,
   authority: { gameId: string; ownerEpoch: string },
   options: {
+    requiredAfterCommit?: () => Promise<void>;
     onCommitted?: (result: GameTurnCommitResultV1) => Promise<void> | void;
     logger?: Pick<Console, "warn">;
   } = {},
@@ -218,6 +219,7 @@ export function createDurableGameRunnerStore(
       };
       assertResultMatchesSnapshot(result, snapshot);
       cachedSnapshot = structuredClone(snapshot);
+      await options.requiredAfterCommit?.();
       if (options.onCommitted) {
         try {
           await options.onCommitted(structuredClone(result));

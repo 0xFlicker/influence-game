@@ -57,6 +57,10 @@ async function click(page: Page, label: string, scope = "") {
   await page.evaluate(`${button}.click()`);
 }
 const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
+    if ("solo" in request && request.solo)
+      return { kind: "solo_target", targetId: request.legalTargetIds[0]!, text: `My ${request.action} choice tonight.`, cue: null };
+    if (request.action === "speaking_priority")
+      return { kind: "speaking_priority", priority: 50 };
     if (request.action === "conversation")
       return { kind: "conversation", text: "Let's discuss the night.", cue: null, recipientId: null, replyToContributionId: null };
     if (request.action === "pack_propose" || request.action === "public_vote")

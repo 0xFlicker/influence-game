@@ -1,3 +1,5 @@
+import {freezeLiveVoices} from "./audio-voices.js";
+import { sealRosterModelRouting, GameModelRoutingError } from "./game-model-routing.js";
 import { queueEpisodeCopy } from "./episode-presentation.js";
 import { releaseWerewolfOwner } from "./werewolf-games.js";
 import { and, eq, sql } from "drizzle-orm";
@@ -680,9 +682,16 @@ async function transitionWaitingGameToInProgress(
         gameId,
         frozenAt: now.toISOString(),
       });
+      const seats = await tx.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, gameId));
+      const sealedConfig = await sealRosterModelRouting(tx, JSON.parse(game.config), seats);
+      for (const seat of seats) {
+        const { model: _oldModel, ...settings } = JSON.parse(seat.agentConfig);
+        await tx.update(schema.gamePlayers).set({ agentConfig: JSON.stringify(settings) }).where(eq(schema.gamePlayers.id, seat.id));
+      }
       const updated = await tx.update(schema.games)
         .set({
           status: "in_progress",
+          config: JSON.stringify(sealedConfig),
           startedAt: now.toISOString(),
         })
         .where(and(eq(schema.games.id, gameId), eq(schema.games.status, "waiting")))
@@ -693,6 +702,7 @@ async function transitionWaitingGameToInProgress(
         "invalid_state",
       );
 
+      if (JSON.parse(game.config).audioMode === true) await freezeLiveVoices(tx,gameId);
       await queueEpisodeCopy(tx, gameId);
 
       if (options.owner) {
@@ -710,6 +720,7 @@ async function transitionWaitingGameToInProgress(
     });
     return claim;
   } catch (error) {
+    if (error instanceof GameModelRoutingError) return { ok: false, error: error.message, statusCode: 400, code: "rated_roster_invalid", retryable: false };
     const freezeError = toRosterFreezeError(error);
     if (error instanceof GameOwnerTransitionError) {
       return {
@@ -984,7 +995,7 @@ export async function markOwnerStartupFailed(
 ): Promise<OwnerStartupFailureResult> {
   const now = new Date().toISOString();
   await db.transaction(async (tx) => {
-    const game = (await tx.select({ status: schema.games.status }).from(schema.games)
+    const game = (await tx.select({ status: schema.games.status, config: schema.games.config }).from(schema.games)
       .where(eq(schema.games.id, gameId)).for("update"))[0];
     if (!game || game.status !== "in_progress") {
       throw new GameOwnerTransitionError(
@@ -1047,8 +1058,15 @@ export async function markOwnerStartupFailed(
       );
     }
 
+    const config = JSON.parse(game.config) as Record<string, unknown>;
+    if (config.modelRouting) {
+      const routing = { ...(config.modelRouting as Record<string, unknown>) };
+      delete routing.contestants;
+      delete routing.frozenRoutes;
+      config.modelRouting = routing;
+    }
     const returned = await tx.update(schema.games)
-      .set({ status: "waiting", startedAt: null })
+      .set({ status: "waiting", startedAt: null, config: JSON.stringify(config) })
       .where(and(eq(schema.games.id, gameId), eq(schema.games.status, "in_progress")))
       .returning({ id: schema.games.id });
     if (returned.length !== 1) {

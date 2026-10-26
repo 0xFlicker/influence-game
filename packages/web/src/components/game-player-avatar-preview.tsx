@@ -3,15 +3,17 @@
 import type { AgentAvatarSize } from "./agent-avatar";
 import { AgentAvatar } from "./agent-avatar";
 import { AgentAvatarPreview } from "./agent-avatar-preview";
+import { AgentModelLabel } from "./agent-model-label";
 import type { GamePlayer, PersonaKey } from "@/lib/api";
 import { PERSONAS, getPersonaLabel } from "@/lib/personas";
 
 export type GamePlayerAvatarSource = Pick<
   GamePlayer,
-  "name" | "persona" | "personaKey" | "avatarUrl" | "currentAgent"
+  "name" | "persona" | "personaKey" | "avatarUrl" | "currentAgent" | "modelPreference"
 >;
 
 export interface GamePlayerAvatarPreviewModel {
+  modelPreference?: GamePlayer["modelPreference"];
   name: string;
   persona: string;
   personaKey: PersonaKey | null;
@@ -31,6 +33,7 @@ export function getGamePlayerAvatarPreviewModel(
 
   return {
     name: player.name,
+    ...(player.modelPreference && { modelPreference: player.modelPreference }),
     persona: player.persona,
     personaKey,
     role: personaKey
@@ -107,6 +110,7 @@ export function GamePlayerAvatarPreviewContent({
           {model.name}
         </p>
         <p className="influence-copy-muted mt-0.5 text-xs">{model.role}</p>
+        <AgentModelLabel preference={model.modelPreference} className="mt-1 block text-xs text-text-secondary break-words" />
       </div>
       <p className="influence-copy-muted mt-3 border-t border-white/10 pt-3 text-[10px] font-semibold uppercase tracking-wide">
         Current record

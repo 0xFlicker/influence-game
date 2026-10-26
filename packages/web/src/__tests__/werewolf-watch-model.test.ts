@@ -73,7 +73,7 @@ test("a completed retrospective ends by showing the result again instead of its 
   expect(werewolfCues([{...window, ...unfinished}]).at(-1)?.reprise).toBeUndefined();
 });
 function silent(cursor: number): WerewolfWatchMoment {
-  return {...template, cursor, entry: {kind: "phase", day: 1, phase: "day"}};
+  return {...template, cursor, entry: {kind: "conversation", day: 1, id: cursor, actorId: "p0", text: null, cue: null, recipientId: null, replyToContributionId: null, unavailable: false, remainingBytes: 2000}};
 }
 test("silent consumption crosses loaded boundaries but never skips a missing window or speech", () => {
   const first = {moments: Array.from({length: 32}, (_, index) => silent(index + 1))};

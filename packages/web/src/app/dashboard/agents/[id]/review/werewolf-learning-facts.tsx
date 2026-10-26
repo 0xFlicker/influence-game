@@ -85,6 +85,6 @@ export function WerewolfLearningFacts({ facts }: { facts: WerewolfFacts }) {
 }
 
 function actionLabel(action: Action["action"]): string {
-  const labels: Record<Action["action"], string> = { introduce: "Introduction", pack_talk: "Pack discussion", attack: "Night target", protect: "Doctor protection", investigate: "Seer investigation", open_thread: "Opened a thread", discuss: "Discussion", vote: "Day vote", conversation: "Open conversation", public_vote: "Public vote", pack_propose: "Pack proposal" };
+  const labels: Record<Action["action"], string> = { speaking_priority: "Speaking priority", introduce: "Introduction", pack_talk: "Pack discussion", attack: "Night target", protect: "Doctor protection", investigate: "Seer investigation", open_thread: "Opened a thread", discuss: "Discussion", vote: "Day vote", conversation: "Open conversation", public_vote: "Public vote", pack_propose: "Pack proposal" };
   return labels[action];
 }

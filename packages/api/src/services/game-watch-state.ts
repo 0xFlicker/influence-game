@@ -1,3 +1,4 @@
+import { audioReadySequence } from "./audio-frontier.js";
 import {
   applyCanonicalEvent,
   buildPostVotePressureProjection,
@@ -13,6 +14,8 @@ import {
   type ViewerDecisionEvent,
 } from "@influence/engine";
 import { asc, eq, or } from "drizzle-orm";
+import type { ModelPreference } from "@influence/engine/game-model-routing";
+import { gamePlayerModelPreference } from "./game-player-model-preference.js";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import type { GameStatus } from "../db/schema.js";
@@ -84,6 +87,7 @@ export interface GameWatchProjectionState {
 }
 
 export interface GameWatchPlayer {
+  modelPreference?: ModelPreference;
   id: string;
   name: string;
   persona: string;
@@ -177,6 +181,7 @@ interface GameRow {
 }
 
 interface PlayerIdentity {
+  modelPreference?: ModelPreference;
   id: string;
   name: string;
   persona: string;
@@ -228,11 +233,17 @@ export async function buildGameWatchState(
   game: GameRow,
 ): Promise<GameWatchState> {
   const shouldLoadResult = game.status === "completed" || game.status === "cancelled";
-  const [players, result, persistedEvents] = await Promise.all([
-    loadPlayerIdentities(db, game.id),
+  let [players, result, persistedEvents] = await Promise.all([
+    loadPlayerIdentities(db, game.id, parseConfig(game.config)),
     shouldLoadResult ? loadTerminalResult(db, game.id) : Promise.resolve(null),
     getPersistedGameEvents(db, game.id),
   ]);
+  const audioReady = await audioReadySequence(db, game.id);
+  if (audioReady !== null && persistedEvents.events.some(event => event.sequence > audioReady)) {
+    const events = persistedEvents.events.filter(event => event.sequence <= audioReady);
+    persistedEvents = {...persistedEvents, events, eventCount:events.length, persistedHead:events.at(-1)};
+    result = null; game = {...game,status:game.status === "completed" ? "in_progress" : game.status};
+  }
   const config = parseConfig(game.config);
   const maxRounds = numberFromConfig(config.maxRounds, 10);
   const kernel = resolveGameKernel({
@@ -310,6 +321,7 @@ export async function getGameWatchReplayFrames(
   db: GameWatchDB,
   idOrSlug: string,
   options: GameWatchReplayFrameOptions = {},
+  acceptedLivePrefix = false,
 ): Promise<GameWatchReplayFrame[] | null> {
   const afterSequence = options.afterSequence ?? 0;
   if (options.limit !== undefined && (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 256)) throw new Error("limit must be an integer from 1 to 256");
@@ -330,9 +342,11 @@ export async function getGameWatchReplayFrames(
   if (!game) return null;
 
   const [players, persistedEvents] = await Promise.all([
-    loadPlayerIdentities(db, game.id),
+    loadPlayerIdentities(db, game.id, parseConfig(game.config)),
     getPersistedGameEvents(db, game.id),
   ]);
+  const audioReady = acceptedLivePrefix ? null : await audioReadySequence(db,game.id);
+  if (audioReady !== null) persistedEvents.events = persistedEvents.events.filter(event => event.sequence <= audioReady);
   if (persistedEvents.events.length === 0) return [];
 
   const frames: GameWatchReplayFrame[] = [];
@@ -381,6 +395,7 @@ export async function getGameWatchReplayFrames(
 async function loadPlayerIdentities(
   db: GameWatchDB,
   gameId: string,
+  config: Record<string, unknown>,
 ): Promise<PlayerIdentity[]> {
   const rows = await db
     .select({
@@ -388,6 +403,7 @@ async function loadPlayerIdentities(
       persona: schema.gamePlayers.persona,
       joinedAt: schema.gamePlayers.joinedAt,
       agentProfileId: schema.gamePlayers.agentProfileId,
+      modelPreference: schema.gamePlayers.modelPreference,
     })
     .from(schema.gamePlayers)
     .where(eq(schema.gamePlayers.gameId, gameId))
@@ -412,6 +428,7 @@ async function loadPlayerIdentities(
     return {
       id: row.id,
       name: personaName ?? "Unknown",
+      ...gamePlayerModelPreference(config, row.id, row.modelPreference),
       persona: personaDescription ?? "Unknown",
       ...(personaKey && { personaKey }),
       ...(avatarUrl && { avatarUrl }),
@@ -801,6 +818,7 @@ function buildProjectedPlayers(
         ...(pressure?.exposeScore !== undefined && { exposeScore: pressure.exposeScore }),
         ...(identity?.avatarUrl && { avatarUrl: identity.avatarUrl }),
         currentAgent: identity?.currentAgent ?? null,
+        ...(identity?.modelPreference && { modelPreference: identity.modelPreference }),
       };
     }),
     ...identities
@@ -814,6 +832,7 @@ function buildProjectedPlayers(
         shielded: false,
         ...(identity.avatarUrl && { avatarUrl: identity.avatarUrl }),
         currentAgent: identity.currentAgent,
+        ...(identity.modelPreference && { modelPreference: identity.modelPreference }),
       })),
   ];
 }
@@ -840,6 +859,7 @@ function buildFallbackPlayers(
       shielded: false,
       ...(identity.avatarUrl && { avatarUrl: identity.avatarUrl }),
       currentAgent: identity.currentAgent,
+      ...(identity.modelPreference && { modelPreference: identity.modelPreference }),
     };
   });
 }

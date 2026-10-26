@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "published": false,
+  "sourceInputs": {
+    "source": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-no-crest/full-body-source.png",
+    "cutout": "/Users/user/Development/influence-game/docs/research/2026-10-25-gemini-no-crest/cutout-output/gemini.png"
+  },
+  "headPosition": {
+    "sourceUrl": "full-body.png",
+    "sourceHash": "a85dff2140e482f56f0e10406726599e129642f0a9d69bc113674124fe44d04e",
+    "sourceWidth": 1024,
+    "sourceHeight": 1536,
+    "rect": {
+      "x": 0.427,
+      "y": 0.013,
+      "width": 0.14,
+      "height": 0.122
+    }
+  },
+  "portraitCrop": {
+    "sourceUrl": "full-body.png",
+    "x": 0.35975,
+    "y": 0.0008000000000000044,
+    "width": 0.27449999999999997,
+    "height": 0.18299999999999997
+  },
+  "portraitPixels": {
+    "left": 368,
+    "top": 1,
+    "width": 281,
+    "height": 281
+  },
+  "assets": {
+    "full-body.png": {
+      "sha256": "a85dff2140e482f56f0e10406726599e129642f0a9d69bc113674124fe44d04e",
+      "byteLength": 1296435
+    },
+    "cutout.png": {
+      "sha256": "94e162b88ae096a986b194e89e1491103749f4ea50028c702ac785bee3d28252",
+      "byteLength": 997268
+    },
+    "portrait.webp": {
+      "sha256": "259d78af8fc0cf436c39bebd9925ed09b7d63169d6cee995780b5949954b8c1a",
+      "byteLength": 30370
+    },
+    "portrait-circle.png": {
+      "sha256": "d59de4a570d9179cb535bf2111951d8b91f5aca3d12652b96d94dbac5a346bee",
+      "byteLength": 270151
+    }
+  },
+  "publicationNote": "Upload under new immutable keys. Replace sourceUrl with the uploaded full-body URL in both coordinate records; let the submission service assign confirmation. Keep existing game-start references unchanged."
+}

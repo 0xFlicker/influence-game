@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
-  estimateCostForKnownModel,
+  estimateCostForKnownModel, modelRateCard, estimateRouteCost, type ModelRateCard,
   estimateTierAwareOpenAICost,
   type PrivateDecisionTrace,
   type ProviderAttemptAccountingFacts,
@@ -43,10 +43,11 @@ export interface RecordProviderSpendResult {
 }
 
 export interface RecordProviderSpendForAttemptInput {
+  rateCard?: ModelRateCard | null;
   id: string;
   logicalCallId: string;
   gameId: string;
-  ownerEpoch: string;
+  ownerEpoch: string | null;
   attemptOrdinal: number;
   actorId?: string | null;
   actorName: string;
@@ -801,9 +802,10 @@ export async function recordProviderSpendForAttempt(
   const hasReportedUsage = Object.values(usage).some(
     (value) => value !== undefined,
   );
+  const card = input.rateCard === undefined ? modelRateCard(input.catalogId ?? `${input.providerProfileId}:${input.modelName}`, input.accounting?.effectiveServiceTier) : input.rateCard;
   const actualCostMicrousd = input.accounting?.actualCostMicrousd;
   const estimatedCostMicrousd = actualCostMicrousd === undefined && hasReportedUsage
-    ? estimateMicrousd(usage, input.modelName, input.accounting?.effectiveServiceTier)
+    ? card ? Math.round(estimateRouteCost(usage, card) * 1_000_000) : undefined
     : undefined;
   const costSource: SpendInsert["costSource"] = actualCostMicrousd !== undefined
     ? input.accounting?.actualCostSource ?? "provider_actual"
@@ -856,9 +858,9 @@ export async function recordProviderSpendForAttempt(
       providerNativeUnit: input.accounting?.providerNativeUnit,
       providerNativeAmount: input.accounting?.providerNativeAmount,
       pricingSourceId: estimatedCostMicrousd !== undefined
-        ? pricingSourceIdFor(input.accounting?.effectiveServiceTier)
+        ? card?.source
         : undefined,
-      rateCardVersion: estimatedCostMicrousd !== undefined ? RATE_CARD_VERSION : undefined,
+      rateCardVersion: estimatedCostMicrousd !== undefined ? card?.version : undefined,
       pricedAt: estimatedCostMicrousd !== undefined ? now.toISOString() : undefined,
       latencyMs: input.latencyMs,
       diagnostics: {
@@ -867,7 +869,7 @@ export async function recordProviderSpendForAttempt(
           ...(isIndeterminate ? ["indeterminate_provider_attempt"] : []),
         ],
       },
-      safeMetadata: safeSpendMetadata({
+      safeMetadata: { ...safeSpendMetadata({
         outcomeKind: input.outcomeKind,
         attemptStatus: input.attemptStatus ?? "terminal",
         ...(input.indeterminateReason && {
@@ -877,12 +879,16 @@ export async function recordProviderSpendForAttempt(
           effectiveServiceTier: input.accounting.effectiveServiceTier,
         }),
       }, usage.cacheWriteTokens),
+        // Application-owned pricing metadata, never raw provider content. Keep
+        // null (unknown) and complete tier rates intact through redaction.
+        rateCard: card,
+      },
       observedAt: input.completedAt,
       updatedAt: now.toISOString(),
     };
     const existingAttemptStatus = asRecord(existing?.safeMetadata)?.attemptStatus;
-    const staleIndeterminate = isIndeterminate && existingAttemptStatus === "terminal";
-    const inserted = staleIndeterminate
+    const alreadyTerminal = existingAttemptStatus === "terminal";
+    const inserted = alreadyTerminal
       ? []
       : await tx
         .insert(schema.gameProviderSpendEntries)
@@ -923,6 +929,7 @@ async function repriceExistingCallLevelRows(
   let aggregateEstimateRows = 0;
   for (const row of rows) {
     const safeMetadata = asRecord(row.safeMetadata);
+    if (safeMetadata && Object.hasOwn(safeMetadata, "rateCard")) continue; // Attempt-time pricing is immutable, including unknown rates.
     const usage = {
       promptTokens: row.promptTokens,
       cachedTokens: row.cachedTokens,

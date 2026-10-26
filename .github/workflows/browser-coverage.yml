@@ -129,6 +129,8 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Install Puppeteer Chrome
         run: bunx puppeteer browsers install chrome
+      - name: Install audio test dependencies
+        run: apt-get update && apt-get install -y --no-install-recommends ffmpeg
       - name: Run isolated API browser stories serially
         run: bun run test:browser:api --shard=${{ matrix.shard }}/3
       - name: Upload failure evidence

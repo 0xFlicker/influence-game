@@ -1,6 +1,6 @@
 import type { WerewolfAudience, WerewolfPublicEntry } from "../werewolf/observation";
 import type { WerewolfAction } from "../werewolf/types";
-import type { WerewolfNightAction } from "../werewolf/watch-contract";
+import { werewolfNightSteps, type WerewolfNightAction } from "../werewolf/watch-contract";
 
 export type ProductionGameKind = "influence" | "werewolf";
 export type ProductionAudience = "public" | WerewolfAudience;
@@ -37,6 +37,7 @@ export type InfluenceProductionPresentation =
 
 export type ProductionMomentPart =
   | { kind: "speech" | "scene" | "opening" | "bridge" | "tally" | "outcome" | "result" | "protect" | "investigate" | "hunt" | "pack_vote" }
+  | { kind: "night-speech"; action: "protect" | "investigate" }
   | { kind: "thinking"; actorId?: string }
   | { kind: "ballot"; voterId: string; purpose: "day" | "pack" | "empower" | "eliminate" | "winner"; juryTiebreaker: boolean; revote: boolean }
   | { kind: "influence-presentation"; presentation: InfluenceProductionPresentation };
@@ -64,7 +65,7 @@ export type ProductionSource =
     })
   | (OrderedProductionSource & {
       kind: "werewolf-event"; eventSequence: number; entry: WerewolfPublicEntry;
-      rulesVersion?: 7 | 8 | 9;
+      rulesVersion?: 7 | 8 | 9 | 10 | 11;
       nightActions?: readonly WerewolfNightAction[];
     })
   | (OrderedProductionSource & {
@@ -96,6 +97,9 @@ export interface ProductionCatalog {
   gameKind: ProductionGameKind;
   audience: ProductionAudience;
   moments: ProductionMoment[];
+  /** Resolved historical Werewolf catalog contract; source hash verification owns this value. */
+  werewolfCatalogVersion?: 1 | 2 | 3;
+  werewolfLegacyPassThoughts?: true;
 }
 
 function nonempty(value: unknown, label: string): asserts value is string {
@@ -150,6 +154,9 @@ function partValue(part: ProductionMomentPart): unknown[] {
       if (!["day", "pack", "empower", "eliminate", "winner"].includes(part.purpose) || typeof part.juryTiebreaker !== "boolean" || typeof part.revote !== "boolean") throw new Error("Invalid production ballot part");
       return [part.kind, part.voterId, part.purpose, part.juryTiebreaker, part.revote];
     case "influence-presentation": return [part.kind, ...presentationValue(part.presentation)];
+    case "night-speech":
+      if (part.action !== "protect" && part.action !== "investigate") throw new Error("Invalid night speech action");
+      return [part.kind, part.action];
     case "thinking":
       if (part.actorId !== undefined) { nonempty(part.actorId, "thinking actor ID"); return [part.kind, part.actorId]; }
       return [part.kind];
@@ -185,8 +192,10 @@ function sourceReference(source: ProductionSource): ProductionSourceReference {
 export function assembleProductionCatalog(input: {
   gameId: string; gameKind: ProductionGameKind; audience: ProductionAudience;
   sources: readonly ProductionSource[];
+  werewolfCatalogVersion?: 1 | 2 | 3;
 }): ProductionCatalog {
   nonempty(input.gameId, "game ID");
+  if (input.werewolfCatalogVersion !== undefined && (input.gameKind !== "werewolf" || ![1,2,3].includes(input.werewolfCatalogVersion))) throw new Error("Invalid historical Werewolf catalog version");
   if (input.gameKind === "influence" ? input.audience !== "public" : input.gameKind !== "werewolf" || !["mystery", "omniscient"].includes(input.audience)) throw new Error("Invalid production game audience");
   const moments: ProductionMoment[] = [];
   const seen = new Map<string, ProductionSourceOrder>();
@@ -247,7 +256,7 @@ export function assembleProductionCatalog(input: {
         if (!["introduce", "discuss", "open_thread", "pack_talk", "attack", "protect", "investigate", "vote", "conversation", "public_vote", "pack_propose"].includes(source.action)) throw new Error("Unsupported Werewolf thinking action");
         if (input.audience === "omniscient") thought(source.thinking, source.defaultThinking, source.actorId);
         break;
-      case "werewolf-event": assembleWerewolfParts(source, input.audience, emit); break;
+      case "werewolf-event": assembleWerewolfParts(source, input.audience, emit, input.werewolfCatalogVersion ?? 3); break;
     }
   }
   moments.sort((a, b) => a.order.anchor - b.order.anchor || a.order.offset - b.order.offset || a.semanticOrder - b.semanticOrder || a.id.localeCompare(b.id));
@@ -255,20 +264,20 @@ export function assembleProductionCatalog(input: {
 }
 
 function assembleWerewolfParts(source: Extract<ProductionSource, { kind: "werewolf-event" }>, audience: ProductionAudience,
-  emit: (part: ProductionMomentPart, kind: ProductionMomentKind, order: number, full?: boolean, actorId?: string) => void) {
+  emit: (part: ProductionMomentPart, kind: ProductionMomentKind, order: number, full?: boolean, actorId?: string) => void, version: 1 | 2 | 3) {
   const entry = source.entry;
   if (audience === "mystery" && (entry.kind === "pack_vote" || entry.kind === "speech" && entry.audience === "pack")) return;
   if (source.nightActions?.length && entry.kind !== "night") throw new Error("Night staging requires a resolved night source");
   switch (entry.kind) {
-    case "phase": break;
+    case "phase": if (version >= 2) emit({kind:"scene"},"scene",0); break;
     case "speech": if (entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, true, entry.actorId); break;
     case "discussion": if (!entry.contribution.unavailable && entry.contribution.text?.trim()) emit({ kind: "speech" }, "speech", 1, true, entry.contribution.actorId); break;
     case "conversation": if (!entry.unavailable && entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, true, entry.actorId); break;
     // The spoken vote and its collection into the ledger share one replay cue.
     case "ballot": emit({ kind: "ballot", voterId: entry.actorId, purpose: "day", juryTiebreaker: false, revote: false }, "ballot", 2, true, entry.actorId); break;
-    case "proposal": if (audience === "omniscient" && !entry.unavailable && entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, false, entry.actorId); break;
+    case "proposal": if (audience === "omniscient" && !entry.unavailable && entry.text?.trim()) emit({ kind: "speech" }, "speech", 1, version >= 3, entry.actorId); break;
     case "vote": {
-      if (source.rulesVersion === 9) { emit({ kind: "tally" }, "tally", 0); emit({ kind: "outcome" }, "outcome", 1); break; }
+      if ((source.rulesVersion ?? 8) >= 9) { emit({ kind: "tally" }, "tally", 0); emit({ kind: "outcome" }, "outcome", 1); break; }
       const rank = (b: { targetId: string | null; unavailable: boolean }) => b.targetId ? 0 : b.unavailable ? 1 : 2;
       const ballots = [...entry.result.ballots].sort((a, b) => rank(a) - rank(b));
       for (const [index, ballot] of ballots.entries()) emit({ kind: "ballot", voterId: ballot.voterId, purpose: "day", juryTiebreaker: false, revote: false }, "ballot", index, true, ballot.voterId);
@@ -280,8 +289,11 @@ function assembleWerewolfParts(source: Extract<ProductionSource, { kind: "werewo
       for (const [index, ballot] of entry.result.ballots.entries()) emit({ kind: "ballot", voterId: ballot.voterId, purpose: "pack", juryTiebreaker: false, revote: false }, "ballot", index, false, ballot.voterId);
       emit({ kind: "pack_vote" }, "tally", entry.result.ballots.length); break;
     case "night":
-      if (audience === "omniscient") for (const [index, action] of (source.nightActions ?? []).entries()) emit({ kind: action.kind }, "action", index, true, "actorId" in action ? action.actorId : undefined);
-      emit({ kind: "outcome" }, "outcome", audience === "omniscient" ? (source.nightActions?.length ?? 0) : 0);
+      if (audience === "omniscient") for (const [index, {action, decision}] of werewolfNightSteps(source.nightActions ?? []).entries()) {
+        if (decision && action.kind !== "hunt") emit({kind: "night-speech", action: action.kind}, "speech", index, true, action.actorId);
+        else emit({ kind: action.kind }, "action", index, true, "actorId" in action ? action.actorId : undefined);
+      }
+      emit({ kind: "outcome" }, "outcome", audience === "omniscient" ? werewolfNightSteps(source.nightActions ?? []).length : 0);
       break;
     case "result": emit({ kind: "result" }, "result", 0); break;
     default: throw new Error("Unsupported Werewolf production source");

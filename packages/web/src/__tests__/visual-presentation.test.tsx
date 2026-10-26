@@ -8,7 +8,8 @@ import { sceneSpeechDurationMs, sceneSpeechOpacity, SCENE_SPEECH_START_MS, SCENE
 import { VisualPresentationFrame, type VisualPresentationBeat } from "../app/games/[slug]/components/visual-presentation";
 import { VisualSceneView } from "../app/games/[slug]/components/visual-scene-view";
 import { StageBackdrop, sceneBackdropSources } from "../app/games/[slug]/components/stage-backdrop";
-import { portraitRoomSeats, portraitRoomTransitionSeats } from "../app/games/[slug]/components/portrait-room";
+import { PortraitRoom, portraitRoomSeats, portraitRoomTransitionSeats } from "../app/games/[slug]/components/portrait-room";
+import { SampledStageProvider } from "../components/watch/sampled-stage";
 import { panelTransition } from "../app/games/[slug]/components/scene-image";
 
 const globals = ["window", "document", "navigator", "Element", "HTMLElement", "Node", "Event", "ResizeObserver", "getComputedStyle"] as const;
@@ -116,6 +117,30 @@ test.each([6, 7, 8])("a %s-person room keeps larger mobile portraits and seats l
   expect(Math.max(...seats.map(seat => Math.abs(seat.x)))).toBeGreaterThan(140);
 });
 
+test("a short narrow portrait stage keeps the front speaker inside its height", () => {
+  const prototype = dom.HTMLElement.prototype;
+  const dimensions = new Map(["clientWidth", "clientHeight"].map(key => [key, Object.getOwnPropertyDescriptor(prototype, key)]));
+  try {
+    Object.defineProperty(prototype, "clientWidth", {configurable:true, get:()=>390});
+    Object.defineProperty(prototype, "clientHeight", {configurable:true, get:()=>300});
+    const cast = Array.from({length:8}, (_,index)=>({id:`p${index+1}`,name:`Person ${index+1}`,persona:"social"}));
+    const view = render(<PortraitRoom floorPerspective beat={{kind:"portrait-room",roomNumber:null,participants:cast,speech}}
+      elapsedMs={SCENE_READ_START_MS} readingElapsedMs={SCENE_READ_START_MS} reducedMotion controlsInset={0} />);
+    const speaker = view.container.querySelector<HTMLElement>('[data-active-speaker="true"]')!;
+    expect(Number.parseFloat(speaker.style.top)).toBeGreaterThanOrEqual(0);
+    // Happy DOM has no CSS layout; verify the actual emitted portrait box. The
+    // browser room checks also cover perspective, labels and measured typography.
+    expect(Number.parseFloat(speaker.style.top) + Number.parseFloat(speaker.style.width)).toBeLessThan(300);
+  } finally {
+    cleanup();
+    // Happy DOM shares this prototype across windows and later test files.
+    for (const [key, descriptor] of dimensions) {
+      if (descriptor) Object.defineProperty(prototype, key, descriptor);
+      else Reflect.deleteProperty(prototype, key);
+    }
+  }
+});
+
 test("a speaker jump across the circle rotates the whole ring instead of cutting across it", () => {
   const count = 8;
   const start = portraitRoomSeats(800, count, 0, 150, true);
@@ -149,6 +174,36 @@ test.each([3, 4, 5])("a mobile room still spreads %s survivors into depth", coun
   expect(seats[1]).toMatchObject({x: 0, z: 60, scale: 1});
   expect(seats[1]!.diameter).toBeGreaterThanOrEqual(100);
   expect(Math.min(...seats.map(seat => seat.y))).toBeLessThan(-200);
+});
+
+test("a live room remount retains its canonical predecessor and samples the same orbit as export", () => {
+  const cast = Array.from({length:8},(_,index)=>({id:`p${index+1}`,name:`Person ${index+1}`,persona:"social"}));
+  const first: Extract<VisualPresentationBeat,{kind:"portrait-room"}> = {kind:"portrait-room",roomNumber:null,participants:cast,speech};
+  const next = {...first,speech:{...speech,id:"next",playerId:"p5",speaker:"Person 5"}};
+  const room = (elapsed:number,reduced=false,previous:string|null="p1") => <PortraitRoom beat={next} previousSpeakerId={previous}
+    elapsedMs={elapsed} readingElapsedMs={elapsed} reducedMotion={reduced} controlsInset={0} />;
+  // Following live unmounts the outgoing room while waiting for the next accepted line.
+  const outgoing=render(<PortraitRoom beat={first} elapsedMs={5000} readingElapsedMs={5000} reducedMotion={false} controlsInset={0} />);
+  outgoing.unmount();
+  const view=render(room(0));
+  const transform=()=>view.container.querySelector<HTMLElement>('[data-room-player="p5"]')!.style.transform;
+  const initial=transform();
+  expect(initial).toContain("-60px");
+  view.rerender(room(325));
+  const middle=transform();
+  expect(middle).not.toBe(initial);
+  view.rerender(room(650));
+  const final=transform();
+  expect(final).toContain("60px) scale(1)");
+  expect(final).not.toBe(middle);
+  // Direct seeks land at the authored clock position; rewinding does not replay a CSS timer.
+  view.rerender(room(5000));expect(transform()).toBe(final);
+  view.rerender(room(325));expect(transform()).toBe(middle);
+  view.rerender(room(325));expect(transform()).toBe(middle);
+  view.rerender(room(0,true));expect(transform()).toBe(final);
+  view.rerender(room(0,false,null));expect(transform()).toBe(final);
+  view.rerender(<SampledStageProvider value={{images:{},previousScene:null,previousSpeaker:"p1",firstInScene:false}}>{room(325,false,null)}</SampledStageProvider>);
+  expect(transform()).toBe(middle);
 });
 
 test("a replay without a winner tableau holds a readable last frame only at the tail", () => {
@@ -333,4 +388,27 @@ test("silent character focus selects their panel without inventing a speech bubb
   const view = render(<VisualSceneView scene={scene} speech={null} focusPlayerId="p2" elapsedMs={1000} reducedMotion />);
   expect(view.container.querySelector('[data-speech-bubble]')).toBeNull();
   expect(Array.from(view.container.querySelectorAll("img")).some(image => image.getAttribute("src") === "/p2.png")).toBe(true);
+});
+
+test("static Influence settings follow numbered rooms and typed ballot purpose", () => {
+  const cast = [{id:"p1",name:"Arden",persona:"social"}];
+  const frame = (selected: VisualPresentationBeat) => <VisualPresentationFrame beat={selected} rooms={[]} elapsedMs={SCENE_READ_START_MS} reducedMotion />;
+  const view = render(frame({kind:"portrait-room",roomNumber:null,participants:cast,speech}));
+  const background = () => view.container.querySelector("[data-room-backdrop]")?.getAttribute("data-room-backdrop");
+  expect(background()).toBe("/visual/influence/rooms-v1/lobby.jpg");
+  for (let roomNumber=1; roomNumber<=5; roomNumber++) {
+    view.rerender(frame({kind:"portrait-room",roomNumber,participants:cast,speech}));
+    expect(background()).toBe(`/visual/influence/rooms-v1/mingle-${roomNumber}.jpg`);
+  }
+  const portrait: Extract<VisualPresentationBeat,{kind:"portrait"}> = {kind:"portrait",purpose:"Introduction",player:cast[0]!,speech};
+  view.rerender(frame(portrait));
+  expect(background()).toBe("/visual/influence/rooms-v1/lobby.jpg");
+  view.rerender(frame({...portrait,purpose:"Ballot",ballotPurpose:"empower",caption:"Vote to eliminate"}));
+  expect(background()).toBe("/visual/influence/rooms-v1/empower.jpg");
+  view.rerender(frame({...portrait,purpose:"Ballot",ballotPurpose:"council",caption:"Vote to empower"}));
+  expect(background()).toBe("/visual/influence/rooms-v1/council.jpg");
+  view.rerender(frame({...portrait,purpose:"Diary"}));
+  expect(background()).toBeUndefined();
+  view.rerender(frame(beat));
+  expect(background()).toBeUndefined();
 });

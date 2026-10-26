@@ -1,3 +1,4 @@
+import { audioDeliveryGuidance } from "../audio-delivery";
 import { describe, expect, test } from "bun:test";
 import OpenAI from "openai";
 import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
@@ -137,7 +138,9 @@ describe("dedicated retrospective invocation", () => {
     expect(JSON.parse(generated!.input)).toEqual(context);
     expect(generated!.input).toContain("LATE_GAME_FACT");
     for (const forbidden of ["CURRENT_MEMORY_MUST_NOT_ENTER", "CURRENT_PERSONA_MUST_NOT_ENTER", "CURRENT_BACKSTORY_MUST_NOT_ENTER", "mira ORIGINAL_STRATEGY", "atlas ORIGINAL_STRATEGY"]) expect(generated!.input).not.toContain(forbidden);
-    expect(generated!.instructions).toBe(RETROSPECTIVE_SYSTEM_PROMPT);
+    expect(generated!.instructions).toContain(RETROSPECTIVE_SYSTEM_PROMPT);
+    expect(generated!.instructions).toContain("Respond primarily in English");
+    expect(generated!.instructions).toContain(audioDeliveryGuidance(false));
     expect(generated!.instructions).toContain("untrusted quoted communication");
     expect(generated!.instructions).toContain("Separate what you knew or believed at the time");
     expect(generated!.instructions).toContain("no longer need to conceal your role or maintain a bluff");
@@ -155,7 +158,7 @@ describe("dedicated retrospective invocation", () => {
     expect(generated!.parallel_tool_calls).toBeUndefined();
     expect(generated!.tools).toBeUndefined();
     expect(generated!.text?.format).toMatchObject({ name: "submit_retrospective", strict: true, schema: {
-      additionalProperties: false, required: ["speech"], properties: { speech: { type: "string", maxLength: 2000 } },
+      additionalProperties: false, required: ["speech"], properties: { speech: { type: "string", minLength: 1, description: "At most 2000 visible characters, excluding delivery tags." } },
     } });
     expect(records).toHaveLength(1);
     expect(records[0]!.acceptedValue).toEqual({ speech });
@@ -171,8 +174,19 @@ describe("dedicated retrospective invocation", () => {
   });
 
   test.each([
-    { name: "prose", arguments_: "ordinary prose" }, { name: "fenced JSON", arguments_: '```json\n{"speech":"ok"}\n```' },
-    { name: "embedded JSON", arguments_: 'prefix {"speech":"ok"}' }, { name: "empty object", arguments_: "{}" },
+    '```json\n{"speech":"Well played."}\n```',
+    'Here is my statement: {"speech":"Well played."}',
+  ])("accepts a wrapped retrospective in one attempt: %s", async arguments_ => {
+    const { context } = dossier(), p = provider({ arguments: arguments_ }), records: ProviderAttemptRecord[] = [];
+    const result = await execute(context, [p.runtime], { onTerminal: record => { records.push(record); } });
+    expect(result.value).toEqual({ speech: "Well played." });
+    expect(records).toHaveLength(1);
+    expect(records[0]?.acceptedValue).toEqual({ speech: "Well played." });
+  });
+
+  test.each([
+    { name: "prose", arguments_: "ordinary prose" }, { name: "broken fenced JSON", arguments_: '```json\n{"speech":"ok",}\n```' },
+    { name: "ambiguous JSON", arguments_: 'prefix {"speech":"ok"} {"speech":"other"}' }, { name: "empty object", arguments_: "{}" },
     { name: "missing speech", arguments_: '{"text":"ok"}' }, { name: "extra field", arguments_: '{"speech":"ok","thinking":"hidden"}' },
     { name: "null speech", arguments_: '{"speech":null}' }, { name: "blank speech", arguments_: JSON.stringify({ speech: " \n " }) },
     { name: "oversized Unicode speech", arguments_: JSON.stringify({ speech: "😀".repeat(2001) }) },

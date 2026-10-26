@@ -52,7 +52,8 @@ export async function projectWerewolfReviewEvidence(db: DrizzleDB, selection: Ow
     const [events, turns, calls, gameRows] = await loadPayloads(Promise.all([
       readWerewolfEvents(db, selected.gameId),
       db.select().from(schema.werewolfTurns).where(eq(schema.werewolfTurns.gameId, selected.gameId)),
-      db.select().from(schema.providerLogicalCalls).where(and(eq(schema.providerLogicalCalls.gameId, selected.gameId),
+      db.select({ action: schema.providerLogicalCalls.action, semanticCoordinate: schema.providerLogicalCalls.semanticCoordinate,
+        acceptedValue: schema.providerLogicalCalls.acceptedValue, acceptedValueSha256: schema.providerLogicalCalls.acceptedValueSha256 }).from(schema.providerLogicalCalls).where(and(eq(schema.providerLogicalCalls.gameId, selected.gameId),
         eq(schema.providerLogicalCalls.actorId, selected.playerId), isNotNull(schema.providerLogicalCalls.acceptedAttemptId))),
       db.select({ config: schema.games.config }).from(schema.games).where(eq(schema.games.id, selected.gameId)),
     ]));
@@ -61,7 +62,7 @@ export async function projectWerewolfReviewEvidence(db: DrizzleDB, selection: Ow
     let state: WerewolfState | null = null;
     const decisions: WerewolfReviewDecision[] = [];
     for (const event of events) {
-      if (event.type === "werewolf.action_accepted" && event.payload.actorId === selected.playerId) {
+      if (event.type === "werewolf.action_accepted" && event.payload.actorId === selected.playerId && event.payload.action !== "speaking_priority") {
         if (!state) throw new Error("Werewolf review is missing its initial state");
         const knownAtDecision = observeWerewolf(state, selected.playerId);
         const turn = planned.get(event.sequence);
@@ -78,7 +79,7 @@ export async function projectWerewolfReviewEvidence(db: DrizzleDB, selection: Ow
           if (call.action !== `werewolf.${request.action}` || call.acceptedValueSha256 !== sha256StableJson(call.acceptedValue)) throw new Error("Werewolf review thinking failed integrity validation");
           const decoded = exactStructuredOutputRegistry.decodeAcceptedValue(werewolfDecisionArtifact(request), call.acceptedValue);
           if (decoded.status !== "valid" || sha256StableJson(werewolfGameplayDecision(decoded.value)) !== sha256StableJson(decision)) throw new Error("Werewolf review thinking does not match its decision");
-          thinking = decoded.value.thinking;
+          thinking = "thinking" in decoded.value ? decoded.value.thinking : null;
         }
         decisions.push({ sequence: event.sequence, day: state.day, phase: state.phase,
           cursor: projectWerewolfView(state, "omniscient").cursor, action: structuredClone(event.payload), knownAtDecision, thinking });

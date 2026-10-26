@@ -22,6 +22,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { getPersonaLabel } from "@/lib/personas";
 import { ACTIVE_GAME } from "@/lib/product-identity";
 import { AgentAvatarPreview } from "@/components/agent-avatar-preview";
+import { AgentModelLabel } from "@/components/agent-model-label";
 import { PlayerProfileLink } from "@/components/player-profile-link";
 
 // ---------------------------------------------------------------------------
@@ -230,6 +231,7 @@ export function QueueSection({
                 name={agent.name}
                 gamesPlayed={agent.gamesPlayed}
                 gamesWon={agent.gamesWon}
+                modelPreference={agent.modelPreference}
                 size="8"
               />
               <button
@@ -246,6 +248,7 @@ export function QueueSection({
                   <p className="influence-copy-muted text-xs truncate">
                     {personaLabel}
                   </p>
+                  <AgentModelLabel preference={agent.modelPreference} className="block text-xs text-text-secondary break-all" />
                 </div>
                 {isSelected && (
                   <span className="text-phase text-xs font-medium shrink-0">

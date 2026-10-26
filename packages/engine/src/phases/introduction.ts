@@ -1,3 +1,4 @@
+import { drainProviderCalls } from "../provider-batch";
 import { Phase } from "../types";
 import {
   assertCanAcceptCommit,
@@ -21,7 +22,7 @@ export async function collectIntroductionBatch(
   ctx: PhaseRunnerContext,
 ): Promise<IntroductionBatchItem[]> {
   const alivePlayers = ctx.gameState.getAlivePlayers();
-  return Promise.all(alivePlayers.map(async (player) => {
+  return drainProviderCalls(alivePlayers.map(async (player) => {
     const agent = ctx.agents.get(player.id)!;
     const phaseCtx = prepareAgentPhaseContext(
       ctx,

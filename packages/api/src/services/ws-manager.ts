@@ -39,6 +39,7 @@ type PublicWsRoomMetadata = {
 
 /** Public transcript entry sent to WebSocket clients (matches WsTranscriptEntry in web/lib/api.ts). */
 export interface PublicWsTranscriptEntry {
+  decisionSpeech?: { action: string; actorId: string; receiptEntrySequence?: number };
   dialogueKind?: TranscriptEntry["dialogueKind"] | null;
   firstDurableEventSequence?: number | null;
   speakerPlayerId?: string | null;
@@ -118,7 +119,7 @@ function deliver(gameId: string, send: () => void): void {
     if (await available(gameId)) { send(); return; }
     for (const ws of connections.get(gameId) ?? []) ws.close(1008, "Game unavailable");
   }).catch(error => {
-    console.error(`[ws] Visibility check failed for ${gameId}:`, error);
+    console.error(`[ws] Outbound delivery failed for ${gameId}:`, error);
     for (const ws of connections.get(gameId) ?? []) ws.close(1011, "Game unavailable");
   });
   pendingDeliveries.set(gameId, pending);
@@ -277,7 +278,7 @@ export function sendGamePublication(
   ws: ServerWebSocket<WsConnectionData>,
   event: WsPublicationEvent,
 ): void {
-  deliver(ws.data.gameId, () => ws.send(JSON.stringify(event)));
+  deliver(ws.data.gameId, () => { ws.send(JSON.stringify(event)); });
 }
 
 /** Broadcast a non-message WsOutboundEvent to all observers of a game. */
@@ -327,7 +328,7 @@ export function sendWatchState(
     state,
     throughPublicationSequence,
   };
-  deliver(ws.data.gameId, () => ws.send(JSON.stringify(outbound)));
+  deliver(ws.data.gameId, () => { ws.send(JSON.stringify(outbound)); });
 }
 
 /** Get the number of active observers for a game. */

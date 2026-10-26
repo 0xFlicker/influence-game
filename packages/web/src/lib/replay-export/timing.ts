@@ -19,7 +19,10 @@ export interface TimingInput {
   thinking: string | null;
   /** Silent framing position for an independently selected thought. */
   sourceElapsedMs?: number;
+  /** Settle the room turn before starting a standalone thought close-up. */
+  thinkingEstablishMs?: number;
   recording?: SpeechRecording;
+  thinkingRecording?: SpeechRecording;
 }
 export interface TimeSegment {
   kind:
@@ -78,15 +81,15 @@ export function compileTiming(
       throw new Error(`Invalid speech boundaries: ${input.key}`);
     if (
       input.recording &&
-      (!speech ||
+      (!speech && input.kind !== "thinking" ||
         !Number.isFinite(input.recording.durationMs) ||
         input.recording.durationMs <= 0)
     )
       throw new Error(
         `Recording requires a spoken cue and positive duration: ${input.key}`,
       );
-    if (input.kind === "thinking" && (!input.thinking?.trim() || speech || input.recording))
-      throw new Error(`Thinking moment requires thought text without speech or recording: ${input.key}`);
+    if (input.kind === "thinking" && (!input.thinking?.trim() || speech))
+      throw new Error(`Thinking moment requires thought text without speech: ${input.key}`);
     const segments: TimeSegment[] = [];
     let time = 0;
     const add = (
@@ -107,7 +110,12 @@ export function compileTiming(
       time += duration;
     };
     const motion = settings.motionScale ?? 1;
-    const thought = thoughtTiming(input.thinking, speech, {readingRate: settings.thinkingRate, motionScale: motion});
+    let thought = thoughtTiming(input.thinking, speech, {readingRate: settings.thinkingRate, motionScale: motion});
+    const thinkingRecording = input.kind === "thinking" ? input.recording : input.thinkingRecording;
+    if (thought && thinkingRecording) {
+      const delta = thinkingRecording.durationMs - (thought.hideAtMs - thought.readAtMs);
+      thought = {...thought, hideAtMs: thought.hideAtMs + delta, returnAtMs: thought.returnAtMs + delta, duration: thought.duration + delta};
+    }
     const thoughtDuration = thought?.duration ?? 0;
     const addThought = () => {
       if (thought)
@@ -133,7 +141,7 @@ export function compileTiming(
         speech.readAtMs,
         speech.hideAtMs,
         input.recording
-          ? Math.max(reading, input.recording.durationMs)
+          ? input.recording.durationMs
           : Math.max(
               Math.min(3000, reading),
               reading / (settings.readingRate ?? 1),
@@ -158,6 +166,7 @@ export function compileTiming(
         settings.conversationGapMs ?? 0,
       );
     } else if (input.kind === "thinking") {
+      if (input.thinkingEstablishMs) add("establish",0,input.sourceElapsedMs ?? input.thinkingEstablishMs,settings.establishingHoldMs ?? input.thinkingEstablishMs * motion);
       addThought();
     } else {
       addThought();
@@ -203,11 +212,11 @@ export function compileTiming(
       segments,
       thought: actualThought,
       speech: compiledSpeech,
-      ...(input.recording && compiledSpeech
+      ...(input.recording && (compiledSpeech || actualThought)
         ? {
             recording: {
               ...input.recording,
-              startMs: startMs + compiledSpeech.readAtMs,
+              startMs: startMs + (compiledSpeech?.readAtMs ?? actualThought!.insertAt + actualThought!.readAtMs),
             },
           }
         : {}),

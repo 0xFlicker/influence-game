@@ -6,10 +6,26 @@ import {
 } from "../services/game-lifecycle.js";
 
 describe("game lifecycle engine config", () => {
+  test("hydrates the frozen decision contract and preserves unversioned accepted history", () => {
+    expect(buildEngineConfigFromGameRecord({}, 6, 8).decisionContractVersion).toBe(1);
+    expect(buildEngineConfigFromGameRecord({ decisionContractVersion: 2 }, 6, 8).decisionContractVersion).toBe(2);
+    expect(() => buildEngineConfigFromGameRecord({ decisionContractVersion: null }, 6, 8)).toThrow("Unsupported Influence decision contract version");
+  });
+
   test("hydrates frozen conversation allowances and room-round counts", () => {
     const policy = { bytesPerParticipant: 500, messageBytes: 320, maxHandoffs: 3 };
     expect(buildEngineConfigFromGameRecord({ conversationPolicy: policy, mingleSessionsPerRound: 2 }, 6, 8)).toMatchObject({ conversationPolicy: policy, mingleSessionsPerRound: 2 });
     expect(() => buildEngineConfigFromGameRecord({ conversationPolicy: { ...policy, messageBytes: -1 } }, 6, 8)).toThrow("Invalid conversation policy");
+  });
+
+  test("hydrates frozen revote rules, including existing games that have not started", () => {
+    expect(buildEngineConfigFromGameRecord({}, 6, 8).empowerRevoteVersion).toBe(1);
+    for (const version of [1, 2] as const) {
+      expect(buildEngineConfigFromGameRecord({ empowerRevoteVersion: version }, 6, 8).empowerRevoteVersion).toBe(version);
+    }
+    for (const version of [0, 3, "2", null]) {
+      expect(() => buildEngineConfigFromGameRecord({ empowerRevoteVersion: version }, 6, 8)).toThrow("Unsupported empower revote version");
+    }
   });
 
   test("bounds API provider request deadlines", () => {

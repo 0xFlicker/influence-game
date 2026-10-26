@@ -16,6 +16,8 @@
 .cast {position:absolute; inset:6% 9%; display:flex; align-items:center; gap:7%;}
 .portrait {height:100%; width:42%; display:flex; align-items:center; justify-content:center; overflow:hidden}
 .portrait img {max-height:100%; max-width:100%; width:auto; height:auto; object-fit:contain; border:1px solid #b79b6355; box-shadow:0 12px 60px #0009}
+/* Keep the existing image box while shadows follow the character alpha. */
+.portrait img.fullBody {border-color:transparent; box-shadow:none; filter:drop-shadow(0 12px 30px #0009)}
 .name {flex:1; min-width:0}
 .name h2 {font:400 5cqw/1.12 Georgia,serif; margin:0; text-wrap:balance; overflow-wrap:anywhere}
 .role {display:block; min-height:1.5em; margin-top:3cqh; color:#d2b981; font:500 1.35cqw system-ui,sans-serif; letter-spacing:.15em; text-transform:uppercase}

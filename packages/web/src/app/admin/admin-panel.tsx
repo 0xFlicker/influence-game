@@ -301,6 +301,7 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
           <p className="text-xs text-red-400/80">{actionError}</p>
         )}
         <div className="flex flex-wrap items-center gap-2">
+          <a href={`/admin/games/${game.id}/models`} className="text-xs underline" onClick={event => event.stopPropagation()}>Models and cast</a>
           {canFill && !filling && (
             <button
               onClick={(e) => { e.stopPropagation(); handleFill(); }}

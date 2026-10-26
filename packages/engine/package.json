@@ -6,11 +6,15 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
+    "./voice-catalog": "./src/voice-catalog.ts",
+    "./audio-delivery": "./src/audio-delivery.ts",
+    "./influence-decision-speech": "./src/influence-decision-speech.ts",
     "./retrospective-budget": "./src/retrospective-budget.ts",
     "./cli-api-session": "./src/cli-api-session.ts",
     "./cli-session-contract": "./src/cli-session-contract.ts",
     "./house-participation": "./src/house-participation.ts",
     "./production-moments": "./src/production-moments/index.ts",
+    "./production-moments/review": "./src/production-moments/review.ts",
     "./production-moments/settings": "./src/production-moments/settings.ts",
     "./production-moments/export": "./src/production-moments/export.ts",
     "./production-moments/recordings": "./src/production-moments/recordings.ts",
@@ -29,6 +33,7 @@
     "./agent-profile-contract": "./src/agent-profile-contract.ts",
     "./agent-creation-traits": "./src/agent-creation-traits.ts",
     "./agent-creation-assistant": "./src/agent-creation-assistant.ts",
+    "./empower-revote-rules": "./src/empower-revote-rules.ts",
     "./format-rules": "./src/format-rules.ts",
     "./format-presentation-metadata": "./src/format-presentation-metadata.ts",
     "./format-selection-policy": "./src/format-selection-policy.ts",
@@ -66,7 +71,12 @@
     "./house-cuts/trial": "./src/house-cuts/trial.ts",
     "./postgame-media/werewolf-trailer-manifest": "./src/postgame-media/werewolf-trailer-manifest.ts",
     "./werewolf/visual-scenes": "./src/werewolf/visual-scenes.ts",
-    "./render-execution-config": "./src/render-execution-config.ts"
+    "./render-execution-config": "./src/render-execution-config.ts",
+    "./game-model-routing": "./src/game-model-routing.ts",
+    "./model-route-metadata": "./src/model-route-metadata.ts",
+    "./audio-track": "./src/audio-track.ts",
+    "./audio-watch": "./src/audio-watch.ts",
+    "./werewolf/house-speech": "./src/werewolf/house-speech.ts"
   },
   "scripts": {
     "simulate:werewolf": "bun run src/werewolf/simulate.ts",
@@ -91,11 +101,13 @@
     "@influence/prompt-lab-protocol": "workspace:*",
     "ajv": "^8.17.1",
     "openai": "^4.77.0",
+    "proper-lockfile": "^4.1.2",
     "rxjs": "^7.8.2",
     "xstate": "^5.20.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/proper-lockfile": "^4.1.4",
     "@typescript-eslint/eslint-plugin": "^8.57.1",
     "@typescript-eslint/parser": "^8.57.1",
     "bun-types": "^1.3.10",

@@ -21,7 +21,7 @@ export async function readViewerMedia(db: Pick<DrizzleDB, "select">, gameId: str
   const scenes = options.sceneIds ? sceneRows.filter(scene => options.sceneIds!.includes(scene.id)) : sceneRows;
   const bindings: Record<string, string> = {};
   for (const row of dialogue) {
-    if (!row.sequence || !row.speaker || row.scope === "diary" || row.scope === "thinking" || row.context?.presentationPurpose === "farewell" || row.context?.acceptedBallot) continue;
+    if (!row.sequence || !row.speaker || row.scope === "diary" || row.scope === "thinking" || row.context?.presentationPurpose === "farewell" || (row.context?.acceptedBallot || row.context?.decisionSpeech)) continue;
     if (row.context?.visualScene) { bindings[row.sequence] = row.context.visualScene.id; continue; }
     const phase = row.phase as Phase;
     if (phase === Phase.INTRODUCTION || (phase === Phase.MINGLE || phase === Phase.MINGLE_I || phase === Phase.POST_VOTE_MINGLE || phase === Phase.FORMAT_MINGLE) && row.context?.roomId == null) continue;

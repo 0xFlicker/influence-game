@@ -9,7 +9,7 @@ export function useWatchTimeline<C extends WatchCue>(director: PresentationDirec
   const [frame, setFrame] = useState(0);
   useEffect(() => director.subscribe(() => setRevision(value => value + 1)), [director]);
   useEffect(() => director.setThinkingEnabled(thinking), [director, thinking]);
-  const timeline = useMemo(() => { void revision; return compileWatchTimeline(cues, key => thinking ? director.getThinkingText(key) : null); }, [cues, director, thinking, revision]);
+  const timeline = useMemo(() => { void revision; return compileWatchTimeline(cues, key => thinking ? director.getThinkingText(key) : null,key => director.getRecordedDuration(key)); }, [cues, director, thinking, revision]);
   useEffect(() => {
     const byKey = new Map(timeline.map(cue => [cue.key, cue]));
     let request = 0;

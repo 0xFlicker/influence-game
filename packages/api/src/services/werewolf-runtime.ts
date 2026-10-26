@@ -1,3 +1,5 @@
+import { freezeLiveAudio, ensureLiveAudio, pauseLiveAudio, LiveAudioBlocked } from "./audio-live.js";
+import { actorProviderManifest, type GameModelRouting } from "@influence/engine";
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity, RetrospectiveExecutionError, ProviderUnavailableError } from "@influence/engine";
 import { pauseRetrospectiveExecution } from "./game-retrospective-recovery.js";
 import { WerewolfVisualBlocked } from "./werewolf-visual-policy.js";
@@ -8,7 +10,7 @@ import { runWerewolf, replayWerewolf, WerewolfModelAgent, withEvaluationBudget, 
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createApiProviderExecutionHooks } from "./provider-call-journal.js";
 import { renewGameRunOwner } from "./game-ownership.js";
-import { createWerewolfStore, releaseWerewolfOwner } from "./werewolf-games.js";
+import { createWerewolfStore, completeWerewolfAudioGame, releaseWerewolfOwner } from "./werewolf-games.js";
 
 const active = new Map<string, { controller: AbortController; promise: Promise<void> }>();
 export const isWerewolfRunning = (gameId: string) => active.has(gameId);
@@ -31,6 +33,8 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
   const controller = new AbortController();
   const config = JSON.parse(game.config) as Record<string, unknown>;
   const mockAgent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request, observation }) {
+    if ("solo" in request && request.solo) return {kind: "solo_target", targetId: request.legalTargetIds[0]!, text: "I choose this player for tonight.", cue: null};
+    if (request.action === "speaking_priority") return { kind: "speaking_priority", priority: 50 };
     if (request.action === "conversation") return { kind: "conversation", text: null, cue: null, recipientId: null, replyToContributionId: null };
     if (request.action === "public_vote" || request.action === "pack_propose") return { kind: "spoken_target", targetId: request.legalTargetIds[0]!, text: "I will follow this choice.", cue: null, thinking: "Fixture choice" };
     if (request.action === "open_thread") return { kind: "opening", text: "Who changed their mind?", cue: null, recipientIds: request.legalRecipientIds.slice(0, 3) };
@@ -39,8 +43,12 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
     return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Fixture choice" }
       : { kind: "speech", cue: null, text: "I will compare the claims with today's vote." };
   } };
+  const runtimeOptions = { openAIServiceTier: "flex" as const, timeout: 120_000 };
+  const contestantRuntimes = new Map(Object.keys((config.modelRouting as GameModelRouting | undefined)?.contestants ?? {}).map(id => [id,
+    createLlmProviderRuntimesFromEnv(actorProviderManifest(config, { id, role: "player" }), process.env, runtimeOptions) ?? []]));
   const agent = agentOverride ?? (process.env.INFLUENCE_API_TEST_MOCK_RUNNER === "true" ? mockAgent : new WerewolfModelAgent({
-    runtimes: createLlmProviderRuntimesFromEnv(resolveProviderManifestFromGameConfig(config), process.env, { openAIServiceTier: "flex", timeout: 120_000 }) ?? [],
+    runtimes: contestantRuntimes.size ? [...new Map([...contestantRuntimes.values()].flat().map(runtime => [runtime.catalogId, runtime])).values()] : createLlmProviderRuntimesFromEnv(resolveProviderManifestFromGameConfig(config), process.env, runtimeOptions) ?? [],
+    runtimesForActor: actorId => contestantRuntimes.get(actorId) ?? createLlmProviderRuntimesFromEnv(actorProviderManifest(config, { id: actorId, role: "player" }), process.env, runtimeOptions) ?? [],
     hooks: withEvaluationBudget(createApiProviderExecutionHooks(db, { gameId, ownerEpoch }), process.env), ownerEpoch,
   }));
   let heartbeatFailure = false;
@@ -52,7 +60,7 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
     });
   }, 30_000);
   heartbeat.unref();
-  const store = createWerewolfStore(db, gameId, ownerEpoch);
+  const store = createWerewolfStore(db, gameId, ownerEpoch, config.audioMode === true);
   let recoverVisuals = async () => {};
   if (config.visualMode === true) {
     const prepareTurn = store.prepare!;
@@ -75,9 +83,21 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
       await prepareScene(state, request);
     };
   }
-  const promise = recoverVisuals().then(() => runWerewolf(store, agent, controller.signal))
-    .then(() => {})
+  if (config.audioMode === true) {
+    await freezeLiveAudio(db, gameId);
+    const append = store.append;
+    store.append = async (event, retrospectiveInput) => {
+      await append(event, retrospectiveInput);
+      await ensureLiveAudio(db, gameId, ownerEpoch, controller.signal);
+    };
+  }
+  const promise = recoverVisuals().then(async () => {
+    if (config.audioMode === true && (await store.read()).length) await ensureLiveAudio(db, gameId, ownerEpoch, controller.signal);
+    return runWerewolf(store, agent, controller.signal);
+  })
+    .then(async () => { if (config.audioMode === true) await completeWerewolfAudioGame(db,gameId,ownerEpoch); })
     .catch(async (error) => {
+      if (error instanceof LiveAudioBlocked) { await pauseLiveAudio(db, gameId, ownerEpoch); return; }
       if (error instanceof RetrospectiveExecutionError && !controller.signal.aborted && !heartbeatFailure) {
         await pauseRetrospectiveExecution(db, gameId, ownerEpoch, error);
         return;

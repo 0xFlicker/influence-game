@@ -1,3 +1,10 @@
+import {productionEditorial} from "../services/production-editorial.js";
+import {completeProductionSource as completeSource, ProductionEditorialInputError} from "../services/production-editorial-source.js";
+import {resumeLiveAudio,LiveAudioBlocked} from "../services/audio-live.js";
+import {readAudioPublication, readPublishedAudioBytes} from "../services/audio-publication.js";
+import {audioBytesResponse} from "./audio.js";
+import {productionMomentContent} from "../services/production-moment-content.js";
+import { previewAudioTrack, queueAudioBackfill, retryAudioTrack, AudioTrackConflict } from "../services/audio-tracks.js";
 import {createHash} from "node:crypto";
 import {Hono} from "hono";
 import {createMiddleware} from "hono/factory";
@@ -10,8 +17,8 @@ import {schema,type DrizzleDB} from "../db/index.js";
 import {getPermissionsForUser} from "../db/rbac.js";
 import {requireAuth,type AuthEnv} from "../middleware/auth.js";
 import {AnnotationConflict,decodeAnnotationReplacement,readMomentAnnotations,replaceMomentAnnotation,resolveAnnotatedSelection} from "../services/production-annotations.js";
-import {buildInfluenceProductionSourceSnapshot,decodeInfluenceProductionSnapshot,readInfluenceProductionSource,InfluenceProductionSourceError} from "../services/influence-production-source.js";
-import {buildWerewolfProductionSourceSnapshot,decodeWerewolfProductionSnapshot,readWerewolfProductionSource,readWerewolfProductionMedia,readWerewolfProductionCharacter} from "../services/werewolf-production-source.js";
+import {decodeInfluenceProductionSnapshot,readInfluenceProductionSource,InfluenceProductionSourceError} from "../services/influence-production-source.js";
+import {decodeWerewolfProductionSnapshot,readWerewolfProductionSource,readWerewolfProductionMedia,readWerewolfProductionCharacter} from "../services/werewolf-production-source.js";
 import {readProductionScenes,readProductionScene} from "../services/production-scenes.js";
 import {readProductionRecovery} from "../services/production-recovery.js";
 import {ReplayVisualError} from "../services/visual-replay-production.js";
@@ -48,16 +55,7 @@ async function kind(db:Pick<DrizzleDB,"select">,id:string) {
   if (!game) throw new WerewolfGameError("Production game not found",404);
   return game;
 }
-async function completeSource(tx:VisualTransaction,id:string,body:Record<string,unknown>) {
-  const game = await kind(tx,id), access = options(body);
-  if (game.gameKind === "werewolf") {
-    if (access.audience === "public") throw new StudioInputError("Werewolf requires Mystery or Omniscient audience");
-    return buildWerewolfProductionSourceSnapshot(tx,game.id,{audience:access.audience,thinking:access.thinking,
-      snapshot:body.snapshot === undefined ? undefined : decodeWerewolfProductionSnapshot(body.snapshot)});
-  }
-  if (access.audience !== "public") throw new StudioInputError("Influence uses its public audience");
-  return buildInfluenceProductionSourceSnapshot(tx,game.id,{snapshot:body.snapshot === undefined ? undefined : decodeInfluenceProductionSnapshot(body.snapshot)});
-}
+
 function descriptorHash(value:Omit<ProductionExportDescriptor,"hash">) {
   return `sha256:${createHash("sha256").update(stableProductionJson(value)).digest("hex")}`;
 }
@@ -73,9 +71,27 @@ async function assertCompleteExportSource(tx:VisualTransaction,id:string,source:
 function validateRecordingMoments(catalog:ProductionCatalog,ids:readonly string[],recordings:readonly ProductionRecording[]) {
   const selected = new Set(ids);
   for (const recording of recordings) {
-    const [moment] = resolveProductionMomentIds(catalog,[recording.momentId]);
-    if (!selected.has(recording.momentId) || moment!.kind !== "speech" || (moment!.actorId ?? null) !== recording.speakerId)
-      throw new Error("Recording does not match a selected authorized speech moment");
+    resolveProductionMomentIds(catalog,[recording.momentId]);
+    // Playback cues own speech identity; the catalog's actor can be the subject
+    // of House narration. Do not reconstruct audio policy from moment kinds.
+    if (!selected.has(recording.momentId))
+      throw new Error("Recording belongs to a moment outside the selected cut");
+  }
+}
+
+async function validateGeneratedRecordings(db:Pick<DrizzleDB,"select">,source:Awaited<ReturnType<typeof completeSource>>,recordings:readonly ProductionRecording[]) {
+  const catalog = source.catalog;
+  const generated = recordings.filter(recording => recording.versionId);
+  if (!generated.length) return;
+  const track = await readAudioPublication(db,catalog.gameId,catalog.audience,catalog.audience !== "mystery",true,generated.map(recording => recording.versionId!));
+  for (const recording of generated) {
+    const clip = track?.clips.find(clip => clip.momentId === recording.momentId && clip.versionId === recording.versionId);
+    if (!clip || clip.speakerId !== recording.speakerId || clip.textHash !== recording.textHash || clip.sha256 !== recording.sha256 || clip.durationMs !== recording.durationMs)
+      throw new StudioInputError("Generated recording does not match its authorized stored version");
+    const moment = catalog.moments.find(moment => moment.id === recording.momentId);
+    const content = moment && productionMomentContent(source, moment);
+    if (!content?.text || content.speakerId !== recording.speakerId || createHash("sha256").update(content.text).digest("hex") !== recording.textHash)
+      throw new StudioInputError("Generated recording does not match its frozen source text");
   }
 }
 
@@ -91,12 +107,62 @@ export function createProductionStudioRoutes(db:DrizzleDB) {
     await next();
   }));
   app.onError((error,c) => {
+    if (error instanceof AudioTrackConflict || error instanceof LiveAudioBlocked) return c.json({error:error.message},409);
     if (error instanceof AnnotationConflict) return c.json({error:error.message,current:error.current},409);
     if (error instanceof WerewolfGameError) return c.json({error:error.message},error.status);
     if (error instanceof ReplayVisualError) return c.json({error:error.message,code:error.code},error.status);
-    if (error instanceof StudioInputError || error instanceof InfluenceProductionSourceError) return c.json({error:error.message},400);
+    if (error instanceof ProductionEditorialInputError || error instanceof StudioInputError || error instanceof InfluenceProductionSourceError) return c.json({error:error.message},400);
     console.error("[production-studio]",error);
     return c.json({error:"Production request failed. Refresh to check saved state."},500);
+  });
+  app.post(`${root}/cut-preview`,async c => {
+    const body=object(await c.req.json());fields(body,["audience","thinking","snapshot","recipe","music","volume"]);
+    const result=await productionEditorial(db,c.get("user").id,"preview_production_cut",{...body,gameIdOrSlug:c.req.param("id"),limit:1});
+    return c.json(result,result.status === "ok" ? 200:400);
+  });
+  app.get(`${root}/audio/manifest`, async c => {
+    const access=options({audience:c.req.query("audience"),thinking:c.req.query("thinking")==="on"});
+    return c.json(await readAudioPublication(db,c.req.param("id"),access.audience,access.thinking,true));
+  });
+  app.post(`${root}/audio/versions`, async c => {
+    const body = object(await c.req.json()); fields(body,["audience","thinking","versionIds"]);
+    const access = options(body);
+    if (!Array.isArray(body.versionIds) || body.versionIds.length > 50000 || new Set(body.versionIds).size !== body.versionIds.length
+      || body.versionIds.some(id => typeof id !== "string" || !/^[a-f0-9-]{36}$/.test(id))) throw new StudioInputError("Invalid frozen audio versions");
+    const publication = await readAudioPublication(db,c.req.param("id"),access.audience,access.thinking,true,body.versionIds as string[]);
+    if ((publication?.clips.length ?? 0) !== body.versionIds.length) throw new StudioInputError("Frozen audio version is unavailable for this audience");
+    return c.json(publication);
+  });
+  app.get(`${root}/audio/:version`, async c => {
+    const audience = c.req.query("audience"), thinking = c.req.query("thinking"), version = c.req.param("version");
+    if (thinking !== "on" && thinking !== "off") throw new StudioInputError("Invalid audio thinking option");
+    const access = options({audience, thinking: thinking === "on"});
+    if (!/^[a-f0-9-]{36}$/.test(version)) return c.json({error:"Audio not found"},404);
+    return audioBytesResponse(c, await readPublishedAudioBytes(db,c.req.param("id"),version,access.audience,access.thinking,true));
+  });
+  app.get(`${root}/audio`, async c => {
+    const game = await kind(db,c.req.param("id"));
+    const preview = await previewAudioTrack(db,game.id);
+    return c.json({previewHash:preview.previewHash, voices:preview.voices, clipCount:preview.source.lines.length,
+      characters:preview.characters, estimateUsd:preview.estimateUsd, retryBudgetUsd:preview.retryBudgetUsd, tracks:preview.existing,resumeOwnerEpoch:preview.resumeOwnerEpoch});
+  });
+  app.post(`${root}/audio`, async c => {
+    const body = object(await c.req.json()); fields(body,["previewHash"]);
+    if (typeof body.previewHash !== "string") throw new StudioInputError("Review the audio preview before generating");
+    const game = await kind(db,c.req.param("id"));
+    return c.json({trackId:await queueAudioBackfill(db,game.id,c.get("user").id,body.previewHash)},202);
+  });
+  app.post(`${root}/audio/resume`,async c => {
+    const body=object(await c.req.json());fields(body,["ownerEpoch"]);
+    if (typeof body.ownerEpoch !== "string") throw new StudioInputError("Review audio recovery before resuming");
+    const game=await kind(db,c.req.param("id"));
+    await resumeLiveAudio(db,game.id,body.ownerEpoch);
+    return c.json({resumed:true});
+  });
+  app.post(`${root}/audio/:track/retry`, async c => {
+    const game = await kind(db,c.req.param("id"));
+    await retryAudioTrack(db,game.id,c.req.param("track"));
+    return c.json({queued:true},202);
   });
   app.get(`${root}/recovery`,async c => {
     if (Object.keys(c.req.query()).some(key => !["offset","limit"].includes(key))) throw new StudioInputError("Unsupported recovery query");
@@ -179,6 +245,7 @@ export function createProductionStudioRoutes(db:DrizzleDB) {
           resolved = await resolveAnnotatedSelection(tx,source.catalog,selection);
           for (const id of Object.keys(settings.profile.overrides)) resolveProductionMomentIds(source.catalog,[id]);
           validateRecordingMoments(source.catalog,resolved.momentIds,recordings);
+          await validateGeneratedRecordings(tx,source,recordings);
         } catch (error) {throw new StudioInputError(error instanceof Error ? error.message : "Invalid selection");}
         if (resolved.momentIds.length !== expectedMomentIds.length || resolved.momentIds.some((id,index) => id !== expectedMomentIds[index]))
           throw new WerewolfGameError("Saved tags changed this cut. Refresh tags and review the cut before exporting.",409);
@@ -201,7 +268,7 @@ export function createProductionStudioRoutes(db:DrizzleDB) {
       await assertCompleteExportSource(tx,c.req.param("id"),source,{audience:descriptor.audience,
         thinking:typeof descriptor.sourceSnapshot.thinking === "boolean" ? descriptor.sourceSnapshot.thinking : descriptor.selection.thinking});
       let moments;
-      try {moments = resolveProductionMomentIds(source.catalog,descriptor.momentIds);validateRecordingMoments(source.catalog,descriptor.momentIds,descriptor.recordings);}
+      try {moments = resolveProductionMomentIds(source.catalog,descriptor.momentIds);validateRecordingMoments(source.catalog,descriptor.momentIds,descriptor.recordings);await validateGeneratedRecordings(tx,source,descriptor.recordings);}
       catch (error) {throw new StudioInputError(error instanceof Error ? error.message : "Invalid frozen moment");}
       if (moments.some((moment,index) => moment.id !== descriptor.momentIds[index])) throw new StudioInputError("Frozen selection must preserve source order");
       return {valid:true,hash,momentIds:descriptor.momentIds};
