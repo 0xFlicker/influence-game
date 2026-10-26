@@ -31,9 +31,9 @@ test("profile ownership and current role, not token claims, govern model choices
 test("enrollment preference stays fixed after edits and an explicit admin Default override wins", async () => {
   const policy = gameModelPolicy({});
   await saveModelPreference(db, "owner", "character", { catalogId: "katana:deepseek-v4-flash" });
-  const seat = { id: "seat", agentProfileId: "character", modelPreference: { catalogId: "katana:glm-5-3-flash-private" } };
+  const seat = { id: "seat", agentProfileId: "character", modelPreference: { catalogId: "meta-muse:muse-spark-1.3-contributor" } };
   const config = await db.transaction(tx => sealRosterModelRouting(tx, { modelRouting: policy }, [seat]));
-  expect(actorProviderManifest(config, { id: "seat", role: "player" })[0]!.catalogId).toBe("katana:glm-5-3-flash-private");
+  expect(actorProviderManifest(config, { id: "seat", role: "player" })[0]!.catalogId).toBe("meta-muse:muse-spark-1.3-contributor");
   policy.overrides.seat = "default";
   const overridden = await db.transaction(tx => sealRosterModelRouting(tx, { modelRouting: policy }, [seat]));
   expect(actorProviderManifest(overridden, { id: "seat", role: "player" })[0]!.catalogId).toBe("openai:gpt-6-luna");
@@ -71,6 +71,7 @@ test("HTTP preference writes enforce ownership and current entitlement despite f
     body: JSON.stringify({ modelPreference: preference }),
   });
   expect((await patch("character", { catalogId: "openai:premium" })).status).toBe(403);
+  expect((await patch("character", { catalogId: "katana:glm-5-3-flash-private" })).status).toBe(403);
   expect((await patch("someone-elses-character", "default")).status).toBe(403);
   for (const catalogId of FREE_MODEL_CATALOG_IDS) expect((await patch("character", { catalogId })).status).toBe(200);
   expect((await patch("character", "default")).status).toBe(200);

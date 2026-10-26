@@ -15,6 +15,14 @@ beforeAll(() => {
 });
 
 describe("provider model inventory", () => {
+  test("ordinary users receive three free models and no GLM even when discovery lists it", async () => {
+    const inventory = await providerModelInventory({ OPENAI_API_KEY: "fixture", API_KAT_IMGNAI_KEY: "fixture", API_KAT_IMGNAI_SECRET: "fixture", META_MUSE_API_KEY: "fixture" }, false,
+      async provider => provider === "openai" ? ["gpt-6-luna"] : provider === "katana" ? ["glm-5-3-flash-private", "deepseek-v4-flash"] : ["muse-spark-1.3-contributor"]);
+    expect(inventory.models.map(model => model.catalogId).sort()).toEqual([
+      "katana:deepseek-v4-flash", "meta-muse:muse-spark-1.3-contributor", "openai:gpt-6-luna",
+    ]);
+  });
+
   test("OpenAI discovery exposes Sol rates and omits media models without hiding image-input text models", async () => {
     const excluded = ["gpt-image-2", "gpt-image-1-mini", "gpt-image-1.5", "chatgpt-image-latest", "gpt-image-1",
       "gpt-image-2-2026-04-21", "sora-2", "gpt-4o-transcribe", "omni-moderation-latest"];

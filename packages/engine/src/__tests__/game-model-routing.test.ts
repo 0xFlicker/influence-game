@@ -24,9 +24,12 @@ describe("frozen game model routing", () => {
       expect(() => normalizeGameModelRouting({ ...routing, defaultModelMaxFallbackCalls: value })).toThrow("fallback calls");
     }
   });
-  test("free selections are exactly the four agreed routes plus Default; experimental admin models stay strict", () => {
+  test("free selections allow the three approved routes plus Default; GLM and experimental models require admin access", () => {
     for (const catalogId of FREE_MODEL_CATALOG_IDS) expect(() => assertModelEntitlement(normalizeModelPreference({ catalogId }), false)).not.toThrow();
     expect(() => assertModelEntitlement("default", false)).not.toThrow();
+    const glm = normalizeModelPreference({ catalogId: "katana:glm-5-3-flash-private" });
+    expect(() => assertModelEntitlement(glm, false)).toThrow("admins");
+    expect(() => assertModelEntitlement(glm, true)).not.toThrow();
     const experimental = normalizeModelPreference({ catalogId: "meta-muse:future-text-model" });
     expect(() => assertModelEntitlement(experimental, false)).toThrow("admins");
     expect(() => assertModelEntitlement(experimental, true)).not.toThrow();
@@ -46,7 +49,7 @@ describe("frozen game model routing", () => {
     expect(() => sealGameModelRouting(sealed, [])).toThrow("already sealed");
   });
   test("eight provider-qualified models remain distinct through serialization and resume", () => {
-    const ids = [...FREE_MODEL_CATALOG_IDS, "openai:gpt-5-mini", "katana:grok-4-6", "katana:q-naifu-a3b", "custom-openai-compatible:experimental"];
+    const ids = ["openai:gpt-6-luna", "katana:glm-5-3-flash-private", "katana:deepseek-v4-flash", "meta-muse:muse-spark-1.3-contributor", "openai:gpt-5-mini", "katana:grok-4-6", "katana:q-naifu-a3b", "custom-openai-compatible:experimental"];
     const sealed = sealGameModelRouting(policy(), ids.map((catalogId, i) => ({ id: `seat-${i}`, preference: { catalogId } })));
     const config = JSON.parse(JSON.stringify({ modelRouting: sealed }));
     ids.forEach((catalogId, i) => expect(actorProviderManifest(config, { id: `seat-${i}`, role: "player" })[0]!.catalogId).toBe(catalogId));

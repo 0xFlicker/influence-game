@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { FREE_MODEL_CATALOG_IDS, gameModelPolicy } from "@influence/engine";
+import { gameModelPolicy } from "@influence/engine";
 import { schema } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
@@ -65,7 +65,7 @@ for (const kind of ["influence", "werewolf"] as const) test(`${kind}: API cast r
       : { playerCount: 8, modelRouting: policy });
     await request(`/api/${kind === "werewolf" ? "werewolf" : "games"}/${game.id}/fill`, "POST");
     const cast = await request<{ seats: Array<{ id: string }> }>(`/api/model-routing/games/${game.id}`, "GET");
-    const ids = [...FREE_MODEL_CATALOG_IDS, "openai:gpt-5-mini", "openai:gpt-5-nano", "katana:grok-4-6", "custom-openai-compatible:fixture-model"];
+    const ids = ["openai:gpt-6-luna", "katana:glm-5-3-flash-private", "katana:deepseek-v4-flash", "meta-muse:muse-spark-1.3-contributor", "openai:gpt-5-mini", "openai:gpt-5-nano", "katana:grok-4-6", "custom-openai-compatible:fixture-model"];
     expect(cast.seats).toHaveLength(8);
     const overrides = Object.fromEntries(cast.seats.map((seat: { id: string }, i: number) => [seat.id, { catalogId: ids[i]! }]));
     await request(`/api/model-routing/games/${game.id}`, "PUT", { ...policy, overrides });

@@ -681,7 +681,7 @@ describe("Agent Profile API", () => {
     test("saves model preference with profile edits and leaves it unchanged when omitted", async () => {
       const created = await app.request("/api/agent-profiles", jsonReq({ name: "Model Casey", personality: "Careful." }, tokenB));
       const { id } = await created.json() as { id: string };
-      const modelPreference = { catalogId: "katana:glm-5-3-flash-private" };
+      const modelPreference = { catalogId: "katana:deepseek-v4-flash" };
       const saved = await app.request(`/api/agent-profiles/${id}`, jsonReq({ name: "Model Casey Updated", modelPreference }, tokenB, "PATCH"));
       expect(saved.status).toBe(200);
       expect(await saved.json()).toMatchObject({ name: "Model Casey Updated", modelPreference });
@@ -714,7 +714,7 @@ describe("Agent Profile API", () => {
       expect(updated.status).toBe(200);
       const failed = await app.request(`/api/agent-profiles/${original.id}`, jsonReq({
         strategyStyle: "Stale strategy.", expectedRevisionId: original.profileRevisionId,
-        modelPreference: { catalogId: "katana:glm-5-3-flash-private" },
+        modelPreference: { catalogId: "katana:deepseek-v4-flash" },
       }, tokenB, "PATCH"));
       expect(failed.status).toBe(409);
       const [stored] = await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, original.id));
@@ -725,7 +725,7 @@ describe("Agent Profile API", () => {
       const created = await app.request("/api/agent-profiles", jsonReq({ name: "Held Model Casey", personality: "Original." }, tokenB));
       const { id } = await created.json() as { id: string };
       await db.update(schema.agentProfiles).set({ moderationRequired: true }).where(eq(schema.agentProfiles.id, id));
-      const modelPreference = { catalogId: "katana:glm-5-3-flash-private" };
+      const modelPreference = { catalogId: "katana:deepseek-v4-flash" };
       const saved = await app.request(`/api/agent-profiles/${id}`, jsonReq({ personality: "Correction.", modelPreference }, tokenB, "PATCH"));
       expect(saved.status).toBe(200);
       expect(await saved.json()).toMatchObject({ modelPreference, personality: "Original.", receipt: { publication: "held" } });
