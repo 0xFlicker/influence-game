@@ -36,6 +36,8 @@ async function renderPlayer(element: ReactElement, skipOpening = false) {
   await restoreDOM?.();
   restoreDOM = undefined;
   const dom = new Window({url: "http://localhost"});
+  // The mounted speech bubbles wait for fonts; each isolated document owns readiness.
+  Object.defineProperty(dom.document, "fonts", {value: {ready: Promise.resolve()}});
   const keys = ["window", "document", "navigator", "localStorage", "HTMLElement", "Element", "Node", "Event", "ResizeObserver", "requestAnimationFrame", "cancelAnimationFrame", "getComputedStyle"] as const;
   const descriptors = new Map(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   for (const key of keys) Object.defineProperty(globalThis, key, {configurable:true, value:key === "window" ? dom : key === "getComputedStyle" ? dom.getComputedStyle.bind(dom) : key === "requestAnimationFrame" ? dom.requestAnimationFrame.bind(dom) : key === "cancelAnimationFrame" ? dom.cancelAnimationFrame.bind(dom) : dom[key]});
