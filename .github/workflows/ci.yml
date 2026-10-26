@@ -26,6 +26,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Check character worker platform diagnostics
+        run: python3 -m unittest discover -s workers/character-cutouts -p 'test_*.py'
+
       - name: Enforce release migration policy
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}

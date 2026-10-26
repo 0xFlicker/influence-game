@@ -12,6 +12,27 @@ import urllib.request
 RECIPE = "birefnet-general-58f621f0-rembg2.0.86-r1"
 
 
+def cgroup_metrics(root=Path("/sys/fs/cgroup")):
+    """Read Docker cgroup v2 or Fargate cgroup v1 diagnostics, when exposed."""
+    def read(*paths):
+        for path in paths:
+            try:
+                return (root / path).read_text().strip()
+            except FileNotFoundError:
+                continue
+        return None
+
+    cpu = read("cpu.max")
+    if cpu is None:
+        quota = read("cpu/cpu.cfs_quota_us", "cpu,cpuacct/cpu.cfs_quota_us")
+        period = read("cpu/cpu.cfs_period_us", "cpu,cpuacct/cpu.cfs_period_us")
+        cpu = f"{quota} {period}" if quota is not None and period is not None else None
+    peak = read("memory.peak", "memory/memory.max_usage_in_bytes")
+    return {"cpu_max": cpu,
+            "memory_max": read("memory.max", "memory/memory.limit_in_bytes"),
+            "cgroup_peak_bytes": int(peak) if peak is not None else None}
+
+
 def process(session, source):
     from PIL import Image, ImageOps
     from rembg import remove
@@ -32,8 +53,7 @@ def main():
     start = time.monotonic()
     session = new_session("birefnet-general", providers=["CPUExecutionProvider"])
     metrics = {"recipe": RECIPE, "load_seconds": time.monotonic() - start,
-               "cpu_max": Path("/sys/fs/cgroup/cpu.max").read_text().strip(),
-               "memory_max": Path("/sys/fs/cgroup/memory.max").read_text().strip(), "images": []}
+               **cgroup_metrics(), "images": []}
     if args.input:
         if not args.output:
             parser.error("--output is required with --input")
@@ -50,7 +70,7 @@ def main():
                    "output_sha256": hashlib.sha256(result).hexdigest(), "bytes": len(result)}
             metrics["images"].append(row)
             metrics["peak_rss_bytes"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
-            metrics["cgroup_peak_bytes"] = int(Path("/sys/fs/cgroup/memory.peak").read_text())
+            metrics.update(cgroup_metrics())
             (args.output / "metrics.json").write_text(json.dumps(metrics, indent=2))
             print(json.dumps(row), flush=True)
     else:
@@ -80,7 +100,7 @@ def run_job(session):
     print(json.dumps({"job": job, "recipe": RECIPE, "seconds": time.monotonic() - started,
                       "source_sha256": claim["sourceHash"], "output_sha256": hashlib.sha256(output).hexdigest(),
                       "peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024,
-                      "cgroup_peak_bytes": int(Path("/sys/fs/cgroup/memory.peak").read_text())}), flush=True)
+                      **cgroup_metrics()}), flush=True)
 
 
 if __name__ == "__main__":

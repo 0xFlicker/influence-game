@@ -198,3 +198,7 @@ model load. A reused nine-image session peaked at 13.64 GiB cgroup memory; the f
 image peaked at 8.83 GiB cgroup / 8.92 GiB RSS. Production starts a fresh process for
 each image. These are Docker Desktop measurements, not an AWS latency guarantee.
 Exact dependencies are in `workers/character-cutouts/requirements.lock`.
+Worker diagnostics support cgroup v2 (Docker Desktop) and cgroup v1 (Fargate).
+Unexposed diagnostic counters are reported as null; missing metrics files must not
+prevent inference or turn an accepted upload into a failed job. Verify both layouts
+with `python3 -m unittest discover -s workers/character-cutouts -p 'test_*.py'`.
