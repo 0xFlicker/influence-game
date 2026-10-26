@@ -36,9 +36,9 @@ async function renderPlayer(element: ReactElement, skipOpening = false) {
   await restoreDOM?.();
   restoreDOM = undefined;
   const dom = new Window({url: "http://localhost"});
-  const keys = ["window", "document", "navigator", "localStorage", "HTMLElement", "Element", "Node", "Event", "ResizeObserver", "requestAnimationFrame", "cancelAnimationFrame"] as const;
+  const keys = ["window", "document", "navigator", "localStorage", "HTMLElement", "Element", "Node", "Event", "ResizeObserver", "requestAnimationFrame", "cancelAnimationFrame", "getComputedStyle"] as const;
   const descriptors = new Map(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
-  for (const key of keys) Object.defineProperty(globalThis, key, {configurable:true, value:key === "window" ? dom : key === "requestAnimationFrame" ? dom.requestAnimationFrame.bind(dom) : key === "cancelAnimationFrame" ? dom.cancelAnimationFrame.bind(dom) : dom[key]});
+  for (const key of keys) Object.defineProperty(globalThis, key, {configurable:true, value:key === "window" ? dom : key === "getComputedStyle" ? dom.getComputedStyle.bind(dom) : key === "requestAnimationFrame" ? dom.requestAnimationFrame.bind(dom) : key === "cancelAnimationFrame" ? dom.cancelAnimationFrame.bind(dom) : dom[key]});
   restoreDOM = async () => {await act(async () => {cleanup();});await dom.close();for(const key of keys){const descriptor=descriptors.get(key);if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}};
   const view = render(element);
   if (skipOpening) {
