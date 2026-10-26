@@ -1,5 +1,11 @@
 #!/usr/bin/env bun
 /**
+ * Native Anthropic uses anthropic:claude-haiku-5-5 and ANTHROPIC_API_KEY. Paid
+ * evaluation stays on the localhost API, with contestant and House manifests
+ * explicit and a shared anthropicUsd local-task allowance. Preserve all original
+ * requests, responses, native thinking/signatures, usage, and failures in private
+ * evidence. Authored thinking is a fictional character explanation, not extraction
+ * of model reasoning. No direct House-call bypass or `as any` shortcuts.
  * New shared model invocations request primarily English authored prose, allowing
  * natural brief foreign phrases and preserving names, quotes and structured IDs.
  * This is prompt guidance, not language-based rejection or historical rewriting.
@@ -853,7 +859,7 @@ const FULL_CAST: Array<{ name: string; personality: Personality }> = [
 function selectCast(
   count: number,
   requestedPersonas: string[] | null,
-  openai: OpenAI,
+  openai: OpenAI | import("@anthropic-ai/sdk").default,
   modelRuntime: SimulationModelRuntime,
   openAIReasoningSummary?: OpenAIReasoningSummaryMode,
   privateTraceSink?: import("./game-runner").PrivateTraceSink,

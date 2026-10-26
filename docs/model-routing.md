@@ -1,6 +1,6 @@
 # Character and House models
 
-Characters have one operational `modelPreference`, shared across Influence and Werewolf. It is independent of strategy text and moderation revisions. The three free models are OpenAI GPT-6 Luna (Flex), Katana DeepSeek Flash (`deepseek-v4-flash`), and Meta Muse 1.3 Contributor (`muse-spark-1.3-contributor`), alongside Default. GLM Flash was removed from free selection after another minimal Katana inference returned HTTP 502 with no output on October 25, 2026 (America/Denver). Admins/sysops can choose any text model ID understood by a configured adapter. Discovery is advisory, not paid qualification. Unknown capability claims and prices remain labelled as unknown or inferred.
+Characters have one operational `modelPreference`, shared across Influence and Werewolf. It is independent of strategy text and moderation revisions. Free choices are native Anthropic Haiku 5.5 (`anthropic:claude-haiku-5-5`), OpenAI GPT-6 Luna (Flex), Katana DeepSeek Flash (`deepseek-v4-flash`), and Meta Muse 1.3 Contributor (`muse-spark-1.3-contributor`), alongside Default. GLM Flash was removed from free selection after another minimal Katana inference returned HTTP 502 with no output on October 25, 2026 (America/Denver). Admins/sysops can choose any text model ID understood by a configured adapter. Discovery is advisory, not paid qualification. Unknown capability claims and prices remain labelled as unknown or inferred. Native Anthropic requires audited capability facts; see [its setup and contract](native-anthropic.md).
 
 Edit a character's preference in its editor. Admin creation has separate contestant and House routes. In the admin game list, **Models** opens cast overrides, shared contestant fallbacks, House fallbacks, and exclusions. An explicit Default override selects the game default; removing the override restores the enrollment preference. The short best-effort explanation needs no consent checkbox. Subscription billing and media-model selection are outside this setting.
 
@@ -74,6 +74,7 @@ The normalized Katana snapshot in `packages/engine/src/katana-catalog-snapshot.j
 | Route | Input / cached input / output USD per million | Evidence |
 |---|---|---|
 | Luna Flex | 0.05 / 0.005 / 0.25 | [OpenAI model page](https://developers.openai.com/api/docs/models/gpt-6-luna), October 23; long-context/cache-write tiers retained |
+| Haiku 5.5 Standard | 0.10 / 0.01 / 0.50 | [October 25 native audit](research/2026-10-25-anthropic-native-provider/README.md); all rates increase fivefold above 100K prompt tokens |
 | GLM Flash | 0.156 / 0.0312 / 0.52 | Katana October 23 metadata |
 | DeepSeek Flash | 0.1001 / 0.02002 / 0.2002 | Katana October 23 metadata |
 | Muse Contributor | 0.10 / 0.002 / 0.20 | Existing October 14 [Meta pricing](https://dev.meta.ai/docs/pricing-rate-limits) record; public refresh unavailable October 23 |

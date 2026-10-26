@@ -1,5 +1,15 @@
 # Reasoning & Transcript Observability
 
+Native Anthropic uses the same durable attempt and private bucket evidence paths.
+Preserve summarized thinking, opaque signatures, redacted blocks, original JSON,
+cache usage, and unsuccessful billable responses. Authored `thinking` explicitly
+asks for a brief fictional character explanation; it is not a request to extract
+the provider's hidden reasoning. The Anthropic wire codec decodes exact native
+schemas before the existing semantic and clean-text checks. Inspect both wire and
+accepted values when diagnosing errors; never repair malformed JSON. See
+[native provider details](native-anthropic.md). House calls stay direct through
+the coordinator and typed contracts; no `as any` shortcuts.
+
 New Influence games freeze their decision-speech contract. Historical accepted
 ballots replay under their original exact contract without replacement provider
 calls. Length repairs include the clean UTF-8 speech draft and measured overage.

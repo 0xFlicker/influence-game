@@ -1,5 +1,13 @@
 # Local Model Evaluation
 
+Native Anthropic evaluations select `anthropic:claude-haiku-5-5` for both cast and
+House routes. Use `ANTHROPIC_API_KEY` from Doppler and a shared local-task ledger
+with `anthropicUsd` set to the authorized ceiling. Retain every API game ID and
+private attempt, including rejected schemas and billable malformed output. Native
+thinking summaries/signatures remain separate from fictional character explanations.
+See [native Anthropic setup and accounting](native-anthropic.md). No `as any` or
+direct calls around the existing House/provider coordinator are permitted.
+
 Provider parameters follow frozen model capabilities: non-reasoning models omit
 reasoning summaries and models without Flex support use their supported tier.
 Local task-budget admission rejections retain zero-charge `not_dispatched`

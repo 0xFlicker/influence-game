@@ -15,6 +15,7 @@ function providerConfigured(
   env: NodeJS.ProcessEnv,
 ): boolean {
   if (providerProfileId === "openai") return Boolean(env.OPENAI_API_KEY?.trim());
+  if (providerProfileId === "anthropic") return Boolean(env.ANTHROPIC_API_KEY?.trim());
   if (providerProfileId === "katana") {
     return Boolean(
       env.API_KAT_IMGNAI_KEY?.trim()
@@ -76,8 +77,9 @@ async function listConfiguredProviderModelIds(
     timeout: 5_000,
   });
   if (!llm) throw new Error("Provider is not configured");
-  const models = await llm.client.models.list();
-  return models.data.map((model) => model.id);
+  const ids: string[] = [];
+  for await (const model of llm.client.models.list()) ids.push(model.id);
+  return ids;
 }
 
 export async function providerModelInventory(env: NodeJS.ProcessEnv, privileged: boolean, listModelIds = listConfiguredProviderModelIds) {

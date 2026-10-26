@@ -1,5 +1,5 @@
 /** Direction for authored thinking, not native provider reasoning or a validation rule. */
-export const THINKING_FIELD_GUIDANCE = "A brief, first-person inner monologue in character, usually 2–4 short sentences. Focus on your motive and next game move, not a transcript recap or a checklist of whether to speak. Do not quote instructions or discuss output fields, internal IDs, delivery tags, length corrections or byte/token limits.";
+export const THINKING_FIELD_GUIDANCE = "A brief fictional character explanation in first person, usually 2–4 short sentences. Describe the character's motive and next game move, not the model's private reasoning, a transcript recap or a checklist of whether to speak. Do not quote instructions or discuss output fields, internal IDs, delivery tags, length corrections or byte/token limits.";
 
 export const THINKING_CONTENT_GUIDANCE = [
   THINKING_FIELD_GUIDANCE,

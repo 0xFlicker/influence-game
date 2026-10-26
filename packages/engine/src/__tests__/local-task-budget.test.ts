@@ -8,7 +8,7 @@ import { ProviderCircuitOpenError, ProviderCallBudgetExhaustedError, ProviderJou
 
 async function fixture(run: (path: string, env: NodeJS.ProcessEnv) => Promise<void>) {
   const dir = await mkdtemp(join(tmpdir(), "local-task-budget-")), path = join(dir, "ledger.json");
-  const ledger: LocalTaskLedger = { version: 1, limits: { openaiUsd: 15, katanaCredits: 10000, xaiUsd: 15, metaUsd: 0 }, prior: { openaiUsd: 0, katanaCredits: 0, xaiUsd: 0, metaUsd: 0 }, allowedGameIds: ["g"], entries: [] };
+  const ledger: LocalTaskLedger = { version: 1, limits: { openaiUsd: 15, katanaCredits: 10000, xaiUsd: 15, metaUsd: 0, anthropicUsd: 0 }, prior: { openaiUsd: 0, katanaCredits: 0, xaiUsd: 0, metaUsd: 0, anthropicUsd: 0 }, allowedGameIds: ["g"], entries: [] };
   await writeFile(path, JSON.stringify(ledger));
   try { await run(path, { INFLUENCE_LOCAL_TASK_BUDGET: path }); } finally { await rm(dir, { recursive: true, force: true }); }
 }
@@ -52,6 +52,24 @@ test("audio retries and parallel reservations cannot exceed shared allowance", (
   expect(results.filter(r=>r.status==="fulfilled")).toHaveLength(1);
   const ledger=JSON.parse(await readFile(path,"utf8")) as LocalTaskLedger;
   expect(ledger.entries[0]!.charged).toBe(9);
+}));
+
+test("Anthropic reserves the higher prompt tier and cannot exceed its separate $5 ceiling", () => fixture(async (path, env) => {
+  await updateLocalTaskLedger(path, ledger => { ledger.limits.anthropicUsd = 5; ledger.limits.openaiUsd = 0; });
+  const hooks = withLocalTaskBudget({}, env);
+  const request = intent("haiku", "anthropic:claude-haiku-5-5");
+  request.preparedRequest.body = { messages: [{ role: "user", content: "hi" }], max_tokens: 8192 };
+  await hooks.onReserve!(request);
+  let ledger = JSON.parse(await readFile(path, "utf8")) as LocalTaskLedger;
+  expect(ledger.entries[0]).toMatchObject({ currency: "anthropicUsd", inputRate: 1.25, outputRate: 5 });
+  await hooks.onTerminal!({ ...request, completedAt: new Date().toISOString(), latencyMs: 1, outcome: {kind: "usable"}, disposition: "accepted",
+    accounting: {usage: {promptTokens: 1000, completionTokens: 100, reasoningTokens: 90}} });
+  ledger = JSON.parse(await readFile(path, "utf8")) as LocalTaskLedger;
+  expect(ledger.entries[0]!.charged).toBeCloseTo(0.00175);
+  const huge = intent("huge", "anthropic:claude-haiku-5-5");
+  huge.preparedRequest.body = { max_tokens: 1_000_000 };
+  await expect(hooks.onReserve!(huge)).rejects.toThrow("anthropicUsd allowance exhausted");
+  await expect(hooks.onReserve!(intent("openai"))).rejects.toThrow("openaiUsd allowance exhausted");
 }));
 test("audio cannot spend for unrelated queued games", () => fixture(async(_path,env)=>{
   await expect(reserveLocalTaskAudio("old-track", "hello", "unrelated", env)).rejects.toThrow("outside");

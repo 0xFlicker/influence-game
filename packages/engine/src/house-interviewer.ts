@@ -730,7 +730,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   private tokenTracker: TokenTracker | null = null;
   private durableProviderTurnBindings = new Map<string, DurableProviderTurnBinding>();
 
-  constructor(provider: OpenAI | LlmProviderAdapter, model = DEFAULT_MODEL_ID, options: LLMHouseInterviewerOptions = {}) {
+  constructor(provider: OpenAI | import("@anthropic-ai/sdk").default | LlmProviderAdapter, model = DEFAULT_MODEL_ID, options: LLMHouseInterviewerOptions = {}) {
     this.model = model;
     this.providerProfileId = options.providerProfileId ?? "openai";
     this.catalogId = options.catalogId;

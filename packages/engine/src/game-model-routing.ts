@@ -2,7 +2,7 @@ import { DEFAULT_MODEL_CATALOG_ID, MAX_PROVIDER_ENTRY_CALLS_PER_GAME, normalizeP
 
 export const DEFAULT_CONTESTANT_RECOVERY_CALLS = 24;
 
-export const FREE_MODEL_CATALOG_IDS = ["openai:gpt-6-luna", "katana:deepseek-v4-flash", "meta-muse:muse-spark-1.3-contributor"] as const;
+export const FREE_MODEL_CATALOG_IDS = ["openai:gpt-6-luna", "katana:deepseek-v4-flash", "meta-muse:muse-spark-1.3-contributor", "anthropic:claude-haiku-5-5"] as const;
 export type ModelPreference = "default" | GameModelSelection;
 
 /** Small game configuration only. Provider evidence and contexts remain in object storage. */

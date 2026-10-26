@@ -15,12 +15,13 @@ beforeAll(() => {
 });
 
 describe("provider model inventory", () => {
-  test("ordinary users receive three free models and no GLM even when discovery lists it", async () => {
-    const inventory = await providerModelInventory({ OPENAI_API_KEY: "fixture", API_KAT_IMGNAI_KEY: "fixture", API_KAT_IMGNAI_SECRET: "fixture", META_MUSE_API_KEY: "fixture" }, false,
-      async provider => provider === "openai" ? ["gpt-6-luna"] : provider === "katana" ? ["glm-5-3-flash-private", "deepseek-v4-flash"] : ["muse-spark-1.3-contributor"]);
+  test("ordinary users receive free Haiku alongside existing choices, without premium Claude or GLM", async () => {
+    const inventory = await providerModelInventory({ ANTHROPIC_API_KEY: "fixture", OPENAI_API_KEY: "fixture", API_KAT_IMGNAI_KEY: "fixture", API_KAT_IMGNAI_SECRET: "fixture", META_MUSE_API_KEY: "fixture" }, false,
+      async provider => provider === "anthropic" ? ["claude-haiku-5-5", "claude-sonnet-5-5"] : provider === "openai" ? ["gpt-6-luna"] : provider === "katana" ? ["glm-5-3-flash-private", "deepseek-v4-flash"] : ["muse-spark-1.3-contributor"]);
     expect(inventory.models.map(model => model.catalogId).sort()).toEqual([
-      "katana:deepseek-v4-flash", "meta-muse:muse-spark-1.3-contributor", "openai:gpt-6-luna",
+      "anthropic:claude-haiku-5-5", "katana:deepseek-v4-flash", "meta-muse:muse-spark-1.3-contributor", "openai:gpt-6-luna",
     ]);
+    expect(inventory.models.find(model => model.catalogId === "anthropic:claude-haiku-5-5")).toMatchObject({ configured: true, available: true, metadata: { rateCard: { rates: { inputPer1M: 0.1, outputPer1M: 0.5 } } } });
   });
 
   test("OpenAI discovery exposes Sol rates and omits media models without hiding image-input text models", async () => {

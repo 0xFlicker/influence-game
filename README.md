@@ -181,6 +181,10 @@ New game decisions use exact native JSON Schema responses across OpenAI, Muse, a
 
 Characters can choose Default or a free model; admins/sysops can select experimental exact IDs. Game creation separates contestant and House routes with explicit fallback caps. See [model routing](docs/model-routing.md) for the policy and controls.
 
+Native Anthropic uses the official SDK and Doppler's `ANTHROPIC_API_KEY`.
+`anthropic:claude-haiku-5-5` is a free-account choice; see
+[native Anthropic](docs/native-anthropic.md) for configuration, pricing and evaluation evidence.
+
 An explicit preference falls back through the game default and then the remaining configured models, skipping duplicates. The default's shared recovery allowance is editable before start. Provider retry windows cool down the failed model while the next permitted model can run immediately; Luna stays Flex.
 
 Preview an eight-model roster without authentication, API requests, or generation:
