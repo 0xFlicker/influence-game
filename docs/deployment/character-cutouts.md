@@ -103,6 +103,11 @@ stops the local container but retains the lease; resume after expiry. Exit codes
 
 ## Production rollout and exact commands
 
+The API runtime image includes `dist/backfill-character-cutouts.js`. Run it with
+the same arguments below using the accepted image and its scoped production runtime
+environment. Source-tree paths are only for a repository checkout; production images
+do not contain `packages/api/src`. The operator command does not start the API server.
+
 **Not activated by this change.** Read-only verification on 2026-10-25, AWS account
 978355607658, profile `falsefloor-agents`, region `us-west-1`, found the existing
 House render bootstrap stacks and CDK assets repository, but no character-cutout
