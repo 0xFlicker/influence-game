@@ -32,3 +32,6 @@ The normal coordinated release must supply `ANTHROPIC_API_KEY` to gateway and
 worker before cutover and drain old writers. This change does not qualify
 Sonnet, Opus, or Fable gameplay; the earlier paid evaluation covered Haiku
 Werewolf only. No additional paid calls are part of this review.
+
+See [native provider integration](native-model-provider-integration.md) for the
+broader SDK, execution, accounting and qualification lessons from this work.

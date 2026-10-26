@@ -36,3 +36,5 @@ only after their evidence is durable. Unknown usage keeps its reservation.
 
 See [native provider documentation](../../native-anthropic.md) and
 [evaluation evidence](../../research/2026-10-25-anthropic-native-provider/evaluation.md).
+For the complete integration workflow, see
+[native provider integration](../integration-issues/native-model-provider-integration.md).
