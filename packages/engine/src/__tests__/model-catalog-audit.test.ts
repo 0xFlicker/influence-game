@@ -5,6 +5,24 @@ import { providerModelFacts } from "../provider-model-facts";
 import { modelRateCard } from "../model-route-metadata";
 import { MODEL_PRICING } from "../token-tracker";
 
+test("Terra uses documented Responses capabilities and its own Standard and Flex rates", () => {
+  const model = modelCatalogEntryById("openai:gpt-6.1-terra");
+  expect(model?.capabilityEvidence).toBe("documented");
+  expect(model?.evaluationStatus).toBe("evaluation-candidate");
+  expect(model?.capabilities).toMatchObject({ supportsOpenAIResponses: true, supportsStructuredOutput: true, supportsImageInput: true, supportsTemperature: false });
+  expect(model?.allowedReasoningEfforts).toEqual(["low", "medium", "high"]);
+  expect(model?.metadata.rateCard).toMatchObject({ version: "2026-10-26", rates: {
+    inputPer1M: 1, outputPer1M: 5, cachedInputPer1M: .05, cacheWriteInputPer1M: 1.25,
+    tiers: [{ minPromptTokens: 272001, inputPer1M: 2, outputPer1M: 7.5, cachedInputPer1M: .1, cacheWriteInputPer1M: 2.5 }],
+  } });
+  expect(modelRateCard("openai:gpt-6.1-terra", "flex")?.rates).toEqual({
+    inputPer1M: .5, outputPer1M: 2.5, cachedInputPer1M: .025, cacheWriteInputPer1M: .625,
+    tiers: [{ minPromptTokens: 272001, inputPer1M: 1, outputPer1M: 3.75, cachedInputPer1M: .05, cacheWriteInputPer1M: 1.25 }],
+  });
+  expect(modelRateCard("openai:gpt-6.1-sol")?.version).toBe("2026-10-23");
+  expect(() => normalizeProviderManifest([{ catalogId: "openai:gpt-6.1-terra" }])).not.toThrow();
+});
+
 test("every hosted model in the audit has documented facts and a price, or is excluded from gameplay", () => {
   for (const [provider, ids] of Object.entries(inventory)) {
     for (const id of ids) {

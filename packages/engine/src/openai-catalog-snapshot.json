@@ -1494,6 +1494,59 @@
         ]
       }
     },
+    "gpt-6.1-terra": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-6.1-terra",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": true,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 1,
+        "outputPer1M": 5,
+        "cachedInputPer1M": 0.05,
+        "cacheWriteInputPer1M": 1.25,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 2,
+            "outputPer1M": 7.5,
+            "cachedInputPer1M": 0.1,
+            "cacheWriteInputPer1M": 2.5
+          }
+        ]
+      },
+      "flexPricing": {
+        "inputPer1M": 0.5,
+        "outputPer1M": 2.5,
+        "cachedInputPer1M": 0.025,
+        "cacheWriteInputPer1M": 0.625,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 1,
+            "outputPer1M": 3.75,
+            "cachedInputPer1M": 0.05,
+            "cacheWriteInputPer1M": 1.25
+          }
+        ]
+      },
+      "checkedAt": "2026-10-26"
+    },
     "o1-pro": {
       "source": "https://developers.openai.com/api/docs/models/o1-pro",
       "aliases": [
