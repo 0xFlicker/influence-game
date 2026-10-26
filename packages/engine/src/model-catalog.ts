@@ -267,6 +267,14 @@ const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
     "defaultReasoningPolicy": "action-policy"
   },
   {
+    "id": "openai:gpt-6.1-terra",
+    "providerProfileId": "openai",
+    "modelId": "gpt-6.1-terra",
+    "displayName": "OpenAI gpt-6.1-terra",
+    "evaluationStatus": "evaluation-candidate",
+    "defaultReasoningPolicy": "action-policy"
+  },
+  {
     "id": "katana:grok-4-6",
     "providerProfileId": "katana",
     "modelId": "grok-4-6",

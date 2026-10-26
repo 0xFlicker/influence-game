@@ -23,13 +23,14 @@ export interface ProviderModelFacts {
 
 interface OpenAIModelRow extends Omit<ProviderModelFacts, "checkedAt" | "parameters"> {
   aliases: string[];
+  checkedAt?: string;
 }
 
 const openaiRows = openai.models as Record<string, OpenAIModelRow>;
 export const OPENAI_MODEL_FACTS: Readonly<Record<string, ProviderModelFacts>> = Object.fromEntries(
   Object.entries(openaiRows).flatMap(([id, row]) => [id, ...row.aliases].map(alias => [alias, {
     ...row, capabilities: { ...row.capabilities, supportsFlexProcessing: Boolean(row.flexPricing) },
-    checkedAt: openai.checkedAt, parameters: [],
+    checkedAt: row.checkedAt ?? openai.checkedAt, parameters: [],
   }])),
 );
 
