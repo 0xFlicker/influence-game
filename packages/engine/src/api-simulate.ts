@@ -26,7 +26,7 @@ interface ApiSimArgs {
   webBaseUrl: string;
   games: number;
   players: number;
-  provider: "openai" | "anthropic" | "lm-studio" | "katana" | "meta-muse" | "custom-openai-compatible";
+  provider: "openai" | "anthropic" | "xai" | "lm-studio" | "katana" | "meta-muse" | "custom-openai-compatible";
   model?: string;
   modelCatalogId?: string;
   providerManifest?: GameProviderManifest;
@@ -335,7 +335,8 @@ export function catalogIdFromProviderAndModel(
   if (provider === "lm-studio") {
     throw new Error("--model is required for --provider lm-studio");
   }
-  if (provider === "katana") return "katana:grok-4-3";
+  if (provider === "katana") return "katana:deepseek-v4-flash";
+  if (provider === "xai") return "xai:grok-4.3";
   if (provider === "anthropic") return "anthropic:claude-haiku-5-5";
   if (provider === "meta-muse") return "meta-muse:muse-spark-1.3-contributor";
   if (provider === "custom-openai-compatible") {
@@ -358,7 +359,7 @@ function parseMaxRounds(value: string | undefined): number | "auto" | undefined 
 }
 
 function parseProvider(value: string | undefined): ApiSimArgs["provider"] | undefined {
-  if (value === "openai" || value === "anthropic" || value === "lm-studio" || value === "katana" || value === "meta-muse" || value === "custom-openai-compatible") {
+  if (value === "openai" || value === "anthropic" || value === "xai" || value === "lm-studio" || value === "katana" || value === "meta-muse" || value === "custom-openai-compatible") {
     return value;
   }
   return undefined;
@@ -379,10 +380,11 @@ function printHelp(): void {
   bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id>
   bun run simulate:api -- --provider katana --model deepseek-v4-flash
   bun run simulate:api -- --provider anthropic --model claude-haiku-5-5
+  bun run simulate:api -- --provider xai --model grok-4.3
   bun run simulate:api -- \\
     --provider-entry openai:gpt-6-luna,reasoning=action-policy \\
     --provider-entry katana:glm-5-2,reasoning=action-policy,max-calls=24 \\
-    --provider-entry katana:grok-4-5,reasoning=medium,max-calls=12
+    --provider-entry xai:grok-4.5,reasoning=medium,max-calls=12
   bun run simulate:api -- --standard  # opt out of hosted OpenAI Flex
 
 Defaults:

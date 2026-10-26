@@ -803,8 +803,10 @@ export async function recordProviderSpendForAttempt(
     (value) => value !== undefined,
   );
   const frozenCard = input.rateCard === undefined ? modelRateCard(input.catalogId ?? `${input.providerProfileId}:${input.modelName}`, input.accounting?.effectiveServiceTier) : input.rateCard;
-  const card = input.providerProfileId === "anthropic" && input.accounting?.effectiveServiceTier
-    && input.accounting.effectiveServiceTier !== "standard" ? null : frozenCard;
+  const unknownTier = input.accounting?.effectiveServiceTier
+    && ((input.providerProfileId === "anthropic" && input.accounting.effectiveServiceTier !== "standard")
+      || (input.providerProfileId === "xai" && input.accounting.effectiveServiceTier !== "default"));
+  const card = unknownTier ? null : frozenCard;
   const actualCostMicrousd = input.accounting?.actualCostMicrousd;
   const estimatedCostMicrousd = actualCostMicrousd === undefined && hasReportedUsage
     ? card ? Math.round(estimateRouteCost(usage, card) * 1_000_000) : undefined

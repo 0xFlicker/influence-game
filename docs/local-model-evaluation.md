@@ -1,5 +1,18 @@
 # Local Model Evaluation
 
+Native Grok uses `XAI_API_KEY` and the localhost API CLI's `--provider xai
+--model grok-4.3` selection (also 4.5, 4.6 and 4.20 multi-agent). Existing mutable
+Katana choices migrate to identical generations. Catalog discovery is verified;
+native Grok 4.3 completed a six-player localhost Werewolf game and retrospective:
+`zen-blue-crane`, 51 usable calls, **$0.393445** actual LLM cost. See the
+[run report](reviews/2026-10-26-native-xai-werewolf.md). Other models and broader
+gameplay/schema coverage remain unqualified. An authorized paid game does not
+require a dollar ceiling unless the user requests one. When a hard budget is
+configured, the local guards reject xAI because its visible-output cap does not
+bound reasoning spend; do not silently remove that guard. Preserve every API game ID, original sanitized request,
+response, encrypted reasoning item, usage and actual billing ticks. See
+[native xAI](native-xai.md). No `as any` shortcuts or direct House-call bypasses.
+
 Native Anthropic evaluations select `anthropic:claude-haiku-5-5` for both cast and
 House routes. Use `ANTHROPIC_API_KEY` from Doppler and a shared local-task ledger
 with `anthropicUsd` set to the authorized ceiling. Retain every API game ID and
@@ -290,20 +303,9 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   --game-timeout-sec 600 --llm-timeout-sec 90
 ```
 
-For Katana / IMGNAI router smoke testing, use the catalog path so the simulator selects the Katana provider profile and reasoning policy:
-
-```bash
-bun run simulate:katana:grok:smoke
-```
-
-Or choose the depth manually:
-
-```bash
-doppler run --project social-strategy-agent --config dev -- \
-  bun run simulate -- --games 1 --players 6 --variant mingle \
-  --model-catalog katana:grok-4-3 --reasoning-policy high \
-  --game-timeout-sec 900 --llm-timeout-sec 120
-```
+Grok now uses native xAI. Use the durable localhost API after establishing the
+budget prerequisites above; the obsolete file-only Katana Grok smoke command
+has been removed. Historical Katana qualification below remains historical.
 
 4. If the model finishes, run a larger test (add `--chatty` for live colored transcript with per-decision thinking/reasoning visibility — highly recommended for Mingle, format pick, ballot, pointer, and tiebreak work):
 
@@ -631,7 +633,7 @@ Default conversations allow 320 UTF-8 bytes per message and 400 bytes per partic
 `bun run simulate:models` (repository root) supports Influence and Werewolf through the localhost API. `--models` is an ordered comma-separated list with exactly one provider-qualified ID (or `default`) per seat. `--roster path.json` instead accepts `{ seats: [{ id, agentProfileId?, preference }], policy }`, where `preference` is `"default"` or `{ catalogId, reasoningPolicy? }` and `policy` is the documented `GameModelRouting` object. A supplied profile must be owned by the authenticated operator.
 
 ```sh
-bun run simulate:models --game influence --players 8 --models openai:gpt-6-luna,katana:glm-5-3-flash-private,katana:deepseek-v4-flash,meta-muse:muse-spark-1.3-contributor,openai:gpt-5-mini,katana:grok-4-6,katana:q-naifu-a3b,custom-openai-compatible:experimental --provider-entry openai:gpt-6-luna --provider-entry katana:grok-4-6,max-calls=24 --house-entry meta-muse:muse-spark-1.3-contributor --house-entry openai:gpt-6-luna,max-calls=12 --preview
+bun run simulate:models --game influence --players 8 --models openai:gpt-6-luna,katana:glm-5-3-flash-private,katana:deepseek-v4-flash,meta-muse:muse-spark-1.3-contributor,openai:gpt-5-mini,xai:grok-4.6,katana:q-naifu-a3b,custom-openai-compatible:experimental --provider-entry openai:gpt-6-luna --provider-entry xai:grok-4.6,max-calls=24 --house-entry meta-muse:muse-spark-1.3-contributor --house-entry openai:gpt-6-luna,max-calls=12 --preview
 ```
 
 Preview is entirely offline and prints resolved assignments, fallback chains and dated/unknown metadata. It does not assert provider availability or quality. Repeated `--provider-entry` still defines the common fallback chain, never the seat list; `--house-entry` independently defines the House chain. Roster files carry their own complete policy. Luna stays Flex.

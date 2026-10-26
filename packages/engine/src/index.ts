@@ -803,6 +803,7 @@ export { withLocalTaskBudget, localTaskBudgetPath, localTaskBudgetIdentity, rese
 
 export * from "./game-model-routing";
 export * from "./claude-routing";
+export * from "./grok-routing";
 
 export * from "./model-route-metadata";
 

@@ -30,6 +30,7 @@ test("blocks unapproved games and unknown models before underlying journal", () 
   const other = intent("other"); other.coordinate.gameId = "outside";
   await expect(hooks.onReserve!(other)).rejects.toThrow("outside");
   await expect(hooks.onReserve!(intent("unknown","openai:unknown"))).rejects.toThrow("unpriced");
+  await expect(hooks.onReserve!(intent("xai","xai:grok-4.3"))).rejects.toThrow("total reasoning-token spending bound");
   await expect(hooks.onReserve!(intent("meta","meta-muse:muse-spark-1.3-contributor"))).rejects.toThrow("allowance exhausted");
   await expect(hooks.onReserve!(intent("other-meta","meta-muse:muse-wonder-1.0"))).rejects.toThrow("rejects provider");
   expect(calls).toBe(0);
