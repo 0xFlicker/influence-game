@@ -5,11 +5,31 @@ import { estimateRouteCost, modelRateCard } from "../model-route-metadata";
 import { previewModelRoster } from "../mixed-model-simulate";
 import { summarizeModelRouting } from "../model-routing-report";
 import { modelCatalogEntryById } from "../model-catalog";
+import { preferredClaudeCatalogId } from "../claude-routing";
 
 const policy = () => normalizeGameModelRouting({ version: 1, defaultManifest: [{ catalogId: "openai:gpt-6-luna" }, { catalogId: "katana:deepseek-v4-flash", maxCallsPerGame: 5 }],
   houseManifest: [{ catalogId: "meta-muse:muse-spark-1.3-contributor" }, { catalogId: "katana:deepseek-v4-flash", maxCallsPerGame: 2 }], overrides: {}, excludedCatalogIds: [] });
 
 describe("frozen game model routing", () => {
+  test("new Claude choices require the latest native family while historical routes remain readable", () => {
+    for (const [old, current] of [["katana:claude-haiku-4-5", "anthropic:claude-haiku-5-5"], ["anthropic:claude-sonnet-4-6", "anthropic:claude-sonnet-5-5"],
+      ["katana:claude-opus-4-8", "anthropic:claude-opus-5-5"], ["katana:claude-fable-5", "anthropic:claude-fable-5-1"]] as const) {
+      expect(preferredClaudeCatalogId(old)).toBe(current);
+      expect(preferredClaudeCatalogId(current)).toBe(current);
+      expect(() => assertModelEntitlement({ catalogId: old }, true)).toThrow(current);
+      expect(() => assertModelEntitlement({ catalogId: current }, true)).not.toThrow();
+      expect(() => sealGameModelRouting(policy(), [{ id: "seat", preference: { catalogId: old } }])).toThrow(current);
+      // Old persisted runtimes are authoritative even after current selection policy changes.
+      const historical = sealGameModelRouting(policy(), [{ id: "seat", preference: "default" }]);
+      const route = historical.frozenRoutes!.contestants.seat![0]!;
+      const model = modelCatalogEntryById(old)!;
+      historical.frozenRoutes!.contestants.seat = [{ ...route, catalogId: old, modelId: model.modelId, model,
+        providerProfile: { ...route.providerProfile, id: model.providerProfileId } }];
+      expect(actorProviderManifest({ modelRouting: historical }, { id: "seat", role: "player" })[0]!.catalogId).toBe(old);
+      expect(gameModelPolicy({ modelRouting: historical })).toBe(historical);
+    }
+    expect(preferredClaudeCatalogId("katana:deepseek-v4-flash")).toBe("katana:deepseek-v4-flash");
+  });
   test("explicit preferences retain the game default first with a bounded shared allowance", () => {
     const routing = { ...policy(), defaultModelMaxFallbackCalls: 7 };
     const preferred = { catalogId: "katana:glm-5-3-flash-private" };

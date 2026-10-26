@@ -36,6 +36,21 @@ const coordinate: ProviderLogicalCallCoordinate = {
 };
 
 describe("ProviderExecutionCoordinator", () => {
+  it("retains adapter-normalized failure usage instead of reinterpreting native cache fields", async () => {
+    const records: ProviderAttemptRecord[] = [];
+    const accounting = { usage: { promptTokens: 1200, cachedTokens: 900, cacheWriteTokens: 200,
+      completionTokens: 70, reasoningTokens: 50, totalTokens: 1270 }, effectiveServiceTier: "standard" };
+    const failure = Object.assign(new Error("native refusal"), { accounting,
+      nativeResponse: {usage: {input_tokens: 100, cache_read_input_tokens: 900, cache_creation_input_tokens: 200, output_tokens: 70}} });
+    await expect(new ProviderExecutionCoordinator({hooks: {onTerminal: record => {records.push(record);}}}).startCall(coordinate).execute({
+      preparedRequest: {transport: "anthropic.messages", providerProfileId: "anthropic", model: "claude-haiku-5-5", body: {}},
+      maxAttempts: 1, dispatch: async () => {throw failure;},
+      classifyError: () => ({kind: "refusal", message: "refused", retryable: false}),
+      validate: (value: unknown) => ({status: "usable", value}),
+    })).rejects.toBeInstanceOf(ProviderAttemptError);
+    expect(records[0]?.accounting).toEqual(accounting);
+  });
+
   it.each(["60", new Date(61_000).toUTCString()])("honors Retry-After %s by falling back immediately and cooling only the failed model", async retryAfter => {
     let now = 1000;
     const records: ProviderAttemptRecord[] = [];

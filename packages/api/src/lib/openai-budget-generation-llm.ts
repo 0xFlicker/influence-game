@@ -7,6 +7,7 @@
  * path instead of this helper.
  */
 
+import type OpenAI from "openai";
 import {
   createLlmClientFromEnv,
   DEFAULT_MODEL_CATALOG_ID,
@@ -16,7 +17,7 @@ import {
 
 export const OPENAI_BUDGET_GENERATION_CATALOG_ID = DEFAULT_MODEL_CATALOG_ID;
 
-export type OpenAIBudgetGenerationLlm = LlmClientConfig & {
+export type OpenAIBudgetGenerationLlm = LlmClientConfig<OpenAI> & {
   modelId: string;
 };
 
@@ -36,7 +37,7 @@ export function resolveOpenAIBudgetGenerationLlm(
   );
   const llmConfig = createLlmClientFromEnv(env, {
     ...options,
-    providerProfileId: selection.providerProfile.id,
+    providerProfileId: "openai",
   });
 
   return llmConfig

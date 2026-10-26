@@ -1,0 +1,360 @@
+{
+  "fetchedAt": "2026-10-26T01:34:04.660Z",
+  "source": "https://registry.npmjs.org/@anthropic-ai/sdk/latest",
+  "data": {
+    "bin": {
+      "anthropic-ai-sdk": "bin/cli"
+    },
+    "bugs": {
+      "url": "https://github.com/anthropics/anthropic-sdk-typescript/issues"
+    },
+    "dist": {
+      "shasum": "0976efeca0e050b67d8753d027b1e43f920040c5",
+      "tarball": "https://registry.npmjs.org/@anthropic-ai/sdk/-/sdk-1.3.0.tgz",
+      "fileCount": 2924,
+      "integrity": "sha512-k7z9BlLLPxfZH+ov7dS6EnaN/wiZeV8YNT1LZfrpAHIy7oY7pHr4UzirF9f2OlHtFEnRBOX+AZQ91Y5fK+TPTw==",
+      "signatures": [
+        {
+          "sig": "MEUCIBth48ZIAWEtLZMqTqLUCMM26b/ywNJminBL4LZGVj91AiEAyod6V7QcaAc9x3UAFOZFzEZrqIsUmU/GFR3PxTNWQdA=",
+          "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+        },
+        {
+          "sig": "MEQCICe80hkD6KOTEFGQIHYtAdRkwj15z3J4KkWzb1HDIvZuAiAZK3qJvnPIowqjKqlcP1c0jfLEyF7TmyPBDCczACW4cA==",
+          "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+        }
+      ],
+      "attestations": {
+        "url": "https://registry.npmjs.org/-/npm/v1/attestations/@anthropic-ai%2fsdk@1.3.0",
+        "provenance": {
+          "predicateType": "https://slsa.dev/provenance/v1"
+        }
+      },
+      "unpackedSize": 15740193
+    },
+    "main": "./index.js",
+    "name": "@anthropic-ai/sdk",
+    "type": "commonjs",
+    "_from": "file:anthropic-ai-sdk-1.3.0.tgz",
+    "types": "./index.d.ts",
+    "author": {
+      "name": "Anthropic",
+      "email": "support@anthropic.com"
+    },
+    "browser": {
+      "./internal/node.js": "./internal/node.browser.js",
+      "./internal/node.mjs": "./internal/node.browser.mjs",
+      "./tools/memory/node.js": "./tools/memory/node.browser.js",
+      "./tools/memory/node.mjs": "./tools/memory/node.browser.mjs",
+      "./tools/agent-toolset/node.js": "./tools/agent-toolset/node.browser.js",
+      "./tools/agent-toolset/node.mjs": "./tools/agent-toolset/node.browser.mjs"
+    },
+    "exports": {
+      ".": {
+        "types": "./index.d.mts",
+        "default": "./index.mjs",
+        "require": {
+          "types": "./index.d.ts",
+          "default": "./index.js"
+        }
+      },
+      "./error": {
+        "import": "./error.mjs",
+        "require": "./error.js"
+      },
+      "./index": {
+        "import": "./index.mjs",
+        "require": "./index.js"
+      },
+      "./lib/*": {
+        "import": "./lib/*.mjs",
+        "require": "./lib/*.js"
+      },
+      "./client": {
+        "import": "./client.mjs",
+        "require": "./client.js"
+      },
+      "./core/*": {
+        "import": "./core/*.mjs",
+        "require": "./core/*.js"
+      },
+      "./tools/*": {
+        "import": "./tools/*.mjs",
+        "require": "./tools/*.js"
+      },
+      "./uploads": {
+        "import": "./uploads.mjs",
+        "require": "./uploads.js"
+      },
+      "./version": {
+        "import": "./version.mjs",
+        "require": "./version.js"
+      },
+      "./error.js": {
+        "default": "./error.js"
+      },
+      "./index.js": {
+        "default": "./index.js"
+      },
+      "./lib/*.js": {
+        "default": "./lib/*.js"
+      },
+      "./resource": {
+        "import": "./resource.mjs",
+        "require": "./resource.js"
+      },
+      "./_vendor/*": {
+        "import": "./_vendor/*.mjs",
+        "require": "./_vendor/*.js"
+      },
+      "./client.js": {
+        "default": "./client.js"
+      },
+      "./core/*.js": {
+        "default": "./core/*.js"
+      },
+      "./error.mjs": {
+        "default": "./error.mjs"
+      },
+      "./helpers/*": {
+        "import": "./helpers/*.mjs",
+        "require": "./helpers/*.js"
+      },
+      "./index.mjs": {
+        "default": "./index.mjs"
+      },
+      "./lib/*.mjs": {
+        "default": "./lib/*.mjs"
+      },
+      "./resources": {
+        "import": "./resources.mjs",
+        "require": "./resources.js"
+      },
+      "./streaming": {
+        "import": "./streaming.mjs",
+        "require": "./streaming.js"
+      },
+      "./client.mjs": {
+        "default": "./client.mjs"
+      },
+      "./core/*.mjs": {
+        "default": "./core/*.mjs"
+      },
+      "./pagination": {
+        "import": "./pagination.mjs",
+        "require": "./pagination.js"
+      },
+      "./tools/*.js": {
+        "default": "./tools/*.js"
+      },
+      "./uploads.js": {
+        "default": "./uploads.js"
+      },
+      "./version.js": {
+        "default": "./version.js"
+      },
+      "./api-promise": {
+        "import": "./api-promise.mjs",
+        "require": "./api-promise.js"
+      },
+      "./resource.js": {
+        "default": "./resource.js"
+      },
+      "./resources/*": {
+        "import": "./resources/*.mjs",
+        "require": "./resources/*.js"
+      },
+      "./tools/*.mjs": {
+        "default": "./tools/*.mjs"
+      },
+      "./uploads.mjs": {
+        "default": "./uploads.mjs"
+      },
+      "./version.mjs": {
+        "default": "./version.mjs"
+      },
+      "./_vendor/*.js": {
+        "default": "./_vendor/*.js"
+      },
+      "./helpers/*.js": {
+        "default": "./helpers/*.js"
+      },
+      "./resource.mjs": {
+        "default": "./resource.mjs"
+      },
+      "./resources.js": {
+        "default": "./resources.js"
+      },
+      "./streaming.js": {
+        "default": "./streaming.js"
+      },
+      "./_vendor/*.mjs": {
+        "default": "./_vendor/*.mjs"
+      },
+      "./helpers/*.mjs": {
+        "default": "./helpers/*.mjs"
+      },
+      "./pagination.js": {
+        "default": "./pagination.js"
+      },
+      "./resources.mjs": {
+        "default": "./resources.mjs"
+      },
+      "./streaming.mjs": {
+        "default": "./streaming.mjs"
+      },
+      "./api-promise.js": {
+        "default": "./api-promise.js"
+      },
+      "./lib/internal/*": null,
+      "./pagination.mjs": {
+        "default": "./pagination.mjs"
+      },
+      "./resources/*.js": {
+        "default": "./resources/*.js"
+      },
+      "./api-promise.mjs": {
+        "default": "./api-promise.mjs"
+      },
+      "./resources/*.mjs": {
+        "default": "./resources/*.mjs"
+      },
+      "./tools/memory/node": {
+        "import": "./tools/memory/node.mjs",
+        "browser": {
+          "import": "./tools/memory/node.browser.mjs",
+          "require": "./tools/memory/node.browser.js"
+        },
+        "require": "./tools/memory/node.js"
+      },
+      "./tools/agent-toolset/node": {
+        "import": "./tools/agent-toolset/node.mjs",
+        "browser": {
+          "import": "./tools/agent-toolset/node.browser.mjs",
+          "require": "./tools/agent-toolset/node.browser.js"
+        },
+        "require": "./tools/agent-toolset/node.js"
+      }
+    },
+    "license": "Apache-2.0",
+    "private": false,
+    "scripts": {
+      "fix": "./scripts/format",
+      "lint": "./scripts/lint",
+      "test": "./scripts/test",
+      "build": "./scripts/build-all",
+      "format": "./scripts/format",
+      "test:ecosystem": "node ecosystem-tests/cli.mts"
+    },
+    "_npmUser": {
+      "name": "GitHub Actions",
+      "email": "npm-oidc-no-reply@github.com",
+      "trustedPublisher": {
+        "id": "github",
+        "oidcConfigId": "b3b2dec9-6c76-4607-ac8f-fb72de1da424"
+      }
+    },
+    "homepage": "https://github.com/anthropics/anthropic-sdk-typescript#readme",
+    "_resolved": "/tmp/ad0113c25f248956a35bb08989519e16/anthropic-ai-sdk-1.3.0.tgz",
+    "overrides": {
+      "minimatch": "^9.0.5"
+    },
+    "_integrity": "sha512-k7z9BlLLPxfZH+ov7dS6EnaN/wiZeV8YNT1LZfrpAHIy7oY7pHr4UzirF9f2OlHtFEnRBOX+AZQ91Y5fK+TPTw==",
+    "repository": {
+      "url": "git+https://github.com/anthropics/anthropic-sdk-typescript.git",
+      "type": "git"
+    },
+    "_npmVersion": "11.19.0",
+    "description": "The official TypeScript library for the Anthropic API",
+    "directories": {},
+    "maintainers": [
+      {
+        "name": "zak-anthropic",
+        "email": "zak@anthropic.com"
+      },
+      {
+        "name": "dylanc-anthropic",
+        "email": "dylanc@anthropic.com"
+      },
+      {
+        "name": "benjmann",
+        "email": "ben@anthropic.com"
+      },
+      {
+        "name": "nikhil-anthropic",
+        "email": "nikhil@anthropic.com"
+      },
+      {
+        "name": "ejlangev-ant",
+        "email": "ethan.langevin@anthropic.com"
+      },
+      {
+        "name": "jv-anthropic",
+        "email": "jv@anthropic.com"
+      },
+      {
+        "name": "ollie-ant-2025",
+        "email": "ollie@anthropic.com"
+      },
+      {
+        "name": "packy-anthropic",
+        "email": "packy@anthropic.com"
+      },
+      {
+        "name": "claude-code-npm",
+        "email": "claude-code-npm@anthropic.com"
+      },
+      {
+        "name": "noahz-anthropic",
+        "email": "noahz@anthropic.com"
+      },
+      {
+        "name": "sbidasaria",
+        "email": "sbidasaria@anthropic.com"
+      },
+      {
+        "name": "wolffiex",
+        "email": "wolffiex@anthropic.com"
+      },
+      {
+        "name": "meorphis-anthropic",
+        "email": "meorphis@anthropic.com"
+      },
+      {
+        "name": "felixrieseberg-anthropic",
+        "email": "f@anthropic.com"
+      },
+      {
+        "name": "joan-anthropic",
+        "email": "joan@anthropic.com"
+      }
+    ],
+    "resolutions": {
+      "minimatch": "^9.0.5"
+    },
+    "sideEffects": false,
+    "_nodeVersion": "24.21.0",
+    "dependencies": {
+      "standardwebhooks": "^1.0.0",
+      "json-schema-to-ts": "^3.1.1",
+      "@opentelemetry/api": "^1.4.1"
+    },
+    "publishConfig": {
+      "access": "public"
+    },
+    "_hasShrinkwrap": false,
+    "peerDependencies": {
+      "zod": "^3.25.0 || ^4.0.0"
+    },
+    "peerDependenciesMeta": {
+      "zod": {
+        "optional": true
+      }
+    },
+    "_npmOperationalInternal": {
+      "tmp": "tmp/sdk_1.3.0_1792798307715_0.65028074483733",
+      "host": "s3://npm-registry-packages-npm-production"
+    },
+    "_id": "@anthropic-ai/sdk@1.3.0",
+    "version": "1.3.0"
+  }
+}

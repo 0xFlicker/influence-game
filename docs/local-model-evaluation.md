@@ -1,5 +1,13 @@
 # Local Model Evaluation
 
+Native Anthropic evaluations select `anthropic:claude-haiku-5-5` for both cast and
+House routes. Use `ANTHROPIC_API_KEY` from Doppler and a shared local-task ledger
+with `anthropicUsd` set to the authorized ceiling. Retain every API game ID and
+private attempt, including rejected schemas and billable malformed output. Native
+thinking summaries/signatures remain separate from fictional character explanations.
+See [native Anthropic setup and accounting](native-anthropic.md). No `as any` or
+direct calls around the existing House/provider coordinator are permitted.
+
 Provider parameters follow frozen model capabilities: non-reasoning models omit
 reasoning summaries and models without Flex support use their supported tier.
 Local task-budget admission rejections retain zero-charge `not_dispatched`
@@ -651,3 +659,8 @@ turn. Existing games gain audio only through explicit Studio generation.
 ## Inspecting Werewolf House narration
 
 In a retained localhost API game, inspect `/games/<slug>/replay?audience=omniscient` for spoken pack results, Doctor/Seer actions, hunt outcomes, vote results and the House ending summary. Compare Mystery playback to verify that private night details stay hidden. Audio Mode uses the frozen House voice. Existing complete tracks can be previewed and refreshed with `packages/api/src/scripts/refresh-werewolf-house-audio.ts` as documented in `docs/werewolf.md`; gameplay and contestant recordings remain unchanged. Continue retaining `--chatty` and private provider evidence; the presentation copy does not replace it.
+
+Claude selections for new games use native Haiku/Sonnet/Opus 5.5 or Fable 5.1.
+Migration `0140_native_claude_selections` upgrades mutable preferences and waiting
+games; frozen games and private provider evidence retain their original routes.
+See [native Anthropic](native-anthropic.md) for cutover details.

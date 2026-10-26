@@ -1,5 +1,15 @@
 # Reasoning & Transcript Observability
 
+Native Anthropic uses the same durable attempt and private bucket evidence paths.
+Preserve summarized thinking, opaque signatures, redacted blocks, original JSON,
+cache usage, and unsuccessful billable responses. Authored `thinking` explicitly
+asks for a brief fictional character explanation; it is not a request to extract
+the provider's hidden reasoning. The Anthropic wire codec decodes exact native
+schemas before the existing semantic and clean-text checks. Inspect both wire and
+accepted values when diagnosing errors; never repair malformed JSON. See
+[native provider details](native-anthropic.md). House calls stay direct through
+the coordinator and typed contracts; no `as any` shortcuts.
+
 New Influence games freeze their decision-speech contract. Historical accepted
 ballots replay under their original exact contract without replacement provider
 calls. Length repairs include the clean UTF-8 speech draft and measured overage.
@@ -856,3 +866,8 @@ see [Audio Mode](audio-mode.md) for explicit retry/resume boundaries.
 ## Werewolf House playback announcements
 
 Werewolf action/result narration is derived presentation from canonical audience projections. It does not add contestant observations, thinking, provider turns, or canonical transcript events. Pack results, Doctor/Seer scenes and hunts have separate House TTS coordinates; the role's accepted private explanation keeps its original player coordinate. Mystery audio is generated from the Mystery projection, including its own dawn text when Omniscient reveals a save. No prose parsing, `as any`, or indirect House decision calls are introduced.
+
+Claude selections for new games use native Haiku/Sonnet/Opus 5.5 or Fable 5.1.
+Migration `0140_native_claude_selections` upgrades mutable preferences and waiting
+games; frozen games and private provider evidence retain their original routes.
+See [native Anthropic](native-anthropic.md) for cutover details.

@@ -8,6 +8,7 @@ import {
   gameReadyCatalogEntries,
   modelCatalogEntryById,
   lmStudioTimeoutMs,
+  withLocalTaskBudget,
   type LlmClientConfig,
   type ProviderAttemptOutcome,
   type ProviderAttemptRecord,
@@ -98,6 +99,8 @@ export async function executeProviderHealthProbe(
     };
   }
   const status = await completeProviderHealthProbe(db, { ...lease, ...observation });
+  // Settle only after durable private evidence was persisted with probe status.
+  if (observation.evidence && !dependencies.runProbe) await withLocalTaskBudget({}, env).onTerminal?.(observation.evidence);
   return { target, outcome: observation.outcome, status };
 }
 
@@ -203,7 +206,7 @@ async function runLiveProviderHealthProbe(
     messages: [{ role: "user", content: "Reply with OK." }],
     result: { kind: "text" },
     // Thinking models need room for reasoning before their visible OK.
-    outputTokenLimit: target.providerProfileId === "meta-muse" || target.providerProfileId === "lm-studio" ? 2_048 : 16,
+    outputTokenLimit: ["meta-muse", "lm-studio", "anthropic"].includes(target.providerProfileId) ? 2_048 : 16,
   };
   const config = createClient(env, {
     providerProfileId: target.providerProfileId,
@@ -242,8 +245,10 @@ async function runLiveProviderHealthProbe(
     role: "primary",
   };
   let evidence: ProviderAttemptRecord | undefined;
+  const budget = withLocalTaskBudget({}, env);
   const call = new ProviderExecutionCoordinator({
     hooks: {
+      onReserve: budget.onReserve,
       onTerminal: (record) => { evidence = record; },
     },
   }).startCall({

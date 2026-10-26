@@ -943,8 +943,8 @@ export class ProviderLogicalCallExecution {
           rawResponseFromError(error, transportCapture.credentialValues);
         const outcome = withTransportDiagnostics(classified, rawResponse, completedAtMs);
         const accounting = extractProviderAttemptAccounting(
-          rawResponse.body,
           asRecord(error).accounting,
+          rawResponse.body,
           asRecord(error).nativeResponse,
           error,
         );

@@ -1,5 +1,10 @@
 # Development Guide
 
+For direct Claude game routing, see [native Anthropic](docs/native-anthropic.md).
+Gateway and game-worker environments use `ANTHROPIC_API_KEY` from Doppler. Paid
+Haiku evaluations run through localhost API games with retained evidence and a
+shared `anthropicUsd` spending ceiling; they are excluded from required tests.
+
 Retrospectives remain speech-only. The prompt distinguishes beliefs and information available during play from facts revealed after the game, and invites one or two concrete moments rather than a mandatory success/failure recap. Werewolf speakers receive a named canonical reference for their own ballots and night choices, starting role/faction, known pack members, and investigations available before elimination. Death-night checks remain in the revealed account but are excluded from usable in-game knowledge. Fallback actions are marked unavailable; dialogue and earlier final statements cannot establish facts or motives. No private thinking, rationale, or event-reference output is requested. Existing frozen game accounts and accepted speeches are unchanged. The retrospective also receives a named postgame summary of winners, survivors, actual night/day eliminations, and vote tallies/abstentions. It checks earlier final statements against these canonical facts. Winners can include dead teammates. Knowledge differences remain explicit without supplying stock before-and-after phrases; the output remains speech-only.
 
 Werewolf decision prompts name the acting player, identify elimination targets and previous ballots by both ID and name, and distinguish an elimination vote from endorsement. Strategic coaching is selected by assigned role: village roles receive village objectives plus their role advice; wolves receive pack objectives and deception guidance. Shared vote instructions contain mechanics, not faction-specific strategic examples. Public dialogue discloses whatever it says: claiming a personal investigation implies a Seer claim, even without naming the role. Useful contributions can interpret existing arguments or change a vote without adding new facts. Gameplay decisions allow 8,192 completion tokens for native reasoning plus the structured response; the 320-byte speech and existing private-thinking limits remain separate. Replay omits technical discussion-byte readouts; no replacement progress display is introduced.
@@ -857,3 +862,8 @@ The shared resolver is `packages/engine/src/game-model-routing.ts`. New games st
 Explicit preferences precede the entire contestant route, including the default model, with duplicates removed. `defaultModelMaxFallbackCalls` controls the default's shared fallback allowance (24 by default); primary calls and House allowances remain separate. Retryable `Retry-After` responses trigger immediate failover and durable model-scoped cooldowns. Migration `0130_provider_route_cooldowns` adds the health reason/event values. Apply normal migrations before running the updated API; never rewrite a stopped game's sealed routes or context hashes to adopt these defaults.
 
 Use `bun run simulate:models ... --preview` for an offline assignment check and `--report <game-id>` to save the admin routing report from the localhost API. Actual simulation dispatch remains opt-in and paid. See [model routing](docs/model-routing.md), [evaluation examples](docs/local-model-evaluation.md), and the [cutover mapping](docs/deployment/game-model-routing-cutover.md). Required checks remain `bun run test`, `bun run test:postgres`, and `bun run check`.
+
+Claude selections for new games use native Haiku/Sonnet/Opus 5.5 or Fable 5.1.
+Migration `0140_native_claude_selections` upgrades mutable preferences and waiting
+games; frozen games and private provider evidence retain their original routes.
+See [native Anthropic](docs/native-anthropic.md) for cutover details.

@@ -358,6 +358,24 @@ describe("provider call journal", () => {
     ]));
   });
 
+  test("freezes native Anthropic Standard pricing before dispatch and replays accepted decisions", async () => {
+    const gameId = await insertGame(db), ownerEpoch = await insertOwner(db, gameId);
+    const catalogId = "anthropic:claude-haiku-5-5";
+    await db.update(schema.games).set({ config: JSON.stringify({providerManifest: [{catalogId, reasoningPolicy: "low"}]}) }).where(eq(schema.games.id, gameId));
+    const intent = makeIntent(gameId, ownerEpoch);
+    intent.preparedRequest = { transport: "anthropic.messages", providerProfileId: "anthropic", catalogId, model: "claude-haiku-5-5",
+      body: {model: "claude-haiku-5-5", max_tokens: 8192, service_tier: "standard_only"} };
+    const hooks = createApiProviderExecutionHooks(db, {gameId, ownerEpoch});
+    await allocateAndReserve(hooks, intent);
+    const [reserved] = await db.select().from(schema.providerCallAttempts).where(eq(schema.providerCallAttempts.gameId, gameId));
+    expect(reserved!.rateCard).toMatchObject({catalogId, serviceTier: "standard", rates: {inputPer1M: 0.1, outputPer1M: 0.5}});
+    await hooks.onTerminal?.(makeRecord(intent, {outcome: {kind: "usable"}, disposition: "accepted", acceptedValue: {target: "Bea"},
+      accounting: {effectiveServiceTier: "standard", usage: {promptTokens: 1000, completionTokens: 100, reasoningTokens: 90}} }));
+    expect(await createApiProviderExecutionHooks(db, {gameId, ownerEpoch}).onReadAccepted?.(intent.coordinate)).toMatchObject({value: {target: "Bea"}});
+    const [spend] = await db.select().from(schema.gameProviderSpendEntries).where(eq(schema.gameProviderSpendEntries.gameId, gameId));
+    expect(spend).toMatchObject({costSource: "static_estimate", estimatedCostMicrousd: 150, actualCostMicrousd: null});
+  });
+
   test("the game default has a shared fallback cap without charging default-primary calls", async () => {
     const gameId = await insertGame(db), ownerEpoch = await insertOwner(db, gameId);
     const policy = normalizeGameModelRouting({ version: 1,

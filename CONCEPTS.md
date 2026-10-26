@@ -973,3 +973,8 @@ See [character art replacement](docs/deployment/character-art-replacement.md).
 ### Character-cutout demand
 
 An optional derivative request owned by either an Agent Profile or a frozen game/player source. Each demand resolves through existing image storage to a SHA-256 + recipe job; multiple demands can share one job. Readiness changes presentation only, never frozen identity or game authority. Failed/absent derivatives keep the original image; exports retain their publication cutoff.
+
+Current Claude selections use native Haiku/Sonnet/Opus 5.5 or Fable 5.1. A
+selection-policy upgrade changes mutable preferences and unsealed waiting games;
+it never changes the provider identity of a frozen game or accepted attempt.
+See [native Anthropic](docs/native-anthropic.md).

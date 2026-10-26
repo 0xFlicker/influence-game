@@ -5,7 +5,7 @@ import { lock } from "proper-lockfile";
 import { modelRateCard } from "./model-route-metadata";
 import type { ProviderAttemptIntent, ProviderAttemptRecord, ProviderExecutionHooks } from "./provider-execution";
 
-type Currency = "openaiUsd" | "katanaCredits" | "xaiUsd" | "metaUsd";
+type Currency = "openaiUsd" | "katanaCredits" | "xaiUsd" | "metaUsd" | "anthropicUsd";
 type Entry = { id: string; currency: Currency; reserved: number; charged: number; state: "reserved" | "settled" | "not_dispatched"; catalogId: string; gameId?: string; inputRate?: number; outputRate?: number };
 export interface LocalTaskLedger { version: 1; limits: Record<Currency, number>; prior: Record<Currency, number>; allowedGameIds: string[]; entries: Entry[]; perGameLimits?: Record<string,Partial<Record<Currency,number>>> }
 const queues = new Map<string, Promise<void>>();
@@ -38,7 +38,9 @@ export async function updateLocalTaskLedger(path: string, mutate: (ledger: Local
       // Older ledgers authorize no Meta spending until explicitly allocated.
       ledger.limits.metaUsd ??= 0;
       ledger.prior.metaUsd ??= 0;
-      for (const currency of ["openaiUsd", "katanaCredits", "xaiUsd", "metaUsd"] as const) {
+      ledger.limits.anthropicUsd ??= 0;
+      ledger.prior.anthropicUsd ??= 0;
+      for (const currency of ["openaiUsd", "katanaCredits", "xaiUsd", "metaUsd", "anthropicUsd"] as const) {
         if (!finite(ledger.limits[currency]) || !finite(ledger.prior[currency])) throw new Error("Invalid task budget amount");
       }
       if (ledger.entries.some(e => !finite(e.reserved) || !finite(e.charged) || !(e.currency in ledger.limits))) throw new Error("Invalid task budget entry");
@@ -89,7 +91,7 @@ function textReservation(intent: ProviderAttemptIntent): Entry {
   const body = intent.preparedRequest.body as Record<string, unknown>;
   if (!catalogId || !body || typeof body !== "object") throw new Error("Task budget requires a catalog and bounded request");
   const provider = catalogId.split(":")[0];
-  if (!["openai", "katana"].includes(provider!) && catalogId !== "meta-muse:muse-spark-1.3-contributor") throw new Error(`Task budget rejects provider ${provider}`);
+  if (!["openai", "katana", "anthropic"].includes(provider!) && catalogId !== "meta-muse:muse-spark-1.3-contributor") throw new Error(`Task budget rejects provider ${provider}`);
   const card = modelRateCard(catalogId);
   if (!card) throw new Error(`Task budget rejects unpriced model ${catalogId}`);
   const rows = [card.rates, ...(card.rates.tiers ?? [])];
@@ -100,7 +102,7 @@ function textReservation(intent: ProviderAttemptIntent): Entry {
   if (typeof output !== "number" || !Number.isSafeInteger(output) || output <= 0) throw new Error("Task budget requires an explicit output token limit");
   const input = Buffer.byteLength(JSON.stringify(body)) + 16_384;
   const usd = Math.max(card.minimumUsd ?? 0, (input * inputRate + output * outputRate) / 1_000_000) + (card.roundingUsd ?? 0);
-  const currency = provider === "katana" ? "katanaCredits" : provider === "meta-muse" ? "metaUsd" : "openaiUsd";
+  const currency = provider === "katana" ? "katanaCredits" : provider === "meta-muse" ? "metaUsd" : provider === "anthropic" ? "anthropicUsd" : "openaiUsd";
   const amount = currency === "katanaCredits" ? Math.ceil(usd / CREDIT_USD * 10) / 10 : usd;
   return { id: intent.attemptId, currency, reserved: amount, charged: amount, state: "reserved", catalogId,
     gameId: intent.coordinate.gameId, inputRate, outputRate };

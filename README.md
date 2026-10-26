@@ -181,6 +181,10 @@ New game decisions use exact native JSON Schema responses across OpenAI, Muse, a
 
 Characters can choose Default or a free model; admins/sysops can select experimental exact IDs. Game creation separates contestant and House routes with explicit fallback caps. See [model routing](docs/model-routing.md) for the policy and controls.
 
+Native Anthropic uses the official SDK and Doppler's `ANTHROPIC_API_KEY`.
+`anthropic:claude-haiku-5-5` is a free-account choice; see
+[native Anthropic](docs/native-anthropic.md) for configuration, pricing and evaluation evidence.
+
 An explicit preference falls back through the game default and then the remaining configured models, skipping duplicates. The default's shared recovery allowance is editable before start. Provider retry windows cool down the failed model while the next permitted model can run immediately; Luna stays Flex.
 
 Preview an eight-model roster without authentication, API requests, or generation:
@@ -194,3 +198,8 @@ Removing `--preview` starts a localhost API game and can incur charges. Paid run
 ### Optional character-cutout backfill
 
 Use `bun run cutouts:backfill inventory --env local --scope example-models` to preview reusable agent images and frozen game references. Processing requires an explicit environment and bounded selection; production only queues AWS Batch work. See the [operator commands and rollout prerequisites](docs/deployment/character-cutouts.md).
+
+Claude selections for new games use native Haiku/Sonnet/Opus 5.5 or Fable 5.1.
+Migration `0140_native_claude_selections` upgrades mutable preferences and waiting
+games; frozen games and private provider evidence retain their original routes.
+See [native Anthropic](docs/native-anthropic.md) for cutover details.

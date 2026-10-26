@@ -1751,7 +1751,7 @@ export class InfluenceAgent implements IAgent {
     id: UUID,
     name: string,
     personality: Personality,
-    provider: OpenAI | LlmProviderAdapter,
+    provider: OpenAI | import("@anthropic-ai/sdk").default | LlmProviderAdapter,
     model = DEFAULT_MODEL_ID,
     backstory?: string,
     memoryStore?: MemoryStore,

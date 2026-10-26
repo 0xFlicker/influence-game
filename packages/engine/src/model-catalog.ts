@@ -1,10 +1,11 @@
 import { normalizeGameModelRouting, type GameModelRouting } from "./game-model-routing";
 import { modelRouteMetadata } from "./model-route-metadata";
 import type { OpenAIReasoningSummaryMode } from "./llm-client";
+import anthropic from "./anthropic-catalog-snapshot.json";
 
 export { DEFAULT_MODEL_CATALOG_ID, DEFAULT_MODEL_ID } from "./model-defaults";
 
-export type ProviderProfileId = "openai" | "lm-studio" | "katana" | "meta-muse" | "custom-openai-compatible";
+export type ProviderProfileId = "openai" | "anthropic" | "lm-studio" | "katana" | "meta-muse" | "custom-openai-compatible";
 export type ModelReasoningEffort = "low" | "medium" | "high";
 export type ModelReasoningPolicy = "action-policy" | ModelReasoningEffort;
 export type ModelEvaluationStatus = "game-ready" | "evaluation-candidate" | "disabled";
@@ -21,6 +22,8 @@ export interface ModelRequestCapabilities {
   supportsTools: boolean;
   /** Audited hosted OpenAI capacity support; absent for unknown/historical metadata. */
   supportsFlexProcessing?: boolean;
+  /** Native controls frozen with the route, never inferred again on recovery. */
+  anthropic?: { apiVersion: "2026-10-21"; thinking: "adaptive" | "disabled" };
 }
 
 export interface ProviderProfile {
@@ -83,6 +86,7 @@ export const MODEL_REASONING_EFFORTS = ["low", "medium", "high"] as const;
 export const MODEL_REASONING_POLICIES = ["action-policy", ...MODEL_REASONING_EFFORTS] as const;
 
 export const PROVIDER_PROFILES: Record<ProviderProfileId, ProviderProfile> = {
+  anthropic: { id: "anthropic", label: "Anthropic", isLocal: false },
   openai: {
     id: "openai",
     label: "OpenAI",
@@ -177,6 +181,12 @@ const META_MUSE_CAPABILITIES: ModelRequestCapabilities = {
 type ModelDefinition = Omit<ModelCatalogEntry, "capabilities" | "allowedReasoningEfforts">;
 
 const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
+  ...Object.entries(anthropic.models).map(([modelId, facts]): ModelDefinition => ({
+    id: `anthropic:${modelId}`, providerProfileId: "anthropic", modelId,
+    displayName: facts.displayName,
+    evaluationStatus: modelId === "claude-haiku-5-5" ? "game-ready" : "evaluation-candidate",
+    defaultReasoningPolicy: facts.adaptive ? "low" : "action-policy",
+  })),
   {
     "id": "katana:glm-5-3-flash-private",
     "providerProfileId": "katana",
@@ -339,6 +349,7 @@ function dynamicOpenAICompatibleCatalogEntry(catalogId: string): ModelCatalogEnt
   const [profileId, ...modelParts] = catalogId.split(":");
   if (
     profileId !== "openai"
+    && profileId !== "anthropic"
     && profileId !== "katana"
     && profileId !== "lm-studio"
     && profileId !== "custom-openai-compatible"
@@ -349,6 +360,9 @@ function dynamicOpenAICompatibleCatalogEntry(catalogId: string): ModelCatalogEnt
   const modelId = modelParts.join(":").trim();
   if (!modelId || modelId.includes(":") || modelId.length > 200 || !/^[a-zA-Z0-9][a-zA-Z0-9._/-]*$/.test(modelId) || NON_DECISION_MODEL_ID.test(modelId)) return undefined;
   const providerProfileId = profileId;
+  // Native request controls are frozen from audited facts, never guessed from
+  // a newly discovered name. Add a snapshot entry before enabling a new Claude.
+  if (providerProfileId === "anthropic") return undefined;
   const label = providerProfileId === "openai"
     ? "OpenAI"
     : providerProfileId === "katana"
