@@ -153,7 +153,7 @@ An API-backed test game can seal the same fallback order used by Daily:
 ```bash
 bun run simulate:api -- \
   --provider-entry openai:gpt-6-luna,reasoning=action-policy \
-  --provider-entry katana:grok-4-5,reasoning=action-policy,max-calls=12 \
+  --provider-entry xai:grok-4.5,reasoning=action-policy,max-calls=12 \
   --provider-entry katana:glm-5-2,reasoning=action-policy,max-calls=24
 ```
 
@@ -181,6 +181,10 @@ New game decisions use exact native JSON Schema responses across OpenAI, Muse, a
 
 Characters can choose Default or a free model; admins/sysops can select experimental exact IDs. Game creation separates contestant and House routes with explicit fallback caps. See [model routing](docs/model-routing.md) for the policy and controls.
 
+Native xAI uses the existing OpenAI SDK's Responses transport and `XAI_API_KEY`.
+Mutable Grok selections migrate from Katana at the same generation; frozen
+games retain their original routes. See [native xAI](docs/native-xai.md).
+
 Native Anthropic uses the official SDK and Doppler's `ANTHROPIC_API_KEY`.
 `anthropic:claude-haiku-5-5` is a free-account choice; see
 [native Anthropic](docs/native-anthropic.md) for configuration, pricing and evaluation evidence.
@@ -190,7 +194,7 @@ An explicit preference falls back through the game default and then the remainin
 Preview an eight-model roster without authentication, API requests, or generation:
 
 ```sh
-bun run simulate:models --game werewolf --players 8 --models openai:gpt-6-luna,katana:glm-5-3-flash-private,katana:deepseek-v4-flash,meta-muse:muse-spark-1.3-contributor,openai:gpt-5-mini,katana:grok-4-6,katana:q-naifu-a3b,custom-openai-compatible:experimental --house-entry openai:gpt-6-luna --preview
+bun run simulate:models --game werewolf --players 8 --models openai:gpt-6-luna,katana:glm-5-3-flash-private,katana:deepseek-v4-flash,meta-muse:muse-spark-1.3-contributor,openai:gpt-5-mini,xai:grok-4.6,katana:q-naifu-a3b,custom-openai-compatible:experimental --house-entry openai:gpt-6-luna --preview
 ```
 
 Removing `--preview` starts a localhost API game and can incur charges. Paid runs require separate authorization.

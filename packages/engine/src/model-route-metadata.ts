@@ -20,6 +20,7 @@ export function modelRateCard(catalogId: string, serviceTier = "default"): Model
   // Priority and future tiers must not silently inherit Standard prices.
   if (provider === "openai" && !["default", "auto", "flex"].includes(serviceTier)) return null;
   if (provider === "anthropic" && !["default", "standard", "standard_only"].includes(serviceTier)) return null;
+  if (provider === "xai" && serviceTier !== "default") return null;
   const rates = provider === "openai" && serviceTier === "flex" ? facts.flexPricing : facts.pricing;
   if (!rates) return null;
   return { version: facts.checkedAt, catalogId, serviceTier: provider === "katana" ? "provider" : provider === "anthropic" ? "standard" : serviceTier,

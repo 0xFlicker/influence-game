@@ -8,6 +8,13 @@ import {
 import { computeMaxRounds, MAX_NEW_GAME_PLAYERS, MIN_NEW_GAME_PLAYERS } from "../types";
 
 describe("API-backed simulation config", () => {
+  it("routes the xAI convenience flag to native Grok without changing generations", () => {
+    const args = parseArgs(["--provider", "xai"], {});
+    expect(args.provider).toBe("xai");
+    expect(catalogIdFromProviderAndModel(args.provider, args.model)).toBe("xai:grok-4.3");
+    expect(catalogIdFromProviderAndModel("xai", "grok-4.6")).toBe("xai:grok-4.6");
+    expect(catalogIdFromProviderAndModel("katana", undefined)).toBe("katana:deepseek-v4-flash");
+  });
   it("routes the Anthropic convenience flag to native Haiku 5.5", () => {
     const args = parseArgs(["--provider", "anthropic"], {});
     expect(args.provider).toBe("anthropic");

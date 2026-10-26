@@ -91,6 +91,9 @@ function textReservation(intent: ProviderAttemptIntent): Entry {
   const body = intent.preparedRequest.body as Record<string, unknown>;
   if (!catalogId || !body || typeof body !== "object") throw new Error("Task budget requires a catalog and bounded request");
   const provider = catalogId.split(":")[0];
+  // xAI's visible-output cap does not bound billable reasoning. Until a native
+  // total-token ceiling is verified, never pretend a finite task budget is safe.
+  if (provider === "xai") throw new Error("Local xAI evaluation requires a verified total reasoning-token spending bound");
   if (!["openai", "katana", "anthropic"].includes(provider!) && catalogId !== "meta-muse:muse-spark-1.3-contributor") throw new Error(`Task budget rejects provider ${provider}`);
   const card = modelRateCard(catalogId);
   if (!card) throw new Error(`Task budget rejects unpriced model ${catalogId}`);

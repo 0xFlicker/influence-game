@@ -1,5 +1,11 @@
 import { DEFAULT_MODEL_CATALOG_ID, MAX_PROVIDER_ENTRY_CALLS_PER_GAME, normalizeProviderManifest, resolveProviderManifest, resolveProviderManifestFromGameConfig, type GameModelSelection, type GameProviderManifest, type ResolvedProviderManifestEntry } from "./model-catalog";
 import { assertCurrentClaudeSelection } from "./claude-routing";
+import { assertCurrentGrokSelection } from "./grok-routing";
+
+function assertCurrentSelection(catalogId: string): void {
+  assertCurrentClaudeSelection(catalogId);
+  assertCurrentGrokSelection(catalogId);
+}
 
 export const DEFAULT_CONTESTANT_RECOVERY_CALLS = 24;
 
@@ -27,7 +33,7 @@ export function normalizeModelPreference(value: unknown): ModelPreference {
 }
 
 export function assertModelEntitlement(preference: ModelPreference, privileged: boolean): void {
-  if (preference !== "default") assertCurrentClaudeSelection(preference.catalogId);
+  if (preference !== "default") assertCurrentSelection(preference.catalogId);
   if (!privileged && preference !== "default" && !FREE_MODEL_CATALOG_IDS.some(id => id === preference.catalogId)) {
     throw new Error("This model is available to admins and sysops only");
   }
@@ -83,7 +89,7 @@ export function sealGameModelRouting(policy: GameModelRouting, seats: Array<{ id
   assertCurrentGameModelRouting(policy);
   for (const seat of seats) {
     const preference = policy.overrides[seat.id] ?? seat.preference;
-    if (preference && preference !== "default") assertCurrentClaudeSelection(preference.catalogId);
+    if (preference && preference !== "default") assertCurrentSelection(preference.catalogId);
   }
   if (new Set(seats.map(seat => seat.id)).size !== seats.length) throw new Error("Duplicate contestant ID");
   if (Object.keys(policy.overrides).some(id => !seats.some(seat => seat.id === id))) throw new Error("A model override references a missing cast member");
@@ -96,8 +102,9 @@ export function sealGameModelRouting(policy: GameModelRouting, seats: Array<{ id
 /** Validate new settings without rewriting frozen runtimes or historical manifests. */
 export function assertCurrentGameModelRouting(policy: GameModelRouting): void {
   for (const entry of [...policy.defaultManifest, ...policy.houseManifest, ...Object.values(policy.overrides)]) {
-    if (entry !== "default") assertCurrentClaudeSelection(entry.catalogId);
+    if (entry !== "default") assertCurrentSelection(entry.catalogId);
   }
+  for (const id of policy.excludedCatalogIds) assertCurrentGrokSelection(id);
 }
 
 export function actorProviderManifest(config: Record<string, unknown>, actor: { id?: string | null; role: string }): ResolvedProviderManifestEntry[] {

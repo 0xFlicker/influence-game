@@ -434,7 +434,7 @@ describe("Game REST API", () => {
     test("stores one routing policy with separate contestant and House chains", async () => {
       const providerManifest = [
         { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
-        { catalogId: "katana:grok-4-5", reasoningPolicy: "medium", maxCallsPerGame: 12 },
+        { catalogId: "xai:grok-4.5", reasoningPolicy: "medium", maxCallsPerGame: 12 },
         { catalogId: "katana:glm-5-2", reasoningPolicy: "action-policy", maxCallsPerGame: 24 },
       ];
       const res = await app.request(
@@ -462,14 +462,14 @@ describe("Game REST API", () => {
         ]],
         ["missing fallback cap", [
           { catalogId: "openai:gpt-5.6-luna" },
-          { catalogId: "katana:grok-4-5" },
+          { catalogId: "xai:grok-4.5" },
         ]],
         ["incompatible reasoning", [
           { catalogId: "katana:glm-5-2", reasoningPolicy: "high" },
         ]],
         ["unsafe cap", [
           { catalogId: "openai:gpt-5.6-luna" },
-          { catalogId: "katana:grok-4-5", maxCallsPerGame: Number.MAX_SAFE_INTEGER + 1 },
+          { catalogId: "xai:grok-4.5", maxCallsPerGame: Number.MAX_SAFE_INTEGER + 1 },
         ]],
       ];
 
@@ -598,14 +598,14 @@ describe("Game REST API", () => {
       expect(await flatAlias.json()).toEqual({ error: "Invalid model selection" });
     });
 
-    test("accepts game-ready Katana model selection", async () => {
+    test("accepts native xAI model selection", async () => {
       const res = await app.request(
         "/api/games",
         json(
           {
             playerCount: 6,
             modelSelection: {
-              catalogId: "katana:grok-4-3",
+              catalogId: "xai:grok-4.3",
               reasoningPolicy: "high",
             },
             maxRounds: 10,
@@ -623,7 +623,7 @@ describe("Game REST API", () => {
         .where(eq(schema.games.id, body.id)))[0]!;
       const config = JSON.parse(game.config);
       expect(config.modelRouting.defaultManifest[0]).toEqual({
-        catalogId: "katana:grok-4-3",
+        catalogId: "xai:grok-4.3",
         reasoningPolicy: "high",
       });
       expect(config.serviceTier).toBe("flex");
@@ -672,7 +672,7 @@ describe("Game REST API", () => {
         json({
           playerCount: 6,
           providerManifest: [
-            { catalogId: "katana:grok-4-5", reasoningPolicy: "medium" },
+            { catalogId: "xai:grok-4.5", reasoningPolicy: "medium" },
             {
               catalogId: "openai:gpt-5.6-luna",
               reasoningPolicy: "action-policy",
@@ -696,7 +696,7 @@ describe("Game REST API", () => {
           {
             playerCount: 6,
             modelSelection: {
-              catalogId: "katana:grok-4-3",
+              catalogId: "xai:grok-4.3",
               reasoningPolicy: "none",
             },
           },
@@ -978,7 +978,7 @@ describe("Game REST API", () => {
     test("returns sanitized model labels instead of raw model selections", async () => {
       await createTestGame(app, adminToken, {
         modelSelection: {
-          catalogId: "katana:grok-4-3",
+          catalogId: "xai:grok-4.3",
           reasoningPolicy: "medium",
         },
       });
@@ -1261,7 +1261,7 @@ describe("Game REST API", () => {
       const { id } = await createTestGame(app, adminToken, {
         playerCount: 6,
         modelSelection: {
-          catalogId: "katana:grok-4-3",
+          catalogId: "xai:grok-4.3",
           reasoningPolicy: "low",
         },
       });
@@ -1966,7 +1966,7 @@ describe("Game REST API", () => {
     test("records joined player model from game model selection", async () => {
       const { id } = await createTestGame(app, adminToken, {
         modelSelection: {
-          catalogId: "katana:grok-4-3",
+          catalogId: "xai:grok-4.3",
           reasoningPolicy: "medium",
         },
       });
@@ -2036,7 +2036,7 @@ describe("Game REST API", () => {
       const { id } = await createTestGame(app, adminToken, {
         playerCount: 6,
         modelSelection: {
-          catalogId: "katana:grok-4-3",
+          catalogId: "xai:grok-4.3",
           reasoningPolicy: "low",
         },
       });

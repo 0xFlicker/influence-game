@@ -94,7 +94,7 @@ describe("new game form", () => {
     expect(mounted.queryByText(/Curated models and exact IDs/)).toBeNull();
     expect(mounted.queryByText(/Live model inventory is unavailable/)).toBeNull();
     const fallback = mounted.getByRole("combobox", { name: "Fallback 1 model" }) as HTMLSelectElement;
-    expect(fallback.value).toBe("katana:grok-4-6");
+    expect(fallback.value).toBe("xai:grok-4.6");
     expect(fallback.disabled).toBe(false);
     const primary = mounted.getByRole("combobox", { name: "Primary model" }) as HTMLSelectElement;
     fireEvent.change(primary, { target: { value: "katana:grok-4-5" } });
@@ -135,7 +135,7 @@ describe("new game form", () => {
     fireEvent.click(mounted.getByRole("button", { name: /Create .* Game/ }));
     await waitFor(() => expect(pushed).toEqual(["/games/independent-house"]));
     expect(bodies[0]).toMatchObject({ modelRouting: {
-      defaultManifest: [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "medium" }, { catalogId: "katana:grok-4-6", reasoningPolicy: "action-policy", maxCallsPerGame: 24 }],
+      defaultManifest: [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "medium" }, { catalogId: "xai:grok-4.6", reasoningPolicy: "action-policy", maxCallsPerGame: 24 }],
       houseManifest: [{ catalogId: "meta-muse:experimental-text-model", reasoningPolicy: "action-policy" }, { catalogId: "katana:deepseek-v4-flash", reasoningPolicy: "action-policy", maxCallsPerGame: 12 }],
     } });
   });
@@ -180,7 +180,7 @@ describe("new game form", () => {
     await waitFor(() => expect(pushed).toEqual(["/games/default-route"]));
     expect((bodies[0]?.modelRouting as { defaultManifest: unknown }).defaultManifest).toEqual([
       { catalogId: "openai:gpt-6-luna", reasoningPolicy: "medium" },
-      { catalogId: "katana:grok-4-6", reasoningPolicy: "action-policy", maxCallsPerGame: 24 },
+      { catalogId: "xai:grok-4.6", reasoningPolicy: "action-policy", maxCallsPerGame: 24 },
     ]);
   });
 
@@ -268,7 +268,7 @@ describe("new game form", () => {
     ));
     expect(routeSelectors.map((select) => select.value)).toEqual([
       "openai:gpt-6-luna",
-      "katana:grok-4-6",
+      "xai:grok-4.6",
       "openai:gpt-6-luna",
     ]);
 
@@ -300,7 +300,7 @@ describe("new game form", () => {
     expect(createBody).not.toHaveProperty("slotType");
     expect(createBody).not.toHaveProperty("modelSelection");
     expect((createBody.modelRouting as { defaultManifest: unknown }).defaultManifest).toEqual([
-      { catalogId: "katana:grok-4-6", reasoningPolicy: "action-policy" },
+      { catalogId: "xai:grok-4.6", reasoningPolicy: "action-policy" },
       { catalogId: "openai:gpt-6-luna", reasoningPolicy: "medium", maxCallsPerGame: 12 },
     ]);
     expect(createBody.formatManifest).toEqual([
@@ -476,7 +476,7 @@ function providerInventory() {
       {
         ...base,
         capabilities: { ...base.capabilities, supportsImageInput: true },
-        catalogId: "katana:grok-4-6", providerProfileId: "katana", modelId: "grok-4-6",
+        catalogId: "xai:grok-4.6", providerProfileId: "xai", modelId: "grok-4.6",
         displayName: "xAI Grok 4.6", defaultReasoningPolicy: "action-policy",
         allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
       },
@@ -550,7 +550,7 @@ test("Werewolf uses shared model/casting controls and submits configurable roles
   fireEvent.click(mounted.getByRole("button",{name:"Create Werewolf Game"}));
   await waitFor(()=>expect(pushed).toEqual(["/games/custom-village"]));
   expect(calls[0]!.url).toContain("/api/werewolf/lobbies");
-  expect(calls[0]!.body).toMatchObject({visibility:"unlisted",setup:{playerCount:7,wolves:2,seer:false,doctor:true},visualMode:true,fillStrategy:"balanced",modelRouting:{ defaultManifest:[{catalogId:"openai:gpt-6-luna",reasoningPolicy:"medium"},{catalogId:"katana:grok-4-6",reasoningPolicy:"action-policy",maxCallsPerGame:24}]}});
+  expect(calls[0]!.body).toMatchObject({visibility:"unlisted",setup:{playerCount:7,wolves:2,seer:false,doctor:true},visualMode:true,fillStrategy:"balanced",modelRouting:{ defaultManifest:[{catalogId:"openai:gpt-6-luna",reasoningPolicy:"medium"},{catalogId:"xai:grok-4.6",reasoningPolicy:"action-policy",maxCallsPerGame:24}]}});
   expect((calls[0]!.body.personaPool as string[]).length).toBeGreaterThan(1);
   expect(calls[0]!.body).not.toHaveProperty("formatManifest");
 });

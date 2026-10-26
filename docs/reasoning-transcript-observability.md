@@ -1,5 +1,13 @@
 # Reasoning & Transcript Observability
 
+Native xAI uses `xai.responses` with the same exact decision/semantic validators.
+Preserve encrypted reasoning items in private raw-response objects, never as
+authored `thinking` or another contestant's context. Responses output usage
+already includes reasoning; retain actual `cost_in_usd_ticks` as well as token
+counts, including billable failures. See [native xAI](native-xai.md) for the
+same-generation migration and evaluation limits. House calls use the coordinator
+directly; no `as any` shortcuts.
+
 Native Anthropic uses the same durable attempt and private bucket evidence paths.
 Preserve summarized thinking, opaque signatures, redacted blocks, original JSON,
 cache usage, and unsuccessful billable responses. Authored `thinking` explicitly

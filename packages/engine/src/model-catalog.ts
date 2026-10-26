@@ -2,10 +2,11 @@ import { normalizeGameModelRouting, type GameModelRouting } from "./game-model-r
 import { modelRouteMetadata } from "./model-route-metadata";
 import type { OpenAIReasoningSummaryMode } from "./llm-client";
 import anthropic from "./anthropic-catalog-snapshot.json";
+import { XAI_MODEL_FACTS } from "./xai-model-facts";
 
 export { DEFAULT_MODEL_CATALOG_ID, DEFAULT_MODEL_ID } from "./model-defaults";
 
-export type ProviderProfileId = "openai" | "anthropic" | "lm-studio" | "katana" | "meta-muse" | "custom-openai-compatible";
+export type ProviderProfileId = "openai" | "anthropic" | "xai" | "lm-studio" | "katana" | "meta-muse" | "custom-openai-compatible";
 export type ModelReasoningEffort = "low" | "medium" | "high";
 export type ModelReasoningPolicy = "action-policy" | ModelReasoningEffort;
 export type ModelEvaluationStatus = "game-ready" | "evaluation-candidate" | "disabled";
@@ -86,6 +87,7 @@ export const MODEL_REASONING_EFFORTS = ["low", "medium", "high"] as const;
 export const MODEL_REASONING_POLICIES = ["action-policy", ...MODEL_REASONING_EFFORTS] as const;
 
 export const PROVIDER_PROFILES: Record<ProviderProfileId, ProviderProfile> = {
+  xai: { id: "xai", label: "xAI", baseURL: "https://api.x.ai/v1", isLocal: false },
   anthropic: { id: "anthropic", label: "Anthropic", isLocal: false },
   openai: {
     id: "openai",
@@ -181,6 +183,11 @@ const META_MUSE_CAPABILITIES: ModelRequestCapabilities = {
 type ModelDefinition = Omit<ModelCatalogEntry, "capabilities" | "allowedReasoningEfforts">;
 
 const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
+  ...Object.keys(XAI_MODEL_FACTS).map((modelId): ModelDefinition => ({
+    id: `xai:${modelId}`, providerProfileId: "xai", modelId,
+    displayName: `xAI Grok ${modelId.slice(5)}`, evaluationStatus: "evaluation-candidate",
+    defaultReasoningPolicy: "action-policy",
+  })),
   ...Object.entries(anthropic.models).map(([modelId, facts]): ModelDefinition => ({
     id: `anthropic:${modelId}`, providerProfileId: "anthropic", modelId,
     displayName: facts.displayName,
@@ -358,6 +365,7 @@ function dynamicOpenAICompatibleCatalogEntry(catalogId: string): ModelCatalogEnt
   if (
     profileId !== "openai"
     && profileId !== "anthropic"
+    && profileId !== "xai"
     && profileId !== "katana"
     && profileId !== "lm-studio"
     && profileId !== "custom-openai-compatible"
@@ -370,7 +378,7 @@ function dynamicOpenAICompatibleCatalogEntry(catalogId: string): ModelCatalogEnt
   const providerProfileId = profileId;
   // Native request controls are frozen from audited facts, never guessed from
   // a newly discovered name. Add a snapshot entry before enabling a new Claude.
-  if (providerProfileId === "anthropic") return undefined;
+  if (providerProfileId === "anthropic" || providerProfileId === "xai") return undefined;
   const label = providerProfileId === "openai"
     ? "OpenAI"
     : providerProfileId === "katana"
