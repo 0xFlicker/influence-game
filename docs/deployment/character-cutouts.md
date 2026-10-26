@@ -108,13 +108,58 @@ the same arguments below using the accepted image and its scoped production runt
 environment. Source-tree paths are only for a repository checkout; production images
 do not contain `packages/api/src`. The operator command does not start the API server.
 
-**Not activated by this change.** Read-only verification on 2026-10-25, AWS account
-978355607658, profile `falsefloor-agents`, region `us-west-1`, found the existing
-House render bootstrap stacks and CDK assets repository, but no character-cutout
-stack, dedicated worker ECR repository, or Batch queue. `us-east-1` also had none.
-This is account/region-specific evidence, not a deployment claim.
+Production was activated on 2026-10-25 (2026-10-26 UTC), AWS account 978355607658,
+region `us-west-1`, through the protected runtime refresh
+[40263004523](https://github.com/0xFlicker/linode-iac/actions/runs/40263004523).
+The corrected worker definition was activated through protected refresh
+[40264158849](https://github.com/0xFlicker/linode-iac/actions/runs/40264158849).
+API and game-worker remain on accepted application SHA
+`8d08fc383c0c81bbeedfbb82997e73e847185ae8`. Both loaded `aws-batch` mode and the
+public API remained healthy after activation. Staging is disabled; render-worker
+networking and Tailscale policy are unchanged.
 
-Before activation:
+Infrastructure is managed by `falsefloor/infra`
+[PR #4](https://github.com/falsefloor/infra/pull/4):
+
+- Stacks: `HouseCutoutsAssets-prod`, `HouseCutouts-prod`.
+- Queue: `arn:aws:batch:us-west-1:978355607658:job-queue/house-character-cutouts-prod`.
+- Definition: `arn:aws:batch:us-west-1:978355607658:job-definition/house-character-cutouts-prod:2`.
+- Worker digest: `sha256:689ae102993a30222512a2b6369bf482b7871c5e8243225a4f6203c63cff150b`
+  (worker source `6e26c8e1`), Linux ARM64, 2 vCPU / 16 GiB, maximum queue capacity
+  4 vCPU. No warm service or NAT gateway.
+- Dedicated submitter `house-cutouts-prod-submitter` can submit only to this queue
+  and definition. Its access key lives in production Doppler, never CloudFormation
+  outputs or repository files. Workers receive per-job capabilities only.
+- Logs: `/house/cutouts/prod`.
+
+The initial production canary exposed Cloudflare error 1010 for the default Python
+user-agent, before the worker claimed any source. Revision 2 identifies callbacks
+as `HouseCharacterCutouts/1.0`; the edge configuration is unchanged. Dummy-capability
+checks reached claim/source/result while retaining application capability rejection.
+Its complete local HTTP flow at 2 CPU / 16 GiB produced the exact previous GPT Sol
+PNG hash, with 31.1 seconds processing/upload and 9.85 GB peak cgroup memory.
+Model weights and recipe identity did not change.
+
+The revision-2 production canary for Vesper Kane
+(`0d8e0048-a56d-4566-804b-0875269c8be4`) completed on its first attempt:
+Batch `3a430bf3-c002-4551-b8e1-9a20b63b43a3` reported `SUCCEEDED`, exit 0, and
+cutout `f11d1f09-bbe9-40a0-a2e3-c44c7e6a1f66` became ready at
+`2026-10-26T03:33:38.119Z`. Readback from private storage verified a 581,586-byte,
+1024×1536 RGBA PNG with alpha spanning 0–255 and SHA-256
+`e6989b396235e51e21e63434ee447a1e8b4933d150e10cfa3289fb45f9390ca4`.
+Processing plus upload took 38.6 seconds; peak RSS was 9.61 GB. This proves the
+production submit/claim/source/inference/upload/storage path. Repeating the same
+single-agent backfill selected zero new sources and returned the same ready job,
+attempt count and Batch ID. It does not claim a
+new-game or browser playback test; the selected production profile had no game
+sources in inventory.
+
+The first Huntingford job (`a2fbc8de-54ca-44d8-84da-16be213e7460`) failed before
+claim under revision 1. Its durable lease was preserved, with automatic expiry
+at `2026-10-26T04:17:28.125Z`; the normal dispatcher can retry using revision 2.
+Never clear an unexpired lease just to accelerate a smoke test.
+
+For subsequent deployments:
 
 1. Review and deploy the dedicated cutout infrastructure from `falsefloor/infra`;
    preserve render-worker/Tailscale configuration. Provision the worker ECR image,
@@ -130,8 +175,7 @@ Before activation:
    bindings. Preview inventory before separately approved activation. Only after
    activation, process one selection, inspect completion/playback, then bounded batches.
 
-The following commands are for the operator after these prerequisites. They were
-**not executed against production** in this task. Env files contain existing secure
+The following commands are for the operator after these prerequisites. Env files contain existing secure
 bindings; do not paste secrets into command lines. The production env file must also
 bind `INFLUENCE_DEPLOYMENT_ENVIRONMENT=prod`, `CHARACTER_CUTOUT_MODE=aws-batch`,
 `CUTOUT_API_URL`, `CUTOUT_BATCH_QUEUE`, `CUTOUT_BATCH_JOB_DEFINITION`, and `AWS_REGION`.
@@ -139,7 +183,7 @@ bind `INFLUENCE_DEPLOYMENT_ENVIRONMENT=prod`, `CHARACTER_CUTOUT_MODE=aws-batch`,
 ```sh
 cd /Users/user/Development/influence-game
 export CUTOUT_ENV_FILE=/etc/influence/cutouts.production.env
-export AGENT_ID=525f84a1-e1d2-472a-ba4e-ad3f9a9d2a53
+export AGENT_ID=0d8e0048-a56d-4566-804b-0875269c8be4 # Verified production Vesper Kane canary
 # Preview the entire cohort and inspect its game IDs, warnings and failures.
 bun --env-file="$CUTOUT_ENV_FILE" packages/api/src/scripts/backfill-character-cutouts.ts inventory --env production --scope example-models
 # Preview exactly the first bounded mutation batch.
@@ -158,6 +202,18 @@ bun --env-file="$CUTOUT_ENV_FILE" packages/api/src/scripts/backfill-character-cu
 bun --env-file="$CUTOUT_ENV_FILE" packages/api/src/scripts/backfill-character-cutouts.ts retry --env production --job "$JOB_IDS" --wait 900
 bun --env-file="$CUTOUT_ENV_FILE" packages/api/src/scripts/backfill-character-cutouts.ts retry --env production --demand "$DEMAND_IDS" --wait 900
 ```
+
+The nine `example-models` profile IDs are present locally but were all absent from
+production at activation. Cohort inventory correctly reports these warnings and
+zero sources; it does not match unrelated agents by name. Select an existing
+production agent/game explicitly until the intended example profiles are published
+and the cohort is updated deliberately.
+
+The accepted `8d08fc38` API image predates packaging the operator bundle. During
+activation, the command was built from that released source and mounted read-only
+into an isolated Compose container using the accepted API image and its runtime env.
+Later images include the bundle directly. Use Compose for the deployed runtime env
+file: its multiline quoted values are not compatible with `docker run --env-file`.
 
 Keep mode disabled to stop new demand and dispatch; existing derivatives, originals
 and accepted game state remain available. Do not truncate jobs, reset active leases, or rewrite frozen
