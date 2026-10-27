@@ -42,6 +42,8 @@ Unmute handlers pass the new preference synchronously to the audio controller. A
 
 On real devices, test app switching, a locked screen, interruptions from another audio app, Bluetooth/headphone changes and return to the tab. The automated visibility event test proves transport policy and decoded-media continuity, not operating-system background guarantees. iOS controls native HTML media volume differently from desktop; verify opening/voice volume and hardware volume on the target device as part of this check.
 
+When unmuting a paused player, media-element priming is asynchronous behind a silent master gain. Browser assertions must wait for the elements to return to `paused` and verify the transport still offers **Play replay** before starting playback. An immediate `paused` read races activation. PR #230's victory-music CI failure reproduced this race; the condition-based assertion passes all three ending scenarios and retains the actual playback, pause/resume and no-loop checks.
+
 ## Safari and iPhone profiling
 
 Use [Safari Web Inspector Timelines](https://webkit.org/web-inspector/timelines-tab/) on desktop or through a connected iPhone. Record a warmed 30–60 second segment with opening video, a full room, spoken audio and Show thinking. Capture JavaScript & Events and Layout & Rendering; inspect Frames and CPU separately to avoid adding every profiling instrument at once. Compare the same game, cue, speed, viewport and thinking setting on the same device. Repeat paused: the stage and scrubber should no longer schedule continuous React updates. Save exported recordings with device, OS/browser version, game/cue and build SHA.
