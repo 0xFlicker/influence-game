@@ -70,6 +70,37 @@ function frame(moment: WerewolfWatchMoment, scene: AcceptedVisualScene | null = 
 function roomIds(container: HTMLElement) {
   return [...container.querySelectorAll("[data-room-player]")].map(element => element.getAttribute("data-room-player"));
 }
+test("a retained solo portrait releases readiness for each cue without another image load", () => {
+  const moment = discussion();
+  moment.chapterId = "introduction";
+  moment.entry = {kind:"speech", day:0, audience:"public", actorId:"b", text:"Hello", cue:null};
+  const first = werewolfMomentCues(moment)[0]!;
+  const second = werewolfMomentCues({...moment, cursor:21, entry:{...moment.entry, text:"Again"}})[0]!;
+  const third = werewolfMomentCues({...moment, cursor:22, entry:{...moment.entry, actorId:"a", text:"My turn"}})[0]!;
+  const director = new PresentationDirector({policy:werewolfWatchPolicy, followTail:true});
+  director.load([first, second, third]); director.play();
+  const calls: Array<[string, boolean]> = [];
+  const original = director.setReady.bind(director);
+  director.setReady = (key, ready) => {calls.push([key, ready]); original(key, ready);};
+  const draw = (cue: typeof first) => <WerewolfWatchStage cue={cue} scene={null} elapsed={0} reduced director={director} holding={false} status="in_progress" />;
+  const view = render(draw(first));
+  const image = view.getByRole("img", {name:"Marlow"});
+  Object.defineProperties(image, {naturalWidth:{configurable:true,value:400}, naturalHeight:{configurable:true,value:400}});
+  fireEvent.load(image);
+  expect(calls).toContainEqual([first.key,true]);
+  act(() => director.seek(1, 0));
+  view.rerender(draw(second));
+  expect(view.getByRole("img", {name:"Marlow"})).toBe(image);
+  expect(calls).toContainEqual([second.key,false]);
+  expect(calls).toContainEqual([second.key,true]);
+  act(() => director.seek(2, 0));
+  view.rerender(draw(third));
+  expect(calls).toContainEqual([third.key,false]);
+  expect(calls).not.toContainEqual([third.key,true]);
+  fireEvent.load(view.getByRole("img", {name:"Arden"}));
+  expect(calls).toContainEqual([third.key,true]);
+  director.dispose();
+});
 test("live tail retains the scene and shows buffering only while playing", () => {
   const cue = werewolfMomentCues(discussion())[0]!;
   const director = new PresentationDirector({policy: werewolfWatchPolicy, followTail: true});
