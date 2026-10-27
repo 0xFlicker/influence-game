@@ -10,7 +10,7 @@ class AudioStub {
   load(){}
   removeAttribute(){this.src="";}
 }
-const input={tracks:[{src:"/score.mp3",time:6.5,gain:1}],playing:true,muted:false,volume:.3,speed:1};
+const input={tracks:[{src:"/score.mp3",time:6.5,gain:1}],playing:true,muted:false,volume:.3,speed:1,navigationRevision:0};
 test("opening sound follows presentation offset, pause, speed and seeks; leaving it disposes media",async()=>{
  const media:AudioStub[]=[];const controller=new OpeningAudio(()=>{},()=>{const audio=new AudioStub();media.push(audio);return audio as unknown as HTMLAudioElement;});
  controller.update(input);await Promise.resolve();expect(media[0]!.currentTime).toBe(6.5);expect(media[0]!.paused).toBe(false);
