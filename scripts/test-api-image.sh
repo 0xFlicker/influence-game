@@ -22,6 +22,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 docker network create --internal "$scope" >/dev/null
 docker run --rm --network none --entrypoint bun "$image" dist/check-visual-runtime.js
+docker run --rm --network none --entrypoint bun "$image" dist/check-audio-runtime.js
 docker run -d --name "$db" --network "$scope" \
   -e POSTGRES_USER=influence -e POSTGRES_PASSWORD=fixture-only \
   -e POSTGRES_DB=image_check postgres:16 >/dev/null

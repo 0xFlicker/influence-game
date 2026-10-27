@@ -129,6 +129,13 @@ Production uses xAI native MP3 (44.1 kHz, 192 kbps). `ffprobe` measures the retu
 container. There is no normalization, pitch/speed filtering, reverb or other DSP.
 The worker requires `XAI_API_KEY`, the existing private-payload bucket settings,
 and `ffprobe` on PATH. It follows normal execution-worker activation/drain rules.
+`Dockerfile.api`, shared by the gateway and game-worker, installs Debian's
+`ffmpeg` package to supply `ffprobe`. The final image build and
+`scripts/test-api-image.sh` run `dist/check-audio-runtime.js`: a provider-free
+synthetic MP3 checked through the production `measureAudio` path. A missing or
+unusable probe fails image validation before deployment. After deploying this
+fix, retry failed historical tracks with Studio's **Retry missing clips** action;
+deploying the image does not itself retry paid audio generation.
 
 Audio Mode freezes voices in the game-start transaction. After text acceptance,
 the runtime builds eligible production moments and waits for verified audio

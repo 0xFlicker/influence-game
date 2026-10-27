@@ -37,7 +37,8 @@ RUN bun build src/index.ts --target=bun --external sharp --outdir=dist --sourcem
   && bun build src/scripts/preflight-auth-identities.ts --target=bun --external sharp --outdir=dist --entry-naming=preflight-auth-identities.js --sourcemap=external \
   && bun build src/scripts/migrate-storage-payloads.ts --target=bun --external sharp --outdir=dist --entry-naming=migrate-storage-payloads.js --sourcemap=external \
   && bun build src/scripts/mint-deployment-control-token.ts --target=bun --external sharp --outdir=dist --entry-naming=mint-deployment-control-token.js --sourcemap=external \
-  && bun build src/scripts/check-visual-runtime.ts --target=bun --external sharp --outdir=dist --sourcemap=external
+  && bun build src/scripts/check-visual-runtime.ts --target=bun --external sharp --outdir=dist --sourcemap=external \
+  && bun build src/scripts/check-audio-runtime.ts --target=bun --outdir=dist --sourcemap=external
 
 # Explicit isolated proof commands; ordinary image startup remains dist/index.js.
 RUN bun build src/scripts/staging-render-proof.ts src/scripts/staging-render-proof-api.ts --target=bun --external sharp --outdir=dist --sourcemap=external
@@ -45,6 +46,11 @@ RUN bun build src/scripts/staging-render-proof.ts src/scripts/staging-render-pro
 # Slim runtime — only Sharp needs runtime node_modules
 FROM oven/bun:1-slim AS runtime
 WORKDIR /app
+
+# The game-worker uses this image; accepted audio requires ffprobe from FFmpeg.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ffmpeg \
+  && rm -rf /var/lib/apt/lists/*
 
 LABEL org.opencontainers.image.source=https://github.com/0xFlicker/influence-game \
   com.thehouse.influence.release-control-protocol="1"
@@ -59,6 +65,7 @@ COPY packages/api/assets/werewolf/ ./assets/werewolf/
 ENV WEREWOLF_ASSET_DIR=/app/assets/werewolf
 # Provider-free: decode every bundled default and exercise the native image library.
 RUN bun dist/check-visual-runtime.js
+RUN bun dist/check-audio-runtime.js
 
 COPY deployment/render-execution.json /app/deployment/render-execution.json
 ENV INFLUENCE_RENDER_CONFIG_PACKAGED=1
