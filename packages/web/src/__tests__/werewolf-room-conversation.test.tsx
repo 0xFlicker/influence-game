@@ -1,10 +1,14 @@
 import {afterEach, beforeEach, expect, mock, test} from "bun:test";
 import {Window} from "happy-dom";
-import {act, cleanup, fireEvent, render as renderRoot} from "@testing-library/react";
+import {act, cleanup, fireEvent, render as renderRoot, renderHook} from "@testing-library/react";
 import type {WerewolfWatchMoment} from "@influence/engine/werewolf/watch-contract";
 import type {AcceptedVisualScene} from "@influence/engine/visual-mode";
-import {WerewolfContentFrame} from "../components/games/werewolf/werewolf-watch-stage";
-import {werewolfMomentCues} from "../components/games/werewolf/werewolf-watch-model";
+import {WerewolfContentFrame, WerewolfWatchStage} from "../components/games/werewolf/werewolf-watch-stage";
+import {werewolfMomentCues, werewolfWatchPolicy} from "../components/games/werewolf/werewolf-watch-model";
+import {WerewolfOpeningFrame} from "../components/games/werewolf/werewolf-opening-frame";
+import type {WerewolfOpeningCue} from "../components/games/werewolf/werewolf-opening";
+import {PresentationDirector} from "../components/watch/watch-director";
+import {useWatchMusic} from "../components/watch/use-watch-music";
 import {SCENE_READ_START_MS} from "../app/games/[slug]/components/scene-speech-timing";
 import {SOLO_IMAGE_FADE_MS, SOLO_READ_START_MS} from "../app/games/[slug]/components/solo-presentation-timing";
 
@@ -66,6 +70,94 @@ function frame(moment: WerewolfWatchMoment, scene: AcceptedVisualScene | null = 
 function roomIds(container: HTMLElement) {
   return [...container.querySelectorAll("[data-room-player]")].map(element => element.getAttribute("data-room-player"));
 }
+test("a retained solo portrait releases readiness for each cue without another image load", () => {
+  const moment = discussion();
+  moment.chapterId = "introduction";
+  moment.entry = {kind:"speech", day:0, audience:"public", actorId:"b", text:"Hello", cue:null};
+  const first = werewolfMomentCues(moment)[0]!;
+  const second = werewolfMomentCues({...moment, cursor:21, entry:{...moment.entry, text:"Again"}})[0]!;
+  const third = werewolfMomentCues({...moment, cursor:22, entry:{...moment.entry, actorId:"a", text:"My turn"}})[0]!;
+  const director = new PresentationDirector({policy:werewolfWatchPolicy, followTail:true});
+  director.load([first, second, third]); director.play();
+  const calls: Array<[string, boolean]> = [];
+  const original = director.setReady.bind(director);
+  director.setReady = (key, ready) => {calls.push([key, ready]); original(key, ready);};
+  const draw = (cue: typeof first) => <WerewolfWatchStage cue={cue} scene={null} elapsed={0} reduced director={director} holding={false} status="in_progress" />;
+  const view = render(draw(first));
+  const image = view.getByRole("img", {name:"Marlow"});
+  Object.defineProperties(image, {naturalWidth:{configurable:true,value:400}, naturalHeight:{configurable:true,value:400}});
+  fireEvent.load(image);
+  expect(calls).toContainEqual([first.key,true]);
+  act(() => director.seek(1, 0));
+  view.rerender(draw(second));
+  expect(view.getByRole("img", {name:"Marlow"})).toBe(image);
+  expect(calls).toContainEqual([second.key,false]);
+  expect(calls).toContainEqual([second.key,true]);
+  act(() => director.seek(2, 0));
+  view.rerender(draw(third));
+  expect(calls).toContainEqual([third.key,false]);
+  expect(calls).not.toContainEqual([third.key,true]);
+  fireEvent.load(view.getByRole("img", {name:"Arden"}));
+  expect(calls).toContainEqual([third.key,true]);
+  director.dispose();
+});
+test("live tail retains the scene and shows buffering only while playing", () => {
+  const cue = werewolfMomentCues(discussion())[0]!;
+  const director = new PresentationDirector({policy: werewolfWatchPolicy, followTail: true});
+  director.load([cue]); director.seekTimeline(0, cue.baseDurationMs); director.play();
+  const draw = (holding: boolean) => <WerewolfWatchStage cue={cue} scene={null} elapsed={cue.baseDurationMs} reduced director={director} holding={holding} status="in_progress" />;
+  const view = render(draw(true));
+  expect(view.getByText("Arden, who do you suspect?")).not.toBeNull();
+  expect(view.getByRole("status", {name: "Buffering"})).not.toBeNull();
+  expect(view.queryByText("Waiting for the next scene…")).toBeNull();
+  director.pause(); view.rerender(draw(true));
+  expect(view.queryByRole("status", {name: "Buffering"})).toBeNull();
+  director.play(); view.rerender(draw(false));
+  expect(view.queryByRole("status", {name: "Buffering"})).toBeNull();
+  director.dispose();
+});
+test("opening cast switches to a hidden new image until it loads", () => {
+  const cue: WerewolfOpeningCue = {key: "a", baseDurationMs: 2500, opening: {shot: "cast", startMs: 8000, totalMs: 18000, title: "Werewolf", backgroundUrl: "/bg", logoUrl: "/logo", musicUrl: "/music", player: {id: "a", name: "Arden", imageUrl: "/a"}}};
+  const draw = (value: WerewolfOpeningCue) => <WerewolfOpeningFrame cue={value} elapsedMs={1000} browserLoading />;
+  const view = render(draw(cue));
+  const first = view.getByRole("img", {name: "Arden"}) as HTMLImageElement;
+  expect(first.style.opacity).toBe("0"); fireEvent.load(first); expect(first.style.opacity).toBe("1");
+  view.rerender(draw({...cue, key: "b", opening: {...cue.opening, player: {id: "b", name: "Marlow", imageUrl: "/b"}}}));
+  const second = view.getByRole("img", {name: "Marlow"}) as HTMLImageElement;
+  expect(second).not.toBe(first); expect(second.style.opacity).toBe("0");
+  fireEvent.load(second); expect(second.style.opacity).toBe("1");
+});
+test("music continues at the live tail and pauses with playback", async () => {
+  const audioDescriptor = Object.getOwnPropertyDescriptor(globalThis, "Audio");
+  const contextDescriptor = Object.getOwnPropertyDescriptor(globalThis, "AudioContext");
+  const levels: number[] = [];
+  class AudioStub {
+    preload = ""; src = ""; currentTime = 0; duration = 100; readyState = 4; ended = false; error = null;
+    load() {} play() {return Promise.resolve();} pause() {} removeAttribute() {}
+  }
+  class ContextStub {
+    currentTime = 0; state = "running"; destination = {}; gains = 0;
+    createGain() {const master = this.gains++ === 0; return {gain: {value: 0, setTargetAtTime: (value: number) => {if (master) levels.push(value);}}, connect() {}, disconnect() {}};}
+    createMediaElementSource() {return {connect() {}, disconnect() {}};}
+    resume() {return Promise.resolve();} close() {return Promise.resolve();}
+  }
+  Object.defineProperty(globalThis, "Audio", {configurable: true, value: AudioStub});
+  Object.defineProperty(globalThis, "AudioContext", {configurable: true, value: ContextStub});
+  try {
+    const input = {section: {key: "day", src: "/day.mp3", title: "Day", repeat: true}, playing: true, muted: false, volume: 0.3, preparing: false, holding: false, live: true, navigationRevision: 0};
+    const view = renderHook((props: typeof input) => useWatchMusic(props), {initialProps: input});
+    await act(async () => {});
+    view.rerender({...input, holding: true});
+    await act(async () => {await new Promise(resolve => setTimeout(resolve, 1800));});
+    expect(levels.at(-1)).toBe(0.3);
+    view.rerender({...input, holding: true, playing: false});
+    expect(levels.at(-1)).toBe(0);
+    view.unmount();
+  } finally {
+    if (audioDescriptor) Object.defineProperty(globalThis, "Audio", audioDescriptor); else Reflect.deleteProperty(globalThis, "Audio");
+    if (contextDescriptor) Object.defineProperty(globalThis, "AudioContext", contextDescriptor); else Reflect.deleteProperty(globalThis, "AudioContext");
+  }
+});
 test("live Werewolf room derives its orbit predecessor after a waiting-screen remount", () => {
   const before=discussion();
   if(before.entry.kind!=="discussion") throw new Error("fixture");

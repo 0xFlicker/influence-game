@@ -4,7 +4,7 @@ import {validHeadRectangle} from "@influence/engine/character-portrait";
 import {useBubbleTypography} from "@/components/watch/use-bubble-typography";
 import {useSceneThinking} from "@/components/watch/watch-thinking";
 import {thinkingFocus, ThinkingFocusOverlay} from "@/components/watch/thinking-focus";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { resolveAgentAvatarUrl } from "@/components/agent-avatar";
 import { TimedSpeech } from "./timed-speech";
 import type { VisualPresentationBeat } from "./visual-presentation";
@@ -44,6 +44,11 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
   const frame = useRef<HTMLElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [loaded, setLoaded] = useState({ source: "", width: 0, height: 0 });
+  // A retained image does not fire another load event when the next cue uses it.
+  // Reannounce only the current successfully loaded source to the new cue.
+  useEffect(() => {
+    if (loaded.source === source && loaded.width > 0 && loaded.height > 0) onImageReady?.(source);
+  }, [loaded, source, onImageReady]);
   useLayoutEffect(() => {
     const element = frame.current;
     if (!element) return;

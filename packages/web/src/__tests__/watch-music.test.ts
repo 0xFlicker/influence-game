@@ -91,11 +91,10 @@ test("network errors stop the affected bed and explicit retry reloads it", async
   expect(output.decks.some(d=>d.playing)).toBe(false);
   output.decks.forEach(d=>{d.failed=false;}); music.unlock(); await settled(); expect(statuses.at(-1)).toBe("playing");
 });
-test("explicit restart resets same section; zero volume does not pause; live-tail gain fades", async () => {
+test("explicit restart resets same section; zero volume does not pause", async () => {
   const {music, output, input} = setup(); music.update(input); await settled(); output.time = 1; music.tick();
   output.decks.find(d=>d.playing)!.time=54; music.restart(); music.update({...input, volume:0}); await settled();
   expect(output.decks.find(d=>d.playing)!.time).toBe(0); expect(output.level).toBe(0);
-  music.update({...input, fadeGain:0.5}); expect(output.level).toBe(0.15);
 });
 test("new audible preview suspends the old one until an explicit gesture", async () => {
   const first=setup(), second=setup(); first.music.update(first.input); await settled(); second.music.update(second.input); await settled();

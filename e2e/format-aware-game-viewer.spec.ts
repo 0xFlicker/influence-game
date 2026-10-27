@@ -1238,10 +1238,12 @@ test.describe("format-aware game viewer", () => {
       await expect(page.getByRole("heading", { name: label, level: 1, exact: true })).toBeVisible();
       await expect(page.locator(".influence-phase-title")).toHaveCount(0, { timeout: 15_000 });
       // Let this accepted speech finish before the next live publication arrives.
-      await expect(page.getByRole("status").filter({ hasText: "Waiting for messages…" })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole("status", {name: "Buffering"})).toBeVisible({ timeout: 15_000 });
+      await expect(speech).toBeVisible();
     }
     expect(visualRequests).toBeGreaterThan(0);
-    await expect(page.getByText("Waiting for messages…", { exact: true })).toHaveCount(1);
+    await expect(page.getByRole("status", {name: "Buffering"})).toHaveCount(1);
+    await expect(page.getByText("Waiting for messages…", { exact: true })).toHaveCount(0);
     await expect(page.getByText("Waiting for next phase", { exact: true })).toHaveCount(0);
   });
 

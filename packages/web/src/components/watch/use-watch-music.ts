@@ -7,27 +7,19 @@ export function useWatchMusic(input: MusicInput & {preparing: boolean; holding: 
   const controller = useRef<WatchMusic | null>(null);
   const [status, setStatus] = useState<MusicStatus>("idle");
   const [scrubbing, setScrubbing] = useState(false);
-  const [tailGain, setTailGain] = useState(1);
-  const waiting = input.holding && input.live;
-  useEffect(() => {
-    if (!waiting) return;
-    const start = performance.now();
-    const timer = setInterval(() => {const gain = Math.max(0, Math.min(1, 1 - (performance.now() - start - 1000) / 700)); setTailGain(gain); if (gain === 0) clearInterval(timer);}, 40);
-    return () => {clearInterval(timer); setTailGain(1);};
-  }, [waiting]);
   useEffect(() => {
     const music = new WatchMusic(createBrowserMusicOutput, setStatus);
     controller.current = music;
     return () => {music.dispose(); controller.current = null;};
   }, []);
-  const {section, playing, muted, volume, fadeGain, preparing, holding, live, navigationRevision} = input;
+  const {section, playing, muted, volume, preparing, holding, live, navigationRevision} = input;
   const key = section?.key, src = section?.src, title = section?.title, repeat = section?.repeat, continueAtEnd = section?.continueAtEnd;
   useEffect(() => {
     // Freeze selection during scrubbing/loading: no downloads for intermediate destinations.
     if (scrubbing || preparing) {controller.current?.suspend(); return;}
-    controller.current?.update({section: key && src && title && repeat !== undefined ? {key, src, title, repeat, continueAtEnd} : null, muted, volume, fadeGain: (fadeGain ?? 1) * (waiting ? Math.min(1,tailGain) : 1),
-      playing: playing && !(holding && (live ? tailGain <= 0 : !continueAtEnd))});
-  }, [key, src, title, repeat, continueAtEnd, playing, muted, volume, fadeGain, preparing, holding, live, tailGain, waiting, scrubbing, navigationRevision]);
+    controller.current?.update({section: key && src && title && repeat !== undefined ? {key, src, title, repeat, continueAtEnd} : null, muted, volume,
+      playing: playing && !(holding && !live && !continueAtEnd)});
+  }, [key, src, title, repeat, continueAtEnd, playing, muted, volume, preparing, holding, live, scrubbing, navigationRevision]);
   return {
     status,
     unlock: useCallback(() => controller.current?.unlock(), []),

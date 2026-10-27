@@ -35,6 +35,13 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
   const awaitingInitialCue = useRef(true);
   const [revision, setRevision] = useState(0);
   const [navigationRevision, setNavigationRevision] = useState(0);
+  const openingPreloads = useRef(new Map<string, HTMLImageElement>());
+  useEffect(() => {
+    for (const cue of opening.current) {
+      const src = cue.opening.player?.imageUrl;
+      if (src && !openingPreloads.current.has(src)) {const image = document.createElement("img"); image.src = src; openingPreloads.current.set(src, image);}
+    }
+  }, [revision]);
   const commitWindow = useCallback((value: WerewolfWatchWindow, active: number) => {
     // Validate overlaps before replacing a refreshed window.
     werewolfCues([...windows.current.values(), value]);

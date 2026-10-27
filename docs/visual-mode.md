@@ -55,7 +55,7 @@ The content frame plays accepted conversation, portrait beats, canonical format 
 
 `house-segment.tsx` presents the existing logo, gold accents and complete saved text. Reading duration uses the speech clock; entrance and exit take approximately 300 ms. Pause, speed, reduced motion and seeking use the same presentation director as dialogue. Stable dialogue-sequence keys survive REST/live identity changes. Reconnect preserves elapsed time; backfilled summaries cannot interrupt an on-air title. Seeking an operational-only event lands on the next presentable cue. No playback operation generates narration or media.
 
-Finished House segments stay faded out while waiting for new live content, including with reduced motion. Pausing mid-fade freezes opacity; a paused seek to the start remains readable. Resuming or reconnecting at the live tail preserves the completed cue instead of replaying its animation; new content advances the director normally.
+At the live tail, the last House segment remains readable with a buffering indicator while music continues. Pausing mid-fade freezes opacity; a paused seek to the start remains readable. New content advances the director normally.
 
 The old `phase-transition.tsx`, `endgame-entry.tsx`, random flavor copy and `buildReplayScenes` allocation/parser path were removed. Their last version is available at git commit `c7f7b48f` under `packages/web/src/app/games/[slug]/components/`. Phase/format context stays in watch chrome and playback controls, not an independent overlay. Provider execution and visual failure policy are unchanged.
 
