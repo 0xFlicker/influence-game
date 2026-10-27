@@ -6,14 +6,14 @@ import {sampleOpening, type WerewolfOpeningCue} from "./werewolf-opening";
 import styles from "./werewolf-opening.module.css";
 
 /** Shared by the live webpage and the full replay renderer. No controls or independent timers. */
-export function WerewolfOpeningFrame({cue, elapsedMs, reduced = false, playing = false, speed = 1, video, browserLoading = false}: {
-  cue: WerewolfOpeningCue; elapsedMs: number; reduced?: boolean; playing?: boolean; speed?: number;
+export function WerewolfOpeningFrame({cue, elapsedMs, reduced = false, playing = false, speed = 1, navigationRevision = 0, video, browserLoading = false}: {
+  cue: WerewolfOpeningCue; elapsedMs: number; reduced?: boolean; playing?: boolean; speed?: number; navigationRevision?: number;
   video?: (props: OpeningVideoProps) => ReactNode; browserLoading?: boolean;
 }) {
   const shot = cue.opening;
   const frame = sampleOpening(cue, elapsedMs, reduced);
   const [failedImage, setFailedImage] = useState<string | null>(null);
-  const media = {src: shot.videoUrl ?? "", poster: shot.backgroundUrl, timeMs: frame.videoMs, playing, speed};
+  const media = {src: shot.videoUrl ?? "", poster: shot.backgroundUrl, timeMs: frame.videoMs, playing, speed, navigationRevision};
   const backgroundTransform = `translate(${frame.panX}%, ${frame.panY}%) scale(${frame.scale})`;
   return <div className={styles.frame} data-werewolf-opening={shot.shot} data-opening-key={cue.key}>
     <div className={styles.picture} style={{opacity: frame.opacity}}>

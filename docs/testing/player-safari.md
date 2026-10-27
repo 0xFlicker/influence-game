@@ -10,7 +10,7 @@ Install the pinned browser and run the deterministic fixture stories:
 bunx playwright install webkit
 PLAYWRIGHT_FORMAT_VIEWER=1 bunx playwright test e2e/format-aware-game-viewer.spec.ts \
   --project=webkit --project=webkit-mobile \
-  --grep 'player performance|Influence scrubber|unmuted intro|Influence opening reveals cast|fullscreen portrait player' \
+  --grep 'player performance|Influence scrubber|unmuted intro|Influence opening reveals cast|fullscreen portrait player|Werewolf portrait door' \
   --retries=0
 ```
 
@@ -38,7 +38,7 @@ The provider-free baseline passed 3,098 tests (5 skipped); PostgreSQL passed 2,2
 
 Start with fresh site preferences. During the opening, press **Turn music on** once, then exercise pause/resume, skip opening, scene navigation, a crossfade, a loop boundary, volume/mute, and the final results. Repeat with a cold media cache and a slow connection. Verify the first requested audio starts and a later deck can play without another gesture.
 
-Unmute handlers pass the new preference synchronously to the audio controller. Ambient audio resumes its context even when an earlier automatic resume is pending, and primes both retained media elements inside the gesture. `public/music/unlock.wav` is 100 ms of generated 8 kHz mono PCM silence for the otherwise-empty deck. Interrupted contexts retry through the bounded start path; permission denial exposes **Enable music**. Opening audio can start its permission request before metadata arrives, stays silent until positioning is possible, and applies the requested seek before audible playback. Automatic drift correction avoids seeking again while an earlier media seek is pending.
+Unmute handlers pass the new preference synchronously to the audio controller. Ambient audio resumes its context even when an earlier automatic resume is pending, and primes both retained media elements inside the gesture. `public/music/unlock.wav` is 100 ms of generated 8 kHz mono PCM silence for the otherwise-empty deck. Interrupted contexts retry through the bounded start path; permission denial exposes **Enable music**. Opening audio can start its permission request before metadata arrives, stays silent until positioning is possible, and applies the requested seek before audible playback. Opening audio/video align when metadata arrives, on explicit navigation, pause/resume and speed changes, and after buffered playback can resume. Between those boundaries the native decoder runs at the requested rate; render samples do not repeatedly seek a lagging decoder. A pending seek defers the next alignment until `seeked`.
 
 On real devices, test app switching, a locked screen, interruptions from another audio app, Bluetooth/headphone changes and return to the tab. The automated visibility event test proves transport policy and decoded-media continuity, not operating-system background guarantees. iOS controls native HTML media volume differently from desktop; verify opening/voice volume and hardware volume on the target device as part of this check.
 
@@ -53,3 +53,17 @@ For automation against installed macOS Safari, use Apple's [safaridriver/WebDriv
 ## Fullscreen
 
 The fullscreen request asks native browsers to hide navigation UI. Where element fullscreen is unavailable, the existing popover/fixed-viewport expansion preserves the mounted player and playback state. This fallback cannot hide Safari's address or status bars. WebKit's [iPhone element-fullscreen issue](https://bugs.webkit.org/show_bug.cgi?id=206854) tracks that platform limitation. Native video fullscreen is not a replacement for a player containing custom scenes, captions, thinking and controls. Verify rotation, safe areas, settings, Escape/exit and scroll restoration on an actual device.
+
+## Follow-up after device feedback
+
+The follow-up starts from `c8818297` (merged #230). Three findings have direct regression coverage:
+
+- The sample limiter previously restarted its 33.3 ms interval at the actual callback time. Uneven 30 Hz callbacks could alternate between accepted and skipped frames, reducing sampling to 15 fps. It now advances a deadline grid, tolerates small timing jitter, and skips missed deadlines without a catch-up burst. Tests cover uneven 30 Hz, 120 Hz and a long stall. In the 120-callback uneven-30-Hz reproduction, the old limiter sampled 61 callbacks; the fix samples all 120. This proves the sampling fix, not a physical iPhone GPU frame rate.
+- Fullscreen fallback makes the existing player a popover. Browser popover styles can replace inherited text color with `CanvasText`, leaving uncolored speech/name text dark against black. Both player roots explicitly own their white foreground and dark color scheme. Browser tests check fullscreen speech in device dark/light modes and after exit. Werewolf also clears the popover's default padding, margin, border and size limits.
+- The portrait opening crop used 60% horizontal positioning for every Werewolf shot. The door shot now centers both its video and poster independently of the other shots' composition.
+
+Desktop Safari stuttering was reported to settle after startup. Repeated frame-by-frame media seeks were removed from the opening adapter, with buffer recovery and explicit seek tests; a complete reproduction of the reported desktop audio gaps is still absent. The intermittent background music-boundary report remains unconfirmed. Keep cold-cache playback, a backgrounded boundary, and a real iPhone animation check in device acceptance.
+
+Installed Safari 27.0.1 was available locally, but `safaridriver` timed out creating an automation session. The follow-up browser evidence uses Playwright Chromium/WebKit, not installed Safari or a physical iPhone.
+
+Follow-up local validation: 24 selected browser stories passed across Chromium, desktop WebKit and mobile WebKit; the provider-free baseline passed 3,107 tests (5 skipped), the PostgreSQL baseline passed 2,262 tests, the final focused suite passed 33 tests, and typecheck/lint passed.

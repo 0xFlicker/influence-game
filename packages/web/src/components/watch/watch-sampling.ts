@@ -5,12 +5,16 @@ export interface WatchSampler {
   isAnimating(): boolean;
 }
 export function sampleWatch(director: WatchSampler, sample: () => void) {
-  let frame = 0, previous = -Infinity, dirty = true;
+  const interval = 1000 / 30;
+  let frame = 0, nextSample = 0, dirty = true;
   const tick = (now: number) => {
     frame = 0;
-    if (dirty || now - previous >= 1000 / 30 - 0.5 || !director.isAnimating()) {
+    if (dirty) nextSample = now;
+    if (dirty || now + 2 >= nextSample || !director.isAnimating()) {
       dirty = false;
-      previous = now;
+      // Keep a deadline grid instead of restarting the interval at each sample.
+      // Safari can deliver rAF at ~30 Hz; small jitter must not halve it to 15.
+      nextSample += Math.max(1, Math.floor((now - nextSample) / interval) + 1) * interval;
       sample();
     }
     if (director.isAnimating() && !frame) frame = requestAnimationFrame(tick);

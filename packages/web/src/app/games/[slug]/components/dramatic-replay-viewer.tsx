@@ -615,7 +615,7 @@ function DramaticReplayTheater({
       ref={animationScope}
       data-presentation-animation-boundary="true"
       data-reduced-motion={reducedMotion ? "reduce" : "no-preference"}
-      className={`flex flex-col cursor-pointer select-none ${
+      className={`flex flex-col cursor-pointer select-none text-white [color-scheme:dark] ${
         embedded
           ? "relative h-full min-h-0 overflow-hidden"
           : "fixed inset-0 z-30 influence-shell"
@@ -730,7 +730,7 @@ function DramaticReplayTheater({
         } justify-center ${openingCue ? "" : fullscreen ? isRoomPresentation || isSoloPresentation ? "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]" : "pb-[140px] pt-[env(safe-area-inset-top)]" : isSoloPresentation || isRoomPresentation ? "" : isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
       >
         {openingCue ? <>
-          <WatchClock director={director}>{elapsed => <InfluenceOpeningFrame cue={openingCue} elapsedMs={elapsed} reduced={reducedMotion} playing={isPlaying} speed={speed}
+          <WatchClock director={director}>{elapsed => <InfluenceOpeningFrame cue={openingCue} elapsedMs={elapsed} navigationRevision={director.getNavigationRevision()} reduced={reducedMotion} playing={isPlaying} speed={speed}
             {...influenceCastArt(openingPlayer, visualData)} />}</WatchClock>
           <button type="button" data-replay-controls className="absolute right-4 top-4 z-20 rounded-full border border-white/20 bg-black/60 px-4 py-2 text-xs text-white/80 hover:bg-black/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-200"
             onClick={event => {

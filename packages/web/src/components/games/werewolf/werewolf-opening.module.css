@@ -23,6 +23,7 @@
 .role {display:block; min-height:1.5em; margin-top:3cqh; color:#d2b981; font:500 1.35cqw system-ui,sans-serif; letter-spacing:.15em; text-transform:uppercase}
 @container (max-aspect-ratio: 1/1) {
   .backdrop {object-position:60% center}
+  .frame[data-werewolf-opening="door"] .backdrop {object-position:center}
   .brand {left:10%; top:35%; width:80%; gap:4cqw}
   .wordmark strong {font-size:12cqw}.the {font-size:3cqw}.presents {font-size:2cqw}
   .title {max-width:100%;padding:9%}.titleLogo{width:100%}.title h1{font-size:10cqw}.title p,.name p{font-size:2.5cqw}

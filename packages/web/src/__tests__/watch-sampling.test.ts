@@ -21,3 +21,31 @@ test("sampling sleeps when paused, coalesces mutations and wakes after buffering
    stop();expect(frames.size).toBe(0);expect(listeners.size).toBe(0);
  } finally {globalThis.requestAnimationFrame=originalRAF;globalThis.cancelAnimationFrame=originalCancel;}
 });
+
+test("uneven 30 Hz browser callbacks retain 30 fps instead of falling to 15", () => {
+ const originalRAF = globalThis.requestAnimationFrame, originalCancel = globalThis.cancelAnimationFrame;
+ let callback: FrameRequestCallback | undefined, samples = 0;
+ globalThis.requestAnimationFrame = next => {callback=next;return 1;};
+ globalThis.cancelAnimationFrame = () => {callback=undefined;};
+ try {
+   const stop = sampleWatch({isAnimating:()=>true,subscribe:()=>()=>{}},()=>{samples++;});
+   for (let index=0;index<120;index++) callback!(index * 1000 / 30 + (index % 2 ? .6 : 0));
+   expect(samples).toBe(120);
+   stop();
+ } finally {globalThis.requestAnimationFrame=originalRAF;globalThis.cancelAnimationFrame=originalCancel;}
+});
+
+test("high-refresh callbacks stay capped and a long stall does not create catch-up work", () => {
+ const originalRAF = globalThis.requestAnimationFrame, originalCancel = globalThis.cancelAnimationFrame;
+ let callback: FrameRequestCallback | undefined, samples = 0;
+ globalThis.requestAnimationFrame = next => {callback=next;return 1;};
+ globalThis.cancelAnimationFrame = () => {callback=undefined;};
+ try {
+   const stop = sampleWatch({isAnimating:()=>true,subscribe:()=>()=>{}},()=>{samples++;});
+   for (let index=0;index<240;index++) callback!(index * 1000 / 120);
+   expect(samples).toBe(60);
+   callback!(10_000);expect(samples).toBe(61);
+   callback!(10_000 + 1000/120);expect(samples).toBe(61);
+   stop();
+ } finally {globalThis.requestAnimationFrame=originalRAF;globalThis.cancelAnimationFrame=originalCancel;}
+});

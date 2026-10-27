@@ -19,13 +19,13 @@ function CastPortrait({name, fullBodyUrl, headshotUrls}: {name: string; fullBody
     : <div className={styles.monogram} aria-label={`${name} portrait unavailable`}>{name.slice(0, 1)}</div>;
 }
 
-export function InfluenceOpeningFrame({cue, elapsedMs, reduced = false, fullBodyUrl, portraitUrl, fallbackPortraitUrl, playing = false, speed = 1, video}: {
-  cue: InfluenceOpeningCue; elapsedMs: number; reduced?: boolean; fullBodyUrl?: string; portraitUrl?: string; fallbackPortraitUrl?: string; playing?: boolean; speed?: number;
+export function InfluenceOpeningFrame({cue, elapsedMs, reduced = false, fullBodyUrl, portraitUrl, fallbackPortraitUrl, playing = false, speed = 1, navigationRevision = 0, video}: {
+  cue: InfluenceOpeningCue; elapsedMs: number; reduced?: boolean; fullBodyUrl?: string; portraitUrl?: string; fallbackPortraitUrl?: string; playing?: boolean; speed?: number; navigationRevision?: number;
   video?: (props: OpeningVideoProps) => ReactNode;
 }) {
   const shot = cue.opening;
   const frame = sampleInfluenceOpening(cue, elapsedMs, reduced);
-  const media = {src: shot.entranceVideoUrl, poster: shot.posterUrl, timeMs: frame.videoMs, playing, speed};
+  const media = {src: shot.entranceVideoUrl, poster: shot.posterUrl, timeMs: frame.videoMs, playing, speed, navigationRevision};
   return <div className={styles.frame} data-influence-opening={shot.shot} data-opening-key={cue.key}>
     <div className={styles.picture} style={{opacity: frame.exitOpacity * frame.entranceOpacity}}>
       {frame.entrance && !reduced
