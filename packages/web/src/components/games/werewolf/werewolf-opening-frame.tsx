@@ -6,9 +6,9 @@ import {sampleOpening, type WerewolfOpeningCue} from "./werewolf-opening";
 import styles from "./werewolf-opening.module.css";
 
 /** Shared by the live webpage and the full replay renderer. No controls or independent timers. */
-export function WerewolfOpeningFrame({cue, elapsedMs, reduced = false, playing = false, speed = 1, video}: {
+export function WerewolfOpeningFrame({cue, elapsedMs, reduced = false, playing = false, speed = 1, video, browserLoading = false}: {
   cue: WerewolfOpeningCue; elapsedMs: number; reduced?: boolean; playing?: boolean; speed?: number;
-  video?: (props: OpeningVideoProps) => ReactNode;
+  video?: (props: OpeningVideoProps) => ReactNode; browserLoading?: boolean;
 }) {
   const shot = cue.opening;
   const frame = sampleOpening(cue, elapsedMs, reduced);
@@ -30,9 +30,15 @@ export function WerewolfOpeningFrame({cue, elapsedMs, reduced = false, playing =
         <h1>{shot.title === "Werewolf" ? <span className="sr-only">Werewolf</span> : shot.title}</h1><span className={styles.rule} />
       </div>}
       {shot.shot === "cast" && shot.player && <div className={styles.cast} style={{opacity:frame.textOpacity}}>
-        <div className={styles.portrait}>{shot.player.imageUrl && failedImage !== shot.player.imageUrl ? <img className={shot.player.fullBody ? styles.fullBody : undefined} src={shot.player.imageUrl} alt={shot.player.name} onError={() => setFailedImage(shot.player?.imageUrl ?? null)} /> : <span>{shot.player.name}</span>}</div>
+        <div className={styles.portrait}>{shot.player.imageUrl && failedImage !== shot.player.imageUrl ? <CastImage key={shot.player.imageUrl} src={shot.player.imageUrl} name={shot.player.name} fullBody={shot.player.fullBody} browserLoading={browserLoading} reduced={reduced} onError={() => setFailedImage(shot.player?.imageUrl ?? null)} /> : <span>{shot.player.name}</span>}</div>
         <div className={styles.name}><p>THE CAST</p><h2>{shot.player.name}</h2><span className={styles.role}>{shot.player.role ?? ""}</span></div>
       </div>}
     </div>
   </div>;
+}
+
+function CastImage({src, name, fullBody, browserLoading, reduced, onError}: {src: string; name: string; fullBody?: boolean; browserLoading: boolean; reduced: boolean; onError: () => void}) {
+  const [loaded, setLoaded] = useState(false);
+  return <img className={fullBody ? styles.fullBody : undefined} src={src} alt={name} onLoad={() => setLoaded(true)} onError={onError}
+    style={browserLoading ? {opacity: loaded ? 1 : 0, transition: reduced ? undefined : "opacity 400ms ease"} : undefined} />;
 }

@@ -6,7 +6,7 @@ import {WerewolfTransformationStage} from "./werewolf-transformation-stage";
 import {WerewolfNightOutcome} from "./werewolf-night-outcome";
 import {WerewolfRoleStage} from "./werewolf-role-stage";
 import {WerewolfHuntStage} from "./werewolf-hunt-stage";
-import {WatchWaiting} from "@/components/watch/watch-waiting";
+import {WatchBuffering, WatchWaiting} from "@/components/watch/watch-waiting";
 import {useCallback, useEffect, useLayoutEffect, useState} from "react";
 import type {AcceptedVisualScene} from "@influence/engine/visual-mode";
 import {selectVisualShot} from "@influence/engine/visual-mode";
@@ -20,22 +20,26 @@ import {werewolfCueMoment, werewolfHouseCentered, type WerewolfWatchCue} from ".
 import {replayMoment} from "./replay-moment";
 import {WerewolfSoloShot} from "./werewolf-solo-shot";
 import {SOLO_EXIT_MS} from "@/app/games/[slug]/components/solo-presentation-timing";
+import {SCENE_EXIT_HOLD_MS, VISUAL_SPEECH_FADE_MS} from "@influence/engine/visual-speech";
 
 const ignoreReadiness = () => {};
 type Neighbors = {previousCue?: WerewolfWatchCue; nextCue?: WerewolfWatchCue; hideHouseCaption?: boolean};
 
 export function WerewolfWatchStage({cue, scene, elapsed, reduced, director, holding, status, contextLabel, navigationRevision = 0, previousCue, nextCue, houseNarration, hideHouseCaption}: Neighbors & {houseNarration?: NarrationWindow | null; cue: WerewolfWatchCue | null; scene: AcceptedVisualScene | null; elapsed: number; reduced: boolean; director: Pick<PresentationDirector<WerewolfWatchCue>, "manualAdvance" | "setReady" | "getSpeechElapsedBaseMs" | "getSnapshot">; holding: boolean; status?: string; contextLabel?: string; navigationRevision?: number}) {
   const moment = cue ? werewolfCueMoment(cue) : null;
-  const stageElapsed = holding && cue && moment?.retrospective ? Math.min(elapsed, cue.baseDurationMs - SOLO_EXIT_MS - 1) : elapsed;
+  const holdingSolo = holding && cue && moment?.actor && !cue.ballot && !cue.nightAction && cue.moment.entry.kind !== "night" && cue.moment.entry.kind !== "vote" && !werewolfPortraitRoom(cue);
+  const holdingRoomSpeech = holding && cue && moment?.spoken && werewolfPortraitRoom(cue);
+  const stageElapsed = cue && (holdingSolo || holdingRoomSpeech) ? Math.min(elapsed, Math.max(0, cue.baseDurationMs - (holdingSolo ? SOLO_EXIT_MS : SCENE_EXIT_HOLD_MS + VISUAL_SPEECH_FADE_MS) - 1)) : elapsed;
   return <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-black" data-werewolf-stage data-cursor={cue?.moment.cursor} data-elapsed={Math.floor(elapsed)} onClick={event => {if (!(event.target instanceof Element) || !event.target.closest("button,a,input,select,summary")) director.manualAdvance();}}>
     <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60" data-watch-context>{cue?.nightAction ? `Night ${cue.moment.snapshot.day} · ${cue.nightAction.kind === "hunt" ? "The hunt" : cue.nightAction.kind === "protect" ? "Doctor" : "Seer"}` : contextLabel ?? moment?.title ?? "The village"}</div>
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      {cue && moment && (!holding || cue.moment.entry.kind === "result" || moment.retrospective) ? <SceneContent hideHouseCaption previousCue={previousCue} nextCue={nextCue} key={scene ? `${scene.id}:${scene.version}` : "portrait"} navigationRevision={navigationRevision} cue={cue} moment={moment} scene={scene} elapsed={stageElapsed} reduced={reduced} director={director} /> : <WatchWaiting label={status === "in_progress" ? "Waiting for the next scene…" : status === "suspended" ? "Game paused. Waiting for the House…" : holding ? "End of available conversation" : "Preparing the village…"} />}
+      {cue && moment ? <SceneContent hideHouseCaption previousCue={previousCue} nextCue={nextCue} key={scene ? `${scene.id}:${scene.version}` : "portrait"} navigationRevision={navigationRevision} cue={cue} moment={moment} scene={scene} elapsed={stageElapsed} freezeReading={Boolean(holdingSolo || holdingRoomSpeech)} reduced={reduced} director={director} /> : <WatchWaiting label={status === "in_progress" ? "Waiting for the next scene…" : status === "suspended" ? "Game paused. Waiting for the House…" : holding ? "End of available conversation" : "Preparing the village…"} />}
       {cue && moment?.house && !cue.ballot && (!holding || cue.moment.entry.kind === "result") && !(cue.transformation && elapsed < cue.transformation.durationMs) && <HouseNarration centered={werewolfHouseCentered(cue)} text={moment.text} window={hideHouseCaption ? houseNarration ?? null : {elapsedMs: Math.max(0, elapsed - (cue.transformation?.durationMs ?? 0)), durationMs: Math.max(cue.baseDurationMs, elapsed + 1)}} />}
+      {cue && holding && status === "in_progress" && director.getSnapshot().isPlaying && <WatchBuffering />}
     </div>
   </div>;
 }
-function SceneContent({cue, moment, scene, elapsed, reduced, director, navigationRevision, previousCue, nextCue, hideHouseCaption}: Neighbors & {navigationRevision: number; cue: WerewolfWatchCue; moment: ReturnType<typeof replayMoment>; scene: AcceptedVisualScene | null; elapsed: number; reduced: boolean; director: Pick<PresentationDirector<WerewolfWatchCue>, "manualAdvance" | "setReady" | "getSpeechElapsedBaseMs" | "getSnapshot">}) {
+function SceneContent({cue, moment, scene, elapsed, freezeReading, reduced, director, navigationRevision, previousCue, nextCue, hideHouseCaption}: Neighbors & {navigationRevision: number; cue: WerewolfWatchCue; moment: ReturnType<typeof replayMoment>; scene: AcceptedVisualScene | null; elapsed: number; freezeReading: boolean; reduced: boolean; director: Pick<PresentationDirector<WerewolfWatchCue>, "manualAdvance" | "setReady" | "getSpeechElapsedBaseMs" | "getSnapshot">}) {
   const shot = scene?.shots ? selectVisualShot(scene.shots, moment.actor?.id) : null;
   const covered = Boolean(scene && moment.actor && (shot ? shot.visibleParticipantIds.includes(moment.actor.id) : scene.anchors.some(anchor => anchor.playerId === moment.actor?.id && anchor.confidence === "clear")));
   const readinessKey = `${cue.key}:${shot?.imageUrl ?? scene?.imageUrl ?? moment.actor?.avatarUrl ?? "none"}`;
@@ -54,7 +58,7 @@ function SceneContent({cue, moment, scene, elapsed, reduced, director, navigatio
     return () => clearTimeout(timer);
   }, [readinessKey, ready]);
   return <WerewolfContentFrame hideHouseCaption={hideHouseCaption} previousCue={previousCue} nextCue={nextCue} cue={cue} scene={scene} elapsed={elapsed} reduced={reduced} navigationRevision={navigationRevision}
-    timedOut={timedOut} readingElapsed={moment.retrospective ? Math.min(director.getSpeechElapsedBaseMs(), elapsed) : director.getSpeechElapsedBaseMs()} paused={!director.getSnapshot().isPlaying} onReady={onReady ?? ignoreReadiness} />;
+    timedOut={timedOut} readingElapsed={freezeReading || moment.retrospective ? Math.min(director.getSpeechElapsedBaseMs(), elapsed) : director.getSpeechElapsedBaseMs()} paused={!director.getSnapshot().isPlaying} onReady={onReady ?? ignoreReadiness} />;
 }
 
 /** Content only: browser readiness and export preparation own loading independently. */

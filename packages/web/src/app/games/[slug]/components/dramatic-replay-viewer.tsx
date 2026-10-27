@@ -64,6 +64,7 @@ import {composeInfluencePresentation, influenceCastArt} from "./influence-presen
 import {InfluenceOpeningFrame} from "./influence-opening-frame";
 import {influenceMusic, influenceOpeningAudio} from "./influence-music";
 import {useWatchMusic} from "@/components/watch/use-watch-music";
+import {WatchBuffering} from "@/components/watch/watch-waiting";
 import {useOpeningAudio} from "@/components/watch/use-opening-audio";
 
 import {useReplayShare} from "@/components/watch/use-replay-share";
@@ -743,7 +744,7 @@ function DramaticReplayTheater({
           {formatCompilationNotice ? (
             <div className="mb-3 shrink-0">{formatCompilationNotice}</div>
           ) : null}
-          {visual?.beat ? <VisualPresentation hideHouseNarration={voice.houseNarrationAvailable} fullscreen={fullscreen} director={director} retainTail={!live} currentStateEntry={currentStateEntry} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion}
+          {visual?.beat ? <VisualPresentation hideHouseNarration={voice.houseNarrationAvailable} fullscreen={fullscreen} director={director} currentStateEntry={currentStateEntry} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion}
             voteLedger={voteLedgers[directorSnapshot.cursor] ?? null} roster={formatRoster.map(player => ({ ...player, avatarUrl: visualData?.portraits[player.id] ?? player.avatarUrl }))} /> : <>
           {formatCue && (
             <div className={`min-h-0 flex-1 ${formatCue.kind === "two_names_plea" ? "h-full" : ""}`}>
@@ -765,11 +766,8 @@ function DramaticReplayTheater({
         </div>
         </WatchThinking>}
         <HouseNarration text={currentMessage?.text ?? ""} window={voice.houseNarration} bottom={fullscreen ? 140 : 16} />
+        {live && isPlaying && directorSnapshot.waitingAtTail && activeCue && <WatchBuffering />}
       </div>
-
-      {live && !fullscreen && directorSnapshot.waitingAtTail && (
-        <div role="status" className="shrink-0 py-3 text-center text-xs text-white/40">Waiting for messages…</div>
-      )}
 
       {/* Bottom scrub controls — pinned under the scrollable content region */}
       <div

@@ -71,7 +71,7 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
   },[]);
   const voice = useWatchVoice({director,gameId:data?.gameId ?? "",audience,thinking:audience === "omniscient" && thinking,live:data?.status === "in_progress",onPause:watch.pause,
     coordinate:playbackCue ? coordinateForCue(playbackCue) : null,coordinateForCue});
-  const ambient = useWatchMusic({navigationRevision:watch.navigationRevision, section: watch.openingCue ? null : werewolfMusic(active), playing: watch.follow && !watch.openingCue,
+  const ambient = useWatchMusic({navigationRevision:watch.navigationRevision, section: watch.openingCue ? null : werewolfMusic(watch.holding && data?.status === "in_progress" && cue ? cue.moment : active), playing: watch.follow && !watch.openingCue,
     muted: preferences.musicMuted, volume: preferences.musicVolume * (voice.speaking && !voice.muted ? .35 : 1), preparing: watch.preparing,
     holding: watch.holding, live: data?.status === "in_progress"});
   const openingAudio = useOpeningAudio({cue:watch.openingCue, elapsedMs:watch.elapsed, playing:snapshot.isPlaying && !watch.preparing && !watch.holding,
@@ -119,10 +119,10 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
       <div ref={frame} data-player-fullscreen={fullscreen.fullscreen || undefined} className="relative flex min-h-0 flex-1 flex-col bg-black" style={fullscreen.fullscreen ? {position:"fixed",inset:0,width:"100vw",height:"100dvh",zIndex:1000} : undefined}>
         {embedded && <span className="pointer-events-none absolute left-3 top-3 z-30 rounded bg-black/70 px-2 py-1 text-[10px] text-white/75">Werewolf · {audience === "omniscient" ? "Omniscient · Spoilers" : "Mystery"}</span>}
         {watch.openingCue ? <div className="relative min-h-0 flex-1" onClick={event => {if (!(event.target instanceof Element) || !event.target.closest("button")) director.manualAdvance();}}>
-          <WerewolfOpeningFrame cue={watch.openingCue} elapsedMs={watch.elapsed} playing={snapshot.isPlaying && !watch.preparing && !watch.holding} speed={snapshot.speed} reduced={snapshot.reducedMotion} />
+          <WerewolfOpeningFrame cue={watch.openingCue} elapsedMs={watch.elapsed} playing={snapshot.isPlaying && !watch.preparing && !watch.holding} speed={snapshot.speed} reduced={snapshot.reducedMotion} browserLoading />
           <button type="button" className="absolute right-4 top-4 rounded border border-white/20 bg-black/60 px-3 py-2 text-xs text-white/80" onClick={() => {music.suspend(); void watch.seek(1);}}>Skip opening</button>
         </div> : <WatchThinking director={director} cueKey={cue?.key ?? null} enabled={audience === "omniscient" && thinking} speaker={performer?.name ?? "Player"} roleLabel={audience === "omniscient" ? performer?.role ?? undefined : undefined} load={loadThinking}>
-        <WerewolfWatchStage houseNarration={voice.houseNarration} hideHouseCaption={voice.houseNarrationAvailable} previousCue={watch.previousCue} nextCue={watch.nextCue} navigationRevision={watch.navigationRevision} contextLabel={active ? replayMoment({...active.snapshot, entries:[active.entry]}).title : undefined} cue={cue} scene={active?.mediaKey ? watch.media[active.mediaKey] ?? null : null} elapsed={watch.elapsed} reduced={snapshot.reducedMotion} director={director} holding={watch.holding} status={data?.status} />
+        <WerewolfWatchStage houseNarration={voice.houseNarration} hideHouseCaption={voice.houseNarrationAvailable} previousCue={watch.previousCue} nextCue={watch.nextCue} navigationRevision={watch.navigationRevision} contextLabel={cue ? replayMoment({...cue.moment.snapshot, entries:[cue.moment.entry]}).title : undefined} cue={cue} scene={cue?.moment.mediaKey ? watch.media[cue.moment.mediaKey] ?? null : null} elapsed={watch.elapsed} reduced={snapshot.reducedMotion} director={director} holding={watch.holding} status={data?.status} />
         </WatchThinking>}
         {watch.preparing && <p role="status" className="absolute right-3 top-2 text-xs text-white/40">Preparing…</p>}
         {!embedded && active?.entry.kind === "result" && <Link className="self-center rounded-lg border border-white/20 px-4 py-2 text-sm text-white" href={gameResultsHref(slug)}>View final results</Link>}

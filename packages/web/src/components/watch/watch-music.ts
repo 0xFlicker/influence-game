@@ -15,8 +15,6 @@ export interface MusicOutput {
 }
 export interface MusicInput {
   section: MusicSection | null; playing: boolean; muted: boolean; volume: number;
-  /** Transport fade, used while waiting for new live moments. */
-  fadeGain?: number;
 }
 
 const FADE_SECONDS = 0.7;
@@ -117,7 +115,7 @@ export class WatchMusic {
     ownership.current = this;
   }
   private applyMaster() {
-    this.output?.master(this.input.playing && !this.input.muted && !this.superseded ? this.input.volume * (this.input.fadeGain ?? 1) : 0);
+    this.output?.master(this.input.playing && !this.input.muted && !this.superseded ? this.input.volume : 0);
   }
   private start() {
     if (!this.output || this.pending || this.status === "blocked" || this.status === "unavailable") return;
