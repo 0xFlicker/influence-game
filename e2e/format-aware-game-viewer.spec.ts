@@ -1,6 +1,7 @@
 import { Phase } from "../packages/engine/src/types";
 import {execFileSync} from "node:child_process";
 import {writeFile} from "node:fs/promises";
+import {werewolfOpening} from "../packages/web/src/components/games/werewolf/werewolf-opening";
 import {projectWerewolfWatch} from "../packages/engine/src/werewolf/watch";
 import { soloPresentationDurationMs } from "../packages/web/src/app/games/[slug]/components/solo-presentation-timing";
 import {
@@ -125,6 +126,22 @@ interface LocalFormatViewerHarness {
 let harnessProcess: LocalHarnessProcess;
 let harness: LocalFormatViewerHarness;
 
+async function installWerewolfGame(page: Page, slug: string) {
+  // The engine fixture uses Bun's TypeScript support (including declare
+  // class fields), outside Playwright's narrower Babel transformation.
+  const events = JSON.parse(execFileSync("bun", ["-e", `import {werewolfResultsFixture} from './packages/engine/src/fixtures/werewolf-results'; console.log(JSON.stringify(await werewolfResultsFixture('village', ${JSON.stringify(slug)})));`], {encoding:"utf8",maxBuffer:10*1024*1024})) as Parameters<typeof projectWerewolfWatch>[0];
+  await page.route(`**/api/game-entries/${slug}`, route => route.fulfill({json:{id:slug,slug,gameKind:"werewolf"}}));
+  await page.route(`**/api/werewolf/${slug}/lobby`, route => route.fulfill({json:{id:slug,slug,visibility:"public",status:"completed",started:true,playerCount:6,modelLabel:"Fixture",preset:"one_wolf",players:[]}}));
+  await page.route(`**/api/games/${slug}/audio*`, route => route.fulfill({json:null}));
+  await page.route(`**/api/werewolf/${slug}/watch*`, route => {
+    const url = new URL(route.request().url());
+    const view = projectWerewolfWatch(events, "mystery", Number(url.searchParams.get("fromCursor") ?? 1), 32);
+    return route.fulfill({json:{...view,slug,audience:"mystery",status:"completed",publicationCutoff:"2026-10-07T00:00:00Z",media:{}}});
+  });
+  const view=projectWerewolfWatch(events,"mystery",1,32);
+  return {...view,slug,audience:"mystery" as const,status:"completed",publicationCutoff:"2026-10-07T00:00:00Z",media:{}};
+}
+
 test.describe("format-aware game viewer", () => {
   test.skip(
     !RUN_FORMAT_VIEWER,
@@ -160,17 +177,7 @@ test.describe("format-aware game viewer", () => {
       if (kind === "influence") {
         await installDeterministicFormatGame(page, {slug, scenarioId:"save_or_eliminate_clear", status:"completed"});
       } else {
-        // The engine fixture uses Bun's TypeScript support (including declare
-        // class fields), outside Playwright's narrower Babel transformation.
-        const events = JSON.parse(execFileSync("bun", ["-e", `import {werewolfResultsFixture} from './packages/engine/src/fixtures/werewolf-results'; console.log(JSON.stringify(await werewolfResultsFixture('village', ${JSON.stringify(slug)})));`], {encoding:"utf8",maxBuffer:10*1024*1024})) as Parameters<typeof projectWerewolfWatch>[0];
-        await page.route(`**/api/game-entries/${slug}`, route => route.fulfill({json:{id:slug,slug,gameKind:kind}}));
-        await page.route(`**/api/werewolf/${slug}/lobby`, route => route.fulfill({json:{id:slug,slug,visibility:"public",status:"completed",started:true,playerCount:6,modelLabel:"Fixture",preset:"one_wolf",players:[]}}));
-        await page.route(`**/api/games/${slug}/audio*`, route => route.fulfill({json:null}));
-        await page.route(`**/api/werewolf/${slug}/watch*`, route => {
-          const url = new URL(route.request().url());
-          const view = projectWerewolfWatch(events, "mystery", Number(url.searchParams.get("fromCursor") ?? 1), 32);
-          return route.fulfill({json:{...view,slug,audience:"mystery",status:"completed",publicationCutoff:"2026-10-07T00:00:00Z",media:{}}});
-        });
+        await installWerewolfGame(page,slug);
       }
       const errors: string[] = [];
       page.on("pageerror", error => errors.push(error.message));
@@ -552,8 +559,44 @@ test.describe("format-aware game viewer", () => {
     await page.screenshot({path:testInfo.outputPath("bubble-fit-page-2.png")});
   });
 
+  test("Werewolf portrait door is centered and fullscreen speech stays light in both color schemes", async ({page},testInfo) => {
+    const slug="werewolf-portrait-safari";
+    await page.addInitScript(() => Object.defineProperty(document,"fullscreenEnabled",{configurable:true,value:false}));
+    await page.setViewportSize({width:390,height:844});
+    await page.emulateMedia({colorScheme:"dark"});
+    const view=await installWerewolfGame(page,slug);
+    const opening=werewolfOpening(view), door=opening.at(-1)!;
+    await page.goto(viewerUrl(`/games/${slug}/replay?audience=mystery`));
+    await pauseAutoplay(page,"Pause replay");
+    const slider=page.getByRole("slider",{name:"Replay position",exact:true});
+    await slider.fill(String(Math.round((door.opening.startMs + 1000) * 30 / 1000)));
+    const video=page.locator('[data-werewolf-opening="door"] video');
+    await expect(video).toBeVisible();
+    await expect(video).toHaveCSS("object-position","50% 50%");
+    await page.screenshot({path:testInfo.outputPath("werewolf-door-portrait.png")});
+    await page.getByRole("button",{name:"Skip opening",exact:true}).click();
+    const introduction=view.moments.find(moment=>moment.entry.kind === "speech" && moment.entry.text)!;
+    const beforeSpeech=view.playback.filter(step=>step.cursor < introduction.cursor).flatMap(step=>step.durationsMs).reduce((sum,duration)=>sum+duration,0);
+    await slider.fill(String(Math.round((door.opening.totalMs + beforeSpeech + 1500) * 30 / 1000)));
+    const bubble=page.locator('[data-speech-bubble]');
+    await expect(bubble).toBeVisible();
+    await page.getByRole("button",{name:"Enter fullscreen",exact:true}).click();
+    const player=page.locator('[data-player-fullscreen="true"]');
+    await expect(player).toHaveAttribute("popover","manual");
+    for (const colorScheme of ["dark","light"] as const) {
+      await page.emulateMedia({colorScheme});
+      await expect(bubble.locator("blockquote")).toHaveCSS("color","rgb(255, 255, 255)");
+      await expect(player).toHaveCSS("color-scheme","dark");
+      expect(await player.evaluate(element=>element.getBoundingClientRect().width)).toBe(390);
+      await page.screenshot({path:testInfo.outputPath(`werewolf-fullscreen-${colorScheme}.png`)});
+    }
+    await page.getByRole("button",{name:"Exit fullscreen",exact:true}).click();
+    await expect(bubble.locator("blockquote")).toHaveCSS("color","rgb(255, 255, 255)");
+  });
+
   test("fullscreen portrait player preserves speech through fallback, rotation and exit", async ({ page }) => {
     const slug = "fullscreen-portrait-fixture";
+    await page.emulateMedia({colorScheme:"dark"});
     await page.addInitScript(() => Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: false }));
     await page.setViewportSize({ width: 390, height: 844 });
     const scenario = createFormatKernelViewerScenario("two_names_declined");
@@ -572,6 +615,8 @@ test.describe("format-aware game viewer", () => {
     await page.getByRole("button", { name: "Enter fullscreen" }).click();
     const player = page.locator('[data-player-fullscreen="true"]');
     await expect(player).toBeVisible();
+    await expect(player.locator("blockquote")).toHaveCSS("color","rgb(255, 255, 255)");
+    await expect(player).toHaveCSS("color-scheme","dark");
     await player.getByRole("button",{name:"Player settings",exact:true}).click();
     const settings = player.getByRole("dialog",{name:"Player settings"});
     await expect(settings.getByText("Keyboard shortcuts")).toBeVisible();
