@@ -33,6 +33,30 @@ test("append while paused at a tail cannot move the active source position",()=>
  expect(director.getSnapshot().position).toBe(4);expect(director.getSnapshot().isPlaying).toBe(false);director.play();expect(director.getSnapshot().position).toBe(9);
 });
 const speechPolicy: WatchPolicy<Cue> = {...policy, speech: () => ({showAtMs: 500, readAtMs: 800, hideAtMs: 3500, hiddenAtMs: 3800})};
+test("recorded timing compiles once while sampling, then invalidates on duration changes", () => {
+ let speechReads = 0;
+ const clock = new Clock(), director = new PresentationDirector({clock, policy:{...speechPolicy,speech:cue => {speechReads++; return speechPolicy.speech(cue);}}});
+ director.load([{key:"one",cursor:1,baseDurationMs:4000}]);
+ director.setRecordings("one",{speechMs:6000}); director.play();
+ const initialReads = speechReads;
+ for (let frame=0;frame<120;frame++) {clock.tick(16);director.getElapsedBaseMs();director.getAudioPosition();director.getRecordedDuration("one");}
+ expect(speechReads).toBe(initialReads);
+ const duration = director.getRecordedDuration("one")!;
+ director.setRecordings("one",{speechMs:7000});
+ expect(director.getRecordedDuration("one")).toBe(duration+1000);
+ expect(speechReads).toBe(initialReads+1);
+});
+
+test("window eviction retains known recording duration and transport changes do not retime history", () => {
+ const director = new PresentationDirector({clock:new Clock(),policy:speechPolicy});
+ director.load([{key:"one",cursor:1,baseDurationMs:4000}]);
+ director.setRecordings("one",{speechMs:6000});
+ const duration = director.getRecordedDuration("one"), revision = director.getTimingRevision();
+ director.play(); director.pause(); director.setSpeed(2); director.setReady("one",false);
+ expect(director.getTimingRevision()).toBe(revision);
+ director.load([{key:"two",cursor:33,baseDurationMs:4000}]);
+ expect(director.getRecordedDuration("one")).toBe(duration);
+});
 test("thinking owns the clock, freezes on pause, and finishes before speech", () => {
  const clock = new Clock(), director = new PresentationDirector({clock, policy:speechPolicy, followTail:true});
  director.load([{key:"one",cursor:1,baseDurationMs:4000},{key:"two",cursor:2,baseDurationMs:4000}]);

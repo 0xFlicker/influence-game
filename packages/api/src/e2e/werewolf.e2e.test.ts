@@ -1243,6 +1243,10 @@ test("victory music continues beyond the final frame, pauses, and ends without l
       await seekWatch(page,resultCursor);
       if (await page.$('button[aria-label="Turn music on"]')) await page.click('button[aria-label="Turn music on"]');
       if (await page.$('button[aria-label="Enable music"]')) await page.click('button[aria-label="Enable music"]');
+      // Safari activation briefly primes both elements behind the silent master
+      // gain. Wait for those play promises to settle before checking paused media.
+      await page.waitForFunction("window.__musicAudio.length > 0 && window.__musicAudio.every(a=>a.paused)");
+      expect(await page.$('button[aria-label="Play replay"]')).not.toBeNull();
       expect(await page.evaluate("window.__musicAudio.every(a=>a.paused)")).toBe(true);
       await page.click('button[aria-label="Play replay"]');
       if (scenario === "disagreement") {

@@ -1,6 +1,22 @@
 import {expect,test} from "bun:test";
 import type {AudioWatchCoordinate} from "@influence/engine/audio-watch";
-import {influenceTranscriptAudioIdentity,matchesAudioWatch} from "../components/watch/audio-watch-coordinate";
+import type {PublishedAudioClip} from "@influence/engine/audio-track";
+import {indexAudioClips,influenceTranscriptAudioIdentity,matchesAudioWatch} from "../components/watch/audio-watch-coordinate";
+
+test("indexed lookup preserves exact matching, aliases and clip order", () => {
+ const identities: AudioWatchCoordinate[] = [
+   {kind:"influence",transcriptId:"12",entrySequence:42,eventSequence:15,actorId:null,part:"speech"},
+   {kind:"influence",transcriptId:"13",entrySequence:42,eventSequence:15,actorId:null,part:"speech"},
+   {kind:"influence",entrySequence:42,eventSequence:15,actorId:null,part:"thinking"},
+   {kind:"influence",eventSequence:15,actorId:null,part:"speech"},
+   {kind:"werewolf",cursor:9,action:"protect",actorId:"doctor",part:"speech"},
+   {kind:"werewolf",cursor:9,actorId:"doctor",part:"thinking"},
+ ];
+ const clips: PublishedAudioClip[] = identities.map((watch,index)=>({watch,momentId:String(index),speakerId:watch.actorId,textHash:"text",versionId:String(index),sha256:"hash",durationMs:1000,url:"/audio"}));
+ const find = indexAudioClips(clips);
+ for (const request of identities) expect(find(request)).toEqual(clips.filter(clip=>matchesAudioWatch(clip.watch,request)));
+ expect(find(null)).toEqual([]);
+});
 
 test("live speech, thinking and House narration bind through durable dialogue identity",()=>{
  for(const actorId of ["player",null]) for(const part of ["speech","thinking"] as const){

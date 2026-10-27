@@ -1,4 +1,4 @@
-import {compileTiming, sampleTiming} from "../../lib/replay-export/timing";
+import {compileTiming, sampleTiming, type CompiledTiming, type TimingInput} from "../../lib/replay-export/timing";
 /** One shared clock; game adapters own interpretation, ordering and speech timing. */
 import {thoughtTiming, thoughtContentTime, thoughtSpeechBoundaries, sampleThought, type ThoughtTiming, type SpeechBoundaries} from "./thinking-timing";
 export type {SpeechBoundaries} from "./thinking-timing";
@@ -142,10 +142,15 @@ export class PresentationDirector<C extends WatchCue> {
   private thoughts = new Map<string, string | null>();
   private thinkingEnabled = true;
   private recordings = new Map<string, {speechMs?:number;thinkingMs?:number}>();
+  private cuesByKey = new Map<string, C>();
+  private recordedTimings = new Map<string, {cue: C | null; recording: {speechMs?:number;thinkingMs?:number}; text: string | null; input: TimingInput; timing: CompiledTiming}>();
+  private timingRevision = 0;
+  getTimingRevision(): number { return this.timingRevision; }
   private audioPending = false;
   setAudioPending(pending:boolean) {
     if (this.audioPending === pending) return;
     this.captureRemainingTime(); this.clearTimer(); this.audioPending = pending; this.ensureTimer();
+    for (const listener of this.listeners) listener();
   }
   setRecordings(key:string, recording:{speechMs?:number;thinkingMs?:number}) {
     const old = this.recordings.get(key);
@@ -155,6 +160,8 @@ export class PresentationDirector<C extends WatchCue> {
     const elapsed = active ? this.getTimelineElapsedBaseMs() : 0;
     if (active) { this.captureRemainingTime(); this.clearTimer(); }
     this.recordings.set(key,recording);
+    if (!recording.speechMs && !recording.thinkingMs) this.recordedTimings.delete(key);
+    this.timingRevision++;
     if (active) {
       const timing = this.recordedTiming(this.getActiveCue(),this.getThinkingText(key));
       this.thought = timing?.thought ? {key,...timing.thought} : null;
@@ -165,16 +172,29 @@ export class PresentationDirector<C extends WatchCue> {
   private recordedTiming(cue:C|null,text:string|null) {
     const recording = cue && this.recordings.get(cue.key);
     if (!cue || !recording || !recording.speechMs && !recording.thinkingMs) return null;
+    const cached = this.recordedTimings.get(cue.key);
+    if (cached?.cue === cue && cached.recording === recording && cached.text === text) return cached.timing;
     const speech = this.policy.speech(cue);
-    return compileTiming([{key:cue.key,baseDurationMs:cue.thinkingOnly ? 0 : cue.baseDurationMs,
+    const input: TimingInput = {key:cue.key,baseDurationMs:cue.thinkingOnly ? 0 : cue.baseDurationMs,
       kind:cue.thinkingOnly ? "thinking" : speech ? "speech" : "scene",speech,thinking:text,
       ...(speech && recording.speechMs && {recording:{assetId:"speech",durationMs:recording.speechMs}}),
       ...(text && recording.thinkingMs && (cue.thinkingOnly ? {recording:{assetId:"thinking",durationMs:recording.thinkingMs}} : {thinkingRecording:{assetId:"thinking",durationMs:recording.thinkingMs}})),
-    }],{ending:"finish-score",overrides:{}},30)[0]!;
+    };
+    const timing = compileTiming([input],{ending:"finish-score",overrides:{}},30)[0]!;
+    this.recordedTimings.set(cue.key, {cue, recording, text, input, timing});
+    return timing;
   }
   getRecordedDuration(key:string) {
-    const cue = this.state.cues.find(cue => cue.key === key);
-    return cue ? this.recordedTiming(cue,this.getThinkingText(key))?.endMs ?? null : null;
+    // Window eviction must not shorten already-known timeline coordinates.
+    const cue = this.cuesByKey.get(key), text = this.getThinkingText(key);
+    if (cue) return this.recordedTiming(cue,text)?.endMs ?? null;
+    const cached = this.recordedTimings.get(key);
+    if (!cached || cached.input.kind === "thinking" && !text) return null;
+    if (cached.text !== text) {
+      cached.timing = compileTiming([{...cached.input, thinking:text}], {ending:"finish-score",overrides:{}},30)[0]!;
+      cached.text = text;
+    }
+    return cached.timing.endMs;
   }
   getAudioPosition() {
     const cue = this.getActiveCue(), recording = cue && this.recordings.get(cue.key);
@@ -198,6 +218,7 @@ export class PresentationDirector<C extends WatchCue> {
     if (enabled === this.thinkingEnabled) return;
     const elapsedMs = this.getElapsedBaseMs();
     this.thinkingEnabled = enabled;
+    this.timingRevision++;
     const key = this.getActiveCue()?.key;
     if (key) {
       this.exactSeek = {elapsedMs, hadThought: false};
@@ -216,6 +237,7 @@ export class PresentationDirector<C extends WatchCue> {
     if (key !== this.getActiveCue()?.key) return;
     this.setThinkingPending(key, false);
     const normalized = text?.trim() || null;
+    if (this.thinkingEnabled && this.thoughts.get(key) !== normalized) this.timingRevision++;
     if ((!normalized && !this.thought) || this.thought?.text === normalized) {
       if (this.thinkingEnabled) this.thoughts.set(key, normalized);
       this.exactSeek = null; return;
@@ -710,6 +732,10 @@ export class PresentationDirector<C extends WatchCue> {
     if (next === this.state) return;
     if (next.cues !== this.state.cues) {
       this.cueKeys = next.cues.map((cue) => cue.key);
+      this.cuesByKey = new Map(next.cues.map(cue => [cue.key, cue]));
+      // Keep compact timing after window eviction, not entire game snapshots.
+      for (const [key, cached] of this.recordedTimings) if (!this.cuesByKey.has(key)) cached.cue = null;
+      this.timingRevision++;
     }
     if (next.cues[next.cursor]?.key !== this.state.cues[this.state.cursor]?.key) {
       this.ready = true; this.exactSeek = null;

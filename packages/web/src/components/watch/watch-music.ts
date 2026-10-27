@@ -11,7 +11,8 @@ export interface MusicDeck {
 }
 export interface MusicOutput {
   decks: [MusicDeck, MusicDeck]; readonly time: number;
-  resume(): Promise<void>; master(value: number): void; dispose(): void;
+  readonly interrupted: boolean;
+  resume(): Promise<void>; unlock(): Promise<void>; master(value: number): void; dispose(): void;
 }
 export interface MusicInput {
   section: MusicSection | null; playing: boolean; muted: boolean; volume: number;
@@ -43,6 +44,7 @@ export class WatchMusic {
   private report(status: MusicStatus) { if (this.status !== status) { this.status = status; this.changed(status); } }
   private silence() {
     this.version++; this.pending = false; this.running = false;
+    if (this.interval !== null) {clearInterval(this.interval); this.interval = null;}
     if (this.output) { this.output.master(0); for (const deck of this.output.decks) deck.pause(); }
   }
   /** Pause immediately in a pointer/seek handler, before React commits its state. */
@@ -61,7 +63,6 @@ export class WatchMusic {
     if (!this.output && !input.muted && input.playing && input.section) {
       try {
         this.output = this.create();
-        if (this.automaticTick) this.interval = setInterval(() => this.tick(), 40);
       } catch { this.report("unavailable"); return; }
     }
     if (!this.output) return;
@@ -71,21 +72,22 @@ export class WatchMusic {
     if (input.playing && (this.loaded.some(Boolean))) this.start();
   }
   /** Called directly from Music/Play gestures; browser denial is not a mute preference. */
-  unlock() {
+  unlock(muted = this.input.muted) {
     if (this.disposed) return;
     if (this.status === "unavailable") { this.restart(); }
     if (!this.output) {
-      try {this.output = this.create(); if (this.automaticTick) this.interval = setInterval(() => this.tick(), 40);}
+      try {this.output = this.create();}
       catch {this.report("unavailable"); return;}
     }
     this.superseded = false;
+    this.input = {...this.input, muted};
+    this.applyMaster();
     this.report("idle");
+    // Always resume inside the gesture, even if an earlier automatic start is
+    // still pending. Safari may leave that resume unresolved until activation.
+    const output = this.output;
+    void output.unlock().catch(() => {if (!this.disposed && this.output === output) this.report("blocked");});
     this.update(this.input);
-    // Resume inside the gesture even if the visual transport is paused.
-    if (this.output && !this.input.playing) {
-      const version = this.version;
-      void this.output.resume().catch(() => {if (!this.disposed && version === this.version) this.report("blocked");});
-    }
   }
   private select(section: MusicSection | null) {
     if (!this.output) return;
@@ -129,6 +131,7 @@ export class WatchMusic {
       if (this.disposed || !this.input.playing) {for (const deck of output.decks) deck.pause(); return;}
       if (version !== this.version) return;
       this.running = true; this.pending = false; this.lastTime = output.time;
+      if (this.automaticTick && this.interval === null) this.interval = setInterval(() => this.tick(), 40);
       this.report(this.selected ? "playing" : "idle");
     }).catch((error: unknown) => {
       if (this.disposed || version !== this.version) return;
@@ -140,6 +143,9 @@ export class WatchMusic {
   tick() {
     if (!this.output || !this.input.playing || !this.running || this.disposed) return;
     const output = this.output;
+    // Safari can suspend/interrupt its context independently of media play().
+    // Retry once through the normal bounded start path; denial becomes blocked.
+    if (output.interrupted) {this.running = false; this.start(); return;}
     if (output.decks.some((deck, index) => this.loaded[index] && deck.failed)) {this.silence(); this.report("unavailable"); return;}
     const dt = Math.max(0, output.time - this.lastTime); this.lastTime = output.time;
     const fade = this.fade;
@@ -161,7 +167,6 @@ export class WatchMusic {
   }
   dispose() {
     this.disposed = true; this.silence();
-    if (this.interval !== null) clearInterval(this.interval);
     this.output?.dispose(); this.output = null;
     if (ownership.current === this) ownership.current = null;
   }
@@ -171,21 +176,31 @@ export class WatchMusic {
 export function createBrowserMusicOutput(): MusicOutput {
   const context = new AudioContext();
   const master = context.createGain(); master.gain.value = 0; master.connect(context.destination);
-  const decks = [0, 1].map((): MusicDeck => {
+  const decks = [0, 1].map(() => {
     const audio = new Audio(); audio.preload = "auto";
+    let wantsPlayback = false, generation = 0, unlocked = false;
     const source = context.createMediaElementSource(audio), gain = context.createGain();
     gain.gain.value = 0; source.connect(gain); gain.connect(master);
     return {
       get time() { return audio.currentTime; }, set time(value) { audio.currentTime = value; },
       get duration() { return audio.duration; }, get ready() { return audio.readyState >= 3; }, get ended() {return audio.ended;}, get failed() {return audio.error !== null;},
-      load(src) { audio.src = src; audio.load(); },
-      play: () => audio.play(), pause: () => audio.pause(),
-      gain(value) { gain.gain.setTargetAtTime(value, context.currentTime, 0.008); },
-      dispose() { audio.pause(); audio.removeAttribute("src"); audio.load(); source.disconnect(); gain.disconnect(); },
+      load(src: string) { generation++; audio.src = src; audio.load(); },
+      play: () => {wantsPlayback = true; return audio.play().then(() => {unlocked = true;});}, pause: () => {wantsPlayback = false; audio.pause();},
+      gain(value: number) { gain.gain.setTargetAtTime(value, context.currentTime, 0.008); },
+      async unlock() {
+        // Safari grants permission per element. Prime BOTH streaming decks in
+        // this gesture so the next crossfade/loop can start without another tap.
+        if (unlocked) return;
+        if (!audio.getAttribute("src")) audio.src = "/music/unlock.wav";
+        const current = generation;
+        try {await audio.play(); unlocked = true;}
+        catch (cause) {if (!(cause instanceof Error && cause.name === "AbortError")) throw cause;}
+        if (current === generation && !wantsPlayback) audio.pause();
+      },
+      dispose() { generation++; wantsPlayback = false; audio.pause(); audio.removeAttribute("src"); audio.load(); source.disconnect(); gain.disconnect(); },
     };
-  }) as [MusicDeck, MusicDeck];
-  return {decks, get time() {return context.currentTime;},
-    resume: async () => {
+  }) as [MusicDeck & {unlock(): Promise<void>}, MusicDeck & {unlock(): Promise<void>}];
+  const resume = async () => {
       // A blocked resume can remain pending indefinitely. Surface it instead of claiming sound is on.
       const resume = context.resume();
       if (context.state !== "running") {
@@ -193,7 +208,9 @@ export function createBrowserMusicOutput(): MusicOutput {
         try { await Promise.race([resume, new Promise<never>((_, reject) => {timer = setTimeout(() => reject(new DOMException("Enable music to play sound", "NotAllowedError")), 1200);})]); }
         finally { if (timer !== undefined) clearTimeout(timer); }
       } else await resume;
-    },
+    };
+  return {decks, get time() {return context.currentTime;}, get interrupted() {return context.state !== "running";}, resume,
+    unlock: async () => {await Promise.all([resume(), ...decks.map(deck => deck.unlock())]);},
     master(value) { master.gain.setTargetAtTime(value, context.currentTime, value === 0 ? 0.003 : 0.025); },
     dispose() { for (const deck of decks) deck.dispose(); master.disconnect(); void context.close().catch(error => console.warn("Music context could not close", error)); },
   };

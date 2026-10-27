@@ -52,6 +52,41 @@ test("canceled drags do not seek and end the scrub session once", () => {
   expect(input.value).toBe("3"); expect(seeks).toEqual([]); expect(ends).toBe(1);
 });
 
+test("pointer dragging works without native range input events, including WebKit track clicks", async () => {
+ const seeks: number[] = [];
+ const view = render(<ReplayScrubber frame={0} frameCount={101} fps={30} onSeek={value=>{seeks.push(value);}} />), input = slider(view);
+ input.getBoundingClientRect = () => ({left:10,width:200,top:0,bottom:16,right:210,height:16,x:10,y:0,toJSON:()=>({})});
+ fireEvent.pointerDown(input,{button:0,pointerId:1,clientX:50});
+ fireEvent.pointerMove(input,{pointerId:1,clientX:150});
+ expect(input.value).toBe("70");expect(seeks).toEqual([]);
+ await act(async () => fireEvent.pointerUp(input,{pointerId:1,clientX:150}));
+ expect(seeks).toEqual([70]);
+});
+
+test("native touch previews survive WebKit pointer cancellation and commit once on touch end", async () => {
+  const seeks: number[] = []; let starts=0, ends=0;
+  const view = render(<ReplayScrubber frame={3} frameCount={130} fps={30} onSeek={value=>{seeks.push(value);}}
+    onScrubStart={()=>{starts++;}} onScrubEnd={()=>{ends++;}} />), input=slider(view);
+  fireEvent.pointerDown(input,{button:0,pointerId:1,pointerType:"touch"});
+  fireEvent.touchStart(input);
+  fireEvent.input(input,{target:{value:"90"}});
+  fireEvent.pointerCancel(input,{pointerId:1,pointerType:"touch"});
+  fireEvent.lostPointerCapture(input,{pointerId:1});
+  fireEvent.pointerUp(input,{pointerId:1,pointerType:"touch"});
+  expect(input.value).toBe("90"); expect(seeks).toEqual([]);
+  await act(async () => fireEvent.touchEnd(input));
+  expect(seeks).toEqual([90]); expect(starts).toBe(1); expect(ends).toBe(1);
+});
+
+test("a real touch cancellation discards its preview", () => {
+  const seeks: number[] = [];
+  const view = render(<ReplayScrubber frame={3} frameCount={130} fps={30} onSeek={value=>{seeks.push(value);}} />), input=slider(view);
+  fireEvent.touchStart(input);
+  fireEvent.input(input,{target:{value:"90"}});
+  fireEvent.touchCancel(input);
+  expect(input.value).toBe("3"); expect(seeks).toEqual([]);
+});
+
 test("keyboard changes seek immediately; an earlier completion cannot reset a newer target", async () => {
   const seeks: number[] = [], completions: Array<()=>void> = [];
   const view = render(<ReplayScrubber frame={3} frameCount={130} fps={30} onSeek={value=>{seeks.push(value);return new Promise<void>(resolve=>completions.push(resolve));}} />), input=slider(view);

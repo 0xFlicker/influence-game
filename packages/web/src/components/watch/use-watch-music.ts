@@ -22,7 +22,7 @@ export function useWatchMusic(input: MusicInput & {preparing: boolean; holding: 
   }, [key, src, title, repeat, continueAtEnd, playing, muted, volume, preparing, holding, live, scrubbing, navigationRevision]);
   return {
     status,
-    unlock: useCallback(() => controller.current?.unlock(), []),
+    unlock: useCallback((muted?: boolean) => controller.current?.unlock(muted), []),
     suspend: useCallback(() => controller.current?.suspend(), []),
     restart: useCallback(() => controller.current?.restart(), []),
     beginScrub: useCallback(() => {controller.current?.suspend(); setScrubbing(true);}, []),

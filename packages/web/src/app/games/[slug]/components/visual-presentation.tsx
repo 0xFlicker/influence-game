@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import {sampleWatch} from "@/components/watch/watch-sampling";
 import { VISUAL_ROOMS, type AcceptedVisualScene, type VisualRoomId } from "@influence/engine/visual-mode";
 import {NomineeSelection, type NomineeSelectionBeat} from "./nominee-selection";
 import { influenceRoomBackground } from "./influence-rooms";
@@ -46,22 +47,10 @@ export function VisualPresentation({ director, retainTail = true, ...props }: Om
   }, [props.beat.kind, onSceneReadyChange]);
   const [clock, setClock] = useState(() => ({ elapsedMs: director.getElapsedBaseMs(), paused: !director.getSnapshot().isPlaying }));
   useEffect(() => {
-    let frame: number | null = null;
-    const refresh = () => {
-      frame = null;
+    return sampleWatch(director, () => {
       const state = director.getSnapshot();
       setClock({ elapsedMs: director.getElapsedBaseMs(), paused: !state.isPlaying });
-      if (director.isAnimating()) frame = requestAnimationFrame(refresh);
-    };
-    // Director notifications happen inside state transitions. Read on the next
-    // frame, after the transition has also updated its remaining duration.
-    const schedule = () => {
-      if (frame !== null) cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(refresh);
-    };
-    const unsubscribe = director.subscribe(schedule);
-    schedule();
-    return () => { unsubscribe(); if (frame !== null) cancelAnimationFrame(frame); };
+    });
   }, [director]);
   const state = director.getSnapshot();
   const elapsedMs = director.getElapsedBaseMs();

@@ -1,7 +1,8 @@
 "use client";
 import {ReplayScrubber} from "./replay-scrubber";
 import {ShareMoment} from "./share-moment";
-import {useLayoutEffect, useRef, useState, type ReactNode, type RefObject} from "react";
+import {useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject} from "react";
+import type {WatchTimeline} from "./use-watch-timeline";
 import {autoUpdate, flip, FloatingFocusManager, FloatingPortal, offset, shift, size, useDismiss, useFloating, useInteractions, useMergeRefs} from "@floating-ui/react";
 import type {MusicStatus} from "./watch-music";
 const SPEED_OPTIONS = [{value: 0.5, label: "0.5×"}, {value: 1, label: "1×"}, {value: 2, label: "2×"}, {value: 4, label: "4×"}];
@@ -11,10 +12,13 @@ interface WatchTransportProps {
  onScrubStart?: () => void; onScrubEnd?: () => void;
  shareHref?: string; getShareHref?: () => string; header?: ReactNode; settings?: ReactNode; isPlaying: boolean; togglePlay: () => void; speed: number; onSpeed: (speed: number) => void;
  goToBeginning: () => void; goToPrevScene: () => void; onSeek: (position: number) => void | Promise<void>; goToNextScene: () => void; goToEnd: () => void;
- frame: number; frameCount: number; fps: number;
+ timeline: WatchTimeline;
  thinking?: {enabled: boolean; onChange: (enabled: boolean) => void}; live: boolean; cursor: number; count: number;
 }
-export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, fullscreenError, header, isPlaying, togglePlay, speed, onSpeed, goToBeginning, goToPrevScene, onSeek, goToNextScene, goToEnd, live, cursor, count, frame, frameCount, fps, thinking, settings, shareHref, getShareHref, music, onScrubStart, onScrubEnd}: WatchTransportProps) {
+export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, fullscreenError, header, isPlaying, togglePlay, speed, onSpeed, goToBeginning, goToPrevScene, onSeek, goToNextScene, goToEnd, live, cursor, count, timeline, thinking, settings, shareHref, getShareHref, music, onScrubStart, onScrubEnd}: WatchTransportProps) {
+ const {frameCount, fps} = timeline;
+ const [frame, setFrame] = useState(timeline.getFrame);
+ useEffect(() => timeline.subscribe(() => setFrame(timeline.getFrame())), [timeline]);
  const transport = useRef<HTMLDivElement>(null);
  const [width, setWidth] = useState(0);
  const available = width - (music ? 140 : 0) - (shareHref || getShareHref ? 55 : 0);
@@ -74,7 +78,12 @@ export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, 
       <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square"><path d={fullscreen ? "M9 3v6H3m12-6v6h6M3 15h6v6m12-6h-6v6" : "M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6"} /></svg>
     </button>
   </div>
-  <ReplayScrubber frame={frame} frameCount={frameCount} fps={fps} onSeek={onSeek} onScrubStart={onScrubStart} onScrubEnd={onScrubEnd} />
+  <ReplayScrubber frame={frame} frameCount={frameCount} fps={fps} onSeek={async position => {
+    await onSeek(position);
+    // Commit the director's destination with the preview release, rather than
+    // flashing the pre-seek sampled frame until the next animation callback.
+    setFrame(timeline.getFrame());
+  }} onScrubStart={onScrubStart} onScrubEnd={onScrubEnd} />
   {fullscreenError && <p role="alert" className="text-xs text-amber-200">{fullscreenError}</p>}
   {open && <FloatingPortal root={portalRoot}>
     <FloatingFocusManager context={context} modal={false} returnFocus={settingsButton}>

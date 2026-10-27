@@ -1,4 +1,4 @@
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
 import { existsSync } from "node:fs";
 
 const localIdentityRun =
@@ -45,5 +45,9 @@ export default defineConfig({
           use: chromiumUse,
         },
       ]
-    : [{ name: "chromium", use: chromiumUse }],
+    : [{ name: "chromium", use: chromiumUse },
+      ...(localFormatViewerRun ? [
+        {name:"webkit", use:{...devices["Desktop Safari"]}},
+        {name:"webkit-mobile", use:{...devices["iPhone 13"]}},
+      ] : [])],
 });

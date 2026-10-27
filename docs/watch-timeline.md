@@ -12,6 +12,16 @@ Optional thinking retains the existing on-demand authorized fetch. Its duration 
 
 Ambient music keeps its existing seek policy. This change does not add recorded speech or claim that ambient music is synchronized to Studio's rendered audio track. Opening media continues to use the opening clock. The watch renderer also retains its immediate-cut camera policy for explicit seeks; this change shares timeline precision, not Studio's entire rendering pipeline.
 
+## Player sampling and Safari
+
+The stage and transport sample the director independently at up to 30 fps. Sampling stops while paused or waiting for readiness; director notifications wake it and are coalesced until the current mutation is complete. The full viewer, cast, and inspector do not subscribe to frame ticks. Audio readiness changes notify subscribers so buffering recovery restarts the samplers.
+
+Recorded timing is compiled once per cue/text/recording combination. Known durations survive Werewolf window eviction as compact timing inputs, without retaining game snapshots. Transport-only changes do not rebuild the timeline. Voice clips are indexed by canonical coordinates and still pass the exact identity matcher; this does not widen audience visibility or transcript matching.
+
+Pointer dragging is explicit because WebKit track clicks do not consistently initiate native range dragging. Keyboard range input remains native. The selected destination and preview release commit together to avoid flashing a stale sampled frame after a seek.
+
+See [Safari player validation](testing/player-safari.md) for WebKit automation, real-device profiling, audio gestures and fullscreen limitations.
+
 Validation covers absolute frame rounding, unequal cue durations, thinking insertion, cached thinking, paused append, distant-window seek offsets, and complete timing-index parity with the Werewolf renderer for both audiences. Browser tests exercise ballot/tally and night-action seeks plus live-window races and opening navigation.
 
 ## Local validation — 2026-10-18
