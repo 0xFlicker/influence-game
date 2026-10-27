@@ -4,6 +4,7 @@ import type {AudioWatchCoordinate} from "@influence/engine/audio-watch";
 import {HouseNarration} from "@/components/watch/house-narration";
 import {useWatchVoice} from "@/components/watch/use-watch-voice";
 import {influenceTranscriptAudioIdentity} from "@/components/watch/audio-watch-coordinate";
+import {WatchClock} from "@/components/watch/watch-clock";
 import {useWatchTimeline} from "@/components/watch/use-watch-timeline";
 import {isFormatSocialTranscriptMessage, buildClassicPresentationCues, buildReplayPlayersForCue, classicEliminatedPlayerIds, comparePresentationCues, findCueForAdjacentScene, formatCueScene, formatSnapshotForPresentationCursor, mergeFormatAndSocialCues} from "./influence-replay-cues";
 export {isFormatSocialTranscriptMessage, buildClassicPresentationCues, buildReplayPlayersForCue, comparePresentationCues, findCueForAdjacentScene, formatSnapshotForPresentationCursor} from "./influence-replay-cues";
@@ -331,15 +332,15 @@ function DramaticReplayTheater({
   });
   const transportPlaying = isPlaying || closingMusic && (ambient.status === "playing" || ambient.status === "loading");
   const openingAudio = useOpeningAudio({
-    tracks:influenceOpeningAudio(openingCue, director.getElapsedBaseMs()),
+    tracks:() => influenceOpeningAudio(openingCue, director.getElapsedBaseMs()),
     playing:isPlaying && !preparing, muted:preferences.musicMuted, volume:preferences.musicVolume, speed,
-  });
+  }, director);
   const {suspend: suspendMusic} = openingCue ? openingAudio : ambient;
   const {unlock: unlockAmbient, restart: restartAmbient} = ambient;
   const {unlock: unlockOpening, restart: restartOpening} = openingAudio;
-  const unlockMusic = useCallback(() => {
+  const unlockMusic = useCallback((muted?: boolean) => {
     // Prepare the ambient AudioContext in the same gesture as opening playback.
-    unlockAmbient(); unlockOpening();
+    unlockAmbient(muted); unlockOpening(muted);
   }, [unlockAmbient, unlockOpening]);
 
 
@@ -729,8 +730,8 @@ function DramaticReplayTheater({
         } justify-center ${openingCue ? "" : fullscreen ? isRoomPresentation || isSoloPresentation ? "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]" : "pb-[140px] pt-[env(safe-area-inset-top)]" : isSoloPresentation || isRoomPresentation ? "" : isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
       >
         {openingCue ? <>
-          <InfluenceOpeningFrame cue={openingCue} elapsedMs={director.getElapsedBaseMs()} reduced={reducedMotion} playing={isPlaying} speed={speed}
-            {...influenceCastArt(openingPlayer, visualData)} />
+          <WatchClock director={director}>{elapsed => <InfluenceOpeningFrame cue={openingCue} elapsedMs={elapsed} reduced={reducedMotion} playing={isPlaying} speed={speed}
+            {...influenceCastArt(openingPlayer, visualData)} />}</WatchClock>
           <button type="button" data-replay-controls className="absolute right-4 top-4 z-20 rounded-full border border-white/20 bg-black/60 px-4 py-2 text-xs text-white/80 hover:bg-black/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-200"
             onClick={event => {
               event.stopPropagation();
@@ -765,7 +766,7 @@ function DramaticReplayTheater({
 
         </div>
         </WatchThinking>}
-        <HouseNarration text={currentMessage?.text ?? ""} window={voice.houseNarration} bottom={fullscreen ? 140 : 16} />
+        {voice.houseNarrationAvailable && <WatchClock director={director}>{() => <HouseNarration text={currentMessage?.text ?? ""} window={voice.getHouseNarration()} bottom={fullscreen ? 140 : 16} />}</WatchClock>}
         {live && isPlaying && directorSnapshot.waitingAtTail && activeCue && <WatchBuffering />}
       </div>
 
@@ -794,12 +795,13 @@ function DramaticReplayTheater({
           music={{muted:preferences.musicMuted, volume:preferences.musicVolume, status:openingCue ? openingAudio.status : ambient.status,
             onMute:() => {
               const status = openingCue ? openingAudio.status : ambient.status;
-              if (status !== "blocked" && status !== "unavailable") preferences.setMusicMuted(!preferences.musicMuted);
-              unlockMusic();
+              const muted = status === "blocked" || status === "unavailable" ? preferences.musicMuted : !preferences.musicMuted;
+              preferences.setMusicMuted(muted);
+              unlockMusic(muted);
             }, onVolume:preferences.setMusicVolume, retry:unlockMusic}}
           onScrubStart={() => {ambient.beginScrub(); openingAudio.beginScrub();}}
           onScrubEnd={() => {ambient.endScrub(); openingAudio.endScrub();}}
-          goToBeginning={goToBeginning} goToPrevScene={goToPrevScene} onSeek={frame => {const target = timeline.target(frame); if (target) {suspendMusic(); director.setFollowTail(false); director.seekTimeline(target.index, target.elapsedMs);}}} frame={timeline.frame} frameCount={timeline.frameCount} fps={timeline.fps} goToNextScene={goToNextScene} goToEnd={goToEnd}
+          goToBeginning={goToBeginning} goToPrevScene={goToPrevScene} onSeek={frame => {const target = timeline.target(frame); if (target) {suspendMusic(); director.setFollowTail(false); director.seekTimeline(target.index, target.elapsedMs);}}} timeline={timeline} goToNextScene={goToNextScene} goToEnd={goToEnd}
           live={live} cursor={directorSnapshot.cursor} count={presentationCues.length}
           thinking={{enabled:showThinking,onChange:setShowThinking}} />
       </div>

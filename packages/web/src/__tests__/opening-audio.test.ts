@@ -2,6 +2,7 @@ import {expect,test} from "bun:test";
 import {OpeningAudio} from "../components/watch/use-opening-audio";
 import type {MusicStatus} from "../components/watch/watch-music";
 class AudioStub {
+  muted = false; onloadedmetadata: (() => void) | null = null;
   src=""; preload=""; paused=true; readyState=4; currentTime=0;duration=190;volume=1;playbackRate=1; error=null;
   plays=0;deny=false;
   async play(){this.plays++;if(this.deny) throw new DOMException("Denied","NotAllowedError"); this.paused=false;}
@@ -39,5 +40,25 @@ test("a cold seek waits for metadata before playing at the requested offset", as
  controller.update(input);expect(media.plays).toBe(0);
  media.readyState=1;controller.update(input);await Promise.resolve();
  expect(media.currentTime).toBe(6.5);expect(media.plays).toBe(1);
+ controller.dispose();
+});
+
+test("the first unmute starts in the gesture even before metadata arrives", async () => {
+ const media = new AudioStub(); media.readyState = 0;
+ const controller = new OpeningAudio(()=>{},()=>media as unknown as HTMLAudioElement);
+ controller.update({...input,muted:true});
+ controller.unlock(false);
+ expect(media.plays).toBe(1); expect(media.muted).toBe(true);
+ media.readyState = 1; media.onloadedmetadata?.();
+ await Promise.resolve();
+ expect(media.currentTime).toBe(6.5); expect(media.muted).toBe(false);
+ controller.dispose(); expect(media.onloadedmetadata).toBeNull();
+});
+
+test("unlocking while paused does not leave opening audio running", async () => {
+ const media = new AudioStub();
+ const controller = new OpeningAudio(()=>{},()=>media as unknown as HTMLAudioElement);
+ controller.update({...input,playing:false}); controller.unlock();
+ await Promise.resolve(); expect(media.paused).toBe(true);
  controller.dispose();
 });

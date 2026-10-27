@@ -1,4 +1,7 @@
 import { Phase } from "../packages/engine/src/types";
+import {execFileSync} from "node:child_process";
+import {writeFile} from "node:fs/promises";
+import {projectWerewolfWatch} from "../packages/engine/src/werewolf/watch";
 import { soloPresentationDurationMs } from "../packages/web/src/app/games/[slug]/components/solo-presentation-timing";
 import {
   expect,
@@ -38,7 +41,7 @@ async function observeMusic(page: Page) {
 }
 function musicState(page: Page) {
   return page.evaluate(() => (window as unknown as {__scoreMedia: HTMLAudioElement[]}).__scoreMedia.map(audio => ({
-    src:audio.getAttribute("src"), time:audio.currentTime, paused:audio.paused, volume:audio.volume, rate:audio.playbackRate, error:audio.error?.code,
+    src:audio.getAttribute("src"), time:audio.currentTime, paused:audio.paused, muted:audio.muted, volume:audio.volume, rate:audio.playbackRate, error:audio.error?.code,
   })));
 }
 const FORMAT_VIEWER_SLUG =
@@ -151,6 +154,62 @@ test.describe("format-aware game viewer", () => {
     if (harnessProcess) await stopLocalFormatViewerHarness(harnessProcess);
   });
 
+  for (const kind of ["influence", "werewolf"] as const) {
+    test(`${kind} player performance: continuous timeline and responsive pause`, async ({page}, testInfo) => {
+      const slug = `performance-${kind}`;
+      if (kind === "influence") {
+        await installDeterministicFormatGame(page, {slug, scenarioId:"save_or_eliminate_clear", status:"completed"});
+      } else {
+        // The engine fixture uses Bun's TypeScript support (including declare
+        // class fields), outside Playwright's narrower Babel transformation.
+        const events = JSON.parse(execFileSync("bun", ["-e", `import {werewolfResultsFixture} from './packages/engine/src/fixtures/werewolf-results'; console.log(JSON.stringify(await werewolfResultsFixture('village', ${JSON.stringify(slug)})));`], {encoding:"utf8",maxBuffer:10*1024*1024})) as Parameters<typeof projectWerewolfWatch>[0];
+        await page.route(`**/api/game-entries/${slug}`, route => route.fulfill({json:{id:slug,slug,gameKind:kind}}));
+        await page.route(`**/api/werewolf/${slug}/lobby`, route => route.fulfill({json:{id:slug,slug,visibility:"public",status:"completed",started:true,playerCount:6,modelLabel:"Fixture",preset:"one_wolf",players:[]}}));
+        await page.route(`**/api/games/${slug}/audio*`, route => route.fulfill({json:null}));
+        await page.route(`**/api/werewolf/${slug}/watch*`, route => {
+          const url = new URL(route.request().url());
+          const view = projectWerewolfWatch(events, "mystery", Number(url.searchParams.get("fromCursor") ?? 1), 32);
+          return route.fulfill({json:{...view,slug,audience:"mystery",status:"completed",publicationCutoff:"2026-10-07T00:00:00Z",media:{}}});
+        });
+      }
+      const errors: string[] = [];
+      page.on("pageerror", error => errors.push(error.message));
+      await page.goto(viewerUrl(`/games/${slug}/replay?audience=mystery`));
+      const slider = page.getByRole("slider", {name:"Replay position", exact:true});
+      await expect(slider).toBeEnabled();
+      await page.getByRole("button", {name:kind === "werewolf" ? "Skip opening" : "Skip intro",exact:true}).click();
+      await expect(page.getByRole("button", {name:"Pause replay",exact:true})).toBeVisible();
+      const metrics = await page.evaluate(() => new Promise<{samples:number; reversals:number; advanced:number; p95FrameMs:number; maxFrameMs:number}>(resolve => {
+        const slider = document.querySelector<HTMLInputElement>('input[aria-label="Replay position"]')!;
+        const intervals:number[] = [];
+        const start = performance.now(), first = Number(slider.value);
+        let previous = start, position = first, reversals = 0;
+        const sample = (now:number) => {
+          intervals.push(now-previous);previous=now;
+          const next = Number(slider.value);
+          if (next < position) reversals++;
+          position=next;
+          if (now-start < 5000) {requestAnimationFrame(sample);return;}
+          intervals.sort((a,b)=>a-b);
+          resolve({samples:intervals.length,reversals,advanced:position-first,p95FrameMs:intervals[Math.floor(intervals.length*.95)]!,maxFrameMs:intervals.at(-1)!});
+        };
+        requestAnimationFrame(sample);
+      }));
+      const metricsPath = testInfo.outputPath("player-performance.json");
+      await writeFile(metricsPath, JSON.stringify({project:testInfo.project.name,kind,...metrics},null,2));
+      await testInfo.attach("player-performance.json", {path:metricsPath,contentType:"application/json"});
+      expect(metrics.reversals).toBe(0);
+      expect(metrics.advanced).toBeGreaterThan(30);
+      await page.getByRole("button", {name:"Pause replay",exact:true}).click();
+      await expect(page.getByRole("button", {name:"Play replay",exact:true})).toBeVisible();
+      await page.waitForTimeout(100);
+      const paused = await slider.inputValue();
+      await page.waitForTimeout(200);
+      await expect(slider).toHaveValue(paused);
+      expect(errors).toEqual([]);
+    });
+  }
+
   for (const mobile of [false, true]) {
     test(`Influence opening reveals cast and preserves navigation on ${mobile ? "phone" : "desktop"}`, async ({page}, testInfo) => {
       await observeMusic(page);
@@ -196,7 +255,9 @@ test.describe("format-aware game viewer", () => {
       if (mobile) await page.getByRole("button", {name:"Close settings", exact:true}).click();
       await page.getByRole("button", {name:"Play replay", exact:true}).click();
       await expect.poll(async () => (await musicState(page)).find(audio => audio.src?.includes("an-invitation"))?.paused).toBe(false);
+      await expect.poll(async () => (await musicState(page)).find(audio => audio.src?.includes("an-invitation"))?.time ?? 0).toBeGreaterThan(14.9);
       const introAudio = (await musicState(page)).find(audio => audio.src?.includes("an-invitation"))!;
+      expect(introAudio.muted).toBe(false);
       expect(introAudio.time).toBeGreaterThan(14.9);
       expect(introAudio.time).toBeLessThan(18);
       expect(introAudio.volume).toBe(.4);
@@ -257,7 +318,10 @@ test.describe("format-aware game viewer", () => {
         }, hidden);
         if (hidden) {
           const volume = page.getByRole("slider", {name:"Music volume",exact:true});
+          const inSettings = !await volume.isVisible();
+          if (inSettings) await page.getByRole("button", {name:"Player settings",exact:true}).click();
           await volume.fill(String(Number(await volume.inputValue()) + 5));
+          if (inSettings) await page.getByRole("button", {name:"Close settings",exact:true}).click();
         }
         await expect.poll(async () => (await audio())?.time ?? -1).toBeGreaterThan(before + .2);
         await expect(page.getByRole("button", {name:"Mute music",exact:true})).toBeVisible();
@@ -323,7 +387,7 @@ test.describe("format-aware game viewer", () => {
     await expect(page.getByRole("button", {name:"Play replay",exact:true})).toBeVisible();
   });
 
-  test("Influence scrubber seeks individual frames and native drags preserve pause", async ({page}, testInfo) => {
+  test("Influence scrubber seeks individual frames and pointer seeks preserve pause", async ({page, isMobile}, testInfo) => {
     const slug = "frame-scrubber-fixture";
     await installDeterministicFormatGame(page, {slug, scenarioId:"save_or_eliminate_clear", status:"completed"});
     await page.goto(viewerUrl(`/games/${slug}/replay`));
@@ -341,10 +405,14 @@ test.describe("format-aware game viewer", () => {
     await page.keyboard.press("ArrowLeft");
     await expect(slider).toHaveValue("150");
     const box = (await slider.boundingBox())!;
-    await page.mouse.move(box.x + box.width * .2, box.y + box.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width * .7, box.y + box.height / 2, {steps:10});
-    await page.mouse.up();
+    if (isMobile) {
+      await page.touchscreen.tap(box.x + box.width * .7, box.y + box.height / 2);
+    } else {
+      await page.mouse.move(box.x + box.width * .2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width * .7, box.y + box.height / 2, {steps:10});
+      await page.mouse.up();
+    }
     await expect(page.getByRole("button", {name:"Play replay",exact:true})).toBeVisible();
     const frame = await slider.inputValue();
     expect(Number(frame)).toBeGreaterThan(count * .6);

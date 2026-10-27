@@ -36,7 +36,7 @@ const browserSpecs = new Map<string, BrowserSpecOwner>([
     lanes: ["browser-coverage"],
     runners: [{
       name: "test:e2e:format-viewer",
-      command: "PLAYWRIGHT_FORMAT_VIEWER=1 bunx playwright test e2e/format-aware-game-viewer.spec.ts --retries=0",
+      command: "PLAYWRIGHT_FORMAT_VIEWER=1 bunx playwright test e2e/format-aware-game-viewer.spec.ts --project=chromium --retries=0",
     }],
   }],
   // One file contains two explicitly selected Playwright projects. The

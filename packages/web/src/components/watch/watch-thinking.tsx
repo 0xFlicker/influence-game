@@ -5,6 +5,7 @@ import type {BubbleTypography} from "./bubble-typography";
 import {TimedSpeech} from "@/app/games/[slug]/components/timed-speech";
 import {visualSpeechDurationMs, VISUAL_SPEECH_FADE_MS} from "@influence/engine/visual-speech";
 import {thoughtTail} from "./thought-tail";
+import {sampleWatch} from "./watch-sampling";
 
 export type Thought = NonNullable<ReturnType<PresentationDirector<WatchCue>["getThinkingFrame"]>> & {speaker: string; roleLabel?: string};
 const ThinkingContext = createContext<Thought | null>(null);
@@ -36,12 +37,7 @@ export function WatchThinking<C extends WatchCue>({director, cueKey, enabled, sp
   }, [director, cueKey, enabled, load, errorKey]);
   useEffect(() => {
     if (!enabled) return;
-    let frame = 0;
-    const sample = () => {redraw(value => value + 1);frame = director.isAnimating() ? requestAnimationFrame(sample) : 0;};
-    const schedule = () => {if (!frame) frame = requestAnimationFrame(sample);};
-    const unsubscribe = director.subscribe(schedule);
-    schedule();
-    return () => {unsubscribe();cancelAnimationFrame(frame);};
+    return sampleWatch(director, () => redraw(value => value + 1));
   }, [enabled, director]);
   const thought = enabled ? director.getThinkingFrame() : null;
   return <SceneThinkingProvider thought={thought ? {...thought, speaker, roleLabel} : null}>

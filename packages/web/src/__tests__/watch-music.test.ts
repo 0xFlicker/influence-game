@@ -1,5 +1,5 @@
 import {afterEach, expect, test} from "bun:test";
-import {WatchMusic, type MusicDeck, type MusicOutput, type MusicSection, type MusicStatus} from "../components/watch/watch-music";
+import {createBrowserMusicOutput, WatchMusic, type MusicDeck, type MusicOutput, type MusicSection, type MusicStatus} from "../components/watch/watch-music";
 class Deck implements MusicDeck {
   time = 0; duration = 160; ready = true; ended = false; failed = false;
   level = 0; playing = false; src = ""; loads = 0; starts = 0;
@@ -11,8 +11,10 @@ class Deck implements MusicDeck {
   dispose() {this.pause();}
 }
 class Output implements MusicOutput {
+  interrupted = false;
   decks: [Deck, Deck] = [new Deck(), new Deck()]; time = 0; level = 0; closed = false;
   resume() {return Promise.resolve();}
+  unlock() {return this.resume();}
   master(value: number) {this.level = value;}
   dispose() {this.closed = true; this.decks.forEach(d => d.dispose());}
 }
@@ -100,4 +102,74 @@ test("new audible preview suspends the old one until an explicit gesture", async
   const first=setup(), second=setup(); first.music.update(first.input); await settled(); second.music.update(second.input); await settled();
   first.music.update({...first.input}); await settled(); expect(first.output.decks.some(d=>d.playing)).toBe(false);
   first.music.unlock(); await settled(); expect(second.output.decks.some(d=>d.playing)).toBe(false);
+});
+
+test("a gesture resumes even while the automatic resume is still pending", async () => {
+  const {music, output, input} = setup();
+  let attempts = 0, release!: () => void;
+  output.resume = () => ++attempts === 1 ? new Promise<void>(resolve => {release = resolve;}) : Promise.resolve();
+  music.update(input);
+  expect(attempts).toBe(1);
+  music.unlock();
+  expect(attempts).toBe(2);
+  release(); await settled();
+  expect(output.decks.some(deck => deck.playing)).toBe(true);
+});
+
+test("the first unmute gesture starts with the new preference before React commits", async () => {
+  const {music, output, input} = setup();
+  music.update({...input, muted:true});
+  music.unlock(false);
+  expect(output.level).toBe(input.volume);
+  expect(output.decks.some(deck => deck.playing)).toBe(true);
+  await settled();
+});
+
+test("context interruption retries once and denial waits for a new gesture", async () => {
+  const {music, output, input, statuses} = setup();
+  music.update(input); await settled();
+  output.interrupted = true;
+  let attempts = 0;
+  output.resume = () => {attempts++; return Promise.reject(new DOMException("interrupted", "NotAllowedError"));};
+  music.tick(); await settled();
+  music.tick(); music.tick();
+  expect(attempts).toBe(1);
+  expect(statuses.at(-1)).toBe("blocked");
+  expect(output.decks.every(deck => !deck.playing)).toBe(true);
+});
+
+test("browser output primes both elements once and never restarts a retired deck on later gestures", async () => {
+  const originals = ["Audio", "AudioContext"].map(key => [key, Object.getOwnPropertyDescriptor(globalThis,key)] as const);
+  const media: Media[] = [];
+  class Media {
+    src="";preload="";paused=true;currentTime=0;duration=10;readyState=4;ended=false;error=null;starts=0;
+    constructor() {media.push(this);}
+    getAttribute() {return this.src || null;}
+    removeAttribute() {this.src="";}
+    load() {}
+    async play() {this.starts++;this.paused=false;}
+    pause() {this.paused=true;}
+  }
+  const node = () => ({gain:{value:0,setTargetAtTime() {}},connect() {},disconnect() {}});
+  class Context {
+    currentTime=0;state="running";destination={};
+    createGain=node;createMediaElementSource=node;
+    async resume() {} async close() {}
+  }
+  Object.defineProperty(globalThis,"Audio",{configurable:true,value:Media});
+  Object.defineProperty(globalThis,"AudioContext",{configurable:true,value:Context});
+  try {
+    const output=createBrowserMusicOutput();
+    await output.unlock();
+    expect(media.map(audio=>audio.starts)).toEqual([1,1]);
+    expect(media.every(audio=>audio.paused)).toBe(true);
+    output.decks[1].load("/score.mp3");await output.decks[1].play();
+    output.decks[1].pause();media[1]!.ended=true;
+    await output.unlock();
+    expect(media.map(audio=>audio.starts)).toEqual([1,2]);
+    expect(media.every(audio=>audio.paused)).toBe(true);
+    output.dispose();expect(media.every(audio=>audio.src === "")).toBe(true);
+  } finally {
+    for (const [key,descriptor] of originals) {if(descriptor) Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}
+  }
 });

@@ -5,18 +5,13 @@ import {PresentationDirector, type WatchCue, type WatchPolicy} from "./watch-dir
 export function useWatchDirector<C extends WatchCue>(policy: WatchPolicy<C>) {
   const director = useMemo(() => new PresentationDirector({policy, followTail: true}), [policy]);
   const [snapshot, setSnapshot] = useState(() => director.getSnapshot());
-  const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     director.activate();
-    const unsubscribe = director.subscribe(() => { setSnapshot(director.getSnapshot()); setElapsed(director.getElapsedBaseMs()); });
-    // Sampling only: all advancement, pause and speed remain on the shared scheduler.
-    let frame = 0;
-    const sample = () => { setElapsed(director.getElapsedBaseMs()); frame = requestAnimationFrame(sample); };
-    frame = requestAnimationFrame(sample);
+    const unsubscribe = director.subscribe(() => setSnapshot(director.getSnapshot()));
     const preference = matchMedia("(prefers-reduced-motion: reduce)");
     const motion = () => director.setReducedMotion(preference.matches);
     motion(); preference.addEventListener("change", motion);
-    return () => { unsubscribe(); cancelAnimationFrame(frame); preference.removeEventListener("change", motion); director.dispose(); };
+    return () => { unsubscribe(); preference.removeEventListener("change", motion); director.dispose(); };
   }, [director]);
-  return {director, snapshot, elapsed};
+  return {director, snapshot};
 }

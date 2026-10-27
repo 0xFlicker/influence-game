@@ -25,7 +25,7 @@ export function usePlayerFullscreen(frame: RefObject<HTMLElement | null>) {
     if (!element) return;
     setError(null);
     if (element.requestFullscreen && document.fullscreenEnabled !== false) {
-      try { await element.requestFullscreen(); setFullscreen(true); return; }
+      try { await element.requestFullscreen({navigationUI:"hide"}); setFullscreen(true); return; }
       catch (cause) { console.info("Native fullscreen unavailable; using viewport fullscreen.", cause); }
     }
     fallback.current = true;

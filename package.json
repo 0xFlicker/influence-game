@@ -33,7 +33,7 @@
     "test:e2e:identity": "PLAYWRIGHT_LOCAL_IDENTITY=1 bunx playwright test e2e/public-player-identity.spec.ts",
     "test:e2e:layered-auth": "PLAYWRIGHT_LAYERED_AUTH=deterministic bunx playwright test e2e/layered-authentication.spec.ts --project=layered-auth-deterministic",
     "test:e2e:layered-auth:clerk": "PLAYWRIGHT_LAYERED_AUTH=real-clerk bunx playwright test e2e/layered-authentication.spec.ts --project=layered-auth-real-clerk",
-    "test:e2e:format-viewer": "PLAYWRIGHT_FORMAT_VIEWER=1 bunx playwright test e2e/format-aware-game-viewer.spec.ts --retries=0",
+    "test:e2e:format-viewer": "PLAYWRIGHT_FORMAT_VIEWER=1 bunx playwright test e2e/format-aware-game-viewer.spec.ts --project=chromium --retries=0",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "bun run --filter '*' lint",
     "check": "bun run typecheck && bun run lint",
