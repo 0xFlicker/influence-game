@@ -861,6 +861,27 @@ describe("GameRunner durable logical turns", () => {
     expect(first.getCanonicalEvents().at(-1)?.payload).toEqual(second.getCanonicalEvents().at(-1)?.payload);
   });
 
+  it("freezes gender in the durable roster and restores it before initializing contestants", async () => {
+    const store = new MemoryDurableTurnStore();
+    const gameId = createUUID();
+    const ids = [createUUID(), createUUID(), createUUID()];
+    const genders = ["female", "male", "non-binary"] as const;
+    const observed: Array<Array<Pick<import("../types").Player, "id" | "name" | "gender">>> = [];
+    const agents = ids.map((id, i) => Object.assign(new ObservedAgent(id, `Player ${i}`), {
+      gender: genders[i],
+      onGameStart: (_gameId: string, roster: Array<Pick<import("../types").Player, "id" | "name" | "gender">>) => { observed.push(structuredClone(roster)); },
+    }));
+    await new GameRunner(agents, TEST_GAME_CONFIG, undefined, { gameId, durableTurnStore: store }).prepareDurableExecution();
+    expect(observed).toHaveLength(3);
+    expect(observed[0]?.map(player => player.gender)).toEqual([...genders]);
+    observed.length = 0;
+    const recovered = agents.map(agent => Object.assign(agent, { gender: "male" as const }));
+    await new GameRunner(recovered, TEST_GAME_CONFIG, undefined, { gameId, durableTurnStore: store }).prepareDurableExecution();
+    expect(observed).toHaveLength(3);
+    for (const roster of observed) expect(roster.map(player => player.gender)).toEqual([...genders]);
+    expect(store.committedActions).toEqual(["bootstrap-roster"]);
+  });
+
   it("prepares durable authority and roster bootstrap exactly once before run", async () => {
     const store = new MemoryDurableTurnStore();
     const agents = [

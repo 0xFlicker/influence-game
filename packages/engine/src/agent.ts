@@ -1281,6 +1281,8 @@ interface AgentMemory {
 }
 
 export interface InfluenceAgentOptions {
+  /** Stored character gender, never inferred from names or prose. */
+  gender?: import("./types").AgentGender | null;
   /** Frozen replay contract; new agents default to the current strict speech contract. */
   decisionContractVersion?: InfluenceDecisionContractVersion;
   /** Optional producer/debug trace sink for raw model-call evidence. */
@@ -1709,6 +1711,7 @@ type ModelCallResponse = ProviderModelOutcome;
 export class InfluenceAgent implements IAgent {
   readonly id: UUID;
   readonly name: string;
+  readonly gender: import("./types").AgentGender | null;
   readonly personality: Personality;
   private readonly backstory: string;
   private readonly model: string;
@@ -1736,7 +1739,7 @@ export class InfluenceAgent implements IAgent {
   private lastPrivateDecisionId: string | undefined;
   private durableProviderTurnBinding: DurableProviderTurnBinding | null = null;
   private gameId: UUID = "";
-  private allPlayers: Array<{ id: UUID; name: string }> = [];
+  private allPlayers: Array<Pick<import("./types").Player, "id" | "name" | "gender">> = [];
   private memoryStore: MemoryStore | null = null;
   private memory: AgentMemory = {
     allies: new Set(),
@@ -1759,6 +1762,7 @@ export class InfluenceAgent implements IAgent {
   ) {
     this.id = id;
     this.name = name;
+    this.gender = options.gender ?? null;
     this.personality = personality;
     this.model = model;
     this.providerProfileId = options.providerProfileId ?? "openai";
@@ -1999,7 +2003,7 @@ export class InfluenceAgent implements IAgent {
     });
   }
 
-  onGameStart(gameId: UUID, allPlayers: Array<{ id: UUID; name: string }>): void {
+  onGameStart(gameId: UUID, allPlayers: Array<Pick<import("./types").Player, "id" | "name" | "gender">>): void {
     this.gameId = gameId;
     this.allPlayers = allPlayers;
   }
@@ -4934,6 +4938,10 @@ Return the jury_vote JSON response to cast your vote.`;
     return `${INFLUENCE_GAME_PROMPT_CONTEXT}
 
 You are ${this.name}, a contestant on "Influence" — a social strategy game where distinct fictional personalities clash.
+
+## Cast identity
+${this.allPlayers.map(player => `${player.name}: gender ${player.gender ?? "unspecified"}`).join("\n")}
+Use the stored genders above. When gender is unspecified, use the character's name or neutral language; do not guess from names. Gender does not specify personal pronouns; honor any explicitly stated pronouns.
 
 ${this.backstory ? `## Who You Are\n${this.backstory}\n` : ""}
 ## Your Personality & Game Approach

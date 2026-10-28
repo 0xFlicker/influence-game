@@ -272,7 +272,7 @@ export class GameState {
     projection: CanonicalGameProjection;
   } | null = null;
 
-  constructor(players: { id: UUID; name: string }[], options: GameStateOptions = {}) {
+  constructor(players: Pick<Player, "id" | "name" | "gender">[], options: GameStateOptions = {}) {
     this.empowerRevoteVersion = resolveEmpowerRevoteVersion(options.empowerRevoteVersion ?? CURRENT_EMPOWER_REVOTE_VERSION);
     this.gameId = options.gameId ?? createUUID();
     this.formatManifest = resolveFormatManifest(options.formatManifest);
@@ -281,6 +281,7 @@ export class GameState {
       this._players.set(p.id, {
         id: p.id,
         name: p.name,
+        ...(p.gender !== undefined && { gender: p.gender }),
         status: PlayerStatus.ALIVE,
         shielded: false,
       });
@@ -290,6 +291,7 @@ export class GameState {
       players: this.getAllPlayers().map((player) => ({
         id: player.id,
         name: player.name,
+        ...(player.gender !== undefined && { gender: player.gender }),
         status: player.status,
         shielded: player.shielded,
       })),

@@ -104,7 +104,7 @@ export interface WerewolfObservation {
   board: Omit<WerewolfView, "players" | "conversation"> & {
     conversation?: { totalBytes: number; remainingBytes: number; messageBytes: number;
       mustRedirect: boolean; finalRecipientMustRedirect: boolean; voterIds?: string[] } | null;
-    players: Array<{ id: string; name: string; alive: boolean }>;
+    players: Array<{ id: string; name: string; gender?: import("../types").AgentGender | null; alive: boolean }>;
   };
   turnReminder: WerewolfTurnReminder | null;
   self: { id: string; role: WerewolfRole; faction: WerewolfFaction; personality: string; backstory: string; strategy: string };
@@ -142,8 +142,9 @@ export function observeWerewolf(state: WerewolfState, actorId: string): Werewolf
         mustRedirect: conversation.handoffsUsed === conversation.maxHandoffs,
         finalRecipientMustRedirect: conversation.handoffsUsed === conversation.maxHandoffs - 1,
         ...(state.phase === "vote" ? { voterIds: [...conversation.voterIds] } : {}) } : null,
-      // Contestants get game identities, not spectator character metadata.
-      players: state.players.map(p => ({ id: p.id, name: p.name, alive: state.aliveIds.includes(p.id) })),
+      // Stored gender is shared identity; private character notes and spectator visuals stay out.
+      // Preserve absent fields in historical rosters: observation hashes fence durable plans.
+      players: state.players.map(p => ({ id: p.id, name: p.name, ...(p.gender !== undefined && { gender: p.gender }), alive: state.aliveIds.includes(p.id) })),
     },
     turnReminder: werewolfTurnReminder(state, actorId),
     self: { id: actorId, role, faction: role === "werewolf" ? "wolves" : "village", personality: player.personality, backstory: player.backstory, strategy: player.strategy },

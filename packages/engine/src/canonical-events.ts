@@ -602,7 +602,7 @@ export type CanonicalGameEvent =
   | CanonicalEventEnvelope<
       "game.roster_initialized",
       {
-        players: Array<{ id: UUID; name: string; status: PlayerStatus; shielded: boolean }>;
+        players: Array<{ id: UUID; name: string; gender?: import("./types").AgentGender | null; status: PlayerStatus; shielded: boolean }>;
         /** Frozen legal formats. Absent only on historical launch-trio games. */
         formatManifest?: LaunchFormatId[];
         /** Missing on historical games, which use version 1. */

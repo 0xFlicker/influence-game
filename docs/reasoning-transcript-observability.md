@@ -1,5 +1,7 @@
 # Reasoning & Transcript Observability
 
+Contestant prompts in both games include each character's stored gender from the frozen roster, including the acting character. Influence renders cast identity in its shared system prompt; Werewolf includes `gender` in `board.players`. Missing values remain unspecified, with instructions to use names or neutral language instead of guessing. This shares no private personality, backstory, strategy, or reasoning. Existing frozen rosters are never filled from mutable profiles.
+
 Native xAI uses `xai.responses` with the same exact decision/semantic validators.
 Preserve encrypted reasoning items in private raw-response objects, never as
 authored `thinking` or another contestant's context. Responses output usage

@@ -206,6 +206,7 @@ describe("queue enrollment service", () => {
       .where(eq(schema.agentRevisions.id, players[0]!.agentRevisionId!))))[0]!;
     const persistedConfig = JSON.parse(players[0]!.agentConfig) as { model: string; temperature: number };
     expect(JSON.parse(players[0]!.persona)).toEqual({
+      gender: profile.gender,
       name: profile.name,
       personality: profile.personality,
       backstory: profile.backstory,

@@ -58,9 +58,13 @@ export enum PlayerStatus {
   ELIMINATED = "eliminated",
 }
 
+export type AgentGender = "male" | "female" | "non-binary";
+
 export interface Player {
   id: UUID;
   name: string;
+  /** Stored character identity, frozen at game start; absent or null means unspecified. */
+  gender?: AgentGender | null;
   status: PlayerStatus;
   /** Shielded players cannot be revealed as council candidates this round */
   shielded: boolean;

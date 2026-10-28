@@ -282,7 +282,7 @@ export class GameRunner {
     this.resumeFrom = options.resumeFrom ?? options.durableUpgradeFrom;
     this.gameState = this.resumeFrom
       ? GameState.fromCanonicalEvents(this.resumeFrom.canonicalEvents)
-      : new GameState(agents.map((a) => ({ id: a.id, name: a.name })), {
+      : new GameState(agents.map((a) => ({ id: a.id, name: a.name, ...(a.gender !== undefined && { gender: a.gender }) })), {
           ...gameStateOptions,
           formatManifest: resolveFormatManifest(config.formatManifest),
           empowerRevoteVersion: config.empowerRevoteVersion,
@@ -509,6 +509,7 @@ export class GameRunner {
     const players = this.gameState.getAllPlayers().map((player) => ({
       id: player.id,
       name: player.name,
+      gender: player.gender,
     }));
     for (const agent of this.agents.values()) {
       agent.onGameStart(this.gameState.gameId, players);
@@ -519,7 +520,6 @@ export class GameRunner {
   private async prepareDurableExecutionInternal(): Promise<void> {
     const store = this.durableTurnStore;
     if (!store) throw new Error("Durable execution preparation requires a turn store");
-    this.startAgentsForGame();
 
     if (!this.durableTurnSnapshot) {
       const durable = await store.load(this.gameState.gameId);
@@ -535,6 +535,8 @@ export class GameRunner {
         }
       }
     }
+
+    this.startAgentsForGame();
 
     if (!this.durableTurnSnapshot) {
       if (this.resumeFrom && this.durableTurnStore) {
@@ -631,7 +633,7 @@ export class GameRunner {
       phase: Phase.INIT,
     });
 
-    this.startAgentsForGame();
+    if (!this.durableTurnStore) this.startAgentsForGame();
 
     if (this.durableTurnStore) {
       await this.prepareDurableExecution();
@@ -1105,6 +1107,7 @@ export class GameRunner {
     const previousEventHead = this.gameState.getCanonicalEvents().at(-1)?.sequence ?? 0;
     this.durableTurnSnapshot = structuredClone(snapshot);
     this.gameState = GameState.fromCanonicalEvents(snapshot.canonicalEvents);
+    this.startAgentsForGame();
     this.logger = new TranscriptLogger(this.gameState);
     this.logger.seed(snapshot.transcriptEntries);
     if (this.streamListener) this.logger.setStreamListener(this.streamListener);

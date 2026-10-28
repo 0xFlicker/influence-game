@@ -1,5 +1,6 @@
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { loadPayloads } from "../services/payload-storage.js";
+import { sha256StableJson } from "../services/stable-hash.js";
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@influence/engine";
 import { completeCompetitionGame } from "../services/competition-completion.js";
 import { readHouseParticipation } from "../services/house-participation.js";
@@ -44,6 +45,25 @@ async function create(agentProfileIds: string[] = []) {
 }
 
 describe("Werewolf House integration", () => {
+  test("resumes a planned turn from a historical roster without changing its observation hash", async () => {
+    const game = await create();
+    const initial = (await game.store.read())[0]!;
+    if (initial.type !== "werewolf.started") throw new Error("Expected started event");
+    for (const player of initial.payload.players) delete player.gender;
+    await db.update(schema.werewolfEvents).set({ event: initial }).where(eq(schema.werewolfEvents.gameId, game.id));
+    const state = replayWerewolf(await game.store.read());
+    const plan = werewolfActionPlans(state)[0]!;
+    const observation = observeWerewolf(state, plan.request.actorId);
+    const historicalObservation = { ...observation, board: { ...observation.board,
+      players: observation.board.players.map(({ id, name, alive }) => ({ id, name, alive })),
+    } };
+    await db.insert(schema.werewolfTurns).values({ gameId: game.id, sequence: plan.sequence, request: plan.request,
+      observationHash: sha256StableJson(historicalObservation) });
+    await game.store.prepare!(state, plan.request, plan.sequence);
+    expect(observation).toEqual(historicalObservation);
+    expect(await game.store.read()).toEqual([initial]);
+  });
+
   test("length-rejected speech survives provider owner recovery privately and repairs the same turn", async () => {
     const game = await createWerewolfGame(db, ownerId, { preset: "one_wolf", agentProfileIds: [], providerManifest: [{ catalogId: "katana:glm-5-2" }], maxDays: 2 });
     const claim = await claimWerewolfGame(db, game.id);
@@ -253,11 +273,14 @@ describe("Werewolf House integration", () => {
     const before = await game.store.read();
     const state = replayWerewolf(before);
     const character = state.players.find((p) => p.agentProfileId === first.profile.id)!;
-    expect(character).toMatchObject({ name: "Arden Vale", personality: "Observant", backstory: "An old librarian", strategy: "WEREWOLF_EDIT", contentRevisionId: edited.profile.contentRevisionId });
+    expect(character).toMatchObject({ name: "Arden Vale", gender: "non-binary", personality: "Observant", backstory: "An old librarian", strategy: "WEREWOLF_EDIT", contentRevisionId: edited.profile.contentRevisionId });
     expect(JSON.stringify(before)).not.toContain("INFLUENCE_ONLY");
-    await updateOwnedAgentProfile(db, context, first.profile.id, { werewolfStrategyStyle: "FUTURE_GAME", expectedContentRevisionId: edited.profile.contentRevisionId, submissionId: randomUUID() });
+    await updateOwnedAgentProfile(db, context, first.profile.id, { gender: "female", werewolfStrategyStyle: "FUTURE_GAME", expectedContentRevisionId: edited.profile.contentRevisionId, submissionId: randomUUID() });
     expect(await game.store.read()).toEqual(before);
     const observation = observeWerewolf(state, character.id);
+    for (const contestant of state.players) {
+      expect(observeWerewolf(state, contestant.id).board.players.find(player => player.id === character.id)?.gender).toBe("non-binary");
+    }
     expect(observation.self.strategy).toBe("WEREWOLF_EDIT");
     expect(JSON.stringify(await readWerewolfView(db, game.id, "omniscient"))).not.toContain("WEREWOLF_EDIT");
   });

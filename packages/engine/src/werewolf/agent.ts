@@ -12,7 +12,7 @@ import { prepareRetrospectiveInvocation, prepareRetrospectiveCapacityPolicy } fr
 import { retrospectiveAttemptsPerModel } from "../retrospective-budget";
 import { RetrospectiveContractError, type RetrospectiveSpeechV1 } from "../retrospective";
 
-const SPEECH_GUIDANCE = "In spoken text, refer to players only by their character names. Never include player IDs, UUIDs, or other internal identifiers, even when quoting an earlier message. IDs belong only in structured targetId and recipientIds choices, not dialogue.";
+const SPEECH_GUIDANCE = "In spoken text, refer to players only by their character names. Never include player IDs, UUIDs, or other internal identifiers, even when quoting an earlier message. IDs belong only in structured targetId and recipientIds choices, not dialogue. Use the stored gender in board.players. A null or absent gender is unspecified: use the character's name or neutral language, never guess from names. Gender does not specify personal pronouns; honor any explicitly stated pronouns.";
 const UUID_IN_SPEECH = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
 
 function audioDeliveryPolicy(request: WerewolfRequest) {
