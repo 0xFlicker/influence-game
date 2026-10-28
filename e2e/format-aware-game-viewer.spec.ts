@@ -2,6 +2,7 @@ import { Phase } from "../packages/engine/src/types";
 import {execFileSync} from "node:child_process";
 import {writeFile} from "node:fs/promises";
 import {werewolfOpening} from "../packages/web/src/components/games/werewolf/werewolf-opening";
+import {werewolfCues, werewolfCueMoment} from "../packages/web/src/components/games/werewolf/werewolf-watch-model";
 import {projectWerewolfWatch} from "../packages/engine/src/werewolf/watch";
 import { soloPresentationDurationMs } from "../packages/web/src/app/games/[slug]/components/solo-presentation-timing";
 import {
@@ -559,6 +560,96 @@ test.describe("format-aware game viewer", () => {
     await page.screenshot({path:testInfo.outputPath("bubble-fit-page-2.png")});
   });
 
+  for (const savedSound of [false,true]) test(`Werewolf voice survives the opening handoff and slow first load (${savedSound ? "blocked saved sound" : "first visit"})`, async ({page}) => {
+    await observeMusic(page);
+    await page.addInitScript(savedSound => {
+      if (savedSound) localStorage.setItem("house:watch:viewer:v1",JSON.stringify({musicMuted:false,musicVolume:.3,thinking:false}));
+      let gesture = false;
+      document.addEventListener("click",() => {gesture=true;setTimeout(()=>{gesture=false;},0);},true);
+      const activated = new WeakSet<HTMLMediaElement>();
+      const events: unknown[] = [];
+      Object.defineProperty(window,"__voiceEvents",{value:events});
+      const NativeAudio=window.Audio;
+      window.Audio=class extends NativeAudio {
+        constructor(src?:string) {
+          super(src);
+          for(const event of ["loadstart","loadedmetadata","canplay","playing","waiting","seeking","seeked","pause","error","ended"])
+            this.addEventListener(event,()=>{
+              if(events.length < 500 && this.getAttribute("src")?.includes("fixture-voice")) events.push({event,time:this.currentTime,ready:this.readyState,seeking:this.seeking,paused:this.paused,src:this.getAttribute("src")});
+            });
+        }
+      };
+      const nativePlay = HTMLMediaElement.prototype.play;
+      HTMLMediaElement.prototype.play = function () {
+        const src=this.getAttribute("src") ?? "";
+        if (savedSound && this instanceof HTMLAudioElement && !gesture && !activated.has(this)) {
+          return Promise.reject(new DOMException("Audio needs a gesture", "NotAllowedError"));
+        }
+        if (src.includes("/fixture-voice/") && !activated.has(this)) {
+          return Promise.reject(new DOMException("Element has not been activated", "NotAllowedError"));
+        }
+        return nativePlay.call(this).then(() => {activated.add(this);});
+      };
+      const time = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype,"currentTime")!;
+      const seeks: number[] = [];
+      Object.defineProperty(window,"__voiceSeeks",{value:seeks});
+      Object.defineProperty(HTMLMediaElement.prototype,"currentTime",{...time,set(value:number) {
+        if (seeks.length < 500 && this.getAttribute("src")?.includes("/fixture-voice/")) seeks.push(value);
+        time.set!.call(this,value);
+      }});
+    },savedSound);
+    const slug="werewolf-voice-handoff", view=await installWerewolfGame(page,slug);
+    const spoken=werewolfCues([view]).filter(cue=>werewolfCueMoment(cue).spoken).slice(0,3);
+    const clips=spoken.map((cue,index) => {
+      const line=werewolfCueMoment(cue);
+      return {momentId:cue.key,watch:{kind:"werewolf",cursor:cue.moment.cursor,actorId:line.house ? null : line.actor?.id ?? null,part:"speech"},
+        speakerId:line.house ? null : line.actor?.id ?? null,textHash:"fixture",versionId:`voice-${index}`,sha256:"fixture",durationMs:6000,url:`/fixture-voice/${index}.wav`};
+    });
+    await page.route(`**/api/games/${view.gameId}/audio*`,route=>route.fulfill({json:{id:"voice-track",clips}}));
+    // Decode real PCM audio, with a deliberately cold first request.
+    const rate=8000, samples=rate*6, wav=Buffer.alloc(44+samples*2);
+    wav.write("RIFF",0);wav.writeUInt32LE(wav.length-8,4);wav.write("WAVEfmt ",8);wav.writeUInt32LE(16,16);
+    wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(rate,24);wav.writeUInt32LE(rate*2,28);
+    wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write("data",36);wav.writeUInt32LE(samples*2,40);
+    for(let index=0;index<samples;index++) wav.writeInt16LE(Math.round(Math.sin(index*2*Math.PI*220/rate)*1000),44+index*2);
+    await page.route("**/fixture-voice/*.wav",async route => {
+      await new Promise(resolve=>setTimeout(resolve,1200));
+      const range=/^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range ?? "");
+      const start=range ? Number(range[1]) : 0, end=range?.[2] ? Math.min(Number(range[2]),wav.length-1) : wav.length-1;
+      await route.fulfill({status:range ? 206 : 200,contentType:"audio/wav",body:wav.subarray(start,end+1),
+        headers:{"Accept-Ranges":"bytes",...(range ? {"Content-Range":`bytes ${start}-${end}/${wav.length}`} : {})}});
+    });
+    await page.goto(viewerUrl(`/games/${slug}/replay?audience=mystery`));
+    await page.getByRole("button",{name:savedSound ? "Enable music" : "Turn music on",exact:true}).click();
+    await expect.poll(async () => (await musicState(page)).filter(media=>media.src === "/music/unlock.wav").length).toBeGreaterThan(0);
+    // The only unlock gesture is during the opening, before any voice exists.
+    await expect.poll(async () => (await musicState(page)).some(media=>media.src === "/music/unlock.wav" && media.paused)).toBe(true);
+    await page.getByRole("button",{name:"Skip opening",exact:true}).click();
+    const voice=async () => (await musicState(page)).find(media=>media.src?.endsWith("/fixture-voice/0.wav"));
+    await expect.poll(async () => (await voice())?.time ?? -1).toBeGreaterThan(.5);
+    await expect(page.getByRole("button",{name:"Pause replay",exact:true})).toBeVisible();
+    await expect(page.getByRole("button",{name:"Mute music",exact:true})).toBeVisible();
+    const before=(await voice())!.time;
+    const seekCount=() => page.evaluate(()=>(window as unknown as {__voiceSeeks:number[]}).__voiceSeeks.length);
+    const seeks=await seekCount();
+    await expect.poll(async () => (await voice())?.time ?? -1).toBeGreaterThan(before+1.5);
+    expect(await seekCount()).toBe(seeks);
+    const slider=page.getByRole("slider",{name:"Replay position",exact:true});
+    await slider.fill(String(Number(await slider.inputValue())+30));
+    await expect.poll(seekCount).toBeGreaterThan(seeks);
+    await expect.poll(async () => (await musicState(page)).find(media=>media.src?.endsWith("/fixture-voice/1.wav"))?.time ?? -1,{timeout:15_000}).toBeGreaterThan(.5);
+    await expect(page.getByRole("button",{name:"Pause replay",exact:true})).toBeVisible();
+    await expect(page.getByRole("button",{name:"Mute music",exact:true})).toBeVisible();
+  });
+
+  test.afterEach(async ({page},info) => {
+    if (!info.title.startsWith("Werewolf voice survives")) return;
+    await info.attach("voice-media-events",{contentType:"application/json",body:JSON.stringify(await page.evaluate(()=>{
+      const state=window as unknown as {__voiceEvents:unknown[];__voiceSeeks:number[]};
+      return {events:state.__voiceEvents,seeks:state.__voiceSeeks};
+    }))});
+  });
+
   test("Werewolf portrait door is centered and fullscreen speech stays light in both color schemes", async ({page},testInfo) => {
     const slug="werewolf-portrait-safari";
     await page.addInitScript(() => Object.defineProperty(document,"fullscreenEnabled",{configurable:true,value:false}));
@@ -569,6 +660,13 @@ test.describe("format-aware game viewer", () => {
     await page.goto(viewerUrl(`/games/${slug}/replay?audience=mystery`));
     await pauseAutoplay(page,"Pause replay");
     const slider=page.getByRole("slider",{name:"Replay position",exact:true});
+    const warmDoor=page.locator('video[src$="/door.mp4"]');
+    await expect(warmDoor).toBeAttached();
+    await expect(warmDoor).toBeHidden();
+    await expect.poll(()=>warmDoor.evaluate(video=>(video as HTMLVideoElement).readyState)).toBeGreaterThanOrEqual(2);
+    const cast=opening.find(cue=>cue.opening.shot === "cast")!;
+    await slider.fill(String(Math.round((cast.opening.startMs+cast.baseDurationMs-200)*30/1000)));
+    await expect(page.getByRole("heading",{name:cast.opening.player!.name,exact:true}).locator("../..")).toHaveCSS("opacity","0.5");
     await slider.fill(String(Math.round((door.opening.startMs + 1000) * 30 / 1000)));
     const video=page.locator('[data-werewolf-opening="door"] video');
     await expect(video).toBeVisible();

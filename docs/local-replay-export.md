@@ -27,6 +27,17 @@ available span, and Omniscient Werewolf thoughts show the authorized actor role.
 Mystery still excludes thinking. These changes affect presentation only, not
 accepted dialogue, private evidence, or timing policy.
 
+Portrait rooms keep one floor anchor across short/long speeches and independent
+thinking shots. Thinking retains the room backdrop and perspective; a selected
+thought followed by its own spoken ballot keeps the established character visible
+through the handoff. Selecting the ballot alone still uses its normal entrance.
+House narration fits the complete message on one screen for the recording's full
+duration, shrinking type when needed instead of switching to a short overflow page.
+Completed Werewolf retrospectives close on a silent final cast and elimination
+recap, with winner/role/survivor labels and canonical night/day elimination coordinates.
+The spoken result remains before retrospectives. Prepare a fresh bundle and
+re-export to apply these changes to an existing movie; saved MP4s remain unchanged.
+
 Open **Admin → Production**, choose a completed game, save flat tags such as `cut=youtube` on individual thinking or speech moments, and watch **Selected cut**. Set the target geometry, timing and audio mix before choosing **Download selected export**. Paused games support a fixed-prefix preview but cannot be exported.
 
 When selected, Influence empowered tie-break thinking appears after the regular ballot roll call and aggregate, immediately before the tie-break scene. The same player’s earlier ballot keeps its own thinking. Studio preview and export share this canonical source ordering.

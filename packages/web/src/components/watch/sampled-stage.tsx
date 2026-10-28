@@ -12,6 +12,8 @@ export interface SampledStage {
   images: Record<string, { width: number; height: number }>;
   previousScene: AcceptedVisualScene | null;
   previousSpeaker: string | null;
+  /** The preceding selected thought already established this exact actor/action. */
+  continuedActorId?: string | null;
   firstInScene: boolean;
   speech?: {
     text: string;

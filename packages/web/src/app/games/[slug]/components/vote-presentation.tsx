@@ -8,7 +8,7 @@ import { SoloPresentation } from "./solo-presentation";
 import { FitPresentation } from "./fit-presentation";
 import { soloPresentationDurationMs } from "./solo-presentation-timing";
 import { voteLedgerRows, type RevealedVote, type VoteLedgerState } from "./vote-ledger-model";
-import { SILENT_BALLOT_DURATION_MS, votePresentationTiming } from "./vote-presentation-timing";
+import { SILENT_BALLOT_DURATION_MS, VOTE_LEDGER_HEIGHT, votePresentationTiming } from "./vote-presentation-timing";
 import type { SceneFrame } from "./visual-scene-layout";
 import backdropStyles from "./stage-backdrop.module.css";
 
@@ -83,7 +83,7 @@ export function VotePresentation({ beat, ledger, roster, elapsedMs, controlsInse
       <h2 className="mt-2 text-3xl font-semibold text-white">All votes are in</h2>
       {ledger.eligibility && <p className="mt-3 text-sm text-amber-100">{ledger.eligibility.label}{ledger.eligibility.ids.length === 0 ? " · No one qualifies" : ""}</p>}
     </div>}
-    <div ref={ledgerBox} className="absolute inset-x-3 z-20 mx-auto h-[clamp(88px,28%,200px)] max-w-6xl overflow-hidden rounded-2xl border border-white/15 bg-black/80 p-2 shadow-2xl backdrop-blur-md sm:inset-x-6" style={{ bottom: controlsInset + 12 }}>
+    <div ref={ledgerBox} className="absolute inset-x-3 z-20 mx-auto max-w-6xl overflow-hidden rounded-2xl border border-white/15 bg-black/80 p-2 shadow-2xl backdrop-blur-md sm:inset-x-6" style={{ bottom: controlsInset + 12, height:VOTE_LEDGER_HEIGHT }}>
       <FitPresentation enabled onLayoutChange={setLedgerLayout}>
         <VoteLedger title={ledger.title} votes={votes} total={ledger.total} roster={roster}
           polarity={ledger.polarity} abstainLabel={ledger.abstainLabel} eligibility={ledger.complete ? ledger.eligibility : undefined}

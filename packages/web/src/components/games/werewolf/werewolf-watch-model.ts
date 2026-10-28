@@ -20,6 +20,7 @@ export const werewolfWatchPolicy: WatchPolicy<WerewolfWatchCue> = {
   acceptAtWatermark: () => false,
   reconcile: cues => cues,
   speech: cue => {
+    if (cue?.reprise) return null;
     if (cue?.nightDecision) return {showAtMs: SOLO_SPEECH_START_MS, readAtMs: SOLO_READ_START_MS,
       hideAtMs: cue.baseDurationMs - SOLO_EXIT_MS, hiddenAtMs: cue.baseDurationMs};
     if (cue?.ballot && (cue.moment.entry.kind !== "ballot" || cue.moment.entry.text === null)) return null;
@@ -72,7 +73,7 @@ export function werewolfCues(windows: readonly WerewolfWatchWindow[], houseNarra
       transformWolfIds: undefined, wolfForms: undefined, night: undefined,
       entry: {kind: "result", day: last.moment.entry.day, outcome}};
     const [result] = werewolfMomentCues(moment,houseNarration);
-    if (result) cues.push({...result, key: `${result.key}:reprise`, reprise: true});
+    if (result) cues.push({...result, key: `${result.key}:reprise`, baseDurationMs: 12000, reprise: true});
   }
   return cues;
 }
@@ -159,6 +160,7 @@ export function werewolfDoctorSave(moment: WerewolfWatchMoment) {
 /** The role's accepted explanation precedes its result; never derive speech from the outcome. */
 export function werewolfCueMoment(cue: WerewolfWatchCue) {
   const moment = replayMoment({...cue.moment.snapshot, entries: [cue.moment.entry]},cue.houseNarration !== false);
+  if (cue.reprise) return {...moment, title:"Final results", house:false, spoken:false};
   if (cue.nightAction && !cue.nightDecision && cue.houseNarration !== false) return {...moment, house: true, actor: undefined, speaker: "The House", text: werewolfNightHouseSpeech(cue.nightAction, cue.moment.snapshot.players), spoken: true, details: []};
   if (!cue.nightDecision) return moment;
   const action = cue.nightAction;

@@ -1,5 +1,6 @@
 "use client";
 import {werewolfPortraitRoom, werewolfBackdrop} from "./werewolf-room-presentation";
+import {WerewolfEnding} from "./werewolf-ending";
 import {HouseNarration, type NarrationWindow} from "@/components/watch/house-narration";
 import {WerewolfVoteOutcome} from "./werewolf-vote-outcome";
 import {WerewolfTransformationStage} from "./werewolf-transformation-stage";
@@ -78,6 +79,7 @@ export function WerewolfContentFrame({cue, scene, elapsed, reduced, navigationRe
   const readingElapsed = Math.max(0, readingTime - lead);
   const text = cue.moment.entry.kind === "ballot" ? moment.spoken ? moment.text : "" : cue.ballot ? cue.moment.snapshot.players.find(p => p.id === cue.ballot?.current.targetId)?.name ?? "" : moment.text;
   const backgroundUrl = werewolfBackdrop(cue);
+  if (cue.reprise) return <WerewolfEnding snapshot={cue.moment.snapshot} backgroundUrl={backgroundUrl} />;
   const beat: Extract<VisualPresentationBeat, {kind:"portrait"}> | null = actor ? {
     kind:"portrait", purpose: cue.nightDecision ? "Night decision" : moment.retrospective ? "Retrospective" : cue.ballot ? "Ballot" : cue.moment.chapterId === "introduction" ? "Introduction" : moment.spoken ? "Conversation" : "Farewell",
     caption: cue.nightDecision ? "Tonight’s choice" : moment.retrospective ? `Retrospective · ${moment.part ?? "Contestant"}` : cue.ballot ? "Vote to eliminate" : cue.moment.chapterId === "introduction" ? "Introduction" : moment.spoken ? moment.pack ? "Pack conversation" : "Conversation" : "",

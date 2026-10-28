@@ -72,6 +72,17 @@ test("door fades while moving, ending in black before dialogue; reduced motion r
   expect(sampleOpening(door,5300).musicGain).toBe(0);
   expect(sampleOpening(door,4000,true).scale).toBe(1);
 });
+test("cast portraits and names fade out before the next shot, with the background retained", async () => {
+  const [window] = await windows();
+  const cast = werewolfOpening(window!).filter(cue => cue.opening.shot === "cast");
+  for (const cue of cast) {
+    expect(sampleOpening(cue,0).textOpacity).toBe(0);
+    expect(sampleOpening(cue,400).textOpacity).toBe(1);
+    expect(sampleOpening(cue,cue.baseDurationMs-200).textOpacity).toBe(.5);
+    expect(sampleOpening(cue,cue.baseDurationMs).textOpacity).toBe(0);
+    expect(sampleOpening(cue,cue.baseDurationMs).opacity).toBe(1);
+  }
+});
 test("full export prepends the same opening and audio envelopes without replacing gameplay music", async () => {
   const [window] = await windows();
   const cues = buildExportCues({kind:"werewolf",title:"Silence Beneath the Lanterns",windows:[window!],thoughts:[]});

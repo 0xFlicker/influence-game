@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-img-element -- The shared frame also renders from frozen files outside Next. */
 import {useState, type ReactNode} from "react";
 import {OpeningBrowserVideo, type OpeningVideoProps} from "../../watch/opening-browser-video";
-import {sampleOpening, type WerewolfOpeningCue} from "./werewolf-opening";
+import {OPENING_ASSETS, sampleOpening, type WerewolfOpeningCue} from "./werewolf-opening";
 import styles from "./werewolf-opening.module.css";
 
 /** Shared by the live webpage and the full replay renderer. No controls or independent timers. */
@@ -15,10 +15,13 @@ export function WerewolfOpeningFrame({cue, elapsedMs, reduced = false, playing =
   const [failedImage, setFailedImage] = useState<string | null>(null);
   const media = {src: shot.videoUrl ?? "", poster: shot.backgroundUrl, timeMs: frame.videoMs, playing, speed, navigationRevision};
   const backgroundTransform = `translate(${frame.panX}%, ${frame.panY}%) scale(${frame.scale})`;
+  const warmDoor = browserLoading && !video && !reduced;
   return <div className={styles.frame} data-werewolf-opening={shot.shot} data-opening-key={cue.key}>
     <div className={styles.picture} style={{opacity: frame.opacity}}>
-      {shot.videoUrl && !reduced ? video ? video(media) : <OpeningBrowserVideo key={shot.videoUrl} {...media} className={styles.backdrop} /> :
+      {warmDoor && shot.shot === "door" ? null : shot.videoUrl && !reduced ? video ? video(media) : <OpeningBrowserVideo key={shot.videoUrl} {...media} className={styles.backdrop} /> :
         <img className={styles.backdrop} src={shot.backgroundUrl} alt="" style={{transform:backgroundTransform}} />}
+      {warmDoor && <OpeningBrowserVideo src={OPENING_ASSETS.door} poster={OPENING_ASSETS.doorPoster} timeMs={shot.shot === "door" ? frame.videoMs : 0}
+        playing={shot.shot === "door" && playing} speed={speed} navigationRevision={navigationRevision} className={styles.backdrop} hidden={shot.shot !== "door"} />}
       {shot.transitionUrl && <img className={styles.backdrop} src={shot.transitionUrl} alt="" style={{opacity:frame.transitionOpacity, transform:backgroundTransform}} />}
       {shot.shot !== "door" && <div className={styles.shade} />}
       {shot.shot === "house" && <div className={styles.brand} style={{opacity:frame.textOpacity}}>

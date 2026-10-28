@@ -10,7 +10,7 @@ Install the pinned browser and run the deterministic fixture stories:
 bunx playwright install webkit
 PLAYWRIGHT_FORMAT_VIEWER=1 bunx playwright test e2e/format-aware-game-viewer.spec.ts \
   --project=webkit --project=webkit-mobile \
-  --grep 'player performance|Influence scrubber|unmuted intro|Influence opening reveals cast|fullscreen portrait player|Werewolf portrait door' \
+  --grep 'player performance|Influence scrubber|unmuted intro|Influence opening reveals cast|fullscreen portrait player|Werewolf portrait door|Werewolf voice survives' \
   --retries=0
 ```
 
@@ -67,3 +67,15 @@ Desktop Safari stuttering was reported to settle after startup. Repeated frame-b
 Installed Safari 27.0.1 was available locally, but `safaridriver` timed out creating an automation session. The follow-up browser evidence uses Playwright Chromium/WebKit, not installed Safari or a physical iPhone.
 
 Follow-up local validation: 24 selected browser stories passed across Chromium, desktop WebKit and mobile WebKit; the provider-free baseline passed 3,107 tests (5 skipped), the PostgreSQL baseline passed 2,262 tests, the final focused suite passed 33 tests, and typecheck/lint passed.
+
+## Recorded voice and the opening handoff
+
+After #231, device feedback for `grim-amber-coal` (Mystery) identified choppy spoken audio on desktop, a first-handoff pause/sound activation failure on iPhone 16e with Low Power Mode off, and cast portraits cutting away without an exit fade. The first contestant MP3's encoded duration matched its published 7,392.625 ms duration; this inspection does not establish browser playback continuity.
+
+Voice media now uses the same discontinuity-based alignment as opening media. It does not repeatedly assign playback rate or chase native clock lag with seeks. The director holds while a play request starts, during seeking, and when media runs out of playable data; native buffering is allowed to recover without a pause/restart loop. The current cue's first clip starts downloading during its visual entrance. A Play or opening sound gesture primes the retained voice element with the packaged silent clip. Recovering blocked opening sound activates both the opening and ambient music players, preserving the saved mute preference.
+
+The browser voice story uses real decoded PCM audio with a delayed response and an explicit per-element activation restriction. It checks initial and saved-sound recovery, uninterrupted time advancement, an explicit seek, and the next voice clip, retaining media-event diagnostics. These fixtures cover transport behavior; they do not prove that a particular iPhone/Safari decoder is free of audible artifacts. Repeat the same real game from a cold load, after pause/wait/resume, and after seeking far ahead.
+
+The Werewolf door video stays mounted and preloads while the earlier opening shots play. Browser checks verify playable data before the door appears. Cast portraits and names now fade out over their last 400 ms using the shared sampled timeline, including exported replay frames.
+
+Local validation for this voice follow-up: 30 selected browser stories passed across Chromium and both WebKit profiles, followed by all six voice stories again after the final paused-seek correction. The final focused tests passed 32 cases; the provider-free baseline passed 3,114 tests (5 skipped), PostgreSQL passed 2,262, and typecheck/lint passed. The initial sandboxed baseline could not bind local test servers; its rerun with local network access passed. These results are not an installed Safari or physical iPhone listening test.

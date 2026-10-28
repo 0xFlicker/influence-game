@@ -794,6 +794,7 @@ function DramaticReplayTheater({
           isPlaying={transportPlaying} togglePlay={togglePlay} speed={speed} onSpeed={value => director.setSpeed(value)}
           music={{muted:preferences.musicMuted, volume:preferences.musicVolume, status:openingCue ? openingAudio.status : ambient.status,
             onMute:() => {
+              if (isPlaying) voice.resume();
               const status = openingCue ? openingAudio.status : ambient.status;
               const muted = status === "blocked" || status === "unavailable" ? preferences.musicMuted : !preferences.musicMuted;
               preferences.setMusicMuted(muted);
