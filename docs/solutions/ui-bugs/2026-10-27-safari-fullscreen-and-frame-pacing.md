@@ -17,3 +17,11 @@ Opening media previously compared native `currentTime` with the director on ever
 The Werewolf door uses a centered portrait crop, while other opening shots keep their existing offset composition. Both video and poster use the same rule.
 
 See [the Safari test guide](../../testing/player-safari.md) for browser coverage and device limitations. WebKit emulation and callback tests do not establish real iPhone rendering performance or OS audio behavior.
+
+## Recorded voice follow-up
+
+After #231, `grim-amber-coal` Mystery playback still stuttered during spoken introductions on desktop and paused at the first voice/music handoff on an iPhone 16e (Low Power Mode off). The voice adapter still assigned playback rate and corrected clock drift every sample. It now uses discontinuity-based alignment, begins fetching during the cue entrance, and holds the director until native playback starts or buffering/seeking completes. Do not pause the media element just because its own buffering has held the director. Do not interpret a seek's own `waiting` event as a new recovery seek; that can create a rapid seek/wait loop.
+
+A user gesture must prepare the retained voice element even while the current opening has no voice. Recovering blocked opening music must also activate the ambient decks that will play afterward. [WebKit documents activation as per-element](https://webkit.org/blog/7734/auto-play-policy-changes-for-macos/); retain the element when changing sources. The regression imposes that restriction explicitly, delays real PCM delivery, and checks time advancement, an in-clip seek, and the next clip in browser engines. Its media endpoint supports byte ranges like production; a non-seekable test response is not a valid seek fixture.
+
+The cast sampler lacked an exit opacity envelope; it now fades portraits and names during the last 400 ms. The door video is retained and preloaded throughout the browser opening, then revealed without replacing its decoder. Reduced-motion and frozen export rendering keep their existing media ownership.
