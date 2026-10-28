@@ -3,6 +3,22 @@
 The House Discord is configured by an idempotent operator script that uses a
 Discord bot token. Do not automate this with a personal Discord user token.
 
+## Current credential status — October 25, 2026
+
+The original `social-strategy-agent/dev/DISCORD_HOUSE_BOT_TOKEN` below was checked
+read-only and returned HTTP 401. A working token already exists in the False Floor
+Doppler project `overclaw-house`, config `prd`, as `DISCORD_BOT_TOKEN`, under the
+operator's scope `/Users/user/Development/overclaw/workspace-house`. It authenticates
+as The House application `1521918515752472606` and can access The House guild
+`1521918107554152468`. No token reset was necessary.
+
+The script still expects the original environment variable names; its historical
+command below is not a working credential configuration as currently stored. Do
+not rerun whole-server setup just to validate credentials. The bot has no registered
+commands or interactions endpoint, and account verification is not implemented.
+See the [verification and runtime plan](plans/2026-10-25-001-feat-house-discord-verification-plan.md)
+for the canonical secret source, current inventory, and proposed rollout.
+
 ## Required Secrets
 
 The script expects the following secrets in the Doppler `dev` config for the
