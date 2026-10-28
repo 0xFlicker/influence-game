@@ -56,6 +56,8 @@ export type ExportPicture =
       scene: AcceptedVisualScene | null;
       sourceElapsedMs: number;
       backgroundUrl?: string;
+      /** Reserve the response's ledger geometry without including its votes. */
+      ballotFraming?: boolean;
       room?: {number: number | null; label?: string; backgroundUrl?: string; floorPerspective?: boolean; players: Extract<VisualPresentationBeat, {kind:"portrait-room"}>["participants"]};
     }
   | {kind: "werewolf-opening"; cue: WerewolfOpeningCue}

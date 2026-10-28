@@ -393,3 +393,12 @@ Werewolf public ballot playback uses the vote-bloc presentation: the player give
 Omniscient playback keeps the pack music in one continuous section through the hunt, Doctor and Seer actions, their results, and dawn; daytime starts its own section. Mystery does not expose private pack cues. Nonvisual full-body solo sequences cross-dissolve adjacent speakers over 350 ms, with a fade at the beginning and end. The outgoing image stays mounted while the next image loads, retaining its position and scale when its speech bubble disappears. These transitions use the playback clock and the same adjacent cues in exported replays; reduced motion skips the dissolve. Room conversations and ballot collection retain their own staging.
 
 Public ballot explanations use the same measured, timed speech pages as other spoken turns; static ballot labels are reserved for short historical receipts. Pagination preserves the complete accepted text within the bubble in playback, Studio and exports.
+
+Studio and export retain an established ballot portrait when its independently
+selected thought returns to the spoken choice. Portrait-room floor geometry stays
+fixed as speech length changes. House narration uses a single fitted screen for
+the full spoken message. After completed retrospectives, playback and exports
+close on a silent results tableau showing the final cast, winners, survivors and
+recorded eliminations by night/day from the final audience snapshot. The initial
+spoken result still precedes retrospectives; incomplete retrospectives do not
+acquire this closing tableau.

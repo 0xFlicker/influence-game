@@ -16,6 +16,8 @@ import {compilePresentation, thinkingPicture} from "./presentation";
 import {parseTimingProfile} from "./timing";
 import {werewolfBackdrop} from "../../components/games/werewolf/werewolf-room-presentation";
 import {WEREWOLF_ROOMS} from "../../components/games/werewolf/werewolf-rooms";
+import {exportContinuedActor} from "./room-continuity";
+import type {ReplaySource} from "./source";
 
 async function fixture(audience:"mystery"|"omniscient", current = false) {
   const events = current ? await completedCurrentWerewolfFixture("production-binding") : await completedWerewolfResultsFixture("saved", "production-binding");
@@ -57,7 +59,11 @@ test("Studio voting thoughts keep the ballot backdrop through their close-up", a
       && cue.picture.kind === "werewolf" && cue.picture.cue.ballot?.current.voterId === thought.actorId);
     if (closeUp?.picture.kind !== "thinking" || ballot?.picture.kind !== "werewolf") throw new Error("Voting fixture must bind both thought and ballot shots");
     expect(closeUp.picture.backgroundUrl).toBe(WEREWOLF_ROOMS.vote);
+    expect(closeUp.picture.ballotFraming).toBe(true);
     expect(closeUp.picture.backgroundUrl).toBe(werewolfBackdrop(ballot.picture.cue));
+    expect(exportContinuedActor(ballot,closeUp)).toBe(thought.actorId);
+    expect(exportContinuedActor({...ballot,source:{kind:"werewolf",cursor:thought.cursor+1}},closeUp)).toBeNull();
+    expect(exportContinuedActor(ballot)).toBeNull();
     const withGeneratedVillage = thinkingPicture({...ballot,picture:{...ballot.picture,scene:villageScene}}, thought.actorId);
     expect(withGeneratedVillage.scene).toBeNull();
     expect(withGeneratedVillage.backgroundUrl).toBe(WEREWOLF_ROOMS.vote);
@@ -66,6 +72,17 @@ test("Studio voting thoughts keep the ballot backdrop through their close-up", a
   if (conversation?.picture.kind !== "werewolf") throw new Error("Fixture must retain ordinary village conversation");
   expect(werewolfBackdrop(conversation.picture.cue)).toBe(WEREWOLF_ROOMS.village);
   expect(thinkingPicture({...conversation,picture:{...conversation.picture,scene:villageScene}},conversation.speech!.speakerId!).scene).toBe(villageScene);
+});
+test("Influence room thoughts preserve the speech environment and floor framing", () => {
+  const gameId="thought-room";
+  const source: Extract<ReplaySource,{kind:"influence"}> = {kind:"influence",
+    game:{id:gameId,slug:gameId,status:"completed",gameKernel:"classic",players:[{id:"a",name:"Ada",persona:"",status:"alive",shielded:false}]},
+    frames:[],messages:[{id:1,gameId,round:1,phase:"LOBBY",scope:"public",fromPlayerId:"a",fromPlayerName:"Ada",toPlayerIds:null,text:"Let's talk.",timestamp:1}],
+    thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[]}};
+  const speech = buildExportCues(source).find(cue=>cue.picture.kind === "influence" && cue.picture.beat?.kind === "portrait-room");
+  if (!speech) throw new Error("Expected Lobby room");
+  const thought = thinkingPicture(speech,"a");
+  expect(thought.room).toMatchObject({floorPerspective:true,backgroundUrl:"/visual/influence/rooms-v1/lobby.jpg"});
 });
 test("a frozen pre-audio cut binds its original catalog without new House speech or closing reprise", async () => {
   const input=await fixture("omniscient",true);

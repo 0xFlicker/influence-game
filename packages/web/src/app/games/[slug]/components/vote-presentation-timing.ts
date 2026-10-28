@@ -10,3 +10,6 @@ export function votePresentationTiming(elapsedMs: number, durationMs: number, re
   const progress = sceneCameraProgress(elapsedMs - (durationMs - collectionMs), collectionMs);
   return { revealed, progress: reducedMotion && progress > 0 ? 1 : progress };
 }
+/** Match the responsive ledger box and its gap below the solo character. */
+export const VOTE_LEDGER_HEIGHT = "clamp(88px, 28%, 200px)";
+export const voteLedgerInset = (stageHeight: number) => Math.max(88, Math.min(200, stageHeight * .28)) + 24;

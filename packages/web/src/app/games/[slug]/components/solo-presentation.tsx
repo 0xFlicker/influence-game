@@ -1,6 +1,7 @@
 "use client";
 
 import {validHeadRectangle} from "@influence/engine/character-portrait";
+import {useSampledStage} from "@/components/watch/sampled-stage";
 import {useBubbleTypography} from "@/components/watch/use-bubble-typography";
 import {useSceneThinking} from "@/components/watch/watch-thinking";
 import {thinkingFocus, ThinkingFocusOverlay} from "@/components/watch/thinking-focus";
@@ -9,7 +10,7 @@ import { resolveAgentAvatarUrl } from "@/components/agent-avatar";
 import { TimedSpeech } from "./timed-speech";
 import type { VisualPresentationBeat } from "./visual-presentation";
 import { layoutSoloPresentation } from "./solo-presentation-layout";
-import { soloPresentationMotion } from "./solo-presentation-timing";
+import { SOLO_IMAGE_FADE_MS, soloPresentationMotion } from "./solo-presentation-timing";
 import { SCENE_SPEECH_START_MS, sceneSpeechOpacity } from "./scene-speech-timing";
 import { SOLO_STUDIO_BACKDROP, StageBackdrop, RoomBackdrop } from "./stage-backdrop";
 import backdropStyles from "./stage-backdrop.module.css";
@@ -34,9 +35,12 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
   onImageReady?: (source: string | null) => void;
 }) {
   const { player, speech } = beat;
+  const sampled = useSampledStage();
   const motion = speechPresentation === "scene"
     ? { imageOpacity: 1, speechOpacity: sceneSpeechOpacity(speech.text, elapsedMs, reducedMotion), speechElapsedMs: elapsedMs - SCENE_SPEECH_START_MS }
     : soloPresentationMotion(speech.text, elapsedMs, paused, reducedMotion);
+  const portraitOpacity = sampled?.continuedActorId === player.id && elapsedMs < SOLO_IMAGE_FADE_MS
+    ? 1 : motion.imageOpacity;
   const [failedImages, setFailedImages] = useState<ReadonlySet<string>>(new Set());
   const fullBody = player.fullBodyReferenceUrl && !failedImages.has(player.fullBodyReferenceUrl) ? player.fullBodyReferenceUrl : null;
   const portrait = resolveAgentAvatarUrl(player.avatarUrl, player.persona, player.name, player.personaKey);
@@ -90,7 +94,7 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
         setFailedImages(previous => new Set(previous).add(source));
         onImageReady?.(null);
       }}
-      className={`absolute max-w-none ${fullBody ? `object-contain ${backdropStyles.featheredBody}` : "rounded-full object-cover shadow-2xl ring-1 ring-white/30"}`} style={{ ...geometry.image, opacity: imageOpacity ?? motion.imageOpacity }} />
+      className={`absolute max-w-none ${fullBody ? `object-contain ${backdropStyles.featheredBody}` : "rounded-full object-cover shadow-2xl ring-1 ring-white/30"}`} style={{ ...geometry.image, opacity: imageOpacity ?? portraitOpacity }} />
     </div>
     {!thought && !hideSpeech && motion.speechOpacity > 0 && <div data-speech-bubble style={{ ...bubble, opacity: motion.speechOpacity, padding:speechFit.padding }} className="absolute flex flex-col rounded-2xl border border-white/25 bg-black/85 shadow-xl">
       <div className={`mb-2 shrink-0 text-base leading-5 ${speechFit.typography && speechFit.typography.pages.length > 1 && !speechFit.typography.footerHeight ? "pr-12" : ""}`}>
