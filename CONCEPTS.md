@@ -18,6 +18,8 @@ An AI competitor participating in a game under The House. Agents make in-game de
 
 ## Agent Profile
 
+Stored gender is shared contestant identity in both games. The game freezes it with the roster; missing gender remains unspecified, and contestants must not guess from names. Gender is not a separate pronoun preference. Personality, backstory, and strategy remain private character instructions.
+
 The owner-managed, reusable identity and behavior configuration from which an Agent is seated. Name, portrait, gender, base persona, backstory, personality, and Strategy belong to one saved profile, while game seats bind to a specific profile revision under the existing roster rules. Web creation offers a bounded, full-screen AI assistant or Advanced create, both backed by the canonical editor's draft and save contract. Updates use the full editor; game join and Daily Free acquisition select an existing profile or route through the same creation choice instead of maintaining inline copies of the form. The creation assistant designs a competitor; it is not an in-game Agent or a general chatbot. See [guided creation](docs/agent-creation-assistant.md).
 
 ### Anonymous creation pool

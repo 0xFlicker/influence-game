@@ -168,6 +168,7 @@ export async function projectOwnedSeatInTransaction(
   });
   const persona = JSON.stringify({
     name: effectiveRuntimeSnapshot.name,
+    gender: profile.gender,
     personality: effectiveRuntimeSnapshot.personality,
     backstory: effectiveRuntimeSnapshot.backstory,
     strategyHints: effectiveRuntimeSnapshot.strategyInstructions,

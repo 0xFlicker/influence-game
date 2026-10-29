@@ -35,6 +35,24 @@ async function until(ctx: ReturnType<typeof setup>, predicate: (state: WerewolfS
 }
 
 describe("Werewolf authority and recovery", () => {
+  test("every contestant receives frozen roster genders without private character metadata", () => {
+    const { players } = setup();
+    const genders = ["female", "male", "non-binary", null] as const;
+    for (let i = 0; i < genders.length; i++) players[i]!.gender = genders[i];
+    const event = startWerewolf("gender-game", players, werewolfConfig("two_wolves"), "gender-seed");
+    players[0]!.gender = "male";
+    const state = replayWerewolf([event]);
+    for (const actor of state.players) {
+      const observation = observeWerewolf(state, actor.id);
+      expect(observation.board.players).toEqual(state.players.map((player, index) => ({
+        id: player.id, name: player.name, ...(index < genders.length && { gender: genders[index] }), alive: true,
+      })));
+      for (const [index, player] of observation.board.players.entries()) {
+        expect(Object.keys(player).sort()).toEqual(index < genders.length ? ["alive", "gender", "id", "name"] : ["alive", "id", "name"]);
+      }
+    }
+  });
+
   test("an open circuit never becomes speech or a partially committed sealed ballot batch", async () => {
     const ctx = setup();
     await until(ctx, state => nextWerewolfStep(state).kind === "action");

@@ -323,7 +323,7 @@ export class ApiTestMockAgent implements IAgent {
   readonly id: UUID;
   readonly name: string;
 
-  constructor(id: UUID, name: string) {
+  constructor(id: UUID, name: string, readonly gender?: import("@influence/engine").AgentGender | null) {
     this.id = id;
     this.name = name;
   }
@@ -744,13 +744,14 @@ async function startGameWithOwner(
   const agents: IAgent[] = players.map((player) => {
     const persona = JSON.parse(player.persona) as {
       name: string;
+      gender?: import("@influence/engine").AgentGender | null;
       personality?: string;
       strategyHints?: string;
       personaKey?: string;
       backstory?: string;
     };
     if (useTestMockRunner) {
-      return new ApiTestMockAgent(player.id, persona.name);
+      return new ApiTestMockAgent(player.id, persona.name, persona.gender);
     }
 
     const providerRuntimes = runtimesForActor(player.id, "player");
@@ -780,6 +781,7 @@ async function startGameWithOwner(
       persona.backstory,
       memoryStore,
       {
+        gender: persona.gender,
         ...(primaryRuntime.openAIReasoningSummary && { openAIReasoningSummary: primaryRuntime.openAIReasoningSummary }),
         providerProfileId: resolvedModelSelection.providerProfile.id,
         catalogId: resolvedModelSelection.catalogId,

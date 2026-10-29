@@ -50,6 +50,8 @@
  * explanation provenance; recovery preserves already-frozen accounts and hashes.
  * New games freeze the speech contract; accepted historical decisions replay
  * without regeneration. Overlong speech retries include clean UTF-8 overage.
+ * API games freeze stored profile gender into contestant rosters for both games.
+ * Missing gender stays unspecified; prompts must not infer it from names.
  * Native reasoning remains private evidence; no `as any` shortcuts
  * or indirect House calls are permitted.
  * API-backed games default to Public; Unlisted requires --visibility unlisted.

@@ -10,6 +10,7 @@ import { werewolfRoleCoaching } from "../werewolf/strategy";
 
 test.each(["seer", "doctor", "villager", "werewolf"] as const)("%s receives only its own coaching without changing knowledge or the decision contract", async role => {
   const players = Array.from({ length: 8 }, (_, i) => ({ id: `p${i}`, name: `Player ${i}`, personality: `PRIVATE_PERSONALITY_${i}`,
+    gender: (["female", "male", "non-binary", null] as const)[i % 4]!,
     backstory: `PRIVATE_BACKSTORY_${i}`, strategy: `PRIVATE_STRATEGY_${i}`, personaKey: `PRIVATE_ARCHETYPE_${i}`,
     avatarUrl: `https://example.invalid/PRIVATE_ARCHETYPE_${i}.png` }));
   const state = replayWerewolf([startWerewolf("coaching-test", players, werewolfConfig("two_wolves"), "coaching-test")]);
@@ -31,7 +32,8 @@ test.each(["seer", "doctor", "villager", "werewolf"] as const)("%s receives only
       expect(context.seerTiming).toMatchObject({ completedNights, maximumPossibleResults: completedNights });
       const self = players.find(player => player.id === actorId)!;
       expect(context.observation.self).toMatchObject({ personality: self.personality, backstory: self.backstory, strategy: self.strategy });
-      expect(context.observation.board.players).toEqual(players.map(({ id, name }) => ({ id, name, alive: true })));
+      expect(context.observation.board.players).toEqual(players.map(({ id, name, gender }) => ({ id, name, gender, alive: true })));
+      expect(body.messages[0].content).toContain("never guess from names");
       const prompt = JSON.stringify(body.messages);
       for (const player of players) {
         expect(prompt).not.toContain(player.personaKey);

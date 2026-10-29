@@ -59,7 +59,7 @@ export async function freezeWerewolfRoster(tx: Tx, seats: Array<{ id: string; ag
     if (profile.contentRevisionId && !revision) throw new Error("Missing approved character revision");
     const character = revision ? decodeContentSnapshot(revision.snapshot, profile) : profile;
     players.push({ id: seat.id, agentProfileId: profile.id, contentRevisionId: profile.contentRevisionId,
-      name: character.name, personality: character.personality, backstory: character.backstory ?? "",
+      name: character.name, gender: character.gender, personality: character.personality, backstory: character.backstory ?? "",
       strategy: resolveWerewolfStrategy(character.werewolfStrategyStyle, character.personaKey), avatarUrl: character.avatarUrl, personaKey: character.personaKey });
   }
   if (new Set(players.map(player => player.name.trim().toLowerCase())).size !== players.length) throw new WerewolfGameError("Two cast members now share a name. Rename or remove one before starting.");
@@ -80,7 +80,7 @@ export function createWerewolfHousePlayers(existing: Array<Pick<WerewolfPlayer, 
   }
   for (let i = 0; i < count; i++) {
     const identity = getHousePersonaDetails(archetypes[i]!);
-    players.push({ id: randomUUID(), name: names[i]!, personality: identity.personalityBlurb, backstory: "", strategy: resolveWerewolfStrategy(null, archetypes[i]!), avatarUrl: null, personaKey: archetypes[i]! });
+    players.push({ id: randomUUID(), name: names[i]!, gender: null, personality: identity.personalityBlurb, backstory: "", strategy: resolveWerewolfStrategy(null, archetypes[i]!), avatarUrl: null, personaKey: archetypes[i]! });
   }
   return players;
 }

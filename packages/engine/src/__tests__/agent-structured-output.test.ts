@@ -2841,6 +2841,28 @@ describe("InfluenceAgent structured output mode", () => {
     expect(requests[0]).not.toHaveProperty("prompt_cache_options");
   });
 
+  it("supplies the frozen cast genders in contestant prompts, including unspecified identities", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", makeResponsesOpenAIStub(requests,
+      JSON.stringify({ thinking: "Introduce myself.", message: "Hello everyone.", strategyDelta: null }), ""), "gpt-5-nano");
+    const state = new GameState([
+      { id: "atlas-id", name: "Atlas", gender: "female" },
+      { id: "mira-id", name: "Mira", gender: "male" },
+      { id: "vera-id", name: "Vera", gender: "non-binary" },
+      { id: "unknown-id", name: "Unknown", gender: null },
+      { id: "unset-id", name: "Unset" },
+    ]);
+    const replay = GameState.fromCanonicalEvents(state.getCanonicalEvents());
+    expect(replay.getAllPlayers()).toEqual(state.getAllPlayers());
+    agent.onGameStart(replay.gameId, replay.getAllPlayers());
+    await agent.getIntroduction({ ...makeContext(Phase.INTRODUCTION), gameId: replay.gameId });
+    const prompt = JSON.stringify(requests[0]);
+    for (const identity of ["Atlas: gender female", "Mira: gender male", "Vera: gender non-binary", "Unknown: gender unspecified", "Unset: gender unspecified"]) {
+      expect(prompt).toContain(identity);
+    }
+    expect(prompt).toContain("do not guess from names");
+  });
+
   it("uses OpenAI Responses reasoning summaries for message prompts when enabled", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const traces: PrivateDecisionTrace[] = [];
