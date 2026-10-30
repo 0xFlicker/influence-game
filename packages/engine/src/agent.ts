@@ -1,5 +1,6 @@
 import { CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION, type InfluenceDecisionContractVersion, withDecisionSpeech, validateDecisionSpeech, decisionSpeechPolicy } from "./influence-decision-speech";
 import { speechDraftingGuidance } from "./speech-budget";
+import { HOUSE_CAST } from "./house-personas";
 import type { DecisionSchema } from "./model-invocation";
 import { measureLengthFeedback } from "./structured-output";
 import { ContextSpans } from "./context-adaptation";
@@ -6478,23 +6479,8 @@ export function createAgentCast(
   memoryStore?: MemoryStore,
   options: InfluenceAgentOptions = {},
 ): InfluenceAgent[] {
-  const cast: Array<{ name: string; personality: Personality }> = [
-    { name: "Atlas", personality: "strategic" },
-    { name: "Vera", personality: "deceptive" },
-    { name: "Finn", personality: "honest" },
-    { name: "Mira", personality: "social" },
-    { name: "Rex", personality: "aggressive" },
-    { name: "Lyra", personality: "paranoid" },
-    { name: "Kael", personality: "loyalist" },
-    { name: "Echo", personality: "observer" },
-    { name: "Sage", personality: "diplomat" },
-    { name: "Jace", personality: "wildcard" },
-    { name: "Nyx", personality: "contrarian" },
-    { name: "Vex", personality: "broker" },
-  ];
-
-  return cast.map(({ name, personality }) => {
+  return HOUSE_CAST.map(({ name, personality, gender }) => {
     const id: UUID = require("crypto").randomUUID();
-    return new InfluenceAgent(id, name, personality, openaiClient, model, undefined, memoryStore, options);
+    return new InfluenceAgent(id, name, personality, openaiClient, model, undefined, memoryStore, { ...options, gender });
   });
 }

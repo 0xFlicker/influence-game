@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { HOUSE_CAST } from "./house-personas";
 /**
  * Native xAI selects xai:grok-4.3/4.5/4.6 or xai:grok-4.20-multi-agent-0309
  * with XAI_API_KEY. Mutable Katana Grok selections migrate at the same generation;
@@ -51,6 +52,10 @@
  * New games freeze the speech contract; accepted historical decisions replay
  * without regeneration. Overlong speech retries include clean UTF-8 overage.
  * API games freeze stored profile gender into contestant rosters for both games.
+ * API House fills store authored cast gender too; audio defaults use the roster
+ * gender for players without saved profiles. Existing voice snapshots stay frozen.
+ * HOUSE_CAST owns fixed names, archetypes and genders across API/offline casting.
+ * Shuffle whole identities; never pair independent name and archetype pools.
  * Missing gender stays unspecified; prompts must not infer it from names.
  * Native reasoning remains private evidence; no `as any` shortcuts
  * or indirect House calls are permitted.
@@ -423,7 +428,7 @@ import { appendFileSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { GameRunner, type AgentTurnEvent, type GameStreamEvent, type TranscriptEntry } from "./game-runner";
 import type { CanonicalGameEvent } from "./canonical-events";
-import { InfluenceAgent, type Personality } from "./agent";
+import { InfluenceAgent } from "./agent";
 import { LLMHouseInterviewer } from "./house-interviewer";
 import { PromptReuseAggregate, RecallPlanReceiptAggregate } from "./prompt-reuse";
 import { DEFAULT_CONFIG, MIN_NEW_GAME_PLAYERS, Phase, type GameConfig, type UUID } from "./types";
@@ -849,22 +854,7 @@ export function buildSimulationConfig(
 // Cast of available personas
 // ---------------------------------------------------------------------------
 
-const FULL_CAST: Array<{ name: string; personality: Personality }> = [
-  { name: "Atlas", personality: "strategic" },
-  { name: "Vera", personality: "deceptive" },
-  { name: "Finn", personality: "honest" },
-  { name: "Mira", personality: "social" },
-  { name: "Rex", personality: "aggressive" },
-  { name: "Lyra", personality: "paranoid" },
-  { name: "Kael", personality: "loyalist" },
-  { name: "Echo", personality: "observer" },
-  { name: "Sage", personality: "diplomat" },
-  { name: "Jace", personality: "wildcard" },
-  { name: "Rune", personality: "provocateur" },
-  { name: "Wren", personality: "martyr" },
-  { name: "Nyx", personality: "contrarian" },
-  { name: "Vex", personality: "broker" },
-];
+const FULL_CAST = HOUSE_CAST;
 
 function selectCast(
   count: number,
@@ -876,13 +866,13 @@ function selectCast(
   providerExecutionHooks?: ProviderExecutionHooks,
   providerManifest?: readonly LlmProviderRuntime[],
 ): InfluenceAgent[] {
-  let selected: Array<{ name: string; personality: Personality }>;
+  let selected: Array<typeof HOUSE_CAST[number]>;
 
   if (requestedPersonas) {
     // Match requested names to the full cast
     selected = requestedPersonas
       .map((name) => FULL_CAST.find((c) => c.name.toLowerCase() === name.toLowerCase()))
-      .filter((c): c is { name: string; personality: Personality } => c != null);
+      .filter(c => c != null);
 
     if (selected.length < MIN_NEW_GAME_PLAYERS) {
       console.error(
@@ -896,9 +886,10 @@ function selectCast(
     selected = shuffled.slice(0, Math.min(count, shuffled.length));
   }
 
-  return selected.map(({ name, personality }) => {
+  return selected.map(({ name, personality, gender }) => {
     const id: UUID = randomUUID();
     return new InfluenceAgent(id, name, personality, openai, modelRuntime.modelId, undefined, undefined, {
+      gender,
       ...(openAIReasoningSummary && { openAIReasoningSummary }),
       providerProfileId: modelRuntime.providerProfileId,
       ...(modelRuntime.catalogId && { catalogId: modelRuntime.catalogId }),

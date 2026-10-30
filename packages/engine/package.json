@@ -9,6 +9,8 @@
     "./game-follow": "./src/game-follow.ts",
     "./game-follow-influence": "./src/game-follow-influence.ts",
     "./voice-catalog": "./src/voice-catalog.ts",
+    "./house-personas": "./src/house-personas.ts",
+    "./house-character-art": "./src/house-character-art.ts",
     "./audio-delivery": "./src/audio-delivery.ts",
     "./influence-decision-speech": "./src/influence-decision-speech.ts",
     "./retrospective-budget": "./src/retrospective-budget.ts",

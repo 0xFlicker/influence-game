@@ -31,7 +31,7 @@ import {
 } from "../services/deployment-admission.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
 import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
-import { GameState, Phase, type CanonicalGameEvent } from "@influence/engine";
+import { GameState, Phase, getHousePortraitGender, HOUSE_CAST, type CanonicalGameEvent } from "@influence/engine";
 import {
   createCanonicalEventFixture,
   createCompletedCanonicalEventFixture,
@@ -2020,6 +2020,11 @@ describe("Game REST API", () => {
           .toEqual(Array(6).fill("default"));
         const housePlayers = filledPlayers.filter((player) => player.userId === null);
         expect(housePlayers).toHaveLength(5);
+        for (const player of housePlayers) {
+          const persona = JSON.parse(player.persona) as { name: string; gender?: string; personaKey: string };
+          expect(persona.gender).toBe(getHousePortraitGender(persona.name, persona.personaKey));
+          expect(HOUSE_CAST.some(member => member.name === persona.name && member.personality === persona.personaKey)).toBe(true);
+        }
         expect(housePlayers.every((player) => {
           const persona = JSON.parse(player.persona) as {
             personalityBlurb?: string;
@@ -3152,6 +3157,11 @@ describe("Game REST API", () => {
       const names = players.map((p) => JSON.parse(p.persona).name.toLowerCase());
       const uniqueNames = new Set(names);
       expect(uniqueNames.size).toBe(names.length);
+      // Pre-existing waiting House seats acquire portrait metadata before freezing.
+      for (const player of players) {
+        const persona = JSON.parse(player.persona);
+        expect(HOUSE_CAST.find(member => member.name === persona.name)).toMatchObject({ personality: persona.personaKey, gender: persona.gender });
+      }
 
       // Stop the game to clean up
       await app.request(`/api/games/${id}/stop`, authPost(adminToken));

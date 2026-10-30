@@ -3,7 +3,7 @@
 import type { Personality } from "./agent";
 
 // ---------------------------------------------------------------------------
-// Agent name pool — diverse names for AI players
+// Existing Agent Profile name-reservation policy, independent of cast selection.
 // ---------------------------------------------------------------------------
 
 export const HOUSE_AGENT_NAMES = [
@@ -12,6 +12,92 @@ export const HOUSE_AGENT_NAMES = [
   "Nyx", "Orion", "Zara", "Riven", "Luna",
   "Thane", "Iris", "Cyrus", "Wren", "Dax",
 ] as const;
+
+/** Curated from the bundled fictional portraits and their authored prompts.
+ * Order also defines the existing deterministic fallback portrait selection.
+ */
+const HOUSE_PORTRAIT_GENDERS = {
+  honest: "male", strategic: "male", deceptive: "female", paranoid: "female", social: "female",
+  aggressive: "male", loyalist: "male", observer: "female", diplomat: "female", wildcard: "male",
+  contrarian: "female", provocateur: "male", martyr: "female",
+  broker: "female",
+} as const;
+export type HousePortraitKey = keyof typeof HOUSE_PORTRAIT_GENDERS;
+export const HOUSE_PORTRAIT_KEYS = Object.freeze(Object.keys(HOUSE_PORTRAIT_GENDERS) as (keyof typeof HOUSE_PORTRAIT_GENDERS)[]);
+
+/** Same portrait selection for viewers, visual production, and House casting. */
+export function getHousePortraitKey(name: string, personaKey?: string | null): keyof typeof HOUSE_PORTRAIT_GENDERS {
+  const key = personaKey?.trim().toLowerCase();
+  if (key && Object.hasOwn(HOUSE_PORTRAIT_GENDERS, key)) return key as keyof typeof HOUSE_PORTRAIT_GENDERS;
+  let hash = 0;
+  for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return HOUSE_PORTRAIT_KEYS[hash % HOUSE_PORTRAIT_KEYS.length]!;
+}
+
+/** Apply only to built-in House seats, never infer an owned character's gender. */
+export function getHousePortraitGender(name: string, personaKey?: string | null): "male" | "female" {
+  return HOUSE_PORTRAIT_GENDERS[getHousePortraitKey(name, personaKey)];
+}
+
+/** Original authored identities. Shuffle characters, never names and archetypes separately. */
+export const HOUSE_CAST = Object.freeze([
+  { name: "Atlas", personality: "strategic", gender: "male" },
+  { name: "Vera", personality: "deceptive", gender: "female" },
+  { name: "Finn", personality: "honest", gender: "male" },
+  { name: "Mira", personality: "social", gender: "female" },
+  { name: "Rex", personality: "aggressive", gender: "male" },
+  { name: "Lyra", personality: "paranoid", gender: "female" },
+  { name: "Kael", personality: "loyalist", gender: "male" },
+  { name: "Echo", personality: "observer", gender: "female" },
+  { name: "Sage", personality: "diplomat", gender: "female" },
+  { name: "Jace", personality: "wildcard", gender: "male" },
+  { name: "Rune", personality: "provocateur", gender: "male" },
+  { name: "Wren", personality: "martyr", gender: "female" },
+  { name: "Nyx", personality: "contrarian", gender: "female" },
+  { name: "Vex", personality: "broker", gender: "female" },
+] as const satisfies readonly { name: string; personality: Personality; gender: "male" | "female" }[]);
+
+export class HouseCastCapacityError extends Error {}
+
+/** Select distinct complete identities. A restricted pool cannot clone a character. */
+export function pickHouseCast(count: number, options: {
+  excludeNames?: readonly string[];
+  excludeArchetypes?: readonly string[];
+  personaPool?: readonly Personality[];
+  fillStrategy?: "balanced" | "random";
+} = {}) {
+  if (!Number.isInteger(count) || count < 0) throw new Error("House cast count must be a nonnegative integer");
+  const excluded = new Set(options.excludeNames?.map(name => name.trim().toLowerCase()));
+  const pool = new Set(options.personaPool ?? HOUSE_CAST.map(member => member.personality));
+  const available = HOUSE_CAST.filter(member => !excluded.has(member.name.toLowerCase()) && pool.has(member.personality));
+  if (available.length < count) throw new HouseCastCapacityError(`Only ${available.length} distinct House characters are available for ${count} seats. Add archetypes to the casting pool or seat owned agents.`);
+  for (let index = available.length - 1; index > 0; index--) {
+    const other = Math.floor(Math.random() * (index + 1));
+    [available[index], available[other]] = [available[other]!, available[index]!];
+  }
+  if (options.fillStrategy !== "random") {
+    const used = new Set(options.excludeArchetypes);
+    available.sort((left, right) => Number(used.has(left.personality)) - Number(used.has(right.personality)));
+  }
+  return available.slice(0, count);
+}
+
+/** Reconcile waiting House seats once, before their immutable game-start roster.
+ * Keep distinct existing archetypes first; replace duplicated/unknown identities.
+ */
+export function restoreHouseCast(personaKeys: readonly (string | null | undefined)[], excludeNames: readonly string[], personaPool: readonly Personality[] = HOUSE_CAST.map(member => member.personality)) {
+  const used = new Set(excludeNames.map(name => name.trim().toLowerCase()));
+  const pool = new Set(personaPool);
+  const matches = personaKeys.map(key => {
+    const member = HOUSE_CAST.find(candidate => candidate.personality === key && pool.has(candidate.personality) && !used.has(candidate.name.toLowerCase()));
+    if (member) used.add(member.name.toLowerCase());
+    return member;
+  });
+  const remaining = HOUSE_CAST.filter(member => pool.has(member.personality) && !used.has(member.name.toLowerCase()));
+  const missing = matches.filter(member => !member).length;
+  if (remaining.length < missing) throw new HouseCastCapacityError(`The casting pool cannot supply ${personaKeys.length} distinct House characters. Add archetypes or seat owned agents.`);
+  return matches.map(member => member ?? remaining.shift()!);
+}
 
 const NORMALIZED_HOUSE_AGENT_NAMES = new Set(
   HOUSE_AGENT_NAMES.map((name) => name.toLowerCase()),
@@ -88,7 +174,7 @@ const DEFAULT_BLURBS: Record<Personality, { personality: string; strategy: strin
 // Deterministic persona details
 // ---------------------------------------------------------------------------
 
-export const HOUSE_PERSONA_KEYS = Object.keys(DEFAULT_BLURBS) as Personality[];
+export const HOUSE_PERSONA_KEYS: Personality[] = HOUSE_CAST.map(member => member.personality);
 
 export function getHousePersonaDetails(archetype: Personality): {
   personalityBlurb: string;
@@ -99,43 +185,4 @@ export function getHousePersonaDetails(archetype: Personality): {
     personalityBlurb: defaults.personality,
     strategyHints: defaults.strategy,
   };
-}
-
-/**
- * Pick N unique agent names, excluding any already taken.
- */
-export function pickAgentNames(count: number, excludeNames: string[]): string[] {
-  const excluded = new Set(excludeNames.map((n) => n.toLowerCase()));
-  const available = HOUSE_AGENT_NAMES.filter((n) => !excluded.has(n.toLowerCase()));
-
-  // Shuffle and pick
-  const shuffled = [...available].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, count);
-}
-
-/**
- * Pick archetypes for N agents using a balanced distribution.
- */
-export function pickArchetypes(count: number, excludeArchetypes: Personality[] = []): Personality[] {
-  const ALL_ARCHETYPES: Personality[] = [
-    "honest", "strategic", "deceptive", "paranoid", "social",
-    "aggressive", "loyalist", "observer", "diplomat", "wildcard",
-  ];
-
-  // Start by trying to assign unused archetypes first
-  const excluded = new Set(excludeArchetypes);
-  const unused = ALL_ARCHETYPES.filter((a) => !excluded.has(a));
-  const shuffledUnused = [...unused].sort(() => Math.random() - 0.5);
-
-  const result: Personality[] = [];
-  for (let i = 0; i < count; i++) {
-    if (i < shuffledUnused.length) {
-      result.push(shuffledUnused[i]!);
-    } else {
-      // If we need more than available unique archetypes, allow duplicates
-      result.push(ALL_ARCHETYPES[Math.floor(Math.random() * ALL_ARCHETYPES.length)]!);
-    }
-  }
-
-  return result;
 }

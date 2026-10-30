@@ -100,6 +100,18 @@ when a game/track freezes its roster. Missing historical profiles use a stable
 identity fallback. The eight operator-approved testing selections are listed
 in the plan; install them through the owner API before live qualification.
 
+New House-created casts select complete fixed identities from `HOUSE_CAST` in
+both Influence (including Daily Free) and Werewolf. Atlas is always strategic,
+Jace is always wildcard, and Vex is always broker. Name, archetype, gender and
+portrait travel together; only the selection of characters is shuffled. The
+[cast map](house-cast.md) lists all fourteen identities. Players without saved
+profiles use their stored roster gender for automatic voices. Existing waiting
+House seats reconcile to the catalog at start. The standalone older filler names,
+including Thane, are no longer selected for new casts. This is casting metadata,
+never name-based inference during audio reads or for owned profiles.
+Historical rosters without gender remain unspecified; existing tracks retain
+their frozen assignments and recordings.
+
 ## Production, playback and historical tracks
 
 Browser-blocked or interrupted voice playback pauses the viewer without an enable-audio

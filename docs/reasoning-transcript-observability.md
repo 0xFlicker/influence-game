@@ -2,6 +2,8 @@
 
 Contestant prompts in both games include each character's stored gender from the frozen roster, including the acting character. Influence renders cast identity in its shared system prompt; Werewolf includes `gender` in `board.players`. Missing values remain unspecified, with instructions to use names or neutral language instead of guessing. This shares no private personality, backstory, strategy, or reasoning. Existing frozen rosters are never filled from mutable profiles.
 
+New House-created casts carry fixed authored name/archetype/gender identities from `HOUSE_CAST` at fill time too. API fills, the agent factory and offline simulations use the same map. Inspect the frozen roster fields for those players; audio defaults use stored gender even without a saved profile. Historical missing values and frozen voice snapshots remain unchanged.
+
 Native xAI uses `xai.responses` with the same exact decision/semantic validators.
 Preserve encrypted reasoning items in private raw-response objects, never as
 authored `thinking` or another contestant's context. Responses output usage

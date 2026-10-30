@@ -19,7 +19,7 @@ export const werewolfTurns = pgTable("werewolf_turns", {
   observationHash: text("observation_hash").notNull(),
 }, (table) => [primaryKey({ columns: [table.gameId, table.sequence] }), check("werewolf_turns_sequence_check", sql`${table.sequence} > 0`)]);
 
-export type WerewolfHouseCharacter = Pick<WerewolfPlayer, "name" | "personality" | "backstory" | "strategy" | "avatarUrl" | "personaKey">;
+export type WerewolfHouseCharacter = Pick<WerewolfPlayer, "name" | "gender" | "personality" | "backstory" | "strategy" | "avatarUrl" | "fullBodyReferenceUrl" | "personaKey">;
 
 /** Saved admission only. Character revisions and roles freeze in werewolf.started. */
 export const werewolfLobbySeats = pgTable("werewolf_lobby_seats", {

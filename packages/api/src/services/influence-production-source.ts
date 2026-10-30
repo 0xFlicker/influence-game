@@ -1,4 +1,5 @@
 import {hasLiveAudioTrack} from "./audio-frontier.js";
+import { bundledHouseBody } from "@influence/engine/house-character-art";
 import { resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import { isSpectatorHuddleSpeech } from "@influence/engine";
 import { loadPayloads } from "./payload-storage.js";
@@ -293,7 +294,8 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
     if (validHeadRectangle(member.headRectangle)) fullBodyHeads[member.id] = member.headRectangle;
   }
   const portraits = Object.fromEntries(Object.entries(assets[0]?.portraits ?? {}).filter(([id]) => frozen.has(id)).map(([id, artifact]) => [id, artifactUrl(artifact)]));
-  const cutoutSources = Object.fromEntries(Object.entries(fullBodies).map(([id, url]) => [id,
+  const bundledPlayers = new Set([...frozen].filter(([, seat]) => bundledHouseBody(seat.persona.fullBodyReferenceUrl)).map(([id]) => id));
+  const cutoutSources = Object.fromEntries(Object.entries(fullBodies).filter(([id]) => !bundledPlayers.has(id)).map(([id, url]) => [id,
     url.replace(`/api/admin/production/games/${encodeURIComponent(game.id)}/visual/artifacts/`, `/api/games/${game.id}/visual/artifacts/`)]));
   const cutouts = Object.fromEntries(Object.entries(await readyCharacterCutoutUrls(db, game.id, cutoutSources, new Date(publicationCutoff)))
     .map(([id, url]) => [id, url.replace(`/api/games/${encodeURIComponent(game.id)}/cutouts/`, `/api/admin/production/games/${encodeURIComponent(game.id)}/cutouts/`)]));

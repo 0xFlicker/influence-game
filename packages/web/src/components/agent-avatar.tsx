@@ -3,14 +3,9 @@
 import Image from "next/image";
 import {useState} from "react";
 import { resolveApiUrl } from "@/lib/api";
+import { getHousePortraitKey, HOUSE_PORTRAIT_KEYS } from "@influence/engine/house-personas";
 
-const PERSONA_AVATAR_KEYS = [
-  "honest", "strategic", "deceptive", "paranoid", "social",
-  "aggressive", "loyalist", "observer", "diplomat", "wildcard",
-  "contrarian", "provocateur", "martyr",
-] as const;
-
-const PERSONA_AVATARS: ReadonlySet<string> = new Set(PERSONA_AVATAR_KEYS);
+const PERSONA_AVATARS: ReadonlySet<string> = new Set(HOUSE_PORTRAIT_KEYS);
 
 interface AgentAvatarProps {
   avatarUrl?: string | null;
@@ -35,14 +30,6 @@ export type AgentAvatarSize = keyof typeof SIZE_CLASSES;
 function normalizePersonaKey(value: string | null | undefined): string | null {
   const key = value?.trim().toLowerCase();
   return key && PERSONA_AVATARS.has(key) ? key : null;
-}
-
-function fallbackPersonaKey(name: string): string {
-  let hash = 0;
-  for (const char of name) {
-    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  }
-  return PERSONA_AVATAR_KEYS[hash % PERSONA_AVATAR_KEYS.length] ?? "strategic";
 }
 
 function normalizeUploadedAvatarUrl(avatarUrl: string): string {
@@ -93,7 +80,7 @@ export function resolveAgentAvatarUrl(
   const key =
     normalizePersonaKey(personaKey) ??
     normalizePersonaKey(persona) ??
-    fallbackPersonaKey(name);
+    getHousePortraitKey(name);
   return `/avatars/personas/${key}.png`;
 }
 

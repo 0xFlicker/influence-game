@@ -1,5 +1,15 @@
 # Optional Visual Mode
 
+Default House characters use the fixed [fourteen-character cast](house-cast.md).
+New Influence and Werewolf rosters freeze their approved, already-transparent
+`full-body-v1` references. These bundled WebP assets ship beside the headshots;
+catalog URLs and SHA-256 hashes are checked before reading them. Scene preparation
+copies their verified pixels into the existing private visual-artifact store,
+without generating another full-body image. Playback, Studio and exports use the
+frozen references. Older started rosters do not acquire new bodies on reads.
+Bundled cutouts bypass both new cutout demand and cutout backfill; their approved
+pixels are never replaced by an asynchronous background-removal derivative.
+
 Portraits and timed speech bubbles are the standard presentation for every live game and replay. Visual Mode controls generated media, agent imagery and performance cues; it is selected at game creation and defaults off. A visual game always has a complete portrait-and-speech presentation. Generated images improve that presentation. Best effort is the default failure policy; Require visuals is an explicit championship setting. Cue content never causes suspension.
 
 ## Availability contract

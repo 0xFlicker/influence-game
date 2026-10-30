@@ -36,7 +36,7 @@ import { createLocalProviderExecutionJournal } from "../simulate";
 import { retrospectiveProgress } from "../retrospective-progress";
 import { createLlmProviderRuntimesFromEnv } from "../llm-client";
 import { normalizeProviderManifest, resolveProviderManifest } from "../model-catalog";
-import { getHousePersonaDetails, HOUSE_AGENT_NAMES } from "../house-personas";
+import { getHousePersonaDetails, HOUSE_CAST } from "../house-personas";
 import { defaultWerewolfStrategy } from "./strategy";
 import { werewolfReportEntry } from "./report";
 import { WerewolfModelAgent } from "./agent";
@@ -57,9 +57,8 @@ if (values.audience !== "mystery" && values.audience !== "omniscient") throw new
 const audience = values.audience;
 const config = werewolfConfig(values.preset, Number(values["max-days"]));
 const count = WEREWOLF_PRESETS[config.preset].players;
-const names = HOUSE_AGENT_NAMES.slice(0, count);
-const archetypes = ["honest", "strategic", "deceptive", "paranoid", "social", "observer", "diplomat", "loyalist"] as const;
-const players = names.map((name, i) => ({ id: `seat-${i + 1}`, name, personality: getHousePersonaDetails(archetypes[i]!).personalityBlurb, backstory: "", strategy: defaultWerewolfStrategy(archetypes[i]!), avatarUrl: null }));
+const players = HOUSE_CAST.slice(0, count).map((identity, index) => ({ id: `seat-${index + 1}`, name: identity.name, gender: identity.gender,
+  personaKey: identity.personality, personality: getHousePersonaDetails(identity.personality).personalityBlurb, backstory: "", strategy: defaultWerewolfStrategy(identity.personality), avatarUrl: null }));
 const events = [startWerewolf(`werewolf-${randomUUID()}`, players, config, values.seed)];
 const directory = resolve(values.out ?? join(import.meta.dir,"../../docs/simulations",events[0]!.gameId));
 await mkdir(dirname(directory), { recursive: true });

@@ -1,4 +1,5 @@
 import {freezeLiveVoices} from "./audio-voices.js";
+import { houseFullBodyUrl } from "@influence/engine/house-character-art";
 import { audioReadySequence } from "./audio-frontier.js";
 import { creationModelRouting, sealRosterModelRouting } from "./game-model-routing.js";
 import { loadPayloads } from "./payload-storage.js";
@@ -12,7 +13,7 @@ import { parseGameVisibility } from "@influence/engine/game-visibility";
 import { enabledGameKinds } from "@influence/engine/game-availability";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
-import { getHousePersonaDetails, pickAgentNames, HOUSE_PERSONA_KEYS, assertRetrospectiveInputBinding, materializeRetrospectiveContext, providerLogicalCallId } from "@influence/engine";
+import { getHousePersonaDetails, pickHouseCast, restoreHouseCast, HouseCastCapacityError, HOUSE_PERSONA_KEYS, assertRetrospectiveInputBinding, materializeRetrospectiveContext, providerLogicalCallId } from "@influence/engine";
 import type { ProviderLogicalCallCoordinate } from "@influence/engine";
 import { applyWerewolfEvent, resolveWerewolfStrategy, werewolfActionPlans, observeWerewolf, projectWerewolfView, replayWerewolf, startWerewolf, werewolfConfig, WEREWOLF_PRESETS, werewolfExecutionFinished, compileWerewolfRetrospective } from "@influence/engine/werewolf";
 import type { WerewolfAudience, WerewolfEvent, WerewolfPlayer, WerewolfPreset, WerewolfStore, WerewolfVoteProgress } from "@influence/engine/werewolf";
@@ -36,7 +37,7 @@ export async function readWerewolfEvents(db: Pick<DrizzleDB, "select">, gameId: 
   return rows.map((row) => row.event);
 }
 
-export function normalizeWerewolfCasting(input: { personaPool?: unknown; fillStrategy?: unknown }) {
+export function normalizeWerewolfCasting(input: { personaPool?: unknown; fillStrategy?: unknown }): { personaPool: typeof HOUSE_PERSONA_KEYS; fillStrategy: "balanced" | "random" } {
   const all = HOUSE_PERSONA_KEYS;
   const pool = input.personaPool ?? all;
   if (!Array.isArray(pool) || pool.length < 2 || pool.some(key => !all.includes(key)) || new Set(pool).size !== pool.length) throw new WerewolfGameError("Choose at least two distinct archetypes", 400);
@@ -52,7 +53,7 @@ export async function freezeWerewolfRoster(tx: Tx, seats: Array<{ id: string; ag
   if (profiles.length !== seats.filter(seat => seat.agentProfileId).length) throw new WerewolfGameError("A cast member is no longer available. Remove them before starting.");
   const players: WerewolfPlayer[] = [];
   for (const seat of seats) {
-    if (seat.houseCharacter) { players.push({ ...seat.houseCharacter, id: seat.id }); continue; }
+    if (seat.houseCharacter) continue;
     const profile = profiles.find((p) => p.id === seat.agentProfileId)!;
     if (!hasEligibleAgentContent(profile)) throw new WerewolfGameError("A selected character is archived or awaiting review", 409);
     const [revision] = profile.contentRevisionId ? await loadPayloads(tx.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, profile.contentRevisionId))) : [];
@@ -62,27 +63,35 @@ export async function freezeWerewolfRoster(tx: Tx, seats: Array<{ id: string; ag
       name: character.name, gender: character.gender, personality: character.personality, backstory: character.backstory ?? "",
       strategy: resolveWerewolfStrategy(character.werewolfStrategyStyle, character.personaKey), avatarUrl: character.avatarUrl, personaKey: character.personaKey });
   }
+  const houseSeats = seats.filter(seat => seat.houseCharacter);
+  try {
+    const identities = restoreHouseCast(houseSeats.map(seat => seat.houseCharacter!.personaKey), players.map(player => player.name), casting.personaPool);
+    for (const [index, seat] of houseSeats.entries()) {
+      const identity = identities[index]!, details = getHousePersonaDetails(identity.personality);
+      players.push({ id: seat.id, name: identity.name, gender: identity.gender, personality: details.personalityBlurb,
+        backstory: "", strategy: resolveWerewolfStrategy(null, identity.personality), avatarUrl: null,
+        fullBodyReferenceUrl: houseFullBodyUrl(identity.name, identity.personality), personaKey: identity.personality });
+    }
+  } catch (error) {
+    if (error instanceof HouseCastCapacityError) throw new WerewolfGameError(error.message);
+    throw error;
+  }
   if (new Set(players.map(player => player.name.trim().toLowerCase())).size !== players.length) throw new WerewolfGameError("Two cast members now share a name. Rename or remove one before starting.");
-  return [...players, ...createWerewolfHousePlayers(players, count - players.length, casting)];
+  const bySeat = new Map(players.map(player => [player.id, player]));
+  return [...seats.map(seat => bySeat.get(seat.id)!), ...createWerewolfHousePlayers(players, count - players.length, casting)];
 }
 
 /** Persist these identities during Fill AI; assigning roles remains a Start operation. */
 export function createWerewolfHousePlayers(existing: Array<Pick<WerewolfPlayer, "name" | "personaKey">>, count: number, casting = normalizeWerewolfCasting({})): WerewolfPlayer[] {
-  const players: WerewolfPlayer[] = [];
-  const names = pickAgentNames(count, existing.map((p) => p.name));
-  const archetypes: typeof casting.personaPool = [];
-  let remaining = casting.personaPool.filter(key => !existing.some(player => player.personaKey === key));
-  for (let i = 0; i < count; i++) {
-    if (!remaining.length) remaining = [...casting.personaPool];
-    const pool = casting.fillStrategy === "random" ? casting.personaPool : remaining;
-    const selected = pool[Math.floor(Math.random() * pool.length)]!;
-    archetypes.push(selected); remaining = remaining.filter(key => key !== selected);
+  try {
+    return pickHouseCast(count, { excludeNames: existing.map(player => player.name), excludeArchetypes: existing.flatMap(player => player.personaKey ? [player.personaKey] : []),
+      personaPool: casting.personaPool, fillStrategy: casting.fillStrategy }).map(identity => ({ id: randomUUID(), name: identity.name, gender: identity.gender,
+        personality: getHousePersonaDetails(identity.personality).personalityBlurb, backstory: "", strategy: resolveWerewolfStrategy(null, identity.personality), avatarUrl: null,
+        fullBodyReferenceUrl: houseFullBodyUrl(identity.name, identity.personality), personaKey: identity.personality }));
+  } catch (error) {
+    if (error instanceof HouseCastCapacityError) throw new WerewolfGameError(error.message);
+    throw error;
   }
-  for (let i = 0; i < count; i++) {
-    const identity = getHousePersonaDetails(archetypes[i]!);
-    players.push({ id: randomUUID(), name: names[i]!, gender: null, personality: identity.personalityBlurb, backstory: "", strategy: resolveWerewolfStrategy(null, archetypes[i]!), avatarUrl: null, personaKey: archetypes[i]! });
-  }
-  return players;
 }
 
 /** Starting is one transaction: freeze character + selected game strategy, roles, and model policy. */
