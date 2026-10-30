@@ -2,6 +2,7 @@ import {afterEach,beforeEach,expect,test,spyOn} from "bun:test";
 import {act,cleanup,renderHook} from "@testing-library/react";
 import {Window} from "happy-dom";
 import {useWatchPreferences,watchPreferenceKey} from "../components/watch/use-watch-preferences";
+import {musicVolumeFromSlider, musicVolumeToSlider} from "../components/watch/music-volume";
 const keys=["window","document","navigator","HTMLElement","Element","Node","Event"] as const;
 const original=new Map(keys.map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
 let dom:Window;
@@ -45,14 +46,31 @@ test("blocked storage keeps thinking usable for the session",()=>{
 test("music preferences preserve independent valid fields and synchronize scopes",()=>{
  dom.localStorage.setItem(watchPreferenceKey("viewer"),JSON.stringify({thinking:true,musicMuted:"false",musicVolume:12}));
  const first=renderHook(()=>useWatchPreferences()), second=renderHook(()=>useWatchPreferences()), production=renderHook(()=>useWatchPreferences("production"));
- expect(first.result.current).toMatchObject({thinking:true,musicMuted:true,musicVolume:1});
+ expect(first.result.current).toMatchObject({thinking:true,musicMuted:false,musicVolume:1});
  act(()=>{first.result.current.setMusicMuted(false);first.result.current.setMusicVolume(0.42);});
  expect(second.result.current).toMatchObject({musicMuted:false,musicVolume:0.42});
- expect(production.result.current).toMatchObject({musicMuted:true,musicVolume:0.3});
+ expect(production.result.current).toMatchObject({musicMuted:false,musicVolume:musicVolumeFromSlider(50)});
  first.unmount();
  expect(renderHook(()=>useWatchPreferences()).result.current).toMatchObject({thinking:true,musicMuted:false,musicVolume:0.42});
 });
-test("thinking-only saved preferences keep their choices and default to silent music",()=>{
+test("thinking-only saved preferences keep their choices and default to enabled low-level music",()=>{
  dom.localStorage.setItem(watchPreferenceKey("viewer"),JSON.stringify({thinking:true}));
- expect(renderHook(()=>useWatchPreferences()).result.current).toMatchObject({thinking:true,musicMuted:true,musicVolume:0.3});
+ expect(renderHook(()=>useWatchPreferences()).result.current).toMatchObject({thinking:true,musicMuted:false,musicVolume:musicVolumeFromSlider(50)});
+});
+
+test("new browsers enable music at the midpoint of the audio taper",()=>{
+ const view=renderHook(()=>useWatchPreferences());
+ expect(view.result.current.musicMuted).toBe(false);
+ expect(musicVolumeToSlider(view.result.current.musicVolume)).toBeCloseTo(50);
+ expect(view.result.current.musicVolume).toBeLessThan(.04);
+});
+test("the music taper spreads low gains across the slider and preserves saved levels",()=>{
+ expect(musicVolumeFromSlider(0)).toBe(0);
+ expect(musicVolumeFromSlider(100)).toBeCloseTo(1);
+ expect(musicVolumeFromSlider(90)).toBeLessThan(.51);
+ expect(musicVolumeToSlider(.03)).toBeGreaterThan(49);
+ dom.localStorage.setItem(watchPreferenceKey("viewer"),JSON.stringify({musicMuted:true,musicVolume:.03}));
+ const view=renderHook(()=>useWatchPreferences());
+ expect(view.result.current).toMatchObject({musicMuted:true,musicVolume:.03});
+ expect(musicVolumeFromSlider(musicVolumeToSlider(.03))).toBeCloseTo(.03,8);
 });

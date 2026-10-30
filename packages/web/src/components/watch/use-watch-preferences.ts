@@ -1,9 +1,11 @@
 "use client";
 import {useCallback, useEffect, useRef, useState} from "react";
 
+import {musicVolumeFromSlider} from "./music-volume";
+
 export type WatchPreferenceScope = "viewer" | "production";
 export interface WatchPreferences { thinking: boolean; musicMuted: boolean; musicVolume: number }
-const defaults: WatchPreferences = {thinking:false, musicMuted:true, musicVolume:0.3};
+const defaults: WatchPreferences = {thinking:false, musicMuted:false, musicVolume:musicVolumeFromSlider(50)};
 const changed = "house-watch-preferences-changed";
 export const watchPreferenceKey = (scope: WatchPreferenceScope) => `house:watch:${scope}:v1`;
 function read(scope: WatchPreferenceScope): WatchPreferences {

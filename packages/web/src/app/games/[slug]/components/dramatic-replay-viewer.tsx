@@ -2,6 +2,9 @@
 import type {PresentationCue} from "./types";
 import type {AudioWatchCoordinate} from "@influence/engine/audio-watch";
 import {HouseNarration} from "@/components/watch/house-narration";
+import {influencePresentationPolicy} from "./influence-presentation-director";
+import {influenceProductionReference} from "@/lib/replay-export/influence-production-reference";
+import {useGamePlayback,useIsFollowPlayer} from "@/components/watch/game-playback";
 import {useWatchVoice} from "@/components/watch/use-watch-voice";
 import {influenceTranscriptAudioIdentity} from "@/components/watch/audio-watch-coordinate";
 import {WatchClock} from "@/components/watch/watch-clock";
@@ -64,6 +67,7 @@ import { findPresentationCueIndexForSequence } from "./presentation-sequence";
 import {composeInfluencePresentation, influenceCastArt} from "./influence-presentation";
 import {InfluenceOpeningFrame} from "./influence-opening-frame";
 import {influenceMusic, influenceOpeningAudio} from "./influence-music";
+import {speechMusicVolume} from "@/components/watch/watch-music";
 import {useWatchMusic} from "@/components/watch/use-watch-music";
 import {WatchBuffering} from "@/components/watch/watch-waiting";
 import {useOpeningAudio} from "@/components/watch/use-opening-audio";
@@ -176,6 +180,7 @@ function DramaticReplayTheater({
   const voteLedgers = useMemo(() => compileVoteLedgers(presentationCues), [presentationCues]);
   const revealedWinners = useMemo(() => compileRevealedWinnerCues(presentationCues), [presentationCues]);
   const lobbyMessages = useMemo(() => compileSafetyBounceLobbyLookup(classicCues, scenes), [classicCues, scenes]);
+  const followed=useIsFollowPlayer();
   const {
     director,
     snapshot: directorSnapshot,
@@ -183,7 +188,7 @@ function DramaticReplayTheater({
     reducedMotion,
   } = usePresentationDirector({ followTail: live });
   useWatchAnalytics(director, game.id, "influence", anonymous ? null : live ? "live" : "replay");
-  const { fullscreen, button: fullscreenButton, error: fullscreenError, toggle: toggleFullscreen } = usePlayerFullscreen(animationScope);
+  const { fullscreen: nativeFullscreen, theater, theaterButton, toggleTheater, expanded, button: fullscreenButton, error: fullscreenError, toggle: toggleFullscreen } = usePlayerFullscreen(animationScope,followed);
   const {thinking:showThinking, setThinking:setShowThinking} = preferences;
   const timeline = useWatchTimeline(director, presentationCues, showThinking);
   const controlsRef = useRef<HTMLDivElement>(null);
@@ -313,9 +318,17 @@ function DramaticReplayTheater({
     const actorId=ballot?.voterId ?? (candidate.source === "format" && candidate.kind === "two_names_plea" ? candidate.speakerId : message?.speakerPlayerId ?? message?.fromPlayerId ?? null);
     return {kind:"influence",...transcriptIdentity,eventSequence:candidate.canonicalSequence ?? message?.firstDurableEventSequence ?? 0,actorId,part:"speech"};
   },[scenes]);
-  const [playRequested, setPlayRequested] = useState(true);
-  const voice = useWatchVoice({director,gameId:game.id,audience:"public",thinking:preferences.thinking,live,onPause:() => setPlayRequested(false),
-    coordinate:activeCue ? coordinateForCue(activeCue) : null,coordinateForCue});
+  const [playRequested, setPlayRequested] = useState(!followed);
+  const followPosition = () => activeCue ? {kind:"influence" as const,...influenceProductionReference(activeCue,
+    key=>presentationCues.find(candidate=>candidate.key===key),candidate=>candidate.source==="classic"?scenes[candidate.sceneIndex]?.messages[candidate.messageIndex]:undefined)} : null;
+  const concluded=useCallback(()=>{
+    const current=director.getActiveCue();
+    return current?.source==='endgame'&&current.kind==='endgame_winner'&&current.phase==='RETROSPECTIVE';
+  },[director]);
+  const {onSpeech:onHouseSpeech,houseSpeaking,houseHolding} = useGamePlayback({id:game.id,slug:game.slug,kind:"influence"},followPosition,players,{director,concluded,revealAtMs:activeCue?influencePresentationPolicy.scrubAtMs?.(activeCue)??0:0});
+  const [masterMuted, setMasterMuted] = useState(true);
+  const voice = useWatchVoice({suspended:houseHolding,masterMuted,director,gameId:game.id,audience:"public",thinking:preferences.thinking,live,onPause:() => setPlayRequested(false),
+    coordinate:activeCue ? coordinateForCue(activeCue) : null,coordinateForCue,onSpeech:onHouseSpeech});
   const currentStateEntry = Boolean(live && formatCue && directorSnapshot.hydrationWatermark !== null
     && formatCue.canonicalSequence <= directorSnapshot.hydrationWatermark);
   const isPlaying = directorSnapshot.isPlaying;
@@ -323,17 +336,17 @@ function DramaticReplayTheater({
   const musicSection = influenceMusic(game.id, revealedWinners[Math.min(directorSnapshot.cursor, presentationCues.length - 1)] ?? activeCue, currentMessage);
   const closingMusic = !live && musicSection?.continueAtEnd === true && activeCue !== null
     && directorSnapshot.cursor === presentationCues.length - 1
-    && director.getElapsedBaseMs() >= activeCue.baseDurationMs && playRequested && !preferences.musicMuted;
+    && director.getElapsedBaseMs() >= activeCue.baseDurationMs && playRequested && !masterMuted && !preferences.musicMuted;
   const preparing = live && presentationHydrationStatus !== "ready";
   const ambient = useWatchMusic({
     section:musicSection, playing:(isPlaying || closingMusic) && !openingCue,
-    muted:preferences.musicMuted, volume:preferences.musicVolume * (voice.speaking && !voice.muted ? .35 : 1), preparing,
+    muted:masterMuted || preferences.musicMuted, volume:speechMusicVolume(preferences.musicVolume, voice.speaking && !voice.muted && voice.volume > 0, houseSpeaking), preparing,
     holding:directorSnapshot.waitingAtTail, live, navigationRevision:director.getNavigationRevision(),
   });
   const transportPlaying = isPlaying || closingMusic && (ambient.status === "playing" || ambient.status === "loading");
   const openingAudio = useOpeningAudio({
     tracks:() => influenceOpeningAudio(openingCue, director.getElapsedBaseMs()),
-    playing:isPlaying && !preparing, muted:preferences.musicMuted, volume:preferences.musicVolume, speed,
+    playing:isPlaying && !preparing, muted:masterMuted || preferences.musicMuted, volume:speechMusicVolume(preferences.musicVolume, voice.speaking && !voice.muted && voice.volume > 0, houseSpeaking), speed,
   }, director);
   const {suspend: suspendMusic} = openingCue ? openingAudio : ambient;
   const {unlock: unlockAmbient, restart: restartAmbient} = ambient;
@@ -378,14 +391,14 @@ function DramaticReplayTheater({
       director.load(presentationCues, index);
       director.seekTimeline(index, shared.time * 1000, shared.thinking);
       initialSequenceSeekAppliedRef.current = true;
-      director.play();
+      if (!followed) director.play();
       return;
     }
     if (startSequence !== undefined && !initialSequenceSeekAppliedRef.current && director.getSnapshot().cueKeys.length === 0) {
       const seekIndex = findPresentationCueIndexForSequence(presentationCues, startSequence);
       director.load(presentationCues, Math.max(0,seekIndex));
       initialSequenceSeekAppliedRef.current = true;
-      director.play();
+      if (!followed) director.play();
       return;
     }
     if (live && director.getSnapshot().cueKeys.length === 0) {
@@ -397,19 +410,20 @@ function DramaticReplayTheater({
       } else {
         director.reconnect(presentationCues);
       }
-      director.play();
+      if (!followed) director.play();
       return;
     }
     if (director.getSnapshot().cueKeys.length === 0) {
       director.load(presentationCues);
       director.seek(0, 0);
-      director.play();
+      if (!followed) director.play();
       return;
     }
     // Late visual/timing metadata must retain the selected source and local time,
     // including on completed replays.
     director.append(presentationCues);
   }, [
+    followed,
     director,
     directorSnapshot.cueKeys.length,
     live,
@@ -447,7 +461,7 @@ function DramaticReplayTheater({
   ]);
   const isTwoNamesPresentation = formatCue?.after.activeFormatId === "two_names";
   const isEmpowerPresentation = formatCue?.kind === "empowered_tally" || formatCue?.kind === "empowered_tie";
-  const usesFullHeightContent = Boolean(openingCue) || fullscreen || isEmpowerPresentation || formatCue?.kind === "two_names_plea" || visual.beat !== null;
+  const usesFullHeightContent = Boolean(openingCue) || expanded || isEmpowerPresentation || formatCue?.kind === "two_names_plea" || visual.beat !== null;
   const isSoloPresentation = visual.beat?.kind === "portrait" || visual.beat?.kind === "nominee-selection";
   const isRoomPresentation = visual.beat?.kind === "scene" || visual.beat?.kind === "portrait-room" || visual.beat?.kind === "safety-bounce" || visual.beat?.kind === "winner";
   useEffect(() => {
@@ -463,9 +477,9 @@ function DramaticReplayTheater({
   }, [activeCue?.canonicalSequence, canonicalReplayFrame, allVisibleMessages, onPlaybackStateChange, presentedFormatSnapshot, replayPlayers, scene]);
 
   const advanceMessage = useCallback(() => {
-    if (!preferences.musicMuted) unlockMusic();
+    if (!masterMuted && !preferences.musicMuted) unlockMusic();
     director.manualAdvance();
-  }, [director, unlockMusic, preferences.musicMuted]);
+  }, [director, unlockMusic, preferences.musicMuted, masterMuted]);
 
   const stepBackOneCue = useCallback(() => {
     suspendMusic(); setPlayRequested(false);
@@ -482,7 +496,7 @@ function DramaticReplayTheater({
     if (transportPlaying) pausePresentation();
     else {
       voice.resume();
-      if (!preferences.musicMuted) unlockMusic();
+      if (!masterMuted && !preferences.musicMuted) unlockMusic();
       setPlayRequested(true); director.play();
     }
   };
@@ -517,7 +531,7 @@ function DramaticReplayTheater({
 
   // Reset auto-hide timer helper
   const resetControlsTimer = useCallback(() => {
-    if (embedded && !fullscreen) {
+    if (embedded && !expanded) {
       setControlsVisible(true);
       return;
     }
@@ -525,7 +539,7 @@ function DramaticReplayTheater({
     controlsTimer.current = setTimeout(() => {
       if (!controlsHovered.current && !controlsRef.current?.contains(document.activeElement)) setControlsVisible(false);
     }, 3000);
-  }, [embedded, fullscreen]);
+  }, [embedded, expanded]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -533,7 +547,7 @@ function DramaticReplayTheater({
       if (isPlaying) resetControlsTimer();
     });
     return () => { cancelAnimationFrame(frame); if (controlsTimer.current) clearTimeout(controlsTimer.current); };
-  }, [fullscreen, isPlaying, resetControlsTimer]);
+  }, [expanded, isPlaying, resetControlsTimer]);
 
   // Click/tap handler — if controls are hidden, show them first (don't advance).
   // If controls are already visible, advance the message.
@@ -549,18 +563,18 @@ function DramaticReplayTheater({
 
   // Auto-hide controls (mouse for desktop)
   const handleMouseMove = useCallback(() => {
-    if (embedded && !fullscreen) return;
+    if (embedded && !expanded) return;
     setControlsVisible(true);
     resetControlsTimer();
-  }, [embedded, fullscreen, resetControlsTimer]);
+  }, [embedded, expanded, resetControlsTimer]);
 
   // Auto-hide controls (touch for mobile)
   const handleTouchStart = useCallback(() => {
-    if (embedded && !fullscreen) return;
+    if (embedded && !expanded) return;
     if (controlsVisible) {
       resetControlsTimer();
     }
-  }, [controlsVisible, embedded, fullscreen, resetControlsTimer]);
+  }, [controlsVisible, embedded, expanded, resetControlsTimer]);
 
   useWatchKeyboard({
     toggle: togglePlay,
@@ -620,13 +634,14 @@ function DramaticReplayTheater({
           ? "relative h-full min-h-0 overflow-hidden"
           : "fixed inset-0 z-30 influence-shell"
       }`}
-      data-player-fullscreen={fullscreen || undefined}
-      style={fullscreen ? { position: "fixed", inset: 0, width: "100vw", height: "100dvh", maxWidth: "none", maxHeight: "none", margin: 0, padding: 0, border: 0, zIndex: 1000, background: "black" } : undefined}
+      data-player-fullscreen={nativeFullscreen || undefined}
+      data-player-theater={theater || undefined}
+      style={expanded ? { position: "fixed", inset: 0, width: "100vw", height: "100dvh", maxWidth: "none", maxHeight: "none", margin: 0, padding: 0, border: 0, zIndex: 1000, background: "black" } : undefined}
       onClick={handleClick}
       onMouseMove={handleMouseMove}
       onTouchStart={handleTouchStart}
     >
-      {!embedded && !fullscreen && (
+      {!embedded && !expanded && (
         <>
           <div className="influence-phase-atmosphere" />
           <div className="influence-phase-vignette" />
@@ -635,7 +650,7 @@ function DramaticReplayTheater({
       )}
 
       {/* Exit button — top-left, auto-hides with controls */}
-      {!embedded && !fullscreen && (
+      {!embedded && !expanded && (
         <button
           type="button"
           data-replay-controls
@@ -655,7 +670,7 @@ function DramaticReplayTheater({
       )}
 
       {/* Top bar — phase context */}
-      {!openingCue && !embedded && !fullscreen && (
+      {!openingCue && !embedded && !expanded && (
         <div className={`flex-shrink-0 px-4 md:px-6 pt-4 md:pt-5 pb-2 md:pb-3 flex items-center justify-between z-[60] pointer-events-none transition-opacity duration-500 ${
           controlsVisible || !isPlaying ? "opacity-100" : "opacity-0"
         }`}>
@@ -681,7 +696,7 @@ function DramaticReplayTheater({
       )}
 
       {/* Game state HUD — top-right corner, auto-hides with controls, hidden on mobile */}
-      {!openingCue && !embedded && !fullscreen && (
+      {!openingCue && !embedded && !expanded && (
         <div
           data-replay-controls
         ref={controlsRef}
@@ -704,7 +719,7 @@ function DramaticReplayTheater({
       )}
 
       {/* Scene progress bar */}
-      <div className={`shrink-0 px-6 z-[60] ${fullscreen ? "hidden" : ""}`}>
+      <div className={`shrink-0 px-6 z-[60] ${expanded ? "hidden" : ""}`}>
         <div className="flex h-0.5 rounded-full overflow-hidden bg-white/5 gap-px">
           {presentationCues.map((cue, i) => (
             <div
@@ -727,7 +742,7 @@ function DramaticReplayTheater({
           usesFullHeightContent
             ? "items-stretch overflow-hidden"
             : "items-start overflow-y-auto overscroll-y-contain"
-        } justify-center ${openingCue ? "" : fullscreen ? isRoomPresentation || isSoloPresentation ? "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]" : "pb-[140px] pt-[env(safe-area-inset-top)]" : isSoloPresentation || isRoomPresentation ? "" : isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
+        } justify-center ${openingCue ? "" : expanded ? isRoomPresentation || isSoloPresentation ? "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]" : "pb-[140px] pt-[env(safe-area-inset-top)]" : isSoloPresentation || isRoomPresentation ? "" : isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
       >
         {openingCue ? <>
           <WatchClock director={director}>{elapsed => <InfluenceOpeningFrame cue={openingCue} elapsedMs={elapsed} navigationRevision={director.getNavigationRevision()} reduced={reducedMotion} playing={isPlaying} speed={speed}
@@ -741,15 +756,15 @@ function DramaticReplayTheater({
               if (firstGameCue >= 0) director.seek(firstGameCue);
             }}>Skip intro</button>
         </> : <WatchThinking director={director} cueKey={activeCue?.key ?? null} enabled={showThinking} speaker={thinkingSpeaker} load={loadThinking}>
-        <div className={`mx-auto w-full min-h-0 ${!usesFullHeightContent ? "my-auto" : ""} ${usesFullHeightContent ? "flex flex-1 flex-col" : ""} ${fullscreen || isSoloPresentation || isRoomPresentation ? "" : "max-w-3xl"}`}>
+        <div className={`mx-auto w-full min-h-0 ${!usesFullHeightContent ? "my-auto" : ""} ${usesFullHeightContent ? "flex flex-1 flex-col" : ""} ${expanded || isSoloPresentation || isRoomPresentation ? "" : "max-w-3xl"}`}>
           {formatCompilationNotice ? (
             <div className="mb-3 shrink-0">{formatCompilationNotice}</div>
           ) : null}
-          {visual?.beat ? <VisualPresentation hideHouseNarration={voice.houseNarrationAvailable} fullscreen={fullscreen} director={director} currentStateEntry={currentStateEntry} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion}
+          {visual?.beat ? <VisualPresentation hideHouseNarration={voice.houseNarrationAvailable} fullscreen={expanded} director={director} currentStateEntry={currentStateEntry} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion}
             voteLedger={voteLedgers[directorSnapshot.cursor] ?? null} roster={formatRoster.map(player => ({ ...player, avatarUrl: visualData?.portraits[player.id] ?? player.avatarUrl }))} /> : <>
           {formatCue && (
             <div className={`min-h-0 flex-1 ${formatCue.kind === "two_names_plea" ? "h-full" : ""}`}>
-              <FitPresentation enabled={fullscreen || isEmpowerPresentation}><FormatPresentation
+              <FitPresentation enabled={expanded || isEmpowerPresentation}><FormatPresentation
                 cue={formatCue}
                 roster={formatRoster}
                 currentStateEntry={Boolean(
@@ -766,7 +781,7 @@ function DramaticReplayTheater({
 
         </div>
         </WatchThinking>}
-        {voice.houseNarrationAvailable && <WatchClock director={director}>{() => <HouseNarration text={currentMessage?.text ?? ""} window={voice.getHouseNarration()} bottom={fullscreen ? 140 : 16} />}</WatchClock>}
+        {voice.houseNarrationAvailable && <WatchClock director={director}>{() => <HouseNarration text={currentMessage?.text ?? ""} window={voice.getHouseNarration()} bottom={expanded ? 140 : 16} />}</WatchClock>}
         {live && isPlaying && directorSnapshot.waitingAtTail && activeCue && <WatchBuffering />}
       </div>
 
@@ -778,28 +793,25 @@ function DramaticReplayTheater({
         onBlurCapture={event => {if (!event.currentTarget.contains(event.relatedTarget)) controlsHovered.current = false;}}
         onPointerEnter={(event) => { if (event.pointerType === "mouse") controlsHovered.current = true; }}
         onPointerLeave={() => { controlsHovered.current = false; resetControlsTimer(); }}
-        className={`${fullscreen ? "absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/85 to-transparent" : "shrink-0 border-t border-white/5 bg-black/70"} px-3 md:px-6 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 md:py-2 transition-opacity duration-500 z-[60] backdrop-blur-sm ${
+        className={`${expanded ? "absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/85 to-transparent" : "shrink-0 border-t border-white/5 bg-black/70"} px-3 md:px-6 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 md:py-2 transition-opacity duration-500 z-[60] backdrop-blur-sm ${
           controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
         {shared?.cue && presentationCues.length > 0 && !presentationCues.some(cue => cue.key === shared.cue) && <p role="alert">This replay moment is no longer available.</p>}
         {voice.error && <div role="alert">{voice.error}</div>}
-        {voice.available && <label className="text-xs">Voice volume <input aria-label="Voice volume" type="range" min="0" max="1" step="0.05" value={voice.muted ? 0 : voice.volume} onChange={event => {voice.setMuted(false);voice.setVolume(Number(event.target.value));}} /></label>}
+
         <WatchTransport getShareHref={() => {
           const cue = director.getActiveCue();
           const href = cue?.canonicalSequence != null ? gameReplaySequenceHref(game.slug, cue.canonicalSequence) : gameReplayHref(game.slug);
           return cue ? replayShareHref(href, cue.key, director.getTimelineElapsedBaseMs(), director.getSnapshot().speed, preferences) : href;
-        }} fullscreen={fullscreen} fullscreenButton={fullscreenButton} toggleFullscreen={toggleFullscreen} fullscreenError={fullscreenError}
+        }} fullscreen={nativeFullscreen} theater={theater} theaterButton={theaterButton} toggleTheater={toggleTheater} fullscreenButton={fullscreenButton} toggleFullscreen={toggleFullscreen} fullscreenError={fullscreenError}
           header={activeFormatIdForSocialScene ? <div className="mb-3 flex justify-center"><ActiveFormatLabel formatId={activeFormatIdForSocialScene} /></div> : null}
           isPlaying={transportPlaying} togglePlay={togglePlay} speed={speed} onSpeed={value => director.setSpeed(value)}
-          music={{muted:preferences.musicMuted, volume:preferences.musicVolume, status:openingCue ? openingAudio.status : ambient.status,
-            onMute:() => {
-              if (isPlaying) voice.resume();
-              const status = openingCue ? openingAudio.status : ambient.status;
-              const muted = status === "blocked" || status === "unavailable" ? preferences.musicMuted : !preferences.musicMuted;
-              preferences.setMusicMuted(muted);
-              unlockMusic(muted);
-            }, onVolume:preferences.setMusicVolume, retry:unlockMusic}}
+          audio={{muted:masterMuted,onMute:() => {if (isPlaying) voice.resume();setMasterMuted(!masterMuted);unlockMusic(!masterMuted || preferences.musicMuted);}}}
+          voice={voice.available ? {muted:voice.muted,volume:voice.volume,onMute:() => voice.setMuted(!voice.muted),onVolume:voice.setVolume} : undefined}
+          music={{muted:preferences.musicMuted,volume:preferences.musicVolume,status:openingCue ? openingAudio.status : ambient.status,
+            onMute:() => {if (isPlaying) voice.resume();preferences.setMusicMuted(!preferences.musicMuted);unlockMusic(masterMuted || !preferences.musicMuted);},
+            onVolume:preferences.setMusicVolume,retry:() => unlockMusic(masterMuted || preferences.musicMuted)}}
           onScrubStart={() => {ambient.beginScrub(); openingAudio.beginScrub();}}
           onScrubEnd={() => {ambient.endScrub(); openingAudio.endScrub();}}
           goToBeginning={goToBeginning} goToPrevScene={goToPrevScene} onSeek={frame => {const target = timeline.target(frame); if (target) {suspendMusic(); director.setFollowTail(false); director.seekTimeline(target.index, target.elapsedMs);}}} timeline={timeline} goToNextScene={goToNextScene} goToEnd={goToEnd}

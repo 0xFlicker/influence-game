@@ -25,6 +25,7 @@ interface BrowserSpecRunner {
 }
 
 const browserSpecs = new Map<string, BrowserSpecOwner>([
+  ["e2e/house-follow.spec.ts", {lanes:["browser-coverage"],runners:[{name:"test:e2e:house-follow",command:"bunx playwright test e2e/house-follow.spec.ts --project=chromium --retries=0"}]}],
   ["e2e/public-player-identity.spec.ts", {
     lanes: ["browser-coverage"],
     runners: [{

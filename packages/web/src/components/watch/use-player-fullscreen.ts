@@ -2,11 +2,13 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
 /** Fullscreen the existing element: never portal or remount the director. */
-export function usePlayerFullscreen(frame: RefObject<HTMLElement | null>) {
+export function usePlayerFullscreen(frame: RefObject<HTMLElement | null>, initiallyTheater = false) {
   const [fullscreen, setFullscreen] = useState(false);
+  const [theater, setTheater] = useState(initiallyTheater);
+  const theaterButton = useRef<HTMLButtonElement>(null);
   const [error, setError] = useState<string | null>(null);
   const button = useRef<HTMLButtonElement>(null);
-  const fallback = useRef(false);
+  const fallback = useRef(initiallyTheater);
   const exit = useCallback(async () => {
     try {
       if (document.fullscreenElement === frame.current) await document.exitFullscreen();
@@ -17,14 +19,16 @@ export function usePlayerFullscreen(frame: RefObject<HTMLElement | null>) {
         fallback.current = false;
       }
       setFullscreen(false);
-      button.current?.focus();
+      setTheater(false);
+      (theater ? theaterButton : button).current?.focus();
     } catch { setError("Could not exit fullscreen. Press Escape to return."); }
-  }, [frame]);
-  const enter = useCallback(async () => {
+  }, [frame, theater]);
+  const enter = useCallback(async (theaterMode = false) => {
+    if (fullscreen || theater) await exit();
     const element = frame.current;
     if (!element) return;
     setError(null);
-    if (element.requestFullscreen && document.fullscreenEnabled !== false) {
+    if (!theaterMode && element.requestFullscreen && document.fullscreenEnabled !== false) {
       try { await element.requestFullscreen({navigationUI:"hide"}); setFullscreen(true); return; }
       catch (cause) { console.info("Native fullscreen unavailable; using viewport fullscreen.", cause); }
     }
@@ -34,8 +38,9 @@ export function usePlayerFullscreen(frame: RefObject<HTMLElement | null>) {
       try { element.setAttribute("popover", "manual"); element.showPopover(); }
       catch (cause) { element.removeAttribute("popover"); console.warn("Top-layer fullscreen unavailable; using fixed viewport.", cause); }
     }
-    setFullscreen(true);
-  }, [frame]);
+    setTheater(theaterMode);
+    setFullscreen(!theaterMode);
+  }, [frame, fullscreen, theater, exit]);
   useEffect(() => {
     const change = () => {
       if (fallback.current) return;
@@ -47,11 +52,16 @@ export function usePlayerFullscreen(frame: RefObject<HTMLElement | null>) {
     return () => document.removeEventListener("fullscreenchange", change);
   }, [frame]);
   useEffect(() => {
-    if (!fullscreen) return;
+    if (!fullscreen && !theater) return;
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const restore: Array<() => void> = [];
     if (fallback.current) {
+      const element=frame.current;
+      if(element?.showPopover && !element.hasAttribute("popover")) {
+        try {element.setAttribute("popover","manual");element.showPopover();}
+        catch(cause) {element.removeAttribute("popover");console.warn("Top-layer theater unavailable; using fixed viewport.",cause);}
+      }
       let branch: HTMLElement | null = frame.current;
       while (branch?.parentElement) {
         for (const sibling of Array.from(branch.parentElement.children)) {
@@ -71,7 +81,7 @@ export function usePlayerFullscreen(frame: RefObject<HTMLElement | null>) {
       }
     }
     const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { event.preventDefault(); void exit(); }
+      if (event.key === "Escape" && !frame.current?.querySelector('[role="dialog"]')) { event.preventDefault(); void exit(); }
       if (event.key === "Tab") {
         const controls = Array.from(frame.current?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input') ?? []).filter((node) => node.getClientRects().length > 0);
         const first = controls[0], last = controls.at(-1);
@@ -79,8 +89,10 @@ export function usePlayerFullscreen(frame: RefObject<HTMLElement | null>) {
         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
       }
     };
-    document.addEventListener("keydown", key);
-    return () => { restore.reverse().forEach((reset) => reset()); document.body.style.overflow = previous; document.removeEventListener("keydown", key); };
-  }, [fullscreen, exit, frame]);
-  return { fullscreen, button, error, toggle: () => fullscreen ? exit() : enter() };
+    // Check dialogs before their Escape handler removes them from the DOM.
+    document.addEventListener("keydown", key, true);
+    return () => { restore.reverse().forEach((reset) => reset()); document.body.style.overflow = previous; document.removeEventListener("keydown", key, true); };
+  }, [fullscreen, theater, exit, frame]);
+  return { fullscreen, theater, expanded: fullscreen || theater, button, theaterButton, error,
+    toggle: () => fullscreen ? exit() : enter(), toggleTheater: () => theater ? exit() : enter(true) };
 }

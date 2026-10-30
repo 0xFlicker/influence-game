@@ -6,6 +6,8 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
+    "./game-follow": "./src/game-follow.ts",
+    "./game-follow-influence": "./src/game-follow-influence.ts",
     "./voice-catalog": "./src/voice-catalog.ts",
     "./audio-delivery": "./src/audio-delivery.ts",
     "./influence-decision-speech": "./src/influence-decision-speech.ts",

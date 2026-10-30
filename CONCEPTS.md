@@ -980,3 +980,7 @@ Current Claude selections use native Haiku/Sonnet/Opus 5.5 or Fable 5.1. A
 selection-policy upgrade changes mutable preferences and unsealed waiting games;
 it never changes the provider identity of a frozen game or accepted attempt.
 See [native Anthropic](docs/native-anthropic.md).
+
+### House follow feed
+
+A game adapter supplies canonical knowledge through the player's current semantic action, independent of rendered text and the Show thinking toggle. Mystery Werewolf excludes roles and thinking; Omniscient and Influence include permitted cognition. Tab images provide supplemental visual context. Actual game speech temporarily takes priority over host speech without ending either session. See [House follow](docs/house-follow.md).
