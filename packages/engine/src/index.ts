@@ -621,10 +621,15 @@ export type {
 // House personas
 export {
   HOUSE_AGENT_NAMES,
+  getHousePortraitGender,
+  getHousePortraitKey,
+  HOUSE_PORTRAIT_KEYS,
   getHousePersonaDetails,
   isReservedHouseAgentName,
-  pickAgentNames,
-  pickArchetypes,
+  HOUSE_CAST,
+  pickHouseCast,
+  restoreHouseCast,
+  HouseCastCapacityError,
   HOUSE_PERSONA_KEYS,
 } from "./house-personas";
 

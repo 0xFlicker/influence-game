@@ -129,6 +129,13 @@ const personas: PersonaPrompt[] = [
     tags: "gentle resolve, luminous feathers motif, protective warmth, melancholy neon halo",
     presentation: "feminine",
   },
+  {
+    key: "broker",
+    name: "Vex",
+    role: "charismatic art dealer, transactional information broker",
+    tags: "mature woman, warm deep-brown skin, short swept black twists, geometric gold earrings, knowing smile, tailored plum and black jacket, mustard gold waistcoat",
+    presentation: "feminine",
+  },
 ];
 
 const negativePrompt = [

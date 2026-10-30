@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { bundledHouseBody } from "@influence/engine/house-character-art";
 import { and, asc, eq, inArray, isNull, lt, lte, sql } from "drizzle-orm";
 import sharp from "sharp";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -27,6 +28,7 @@ export function cutoutMode(env: Record<string, string | undefined> = process.env
 
 /** Only server-selected frozen references enter this queue. No caller-supplied URLs. */
 export async function requestCharacterCutouts(db: DrizzleDB, gameId: string, sources: Record<string, string>): Promise<Record<string, string>> {
+  sources = Object.fromEntries(Object.entries(sources).filter(([, url]) => !bundledHouseBody(url)));
   if (!Object.keys(sources).length) return {};
   try {
     if (cutoutMode() !== "disabled") await db.insert(demands).values(Object.entries(sources).map(([playerId, sourceKey]) => ({

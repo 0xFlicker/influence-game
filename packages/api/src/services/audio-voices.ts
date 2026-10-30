@@ -1,6 +1,7 @@
 import { eq, inArray } from "drizzle-orm";
 import { assignPlayerVoice, HOUSE_VOICE, type VoiceAssignment } from "@influence/engine/voice-catalog";
 import { schema, type DrizzleDB } from "../db/index.js";
+import { isAgentGender } from "../lib/agent-gender.js";
 
 export async function readAgentVoice(db: Pick<DrizzleDB,"select">, id: string): Promise<VoiceAssignment> {
   const [stored] = await db.select().from(schema.agentVoices).where(eq(schema.agentVoices.agentProfileId, id));
@@ -11,9 +12,14 @@ export async function readAgentVoice(db: Pick<DrizzleDB,"select">, id: string): 
 }
 /** Preview is read-only; freeze these exact assignments when starting the track. */
 export async function gameVoiceRoster(db:Pick<DrizzleDB,"select">,gameId:string) {
-  const players = await db.select({ id: schema.gamePlayers.id, agentId: schema.gamePlayers.agentProfileId }).from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, gameId));
+  const seats = await db.select({ id: schema.gamePlayers.id, agentId: schema.gamePlayers.agentProfileId, persona: schema.gamePlayers.persona }).from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, gameId));
+  const players = seats.map(({persona, ...seat}) => {
+    const {gender} = JSON.parse(persona) as {gender?: unknown};
+    if (gender != null && !isAgentGender(gender)) throw new Error("Invalid frozen player gender");
+    return {...seat, gender: gender ?? null};
+  });
   const [start] = await db.select({event:schema.werewolfEvents.event}).from(schema.werewolfEvents).where(eq(schema.werewolfEvents.gameId,gameId)).orderBy(schema.werewolfEvents.sequence).limit(1);
-  if (start?.event.type === "werewolf.started") players.push(...start.event.payload.players.map(player => ({id:player.id,agentId:player.agentProfileId ?? null})));
+  if (start?.event.type === "werewolf.started") players.push(...start.event.payload.players.map(player => ({id:player.id,agentId:player.agentProfileId ?? null,gender:player.gender ?? null})));
   return players;
 }
 export async function previewGameVoices(db:Pick<DrizzleDB,"select">,gameId:string):Promise<Record<string,VoiceAssignment>> {
@@ -21,7 +27,7 @@ export async function previewGameVoices(db:Pick<DrizzleDB,"select">,gameId:strin
   const ids=players.flatMap(player=>player.agentId ? [player.agentId] : []);
   const profiles=new Set(ids.length ? (await db.select({id:schema.agentProfiles.id}).from(schema.agentProfiles).where(inArray(schema.agentProfiles.id,ids))).map(row=>row.id) : []);
   const voices: Record<string, VoiceAssignment> = { house: HOUSE_VOICE };
-  for (const player of players) voices[player.id] = player.agentId && profiles.has(player.agentId) ? await readAgentVoice(db, player.agentId) : assignPlayerVoice(player.agentId ?? player.id, null);
+  for (const player of players) voices[player.id] = player.agentId && profiles.has(player.agentId) ? await readAgentVoice(db, player.agentId) : assignPlayerVoice(player.agentId ?? player.id, player.gender);
   return voices;
 }
 

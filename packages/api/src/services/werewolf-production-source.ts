@@ -101,9 +101,9 @@ export async function buildWerewolfProductionSourceSnapshot(tx: DrizzleDB | Visu
   let references = await werewolfReferenceMetadata(tx, game.id, events.find(event => event.type === "werewolf.started")?.payload.players,
     { availableHashes: options.refreshVisuals ? undefined : options.snapshot?.availableCharacterAssets });
   const availableCharacterAssets = [...new Set(references.flatMap(ref => [ref.bodyHash, ref.portraitHash].filter((hash): hash is string => hash !== null)))].sort();
-  const readyCutouts = await readyCutoutsByHash(tx, references.flatMap(ref => ref.bodyHash ? [ref.bodyHash] : []), publicationCutoff);
+  const readyCutouts = await readyCutoutsByHash(tx, references.flatMap(ref => ref.bodyHash && !ref.bundled ? [ref.bodyHash] : []), publicationCutoff);
   let cutoutReferences = references.flatMap(ref => {
-    const job = ref.bodyHash ? readyCutouts.get(ref.bodyHash) : undefined;
+    const job = ref.bodyHash && !ref.bundled ? readyCutouts.get(ref.bodyHash) : undefined;
     return job?.image ? [{ playerId: ref.profile.id, sourceHash: job.sourceHash, image: job.image }] : [];
   });
   const provenance = projectWerewolfProductionProvenance(events, options.audience);

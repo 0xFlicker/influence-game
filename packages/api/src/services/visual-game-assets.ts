@@ -7,21 +7,28 @@ import { readFile } from "node:fs/promises";
 import { and, eq } from "drizzle-orm";
 import { VISUAL_HOUSE_STYLE, VISUAL_ROOMS, type FrozenVisualProfile } from "@influence/engine/visual-mode";
 import { schema, type DrizzleDB } from "../db/index.js";
+import { getHousePortraitKey } from "@influence/engine";
+import { bundledHouseBody } from "@influence/engine/house-character-art";
 import { readLocalUpload } from "../lib/storage.js";
 import { renderVisualAssetBestEffort } from "./visual-render-journal.js";
 import { readVisualArtifact, storeVisualArtifact } from "./visual-scene-store.js";
 
-const PERSONAS = ["honest", "strategic", "deceptive", "paranoid", "social", "aggressive", "loyalist", "observer", "diplomat", "wildcard", "contrarian", "provocateur", "martyr"];
 export class VisualRecoveryRequired extends Error {
   constructor(message: string) { super(message); this.name = "VisualRecoveryRequired"; }
 }
 
 /** Only application-owned uploads or bundled persona art enter provider requests. */
 export async function readVisualProfileImage(url: string | null, profile: Pick<FrozenVisualProfile, "name" | "personaKey">): Promise<Buffer> {
+  const bundled = bundledHouseBody(url);
+  if (bundled) {
+    const relative = bundled.url.slice("/avatars/personas/".length);
+    const directory = process.env.INFLUENCE_PERSONA_ASSET_DIR;
+    const bytes = await readFile(directory ? join(directory, relative) : new URL(`../../../web/public/avatars/personas/${relative}`, import.meta.url));
+    if (createHash("sha256").update(bytes).digest("hex") !== bundled.sha256) throw new Error("Bundled House full-body integrity mismatch");
+    return bytes;
+  }
   if (!url) {
-    let hash = 0;
-    for (const char of profile.name) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-    const key = PERSONAS.includes(profile.personaKey) ? profile.personaKey : PERSONAS[hash % PERSONAS.length]!;
+    const key = getHousePortraitKey(profile.name, profile.personaKey);
     const directory = process.env.INFLUENCE_PERSONA_ASSET_DIR;
     return readFile(directory
       ? join(directory, `${key}.png`)

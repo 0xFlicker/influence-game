@@ -1,4 +1,5 @@
 import { loadPayloads } from "./payload-storage.js";
+import { bundledHouseBody } from "@influence/engine/house-character-art";
 import { validHeadRectangle, type CharacterHeadPosition } from "@influence/engine/character-portrait";
 import { readWerewolfVisualPause } from "./werewolf-visual-policy.js";
 import { visualFailurePolicy } from "./visual-policy.js";
@@ -34,11 +35,14 @@ export async function werewolfReferenceMetadata(db: Pick<DrizzleDB, "select">, g
         ? (assets as Record<string, unknown>)[url] : null;
       return typeof hash === "string" ? hash : null;
     };
-    return { player, snapshot, bodyHash: hashFor("fullBodyReferenceUrl"), portraitHash: hashFor("avatarUrl") };
+    const bundled = !player.agentProfileId ? bundledHouseBody(player.fullBodyReferenceUrl) : null;
+    if (!player.agentProfileId && player.fullBodyReferenceUrl && !bundled) throw new WerewolfReferenceError("Unknown frozen House full-body reference");
+    return { player, snapshot, bodyHash: bundled?.sha256 ?? hashFor("fullBodyReferenceUrl"), portraitHash: hashFor("avatarUrl") };
   });
   const hashes = members.flatMap(member => [member.bodyHash, member.portraitHash].filter((hash): hash is string => hash !== null));
   const available = new Set(hashes.length ? (await db.select({ hash: schema.agentContentAssets.hash }).from(schema.agentContentAssets)
     .where(inArray(schema.agentContentAssets.hash, hashes))).map(asset => asset.hash) : []);
+  for (const member of members) if (!member.player.agentProfileId && bundledHouseBody(member.player.fullBodyReferenceUrl) && member.bodyHash) available.add(member.bodyHash);
   if (options.availableHashes) {
     if (options.availableHashes.some(hash => !hashes.includes(hash))) throw new WerewolfReferenceError("Pinned character asset is not an immutable game-start reference");
     const pinned = new Set(options.availableHashes);
@@ -48,12 +52,12 @@ export async function werewolfReferenceMetadata(db: Pick<DrizzleDB, "select">, g
     const bundled = !player.agentProfileId;
     const body = bodyHash && available.has(bodyHash) ? bodyHash : null;
     const portrait = portraitHash && available.has(portraitHash) ? portraitHash : null;
-    const kind = bundled ? "portrait" : body ? "full_body" : portrait ? "portrait" : "missing";
+    const kind = body ? "full_body" : bundled || portrait ? "portrait" : "missing";
     const head = snapshot?.headPosition as CharacterHeadPosition | undefined;
     const headPosition = kind === "full_body" && head?.confirmation && head.sourceUrl === snapshot?.fullBodyReferenceUrl
       && head.sourceHash === body && validHeadRectangle(head.rect) ? head : undefined;
     const profile: FrozenVisualProfile = { id: player.id, name: player.name, personaKey: player.personaKey ?? "", avatarUrl: null,
-      fullBodyReferenceUrl: kind === "full_body" ? String(snapshot!.fullBodyReferenceUrl) : null,
+      fullBodyReferenceUrl: kind === "full_body" ? bundled ? player.fullBodyReferenceUrl! : String(snapshot!.fullBodyReferenceUrl) : null,
       ...(headPosition ? { headPosition } : {}),
       performanceInstructions: typeof snapshot?.performanceInstructions === "string" ? snapshot.performanceInstructions : "" };
     return { profile, kind, bodyHash: body, portraitHash: portrait, bundled };
@@ -66,7 +70,9 @@ export async function werewolfReferences(db: DrizzleDB, gameId: string) {
   const hashes = refs.flatMap(ref => [ref.bodyHash, ref.portraitHash].filter((hash): hash is string => hash !== null));
   const assets = hashes.length ? await loadPayloads(db.select().from(schema.agentContentAssets).where(inArray(schema.agentContentAssets.hash, hashes))) : [];
   const bytes = (hash: string | null) => assets.find(asset => asset.hash === hash)?.bytes ?? null;
-  return refs.map(ref => ({ ...ref, bytes: bytes(ref.bodyHash ?? ref.portraitHash), portraitBytes: bytes(ref.portraitHash) }));
+  return Promise.all(refs.map(async ref => ({ ...ref,
+    bytes: ref.bundled && ref.kind === "full_body" ? await readVisualProfileImage(ref.profile.fullBodyReferenceUrl, ref.profile) : bytes(ref.bodyHash ?? ref.portraitHash),
+    portraitBytes: bytes(ref.portraitHash) })));
 }
 
 export async function freezeWerewolfReferences(db: DrizzleDB, gameId: string, participants: Array<{ id: string; name: string }>) {

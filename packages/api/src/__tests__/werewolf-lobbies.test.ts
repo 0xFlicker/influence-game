@@ -3,7 +3,7 @@ import { afterAll, beforeEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { replayWerewolf, werewolfConfig } from "@influence/engine/werewolf";
-import { DEFAULT_MODEL_CATALOG_ID } from "@influence/engine";
+import { DEFAULT_MODEL_CATALOG_ID, getHousePortraitGender, HOUSE_CAST } from "@influence/engine";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { setupTestDB } from "./test-utils.js";
@@ -93,6 +93,11 @@ test("start freezes the latest approved strategy for every owner, assigns roles 
   const seat = await joinWerewolfLobby(db, game.id, "guest", agent.id);
   await updateOwnedAgentProfile(db, { userId: "guest" }, agent.id, { werewolfStrategyStyle: "LATEST_STRATEGY", submissionId: randomUUID(), expectedContentRevisionId: agent.contentRevisionId });
   await fillWerewolfLobby(db, game.id);
+  // Simulate a lobby filled before House portrait gender was stored.
+  const houseSeats = await db.select().from(schema.werewolfLobbySeats).where(eq(schema.werewolfLobbySeats.gameId, game.id));
+  for (const houseSeat of houseSeats) {
+    if (houseSeat.houseCharacter) await db.update(schema.werewolfLobbySeats).set({ houseCharacter: { ...houseSeat.houseCharacter, name: "Thane", gender: null } }).where(eq(schema.werewolfLobbySeats.id, houseSeat.id));
+  }
   const starts = await Promise.allSettled([startWerewolfLobby(db, game.id), startWerewolfLobby(db, game.id)]);
   expect(starts.filter(result => result.status === "fulfilled")).toHaveLength(1);
   expect(await db.select().from(schema.gameEpisodePresentations)).toMatchObject([{ gameId: game.id, status: "queued" }]);
@@ -100,6 +105,10 @@ test("start freezes the latest approved strategy for every owner, assigns roles 
   expect(events).toHaveLength(1);
   const state = replayWerewolf(events);
   expect(state.players).toHaveLength(6);
+  for (const player of state.players.filter(player => !player.agentProfileId)) {
+    expect(player.gender).toBe(getHousePortraitGender(player.name, player.personaKey));
+    expect(player.personaKey).toBe(HOUSE_CAST.find(member => member.name === player.name)?.personality);
+  }
   expect(state.players.find(player => player.id === seat.playerId)).toMatchObject({ agentProfileId: agent.id, strategy: "LATEST_STRATEGY" });
   expect(JSON.stringify(events)).not.toContain("INFLUENCE_ONLY");
   const started = await readWerewolfLobby(db, game.id);
@@ -183,17 +192,25 @@ test("an older waiting lobby preserves its frozen rules version and config field
   expect(Object.keys(JSON.parse(started!.config).modelRouting.contestants)).toHaveLength(6);
 });
 
+test("a restricted pool cannot clone fixed House identities or partially fill a lobby", async () => {
+  const game = await createWerewolfLobby(db, "owner", { preset: "one_wolf", personaPool: ["observer", "aggressive"] });
+  await expect(fillWerewolfLobby(db, game.id)).rejects.toThrow("distinct House characters");
+  expect(await db.select().from(schema.werewolfLobbySeats).where(eq(schema.werewolfLobbySeats.gameId, game.id))).toHaveLength(0);
+  expect((await readWerewolfLobby(db, game.id)).status).toBe("waiting");
+});
+
 test("custom setup, provider policy, casting and visuals survive lobby start", async () => {
   await grantTestAuthority(db, "owner", [], "admin");
   const setup = {playerCount:7 as const,wolves:2 as const,seer:false,doctor:true};
-  const g = await createWerewolfLobby(db,"owner",{preset:"two_wolves",setup,visualMode:true,personaPool:["observer","aggressive"],fillStrategy:"balanced",providerManifest:[{catalogId:DEFAULT_MODEL_CATALOG_ID,reasoningPolicy:"low"}]});
+  const personaPool = ["observer", "aggressive", "strategic", "honest", "deceptive", "social", "wildcard"] as const;
+  const g = await createWerewolfLobby(db,"owner",{preset:"two_wolves",setup,visualMode:true,personaPool:[...personaPool],fillStrategy:"balanced",providerManifest:[{catalogId:DEFAULT_MODEL_CATALOG_ID,reasoningPolicy:"low"}]});
   expect((await readWerewolfLobby(db,g.id)).playerCount).toBe(7);
   await fillWerewolfLobby(db,g.id);
   await startWerewolfLobby(db,g.id);
   const state = replayWerewolf(await readWerewolfEvents(db,g.id));
   expect(state.config.setup).toEqual(setup);
   expect(state.players).toHaveLength(7);
-  expect(new Set(state.players.map(p=>p.personaKey))).toEqual(new Set(["observer","aggressive"]));
+  expect(new Set(state.players.map(p=>p.personaKey))).toEqual(new Set(personaPool));
   const roles = Object.values(state.roles);
   expect(roles.filter(r=>r==="werewolf")).toHaveLength(2);
   expect(roles).not.toContain("seer");

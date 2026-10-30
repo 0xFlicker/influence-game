@@ -2,6 +2,8 @@
 
 For API evaluations with saved characters, contestant contexts include stored gender frozen at game start. In retained provider requests from `simulate:models`, check Influence's cast identity section or Werewolf's `board.players[].gender`. Characters without stored gender remain unspecified; do not infer gender from names. Offline fixtures only include genders explicitly supplied in their roster. Paid runs still require explicit authorization.
 
+API House fills, `createAgentCast`, and both offline simulation entrypoints share the fixed `HOUSE_CAST` name/archetype/gender map. API casts include Daily Free. With Audio Mode enabled, players without saved profiles receive gender-matched defaults from their stored roster value. Verify new rosters; existing recordings keep their frozen voices. Werewolf pools need enough distinct available House characters for their unowned seats; a narrow pool cannot clone a character under another name.
+
 Native Grok uses `XAI_API_KEY` and the localhost API CLI's `--provider xai
 --model grok-4.3` selection (also 4.5, 4.6 and 4.20 multi-agent). Existing mutable
 Katana choices migrate to identical generations. Catalog discovery is verified;

@@ -222,10 +222,10 @@ test("pack and lobby production use canonical membership and publish privately t
   expect(await readWerewolfEvents(db, g.id)).toEqual(before);
 });
 
-test("incomplete games cannot start production and unavailable references never borrow editable profiles", async () => {
+test("incomplete games cannot start production and new House casts use bundled full-body references", async () => {
   const g = await game(false);
   await expect(readReplayVisualProduction(db, g.id)).rejects.toThrow("completed");
-  const refs = await werewolfReferences(db, g.id); expect(refs).toHaveLength(8); expect(refs.every(r => r.kind === "portrait")).toBe(true);
+  const refs = await werewolfReferences(db, g.id); expect(refs).toHaveLength(8); expect(refs.every(r => r.kind === "full_body" && r.bundled)).toBe(true);
 });
 
 test("production reads captured revision bytes, never a later character edit", async () => {

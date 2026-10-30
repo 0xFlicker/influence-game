@@ -18,6 +18,8 @@ export interface WerewolfPlayer {
   backstory: string;
   strategy: string;
   avatarUrl: string | null;
+  /** Immutable bundled art URL for House characters, frozen at game start. */
+  fullBodyReferenceUrl?: string | null;
   personaKey?: string | null;
 }
 

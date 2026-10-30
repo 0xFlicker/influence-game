@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { HOUSE_AGENT_NAMES } from "@influence/engine";
+import { houseFullBodyUrl } from "@influence/engine/house-character-art";
+import { restoreHouseCast, HouseCastCapacityError, getHousePersonaDetails } from "@influence/engine";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -92,7 +93,7 @@ async function freezeWaitingRoster(
 
   validateOwnership(projectedSeats, Boolean(game.seasonId));
   await validateRevisionIdentity(tx, projectedSeats);
-  const seats = await resolveHouseOnlyNameCollisions(tx, game.id, projectedSeats);
+  const seats = await resolveHouseRosterIdentities(tx, game.id, projectedSeats);
   const competitionSnapshotCount = game.seasonId
     ? await replaceCompetitionSnapshots(tx, game.id, seats, input.frozenAt)
     : await clearCompetitionSnapshots(tx, game.id);
@@ -175,12 +176,12 @@ async function validateRevisionIdentity(
   }
 }
 
-async function resolveHouseOnlyNameCollisions(
+async function resolveHouseRosterIdentities(
   tx: DrizzleTransaction,
   gameId: string,
   seats: readonly PlayerRow[],
 ): Promise<PlayerRow[]> {
-  const sortedSeats = [...seats].sort((left, right) => left.id.localeCompare(right.id));
+  const sortedSeats = seats.map(seat => ({ ...seat })).sort((left, right) => left.id.localeCompare(right.id));
   const groups = new Map<string, Array<{ seat: PlayerRow; persona: Record<string, unknown> }>>();
   for (const seat of sortedSeats) {
     const persona = parsePersona(seat);
@@ -191,9 +192,6 @@ async function resolveHouseOnlyNameCollisions(
     groups.set(normalized, group);
   }
 
-  const usedNames = new Set([...groups.keys()]);
-  const replacements = new Map<string, string>();
-  let fallbackOrdinal = 1;
   for (const group of groups.values()) {
     if (group.length < 2) continue;
     if (group.some(({ seat }) => seat.agentProfileId || seat.userId)) {
@@ -203,30 +201,29 @@ async function resolveHouseOnlyNameCollisions(
         "name_conflict",
       );
     }
-    for (const duplicate of group.slice(1)) {
-      let replacement: string | undefined = HOUSE_AGENT_NAMES.find(
-        (candidate) => !usedNames.has(normalizeName(candidate)),
-      );
-      while (!replacement) {
-        const candidate = `Agent-${fallbackOrdinal++}`;
-        if (!usedNames.has(normalizeName(candidate))) replacement = candidate;
-      }
-      usedNames.add(normalizeName(replacement));
-      replacements.set(duplicate.seat.id, replacement);
-      duplicate.persona.name = replacement;
-      await tx.update(schema.gamePlayers).set({ persona: JSON.stringify(duplicate.persona) }).where(and(
-        eq(schema.gamePlayers.id, duplicate.seat.id),
-        eq(schema.gamePlayers.gameId, gameId),
-      ));
-    }
   }
-  return sortedSeats.map((seat) => {
-    const replacement = replacements.get(seat.id);
-    if (!replacement) return seat;
-    const persona = parsePersona(seat);
-    persona.name = replacement;
-    return { ...seat, persona: JSON.stringify(persona) };
-  });
+  const house = sortedSeats.filter(seat => !seat.agentProfileId && !seat.userId);
+  const ownedNames = sortedSeats.filter(seat => seat.agentProfileId || seat.userId).map(seat => parsePersona(seat).name);
+  try {
+    const identities = restoreHouseCast(house.map(seat => {
+      const persona = parsePersona(seat), key = persona.personaKey ?? persona.personality;
+      return typeof key === "string" ? key : null;
+    }), ownedNames);
+    for (const [index, seat] of house.entries()) {
+      const identity = identities[index]!, details = getHousePersonaDetails(identity.personality);
+      const persona = { ...parsePersona(seat), name: identity.name, gender: identity.gender, personality: identity.personality,
+        personaKey: identity.personality, personalityBlurb: details.personalityBlurb, strategyHints: details.strategyHints,
+        avatarUrl: null, fullBodyReferenceUrl: houseFullBodyUrl(identity.name, identity.personality), headPosition: null };
+      const serialized = JSON.stringify(persona);
+      if (serialized === seat.persona) continue;
+      seat.persona = serialized;
+      await tx.update(schema.gamePlayers).set({ persona: serialized }).where(and(eq(schema.gamePlayers.id, seat.id), eq(schema.gamePlayers.gameId, gameId)));
+    }
+  } catch (error) {
+    if (error instanceof HouseCastCapacityError) throw freezeError(error.message, "rated_roster_invalid", "name_conflict");
+    throw error;
+  }
+  return sortedSeats;
 }
 
 async function replaceCompetitionSnapshots(
