@@ -473,4 +473,8 @@ test('follow context requires a producer and applies the requested playback audi
  expect(body.visibility).toBe('mystery');expect(body.thinking).toEqual([]);
  expect(JSON.stringify(body)).not.toContain('"role":');
  expect((await request(`${root(f.id)}/follow-context`,{...position,thinking:true})).status).toBe(400);
+ for(const part of [null,{}, {kind:'night-speech',action:'unknown'}, {kind:'ballot',voterId:'p1'}])
+  expect((await request(`${root(f.id)}/follow-context`,{...position,part})).status).toBe(400);
+ for(const source of [null,{}, {kind:'influence-event',eventSequence:-1}, {kind:'influence-bridge',following:null,followingPart:{kind:'speech'}}])
+  expect((await request(`${root(f.id)}/follow-context`,{kind:'influence',source,part:{kind:'speech'}})).status).toBe(400);
 });

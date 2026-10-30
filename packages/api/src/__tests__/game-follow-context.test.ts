@@ -83,4 +83,19 @@ test('Influence reveals accepted ballots individually and withholds the aggregat
  expect(exposed.some(row=>row.includes('"type":"format.resolved"'))).toBe(false);
  const ballots=exposed.filter(row=>row.includes('"type":"format.ballot_cast"'));
  expect(ballots.length).toBe(1);
+ // Exercise the full canonical format fixture, not just its first voter.
+ for(const moment of refreshed.catalog.moments){
+  if(moment.source.kind!=='influence-event'||moment.part.kind!=='influence-presentation'||moment.part.presentation.kind!=='format_roll_call')continue;
+  const sequence=moment.source.eventSequence;
+  const resolution=events.find(e=>e.sequence===sequence);
+  if(resolution?.type!=='format.resolved')throw new Error('Roll call must resolve a canonical format');
+  const context=projectInfluenceFollow(refreshed,{kind:'influence',source:moment.source,part:moment.part});
+  const released=context.history.flatMap(row=>row&&typeof row==='object'&&!Array.isArray(row)&&row.kind==='event'?[JSON.stringify(row.event)]:[]);
+  const reachedVoters=refreshed.catalog.moments.slice(0,refreshed.catalog.moments.indexOf(moment)+1).flatMap(m=>m.source.kind==='influence-event'&&m.source.eventSequence===resolution.sequence&&m.part.kind==='influence-presentation'&&m.part.presentation.kind==='format_roll_call'?[m.part.presentation.voterId]:[]);
+  for(const vote of events.filter(e=>(e.type==='format.ballot_cast'||e.type==='format.ballot_forfeited')&&e.round===resolution.round)){
+   if(vote.type!=='format.ballot_cast'&&vote.type!=='format.ballot_forfeited')continue;
+   expect(released.includes(JSON.stringify(vote))).toBe(reachedVoters.includes(vote.payload.voterId));
+  }
+  expect(released.includes(JSON.stringify(resolution))).toBe(false);
+ }
 });

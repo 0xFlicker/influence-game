@@ -26,6 +26,8 @@ The backend receives the complete bounded snapshot. GPT-Live receives setup once
 
 Seeking aborts obsolete context requests; delayed responses cannot attach to a new position or game. Joining midway makes the permitted prefix available for analysis without instructing the House to narrate a recap. Context failures appear beside the follow controls and never suspend the game.
 
+Malformed playback source/part coordinates return an `invalid_input` HTTP 400, including missing nested fields. Well-formed coordinates must still resolve against the game's accepted production catalog; a syntactically valid key is not authorization or evidence that a moment exists.
+
 ## Images and speech
 
 Studio tab sharing captures actual video pixels, sampling a JPEG every two seconds at up to 1280 pixels wide. This is an initial image sampling choice, not a commentary limit. The House keeps only the latest frame in memory, associated with its game and position; a frame for another position is not supplied as the current view. Stop sharing stops the media tracks and clears the image. Sampling latency can miss brief changes.

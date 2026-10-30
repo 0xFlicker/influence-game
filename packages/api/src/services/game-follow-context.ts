@@ -23,11 +23,15 @@ function position(value:unknown):GameFollowPosition {
   const p=value as Record<string,unknown>;
   if(p.kind==='influence' && Object.keys(p).sort().join()==='kind,part,source') {
     const typed=p as unknown as Extract<GameFollowPosition,{kind:'influence'}>;
-    productionMomentKey('validation',typed.source,typed.part);return typed;
+    try { productionMomentKey('validation',typed.source,typed.part); }
+    catch { return invalid('Invalid game playback source or part'); }
+    return typed;
   }
   if(p.kind==='werewolf' && Object.keys(p).sort().join()==='audience,cursor,kind,part' && ['mystery','omniscient'].includes(String(p.audience)) && Number.isSafeInteger(p.cursor) && Number(p.cursor)>=0) {
     const typed=p as unknown as Extract<GameFollowPosition,{kind:'werewolf'}>;
-    productionMomentKey('validation',{kind:'werewolf-event',eventSequence:1},typed.part);return typed;
+    try { productionMomentKey('validation',{kind:'werewolf-event',eventSequence:1},typed.part); }
+    catch { return invalid('Invalid Werewolf playback part'); }
+    return typed;
   }
   return invalid('Invalid game playback position');
 }
