@@ -113,33 +113,34 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
   const centerX = size.width * (beside ? .72 : .5);
   const diameter = Math.min(seats[0]?.diameter ?? 0, available * (beside ? deep ? .3 : .44 : .34));
   const thought = useSceneThinking();
-  const bubbleHeight = Math.max(0, Math.min(400, beside ? available - 56 : available * (deep || floorPerspective ? .3 : .45)));
-  const restingCenterY = floorPerspective ? available * (beside ? .60 : .58) : beside ? available * (deep ? .64 : .5) : deep ? available * .8 : Math.max(diameter / 2 + 44, (available + bubbleHeight) / 2);
-  // Rear seats put their names above their portraits. Reserve that row too,
-  // instead of anchoring a shallow room's speech over the rear cast.
-  const speechClearance = floorPerspective ? deep ? roomDepth * 2 + 48 : 12 : 24;
-  const bubbleTop = beside ? 44 : Math.max(44, restingCenterY - diameter / 2 - bubbleHeight - speechClearance);
+  // Keep the established ring position independent of message length, fitted
+  // typography and empty thought shots. This is a seating budget, not a text cap.
+  const seatingBudget = Math.max(0, Math.min(400, beside ? available - 56 : available * (deep || floorPerspective ? .3 : .45)));
+  const restingCenterY = floorPerspective ? available * (beside ? .60 : .58) : beside ? available * (deep ? .64 : .5) : deep ? available * .8 : Math.max(diameter / 2 + 44, (available + seatingBudget) / 2);
+  const floorClearance = deep ? roomDepth * 2 + 48 : 12;
+  const centerY = floorPerspective && !beside
+    ? Math.min(Math.max(restingCenterY, 44 + seatingBudget + diameter / 2 + floorClearance),
+      Math.max(diameter / 2, available - diameter / 2 - 48))
+    : restingCenterY;
+  // The front portrait sits at z=60 under the room's 1200px perspective. Aim
+  // just above its projected head, allowing speech to cover the rear listeners.
+  const speakerTop = size.height / 2 + (centerY - diameter / 2 - size.height / 2) * 1200 / (1200 - 60);
+  const bubbleBottom = speakerTop - 20;
+  const bubbleHeight = Math.max(0, beside ? available - 56 : bubbleBottom - 44);
   const opacity = speechPresentation === "solo" ? soloPresentationMotion(beat.speech.text, elapsedMs, false, reducedMotion).speechOpacity
     : sceneSpeechOpacity(beat.speech.text, elapsedMs, reducedMotion);
   const speechTime = speechPresentation === "solo" ? soloPresentationMotion(beat.speech.text, readingElapsedMs).speechElapsedMs
     : readingElapsedMs - SCENE_SPEECH_START_MS;
-  const bubbleWidth = Math.max(0, Math.min(720, beside ? size.width * .43 : deep ? size.width * .58 : size.width - 24));
-  const rawBubble = {left: beside ? 12 : (size.width - bubbleWidth) / 2, top: bubbleTop,
+  const bubbleWidth = Math.max(0, Math.min(960, beside ? size.width * .43 : size.width - 32));
+  const speechBox = {left: beside ? 12 : (size.width - bubbleWidth) / 2, top: 44,
     width: bubbleWidth, height: bubbleHeight};
-  const speechBox = rawBubble;
   const speechFit = useBubbleTypography(frame, beat.speech.text, speechBox, "speech", available < 300);
   const fittedBubbleHeight = speechFit.typography?.height ?? speechBox.height;
   const fittedBubbleWidth = speechFit.typography?.width ?? speechBox.width;
-  // Anchor to the fixed speech budget, so short replies and empty thought shots
-  // cannot move the ring. Short stages still reserve the front portrait/label.
-  const centerY = floorPerspective && !beside
-    ? Math.min(Math.max(restingCenterY, 44 + bubbleHeight + diameter / 2 + speechClearance),
-      Math.max(diameter / 2, available - diameter / 2 - 48))
-    : restingCenterY;
   const focus = thinkingFocus(size.width,available,{left:centerX-diameter*.28,top:centerY-diameter*.4,width:diameter*.56,height:diameter*.56},thought?.focus ?? 0,true,reducedMotion);
   const bubble = {...speechBox,width:fittedBubbleWidth,height:fittedBubbleHeight,
     left: beside ? speechBox.left : centerX - fittedBubbleWidth / 2,
-    top: floorPerspective && !beside ? Math.max(44, centerY - diameter / 2 - fittedBubbleHeight - speechClearance) : speechBox.top};
+    top: beside ? speechBox.top : Math.max(44, bubbleBottom - fittedBubbleHeight)};
   const roomLabel = beat.roomLabel ?? `Mingle${beat.roomNumber === null ? "" : ` · Room ${beat.roomNumber}`}`;
   return <section ref={frame} aria-label={beat.roomLabel ?? (beat.roomNumber === null ? "Mingle room" : `Mingle room ${beat.roomNumber}`)} data-portrait-room
     className="relative min-h-0 w-full flex-1 overflow-hidden" style={{ perspective: 1200 }}>
@@ -168,7 +169,7 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
       style={{...bubble, opacity, padding:speechFit.padding}}>
       <p className={`mb-2 h-5 shrink-0 truncate text-base font-semibold leading-5 text-white/80 ${speechFit.typography && speechFit.typography.pages.length > 1 && !speechFit.typography.footerHeight ? "pr-12" : ""}`}>{beat.speech.speaker}</p>
       <TimedSpeech text={beat.speech.text} elapsedMs={speechTime} typography={speechFit.typography} className="text-base leading-relaxed" />
-      <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/25 bg-black/90 ${beside ? "-right-2 border-r border-t" : "-bottom-2 left-1/2 -translate-x-1/2 border-r border-b"}`} style={beside ? { top: centerY - bubbleTop - 8 } : undefined} />
+      <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/25 bg-black/90 ${beside ? "-right-2 border-r border-t" : "-bottom-2 left-1/2 -translate-x-1/2 border-r border-b"}`} style={beside ? { top: centerY - speechBox.top - 8 } : undefined} />
     </div>}
     <ThinkingFocusOverlay frame={frame} layout={focus} />
   </section>;
