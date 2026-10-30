@@ -45,7 +45,7 @@ export function WatchTransport({theater, theaterButton, toggleTheater, audio, vo
  const referenceRef = useMergeRefs([settingsButton, setReference]);
  const dismiss = useDismiss(context);
  const {getReferenceProps,getFloatingProps} = useInteractions([dismiss]);
- const button = "inline-flex h-10 min-w-10 shrink-0 items-center justify-center gap-2 rounded-lg px-2 text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-white disabled:opacity-25 disabled:cursor-not-allowed";
+ const button = "inline-flex h-10 min-w-8 shrink-0 items-center justify-center gap-2 rounded-lg px-1 sm:min-w-10 sm:px-2 text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-white disabled:opacity-25 disabled:cursor-not-allowed";
  const speedControl = <fieldset className="min-w-0"><legend className="sr-only">Playback speed</legend><div className="flex items-center gap-1"><span className="mr-1 text-xs text-white/50">Speed</span>{SPEED_OPTIONS.map(option =>
   <button key={option.value} type="button" aria-pressed={speed === option.value} onClick={() => onSpeed(option.value)} className={`h-9 rounded-lg border px-2 text-xs ${speed === option.value ? "border-white/50 bg-white/15 text-white" : "border-transparent text-white/60 hover:bg-white/10"}`}>{option.label}</button>
  )}</div></fieldset>;
@@ -98,7 +98,7 @@ export function WatchTransport({theater, theaterButton, toggleTheater, audio, vo
         {header}
         {settings && <div className="mb-4 border-b border-white/10 pb-4" onClick={event => {if (event.target instanceof Element && event.target.closest("button")) setOpen(false);}}>{settings}</div>}
         <div className="space-y-4">
-          {music && <div className="space-y-2"><label className="flex items-center gap-2"><input type="checkbox" checked={!music.muted} onChange={music.onMute} />Music</label><label className="flex items-center gap-3 text-white/80"><span className="w-24 shrink-0">Music volume</span>{volumeControl}</label>{music.status === "blocked" && <button type="button" onClick={music.retry}>Enable music playback</button>}</div>}
+          {music && <div className="space-y-2"><label className="flex items-center gap-2"><input type="checkbox" checked={!music.muted} onChange={music.onMute} />Music</label><label className="flex items-center gap-3 text-white/80"><span className="w-24 shrink-0">Music volume</span>{volumeControl}</label>{music.status === "blocked" && <button type="button" onClick={music.retry}>Enable music playback</button>}{music.status === "unavailable" && <button type="button" onClick={music.retry}>Music unavailable. Retry</button>}</div>}
           {voice && <div className="space-y-2"><label className="flex items-center gap-2"><input type="checkbox" checked={!voice.muted} onChange={voice.onMute} />Voice</label><label className="flex items-center gap-3 text-white/80"><span className="w-24 shrink-0">Voice volume</span><input className="h-10 min-w-0 flex-1 cursor-pointer accent-white" aria-label="Voice volume" type="range" min="0" max="1" step="0.05" value={voice.volume} onChange={event => voice.onVolume(Number(event.target.value))} /></label></div>}
           {capacity < 1 && speedControl}
           {capacity < 2 && thinkingControl}

@@ -826,17 +826,17 @@ test("Werewolf autoplays with device preferences and Mystery preserves the saved
     await page.waitForFunction("Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-elapsed')) > 900");
     await pauseWerewolf(page);
     await page.click('button[aria-label="Player settings"]');
-    await page.waitForSelector('[role="dialog"] input[type="checkbox"]');
-    expect(await page.evaluate("document.querySelector('[role=\"dialog\"] input[type=\"checkbox\"]').checked")).toBe(true);
-    await page.click('[role="dialog"] input[type="checkbox"]');
+    await page.waitForSelector('aria/Show thinking');
+    expect(await page.$eval('aria/Show thinking',node=>'checked' in node && node.checked)).toBe(true);
+    await page.click('aria/Show thinking');
     let saved=await page.evaluate("localStorage.getItem('house:watch:viewer:v1')");
     expect(JSON.parse(saved as string)).toMatchObject({thinking:false});
     await page.reload({waitUntil:"domcontentloaded"});
     await pauseWerewolf(page);
     await page.click('button[aria-label="Player settings"]');
-    await page.waitForSelector('[role="dialog"] input[type="checkbox"]');
-    expect(await page.evaluate("document.querySelector('[role=\"dialog\"] input[type=\"checkbox\"]').checked")).toBe(false);
-    await page.click('[role="dialog"] input[type="checkbox"]');
+    await page.waitForSelector('aria/Show thinking');
+    expect(await page.$eval('aria/Show thinking',node=>'checked' in node && node.checked)).toBe(false);
+    await page.click('aria/Show thinking');
     saved=await page.evaluate("localStorage.getItem('house:watch:viewer:v1')");
     expect(JSON.parse(saved as string).thinking).toBe(true);
     await page.goto(`${servers.webUrl}/games/${game.slug}/replay?audience=mystery`,{waitUntil:"domcontentloaded"});
@@ -1135,7 +1135,7 @@ test("House replay music follows transport, remembers volume and stays visible o
     await page.goto(url,{waitUntil:"domcontentloaded"});
     await skipWerewolfOpening(page);
     expect(await page.evaluate("window.__musicAudio.length")).toBe(0);
-    await page.click('button[aria-label="Turn music on"]');
+    await page.click('button[aria-label="Unmute audio"]');
     await page.waitForFunction("window.__musicAudio.some(a=>!a.paused && a.currentTime>0.1)");
     expect(await page.evaluate("window.__musicContexts.filter(c=>c.state!=='closed').length")).toBe(1);
     expect(await page.evaluate("window.__musicAudio.length")).toBe(2);
@@ -1153,11 +1153,13 @@ test("House replay music follows transport, remembers volume and stays visible o
     // Exercise a real decoded full-source loop without waiting three minutes.
     await page.evaluate("window.__musicAudio.find(a=>!a.paused).currentTime=window.__musicAudio.find(a=>!a.paused).duration-0.5");
     await page.waitForFunction("window.__musicAudio.some(a=>!a.paused && a.currentTime>0.1 && a.currentTime<3)");
-    await page.click('button[aria-label="Mute music"]');
+    await page.click('button[aria-label="Mute audio"]');
     expect(await page.evaluate("window.__musicAudio.some(a=>!a.paused)")).toBe(true);
-    await page.click('button[aria-label="Turn music on"]');
+    await page.click('button[aria-label="Unmute audio"]');
+    await page.click('button[aria-label="Player settings"]');
     await page.evaluate(`(() => {const input=document.querySelector('input[aria-label="Music volume"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,"42");input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));})()`);
-    await page.waitForFunction("JSON.parse(localStorage.getItem('house:watch:viewer:v1')).musicVolume===0.42");
+    await page.waitForFunction("Math.abs(JSON.parse(localStorage.getItem('house:watch:viewer:v1')).musicVolume - (10 ** (3 * .42) - 1) / 999) < 1e-8");
+    await page.click('button[aria-label="Close settings"]');
     await pauseWerewolf(page);
     const presentation=await(await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/presentation?audience=mystery`)).json() as WerewolfPresentation;
     const daytime=presentation.view.entries.findIndex(entry=>entry.kind==="discussion");
@@ -1181,7 +1183,7 @@ test("House replay music follows transport, remembers volume and stays visible o
     expect(await page.$eval('input[aria-label="Music volume"]',node=>node.value)).toBe("42");
     await page.click('button[aria-label="Close settings"]');
     expect(await page.evaluate("document.documentElement.scrollWidth<=innerWidth")).toBe(true);
-    expect(await page.evaluate(`(() => {const node=document.querySelector('[data-watch-transport]'), right=node.getBoundingClientRect().right;return Array.from(node.querySelectorAll('button,input')).every(control=>control.getBoundingClientRect().right<=right+1);})()`)).toBe(true);
+    expect(await page.evaluate(`(() => {const node=document.querySelector('[data-watch-transport]'), right=node.getBoundingClientRect().right;return Array.from(node.querySelectorAll('button,input')).filter(control=>control.getBoundingClientRect().right>right+1).map(control=>({label:control.getAttribute('aria-label'),right:control.getBoundingClientRect().right,availableRight:right}));})()`)).toEqual([]);
     await page.screenshot({path:"/tmp/werewolf-music-mobile.png"});
     const slider=await page.$('input[aria-label="Replay position"]'), box=await slider!.boundingBox();
     await page.mouse.move(box!.x+box!.width/2,box!.y+box!.height/2);await page.mouse.down();
@@ -1197,9 +1199,8 @@ test("House replay music follows transport, remembers volume and stays visible o
     await page.waitForSelector('input[aria-label="Music volume"]');
     expect(await page.evaluate(`document.querySelector('input[aria-label="Music volume"]').value`)).toBe("42");
     await page.click('button[aria-label="Close settings"]');
-    // Real default autoplay policy may allow or block: either must keep the replay usable.
-    await page.waitForFunction(`window.__musicAudio.some(a=>!a.paused && a.currentTime>0.1) || document.querySelector('button[aria-label="Enable music"]')`);
-    if(await page.$('button[aria-label="Enable music"]')) await page.click('button[aria-label="Enable music"]');
+    // Reload retains the selected gain but starts master-muted again.
+    await page.click('button[aria-label="Unmute audio"]');
     await page.waitForFunction("window.__musicAudio.some(a=>!a.paused && a.currentTime>0.1)");
     // A real HTTP failure leaves visual playback running and can be explicitly retried.
     let failMusic=true;
@@ -1207,9 +1208,11 @@ test("House replay music follows transport, remembers volume and stays visible o
     page.on("request",request=>{if(failMusic && new URL(request.url()).pathname.endsWith(".mp3"))void request.respond({status:404,body:"Missing music fixture"});else void request.continue();});
     await page.click('button[aria-label="Player settings"]');
     await page.evaluate("Array.from(document.querySelectorAll('[role=dialog] button')).find(b=>b.textContent==='Restart replay').click()");
-    await page.waitForSelector('button[aria-label="Music unavailable. Retry"]');
+    await page.click('button[aria-label="Player settings"]');
+    await page.waitForFunction("Array.from(document.querySelectorAll('[role=dialog] button')).some(b=>b.textContent==='Music unavailable. Retry')");
     expect(await page.$('button[aria-label="Pause replay"]')).not.toBeNull();
-    failMusic=false;await page.click('button[aria-label="Music unavailable. Retry"]');
+    failMusic=false;await page.evaluate("Array.from(document.querySelectorAll('[role=dialog] button')).find(b=>b.textContent==='Music unavailable. Retry').click()");
+    await page.click('button[aria-label="Close settings"]');
     await page.waitForFunction("window.__musicAudio.some(a=>!a.paused && a.currentTime>0.1)");
     // Background playback intentionally retains sound and play intent.
     await page.evaluate("window.__backgroundMusic=window.__musicAudio.find(a=>!a.paused);window.__backgroundTime=window.__backgroundMusic.currentTime;Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));");
@@ -1248,8 +1251,7 @@ test("victory music continues beyond the final frame, pauses, and ends without l
       const resultCursor = presentation.view.entries.findIndex(entry=>entry.kind==="result") + 1;
       expect(resultCursor).toBeGreaterThan(0);
       await seekWatch(page,resultCursor);
-      if (await page.$('button[aria-label="Turn music on"]')) await page.click('button[aria-label="Turn music on"]');
-      if (await page.$('button[aria-label="Enable music"]')) await page.click('button[aria-label="Enable music"]');
+      await page.click('button[aria-label="Unmute audio"]');
       // Safari activation briefly primes both elements behind the silent master
       // gain. Wait for those play promises to settle before checking paused media.
       await page.waitForFunction("window.__musicAudio.length > 0 && window.__musicAudio.every(a=>a.paused)");

@@ -128,10 +128,10 @@ for(const slug of ["dark-coral-horn","player-card-village"]){
    await pause(frame,90_000);
    expect(Number(await frame.$eval('input[aria-label="Replay position"]',e=>e.value))).toBeLessThan(150);
    await frame.click('button[aria-label="Player settings"]');await clickText(frame,"2×");
-   const thinking=await frame.$('input[type="checkbox"]');if(thinking)await thinking.click();
-   await frame.click('button[aria-label="Close settings"]');
+   await frame.getByLabel('Show thinking',{exact:true}).check();
    await frame.evaluate(`(() => {const el=document.querySelector('input[aria-label="Music volume"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(el,"67");el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}));})()`);
-   await frame.click('button[aria-label="Turn music on"]');
+   await frame.click('button[aria-label="Close settings"]');
+   await frame.click('button[aria-label="Unmute audio"]');
    // Start well beyond the opening and land within a cue, not its readable boundary.
    await scrub(frame,1801);
    await frame.waitForFunction(`Number(document.querySelector('input[aria-label="Replay position"]')?.value)>1000`);
@@ -141,7 +141,7 @@ for(const slug of ["dark-coral-horn","player-card-village"]){
    }
    const shared=await captureShare(frame);
    expect(shared.searchParams.get("cue")).not.toContain("opening");
-   expect(shared.searchParams.get("muted")).toBe("0");expect(shared.searchParams.get("volume")).toBe("0.67");
+   expect(shared.searchParams.get("muted")).toBe("0");expect(Number(shared.searchParams.get("volume"))).toBeCloseTo(0.10143073,8);
    expect(shared.searchParams.get("speed")).toBe("2");expect(shared.searchParams.get("thinking")).toBe("1");expect(shared.searchParams.get("cue")).toBeTruthy();
    const embedPath=shared.pathname.replace(`/games/${slug}/replay`,`/embed/games/${slug}`);
    await freezeClock(page);
@@ -150,7 +150,7 @@ for(const slug of ["dark-coral-horn","player-card-village"]){
    const restored=await captureShare(frame);
    expect(restored.searchParams.get("cue")).toBe(shared.searchParams.get("cue"));
    expect(Math.abs(Number(restored.searchParams.get("t"))-Number(shared.searchParams.get("t")))).toBeLessThan(1.5);
-   expect(restored.searchParams.get("muted")).toBe("0");expect(restored.searchParams.get("volume")).toBe("0.67");
+   expect(restored.searchParams.get("muted")).toBe("0");expect(restored.searchParams.get("volume")).toBe(shared.searchParams.get("volume"));
    expect(restored.searchParams.get("speed")).toBe("2");expect(restored.searchParams.get("thinking")).toBe("1");
    // Farcaster launches the normal app at this moment, including its site providers.
    const appPage=await browser.newPage();await rejectOptionalAnalytics(appPage);await appPage.clock.install();
