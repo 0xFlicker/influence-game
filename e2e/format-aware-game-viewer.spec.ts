@@ -940,6 +940,50 @@ test.describe("format-aware game viewer", () => {
     }
   });
 
+  test("portrait-room speech uses the space above the speaker before adding pages", async ({ page }, testInfo) => {
+    await page.addInitScript(() => Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: false }));
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    const slug = "portrait-speech-space";
+    const scenario = createFormatKernelViewerScenario("two_names_declined");
+    const roster = Array.from({ length: 12 }, (_, index) => ({
+      ...scenario.roster[index % scenario.roster.length]!, id: `person-${index}`, name: `Person ${index + 1}`,
+    }));
+    const fixture = await installDeterministicFormatGame(page, { slug, scenarioId: "two_names_declined", roster, status: "in_progress", initialDecisionCount: 0 });
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
+    await expect.poll(() => fixture.sockets.length).toBe(1);
+    const text = "I’d probably take the aunt’s notes and pretend they were part of the recipe all along. But first I’d ask everyone what they noticed, because someone always remembers the detail that changes the whole story. If we compare those details now, we can make a plan together instead of guessing who to trust.";
+    fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: {
+      entrySequence: 1, round: 0, phase: "LOBBY", from: roster[0]!.id,
+      scope: "public", text, timestamp: Date.now(),
+    } }));
+    const room = page.getByRole("region", { name: "Lobby", exact: true });
+    const bubble = room.locator("[data-speech-bubble]");
+    await expect(bubble).toHaveCSS("opacity", "1");
+    await page.getByRole("button", { name: /Pause/ }).filter({ visible: true }).click();
+    await page.getByRole("button", { name: "Enter fullscreen", exact: true }).click();
+    for (const size of [{ width: 1920, height: 1080 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(size);
+      await expect.poll(async () => Math.round((await room.boundingBox())!.width)).toBe(size.width);
+      await expect.poll(() => room.evaluate(element => {
+        const stage = element.getBoundingClientRect();
+        const bubble = element.querySelector("[data-speech-bubble]")!.getBoundingClientRect();
+        const tail = element.querySelector("[data-speech-bubble] > [aria-hidden]")!.getBoundingClientRect();
+        const speaker = element.querySelector('[data-active-speaker="true"] img')!.getBoundingClientRect();
+        const copy = element.querySelector("[data-speech-bubble] > div")!;
+        return bubble.top >= stage.top + 43 && bubble.left >= stage.left
+          && bubble.right <= stage.right && speaker.top - tail.bottom >= 4
+          && speaker.top - tail.bottom <= 16
+          && Math.abs(tail.left + tail.width / 2 - speaker.left - speaker.width / 2) < 2
+          && copy.scrollHeight <= copy.clientHeight + 1;
+      })).toBe(true);
+      await expect(bubble).toContainText(text);
+      await expect(bubble.locator('[aria-label^="Page "]')).toHaveCount(0);
+      if (size.width < 600) expect((await bubble.boundingBox())!.width).toBeGreaterThan(size.width * .85);
+      await room.screenshot({ path: testInfo.outputPath(`portrait-speech-space-${size.width}.png`) });
+    }
+  });
+
   for (const [phase, roomId] of [["LOBBY", "lobby"], ["MINGLE", "mingle-1"], ["JURY_QUESTIONS", "finals"]] as const) {
     test(`${phase} bubbles fade, hold a clear scene, and pan between paused clicks`, async ({ page }, testInfo) => {
       await page.clock.install();
