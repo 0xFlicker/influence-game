@@ -31,18 +31,24 @@ waiting for its `currentSrc` to contain the former public `/api/games/` path.
 Keep the elapsed-time and rewind assertions on that element: changing the URL
 expectation must not weaken the playback continuity test.
 
-The Werewolf portrait-room browser check also caught a real layout regression:
-floor-perspective speech was anchored above the front speaker while the rear
-cast's name labels occupied that same area. Reserve the rear row when positioning
-the bubble and move the ring down only as far as the fitted speech requires.
-Bound that movement by the remaining portrait and name space: a narrow 300px
-embedded stage must not push the front speaker outside its clipped container.
-Keep the existing mobile label-overlap and portrait-containment assertions; the
-shared component supplies the same layout to Influence, Werewolf and sampled
-exports without changing canonical history or media identities.
+The original Werewolf portrait-room fix reserved rear-row labels above the
+speaker. The October 29 layout revision deliberately allows speech to cover
+those listeners so ordinary turns can use the available space before paginating.
+Keep the ring independent of fitted message size and preserve the front portrait
+and name inside short stages. Browser checks now verify that speech clears the
+active head and its caret points close to that speaker; a blanket prohibition on
+rear-label overlap contradicts the intended layout. The shared component supplies
+the same layout to Influence, Werewolf and sampled exports without changing
+canonical history or media identities.
 Restore mocked Happy DOM dimension descriptors in `finally`: its HTMLElement
 prototype is shared across windows, so a short-stage unit fixture can otherwise
 activate typography measurement in unrelated later tests.
+
+Music browser instrumentation must count media elements attached through
+`AudioContext.createMediaElementSource`, rather than every `new Audio()` call.
+The voice controller primes a separate unlock element during a user gesture.
+Keep the exact two-deck music ownership assertion through fullscreen transitions
+and the transport/loop checks scoped to the music graph.
 
 Format-viewer fixtures must answer the audio metadata endpoint with JSON `null`
 when there are no recordings. Their generic 404 caused the real voice controller

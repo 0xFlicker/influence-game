@@ -587,13 +587,17 @@ test("Werewolf without visual mode shows village and pack portrait rooms on desk
           });
         })()`);
         expect(await page.$eval('[data-active-speaker="true"] p', element => element.scrollWidth <= element.clientWidth)).toBe(true);
-        if (viewport.width === 390) expect(await page.$$eval("[data-room-player] p", elements => {
-          const bubble = elements[0]!.ownerDocument.querySelector("[data-speech-bubble]")!.getBoundingClientRect();
-          return elements.every(element => {
-            const name = element.getBoundingClientRect();
-            return name.right <= bubble.left || name.left >= bubble.right || name.bottom <= bubble.top || name.top >= bubble.bottom;
-          });
-        })).toBe(true);
+        // Rear listeners may sit beneath speech. Keep the active head clear and
+        // its caret close, including after typography settles on a resized stage.
+        if (viewport.width === 390) await page.waitForFunction(`(() => {
+          const bubble = document.querySelector("[data-speech-bubble]");
+          const tail = bubble?.querySelector(":scope > [aria-hidden]");
+          const speaker = document.querySelector('[data-active-speaker="true"] img');
+          if (!bubble || !tail || !speaker) return false;
+          const box = bubble.getBoundingClientRect(), pointer = tail.getBoundingClientRect(), head = speaker.getBoundingClientRect();
+          return box.bottom <= head.top && head.top - pointer.bottom >= 4 && head.top - pointer.bottom <= 16
+            && Math.abs(pointer.left + pointer.width / 2 - head.left - head.width / 2) < 2;
+        })()`);
         expect(await page.evaluate("document.documentElement.scrollWidth <= innerWidth")).toBe(true);
         await page.screenshot({path: `/tmp/werewolf-portrait-room-${viewport.width}.png`});
       }
@@ -1117,9 +1121,12 @@ test("House replay music follows transport, remembers volume and stays visible o
   try {
     await page.evaluateOnNewDocument(`(() => {
       window.__musicAudio=[]; window.__musicContexts=[];
-      const OriginalAudio=window.Audio, OriginalContext=window.AudioContext;
-      window.Audio=class extends OriginalAudio {constructor(...args){super(...args);window.__musicAudio.push(this);}};
-      window.AudioContext=class extends OriginalContext {constructor(...args){super(...args);window.__musicContexts.push(this);}};
+      // Count music graph decks; voice separately primes its own audio element.
+      const OriginalContext=window.AudioContext;
+      window.AudioContext=class extends OriginalContext {
+        constructor(...args){super(...args);window.__musicContexts.push(this);}
+        createMediaElementSource(audio){const source=super.createMediaElementSource(audio);window.__musicAudio.push(audio);return source;}
+      };
     })()`);
     await page.setViewport({width:1440,height:1000});
     await page.goto(servers.webUrl!,{waitUntil:"domcontentloaded"});
