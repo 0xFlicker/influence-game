@@ -130,3 +130,19 @@ for(const thinking of [false,true])test(`Buffered commentary waits for ${thinkin
  bridge!.send(JSON.stringify({type:'commentary-hold',id:holdId,held:false}));
  await page.waitForTimeout(200);expect((await voice())?.paused).toBe(true);
 });
+
+
+test('a quiet transition keeps pending commentary until the announcement ends and publishes completion',async({page})=>{
+ await fixture(page);let bridge:WebSocketRoute|undefined;const messages:Record<string,unknown>[]=[];
+ await page.routeWebSocket(`ws://localhost:8787/follow?pair=${pair}`,ws=>{bridge=ws;ws.onMessage(raw=>messages.push(JSON.parse(String(raw))));ws.send(JSON.stringify({type:'connected'}));});
+ await page.goto(operator);await expect(page.getByRole('status',{name:'House connection'})).toHaveText('Connected to House Studio');
+ await page.getByRole('button',{name:'Begin announcement'}).click();
+ await expect.poll(()=>messages.some(m=>m.type==='commentary-boundary'&&m.blocked)).toBe(true);
+ const id='72ffba03-453e-405b-a4b9-06fb5801a0fe';bridge!.send(JSON.stringify({type:'commentary-hold',id,held:true}));
+ await page.waitForTimeout(150);expect(messages.some(m=>m.type==='commentary-ready')).toBe(false);
+ await page.getByRole('button',{name:'Complete announcement'}).click();
+ await expect.poll(()=>messages.filter(m=>m.type==='commentary-ready'&&m.id===id).length).toBe(1);
+ bridge!.send(JSON.stringify({type:'commentary-hold',id,held:false}));
+ await page.getByRole('button',{name:'Finish game'}).click();
+ await expect.poll(()=>messages.some(m=>m.type==='commentary-boundary'&&m.concluded===true)).toBe(true);
+});

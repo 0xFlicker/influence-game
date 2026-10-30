@@ -321,7 +321,11 @@ function DramaticReplayTheater({
   const [playRequested, setPlayRequested] = useState(!followed);
   const followPosition = () => activeCue ? {kind:"influence" as const,...influenceProductionReference(activeCue,
     key=>presentationCues.find(candidate=>candidate.key===key),candidate=>candidate.source==="classic"?scenes[candidate.sceneIndex]?.messages[candidate.messageIndex]:undefined)} : null;
-  const {onSpeech:onHouseSpeech,houseSpeaking,houseHolding} = useGamePlayback({id:game.id,slug:game.slug,kind:"influence"},followPosition,players,{director,revealAtMs:activeCue?influencePresentationPolicy.scrubAtMs?.(activeCue)??0:0});
+  const concluded=useCallback(()=>{
+    const current=director.getActiveCue();
+    return current?.source==='endgame'&&current.kind==='endgame_winner'&&current.phase==='RETROSPECTIVE';
+  },[director]);
+  const {onSpeech:onHouseSpeech,houseSpeaking,houseHolding} = useGamePlayback({id:game.id,slug:game.slug,kind:"influence"},followPosition,players,{director,concluded,revealAtMs:activeCue?influencePresentationPolicy.scrubAtMs?.(activeCue)??0:0});
   const [masterMuted, setMasterMuted] = useState(true);
   const voice = useWatchVoice({suspended:houseHolding,masterMuted,director,gameId:game.id,audience:"public",thinking:preferences.thinking,live,onPause:() => setPlayRequested(false),
     coordinate:activeCue ? coordinateForCue(activeCue) : null,coordinateForCue,onSpeech:onHouseSpeech});

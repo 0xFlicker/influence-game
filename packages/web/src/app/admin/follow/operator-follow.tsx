@@ -28,7 +28,7 @@ function PairedPlayer({children}:{children:ReactNode}) {
   const [heldRequest,setHeldRequest]=useState<string|null>(null);
   const update=useCallback((value:PlaybackUpdate)=>{boundary.current=value.timing;setPlayback(value);},[]);
   const holdAtSilence=useCallback(()=>{
-    if(!pendingHold.current||speechState.current.speaking)return;
+    if(!pendingHold.current||speechState.current.speaking||boundary.current?.commentaryReady?.()===false)return;
     // Freeze synchronously at the media boundary, before another cue can start.
     boundary.current?.director.setCommentaryHeld(true);
     setHeldRequest(pendingHold.current);
@@ -81,6 +81,21 @@ function PairedPlayer({children}:{children:ReactNode}) {
     if(!speaking)holdAtSilence();
     if(socket.current?.readyState===WebSocket.OPEN)socket.current.send(JSON.stringify({type:'speech',speaking,speaker}));
   },[holdAtSilence]);
+  useEffect(()=>{
+    const timing=playback?.timing;
+    if(!connected||!timing)return;
+    let previous:string|undefined;
+    const sample=()=>{
+      const blocked=timing.commentaryReady?.()===false;
+      const concluded=timing.concluded?.()===true;
+      const signature=JSON.stringify([blocked,concluded]);
+      if(signature!==previous&&socket.current?.readyState===WebSocket.OPEN){
+        previous=signature;socket.current.send(JSON.stringify({type:'commentary-boundary',blocked,concluded}));
+      }
+      holdAtSilence();
+    };
+    const off=sampleWatch(timing.director,sample);sample();return off;
+  },[connected,playback,holdAtSilence]);
   const value=useMemo(()=>({update,speech,houseSpeaking,pauseForHouse,commentaryHeld:heldRequest!==null}),[update,speech,houseSpeaking,pauseForHouse,heldRequest]);
   useEffect(()=>{
     if(!connected||!playback?.game.id||!playback.position)return;

@@ -75,3 +75,9 @@ Operator-only correction validation: nine game-browser tests and five House-brow
 Development lifecycle correction (2026-10-30): the operator publisher defers socket creation to a cancellable microtask so React Strict Mode's discarded setup never consumes the one-use pairing. Browser fixtures run under Strict Mode and assert exactly one socket attempt; real player closure still ends following. This does not add reconnection or change pairing authorization.
 
 The correction passed ten Strict Mode browser cases plus a cross-project smoke using the real House Studio server/WebSocket and the actual operator publisher: the paired player published fixture context, enabled Stop/Share, and released on close without any GPT-Live session. Windows localhost ports 3001 and 3000 returned HTTP 200 after restoring detached Mac web/gateway/tunnel processes. An invalidated pairing requires a fresh Follow game click; restoring the tunnel does not revive an expired token.
+
+## Commentary boundaries and completed playback
+
+The paired player publishes a separate commentary boundary from its canonical cues and the existing recorded playback clock. A night-resolution screen is kept together with the following daytime announcement; quiet gaps between these screens do not release buffered House audio. Announcements, including the result reveal, reserve the floor until their narration/read window finishes. This does not widen or otherwise change the Mystery/Omniscient knowledge projection.
+
+After the retrospective reaches the closing results reprise, the player explicitly reports concluded playback. House Studio sends one acknowledged game-finished update and asks for a closing take followed by discussion with the operator. Buffering and the automatic microphone gate end at that boundary; manual microphone/House mute selections remain authoritative. The winner's first reveal is not the end-of-game conversation trigger.
