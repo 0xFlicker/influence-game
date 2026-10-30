@@ -464,3 +464,13 @@ test("Studio backfill requires producer authority and freezes only verified gene
   const thoughtOff=await request(`${root(f.gameId)}/audio/manifest?audience=public&thinking=off`);
   expect((await thoughtOff.json() as typeof publication).clips.some(row=>row.versionId===clip.versionId)).toBe(false);
 });
+
+test('follow context requires a producer and applies the requested playback audience',async()=>{
+ const f=await wolf();const position={kind:'werewolf',audience:'mystery',cursor:0,part:{kind:'opening'}};
+ expect((await request(`${root(f.id)}/follow-context`,position)).status).toBe(403);
+ await producer();const response=await request(`${root(f.id)}/follow-context`,position);
+ expect(response.status).toBe(200);const body=await response.json() as {visibility:string;thinking:unknown[]};
+ expect(body.visibility).toBe('mystery');expect(body.thinking).toEqual([]);
+ expect(JSON.stringify(body)).not.toContain('"role":');
+ expect((await request(`${root(f.id)}/follow-context`,{...position,thinking:true})).status).toBe(400);
+});

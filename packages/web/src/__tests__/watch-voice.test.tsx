@@ -33,6 +33,10 @@ class FakeAudio {
   onloadedmetadata: (() => void) | null = null;
   onseeked: (() => void) | null = null;
   onerror: (() => void) | null = null;
+  onpause: (() => void) | null = null;
+  onended: (() => void) | null = null;
+  onemptied: (() => void) | null = null;
+  onvolumechange: (() => void) | null = null;
   plays = 0;
   nextPlay: (() => Promise<void>) | null = null;
   constructor() {FakeAudio.instances.push(this);}
@@ -78,10 +82,10 @@ async function frame() {
     for (const callback of pending) callback(frameTime);
   });
 }
-async function mount() {
+async function mount(onSpeech?: (speaking:boolean,id:string|null)=>void) {
   let pauses = 0;
   const hook = renderHook(({cursor}) => useWatchVoice({director, gameId:"g", audience:"public", thinking:false,
-    coordinate:coordinate(cursor), onPause:() => {pauses++;},
+    coordinate:coordinate(cursor), onSpeech, onPause:() => {pauses++;},
   }), {initialProps:{cursor:1}});
   await act(async () => {});
   act(() => director.seekTimeline(0, 1200));
@@ -279,4 +283,46 @@ test("Play during a silent pose does not cancel pending voice activation", async
   audio.nextPlay=null;now=1200;await frame();
   expect(audio.src).toBe("/clip-1.mp3");
   expect(audio.paused).toBe(false);
+});
+
+
+test("follow speech starts at actual playing, excludes preloads, and ends on mute/pause/end", async () => {
+  const events: [boolean,string|null][]=[];
+  const view=await mount((speaking,id)=>events.push([speaking,id]));
+  expect(events).toEqual([]);
+  act(()=>director.play());await frame();
+  expect(view.audio.plays).toBeGreaterThan(0);
+  expect(events).toEqual([]);
+  act(()=>view.audio.onplaying?.());
+  expect(events).toEqual([[true,"p"]]);
+  act(()=>{view.audio.muted=true;view.audio.onvolumechange?.();});
+  expect(events.at(-1)).toEqual([false,null]);
+  act(()=>{view.audio.muted=false;view.audio.onvolumechange?.();});
+  expect(events.at(-1)).toEqual([true,"p"]);
+  act(()=>{view.audio.pause();view.audio.onpause?.();});
+  expect(events.at(-1)).toEqual([false,null]);
+  act(()=>{view.audio.play();view.audio.onplaying?.();});
+  expect(events.at(-1)).toEqual([true,"p"]);
+  act(()=>view.audio.onended?.());
+  expect(events.at(-1)).toEqual([false,null]);
+  view.unmount();
+});
+
+test("master mute immediately silences voice while preserving its channel settings", async () => {
+  const hook=renderHook(({masterMuted}) => useWatchVoice({director,gameId:"g",audience:"public",thinking:false,
+    coordinate:coordinate(1),onPause:()=>{},masterMuted}),{initialProps:{masterMuted:false}});
+  await act(async () => {});
+  const audio=FakeAudio.instances[0]!;
+  act(() => hook.result.current.setVolume(.4));
+  hook.rerender({masterMuted:true});
+  expect(audio.muted).toBe(true);
+  expect(hook.result.current.muted).toBe(false);
+  expect(audio.volume).toBe(.4);
+  hook.rerender({masterMuted:false});
+  expect(audio.muted).toBe(false);
+  act(() => hook.result.current.setMuted(true));
+  hook.rerender({masterMuted:true});
+  hook.rerender({masterMuted:false});
+  expect(audio.muted).toBe(true);
+  expect(audio.volume).toBe(.4);
 });

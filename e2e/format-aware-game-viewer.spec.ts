@@ -35,12 +35,30 @@ async function observeMusic(page: Page) {
   await page.addInitScript(() => {
     const media: HTMLAudioElement[] = [];
     Object.defineProperty(window, "__scoreMedia", {value:media});
+    const gains: GainNode[]=[];
+    Object.defineProperty(window,"__scoreGains",{value:gains});
+    const connect=AudioNode.prototype.connect;
+    AudioNode.prototype.connect=new Proxy(connect,{apply(target,node,args) {
+      if (node instanceof GainNode && args[0] instanceof AudioDestinationNode) gains.push(node);
+      return Reflect.apply(target,node,args);
+    }});
     const NativeAudio = window.Audio;
     window.Audio = class extends NativeAudio {
       constructor(src?: string) {super(src); media.push(this);}
     };
   });
 }
+
+async function enableMusic(page:Page) {
+  const unmute=page.getByRole("button",{name:"Unmute audio",exact:true});
+  await unmute.click();
+  await page.getByRole("button",{name:"Player settings",exact:true}).click();
+  await page.getByRole("checkbox",{name:"Music",exact:true}).check();
+  const enable=page.getByRole("button",{name:"Enable music playback",exact:true});
+  if (await enable.isVisible()) await enable.click();
+  await page.getByRole("button",{name:"Close settings",exact:true}).click();
+}
+
 function musicState(page: Page) {
   return page.evaluate(() => (window as unknown as {__scoreMedia: HTMLAudioElement[]}).__scoreMedia.map(audio => ({
     src:audio.getAttribute("src"), time:audio.currentTime, paused:audio.paused, muted:audio.muted, volume:audio.volume, rate:audio.playbackRate, error:audio.error?.code,
@@ -172,6 +190,30 @@ test.describe("format-aware game viewer", () => {
     if (harnessProcess) await stopLocalFormatViewerHarness(harnessProcess);
   });
 
+  for (const kind of ["influence", "werewolf"] as const) test(`${kind} starts master-muted with low music on the audio taper`,async ({page})=>{
+    await observeMusic(page);
+    const slug=`volume-default-${kind}`;
+    if(kind==="influence") await installDeterministicFormatGame(page,{slug,scenarioId:"save_or_eliminate_clear",status:"completed"});
+    else await installWerewolfGame(page,slug);
+    await page.goto(viewerUrl(`/games/${slug}/replay?audience=mystery`));
+    await expect(page.getByRole("button",{name:"Unmute audio",exact:true})).toBeVisible();
+    await page.getByRole("button",{name:"Player settings",exact:true}).click();
+    await expect(page.getByRole("checkbox",{name:"Music",exact:true})).toBeChecked();
+    const volume=page.getByRole("slider",{name:"Music volume",exact:true});
+    await expect(volume).toHaveValue("50");
+    await volume.fill("70");
+    expect(await page.evaluate(()=>JSON.parse(localStorage.getItem("house:watch:viewer:v1")!).musicVolume)).toBeCloseTo(.125,2);
+    await page.getByRole("button",{name:"Close settings",exact:true}).click();
+    await expect(page.getByRole("button",{name:"Unmute audio",exact:true})).toBeVisible();
+    expect((await musicState(page)).every(media=>media.muted || media.paused)).toBe(true);
+    await page.getByRole("button",{name:"Unmute audio",exact:true}).click();
+    await expect.poll(async () => (await musicState(page)).some(media=>!media.paused && !media.muted && media.volume>0 && !media.src?.endsWith("unlock.wav"))).toBe(true);
+    await page.reload();
+    await expect(page.getByRole("button",{name:"Unmute audio",exact:true})).toBeVisible();
+    await page.getByRole("button",{name:"Player settings",exact:true}).click();
+    await expect(volume).toHaveValue("70");
+  });
+
   for (const kind of ["influence", "werewolf"] as const) {
     test(`${kind} player performance: continuous timeline and responsive pause`, async ({page}, testInfo) => {
       const slug = `performance-${kind}`;
@@ -242,9 +284,9 @@ test.describe("format-aware game viewer", () => {
       await expect(opening).toBeVisible();
       await pauseAutoplay(page, "Pause replay");
       expect(await musicState(page)).toEqual([]);
-      if (mobile) await page.getByRole("button", {name:"Player settings", exact:true}).click();
+      await page.getByRole("button", {name:"Player settings", exact:true}).click();
       await expect(page.getByRole("slider", {name:"Music volume"})).toBeInViewport();
-      if (mobile) await page.getByRole("button", {name:"Close settings", exact:true}).click();
+      await page.getByRole("button", {name:"Close settings", exact:true}).click();
       const slider = page.getByRole("slider", {name:"Replay position",exact:true});
       await slider.fill("450");
       await slider.press("ArrowRight");
@@ -257,10 +299,10 @@ test.describe("format-aware game viewer", () => {
         await expect.poll(() => video.evaluate(element => (element as HTMLVideoElement).currentTime)).toBeCloseTo(15, 0);
         expect(await video.evaluate(element => (element as HTMLVideoElement).paused)).toBe(true);
       }
-      await page.getByRole("button", {name:"Turn music on", exact:true}).click();
-      if (mobile) await page.getByRole("button", {name:"Player settings", exact:true}).click();
+      await enableMusic(page);
+      await page.getByRole("button", {name:"Player settings", exact:true}).click();
       await page.getByRole("slider", {name:"Music volume"}).fill("40");
-      if (mobile) await page.getByRole("button", {name:"Close settings", exact:true}).click();
+      await page.getByRole("button", {name:"Close settings", exact:true}).click();
       await page.getByRole("button", {name:"Play replay", exact:true}).click();
       await expect.poll(async () => (await musicState(page)).find(audio => audio.src?.includes("an-invitation"))?.paused).toBe(false);
       await expect.poll(async () => (await musicState(page)).find(audio => audio.src?.includes("an-invitation"))?.time ?? 0).toBeGreaterThan(14.9);
@@ -268,7 +310,7 @@ test.describe("format-aware game viewer", () => {
       expect(introAudio.muted).toBe(false);
       expect(introAudio.time).toBeGreaterThan(14.9);
       expect(introAudio.time).toBeLessThan(18);
-      expect(introAudio.volume).toBe(.4);
+      expect(introAudio.volume).toBeCloseTo(.01486,4);
       await pauseAutoplay(page, "Pause replay");
       expect((await musicState(page)).every(audio => audio.paused)).toBe(true);
       await slider.fill("630");
@@ -310,7 +352,7 @@ test.describe("format-aware game viewer", () => {
     }]});
     await page.route(`**/api/games/${slug}/transcript*`, route => route.fulfill({json:[]}));
     await page.goto(viewerUrl(`/games/${slug}/replay`));
-    await page.getByRole("button", {name:"Turn music on",exact:true}).click();
+    await enableMusic(page);
     const keepsPlaying = async (track: string) => {
       const audio = async () => (await musicState(page)).find(media => media.src?.includes(track) && !media.paused);
       await expect.poll(async () => (await audio())?.time ?? -1).toBeGreaterThan(.5);
@@ -332,7 +374,7 @@ test.describe("format-aware game viewer", () => {
           if (inSettings) await page.getByRole("button", {name:"Close settings",exact:true}).click();
         }
         await expect.poll(async () => (await audio())?.time ?? -1).toBeGreaterThan(before + .2);
-        await expect(page.getByRole("button", {name:"Mute music",exact:true})).toBeVisible();
+        await expect(page.getByRole("button", {name:"Mute audio",exact:true})).toBeVisible();
         await expect(page.getByRole("button", {name:"Pause replay",exact:true})).toBeVisible();
       }
     };
@@ -361,7 +403,7 @@ test.describe("format-aware game viewer", () => {
     await pauseAutoplay(page, "Pause replay");
     const position = page.getByRole("slider", {name:"Replay position",exact:true});
     await position.fill(String(Number(await position.getAttribute("max")) - 30));
-    await page.getByRole("button", {name:"Turn music on",exact:true}).click();
+    await enableMusic(page);
     await page.getByRole("button", {name:"Play replay",exact:true}).click();
     await expect.poll(async () => (await musicState(page)).find(audio => audio.src?.includes("the-last-word"))?.time).toBeGreaterThan(3);
     await expect(page.getByRole("button", {name:"Pause replay",exact:true})).toBeVisible();
@@ -389,7 +431,7 @@ test.describe("format-aware game viewer", () => {
     const position = page.getByRole("slider", {name:"Replay position",exact:true});
     const end = Number(await position.getAttribute("max"));
     await position.fill(String(end - 30));
-    await expect(page.getByRole("button", {name:"Turn music on",exact:true})).toBeVisible();
+    await expect(page.getByRole("button", {name:"Unmute audio",exact:true})).toBeVisible();
     await page.getByRole("button", {name:"Play replay",exact:true}).click();
     await expect.poll(async()=>Number(await position.inputValue())).toBe(end);
     await expect(page.getByRole("button", {name:"Play replay",exact:true})).toBeVisible();
@@ -620,7 +662,7 @@ test.describe("format-aware game viewer", () => {
         headers:{"Accept-Ranges":"bytes",...(range ? {"Content-Range":`bytes ${start}-${end}/${wav.length}`} : {})}});
     });
     await page.goto(viewerUrl(`/games/${slug}/replay?audience=mystery`));
-    await page.getByRole("button",{name:savedSound ? "Enable music" : "Turn music on",exact:true}).click();
+    await enableMusic(page);
     await expect.poll(async () => (await musicState(page)).filter(media=>media.src === "/music/unlock.wav").length).toBeGreaterThan(0);
     // The only unlock gesture is during the opening, before any voice exists.
     await expect.poll(async () => (await musicState(page)).some(media=>media.src === "/music/unlock.wav" && media.paused)).toBe(true);
@@ -628,7 +670,13 @@ test.describe("format-aware game viewer", () => {
     const voice=async () => (await musicState(page)).find(media=>media.src?.endsWith("/fixture-voice/0.wav"));
     await expect.poll(async () => (await voice())?.time ?? -1).toBeGreaterThan(.5);
     await expect(page.getByRole("button",{name:"Pause replay",exact:true})).toBeVisible();
-    await expect(page.getByRole("button",{name:"Mute music",exact:true})).toBeVisible();
+    await expect(page.getByRole("button",{name:"Mute audio",exact:true})).toBeVisible();
+    await page.getByRole("button",{name:"Mute audio",exact:true}).click();
+    await expect.poll(async () => (await voice())?.muted).toBe(true);
+    await expect.poll(()=>page.evaluate(()=>(window as unknown as {__scoreGains:GainNode[]}).__scoreGains.every(gain=>gain.gain.value===0))).toBe(true);
+    await page.getByRole("button",{name:"Unmute audio",exact:true}).click();
+    await expect.poll(async () => (await voice())?.muted).toBe(false);
+    await expect.poll(()=>page.evaluate(()=>(window as unknown as {__scoreGains:GainNode[]}).__scoreGains.some(gain=>gain.gain.value>0))).toBe(true);
     const before=(await voice())!.time;
     const seekCount=() => page.evaluate(()=>(window as unknown as {__voiceSeeks:number[]}).__voiceSeeks.length);
     const seeks=await seekCount();
@@ -639,7 +687,14 @@ test.describe("format-aware game viewer", () => {
     await expect.poll(seekCount).toBeGreaterThan(seeks);
     await expect.poll(async () => (await musicState(page)).find(media=>media.src?.endsWith("/fixture-voice/1.wav"))?.time ?? -1,{timeout:15_000}).toBeGreaterThan(.5);
     await expect(page.getByRole("button",{name:"Pause replay",exact:true})).toBeVisible();
-    await expect(page.getByRole("button",{name:"Mute music",exact:true})).toBeVisible();
+    await expect(page.getByRole("button",{name:"Mute audio",exact:true})).toBeVisible();
+    await page.getByRole("button",{name:"Player settings",exact:true}).click();
+    const musicBounds=await page.getByRole("slider",{name:"Music volume",exact:true}).boundingBox();
+    const voiceBounds=await page.getByRole("slider",{name:"Voice volume",exact:true}).boundingBox();
+    expect(musicBounds).not.toBeNull();expect(voiceBounds).not.toBeNull();
+    expect(voiceBounds!.x).toBe(musicBounds!.x);
+    expect(voiceBounds!.width).toBe(musicBounds!.width);
+    await expect(page.getByRole("checkbox",{name:"Voice",exact:true})).toBeChecked();
   });
 
   test.afterEach(async ({page},info) => {
@@ -678,6 +733,11 @@ test.describe("format-aware game viewer", () => {
     await slider.fill(String(Math.round((door.opening.totalMs + beforeSpeech + 1500) * 30 / 1000)));
     const bubble=page.locator('[data-speech-bubble]');
     await expect(bubble).toBeVisible();
+    await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
+    await expect(page.locator('[data-player-theater="true"]')).toHaveCSS("width",`${page.viewportSize()!.width}px`);
+    await expect(page.locator('[data-player-theater="true"]')).toHaveCSS("height",`${page.viewportSize()!.height}px`);
+    expect(await page.evaluate(()=>document.fullscreenElement)).toBeNull();
+    await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
     await page.getByRole("button",{name:"Enter fullscreen",exact:true}).click();
     const player=page.locator('[data-player-fullscreen="true"]');
     await expect(player).toHaveAttribute("popover","manual");
@@ -1045,7 +1105,7 @@ test.describe("format-aware game viewer", () => {
     });
   }
 
-  test("native fullscreen enters and exits without changing paused speech", async ({ page }) => {
+  test("native fullscreen enters and exits without changing paused speech", async ({ page },testInfo) => {
     await page.clock.install();
     const slug = "native-fullscreen-fixture";
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -1067,6 +1127,20 @@ test.describe("format-aware game viewer", () => {
     await expect(speech.locator('..')).toHaveCSS("opacity", "1");
     await page.getByRole("button", { name: /Pause/ }).filter({ visible: true }).click();
     await expect(speech).toContainText("The same speech stays on screen.");
+    await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
+    const theater=page.locator('[data-player-theater="true"]');
+    await expect(theater).toHaveCSS("width","1280px");
+    await expect(theater).toHaveCSS("height","800px");
+    expect(await page.evaluate(()=>document.fullscreenElement)).toBeNull();
+    await expect(speech).toContainText("The same speech stays on screen.");
+    await page.getByRole("button",{name:"Player settings",exact:true}).click();
+    await expect(page.getByRole("dialog",{name:"Player settings"})).toBeVisible();
+    await page.screenshot({path:testInfo.outputPath("theater-settings.png")});
+    await page.keyboard.press("Escape");
+    await expect(theater).toBeVisible();
+    await page.getByRole("button",{name:"Exit theater mode",exact:true}).press("Escape");
+    await expect(page.getByRole("button",{name:"Enter theater mode",exact:true})).toBeFocused();
+    await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
     await page.getByRole("button", { name: "Enter fullscreen", exact: true }).click();
     await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(true);
     await expect(speech).toContainText("The same speech stays on screen.");
@@ -2106,7 +2180,7 @@ test.describe("format-aware game viewer", () => {
     await expect(rollCall).not.toHaveAttribute("aria-label", firstVoter!);
     await expect(rollCall.getByRole("blockquote")).not.toBeEmpty();
     await expect(rollCall).toHaveCount(1);
-    await expect(page.getByRole("button", { name: /audio|sound|mute/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Unmute audio", exact:true })).toHaveCount(1);
     await captureSettledScreenshot(
       page,
       testInfo,

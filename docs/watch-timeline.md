@@ -32,3 +32,11 @@ Validation covers absolute frame rounding, unequal cue durations, thinking inser
 - Six deterministic browser cases passed: Werewolf live-window races, openings, ballots/tally, private night-action steps; Influence individual frames/native drag and thinking seeks. Focused director, timing-index parity, cache and readiness tests also passed after the final changes.
 
 Final typecheck, lint and provider-free tests passed on the rebased branch. PostgreSQL and browser results above were obtained before removing two unrelated inherited PostHog commits; the scrubber implementation rebased without conflicts. No staging or production deployment was performed.
+
+## Player display and sound controls
+
+Influence and Werewolf share icon-only theater and fullscreen controls. Theater expands the existing player to the browser viewport, leaving browser chrome visible; fullscreen requests browser fullscreen. Neither remounts playback. Escape exits the expanded view (or closes open settings first), restores scrolling, and returns focus to its control.
+
+The transport speaker icon is a master mute for both voice and music, including opening and closing music. Player settings contain separate Voice and Music enable switches and volume sliders. Master mute preserves those channel selections and levels; unmuting restores them. Muting does not pause or seek the game.
+
+New player sessions start master-muted, with voice enabled. New browsers also default to music enabled at 50% on the audio-taper slider (about 3.1% linear gain). The music slider maps its travel exponentially across a roughly 60 dB range, with exact silence at zero, giving low levels more room and reserving high gains for the right edge. Stored and shared music gains retain their actual loudness; the slider displays their corresponding position on the curve.

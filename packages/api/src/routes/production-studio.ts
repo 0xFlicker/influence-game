@@ -1,3 +1,5 @@
+import {readGameFollowContext} from '../services/game-follow-context.js';
+import {HouseInspectionError} from '../services/house-game-access.js';
 import {productionEditorial} from "../services/production-editorial.js";
 import {completeProductionSource as completeSource, ProductionEditorialInputError} from "../services/production-editorial-source.js";
 import {resumeLiveAudio,LiveAudioBlocked} from "../services/audio-live.js";
@@ -107,6 +109,7 @@ export function createProductionStudioRoutes(db:DrizzleDB) {
     await next();
   }));
   app.onError((error,c) => {
+    if(error instanceof HouseInspectionError)return c.json({error:error.message},error.code==='not_accessible'?404:400);
     if (error instanceof AudioTrackConflict || error instanceof LiveAudioBlocked) return c.json({error:error.message},409);
     if (error instanceof AnnotationConflict) return c.json({error:error.message,current:error.current},409);
     if (error instanceof WerewolfGameError) return c.json({error:error.message},error.status);
@@ -115,6 +118,7 @@ export function createProductionStudioRoutes(db:DrizzleDB) {
     console.error("[production-studio]",error);
     return c.json({error:"Production request failed. Refresh to check saved state."},500);
   });
+  app.post(`${root}/follow-context`,async c=>c.json(await readGameFollowContext(db,c.req.param('id'),await c.req.json())));
   app.post(`${root}/cut-preview`,async c => {
     const body=object(await c.req.json());fields(body,["audience","thinking","snapshot","recipe","music","volume"]);
     const result=await productionEditorial(db,c.get("user").id,"preview_production_cut",{...body,gameIdOrSlug:c.req.param("id"),limit:1});

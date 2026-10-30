@@ -10,9 +10,9 @@ beforeEach(() => { dom = new HappyDOMWindow(); for (const key of keys) Object.de
 afterEach(() => { cleanup(); dom.close(); for (const key of keys) { const descriptor = original.get(key); if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); } });
 function Player() {
   const frame = useRef<HTMLDivElement>(null);
-  const { fullscreen, button, toggle } = usePlayerFullscreen(frame);
+  const { fullscreen, theater, theaterButton, toggleTheater, button, toggle } = usePlayerFullscreen(frame);
   const [count, setCount] = useState(0);
-  return <div ref={frame} data-testid="player" data-fullscreen={fullscreen}><button ref={button} onClick={() => void toggle()}>Fullscreen</button><button onClick={() => setCount(count + 1)}>Step {count}</button></div>;
+  return <div ref={frame} data-testid="player" data-fullscreen={fullscreen} data-theater={theater}><button ref={theaterButton} onClick={() => void toggleTheater()}>Theater</button><button ref={button} onClick={() => void toggle()}>Fullscreen</button><button onClick={() => setCount(count + 1)}>Step {count}</button></div>;
 }
 test("native fullscreen preserves the mounted player, exits and restores focus/scroll", async () => {
   const view = render(<Player />);
@@ -43,4 +43,23 @@ test("unavailable fullscreen uses the same element and restores scrolling on unm
   expect(frame.dataset.fullscreen).toBe("true");
   view.unmount();
   expect(document.body.style.overflow).toBe("");
+});
+
+test("theater fills the viewport without requesting native fullscreen or remounting playback", async () => {
+  const view = render(<Player />), frame = view.getByTestId("player");
+  let requests=0;
+  frame.requestFullscreen=async () => {requests++;};
+  frame.showPopover=() => {};
+  frame.hidePopover=() => {};
+  fireEvent.click(view.getByText("Step 0"));
+  await act(async () => fireEvent.click(view.getByText("Theater")));
+  expect(requests).toBe(0);
+  expect(frame.dataset.theater).toBe("true");
+  expect(frame.dataset.fullscreen).toBe("false");
+  expect(document.body.style.overflow).toBe("hidden");
+  expect(view.getByText("Step 1")).not.toBeNull();
+  await act(async () => fireEvent.keyDown(document, {key:"Escape"}));
+  expect(frame.dataset.theater).toBe("false");
+  expect(document.body.style.overflow).toBe("");
+  expect(document.activeElement).toBe(view.getByText("Theater"));
 });
