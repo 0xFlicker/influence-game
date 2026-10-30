@@ -3,7 +3,7 @@ import type {AudioWatchCoordinate} from "@influence/engine/audio-watch";
 import type {WerewolfPlaybackCue} from "./werewolf-opening";
 import {werewolfPlaybackPolicy} from "./werewolf-opening";
 import {werewolfFollowPosition} from "./werewolf-follow-position";
-import {useGamePlayback} from "@/components/watch/game-playback";
+import {useGamePlayback,useIsFollowPlayer} from "@/components/watch/game-playback";
 import {useWatchVoice} from "@/components/watch/use-watch-voice";
 import {WatchClock} from "@/components/watch/watch-clock";
 import {useWatchTimeline} from "@/components/watch/use-watch-timeline";
@@ -51,10 +51,11 @@ export function WerewolfViewer({slug, title, audience, preferenceScope = "viewer
   return <WerewolfSession embedded={embedded} shared={shared.state} startCursor={startCursor} preferences={preferences} key={`${slug}:${audience}`} slug={slug} title={title} audience={audience} cutoff={publication} />;
 }
 function WerewolfSession({slug, title, audience, cutoff, preferences, startCursor, embedded, shared}: {slug: string; title?: string; audience: WerewolfAudience; cutoff: string; preferences: ReturnType<typeof useWatchPreferences>; startCursor?:number; embedded:boolean; shared?:ReplayShareState}) {
-  const watch = useWerewolfWatch(slug, audience, cutoff, startCursor, title, shared, embedded);
+  const followed=useIsFollowPlayer();
+  const watch = useWerewolfWatch(slug, audience, cutoff, startCursor, title, shared, embedded, followed);
   const {director, snapshot, data, active} = watch;
   const frame = useRef<HTMLDivElement>(null);
-  const fullscreen = usePlayerFullscreen(frame);
+  const fullscreen = usePlayerFullscreen(frame,followed);
   const [selected, setSelected] = useState<string | null>(null);
   const {thinking, setThinking} = preferences;
   const timeline = useWatchTimeline(director, watch.timingCues, audience === "omniscient" && thinking);
@@ -74,9 +75,9 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
     return {kind:"werewolf",cursor:candidate.moment.cursor,actorId:line.house ? null : line.actor?.id ?? null,part:"speech",
       ...(candidate.nightAction && {action:candidate.nightAction.kind})};
   },[]);
-  const {onSpeech:onHouseSpeech,houseSpeaking}=useGamePlayback({id:data?.gameId ?? "",slug,kind:"werewolf"},()=>werewolfFollowPosition(playbackCue,audience),data?.players ?? [],{director,revealAtMs:playbackCue?werewolfPlaybackPolicy.scrubAtMs?.(playbackCue)??0:0});
+  const {onSpeech:onHouseSpeech,houseSpeaking,houseHolding}=useGamePlayback({id:data?.gameId ?? "",slug,kind:"werewolf"},()=>werewolfFollowPosition(playbackCue,audience),data?.players ?? [],{director,revealAtMs:playbackCue?werewolfPlaybackPolicy.scrubAtMs?.(playbackCue)??0:0});
   const [masterMuted, setMasterMuted] = useState(true);
-  const voice = useWatchVoice({masterMuted,director,gameId:data?.gameId ?? "",audience,thinking:audience === "omniscient" && thinking,live:data?.status === "in_progress",onPause:watch.pause,
+  const voice = useWatchVoice({suspended:houseHolding,masterMuted,director,gameId:data?.gameId ?? "",audience,thinking:audience === "omniscient" && thinking,live:data?.status === "in_progress",onPause:watch.pause,
     coordinate:playbackCue ? coordinateForCue(playbackCue) : null,coordinateForCue,onSpeech:onHouseSpeech});
   const ambient = useWatchMusic({navigationRevision:watch.navigationRevision, section: watch.openingCue ? null : werewolfMusic(watch.holding && data?.status === "in_progress" && cue ? cue.moment : active), playing: watch.follow && !watch.openingCue,
     muted: masterMuted || preferences.musicMuted, volume: speechMusicVolume(preferences.musicVolume, voice.speaking && !voice.muted && voice.volume > 0, houseSpeaking), preparing: watch.preparing,

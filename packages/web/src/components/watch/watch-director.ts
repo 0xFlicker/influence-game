@@ -147,6 +147,13 @@ export class PresentationDirector<C extends WatchCue> {
   private timingRevision = 0;
   getTimingRevision(): number { return this.timingRevision; }
   private audioPending = false;
+  private commentaryHeld = false;
+  /** Hold the shared cue clock without changing operator play intent or music. */
+  setCommentaryHeld(held:boolean) {
+    if(this.commentaryHeld===held)return;
+    this.captureRemainingTime();this.clearTimer();this.commentaryHeld=held;this.ensureTimer();
+    for(const listener of this.listeners)listener();
+  }
   setAudioPending(pending:boolean) {
     if (this.audioPending === pending) return;
     this.captureRemainingTime(); this.clearTimer(); this.audioPending = pending; this.ensureTimer();
@@ -677,6 +684,7 @@ export class PresentationDirector<C extends WatchCue> {
       || !this.ready
       || this.thinkingPending
       || this.audioPending
+      || this.commentaryHeld
       || this.timerId !== null
       || (!this.state.isPlaying && !this.manualTransition)
       || this.state.waitingAtTail

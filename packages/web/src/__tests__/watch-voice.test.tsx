@@ -326,3 +326,25 @@ test("master mute immediately silences voice while preserving its channel settin
   expect(audio.muted).toBe(true);
   expect(audio.volume).toBe(.4);
 });
+
+test('House hold pauses media in place, blocks resume, and preserves manual pause',async()=>{
+ let pauses=0;
+ const hook=renderHook(({suspended})=>useWatchVoice({director,gameId:'g',audience:'public',thinking:false,coordinate:coordinate(1),onPause:()=>{pauses++;},suspended}),{initialProps:{suspended:false}});
+ await act(async()=>{});act(()=>{director.seekTimeline(0,1200);director.play();});await frame();
+ const audio=FakeAudio.instances[0]!;expect(audio.paused).toBe(false);
+ act(()=>{director.setCommentaryHeld(true);hook.rerender({suspended:true});});await frame();
+ const time=audio.currentTime,plays=audio.plays;
+ act(()=>hook.result.current.resume());await frame();expect(audio.paused).toBe(true);expect(audio.plays).toBe(plays);expect(audio.currentTime).toBe(time);expect(pauses).toBe(0);expect(director.getSnapshot().isPlaying).toBe(true);
+ act(()=>{director.setCommentaryHeld(false);hook.rerender({suspended:false});});await frame();expect(audio.paused).toBe(false);
+ act(()=>{director.setCommentaryHeld(true);hook.rerender({suspended:true});director.pause();director.setCommentaryHeld(false);hook.rerender({suspended:false});});await frame();expect(audio.paused).toBe(true);expect(director.getSnapshot().isPlaying).toBe(false);
+});
+
+test('an in-flight play aborted by House hold does not clear the operator play intent',async()=>{
+ let pauses=0,rejectPlay:(error:Error)=>void=()=>{};
+ const hook=renderHook(({suspended})=>useWatchVoice({director,gameId:'g',audience:'public',thinking:false,coordinate:coordinate(1),onPause:()=>{pauses++;},suspended}),{initialProps:{suspended:false}});
+ await act(async()=>{});act(()=>director.seekTimeline(0,1200));await frame();
+ const audio=FakeAudio.instances[0]!;audio.nextPlay=()=>new Promise((_,reject)=>{rejectPlay=reject;});act(()=>director.play());await frame();
+ act(()=>{director.setCommentaryHeld(true);hook.rerender({suspended:true});});
+ await act(async()=>rejectPlay(new DOMException('interrupted','AbortError')));
+ expect(pauses).toBe(0);expect(director.getSnapshot().isPlaying).toBe(true);expect(audio.paused).toBe(true);
+});

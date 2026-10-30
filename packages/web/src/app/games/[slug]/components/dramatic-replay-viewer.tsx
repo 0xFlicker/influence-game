@@ -4,7 +4,7 @@ import type {AudioWatchCoordinate} from "@influence/engine/audio-watch";
 import {HouseNarration} from "@/components/watch/house-narration";
 import {influencePresentationPolicy} from "./influence-presentation-director";
 import {influenceProductionReference} from "@/lib/replay-export/influence-production-reference";
-import {useGamePlayback} from "@/components/watch/game-playback";
+import {useGamePlayback,useIsFollowPlayer} from "@/components/watch/game-playback";
 import {useWatchVoice} from "@/components/watch/use-watch-voice";
 import {influenceTranscriptAudioIdentity} from "@/components/watch/audio-watch-coordinate";
 import {WatchClock} from "@/components/watch/watch-clock";
@@ -180,6 +180,7 @@ function DramaticReplayTheater({
   const voteLedgers = useMemo(() => compileVoteLedgers(presentationCues), [presentationCues]);
   const revealedWinners = useMemo(() => compileRevealedWinnerCues(presentationCues), [presentationCues]);
   const lobbyMessages = useMemo(() => compileSafetyBounceLobbyLookup(classicCues, scenes), [classicCues, scenes]);
+  const followed=useIsFollowPlayer();
   const {
     director,
     snapshot: directorSnapshot,
@@ -187,7 +188,7 @@ function DramaticReplayTheater({
     reducedMotion,
   } = usePresentationDirector({ followTail: live });
   useWatchAnalytics(director, game.id, "influence", anonymous ? null : live ? "live" : "replay");
-  const { fullscreen: nativeFullscreen, theater, theaterButton, toggleTheater, expanded, button: fullscreenButton, error: fullscreenError, toggle: toggleFullscreen } = usePlayerFullscreen(animationScope);
+  const { fullscreen: nativeFullscreen, theater, theaterButton, toggleTheater, expanded, button: fullscreenButton, error: fullscreenError, toggle: toggleFullscreen } = usePlayerFullscreen(animationScope,followed);
   const {thinking:showThinking, setThinking:setShowThinking} = preferences;
   const timeline = useWatchTimeline(director, presentationCues, showThinking);
   const controlsRef = useRef<HTMLDivElement>(null);
@@ -317,12 +318,12 @@ function DramaticReplayTheater({
     const actorId=ballot?.voterId ?? (candidate.source === "format" && candidate.kind === "two_names_plea" ? candidate.speakerId : message?.speakerPlayerId ?? message?.fromPlayerId ?? null);
     return {kind:"influence",...transcriptIdentity,eventSequence:candidate.canonicalSequence ?? message?.firstDurableEventSequence ?? 0,actorId,part:"speech"};
   },[scenes]);
-  const [playRequested, setPlayRequested] = useState(true);
+  const [playRequested, setPlayRequested] = useState(!followed);
   const followPosition = () => activeCue ? {kind:"influence" as const,...influenceProductionReference(activeCue,
     key=>presentationCues.find(candidate=>candidate.key===key),candidate=>candidate.source==="classic"?scenes[candidate.sceneIndex]?.messages[candidate.messageIndex]:undefined)} : null;
-  const {onSpeech:onHouseSpeech,houseSpeaking} = useGamePlayback({id:game.id,slug:game.slug,kind:"influence"},followPosition,players,{director,revealAtMs:activeCue?influencePresentationPolicy.scrubAtMs?.(activeCue)??0:0});
+  const {onSpeech:onHouseSpeech,houseSpeaking,houseHolding} = useGamePlayback({id:game.id,slug:game.slug,kind:"influence"},followPosition,players,{director,revealAtMs:activeCue?influencePresentationPolicy.scrubAtMs?.(activeCue)??0:0});
   const [masterMuted, setMasterMuted] = useState(true);
-  const voice = useWatchVoice({masterMuted,director,gameId:game.id,audience:"public",thinking:preferences.thinking,live,onPause:() => setPlayRequested(false),
+  const voice = useWatchVoice({suspended:houseHolding,masterMuted,director,gameId:game.id,audience:"public",thinking:preferences.thinking,live,onPause:() => setPlayRequested(false),
     coordinate:activeCue ? coordinateForCue(activeCue) : null,coordinateForCue,onSpeech:onHouseSpeech});
   const currentStateEntry = Boolean(live && formatCue && directorSnapshot.hydrationWatermark !== null
     && formatCue.canonicalSequence <= directorSnapshot.hydrationWatermark);
@@ -386,14 +387,14 @@ function DramaticReplayTheater({
       director.load(presentationCues, index);
       director.seekTimeline(index, shared.time * 1000, shared.thinking);
       initialSequenceSeekAppliedRef.current = true;
-      director.play();
+      if (!followed) director.play();
       return;
     }
     if (startSequence !== undefined && !initialSequenceSeekAppliedRef.current && director.getSnapshot().cueKeys.length === 0) {
       const seekIndex = findPresentationCueIndexForSequence(presentationCues, startSequence);
       director.load(presentationCues, Math.max(0,seekIndex));
       initialSequenceSeekAppliedRef.current = true;
-      director.play();
+      if (!followed) director.play();
       return;
     }
     if (live && director.getSnapshot().cueKeys.length === 0) {
@@ -405,19 +406,20 @@ function DramaticReplayTheater({
       } else {
         director.reconnect(presentationCues);
       }
-      director.play();
+      if (!followed) director.play();
       return;
     }
     if (director.getSnapshot().cueKeys.length === 0) {
       director.load(presentationCues);
       director.seek(0, 0);
-      director.play();
+      if (!followed) director.play();
       return;
     }
     // Late visual/timing metadata must retain the selected source and local time,
     // including on completed replays.
     director.append(presentationCues);
   }, [
+    followed,
     director,
     directorSnapshot.cueKeys.length,
     live,

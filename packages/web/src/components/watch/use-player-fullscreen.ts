@@ -2,13 +2,13 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
 /** Fullscreen the existing element: never portal or remount the director. */
-export function usePlayerFullscreen(frame: RefObject<HTMLElement | null>) {
+export function usePlayerFullscreen(frame: RefObject<HTMLElement | null>, initiallyTheater = false) {
   const [fullscreen, setFullscreen] = useState(false);
-  const [theater, setTheater] = useState(false);
+  const [theater, setTheater] = useState(initiallyTheater);
   const theaterButton = useRef<HTMLButtonElement>(null);
   const [error, setError] = useState<string | null>(null);
   const button = useRef<HTMLButtonElement>(null);
-  const fallback = useRef(false);
+  const fallback = useRef(initiallyTheater);
   const exit = useCallback(async () => {
     try {
       if (document.fullscreenElement === frame.current) await document.exitFullscreen();
@@ -57,6 +57,11 @@ export function usePlayerFullscreen(frame: RefObject<HTMLElement | null>) {
     document.body.style.overflow = "hidden";
     const restore: Array<() => void> = [];
     if (fallback.current) {
+      const element=frame.current;
+      if(element?.showPopover && !element.hasAttribute("popover")) {
+        try {element.setAttribute("popover","manual");element.showPopover();}
+        catch(cause) {element.removeAttribute("popover");console.warn("Top-layer theater unavailable; using fixed viewport.",cause);}
+      }
       let branch: HTMLElement | null = frame.current;
       while (branch?.parentElement) {
         for (const sibling of Array.from(branch.parentElement.children)) {

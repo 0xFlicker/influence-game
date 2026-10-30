@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PublishedAudioClip, PublishedAudioTrack } from "@influence/engine/audio-track";
 import type { AudioWatchCoordinate } from "@influence/engine/audio-watch";
 import type { ProductionAudience } from "@influence/engine/production-moments";
@@ -12,9 +12,9 @@ import {MediaAlignment} from "./media-alignment";
 export { matchesAudioWatch } from "./audio-watch-coordinate";
 
 /** HTML audio follows the existing director clock, including exact in-clip seeks. */
-export function useWatchVoice<C extends WatchCue>({ director, gameId, audience, thinking, coordinate, coordinateForCue, onPause, onSpeech, masterMuted = false, live = false }: {
+export function useWatchVoice<C extends WatchCue>({ director, gameId, audience, thinking, coordinate, coordinateForCue, onPause, onSpeech, masterMuted = false, suspended = false, live = false }: {
   director: PresentationDirector<C>; gameId: string; audience: ProductionAudience; thinking: boolean;
-  coordinate: AudioWatchCoordinate | null; coordinateForCue?: (cue:C)=>AudioWatchCoordinate|null; onPause: () => void; onSpeech?: (speaking:boolean,speakerId:string|null)=>void; live?: boolean; masterMuted?: boolean;
+  coordinate: AudioWatchCoordinate | null; coordinateForCue?: (cue:C)=>AudioWatchCoordinate|null; onPause: () => void; onSpeech?: (speaking:boolean,speakerId:string|null)=>void; live?: boolean; masterMuted?: boolean; suspended?:boolean;
 }) {
   const [muted, setMuted] = useState(false), [volume, setVolume] = useState(1), [error, setError] = useState<string | null>(null);
   const speechObserver = useRef(onSpeech);
@@ -26,7 +26,13 @@ export function useWatchVoice<C extends WatchCue>({ director, gameId, audience, 
   const generation = useRef(0);
   const unlocked = useRef(false);
   const priming = useRef(false);
+  const suspendedRef=useRef(suspended);
+  useLayoutEffect(()=>{
+    suspendedRef.current=suspended;
+    if(suspended)player.current?.pause();
+  },[suspended]);
   const prime = () => {
+    if(suspendedRef.current)return;
     if (unlocked.current || priming.current) return;
     const audio = player.current ?? new Audio(); player.current = audio;
     const current = ++generation.current;
@@ -138,7 +144,7 @@ export function useWatchVoice<C extends WatchCue>({ director, gameId, audience, 
     };
     const pause = () => {stop();director.pause();pausePlayback.current();};
     const start = () => {
-      if (!audio.paused || starting) return;
+      if (suspendedRef.current || !audio.paused || starting) return;
       starting = true;
       hold(true);
       const currentAttempt = ++attempt;
@@ -146,6 +152,7 @@ export function useWatchVoice<C extends WatchCue>({ director, gameId, audience, 
         if (!disposed && currentAttempt === attempt) {starting = false;unlocked.current = true;if (!audio.seeking && audio.readyState >= 3) hold(false);}
       }, cause => {
         if (disposed || currentAttempt !== attempt) return;
+        if(suspendedRef.current){stop();return;}
         pause();
         // Browser permission and interruption are ordinary paused states.
         if (!(cause instanceof Error && ["NotAllowedError", "AbortError"].includes(cause.name))) {
@@ -170,6 +177,7 @@ export function useWatchVoice<C extends WatchCue>({ director, gameId, audience, 
     audio.onerror = () => { if (!disposed) {pause(); setError("Voice audio could not load. Press Play to retry.");} };
     const sample = (resuming = false) => {
       if (disposed) return false;
+      if(suspendedRef.current){stop();return false;}
       const position = director.getAudioPosition(), snapshot = director.getSnapshot();
       const candidates = position?.part === "thinking" ? thoughtClips : speechClips;
       let offset = position?.offsetMs ?? -1;
