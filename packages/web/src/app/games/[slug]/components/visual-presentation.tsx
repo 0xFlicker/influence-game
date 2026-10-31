@@ -101,7 +101,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   } else if (beat.kind === "two-names-decision") {
     content = <TwoNamesDecision beat={beat} elapsedMs={clockElapsedMs} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} controlsInset={controlsInset} />;
   } else if (beat.kind === "safety-chain") {
-    content = <SafetyChain key={beat.cue.key} beat={beat} elapsedMs={clockElapsedMs} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} controlsInset={controlsInset} />;
+    content = <SafetyChain beat={beat} elapsedMs={clockElapsedMs} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} controlsInset={controlsInset} />;
   } else if (beat.kind === "nominee-selection") {
     content = <NomineeSelection beat={beat} elapsedMs={clockElapsedMs} reducedMotion={reducedMotion} />;
   } else if (beat.kind === "winner") {

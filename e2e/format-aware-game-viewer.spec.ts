@@ -2034,6 +2034,8 @@ test.describe("format-aware game viewer", () => {
       const chain = page.locator("[data-safety-chain]");
       await advanceUntilVisible(page, chain, "Safety Bounce starter");
       await expect(chain).toHaveAttribute("data-format-cue", "safety_bounce_started");
+      const continuousStage = await chain.elementHandle();
+      const continuousBackdrop = await chain.locator("[data-room-backdrop]").elementHandle();
       await expect(chain.locator("[data-chain-player]")).toHaveCount(4);
       await expect(chain.locator('[data-chain-player="atlas"]')).toHaveAttribute("data-chooser", "true");
       await playbackKey(page, "ArrowRight");
@@ -2044,6 +2046,8 @@ test.describe("format-aware game viewer", () => {
       await playbackKey(page, "ArrowRight");
       await page.clock.runFor(250);
       await expect(chain).toHaveAttribute("data-chain-count", "2");
+      expect(await continuousStage!.evaluate(node => node.isConnected)).toBe(true);
+      expect(await continuousBackdrop!.evaluate(node => node.isConnected)).toBe(true);
       await expect(chain.locator('[data-chain-player="lyra"]')).toHaveAttribute("data-chain-pool", "vulnerable");
       await expect(chain.locator('[data-chain-player="echo"]')).toHaveAttribute("data-chooser", "true");
       await chain.screenshot({path:testInfo.outputPath(`safety-chain-${mobile ? "mobile" : "desktop"}.png`)});
