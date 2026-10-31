@@ -49,6 +49,9 @@ export function setApiBase(url: string): void {
 }
 
 export function resolveApiUrl(pathOrUrl: string): string {
+  // Bundled character art is served by the web app, including when API and web
+  // have separate origins. Frozen game snapshots retain these versioned paths.
+  if (pathOrUrl.startsWith("/avatars/")) return pathOrUrl;
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(pathOrUrl)) {
     return pathOrUrl;
   }
