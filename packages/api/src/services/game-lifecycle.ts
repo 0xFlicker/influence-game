@@ -1,4 +1,4 @@
-import { resolveInfluenceDecisionContractVersion } from "@influence/engine/influence-decision-speech";
+import { resolveInfluenceGameDecisionVersion, resolveInfluenceGameSchemaVersion } from "@influence/engine/influence-game-schema";
 import { freezeLiveAudio, ensureLiveAudio, pauseLiveAudio, LiveAudioBlocked } from "./audio-live.js";
 import { resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import { actorProviderManifest, gameModelPolicy, sealGameModelRouting } from "@influence/engine";
@@ -446,7 +446,8 @@ export function buildEngineConfigFromGameRecord(
     minPlayers,
     maxPlayers,
     empowerRevoteVersion: resolveEmpowerRevoteVersion(gameConfig.empowerRevoteVersion),
-    decisionContractVersion: resolveInfluenceDecisionContractVersion(gameConfig.decisionContractVersion),
+    decisionContractVersion: resolveInfluenceGameDecisionVersion(gameConfig.gameSchemaVersion, gameConfig.decisionContractVersion),
+    gameSchemaVersion: resolveInfluenceGameSchemaVersion(gameConfig.gameSchemaVersion),
     formatManifest: resolveFormatManifest(
       gameConfig.formatManifest ?? LEGACY_FORMAT_MANIFEST,
     ),
@@ -793,7 +794,7 @@ async function startGameWithOwner(
         ...(privateTraceSink && { privateTraceSink }),
         ...(providerExecutionHooks && { providerExecutionHooks }),
         providerManifest: providerRuntimes,
-        decisionContractVersion: resolveInfluenceDecisionContractVersion(gameConfig.decisionContractVersion),
+        decisionContractVersion: resolveInfluenceGameDecisionVersion(gameConfig.gameSchemaVersion, gameConfig.decisionContractVersion),
       },
     );
     agent.setTokenTracker(tokenTracker);

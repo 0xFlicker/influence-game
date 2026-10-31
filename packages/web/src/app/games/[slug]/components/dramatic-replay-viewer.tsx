@@ -1,4 +1,6 @@
 "use client";
+
+import {twoNamesDecisionSpeechAction} from "@influence/engine/influence-decision-speech";
 import type {PresentationCue} from "./types";
 import type {AudioWatchCoordinate} from "@influence/engine/audio-watch";
 import {HouseNarration} from "@/components/watch/house-narration";
@@ -7,12 +9,14 @@ import {influenceProductionReference} from "@/lib/replay-export/influence-produc
 import {useGamePlayback,useIsFollowPlayer} from "@/components/watch/game-playback";
 import {useWatchVoice} from "@/components/watch/use-watch-voice";
 import {influenceTranscriptAudioIdentity} from "@/components/watch/audio-watch-coordinate";
+import {sampleWatch} from "@/components/watch/watch-sampling";
+import {soloPresentationDurationMs} from "./solo-presentation-timing";
 import {WatchClock} from "@/components/watch/watch-clock";
 import {useWatchTimeline} from "@/components/watch/use-watch-timeline";
 import {isFormatSocialTranscriptMessage, buildClassicPresentationCues, buildReplayPlayersForCue, classicEliminatedPlayerIds, comparePresentationCues, findCueForAdjacentScene, formatCueScene, formatSnapshotForPresentationCursor, mergeFormatAndSocialCues} from "./influence-replay-cues";
 export {isFormatSocialTranscriptMessage, buildClassicPresentationCues, buildReplayPlayersForCue, comparePresentationCues, findCueForAdjacentScene, formatSnapshotForPresentationCursor} from "./influence-replay-cues";
 
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { Component, type ReactNode, useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { FitPresentation } from "./fit-presentation";
 import { usePlayerFullscreen } from "@/components/watch/use-player-fullscreen";
 import {WatchThinking} from "@/components/watch/watch-thinking";
@@ -99,9 +103,18 @@ export function DramaticReplayViewer(props: DramaticReplayViewerProps) {
   if (!shared.ready || !preferences.ready) return <WatchWaiting label="Preparing the player…" />;
   return (
     <MotionConfig reducedMotion="user">
-      <DramaticReplayTheater {...props} shared={shared.state} preferences={preferences} />
+      <PlaybackContractBoundary key={props.game.id}><DramaticReplayTheater {...props} shared={shared.state} preferences={preferences} /></PlaybackContractBoundary>
     </MotionConfig>
   );
+}
+
+class PlaybackContractBoundary extends Component<{children: ReactNode}, {error: Error | null}> {
+  state: {error: Error | null} = {error: null};
+  static getDerivedStateFromError(error: Error) { return {error}; }
+  render() {
+    if (this.state.error) return <section role="alert" className="rounded-xl border border-amber-400/40 bg-black/80 p-6 text-white"><h2 className="text-lg font-semibold">Playback stopped</h2><p>{this.state.error.name === "PresentationContractError" ? this.state.error.message : "This recording could not be presented. The game is unaffected."}</p></section>;
+    return this.props.children;
+  }
 }
 
 function DramaticReplayTheater({
@@ -150,8 +163,9 @@ function DramaticReplayTheater({
       gameKernel: game.gameKernel ?? game.watchState?.gameKernel ?? "classic",
       formatManifest: game.formatManifest,
       empowerRevoteVersion: game.empowerRevoteVersion,
+      gameSchemaVersion: game.gameSchemaVersion,
       roster: formatRoster,
-      decisions: formatPresentationDecisionsFromFrames(replayFrames),
+      decisions: formatPresentationDecisionsFromFrames(replayFrames, game.gameSchemaVersion),
       eligiblePlayerIdsByRound: formatPresentationEligibilityFromFrames(replayFrames),
     }),
     [
@@ -159,6 +173,7 @@ function DramaticReplayTheater({
       game.gameKernel,
       game.formatManifest,
       game.empowerRevoteVersion,
+      game.gameSchemaVersion,
       game.id,
       game.watchState?.gameKernel,
       replayFrames,
@@ -176,11 +191,13 @@ function DramaticReplayTheater({
       replayFrames,
     ],
   );
-  const presentationCues = useMemo(() => composeInfluencePresentation(game.id, canonicalPresentationCues, players, scenes), [canonicalPresentationCues, game.id, players, scenes]);
+  const presentationCues = useMemo(() => composeInfluencePresentation(game.id, canonicalPresentationCues, players, scenes, game.gameSchemaVersion, {speechPrefixComplete: !live && (presentationHydrationStatus === undefined || presentationHydrationStatus === "ready")}), [canonicalPresentationCues, game.id, players, scenes, game.gameSchemaVersion, live, presentationHydrationStatus]);
   const voteLedgers = useMemo(() => compileVoteLedgers(presentationCues), [presentationCues]);
   const revealedWinners = useMemo(() => compileRevealedWinnerCues(presentationCues), [presentationCues]);
   const lobbyMessages = useMemo(() => compileSafetyBounceLobbyLookup(classicCues, scenes), [classicCues, scenes]);
   const followed=useIsFollowPlayer();
+  // Live-tail waiting belongs to the game lifecycle. Navigation changes position
+  // and play intent, but must still buffer when playback catches up again.
   const {
     director,
     snapshot: directorSnapshot,
@@ -206,14 +223,25 @@ function DramaticReplayTheater({
   const openingPlayer = openingCue?.opening.player ? players.find(player => player.id === openingCue.opening.player?.id) : undefined;
   const classicCue = activeCue?.source === "classic" ? activeCue : null;
   const formatCue = activeCue?.source === "format" ? activeCue : null;
+  const [chainReveal, setChainReveal] = useState<{key: string; revealed: boolean} | null>(null);
+  useEffect(() => {
+    if (!activeCue || (activeCue.kind !== "safety_bounce_pointer" && !twoNamesDecisionSpeechAction(activeCue.kind)) || !activeCue.spokenMessage) return;
+    return sampleWatch(director, () => {
+      const revealed = !director.getThinkingFrame() && director.getElapsedBaseMs() >= soloPresentationDurationMs(activeCue.spokenMessage!);
+      setChainReveal(previous => previous?.key === activeCue.key && previous.revealed === revealed ? previous : {key:activeCue.key,revealed});
+    });
+  }, [activeCue, director]);
   const presentedFormatSnapshot = useMemo(() => {
     if (!isFormatGame || !activeCue) return null;
+    if (activeCue.source === "format" && (activeCue.kind === "safety_bounce_pointer" || twoNamesDecisionSpeechAction(activeCue.kind)) && activeCue.spokenMessage
+      && !(chainReveal?.key === activeCue.key && chainReveal.revealed)
+      && !(live && directorSnapshot.hydrationWatermark !== null && activeCue.canonicalSequence <= directorSnapshot.hydrationWatermark)) return activeCue.before;
     return formatSnapshotForPresentationCursor(
       presentationCues,
       directorSnapshot.cursor,
       activeCue.round,
     );
-  }, [activeCue, isFormatGame, directorSnapshot.cursor, presentationCues]);
+  }, [activeCue, isFormatGame, directorSnapshot.cursor, directorSnapshot.hydrationWatermark, presentationCues, chainReveal, live]);
   const activeFormatIdForSocialScene = classicCue ? presentedFormatSnapshot?.activeFormatId ?? null : null;
   const messageIndex = classicCue?.messageIndex ?? 0;
   const scene = classicCue
@@ -296,11 +324,12 @@ function DramaticReplayTheater({
   const thinkingActor = influenceThinkingActor(activeCue, visual.beat);
   const thinkingSpeaker = players.find(player => player.id === thinkingActor)?.name ?? "Player";
   const thoughtSequence = activeCue?.canonicalSequence;
-  const messageThought = currentMessage?.thinking;
-  const messageId = currentMessage?.id;
-  const entrySequence = currentMessage?.entrySequence;
+  const thoughtMessage = activeCue?.decisionSpeechEntry ?? currentMessage;
+  const messageThought = thoughtMessage?.thinking;
+  const messageId = thoughtMessage?.id;
+  const entrySequence = thoughtMessage?.entrySequence;
   const thoughtRound = activeCue?.round, thoughtPhase = activeCue?.phase;
-  const classicThought = activeCue?.source === "classic";
+  const classicThought = activeCue?.source === "classic" || Boolean(activeCue?.decisionSpeechEntry);
   const loadThinking = useCallback(async (signal: AbortSignal) => {
     if (!thinkingActor || thoughtRound === undefined || !thoughtPhase) return null;
     if (classicThought && messageThought) return messageThought;
@@ -311,8 +340,8 @@ function DramaticReplayTheater({
   }, [anonymous, game.slug, thinkingActor, thoughtSequence, thoughtRound, thoughtPhase, messageThought, messageId, entrySequence, classicThought, activeCue]);
   const coordinateForCue=useCallback((candidate:PresentationCue):AudioWatchCoordinate|null=>{
     if (candidate.source === "opening" || candidate.source === "house" || candidate.voteSummary) return null;
-    const message=candidate.source === "classic" ? scenes[candidate.sceneIndex]?.messages[candidate.messageIndex] : formatCueScene(candidate)?.messages[0];
-    const transcriptIdentity=candidate.source === "classic" && message ? influenceTranscriptAudioIdentity(message) : null;
+    const message=candidate.decisionSpeechEntry ?? (candidate.source === "classic" ? scenes[candidate.sceneIndex]?.messages[candidate.messageIndex] : formatCueScene(candidate)?.messages[0]);
+    const transcriptIdentity=(candidate.source === "classic" || candidate.decisionSpeechEntry) && message ? influenceTranscriptAudioIdentity(message) : null;
     if (candidate.source === "classic" && !transcriptIdentity) return null;
     const ballot=candidate.source === "format" ? candidate.visualBallot ?? (candidate.kind === "format_roll_call" ? candidate.ballot : null) : candidate.source === "endgame" ? candidate.ballot : null;
     const actorId=ballot?.voterId ?? (candidate.source === "format" && candidate.kind === "two_names_plea" ? candidate.speakerId : message?.speakerPlayerId ?? message?.fromPlayerId ?? null);
@@ -463,7 +492,7 @@ function DramaticReplayTheater({
   const isEmpowerPresentation = formatCue?.kind === "empowered_tally" || formatCue?.kind === "empowered_tie";
   const usesFullHeightContent = Boolean(openingCue) || expanded || isEmpowerPresentation || formatCue?.kind === "two_names_plea" || visual.beat !== null;
   const isSoloPresentation = visual.beat?.kind === "portrait" || visual.beat?.kind === "nominee-selection";
-  const isRoomPresentation = visual.beat?.kind === "scene" || visual.beat?.kind === "portrait-room" || visual.beat?.kind === "safety-bounce" || visual.beat?.kind === "winner";
+  const isRoomPresentation = visual.beat?.kind === "scene" || visual.beat?.kind === "portrait-room" || visual.beat?.kind === "safety-bounce" || visual.beat?.kind === "winner" || visual.beat?.kind === "two-names-stage" || visual.beat?.kind === "two-names-decision";
   useEffect(() => {
     if (!scene || !onPlaybackStateChange) return;
     onPlaybackStateChange({
@@ -482,10 +511,8 @@ function DramaticReplayTheater({
   }, [director, unlockMusic, preferences.musicMuted, masterMuted]);
 
   const stepBackOneCue = useCallback(() => {
-    suspendMusic(); setPlayRequested(false);
-    director.pause(); director.setFollowTail(false);
     director.seek(directorSnapshot.cursor - 1);
-  }, [director, directorSnapshot.cursor, suspendMusic]);
+  }, [director, directorSnapshot.cursor]);
 
   const pausePresentation = useCallback(() => {
     suspendMusic(); setPlayRequested(false);
@@ -507,8 +534,8 @@ function DramaticReplayTheater({
       directorSnapshot.cursor,
       1,
     );
-    if (nextIndex !== null) {pausePresentation(); director.setFollowTail(false); director.seek(nextIndex);}
-  }, [director, directorSnapshot.cursor, presentationCues, pausePresentation]);
+    if (nextIndex !== null) director.seek(nextIndex);
+  }, [director, directorSnapshot.cursor, presentationCues]);
 
   const goToEnd = useCallback(() => {
     if (presentationCues.length > 0) {
@@ -521,13 +548,13 @@ function DramaticReplayTheater({
 
   const goToBeginning = useCallback(() => {
     restartAmbient(); restartOpening();
-    setPlayRequested(false); director.pause(); director.setFollowTail(false); director.seek(0, 0);
+    setPlayRequested(false); director.pause(); director.seek(0, 0);
   }, [director, restartAmbient, restartOpening]);
 
   const goToPrevScene = useCallback(() => {
     const previousIndex = findCueForAdjacentScene(presentationCues, directorSnapshot.cursor, -1);
-    if (previousIndex !== null) {pausePresentation(); director.setFollowTail(false); director.seek(previousIndex);}
-  }, [director, directorSnapshot.cursor, presentationCues, pausePresentation]);
+    if (previousIndex !== null) director.seek(previousIndex);
+  }, [director, directorSnapshot.cursor, presentationCues]);
 
   // Reset auto-hide timer helper
   const resetControlsTimer = useCallback(() => {
@@ -766,7 +793,7 @@ function DramaticReplayTheater({
             <div className={`min-h-0 flex-1 ${formatCue.kind === "two_names_plea" ? "h-full" : ""}`}>
               <FitPresentation enabled={expanded || isEmpowerPresentation}><FormatPresentation
                 cue={formatCue}
-                roster={formatRoster}
+                roster={formatRoster.map(player => ({...player, avatarUrl: visualData?.portraits[player.id] ?? player.avatarUrl, fullBodyReferenceUrl: visualData?.fullBodies?.[player.id]}))}
                 currentStateEntry={Boolean(
                   live
                   && directorSnapshot.hydrationWatermark !== null
@@ -814,7 +841,7 @@ function DramaticReplayTheater({
             onVolume:preferences.setMusicVolume,retry:() => unlockMusic(masterMuted || preferences.musicMuted)}}
           onScrubStart={() => {ambient.beginScrub(); openingAudio.beginScrub();}}
           onScrubEnd={() => {ambient.endScrub(); openingAudio.endScrub();}}
-          goToBeginning={goToBeginning} goToPrevScene={goToPrevScene} onSeek={frame => {const target = timeline.target(frame); if (target) {suspendMusic(); director.setFollowTail(false); director.seekTimeline(target.index, target.elapsedMs);}}} timeline={timeline} goToNextScene={goToNextScene} goToEnd={goToEnd}
+          goToBeginning={goToBeginning} goToPrevScene={goToPrevScene} onSeek={frame => {const target = timeline.target(frame); if (target) {suspendMusic(); director.seekTimeline(target.index, target.elapsedMs);}}} timeline={timeline} goToNextScene={goToNextScene} goToEnd={goToEnd}
           live={live} cursor={directorSnapshot.cursor} count={presentationCues.length}
           thinking={{enabled:showThinking,onChange:setShowThinking}} />
       </div>

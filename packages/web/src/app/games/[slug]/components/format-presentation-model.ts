@@ -1,3 +1,5 @@
+import {twoNamesDecisionSpeechAction} from "@influence/engine/influence-decision-speech";
+import {assertEventProducedPresentation, PresentationContractError, assertReplayFrameOwnership, assertViewerEventOwnership} from "./presentation-ownership";
 import { resolveEmpowerRevoteVersion, type EmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import type {
   GameKernel,
@@ -70,6 +72,7 @@ export interface FormatPresentationCompilation {
 export interface CompileFormatPresentationPrefixInput {
   gameId: string;
   gameKernel: GameKernel;
+  gameSchemaVersion?: number;
   roster: readonly FormatPresentationRosterPlayer[];
   decisions: readonly ViewerDecisionEvent[];
   empowerRevoteVersion?: EmpowerRevoteVersion;
@@ -92,7 +95,9 @@ interface EmpowerPresentationAccumulator {
 
 export function formatPresentationDecisionsFromFrames(
   frames: readonly GameWatchReplayFrame[],
+  gameSchemaVersion?: number,
 ): ViewerDecisionEvent[] {
+  assertReplayFrameOwnership(frames, gameSchemaVersion);
   return frames
     .filter((frame) => frame.viewerDecisionEvent)
     .sort((left, right) => left.sequence - right.sequence)
@@ -118,12 +123,14 @@ export function formatPresentationEligibilityFromFrames(
 export function compileFormatPresentationPrefix({
   gameId,
   gameKernel,
+  gameSchemaVersion,
   roster,
   decisions,
   formatManifest,
   empowerRevoteVersion,
   eligiblePlayerIdsByRound,
 }: CompileFormatPresentationPrefixInput): FormatPresentationCompilation {
+  assertViewerEventOwnership(decisions, gameSchemaVersion);
   let snapshot = emptySnapshot();
   const cues: FormatPresentationCue[] = [];
   const rosterIds = roster.map((player) => player.id);
@@ -187,7 +194,11 @@ export function compileFormatPresentationPrefix({
       snapshot,
       cues,
     });
-    if (failure) return failure;
+    if (failure) {
+      if ((gameSchemaVersion ?? 1) >= 3) throw new PresentationContractError(`invalid-presentation:${failure.diagnostic?.code ?? "unknown"}`, decision.sequence);
+      return failure;
+    }
+    assertEventProducedPresentation(decision, cues, gameSchemaVersion);
     snapshot = latestSnapshot(snapshot, cues, decision.sequence, phaseKey(decision.phase));
   }
 
@@ -625,6 +636,7 @@ function applyDecision(input: {
         ...base,
         key: cueKey(gameId, decision.sequence, "two-names-nominees"),
         kind: "two_names_initial_names",
+        requiredDecisionSpeech: decision.publicDecisionSpeech?.find(speech => speech.action === twoNamesDecisionSpeechAction("two_names_initial_names")),
         baseDurationMs: FIXED_CUE_DURATION_MS.two_names_initial_names,
         empoweredId: decision.payload.empoweredId,
         nomineeIds: [...decision.payload.initialNomineeIds],
@@ -703,6 +715,7 @@ function applyDecision(input: {
         ...base,
         key: cueKey(gameId, decision.sequence, "two-names-override-declined"),
         kind: "two_names_override_declined",
+        requiredDecisionSpeech: decision.publicDecisionSpeech?.find(speech => speech.action === twoNamesDecisionSpeechAction("two_names_override_declined")),
         baseDurationMs: FIXED_CUE_DURATION_MS.two_names_override_declined,
         ...decision.payload,
         after: cloneSnapshot(snapshot),
@@ -734,6 +747,7 @@ function applyDecision(input: {
         ...base,
         key: cueKey(gameId, decision.sequence, "two-names-removed"),
         kind: "two_names_override_removed",
+        requiredDecisionSpeech: decision.publicDecisionSpeech?.find(speech => speech.action === twoNamesDecisionSpeechAction("two_names_override_removed")),
         baseDurationMs: FIXED_CUE_DURATION_MS.two_names_override_removed,
         ...decision.payload,
         after: cloneSnapshot(snapshot),
@@ -770,6 +784,7 @@ function applyDecision(input: {
         ...base,
         key: cueKey(gameId, decision.sequence, "two-names-replacement"),
         kind: "two_names_replacement",
+        requiredDecisionSpeech: decision.publicDecisionSpeech?.find(speech => speech.action === twoNamesDecisionSpeechAction("two_names_replacement")),
         baseDurationMs: FIXED_CUE_DURATION_MS.two_names_replacement,
         ...decision.payload,
         after: cloneSnapshot(snapshot),
@@ -1072,6 +1087,7 @@ function applyDecision(input: {
         ...base,
         key: cueKey(gameId, decision.sequence, "bounce-pointer"),
         kind: "safety_bounce_pointer",
+        requiredDecisionSpeech: decision.publicDecisionSpeech?.find(speech => speech.action === "bounce-pointer"),
         baseDurationMs: safetyBouncePointerDurationMs(pacing),
         ...decision.payload,
         pointerCandidateIds,
@@ -1089,8 +1105,22 @@ function applyDecision(input: {
         snapshot,
         cues,
       });
-    default:
+    // These are owned by endgame/classic presentation or update the replay frame.
+    case "game.phase_entered":
+    case "player.eliminated":
+    case "endgame.elimination_resolved":
+    case "jury.winner_determined":
+    case "power.action_set":
+    case "power.candidates_resolved":
+    case "council.vote_cast":
+    case "council.elimination_resolved":
       break;
+    default: {
+      const unhandled: never = decision;
+      // Historical unknown runtime records retain their existing tolerance.
+      void unhandled;
+      break;
+    }
   }
 
   return null;

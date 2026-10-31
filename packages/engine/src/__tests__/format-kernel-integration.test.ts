@@ -1095,3 +1095,26 @@ describe("Format kernel integration (MockAgent)", () => {
     }
   });
 });
+
+it.each([1, 2] as const)("Safety Bounce schema %s preserves its frozen social order and recent public speech", async (gameSchemaVersion) => {
+  const seen: string[][] = [];
+  class ChainAgent extends MockAgent {
+    override async getBouncePointer(...args: Parameters<MockAgent["getBouncePointer"]>) {
+      seen.push(args[0].publicMessages.filter(row => row.text.startsWith("CHAIN ")).map(row => row.text));
+      return {...await super.getBouncePointer(...args), decisionMessage: `CHAIN ${this.id}`};
+    }
+  }
+  const agents = ["A", "B", "C", "D", "E", "F"].map(name => new ChainAgent(createUUID(), name));
+  const runner = new GameRunner(agents, {...TEST_CONFIG, maxRounds: 1, gameSchemaVersion, formatManifest: ["safety_bounce"], mingleSessionsPerRound: 1}, undefined, {maxRoundsMode: "exact", random: () => 0});
+  await runner.run();
+  const events = runner.getCanonicalEvents();
+  const chain = events.filter(e => e.type === "format.safety_bounce_pointer");
+  expect(chain).toHaveLength(5);
+  expect(seen.map(rows => rows.length)).toEqual([0, 1, 2, 3, 4]);
+  const mingle = events.find(e => e.type === "game.phase_entered" && e.payload.phase === Phase.FORMAT_MINGLE)!;
+  expect(chain.every(e => gameSchemaVersion === 2 ? e.sequence < mingle.sequence : e.sequence > mingle.sequence)).toBe(true);
+  const ballots = events.filter(e => e.type === "format.ballot_cast" && e.payload.formatId === "safety_bounce");
+  expect(ballots).toHaveLength(6);
+  expect(ballots.every(e => e.sequence > mingle.sequence)).toBe(true);
+  expect(replayCanonicalEvents(events).gameSchemaVersion).toBe(gameSchemaVersion);
+});

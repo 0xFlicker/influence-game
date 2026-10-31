@@ -152,6 +152,7 @@ export interface DurableRunFinaleIntegrity {
 
 export type DurableRunExecutionCursorSummary =
   | { kind: "huddle_conversation" | "lobby_conversation" }
+  | { kind: "safety_bounce"; coordinate: "safety_bounce"; stage: "draw" | "pointer" | "resolve" }
   | { kind: "retrospective"; coordinate: "initialize" | "statement" | "complete" }
   | { kind: "phase_enter"; coordinate: string }
   | { kind: "parallel_batch"; coordinate: string }
@@ -635,6 +636,8 @@ function summarizeExecutionCursor(
   cursor: GameExecutionCursorV1,
 ): DurableRunExecutionCursorSummary {
   switch (cursor.kind) {
+    case "safety_bounce":
+      return { kind: cursor.kind, coordinate: "safety_bounce", stage: cursor.stage };
     case "retrospective":
       return { kind: cursor.kind, coordinate: cursor.stage };
     case "phase_enter":

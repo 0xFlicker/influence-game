@@ -75,6 +75,9 @@ export function VotePresentation({ beat, ledger, roster, elapsedMs, controlsInse
     height: flight.from.height + (flight.to.height - flight.from.height) * progress,
   } : null;
   return <div ref={stage} className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-vote-presentation>
+    {ledger.safetyPools && <div data-safety-pools className="absolute inset-x-2 top-2 z-20 flex justify-between gap-4 text-xs">
+      {(["safe", "vulnerable"] as const).map(pool => <div key={pool} className={`rounded-xl bg-black/80 p-2 ${pool === "safe" ? "text-emerald-200" : "text-amber-200"}`}><p className="mb-1 capitalize">{pool} · {ledger.safetyPools![pool].length}</p><div className="flex flex-wrap gap-1">{ledger.safetyPools![pool].map(id => {const player = roster.find(p => p.id === id); return player ? <span key={id} title={player.name}><AgentAvatar {...player} persona={player.persona ?? ""} size="8" /></span> : null;})}</div></div>)}
+    </div>}
     <SoloPresentation {...props} beat={beat} elapsedMs={elapsedMs} controlsInset={controlsInset + ledgerHeight + 24}
       hideSpeech={silent || ledger.complete} staticSpeech={staticSpeech} onImageReady={source => {setImageSource(source); onImageReady?.(source);}}
       imageOpacity={ledger.complete || canFly && progress > 0 ? 0 : undefined} />

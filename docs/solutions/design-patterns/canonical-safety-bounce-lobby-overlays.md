@@ -21,3 +21,8 @@ Select a lobby through the current round's prior canonical dialogue, honoring it
 Render the loaded image at its measured aspect ratio. Badges and directed arrows share that exact image rectangle, including letterboxing, rotation and narrow screens. Clear head anchors receive image overlays; uncertain guests remain in the numbered named strip. Green checks and amber warning triangles distinguish classifications without relying solely on color. Elimination remains in its separate result presentation.
 
 An unavailable or failed image uses the existing picker. Canonical tally and tie cues can retain the room; ballot speech keeps its existing presentation clock. Browser fixtures verify image-relative coordinates, backward seeks, reconnects, reduced motion and failure fallback. See [Visual Mode](../../visual-mode.md#safety-bounce-on-the-lobby-image) for the interaction contract.
+
+
+## Replacement: October 2026
+
+Chain decisions now use `safety-chain.tsx` with static room art and individual full bodies. A prior generated lobby image is no longer required. The canonical board remains authoritative. Keep the historical projection and malformed-prefix regression tests; do not reinstate arrow geometry or image-overlap constraints.

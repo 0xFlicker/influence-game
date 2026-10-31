@@ -194,6 +194,7 @@ export const PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES = [
   "vote",
   "format_menu",
   "format_pick",
+  "safety_bounce",
   "format_mingle",
   "format_resolve",
   "post_vote_mingle",

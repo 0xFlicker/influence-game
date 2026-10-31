@@ -15,7 +15,7 @@ export async function bindInfluenceProductionPresentation(input:{
   if (catalog.gameId !== source.game.id || catalog.gameKind !== "influence" || catalog.audience !== "public")
     throw new Error("Production catalog does not match its authorized source");
   const sources = buildInfluenceProductionSources({gameId:source.game.id,gameKernel:source.game.gameKernel ?? "classic",
-    transcripts:source.messages,frames:source.frames,thoughts:input.thoughts});
+    transcripts:source.messages,frames:source.frames,thoughts:input.thoughts,attachDecisionSpeech:source.projectionVersion !== 3,attachTwoNamesSpeech:source.projectionVersion === undefined || source.projectionVersion >= 5});
   const expected = assembleProductionCatalog({gameId:source.game.id,gameKind:"influence",audience:"public",sources});
   const validated = resolveProductionMomentIds(expected,catalog.moments.map(moment => moment.id));
   if (validated.length !== expected.moments.length || validated.some((moment,index) => moment.id !== catalog.moments[index]?.id))
@@ -50,10 +50,11 @@ export async function bindInfluenceProductionPresentation(input:{
       priorPicture = cue;
       return {id:moment.id,segments:[{...cue,momentId:moment.id}]};
     }
-    const text = moment.source.kind === "influence-transcript" ? transcripts.get(moment.source.transcriptId)?.thinking
-      : moment.source.kind === "influence-event" ? thoughts.get(`${moment.source.eventSequence}:${moment.actorId}`)?.thinking : null;
-    // A thought's camera is permitted framing context; its neighboring response is never serialized.
     const context = nextPictures[index] ?? priorPicture;
+    const attachedThinking = context?.picture.kind === "influence" ? context.picture.cue.decisionSpeechEntry?.thinking : null;
+    const text = moment.source.kind === "influence-transcript" ? transcripts.get(moment.source.transcriptId)?.thinking
+      : moment.source.kind === "influence-event" ? thoughts.get(`${moment.source.eventSequence}:${moment.actorId}`)?.thinking ?? attachedThinking : null;
+    // A thought's camera is permitted framing context; its neighboring response is never serialized.
     if (!text || !context) throw new Error(`Unavailable accepted thinking: ${moment.id}`);
     return {id:moment.id,segments:[thinkingSegment(context,moment.id,text,moment.actorId)]};
   });

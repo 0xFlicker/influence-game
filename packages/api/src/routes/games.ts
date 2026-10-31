@@ -1,3 +1,4 @@
+import {CURRENT_INFLUENCE_GAME_SCHEMA_VERSION} from "@influence/engine/influence-game-schema";
 import { CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION } from "@influence/engine/influence-decision-speech";
 import { houseFullBodyUrl } from "@influence/engine/house-character-art";
 import { audioReadySequence } from "../services/audio-frontier.js";
@@ -232,6 +233,7 @@ export function createGameRoutes(db: DrizzleDB) {
       formatManifest: frozenFormatManifest,
       empowerRevoteVersion: CURRENT_EMPOWER_REVOTE_VERSION,
       decisionContractVersion: CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION,
+      gameSchemaVersion: CURRENT_INFLUENCE_GAME_SCHEMA_VERSION,
     };
 
     const gameId = randomUUID();
@@ -341,6 +343,7 @@ export function createGameRoutes(db: DrizzleDB) {
       visualPaused: game.status === "suspended" && Boolean(config.visualPause),
           formatManifest,
           empowerRevoteVersion: resolveEmpowerRevoteVersion(config.empowerRevoteVersion),
+          gameSchemaVersion: config.gameSchemaVersion ?? 1,
           trackType: game.trackType,
           seasonId: game.seasonId ?? undefined,
           season: game.seasonId ? seasonById.get(game.seasonId) : undefined,
@@ -434,6 +437,7 @@ export function createGameRoutes(db: DrizzleDB) {
       visualPaused: game.status === "suspended" && Boolean(config.visualPause),
       formatManifest,
       empowerRevoteVersion: resolveEmpowerRevoteVersion(config.empowerRevoteVersion),
+      gameSchemaVersion: config.gameSchemaVersion ?? 1,
       seasonId: game.seasonId ?? undefined,
       season: competition
         ? {

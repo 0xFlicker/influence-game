@@ -56,7 +56,7 @@ for (const value of [
     dispatches += 1;
     throw new Error("Accepted replay must not dispatch");
   } });
-  const makeAgent = (version: 1 | 2) => {
+  const makeAgent = (version: 1 | 2 | 3) => {
     const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", provider, "gpt-5-nano", undefined, undefined,
       { decisionContractVersion: version, providerExecutionHooks: createApiProviderExecutionHooks(db, { gameId, ownerEpoch }) });
     agent.onGameStart(gameId, context.alivePlayers);

@@ -55,6 +55,8 @@ export interface CanonicalSourcePointer {
    * Forward-path only; not a public narrative of thought content.
    */
   decisionId?: UUID;
+  /** New-root accepted public delivery; sanitized to action and actor for playback. */
+  speechRequired?: boolean;
   /** Engine-owned provenance for a required action accepted without model authorship. */
   engineFallback?: {
     source: "engine";
@@ -607,6 +609,7 @@ export type CanonicalGameEvent =
         formatManifest?: LaunchFormatId[];
         /** Missing on historical games, which use version 1. */
         empowerRevoteVersion?: import("./empower-revote-rules").EmpowerRevoteVersion;
+        gameSchemaVersion?: import("./influence-game-schema").InfluenceGameSchemaVersion;
       }
     >
   | CanonicalEventEnvelope<

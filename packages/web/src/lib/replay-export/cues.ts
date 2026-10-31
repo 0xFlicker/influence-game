@@ -167,8 +167,9 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
     gameKernel: game.gameKernel ?? "classic",
     formatManifest: game.formatManifest,
     empowerRevoteVersion: game.empowerRevoteVersion,
+    gameSchemaVersion: game.gameSchemaVersion,
     roster,
-    decisions: formatPresentationDecisionsFromFrames(frames),
+    decisions: formatPresentationDecisionsFromFrames(frames, game.gameSchemaVersion),
     eligiblePlayerIdsByRound: formatPresentationEligibilityFromFrames(frames),
   });
   if (game.gameKernel === "format" && compilation.diagnostic)
@@ -184,6 +185,8 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
       ].sort(comparePresentationCues),
       game.players,
     scenes,
+    game.gameSchemaVersion,
+    {attachDecisionSpeech: source.projectionVersion !== 3, attachTwoNamesSpeech: source.projectionVersion === undefined || source.projectionVersion >= 5},
   );
   const frameForSequence = compileReplayFrameLookup(frames);
   const lobbyMessages = compileSafetyBounceLobbyLookup(classic, scenes);
@@ -197,10 +200,10 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
         source:{kind:"opening"}, label:"Opening", speech:null, music:null});
       continue;
     }
-    const message =
+    const message = cue.decisionSpeechEntry ?? (
       cue.source === "classic"
         ? (scenes[cue.sceneIndex]?.messages[cue.messageIndex] ?? null)
-        : null;
+        : null);
     const prior =
       cue.source === "format"
         ? lobbyMessages(cue.round, cue.canonicalSequence)

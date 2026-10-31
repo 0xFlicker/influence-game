@@ -41,7 +41,7 @@ export interface GameTurnHeadsV1 {
 
 export const RUNTIME_ACTOR_COORDINATES = [
   "introduction", "lobby", "mingle_i", "pre_vote_huddle", "vote",
-  "format_menu", "format_pick", "format_mingle", "format_resolve",
+  "format_menu", "format_pick", "safety_bounce", "format_mingle", "format_resolve",
   "post_vote_mingle", "power", "reveal", "pre_council_huddle", "council",
   "reckoning_lobby", "reckoning_plea", "reckoning_vote", "tribunal_lobby",
   "tribunal_accusation", "tribunal_defense", "tribunal_vote", "judgment_opening",
@@ -185,6 +185,7 @@ export interface DiaryProgressV1 {
 
 /** Closed program counter; handler-local state cannot hide in an arbitrary bag. */
 export type GameExecutionCursorV1 =
+  | { version: 1; kind: "safety_bounce"; stage: "draw" | "pointer" | "resolve" }
   | { version: 1; kind: "retrospective"; stage: "initialize" }
   | { version: 1; kind: "retrospective"; stage: "statement"; definitionHash: string; ordinal: number }
   | { version: 1; kind: "retrospective"; stage: "complete"; definitionHash: string }
@@ -588,6 +589,9 @@ function validateCursor(value: unknown): string[] {
   }
   const errors: string[] = [];
   switch (value.kind) {
+    case "safety_bounce":
+      if (!exactRecord(value, ["version", "kind", "stage"]) || !["draw", "pointer", "resolve"].includes(String(value.stage))) errors.push("Invalid Safety Bounce cursor");
+      break;
     case "retrospective":
       if (value.stage === "initialize") {
         if (!exactRecord(value, ["version", "kind", "stage"])) errors.push("retrospective initialize cursor fields are not exact");

@@ -214,6 +214,24 @@ test.describe("format-aware game viewer", () => {
     await expect(volume).toHaveValue("70");
   });
 
+  for (const revision of [1, 3]) test(`presentation contract v${revision} protects historical playback and rejects unknown events`, async ({page}) => {
+    await page.clock.install();
+    const slug = `presentation-contract-${revision}`;
+    const scenario = createFormatKernelViewerScenario("two_names_declined");
+    const decisions = [...scenario.decisions, {...scenario.decisions.at(-1)!, sequence:999, type:"future.unimplemented"}] as typeof scenario.decisions;
+    const fixture = await installDeterministicFormatGame(page,{slug,scenarioId:"two_names_declined",status:"completed",decisions});
+    await page.route(`**/api/games/${slug}`, route=>route.fulfill({json:{...fixture.currentGame(),gameSchemaVersion:revision}}));
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    if (revision === 3) {
+      await expect(page.getByRole("alert").filter({hasText:"Playback stopped"})).toContainText("Playback stopped");
+      await expect(page.getByRole("alert").filter({hasText:"Playback stopped"})).toContainText("unknown-canonical-event");
+    } else {
+      await pauseAutoplay(page,"Pause replay");
+      await expect(page.getByRole("heading",{name:"Playback stopped",exact:true})).toHaveCount(0);
+      await advanceUntilVisible(page,page.locator('[data-format-cue="two_names_initial_names"]'),"historical nomination");
+    }
+  });
+
   for (const kind of ["influence", "werewolf"] as const) {
     test(`${kind} player performance: continuous timeline and responsive pause`, async ({page}, testInfo) => {
       const slug = `performance-${kind}`;
@@ -311,6 +329,11 @@ test.describe("format-aware game viewer", () => {
       expect(introAudio.time).toBeGreaterThan(14.9);
       expect(introAudio.time).toBeLessThan(18);
       expect(introAudio.volume).toBeCloseTo(.01486,4);
+      for (const speedKey of ["3", "4"]) {
+        await playbackKey(page, speedKey);
+        await expect.poll(async () => (await musicState(page)).find(audio => audio.src?.includes("an-invitation"))?.rate).toBe(1);
+        if (!mobile) expect(await opening.locator("video").evaluate(video => (video as HTMLVideoElement).playbackRate)).toBe(1);
+      }
       await pauseAutoplay(page, "Pause replay");
       expect((await musicState(page)).every(audio => audio.paused)).toBe(true);
       await slider.fill("630");
@@ -2005,106 +2028,283 @@ test.describe("format-aware game viewer", () => {
   });
 
   for (const mobile of [false, true]) {
-    test(`Safety Bounce draws the accepted chain on the lobby ${mobile ? "mobile" : "desktop"}`, async ({ page }, testInfo) => {
+    test(`Safety Bounce hands off the full-body chain on ${mobile ? "mobile" : "desktop"}`, async ({page}, testInfo) => {
       await page.clock.install();
-      await page.addInitScript(() => Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: false }));
-      await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 });
-      await page.emulateMedia({ reducedMotion: mobile ? "reduce" : "no-preference" });
-      const slug = `safety-lobby-${mobile ? "mobile" : "desktop"}`;
+      await page.setViewportSize(mobile ? {width:390,height:844} : {width:1440,height:900});
+      await page.emulateMedia({reducedMotion: mobile ? "reduce" : "no-preference"});
+      const slug = `safety-chain-${mobile ? "mobile" : "desktop"}`;
       await installSafetyBounceLobby(page, slug);
       await page.goto(viewerUrl(`/games/${slug}/replay`));
-      await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
-      await pauseAutoplay(page, mobile ? "Pause replay" : "⏸ Pause");
-      const lobby = page.getByRole("region", { name: "Safety Bounce in the lobby" });
-      await advanceUntilVisible(page, lobby, "Safety Bounce lobby");
-      await expect(lobby).toHaveAttribute("data-format-cue", "safety_bounce_started");
-      await expect(lobby.locator("[data-scene-player]")).toHaveCount(4);
-      await expect(lobby.locator("[data-chain-arrow]")).toHaveCount(0);
+      await pauseAutoplay(page, "Pause replay");
+      const chain = page.locator("[data-safety-chain]");
+      await advanceUntilVisible(page, chain, "Safety Bounce starter");
+      await expect(chain).toHaveAttribute("data-format-cue", "safety_bounce_started");
+      const continuousStage = await chain.elementHandle();
+      const continuousBackdrop = await chain.locator("[data-room-backdrop]").elementHandle();
+      await expect(chain.locator("[data-chain-player]")).toHaveCount(4);
+      await expect(chain.locator('[data-chain-player="atlas"]')).toHaveAttribute("data-chooser", "true");
       await playbackKey(page, "ArrowRight");
-      await page.clock.runFor(500);
-      await expect(lobby.locator('[data-chain-arrow="atlas:lyra"]')).toHaveAttribute("data-classification", "vulnerable");
-      await expect(lobby.locator('[data-scene-player="lyra"]')).toHaveAttribute("data-classification", "vulnerable");
-      await expect(lobby.locator('[data-scene-player="echo"]')).toHaveAttribute("data-classification", "unclassified");
-      await expect(lobby.locator('[data-scene-player="atlas"]')).toHaveAttribute("data-chooser", "true");
+      await page.clock.runFor(250);
+      await expect(chain).toHaveAttribute("data-chain-count", "1");
+      await expect(chain.locator('[data-chain-player="atlas"]')).toHaveAttribute("data-chain-pool", "safe");
+      await expect(chain.locator('[data-chain-player="lyra"]')).toHaveAttribute("data-chooser", "true");
       await playbackKey(page, "ArrowRight");
-      await page.clock.runFor(500);
-      await expect(lobby.locator("[data-chain-arrow]")).toHaveCount(2);
-      await expect(lobby.locator('[data-chain-arrow="lyra:echo"]')).toHaveAttribute("data-classification", "safe");
-      await expect(lobby.locator('[data-scene-player="lyra"]')).toHaveAttribute("data-chooser", "true");
-      await expect(lobby).toContainText("Up next: Echo chooses someone Vulnerable.");
-      const image = lobby.getByRole("img", { name: "Safety Bounce lobby" });
-      const imageBox = await image.boundingBox();
-      const marker = await lobby.locator('[data-scene-player="lyra"]').boundingBox();
-      expect(imageBox).not.toBeNull();
-      expect(marker).not.toBeNull();
-      expect(Math.abs(marker!.x + marker!.width / 2 - (imageBox!.x + imageBox!.width * .375))).toBeLessThan(2);
-      expect(Math.abs(marker!.y - (imageBox!.y + imageBox!.height * .405))).toBeLessThan(2);
-      await lobby.screenshot({ path: testInfo.outputPath(`safety-chain-${mobile ? "mobile" : "desktop"}.png`) });
-      if (mobile) {
-        await page.getByRole("button", { name: "Enter fullscreen" }).click();
-        await expect(lobby.locator("[data-chain-arrow]")).toHaveCount(2);
-        await page.setViewportSize({ width: 844, height: 390 });
-        await expect(lobby.locator("[data-scene-player]")).toHaveCount(4);
-        await expect.poll(async () => {
-          const rect = await image.boundingBox();
-          return rect ? Math.abs(rect.width / rect.height - 16 / 9) : 1;
-        }).toBeLessThan(.01);
-        await expect(lobby.locator('[data-scene-player="lyra"]')).toBeInViewport();
-        await page.getByRole("button", { name: "Exit fullscreen" }).click();
-        await page.setViewportSize({ width: 390, height: 844 });
-      }
+      await page.clock.runFor(250);
+      await expect(chain).toHaveAttribute("data-chain-count", "2");
+      expect(await continuousStage!.evaluate(node => node.isConnected)).toBe(true);
+      expect(await continuousBackdrop!.evaluate(node => node.isConnected)).toBe(true);
+      await expect(chain.locator('[data-chain-player="lyra"]')).toHaveAttribute("data-chain-pool", "vulnerable");
+      await expect(chain.locator('[data-chain-player="echo"]')).toHaveAttribute("data-chooser", "true");
+      await chain.screenshot({path:testInfo.outputPath(`safety-chain-${mobile ? "mobile" : "desktop"}.png`)});
       await playbackKey(page, "ArrowLeft");
-      await page.clock.runFor(300);
-      await expect(lobby.locator("[data-chain-arrow]")).toHaveCount(1);
-      await expect(lobby.locator('[data-scene-player="echo"]')).toHaveAttribute("data-classification", "unclassified");
-      await advanceUntilVisible(page, lobby.locator('[aria-label="2 votes"]').first(), "Safety Bounce lobby tally");
-      await expect(lobby).toHaveAttribute("data-format-cue", "format_aggregate");
-      await expect(lobby.locator("[data-chain-arrow]")).toHaveCount(3);
-      await expect(lobby.locator('[aria-label="2 votes"]')).toHaveCount(2);
+      await page.clock.runFor(250);
+      await expect(chain).toHaveAttribute("data-chain-count", "1");
+      await expect(chain.locator('[data-chain-player="echo"]')).toHaveAttribute("data-chain-classification", "unclassified");
+      await advanceUntilVisible(page, page.locator('[data-safety-chain][data-chain-count="3"]'), "terminal chain");
+      await expect(chain.locator("[data-chooser]")).toHaveCount(0);
+      await expect(chain.locator("[data-chain-pool]")).toHaveCount(4);
+      await advanceUntilVisible(page, page.locator("[data-safety-pools]"), "pools during voting");
+      await expect(page.locator("[data-safety-pools]")).toContainText("safe · 2");
       const nominees = page.locator("[data-nominee-selection]");
-      await advanceUntilVisible(page, nominees, "Safety Bounce nominee pool");
-      await expect(nominees).toContainText("Atlas chooses who leaves");
+      await advanceUntilVisible(page, nominees, "empowered tie");
       await expect(nominees.locator("[data-nominee]")).toHaveCount(2);
-      await advanceUntilVisible(page, page.locator('[data-format-cue="format_elimination"]'), "existing elimination presentation");
-      await expect(lobby).toHaveCount(0);
+      await advanceUntilVisible(page, page.locator('[data-format-cue="format_elimination"]'), "elimination");
     });
   }
 
-  test("Safety Bounce lobby reconnect keeps accepted arrows and settles on the next chooser", async ({ page }) => {
+  test("Influence next and previous preserve playing and paused state", async ({page}) => {
     await page.clock.install();
-    const slug = "safety-lobby-live";
-    const fixture = await installSafetyBounceLobby(page, slug, { live: true });
+    const slug = "navigation-play-state";
+    await installSafetyBounceLobby(page, slug);
     await page.goto(viewerUrl(`/games/${slug}/replay`));
-    const lobby = page.getByRole("region", { name: "Safety Bounce in the lobby" });
-    await expect(lobby).toBeVisible();
-    await expect(lobby.locator("[data-chain-arrow]")).toHaveCount(1);
-    await expect(lobby.locator('[data-scene-player="lyra"]')).toHaveAttribute("data-chooser", "true");
-    await expect.poll(() => fixture.sockets.length).toBe(1);
-    fixture.setDecisionCount(5);
-    await fixture.sockets[0]!.close({ code: 1012, reason: "lobby reconnect" });
-    await page.clock.runFor(1250);
-    await expect.poll(() => fixture.sockets.length).toBe(2);
-    await expect(lobby.locator("[data-chain-arrow]")).toHaveCount(2);
-    await page.reload();
-    await expect(lobby.locator("[data-chain-arrow]")).toHaveCount(2);
-    await expect(lobby.locator('[data-scene-player="echo"]')).toHaveAttribute("data-chooser", "true");
-    await expect(lobby.locator('[data-scene-player="rex"]')).toHaveAttribute("data-classification", "unclassified");
+    await pauseAutoplay(page, "Pause replay");
+    await advanceUntilVisible(page, page.locator("[data-safety-chain]"), "Safety Bounce starter");
+    const next = page.getByRole("button", {name:"Next scene", exact:true});
+    const previous = page.getByRole("button", {name:"Previous room or scene", exact:true});
+    const play = page.getByRole("button", {name:"Play replay", exact:true});
+    const pause = page.getByRole("button", {name:"Pause replay", exact:true});
+    await next.click();
+    await expect(play).toBeVisible();
+    await previous.click();
+    await expect(play).toBeVisible();
+    await play.click();
+    await expect(pause).toBeVisible();
+    await next.click();
+    await expect(pause).toBeVisible();
+    await previous.click();
+    await expect(pause).toBeVisible();
+    await playbackKey(page, "ArrowLeft");
+    await expect(pause).toBeVisible();
   });
 
-  test("Safety Bounce keeps uncertain guests unanchored and falls back when the lobby image fails", async ({ page }) => {
+  test("live Influence buffers after a seek and resumes on new gameplay without replaying the tail", async ({ page }) => {
     await page.clock.install();
-    const slug = "safety-lobby-fallback";
-    await installSafetyBounceLobby(page, slug, { uncertain: true });
+    await observeMusic(page);
+    const slug = "live-seek-buffering";
+    const fixture = await installSafetyBounceLobby(page, slug, { live: true });
     await page.goto(viewerUrl(`/games/${slug}/replay`));
-    await pauseAutoplay(page, "⏸ Pause");
-    const lobby = page.getByRole("region", { name: "Safety Bounce in the lobby" });
-    await advanceUntilVisible(page, lobby, "partially anchored lobby");
-    await expect(lobby.locator('[data-scene-player="rex"]')).toHaveCount(0);
-    await expect(lobby.locator('[data-chain-member="rex"]')).toBeVisible();
-    // Simulate the browser's real image-error event without changing canonical cues.
-    await lobby.getByRole("img").dispatchEvent("error");
-    await expect(page.locator("[data-safety-bounce-stage]")).toBeVisible();
-    await expect(page.locator("[data-board-member]")).toHaveCount(4);
+    const lobby = page.locator("[data-safety-chain]");
+    await expect(lobby).toBeVisible();
+    await enableMusic(page);
+    // Slider navigation used to permanently disable live following.
+    const slider = page.getByRole("slider", { name: "Replay position" });
+    await slider.focus();
+    await slider.press("End");
+    await page.clock.runFor(30_000);
+    await expect(page.getByRole("status", { name: "Buffering" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Pause replay", exact: true })).toBeVisible();
+    const score = async () => (await musicState(page)).find(audio => audio.src?.includes("/music/influence/") && !audio.paused);
+    await expect.poll(async () => (await score())?.time ?? -1).toBeGreaterThan(0);
+    const musicTime = (await score())!.time;
+    await expect.poll(async () => (await score())?.time ?? -1).toBeGreaterThan(musicTime + .2);
+    await page.getByRole("button", { name: "Pause replay", exact: true }).click();
+    await expect(page.getByRole("status", { name: "Buffering" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Play replay", exact: true }).click();
+    await expect(page.getByRole("status", { name: "Buffering" })).toBeVisible();
+    fixture.setDecisionCount(5);
+    await fixture.sockets[0]!.close({ code: 1012, reason: "new gameplay" });
+    await page.clock.runFor(1250);
+    await expect(lobby).toHaveAttribute("data-chain-count", "2");
+    await expect(page.getByRole("status", { name: "Buffering" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Pause replay", exact: true })).toBeVisible();
+  });
+
+  test("Safety Bounce reconnect restores the accepted board and next chooser", async ({page}) => {
+    await page.clock.install();
+    const slug = "safety-chain-live";
+    const fixture = await installSafetyBounceLobby(page, slug, {live:true});
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    const chain = page.locator("[data-safety-chain]");
+    await expect(chain).toBeVisible();
+    await expect(chain).toHaveAttribute("data-chain-count", "1");
+    await expect.poll(() => fixture.sockets.length).toBe(1);
+    fixture.setDecisionCount(5);
+    await fixture.sockets[0]!.close({code:1012,reason:"chain reconnect"});
+    await page.clock.runFor(1250);
+    await expect.poll(() => fixture.sockets.length).toBe(2);
+    await page.reload();
+    await expect(chain).toHaveAttribute("data-chain-count", "2");
+    await expect(chain.locator('[data-chain-player="echo"]')).toHaveAttribute("data-chooser", "true");
+    await expect(chain.locator('[data-chain-player="rex"]')).toHaveAttribute("data-chain-classification", "unclassified");
+  });
+
+  test("Safety Bounce preserves every guest when full-body art fails", async ({page}) => {
+    await page.clock.install();
+    const slug = "safety-chain-art";
+    await installSafetyBounceLobby(page, slug, {uncertain:true});
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page, "Pause replay");
+    const chain = page.locator("[data-safety-chain]");
+    await advanceUntilVisible(page, chain, "chain without required lobby anchors");
+    await expect(chain.locator("[data-chain-player]")).toHaveCount(4);
+    const chooser = chain.locator('[data-chain-player="atlas"]');
+    await chooser.getByRole("img").first().dispatchEvent("error");
+    await expect(chooser).toContainText("Atlas");
+    await expect(chain.locator("[data-chain-player]")).toHaveCount(4);
+  });
+
+  for (const mobile of [false, true]) test(`Two Names nominee moves into Override on ${mobile ? "mobile" : "desktop"}`, async ({page}, testInfo) => {
+    await page.clock.install();
+    if (mobile) await page.setViewportSize({width:390,height:844});
+    const scenario = createFormatKernelViewerScenario("two_names_used_tie");
+    const holderId = mobile ? "echo" : "lyra";
+    const decisions = scenario.decisions.slice(0,4).map(event => event.type === "format.two_names_setup"
+      ? {...event,payload:{...event.payload,overrideHolderId:holderId}} : event);
+    const slug = "two-names-nominee-override";
+    await installDeterministicFormatGame(page,{slug,scenarioId:"two_names_used_tie",status:"completed",decisions});
+    if (!mobile) {
+      await page.route("**/handoff-body.svg", route => route.fulfill({contentType:"image/svg+xml",body:'<svg xmlns="http://www.w3.org/2000/svg" width="200" height="600"><circle cx="100" cy="65" r="50" fill="#d8ad83"/><path d="M60 125h80l25 300-40 150h-20V420H95v155H75L35 425Z" fill="#907aca"/></svg>'}));
+      await page.route(`**/api/games/${slug}/visual`,route => route.fulfill({json:{enabled:false,status:null,scenes:[],portraits:{},fullBodies:Object.fromEntries(scenario.roster.map(player=>[player.id,"/handoff-body.svg"]))}}));
+    }
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page,"Pause replay");
+    const stage = page.locator('[data-format-cue="two_names_override_draw"]');
+    await advanceUntilVisible(page,stage,"nominee override");
+    await expect(stage.locator("[data-override-handoff-player]")).toHaveCount(2);
+    const selected = stage.locator(`[data-override-handoff-player="${holderId}"]`);
+    const before = await selected.boundingBox();
+    await page.getByRole("button",{name:"Play replay",exact:true}).click();
+    await page.clock.runFor(1100);
+    await page.getByRole("button",{name:"Pause replay",exact:true}).click();
+    await expect(stage.locator("[data-override-handoff-player]")).toHaveCount(1);
+    const after = await selected.boundingBox();
+    const frame = await stage.boundingBox();
+    expect(after!.width).toBeGreaterThan(before!.width * 1.5);
+    expect(Math.abs(after!.x + after!.width / 2 - (frame!.x + frame!.width / 2))).toBeLessThan(2);
+    await stage.screenshot({path:testInfo.outputPath("nominee-override-landed.png")});
+  });
+
+  for (const mobile of [false, true]) test(`Two Names uses full bodies for role and nominee reveals ${mobile ? "mobile" : "desktop"}`, async ({page}, testInfo) => {
+    await page.clock.install();
+    if (mobile) await page.setViewportSize({width:390,height:844});
+    const slug = "two-names-body-reveals";
+    await installDeterministicFormatGame(page,{slug,scenarioId:"two_names_used_tie",status:"completed"});
+    const fixture = createFormatKernelViewerScenario("two_names_used_tie");
+    await page.route("**/two-names-body.svg", route => route.fulfill({contentType:"image/svg+xml",body:'<svg xmlns="http://www.w3.org/2000/svg" width="200" height="600"><circle cx="100" cy="65" r="50" fill="#d8ad83"/><path d="M60 125h80l25 300-40 150h-20V420H95v155H75L35 425Z" fill="#907aca"/></svg>'}));
+    await page.route(`**/api/games/${slug}/visual`,route => route.fulfill({json:{enabled:false,status:null,scenes:[],portraits:{},fullBodies:Object.fromEntries(fixture.roster.map(player=>[player.id,"/two-names-body.svg"]))}}));
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page,"Pause replay");
+    await page.getByRole("button",{name:"Enter fullscreen",exact:true}).click();
+    for (const kind of ["two_names_empowered_intro","two_names_initial_names","two_names_override_draw","two_names_override_removed","two_names_replacement","format_aggregate","format_elimination"]) {
+      const stage = page.locator(`[data-format-cue="${kind}"]`);
+      await advanceUntilVisible(page,stage,kind);
+      const stageSize = await stage.boundingBox();
+      expect(stageSize!.height).toBeGreaterThan(page.viewportSize()!.height * .7);
+      expect(stageSize!.width).toBeGreaterThan(page.viewportSize()!.width * .9);
+      await expect(stage.locator('[data-two-names-art="full-body"]')).toHaveCount(kind === "two_names_empowered_intro" || kind === "two_names_override_draw" ? 1 : 2);
+      await stage.screenshot({path:testInfo.outputPath(`${kind}-body.png`)});
+    }
+    // A failed cutout must still leave the historical decision watchable.
+    await page.route("**/two-names-body.svg",route => route.abort());
+    await page.reload();
+    await pauseAutoplay(page,"Pause replay");
+    const intro = page.locator('[data-format-cue="two_names_empowered_intro"]');
+    await advanceUntilVisible(page,intro,"portrait fallback intro");
+    await expect(intro.locator('[data-two-names-art="portrait"]')).toBeVisible();
+    await expect(intro).toContainText("Atlas");
+  });
+
+  for (const scenarioId of ["two_names_declined", "two_names_used_tie"] as const) test(`Two Names ${scenarioId} speaks before nominations and override decisions`, async ({page}, testInfo) => {
+    await page.clock.install();
+    if (scenarioId === "two_names_declined") await page.setViewportSize({width:390,height:844});
+    const slug = `speech-${scenarioId}`;
+    await installDeterministicFormatGame(page,{slug,scenarioId,status:"completed"});
+    const fixture = createFormatKernelViewerScenario(scenarioId);
+    const actions = fixture.decisions.flatMap((event,index) => {
+      const action = event.type === "format.two_names_setup" ? "format-two-names-initial-names"
+        : event.type === "format.two_names_override_used" || event.type === "format.two_names_override_declined" ? "format-two-names-override"
+        : event.type === "format.two_names_replacement_named" ? "format-two-names-replacement" : null;
+      const actorId = "empoweredId" in event.payload ? event.payload.empoweredId : "overrideHolderId" in event.payload ? event.payload.overrideHolderId : null;
+      const kind = event.type === "format.two_names_setup" ? "two_names_initial_names" : event.type === "format.two_names_override_used" ? "two_names_override_removed" : event.type === "format.two_names_override_declined" ? "two_names_override_declined" : "two_names_replacement";
+      return action && actorId ? [{kind,id:index+1,entrySequence:index+1,firstDurableEventSequence:event.sequence,gameId:slug,round:event.round,phase:event.phase,scope:"public",fromPlayerId:actorId,fromPlayerName:actorId,toPlayerIds:null,text:`I choose trust for decision ${index}.`,thinking:`I weigh trust for decision ${index}.`,timestamp:Date.parse(event.timestamp),decisionSpeech:{actorId,action}}] : [];
+    });
+    await page.route(`**/api/games/${slug}/transcript`,route => route.fulfill({json:actions.map(({kind,...message})=>{void kind;return message;})}));
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page,"Pause replay");
+    await page.getByRole("button",{name:"Player settings",exact:true}).click();
+    await page.getByLabel("Show thinking",{exact:true}).check();
+    await page.getByRole("button",{name:"Close settings",exact:true}).click();
+    for (const action of actions) {
+      const speaking = page.locator(`[data-two-names-decision-speech="${action.kind}"]`);
+      const reveal = page.locator(`[data-two-names-decision-reveal="${action.kind}"]`);
+      await advanceUntilVisible(page,speaking.locator("[data-in-scene-thinking]"),`${action.kind} thinking`);
+      await expect(speaking.locator('[data-room-backdrop]')).toHaveAttribute("data-room-backdrop","/visual/influence/rooms-v1/council.jpg");
+      await expect(reveal).toHaveCount(0);
+      await advanceUntilVisible(page,speaking.locator("[data-speech-bubble]"),`${action.kind} speech`);
+      await expect(speaking).toContainText("I choose trust");
+      await expect(reveal).toHaveCount(0);
+      await speaking.screenshot({path:testInfo.outputPath(`${action.kind}-speech.png`)});
+      await page.getByRole("button",{name:"Play replay",exact:true}).click();
+      await advanceClockUntilVisible(page,reveal,`${action.kind} reveal`);
+      await pauseAutoplay(page,"Pause replay");
+    }
+  });
+
+  for (const mobile of [false,true]) test(`Safety Bounce plays saved thinking and speech at each pick and the empowered tie ${mobile ? "mobile" : "desktop"}`, async ({page}, testInfo) => {
+    if (mobile) await page.setViewportSize({width:390,height:844});
+    await page.clock.install();
+    const slug = "safety-chain-speech";
+    await installSafetyBounceLobby(page, slug);
+    const scenario = createFormatKernelViewerScenario("safety_bounce_tie");
+    const speeches = scenario.decisions.flatMap((event, index) => {
+      const actorId = event.type === "format.safety_bounce_pointer" ? event.payload.actorId : event.type === "format.resolved" ? event.payload.tiebreakerId : null;
+      if (!actorId) return [];
+      const tie = event.type === "format.resolved";
+      return [{id:index+1,entrySequence:index+1,firstDurableEventSequence:event.sequence,gameId:slug,round:event.round,phase:event.phase,scope:"public",fromPlayerId:actorId,fromPlayerName:actorId,toPlayerIds:null,
+        text:tie ? "I am breaking this tie because I trust the other player." : `I choose this player because we need a stronger balance. Pick ${index}.`,
+        thinking:tie ? "My tie decision protects my next round." : `My private chain reasoning ${index}. I want to protect the promise I made earlier while keeping my options open. This choice leaves both sides with a reason to work with me, but I still need to hear what the next player says before deciding who I can trust.`,timestamp:Date.parse(event.timestamp),decisionSpeech:{actorId,action:tie ? "format-tiebreak" : "bounce-pointer"}}];
+    });
+    const ballots = scenario.decisions.flatMap((event,index) => event.type === "format.ballot_cast" ? [{id:100+index,entrySequence:100+index,firstDurableEventSequence:event.sequence,gameId:slug,round:event.round,phase:event.phase,scope:"system",fromPlayerId:event.payload.voterId,fromPlayerName:event.payload.voterId,toPlayerIds:[],text:`I vote ${event.payload.targetId} because I cannot trust them.`,timestamp:Date.parse(event.timestamp),decisionSpeech:{actorId:event.payload.voterId,action:"format-ballot"}}] : []);
+    await page.route(`**/api/games/${slug}/transcript`, route => route.fulfill({json:[...speeches,...ballots]}));
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page, "Pause replay");
+    await page.getByRole("button",{name:"Player settings",exact:true}).click();
+    await page.getByLabel("Show thinking",{exact:true}).check();
+    await page.getByRole("button",{name:"Close settings",exact:true}).click();
+    await page.getByRole("button",{name:"Enter fullscreen",exact:true}).click();
+    const chain = page.locator("[data-safety-chain]");
+    const thinking = chain;
+    await advanceUntilVisible(page, thinking.locator("[data-in-scene-thinking]"), "chain thinking");
+    await expect(thinking).toContainText("My private chain reasoning");
+    await expect(thinking.locator("[data-thought-tail]")).not.toHaveCount(0);
+    await expect(thinking.locator("[data-thinking-camera]")).not.toHaveCSS("transform","matrix(1, 0, 0, 1, 0, 0)");
+    await expect(thinking.locator("[data-room-backdrop]")).toHaveAttribute("data-room-backdrop","/visual/influence/rooms-v1/council.jpg");
+    await expect(thinking.locator("[data-speech-bubble]")).toHaveCount(0);
+    await thinking.screenshot({path:testInfo.outputPath("safety-chain-thinking.png")});
+    await advanceUntilVisible(page, chain.locator("[data-speech-bubble]"), "chain public speech");
+    await expect(chain).toContainText("I choose this player because");
+    await expect(chain.locator("[data-speech-tail]")).toHaveCount(1);
+    await expect(chain.locator("[data-thinking-camera]")).toHaveCSS("transform","matrix(1, 0, 0, 1, 0, 0)");
+    await chain.screenshot({path:testInfo.outputPath("safety-chain-public-speech.png")});
+    await expect(chain.locator('[data-chain-player="atlas"]')).toHaveAttribute("data-chooser","true");
+    await advanceUntilVisible(page, page.getByRole("blockquote").filter({hasText:"because I cannot trust them"}), "House ballot explanation");
+    await expect(page.locator("[data-in-scene-thinking]")).toHaveCount(0);
+    await advanceUntilVisible(page, page.locator("[data-in-scene-thinking]").filter({hasText:"My tie decision"}), "empowered thinking");
+    await advanceUntilVisible(page, page.locator("[data-nominee-selection] [data-speech-bubble]").filter({hasText:"I am breaking this tie"}), "empowered speech");
+    await page.locator("[data-nominee-selection]").screenshot({path:testInfo.outputPath("empowered-public-speech.png")});
+    await expect(page.locator('[data-nominee-selection] [data-selected="true"]')).toHaveCount(0);
+    await page.getByRole("button", {name:"Play replay", exact:true}).click();
+    await advanceClockUntilVisible(page, page.locator('[data-nominee-selection] [data-selected="true"]'), "empowered reveal");
   });
 
   test("settles canonical Safety Bounce choreography through shared replay controls", async ({
@@ -2209,7 +2409,7 @@ test.describe("format-aware game viewer", () => {
     await assertBoardPartition(pointerStage);
     await assertInsideViewport(pointerStage, 390);
     await expect(
-      pointerStage.locator('[data-pointer-cycle-candidate="true"]'),
+      pointerStage.locator("[data-chain-player]"),
     ).not.toHaveCount(0);
     await captureSettledScreenshot(
       page,
@@ -2366,7 +2566,7 @@ async function installSafetyBounceLobby(page: Page, slug: string, options: { unc
     text: "The House is ready for the next round.", timestamp: 1, visualScene: { id: "bounce-lobby", roomId: "lobby" },
   }] }));
   await page.route(`**/api/games/${slug}/visual`, route => route.fulfill({ json: {
-    enabled: true, status: null, portraits: {}, scenes: [{
+    enabled: true, status: null, portraits: {}, fullBodies: Object.fromEntries(scenario.roster.map(player => [player.id, "/bounce-body.svg"])), scenes: [{
       id: "bounce-lobby", roomId: "lobby", version: 1, imageUrl: "/bounce-lobby.svg", afterDialogueSequence: 0,
       participantIds: scenario.roster.map(player => player.id),
       anchors: scenario.roster.map((player, index) => ({ playerId: player.id, label: index + 1,
@@ -2375,6 +2575,7 @@ async function installSafetyBounceLobby(page: Page, slug: string, options: { unc
       })),
     }],
   } }));
+  await page.route("**/bounce-body.svg", route => route.fulfill({contentType:"image/svg+xml",body:'<svg xmlns="http://www.w3.org/2000/svg" width="400" height="900"><circle cx="200" cy="120" r="80" fill="#d6b89c"/><path d="M110 220Q200 180 290 220L330 600H270L260 890H200L180 600L160 890H100L110 600H70Z" fill="#766c9a"/></svg>'}));
   await page.route("**/bounce-lobby.svg", route => route.fulfill({ contentType: "image/svg+xml", body:
     '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><rect width="1600" height="900" fill="#24212c"/><path d="M0 600H1600V900H0Z" fill="#443849"/>'
     + scenario.roster.map((player, index) => `<g><rect x="${130 + index * 400}" y="350" width="140" height="320" rx="60" fill="#75667c"/><ellipse cx="${200 + index * 400}" cy="297" rx="40" ry="45" fill="#c9bbaa"/><text x="${200 + index * 400}" y="740" fill="white" text-anchor="middle" font-family="sans-serif" font-size="26">${player.name}</text></g>`).join("") + '</svg>',
@@ -2516,53 +2717,25 @@ async function replayPlayerCounts(
 
 async function assertCanonicalPointerLanding(stage: Locator): Promise<void> {
   const accepted = await acceptedTarget(stage);
-  const finalCandidate = stage.locator(
-    '[data-pointer-cycle-candidate="true"][data-canonical-target="true"]',
-  );
-  await expect(finalCandidate).toHaveCount(1);
-  await expect(finalCandidate).toHaveAttribute(
-    "data-pointer-candidate-id",
-    accepted,
-  );
-  await expect(stage.locator(`[data-board-member="${accepted}"]`)).toHaveCount(1);
+  await expect(stage.locator(`[data-chain-player="${accepted}"]`)).toHaveCount(1);
+  await expect(stage.locator(`[data-chain-player="${accepted}"]`)).not.toHaveAttribute("data-chain-classification", "unclassified");
 }
-
 async function acceptedTarget(stage: Locator): Promise<string> {
-  const value = await stage.locator("[data-accepted-target]").getAttribute(
-    "data-accepted-target",
-  );
+  const value = await stage.getAttribute("data-accepted-target");
   if (!value) throw new Error("Accepted Safety Bounce target is not explicit.");
   return value;
 }
-
 async function assertBoardPartition(stage: Locator): Promise<string[]> {
-  const ids = await stage.locator("[data-board-member]").evaluateAll((nodes) =>
-    nodes.map((node) => node.getAttribute("data-board-member") ?? ""),
-  );
+  const ids = await stage.locator("[data-chain-player]").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-chain-player")!));
   expect(ids.length).toBeGreaterThan(2);
   expect(new Set(ids).size).toBe(ids.length);
-  await expect(stage.locator('[data-lane="safe"]')).toHaveCount(1);
-  await expect(stage.locator('[data-lane="vulnerable"]')).toHaveCount(1);
-  await expect(stage.locator('[data-lane="bench"]')).toHaveCount(1);
-  await expect(stage.locator("[data-center-actor]")).toHaveCount(1);
-  return [...ids].sort();
+  return ids.sort();
 }
-
-async function assertInsideViewport(
-  stage: Locator,
-  viewportWidth: number,
-): Promise<void> {
-  const boxes = await stage.locator("[data-board-member]").evaluateAll((nodes) =>
-    nodes.map((node) => {
-      const rect = node.getBoundingClientRect();
-      return { left: rect.left, right: rect.right, width: rect.width };
-    }),
-  );
-  for (const box of boxes) {
-    expect(box.width).toBeGreaterThan(0);
-    expect(box.left).toBeGreaterThanOrEqual(0);
-    expect(box.right).toBeLessThanOrEqual(viewportWidth);
-  }
+async function assertInsideViewport(stage: Locator, viewportWidth: number): Promise<void> {
+  const box = await stage.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.width).toBeGreaterThan(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(viewportWidth);
 }
 
 async function captureSettledScreenshot(

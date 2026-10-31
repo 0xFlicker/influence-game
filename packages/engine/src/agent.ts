@@ -5157,12 +5157,19 @@ Use these as live facts for strategy and conversation. You may plead, bargain, r
     const coordinationGuidance = pressure.selectedFormat === "vote_bomb" && ctx.phase !== Phase.FORMAT_RESOLVE
       ? `\n\n## The Short List Coordination\n${getFormatRegistration("vote_bomb").decision.strategyGuidance}`
       : "";
+    const board = pressure.bounceBoard;
+    const names = (ids: UUID[]) => ids.map(id => ctx.alivePlayers.find(player => player.id === id)?.name ?? id).join(", ");
+    const bounceGuidance = board ? `\n\n## Safety Bounce board\nSafe: ${names(board.safe)}\nVulnerable: ${names(board.vulnerable)}\nUnclassified: ${names(board.unclassified)}\n${board.unclassified.length === 0
+      ? board.vulnerable.length === 1
+        ? "Classification is complete. The sole vulnerable player exits automatically; there is no ballot."
+        : `${board.safe.includes(ctx.selfId) ? "You are safe from elimination this round. Use Mingle to decide whom to vote against and negotiate support or commitments." : "You are vulnerable and can exit this round. Use Mingle to build support, discourage elimination votes against you, and coordinate alternatives."} All living players vote to eliminate one of the vulnerable players; the highest total exits. ${pressure.empoweredName} breaks an exit tie.`
+      : "The chain is still running; only unclassified players can be picked."}` : "";
     return `## Current Format Pressure
 - Locked round format: ${lockedName} (format id: ${formatSurfaceId(pressure.selectedFormat)})
 - Empowered chooser and format tiebreaker: ${pressure.empoweredName}
 - Active rule sheet: ${pressure.ruleSheetSummary ?? ruleSheetForFormat(pressure.selectedFormat)}
 - Visibility: ${this.formatVisibilityGuidance(pressure.selectedFormat)}
-Use only this locked format for the current round. Prefer the full public name in speech. Do not import rules from an unselected format or the retired default Power-to-Council loop.${coordinationGuidance}`;
+Use only this locked format for the current round. Prefer the full public name in speech. Do not import rules from an unselected format or the retired default Power-to-Council loop.${coordinationGuidance}${bounceGuidance}`;
   }
 
   private buildRestrictedHistoryLegalitySection(ctx: PhaseContext): string {
@@ -6042,7 +6049,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
   }
 
   private decisionSchemaWithStrategy(tool: DecisionSchema, options?: LlmCallOptions): DecisionSchema {
-    const spoken = withDecisionSpeech(tool, options?.action ?? tool.name);
+    const spoken = withDecisionSpeech(tool, options?.action ?? tool.name, this.decisionContractVersion);
     return { ...spoken, schema: this.withStrategyCandidateSchema(spoken.schema, options) };
   }
 
@@ -6283,9 +6290,9 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       value: unknown,
       requireSpeech = true,
     ): StructuredDomainDecodeResult<unknown> => {
-      const speechIssue = requireSpeech ? validateDecisionSpeech(action, value) : null;
+      const speechIssue = requireSpeech ? validateDecisionSpeech(action, value, this.decisionContractVersion) : null;
       if (speechIssue) {
-        const policy = decisionSpeechPolicy(action);
+        const policy = decisionSpeechPolicy(action, this.decisionContractVersion);
         const message = value && typeof value === "object" && "message" in value ? value.message : undefined;
         const feedback = policy && typeof message === "string"
           ? measureLengthFeedback(message, "message", policy.maxBytes, "utf8_bytes") : undefined;
@@ -6326,7 +6333,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       return { status: "valid", value: Object.assign({}, decoded.value, { cue }) };
     };
     const artifact = createExactStructuredOutputArtifact<TProviderValue, TDomainValue>({
-      action: `agent-tool.${action}.${options?.visual ? "visual." : ""}v${decisionSpeechPolicy(action) ? 2 : 1}`,
+      action: `agent-tool.${action}.${options?.visual ? "visual." : ""}v${decisionSpeechPolicy(action) ? Math.max(2, this.decisionContractVersion) : 1}`,
       name: requestTool.name,
       schema: {
         ...(requestTool.description && { description: requestTool.description }),

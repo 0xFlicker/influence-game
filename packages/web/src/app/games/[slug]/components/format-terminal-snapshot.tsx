@@ -19,6 +19,7 @@ export function FormatTerminalSnapshot({
   decisions,
   formatManifest,
   empowerRevoteVersion,
+  gameSchemaVersion,
   eligiblePlayerIdsByRound,
   loading = false,
 }: {
@@ -27,6 +28,7 @@ export function FormatTerminalSnapshot({
   decisions: readonly ViewerDecisionEvent[];
   formatManifest?: readonly LaunchFormatId[];
   empowerRevoteVersion?: EmpowerRevoteVersion;
+  gameSchemaVersion?: number;
   eligiblePlayerIdsByRound?: ReadonlyMap<number, readonly string[]>;
   loading?: boolean;
 }) {
@@ -35,6 +37,7 @@ export function FormatTerminalSnapshot({
     gameKernel: "format",
     formatManifest,
     empowerRevoteVersion,
+  gameSchemaVersion,
     roster,
     decisions,
     eligiblePlayerIdsByRound,

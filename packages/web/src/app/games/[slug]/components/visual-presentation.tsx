@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import {useSceneThinking} from "@/components/watch/watch-thinking";
+import {FormatPresentation} from "./format-presentation";
+import type {FormatPresentationCue} from "./types";
 import {sampleWatch} from "@/components/watch/watch-sampling";
 import { VISUAL_ROOMS, type AcceptedVisualScene, type VisualRoomId } from "@influence/engine/visual-mode";
 import {NomineeSelection, type NomineeSelectionBeat} from "./nominee-selection";
@@ -11,6 +14,7 @@ import { TimedSpeech } from "./timed-speech";
 import { HouseSegment } from "./house-segment";
 import { VisualSceneView, type VisualSpeech } from "./visual-scene-view";
 import { SCENE_SPEECH_START_MS, sceneSpeechOpacity } from "./scene-speech-timing";
+import { SafetyChain, type SafetyChainBeat } from "./safety-chain";
 import { SafetyBounceScene } from "./safety-bounce-scene";
 import type { SafetyBounceSceneBeat } from "./safety-bounce-scene-model";
 import { WinnerScene, type WinnerSceneBeat } from "./winner-scene";
@@ -23,6 +27,9 @@ import type { FormatPresentationRosterPlayer } from "./types";
 
 /** Constructed from accepted dialogue or structured ballot facts at their reveal cue. */
 export type VisualPresentationBeat =
+  | {kind:"two-names-stage"; cue:FormatPresentationCue; roster:SafetyChainBeat["roster"]}
+  | {kind:"two-names-decision"; cue:FormatPresentationCue; roster:SafetyChainBeat["roster"]; player:SafetyChainBeat["roster"][number] & {headRectangle?: import("@influence/engine/character-portrait").HeadRectangle}; speech:VisualSpeech}
+  | SafetyChainBeat
   | NomineeSelectionBeat
   | SafetyBounceSceneBeat
   | WinnerSceneBeat
@@ -89,7 +96,13 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   const mingleRooms = rooms.filter((room) => room.roomId.startsWith("mingle-"));
   const backgroundUrl = influenceRoomBackground(beat, voteLedger);
   let content;
-  if (beat.kind === "nominee-selection") {
+  if (beat.kind === "two-names-stage") {
+    content = <FormatPresentation elapsedMs={clockElapsedMs} reducedMotion={reducedMotion} cue={beat.cue} roster={beat.roster} currentStateEntry={currentStateEntry} controlsInset={controlsInset} />;
+  } else if (beat.kind === "two-names-decision") {
+    content = <TwoNamesDecision beat={beat} elapsedMs={clockElapsedMs} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} controlsInset={controlsInset} />;
+  } else if (beat.kind === "safety-chain") {
+    content = <SafetyChain beat={beat} elapsedMs={clockElapsedMs} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} controlsInset={controlsInset} />;
+  } else if (beat.kind === "nominee-selection") {
     content = <NomineeSelection beat={beat} elapsedMs={clockElapsedMs} reducedMotion={reducedMotion} />;
   } else if (beat.kind === "winner") {
     content = <WinnerScene beat={beat} fullscreen={fullscreen} controlsInset={controlsInset} />;
@@ -106,7 +119,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
     content = <section aria-label="Anonymous speech" className={`mx-auto w-full max-w-2xl py-10 ${fullscreen ? "flex min-h-0 flex-1 flex-col px-4" : ""}`}><p className="mb-4 text-xs text-white/50">Anonymous</p>{opacity > 0 && <blockquote data-speech-bubble style={{ opacity }} className={`rounded-2xl border border-white/20 bg-black/85 p-5 ${fullscreen ? "flex min-h-0 flex-1 flex-col" : ""}`}>{fullscreen ? <TimedSpeech text={beat.speech.text} elapsedMs={readingElapsedMs - SCENE_SPEECH_START_MS} /> : beat.speech.text}</blockquote>}</section>;
   } else if (beat.kind === "house") {
     content = hideHouseNarration && beat.text !== null ? null : <HouseSegment fullscreen={fullscreen} text={beat.text} title={beat.title} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} />;
-  } else {
+  } else if (beat.kind === "scene") {
     const isMingle = beat.roomId.startsWith("mingle-");
     const selectedRoom = isMingle && !fullscreen && pinnedRoom && mingleRooms.some((room) => room.roomId === pinnedRoom) ? pinnedRoom : beat.roomId;
     const selectedScene = rooms.find((room) => room.roomId === selectedRoom);
@@ -122,9 +135,25 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
         {scene && <VisualSceneView onReadyChange={onSceneReadyChange} controlsInset={controlsInset} scene={scene} speech={speech} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} navigationRevision={navigationRevision} reducedMotion={reducedMotion} />}
       </div>
     </div>;
+  } else {
+    const unsupported: never = beat;
+    throw new Error(`Unsupported visual presentation: ${JSON.stringify(unsupported)}`);
   }
-  return <div className={`w-full text-white ${(beat.kind !== "anonymous" || fullscreen) ? "flex min-h-0 flex-1 flex-col" : ""}`}>
+  return <div data-presentation-current-entry={currentStateEntry || undefined} className={`w-full text-white ${(beat.kind !== "anonymous" || fullscreen) ? "flex min-h-0 flex-1 flex-col" : ""}`}>
     {content}
     {status && <p role="status" className="mt-3 shrink-0 text-center text-sm text-white/60">{status === "preparing" ? "Preparing the next scene…" : "Using portraits for this scene."}</p>}
+  </div>;
+}
+
+
+function TwoNamesDecision({beat, elapsedMs, currentStateEntry, reducedMotion, controlsInset}: {
+  beat:Extract<VisualPresentationBeat,{kind:"two-names-decision"}>;elapsedMs:number;currentStateEntry:boolean;reducedMotion:boolean;controlsInset:number;
+}) {
+  const thought = useSceneThinking();
+  if (currentStateEntry || (!thought && elapsedMs >= soloPresentationDurationMs(beat.speech.text))) {
+    return <div className="flex min-h-0 flex-1 flex-col" data-two-names-decision-reveal={beat.cue.kind}><FormatPresentation cue={beat.cue} roster={beat.roster} currentStateEntry={currentStateEntry} controlsInset={controlsInset} /></div>;
+  }
+  return <div data-two-names-decision-speech={beat.cue.kind} className="flex min-h-0 flex-1 flex-col">
+    <SoloPresentation backgroundUrl={influenceRoomBackground(beat)} beat={{kind:"portrait",purpose:"Decision",caption:"Two Names",player:beat.player,speech:beat.speech}} elapsedMs={elapsedMs} reducedMotion={reducedMotion} controlsInset={controlsInset} />
   </div>;
 }

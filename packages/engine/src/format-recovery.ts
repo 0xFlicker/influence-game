@@ -9,6 +9,8 @@
 import type { CanonicalGameEvent } from "./canonical-events";
 import { buildFormatPressureProjection } from "./format-pressure";
 import {
+  createBounceBoard,
+  applyBouncePointer,
   LEGACY_FORMAT_MANIFEST,
   formatsAvailableForSelection,
   isLaunchFormatId,
@@ -22,7 +24,8 @@ export type FormatResumeCoordinate =
   | "format_menu"
   | "format_pick"
   | "format_mingle"
-  | "format_resolve";
+  | "format_resolve"
+  | "safety_bounce";
 
 const FORMAT_RESOLUTION_EVENT_TYPES = new Set<CanonicalGameEvent["type"]>([
   "format.ballot_cast",
@@ -34,6 +37,7 @@ const FORMAT_RESOLUTION_EVENT_TYPES = new Set<CanonicalGameEvent["type"]>([
 
 export function isFormatResumeCoordinate(value: string): value is FormatResumeCoordinate {
   return (
+    value === "safety_bounce" ||
     value === "format_menu" ||
     value === "format_pick" ||
     value === "format_mingle" ||
@@ -184,9 +188,11 @@ export function validateFormatResumePrerequisites(
   });
   const menus = roundEvents.filter((event) => event.type === "format.menu_offered");
   const selections = roundEvents.filter((event) => event.type === "format.selected");
-  const resolutionFacts = roundEvents.filter((event) =>
-    FORMAT_RESOLUTION_EVENT_TYPES.has(event.type),
-  );
+  const roster = canonicalEvents.find(event => event.type === "game.roster_initialized");
+  const newChain = roster?.type === "game.roster_initialized" && (roster.payload.gameSchemaVersion ?? 1) >= 2 && selection?.type === "format.selected" && selection.payload.formatId === "safety_bounce";
+  const resolutionFacts = roundEvents.filter(event => FORMAT_RESOLUTION_EVENT_TYPES.has(event.type)
+    && !(newChain && (event.type === "format.safety_bounce_started" || event.type === "format.safety_bounce_pointer")));
+  if (actorCoordinate === "safety_bounce") return newChain && resolutionFacts.length === 0 ? null : "safety_bounce_invalid_prefix";
   const formatMingleAllocations = roundEvents.filter(
     (event) =>
       event.type === "mingle.rooms_allocated" && event.phase === Phase.FORMAT_MINGLE,
@@ -316,6 +322,14 @@ export function buildFormatKernelStateForResume(params: {
   }
 
 
+  const start = params.canonicalEvents.findLast(event => event.round === currentRoundNumber(params.canonicalEvents) && event.type === "format.safety_bounce_started");
+  let bounceBoard: ReturnType<typeof createBounceBoard> | undefined;
+  if (start?.type === "format.safety_bounce_started") {
+    bounceBoard = createBounceBoard(livingPlayerIdsAtSequence(params.canonicalEvents, start.sequence), start.payload.starterId);
+    for (const event of params.canonicalEvents) {
+      if (event.round === start.round && event.type === "format.safety_bounce_pointer") bounceBoard = applyBouncePointer(bounceBoard, event.payload);
+    }
+  }
   const formatManifest = formatManifestFromCanonicalEvents(params.canonicalEvents);
   const round = currentRoundNumber(params.canonicalEvents);
   const roundEvents = eventsInRound(params.canonicalEvents, round);
@@ -341,6 +355,7 @@ export function buildFormatKernelStateForResume(params: {
         empoweredName: params.getPlayerName(empoweredId),
         offeredFormats: [selectedFormat],
         selectedFormat,
+        bounceBoard,
       }),
     };
   }
@@ -389,6 +404,7 @@ export function buildFormatKernelStateForResume(params: {
       empoweredName,
       offeredFormats,
       selectedFormat,
+      bounceBoard,
     }),
   };
 }

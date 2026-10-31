@@ -48,6 +48,13 @@ Measure both speech and thinking before visibility changes, using the stage font
 
 ## Replay music
 
+Live-tail following is a game-lifecycle policy, independent of seeking or stepping
+through history. Influence navigation must preserve that policy: when playback
+catches up, keep `isPlaying` true, show `WatchBuffering`, and retain the music
+transport. Appended cues resume from the next contribution. Explicit Pause still
+freezes playback and music; Play at a waiting tail must not repeat the last cue.
+Werewolf uses the same shared waiting state, with its own window prefetching.
+
 The shared player now owns optional music transport and device sound preferences; a game module selects its score from current audience-visible moments. See [shared replay music transport](shared-replay-music-transport.md) for the adapter contract, autoplay constraints, scrub semantics and new-game checklist. Influence remains silent until a score is selected. Mute and volume stay in the main control bar at all widths.
 
 

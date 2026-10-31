@@ -284,7 +284,7 @@ test("Influence decisions use solo full bodies or avatars, backgrounds, and acti
       const beat = visualWatchPresentation({ ...data, fullBodies }, null, spoken, [player]).beat!;
       expect(beat).toMatchObject({ kind: "portrait", purpose: "Decision", speech: { text: spoken.text }, player: { avatarUrl: "/frozen.png", fullBodyReferenceUrl: fullBodies.a } });
       expect(influenceRoomBackground(beat)).toBe(action === "format-pick" ? INFLUENCE_ROOMS.empower : INFLUENCE_ROOMS.council);
-      expect(influenceThinkingActor(null, beat)).toBe(["format-pick", "format-tiebreak"].includes(action) ? null : "a");
+      expect(influenceThinkingActor(null, beat)).toBe(["format-pick"].includes(action) ? null : "a");
     }
   }
 });
@@ -325,4 +325,14 @@ test("a classic fallback ballot never borrows a later revote's speech", async ()
   expect(portraits).toHaveLength(2);
   expect(portraits[0]!.spokenMessage).toBeUndefined();
   expect(portraits[1]!.spokenMessage).toBe(speech.text);
+});
+
+test("farewell uses the council room while private diaries use a House room", async () => {
+  const { influenceRoomBackground, INFLUENCE_ROOMS } = await import("../app/games/[slug]/components/influence-rooms");
+  const farewell = visualWatchPresentation(data, null, {...message, presentationPurpose:"farewell"}, [player]).beat;
+  expect(farewell?.kind).toBe("portrait");
+  expect(influenceRoomBackground(farewell!)).toBe(INFLUENCE_ROOMS.council);
+  if (farewell?.kind === "portrait") {
+    expect(influenceRoomBackground({...farewell, purpose:"Diary"})).toBe(INFLUENCE_ROOMS.mingle[4]);
+  }
 });

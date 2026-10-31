@@ -1,3 +1,4 @@
+import {influenceOpening} from "../app/games/[slug]/components/influence-opening";
 import { describe, expect, it } from "bun:test";
 import {
   createMajorityEliminationTieViewerDecisions,
@@ -719,5 +720,18 @@ it.each(["tail", "hydration"])("paused clicks reveal buffered live speech after 
   expect(sceneSpeechOpacity("Echo", director.getElapsedBaseMs())).toBe(1);
   director.manualAdvance(); clock.tick(VISUAL_SPEECH_FADE_MS);
   expect(sceneSpeechOpacity("Echo", director.getElapsedBaseMs())).toBe(0);
+  director.dispose();
+});
+
+for (const speed of [2,4]) it(`Influence opening retains its first 20 seconds at ${speed}x then accelerates cast cards`, () => {
+  const clock = new FakeClock();
+  const director = createPresentationDirector({clock});
+  const cues = influenceOpening("g", [{id:"a",name:"A"},{id:"b",name:"B"}]);
+  director.load(cues); director.setSpeed(speed); director.play();
+  clock.tick(11999); expect(director.getSnapshot().cursor).toBe(0);
+  clock.tick(1); expect(director.getSnapshot().cursor).toBe(1);
+  clock.tick(7999); expect(director.getSnapshot().cursor).toBe(1);
+  clock.tick(1); expect(director.getSnapshot().cursor).toBe(2);
+  clock.tick(2800 / speed); expect(director.getSnapshot().cursor).toBe(3);
   director.dispose();
 });

@@ -647,6 +647,7 @@ export interface GameConfig {
   empowerRevoteVersion?: import("./empower-revote-rules").EmpowerRevoteVersion;
   /** Frozen accepted-decision replay contract. */
   decisionContractVersion?: import("./influence-decision-speech").InfluenceDecisionContractVersion;
+  gameSchemaVersion?: import("./influence-game-schema").InfluenceGameSchemaVersion;
   conversationPolicy?: import("./open-conversation").ConversationPolicy;
   /** Frozen legal formats for this game. Omission is normalized at admission. */
   formatManifest?: readonly LaunchFormatId[];

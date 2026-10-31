@@ -1553,3 +1553,49 @@ describe("GameRunner durable logical turns", () => {
     expect(store.snapshot!.transcriptEntries.filter(e=>e.scope==="public"&&e.phase==="LOBBY").map(e=>e.from)).toEqual([firstSpeaker.name,secondSpeaker.name]);
   });
 });
+
+it("restarts every new Safety Bounce chain commit and restores the public board before Mingle", async () => {
+  const store = new MemoryDurableTurnStore();
+  const ids = Array.from({length: 6}, () => createUUID());
+  const config = {...TEST_GAME_CONFIG, gameSchemaVersion: 2 as const, maxRounds: 1, formatManifest: ["safety_bounce" as const], mingleSessionsPerRound: 1};
+  const seen: number[] = [];
+  class SpeakingChainAgent extends ObservedAgent {
+    override async getBouncePointer(...args: Parameters<MockAgent["getBouncePointer"]>) {
+      seen.push(args[0].publicMessages.filter(row => row.text.startsWith("CHAIN ")).length);
+      return {...await super.getBouncePointer(...args), decisionMessage: `CHAIN ${this.id}`};
+    }
+    override async getSafetyBounceVote(ctx: PhaseContext, vulnerableIds: string[]) {
+      return {...await super.getSafetyBounceVote(ctx, vulnerableIds), targetId: vulnerableIds[ids.indexOf(this.id) % vulnerableIds.length]!, decisionMessage: "A sealed House explanation."};
+    }
+    override async breakFormatEliminationTie(...args: Parameters<MockAgent["breakFormatEliminationTie"]>) {
+      return {...await super.breakFormatEliminationTie(...args), decisionMessage: "My public deciding explanation.", thinking: "My private deciding reason."};
+    }
+    override async getMingleIntent(...args: Parameters<MockAgent["getMingleIntent"]>) {
+      const context = args[0];
+      if (context.phase === Phase.FORMAT_MINGLE) {
+        expect(context.formatPressure?.bounceBoard?.unclassified).toEqual([]);
+        expect(context.formatPressure!.bounceBoard!.safe.length + context.formatPressure!.bounceBoard!.vulnerable.length).toBe(6);
+        expect(context.publicMessages.filter(row => row.text.startsWith("CHAIN "))).toHaveLength(5);
+      }
+      return super.getMingleIntent(...args);
+    }
+  }
+  const gameId = createUUID();
+  for (let restart = 0; restart < 12; restart++) {
+    const runner = new GameRunner(ids.map((id, index) => new SpeakingChainAgent(id, `Seat ${index}`)), config, undefined, {gameId, durableTurnStore: store, maxRoundsMode: "exact"});
+    store.onCommit = draft => {
+      if (draft.canonicalEvents.some(event => event.type === "format.safety_bounce_started" || event.type === "format.safety_bounce_pointer" || event.type === "format.ballot_cast" || event.type === "format.resolved")) runner.abort();
+    };
+    await expectAborted(runner.run());
+    if (store.snapshot!.canonicalEvents.some(event => event.type === "format.resolved")) break;
+  }
+  const events = store.snapshot!.canonicalEvents;
+  expect(events.filter(event => event.type === "format.safety_bounce_started")).toHaveLength(1);
+  expect(events.filter(event => event.type === "format.safety_bounce_pointer")).toHaveLength(5);
+  expect(events.filter(event => event.type === "format.ballot_cast")).toHaveLength(6);
+  expect(events.filter(event => event.type === "format.resolved")).toHaveLength(1);
+  expect(seen).toEqual([0, 1, 2, 3, 4]);
+  expect(store.snapshot!.transcriptEntries.filter(entry => entry.text === "My public deciding explanation.")).toHaveLength(1);
+  expect(store.plannedIntentForAction("format-resolve")!.providerSubcalls).toEqual([expect.objectContaining({action:"format-tiebreak"})]);
+  expect(store.committedActions.filter(action => action === "safety-bounce-pointer")).toHaveLength(5);
+});

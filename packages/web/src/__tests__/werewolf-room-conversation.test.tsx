@@ -318,7 +318,7 @@ test("solo role clips use frozen full-body art and their room before revealing t
     expect(container.querySelector('[data-solo-image]')?.getAttribute('data-solo-image')).toBe("full-body");
     expect(container.querySelector('[data-solo-portrait]')?.getAttribute('src')).toBe(`/${actor}-full.png`);
     expect(container.querySelector('[data-room-backdrop]')?.getAttribute('data-room-backdrop')).toContain(room);
-    expect(container.querySelector('[data-thinking-camera] [data-room-backdrop]')).toBeNull();
+    expect(container.querySelector('[data-thinking-camera] [data-room-backdrop]')).not.toBeNull();
     expect(container.querySelector('[data-investigation-result]')).toBeNull();
     rerender(<WerewolfContentFrame cue={cues[index+1]!} scene={null} elapsed={0} reduced />);
     expect(container.querySelector('[data-night-role]')).not.toBeNull();

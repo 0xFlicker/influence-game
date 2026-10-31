@@ -1,6 +1,9 @@
 "use client";
 
+import { useState, type CSSProperties } from "react";
 import { GamePlayerAvatarPreview } from "@/components/game-player-avatar-preview";
+import { RoomBackdrop } from "./stage-backdrop";
+import { INFLUENCE_ROOMS } from "./influence-rooms";
 import type {
   FormatPresentationCue,
   FormatPresentationRosterPlayer,
@@ -22,10 +25,16 @@ export function TwoNamesStage({
   cue,
   roster,
   currentStateEntry,
+  controlsInset = 0,
+  elapsedMs = 1000,
+  reducedMotion = false,
 }: {
+  elapsedMs?: number;
+  reducedMotion?: boolean;
   cue: TwoNamesCue;
   roster: readonly FormatPresentationRosterPlayer[];
   currentStateEntry: boolean;
+  controlsInset?: number;
 }) {
   const facts = cue.after.twoNames;
   const showEmpoweredAnchor = cue.kind !== "two_names_empowered_intro";
@@ -36,11 +45,12 @@ export function TwoNamesStage({
   return (
     <section
       data-format-cue={cue.kind}
+      style={{paddingBottom:controlsInset + 16}}
       data-presentation-current-entry={currentStateEntry ? "true" : undefined}
-      className={`relative mx-auto flex ${cue.kind === "two_names_plea" ? "h-full min-h-0" : ""} w-full max-w-5xl flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-[#0b0b0d] p-4 text-[#f5f1ea] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_30px_80px_rgba(0,0,0,0.35)] md:px-6`}
+      className="relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-[#0b0b0d] p-4 text-[#f5f1ea] md:px-8"
       aria-live="polite"
     >
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(231,189,112,0.09),transparent_34%),radial-gradient(circle_at_80%_80%,rgba(166,140,255,0.06),transparent_34%)]" />
+      <RoomBackdrop source={INFLUENCE_ROOMS.council} />
       {showEmpoweredAnchor && facts?.empoweredId ? (
         <RoleAnchor role="Empowered" player={player(facts.empoweredId, roster)} side="left" />
       ) : null}
@@ -48,14 +58,14 @@ export function TwoNamesStage({
         <RoleAnchor role="Override" player={player(facts.overrideHolderId, roster)} side="right" />
       ) : null}
 
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center pt-20">
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center pt-16 pb-4">
         {cue.kind === "two_names_empowered_intro" ? (
           <PortraitReveal label="Empowered" player={player(cue.empoweredId, roster)} tone="gold" />
         ) : null}
 
         {cue.kind === "two_names_initial_names" ? (
-          <div className="w-full">
-            <p className="mb-7 text-center text-sm font-medium tracking-wide text-white/65">
+          <div className="flex min-h-0 w-full flex-1 flex-col">
+            <p className="mb-4 shrink-0 text-center text-xl font-semibold tracking-wide text-white/90 md:text-3xl">
               {name(cue.empoweredId, roster)} nominates:
             </p>
             <DossierPair ids={cue.nomineeIds} roster={roster} reveal />
@@ -63,7 +73,10 @@ export function TwoNamesStage({
         ) : null}
 
         {cue.kind === "two_names_override_draw" ? (
-          <PortraitReveal label="Override" player={player(cue.overrideHolderId, roster)} tone="violet" />
+          facts?.initialNomineeIds?.includes(cue.overrideHolderId) ? (
+            <NomineeOverrideHandoff ids={facts.initialNomineeIds} holderId={cue.overrideHolderId} roster={roster}
+              elapsedMs={elapsedMs} immediate={reducedMotion || currentStateEntry} />
+          ) : <PortraitReveal label="Override" player={player(cue.overrideHolderId, roster)} tone="violet" />
         ) : null}
 
         {cue.kind === "two_names_mingle_complete" ? (
@@ -75,18 +88,18 @@ export function TwoNamesStage({
         ) : null}
 
         {cue.kind === "two_names_override_declined" ? (
-          <div className="w-full text-center">
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#a68cff]">Override declined</p>
+          <div className="flex min-h-0 w-full flex-1 flex-col text-center">
+            <p className="text-xl font-semibold uppercase tracking-[0.12em] text-[#a68cff] md:text-3xl">Override declined</p>
             <h2 className="mt-4 font-serif text-3xl md:text-5xl">
               {name(cue.overrideHolderId, roster)} leaves the names untouched
             </h2>
-            <div className="mt-8"><DossierPair ids={cue.finalistPlayerIds} roster={roster} /></div>
+            <div className="mt-4 flex min-h-0 flex-1"><DossierPair ids={cue.finalistPlayerIds} roster={roster} /></div>
           </div>
         ) : null}
 
         {cue.kind === "two_names_override_removed" && facts?.initialNomineeIds ? (
-          <div className="w-full">
-            <p className="mb-7 text-center text-xs font-semibold uppercase tracking-[0.3em] text-[#a68cff]">Override used</p>
+          <div className="flex min-h-0 w-full flex-1 flex-col">
+            <p className="mb-4 shrink-0 text-center text-xl font-semibold uppercase tracking-[0.12em] text-[#a68cff] md:text-3xl">Override used</p>
             <DossierPair
               ids={facts.initialNomineeIds}
               roster={roster}
@@ -96,8 +109,8 @@ export function TwoNamesStage({
         ) : null}
 
         {cue.kind === "two_names_replacement" ? (
-          <div className="w-full">
-            <p className="mb-7 text-center text-sm text-white/60">
+          <div className="flex min-h-0 w-full flex-1 flex-col">
+            <p className="mb-4 shrink-0 text-center text-xl font-semibold tracking-wide text-white/90 md:text-3xl">
               {name(cue.empoweredId, roster)} nominates:
             </p>
             <DossierPair
@@ -133,6 +146,40 @@ export function TwoNamesRoleAnchors({
       {facts.overrideHolderId ? <RoleAnchor role="Override" player={player(facts.overrideHolderId, roster)} side="right" compact /> : <span />}
     </div>
   );
+}
+
+export function TwoNamesResultStage({cue, roster, controlsInset = 0}: {
+  cue: Extract<FormatPresentationCue, {kind: "format_aggregate" | "format_elimination"}>;
+  roster: readonly FormatPresentationRosterPlayer[];
+  controlsInset?: number;
+}) {
+  const aggregate = cue.after.resolution?.aggregate;
+  const ids = aggregate?.capability === "two_names" ? aggregate.finalistPlayerIds : cue.after.twoNames?.finalistPlayerIds;
+  const totals = aggregate?.capability === "two_names" ? aggregate.totals : {};
+  const eliminatedId = cue.kind === "format_elimination" ? cue.eliminatedId : null;
+  const tied = ids && totals[ids[0]] === totals[ids[1]];
+  return <section data-format-cue={cue.kind} data-resolution-kind={cue.kind === "format_elimination" ? cue.resolutionKind : undefined}
+    style={{paddingBottom:controlsInset + 16}}
+    className="relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-[#0b0b0d] p-4 text-[#f5f1ea] md:px-8" aria-live="polite">
+    <RoomBackdrop source={INFLUENCE_ROOMS.council} />
+    <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center">
+      <h2 className="mb-4 shrink-0 text-center text-xl font-semibold md:text-3xl">
+        {eliminatedId ? `${name(eliminatedId, roster)} is eliminated` : tied ? "Tie · Empowered decides" : "Result locked"}
+      </h2>
+      <dl aria-label="Two Names vote totals" className="mx-auto grid min-h-0 w-full max-w-6xl flex-1 grid-cols-2 gap-4 text-center md:gap-12">
+        {ids?.map(id => <div key={id} className="flex min-h-0 min-w-0 flex-col items-center">
+          <CharacterArt player={player(id, roster)} />
+          <dt className="mt-3 font-serif text-xl md:text-3xl">{name(id, roster)}</dt>
+          <dd className="mt-2 text-2xl font-semibold" aria-label={`${name(id, roster)}: ${totals[id] ?? 0} exit vote${totals[id] === 1 ? "" : "s"}`}>
+            {totals[id] ?? 0}<span className="ml-2 text-sm font-normal text-white/70">Exit votes</span>
+          </dd>
+          {eliminatedId ? <p className={`mt-2 text-xs font-semibold uppercase tracking-widest ${id === eliminatedId ? "text-[#ff7b91]" : "text-[#e7bd70]"}`}>
+            {id === eliminatedId ? "Eliminated" : "Safe"}
+          </p> : null}
+        </div>)}
+      </dl>
+    </div>
+  </section>;
 }
 
 export function TwoNamesVoteStage({ cue, roster }: {
@@ -190,18 +237,52 @@ function RoleAnchor({ player: source, role, side, compact = false }: {
   );
 }
 
+// The same clock drives playback and exports; no wall-clock CSS transition.
+function NomineeOverrideHandoff({ids, holderId, roster, elapsedMs, immediate}: {
+  ids: [string, string];
+  holderId: string;
+  roster: readonly FormatPresentationRosterPlayer[];
+  elapsedMs: number;
+  immediate: boolean;
+}) {
+  const fraction = immediate ? 1 : Math.min(1, Math.max(0, elapsedMs / 1000));
+  const progress = fraction * fraction * (3 - 2 * fraction);
+  return <div data-two-names-handoff="nominee-to-override"
+    className="flex min-h-0 w-full flex-1 flex-col [--pair-gap:1rem] [--name-start:1.25rem] [--name-end:1.875rem] md:[--pair-gap:3rem] md:[--name-start:1.875rem] md:[--name-end:3rem]"
+    style={{"--handoff": progress} as CSSProperties}>
+    <p className="mb-4 shrink-0 text-center text-xl font-semibold uppercase tracking-[0.16em] text-[#a68cff] md:text-3xl">Override</p>
+    <div className="relative min-h-0 w-full flex-1" style={{"--pair-width":"min(100%, 72rem)", "--card-width":"calc((var(--pair-width) - var(--pair-gap)) / 2)"} as CSSProperties}>
+      {ids.map((id, index) => {
+        const selected = id === holderId;
+        if (!selected && fraction >= 1) return null;
+        const sourceLeft = `calc((100% - var(--pair-width)) / 2 + ${index} * (var(--card-width) + var(--pair-gap)))`;
+        return <article key={id} data-override-handoff-player={id}
+          className="absolute inset-y-0 flex min-h-0 flex-col items-center text-center"
+          style={{
+            left:selected ? `calc((1 - var(--handoff)) * (${sourceLeft}))` : sourceLeft,
+            width:selected ? "calc(var(--card-width) + (100% - var(--card-width)) * var(--handoff))" : "var(--card-width)",
+            opacity:selected ? 1 : 1 - Math.min(1, fraction * 2),
+          }}>
+          <CharacterArt player={player(id, roster)} portraitScale={selected ? 1 + progress : 1} />
+          <h2 className="mt-3 shrink-0 font-serif leading-tight" style={{fontSize:selected ? "calc(var(--name-start) + (var(--name-end) - var(--name-start)) * var(--handoff))" : "var(--name-start)"}}>{name(id, roster)}</h2>
+          <p className="shrink-0 overflow-hidden text-[9px] font-semibold uppercase tracking-[0.28em] text-[#ff7b91]"
+            style={{height:21.5 * (selected ? 1 - progress : 1), paddingTop:8 * (selected ? 1 - progress : 1), opacity:selected ? 1 - progress : 1}}>Nominated</p>
+        </article>;
+      })}
+    </div>
+  </div>;
+}
+
 function PortraitReveal({ player: source, label, tone }: {
   player: FormatPresentationRosterPlayer;
   label: string;
   tone: "gold" | "violet";
 }) {
   return (
-    <div data-two-names-reveal="portrait" className="text-center">
-      <p className={`mb-6 text-xs font-semibold uppercase tracking-[0.34em] ${tone === "gold" ? "text-[#e7bd70]" : "text-[#a68cff]"}`}>{label}</p>
-      <div className={`mx-auto grid h-36 w-36 place-items-center rounded-full border p-3 ${tone === "gold" ? "border-[#e7bd70]/35 bg-[#e7bd70]/5" : "border-[#a68cff]/35 bg-[#a68cff]/5"}`}>
-        <Avatar player={source} size="32" />
-      </div>
-      <h2 className="mt-6 font-serif text-5xl md:text-7xl" title={source.name}>{source.name}</h2>
+    <div data-two-names-reveal="portrait" className="flex min-h-0 w-full flex-1 flex-col text-center">
+      <p className={`mb-4 shrink-0 text-xl font-semibold uppercase tracking-[0.16em] md:text-3xl ${tone === "gold" ? "text-[#e7bd70]" : "text-[#a68cff]"}`}>{label}</p>
+      <CharacterArt player={source} prominent />
+      <h2 className="mt-3 shrink-0 font-serif text-3xl md:text-5xl" title={source.name}>{source.name}</h2>
     </div>
   );
 }
@@ -214,7 +295,7 @@ function DossierPair({ ids, roster, removedId, enteringId, reveal = false }: {
   reveal?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-3 md:gap-6">
+    <div className="mx-auto grid min-h-0 w-full max-w-6xl flex-1 grid-cols-2 gap-4 md:gap-12">
       {ids.map((id, index) => (
         <article
           key={id}
@@ -222,12 +303,12 @@ function DossierPair({ ids, roster, removedId, enteringId, reveal = false }: {
           data-two-names-reveal={reveal && (!enteringId || enteringId === id) ? "dossier" : undefined}
           data-dossier-index={index}
           style={{ opacity: removedId === id ? 0.28 : 1 }}
-          className="relative min-w-0 rounded-[1.4rem] border border-white/10 bg-white/[0.035] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] md:p-3"
+          className="relative flex min-h-0 min-w-0 flex-col items-center"
         >
-          <div className="flex min-h-40 flex-col items-center justify-center rounded-[1rem] border border-white/[0.07] bg-black/25 px-2 py-5 md:min-h-48">
-            <Avatar player={player(id, roster)} size="16" />
-            <h3 className="mt-4 max-w-full truncate font-serif text-2xl md:text-4xl" title={name(id, roster)}>{name(id, roster)}</h3>
-            <p className="mt-3 text-[9px] font-semibold uppercase tracking-[0.28em] text-[#ff7b91]">Nominated</p>
+          <div className="flex min-h-0 w-full flex-1 flex-col items-center">
+            <CharacterArt player={player(id, roster)} />
+            <h3 className="mt-3 max-w-full shrink-0 text-center font-serif text-xl leading-tight md:text-3xl" title={name(id, roster)}>{name(id, roster)}</h3>
+            <p className="mt-2 shrink-0 text-[9px] font-semibold uppercase tracking-[0.28em] text-[#ff7b91]">Nominated</p>
           </div>
           {removedId === id ? <span className="absolute left-[12%] top-1/2 h-0.5 w-[76%] -rotate-12 bg-[#ff7b91] shadow-[0_0_16px_rgba(255,123,145,0.65)]" aria-label="Removed" /> : null}
         </article>
@@ -259,6 +340,17 @@ function Plea({ cue, roster }: {
 
 function Avatar({ player: source, size }: { player: FormatPresentationRosterPlayer; size: "8" | "16" | "32" }) {
   return <GamePlayerAvatarPreview player={{ ...source, persona: source.persona ?? "" }} size={size} />;
+}
+
+/** The visual API selects the cutout, or original full body when no cutout exists. */
+function CharacterArt({player: source, prominent = false, portraitScale = 1}: {player: FormatPresentationRosterPlayer; prominent?: boolean; portraitScale?: number}) {
+  const [failedSource, setFailedSource] = useState<string | null>(null);
+  const body = source.fullBodyReferenceUrl;
+  if (!body || body === failedSource) return <div data-two-names-art="portrait" className="flex min-h-0 flex-1 items-center justify-center"><div style={{transform:`scale(${portraitScale})`}}><Avatar player={source} size={prominent ? "32" : "16"} /></div></div>;
+  return <div data-two-names-art="full-body" className="relative mx-auto min-h-0 w-full flex-1">
+    {/* eslint-disable-next-line @next/next/no-img-element -- frozen cutout with historical portrait fallback */}
+    <img src={body} alt={source.name} className="absolute inset-0 h-full w-full object-contain object-bottom" onError={() => setFailedSource(body)} />
+  </div>;
 }
 
 function player(id: string, roster: readonly FormatPresentationRosterPlayer[]): FormatPresentationRosterPlayer {
