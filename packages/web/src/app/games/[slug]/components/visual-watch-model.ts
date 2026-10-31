@@ -88,7 +88,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
         player:{...actor, avatarUrl:data.portraits[actor.id] ?? actor.avatarUrl, fullBodyReferenceUrl:data.fullBodies?.[actor.id], headRectangle:data.fullBodyHeads?.[actor.id]},
         speech:{id:cue.key,playerId:actor.id,speaker:actor.name,text:cue.decisionSpeechEntry.text}}};
     }
-    if (twoNamesDecisionSpeechAction(cue.kind) || ["two_names_empowered_intro", "two_names_override_draw", "two_names_mingle_complete"].includes(cue.kind)) {
+    if (((cue.kind === "format_aggregate" || cue.kind === "format_elimination") && cue.after.activeFormatId === "two_names") || twoNamesDecisionSpeechAction(cue.kind) || ["two_names_empowered_intro", "two_names_override_draw", "two_names_mingle_complete"].includes(cue.kind)) {
       return {rooms, beat:{kind:"two-names-stage",cue,roster:twoNamesRoster()}};
     }
     if (cue.kind === "format_tiebreak" || cue.kind === "format_deciding_vote") {

@@ -6,7 +6,7 @@ import { FormatEmpowerVoteStage } from "./format-empower-vote-stage";
 import { FormatOfferStage } from "./format-offer-stage";
 import { FormatResolutionStage } from "./format-resolution-stage";
 import { SafetyBounceStage } from "./safety-bounce-stage";
-import { TwoNamesRoleAnchors, TwoNamesStage, TwoNamesVoteStage } from "./two-names-stage";
+import { TwoNamesRoleAnchors, TwoNamesStage, TwoNamesVoteStage, TwoNamesResultStage } from "./two-names-stage";
 import { FORMAT_PRESENTATION_METADATA } from "@influence/engine/format-presentation-metadata";
 
 export function FormatPresentation({
@@ -103,7 +103,11 @@ export function FormatPresentation({
     return <TwoNamesStage cue={cue} roster={roster} currentStateEntry={currentStateEntry} controlsInset={controlsInset} />;
   }
 
-  if ((cue.kind === "format_aggregate" || cue.kind === "format_roll_call") && cue.after.activeFormatId === "two_names") {
+  if ((cue.kind === "format_aggregate" || cue.kind === "format_elimination") && cue.after.activeFormatId === "two_names") {
+    return <TwoNamesResultStage cue={cue} roster={roster} controlsInset={controlsInset} />;
+  }
+
+  if (cue.kind === "format_roll_call" && cue.after.activeFormatId === "two_names") {
     return (
       <PresentationShell cue={cue} roster={roster} currentStateEntry={currentStateEntry}>
         <TwoNamesVoteStage cue={cue} roster={roster} />

@@ -326,3 +326,13 @@ test("a classic fallback ballot never borrows a later revote's speech", async ()
   expect(portraits[0]!.spokenMessage).toBeUndefined();
   expect(portraits[1]!.spokenMessage).toBe(speech.text);
 });
+
+test("farewell uses the council room while private diaries retain the studio", async () => {
+  const { influenceRoomBackground, INFLUENCE_ROOMS } = await import("../app/games/[slug]/components/influence-rooms");
+  const farewell = visualWatchPresentation(data, null, {...message, presentationPurpose:"farewell"}, [player]).beat;
+  expect(farewell?.kind).toBe("portrait");
+  expect(influenceRoomBackground(farewell!)).toBe(INFLUENCE_ROOMS.council);
+  if (farewell?.kind === "portrait") {
+    expect(influenceRoomBackground({...farewell, purpose:"Diary"})).toBeUndefined();
+  }
+});

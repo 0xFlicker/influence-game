@@ -141,6 +141,40 @@ export function TwoNamesRoleAnchors({
   );
 }
 
+export function TwoNamesResultStage({cue, roster, controlsInset = 0}: {
+  cue: Extract<FormatPresentationCue, {kind: "format_aggregate" | "format_elimination"}>;
+  roster: readonly FormatPresentationRosterPlayer[];
+  controlsInset?: number;
+}) {
+  const aggregate = cue.after.resolution?.aggregate;
+  const ids = aggregate?.capability === "two_names" ? aggregate.finalistPlayerIds : cue.after.twoNames?.finalistPlayerIds;
+  const totals = aggregate?.capability === "two_names" ? aggregate.totals : {};
+  const eliminatedId = cue.kind === "format_elimination" ? cue.eliminatedId : null;
+  const tied = ids && totals[ids[0]] === totals[ids[1]];
+  return <section data-format-cue={cue.kind} data-resolution-kind={cue.kind === "format_elimination" ? cue.resolutionKind : undefined}
+    style={{paddingBottom:controlsInset + 16}}
+    className="relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-[#0b0b0d] p-4 text-[#f5f1ea] md:px-8" aria-live="polite">
+    <RoomBackdrop source={INFLUENCE_ROOMS.council} />
+    <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center">
+      <h2 className="mb-4 shrink-0 text-center text-xl font-semibold md:text-3xl">
+        {eliminatedId ? `${name(eliminatedId, roster)} is eliminated` : tied ? "Tie · Empowered decides" : "Result locked"}
+      </h2>
+      <dl aria-label="Two Names vote totals" className="mx-auto grid min-h-0 w-full max-w-6xl flex-1 grid-cols-2 gap-4 text-center md:gap-12">
+        {ids?.map(id => <div key={id} className="flex min-h-0 min-w-0 flex-col items-center">
+          <CharacterArt player={player(id, roster)} />
+          <dt className="mt-3 font-serif text-xl md:text-3xl">{name(id, roster)}</dt>
+          <dd className="mt-2 text-2xl font-semibold" aria-label={`${name(id, roster)}: ${totals[id] ?? 0} exit vote${totals[id] === 1 ? "" : "s"}`}>
+            {totals[id] ?? 0}<span className="ml-2 text-sm font-normal text-white/70">Exit votes</span>
+          </dd>
+          {eliminatedId ? <p className={`mt-2 text-xs font-semibold uppercase tracking-widest ${id === eliminatedId ? "text-[#ff7b91]" : "text-[#e7bd70]"}`}>
+            {id === eliminatedId ? "Eliminated" : "Safe"}
+          </p> : null}
+        </div>)}
+      </dl>
+    </div>
+  </section>;
+}
+
 export function TwoNamesVoteStage({ cue, roster }: {
   cue: Extract<FormatPresentationCue, { kind: "format_roll_call" | "format_aggregate" }>;
   roster: readonly FormatPresentationRosterPlayer[];

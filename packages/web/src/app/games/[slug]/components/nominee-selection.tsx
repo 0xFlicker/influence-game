@@ -8,6 +8,7 @@ import {useState} from "react";
 import {AgentAvatar} from "@/components/agent-avatar";
 import type {GamePlayer} from "@/lib/api";
 import {useSceneThinking} from "@/components/watch/watch-thinking";
+import {INFLUENCE_ROOMS} from "./influence-rooms";
 import {SoloPresentation} from "./solo-presentation";
 
 export interface NomineeSelectionBeat {
@@ -30,7 +31,7 @@ export function NomineeSelection({beat, elapsedMs, reducedMotion = false}: {
   const exitProgress = reducedMotion ? 1 : Math.max(0, Math.min(1, (elapsedMs - 1000) / 600));
   const motion = soloPresentationMotion(beat.speech?.text ?? "", elapsedMs, false, reducedMotion);
   const selected = beat.nominees.find(player => player.id === beat.selectedId);
-  if (thought) return <SoloPresentation beat={{kind:"portrait",purpose:"Ballot",caption:"Empowered · deciding vote",player:beat.chooser,
+  if (thought) return <SoloPresentation backgroundUrl={INFLUENCE_ROOMS.council} beat={{kind:"portrait",purpose:"Ballot",caption:"Empowered · deciding vote",player:beat.chooser,
     speech:{id:`tiebreak:${beat.chooser.id}`,playerId:beat.chooser.id,speaker:beat.chooser.name,text:""}}}
     elapsedMs={elapsedMs} reducedMotion={reducedMotion} imageOpacity={1} hideSpeech />;
   return <section data-nominee-selection className="relative grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-4 overflow-hidden bg-[radial-gradient(ellipse_at_top,#29211b,#08090c_75%)] p-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] sm:grid-rows-1 sm:gap-6 sm:p-6">

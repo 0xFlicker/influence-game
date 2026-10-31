@@ -2122,7 +2122,7 @@ test.describe("format-aware game viewer", () => {
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await pauseAutoplay(page,"Pause replay");
     await page.getByRole("button",{name:"Enter fullscreen",exact:true}).click();
-    for (const kind of ["two_names_empowered_intro","two_names_initial_names","two_names_override_draw","two_names_override_removed","two_names_replacement"]) {
+    for (const kind of ["two_names_empowered_intro","two_names_initial_names","two_names_override_draw","two_names_override_removed","two_names_replacement","format_aggregate","format_elimination"]) {
       const stage = page.locator(`[data-format-cue="${kind}"]`);
       await advanceUntilVisible(page,stage,kind);
       const stageSize = await stage.boundingBox();
