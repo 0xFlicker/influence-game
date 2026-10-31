@@ -226,7 +226,8 @@ jobs:
             Dockerfile.api Dockerfile.web Dockerfile.render-worker \
             .dockerignore package.json bun.lock bunfig.toml tsconfig.json scripts/test-api-image.sh \
             packages/api/ packages/engine/ packages/prompt-lab-protocol/ packages/web/ \
-            deployment/ music/house-highlights-variants/ music/werewolf/; then
+            deployment/ music/house-highlights-variants/ music/werewolf/ \
+            ':(exclude)packages/engine/src/__tests__/render-execution-config.test.ts'; then
             echo "release_required=false" >> "$GITHUB_OUTPUT"
           else
             echo "release_required=true" >> "$GITHUB_OUTPUT"
