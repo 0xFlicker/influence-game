@@ -17,3 +17,5 @@ test-results/
 packages/web/.renders/
 .DS_Store
 .agents/
+
+scripts/__pycache__/
