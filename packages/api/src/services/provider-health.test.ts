@@ -16,6 +16,8 @@ import {
   listProviderHealth,
   projectDailyProviderAdmissionImpact,
   providerHealthEntryScope,
+  providerHealthFlexScope,
+  resolveOpenAIServiceTier,
   providerHealthProviderScope,
   recordProviderHealthOutcomeInTransaction,
   type ProviderHealthPolicy,
@@ -72,6 +74,22 @@ describe("provider health circuit authority", () => {
 
   beforeEach(async () => {
     db = await setupTestDB();
+  });
+
+
+  test("Flex capacity cooldown survives new callers, admits standard, and expires within the bounded policy", async () => {
+    const route = { providerProfileId: "openai", catalogId: "openai:gpt-6-luna" };
+    await db.transaction(tx => recordProviderHealthOutcomeInTransaction(tx, { ...route, flexCapacity: true,
+      outcome: { kind: "rate_limit", retryable: true, message: "capacity", httpStatus: 429, errorCode: "flex_unavailable", retryAfterMs: 86_400_000 } }));
+    expect(await resolveOpenAIServiceTier(db, route.catalogId)).toBe("default");
+    await expect(db.transaction(tx => assertProviderDispatchHealthInTransaction(tx, { ...route, serviceTier: "default" }))).resolves.toBeUndefined();
+    await expect(db.transaction(tx => assertProviderDispatchHealthInTransaction(tx, { ...route, serviceTier: "flex" }))).rejects.toBeInstanceOf(ProviderCircuitOpenError);
+    const key = providerHealthFlexScope(route.catalogId).scopeKey;
+    const row = (await listProviderHealth(db)).find(row => row.scopeKey === key)!;
+    expect(Date.parse(row.cooldownUntil!) - Date.parse(row.openedAt!)).toBe(900_000);
+    await db.update(schema.providerHealthStates).set({ cooldownUntil: new Date(0).toISOString() }).where(eq(schema.providerHealthStates.scopeKey, key));
+    expect(await resolveOpenAIServiceTier(db, route.catalogId)).toBe("flex");
+    expect(await checkDailyProviderAdmission(db, resolveProviderManifestFromGameConfig({ providerManifest: [{ catalogId: route.catalogId }] }))).toEqual({ ok: true });
   });
 
   test.each(["service_error", "rate_limit"] as const)("%s Retry-After cools only GLM across actors and reopens after the deadline", async kind => {

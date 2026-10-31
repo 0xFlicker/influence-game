@@ -1,5 +1,8 @@
 #!/usr/bin/env bun
 /**
+ * Hosted OpenAI Flex capacity retries the same model on explicit standard (default).
+ * API availability exhaustion durably delays the same turn, then suspends; it never
+ * invents ballots or skips required speech. Retain each attempt and its tier-aware cost.
  * Native xAI selects xai:grok-4.3/4.5/4.6 or xai:grok-4.20-multi-agent-0309
  * with XAI_API_KEY. Mutable Katana Grok selections migrate at the same generation;
  * frozen historical games retain Katana. Use the localhost API for paid evaluation.

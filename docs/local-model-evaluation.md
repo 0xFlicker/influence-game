@@ -666,3 +666,8 @@ Claude selections for new games use native Haiku/Sonnet/Opus 5.5 or Fable 5.1.
 Migration `0140_native_claude_selections` upgrades mutable preferences and waiting
 games; frozen games and private provider evidence retain their original routes.
 See [native Anthropic](native-anthropic.md) for cutover details.
+
+
+### Provider availability recovery
+
+Use `bun run simulate:api -- --help` for the localhost API evaluation options; keep the API game ID and inspect private attempt evidence alongside `--chatty` output. Hosted OpenAI Flex capacity fails over to explicit standard (`default`) on the same model; standard can cost more. If all permitted routes are unavailable, the API delays the same turn and eventually suspends instead of inventing decisions. Deterministic coverage uses `bun run test`, `bun run test:postgres`, and `bun run check`; these do not authorize paid probes. Preserve all sanitized attempts, requested/actual tier, usage and native reasoning. No `as any` or direct House calls. See [model routing](model-routing.md).

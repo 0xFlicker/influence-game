@@ -13,7 +13,7 @@ import {
 } from "../durable-game-turn";
 import { GameRunner } from "../game-runner";
 import { TemplateHouseInterviewer } from "../house-interviewer";
-import { durableProviderLogicalCallId } from "../provider-execution";
+import { durableProviderLogicalCallId, ProviderDeferredError, ProviderUnavailableError } from "../provider-execution";
 import type {
   DurableGameTurnCommittedV1,
   DurableGameTurnInitializationV1,
@@ -484,6 +484,38 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 }
 
 describe("GameRunner durable logical turns", () => {
+
+  it.each([
+    ["judgment_opening", "getOpeningStatement"],
+    ["judgment_closing", "getClosingArgument"],
+    ["judgment_jury_vote", "getJuryVote"],
+  ] as const)("availability defers %s without skipped speeches or engine ballots", async (actor, method) => {
+    const store = new MemoryDurableTurnStore();
+    const ids = Array.from({ length: 5 }, () => createUUID());
+    const initial = new GameRunner(endgameAgents(ids), ENDGAME_DURABLE_CONFIG, undefined, { durableTurnStore: store });
+    store.onCommit = draft => { if (draft.nextExecution.cursor.kind === "phase_enter" && draft.nextExecution.cursor.actor === actor) initial.abort(); };
+    await expectAborted(initial.run());
+    const frozen = structuredClone(store.snapshot!);
+    const agents = endgameAgents(ids);
+    let dispatches = 0;
+    for (const agent of agents) agent[method] = async () => {
+      dispatches++;
+      throw new ProviderDeferredError(new ProviderUnavailableError("both tiers unavailable", "rate_limit"), {
+        gameId: frozen.execution.gameId, actor: { id: agent.id, name: agent.name, role: "player" }, action: method,
+        semantic: { version: 1, kind: "phase_call", phase: Phase.JURY_VOTE, round: 10, canonicalEventSequence: frozen.execution.heads.eventSequence, callSlot: 1 },
+      });
+    };
+    store.onCommit = undefined;
+    await expect(new GameRunner(agents, ENDGAME_DURABLE_CONFIG, undefined, { gameId: frozen.execution.gameId, durableTurnStore: store }).run()).rejects.toBeInstanceOf(ProviderDeferredError);
+    expect(dispatches).toBeGreaterThan(0);
+    expect(store.snapshot).toEqual(frozen);
+    expect(store.snapshot!.canonicalEvents.some(event => event.type === "jury.winner_determined")).toBe(false);
+    // Recreating the runner resumes the unfinished stage and can finish honestly.
+    const result = await new GameRunner(endgameAgents(ids), ENDGAME_DURABLE_CONFIG, undefined, { gameId: frozen.execution.gameId, durableTurnStore: store }).run();
+    expect(result.winner).toBeDefined();
+    expect(store.committedActions.filter(action => action === "judgment-jury-vote")).toHaveLength(1);
+  });
+
   it("keeps an exhausted required statement at its exact unfinished slot", async () => {
     const store = new MemoryDurableTurnStore();
     const ids = [createUUID(), createUUID(), createUUID()];

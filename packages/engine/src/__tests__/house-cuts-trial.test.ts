@@ -16,13 +16,15 @@ function runtime(output?: string, capacityFailures = 0) {
   let calls = 0;
   const model = modelCatalogEntryById(CUT_EDITORIAL_MODEL)!;
   const value: LlmProviderRuntime = { catalogId: CUT_EDITORIAL_MODEL, modelId: model.modelId, providerProfileId: "openai",
-    modelCapabilities: model.capabilities, reasoningPolicy: "low",  position: 0, role: "primary",
+    modelCapabilities: model.capabilities, reasoningPolicy: "low", openAIServiceTier: "flex",  position: 0, role: "primary",
     adapter: { id: "test", validate: () => ({ compatible: true }),
-      compile: (invocation, descriptor) => { tiers.push(descriptor.openAIServiceTier); return { transport: "openai.responses", body: invocation.messages }; },
+      compile: (invocation, descriptor) => ({ transport: "openai.responses", body: { input: invocation.messages, service_tier: descriptor.openAIServiceTier } }),
       async dispatch(request) {
         calls++;
-        if (calls <= capacityFailures) throw new Error("capacity");
-        const messages = request.body as Array<{ content: string }>;
+        const body = request.body as { service_tier: string; input: Array<{ content: string }> };
+        tiers.push(body.service_tier);
+        if (calls <= capacityFailures) throw Object.assign(new Error("capacity"), { status: 429, error: { code: body.service_tier === "flex" ? "flex_unavailable" : "rate_limit_exceeded" } });
+        const messages = body.input;
         const window = JSON.parse(messages[1]!.content) as CutWindow;
         const text = output ?? JSON.stringify({ sourceHash: window.sourceHash, windowId: window.id, candidates: [] });
         return { transport: "openai.responses", nativeResponse: { text }, text, toolCalls: [], status: "completed",
@@ -71,12 +73,12 @@ test("unknown dispatched outcome fails closed on resume", async () => {
 });
 
 test("Flex capacity failures receive only one standard-tier retry, preserving prior attempts", async () => {
-  const provider = runtime(undefined, 2), journal = newCutTrialJournal(source, 1);
+  const provider = runtime(undefined, 1), journal = newCutTrialJournal(source, 1);
   await runCutTrial({ source, journal, runtimes: [provider.value], save: async () => {} });
-  expect(provider.calls()).toBe(3);
-  expect(provider.tiers.at(-1)).toBe("auto");
-  expect(journal.attempts.filter(a => a.terminal?.outcome.kind === "rate_limit")).toHaveLength(2);
-  expect(journal.attempts[2]!.terminal?.acceptedValue).toBeDefined();
+  expect(provider.calls()).toBe(2);
+  expect(provider.tiers).toEqual(["flex", "default"]);
+  expect(journal.attempts.filter(a => a.terminal?.outcome.kind === "rate_limit")).toHaveLength(1);
+  expect(journal.attempts[1]!.terminal?.acceptedValue).toBeDefined();
   const failing = runtime(undefined, 9), exhausted = newCutTrialJournal(source, 1);
   await expect(runCutTrial({ source, journal: exhausted, runtimes: [failing.value], save: async () => {} })).rejects.toThrow();
   expect(failing.calls()).toBe(3);

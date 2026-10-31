@@ -1,3 +1,4 @@
+import { ProviderDeferredError } from "../provider-execution";
 import { describe, expect, it } from "bun:test";
 import { APIUserAbortError } from "openai";
 import type OpenAI from "openai";
@@ -935,7 +936,7 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
     expect(JSON.stringify(attempts[0])).not.toContain("house-secret");
   });
 
-  it("aborts hung structured requests and falls back", async () => {
+  it("aborts hung structured requests and defers the required House call", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const house = new LLMHouseInterviewer(
       makeHangingOpenAIStub(requests),
@@ -943,12 +944,7 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
       { structuredOutputTimeoutMs: 5 },
     );
 
-    const result = await house.assignMingleRooms(makeAssignmentContext());
-
-    expect(result.rooms).toEqual([]);
-    expect(result.rationale).toBe(
-      "House assignment failed; deterministic fallback will assign rooms (request_aborted).",
-    );
+    await expect(house.assignMingleRooms(makeAssignmentContext())).rejects.toBeInstanceOf(ProviderDeferredError);
     expect(requests).toHaveLength(2);
   });
 
@@ -965,9 +961,7 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
       },
     );
 
-    const result = await house.assignMingleRooms(makeAssignmentContext());
-
-    expect(result.rooms).toEqual([]);
+    await expect(house.assignMingleRooms(makeAssignmentContext())).rejects.toBeInstanceOf(ProviderDeferredError);
     expect(requests).toHaveLength(2);
     expect(attempts.map((record) => record.outcome)).toEqual([
       { kind: "transport_timeout", message: "Request was aborted.", retryable: true },
@@ -1655,7 +1649,7 @@ describe("LLMHouseInterviewer authored House summaries", () => {
       const requests: Array<{ params: Record<string, unknown>; options?: Record<string, unknown> }> = [];
       const result = await new LLMHouseInterviewer(
         makeHouseSummaryOpenAIStub(requests, [{
-          error: new Error("SECRET_PROVIDER_TEXT"),
+          error: Object.assign(new Error("SECRET_PROVIDER_TEXT"), { status: 400, error: { code: "invalid_prompt" } }),
         }]),
         "test-model",
       ).generateHouseSummary(makeHouseSummaryContext());
@@ -1731,7 +1725,7 @@ describe("LLMHouseInterviewer authored long-form producer copy", () => {
     for (const response of [
       { structured: { summary: "No thinking field." } },
       { structured: { summary: "Proof-shaped.", thinking: null, claims: [] } },
-      { error: new Error("provider refused") },
+      { error: Object.assign(new Error("provider refused"), { status: 400, error: { code: "invalid_prompt" } }) },
     ]) {
       const requests: Array<{ params: Record<string, unknown>; options?: Record<string, unknown> }> = [];
       const result = await new LLMHouseInterviewer(
@@ -1740,7 +1734,7 @@ describe("LLMHouseInterviewer authored long-form producer copy", () => {
       ).generateLongFormGameplaySummary(makeLongFormContext());
 
       expect(result).toBeNull();
-      expect(requests).toHaveLength(2);
+      expect(requests).toHaveLength("error" in response ? 1 : 2);
     }
   });
 });

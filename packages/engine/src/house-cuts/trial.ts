@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createLlmProviderRuntimesFromEnv, type LlmProviderRuntime } from "../llm-client";
 import { resolveProviderManifest } from "../model-catalog";
 import { executeModelInvocation } from "../provider-adapters";
-import { ProviderExecutionCoordinator, ProviderAttemptError, type ProviderAttemptIntent, type ProviderAttemptRecord } from "../provider-execution";
+import { ProviderExecutionCoordinator, isFlexCapacityFailure, type ProviderAttemptIntent, type ProviderAttemptRecord } from "../provider-execution";
 import { createExactStructuredOutputArtifact, type StructuredDomainDecodeResult } from "../structured-output";
 import { estimateCostForKnownModel, estimateTierAwareOpenAICost } from "../token-tracker";
 import { CUT_EDITORIAL_MODEL, CUT_EDITORIAL_VERSION, CUT_EDITORIAL_PROMPT, CUT_PROPOSAL_SCHEMA, discoverCuts, planCutDiscovery, type DiscoveryReport } from "./editorial";
@@ -101,8 +101,12 @@ export async function executeCutTrialInvocation<T>(options: {
     if (journal.attempts.some(a => !a.terminal)) throw new Error("Unknown prior dispatch; do not retry blindly");
     progress?.(request.window.id);
     const attempts = () => journal.attempts.filter(a => a.windowId === request.window.id);
-    const capacityFallback = () => attempts().length === 2 && attempts().every(a => a.terminal?.outcome.kind === "rate_limit");
+    const capacityAttempts = () => attempts().filter(a => a.terminal && isFlexCapacityFailure(a.terminal)).length;
     const coordinator = new ProviderExecutionCoordinator({ hooks: {
+      async onResolveOpenAIServiceTier() {
+        const failure = attempts().findLast(a => a.terminal && isFlexCapacityFailure(a.terminal))?.terminal;
+        return failure && Date.now() - Date.parse(failure.completedAt) < 300_000 ? "default" : "flex";
+      },
       onReadAccepted() {
         const accepted = attempts().find(a => a.terminal?.acceptedValue !== undefined)?.terminal;
         return accepted ? { attemptId: accepted.attemptId, attemptOrdinal: accepted.attemptOrdinal,
@@ -111,7 +115,7 @@ export async function executeCutTrialInvocation<T>(options: {
       onAllocateAttemptOrdinal() { return attempts().length + 1; },
       async onReserve(intent) {
         options.signal?.throwIfAborted();
-        if (attempts().length >= 2 && !capacityFallback()) throw new Error("Window attempt budget exhausted; inspect failed attempts");
+        if (attempts().length - capacityAttempts() >= 2) throw new Error("Window attempt budget exhausted; inspect failed attempts");
         const reservedUsd = reserveCost(Buffer.byteLength(JSON.stringify(intent.preparedRequest.body)), request.maxOutputTokens);
         if (cutTrialSpend(journal) + reservedUsd > journal.budgetUsd) throw new Error("Editorial trial cost ceiling reached");
         journal.attempts.push({ windowId: request.window.id, intent, reservedUsd });
@@ -129,19 +133,13 @@ export async function executeCutTrialInvocation<T>(options: {
     const call = coordinator.startCall({ gameId: source.game.id, actor: { name: "House Cuts editor", role: "producer" },
       action: "house_cut_discovery", semantic: { version: 1, kind: "house_cut_discovery", sourceHash: source.hash,
         windowId: request.window.id, editorialVersion: CUT_EDITORIAL_VERSION } });
-    const execute = (standard: boolean) => executeModelInvocation({ call, runtimes: standard ? [{ ...runtimes[0]!, openAIServiceTier: "auto" }] : runtimes, maxAttempts: standard ? 1 : 2, requestSignalFactory: () => options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000),
+    const execute = () => executeModelInvocation({ call, runtimes, maxAttempts: 2, requestSignalFactory: () => options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000),
       invocation: { messages: [{ role: "system", content: request.prompt }, { role: "user", content: JSON.stringify(request.window) }],
         result: { kind: "structured", artifact: artifact(request) }, outputTokenLimit: request.maxOutputTokens, reasoning: { effort: "low" } },
       validate: (_outcome, value) => value ? { status: "usable", value }
         : { status: "unusable", kind: "undecodable_structured_output", message: "Missing Cut batch" },
     });
-    let result;
-    try { result = await execute(capacityFallback()); }
-    catch (error) {
-      if (!(error instanceof ProviderAttemptError) || error.outcome.kind !== "rate_limit" || !capacityFallback()) throw error;
-      progress?.(`${request.window.id}: Flex capacity unavailable; trying standard processing once`);
-      result = await execute(true);
-    }
+    const result = await execute();
     const rows = attempts();
     const costUsd = rows.some(a => a.estimatedCostUsd == null) ? null : rows.reduce((n, a) => n + a.estimatedCostUsd!, 0);
     return { decoded: result.value, kind: "provider" as const, costUsd };

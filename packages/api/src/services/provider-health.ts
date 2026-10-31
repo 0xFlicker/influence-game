@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { and, asc, eq, sql } from "drizzle-orm";
 import {
   ProviderCircuitOpenError,
+  FLEX_COOLDOWN_MS, MAX_FLEX_COOLDOWN_MS,
   type ProviderAttemptFailureKind,
   type ProviderAttemptOutcome,
   type ProviderAttemptRecord,
@@ -146,16 +147,29 @@ export function providerHealthEntryScope(
   };
 }
 
+export function providerHealthFlexScope(catalogId: string): ProviderHealthScope {
+  return { ...providerHealthEntryScope("openai", catalogId), scopeKey: `entry:${catalogId}:tier:flex` };
+}
+
+export async function resolveOpenAIServiceTier(db: DrizzleDB, catalogId: string): Promise<"flex" | "default"> {
+  return db.transaction(async tx => {
+    const row = await loadDispatchState(tx, providerHealthFlexScope(catalogId));
+    return row.state === "closed" ? "flex" : "default";
+  });
+}
+
 export async function assertProviderDispatchHealthInTransaction(
   tx: DrizzleTransaction,
   input: {
     providerProfileId: string;
     catalogId: string;
+    serviceTier?: unknown;
   },
 ): Promise<void> {
   const scopes = [
     providerHealthProviderScope(input.providerProfileId),
     providerHealthEntryScope(input.providerProfileId, input.catalogId),
+    ...(input.providerProfileId === "openai" && input.serviceTier === "flex" ? [providerHealthFlexScope(input.catalogId)] : []),
   ];
   for (const scope of scopes) {
     const row = await loadDispatchState(tx, scope);
@@ -201,6 +215,7 @@ export async function recordProviderHealthOutcomeInTransaction(
     providerProfileId: string;
     catalogId: string | null;
     outcome: ProviderAttemptOutcome;
+    flexCapacity?: boolean;
   },
   policy: ProviderHealthPolicy = DEFAULT_PROVIDER_HEALTH_POLICY,
 ): Promise<{
@@ -230,9 +245,10 @@ export async function recordProviderHealthOutcomeInTransaction(
     return {};
   }
 
-  const reason = input.outcome.kind === "rate_limit" && input.outcome.retryAfterMs ? "rate_limit" : breakerReason(input.outcome.kind);
+  const reason = input.outcome.kind === "rate_limit" && (input.outcome.retryAfterMs || input.flexCapacity) ? "rate_limit" : breakerReason(input.outcome.kind);
   if (!reason) return {};
-  const scope = reason !== "authentication" && input.catalogId
+  const scope = input.flexCapacity && input.catalogId ? providerHealthFlexScope(input.catalogId)
+    : reason !== "authentication" && input.catalogId
     ? providerHealthEntryScope(input.providerProfileId, input.catalogId)
     : providerHealthProviderScope(input.providerProfileId);
   const row = await loadEffectiveState(tx, scope, now);
@@ -255,7 +271,9 @@ export async function recordProviderHealthOutcomeInTransaction(
   }
 
   const immediate = reason === "authentication" || reason === "configuration";
-  const retryAfterMs = input.outcome.retryAfterMs;
+  const retryAfterMs = input.flexCapacity
+    ? Math.min(MAX_FLEX_COOLDOWN_MS, Math.max(FLEX_COOLDOWN_MS, input.outcome.retryAfterMs ?? FLEX_COOLDOWN_MS))
+    : input.outcome.retryAfterMs;
   const windowActive = row.windowStartedAt !== null
     && Date.parse(now) - Date.parse(row.windowStartedAt) <= policy.transientWindowMs;
   const nextCount = immediate
@@ -310,6 +328,7 @@ export async function getProviderCircuitForOutcomeInTransaction(
     providerProfileId: string;
     catalogId: string | null;
     outcome: ProviderAttemptOutcome;
+    flexCapacity?: boolean;
   },
 ): Promise<{
   scopeKey: string;
@@ -317,9 +336,10 @@ export async function getProviderCircuitForOutcomeInTransaction(
   haltManifest: boolean;
 } | undefined> {
   if (input.outcome.kind === "usable") return undefined;
-  const reason = input.outcome.kind === "rate_limit" && input.outcome.retryAfterMs ? "rate_limit" : breakerReason(input.outcome.kind);
+  const reason = input.outcome.kind === "rate_limit" && (input.outcome.retryAfterMs || input.flexCapacity) ? "rate_limit" : breakerReason(input.outcome.kind);
   if (!reason) return undefined;
-  const scope = reason !== "authentication" && input.catalogId
+  const scope = input.flexCapacity && input.catalogId ? providerHealthFlexScope(input.catalogId)
+    : reason !== "authentication" && input.catalogId
     ? providerHealthEntryScope(input.providerProfileId, input.catalogId)
     : providerHealthProviderScope(input.providerProfileId);
   const row = await loadEffectiveState(tx, scope, await databaseNow(tx));

@@ -1,4 +1,4 @@
-import { actorProviderManifest, modelRateCard, withLocalTaskBudget } from "@influence/engine";
+import { actorProviderManifest, modelRateCard, withLocalTaskBudget, isFlexCapacityFailure, isProviderAvailabilityFailure } from "@influence/engine";
 import { storeJson, Hydrated, loadPayloads, storeFields } from "./payload-storage.js";
 import { assertWerewolfProviderTurn } from "./werewolf-games.js";
 import { ProviderJournalEntryExhaustedError, retrospectiveAttemptsPerModel } from "@influence/engine";
@@ -37,6 +37,7 @@ import { createPrivateTraceStorageAdapter, type PrivateTraceStorageAdapter } fro
 import { sha256StableJson, stableJson } from "./stable-hash.js";
 import {
   assertProviderDispatchHealthInTransaction,
+  resolveOpenAIServiceTier,
   getProviderCircuitForOutcomeInTransaction,
   recordProviderHealthOutcomeInTransaction,
 } from "./provider-health.js";
@@ -312,6 +313,7 @@ async function assertProviderDispatchPolicy(
   if (!catalogId) {
     await assertProviderDispatchHealthInTransaction(tx, {
       providerProfileId: intent.preparedRequest.providerProfileId,
+      serviceTier: (intent.preparedRequest.body as Record<string, unknown>).service_tier,
       catalogId: `${intent.preparedRequest.providerProfileId}:${intent.preparedRequest.model}`,
     });
     return null;
@@ -327,6 +329,7 @@ async function assertProviderDispatchPolicy(
   if (config.providerManifest === undefined && config.modelRouting === undefined) {
     await assertProviderDispatchHealthInTransaction(tx, {
       providerProfileId: intent.preparedRequest.providerProfileId,
+      serviceTier: (intent.preparedRequest.body as Record<string, unknown>).service_tier,
       catalogId,
     });
     return null;
@@ -346,6 +349,7 @@ async function assertProviderDispatchPolicy(
   }
   await assertProviderDispatchHealthInTransaction(tx, {
     providerProfileId: intent.preparedRequest.providerProfileId,
+    serviceTier: (intent.preparedRequest.body as Record<string, unknown>).service_tier,
     catalogId,
   });
   if (entry.maxCallsPerGame === undefined) return null;
@@ -467,7 +471,7 @@ async function reserveAttempt(
         catalogId: schema.providerCallAttempts.catalogId }).from(schema.providerCallAttempts)
         .where(eq(schema.providerCallAttempts.logicalCallId, callId));
       if (identity && previous.some(row => row.sourceHash && row.sourceHash !== identity.sourceHash)) throw new Error("Context source identity conflict");
-      const matching = previous.filter(row => (!recoveredAt || row.startedAt >= recoveredAt) && row.catalogId === intent.preparedRequest.catalogId && (row.revision ?? 0) === (identity?.revision ?? 0));
+      const matching = previous.filter(row => row.outcome !== null && !isProviderAvailabilityFailure(row.outcome) && (!recoveredAt || row.startedAt >= recoveredAt) && row.catalogId === intent.preparedRequest.catalogId && (row.revision ?? 0) === (identity?.revision ?? 0));
       if (matching.length >= limit || matching.some(row => row.outcome === "context_overflow")) {
         throw new ProviderJournalEntryExhaustedError(intent.preparedRequest.catalogId!);
       }
@@ -476,9 +480,9 @@ async function reserveAttempt(
       if (!game || !intent.preparedRequest.catalogId) throw new Error("Retrospective dispatch requires its sealed model identity");
       const resume = (JSON.parse(game.config) as { retrospectiveResume?: { logicalCallId?: string | null; retryAfterAttemptOrdinal?: number } }).retrospectiveResume;
       const floor = resume?.logicalCallId === callId ? resume.retryAfterAttemptOrdinal ?? 0 : 0;
-      const previous = await tx.select({ ordinal: schema.providerCallAttempts.attemptOrdinal, disposition: schema.providerCallAttempts.disposition })
+      const previous = await tx.select({ ordinal: schema.providerCallAttempts.attemptOrdinal, outcome: schema.providerCallAttempts.outcomeKind, disposition: schema.providerCallAttempts.disposition })
         .from(schema.providerCallAttempts).where(and(eq(schema.providerCallAttempts.logicalCallId, callId), eq(schema.providerCallAttempts.catalogId, intent.preparedRequest.catalogId)));
-      const policyAttempts = previous.filter(attempt => attempt.ordinal > floor);
+      const policyAttempts = previous.filter(attempt => attempt.ordinal > floor && attempt.outcome !== null && !isProviderAvailabilityFailure(attempt.outcome));
       if (policyAttempts.length >= retrospectiveAttemptsPerModel(game.gameKind) || policyAttempts.some(attempt => attempt.disposition === "exhausted")) {
         throw new ProviderJournalEntryExhaustedError(intent.preparedRequest.catalogId);
       }
@@ -699,6 +703,7 @@ async function terminalizeAttempt(
         providerProfileId: record.preparedRequest.providerProfileId,
         catalogId: record.preparedRequest.catalogId ?? null,
         outcome: record.outcome,
+        flexCapacity: isFlexCapacityFailure(record),
       });
       return { ...existing, ...(circuit && { circuit }) };
     }
@@ -815,6 +820,7 @@ async function terminalizeAttempt(
       providerProfileId: record.preparedRequest.providerProfileId,
       catalogId: record.preparedRequest.catalogId ?? null,
       outcome: record.outcome,
+      flexCapacity: isFlexCapacityFailure(record),
     });
     return { attempt: rows[0]!, logicalCall, ...health };
   });
@@ -1385,6 +1391,7 @@ export function createApiProviderExecutionHooks(
   options: CreateApiProviderExecutionHooksOptions,
 ): ProviderExecutionHooks {
   return withLocalTaskBudget({
+    onResolveOpenAIServiceTier: catalogId => resolveOpenAIServiceTier(db, catalogId),
     onReadLengthFeedback: (coordinate) => readLengthFeedback(db, options, coordinate),
     onReadAccepted: (coordinate) => readAcceptedResult(db, options, coordinate),
     onReadContextAttempts: async (coordinate) => {
@@ -1418,7 +1425,7 @@ export function createApiProviderExecutionHooks(
           options.projectSpend ?? defaultProjectSpend,
         );
       }
-      if (journaled.circuit) {
+      if (journaled.circuit && !isFlexCapacityFailure(record)) {
         throw new ProviderCircuitOpenError(
           record.preparedRequest.catalogId ?? `${record.preparedRequest.providerProfileId}:${record.preparedRequest.model}`,
           journaled.circuit.scopeKey,

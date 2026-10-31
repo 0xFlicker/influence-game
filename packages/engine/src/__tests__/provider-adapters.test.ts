@@ -166,6 +166,27 @@ async function rejectedProviderAttempt(
 }
 
 describe("provider-native adapters", () => {
+
+  it.each(["player", "house"] as const)("%s Flex failover dispatches the identical native contract on explicit default tier", async role => {
+    const bodies: Record<string, unknown>[] = [], records: ProviderAttemptRecord[] = [];
+    const client = { responses: { create: async (body: Record<string, unknown>) => {
+      bodies.push(body);
+      if (body.service_tier === "flex") throw Object.assign(new Error("capacity"), { status: 429, error: { code: "flex_unavailable" } });
+      return { id: "standard-response", status: "completed", service_tier: "default", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: '{"target":"Blair"}', annotations: [] }] }],
+        usage: { input_tokens: 100, output_tokens: 10, total_tokens: 110 } };
+    } } } as unknown as OpenAI;
+    const result = await executeModelInvocation({ call: new ProviderExecutionCoordinator({ hooks: { onTerminal: r => { records.push(r); } } }).startCall({
+      actor: { name: "Actor", role }, action: "test.cast-vote.v1", semantic: { version: 1, kind: "phase_call", phase: Phase.VOTE, round: 0, canonicalEventSequence: 0, callSlot: 1 },
+    }), runtimes: [runtime("openai:gpt-6-luna", client)], invocation, maxAttempts: 1,
+      validate: (_outcome, value) => value ? { status: "usable", value } : { status: "unusable", kind: "malformed_output", message: "missing vote" },
+    });
+    expect(result.value).toEqual({ target: "Blair" });
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toEqual({ ...bodies[0], service_tier: "default" });
+    expect(records.map(r => r.disposition)).toEqual(["retry_scheduled", "accepted"]);
+    expect(records[1]!.accounting?.effectiveServiceTier).toBe("default");
+  });
+
   it("repairs the exact rejected draft without changing the frozen context source", async () => {
     const repairArtifact = createExactStructuredOutputArtifact<{ text: string }, { text: string }>({
       action: "test.repair-text.v1", name: "repair_text",
@@ -301,7 +322,7 @@ describe("provider-native adapters", () => {
       semantic: { version: 1, kind: "phase_call", phase: Phase.VOTE, round: 0, canonicalEventSequence: 0, callSlot: 1 } });
     await expect(executeModelInvocation({ call, runtimes: [local], invocation, maxAttempts: 1, cancellationSignal: controller.signal,
       validate: () => ({ status: "unusable", kind: "malformed_output", message: "unexpected response" }),
-    })).rejects.toMatchObject({ outcome: { kind: mode === "timeout" ? "transport_timeout" : "cancellation" } });
+    })).rejects.toMatchObject(mode === "timeout" ? { failure: { outcome: { kind: "transport_timeout" } } } : { outcome: { kind: "cancellation" } });
   });
   it("decodes the same exact JSON response on Grok and GLM", async () => {
     const grokClient = {

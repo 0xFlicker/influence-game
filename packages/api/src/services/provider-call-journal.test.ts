@@ -1,3 +1,4 @@
+import { deferProviderGame, providerRetryPending } from "./provider-game-retry.js";
 import { normalizeAudioPayload } from "@influence/engine/audio-delivery";
 import { testPayloadStore } from "../__tests__/payload-test-store.js";
 import { getProviderFailureDetail } from "./provider-failure-read-model.js";
@@ -6,8 +7,9 @@ import { loadPayloads, storeFields, storeJson, setPayloadObjectStoreForTests } f
 import { beforeEach, describe, expect, test } from "bun:test";
 import { and, eq, sql } from "drizzle-orm";
 import {
-  Phase, normalizeGameModelRouting, sealGameModelRouting,
+  Phase, normalizeGameModelRouting, sealGameModelRouting, modelRateCard,
   ProviderAttemptError,
+  ProviderDeferredError,
   ProviderCallBudgetExhaustedError,
   ProviderCircuitOpenError,
   ProviderExecutionCoordinator,
@@ -260,6 +262,81 @@ describe("provider call journal", () => {
   beforeEach(async () => {
     process.env.LINODE_PRIVATE_CONTENT_BUCKET = "private-content-bucket";
     db = await setupTestDB();
+  });
+
+
+
+  test("both tiers unavailable preserve the same turn and durably delay its next owner", async () => {
+    const gameId = await insertGame(db, { status: "in_progress" }), ownerEpoch = await insertOwner(db, gameId);
+    const coordinate = makeIntent(gameId, ownerEpoch).coordinate;
+    const events = createCanonicalEventFixture(gameId);
+    await appendGameEvents(db, { gameId, ownerEpoch, events });
+    const before = await db.select().from(schema.gameEvents).where(eq(schema.gameEvents.gameId, gameId));
+    const tiers: string[] = [];
+    const call = new ProviderExecutionCoordinator({ hooks: createApiProviderExecutionHooks(db, { gameId, ownerEpoch }) }).startCall(coordinate);
+    let deferred: ProviderDeferredError | undefined;
+    try {
+      await call.executeManifest({ entries: [{ catalogId: "openai:gpt-6-luna", maxAttempts: 1,
+        preparedRequest: { transport: "openai.responses", providerProfileId: "openai", catalogId: "openai:gpt-6-luna", model: "gpt-6-luna", body: { service_tier: "flex" } },
+        dispatch: async ({ serviceTier }) => { tiers.push(serviceTier ?? "flex"); throw Object.assign(new Error("unavailable"), {
+          status: 429, headers: { "retry-after": "300" }, error: { code: serviceTier ? "rate_limit_exceeded" : "flex_unavailable" },
+        }); }, validate: (value: unknown) => ({ status: "usable", value }),
+      }] });
+    } catch (error) { if (!(error instanceof ProviderDeferredError)) throw error; deferred = error; }
+    expect(deferred).toBeDefined();
+    await deferProviderGame(db, gameId, ownerEpoch, deferred!);
+    const [game] = await db.select().from(schema.games).where(eq(schema.games.id, gameId));
+    expect(game!.status).toBe("in_progress");
+    expect(providerRetryPending(game!.config)).toBe(true);
+    expect(providerRetryPending(game!.config, Date.now() + 61_000)).toBe(false);
+    expect(tiers).toEqual(["flex", "default"]);
+    expect(await db.select().from(schema.gameEvents).where(eq(schema.gameEvents.gameId, gameId))).toEqual(before);
+    expect((await db.select().from(schema.providerLogicalCalls).where(eq(schema.providerLogicalCalls.gameId, gameId)))[0]!.acceptedAttemptId).toBeNull();
+    expect((await db.select().from(schema.gameRunOwners).where(eq(schema.gameRunOwners.ownerEpoch, ownerEpoch)))[0]!.failureReason).toBe("provider_execution_deferred");
+    // Bounded recovery eventually suspends, retaining the exact same logical call.
+    const config = JSON.parse(game!.config); config.providerRetry.attempt = 23;
+    await db.update(schema.games).set({ config: JSON.stringify(config) }).where(eq(schema.games.id, gameId));
+    const nextOwner = await insertOwner(db, gameId);
+    await deferProviderGame(db, gameId, nextOwner, deferred!);
+    expect((await db.select().from(schema.games).where(eq(schema.games.id, gameId)))[0]!.status).toBe("suspended");
+    expect(await db.select().from(schema.gameEvents).where(eq(schema.gameEvents.gameId, gameId))).toEqual(before);
+  });
+
+  test.each(["after-flex", "after-standard"])("Flex failover survives restart %s with one accepted result", async boundary => {
+    const gameId = await insertGame(db), ownerEpoch = await insertOwner(db, gameId);
+    const coordinate = makeIntent(gameId, ownerEpoch).coordinate;
+    const tiers: string[] = [];
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    const entry = { catalogId: "openai:gpt-6-luna", maxAttempts: 1,
+      contextIdentity: () => ({ sourceHash: `sha256:${"a".repeat(64)}`, revision: 0, maxAttempts: 1 }),
+      preparedRequest: { transport: "openai.responses", providerProfileId: "openai" as const, catalogId: "openai:gpt-6-luna", model: "gpt-6-luna", body: { service_tier: "flex", input: "Vote", reasoning: { effort: "low" } } },
+      dispatch: async ({ serviceTier }: { serviceTier?: "default" }) => {
+        tiers.push(serviceTier ?? "flex");
+        if (!serviceTier) throw Object.assign(new Error("capacity"), { status: 429, headers: { "retry-after": "300" }, error: { code: "flex_unavailable" } });
+        return { target: "Bea" };
+      }, validate: (value: { target: string }) => ({ status: "usable" as const, value }),
+      accounting: () => ({ effectiveServiceTier: "default", usage: { promptTokens: 1000, completionTokens: 100, totalTokens: 1100 } }),
+    };
+    let crashed = false;
+    const interrupted = new ProviderExecutionCoordinator({ hooks: { ...hooks, onTerminal: async record => {
+      const receipt = await hooks.onTerminal?.(record);
+      if (!crashed && (boundary === "after-flex" ? record.outcome.kind !== "usable" : record.outcome.kind === "usable")) {
+        crashed = true; throw new Error("simulated process loss");
+      }
+      return receipt;
+    } } });
+    await expect(interrupted.startCall(coordinate).executeManifest({ entries: [entry] })).rejects.toThrow("simulated process loss");
+    const recovered = new ProviderExecutionCoordinator({ hooks: createApiProviderExecutionHooks(db, { gameId, ownerEpoch }) });
+    await expect(recovered.startCall(coordinate).executeManifest({ entries: [entry] })).resolves.toMatchObject({ value: { target: "Bea" }, acceptedAttemptOrdinal: 2 });
+    await recovered.startCall(coordinate).executeManifest({ entries: [entry] });
+    expect(tiers).toEqual(["flex", "default"]);
+    const attempts = await db.select().from(schema.providerCallAttempts).where(eq(schema.providerCallAttempts.gameId, gameId)).orderBy(schema.providerCallAttempts.attemptOrdinal);
+    expect(attempts.map(a => a.disposition)).toEqual(["retry_scheduled", "accepted"]);
+    expect(attempts[1]!.rateCard).toEqual(modelRateCard("openai:gpt-6-luna", "default"));
+    const spend = await db.select().from(schema.gameProviderSpendEntries).where(eq(schema.gameProviderSpendEntries.gameId, gameId));
+    expect(spend.find(row => row.attemptOrdinal === 2)).toMatchObject({ estimatedCostMicrousd: 150,
+      costSource: "static_estimate", safeMetadata: { effectiveServiceTier: "default" } });
+    expect((await db.select().from(schema.providerAttemptEvidenceOutbox).where(eq(schema.providerAttemptEvidenceOutbox.gameId, gameId)))).toHaveLength(2);
   });
 
   test("a failed fallback resumes with the same context after strategy traverses JSONB", async () => {

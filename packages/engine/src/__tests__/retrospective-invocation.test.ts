@@ -1,3 +1,4 @@
+import { ProviderDeferredError } from "../provider-execution";
 import { audioDeliveryGuidance } from "../audio-delivery";
 import { describe, expect, test } from "bun:test";
 import OpenAI from "openai";
@@ -280,7 +281,7 @@ describe("retrospective dispatch and input fences", () => {
 
   test("provider endpoint failure exhausts as a typed attempt failure, never a capacity gate", async () => {
     const { context } = dossier(), unavailable = provider({ status: 429 });
-    await expect(execute(context, [unavailable.runtime])).rejects.toBeInstanceOf(ProviderAttemptError);
+    await expect(execute(context, [unavailable.runtime])).rejects.toBeInstanceOf(ProviderDeferredError);
     expect(unavailable.requests).toHaveLength(2); // Bounded attempt retries dispatch; SDK retries stay disabled by the coordinator.
   });
 
