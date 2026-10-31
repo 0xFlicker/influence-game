@@ -64,12 +64,14 @@ def evidence_identity(kind, evidence, run):
     return sha, digest
 
 class Mirror:
-    def __init__(self, kind, auth_file, runner=subprocess.run):
+    def __init__(self, kind, auth_file, runner=subprocess.run, max_manifests=5):
+        require(type(max_manifests) is int and 5 <= max_manifests <= 10, 'invalid retention exception limit')
         self.selected = KINDS[kind]
         self.auth_file = str(auth_file)
         self.runner = runner
         self.parts = {}
         self.visited = set()
+        self.max_manifests = max_manifests
 
     def call(self, argv):
         result = self.runner(argv, capture_output=True, timeout=600 if argv[:2] == ['skopeo', 'copy'] else 120)
@@ -136,6 +138,7 @@ class Mirror:
             self.graph(destination, image['imageDigest'])
         projected = sum(self.parts.values())
         require(projected <= selected['budget'], 'repository storage admission budget exceeded')
+        require(len(self.visited) <= self.max_manifests, 'five-image retention target exceeded; review protected-reference exception')
         if digest not in roots:
             with tempfile.TemporaryDirectory() as directory:
                 result_file = Path(directory) / 'digest'
@@ -146,7 +149,8 @@ class Mirror:
         observed = self.aws('ecr', 'describe-images', '--repository-name', selected['repository'], '--image-ids', 'imageDigest=' + digest).get('imageDetails', [])
         require(len(observed) == 1 and observed[0].get('imageDigest') == digest, 'destination digest was not verified')
         return {'destination': destination + '@' + digest, 'verifiedDestinationDigest': digest,
-                'projectedUniqueBytes': projected, 'repositoryAdmissionBytes': selected['budget'], 'retainedReleaseDigests': len(roots | {digest})}
+                'projectedUniqueBytes': projected, 'repositoryAdmissionBytes': selected['budget'], 'retainedReleaseDigests': len(roots | {digest}),
+                'manifestCount': len(self.visited), 'manifestTarget': 5, 'approvedManifestLimit': self.max_manifests}
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -156,18 +160,19 @@ def main():
     parser.add_argument('--auth-file', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--publish', action='store_true', help='Requires exact operator approval; otherwise metadata only')
+    parser.add_argument('--max-manifests', type=int, choices=range(5,11), default=5, help='Five by default; higher limits require explicit reference-preservation exception approval')
     args = parser.parse_args()
     try:
         auth_stat = args.auth_file.lstat()
         require(stat.S_ISREG(auth_stat.st_mode) and auth_stat.st_mode & 0o077 == 0 and auth_stat.st_uid == os.geteuid(), 'registry auth file must be private and owned by the executing user')
         run = json.loads(args.run_metadata.read_text())
         sha, digest = evidence_identity(args.kind, json.loads(args.evidence.read_text()), run)
-        mirror = Mirror(args.kind, args.auth_file)
+        mirror = Mirror(args.kind, args.auth_file, max_manifests=args.max_manifests)
         size = mirror.measure(digest)
-        require(size <= KINDS[args.kind]['budget'], 'source alone exceeds repository admission budget')
         receipt = {'schemaVersion': 1, 'kind': args.kind, 'sourceSha': sha, 'sourceRunId': run['id'], 'sourceRunAttempt': run['run_attempt'],
                    'source': KINDS[args.kind]['source'] + '@' + digest, 'sourceDigest': digest,
-                   'evidenceSha256': hashlib.sha256(args.evidence.read_bytes()).hexdigest(), 'sourceUniqueBytes': size, 'published': args.publish}
+                   'evidenceSha256': hashlib.sha256(args.evidence.read_bytes()).hexdigest(), 'sourceUniqueBytes': size, 'sourceManifestCount': len(mirror.visited),
+                   'sourceExceedsStorageBudget': size > KINDS[args.kind]['budget'], 'needsRetentionException': len(mirror.visited) > 5, 'published': args.publish}
         if args.publish:
             receipt.update(mirror.publish(digest))
         with args.output.open('x') as output:

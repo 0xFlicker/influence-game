@@ -93,6 +93,25 @@ class MirrorTests(unittest.TestCase):
         mirror=m.Mirror('worker','/private/test-auth',runner)
         self.assertEqual(mirror.measure(root_digest),len(self.raw)+len(other)+len(root)+100+200+1024)
         self.assertEqual(len(mirror.visited),3)
+    def test_five_counts_manifests_not_tags_and_exception_requires_explicit_limit(self):
+        manifests={}
+        children=[]
+        for i in range(5):
+            raw,digest=body_digest({'schemaVersion':2,'mediaType':'application/vnd.oci.image.manifest.v1+json',
+                'config':{'digest':'sha256:'+hashlib.sha256(str(i).encode()).hexdigest(),'size':100},
+                'layers':[{'digest':'sha256:'+'d'*64,'size':1024}]})
+            manifests[digest]=raw; children.append({'digest':digest,'platform':{'os':'linux','architecture':'amd64'}})
+        raw,digest=body_digest({'schemaVersion':2,'mediaType':'application/vnd.oci.image.index.v1+json','manifests':children})
+        manifests[digest]=raw; self.digest=digest; self.copied_digest=digest
+        def runner(argv,**kwargs):
+            if '--raw' in argv:return SimpleNamespace(returncode=0,stdout=manifests[argv[-1].split('@')[1]])
+            return self.runner(argv,**kwargs)
+        mirror=m.Mirror('worker','/private/test-auth',runner)
+        mirror.measure(digest)
+        with self.assertRaisesRegex(ValueError,'five-image'):mirror.publish(digest)
+        self.assertFalse(any('copy' in a for a in self.calls))
+        mirror.max_manifests=6
+        self.assertEqual(mirror.publish(digest)['manifestCount'],6)
 
 class EvidenceTests(unittest.TestCase):
     def setUp(self):

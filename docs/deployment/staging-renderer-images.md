@@ -34,7 +34,12 @@ cross-repository GHCR access or a permanent registry credential. Temporary
 registry auth files are private and removed; errors suppress credential-bearing
 tool diagnostics. Nothing runs on PRs except credential-free helper tests.
 
-Each private repository admits at most two deployment digest tags. Before copy,
+Each private repository targets **five image/manifest objects**, not five tags,
+and admits at most two deployment roots (current and rollback). Multi-architecture
+indexes, platform manifests and attestations all count. The default limit is five;
+the manual `max_manifests` input may be increased, up to ten, only after explicit
+approval of a protected-reference exception. The helper surfaces the count and
+stops before copying when the chosen limit would be exceeded. Before copy,
 the helper walks all source/destination manifest metadata and deduplicates
 compressed layers/configs/manifests. Worker repository admission is capped at
 3 GiB; sidecar admission is 512 MiB. The combined conservative storage allowance

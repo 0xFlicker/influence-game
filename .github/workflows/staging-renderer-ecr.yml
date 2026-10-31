@@ -15,6 +15,11 @@ on:
         description: Copy to ECR only after exact image/IAM publication approval; false measures metadata only
         type: boolean
         default: false
+      max_manifests:
+        description: Five image objects by default; higher requires exact protected-reference exception approval
+        type: choice
+        options: ['5', '6', '7', '8', '9', '10']
+        default: '5'
 permissions:
   contents: read
 concurrency:
@@ -82,7 +87,9 @@ jobs:
         run: aws ecr get-login-password --region us-west-1 | skopeo login --authfile "$RUNNER_TEMP/staging-ecr-auth.json" --username AWS --password-stdin 978355607658.dkr.ecr.us-west-1.amazonaws.com
       - name: Preserve all manifests and verify destination digest
         if: inputs.publish
-        run: python3 scripts/staging-ecr-mirror.py --kind worker --run-metadata source-run.json --evidence source-evidence/release-manifest.json --auth-file "$RUNNER_TEMP/staging-ecr-auth.json" --output mirror-receipt.json --publish
+        env:
+          MANIFEST_LIMIT: ${{ inputs.max_manifests }}
+        run: python3 scripts/staging-ecr-mirror.py --kind worker --run-metadata source-run.json --evidence source-evidence/release-manifest.json --auth-file "$RUNNER_TEMP/staging-ecr-auth.json" --output mirror-receipt.json --max-manifests "$MANIFEST_LIMIT" --publish
       - uses: actions/upload-artifact@v6
         with:
           name: staging-worker-image-receipt
