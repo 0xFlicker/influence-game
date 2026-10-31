@@ -1,5 +1,8 @@
 "use client";
 
+import type {VisualSpeech} from "./visual-scene-view";
+import {TimedSpeech} from "./timed-speech";
+import {soloPresentationMotion} from "./solo-presentation-timing";
 import {FitPresentation} from "./fit-presentation";
 import {useState} from "react";
 import {AgentAvatar} from "@/components/agent-avatar";
@@ -12,6 +15,7 @@ export interface NomineeSelectionBeat {
   chooser: GamePlayer & {fullBodyReferenceUrl?: string | null};
   nominees: GamePlayer[];
   selectedId: string | null;
+  speech?: VisualSpeech;
 }
 
 /** Existing art only. Selection is a recorded decision, never a random animation result. */
@@ -24,6 +28,7 @@ export function NomineeSelection({beat, elapsedMs, reducedMotion = false}: {
   const marked = beat.selectedId !== null && (reducedMotion || elapsedMs >= 650);
   const eliminated = marked && (reducedMotion || elapsedMs >= 1600);
   const exitProgress = reducedMotion ? 1 : Math.max(0, Math.min(1, (elapsedMs - 1000) / 600));
+  const motion = soloPresentationMotion(beat.speech?.text ?? "", elapsedMs, false, reducedMotion);
   const selected = beat.nominees.find(player => player.id === beat.selectedId);
   if (thought) return <SoloPresentation beat={{kind:"portrait",purpose:"Ballot",caption:"Empowered · deciding vote",player:beat.chooser,
     speech:{id:`tiebreak:${beat.chooser.id}`,playerId:beat.chooser.id,speaker:beat.chooser.name,text:""}}}
@@ -34,6 +39,7 @@ export function NomineeSelection({beat, elapsedMs, reducedMotion = false}: {
         /* eslint-disable-next-line @next/next/no-img-element -- frozen character art with portrait fallback */
         <img src={body} alt={beat.chooser.name} onError={() => setFailedBody(body)} className="min-h-0 w-full flex-1 object-contain" />
         : <div className="flex min-h-0 items-center justify-center"><AgentAvatar {...beat.chooser} size="32" /></div>}
+      {beat.speech && motion.speechOpacity > 0 && <blockquote data-speech-bubble className="absolute bottom-16 left-2 right-2 flex h-[40%] min-h-0 flex-col rounded-2xl bg-black/90 p-4 text-white" style={{opacity: motion.speechOpacity}}><TimedSpeech text={beat.speech.text} elapsedMs={motion.speechElapsedMs} /></blockquote>}
       <p className="mt-3 text-center text-lg font-semibold text-white">{beat.chooser.name}</p>
       <p className="text-xs uppercase tracking-widest text-amber-200">Empowered · deciding vote</p>
     </div>

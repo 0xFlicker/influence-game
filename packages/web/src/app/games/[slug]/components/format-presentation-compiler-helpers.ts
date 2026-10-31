@@ -222,6 +222,7 @@ export function applyResolution(input: {
       round: decision.round,
       phase,
       kind: "format_tiebreak",
+      requiredDecisionSpeech: decision.publicDecisionSpeech?.find(speech => speech.action === "format-tiebreak" || speech.action === "format-two-names-tiebreak"),
       baseDurationMs: FIXED_CUE_DURATION_MS.format_tiebreak,
       before,
       after: cloneSnapshot(snapshot),

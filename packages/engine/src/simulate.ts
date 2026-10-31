@@ -1,6 +1,10 @@
 #!/usr/bin/env bun
 import { HOUSE_CAST } from "./house-personas";
 /**
+ * New simulations freeze root schema v2: Safety Bounce classifies before Mingle;
+ * decision v3 preserves public chain/tiebreak speech and private House ballot explanations.
+ * Keep direct House calls and typed evidence; no `as any` shortcuts.
+
  * Native xAI selects xai:grok-4.3/4.5/4.6 or xai:grok-4.20-multi-agent-0309
  * with XAI_API_KEY. Mutable Katana Grok selections migrate at the same generation;
  * frozen historical games retain Katana. Use the localhost API for paid evaluation.
@@ -840,6 +844,7 @@ export function buildSimulationConfig(
 
   return {
     ...DEFAULT_CONFIG,
+    gameSchemaVersion: 2,
     maxRounds,
     formatManifest: resolveFormatManifest(options.formatManifest),
     diaryRoomAfterPhases: enableDiary ? [Phase.FORMAT_RESOLVE, Phase.COUNCIL] : [],

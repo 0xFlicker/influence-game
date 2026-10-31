@@ -9,11 +9,12 @@ import type { VisualWatchData } from "../../app/games/[slug]/components/visual-w
 
 export type InfluenceExportGame = Pick<
   GameDetail,
-  "id" | "slug" | "status" | "players" | "gameKernel" | "formatManifest" | "empowerRevoteVersion"
+  "id" | "slug" | "status" | "players" | "gameKernel" | "formatManifest" | "empowerRevoteVersion" | "gameSchemaVersion"
 >;
 export type ReplaySource =
   | {
       kind: "influence";
+      projectionVersion?: 3 | 4;
       game: InfluenceExportGame;
       messages: TranscriptEntry[];
       frames: GameWatchReplayFrame[];

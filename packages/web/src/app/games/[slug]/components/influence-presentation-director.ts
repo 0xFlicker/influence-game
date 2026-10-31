@@ -6,7 +6,7 @@ import { useAnimate } from "motion/react";
 import {presentationEntrances} from "./presentation-entrances";
 import type { PresentationCue } from "./types";
 import { VISUAL_SPEECH_FADE_MS } from "@influence/engine/visual-speech";
-import { SOLO_SPEECH_START_MS, SOLO_READ_START_MS, SOLO_SPEECH_FADE_MS, SOLO_EXIT_MS } from "./solo-presentation-timing";
+import { SOLO_SPEECH_START_MS, SOLO_READ_START_MS, SOLO_SPEECH_FADE_MS, SOLO_EXIT_MS, soloPresentationDurationMs } from "./solo-presentation-timing";
 import { SCENE_SPEECH_START_MS, SCENE_READ_START_MS, SCENE_EXIT_HOLD_MS } from "./scene-speech-timing";
 
 import { PresentationDirector as SharedPresentationDirector, type CreatePresentationDirectorOptions, type PresentationAnimationControlAdapter, type WatchPolicy } from "@/components/watch/watch-director";
@@ -17,7 +17,7 @@ interface RetainedMotionControl { pause(): void; play(): void; complete(): void;
 export const influencePresentationPolicy: WatchPolicy<PresentationCue> = {
   position: cue => cue.canonicalSequence,
   speech: speechBoundaries,
-  scrubAtMs: cue => cue.source === "opening" ? 350 : cue.kind === "format_deciding_vote" ? 2000 : voteSceneIdentity(cue) && !cue.voteSummary ? SOLO_READ_START_MS : cue.voteSummary ? 0 : speechBoundaries(cue)?.showAtMs ?? 0,
+  scrubAtMs: cue => cue.kind === "safety_bounce_pointer" && !cue.spokenMessage ? 2500 : cue.source === "opening" ? 350 : cue.kind === "format_deciding_vote" ? 2000 : voteSceneIdentity(cue) && !cue.voteSummary ? SOLO_READ_START_MS : cue.voteSummary ? 0 : speechBoundaries(cue)?.showAtMs ?? 0,
   isCatchUp: cue => cue.source === "opening" || cue.source !== "format" && Boolean(cue.liveCatchUp),
   acceptAtWatermark: (cue, watermark) => cue.source !== "format" && cue.canonicalSequence === watermark,
   reconcile: retainActiveHouseBridge,
@@ -150,6 +150,11 @@ function usePrefersReducedMotion(): boolean {
 }
 
 function speechBoundaries(cue: PresentationCue | null) {
+  if (cue?.decisionSpeechEntry && cue.spokenMessage) return {
+    showAtMs: SOLO_SPEECH_START_MS, readAtMs: SOLO_READ_START_MS,
+    hideAtMs: soloPresentationDurationMs(cue.spokenMessage) - SOLO_EXIT_MS,
+    hiddenAtMs: soloPresentationDurationMs(cue.spokenMessage),
+  };
   if (cue?.source === "classic" && cue.houseSummary) return {
     showAtMs:0,readAtMs:0,hideAtMs:cue.baseDurationMs,hiddenAtMs:cue.baseDurationMs,
   };

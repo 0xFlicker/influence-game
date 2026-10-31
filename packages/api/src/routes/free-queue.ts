@@ -279,6 +279,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       formatManifest: [...DEFAULT_FORMAT_MANIFEST],
       empowerRevoteVersion: CURRENT_EMPOWER_REVOTE_VERSION,
       decisionContractVersion: CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION,
+      gameSchemaVersion: 2,
     };
 
     const user = c.get("user");

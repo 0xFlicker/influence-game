@@ -64,12 +64,14 @@ import type {
 } from "./types";
 import { CURRENT_EMPOWER_REVOTE_VERSION, resolveEmpowerRevoteVersion, type EmpowerRevoteVersion } from "./empower-revote-rules";
 import { Phase, PlayerStatus } from "./types";
+import { resolveInfluenceGameSchemaVersion, type InfluenceGameSchemaVersion } from "./influence-game-schema";
 
 export function createUUID(): UUID {
   return randomUUID();
 }
 
 export interface GameStateOptions {
+  gameSchemaVersion?: InfluenceGameSchemaVersion;
   empowerRevoteVersion?: EmpowerRevoteVersion;
   gameId?: UUID;
   now?: () => number;
@@ -219,6 +221,7 @@ function responsesForLineageVersion(
 export class GameState {
   readonly gameId: UUID;
   readonly empowerRevoteVersion: EmpowerRevoteVersion;
+  readonly gameSchemaVersion: InfluenceGameSchemaVersion;
   readonly formatManifest: readonly LaunchFormatId[];
   private readonly canonicalEvents = new CanonicalEventLog();
   private readonly now: () => number;
@@ -274,6 +277,7 @@ export class GameState {
 
   constructor(players: Pick<Player, "id" | "name" | "gender">[], options: GameStateOptions = {}) {
     this.empowerRevoteVersion = resolveEmpowerRevoteVersion(options.empowerRevoteVersion ?? CURRENT_EMPOWER_REVOTE_VERSION);
+    this.gameSchemaVersion = resolveInfluenceGameSchemaVersion(options.gameSchemaVersion);
     this.gameId = options.gameId ?? createUUID();
     this.formatManifest = resolveFormatManifest(options.formatManifest);
     this.now = options.now ?? Date.now;
@@ -297,6 +301,7 @@ export class GameState {
       })),
       formatManifest: [...this.formatManifest],
       empowerRevoteVersion: this.empowerRevoteVersion,
+      gameSchemaVersion: this.gameSchemaVersion,
     }, { phase: Phase.INIT, visibility: "system" });
   }
 
@@ -311,6 +316,7 @@ export class GameState {
       gameId: projection.gameId,
       formatManifest: projection.formatManifest,
       empowerRevoteVersion: projection.empowerRevoteVersion,
+      gameSchemaVersion: projection.gameSchemaVersion,
       ...options,
     });
     state.canonicalEvents.replaceAll(events);
@@ -408,7 +414,7 @@ export class GameState {
       timestamp: new Date(this.now()).toISOString(),
       source: options.source,
       visibility: options.visibility,
-      sourcePointers: options.sourcePointers,
+      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
     });
   }
 
@@ -596,7 +602,7 @@ export class GameState {
     }, {
       phase: options.phase,
       visibility: "producer",
-      sourcePointers: options.sourcePointers,
+      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
     });
     this.setAllianceLineage(activatedLineage);
     this.setAlliance(alliance);
@@ -881,7 +887,7 @@ export class GameState {
     this.appendCanonicalEvent("alliance.proposal_submitted", { lineage }, {
       phase,
       visibility: "producer",
-      sourcePointers: options.sourcePointers,
+      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
     });
     this.setAllianceLineage(lineage);
     return cloneAllianceProposalVersion(version);
@@ -933,7 +939,7 @@ export class GameState {
     this.appendCanonicalEvent("alliance.proposal_submitted", { lineage }, {
       phase,
       visibility: "producer",
-      sourcePointers: options.sourcePointers,
+      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
     });
     this.setAllianceLineage(lineage);
     return cloneAllianceProposalVersion(version);
@@ -980,7 +986,7 @@ export class GameState {
     }, {
       phase,
       visibility: "producer",
-      sourcePointers: options.sourcePointers,
+      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
     });
     this.setAllianceLineage(lineage);
 
@@ -1040,7 +1046,7 @@ export class GameState {
     this.appendCanonicalEvent("alliance.counter_submitted", { lineage }, {
       phase,
       visibility: "producer",
-      sourcePointers: options.sourcePointers,
+      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
     });
     this.setAllianceLineage(lineage);
     return cloneAllianceProposalVersion(version);
@@ -1059,7 +1065,7 @@ export class GameState {
     this.appendCanonicalEvent("alliance.proposal_expired", { lineage }, {
       phase,
       visibility: "producer",
-      sourcePointers: options.sourcePointers,
+      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
     });
     this.setAllianceLineage(lineage);
     return cloneAllianceProposalLineage(lineage);

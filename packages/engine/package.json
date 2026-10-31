@@ -13,6 +13,7 @@
     "./house-character-art": "./src/house-character-art.ts",
     "./audio-delivery": "./src/audio-delivery.ts",
     "./influence-decision-speech": "./src/influence-decision-speech.ts",
+    "./influence-game-schema": "./src/influence-game-schema.ts",
     "./retrospective-budget": "./src/retrospective-budget.ts",
     "./cli-api-session": "./src/cli-api-session.ts",
     "./cli-session-contract": "./src/cli-session-contract.ts",

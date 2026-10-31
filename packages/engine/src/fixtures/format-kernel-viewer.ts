@@ -16,6 +16,7 @@ export const FORMAT_KERNEL_VIEWER_SCENARIO_IDS = [
   "vote_bomb_clear",
   "majority_elimination_clear",
   "majority_elimination_tie",
+  "restricted_history_clear",
   "even_votes_clear",
   "even_votes_tie",
   "safety_bounce_tie",
@@ -70,6 +71,15 @@ export function createFormatKernelViewerScenario(
   const safetyBounce = createSafetyBounceViewerDecisions();
 
   switch (id) {
+    case "restricted_history_clear": {
+      const decisions = majorityEliminationClear.map((event): ViewerDecisionEvent => {
+        const base = {...event, round: 3};
+        if (event.type === "format.menu_offered") return {...base, type: event.type, payload: {...event.payload, offeredFormatIds: ["restricted_history", "save_or_eliminate"]}};
+        if (event.type === "format.selected" || event.type === "format.ballot_cast" || event.type === "format.resolved") return {...event, round: 3, payload: {...event.payload, formatId: "restricted_history"}} as ViewerDecisionEvent;
+        return base;
+      });
+      return scenario(id, roster, decisions, {status: "ready", selectedFormatId: "restricted_history", resolutionKind: "auto", eliminatedId: "lyra", tiebreakerId: null, ballotPresentation: "revealed"});
+    }
     case "two_names_declined":
     case "two_names_used_tie":
       return createTwoNamesScenario(id);

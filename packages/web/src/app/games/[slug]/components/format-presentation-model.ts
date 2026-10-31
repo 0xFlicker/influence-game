@@ -1,3 +1,4 @@
+import {assertReplayFrameOwnership, assertViewerEventOwnership} from "./presentation-ownership";
 import { resolveEmpowerRevoteVersion, type EmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import type {
   GameKernel,
@@ -70,6 +71,7 @@ export interface FormatPresentationCompilation {
 export interface CompileFormatPresentationPrefixInput {
   gameId: string;
   gameKernel: GameKernel;
+  gameSchemaVersion?: number;
   roster: readonly FormatPresentationRosterPlayer[];
   decisions: readonly ViewerDecisionEvent[];
   empowerRevoteVersion?: EmpowerRevoteVersion;
@@ -92,7 +94,9 @@ interface EmpowerPresentationAccumulator {
 
 export function formatPresentationDecisionsFromFrames(
   frames: readonly GameWatchReplayFrame[],
+  gameSchemaVersion?: number,
 ): ViewerDecisionEvent[] {
+  assertReplayFrameOwnership(frames, gameSchemaVersion);
   return frames
     .filter((frame) => frame.viewerDecisionEvent)
     .sort((left, right) => left.sequence - right.sequence)
@@ -118,12 +122,14 @@ export function formatPresentationEligibilityFromFrames(
 export function compileFormatPresentationPrefix({
   gameId,
   gameKernel,
+  gameSchemaVersion,
   roster,
   decisions,
   formatManifest,
   empowerRevoteVersion,
   eligiblePlayerIdsByRound,
 }: CompileFormatPresentationPrefixInput): FormatPresentationCompilation {
+  assertViewerEventOwnership(decisions, gameSchemaVersion);
   let snapshot = emptySnapshot();
   const cues: FormatPresentationCue[] = [];
   const rosterIds = roster.map((player) => player.id);
@@ -1072,6 +1078,7 @@ function applyDecision(input: {
         ...base,
         key: cueKey(gameId, decision.sequence, "bounce-pointer"),
         kind: "safety_bounce_pointer",
+        requiredDecisionSpeech: decision.publicDecisionSpeech?.find(speech => speech.action === "bounce-pointer"),
         baseDurationMs: safetyBouncePointerDurationMs(pacing),
         ...decision.payload,
         pointerCandidateIds,
@@ -1089,8 +1096,22 @@ function applyDecision(input: {
         snapshot,
         cues,
       });
-    default:
+    // These are owned by endgame/classic presentation or update the replay frame.
+    case "game.phase_entered":
+    case "player.eliminated":
+    case "endgame.elimination_resolved":
+    case "jury.winner_determined":
+    case "power.action_set":
+    case "power.candidates_resolved":
+    case "council.vote_cast":
+    case "council.elimination_resolved":
       break;
+    default: {
+      const unhandled: never = decision;
+      // Historical unknown runtime records retain their existing tolerance.
+      void unhandled;
+      break;
+    }
   }
 
   return null;

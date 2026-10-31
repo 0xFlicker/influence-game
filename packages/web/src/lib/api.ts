@@ -538,6 +538,7 @@ export interface GameSummary {
   modelLabel: string;
   visibility: GameVisibility;
   /** Missing historical versions use v1. */
+  gameSchemaVersion?: 1 | 2;
   empowerRevoteVersion?: EmpowerRevoteVersion;
   /** Frozen game configuration; absent only on historical/mock payloads. */
   formatManifest?: EngineLaunchFormatId[];
@@ -2800,6 +2801,7 @@ export interface GameDetail {
   modelLabel: string;
   visibility: GameVisibility;
   /** Missing historical versions use v1. */
+  gameSchemaVersion?: 1 | 2;
   empowerRevoteVersion?: EmpowerRevoteVersion;
   /** Frozen game configuration; absent only on historical/mock payloads. */
   formatManifest?: EngineLaunchFormatId[];

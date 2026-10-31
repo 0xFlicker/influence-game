@@ -1,7 +1,7 @@
 ---
 title: Safety Bounce choreography, post-classification Mingle, and strict viewer coverage
 date: 2026-10-30
-status: researched-plan
+status: implemented
 ---
 
 # Safety Bounce choreography and viewer contract
@@ -12,7 +12,7 @@ Make Safety Bounce a continuous, visually engaging chain: a full-body chooser sp
 
 For newly created games, the round becomes **format selection → Safety Bounce classification → Mingle (and its existing huddles) → sealed vote/reveal → empowered tiebreak speech and choice if needed → elimination/farewell**. Historical games retain their frozen execution order; their accepted speeches should still receive correct presentation placement. Other formats keep their existing social windows.
 
-This document is planning only. No engine, API, UI, test, stored game, or deployment changes have been made. Repository source and read-only staging records for `hard-violet-reef` were inspected. Browser playback has not been reproduced. Findings below distinguish saved evidence from playback proof.
+The plan was approved and committed as `9f00ca5e`; implementation is in progress. The findings below describe the pre-change research baseline. Repository source and read-only staging records for `hard-violet-reef` were inspected. Browser playback has not been reproduced. Findings below distinguish saved evidence from playback proof.
 
 ### Accepted follow-up requirements
 
@@ -162,3 +162,18 @@ Completion requires the original late-speech regression reproduced and fixed, sa
 - Inventory all runtime generic event-rendering paths before deleting them. A compiler's default branch may represent deliberate ownership by another compiler; replace it with explicit classification, not an indiscriminate throw.
 - Inspect the current asset DTO/resolver end to end before selecting fields for transparent versus ordinary full-body art. The visual model already consumes resolved full-body URLs; preserve that abstraction where possible.
 - Confirm speech identity survives current API serialization. Add only missing small coordinates; keep large speech/evidence payloads in the existing bucket-backed storage. No historical content regeneration or broad storage refactor is part of this story.
+
+
+## Implementation verification — 2026-10-30
+
+Implemented on `codex/safety-bounce-choreography`, following plan commit `9f00ca5e`.
+
+- New games freeze root schema v2 and decision contract v3. Safety Bounce commits the starter and each public pick before the existing Mingle window; finalized pools and personal guidance survive restoration. Ballots remain sealed contestant-private speech. Both format tiebreak actions request thinking and public speech.
+- Playback attaches public thinking/speech to chain and tie decisions, retains ballot explanations at reveal, animates full-body handoffs into avatar pools, and keeps the pools during voting. Existing historical chains remain playable without speech or generated lobby media.
+- New-root event projection and renderer ownership is exhaustive, with runtime diagnostics and incomplete-delivery buffering. Catalog fixtures exercise every valid prefix and reject missing ownership, missing/ambiguous speech, and orphan speech.
+- Historical projections retain absent version fields to preserve checkpoint hashes. Existing pinned production v3 snapshots keep their source identities; new v4 snapshots attach speech to decisions. Studio, export, audio, and MCP contracts support the same boundary.
+- `bun run test`: **3,165 passed, 5 existing skips, 0 failed** (333 files).
+- `bun run check`: all packages passed typechecking and lint.
+- `bun run test:e2e:format-viewer --trace=off`: **64 passed**. Desktop/mobile screenshots were inspected; assertions cover thinking/speech/reveal, pools, art fallback, historical replay, reduced motion, seek and reconnect. Browser fixtures are deterministic; this is local proof, not a deployed staging verification.
+- `bun run test:postgres`: **2,276 passed, 4 failed** in the full run. All four failures identified the MCP snapshot schema still requiring production v3. After updating it to admit v3/v4, the sequential rerun of editorial MCP, production source, audio annotations, durable store, game API and free queue passed **177 tests, 0 failed**. The full PostgreSQL suite was not repeated after that focused schema correction.
+- Skill structure validation passed; browser-generated Next configuration changes were removed. No deployment, paid simulation, or historical data rewrite was performed.

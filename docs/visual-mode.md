@@ -409,3 +409,10 @@ When Show thinking is enabled, every captured thought is a separate shot before 
 ### Device playback preferences (2026-10-02)
 
 Werewolf opens playing from the first playable contribution, including when a live game is still waiting for its first line. Both House game viewers load the device's saved Show thinking and thinking order before mounting playback. The versioned localStorage key is `house:watch:viewer:v1`; Mystery hides thinking without overwriting it. Explicit production embeds can pass `preferenceScope="production"` to use a separate `house:watch:production:v1` choice. Storage failure leaves session controls usable; cleared or invalid preferences use thinking off / thinking first. This preference is browser-local, not an account setting.
+
+
+### Safety Bounce chain staging
+
+Safety Bounce uses the existing council background and resolved cast art, independently of generated lobby scenes. The starter stands apart from the crowd. Saved thinking (when enabled), public speech, structured pick, and handoff share the player clock. The picked contestant moves into the chooser position; the prior chooser moves to their existing Safe/Vulnerable pool and becomes a headshot. The terminal target joins their pool without a fabricated turn. Both pools remain visible through voting.
+
+Use transparent full-body art, ordinary full-body art in the same placement, then an avatar. Image overlap is intentional and has no collision rule. Missing art never removes a contestant. Pause, seeking and reduced motion derive from canonical before/after boards. Old games use this scene with absent speech/thinking omitted. Production source snapshots v4 attach speeches to decision moments; frozen v3 snapshots retain their existing source identities.

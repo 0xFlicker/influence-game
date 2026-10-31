@@ -113,3 +113,22 @@ for (const scenarioId of FORMAT_KERNEL_VIEWER_SCENARIO_IDS.filter(id => !id.star
     expect(compilePresentation({...settings,selectedIds:[openingId],music:false}).audio.clips).toEqual([]);
   });
 }
+
+test.each([3, 4] as const)("Safety Bounce production snapshot v%s retains its own speech identities", async projectionVersion => {
+  const fixture = createFormatKernelViewerScenario("safety_bounce_tie");
+  const players = fixture.roster.map(player => ({...player, persona:"",status:"alive" as const,shielded:false}));
+  const frames: GameWatchReplayFrame[] = fixture.decisions.map(event => ({schemaVersion:3,gameId:"g",slug:"g",sequence:event.sequence,eventType:event.type,timestamp:Date.parse(event.timestamp),round:event.round,phase:event.phase ?? "INIT",players,viewerDecisionEvent:event,counts:{totalPlayers:4,alivePlayers:4,eliminatedPlayers:0,unknownPlayers:0}}));
+  const messages: TranscriptEntry[] = fixture.decisions.flatMap((event,index) => {
+    const actorId = event.type === "format.safety_bounce_pointer" ? event.payload.actorId : event.type === "format.resolved" ? event.payload.tiebreakerId : null;
+    if (!actorId) return [];
+    return [{id:index+1,entrySequence:index+1,firstDurableEventSequence:event.sequence,gameId:"g",round:event.round,phase:event.phase ?? "INIT",scope:"public",fromPlayerId:actorId,fromPlayerName:actorId,toPlayerIds:null,text:`Accepted public reason ${index}.`,thinking:`Accepted private thinking ${index}.`,timestamp:Date.parse(event.timestamp),decisionSpeech:{actorId,action:event.type === "format.safety_bounce_pointer" ? "bounce-pointer" : "format-tiebreak"}}];
+  });
+  const source: Extract<ReplaySource,{kind:"influence"}> = {kind:"influence",projectionVersion,game:{id:"g",slug:"g",status:"completed",gameKernel:"format",players},messages,frames,thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[]}};
+  const sources = buildInfluenceProductionSources({gameId:"g",gameKernel:"format",transcripts:messages,frames,attachDecisionSpeech:projectionVersion !== 3});
+  const catalog = assembleProductionCatalog({gameId:"g",gameKind:"influence",audience:"public",sources});
+  const bound = await bindInfluenceProductionPresentation({source,catalog,thoughts:[]});
+  expect(bound.length).toBeGreaterThan(0);
+  const cues = buildExportCues(source);
+  for (const message of messages) expect(cues.filter(cue => cue.speech?.text === message.text)).toHaveLength(1);
+  expect(catalog.moments.filter(moment => moment.source.kind === "influence-transcript" && moment.kind !== "thinking")).toHaveLength(projectionVersion === 3 ? messages.length : 0);
+});

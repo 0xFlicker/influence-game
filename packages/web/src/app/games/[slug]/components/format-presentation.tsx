@@ -97,8 +97,8 @@ export function FormatPresentation({
     );
   }
 
-  if (cue.kind.startsWith("two_names_")) {
-    return <TwoNamesStage cue={cue as Parameters<typeof TwoNamesStage>[0]["cue"]} roster={roster} currentStateEntry={currentStateEntry} />;
+  if (cue.kind === "two_names_empowered_intro" || cue.kind === "two_names_initial_names" || cue.kind === "two_names_override_draw" || cue.kind === "two_names_mingle_complete" || cue.kind === "two_names_override_declined" || cue.kind === "two_names_override_removed" || cue.kind === "two_names_replacement" || cue.kind === "two_names_plea") {
+    return <TwoNamesStage cue={cue} roster={roster} currentStateEntry={currentStateEntry} />;
   }
 
   if ((cue.kind === "format_aggregate" || cue.kind === "format_roll_call") && cue.after.activeFormatId === "two_names") {
@@ -177,7 +177,8 @@ export function FormatPresentation({
     );
   }
 
-  return null;
+  const unhandled: never = cue;
+  throw new Error(`Unsupported format presentation cue: ${JSON.stringify(unhandled)}`);
 }
 
 function PresentationShell({

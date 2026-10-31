@@ -868,3 +868,6 @@ Claude selections for new games use native Haiku/Sonnet/Opus 5.5 or Fable 5.1.
 Migration `0140_native_claude_selections` upgrades mutable preferences and waiting
 games; frozen games and private provider evidence retain their original routes.
 See [native Anthropic](docs/native-anthropic.md) for cutover details.
+
+
+Safety Bounce viewer regression checks: run `bun test ./packages/web/src/__tests__/safety-bounce-presentation.test.ts`, then `bun run test:e2e:format-viewer`. Catalog additions require a shared fixture and explicit canonical/viewer event ownership. Verify actual speech text, thinking-before-speech and target-after-speech, not just a nonempty renderer. Preserve old game fixtures. Use Bun, no `as any`, and direct House calls.

@@ -883,3 +883,12 @@ Claude selections for new games use native Haiku/Sonnet/Opus 5.5 or Fable 5.1.
 Migration `0140_native_claude_selections` upgrades mutable preferences and waiting
 games; frozen games and private provider evidence retain their original routes.
 See [native Anthropic](native-anthropic.md) for cutover details.
+
+
+### Safety Bounce speech and lifecycle revisions
+
+New Influence games freeze root `gameSchemaVersion: 2` and decision contract v3. Safety Bounce commits its starter draw and each public pointer separately before Format Mingle. The complete Safe/Vulnerable pools and the contestant's own status are present before the first Mingle turn. Sealed ballots follow Mingle; an empowered tiebreak requests private thinking and public speech before its structured choice. Public decision speeches enter the normal durable dialogue record: recent speech remains required under the existing context policy, and older speech remains eligible for authorized recall. No memory write is forced.
+
+Ballots request a private explanation to the House in **one sentence or less**, within the shared 320-byte speech allowance, without a thinking field. These explanations stay out of contestant dialogue and appear only at their canonical spectator reveal. Continue retaining structured thinking, available native reasoning and sanitized attempts; do not parse speech into game facts, use `as any`, or bypass direct House calls.
+
+Unversioned/root-v1 games retain their original execution order and remain viewable. Their chain scenes skip missing speech/thinking. New-root playback checks event ownership and speech consumption; unsupported records stop playback with a diagnostic rather than producing a generic event card. This does not stop the game.

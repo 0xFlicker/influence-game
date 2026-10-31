@@ -284,7 +284,7 @@ test("Influence decisions use solo full bodies or avatars, backgrounds, and acti
       const beat = visualWatchPresentation({ ...data, fullBodies }, null, spoken, [player]).beat!;
       expect(beat).toMatchObject({ kind: "portrait", purpose: "Decision", speech: { text: spoken.text }, player: { avatarUrl: "/frozen.png", fullBodyReferenceUrl: fullBodies.a } });
       expect(influenceRoomBackground(beat)).toBe(action === "format-pick" ? INFLUENCE_ROOMS.empower : INFLUENCE_ROOMS.council);
-      expect(influenceThinkingActor(null, beat)).toBe(["format-pick", "format-tiebreak"].includes(action) ? null : "a");
+      expect(influenceThinkingActor(null, beat)).toBe(["format-pick"].includes(action) ? null : "a");
     }
   }
 });

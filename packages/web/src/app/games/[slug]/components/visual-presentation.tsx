@@ -11,6 +11,7 @@ import { TimedSpeech } from "./timed-speech";
 import { HouseSegment } from "./house-segment";
 import { VisualSceneView, type VisualSpeech } from "./visual-scene-view";
 import { SCENE_SPEECH_START_MS, sceneSpeechOpacity } from "./scene-speech-timing";
+import { SafetyChain, type SafetyChainBeat } from "./safety-chain";
 import { SafetyBounceScene } from "./safety-bounce-scene";
 import type { SafetyBounceSceneBeat } from "./safety-bounce-scene-model";
 import { WinnerScene, type WinnerSceneBeat } from "./winner-scene";
@@ -23,6 +24,7 @@ import type { FormatPresentationRosterPlayer } from "./types";
 
 /** Constructed from accepted dialogue or structured ballot facts at their reveal cue. */
 export type VisualPresentationBeat =
+  | SafetyChainBeat
   | NomineeSelectionBeat
   | SafetyBounceSceneBeat
   | WinnerSceneBeat
@@ -89,7 +91,9 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   const mingleRooms = rooms.filter((room) => room.roomId.startsWith("mingle-"));
   const backgroundUrl = influenceRoomBackground(beat, voteLedger);
   let content;
-  if (beat.kind === "nominee-selection") {
+  if (beat.kind === "safety-chain") {
+    content = <SafetyChain key={beat.cue.key} beat={beat} elapsedMs={clockElapsedMs} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} controlsInset={controlsInset} />;
+  } else if (beat.kind === "nominee-selection") {
     content = <NomineeSelection beat={beat} elapsedMs={clockElapsedMs} reducedMotion={reducedMotion} />;
   } else if (beat.kind === "winner") {
     content = <WinnerScene beat={beat} fullscreen={fullscreen} controlsInset={controlsInset} />;
@@ -123,7 +127,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
       </div>
     </div>;
   }
-  return <div className={`w-full text-white ${(beat.kind !== "anonymous" || fullscreen) ? "flex min-h-0 flex-1 flex-col" : ""}`}>
+  return <div data-presentation-current-entry={currentStateEntry || undefined} className={`w-full text-white ${(beat.kind !== "anonymous" || fullscreen) ? "flex min-h-0 flex-1 flex-col" : ""}`}>
     {content}
     {status && <p role="status" className="mt-3 shrink-0 text-center text-sm text-white/60">{status === "preparing" ? "Preparing the next scene…" : "Using portraits for this scene."}</p>}
   </div>;

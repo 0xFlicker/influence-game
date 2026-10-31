@@ -106,7 +106,7 @@ export async function loadProductionReplaySource(read:ReadReplayJson,input:Produ
     }
     if (!game || !visual) throw new Error("Missing Influence production source");
     if (frames.length !== snapshot!.throughEventSequence) throw new Error("Influence canonical source history is incomplete");
-    source = {kind:"influence",game,messages,frames,visual:{...visual,scenes,bindings},thoughts:{}};
+    source = {kind:"influence",projectionVersion: (snapshot as {projectionVersion?: 3 | 4}).projectionVersion,game,messages,frames,visual:{...visual,scenes,bindings},thoughts:{}};
   }
   if (!snapshot) throw new Error("Missing fixed source snapshot");
   return {snapshot,status,title,source,catalog:{gameId:input.gameId,gameKind:input.gameKind,audience:input.audience,moments:[...moments.values()],...(werewolfCatalogVersion !== undefined && {werewolfCatalogVersion}),...(werewolfLegacyPassThoughts && {werewolfLegacyPassThoughts})},

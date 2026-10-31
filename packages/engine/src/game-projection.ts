@@ -1,4 +1,5 @@
 import { resolveEmpowerRevoteVersion, type EmpowerRevoteVersion } from "./empower-revote-rules";
+import { resolveInfluenceGameSchemaVersion, type InfluenceGameSchemaVersion } from "./influence-game-schema";
 import {
   decodeLegacyAllianceHuddleOutcomeV1,
   withParticipantSnapshotFromSession,
@@ -57,6 +58,7 @@ export interface CanonicalGameProjection {
   players: Record<UUID, ProjectedPlayer>;
   formatManifest: LaunchFormatId[];
   empowerRevoteVersion: EmpowerRevoteVersion;
+  gameSchemaVersion?: InfluenceGameSchemaVersion;
   currentVoteTally: VoteTally;
   currentCouncilTally: CouncilVoteTally;
   empoweredId: UUID | null;
@@ -254,6 +256,9 @@ export function applyCanonicalEvent(
     }
     case "game.roster_initialized": {
       projection.empowerRevoteVersion = resolveEmpowerRevoteVersion(event.payload.empowerRevoteVersion);
+      // Historical checkpoint hashes include this exact projection document.
+      // An absent root field must stay absent when replaying old events.
+      if (event.payload.gameSchemaVersion !== undefined) projection.gameSchemaVersion = resolveInfluenceGameSchemaVersion(event.payload.gameSchemaVersion);
       projection.formatManifest = event.payload.formatManifest === undefined
         ? [...LEGACY_FORMAT_MANIFEST]
         : resolveFormatManifest(event.payload.formatManifest);

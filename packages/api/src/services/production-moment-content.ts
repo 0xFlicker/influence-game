@@ -30,10 +30,17 @@ export function productionMomentContent(source:EditorialSource,moment:Production
   const frame=ref.kind === "influence-event" ? source.frames.find(row=>row.sequence===ref.eventSequence):undefined;
   const presentation=moment.part.kind === "influence-presentation" ? moment.part.presentation:null;
   const action=presentation?.kind === "empower_ballot" ? presentation.revote ? "empower-revote":"vote"
+    : presentation?.kind === "safety_bounce_pointer" ? "bounce-pointer"
+    : presentation?.kind === "format_tiebreak" ? frame?.viewerDecisionEvent?.type === "format.resolved" && frame.viewerDecisionEvent.payload.formatId === "two_names" ? "format-two-names-tiebreak" : "format-tiebreak"
     : presentation?.kind === "format_roll_call" ? "format-ballot"
     : presentation?.kind === "endgame_ballot" ? frame?.phase === "JURY_VOTE" ? "jury-vote" : presentation.juryTiebreaker ? "tribunal-jury-tiebreaker-vote":"endgame-elimination-vote":null;
   let message=ref.kind === "influence-transcript" ? source.messages.find(row=>String(row.id)===ref.transcriptId)
     : action ? source.messages.find(row=>row.round===frame?.round && row.decisionSpeech?.actorId===moment.actorId && row.decisionSpeech?.action===action):undefined;
+  if (!message && moment.kind === "thinking" && frame?.viewerDecisionEvent) {
+    const event = frame.viewerDecisionEvent;
+    const actions = event.type === "format.safety_bounce_pointer" ? ["bounce-pointer"] : event.type === "format.resolved" && event.payload.tiebreakerId === moment.actorId ? ["format-tiebreak", "format-two-names-tiebreak"] : [];
+    message = source.messages.find(row => row.round === frame.round && row.decisionSpeech && row.decisionSpeech.actorId === moment.actorId && actions.includes(row.decisionSpeech.action));
+  }
   const original=message;
   if (message?.acceptedBallot && moment.kind !== "thinking") {
     const ballot=message.acceptedBallot,receipt=message.entrySequence;
@@ -41,8 +48,8 @@ export function productionMomentContent(source:EditorialSource,moment:Production
   }
   const event=frame?.viewerDecisionEvent;
   const text=moment.kind === "thinking" ? ref.kind === "influence-event"
-    ? source.acceptedThoughts.find(row=>row.eventSequence===ref.eventSequence && row.actorId===moment.actorId)?.thinking : message?.thinking
+    ? source.acceptedThoughts.find(row=>row.eventSequence===ref.eventSequence && row.actorId===moment.actorId)?.thinking ?? message?.thinking : message?.thinking
     : event?.type === "format.two_names_plea_recorded" && presentation?.kind === "two_names_plea" && event.payload.status === "accepted" ? event.payload.text
-    : ["speech","scene","ballot"].includes(moment.kind) ? message?.text:undefined;
+    : ["speech","scene","ballot","action"].includes(moment.kind) ? message?.text:undefined;
   return {text:text?.trim() ? text:null,actorName:source.game.players.find(row=>row.id===moment.actorId)?.name ?? null,speakerId:moment.actorId ?? null};
 }

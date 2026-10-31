@@ -232,6 +232,7 @@ export function createGameRoutes(db: DrizzleDB) {
       formatManifest: frozenFormatManifest,
       empowerRevoteVersion: CURRENT_EMPOWER_REVOTE_VERSION,
       decisionContractVersion: CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION,
+      gameSchemaVersion: 2,
     };
 
     const gameId = randomUUID();
@@ -341,6 +342,7 @@ export function createGameRoutes(db: DrizzleDB) {
       visualPaused: game.status === "suspended" && Boolean(config.visualPause),
           formatManifest,
           empowerRevoteVersion: resolveEmpowerRevoteVersion(config.empowerRevoteVersion),
+          gameSchemaVersion: config.gameSchemaVersion ?? 1,
           trackType: game.trackType,
           seasonId: game.seasonId ?? undefined,
           season: game.seasonId ? seasonById.get(game.seasonId) : undefined,
@@ -434,6 +436,7 @@ export function createGameRoutes(db: DrizzleDB) {
       visualPaused: game.status === "suspended" && Boolean(config.visualPause),
       formatManifest,
       empowerRevoteVersion: resolveEmpowerRevoteVersion(config.empowerRevoteVersion),
+      gameSchemaVersion: config.gameSchemaVersion ?? 1,
       seasonId: game.seasonId ?? undefined,
       season: competition
         ? {

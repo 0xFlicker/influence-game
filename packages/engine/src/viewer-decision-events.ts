@@ -28,6 +28,7 @@ export interface ViewerDecisionEventBase<
   round: number;
   phase: Phase | null;
   type: TType;
+  publicDecisionSpeech?: Array<{actorId: string; action: string}>;
   payload: TPayload;
 }
 
@@ -173,34 +174,68 @@ export type ViewerDecisionEvent =
       }
     >;
 
-const VIEWER_DECISION_EVENT_TYPES = new Set<string>([
-  "endgame.elimination_resolved",
-  "jury.winner_determined",
-  "game.phase_entered",
-  "player.eliminated",
-  "vote.cast",
-  "vote.empower_tally_resolved",
-  "vote.empower_revote_cast",
-  "vote.empower_vote_cleared",
-  "vote.empowered_set",
-  "format.menu_offered",
-  "format.selected",
-  "format.two_names_setup",
-  "format.two_names_mingle_completed",
-  "format.two_names_override_declined",
-  "format.two_names_override_used",
-  "format.two_names_replacement_named",
-  "format.two_names_plea_recorded",
-  "format.ballot_cast",
-  "format.ballot_forfeited",
-  "format.safety_bounce_started",
-  "format.safety_bounce_pointer",
-  "format.resolved",
-  "power.action_set",
-  "power.candidates_resolved",
-  "council.vote_cast",
-  "council.elimination_resolved",
-]);
+/** Exhaustive canonical ownership: new event types cannot silently disappear from playback.
+ * Non-viewer facts remain in their existing authorized state, media, or dialogue lane. */
+export const CANONICAL_PRESENTATION_OWNERS = {
+  "retrospective.started": "transcript: retrospective",
+  "retrospective.statement_recorded": "transcript: retrospective",
+  "retrospective.completed": "transcript: retrospective",
+  "game.roster_initialized": "state: frozen roster",
+  "game.phase_entered": "viewer decision",
+  "round.started": "state: round results and boundary",
+  "shields.expired": "state: shield expiry",
+  "visual.operation_recorded": "media: accepted visual cue",
+  "visual.cue_recorded": "media: accepted visual cue",
+  "mingle.rooms_allocated": "state: room allocation and coordination",
+  "mingle.coordination_receipt_recorded": "state: room allocation and coordination",
+  "vote.cast": "viewer decision",
+  "vote.empower_tally_resolved": "viewer decision",
+  "vote.empower_revote_cast": "viewer decision",
+  "vote.empower_vote_cleared": "viewer decision",
+  "vote.empowered_set": "viewer decision",
+  "format.menu_offered": "viewer decision",
+  "format.selected": "viewer decision",
+  "format.two_names_setup": "viewer decision",
+  "format.two_names_mingle_completed": "viewer decision",
+  "format.two_names_override_declined": "viewer decision",
+  "format.two_names_override_used": "viewer decision",
+  "format.two_names_replacement_named": "viewer decision",
+  "format.two_names_plea_recorded": "viewer decision",
+  "format.ballot_cast": "viewer decision",
+  "format.ballot_forfeited": "viewer decision",
+  "format.safety_bounce_started": "viewer decision",
+  "format.safety_bounce_pointer": "viewer decision",
+  "format.resolved": "viewer decision",
+  "power.action_set": "viewer decision",
+  "power.candidates_resolved": "viewer decision",
+  "alliance.proposal_submitted": "authorized alliance state and dialogue",
+  "alliance.response_recorded": "authorized alliance state and dialogue",
+  "alliance.counter_submitted": "authorized alliance state and dialogue",
+  "alliance.activated": "authorized alliance state and dialogue",
+  "alliance.amendment_resolved": "authorized alliance state and dialogue",
+  "alliance.proposal_expired": "authorized alliance state and dialogue",
+  "alliance.closed": "authorized alliance state and dialogue",
+  "alliance.archived": "authorized alliance state and dialogue",
+  "alliance.huddle_scheduled": "authorized alliance state and dialogue",
+  "alliance.huddle_skipped": "authorized alliance state and dialogue",
+  "alliance.huddle_completed": "authorized alliance state and dialogue",
+  "alliance.huddle_outcome_recorded": "authorized alliance state and dialogue",
+  "council.vote_cast": "viewer decision",
+  "council.elimination_resolved": "viewer decision",
+  "player.last_message_recorded": "transcript: accepted farewell",
+  "player.eliminated": "viewer decision",
+  "player.elimination_message_recorded": "transcript: accepted farewell",
+  "endgame.stage_set": "state: endgame stage and sealed receipts",
+  "endgame.elimination_vote_cast": "state: endgame stage and sealed receipts",
+  "endgame.elimination_resolved": "viewer decision",
+  "jury.vote_cast": "sealed receipt: jury reveal at result",
+  "jury.winner_determined": "viewer decision",
+  "judgment.speech_recorded": "transcript: judgment speech",
+  "endgame.speech_recorded": "state: endgame stage and sealed receipts",
+  "round.result_recorded": "state: round results and boundary",
+} satisfies Record<CanonicalGameEvent["type"], string>;
+
+
 
 export type ViewerFormatResolutionPayload = {
   formatId: LaunchFormatId;
@@ -254,7 +289,7 @@ export interface ProjectFormatBallotPresentationOptions {
 export function projectViewerDecisionEvent(
   event: CanonicalGameEvent,
 ): ViewerDecisionEvent | null {
-  if (!VIEWER_DECISION_EVENT_TYPES.has(event.type)) return null;
+  if (CANONICAL_PRESENTATION_OWNERS[event.type] !== "viewer decision") return null;
   const base = viewerEventBase(event);
 
   switch (event.type) {
@@ -464,7 +499,7 @@ export function projectViewerDecisionEvent(
         },
       };
     default:
-      return null;
+      throw new Error(`Viewer decision has no projector: ${event.type}`);
   }
 }
 
@@ -474,6 +509,9 @@ function viewerEventBase(event: CanonicalGameEvent): Omit<ViewerDecisionEvent, "
     timestamp: event.timestamp,
     round: event.round,
     phase: event.phase,
+    ...(event.sourcePointers.some(pointer => pointer.kind === "agent_turn" && pointer.speechRequired && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(pointer.action ?? "")) && {
+      publicDecisionSpeech: event.sourcePointers.flatMap(pointer => pointer.kind === "agent_turn" && pointer.actorId && pointer.speechRequired && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(pointer.action ?? "") ? [{actorId: pointer.actorId, action: pointer.action!}] : []),
+    }),
   };
 }
 

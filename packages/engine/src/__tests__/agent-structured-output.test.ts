@@ -815,7 +815,7 @@ describe("Two Names agent decision surface", () => {
         },
         {
           toolName: "two_names_tiebreak",
-          args: { message: "Mira.", target: "Nyx", strategyDelta: null },
+          args: { thinking: "End the tie.", message: "Mira.", target: "Nyx", strategyDelta: null },
         },
       ]),
       "gpt-5-nano",
@@ -1828,6 +1828,7 @@ describe("InfluenceAgent structured output mode", () => {
         {
           toolName: "format_tiebreak",
           args: {
+            thinking: "End the tie.",
             message: "Mira.",
             target: "Vera",
             strategyDelta: "Break the tie against Vera.",
@@ -6836,7 +6837,7 @@ describe("Influence decision delivery boundary", () => {
     await expect(agent.getVotes(makeContext())).rejects.toBeInstanceOf(ProviderAttemptError);
   });
 
-  it.each(["x".repeat(121), "界".repeat(41)])("repairs clean ballot bytes while preserving the rejected decision: %s", async draft => {
+  it.each(["x".repeat(321), "界".repeat(107)])("repairs clean ballot bytes while preserving the rejected decision: %s", async draft => {
     const requests: Array<Record<string, unknown>> = [];
     const attempts: ProviderAttemptRecord[] = [];
     const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic",
@@ -6849,7 +6850,7 @@ describe("Influence decision delivery boundary", () => {
     agent.onGameStart("game-1", makeContext().alivePlayers);
     expect(await agent.getVotes(makeContext())).toMatchObject({ empowerTarget: "mira-id", decisionMessage: "Mira." });
     expect(attempts[0]?.lengthFeedback).toMatchObject({ field: "message", draft,
-      measured: Buffer.byteLength(draft, "utf8"), allowed: 120, unit: "utf8_bytes",
+      measured: Buffer.byteLength(draft, "utf8"), allowed: 320, unit: "utf8_bytes",
       rejectedDecision: { empower: "Mira", message: draft, strategyDelta: null },
     });
     const retry = JSON.stringify(requests[1]!.messages);
@@ -6858,7 +6859,7 @@ describe("Influence decision delivery boundary", () => {
     expect(retry).not.toContain(`<soft>${draft}</soft>`);
     expect(attempts[0]?.acceptedValue).toBeUndefined();
   });
-  for (const extra of [{}, { message: "" }, { message: "   " }, { message: "界".repeat(41) }, { message: "Mira", thinking: "Unrequested thought" }, { message: "Mira", extra: true }]) {
+  for (const extra of [{}, { message: "" }, { message: "   " }, { message: "界".repeat(107) }, { message: "Mira", thinking: "Unrequested thought" }, { message: "Mira", extra: true }]) {
     it(`rejects invalid ballot speech before acceptance: ${JSON.stringify(extra)}`, async () => {
       const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic",
         makeToolOpenAIStub([], "cast_votes", { empower: "Mira", strategyDelta: null, ...extra }),
@@ -6892,4 +6893,22 @@ it("keeps annotated jury speech private while accepting clean dialogue and think
   expect(JSON.stringify(records[0]!.rawResponse)).toContain("<emphasis>");
   const messages = requests[0]!.messages as Array<{ role: string; content: string }>;
   expect(messages.find(message => message.role === "system")?.content).toContain("Prefer <higher-pitch>");
+});
+
+it.each([true, false])("puts the complete Safety Bounce board and personal status in the pre-Mingle prompt (safe=%s)", async safe => {
+  const requests: Array<Record<string, unknown>> = [];
+  const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", makeToolOpenAIStub(requests, "safety_bounce_vote", {target:"Mira",message:"Mira, because her alliance controls the next round.",strategyDelta:null}), "gpt-5-nano");
+  const ctx = {...makeContext(Phase.FORMAT_MINGLE), formatPressure: {
+    empoweredId:"vera-id",empoweredName:"Vera",ruleSheetSummary:ruleSheetForFormat("safety_bounce"),offeredFormats:["safety_bounce"] as ["safety_bounce"],selectedFormat:"safety_bounce" as const,
+    bounceBoard:{safe:safe ? ["atlas-id","vera-id"] : ["vera-id"],vulnerable:safe ? ["mira-id"] : ["atlas-id","mira-id"],unclassified:[],nextActorId:null},
+  }};
+  // Include two vulnerable seats so the guidance describes a ballot, not auto-exit.
+  if (safe) {ctx.formatPressure.bounceBoard.safe = ["atlas-id"];ctx.formatPressure.bounceBoard.vulnerable = ["mira-id","vera-id"];}
+  agent.onGameStart(ctx.gameId, ctx.alivePlayers);
+  await agent.getSafetyBounceVote(ctx, ctx.formatPressure.bounceBoard.vulnerable);
+  const prompt = JSON.stringify(requests[0]!.messages);
+  expect(prompt).toContain("Safety Bounce board");
+  expect(prompt).toContain("Safe:");
+  expect(prompt).toContain("Vulnerable:");
+  expect(prompt).toContain(safe ? "You are safe from elimination this round" : "You are vulnerable and can exit this round");
 });
