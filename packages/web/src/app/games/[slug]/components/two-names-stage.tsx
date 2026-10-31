@@ -61,7 +61,7 @@ export function TwoNamesStage({
 
         {cue.kind === "two_names_initial_names" ? (
           <div className="flex min-h-0 w-full flex-1 flex-col">
-            <p className="mb-4 shrink-0 text-center text-sm font-medium tracking-wide text-white/65">
+            <p className="mb-4 shrink-0 text-center text-xl font-semibold tracking-wide text-white/90 md:text-3xl">
               {name(cue.empoweredId, roster)} nominates:
             </p>
             <DossierPair ids={cue.nomineeIds} roster={roster} reveal />
@@ -82,7 +82,7 @@ export function TwoNamesStage({
 
         {cue.kind === "two_names_override_declined" ? (
           <div className="flex min-h-0 w-full flex-1 flex-col text-center">
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#a68cff]">Override declined</p>
+            <p className="text-xl font-semibold uppercase tracking-[0.12em] text-[#a68cff] md:text-3xl">Override declined</p>
             <h2 className="mt-4 font-serif text-3xl md:text-5xl">
               {name(cue.overrideHolderId, roster)} leaves the names untouched
             </h2>
@@ -92,7 +92,7 @@ export function TwoNamesStage({
 
         {cue.kind === "two_names_override_removed" && facts?.initialNomineeIds ? (
           <div className="flex min-h-0 w-full flex-1 flex-col">
-            <p className="mb-4 shrink-0 text-center text-xs font-semibold uppercase tracking-[0.3em] text-[#a68cff]">Override used</p>
+            <p className="mb-4 shrink-0 text-center text-xl font-semibold uppercase tracking-[0.12em] text-[#a68cff] md:text-3xl">Override used</p>
             <DossierPair
               ids={facts.initialNomineeIds}
               roster={roster}
@@ -103,7 +103,7 @@ export function TwoNamesStage({
 
         {cue.kind === "two_names_replacement" ? (
           <div className="flex min-h-0 w-full flex-1 flex-col">
-            <p className="mb-4 shrink-0 text-center text-sm text-white/60">
+            <p className="mb-4 shrink-0 text-center text-xl font-semibold tracking-wide text-white/90 md:text-3xl">
               {name(cue.empoweredId, roster)} nominates:
             </p>
             <DossierPair
@@ -203,7 +203,7 @@ function PortraitReveal({ player: source, label, tone }: {
 }) {
   return (
     <div data-two-names-reveal="portrait" className="flex min-h-0 w-full flex-1 flex-col text-center">
-      <p className={`mb-4 shrink-0 text-xs font-semibold uppercase tracking-[0.34em] ${tone === "gold" ? "text-[#e7bd70]" : "text-[#a68cff]"}`}>{label}</p>
+      <p className={`mb-4 shrink-0 text-xl font-semibold uppercase tracking-[0.16em] md:text-3xl ${tone === "gold" ? "text-[#e7bd70]" : "text-[#a68cff]"}`}>{label}</p>
       <CharacterArt player={source} prominent />
       <h2 className="mt-3 shrink-0 font-serif text-3xl md:text-5xl" title={source.name}>{source.name}</h2>
     </div>
