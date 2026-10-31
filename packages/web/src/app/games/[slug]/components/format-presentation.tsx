@@ -13,10 +13,12 @@ export function FormatPresentation({
   cue,
   roster,
   currentStateEntry,
+  controlsInset = 0,
 }: {
   cue: FormatPresentationCue;
   roster: readonly FormatPresentationRosterPlayer[];
   currentStateEntry: boolean;
+  controlsInset?: number;
 }) {
   if (cue.kind === "empowered_tally" || cue.kind === "empowered_tie") {
     return (
@@ -98,7 +100,7 @@ export function FormatPresentation({
   }
 
   if (cue.kind === "two_names_empowered_intro" || cue.kind === "two_names_initial_names" || cue.kind === "two_names_override_draw" || cue.kind === "two_names_mingle_complete" || cue.kind === "two_names_override_declined" || cue.kind === "two_names_override_removed" || cue.kind === "two_names_replacement" || cue.kind === "two_names_plea") {
-    return <TwoNamesStage cue={cue} roster={roster} currentStateEntry={currentStateEntry} />;
+    return <TwoNamesStage cue={cue} roster={roster} currentStateEntry={currentStateEntry} controlsInset={controlsInset} />;
   }
 
   if ((cue.kind === "format_aggregate" || cue.kind === "format_roll_call") && cue.after.activeFormatId === "two_names") {

@@ -195,3 +195,13 @@ Two Names verification:
 - Coverage includes absent historical deliveries, pinned v3/v4 snapshots, v5 speech ownership, same/different empowered and override actors, required-speech projection, missing/ambiguous/unconsumed delivery failures, live-prefix buffering, and speech before result reveal.
 - `bun run test:postgres`: **2,281 passed, 0 failed** across 206 files, including the new production-content test.
 - Final `bun run check`: typechecking and lint passed. Browser-generated Next configuration changes were removed; no deployment or paid simulation was performed.
+
+### Two Names artwork follow-through
+
+Role introductions and nominee/replacement reveals now consume the frozen full-body assets over the council-room background, including the reveal after a spoken decision. Compact role badges remain headshots. Missing or failed full-body images fall back to portraits, preserving old-game viewability. Desktop/mobile browser stories exercise all five reveal stages and failed-image fallback; the reported `bare-sand-nest` Empowered introduction was also checked against its actual transparent cutout locally.
+
+The adjacent thinking/speech beat also now receives the council-room background rather than falling back to the gray solo studio. Saved head calibration accompanies its cutout. The actual `bare-sand-nest` thinking frame was inspected locally, and the speech tests assert the room backdrop.
+
+The follow-up fullscreen review exposed the old fixed-width card wrapper. Two Names reveals now use the shared full-stage visual path, with side-by-side characters, labels below, no nested dossier borders, and reserved playback-control space. Desktop/mobile fullscreen tests assert stage width and height, in addition to image presence and historical fallback.
+
+Artwork/layout verification: provider-free baseline **3,174 passed, 5 skipped** after rerunning outside the port-restricted sandbox; final focused viewer/export tests **78 passed**; final Two Names browser run **11 passed**, including mobile/desktop fullscreen sizing, missing-art fallback, historical replay and both speech branches. `bun run check` passed. The new fullscreen assertions initially caught duplicated player-shell padding; the final run passed after removing it. No API or game-state behavior changed in this presentation-only follow-up.

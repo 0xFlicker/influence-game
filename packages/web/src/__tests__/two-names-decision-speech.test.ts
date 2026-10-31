@@ -27,14 +27,18 @@ for (const id of ["two_names_declined", "two_names_used_tie"] as const) test(`${
   expect(cues.filter(cue => cue.source === "classic")).toHaveLength(0);
   expect(cues.filter(cue => cue.decisionSpeechEntry)).toHaveLength(deliveries.length);
   for (const cue of cues.filter(cue => cue.decisionSpeechEntry)) {
-    const beat = visualWatchPresentation({enabled:false,status:null,portraits:{},scenes:[]},cue,null,players).beat!;
+    const fullBodies = Object.fromEntries(players.map(player => [player.id, `/cutouts/${player.id}.png`]));
+    const beat = visualWatchPresentation({enabled:false,status:null,portraits:{},fullBodies,scenes:[]},cue,null,players).beat!;
     expect(beat.kind).toBe("two-names-decision");
     expect(influenceThinkingActor(cue,beat)).toBe(cue.decisionSpeechEntry!.decisionSpeech!.actorId);
     const render = (elapsedMs:number,currentStateEntry=false) => renderToStaticMarkup(createElement(VisualPresentationFrame,{beat,rooms:[],elapsedMs,currentStateEntry}));
     const before = render(1000);
     expect(before).toContain("data-two-names-decision-speech");
+    expect(before).toContain('data-room-backdrop="/visual/influence/rooms-v1/council.jpg"');
+    expect(before).not.toContain("solo-studio-backdrop");
     expect(before).not.toContain("data-two-names-decision-reveal");
     expect(render(soloPresentationDurationMs(cue.spokenMessage!)+1)).toContain("data-two-names-decision-reveal");
+    expect(render(soloPresentationDurationMs(cue.spokenMessage!)+1)).toContain('data-two-names-art="full-body"');
     expect(render(0,true)).toContain("data-two-names-decision-reveal");
   }
   const required = compiled.cues.map(cue => {

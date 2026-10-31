@@ -17,6 +17,7 @@ export const INFLUENCE_ROOMS = {
 
 /** Select from structured room/ballot identity, never the displayed caption or speech. */
 export function influenceRoomBackground(beat: VisualPresentationBeat, ledger?: VoteLedgerState | null): string | undefined {
+  if (beat.kind === "two-names-decision") return INFLUENCE_ROOMS.council;
   if (beat.kind === "portrait-room") {
     return beat.roomNumber === null ? INFLUENCE_ROOMS.lobby
       : INFLUENCE_ROOMS.mingle[beat.roomNumber - 1] ?? INFLUENCE_ROOMS.lobby;

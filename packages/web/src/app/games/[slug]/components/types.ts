@@ -73,6 +73,7 @@ export interface FormatPresentationRosterPlayer {
   persona?: string;
   personaKey?: string;
   avatarUrl?: string;
+  fullBodyReferenceUrl?: string | null;
   currentAgent?: GamePlayer["currentAgent"];
   modelPreference?: GamePlayer["modelPreference"];
 }

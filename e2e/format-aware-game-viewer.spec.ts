@@ -2111,6 +2111,36 @@ test.describe("format-aware game viewer", () => {
     await expect(chain.locator("[data-chain-player]")).toHaveCount(4);
   });
 
+  for (const mobile of [false, true]) test(`Two Names uses full bodies for role and nominee reveals ${mobile ? "mobile" : "desktop"}`, async ({page}, testInfo) => {
+    await page.clock.install();
+    if (mobile) await page.setViewportSize({width:390,height:844});
+    const slug = "two-names-body-reveals";
+    await installDeterministicFormatGame(page,{slug,scenarioId:"two_names_used_tie",status:"completed"});
+    const fixture = createFormatKernelViewerScenario("two_names_used_tie");
+    await page.route("**/two-names-body.svg", route => route.fulfill({contentType:"image/svg+xml",body:'<svg xmlns="http://www.w3.org/2000/svg" width="200" height="600"><circle cx="100" cy="65" r="50" fill="#d8ad83"/><path d="M60 125h80l25 300-40 150h-20V420H95v155H75L35 425Z" fill="#907aca"/></svg>'}));
+    await page.route(`**/api/games/${slug}/visual`,route => route.fulfill({json:{enabled:false,status:null,scenes:[],portraits:{},fullBodies:Object.fromEntries(fixture.roster.map(player=>[player.id,"/two-names-body.svg"]))}}));
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page,"Pause replay");
+    await page.getByRole("button",{name:"Enter fullscreen",exact:true}).click();
+    for (const kind of ["two_names_empowered_intro","two_names_initial_names","two_names_override_draw","two_names_override_removed","two_names_replacement"]) {
+      const stage = page.locator(`[data-format-cue="${kind}"]`);
+      await advanceUntilVisible(page,stage,kind);
+      const stageSize = await stage.boundingBox();
+      expect(stageSize!.height).toBeGreaterThan(page.viewportSize()!.height * .7);
+      expect(stageSize!.width).toBeGreaterThan(page.viewportSize()!.width * .9);
+      await expect(stage.locator('[data-two-names-art="full-body"]')).toHaveCount(kind === "two_names_empowered_intro" || kind === "two_names_override_draw" ? 1 : 2);
+      await stage.screenshot({path:testInfo.outputPath(`${kind}-body.png`)});
+    }
+    // A failed cutout must still leave the historical decision watchable.
+    await page.route("**/two-names-body.svg",route => route.abort());
+    await page.reload();
+    await pauseAutoplay(page,"Pause replay");
+    const intro = page.locator('[data-format-cue="two_names_empowered_intro"]');
+    await advanceUntilVisible(page,intro,"portrait fallback intro");
+    await expect(intro.locator('[data-two-names-art="portrait"]')).toBeVisible();
+    await expect(intro).toContainText("Atlas");
+  });
+
   for (const scenarioId of ["two_names_declined", "two_names_used_tie"] as const) test(`Two Names ${scenarioId} speaks before nominations and override decisions`, async ({page}, testInfo) => {
     await page.clock.install();
     if (scenarioId === "two_names_declined") await page.setViewportSize({width:390,height:844});
@@ -2135,6 +2165,7 @@ test.describe("format-aware game viewer", () => {
       const speaking = page.locator(`[data-two-names-decision-speech="${action.kind}"]`);
       const reveal = page.locator(`[data-two-names-decision-reveal="${action.kind}"]`);
       await advanceUntilVisible(page,speaking.locator("[data-in-scene-thinking]"),`${action.kind} thinking`);
+      await expect(speaking.locator('[data-room-backdrop]')).toHaveAttribute("data-room-backdrop","/visual/influence/rooms-v1/council.jpg");
       await expect(reveal).toHaveCount(0);
       await advanceUntilVisible(page,speaking.locator("[data-speech-bubble]"),`${action.kind} speech`);
       await expect(speaking).toContainText("I choose trust");

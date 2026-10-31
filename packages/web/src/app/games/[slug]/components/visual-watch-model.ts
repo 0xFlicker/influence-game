@@ -81,11 +81,15 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
     return { rooms, beat };
   }
   if (cue?.source === "format") {
+    const twoNamesRoster = () => players.map(player => ({...player, avatarUrl:data.portraits[player.id] ?? player.avatarUrl, fullBodyReferenceUrl:data.fullBodies?.[player.id]}));
     if (twoNamesDecisionSpeechAction(cue.kind) && cue.decisionSpeechEntry) {
       const actor = players.find(player => player.id === cue.decisionSpeechEntry!.decisionSpeech!.actorId);
-      if (actor) return {rooms, beat: {kind:"two-names-decision", cue, roster:[...players],
-        player:{...actor, avatarUrl:data.portraits[actor.id] ?? actor.avatarUrl, fullBodyReferenceUrl:data.fullBodies?.[actor.id]},
+      if (actor) return {rooms, beat: {kind:"two-names-decision", cue, roster:twoNamesRoster(),
+        player:{...actor, avatarUrl:data.portraits[actor.id] ?? actor.avatarUrl, fullBodyReferenceUrl:data.fullBodies?.[actor.id], headRectangle:data.fullBodyHeads?.[actor.id]},
         speech:{id:cue.key,playerId:actor.id,speaker:actor.name,text:cue.decisionSpeechEntry.text}}};
+    }
+    if (twoNamesDecisionSpeechAction(cue.kind) || ["two_names_empowered_intro", "two_names_override_draw", "two_names_mingle_complete"].includes(cue.kind)) {
+      return {rooms, beat:{kind:"two-names-stage",cue,roster:twoNamesRoster()}};
     }
     if (cue.kind === "format_tiebreak" || cue.kind === "format_deciding_vote") {
       const chooser = players.find(player => player.id === cue.tiebreakerId);

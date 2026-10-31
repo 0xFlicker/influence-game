@@ -27,7 +27,8 @@ import type { FormatPresentationRosterPlayer } from "./types";
 
 /** Constructed from accepted dialogue or structured ballot facts at their reveal cue. */
 export type VisualPresentationBeat =
-  | {kind:"two-names-decision"; cue:FormatPresentationCue; roster:SafetyChainBeat["roster"]; player:SafetyChainBeat["roster"][number]; speech:VisualSpeech}
+  | {kind:"two-names-stage"; cue:FormatPresentationCue; roster:SafetyChainBeat["roster"]}
+  | {kind:"two-names-decision"; cue:FormatPresentationCue; roster:SafetyChainBeat["roster"]; player:SafetyChainBeat["roster"][number] & {headRectangle?: import("@influence/engine/character-portrait").HeadRectangle}; speech:VisualSpeech}
   | SafetyChainBeat
   | NomineeSelectionBeat
   | SafetyBounceSceneBeat
@@ -95,7 +96,9 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   const mingleRooms = rooms.filter((room) => room.roomId.startsWith("mingle-"));
   const backgroundUrl = influenceRoomBackground(beat, voteLedger);
   let content;
-  if (beat.kind === "two-names-decision") {
+  if (beat.kind === "two-names-stage") {
+    content = <FormatPresentation cue={beat.cue} roster={beat.roster} currentStateEntry={currentStateEntry} controlsInset={controlsInset} />;
+  } else if (beat.kind === "two-names-decision") {
     content = <TwoNamesDecision beat={beat} elapsedMs={clockElapsedMs} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} controlsInset={controlsInset} />;
   } else if (beat.kind === "safety-chain") {
     content = <SafetyChain key={beat.cue.key} beat={beat} elapsedMs={clockElapsedMs} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} controlsInset={controlsInset} />;
@@ -145,9 +148,9 @@ function TwoNamesDecision({beat, elapsedMs, currentStateEntry, reducedMotion, co
 }) {
   const thought = useSceneThinking();
   if (currentStateEntry || (!thought && elapsedMs >= soloPresentationDurationMs(beat.speech.text))) {
-    return <div className="flex min-h-0 flex-1 flex-col" data-two-names-decision-reveal={beat.cue.kind}><FormatPresentation cue={beat.cue} roster={beat.roster} currentStateEntry={currentStateEntry} /></div>;
+    return <div className="flex min-h-0 flex-1 flex-col" data-two-names-decision-reveal={beat.cue.kind}><FormatPresentation cue={beat.cue} roster={beat.roster} currentStateEntry={currentStateEntry} controlsInset={controlsInset} /></div>;
   }
   return <div data-two-names-decision-speech={beat.cue.kind} className="flex min-h-0 flex-1 flex-col">
-    <SoloPresentation beat={{kind:"portrait",purpose:"Decision",caption:"Two Names",player:beat.player,speech:beat.speech}} elapsedMs={elapsedMs} reducedMotion={reducedMotion} controlsInset={controlsInset} />
+    <SoloPresentation backgroundUrl={influenceRoomBackground(beat)} beat={{kind:"portrait",purpose:"Decision",caption:"Two Names",player:beat.player,speech:beat.speech}} elapsedMs={elapsedMs} reducedMotion={reducedMotion} controlsInset={controlsInset} />
   </div>;
 }

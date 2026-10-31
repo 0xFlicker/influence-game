@@ -492,7 +492,7 @@ function DramaticReplayTheater({
   const isEmpowerPresentation = formatCue?.kind === "empowered_tally" || formatCue?.kind === "empowered_tie";
   const usesFullHeightContent = Boolean(openingCue) || expanded || isEmpowerPresentation || formatCue?.kind === "two_names_plea" || visual.beat !== null;
   const isSoloPresentation = visual.beat?.kind === "portrait" || visual.beat?.kind === "nominee-selection";
-  const isRoomPresentation = visual.beat?.kind === "scene" || visual.beat?.kind === "portrait-room" || visual.beat?.kind === "safety-bounce" || visual.beat?.kind === "winner";
+  const isRoomPresentation = visual.beat?.kind === "scene" || visual.beat?.kind === "portrait-room" || visual.beat?.kind === "safety-bounce" || visual.beat?.kind === "winner" || visual.beat?.kind === "two-names-stage" || visual.beat?.kind === "two-names-decision";
   useEffect(() => {
     if (!scene || !onPlaybackStateChange) return;
     onPlaybackStateChange({
@@ -795,7 +795,7 @@ function DramaticReplayTheater({
             <div className={`min-h-0 flex-1 ${formatCue.kind === "two_names_plea" ? "h-full" : ""}`}>
               <FitPresentation enabled={expanded || isEmpowerPresentation}><FormatPresentation
                 cue={formatCue}
-                roster={formatRoster}
+                roster={formatRoster.map(player => ({...player, avatarUrl: visualData?.portraits[player.id] ?? player.avatarUrl, fullBodyReferenceUrl: visualData?.fullBodies?.[player.id]}))}
                 currentStateEntry={Boolean(
                   live
                   && directorSnapshot.hydrationWatermark !== null
