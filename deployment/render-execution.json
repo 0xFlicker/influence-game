@@ -6,7 +6,7 @@
       "network": "direct"
     },
     "staging": {
-      "mode": "local",
+      "mode": "remote",
       "network": "tailnet",
       "apiOrigin": "https://influence-staging.tail8a79ed.ts.net"
     }
