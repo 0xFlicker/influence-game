@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      proof_publication:
+        description: Publish only the exact staging-policy proof branch; never deploy or move staging tags
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -28,6 +33,9 @@ jobs:
 
       - name: Check character worker platform diagnostics
         run: python3 -m unittest discover -s workers/character-cutouts -p 'test_*.py'
+
+      - name: Check isolated proof publication source guards
+        run: python3 -m unittest discover -s scripts -p 'test_staging_proof_source.py'
 
       - name: Enforce release migration policy
         env:
@@ -178,7 +186,7 @@ jobs:
           '
 
   release-scope:
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    if: ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.proof_publication && startsWith(github.ref, 'refs/heads/proof/staging-render-') && github.repository_id == '1183905474' && github.actor_id == '97764360')
     runs-on: ubuntu-latest
     outputs:
       release_required: ${{ steps.scope.outputs.release_required }}
@@ -191,7 +199,16 @@ jobs:
         id: scope
         env:
           BASE_SHA: ${{ github.event.before }}
+          PROOF_PUBLICATION: ${{ inputs.proof_publication }}
         run: |
+          if [ "$PROOF_PUBLICATION" = true ]; then
+            [[ "$GITHUB_REF" == refs/heads/proof/staging-render-* ]]
+            # Use main's verifier, not code supplied by the proof branch.
+            git show origin/main:scripts/staging-proof-source.py > "$RUNNER_TEMP/proof-source.py"
+            python3 "$RUNNER_TEMP/proof-source.py" --candidate "$GITHUB_SHA" --output proof-source.json
+            echo "release_required=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             echo "release_required=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -216,7 +233,7 @@ jobs:
           fi
 
   docker-build-push:
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && needs.release-scope.outputs.release_required == 'true'
+    if: (((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && !inputs.proof_publication) || (github.event_name == 'workflow_dispatch' && inputs.proof_publication && startsWith(github.ref, 'refs/heads/proof/staging-render-') && github.repository_id == '1183905474' && github.actor_id == '97764360')) && needs.release-scope.outputs.release_required == 'true'
     needs: [check, release-scope]
     runs-on: ubuntu-latest
     permissions:
@@ -253,15 +270,27 @@ jobs:
 
       - name: Extract short SHA
         id: sha
-        run: echo "short=$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_OUTPUT"
+        env:
+          PROOF_PUBLICATION: ${{ inputs.proof_publication }}
+        run: |
+          if [ "$PROOF_PUBLICATION" = true ]; then
+            echo "short=render-proof-${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+          else
+            echo "short=$(echo "$GITHUB_SHA" | cut -c1-7)" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build and push ${{ matrix.target }}
         env:
           PRIVY_APP_ID: ${{ secrets.PRIVY_APP_ID }}
-          POSTHOG_PERSONAL_API_KEY: ${{ matrix.target == 'web' && secrets.POSTHOG_PERSONAL_API_KEY || '' }}
+          POSTHOG_PERSONAL_API_KEY: ${{ !inputs.proof_publication && matrix.target == 'web' && secrets.POSTHOG_PERSONAL_API_KEY || '' }}
+          PROOF_PUBLICATION: ${{ inputs.proof_publication }}
         run: |
           posthog_args=()
-          if [ "${{ matrix.target }}" = "web" ]; then
+          mutable_tag_args=()
+          if [ "$PROOF_PUBLICATION" != true ]; then
+            mutable_tag_args=(-t ${{ matrix.image }}:staging)
+          fi
+          if [ "${{ matrix.target }}" = "web" ] && [ "$PROOF_PUBLICATION" != true ]; then
             posthog_args=(--build-arg POSTHOG_UPLOAD_SOURCEMAPS=1 --secret id=posthog_api_key,env=POSTHOG_PERSONAL_API_KEY)
           fi
           docker build -f ${{ matrix.dockerfile }} \
@@ -269,7 +298,7 @@ jobs:
             "${posthog_args[@]}" \
             ${{ matrix.build_args }} \
             -t ${{ matrix.image }}:${{ steps.sha.outputs.short }} \
-            -t ${{ matrix.image }}:staging \
+            "${mutable_tag_args[@]}" \
             .
           if [ "${{ matrix.target }}" = "render-worker" ]; then
             docker run --rm --entrypoint sh ${{ matrix.image }}:${{ steps.sha.outputs.short }} -ec '
@@ -289,7 +318,9 @@ jobs:
             exit 1
           fi
           printf '%s\n' "$immutable_digest" > "${{ matrix.target }}.digest"
-          docker push ${{ matrix.image }}:staging
+          if [ "$PROOF_PUBLICATION" != true ]; then
+            docker push ${{ matrix.image }}:staging
+          fi
 
       - name: Upload ${{ matrix.target }} digest evidence
         uses: actions/upload-artifact@v6
@@ -301,7 +332,7 @@ jobs:
           overwrite: true
 
   release-manifest:
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    if: ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && !inputs.proof_publication) || (github.event_name == 'workflow_dispatch' && inputs.proof_publication && startsWith(github.ref, 'refs/heads/proof/staging-render-') && github.repository_id == '1183905474' && github.actor_id == '97764360')
     # Images may build in parallel, but only a fully verified candidate is releasable.
     needs: [check, provider-free, api-postgres, docker-build-push]
     runs-on: ubuntu-latest
@@ -399,7 +430,7 @@ jobs:
           retention-days: 14
 
   trigger-deploy:
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && !inputs.proof_publication
     needs: release-manifest
     runs-on: ubuntu-latest
     env:

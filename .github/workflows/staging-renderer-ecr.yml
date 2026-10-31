@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       source_run_id:
-        description: Successful main CI run containing the exact three-image release manifest
+        description: Successful main CI or independently verified isolated-proof publication run
         type: string
         required: true
       publish:
@@ -55,6 +55,11 @@ jobs:
         run: |
           [[ "$SOURCE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" > source-run.json
+          source_branch="$(python3 -c 'import json; print(json.load(open("source-run.json"))["head_branch"])')"
+          if [ "$source_branch" != main ]; then
+            python3 scripts/staging-proof-source.py --run-metadata source-run.json --output verified-proof-run.json
+            mv verified-proof-run.json source-run.json
+          fi
           artifact="$(python3 - <<'PY'
           import importlib.util, json
           spec = importlib.util.spec_from_file_location('mirror', 'scripts/staging-ecr-mirror.py')

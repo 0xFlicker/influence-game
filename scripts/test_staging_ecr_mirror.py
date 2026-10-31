@@ -24,6 +24,13 @@ class MirrorTests(unittest.TestCase):
         self.copied_digest = self.digest
         self.lifecycle = None
         self.mirror = m.Mirror('worker', '/private/test-auth', self.runner)
+    def test_proof_build_requires_independent_main_source_attestation(self):
+        run={'repository':{'id':1183905474},'path':'.github/workflows/ci.yml','head_branch':'proof/staging-render-one','conclusion':'success','event':'workflow_dispatch','head_sha':'a'*40,'id':123,'run_attempt':1,'actor':{'id':97764360}}
+        with self.assertRaises(ValueError):m.source_run('worker',run)
+        run['proofSource']={'purpose':'isolated-staging-render-proof','candidateSha':'a'*40,'baseSha':'b'*40,'policyFileSha256':'sha256:'+'c'*64}
+        self.assertEqual(m.source_run('worker',run),'a'*40)
+        for key,value in [('actor',{'id':1}),('event','push'),('head_branch','feature/other')]:
+            with self.assertRaises(ValueError):m.source_run('worker',{**run,key:value})
     def runner(self, argv, **kwargs):
         self.calls.append(argv)
         self.assertTrue(kwargs['capture_output'])

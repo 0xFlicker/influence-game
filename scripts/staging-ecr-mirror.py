@@ -35,9 +35,17 @@ def require(condition, message):
 
 def source_run(kind, run):
     selected = KINDS[kind]
+    proof = run.get('proofSource', {})
+    proof_branch = kind == 'worker' and re.fullmatch(r'proof/staging-render-[a-z0-9-]{1,60}', run.get('head_branch', ''))
+    if proof_branch:
+        require(run.get('event') == 'workflow_dispatch' and run.get('actor', {}).get('id') == 97764360
+                and proof.get('purpose') == 'isolated-staging-render-proof'
+                and proof.get('candidateSha') == run.get('head_sha')
+                and re.fullmatch(r'[a-f0-9]{40}', proof.get('baseSha', ''))
+                and DIGEST.fullmatch(proof.get('policyFileSha256', '')), 'proof source was not independently verified')
     require(run.get('repository', {}).get('id') == selected['repository_id'] and
             run.get('path', '').split('@')[0] == selected['workflow'] and
-            run.get('head_branch') == 'main' and run.get('conclusion') == 'success' and
+            (run.get('head_branch') == 'main' or proof_branch) and run.get('conclusion') == 'success' and
             run.get('event') in ['push', 'workflow_dispatch'], 'untrusted source workflow run')
     sha = run.get('head_sha', '')
     require(re.fullmatch(r'[a-f0-9]{40}', sha) is not None and type(run.get('id')) is int and run['id'] > 0 and type(run.get('run_attempt')) is int and run['run_attempt'] > 0, 'invalid source run identity')
