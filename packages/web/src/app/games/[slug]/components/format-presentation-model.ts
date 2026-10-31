@@ -1,3 +1,4 @@
+import {twoNamesDecisionSpeechAction} from "@influence/engine/influence-decision-speech";
 import {assertReplayFrameOwnership, assertViewerEventOwnership} from "./presentation-ownership";
 import { resolveEmpowerRevoteVersion, type EmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import type {
@@ -631,6 +632,7 @@ function applyDecision(input: {
         ...base,
         key: cueKey(gameId, decision.sequence, "two-names-nominees"),
         kind: "two_names_initial_names",
+        requiredDecisionSpeech: decision.publicDecisionSpeech?.find(speech => speech.action === twoNamesDecisionSpeechAction("two_names_initial_names")),
         baseDurationMs: FIXED_CUE_DURATION_MS.two_names_initial_names,
         empoweredId: decision.payload.empoweredId,
         nomineeIds: [...decision.payload.initialNomineeIds],
@@ -709,6 +711,7 @@ function applyDecision(input: {
         ...base,
         key: cueKey(gameId, decision.sequence, "two-names-override-declined"),
         kind: "two_names_override_declined",
+        requiredDecisionSpeech: decision.publicDecisionSpeech?.find(speech => speech.action === twoNamesDecisionSpeechAction("two_names_override_declined")),
         baseDurationMs: FIXED_CUE_DURATION_MS.two_names_override_declined,
         ...decision.payload,
         after: cloneSnapshot(snapshot),
@@ -740,6 +743,7 @@ function applyDecision(input: {
         ...base,
         key: cueKey(gameId, decision.sequence, "two-names-removed"),
         kind: "two_names_override_removed",
+        requiredDecisionSpeech: decision.publicDecisionSpeech?.find(speech => speech.action === twoNamesDecisionSpeechAction("two_names_override_removed")),
         baseDurationMs: FIXED_CUE_DURATION_MS.two_names_override_removed,
         ...decision.payload,
         after: cloneSnapshot(snapshot),
@@ -776,6 +780,7 @@ function applyDecision(input: {
         ...base,
         key: cueKey(gameId, decision.sequence, "two-names-replacement"),
         kind: "two_names_replacement",
+        requiredDecisionSpeech: decision.publicDecisionSpeech?.find(speech => speech.action === twoNamesDecisionSpeechAction("two_names_replacement")),
         baseDurationMs: FIXED_CUE_DURATION_MS.two_names_replacement,
         ...decision.payload,
         after: cloneSnapshot(snapshot),

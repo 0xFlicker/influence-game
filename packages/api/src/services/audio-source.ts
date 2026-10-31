@@ -1,3 +1,4 @@
+import {twoNamesDecisionSpeechAction, TWO_NAMES_PUBLIC_DECISION_ACTIONS} from "@influence/engine/influence-decision-speech";
 import {productionMomentContent} from "./production-moment-content.js";
 import { providerAcceptedDecisionId } from "@influence/engine";
 import {werewolfHouseSpeech, werewolfNightHouseSpeech} from "@influence/engine/werewolf/house-speech";
@@ -114,16 +115,17 @@ export async function readAudioSource(db: DrizzleDB | Parameters<Parameters<Driz
       const frame = ref.kind === "influence-event" ? source.frames.find(row => row.sequence === ref.eventSequence) : undefined;
       const presentation = moment.part.kind === "influence-presentation" ? moment.part.presentation : null;
       const action = presentation?.kind === "empower_ballot" ? presentation.revote ? "empower-revote" : "vote"
-        : presentation?.kind === "safety_bounce_pointer" ? "bounce-pointer"
+        : twoNamesDecisionSpeechAction(presentation?.kind ?? "") ?? (presentation?.kind === "safety_bounce_pointer" ? "bounce-pointer"
     : presentation?.kind === "format_tiebreak" ? frame?.viewerDecisionEvent?.type === "format.resolved" && frame.viewerDecisionEvent.payload.formatId === "two_names" ? "format-two-names-tiebreak" : "format-tiebreak"
     : presentation?.kind === "format_roll_call" ? "format-ballot"
-        : presentation?.kind === "endgame_ballot" ? frame?.phase === "JURY_VOTE" ? "jury-vote" : presentation.juryTiebreaker ? "tribunal-jury-tiebreaker-vote" : "endgame-elimination-vote" : null;
+        : presentation?.kind === "endgame_ballot" ? frame?.phase === "JURY_VOTE" ? "jury-vote" : presentation.juryTiebreaker ? "tribunal-jury-tiebreaker-vote" : "endgame-elimination-vote" : null);
       let message = ref.kind === "influence-transcript" ? source.messages.find(row => String(row.id) === ref.transcriptId)
         : action ? source.messages.find(row => row.round === frame?.round && row.decisionSpeech && row.decisionSpeech.actorId === moment.actorId && row.decisionSpeech?.action === action)
         : undefined;
       if (!message && moment.kind === "thinking" && frame?.viewerDecisionEvent) {
         const event = frame.viewerDecisionEvent;
-        const actions = event.type === "format.safety_bounce_pointer" ? ["bounce-pointer"] : event.type === "format.resolved" && event.payload.tiebreakerId === moment.actorId ? ["format-tiebreak", "format-two-names-tiebreak"] : [];
+        const twoNamesAction = twoNamesDecisionSpeechAction(event.type);
+        const actions = twoNamesAction ? [twoNamesAction] : event.type === "format.safety_bounce_pointer" ? ["bounce-pointer"] : event.type === "format.resolved" && event.payload.tiebreakerId === moment.actorId ? ["format-tiebreak", "format-two-names-tiebreak"] : [];
         message = source.messages.find(row => row.round === frame.round && row.decisionSpeech && row.decisionSpeech.actorId === moment.actorId && actions.includes(row.decisionSpeech.action));
       }
       const transcript = message;
@@ -143,7 +145,7 @@ export async function readAudioSource(db: DrizzleDB | Parameters<Parameters<Driz
       if (decisions.size === 1) decisionByMoment.set(moment.id, [...decisions][0]!);
       lines.push({ ...(message?.firstDurableEventSequence != null && {annotationSequence:message.firstDurableEventSequence}), momentId: moment.id, speakerId: moment.actorId ?? null, text,
         synthesisText: compileAudioDelivery(text, context).synthesisText, context,
-        watch: {public:{kind:"influence",...(ref.kind === "influence-transcript" ? {transcriptId:ref.transcriptId} : message?.decisionSpeech && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(message.decisionSpeech.action) ? {transcriptId:String(message.id), ...(message.entrySequence !== undefined && {entrySequence:message.entrySequence})} : {}),eventSequence:"eventSequence" in ref ? ref.eventSequence : message?.firstDurableEventSequence ?? 0,actorId:moment.actorId ?? null,part:context}},
+        watch: {public:{kind:"influence",...(ref.kind === "influence-transcript" ? {transcriptId:ref.transcriptId} : message?.decisionSpeech && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak", ...TWO_NAMES_PUBLIC_DECISION_ACTIONS].includes(message.decisionSpeech.action) ? {transcriptId:String(message.id), ...(message.entrySequence !== undefined && {entrySequence:message.entrySequence})} : {}),eventSequence:"eventSequence" in ref ? ref.eventSequence : message?.firstDurableEventSequence ?? 0,actorId:moment.actorId ?? null,part:context}},
         eventSequence: "eventSequence" in ref ? ref.eventSequence : message?.firstDurableEventSequence ?? 0, audiences: ["public"] });
     }
   }

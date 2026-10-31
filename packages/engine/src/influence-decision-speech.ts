@@ -53,3 +53,15 @@ export function validateDecisionSpeech(action: string, value: unknown, version: 
   if (!policy.thinking && Object.hasOwn(record, "thinking")) return "This decision requests speech only, not thinking.";
   return null;
 }
+
+/** Public Two Names decisions whose saved delivery precedes the canonical reveal. */
+export const TWO_NAMES_PUBLIC_DECISION_ACTIONS = ["format-two-names-initial-names", "format-two-names-override", "format-two-names-replacement"] as const;
+export function twoNamesDecisionSpeechAction(kind: string): string | null {
+  switch (kind) {
+    case "two_names_initial_names": case "format.two_names_setup": return TWO_NAMES_PUBLIC_DECISION_ACTIONS[0];
+    case "two_names_override_declined": case "two_names_override_removed":
+    case "format.two_names_override_declined": case "format.two_names_override_used": return TWO_NAMES_PUBLIC_DECISION_ACTIONS[1];
+    case "two_names_replacement": case "format.two_names_replacement_named": return TWO_NAMES_PUBLIC_DECISION_ACTIONS[2];
+    default: return null;
+  }
+}

@@ -186,7 +186,7 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
       game.players,
     scenes,
     game.gameSchemaVersion,
-    {attachDecisionSpeech: source.projectionVersion !== 3},
+    {attachDecisionSpeech: source.projectionVersion !== 3, attachTwoNamesSpeech: source.projectionVersion === undefined || source.projectionVersion >= 5},
   );
   const frameForSequence = compileReplayFrameLookup(frames);
   const lobbyMessages = compileSafetyBounceLobbyLookup(classic, scenes);

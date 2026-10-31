@@ -1,4 +1,4 @@
-import { decisionSpeechPolicy } from "@influence/engine/influence-decision-speech";
+import { decisionSpeechPolicy, twoNamesDecisionSpeechAction } from "@influence/engine/influence-decision-speech";
 import {voteSceneIdentity} from "./vote-ledger-model";
 import type { AcceptedVisualScene } from "@influence/engine/visual-mode";
 import type { GamePlayer, GameWatchReplayFrame, TranscriptEntry } from "@/lib/api";
@@ -81,6 +81,12 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
     return { rooms, beat };
   }
   if (cue?.source === "format") {
+    if (twoNamesDecisionSpeechAction(cue.kind) && cue.decisionSpeechEntry) {
+      const actor = players.find(player => player.id === cue.decisionSpeechEntry!.decisionSpeech!.actorId);
+      if (actor) return {rooms, beat: {kind:"two-names-decision", cue, roster:[...players],
+        player:{...actor, avatarUrl:data.portraits[actor.id] ?? actor.avatarUrl, fullBodyReferenceUrl:data.fullBodies?.[actor.id]},
+        speech:{id:cue.key,playerId:actor.id,speaker:actor.name,text:cue.decisionSpeechEntry.text}}};
+    }
     if (cue.kind === "format_tiebreak" || cue.kind === "format_deciding_vote") {
       const chooser = players.find(player => player.id === cue.tiebreakerId);
       const ids = cue.kind === "format_tiebreak" ? cue.tiedPlayerIds : cue.after.resolution?.tiedPlayerIds ?? [];

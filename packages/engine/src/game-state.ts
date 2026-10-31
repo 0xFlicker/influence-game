@@ -1,3 +1,4 @@
+import {TWO_NAMES_PUBLIC_DECISION_ACTIONS} from "./influence-decision-speech";
 /**
  * Influence Game - Game State Manager
  *
@@ -414,7 +415,7 @@ export class GameState {
       timestamp: new Date(this.now()).toISOString(),
       source: options.source,
       visibility: options.visibility,
-      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
+      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak", ...TWO_NAMES_PUBLIC_DECISION_ACTIONS].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
     });
   }
 
@@ -602,7 +603,7 @@ export class GameState {
     }, {
       phase: options.phase,
       visibility: "producer",
-      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
+      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak", ...TWO_NAMES_PUBLIC_DECISION_ACTIONS].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
     });
     this.setAllianceLineage(activatedLineage);
     this.setAlliance(alliance);
@@ -887,7 +888,7 @@ export class GameState {
     this.appendCanonicalEvent("alliance.proposal_submitted", { lineage }, {
       phase,
       visibility: "producer",
-      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
+      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak", ...TWO_NAMES_PUBLIC_DECISION_ACTIONS].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
     });
     this.setAllianceLineage(lineage);
     return cloneAllianceProposalVersion(version);
@@ -939,7 +940,7 @@ export class GameState {
     this.appendCanonicalEvent("alliance.proposal_submitted", { lineage }, {
       phase,
       visibility: "producer",
-      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
+      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak", ...TWO_NAMES_PUBLIC_DECISION_ACTIONS].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
     });
     this.setAllianceLineage(lineage);
     return cloneAllianceProposalVersion(version);
@@ -986,7 +987,7 @@ export class GameState {
     }, {
       phase,
       visibility: "producer",
-      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
+      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak", ...TWO_NAMES_PUBLIC_DECISION_ACTIONS].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
     });
     this.setAllianceLineage(lineage);
 
@@ -1046,7 +1047,7 @@ export class GameState {
     this.appendCanonicalEvent("alliance.counter_submitted", { lineage }, {
       phase,
       visibility: "producer",
-      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
+      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak", ...TWO_NAMES_PUBLIC_DECISION_ACTIONS].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
     });
     this.setAllianceLineage(lineage);
     return cloneAllianceProposalVersion(version);
@@ -1065,7 +1066,7 @@ export class GameState {
     this.appendCanonicalEvent("alliance.proposal_expired", { lineage }, {
       phase,
       visibility: "producer",
-      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
+      sourcePointers: this.gameSchemaVersion >= 2 ? options.sourcePointers?.map(pointer => pointer.kind === "agent_turn" && pointer.decisionId && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak", ...TWO_NAMES_PUBLIC_DECISION_ACTIONS].includes(pointer.action ?? "") ? {...pointer, speechRequired: true} : pointer) : options.sourcePointers,
     });
     this.setAllianceLineage(lineage);
     return cloneAllianceProposalLineage(lineage);

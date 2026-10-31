@@ -12,6 +12,7 @@ import {
   type FormatEliminationResolution,
   type LaunchFormatId,
 } from "./formats";
+import { TWO_NAMES_PUBLIC_DECISION_ACTIONS } from "./influence-decision-speech";
 import type { Phase, PowerAction, UUID } from "./types";
 
 /**
@@ -509,8 +510,8 @@ function viewerEventBase(event: CanonicalGameEvent): Omit<ViewerDecisionEvent, "
     timestamp: event.timestamp,
     round: event.round,
     phase: event.phase,
-    ...(event.sourcePointers.some(pointer => pointer.kind === "agent_turn" && pointer.speechRequired && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(pointer.action ?? "")) && {
-      publicDecisionSpeech: event.sourcePointers.flatMap(pointer => pointer.kind === "agent_turn" && pointer.actorId && pointer.speechRequired && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(pointer.action ?? "") ? [{actorId: pointer.actorId, action: pointer.action!}] : []),
+    ...(event.sourcePointers.some(pointer => pointer.kind === "agent_turn" && pointer.speechRequired && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak", ...TWO_NAMES_PUBLIC_DECISION_ACTIONS].includes(pointer.action ?? "")) && {
+      publicDecisionSpeech: event.sourcePointers.flatMap(pointer => pointer.kind === "agent_turn" && pointer.actorId && pointer.speechRequired && !pointer.engineFallback && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak", ...TWO_NAMES_PUBLIC_DECISION_ACTIONS].includes(pointer.action ?? "") ? [{actorId: pointer.actorId, action: pointer.action!}] : []),
     }),
   };
 }

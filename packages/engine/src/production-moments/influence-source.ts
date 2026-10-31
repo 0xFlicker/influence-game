@@ -1,3 +1,4 @@
+import {twoNamesDecisionSpeechAction, TWO_NAMES_PUBLIC_DECISION_ACTIONS} from "../influence-decision-speech";
 import { INFLUENCE_BALLOT_ACTIONS } from "../influence-decision-speech";
 import type { ViewerDecisionEvent } from "../viewer-decision-events";
 import { assembleProductionCatalog, type InfluenceProductionPresentation, type ProductionSource } from "./index";
@@ -75,6 +76,8 @@ export function buildInfluenceProductionSources(input: {
   gameId: string; gameKernel: "classic" | "format";
   /** Frozen v3 source snapshots retain their original separate speech moments. */
   attachDecisionSpeech?: boolean;
+  /** Frozen v3/v4 snapshots retain their separate Two Names speeches. */
+  attachTwoNamesSpeech?: boolean;
   transcripts: readonly InfluenceProductionTranscript[];
   frames: readonly InfluenceProductionFrame[];
   thoughts?: readonly InfluenceProductionThought[];
@@ -98,9 +101,18 @@ export function buildInfluenceProductionSources(input: {
     if (transcriptIds.has(String(message.id))) throw new Error("Ambiguous Influence production transcript row");
     transcriptIds.add(String(message.id));
     if (message.decisionSpeech && message.scope === "system") continue;
-    if (input.attachDecisionSpeech !== false && input.gameKernel === "format" && message.decisionSpeech && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(message.decisionSpeech.action)) {
+    if (input.attachDecisionSpeech !== false && input.gameKernel === "format" && message.decisionSpeech && ["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak", ...(input.attachTwoNamesSpeech !== false ? TWO_NAMES_PUBLIC_DECISION_ACTIONS : [])].includes(message.decisionSpeech.action)) {
       const speech = message.decisionSpeech;
-      if (frames.some(frame => frame.round === message.round && (frame.viewerDecisionEvent?.type === "format.safety_bounce_pointer" ? speech.action === "bounce-pointer" && frame.viewerDecisionEvent.payload.actorId === speech.actorId : frame.viewerDecisionEvent?.type === "format.resolved" && speech.action !== "bounce-pointer" && frame.viewerDecisionEvent.payload.tiebreakerId === speech.actorId))) continue;
+      if (frames.some(frame => {
+        const event = frame.viewerDecisionEvent;
+        if (frame.round !== message.round || !event) return false;
+        if (twoNamesDecisionSpeechAction(event.type) === speech.action) {
+          const actor = "empoweredId" in event.payload ? event.payload.empoweredId : "overrideHolderId" in event.payload ? event.payload.overrideHolderId : null;
+          return actor === speech.actorId;
+        }
+        return event.type === "format.safety_bounce_pointer" ? speech.action === "bounce-pointer" && event.payload.actorId === speech.actorId
+          : event.type === "format.resolved" && ["format-tiebreak", "format-two-names-tiebreak"].includes(speech.action) && event.payload.tiebreakerId === speech.actorId;
+      })) continue;
     }
     if (!isInfluenceProductionStoryDialogue(message) || input.gameKernel === "format" && !isInfluenceProductionSocialTranscript(message)) continue;
     const token = message.anonymous ? undefined : message.speakerPlayerId ?? message.fromPlayerId ?? undefined;
@@ -127,7 +139,8 @@ export function buildInfluenceProductionSources(input: {
   let pendingEndgameExit: { round: number; playerId: string } | null = null;
   const format = (event: ViewerDecisionEvent, presentation: InfluenceProductionPresentation, phase = event.phase ?? "INIT") => {
     const actorId = "actorId" in presentation ? presentation.actorId : undefined;
-    const actions = presentation.kind === "safety_bounce_pointer" ? ["bounce-pointer"] : presentation.kind === "format_tiebreak" ? ["format-tiebreak", "format-two-names-tiebreak"] : [];
+    const twoNamesAction = input.attachTwoNamesSpeech !== false ? twoNamesDecisionSpeechAction(presentation.kind) : null;
+    const actions = twoNamesAction ? [twoNamesAction] : presentation.kind === "safety_bounce_pointer" ? ["bounce-pointer"] : presentation.kind === "format_tiebreak" ? ["format-tiebreak", "format-two-names-tiebreak"] : [];
     const speech = input.attachDecisionSpeech !== false ? transcripts.find(row => row.round === event.round && row.decisionSpeech && row.decisionSpeech.actorId === actorId && actions.includes(row.decisionSpeech.action)) : undefined;
     append({kind:"influence-event",eventSequence:event.sequence,presentation,order:{anchor:0,offset:0}, ...(speech?.thinking && {thinking:speech.thinking,defaultThinking:false,actorId})},event.round,phase,event.sequence,"format");
   };

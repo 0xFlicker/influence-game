@@ -1,4 +1,6 @@
 "use client";
+
+import {twoNamesDecisionSpeechAction} from "@influence/engine/influence-decision-speech";
 import type {PresentationCue} from "./types";
 import type {AudioWatchCoordinate} from "@influence/engine/audio-watch";
 import {HouseNarration} from "@/components/watch/house-narration";
@@ -223,7 +225,7 @@ function DramaticReplayTheater({
   const formatCue = activeCue?.source === "format" ? activeCue : null;
   const [chainReveal, setChainReveal] = useState<{key: string; revealed: boolean} | null>(null);
   useEffect(() => {
-    if (activeCue?.kind !== "safety_bounce_pointer" || !activeCue.spokenMessage) return;
+    if (!activeCue || (activeCue.kind !== "safety_bounce_pointer" && !twoNamesDecisionSpeechAction(activeCue.kind)) || !activeCue.spokenMessage) return;
     return sampleWatch(director, () => {
       const revealed = !director.getThinkingFrame() && director.getElapsedBaseMs() >= soloPresentationDurationMs(activeCue.spokenMessage!);
       setChainReveal(previous => previous?.key === activeCue.key && previous.revealed === revealed ? previous : {key:activeCue.key,revealed});
@@ -231,7 +233,7 @@ function DramaticReplayTheater({
   }, [activeCue, director]);
   const presentedFormatSnapshot = useMemo(() => {
     if (!isFormatGame || !activeCue) return null;
-    if (activeCue.source === "format" && activeCue.kind === "safety_bounce_pointer" && activeCue.spokenMessage
+    if (activeCue.source === "format" && (activeCue.kind === "safety_bounce_pointer" || twoNamesDecisionSpeechAction(activeCue.kind)) && activeCue.spokenMessage
       && !(chainReveal?.key === activeCue.key && chainReveal.revealed)
       && !(live && directorSnapshot.hydrationWatermark !== null && activeCue.canonicalSequence <= directorSnapshot.hydrationWatermark)) return activeCue.before;
     return formatSnapshotForPresentationCursor(

@@ -132,3 +132,29 @@ test.each([3, 4] as const)("Safety Bounce production snapshot v%s retains its ow
   for (const message of messages) expect(cues.filter(cue => cue.speech?.text === message.text)).toHaveLength(1);
   expect(catalog.moments.filter(moment => moment.source.kind === "influence-transcript" && moment.kind !== "thinking")).toHaveLength(projectionVersion === 3 ? messages.length : 0);
 });
+
+
+for (const overrideHolderId of ["atlas", "rex"]) for (const projectionVersion of [3,4,5] as const) test(`Two Names snapshot v${projectionVersion} preserves speech ownership with override holder ${overrideHolderId}`, async () => {
+  const {twoNamesDecisionSpeechAction} = await import("@influence/engine/influence-decision-speech");
+  const fixture = createFormatKernelViewerScenario("two_names_used_tie");
+  for (const event of fixture.decisions) {
+    if ("overrideHolderId" in event.payload) event.payload.overrideHolderId = overrideHolderId;
+    if (event.type === "format.resolved" && event.payload.aggregate?.capability === "two_names") event.payload.aggregate.overrideHolderId = overrideHolderId;
+  }
+  const players = fixture.roster.map(player => ({...player,persona:"",status:"alive" as const,shielded:false}));
+  const frames: GameWatchReplayFrame[] = fixture.decisions.map(event => ({schemaVersion:3,gameId:"g",slug:"g",sequence:event.sequence,eventType:event.type,timestamp:Date.parse(event.timestamp),round:event.round,phase:event.phase ?? "INIT",players,viewerDecisionEvent:event,counts:{totalPlayers:5,alivePlayers:5,eliminatedPlayers:0,unknownPlayers:0}}));
+  const messages: TranscriptEntry[] = fixture.decisions.flatMap((event,index) => {
+    const action = twoNamesDecisionSpeechAction(event.type);
+    const actorId = "empoweredId" in event.payload ? event.payload.empoweredId : "overrideHolderId" in event.payload ? event.payload.overrideHolderId : null;
+    return action && actorId ? [{id:index+1,entrySequence:100+index,firstDurableEventSequence:event.sequence,gameId:"g",round:event.round,phase:event.phase ?? "INIT",scope:"public",fromPlayerId:actorId,fromPlayerName:actorId,toPlayerIds:null,text:`Public decision ${index}.`,thinking:`Private thought ${index}.`,timestamp:Date.parse(event.timestamp),decisionSpeech:{actorId,action}}] : [];
+  });
+  const source: Extract<ReplaySource,{kind:"influence"}> = {kind:"influence",projectionVersion,game:{id:"g",slug:"g",status:"completed",gameKernel:"format",players},messages,frames,thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[]}};
+  const sources = buildInfluenceProductionSources({gameId:"g",gameKernel:"format",transcripts:messages,frames,attachDecisionSpeech:projectionVersion !== 3,attachTwoNamesSpeech:projectionVersion >= 5});
+  const catalog = assembleProductionCatalog({gameId:"g",gameKind:"influence",audience:"public",sources});
+  const bound = await bindInfluenceProductionPresentation({source,catalog,thoughts:[]});
+  expect(bound.length).toBeGreaterThan(0);
+  const cues = buildExportCues(source);
+  for (const message of messages) expect(cues.filter(cue => cue.speech?.text === message.text)).toHaveLength(1);
+  expect(catalog.moments.filter(moment => moment.kind === "thinking")).toHaveLength(messages.length);
+  expect(catalog.moments.filter(moment => moment.source.kind === "influence-transcript" && moment.kind !== "thinking")).toHaveLength(projectionVersion < 5 ? messages.length : 0);
+});

@@ -177,3 +177,21 @@ Implemented on `codex/safety-bounce-choreography`, following plan commit `9f00ca
 - `bun run test:e2e:format-viewer --trace=off`: **64 passed**. Desktop/mobile screenshots were inspected; assertions cover thinking/speech/reveal, pools, art fallback, historical replay, reduced motion, seek and reconnect. Browser fixtures are deterministic; this is local proof, not a deployed staging verification.
 - `bun run test:postgres`: **2,276 passed, 4 failed** in the full run. All four failures identified the MCP snapshot schema still requiring production v3. After updating it to admit v3/v4, the sequential rerun of editorial MCP, production source, audio annotations, durable store, game API and free queue passed **177 tests, 0 failed**. The full PostgreSQL suite was not repeated after that focused schema correction.
 - Skill structure validation passed; browser-generated Next configuration changes were removed. No deployment, paid simulation, or historical data rewrite was performed.
+
+
+## Follow-up TODO: speech ownership across every format and phase
+
+- [ ] Extend the same semantic coverage beyond Safety Bounce and Two Names to every game format, phase, decision action, and speech-bearing event. Inventory ownership; verify thinking → speech → canonical reveal, exactly-once consumption, correct actor/slot, live buffering, replay, audio, Studio/export, and no delayed speech tail. Add negative tests that prove missing integrations fail rather than accepting a generic viewer.
+- **THOU SHALT NOT BREAK AN OLD GAME.** Preserve viewability and frozen execution/source contracts for all supported historical games. Test old versions, absent speech/thinking, existing recorded speeches, and pinned production snapshots. New strict requirements must never retroactively invalidate old recordings. Historical regression tests are release blockers.
+
+### Two Names follow-through
+
+Connect existing initial-nomination, override (used/declined), and replacement deliveries to their canonical cues. Reuse the portrait thinking/speech scene before the existing result display, hold sidebar facts at the pre-decision snapshot until reveal, and preserve silent historical cues. Newly captured source pointers require their accepted speech under the new-root viewer contract. Production snapshot v5 adds these attachments; pinned v3/v4 snapshots retain their original source identities and separate speeches.
+
+Two Names verification:
+
+- Provider-free baseline: **3,170 passed, 5 skipped**. After the final projector and distinct-role corrections, the focused engine/viewer/export suite passed **40 tests**.
+- Full browser suite: **65 passed, 2 failed** (live share-link pause state and Safety Bounce reveal timing). An unchanged focused rerun passed **all 3 tests**, including both failures. Both new Two Names browser stories passed in the full run; mobile and desktop speech screenshots were inspected.
+- Coverage includes absent historical deliveries, pinned v3/v4 snapshots, v5 speech ownership, same/different empowered and override actors, required-speech projection, missing/ambiguous/unconsumed delivery failures, live-prefix buffering, and speech before result reveal.
+- `bun run test:postgres`: **2,281 passed, 0 failed** across 206 files, including the new production-content test.
+- Final `bun run check`: typechecking and lint passed. Browser-generated Next configuration changes were removed; no deployment or paid simulation was performed.

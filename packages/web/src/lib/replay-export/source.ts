@@ -14,7 +14,7 @@ export type InfluenceExportGame = Pick<
 export type ReplaySource =
   | {
       kind: "influence";
-      projectionVersion?: 3 | 4;
+      projectionVersion?: 3 | 4 | 5;
       game: InfluenceExportGame;
       messages: TranscriptEntry[];
       frames: GameWatchReplayFrame[];

@@ -15,7 +15,7 @@ export async function bindInfluenceProductionPresentation(input:{
   if (catalog.gameId !== source.game.id || catalog.gameKind !== "influence" || catalog.audience !== "public")
     throw new Error("Production catalog does not match its authorized source");
   const sources = buildInfluenceProductionSources({gameId:source.game.id,gameKernel:source.game.gameKernel ?? "classic",
-    transcripts:source.messages,frames:source.frames,thoughts:input.thoughts,attachDecisionSpeech:source.projectionVersion !== 3});
+    transcripts:source.messages,frames:source.frames,thoughts:input.thoughts,attachDecisionSpeech:source.projectionVersion !== 3,attachTwoNamesSpeech:source.projectionVersion === undefined || source.projectionVersion >= 5});
   const expected = assembleProductionCatalog({gameId:source.game.id,gameKind:"influence",audience:"public",sources});
   const validated = resolveProductionMomentIds(expected,catalog.moments.map(moment => moment.id));
   if (validated.length !== expected.moments.length || validated.some((moment,index) => moment.id !== catalog.moments[index]?.id))

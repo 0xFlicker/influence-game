@@ -4,6 +4,36 @@ import { GameState } from "../game-state";
 import { TranscriptLogger } from "../transcript-logger";
 import { Phase } from "../types";
 import { FORMAT_CATALOG, resolveSealedElimRound } from "../formats";
+import { projectViewerDecisionEvent } from "../viewer-decision-events";
+import type { CanonicalSourcePointer } from "../canonical-events";
+
+test("Two Names projects required public speech only for new accepted model decisions", () => {
+  for (const gameSchemaVersion of [1, 2] as const) {
+    for (const fallback of [false, true]) {
+      const state = new GameState([...players, {id: "d", name: "Dee"}], {gameSchemaVersion});
+      const pointer = (actorId: string, action: string): CanonicalSourcePointer[] => [{
+        kind: "agent_turn", actorId, action, decisionId: "accepted-decision",
+        ...(fallback ? {engineFallback: {source: "engine" as const, reason: "unavailable", seed: "test"}} : {}),
+      }];
+      state.recordTwoNamesSetup({empoweredId: "a", initialNomineeIds: ["b", "c"], overrideHolderId: "d"}, pointer("a", "format-two-names-initial-names"));
+      state.recordTwoNamesOverrideDeclined("d", ["b", "c"], pointer("d", "format-two-names-override"));
+      state.recordTwoNamesOverrideUsed({overrideHolderId: "d", removedNomineeId: "b", empoweredId: "a", replacementNomineeId: "d", finalistPlayerIds: ["c", "d"]}, {
+        override: pointer("d", "format-two-names-override"), replacement: pointer("a", "format-two-names-replacement"),
+      });
+      const events = state.getCanonicalEvents().filter(event => event.type.startsWith("format.two_names_"));
+      expect(events).toHaveLength(4);
+      for (const event of events) {
+        const projected = projectViewerDecisionEvent(event);
+        expect(projected).not.toBeNull();
+        if (gameSchemaVersion === 2 && !fallback) {
+          expect(projected!.publicDecisionSpeech).toEqual([{actorId: event.sourcePointers[0]!.actorId!, action: event.sourcePointers[0]!.action!}]);
+        } else {
+          expect(projected).not.toHaveProperty("publicDecisionSpeech");
+        }
+      }
+    }
+  }
+});
 
 const players = [{ id: "a", name: "Ada" }, { id: "b", name: "Bea" }, { id: "c", name: "Cam" }];
 test("drafting margin does not narrow acceptance or permit multibyte overages", () => {

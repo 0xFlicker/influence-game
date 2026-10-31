@@ -2111,6 +2111,41 @@ test.describe("format-aware game viewer", () => {
     await expect(chain.locator("[data-chain-player]")).toHaveCount(4);
   });
 
+  for (const scenarioId of ["two_names_declined", "two_names_used_tie"] as const) test(`Two Names ${scenarioId} speaks before nominations and override decisions`, async ({page}, testInfo) => {
+    await page.clock.install();
+    if (scenarioId === "two_names_declined") await page.setViewportSize({width:390,height:844});
+    const slug = `speech-${scenarioId}`;
+    await installDeterministicFormatGame(page,{slug,scenarioId,status:"completed"});
+    const fixture = createFormatKernelViewerScenario(scenarioId);
+    const actions = fixture.decisions.flatMap((event,index) => {
+      const action = event.type === "format.two_names_setup" ? "format-two-names-initial-names"
+        : event.type === "format.two_names_override_used" || event.type === "format.two_names_override_declined" ? "format-two-names-override"
+        : event.type === "format.two_names_replacement_named" ? "format-two-names-replacement" : null;
+      const actorId = "empoweredId" in event.payload ? event.payload.empoweredId : "overrideHolderId" in event.payload ? event.payload.overrideHolderId : null;
+      const kind = event.type === "format.two_names_setup" ? "two_names_initial_names" : event.type === "format.two_names_override_used" ? "two_names_override_removed" : event.type === "format.two_names_override_declined" ? "two_names_override_declined" : "two_names_replacement";
+      return action && actorId ? [{kind,id:index+1,entrySequence:index+1,firstDurableEventSequence:event.sequence,gameId:slug,round:event.round,phase:event.phase,scope:"public",fromPlayerId:actorId,fromPlayerName:actorId,toPlayerIds:null,text:`I choose trust for decision ${index}.`,thinking:`I weigh trust for decision ${index}.`,timestamp:Date.parse(event.timestamp),decisionSpeech:{actorId,action}}] : [];
+    });
+    await page.route(`**/api/games/${slug}/transcript`,route => route.fulfill({json:actions.map(({kind,...message})=>{void kind;return message;})}));
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page,"Pause replay");
+    await page.getByRole("button",{name:"Player settings",exact:true}).click();
+    await page.getByLabel("Show thinking",{exact:true}).check();
+    await page.getByRole("button",{name:"Close settings",exact:true}).click();
+    for (const action of actions) {
+      const speaking = page.locator(`[data-two-names-decision-speech="${action.kind}"]`);
+      const reveal = page.locator(`[data-two-names-decision-reveal="${action.kind}"]`);
+      await advanceUntilVisible(page,speaking.locator("[data-in-scene-thinking]"),`${action.kind} thinking`);
+      await expect(reveal).toHaveCount(0);
+      await advanceUntilVisible(page,speaking.locator("[data-speech-bubble]"),`${action.kind} speech`);
+      await expect(speaking).toContainText("I choose trust");
+      await expect(reveal).toHaveCount(0);
+      await speaking.screenshot({path:testInfo.outputPath(`${action.kind}-speech.png`)});
+      await page.getByRole("button",{name:"Play replay",exact:true}).click();
+      await advanceClockUntilVisible(page,reveal,`${action.kind} reveal`);
+      await pauseAutoplay(page,"Pause replay");
+    }
+  });
+
   test("Safety Bounce plays saved thinking and speech at each pick and the empowered tie", async ({page}, testInfo) => {
     await page.clock.install();
     const slug = "safety-chain-speech";

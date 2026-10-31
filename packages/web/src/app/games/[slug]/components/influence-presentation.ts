@@ -1,3 +1,4 @@
+import {twoNamesDecisionSpeechAction, TWO_NAMES_PUBLIC_DECISION_ACTIONS} from "@influence/engine/influence-decision-speech";
 import {PresentationContractError} from "./presentation-ownership";
 import { soloPresentationDurationMs } from "./solo-presentation-timing";
 import type {GamePlayer} from "@/lib/api";
@@ -8,10 +9,10 @@ import {paceVisualBallots, type VisualWatchData} from "./visual-watch-model";
 import type {PresentationCue, ReplayScene} from "./types";
 
 /** Editorial composition shared by the live player, Studio and the exporter. */
-export function composeInfluencePresentation(gameId: string, canonical: readonly PresentationCue[], players: readonly GamePlayer[], scenes: ReplayScene[], gameSchemaVersion = 1, options: {attachDecisionSpeech?: boolean; speechPrefixComplete?: boolean} = {}): PresentationCue[] {
+export function composeInfluencePresentation(gameId: string, canonical: readonly PresentationCue[], players: readonly GamePlayer[], scenes: ReplayScene[], gameSchemaVersion = 1, options: {attachDecisionSpeech?: boolean; attachTwoNamesSpeech?: boolean; speechPrefixComplete?: boolean} = {}): PresentationCue[] {
   return canonical.length ? [
     ...influenceOpening(gameId, players),
-    ...withHouseBridges(withBallotSpeech(paceVisualBallots(canonical, players), scenes, gameSchemaVersion, options.attachDecisionSpeech !== false, options.speechPrefixComplete !== false), scenes),
+    ...withHouseBridges(withBallotSpeech(paceVisualBallots(canonical, players), scenes, gameSchemaVersion, options.attachDecisionSpeech !== false, options.speechPrefixComplete !== false, options.attachTwoNamesSpeech !== false), scenes),
   ] : [];
 }
 
@@ -25,13 +26,14 @@ export function influenceCastArt(player: GamePlayer | undefined, visual: Pick<Vi
 }
 
 /** Match accepted speech by structured action/actor/round only, at the existing reveal. */
-function withBallotSpeech(cues: PresentationCue[], scenes: ReplayScene[], gameSchemaVersion: number, attachDecisionSpeech: boolean, speechPrefixComplete: boolean): PresentationCue[] {
+function withBallotSpeech(cues: PresentationCue[], scenes: ReplayScene[], gameSchemaVersion: number, attachDecisionSpeech: boolean, speechPrefixComplete: boolean, attachTwoNamesSpeech: boolean): PresentationCue[] {
   const messages = scenes.flatMap(scene => scene.messages);
   const attached = new Map<string, (typeof messages)[number]>();
   for (const cue of cues) {
     if (!attachDecisionSpeech || cue.source !== "format") continue;
-    const actor = cue.kind === "safety_bounce_pointer" ? cue.actorId : cue.kind === "format_tiebreak" ? cue.tiebreakerId : null;
-    const actions = cue.kind === "safety_bounce_pointer" ? ["bounce-pointer"] : ["format-tiebreak", "format-two-names-tiebreak"];
+    const twoNamesAction = attachTwoNamesSpeech ? twoNamesDecisionSpeechAction(cue.kind) : null;
+    const actor = twoNamesAction ? ("overrideHolderId" in cue ? cue.overrideHolderId : "empoweredId" in cue ? cue.empoweredId : null) : cue.kind === "safety_bounce_pointer" ? cue.actorId : cue.kind === "format_tiebreak" ? cue.tiebreakerId : null;
+    const actions = twoNamesAction ? [twoNamesAction] : cue.kind === "safety_bounce_pointer" ? ["bounce-pointer"] : ["format-tiebreak", "format-two-names-tiebreak"];
     if (!actor) continue;
     const matches = messages.filter(row => row.round === cue.round && row.decisionSpeech?.actorId === actor && actions.includes(row.decisionSpeech.action));
     if (gameSchemaVersion >= 2 && matches.length > 1) throw new PresentationContractError("ambiguous-speech", cue.canonicalSequence);
@@ -47,7 +49,7 @@ function withBallotSpeech(cues: PresentationCue[], scenes: ReplayScene[], gameSc
       if (cue.requiredDecisionSpeech && !attached.has(cue.key) && cues.some(end => end.source === "format" && end.round === cue.round && end.kind === "format_elimination")) throw new PresentationContractError("missing-speech", cue.canonicalSequence ?? 0);
     }
     for (const row of messages) {
-      if (!row.decisionSpeech || !["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak"].includes(row.decisionSpeech.action) || owned.has(row)) continue;
+      if (!row.decisionSpeech || !["bounce-pointer", "format-tiebreak", "format-two-names-tiebreak", ...(attachTwoNamesSpeech ? TWO_NAMES_PUBLIC_DECISION_ACTIONS : [])].includes(row.decisionSpeech.action) || owned.has(row)) continue;
       // A delivered transcript may lead its canonical publication. Validate only
       // once the matching round resolution is present, never an unfinished chain.
       if (cues.some(cue => cue.source === "format" && cue.round === row.round && cue.kind === "format_elimination")) throw new PresentationContractError("unconsumed-speech", row.firstDurableEventSequence ?? 0);
@@ -56,7 +58,7 @@ function withBallotSpeech(cues: PresentationCue[], scenes: ReplayScene[], gameSc
   return cues.flatMap(cue => {
     const speech = attached.get(cue.key);
     if (speech) return [{...cue, spokenMessage: speech.text, decisionSpeechEntry: speech,
-      baseDurationMs: soloPresentationDurationMs(speech.text) + (cue.source === "format" && cue.kind === "safety_bounce_pointer" ? 1800 : 0)}];
+      baseDurationMs: soloPresentationDurationMs(speech.text) + (twoNamesDecisionSpeechAction(cue.kind) ? cue.baseDurationMs : cue.source === "format" && cue.kind === "safety_bounce_pointer" ? 1800 : 0)}];
     if (cue.source === "format" && cue.kind === "safety_bounce_pointer" && !speech) cue = {...cue, baseDurationMs: Math.max(3000, cue.baseDurationMs)};
     if (cue.source === "classic") {
       const message = scenes[cue.sceneIndex]?.messages[cue.messageIndex];
