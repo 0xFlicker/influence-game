@@ -329,6 +329,11 @@ test.describe("format-aware game viewer", () => {
       expect(introAudio.time).toBeGreaterThan(14.9);
       expect(introAudio.time).toBeLessThan(18);
       expect(introAudio.volume).toBeCloseTo(.01486,4);
+      for (const speedKey of ["3", "4"]) {
+        await playbackKey(page, speedKey);
+        await expect.poll(async () => (await musicState(page)).find(audio => audio.src?.includes("an-invitation"))?.rate).toBe(1);
+        if (!mobile) expect(await opening.locator("video").evaluate(video => (video as HTMLVideoElement).playbackRate)).toBe(1);
+      }
       await pauseAutoplay(page, "Pause replay");
       expect((await musicState(page)).every(audio => audio.paused)).toBe(true);
       await slider.fill("630");

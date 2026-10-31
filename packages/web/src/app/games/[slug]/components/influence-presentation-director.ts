@@ -1,5 +1,6 @@
 "use client";
 
+import {INFLUENCE_ENTRANCE_MS} from "./influence-opening";
 import {voteSceneIdentity} from "./vote-ledger-model";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAnimate } from "motion/react";
@@ -16,6 +17,7 @@ type PresentationDirectorSnapshot = WatchDirectorSnapshot & { canonicalSequence:
 interface RetainedMotionControl { pause(): void; play(): void; complete(): void; speed: number }
 export const influencePresentationPolicy: WatchPolicy<PresentationCue> = {
   position: cue => cue.canonicalSequence,
+  playbackSpeed: (cue, requested) => cue.source === "opening" && cue.opening.startMs < INFLUENCE_ENTRANCE_MS ? 1 : requested,
   speech: speechBoundaries,
   scrubAtMs: cue => cue.kind === "safety_bounce_pointer" && !cue.spokenMessage ? 2500 : cue.source === "opening" ? 350 : cue.kind === "format_deciding_vote" ? 2000 : voteSceneIdentity(cue) && !cue.voteSummary ? SOLO_READ_START_MS : cue.voteSummary ? 0 : speechBoundaries(cue)?.showAtMs ?? 0,
   isCatchUp: cue => cue.source === "opening" || cue.source !== "format" && Boolean(cue.liveCatchUp),

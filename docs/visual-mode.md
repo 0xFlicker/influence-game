@@ -441,3 +441,5 @@ Bundled `/avatars/` character images resolve on the web origin, including deploy
 Influence Next/Previous scene buttons and previous-contribution navigation preserve the existing play/pause state. Navigation does not implicitly pause playback.
 
 Empower voting, ties/revotes, the empowered reveal, and format selection share the round’s “Terms and Conditions” music section without restarting at those boundaries. Elimination ballots retain “Names on the Table.”
+
+Music always runs at 1×, including Influence and Werewolf opening tracks. Changing playback speed or pausing/resuming does not seek music to the accelerated visual clock; explicit navigation still aligns it. Influence’s first 20 seconds (entrance and title) retain real-time pacing at every speed; cast cards afterward use the selected speed.

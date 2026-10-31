@@ -11,21 +11,23 @@ class AudioStub {
   removeAttribute(){this.src="";}
 }
 const input={tracks:[{src:"/score.mp3",time:6.5,gain:1}],playing:true,muted:false,volume:.3,speed:1,navigationRevision:0};
-test("opening sound follows presentation offset, pause, speed and seeks; leaving it disposes media",async()=>{
+test("opening music preserves natural speed and position across speed changes and pause",async()=>{
  const media:AudioStub[]=[];const controller=new OpeningAudio(()=>{},()=>{const audio=new AudioStub();media.push(audio);return audio as unknown as HTMLAudioElement;});
  controller.update(input);await Promise.resolve();expect(media[0]!.currentTime).toBe(6.5);expect(media[0]!.paused).toBe(false);
  controller.update({...input,playing:false});expect(media[0]!.paused).toBe(true);
- controller.update({...input,tracks:[{...input.tracks[0]!,time:7.1}],speed:2});await Promise.resolve();expect(media[0]!.currentTime).toBe(7.1);expect(media[0]!.playbackRate).toBe(2);
+ controller.update({...input,tracks:[{...input.tracks[0]!,time:7.1}],speed:2});await Promise.resolve();expect(media[0]!.currentTime).toBe(6.5);expect(media[0]!.playbackRate).toBe(1);
+ controller.update({...input,tracks:[{...input.tracks[0]!,time:15}],speed:4});expect(media[0]!.currentTime).toBe(6.5);expect(media[0]!.playbackRate).toBe(1);
+ controller.update({...input,tracks:[{...input.tracks[0]!,time:20}],speed:4,navigationRevision:1});expect(media[0]!.currentTime).toBe(20);expect(media[0]!.playbackRate).toBe(1);
  controller.update({...input,muted:true});expect(media[0]!.paused).toBe(true);
  controller.update({...input,tracks:[]});expect(media[0]!.src).toBe("");
 });
-test("blocked autoplay does not retry every frame, and explicit unlock seeks to the current position",async()=>{
+test("blocked autoplay does not retry every frame, and explicit unlock retains the music position",async()=>{
  const media=new AudioStub();media.deny=true;const states:MusicStatus[]=[];
  const controller=new OpeningAudio(s=>states.push(s),()=>media as unknown as HTMLAudioElement);
  controller.update(input);await Promise.resolve();controller.update({...input,tracks:[{...input.tracks[0]!,time:6.7}]});
  expect(states.at(-1)).toBe("blocked");expect(media.plays).toBe(1);
  media.deny=false;controller.unlock();await Promise.resolve();controller.update({...input,tracks:[{...input.tracks[0]!,time:6.8}]});
- expect(media.currentTime).toBeCloseTo(6.7);expect(states.at(-1)).toBe("playing");controller.dispose();
+ expect(media.currentTime).toBeCloseTo(6.5);expect(states.at(-1)).toBe("playing");controller.dispose();
 });
 test("late play rejection after a seek cannot mark a disposed deck blocked",async()=>{
  const media=new AudioStub();let reject!:(reason:unknown)=>void;

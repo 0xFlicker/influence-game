@@ -54,7 +54,7 @@ export function influenceMusic(gameId: string, cue: PresentationCue | null, mess
   return {key:`${gameId}:${section}`, ...INFLUENCE_MUSIC[track], repeat:track !== "winner", continueAtEnd:track === "winner"};
 }
 
-/** One continuous song from the entrance through the cast; seek/speed use the visual clock. */
+/** Authored opening offsets and fades; live music runs at 1x between explicit seeks. */
 export function influenceOpeningAudio(cue: InfluenceOpeningCue | null, elapsedMs: number): OpeningAudioTrack[] {
   if (!cue) return [];
   const timeMs = cue.opening.startMs + Math.max(0, Math.min(elapsedMs, cue.baseDurationMs));

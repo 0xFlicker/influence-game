@@ -6,8 +6,8 @@ import {MediaAlignment} from "./media-alignment";
 
 export interface OpeningAudioTrack {src: string; time: number; gain: number}
 interface Input {tracks: readonly OpeningAudioTrack[]; playing: boolean; muted: boolean; volume: number; speed: number; navigationRevision: number}
-interface Deck {audio: HTMLAudioElement; src: string; pending: boolean; blocked: boolean; failed: boolean; generation: number; alignment: MediaAlignment}
-/** Position-locked opening sound; the shared director remains the only advancement clock. */
+interface Deck {audio: HTMLAudioElement; src: string; pending: boolean; blocked: boolean; failed: boolean; generation: number; navigationRevision: number | null; alignment: MediaAlignment}
+/** Music always plays at natural speed; only explicit navigation repositions it. */
 export class OpeningAudio {
   private decks: Deck[] = [];
   private input: Input | null = null;
@@ -28,7 +28,7 @@ export class OpeningAudio {
       let deck = this.decks.find(d => d.src === track.src);
       if (!deck) {
         const audio = this.create(); audio.preload = "auto"; audio.src = track.src;
-        deck = {audio, src:track.src, pending:false, blocked:false, failed:false, generation:0, alignment:new MediaAlignment()};
+        deck = {audio, src:track.src, pending:false, blocked:false, failed:false, generation:0, navigationRevision:null, alignment:new MediaAlignment()};
         this.decks.push(deck);
         audio.onloadedmetadata = () => {if (this.input && this.decks.includes(deck!)) this.update(this.input);};
         audio.oncanplay = audio.onloadedmetadata;
@@ -44,7 +44,9 @@ export class OpeningAudio {
       audio.muted = audio.readyState < 1 || !input.playing;
       if (audio.readyState < 1 && !deck.failed && !gesture) continue;
       if (gesture) deck.alignment.invalidate();
-      deck.alignment.sync(audio, {time:track.time, playing:input.playing, speed:input.speed, revision:input.navigationRevision});
+      const navigation = deck.navigationRevision !== input.navigationRevision;
+      deck.alignment.sync(audio, {time:navigation ? track.time : audio.currentTime, playing:input.playing, speed:1, revision:input.navigationRevision});
+      if (audio.readyState >= 1 && !audio.seeking) deck.navigationRevision = input.navigationRevision;
       if (track.gain <= 0 && !gesture || deck.failed || deck.blocked) {audio.pause(); continue;}
       if (audio.paused && !deck.pending) {
         const current = deck; const generation = ++current.generation; current.pending = true;

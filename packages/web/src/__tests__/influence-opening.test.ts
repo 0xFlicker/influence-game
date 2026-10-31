@@ -59,7 +59,7 @@ test("pause, speed, append and automatic handoff retain the shared clock", () =>
   expect(director.getElapsedBaseMs()).toBe(900);
   expect(director.getSnapshot().isPlaying).toBe(false);
   director.setSpeed(2); director.play(); now += 100;
-  expect(director.getElapsedBaseMs()).toBe(1100);
+  expect(director.getElapsedBaseMs()).toBe(1000); // Entrance remains at real-time speed.
   director.seek(opening.length - 1, 0); now += 1500;
   const fire = callback as (() => void) | null; fire?.();
   expect(director.getActiveCue()?.key).toBe(speech.key);

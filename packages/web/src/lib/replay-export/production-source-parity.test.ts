@@ -56,7 +56,7 @@ test("production inventory preserves classic history, endgame ballots and both j
   const winners = compileRevealedWinnerCues(cues);
   expect(exported.map(c=>c.music)).toEqual(cues.map((cue,index)=>influenceMusic("g",winners[index]??cue,
     cue.source === "classic" ? scenes[cue.sceneIndex]?.messages[cue.messageIndex] : null)));
-  expect(new Set(exported.flatMap(c=>c.music ? [c.music.title] : []))).toEqual(new Set(["Good Company","Names on the Table","The Empty Chair","The Last Word"]));
+  expect(new Set(exported.flatMap(c=>c.music ? [c.music.title] : []))).toEqual(new Set(["Good Company","Terms and Conditions","Names on the Table","The Empty Chair","The Last Word"]));
   expect(exported.at(-1)!.timing.kind).toBe("result");
   const bound = await bindInfluenceProductionPresentation({source,catalog,thoughts:[]});
   expect(bound.flatMap(m=>m.segments).map(c=>({picture:c.picture,music:c.music}))).toEqual(exported.map(c=>({picture:c.picture,music:c.music})));
