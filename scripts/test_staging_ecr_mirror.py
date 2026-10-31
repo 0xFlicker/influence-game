@@ -22,6 +22,7 @@ class MirrorTests(unittest.TestCase):
         self.identity = {'Account': m.ACCOUNT, 'Arn': 'arn:aws:sts::' + m.ACCOUNT + ':assumed-role/HouseRenderStagingWorkerImagePublisher/test'}
         self.repo = {'repositoryUri': m.REGISTRY + '/house-render-staging-worker', 'imageTagMutability': 'IMMUTABLE', 'encryptionConfiguration': {'encryptionType': 'AES256'}}
         self.copied_digest = self.digest
+        self.lifecycle = None
         self.mirror = m.Mirror('worker', '/private/test-auth', self.runner)
     def runner(self, argv, **kwargs):
         self.calls.append(argv)
@@ -34,6 +35,9 @@ class MirrorTests(unittest.TestCase):
             return SimpleNamespace(returncode=0, stdout=b'{"os":"linux","architecture":"amd64"}')
         if argv[1:3] == ['sts', 'get-caller-identity']: data = self.identity
         elif argv[1:3] == ['ecr', 'describe-repositories']: data = {'repositories': [self.repo]}
+        elif argv[1:3] == ['ecr', 'get-lifecycle-policy']:
+            if self.lifecycle is None:return SimpleNamespace(returncode=1,stdout=b'',stderr=b'LifecyclePolicyNotFoundException')
+            data={'lifecyclePolicyText':json.dumps(self.lifecycle)}
         elif '--image-ids' in argv: data = {'imageDetails': [{'imageDigest': self.digest}]}
         else: data = {'imageDetails': self.images}
         return SimpleNamespace(returncode=0, stdout=json.dumps(data).encode())
@@ -76,6 +80,14 @@ class MirrorTests(unittest.TestCase):
         self.images = [{'imageDigest':self.digest,'imageTags':['sha256-'+self.digest[7:]]}]
         self.assertEqual(self.mirror.publish(self.digest)['retainedReleaseDigests'],1)
         self.assertFalse(any('copy' in a or any('delete' in x.lower() for x in a) for a in self.calls))
+    def test_installed_lifecycle_must_protect_exact_incoming_root(self):
+        self.mirror.measure(self.digest)
+        final={'rulePriority':2,'selection':{'tagStatus':'any','countType':'imageCountMoreThan','countNumber':5}}
+        self.lifecycle={'rules':[final]}
+        with self.assertRaisesRegex(ValueError,'lifecycle must protect'):self.mirror.publish(self.digest)
+        self.assertFalse(any('copy' in a for a in self.calls))
+        self.lifecycle['rules'].insert(0,{'rulePriority':1,'selection':{'tagStatus':'tagged','tagPatternList':['sha256-'+self.digest[7:]],'countType':'imageCountMoreThan','countNumber':1}})
+        self.assertTrue(self.mirror.publish(self.digest)['lifecycleInstalled'])
     def test_raw_manifest_hash_must_match_and_command_diagnostics_are_not_exposed(self):
         with self.assertRaisesRegex(ValueError, 'manifest digest'): self.mirror.measure('sha256:'+'a'*64)
         rejected = m.Mirror('worker','/private/test-auth',lambda *a,**k:SimpleNamespace(returncode=1,stdout=b'',stderr=b'test-only-private-credential'))

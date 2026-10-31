@@ -63,6 +63,19 @@ def evidence_identity(kind, evidence, run):
     require(DIGEST.fullmatch(digest), 'invalid source digest')
     return sha, digest
 
+def verify_lifecycle(policy, tags):
+    """Only the reviewed exact-tag protection + five-object policy is accepted."""
+    rules = sorted(policy.get('rules', []), key=lambda r:r.get('rulePriority',0))
+    require(rules and rules[-1].get('selection') == {'tagStatus':'any','countType':'imageCountMoreThan','countNumber':5}, 'unreviewed lifecycle policy')
+    protected = set()
+    for rule in rules[:-1]:
+        selection = rule.get('selection', {})
+        patterns = selection.get('tagPatternList', [])
+        require(selection.get('tagStatus') == 'tagged' and selection.get('countType') == 'imageCountMoreThan' and
+                selection.get('countNumber') == 1 and len(patterns) == 1 and '*' not in patterns[0], 'unreviewed lifecycle protection rule')
+        protected.add(patterns[0])
+    require(set(tags) <= protected, 'lifecycle must protect current/rollback and incoming digest tags before copying')
+
 class Mirror:
     def __init__(self, kind, auth_file, runner=subprocess.run, max_manifests=5):
         require(type(max_manifests) is int and 5 <= max_manifests <= 10, 'invalid retention exception limit')
@@ -80,6 +93,14 @@ class Mirror:
 
     def aws(self, *args):
         return json.loads(self.call(['aws', *args, '--region', REGION, '--output', 'json']))
+
+    def lifecycle(self):
+        result = self.runner(['aws','ecr','get-lifecycle-policy','--repository-name',self.selected['repository'],'--region',REGION,'--output','json'],capture_output=True,timeout=120)
+        if result.returncode:
+            stderr = result.stderr if isinstance(result.stderr,bytes) else result.stderr.encode()
+            require(b'LifecyclePolicyNotFoundException' in stderr, 'lifecycle metadata read failed')
+            return None
+        return json.loads(json.loads(result.stdout)['lifecyclePolicyText'])
 
     def add(self, digest, size):
         require(DIGEST.fullmatch(digest) and type(size) is int and 0 <= size <= 64 * 1024**3, 'invalid content descriptor')
@@ -134,6 +155,9 @@ class Mirror:
                 require(tag == 'sha256-' + image['imageDigest'][7:], 'foreign repository tag requires operator review')
                 roots.add(image['imageDigest'])
         require(digest in roots or len(roots) < 2, 'two retained release digests already occupy this repository; operator cleanup required')
+        lifecycle = self.lifecycle()
+        if lifecycle is not None:
+            verify_lifecycle(lifecycle, ['sha256-' + d[7:] for d in roots | {digest}])
         for image in images:
             self.graph(destination, image['imageDigest'])
         projected = sum(self.parts.values())
@@ -150,7 +174,8 @@ class Mirror:
         require(len(observed) == 1 and observed[0].get('imageDigest') == digest, 'destination digest was not verified')
         return {'destination': destination + '@' + digest, 'verifiedDestinationDigest': digest,
                 'projectedUniqueBytes': projected, 'repositoryAdmissionBytes': selected['budget'], 'retainedReleaseDigests': len(roots | {digest}),
-                'manifestCount': len(self.visited), 'manifestTarget': 5, 'approvedManifestLimit': self.max_manifests}
+                'manifestCount': len(self.visited), 'manifestTarget': 5, 'approvedManifestLimit': self.max_manifests,
+                'lifecycleInstalled': lifecycle is not None, 'retentionApplyPending': lifecycle is None}
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)

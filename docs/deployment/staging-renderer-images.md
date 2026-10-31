@@ -48,6 +48,10 @@ bytes are recorded in measurement and publication receipts. The helper stops
 before a third retained release or budget overflow; publisher roles cannot
 delete images. Operator-approved, release-aware cleanup must preserve current
 and rollback references. No age-based lifecycle can silently delete them.
+If a lifecycle policy is installed, publication also requires exact higher-priority
+protections for every current/rollback and incoming digest tag before copying.
+Missing policies are reported as pending apply; the publisher cannot install or
+delete a policy. Native previews and deletion confirmation remain operator steps.
 These are admission limits, not AWS billing caps: failed uploads/concurrent
 administrator writes can leave additional transient storage requiring review.
 
