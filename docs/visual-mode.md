@@ -439,3 +439,5 @@ Safety Bounce public speech sits directly below the actor’s head over their bo
 Bundled `/avatars/` character images resolve on the web origin, including deployments with a separate API origin. API-hosted cutouts and visual artifacts continue to resolve on the API origin. Frozen roster artwork paths are unchanged.
 
 Influence Next/Previous scene buttons and previous-contribution navigation preserve the existing play/pause state. Navigation does not implicitly pause playback.
+
+Empower voting, ties/revotes, the empowered reveal, and format selection share the round’s “Terms and Conditions” music section without restarting at those boundaries. Elimination ballots retain “Names on the Table.”

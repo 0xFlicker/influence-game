@@ -21,7 +21,7 @@ const phases: Partial<Record<PhaseKey, Bed>> = {
   POST_VOTE_MINGLE:"social", FORMAT_MINGLE:"social", WHISPER:"social", RUMOR:"social",
   PRE_VOTE_HUDDLE:"strategy", PRE_COUNCIL_HUDDLE:"strategy",
   FORMAT_MENU:"strategy", FORMAT_PICK:"strategy", FORMAT_RESOLVE:"strategy", POWER:"strategy",
-  VOTE:"ballot", REVEAL:"ballot", COUNCIL:"ballot", PLEA:"ballot",
+  VOTE:"strategy", REVEAL:"strategy", COUNCIL:"ballot", PLEA:"ballot",
   ACCUSATION:"ballot", DEFENSE:"ballot", OPENING_STATEMENTS:"ballot",
   JURY_QUESTIONS:"ballot", CLOSING_ARGUMENTS:"ballot", JURY_VOTE:"ballot",
   DIARY_ROOM:"reflection", RETROSPECTIVE:"reflection",
@@ -38,9 +38,9 @@ export function influenceMusic(gameId: string, cue: PresentationCue | null, mess
   } else if (cue.source === "format") {
     switch (cue.kind) {
       case "format_elimination": track = "reflection"; break;
-      case "two_names_plea":
       case "empowered_tally":
-      case "empowered_tie":
+      case "empowered_tie": track = "strategy"; break;
+      case "two_names_plea":
       case "format_aggregate":
       case "format_roll_call":
       case "format_tiebreak":
