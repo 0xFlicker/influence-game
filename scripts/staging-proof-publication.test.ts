@@ -45,6 +45,33 @@ test('workflow shell scripts parse and mirror verifies proof commit independentl
   expect(steps[verify].run!).toContain('staging-proof-source.py --run-metadata source-run.json');
   expect(verify).toBeLessThan(auth);
 });
+test('proof web packaging removes unuploaded maps and preserves chunks and the release assertion', () => {
+  const root = mkdtempSync(join(tmpdir(), 'proof-web-packaging-'));
+  try {
+    const output = join(root, 'Dockerfile');
+    const source = readFileSync('Dockerfile.web', 'utf8');
+    const assertion = `RUN test -z "$(find .next/static -name '*.map' -print -quit)"`;
+    const cleanup = `RUN find .next/static -type f -name '*.map' -delete\n`;
+    const generate = (input: string) => spawnSync('python3', ['scripts/staging-proof-web-dockerfile.py', '--source', input, '--output', output], { encoding: 'utf8' });
+    expect(generate('Dockerfile.web').status).toBe(0);
+    const derived = readFileSync(output, 'utf8');
+    expect(derived).toBe(source.replace(assertion, cleanup + assertion));
+    mkdirSync(join(root, '.next/static/chunks'), { recursive: true });
+    writeFileSync(join(root, '.next/static/chunks/page.js'), 'chunk');
+    writeFileSync(join(root, '.next/static/chunks/page.js.map'), 'private map');
+    const commands = derived.slice(derived.indexOf(cleanup), derived.indexOf(assertion) + assertion.length)
+      .split('\n').map(line => line.replace(/^RUN /, '')).join('\n');
+    expect(spawnSync('sh', ['-ec', commands], { cwd: root }).status).toBe(0);
+    expect(readFileSync(join(root, '.next/static/chunks/page.js'), 'utf8')).toBe('chunk');
+    const invalid = join(root, 'invalid');
+    for (const content of [source.replace(assertion, ''), source + '\n' + assertion]) {
+      writeFileSync(invalid, content); expect(generate(invalid).status).not.toBe(0);
+    }
+    const build = ci.jobs['docker-build-push'].steps.find(step => step.name === 'Build and push ${{ matrix.target }}')!.run!;
+    expect(build).toContain('if [ "$PROOF_PUBLICATION" = true ] && [ "${{ matrix.target }}" = web ]; then');
+    expect(build).toContain('docker build -f "$dockerfile"');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 test('actual release-scope command excludes only the policy test, while policy edits still require release', () => {
   const root = mkdtempSync(join(tmpdir(), 'proof-release-scope-'));
   const run = (command: string, args: string[], env = process.env) => {

@@ -24,6 +24,10 @@ proof branch with `proof_publication=true`. The trusted-main verifier requires
 one policy-only commit whose parent is on main. All normal check/provider-free/
 PostgreSQL gates still apply. The three images use unique full-SHA/run/attempt
 proof tags; no `:staging` tag moves, source-map upload or staging dispatch occurs.
+For the proof web build only, a checked derivative of `Dockerfile.web` deletes
+unuploaded browser maps immediately before the unchanged final no-maps assertion.
+The release Dockerfile and ordinary upload behavior remain unchanged; unexpected
+Dockerfile assertion changes fail closed instead of producing a proof image.
 The existing exact three-image release manifest format is preserved. This is an
 image publication, not deployment, admission or proof execution.
 

@@ -288,13 +288,18 @@ jobs:
         run: |
           posthog_args=()
           mutable_tag_args=()
+          dockerfile=${{ matrix.dockerfile }}
+          if [ "$PROOF_PUBLICATION" = true ] && [ "${{ matrix.target }}" = web ]; then
+            dockerfile="$RUNNER_TEMP/proof-web.Dockerfile"
+            python3 scripts/staging-proof-web-dockerfile.py --source Dockerfile.web --output "$dockerfile"
+          fi
           if [ "$PROOF_PUBLICATION" != true ]; then
             mutable_tag_args=(-t ${{ matrix.image }}:staging)
           fi
           if [ "${{ matrix.target }}" = "web" ] && [ "$PROOF_PUBLICATION" != true ]; then
             posthog_args=(--build-arg POSTHOG_UPLOAD_SOURCEMAPS=1 --secret id=posthog_api_key,env=POSTHOG_PERSONAL_API_KEY)
           fi
-          docker build -f ${{ matrix.dockerfile }} \
+          docker build -f "$dockerfile" \
             --build-arg GIT_SHA=${{ github.sha }} \
             "${posthog_args[@]}" \
             ${{ matrix.build_args }} \
