@@ -1,3 +1,4 @@
+import {presentationEntrances} from "../app/games/[slug]/components/presentation-entrances";
 import {createFormatKernelViewerScenario} from "@influence/engine/fixtures/format-kernel-viewer";
 import {compileFormatPresentationPrefix} from "../app/games/[slug]/components/format-presentation-model";
 import {chainSpeechBox, chainCharacterHead, SafetyChain} from "../app/games/[slug]/components/safety-chain";
@@ -147,6 +148,7 @@ for (const [width,height] of [[1440,900],[390,844]]) test(`Safety Bounce ${width
   expect(camera.textContent).toContain("Safe ·");
   expect(camera.textContent).toContain("Vulnerable ·");
   expect(camera.querySelector("[data-in-scene-thinking]")).toBeNull();
+  expect(presentationEntrances(view.container, cue, false, true)).toEqual([]);
   expect(view.container.querySelector("[data-speech-bubble]")).toBeNull();
   view.rerender(content(false));
   expect(view.container.querySelector("[data-in-scene-thinking]")).toBeNull();
