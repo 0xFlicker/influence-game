@@ -8,7 +8,7 @@ import { projectViewerDecisionEvent } from "../viewer-decision-events";
 import type { CanonicalSourcePointer } from "../canonical-events";
 
 test("Two Names projects required public speech only for new accepted model decisions", () => {
-  for (const gameSchemaVersion of [1, 2] as const) {
+  for (const gameSchemaVersion of [1, 2, 3] as const) {
     for (const fallback of [false, true]) {
       const state = new GameState([...players, {id: "d", name: "Dee"}], {gameSchemaVersion});
       const pointer = (actorId: string, action: string): CanonicalSourcePointer[] => [{
@@ -25,7 +25,7 @@ test("Two Names projects required public speech only for new accepted model deci
       for (const event of events) {
         const projected = projectViewerDecisionEvent(event);
         expect(projected).not.toBeNull();
-        if (gameSchemaVersion === 2 && !fallback) {
+        if (gameSchemaVersion >= 2 && !fallback) {
           expect(projected!.publicDecisionSpeech).toEqual([{actorId: event.sourcePointers[0]!.actorId!, action: event.sourcePointers[0]!.action!}]);
         } else {
           expect(projected).not.toHaveProperty("publicDecisionSpeech");
@@ -211,6 +211,8 @@ test("new root contracts cannot restore with historical decision schemas", async
   expect(resolveInfluenceGameDecisionVersion(undefined, undefined)).toBe(1);
   expect(resolveInfluenceGameDecisionVersion(1, 2)).toBe(2);
   expect(resolveInfluenceGameDecisionVersion(2, 3)).toBe(3);
+  expect(resolveInfluenceGameDecisionVersion(3, 3)).toBe(3);
+  for (const version of [undefined, 1, 2]) expect(() => resolveInfluenceGameDecisionVersion(3, version)).toThrow("requires decision contract v3");
   for (const version of [undefined, 1, 2]) expect(() => resolveInfluenceGameDecisionVersion(2, version)).toThrow("requires decision contract v3");
 });
 

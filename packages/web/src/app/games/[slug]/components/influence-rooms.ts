@@ -27,5 +27,11 @@ export function influenceRoomBackground(beat: VisualPresentationBeat, ledger?: V
   if (beat.purpose === "Introduction") return INFLUENCE_ROOMS.lobby;
   if (beat.purpose === "Ballot") return (beat.ballotPurpose ?? ledger?.current.choice) === "empower"
     ? INFLUENCE_ROOMS.empower : INFLUENCE_ROOMS.council;
-  return undefined;
+  switch (beat.purpose) {
+    case "Diary": return INFLUENCE_ROOMS.mingle[4];
+    case "Retrospective": return INFLUENCE_ROOMS.lobby;
+    case "Conversation": return INFLUENCE_ROOMS.lobby;
+    case "Night decision": return INFLUENCE_ROOMS.council;
+    default: { const unsupported: never = beat.purpose; throw new Error(`Unsupported portrait purpose: ${unsupported}`); }
+  }
 }

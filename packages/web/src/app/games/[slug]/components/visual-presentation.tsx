@@ -119,7 +119,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
     content = <section aria-label="Anonymous speech" className={`mx-auto w-full max-w-2xl py-10 ${fullscreen ? "flex min-h-0 flex-1 flex-col px-4" : ""}`}><p className="mb-4 text-xs text-white/50">Anonymous</p>{opacity > 0 && <blockquote data-speech-bubble style={{ opacity }} className={`rounded-2xl border border-white/20 bg-black/85 p-5 ${fullscreen ? "flex min-h-0 flex-1 flex-col" : ""}`}>{fullscreen ? <TimedSpeech text={beat.speech.text} elapsedMs={readingElapsedMs - SCENE_SPEECH_START_MS} /> : beat.speech.text}</blockquote>}</section>;
   } else if (beat.kind === "house") {
     content = hideHouseNarration && beat.text !== null ? null : <HouseSegment fullscreen={fullscreen} text={beat.text} title={beat.title} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} />;
-  } else {
+  } else if (beat.kind === "scene") {
     const isMingle = beat.roomId.startsWith("mingle-");
     const selectedRoom = isMingle && !fullscreen && pinnedRoom && mingleRooms.some((room) => room.roomId === pinnedRoom) ? pinnedRoom : beat.roomId;
     const selectedScene = rooms.find((room) => room.roomId === selectedRoom);
@@ -135,6 +135,9 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
         {scene && <VisualSceneView onReadyChange={onSceneReadyChange} controlsInset={controlsInset} scene={scene} speech={speech} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} navigationRevision={navigationRevision} reducedMotion={reducedMotion} />}
       </div>
     </div>;
+  } else {
+    const unsupported: never = beat;
+    throw new Error(`Unsupported visual presentation: ${JSON.stringify(unsupported)}`);
   }
   return <div data-presentation-current-entry={currentStateEntry || undefined} className={`w-full text-white ${(beat.kind !== "anonymous" || fullscreen) ? "flex min-h-0 flex-1 flex-col" : ""}`}>
     {content}

@@ -1,5 +1,5 @@
 import {twoNamesDecisionSpeechAction} from "@influence/engine/influence-decision-speech";
-import {assertReplayFrameOwnership, assertViewerEventOwnership} from "./presentation-ownership";
+import {assertEventProducedPresentation, PresentationContractError, assertReplayFrameOwnership, assertViewerEventOwnership} from "./presentation-ownership";
 import { resolveEmpowerRevoteVersion, type EmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import type {
   GameKernel,
@@ -194,7 +194,11 @@ export function compileFormatPresentationPrefix({
       snapshot,
       cues,
     });
-    if (failure) return failure;
+    if (failure) {
+      if ((gameSchemaVersion ?? 1) >= 3) throw new PresentationContractError(`invalid-presentation:${failure.diagnostic?.code ?? "unknown"}`, decision.sequence);
+      return failure;
+    }
+    assertEventProducedPresentation(decision, cues, gameSchemaVersion);
     snapshot = latestSnapshot(snapshot, cues, decision.sequence, phaseKey(decision.phase));
   }
 

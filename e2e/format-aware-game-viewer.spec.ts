@@ -214,6 +214,24 @@ test.describe("format-aware game viewer", () => {
     await expect(volume).toHaveValue("70");
   });
 
+  for (const revision of [1, 3]) test(`presentation contract v${revision} protects historical playback and rejects unknown events`, async ({page}) => {
+    await page.clock.install();
+    const slug = `presentation-contract-${revision}`;
+    const scenario = createFormatKernelViewerScenario("two_names_declined");
+    const decisions = [...scenario.decisions, {...scenario.decisions.at(-1)!, sequence:999, type:"future.unimplemented"}] as typeof scenario.decisions;
+    const fixture = await installDeterministicFormatGame(page,{slug,scenarioId:"two_names_declined",status:"completed",decisions});
+    await page.route(`**/api/games/${slug}`, route=>route.fulfill({json:{...fixture.currentGame(),gameSchemaVersion:revision}}));
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    if (revision === 3) {
+      await expect(page.getByRole("alert").filter({hasText:"Playback stopped"})).toContainText("Playback stopped");
+      await expect(page.getByRole("alert").filter({hasText:"Playback stopped"})).toContainText("unknown-canonical-event");
+    } else {
+      await pauseAutoplay(page,"Pause replay");
+      await expect(page.getByRole("heading",{name:"Playback stopped",exact:true})).toHaveCount(0);
+      await advanceUntilVisible(page,page.locator('[data-format-cue="two_names_initial_names"]'),"historical nomination");
+    }
+  });
+
   for (const kind of ["influence", "werewolf"] as const) {
     test(`${kind} player performance: continuous timeline and responsive pause`, async ({page}, testInfo) => {
       const slug = `performance-${kind}`;
@@ -2177,7 +2195,8 @@ test.describe("format-aware game viewer", () => {
     }
   });
 
-  test("Safety Bounce plays saved thinking and speech at each pick and the empowered tie", async ({page}, testInfo) => {
+  for (const mobile of [false,true]) test(`Safety Bounce plays saved thinking and speech at each pick and the empowered tie ${mobile ? "mobile" : "desktop"}`, async ({page}, testInfo) => {
+    if (mobile) await page.setViewportSize({width:390,height:844});
     await page.clock.install();
     const slug = "safety-chain-speech";
     await installSafetyBounceLobby(page, slug);
@@ -2188,7 +2207,7 @@ test.describe("format-aware game viewer", () => {
       const tie = event.type === "format.resolved";
       return [{id:index+1,entrySequence:index+1,firstDurableEventSequence:event.sequence,gameId:slug,round:event.round,phase:event.phase,scope:"public",fromPlayerId:actorId,fromPlayerName:actorId,toPlayerIds:null,
         text:tie ? "I am breaking this tie because I trust the other player." : `I choose this player because we need a stronger balance. Pick ${index}.`,
-        thinking:tie ? "My tie decision protects my next round." : `My private chain reasoning ${index}.`,timestamp:Date.parse(event.timestamp),decisionSpeech:{actorId,action:tie ? "format-tiebreak" : "bounce-pointer"}}];
+        thinking:tie ? "My tie decision protects my next round." : `My private chain reasoning ${index}. I want to protect the promise I made earlier while keeping my options open. This choice leaves both sides with a reason to work with me, but I still need to hear what the next player says before deciding who I can trust.`,timestamp:Date.parse(event.timestamp),decisionSpeech:{actorId,action:tie ? "format-tiebreak" : "bounce-pointer"}}];
     });
     const ballots = scenario.decisions.flatMap((event,index) => event.type === "format.ballot_cast" ? [{id:100+index,entrySequence:100+index,firstDurableEventSequence:event.sequence,gameId:slug,round:event.round,phase:event.phase,scope:"system",fromPlayerId:event.payload.voterId,fromPlayerName:event.payload.voterId,toPlayerIds:[],text:`I vote ${event.payload.targetId} because I cannot trust them.`,timestamp:Date.parse(event.timestamp),decisionSpeech:{actorId:event.payload.voterId,action:"format-ballot"}}] : []);
     await page.route(`**/api/games/${slug}/transcript`, route => route.fulfill({json:[...speeches,...ballots]}));
@@ -2197,12 +2216,20 @@ test.describe("format-aware game viewer", () => {
     await page.getByRole("button",{name:"Player settings",exact:true}).click();
     await page.getByLabel("Show thinking",{exact:true}).check();
     await page.getByRole("button",{name:"Close settings",exact:true}).click();
+    await page.getByRole("button",{name:"Enter fullscreen",exact:true}).click();
     const chain = page.locator("[data-safety-chain]");
-    await advanceUntilVisible(page, chain.locator("[data-in-scene-thinking]"), "chain thinking");
-    await expect(chain).toContainText("My private chain reasoning");
-    await expect(chain.locator("[data-speech-bubble]")).toHaveCount(0);
+    const thinking = chain;
+    await advanceUntilVisible(page, thinking.locator("[data-in-scene-thinking]"), "chain thinking");
+    await expect(thinking).toContainText("My private chain reasoning");
+    await expect(thinking.locator("[data-thought-tail]")).not.toHaveCount(0);
+    await expect(thinking.locator("[data-thinking-camera]")).not.toHaveCSS("transform","matrix(1, 0, 0, 1, 0, 0)");
+    await expect(thinking.locator("[data-room-backdrop]")).toHaveAttribute("data-room-backdrop","/visual/influence/rooms-v1/council.jpg");
+    await expect(thinking.locator("[data-speech-bubble]")).toHaveCount(0);
+    await thinking.screenshot({path:testInfo.outputPath("safety-chain-thinking.png")});
     await advanceUntilVisible(page, chain.locator("[data-speech-bubble]"), "chain public speech");
     await expect(chain).toContainText("I choose this player because");
+    await expect(chain.locator("[data-speech-tail]")).toHaveCount(1);
+    await expect(chain.locator("[data-thinking-camera]")).toHaveCSS("transform","matrix(1, 0, 0, 1, 0, 0)");
     await chain.screenshot({path:testInfo.outputPath("safety-chain-public-speech.png")});
     await expect(chain.locator('[data-chain-player="atlas"]')).toHaveAttribute("data-chooser","true");
     await advanceUntilVisible(page, page.getByRole("blockquote").filter({hasText:"because I cannot trust them"}), "House ballot explanation");

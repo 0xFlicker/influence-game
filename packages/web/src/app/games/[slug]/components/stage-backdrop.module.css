@@ -3,7 +3,7 @@
   inset: 0;
   overflow: hidden;
   pointer-events: none;
-  background: #57524c;
+  background: #15120f url("/visual/influence/rooms-v1/lobby.jpg") center / cover;
 }
 
 .half {
@@ -27,7 +27,7 @@
 
 .neighbor { --edge-blur: 8px; }
 .repeat { --edge-blur: 24px; }
-.studio { --edge-blur: 6px; }
+.room { --edge-blur: 6px; }
 
 .left { left: 0; }
 .right { right: 0; }

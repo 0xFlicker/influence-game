@@ -802,7 +802,7 @@ describe("Game REST API", () => {
       expect(config.maxRounds).toBeGreaterThanOrEqual(10);
       expect(config.empowerRevoteVersion).toBe(2);
     expect(config.decisionContractVersion).toBe(3);
-      expect(config.gameSchemaVersion).toBe(2);
+      expect(config.gameSchemaVersion).toBe(3);
       expect(config.formatManifest).toEqual([
         "save_or_eliminate",
         "vote_bomb",

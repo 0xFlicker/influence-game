@@ -95,7 +95,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
       const chooser = players.find(player => player.id === cue.tiebreakerId);
       const ids = cue.kind === "format_tiebreak" ? cue.tiedPlayerIds : cue.after.resolution?.tiedPlayerIds ?? [];
       if (chooser && ids.length) return {rooms, beat: {kind: "nominee-selection",
-        chooser: {...chooser, avatarUrl: data.portraits[chooser.id] ?? chooser.avatarUrl, fullBodyReferenceUrl: data.fullBodies?.[chooser.id]},
+        chooser: {...chooser, avatarUrl: data.portraits[chooser.id] ?? chooser.avatarUrl, fullBodyReferenceUrl: data.fullBodies?.[chooser.id], headRectangle:data.fullBodyHeads?.[chooser.id]},
         nominees: ids.flatMap(id => {const player = players.find(p => p.id === id);return player ? [{...player, avatarUrl: data.portraits[id] ?? player.avatarUrl}] : []}),
         speech: cue.spokenMessage ? {id: cue.key, playerId: chooser.id, speaker: chooser.name, text: cue.spokenMessage} : undefined,
         selectedId: cue.kind === "format_deciding_vote" ? cue.targetId : null,
@@ -104,7 +104,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
     if (cue.kind === "safety_bounce_started" || cue.kind === "safety_bounce_pointer") {
       const actorId = cue.kind === "safety_bounce_pointer" ? cue.actorId : cue.starterId;
       return {rooms, beat: {kind: "safety-chain", cue,
-        roster: players.map(player => ({...player, avatarUrl: data.portraits[player.id] ?? player.avatarUrl, fullBodyReferenceUrl: data.fullBodies?.[player.id]})),
+        roster: players.map(player => ({...player, avatarUrl: data.portraits[player.id] ?? player.avatarUrl, fullBodyReferenceUrl: data.fullBodies?.[player.id], headRectangle:data.fullBodyHeads?.[player.id]})),
         speech: cue.spokenMessage ? {id: cue.key, playerId: actorId, speaker: players.find(p => p.id === actorId)?.name ?? actorId, text: cue.spokenMessage} : undefined}};
     }
     if (isSafetyBounceSceneCue(cue)) {

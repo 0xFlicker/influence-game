@@ -13,7 +13,7 @@ import {SoloPresentation} from "./solo-presentation";
 
 export interface NomineeSelectionBeat {
   kind: "nominee-selection";
-  chooser: GamePlayer & {fullBodyReferenceUrl?: string | null};
+  chooser: GamePlayer & {fullBodyReferenceUrl?: string | null; headRectangle?: import("@influence/engine/character-portrait").HeadRectangle};
   nominees: GamePlayer[];
   selectedId: string | null;
   speech?: VisualSpeech;

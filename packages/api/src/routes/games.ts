@@ -1,3 +1,4 @@
+import {CURRENT_INFLUENCE_GAME_SCHEMA_VERSION} from "@influence/engine/influence-game-schema";
 import { CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION } from "@influence/engine/influence-decision-speech";
 import { houseFullBodyUrl } from "@influence/engine/house-character-art";
 import { audioReadySequence } from "../services/audio-frontier.js";
@@ -232,7 +233,7 @@ export function createGameRoutes(db: DrizzleDB) {
       formatManifest: frozenFormatManifest,
       empowerRevoteVersion: CURRENT_EMPOWER_REVOTE_VERSION,
       decisionContractVersion: CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION,
-      gameSchemaVersion: 2,
+      gameSchemaVersion: CURRENT_INFLUENCE_GAME_SCHEMA_VERSION,
     };
 
     const gameId = randomUUID();

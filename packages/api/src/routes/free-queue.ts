@@ -1,3 +1,4 @@
+import {CURRENT_INFLUENCE_GAME_SCHEMA_VERSION} from "@influence/engine/influence-game-schema";
 import { CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION } from "@influence/engine/influence-decision-speech";
 import { houseFullBodyUrl } from "@influence/engine/house-character-art";
 import { CURRENT_EMPOWER_REVOTE_VERSION } from "@influence/engine/empower-revote-rules";
@@ -279,7 +280,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       formatManifest: [...DEFAULT_FORMAT_MANIFEST],
       empowerRevoteVersion: CURRENT_EMPOWER_REVOTE_VERSION,
       decisionContractVersion: CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION,
-      gameSchemaVersion: 2,
+      gameSchemaVersion: CURRENT_INFLUENCE_GAME_SCHEMA_VERSION,
     };
 
     const user = c.get("user");

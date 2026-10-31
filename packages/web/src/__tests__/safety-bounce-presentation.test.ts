@@ -43,7 +43,7 @@ test("unknown events, ambiguous and orphan speeches fail only under the new root
   const unknown = {...scenario.decisions[0]!, type: "future.event"} as unknown as ViewerDecisionEvent;
   expect(() => assertViewerEventOwnership([unknown], 2)).toThrow("unknown-event");
   expect(() => assertViewerEventOwnership([unknown], undefined)).not.toThrow();
-  expect(() => assertViewerEventOwnership([], 3)).toThrow("Unsupported Influence game schema");
+  expect(() => assertViewerEventOwnership([], 4)).toThrow("Unsupported Influence game schema");
   const scenes = buildStoryScenes([...deliveries, {...deliveries[0]!, id: 999}]);
   expect(() => composeInfluencePresentation("g", compile().cues, players, scenes, 2)).toThrow("ambiguous-speech");
   expect(() => composeInfluencePresentation("g", compile().cues, players, scenes)).not.toThrow();

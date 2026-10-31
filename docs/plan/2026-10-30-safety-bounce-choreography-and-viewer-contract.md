@@ -205,3 +205,8 @@ The adjacent thinking/speech beat also now receives the council-room background 
 The follow-up fullscreen review exposed the old fixed-width card wrapper. Two Names reveals now use the shared full-stage visual path, with side-by-side characters, labels below, no nested dossier borders, and reserved playback-control space. Desktop/mobile fullscreen tests assert stage width and height, in addition to image presence and historical fallback.
 
 Artwork/layout verification: provider-free baseline **3,174 passed, 5 skipped** after rerunning outside the port-restricted sandbox; final focused viewer/export tests **78 passed**; final Two Names browser run **11 passed**, including mobile/desktop fullscreen sizing, missing-art fallback, historical replay and both speech branches. `bun run check` passed. The new fullscreen assertions initially caught duplicated player-shell padding; the final run passed after removing it. No API or game-state behavior changed in this presentation-only follow-up.
+
+
+### Follow-up: viewer coverage and room backgrounds
+
+New root schema v3 extends the existing ownership checks with event-to-cue delivery checks and rejects invalid format presentation instead of leaving an incomplete result panel. Existing root versions remain frozen: **THOU SHALT NOT BREAK AN OLD GAME.** Every format cue is required in executable prefix/render coverage across historical and current versions; Empower tie/revote fixtures supplement the format scenarios. All remaining solo/decorative studio gray backgrounds now select existing House room artwork. Diary visibility is unchanged.
