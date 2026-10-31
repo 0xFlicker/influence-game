@@ -53,21 +53,21 @@ const result = await call.executeManifest({
 });
 ```
 
-Each dispatch consumes its reserved fallback unit and is never refunded. Reservation and the provider-health check belong in the same database transaction so a breaker cannot open between observation and dispatch. An exhausted or entry-scoped-open manifest entry may advance to the next permitted entry; a provider-wide open circuit may halt automatic cross-provider spending.
+Each dispatch consumes its reserved fallback unit and is never refunded. Reservation and the provider-health check belong in the same database transaction so a breaker cannot open between observation and dispatch. An exhausted or entry-scoped-open manifest entry may advance to the next permitted entry; a provider-wide open circuit blocks that provider while other sealed providers remain eligible.
 
 ### Preserve useful failure evidence without making storage gameplay authority
 
 Capture the exact prepared request and provider response at the transport boundary before parsing discards detail. Sanitize credentials before persistence, including reflected values and credential-bearing URL parameters. For non-429 failures, retain the exact sanitized envelope and correlation metadata.
 
-Recovered rate limits are different: aggregate their count and recovered status instead of writing one raw object per retry. Terminal rate-limit exhaustion retains the count and terminal reason.
+Rate limits retain full sanitized attempt evidence as well as aggregate counts, recovery status and terminal reason.
 
 Write a deterministic private-evidence outbox next to the terminal attempt journal. Object-storage workers may claim and reconcile that outbox with bounded deadlines, backoff, and idempotent identities. If evidence storage fails, mark diagnostics degraded and continue gameplay; a diagnostic failure must not repeat or invalidate an accepted action.
 
 ### Separate optional absence from required legal continuation
 
-Optional speech or narration exhaustion creates no transcript message, model thinking, strategy update, or synthetic `[No response]` prose.
+Output-specific optional speech or narration exhaustion creates no transcript message, model thinking, strategy update, or synthetic `[No response]` prose.
 
-Required decisions use phase-owned deterministic fallback over the current legal choices. The fallback commits through the normal canonical path, so it affects tallies, later eligibility, and game history, while provenance records that the engine—not a model—selected it. Do not fabricate a model decision ID, rationale, or strategy delta.
+Only exhausted output-validation failures may use phase-owned deterministic fallback over the current legal choices. Availability failures instead preserve the unfinished turn for durable delayed retry or suspension. The fallback commits through the normal canonical path, so it affects tallies, later eligibility, and game history, while provenance records that the engine—not a model—selected it. Do not fabricate a model decision ID, rationale, or strategy delta.
 
 ### Seal one manifest per game
 
@@ -94,9 +94,9 @@ Validate provider payloads and accepted domain values as separate representation
 
 ### Treat systemic provider health as separate durable authority
 
-Request-specific refusal and rate limiting without a valid future `Retry-After` remain call-scoped. Authentication failures open provider health immediately; unsupported configuration can open only the affected entry. Retryable failures with `Retry-After` immediately cool down that model and advance to the next permitted route. Repeated service or transport failures without the header open the model's circuit after a bounded threshold. Other models on that provider remain usable. Ambiguous 4xx responses stay call-scoped without corroboration.
+Request-specific refusal and rate limiting without a valid future `Retry-After` remain call-scoped. Authentication failures open provider health immediately; unsupported configuration can open only the affected entry. Explicit OpenAI Flex capacity first cools only its Flex tier and retries the same model on explicit standard processing; see [Flex recovery](openai-flex-simulation-retries.md). Other retryable failures with `Retry-After` cool down that model and advance to the next permitted route. Repeated service or transport failures without the header open the model's circuit after a bounded threshold. Other models on that provider remain usable. Ambiguous 4xx responses stay call-scoped without corroboration.
 
-Persist revisioned health state. Dispatch admission automatically closes an expired transient model cooldown and records `cooldown_expired`; this permits a subsequent ordinary request, not an extra paid probe. Authentication/configuration circuits still require a successful probe against the current revision using one expiring lease. A failed probe leaves the circuit open and stores its sanitized evidence. An open Daily primary pauses new Daily claims, while running games continue through their permitted manifest or engine behavior.
+Persist revisioned health state. Dispatch admission automatically closes an expired transient model cooldown and records `cooldown_expired`; this permits a subsequent ordinary request, not an extra paid probe. Authentication/configuration circuits still require a successful probe against the current revision using one expiring lease. A failed probe leaves the circuit open and stores its sanitized evidence. An open Daily primary pauses new Daily claims, while running games continue through their permitted manifest or durably defer the same turn.
 
 ### Preserve the existing private authority split
 
@@ -136,7 +136,7 @@ non-429 failure
 recovered 429 activity
   -> logical-call aggregate count
   -> recovered outcome
-  -> no raw object per retry
+  -> full sanitized evidence for each actual dispatch
 
 indeterminate dispatch after crash
   -> retry with next durable attempt ordinal

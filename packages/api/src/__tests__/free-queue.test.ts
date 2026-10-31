@@ -1,3 +1,4 @@
+import { DEFAULT_GAME_FALLBACKS } from "@influence/engine/model-defaults";
 import { getNextFreeGameTime, getNextDailyFreeDrawAt } from "../services/free-game-schedule.js";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
@@ -296,8 +297,9 @@ describe("free queue season admission", () => {
     });
     expect(gameConfig.modelRouting.defaultManifest).toEqual([
       gameConfig.modelRouting.defaultManifest[0],
-      { catalogId: "xai:grok-4.6", reasoningPolicy: "action-policy", maxCallsPerGame: 24 },
+      ...DEFAULT_GAME_FALLBACKS,
     ]);
+    expect(gameConfig.modelRouting.houseManifest).toEqual(gameConfig.modelRouting.defaultManifest);
     expect(gameConfig.visualMode).toBe(false);
     expect(gameConfig).not.toHaveProperty("visualFailurePolicy");
     expect(gameConfig).not.toHaveProperty("modelTier");

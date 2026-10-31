@@ -1,3 +1,6 @@
+import { ProviderDeferredError } from "@influence/engine";
+import { deferProviderGame } from "./provider-game-retry.js";
+
 import { resolveInfluenceGameDecisionVersion, resolveInfluenceGameSchemaVersion } from "@influence/engine/influence-game-schema";
 import { freezeLiveAudio, ensureLiveAudio, pauseLiveAudio, LiveAudioBlocked } from "./audio-live.js";
 import { resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
@@ -997,6 +1000,7 @@ async function runGameAsync(
     await publishCurrentWatchState(db, gameId, "completion", refresh?.watchState);
     await reconcilePostgameMediaAfterCompletion(db, gameId);
   } catch (err) {
+    if (err instanceof ProviderDeferredError && ownerEpoch && !runner.aborted) { await deferProviderGame(db, gameId, ownerEpoch, err); return; }
     if (err instanceof LiveAudioBlocked && ownerEpoch) { await pauseLiveAudio(db, gameId, ownerEpoch); return; }
     if (err instanceof ContextSourceConflictError && ownerEpoch && !runner.aborted) {
       console.error(`[game-lifecycle] Context integrity conflict for ${gameId}:`, err.message);

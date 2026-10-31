@@ -1,3 +1,4 @@
+import { providerRetryPending } from "./provider-game-retry.js";
 import {freezeLiveVoices} from "./audio-voices.js";
 import { houseFullBodyUrl } from "@influence/engine/house-character-art";
 import { audioReadySequence } from "./audio-frontier.js";
@@ -144,7 +145,7 @@ export async function claimWerewolfGame(db: DrizzleDB, gameId: string, processId
     const admission = await checkRecoveryAdmissionInTransaction(tx);
     if (!admission.ok) return { ok: false as const, error: admission.error };
     const [game] = await tx.select().from(schema.games).where(eq(schema.games.id, gameId)).for("update");
-    if (!game || game.gameKind !== "werewolf" || game.status !== "in_progress") return { ok: false as const, error: "Game is not running" };
+    if (!game || game.gameKind !== "werewolf" || (game.status !== "in_progress" || providerRetryPending(game.config))) return { ok: false as const, error: "Game is not running" };
     const [owner] = await tx.select().from(schema.gameRunOwners).where(and(eq(schema.gameRunOwners.gameId, gameId), eq(schema.gameRunOwners.status, "active"))).for("update");
     const now = new Date();
     if (owner && (!owner.expiresAt || new Date(owner.expiresAt) > now)) return { ok: false as const, error: "A worker already owns this game" };

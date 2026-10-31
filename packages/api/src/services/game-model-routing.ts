@@ -1,3 +1,4 @@
+import { DEFAULT_MODEL_CATALOG_ID, DEFAULT_GAME_FALLBACKS } from "@influence/engine/model-defaults";
 import { and, eq, or, inArray, sql } from "drizzle-orm";
 import { summarizeModelRouting, actorProviderManifest, assertCurrentGameModelRouting, assertModelEntitlement, contestantManifest, gameModelPolicy, normalizeGameModelRouting, normalizeModelPreference, sealGameModelRouting, type ModelPreference } from "@influence/engine";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -24,7 +25,10 @@ export async function creationModelRouting(db: Pick<DrizzleDB, "select">, userId
     && !await userHasAnyRole(db, userId, ["admin", "sysop"])) throw new GameModelRoutingError("Game model settings require admin or sysop access", 403);
   if (config.serviceTier !== undefined && config.serviceTier !== "flex" && config.serviceTier !== "auto") throw new GameModelRoutingError("Invalid service tier");
   if (config.modelRouting && typeof config.modelRouting === "object" && ("contestants" in config.modelRouting || "frozenRoutes" in config.modelRouting)) throw new GameModelRoutingError("Clients cannot supply sealed model assignments");
-  const policy = modelInput(() => gameModelPolicy(config));
+  const useDefaults = config.modelRouting === undefined && config.providerManifest === undefined && config.modelSelection === undefined;
+  const policy = modelInput(() => gameModelPolicy(useDefaults
+    ? { ...config, providerManifest: [{ catalogId: DEFAULT_MODEL_CATALOG_ID }, ...DEFAULT_GAME_FALLBACKS] }
+    : config));
   modelInput(() => assertCurrentGameModelRouting(policy));
   return policy;
 }

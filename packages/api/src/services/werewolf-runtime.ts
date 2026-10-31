@@ -1,3 +1,5 @@
+import { ProviderDeferredError } from "@influence/engine";
+import { deferProviderGame } from "./provider-game-retry.js";
 import { freezeLiveAudio, ensureLiveAudio, pauseLiveAudio, LiveAudioBlocked } from "./audio-live.js";
 import { actorProviderManifest, type GameModelRouting } from "@influence/engine";
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity, RetrospectiveExecutionError, ProviderUnavailableError } from "@influence/engine";
@@ -97,6 +99,7 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
   })
     .then(async () => { if (config.audioMode === true) await completeWerewolfAudioGame(db,gameId,ownerEpoch); })
     .catch(async (error) => {
+      if (error instanceof ProviderDeferredError && !controller.signal.aborted && !heartbeatFailure) { await deferProviderGame(db, gameId, ownerEpoch, error); return; }
       if (error instanceof LiveAudioBlocked) { await pauseLiveAudio(db, gameId, ownerEpoch); return; }
       if (error instanceof RetrospectiveExecutionError && !controller.signal.aborted && !heartbeatFailure) {
         await pauseRetrospectiveExecution(db, gameId, ownerEpoch, error);

@@ -2,6 +2,10 @@
 import {CURRENT_INFLUENCE_GAME_SCHEMA_VERSION} from "./influence-game-schema";
 import { HOUSE_CAST } from "./house-personas";
 /**
+ * Hosted OpenAI Flex capacity retries the same model on explicit standard (default).
+ * API availability exhaustion durably delays the same turn, then suspends; it never
+ * invents ballots or skips required speech. Retain each attempt and its tier-aware cost.
+
  * New simulations freeze root schema v3 (strict viewer coverage): Safety Bounce classifies before Mingle;
  * decision v3 preserves public chain/tiebreak speech and private House ballot explanations.
  * Keep direct House calls and typed evidence; no `as any` shortcuts.

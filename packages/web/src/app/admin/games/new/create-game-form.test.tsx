@@ -1,3 +1,4 @@
+import { DEFAULT_GAME_FALLBACKS } from "@influence/engine/model-defaults";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { act, cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 import { Window as HappyDOMWindow } from "happy-dom";
@@ -94,7 +95,7 @@ describe("new game form", () => {
     expect(mounted.queryByText(/Curated models and exact IDs/)).toBeNull();
     expect(mounted.queryByText(/Live model inventory is unavailable/)).toBeNull();
     const fallback = mounted.getByRole("combobox", { name: "Fallback 1 model" }) as HTMLSelectElement;
-    expect(fallback.value).toBe("xai:grok-4.6");
+    expect(fallback.value).toBe("anthropic:claude-haiku-5-5");
     expect(fallback.disabled).toBe(false);
     const primary = mounted.getByRole("combobox", { name: "Primary model" }) as HTMLSelectElement;
     fireEvent.change(primary, { target: { value: "katana:grok-4-5" } });
@@ -130,13 +131,13 @@ describe("new game form", () => {
     fireEvent.input(mounted.getByRole("textbox", { name: "House Primary exact model ID" }), { target: { value: "meta-muse:experimental-text-model" } });
     expect(mounted.getByText("Pricing unavailable")).not.toBeNull();
     expect(mounted.queryByText(/Capabilities and pricing may be unknown/)).toBeNull();
-    fireEvent.click(mounted.getByRole("button", { name: /House Add fallback/ }));
+    fireEvent.click(mounted.getByRole("button", { name: "House Remove fallback 2" }));
     fireEvent.input(mounted.getByRole("textbox", { name: "House Fallback 1 exact model ID" }), { target: { value: "katana:deepseek-v4-flash" } });
     fireEvent.click(mounted.getByRole("button", { name: /Create .* Game/ }));
     await waitFor(() => expect(pushed).toEqual(["/games/independent-house"]));
     expect(bodies[0]).toMatchObject({ modelRouting: {
-      defaultManifest: [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "medium" }, { catalogId: "xai:grok-4.6", reasoningPolicy: "action-policy", maxCallsPerGame: 24 }],
-      houseManifest: [{ catalogId: "meta-muse:experimental-text-model", reasoningPolicy: "action-policy" }, { catalogId: "katana:deepseek-v4-flash", reasoningPolicy: "action-policy", maxCallsPerGame: 12 }],
+      defaultManifest: [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "medium" }, ...DEFAULT_GAME_FALLBACKS],
+      houseManifest: [{ catalogId: "meta-muse:experimental-text-model", reasoningPolicy: "action-policy" }, { catalogId: "katana:deepseek-v4-flash", reasoningPolicy: "action-policy", maxCallsPerGame: 1000 }],
     } });
   });
 
@@ -165,7 +166,7 @@ describe("new game form", () => {
     expect(bodies[0]).toMatchObject({ visualMode: true, modelRouting: { defaultManifest: [{ catalogId: model.id, reasoningPolicy: "medium" }], houseManifest: [{ catalogId: model.id, reasoningPolicy: "medium" }] } });
   });
 
-  test.each([false, true])("defaults to Luna and Grok 4.6 only (visual: %s)", async visual => {
+  test.each([false, true])("defaults to Luna with economical native Anthropic and xAI fallbacks (visual: %s)", async visual => {
     installDom();
     const bodies: Array<Record<string, unknown>> = [];
     globalThis.fetch = (async (request, init) => {
@@ -180,7 +181,7 @@ describe("new game form", () => {
     await waitFor(() => expect(pushed).toEqual(["/games/default-route"]));
     expect((bodies[0]?.modelRouting as { defaultManifest: unknown }).defaultManifest).toEqual([
       { catalogId: "openai:gpt-6-luna", reasoningPolicy: "medium" },
-      { catalogId: "xai:grok-4.6", reasoningPolicy: "action-policy", maxCallsPerGame: 24 },
+      ...DEFAULT_GAME_FALLBACKS,
     ]);
   });
 
@@ -259,17 +260,20 @@ describe("new game form", () => {
 
     expect(mounted.getAllByText("Primary")[0]).not.toBeNull();
     expect(mounted.getAllByText("Fallback 1").length).toBeGreaterThan(0);
-    expect(mounted.queryByText("Fallback 2")).toBeNull();
+    expect(mounted.getAllByText("Fallback 2").length).toBeGreaterThan(0);
     expect(mounted.queryByText(/Mixed/)).toBeNull();
-    expect(mounted.getAllByText("Adaptive").length).toBe(3);
+    expect(mounted.getAllByText("Adaptive").length).toBe(6);
 
     const routeSelectors = Array.from(mounted.container.querySelectorAll<HTMLSelectElement>(
       'select[aria-label$="model"]',
     ));
     expect(routeSelectors.map((select) => select.value)).toEqual([
       "openai:gpt-6-luna",
-      "xai:grok-4.6",
+      "anthropic:claude-haiku-5-5",
+      "xai:grok-4.3",
       "openai:gpt-6-luna",
+      "anthropic:claude-haiku-5-5",
+      "xai:grok-4.3",
     ]);
 
     const options = Array.from(mounted.container.querySelectorAll("option"))
@@ -300,8 +304,9 @@ describe("new game form", () => {
     expect(createBody).not.toHaveProperty("slotType");
     expect(createBody).not.toHaveProperty("modelSelection");
     expect((createBody.modelRouting as { defaultManifest: unknown }).defaultManifest).toEqual([
-      { catalogId: "xai:grok-4.6", reasoningPolicy: "action-policy" },
+      { catalogId: "anthropic:claude-haiku-5-5", reasoningPolicy: "action-policy" },
       { catalogId: "openai:gpt-6-luna", reasoningPolicy: "medium", maxCallsPerGame: 12 },
+      DEFAULT_GAME_FALLBACKS[1],
     ]);
     expect(createBody.formatManifest).toEqual([
       "save_or_eliminate",
@@ -426,7 +431,7 @@ describe("new game form", () => {
 
     const mounted = render(<CreateGameForm />);
     await waitFor(() => expect(mounted.getAllByText("Fallback 1").length).toBeGreaterThan(0));
-    expect(mounted.queryByText("Fallback 2")).toBeNull();
+    expect(mounted.getAllByText("Fallback 2").length).toBeGreaterThan(0);
     const glmOption = Array.from(mounted.container.querySelectorAll("option"))
       .find((option) => option.value === "katana:glm-5-2");
     expect(glmOption?.disabled).toBe(false);
@@ -473,6 +478,11 @@ function providerInventory() {
   return {
     status: "complete",
     models: [
+      ...DEFAULT_GAME_FALLBACKS.map(entry => ({ ...base, catalogId: entry.catalogId,
+        providerProfileId: entry.catalogId.split(":")[0]!, modelId: entry.catalogId.split(":")[1]!,
+        displayName: entry.catalogId, defaultReasoningPolicy: "action-policy",
+        capabilities: { ...base.capabilities, supportsImageInput: true },
+        allowedReasoningPolicies: ["action-policy", "low", "medium", "high"], })),
       {
         ...base,
         capabilities: { ...base.capabilities, supportsImageInput: true },
@@ -525,7 +535,7 @@ async function configureTextFallbacks(mounted: ReturnType<typeof render>) {
   await waitFor(() => expect(mounted.getAllByRole("option", { name: "Katana GLM 5.2" }).length).toBeGreaterThan(0));
   if (!mounted.queryByRole("combobox", { name: "Fallback 1 model" })) fireEvent.click(mounted.getByRole("button", { name: "+ Add fallback" }));
   fireEvent.change(mounted.getByRole("combobox", { name: "Fallback 1 model" }), { target: { value: "katana:glm-5-2" } });
-  fireEvent.click(mounted.getByRole("button", { name: "+ Add fallback" }));
+  if (!mounted.queryByRole("combobox", { name: "Fallback 2 model" })) fireEvent.click(mounted.getByRole("button", { name: "+ Add fallback" }));
   fireEvent.change(mounted.getByRole("combobox", { name: "Fallback 2 model" }), { target: { value: "katana:grok-4-5" } });
 }
 
@@ -550,7 +560,7 @@ test("Werewolf uses shared model/casting controls and submits configurable roles
   fireEvent.click(mounted.getByRole("button",{name:"Create Werewolf Game"}));
   await waitFor(()=>expect(pushed).toEqual(["/games/custom-village"]));
   expect(calls[0]!.url).toContain("/api/werewolf/lobbies");
-  expect(calls[0]!.body).toMatchObject({visibility:"unlisted",setup:{playerCount:7,wolves:2,seer:false,doctor:true},visualMode:true,fillStrategy:"balanced",modelRouting:{ defaultManifest:[{catalogId:"openai:gpt-6-luna",reasoningPolicy:"medium"},{catalogId:"xai:grok-4.6",reasoningPolicy:"action-policy",maxCallsPerGame:24}]}});
+  expect(calls[0]!.body).toMatchObject({visibility:"unlisted",setup:{playerCount:7,wolves:2,seer:false,doctor:true},visualMode:true,fillStrategy:"balanced",modelRouting:{ defaultManifest:[{catalogId:"openai:gpt-6-luna",reasoningPolicy:"medium"},...DEFAULT_GAME_FALLBACKS]}});
   expect((calls[0]!.body.personaPool as string[]).length).toBeGreaterThan(1);
   expect(calls[0]!.body).not.toHaveProperty("formatManifest");
 });

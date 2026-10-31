@@ -870,4 +870,8 @@ games; frozen games and private provider evidence retain their original routes.
 See [native Anthropic](docs/native-anthropic.md) for cutover details.
 
 
+### Provider availability recovery
+
+Use `bun run simulate:api -- --help` for the localhost API evaluation options; keep the API game ID and inspect private attempt evidence alongside `--chatty` output. Hosted OpenAI Flex capacity fails over to explicit standard (`default`) on the same model; standard can cost more. If all permitted routes are unavailable, the API delays the same turn and eventually suspends instead of inventing decisions. Deterministic coverage uses `bun run test`, `bun run test:postgres`, and `bun run check`; these do not authorize paid probes. Preserve all sanitized attempts, requested/actual tier, usage and native reasoning. No `as any` or direct House calls. See [model routing](docs/model-routing.md).
+
 Safety Bounce viewer regression checks: run `bun test ./packages/web/src/__tests__/safety-bounce-presentation.test.ts`, then `bun run test:e2e:format-viewer`. Catalog additions require a shared fixture and explicit canonical/viewer event ownership. Verify actual speech text, thinking-before-speech and target-after-speech, not just a nonempty renderer. Preserve old game fixtures. Use Bun, no `as any`, and direct House calls.

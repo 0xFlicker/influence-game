@@ -189,7 +189,7 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
           };
         },
         maxAttempts: options.maxAttempts,
-        dispatch: async ({ attemptOrdinal, requestOptions }) => {
+        dispatch: async ({ attemptOrdinal, requestOptions, serviceTier }) => {
           const key = `${runtime.catalogId}:${attemptOrdinal}`;
           const compiled = compiledByAttempt.get(key);
           const semanticCall = compiled?.invocation ?? withRepair(withOutputGuidance(invocation()));
@@ -201,7 +201,8 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
           const requestSignal = runtime.providerProfileId === "lm-studio"
             ? AbortSignal.timeout(runtime.localRequestTimeoutMs ?? DEFAULT_LM_STUDIO_TIMEOUT_MS)
             : options.requestSignalFactory?.();
-          const outcome = await adapterRuntime.adapter.dispatch(prepared, {
+          const dispatched = serviceTier ? { ...prepared, body: { ...(prepared.body as Record<string, unknown>), service_tier: serviceTier } } : prepared;
+          const outcome = await adapterRuntime.adapter.dispatch(dispatched, {
             ...requestOptions,
             ...((requestOptions.signal || requestSignal) && {
               signal: requestOptions.signal && requestSignal

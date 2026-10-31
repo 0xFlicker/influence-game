@@ -983,6 +983,11 @@ selection-policy upgrade changes mutable preferences and unsealed waiting games;
 it never changes the provider identity of a frozen game or accepted attempt.
 See [native Anthropic](docs/native-anthropic.md).
 
+
+### Provider availability versus model-output exhaustion
+
+A service-tier failover changes only OpenAI processing priority/pricing, preserving model and contestant identity. A manifest fallback changes the effective model within a frozen allowed route and records that provenance. Availability exhaustion means the logical turn is pending, not an accepted game action. Only exhausted output validation may invoke a phase-owned rules-legal fallback.
+
 ### House follow feed
 
 A game adapter supplies canonical knowledge through the player's current semantic action, independent of rendered text and the Show thinking toggle. Mystery Werewolf excludes roles and thinking; Omniscient and Influence include permitted cognition. Tab images provide supplemental visual context. Actual game speech temporarily takes priority over host speech without ending either session. See [House follow](docs/house-follow.md).

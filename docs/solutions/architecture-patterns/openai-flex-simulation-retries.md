@@ -1,47 +1,20 @@
 ---
-title: OpenAI Flex Simulation Retries
-date: 2026-07-24
+title: OpenAI Flex capacity failover inside durable logical calls
+date: 2026-10-31
 category: architecture-patterns
-module: engine simulation OpenAI transport
+module: provider execution
 problem_type: reliability_pattern
-component: service_object
-severity: medium
-applies_when:
-  - adding a lower-priority OpenAI simulation run
-  - handling Flex resource-unavailable responses
-  - modifying simulator provider request transport
-tags: [openai, flex, simulations, retries, service-tier, rate-limits]
-related_components: [simulation-runner, llm-client, local-model-evaluation]
+tags: [openai, flex, recovery, service-tier, provider-journal]
 ---
 
-# OpenAI Flex Simulation Retries
+# OpenAI Flex capacity failover
 
-## Guidance
+Coordinated gameplay disables SDK and legacy fetch-wrapper retries. Flex capacity therefore must fail over in `provider-execution.ts`, not underneath the durable attempt boundary. Explicit hosted OpenAI 429 `flex_unavailable` / `resource_unavailable` retries the same model with `service_tier: "default"`. The installed Responses and Chat Completions SDK contracts accept `default`; unlike `auto`, it explicitly selects standard pricing/performance. See the [official Responses contract](https://developers.openai.com/api/reference/resources/responses/websocket-events#response.create) and [Flex guide](https://developers.openai.com/api/docs/guides/flex-processing).
 
-`--flex` is a hosted-OpenAI simulation option, not a generic OpenAI-compatible
-provider option. Inject `service_tier: "flex"` only into Responses and Chat
-Completions POST bodies for the hosted provider.
+Persist a Flex-only entry health scope, with a 5-minute default cooldown capped at 15 minutes. Subsequent calls request standard until expiry; an ordinary later call tries Flex again. Keep generic rate limits, authentication, cancellation, schema errors and context overflow distinct. Preserve schema, semantic validation, context hash, reasoning and accepted-result authority. Each network dispatch needs its own durable ordinal and full sanitized evidence. Standard attempts freeze standard pricing and retain returned actual tier; unknown tiers remain unpriced.
 
-Treat Flex 429 resource-unavailable responses as expected: retry three times
-with bounded exponential backoff, honoring `Retry-After` only up to the same
-30-second maximum. The next attempt uses `service_tier: "auto"` for that
-request only; later simulation calls begin by probing Flex again. An auto-tier
-429 is returned to the normal caller retry policy rather than looping inside
-the Flex wrapper.
+Do not count availability or indeterminate attempts as semantic-output exhaustion. Read accepted results before preparation. A crash between dispatch and terminalization may duplicate remote inference/billing; it cannot duplicate canonical acceptance. A known terminal Flex failure must not be redispatched after restart while its cooldown remains active.
 
-When rewriting a request body, remove the inherited `content-length` header so
-the fetch implementation calculates the new length. Backoff must observe the
-request AbortSignal, otherwise a configured request timeout cannot interrupt a
-pending retry sleep.
+When permitted routes cannot supply a decision, defer the same turn. API recovery waves use 1, 2, 4, 8, 16, then 30-minute delays and suspend after 24 waves. Operational blockers requiring repair suspend sooner. Never convert HTTP 429/502 into speeches, abstentions or synthetic votes. Preserve all historical events and receipts, including already completed fallback-heavy games.
 
-## Cost accounting
-
-Record the effective `service_tier` returned by each successful OpenAI response
-beside its usage counters. A Flex batch summary reports its tier-aware estimated
-spend: Flex rows use the Flex/Batch rate card; auto/default fallback rows use
-the standard rate card and remain visible rather than being normalized away.
-Resource-unavailable 429 attempts have no usage or cost. The single comparison
-table retains the familiar OpenAI and Grok rows: Flex-supported OpenAI models
-use Flex rates, while unsupported OpenAI models and Grok retain standard rates.
-This is a rate-card estimate, not an invoice; returned tiers without a
-configured rate must be left unpriced and called out in the summary.
+Deterministic tests cover native request equivalence for player/House roles, cooldown routing/expiry, PostgreSQL restarts after Flex terminalization and standard acceptance, per-attempt evidence/rate cards, both-tier deferral and bounded suspension. No paid inference is required.

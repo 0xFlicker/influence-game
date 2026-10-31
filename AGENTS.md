@@ -93,7 +93,7 @@
 - Prefer Compound Engineering skills for plan/implement/review/PR flows when available.
 - Update `docs/solutions/`, `CONCEPTS.md`, and ops docs when behavior changes.
 
-- Werewolf v9/v10 require a strict majority of all living players in its single public vote; abstention is legal and a miss means no elimination. v7/v8 used thread checkpoints and a final plurality ballot. Only canonical `werewolf.day_vote_resolved` establishes the result; never carry votes forward. A typed provider failure records a marked unavailable abstention rather than fabricating a target.
+- Werewolf v9/v10 require a strict majority of all living players in its single public vote; abstention is legal and a miss means no elimination. v7/v8 used thread checkpoints and a final plurality ballot. Only canonical `werewolf.day_vote_resolved` establishes the result; never carry votes forward. Availability failures preserve the same unfinished vote and durably retry or suspend; they never produce an unavailable abstention. Only output-specific exhaustion may use the phase-owned marked fallback policy.
 
 - Werewolf v9/v10 public ballots are serial: commit and publish each accepted choice before dispatching the next voter. Earlier v7/v8 sealed batches retain their historical journal replay and one canonical reveal. Never leak future ballots or inject spectator progress into contestant observations or historical cursor reads.
 

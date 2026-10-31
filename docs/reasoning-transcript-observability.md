@@ -407,7 +407,7 @@ Simulation runs persist per-turn reasoning in local JSONL artifacts. API-backed 
 
 Decision traces and provider attempts are separate evidence types. Every logical player or House call runs through the shared attempt coordinator. Every terminal attempt preserves its exact sanitized prepared request and provider response, including successful decisions and native reasoning. Rate limits retain their aggregate counts and terminal reason as well as individual raw evidence. API evidence upload may degrade without failing gameplay because the durable private-payload outbox retains the body for recovery; it must not discard that body. The durable attempt reservation is required before dispatch. Local evidence-write failure stops the simulation instead of silently continuing to spend.
 
-Optional speech exhaustion emits no transcript row and no synthetic `[No response]` prose. Required decisions fall back only through phase-owned deterministic legality and commit with engine-fallback provenance, so the action affects tallies/history without pretending a model supplied rationale, thinking, or strategy. A crash may repeat an indeterminate billable remote request; durable owner, attempt, budget, and accepted-result fences still permit only one canonical gameplay effect.
+Availability exhaustion defers the same unfinished call; it cannot emit empty speech, a skipped required speech, or synthetic ballots. Output-specific exhaustion alone may omit optional speech or invoke phase-owned deterministic legality with engine-fallback provenance, so the action affects tallies/history without pretending a model supplied rationale, thinking, or strategy. A crash may repeat an indeterminate billable remote request; durable owner, attempt, budget, and accepted-result fences still permit only one canonical gameplay effect.
 
 Admin game history shows a Provider failures action whenever evidence exists, including recovered calls. Admin/sysop reads revalidate current role on every request. Producer MCP uses `list_trace_manifests` and `read_trace_content` with `evidenceType: "provider_attempt_failure"`; it requires producer OAuth scope plus current producer role. Raw reads are bounded, continuable, audited, no-store, escaped in web UI, and marked as untrusted data in MCP. Public, player, owner-only, transcript, watch, and ordinary `games:read` surfaces receive none of it.
 
@@ -884,6 +884,8 @@ Migration `0140_native_claude_selections` upgrades mutable preferences and waiti
 games; frozen games and private provider evidence retain their original routes.
 See [native Anthropic](native-anthropic.md) for cutover details.
 
+
+OpenAI Flex capacity failover records a separate attempt requesting `service_tier: "default"` on the same model. Preserve both sanitized envelopes, requested tier in request evidence, actual tier in accounting, usage and the frozen per-attempt rate card. Standard usage must use standard pricing. Durable Flex cooldowns and `providerRetry` are private operational state, never contestant observations. See [routing and recovery](model-routing.md#availability-recovery). No `as any` or direct House-call bypasses.
 
 ### Safety Bounce speech and lifecycle revisions
 

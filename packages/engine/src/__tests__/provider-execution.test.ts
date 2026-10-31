@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { APIUserAbortError } from "openai";
 import {
   ProviderAttemptError,
+  ProviderDeferredError,
   ProviderAcceptedValueIntegrityError,
   ProviderCallBudgetExhaustedError,
   ProviderCircuitOpenError,
@@ -36,6 +37,64 @@ const coordinate: ProviderLogicalCallCoordinate = {
 };
 
 describe("ProviderExecutionCoordinator", () => {
+
+  it("keeps a transient route recoverable when a later fallback has broken credentials or no budget", async () => {
+    const coordinator = new ProviderExecutionCoordinator({ hooks: { onReserve: intent => {
+      if (intent.preparedRequest.catalogId === "anthropic:fallback") throw new ProviderCircuitOpenError("anthropic:fallback", "provider:anthropic", 1, true);
+      if (intent.preparedRequest.catalogId === "xai:fallback") throw new ProviderCallBudgetExhaustedError("xai:fallback", 1, 1);
+    } } });
+    const entries = ["openai:primary", "anthropic:fallback", "xai:fallback"].map(catalogId => ({
+      catalogId, maxAttempts: 1,
+      preparedRequest: { providerProfileId: "openai" as const, catalogId, model: "fixture", transport: "fixture", body: {} },
+      dispatch: async () => { throw Object.assign(new Error("temporarily unavailable"), { status: 502 }); },
+      validate: (value: unknown) => ({ status: "usable" as const, value }),
+    }));
+    await expect(coordinator.startCall(coordinate).executeManifest({ entries })).rejects.toMatchObject({ name: "ProviderDeferredError", failure: { outcome: { kind: "service_error" } } });
+  });
+
+
+  it("fails over explicit Flex capacity immediately, retains default accounting, and bounds recovery", async () => {
+    let now = 0;
+    const records: ProviderAttemptRecord[] = [], tiers: string[] = [];
+    const coordinator = new ProviderExecutionCoordinator({ now: () => now, wait: async () => { throw new Error("unexpected wait"); },
+      hooks: { onTerminal: record => { records.push(record); } } });
+    const entry = { catalogId: "openai:gpt-6-luna", maxAttempts: 1,
+      preparedRequest: { transport: "openai.responses", providerProfileId: "openai" as const, catalogId: "openai:gpt-6-luna", model: "gpt-6-luna",
+        body: { service_tier: "flex", input: "unchanged", reasoning: { effort: "high" }, text: { format: { type: "json_schema" } } } },
+      dispatch: async ({ serviceTier }: { serviceTier?: "default" }) => {
+        tiers.push(serviceTier ?? "flex");
+        if (!serviceTier) throw Object.assign(new Error("capacity"), { status: 429, headers: { "retry-after": "300" }, error: { code: "flex_unavailable" } });
+        return { target: "Bea" };
+      }, validate: (value: { target: string }) => ({ status: "usable" as const, value }),
+      accounting: () => ({ effectiveServiceTier: "default", usage: { promptTokens: 10, completionTokens: 2, totalTokens: 12 } }),
+    };
+    const call = coordinator.startCall(coordinate);
+    await expect(call.executeManifest({ entries: [entry] })).resolves.toMatchObject({ value: { target: "Bea" }, acceptedAttemptOrdinal: 2 });
+    await call.executeManifest({ entries: [entry] });
+    expect(tiers).toEqual(["flex", "default"]);
+    expect(records.map(r => r.disposition)).toEqual(["retry_scheduled", "accepted"]);
+    expect(new Set(records.map(r => r.attemptId)).size).toBe(2);
+    expect(records[1]!.preparedRequest.body).toEqual({ ...entry.preparedRequest.body, service_tier: "default" });
+    expect(records[1]!.accounting?.effectiveServiceTier).toBe("default");
+    await coordinator.startCall(coordinate).executeManifest({ entries: [entry] });
+    expect(tiers).toEqual(["flex", "default", "default"]);
+    now = 300_001;
+    await coordinator.startCall(coordinate).executeManifest({ entries: [entry] });
+    expect(tiers.slice(-2)).toEqual(["flex", "default"]);
+  });
+
+  it.each([429, 502, 401])("defers HTTP %s availability/auth failure instead of exposing phase fallback", async status => {
+    const records: ProviderAttemptRecord[] = [];
+    await expect(new ProviderExecutionCoordinator({ hooks: { onTerminal: r => { records.push(r); } } }).startCall(coordinate).executeManifest({ entries: [{
+      catalogId: "openai:gpt-6-luna", maxAttempts: 1,
+      preparedRequest: { transport: "openai.responses", providerProfileId: "openai", model: "gpt-6-luna", body: { service_tier: "flex" } },
+      dispatch: async () => { throw Object.assign(new Error("unavailable"), { status, error: { code: "unrelated_error" } }); },
+      validate: (value: unknown) => ({ status: "usable", value }),
+    }] })).rejects.toBeInstanceOf(ProviderDeferredError);
+    expect(records).toHaveLength(1);
+    expect(records[0]!.acceptedValue).toBeUndefined();
+  });
+
   it("retains adapter-normalized failure usage instead of reinterpreting native cache fields", async () => {
     const records: ProviderAttemptRecord[] = [];
     const accounting = { usage: { promptTokens: 1200, cachedTokens: 900, cacheWriteTokens: 200,
@@ -414,7 +473,7 @@ describe("ProviderExecutionCoordinator", () => {
     expect(dispatches).toEqual(["openai:primary", "katana:glm"]);
   });
 
-  it("halts the manifest when the primary provider circuit is open", async () => {
+  it("continues to another provider when the primary provider circuit is open", async () => {
     const dispatches: string[] = [];
     const coordinator = new ProviderExecutionCoordinator({
       hooks: {
@@ -451,12 +510,8 @@ describe("ProviderExecutionCoordinator", () => {
 
     await expect(coordinator.startCall(coordinate).executeManifest({
       entries: [entry("openai:primary"), entry("katana:grok")],
-    })).rejects.toMatchObject({
-      name: "ProviderCircuitOpenError",
-      scopeKey: "provider:openai",
-      haltManifest: true,
-    });
-    expect(dispatches).toEqual([]);
+    })).resolves.toMatchObject({ catalogId: "katana:grok" });
+    expect(dispatches).toEqual(["katana:grok"]);
   });
 
   it("skips an entry-scoped circuit and reaches the next fallback", async () => {

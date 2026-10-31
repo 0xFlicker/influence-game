@@ -131,6 +131,7 @@ import {
   ProviderAttemptError,
   ProviderExecutionCoordinator,
   ProviderUnavailableError,
+  ProviderDeferredError,
   providerAcceptedDecisionId,
   type ProviderCandidateValidation,
   type ProviderAttemptRecord,
@@ -1953,6 +1954,7 @@ export class InfluenceAgent implements IAgent {
     message: string,
     error: unknown,
   ): void {
+    if (error instanceof ProviderDeferredError) error = error.failure;
     if (error instanceof ProviderUnavailableError) {
       console.error(message, {
         type: "provider_unavailable",

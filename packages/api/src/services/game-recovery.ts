@@ -61,6 +61,7 @@ export async function findStartupRecoverableGameIds(db: DrizzleDB): Promise<stri
     !sealedGameIds.has(gameId)
     &&
     latestFailureByGame.get(gameId) !== "competition_settlement_repair_required"
+    && latestFailureByGame.get(gameId) !== "provider_execution_suspended"
     && latestFailureByGame.get(gameId) !== "retrospective_paused"
     && !latestFailureByGame.get(gameId)?.startsWith("retrospective_failed:")
   ));

@@ -1,3 +1,4 @@
+import { DEFAULT_GAME_FALLBACKS } from "@influence/engine/model-defaults";
 import { beforeEach, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
@@ -95,4 +96,16 @@ test("immediately started Werewolf games retain readable frozen cast assignments
   expect(result.frozen).toBeTrue();
   expect(result.seats).toHaveLength(8);
   expect(result.seats.every(seat => seat.preference === "default" && seat.manifest[0]?.catalogId === "openai:gpt-6-luna")).toBeTrue();
+});
+
+
+test("new games default both routes to native fallbacks while explicit and historical routes stay exact", async () => {
+  const defaults = await creationModelRouting(db, "owner", {});
+  expect(defaults.defaultManifest.slice(1)).toEqual([...DEFAULT_GAME_FALLBACKS]);
+  expect(defaults.houseManifest).toEqual(defaults.defaultManifest);
+  const explicit = [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "low" as const }];
+  const custom = await creationModelRouting(db, "admin", { providerManifest: explicit });
+  expect(custom.defaultManifest).toEqual(explicit);
+  expect(custom.houseManifest).toEqual(explicit);
+  expect(gameModelPolicy({}).defaultManifest).toHaveLength(1);
 });

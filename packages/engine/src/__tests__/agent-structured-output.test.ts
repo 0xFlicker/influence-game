@@ -1,3 +1,4 @@
+import { ProviderDeferredError } from "../provider-execution";
 import { advanceConversation, beginConversation, conversationPrompt } from "../open-conversation";
 import { ContextBuilder } from "../context-builder";
 import { GameState } from "../game-state";
@@ -480,7 +481,7 @@ describe("sealed-elim agent decision surface", () => {
     expect(ballot.targetId).not.toBe(agent.id);
   });
 
-  it("leaves format tool exhaustion for the phase to repair", async () => {
+  it("defers unavailable required decisions without phase-owned fallback", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -494,7 +495,7 @@ describe("sealed-elim agent decision surface", () => {
     await expect(agent.getMajorityEliminationBallot(
       makeContext(Phase.FORMAT_RESOLVE),
       ["atlas-id", "mira-id", "vera-id"],
-    )).rejects.toBeInstanceOf(ProviderAttemptError);
+    )).rejects.toBeInstanceOf(ProviderDeferredError);
     expect(requests).toHaveLength(2);
   });
 
@@ -906,7 +907,7 @@ describe("Two Names agent decision surface", () => {
     expect(traces).toEqual([]);
   });
 
-  it("leaves exhausted required decisions for phase-owned fallback", async () => {
+  it("defers unavailable required decisions without phase-owned fallback", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -920,7 +921,7 @@ describe("Two Names agent decision surface", () => {
     await expect(agent.getTwoNamesInitialNames(
       context,
       ["mira-id", "vera-id", "nyx-id", "sage-id"],
-    )).rejects.toBeInstanceOf(ProviderAttemptError);
+    )).rejects.toBeInstanceOf(ProviderDeferredError);
     expect(requests).toHaveLength(2);
   });
 });
@@ -1137,7 +1138,7 @@ describe("InfluenceAgent structured output mode", () => {
     agent.onGameStart("game-1", makeContext().alivePlayers);
     agent.markCompactStrategyReconciliationRequired();
 
-    await expect(agent.getVotes(makeContext(Phase.VOTE))).rejects.toThrow("forced failure");
+    await expect(agent.getVotes(makeContext(Phase.VOTE))).rejects.toBeInstanceOf(ProviderDeferredError);
 
     expect(requests).toHaveLength(1);
     expect(agent.getCompactStrategyState()).toMatchObject({
@@ -3110,7 +3111,7 @@ describe("InfluenceAgent structured output mode", () => {
       makeContext(Phase.VOTE),
       ["mira-id", "vera-id"],
       { empowerTarget: "vera-id" },
-    )).rejects.toThrow("forced failure");
+    )).rejects.toBeInstanceOf(ProviderDeferredError);
   });
 
   it("preserves private candidate-selection reasoning and eligible-set constraints", async () => {
@@ -5207,7 +5208,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(tools[0]!.schema.required).not.toContain("strategyDelta");
   });
 
-  it("returns typed absence instead of fabricated speech when optional provider calls exhaust", async () => {
+  it("defers speech when providers are unavailable", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -5221,16 +5222,7 @@ describe("InfluenceAgent structured output mode", () => {
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
-    const response = await agent.getIntroduction(makeContext(Phase.INTRODUCTION));
-
-    expect(response).toEqual({
-      thinking: "",
-      message: "",
-      providerAbsence: {
-        kind: "provider_exhausted",
-        outcome: "service_error",
-      },
-    });
+    await expect(agent.getIntroduction(makeContext(Phase.INTRODUCTION))).rejects.toBeInstanceOf(ProviderDeferredError);
     expect(requests).toHaveLength(2);
   });
 
@@ -5354,14 +5346,7 @@ describe("InfluenceAgent structured output mode", () => {
     console.error = loggedError;
 
     try {
-      expect(await agent.getIntroduction(makeContext(Phase.INTRODUCTION))).toEqual({
-        thinking: "",
-        message: "",
-        providerAbsence: {
-          kind: "provider_exhausted",
-          outcome: "service_error",
-        },
-      });
+      await expect(agent.getIntroduction(makeContext(Phase.INTRODUCTION))).rejects.toBeInstanceOf(ProviderDeferredError);
     } finally {
       console.error = originalError;
     }
@@ -5423,7 +5408,7 @@ describe("InfluenceAgent structured output mode", () => {
     ]);
   });
 
-  it("omits optional speech when dispatch is blocked by provider health or budget", async () => {
+  it("defers speech when dispatch is blocked by provider health or budget", async () => {
     const scenarios = [
       {
         outcome: "circuit_open",
@@ -5459,14 +5444,7 @@ describe("InfluenceAgent structured output mode", () => {
       );
       agent.onGameStart("game-1", makeContext().alivePlayers);
 
-      expect(await agent.getIntroduction(makeContext(Phase.INTRODUCTION))).toEqual({
-        thinking: "",
-        message: "",
-        providerAbsence: {
-          kind: "provider_exhausted",
-          outcome: scenario.outcome,
-        },
-      });
+      await expect(agent.getIntroduction(makeContext(Phase.INTRODUCTION))).rejects.toBeInstanceOf(ProviderDeferredError);
       expect(requests).toHaveLength(0);
     }
   });

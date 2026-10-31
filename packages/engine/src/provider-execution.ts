@@ -435,7 +435,33 @@ export interface ProviderTerminalReceipt {
   acceptedAttemptId?: string;
 }
 
+export const FLEX_COOLDOWN_MS = 300_000;
+export const MAX_FLEX_COOLDOWN_MS = 900_000;
+
+export function isFlexCapacityFailure(record: Pick<ProviderAttemptRecord, "preparedRequest" | "outcome">): boolean {
+  const body = asRecord(record.preparedRequest.body);
+  return record.preparedRequest.providerProfileId === "openai" && body.service_tier === "flex"
+    && record.outcome.kind === "rate_limit" && record.outcome.httpStatus === 429
+    && ["flex_unavailable", "resource_unavailable"].includes(record.outcome.errorCode ?? "");
+}
+
+export function isProviderAvailabilityFailure(kind: string | null): boolean {
+  return kind !== null && ["rate_limit", "service_error", "transport_timeout", "transport_error",
+    "authentication", "configuration", "request_error", "budget_exhausted", "circuit_open"].includes(kind);
+}
+
+/** Operational failure, deliberately outside phase-owned invalid-output fallback policy. */
+export class ProviderDeferredError extends Error {
+  constructor(readonly failure: ProviderUnavailableError, readonly coordinate: ProviderLogicalCallCoordinate) {
+    super(`Provider execution paused (${failure.outcome.kind})`);
+    Object.defineProperty(this, "failure", { enumerable: false });
+    this.name = "ProviderDeferredError";
+  }
+}
+
 export interface ProviderExecutionHooks {
+  onResolveOpenAIServiceTier?(catalogId: string): Promise<"flex" | "default">;
+
   onReadLengthFeedback?(coordinate: ProviderLogicalCallCoordinate): Promise<LengthFeedback | undefined> | LengthFeedback | undefined;
   onReadContextAttempts?(coordinate: ProviderLogicalCallCoordinate): Promise<ProviderContextAttempt[]>;
   /** Return the previously accepted value for this stable logical call. */
@@ -491,6 +517,7 @@ export interface ExecuteProviderCallOptions<TResponse, TValue> {
     attemptOrdinal: number;
     attemptId: string;
     requestOptions: ProviderDispatchRequestOptions;
+    serviceTier?: "default";
   }): Promise<TResponse>;
   validate(response: TResponse): ProviderCandidateValidation<TValue>;
   validateAcceptedValue?(value: unknown): ProviderAcceptedValueValidation<TValue>;
@@ -766,6 +793,7 @@ export class ProviderLogicalCallExecution {
     options.cancellationSignal?.throwIfAborted();
     await options.beforeDispatch?.();
     let lastAttemptError: ProviderUnavailableError | undefined;
+    let availabilityError: ProviderUnavailableError | undefined;
     let lastBudgetError: ProviderCallBudgetExhaustedError | undefined;
     let lastCircuitError: ProviderCircuitOpenError | undefined;
     let lastCompatibilityError: ProviderEntryIncompatibleError | undefined;
@@ -774,6 +802,7 @@ export class ProviderLogicalCallExecution {
       options.cancellationSignal?.throwIfAborted();
       if ((this.cooldowns.get(entry.catalogId) ?? 0) > this.now()) {
         lastCircuitError = new ProviderCircuitOpenError(entry.catalogId, `entry:${entry.catalogId}`, 0, false);
+        availabilityError = lastCircuitError;
         continue;
       }
       const compatibility = entry.compatibility?.();
@@ -803,6 +832,14 @@ export class ProviderLogicalCallExecution {
           acceptedAttemptOrdinal: accepted.attemptOrdinal,
         };
       } catch (error) {
+        if (error instanceof ProviderUnavailableError && error.outcome.kind === "cancellation") throw error;
+        if (error instanceof ProviderUnavailableError && isProviderAvailabilityFailure(error.outcome.kind)) {
+          const transient = ["rate_limit", "service_error", "transport_timeout", "transport_error"].includes(error.outcome.kind)
+            || error instanceof ProviderCircuitOpenError && !error.haltManifest;
+          // A broken/exhausted fallback must not prevent delayed recovery of a
+          // temporarily unavailable primary (or another permitted route).
+          if (!availabilityError || transient) availabilityError = error;
+        }
         if (error instanceof ProviderJournalEntryExhaustedError) {
           lastJournalError = error;
           continue;
@@ -816,7 +853,7 @@ export class ProviderLogicalCallExecution {
           continue;
         }
         if (error instanceof ProviderCircuitOpenError) {
-          if (error.haltManifest) throw error;
+          // Provider-wide health blocks that provider, not other sealed providers.
           lastCircuitError = error;
           continue;
         }
@@ -825,9 +862,11 @@ export class ProviderLogicalCallExecution {
       }
     }
 
-    // A primary entry is intentionally uncapped, so a normal exhausted
-    // manifest always has an attempt error. Preserve that gameplay-facing
-    // typed outcome rather than replacing it with a later budget skip.
+    // An unavailable route has not demonstrated invalid model output. Keep the
+    // logical turn pending even when another route returned malformed output.
+    if (availabilityError || lastCircuitError || lastBudgetError || lastCompatibilityError) {
+      throw new ProviderDeferredError(availabilityError ?? lastCircuitError ?? lastBudgetError ?? lastCompatibilityError!, this.coordinate);
+    }
     throw lastAttemptError ?? lastJournalError ?? lastCircuitError ?? lastBudgetError ??
       lastCompatibilityError ??
       new Error("Provider manifest exhausted without an attempt");
@@ -869,6 +908,7 @@ export class ProviderLogicalCallExecution {
   ): Promise<TValue> {
     const maxAttempts = Math.max(1, Math.floor(options.maxAttempts));
     let lastError: ProviderAttemptError | null = null;
+    let forceStandard = false;
 
     for (let localAttempt = 1; localAttempt <= maxAttempts; localAttempt++) {
       providerAdmissionGuard.getStore()?.();
@@ -886,10 +926,18 @@ export class ProviderLogicalCallExecution {
       );
       const attemptId = randomUUID();
       const startedAtMs = this.now();
-      const preparedRequest =
+      let preparedRequest =
         typeof options.preparedRequest === "function"
           ? options.preparedRequest(attemptOrdinal)
           : options.preparedRequest;
+      const body = asRecord(preparedRequest.body);
+      const flex = preparedRequest.providerProfileId === "openai" && body.service_tier === "flex";
+      const catalogId = preparedRequest.catalogId ?? `openai:${preparedRequest.model}`;
+      if (flex && (forceStandard || (this.cooldowns.get(`${catalogId}:flex`) ?? 0) > this.now()
+        || await this.hooks?.onResolveOpenAIServiceTier?.(catalogId) === "default")) {
+        forceStandard = true;
+        preparedRequest = { ...preparedRequest, body: { ...body, service_tier: "default" } };
+      }
       const transportCapture: MutableTransportCapture = {
         credentialValues: preparedRequest.credentialValues ?? [],
       };
@@ -904,7 +952,16 @@ export class ProviderLogicalCallExecution {
       transportCapture.request = intent.preparedRequest;
 
       providerAdmissionGuard.getStore()?.();
-      await this.hooks?.onReserve?.(intent);
+      try {
+        await this.hooks?.onReserve?.(intent);
+      } catch (error) {
+        if (flex && !forceStandard && error instanceof ProviderCircuitOpenError && error.scopeKey.endsWith(":tier:flex")) {
+          forceStandard = true;
+          localAttempt--;
+          continue;
+        }
+        throw error;
+      }
       activeTransportCaptures.set(attemptId, transportCapture);
 
       let capturedRecord: Omit<ProviderAttemptRecord, "disposition">;
@@ -919,6 +976,7 @@ export class ProviderLogicalCallExecution {
         const response = await options.dispatch({
           attemptOrdinal,
           attemptId,
+          ...(forceStandard && { serviceTier: "default" as const }),
           requestOptions: {
             maxRetries: 0,
             ...(options.cancellationSignal && {
@@ -1056,9 +1114,10 @@ export class ProviderLogicalCallExecution {
         capturedRecord = dispatchResult.record;
       }
 
+      const flexFailover = isFlexCapacityFailure(capturedRecord);
       const contextRetry = capturedRecord.outcome.kind === "context_overflow"
         && options.adaptContext === true && (capturedRecord.context?.revision ?? 0) < 3;
-      const willRetry = contextRetry ||
+      const willRetry = flexFailover || contextRetry ||
         capturedRecord.outcome.kind !== "usable" &&
         capturedRecord.outcome.retryable &&
         !capturedRecord.outcome.retryAfterMs &&
@@ -1094,7 +1153,10 @@ export class ProviderLogicalCallExecution {
         }),
       };
 
-      if (record.outcome.kind !== "usable" && record.outcome.retryable && record.outcome.retryAfterMs && record.preparedRequest.catalogId) {
+      if (flexFailover) {
+        const delay = record.outcome.kind === "usable" ? FLEX_COOLDOWN_MS : record.outcome.retryAfterMs ?? FLEX_COOLDOWN_MS;
+        this.cooldowns.set(`${catalogId}:flex`, this.now() + Math.min(MAX_FLEX_COOLDOWN_MS, Math.max(FLEX_COOLDOWN_MS, delay)));
+      } else if (record.outcome.kind !== "usable" && record.outcome.retryable && record.outcome.retryAfterMs && record.preparedRequest.catalogId) {
         this.cooldowns.set(record.preparedRequest.catalogId, this.now() + record.outcome.retryAfterMs);
       }
       const terminalReceipt = await this.hooks?.onTerminal?.(record);
@@ -1123,6 +1185,7 @@ export class ProviderLogicalCallExecution {
       if (!willRetry) {
         throw lastError;
       }
+      if (flexFailover) { forceStandard = true; localAttempt--; continue; }
       if (contextRetry) { localAttempt = 0; continue; }
       await options.onRetry?.(record);
       await this.wait(localAttempt * 1_000, options.cancellationSignal);

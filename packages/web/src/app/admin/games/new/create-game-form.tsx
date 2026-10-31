@@ -9,7 +9,7 @@ import type { WerewolfSetup } from "@influence/engine/werewolf/types";
 import { useRouter } from "next/navigation";
 import { MODEL_CATALOG, MODEL_REASONING_POLICIES, modelCatalogEntryById } from "@influence/engine/model-catalog";
 import { ModelPricing } from "@/components/model-pricing";
-import { DEFAULT_GAME_FALLBACK, DEFAULT_MODEL_CATALOG_ID } from "@influence/engine/model-defaults";
+import { DEFAULT_GAME_FALLBACKS, DEFAULT_MODEL_CATALOG_ID } from "@influence/engine/model-defaults";
 import { DEFAULT_CONTESTANT_RECOVERY_CALLS } from "@influence/engine/game-model-routing";
 import {
   FORMAT_PRESENTATION_METADATA,
@@ -127,7 +127,7 @@ export const DEFAULT_PROVIDER_MANIFEST: GameProviderManifestEntry[] = [
   { catalogId: DEFAULT_MODEL_CATALOG_ID, reasoningPolicy: "medium" },
 ];
 
-const RECOMMENDED_PROVIDER_FALLBACKS = [DEFAULT_GAME_FALLBACK];
+const RECOMMENDED_PROVIDER_FALLBACKS = DEFAULT_GAME_FALLBACKS;
 
 export function moveProviderRouteEntry(
   entries: ProviderRouteEntry[],
@@ -679,6 +679,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
   const gameName = isWerewolf ? "Werewolf" : ACTIVE_GAME.name;
   const router = useRouter();
   const [form, setForm] = useState<FormState>(DEFAULT_STATE);
+  const houseRouteEdited = useRef(false);
   const [houseRoute, setHouseRoute] = useState<ProviderRouteEntry[]>(() => DEFAULT_PROVIDER_MANIFEST.map(entry => ({ ...entry, uiId: `house-${nextProviderRouteId++}` })));
   const [exclusions, setExclusions] = useState<string[]>([]);
   const [defaultModelMaxFallbackCalls, setDefaultModelMaxFallbackCalls] = useState(DEFAULT_CONTESTANT_RECOVERY_CALLS);
@@ -701,21 +702,18 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
         allowedReasoningPolicies: model.allowedReasoningPolicies,
         metadata: model.metadata,
       })));
+      const configuredModelIds = new Set(
+        inventory.models
+          .filter((model) => model.configured && model.available === true)
+          .map((model) => model.catalogId),
+      );
+      const recommendedRoute = [
+        ...DEFAULT_PROVIDER_MANIFEST,
+        ...RECOMMENDED_PROVIDER_FALLBACKS.filter(entry => configuredModelIds.has(entry.catalogId)),
+      ];
+      if (!houseRouteEdited.current) setHouseRoute(recommendedRoute.map(providerRouteEntry));
       if (!providerRouteEdited.current) {
-        const configuredModelIds = new Set(
-          inventory.models
-            .filter((model) => model.configured && model.available === true)
-            .map((model) => model.catalogId),
-        );
-        setForm((current) => ({
-          ...current,
-          providerRoute: [
-            ...DEFAULT_PROVIDER_MANIFEST,
-            ...RECOMMENDED_PROVIDER_FALLBACKS.filter(
-              (entry) => configuredModelIds.has(entry.catalogId),
-            ),
-          ].map(providerRouteEntry),
-        }));
+        setForm(current => ({ ...current, providerRoute: recommendedRoute.map(providerRouteEntry) }));
       }
     }).catch(() => {
       if (active) console.warn("Model catalog request failed; retaining current choices.");
@@ -853,7 +851,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
 
       <SectionCard title="House model and fallbacks">
         <p className="mb-3 text-sm text-white/60">Summaries, production decisions, and episode titles use this route. House fallback allowances are separate from contestants.</p>
-        <ProviderRouteEditor labelPrefix="House " entries={houseRoute} models={models} visualMode={false} activeRoute={houseRoute} onChange={setHouseRoute} />
+        <ProviderRouteEditor labelPrefix="House " entries={houseRoute} models={models} visualMode={false} activeRoute={houseRoute} onChange={route => { houseRouteEdited.current = true; setHouseRoute(route); }} />
       </SectionCard>
       <AllowedModelsPicker models={models} excludedIds={exclusions} onChange={setExclusions}
         inUseIds={[...form.providerRoute, ...houseRoute].map(entry => entry.catalogId)} />

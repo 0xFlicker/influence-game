@@ -1,3 +1,4 @@
+import { providerRetryPending } from "./provider-game-retry.js";
 import {freezeLiveVoices} from "./audio-voices.js";
 import { sealRosterModelRouting, GameModelRoutingError } from "./game-model-routing.js";
 import { queueEpisodeCopy } from "./episode-presentation.js";
@@ -173,7 +174,7 @@ export async function adoptDurableGameRunOwner(
     `);
 
     const game = (await tx
-      .select({ status: schema.games.status })
+      .select({ status: schema.games.status, config: schema.games.config })
       .from(schema.games)
       .where(eq(schema.games.id, gameId))
       .for("update"))[0];
@@ -185,10 +186,10 @@ export async function adoptDurableGameRunOwner(
         code: "game_not_running",
       };
     }
-    if (game.status !== "in_progress") {
+    if (game.status !== "in_progress" || providerRetryPending(game.config)) {
       return {
         ok: false,
-        error: "Only an in-progress game can be adopted",
+        error: game.status === "in_progress" ? "Provider retry is not ready yet" : "Only an in-progress game can be adopted",
         statusCode: 409,
         code: "game_not_running",
       };
@@ -312,7 +313,7 @@ export async function adoptUninitializedDurableGameRunOwner(
       )
     `);
 
-    const game = (await tx.select({ status: schema.games.status })
+    const game = (await tx.select({ status: schema.games.status, config: schema.games.config })
       .from(schema.games)
       .where(eq(schema.games.id, gameId))
       .for("update"))[0];
@@ -324,10 +325,10 @@ export async function adoptUninitializedDurableGameRunOwner(
         code: "game_not_running",
       };
     }
-    if (game.status !== "in_progress") {
+    if (game.status !== "in_progress" || providerRetryPending(game.config)) {
       return {
         ok: false,
-        error: "Only an in-progress game can be adopted",
+        error: game.status === "in_progress" ? "Provider retry is not ready yet" : "Only an in-progress game can be adopted",
         statusCode: 409,
         code: "game_not_running",
       };
@@ -450,17 +451,17 @@ export async function adoptPreDurableGameRunOwner(
         hashtext(${gameId})
       )
     `);
-    const game = (await tx.select({ status: schema.games.status })
+    const game = (await tx.select({ status: schema.games.status, config: schema.games.config })
       .from(schema.games)
       .where(eq(schema.games.id, gameId))
       .for("update"))[0];
     if (!game) {
       return { ok: false, error: "Game not found", statusCode: 404, code: "game_not_running" };
     }
-    if (game.status !== "in_progress") {
+    if (game.status !== "in_progress" || providerRetryPending(game.config)) {
       return {
         ok: false,
-        error: "Only an in-progress game can be upgraded",
+        error: game.status === "in_progress" ? "Provider retry is not ready yet" : "Only an in-progress game can be upgraded",
         statusCode: 409,
         code: "game_not_running",
       };

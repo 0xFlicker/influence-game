@@ -672,6 +672,10 @@ games; frozen games and private provider evidence retain their original routes.
 See [native Anthropic](native-anthropic.md) for cutover details.
 
 
+### Provider availability recovery
+
+Use `bun run simulate:api -- --help` for the localhost API evaluation options; keep the API game ID and inspect private attempt evidence alongside `--chatty` output. Hosted OpenAI Flex capacity fails over to explicit standard (`default`) on the same model; standard can cost more. If all permitted routes are unavailable, the API delays the same turn and eventually suspends instead of inventing decisions. Deterministic coverage uses `bun run test`, `bun run test:postgres`, and `bun run check`; these do not authorize paid probes. Preserve all sanitized attempts, requested/actual tier, usage and native reasoning. No `as any` or direct House calls. See [model routing](model-routing.md).
+
 ### Safety Bounce speech and lifecycle revisions
 
 New Influence games freeze root `gameSchemaVersion: 2` and decision contract v3. Safety Bounce commits its starter draw and each public pointer separately before Format Mingle. The complete Safe/Vulnerable pools and the contestant's own status are present before the first Mingle turn. Sealed ballots follow Mingle; an empowered tiebreak requests private thinking and public speech before its structured choice. Public decision speeches enter the normal durable dialogue record: recent speech remains required under the existing context policy, and older speech remains eligible for authorized recall. No memory write is forced.
