@@ -97,7 +97,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   const backgroundUrl = influenceRoomBackground(beat, voteLedger);
   let content;
   if (beat.kind === "two-names-stage") {
-    content = <FormatPresentation cue={beat.cue} roster={beat.roster} currentStateEntry={currentStateEntry} controlsInset={controlsInset} />;
+    content = <FormatPresentation elapsedMs={clockElapsedMs} reducedMotion={reducedMotion} cue={beat.cue} roster={beat.roster} currentStateEntry={currentStateEntry} controlsInset={controlsInset} />;
   } else if (beat.kind === "two-names-decision") {
     content = <TwoNamesDecision beat={beat} elapsedMs={clockElapsedMs} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} controlsInset={controlsInset} />;
   } else if (beat.kind === "safety-chain") {

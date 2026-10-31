@@ -51,3 +51,31 @@ for (const id of ["two_names_declined", "two_names_used_tie"] as const) test(`${
   expect(() => composeInfluencePresentation("g",compiled.cues,players,buildStoryScenes([...deliveries,{...deliveries[0]!,id:999}]),2)).toThrow("ambiguous-speech");
   expect(() => composeInfluencePresentation("g",compiled.cues,players,buildStoryScenes([{...deliveries[0]!,decisionSpeech:{...deliveries[0]!.decisionSpeech!,actorId:"wrong"}}]),2)).toThrow("unconsumed-speech");
 });
+
+test("nominee override handoff keeps the selected nominee visible and fades only the other nominee", () => {
+  const fixture = createFormatKernelViewerScenario("two_names_used_tie");
+  const roster = fixture.roster.map(player => ({...player, persona:"", status:"alive" as const, shielded:false, fullBodyReferenceUrl:`/cutouts/${player.id}.png`}));
+  const compiled = compileFormatPresentationPrefix({gameId:"g",gameKernel:"format",roster,decisions:fixture.decisions});
+  const draw = compiled.cues.find(cue => cue.kind === "two_names_override_draw");
+  if (!draw || draw.kind !== "two_names_override_draw") throw new Error("Missing override draw");
+  const nominees = draw.after.twoNames!.initialNomineeIds!;
+  const render = (holderId:string, elapsedMs:number, reducedMotion=false, currentStateEntry=false) => renderToStaticMarkup(createElement(VisualPresentationFrame, {
+    beat:{kind:"two-names-stage",cue:{...draw,overrideHolderId:holderId},roster}, rooms:[],elapsedMs,reducedMotion,currentStateEntry,
+  }));
+  for (const holderId of nominees) {
+    const start = render(holderId,0);
+    expect(start).toContain('data-two-names-handoff="nominee-to-override"');
+    expect(start).not.toContain('data-two-names-reveal="portrait"');
+    expect(start).toContain("--handoff:0");
+    const middle = render(holderId,500);
+    expect(middle).toContain("--handoff:0.5");
+    expect(middle).toContain("opacity:0");
+    expect(render(holderId,1000)).toContain("--handoff:1");
+    expect(render(holderId,0,true)).toContain("--handoff:1");
+    expect(render(holderId,0,false,true)).toContain("--handoff:1");
+    expect(render(holderId,0)).toBe(start); // seeking back reproduces the initial pair
+  }
+  const outsider = roster.find(player => !nominees.includes(player.id))!;
+  expect(render(outsider.id,0)).toContain('data-two-names-reveal="portrait"');
+  expect(render(outsider.id,0)).not.toContain('data-two-names-handoff');
+});

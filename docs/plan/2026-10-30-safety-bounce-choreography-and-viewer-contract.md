@@ -210,3 +210,9 @@ Artwork/layout verification: provider-free baseline **3,174 passed, 5 skipped** 
 ### Follow-up: viewer coverage and room backgrounds
 
 New root schema v3 extends the existing ownership checks with event-to-cue delivery checks and rejects invalid format presentation instead of leaving an incomplete result panel. Existing root versions remain frozen: **THOU SHALT NOT BREAK AN OLD GAME.** Every format cue is required in executable prefix/render coverage across historical and current versions; Empower tie/revote fixtures supplement the format scenarios. All remaining solo/decorative studio gray backgrounds now select existing House room artwork. Diary visibility is unchanged.
+
+### Nominee-to-Override handoff
+
+When the Override draw selects an initial nominee, retain both nominee positions at the start of the beat, fade the other nominee, and move/resize the selected nominee into the centered Override reveal. The handoff uses the presentation clock, so pause, seek, and export reproduce the same state. Reduced-motion and current-state entry show the settled reveal immediately. Non-nominee draws retain the existing entrance. Historical headshot-only games remain watchable with the same handoff.
+
+Verification: focused Two Names tests cover both nominees, an outside holder, seeking, reduced motion, and current-state entry. Desktop/mobile browser tests cover the handoff and centered landing with full-body and portrait assets; the existing role/reveal browser tests cover the ordinary draw.

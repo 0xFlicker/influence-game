@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { GamePlayerAvatarPreview } from "@/components/game-player-avatar-preview";
 import { RoomBackdrop } from "./stage-backdrop";
 import { INFLUENCE_ROOMS } from "./influence-rooms";
@@ -26,7 +26,11 @@ export function TwoNamesStage({
   roster,
   currentStateEntry,
   controlsInset = 0,
+  elapsedMs = 1000,
+  reducedMotion = false,
 }: {
+  elapsedMs?: number;
+  reducedMotion?: boolean;
   cue: TwoNamesCue;
   roster: readonly FormatPresentationRosterPlayer[];
   currentStateEntry: boolean;
@@ -69,7 +73,10 @@ export function TwoNamesStage({
         ) : null}
 
         {cue.kind === "two_names_override_draw" ? (
-          <PortraitReveal label="Override" player={player(cue.overrideHolderId, roster)} tone="violet" />
+          facts?.initialNomineeIds?.includes(cue.overrideHolderId) ? (
+            <NomineeOverrideHandoff ids={facts.initialNomineeIds} holderId={cue.overrideHolderId} roster={roster}
+              elapsedMs={elapsedMs} immediate={reducedMotion || currentStateEntry} />
+          ) : <PortraitReveal label="Override" player={player(cue.overrideHolderId, roster)} tone="violet" />
         ) : null}
 
         {cue.kind === "two_names_mingle_complete" ? (
@@ -230,6 +237,42 @@ function RoleAnchor({ player: source, role, side, compact = false }: {
   );
 }
 
+// The same clock drives playback and exports; no wall-clock CSS transition.
+function NomineeOverrideHandoff({ids, holderId, roster, elapsedMs, immediate}: {
+  ids: [string, string];
+  holderId: string;
+  roster: readonly FormatPresentationRosterPlayer[];
+  elapsedMs: number;
+  immediate: boolean;
+}) {
+  const fraction = immediate ? 1 : Math.min(1, Math.max(0, elapsedMs / 1000));
+  const progress = fraction * fraction * (3 - 2 * fraction);
+  return <div data-two-names-handoff="nominee-to-override"
+    className="flex min-h-0 w-full flex-1 flex-col [--pair-gap:1rem] [--name-start:1.25rem] [--name-end:1.875rem] md:[--pair-gap:3rem] md:[--name-start:1.875rem] md:[--name-end:3rem]"
+    style={{"--handoff": progress} as CSSProperties}>
+    <p className="mb-4 shrink-0 text-center text-xl font-semibold uppercase tracking-[0.16em] text-[#a68cff] md:text-3xl">Override</p>
+    <div className="relative min-h-0 w-full flex-1" style={{"--pair-width":"min(100%, 72rem)", "--card-width":"calc((var(--pair-width) - var(--pair-gap)) / 2)"} as CSSProperties}>
+      {ids.map((id, index) => {
+        const selected = id === holderId;
+        if (!selected && fraction >= 1) return null;
+        const sourceLeft = `calc((100% - var(--pair-width)) / 2 + ${index} * (var(--card-width) + var(--pair-gap)))`;
+        return <article key={id} data-override-handoff-player={id}
+          className="absolute inset-y-0 flex min-h-0 flex-col items-center text-center"
+          style={{
+            left:selected ? `calc((1 - var(--handoff)) * (${sourceLeft}))` : sourceLeft,
+            width:selected ? "calc(var(--card-width) + (100% - var(--card-width)) * var(--handoff))" : "var(--card-width)",
+            opacity:selected ? 1 : 1 - Math.min(1, fraction * 2),
+          }}>
+          <CharacterArt player={player(id, roster)} portraitScale={selected ? 1 + progress : 1} />
+          <h2 className="mt-3 shrink-0 font-serif leading-tight" style={{fontSize:selected ? "calc(var(--name-start) + (var(--name-end) - var(--name-start)) * var(--handoff))" : "var(--name-start)"}}>{name(id, roster)}</h2>
+          <p className="shrink-0 overflow-hidden text-[9px] font-semibold uppercase tracking-[0.28em] text-[#ff7b91]"
+            style={{height:21.5 * (selected ? 1 - progress : 1), paddingTop:8 * (selected ? 1 - progress : 1), opacity:selected ? 1 - progress : 1}}>Nominated</p>
+        </article>;
+      })}
+    </div>
+  </div>;
+}
+
 function PortraitReveal({ player: source, label, tone }: {
   player: FormatPresentationRosterPlayer;
   label: string;
@@ -300,10 +343,10 @@ function Avatar({ player: source, size }: { player: FormatPresentationRosterPlay
 }
 
 /** The visual API selects the cutout, or original full body when no cutout exists. */
-function CharacterArt({player: source, prominent = false}: {player: FormatPresentationRosterPlayer; prominent?: boolean}) {
+function CharacterArt({player: source, prominent = false, portraitScale = 1}: {player: FormatPresentationRosterPlayer; prominent?: boolean; portraitScale?: number}) {
   const [failedSource, setFailedSource] = useState<string | null>(null);
   const body = source.fullBodyReferenceUrl;
-  if (!body || body === failedSource) return <div data-two-names-art="portrait" className="flex min-h-0 flex-1 items-center justify-center"><Avatar player={source} size={prominent ? "32" : "16"} /></div>;
+  if (!body || body === failedSource) return <div data-two-names-art="portrait" className="flex min-h-0 flex-1 items-center justify-center"><div style={{transform:`scale(${portraitScale})`}}><Avatar player={source} size={prominent ? "32" : "16"} /></div></div>;
   return <div data-two-names-art="full-body" className="relative mx-auto min-h-0 w-full flex-1">
     {/* eslint-disable-next-line @next/next/no-img-element -- frozen cutout with historical portrait fallback */}
     <img src={body} alt={source.name} className="absolute inset-0 h-full w-full object-contain object-bottom" onError={() => setFailedSource(body)} />

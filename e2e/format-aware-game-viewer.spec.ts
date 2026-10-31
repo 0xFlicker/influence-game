@@ -2163,6 +2163,37 @@ test.describe("format-aware game viewer", () => {
     await expect(chain.locator("[data-chain-player]")).toHaveCount(4);
   });
 
+  for (const mobile of [false, true]) test(`Two Names nominee moves into Override on ${mobile ? "mobile" : "desktop"}`, async ({page}, testInfo) => {
+    await page.clock.install();
+    if (mobile) await page.setViewportSize({width:390,height:844});
+    const scenario = createFormatKernelViewerScenario("two_names_used_tie");
+    const holderId = mobile ? "echo" : "lyra";
+    const decisions = scenario.decisions.slice(0,4).map(event => event.type === "format.two_names_setup"
+      ? {...event,payload:{...event.payload,overrideHolderId:holderId}} : event);
+    const slug = "two-names-nominee-override";
+    await installDeterministicFormatGame(page,{slug,scenarioId:"two_names_used_tie",status:"completed",decisions});
+    if (!mobile) {
+      await page.route("**/handoff-body.svg", route => route.fulfill({contentType:"image/svg+xml",body:'<svg xmlns="http://www.w3.org/2000/svg" width="200" height="600"><circle cx="100" cy="65" r="50" fill="#d8ad83"/><path d="M60 125h80l25 300-40 150h-20V420H95v155H75L35 425Z" fill="#907aca"/></svg>'}));
+      await page.route(`**/api/games/${slug}/visual`,route => route.fulfill({json:{enabled:false,status:null,scenes:[],portraits:{},fullBodies:Object.fromEntries(scenario.roster.map(player=>[player.id,"/handoff-body.svg"]))}}));
+    }
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page,"Pause replay");
+    const stage = page.locator('[data-format-cue="two_names_override_draw"]');
+    await advanceUntilVisible(page,stage,"nominee override");
+    await expect(stage.locator("[data-override-handoff-player]")).toHaveCount(2);
+    const selected = stage.locator(`[data-override-handoff-player="${holderId}"]`);
+    const before = await selected.boundingBox();
+    await page.getByRole("button",{name:"Play replay",exact:true}).click();
+    await page.clock.runFor(1100);
+    await page.getByRole("button",{name:"Pause replay",exact:true}).click();
+    await expect(stage.locator("[data-override-handoff-player]")).toHaveCount(1);
+    const after = await selected.boundingBox();
+    const frame = await stage.boundingBox();
+    expect(after!.width).toBeGreaterThan(before!.width * 1.5);
+    expect(Math.abs(after!.x + after!.width / 2 - (frame!.x + frame!.width / 2))).toBeLessThan(2);
+    await stage.screenshot({path:testInfo.outputPath("nominee-override-landed.png")});
+  });
+
   for (const mobile of [false, true]) test(`Two Names uses full bodies for role and nominee reveals ${mobile ? "mobile" : "desktop"}`, async ({page}, testInfo) => {
     await page.clock.install();
     if (mobile) await page.setViewportSize({width:390,height:844});
