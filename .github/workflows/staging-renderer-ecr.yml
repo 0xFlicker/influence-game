@@ -32,6 +32,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository_id == '1183905474' && github.repository_owner_id == '97764360'
     needs: validate
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: read
       actions: read

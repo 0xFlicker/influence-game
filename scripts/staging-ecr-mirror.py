@@ -26,9 +26,12 @@ KINDS = {
                'workflow': '.github/workflows/house-render-tailnet-image.yml', 'budget': 512 * 1024**2},
 }
 
+class Rejected(ValueError):
+    """Only constant, credential-free diagnostics may reach operator output."""
+
 def require(condition, message):
     if not condition:
-        raise ValueError(message)
+        raise Rejected(message)
 
 def source_run(kind, run):
     selected = KINDS[kind]
@@ -69,7 +72,7 @@ class Mirror:
         self.visited = set()
 
     def call(self, argv):
-        result = self.runner(argv, capture_output=True, timeout=120)
+        result = self.runner(argv, capture_output=True, timeout=600 if argv[:2] == ['skopeo', 'copy'] else 120)
         require(result.returncode == 0, argv[0] + ' command failed (diagnostics suppressed to protect credentials)')
         return result.stdout if isinstance(result.stdout, bytes) else result.stdout.encode()
 
@@ -170,6 +173,8 @@ def main():
         with args.output.open('x') as output:
             output.write(json.dumps(receipt, indent=2) + '\n')
         print(json.dumps(receipt))
+    except Rejected as error:
+        raise SystemExit('Staging image operation rejected: ' + str(error))
     except Exception:
         raise SystemExit('Staging image operation rejected; no credential-bearing diagnostics or success receipt emitted.')
 
