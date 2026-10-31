@@ -1,3 +1,7 @@
+import {presentationEntrances} from "../app/games/[slug]/components/presentation-entrances";
+import {createFormatKernelViewerScenario} from "@influence/engine/fixtures/format-kernel-viewer";
+import {compileFormatPresentationPrefix} from "../app/games/[slug]/components/format-presentation-model";
+import {chainSpeechBox, chainCharacterHead, SafetyChain} from "../app/games/[slug]/components/safety-chain";
 import {afterEach, beforeEach, expect, test, spyOn} from "bun:test";
 import {act, cleanup, fireEvent, render} from "@testing-library/react";
 import {Window} from "happy-dom";
@@ -107,9 +111,8 @@ for (const speechPresentation of ["solo","scene"] as const) for (const [width,he
     expect(view.container.querySelector("[data-in-scene-thinking]")).not.toBeNull();
     expect(rectangle()).toEqual(reserved);
     expect(camera()).not.toBe(normal);
-    const backdrop = view.container.querySelector("[data-stage-backdrop]")!;
-    expect(backdrop.closest("[data-thinking-camera]")).toBeNull();
-    expect(backdrop.parentElement).toBe(view.container.querySelector("[data-solo-image]"));
+    const backdrop = view.container.querySelector("[data-room-backdrop]")!;
+    expect(backdrop.closest("[data-thinking-camera]")).toBe(view.container.querySelector("[data-thinking-camera]"));
     expect(view.container.querySelector("[data-speech-bubble]")).toBeNull();
     thinking.mockReturnValue(null);
     view.rerender(content(100000));
@@ -123,3 +126,57 @@ for (const speechPresentation of ["solo","scene"] as const) for (const [width,he
     thinking.mockRestore();
   });
 }
+
+
+for (const [width,height] of [[1440,900],[390,844]]) test(`Safety Bounce ${width}x${height} uses standard camera and thought bubbles before returning to the board`, async () => {
+  Object.defineProperties(dom.HTMLElement.prototype,{clientWidth:{configurable:true,get:()=>width},clientHeight:{configurable:true,get:()=>height}});
+  const fixture = createFormatKernelViewerScenario("safety_bounce_tie");
+  const cue = compileFormatPresentationPrefix({gameId:"g",gameKernel:"format",roster:fixture.roster,decisions:fixture.decisions}).cues.find(cue=>cue.kind === "safety_bounce_pointer")!;
+  if (cue.kind !== "safety_bounce_pointer") throw new Error("Missing pointer fixture");
+  const roster = fixture.roster.map(player=>({...player,persona:"",status:"alive" as const,shielded:false,fullBodyReferenceUrl:"/body.png"}));
+  const thought = {speaker:"Atlas",text:"My private chain reasoning.",elapsedMs:1000,durationMs:3000,opacity:1,focus:1};
+  const content = (thinking:boolean) => <SceneThinkingProvider thought={thinking ? thought : null}>
+    <SafetyChain beat={{kind:"safety-chain",cue,roster}} elapsedMs={0}/>
+  </SceneThinkingProvider>;
+  const view = render(content(true));
+  expect(view.container.querySelectorAll("[data-thought-tail]").length).toBeGreaterThan(0);
+  expect(view.container.querySelector("[data-in-scene-thinking]")?.textContent).toContain(thought.text);
+  expect(view.container.querySelector<HTMLElement>("[data-thinking-camera]")?.style.transform).not.toBe("translate(0px, 0px) scale(1)");
+  const camera = view.container.querySelector("[data-thinking-camera]")!;
+  expect(camera.querySelector("[data-room-backdrop]")).not.toBeNull();
+  expect(camera.querySelector("header")).not.toBeNull();
+  expect(camera.textContent).toContain("Safe ·");
+  expect(camera.textContent).toContain("Vulnerable ·");
+  expect(camera.querySelector("[data-in-scene-thinking]")).toBeNull();
+  expect(presentationEntrances(view.container, cue, false, true)).toEqual([]);
+  expect(view.container.querySelector("[data-speech-bubble]")).toBeNull();
+  view.rerender(content(false));
+  expect(view.container.querySelector("[data-in-scene-thinking]")).toBeNull();
+  expect(view.container.querySelector("[data-safety-chain]")).not.toBeNull();
+  expect(view.container.querySelector(`[data-chain-player="${cue.actorId}"]`)?.getAttribute("data-chooser")).toBe("true");
+  await act(async()=>{});
+});
+
+
+test("Safety Bounce camera targets the contained body pixels at the actor's existing board position", () => {
+  const face = chainCharacterHead({left:80,top:190,width:320,height:550},{width:200,height:600},true,{x:.4,y:.04,width:.2,height:.16});
+  expect(face.left + face.width / 2).toBeCloseTo(240);
+  expect(face.top).toBeCloseTo(212);
+  expect(face.height).toBeCloseTo(88);
+  const shifted = chainCharacterHead({left:130,top:220,width:320,height:550},{width:200,height:600},true,{x:.4,y:.04,width:.2,height:.16});
+  expect(shifted.left - face.left).toBeCloseTo(50);
+  expect(shifted.top - face.top).toBeCloseTo(30);
+});
+
+
+test("Safety Bounce speech sits below the desktop head and above the mobile head", () => {
+  const face = {left:220,top:200,width:40,height:80};
+  const desktop = chainSpeechBox(1000,900,face);
+  expect(desktop.top).toBe(face.top + face.height + 16);
+  expect(desktop.left + desktop.width).toBeLessThanOrEqual(500);
+  const mobileFace = {left:80,top:340,width:40,height:60};
+  const mobile = chainSpeechBox(390,844,mobileFace);
+  expect(mobile.top + mobile.height).toBe(mobileFace.top - 16);
+  expect(mobile.left).toBe(16);
+  expect(mobile.width).toBe(358);
+});

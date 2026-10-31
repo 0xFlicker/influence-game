@@ -4,6 +4,36 @@ import { GameState } from "../game-state";
 import { TranscriptLogger } from "../transcript-logger";
 import { Phase } from "../types";
 import { FORMAT_CATALOG, resolveSealedElimRound } from "../formats";
+import { projectViewerDecisionEvent } from "../viewer-decision-events";
+import type { CanonicalSourcePointer } from "../canonical-events";
+
+test("Two Names projects required public speech only for new accepted model decisions", () => {
+  for (const gameSchemaVersion of [1, 2, 3] as const) {
+    for (const fallback of [false, true]) {
+      const state = new GameState([...players, {id: "d", name: "Dee"}], {gameSchemaVersion});
+      const pointer = (actorId: string, action: string): CanonicalSourcePointer[] => [{
+        kind: "agent_turn", actorId, action, decisionId: "accepted-decision",
+        ...(fallback ? {engineFallback: {source: "engine" as const, reason: "unavailable", seed: "test"}} : {}),
+      }];
+      state.recordTwoNamesSetup({empoweredId: "a", initialNomineeIds: ["b", "c"], overrideHolderId: "d"}, pointer("a", "format-two-names-initial-names"));
+      state.recordTwoNamesOverrideDeclined("d", ["b", "c"], pointer("d", "format-two-names-override"));
+      state.recordTwoNamesOverrideUsed({overrideHolderId: "d", removedNomineeId: "b", empoweredId: "a", replacementNomineeId: "d", finalistPlayerIds: ["c", "d"]}, {
+        override: pointer("d", "format-two-names-override"), replacement: pointer("a", "format-two-names-replacement"),
+      });
+      const events = state.getCanonicalEvents().filter(event => event.type.startsWith("format.two_names_"));
+      expect(events).toHaveLength(4);
+      for (const event of events) {
+        const projected = projectViewerDecisionEvent(event);
+        expect(projected).not.toBeNull();
+        if (gameSchemaVersion >= 2 && !fallback) {
+          expect(projected!.publicDecisionSpeech).toEqual([{actorId: event.sourcePointers[0]!.actorId!, action: event.sourcePointers[0]!.action!}]);
+        } else {
+          expect(projected).not.toHaveProperty("publicDecisionSpeech");
+        }
+      }
+    }
+  }
+});
 
 const players = [{ id: "a", name: "Ada" }, { id: "b", name: "Bea" }, { id: "c", name: "Cam" }];
 test("drafting margin does not narrow acceptance or permit multibyte overages", () => {
@@ -153,9 +183,47 @@ test("ballot speech links to its exact classic receipt", () => {
 });
 
 
-test("new games freeze speech v2 and only unversioned records select historical replay", () => {
-  expect(CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION).toBe(2);
+test("new games freeze speech v3 and only unversioned records select historical replay", () => {
+  expect(CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION).toBe(3);
   expect(resolveInfluenceDecisionContractVersion(undefined)).toBe(1);
-  for (const version of [1, 2] as const) expect(resolveInfluenceDecisionContractVersion(version)).toBe(version);
-  for (const value of [null, 0, 3, "2"]) expect(() => resolveInfluenceDecisionContractVersion(value)).toThrow("Unsupported Influence decision contract version");
+  for (const version of [1, 2, 3] as const) expect(resolveInfluenceDecisionContractVersion(version)).toBe(version);
+  for (const value of [null, 0, 4, "2"]) expect(() => resolveInfluenceDecisionContractVersion(value)).toThrow("Unsupported Influence decision contract version");
+});
+
+test("new sealed ballots invite one sentence or less without requiring private thinking", () => {
+  const tool = withDecisionSpeech({name: "vote", schema: {type: "object", properties: {thinking: {type: "string"}}, required: ["thinking"], additionalProperties: false}}, "vote", 3);
+  const contract = JSON.stringify(tool.schema);
+  expect(contract).toContain("You are speaking privately to the House. State your vote and briefly explain why, in one sentence or less.");
+  expect(contract).not.toContain("No explanation");
+  expect(tool.schema.required).toEqual(["message"]);
+  expect(validateDecisionSpeech("vote", {message: "A".repeat(200)}, 3)).toBeNull();
+  expect(validateDecisionSpeech("vote", {message: "A".repeat(200)}, 2)).toContain("exceeds 120");
+  for (const action of ["format-tiebreak", "format-two-names-tiebreak"]) {
+    const base = {name: action, schema: {type: "object", properties: {}, required: [], additionalProperties: false}};
+    expect(withDecisionSpeech(base, action, 3).schema.required).toEqual(["message", "thinking"]);
+    expect(withDecisionSpeech(base, action, 2).schema.required).toEqual(["message"]);
+  }
+});
+
+
+test("new root contracts cannot restore with historical decision schemas", async () => {
+  const {resolveInfluenceGameDecisionVersion} = await import("../influence-game-schema");
+  expect(resolveInfluenceGameDecisionVersion(undefined, undefined)).toBe(1);
+  expect(resolveInfluenceGameDecisionVersion(1, 2)).toBe(2);
+  expect(resolveInfluenceGameDecisionVersion(2, 3)).toBe(3);
+  expect(resolveInfluenceGameDecisionVersion(3, 3)).toBe(3);
+  for (const version of [undefined, 1, 2]) expect(() => resolveInfluenceGameDecisionVersion(3, version)).toThrow("requires decision contract v3");
+  for (const version of [undefined, 1, 2]) expect(() => resolveInfluenceGameDecisionVersion(2, version)).toThrow("requires decision contract v3");
+});
+
+
+test("historical projections preserve the absent root field and remain restorable", async () => {
+  const {GameState} = await import("../game-state");
+  const {replayCanonicalEvents} = await import("../game-projection");
+  const state = new GameState([{id:"a",name:"A"},{id:"b",name:"B"}], {gameSchemaVersion:2});
+  const events = structuredClone(state.getCanonicalEvents());
+  expect(replayCanonicalEvents(events).gameSchemaVersion).toBe(2);
+  for (const event of events) if (event.type === "game.roster_initialized") delete event.payload.gameSchemaVersion;
+  expect(replayCanonicalEvents(events)).not.toHaveProperty("gameSchemaVersion");
+  expect(GameState.fromCanonicalEvents(events).gameSchemaVersion).toBe(1);
 });

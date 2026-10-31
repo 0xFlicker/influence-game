@@ -18,6 +18,10 @@ An AI competitor participating in a game under The House. Agents make in-game de
 
 ## Agent Profile
 
+Stored gender is shared contestant identity in both games. The game freezes it with the roster; missing gender remains unspecified, and contestants must not guess from names. Gender is not a separate pronoun preference. Personality, backstory, and strategy remain private character instructions.
+
+Default House players use fixed name, archetype, gender and portrait identities from `HOUSE_CAST`; casting shuffles whole characters. Existing waiting House seats reconcile to this catalog at start, keeping distinct archetypes where possible. Automatic voices use the stored gender. Historical rosters are never rewritten during reads. See [the cast map](docs/house-cast.md).
+
 The owner-managed, reusable identity and behavior configuration from which an Agent is seated. Name, portrait, gender, base persona, backstory, personality, and Strategy belong to one saved profile, while game seats bind to a specific profile revision under the existing roster rules. Web creation offers a bounded, full-screen AI assistant or Advanced create, both backed by the canonical editor's draft and save contract. Updates use the full editor; game join and Daily Free acquisition select an existing profile or route through the same creation choice instead of maintaining inline copies of the form. The creation assistant designs a competitor; it is not an in-game Agent or a general chatbot. See [guided creation](docs/agent-creation-assistant.md).
 
 ### Anonymous creation pool
@@ -983,3 +987,16 @@ See [native Anthropic](docs/native-anthropic.md).
 ### Provider availability versus model-output exhaustion
 
 A service-tier failover changes only OpenAI processing priority/pricing, preserving model and contestant identity. A manifest fallback changes the effective model within a frozen allowed route and records that provenance. Availability exhaustion means the logical turn is pending, not an accepted game action. Only exhausted output validation may invoke a phase-owned rules-legal fallback.
+
+### House follow feed
+
+A game adapter supplies canonical knowledge through the player's current semantic action, independent of rendered text and the Show thinking toggle. Mystery Werewolf excludes roles and thinking; Omniscient and Influence include permitted cognition. Tab images provide supplemental visual context. Actual game speech temporarily takes priority over host speech without ending either session. See [House follow](docs/house-follow.md).
+
+
+### Safety Bounce speech and lifecycle revisions
+
+New Influence games freeze root `gameSchemaVersion: 2` and decision contract v3. Safety Bounce commits its starter draw and each public pointer separately before Format Mingle. The complete Safe/Vulnerable pools and the contestant's own status are present before the first Mingle turn. Sealed ballots follow Mingle; an empowered tiebreak requests private thinking and public speech before its structured choice. Public decision speeches enter the normal durable dialogue record: recent speech remains required under the existing context policy, and older speech remains eligible for authorized recall. No memory write is forced.
+
+Ballots request a private explanation to the House in **one sentence or less**, within the shared 320-byte speech allowance, without a thinking field. These explanations stay out of contestant dialogue and appear only at their canonical spectator reveal. Continue retaining structured thinking, available native reasoning and sanitized attempts; do not parse speech into game facts, use `as any`, or bypass direct House calls.
+
+Unversioned/root-v1 games retain their original execution order and remain viewable. Their chain scenes skip missing speech/thinking. New-root playback checks event ownership and speech consumption; unsupported records stop playback with a diagnostic rather than producing a generic event card. This does not stop the game.

@@ -1,5 +1,6 @@
 import { CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION, type InfluenceDecisionContractVersion, withDecisionSpeech, validateDecisionSpeech, decisionSpeechPolicy } from "./influence-decision-speech";
 import { speechDraftingGuidance } from "./speech-budget";
+import { HOUSE_CAST } from "./house-personas";
 import type { DecisionSchema } from "./model-invocation";
 import { measureLengthFeedback } from "./structured-output";
 import { ContextSpans } from "./context-adaptation";
@@ -1282,6 +1283,8 @@ interface AgentMemory {
 }
 
 export interface InfluenceAgentOptions {
+  /** Stored character gender, never inferred from names or prose. */
+  gender?: import("./types").AgentGender | null;
   /** Frozen replay contract; new agents default to the current strict speech contract. */
   decisionContractVersion?: InfluenceDecisionContractVersion;
   /** Optional producer/debug trace sink for raw model-call evidence. */
@@ -1710,6 +1713,7 @@ type ModelCallResponse = ProviderModelOutcome;
 export class InfluenceAgent implements IAgent {
   readonly id: UUID;
   readonly name: string;
+  readonly gender: import("./types").AgentGender | null;
   readonly personality: Personality;
   private readonly backstory: string;
   private readonly model: string;
@@ -1737,7 +1741,7 @@ export class InfluenceAgent implements IAgent {
   private lastPrivateDecisionId: string | undefined;
   private durableProviderTurnBinding: DurableProviderTurnBinding | null = null;
   private gameId: UUID = "";
-  private allPlayers: Array<{ id: UUID; name: string }> = [];
+  private allPlayers: Array<Pick<import("./types").Player, "id" | "name" | "gender">> = [];
   private memoryStore: MemoryStore | null = null;
   private memory: AgentMemory = {
     allies: new Set(),
@@ -1760,6 +1764,7 @@ export class InfluenceAgent implements IAgent {
   ) {
     this.id = id;
     this.name = name;
+    this.gender = options.gender ?? null;
     this.personality = personality;
     this.model = model;
     this.providerProfileId = options.providerProfileId ?? "openai";
@@ -2001,7 +2006,7 @@ export class InfluenceAgent implements IAgent {
     });
   }
 
-  onGameStart(gameId: UUID, allPlayers: Array<{ id: UUID; name: string }>): void {
+  onGameStart(gameId: UUID, allPlayers: Array<Pick<import("./types").Player, "id" | "name" | "gender">>): void {
     this.gameId = gameId;
     this.allPlayers = allPlayers;
   }
@@ -4937,6 +4942,10 @@ Return the jury_vote JSON response to cast your vote.`;
 
 You are ${this.name}, a contestant on "Influence" — a social strategy game where distinct fictional personalities clash.
 
+## Cast identity
+${this.allPlayers.map(player => `${player.name}: gender ${player.gender ?? "unspecified"}`).join("\n")}
+Use the stored genders above. When gender is unspecified, use the character's name or neutral language; do not guess from names. Gender does not specify personal pronouns; honor any explicitly stated pronouns.
+
 ${this.backstory ? `## Who You Are\n${this.backstory}\n` : ""}
 ## Your Personality & Game Approach
 ${PERSONALITY_PROMPTS[this.personality]}
@@ -5150,12 +5159,19 @@ Use these as live facts for strategy and conversation. You may plead, bargain, r
     const coordinationGuidance = pressure.selectedFormat === "vote_bomb" && ctx.phase !== Phase.FORMAT_RESOLVE
       ? `\n\n## The Short List Coordination\n${getFormatRegistration("vote_bomb").decision.strategyGuidance}`
       : "";
+    const board = pressure.bounceBoard;
+    const names = (ids: UUID[]) => ids.map(id => ctx.alivePlayers.find(player => player.id === id)?.name ?? id).join(", ");
+    const bounceGuidance = board ? `\n\n## Safety Bounce board\nSafe: ${names(board.safe)}\nVulnerable: ${names(board.vulnerable)}\nUnclassified: ${names(board.unclassified)}\n${board.unclassified.length === 0
+      ? board.vulnerable.length === 1
+        ? "Classification is complete. The sole vulnerable player exits automatically; there is no ballot."
+        : `${board.safe.includes(ctx.selfId) ? "You are safe from elimination this round. Use Mingle to decide whom to vote against and negotiate support or commitments." : "You are vulnerable and can exit this round. Use Mingle to build support, discourage elimination votes against you, and coordinate alternatives."} All living players vote to eliminate one of the vulnerable players; the highest total exits. ${pressure.empoweredName} breaks an exit tie.`
+      : "The chain is still running; only unclassified players can be picked."}` : "";
     return `## Current Format Pressure
 - Locked round format: ${lockedName} (format id: ${formatSurfaceId(pressure.selectedFormat)})
 - Empowered chooser and format tiebreaker: ${pressure.empoweredName}
 - Active rule sheet: ${pressure.ruleSheetSummary ?? ruleSheetForFormat(pressure.selectedFormat)}
 - Visibility: ${this.formatVisibilityGuidance(pressure.selectedFormat)}
-Use only this locked format for the current round. Prefer the full public name in speech. Do not import rules from an unselected format or the retired default Power-to-Council loop.${coordinationGuidance}`;
+Use only this locked format for the current round. Prefer the full public name in speech. Do not import rules from an unselected format or the retired default Power-to-Council loop.${coordinationGuidance}${bounceGuidance}`;
   }
 
   private buildRestrictedHistoryLegalitySection(ctx: PhaseContext): string {
@@ -6035,7 +6051,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
   }
 
   private decisionSchemaWithStrategy(tool: DecisionSchema, options?: LlmCallOptions): DecisionSchema {
-    const spoken = withDecisionSpeech(tool, options?.action ?? tool.name);
+    const spoken = withDecisionSpeech(tool, options?.action ?? tool.name, this.decisionContractVersion);
     return { ...spoken, schema: this.withStrategyCandidateSchema(spoken.schema, options) };
   }
 
@@ -6276,9 +6292,9 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       value: unknown,
       requireSpeech = true,
     ): StructuredDomainDecodeResult<unknown> => {
-      const speechIssue = requireSpeech ? validateDecisionSpeech(action, value) : null;
+      const speechIssue = requireSpeech ? validateDecisionSpeech(action, value, this.decisionContractVersion) : null;
       if (speechIssue) {
-        const policy = decisionSpeechPolicy(action);
+        const policy = decisionSpeechPolicy(action, this.decisionContractVersion);
         const message = value && typeof value === "object" && "message" in value ? value.message : undefined;
         const feedback = policy && typeof message === "string"
           ? measureLengthFeedback(message, "message", policy.maxBytes, "utf8_bytes") : undefined;
@@ -6319,7 +6335,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       return { status: "valid", value: Object.assign({}, decoded.value, { cue }) };
     };
     const artifact = createExactStructuredOutputArtifact<TProviderValue, TDomainValue>({
-      action: `agent-tool.${action}.${options?.visual ? "visual." : ""}v${decisionSpeechPolicy(action) ? 2 : 1}`,
+      action: `agent-tool.${action}.${options?.visual ? "visual." : ""}v${decisionSpeechPolicy(action) ? Math.max(2, this.decisionContractVersion) : 1}`,
       name: requestTool.name,
       schema: {
         ...(requestTool.description && { description: requestTool.description }),
@@ -6472,23 +6488,8 @@ export function createAgentCast(
   memoryStore?: MemoryStore,
   options: InfluenceAgentOptions = {},
 ): InfluenceAgent[] {
-  const cast: Array<{ name: string; personality: Personality }> = [
-    { name: "Atlas", personality: "strategic" },
-    { name: "Vera", personality: "deceptive" },
-    { name: "Finn", personality: "honest" },
-    { name: "Mira", personality: "social" },
-    { name: "Rex", personality: "aggressive" },
-    { name: "Lyra", personality: "paranoid" },
-    { name: "Kael", personality: "loyalist" },
-    { name: "Echo", personality: "observer" },
-    { name: "Sage", personality: "diplomat" },
-    { name: "Jace", personality: "wildcard" },
-    { name: "Nyx", personality: "contrarian" },
-    { name: "Vex", personality: "broker" },
-  ];
-
-  return cast.map(({ name, personality }) => {
+  return HOUSE_CAST.map(({ name, personality, gender }) => {
     const id: UUID = require("crypto").randomUUID();
-    return new InfluenceAgent(id, name, personality, openaiClient, model, undefined, memoryStore, options);
+    return new InfluenceAgent(id, name, personality, openaiClient, model, undefined, memoryStore, { ...options, gender });
   });
 }

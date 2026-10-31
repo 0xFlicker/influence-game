@@ -12,8 +12,8 @@ test("phase score stays continuous across speakers and uses only presented facts
   expect(influenceMusic("g", {...speech, key:"other", messageIndex:2, canonicalSequence:9})).toEqual(influenceMusic("g", speech));
   expect(influenceMusic("other-game", speech)?.key).not.toBe(influenceMusic("g", speech)?.key);
   expect(influenceMusic("g", {...speech, round:2})?.key).not.toBe(influenceMusic("g", speech)?.key);
-  for (const phase of ["FORMAT_MENU", "FORMAT_PICK", "POWER"] as const) expect(influenceMusic("g", {...speech, phase})?.title).toBe("Terms and Conditions");
-  for (const phase of ["PLEA", "VOTE", "COUNCIL", "JURY_VOTE"] as const) expect(influenceMusic("g", {...speech, phase})?.title).toBe("Names on the Table");
+  for (const phase of ["VOTE", "REVEAL", "FORMAT_MENU", "FORMAT_PICK", "POWER"] as const) expect(influenceMusic("g", {...speech, phase})?.title).toBe("Terms and Conditions");
+  for (const phase of ["PLEA", "COUNCIL", "JURY_VOTE"] as const) expect(influenceMusic("g", {...speech, phase})?.title).toBe("Names on the Table");
   for (const phase of ["DIARY_ROOM", "RETROSPECTIVE"] as const) expect(influenceMusic("g", {...speech, phase})?.title).toBe("The Empty Chair");
   expect(influenceMusic("g", speech, {presentationPurpose:"farewell", scope:"public"})?.title).toBe("The Empty Chair");
   expect(influenceMusic("g", speech, {scope:"diary"})?.title).toBe("The Empty Chair");
@@ -50,4 +50,16 @@ test("intro uses one unbroken source with the first cast at 20 seconds and a fin
   expect(influenceOpeningAudio(last, last.baseDurationMs)[0]?.gain).toBe(0);
   expect(influenceMusic("g", cast)).toBeNull(); expect(influenceOpeningAudio(null, 0)).toEqual([]);
   for (const track of Object.values(INFLUENCE_MUSIC)) expect(existsSync(new URL(`../../public${track.src}`, import.meta.url))).toBe(true);
+});
+
+test("empower voting, ties, reveal and format selection share one continuous music section", () => {
+  const {cues} = compileFormatPresentationPrefix({gameId:FORMAT_KERNEL_VIEWER_GAME_ID, gameKernel:"format", roster:FORMAT_KERNEL_VIEWER_ROSTER, decisions:createMajorityEliminationTieViewerDecisions()});
+  const menu = cues.find(c => c.kind === "format_menu")!;
+  const section = influenceMusic("g", menu);
+  for (const phase of ["VOTE", "REVEAL", "FORMAT_MENU", "FORMAT_PICK"] as const) {
+    expect(influenceMusic("g", {...speech, round:menu.round, phase})).toEqual(section);
+  }
+  expect(influenceMusic("g", {...menu, kind:"empowered_tally", empoweredId:"a", counts:{a:2}, receipts:[]})).toEqual(section);
+  expect(influenceMusic("g", {...menu, kind:"empowered_tie", tiedPlayerIds:["a","b"], counts:{a:2,b:2}, receipts:[]})).toEqual(section);
+  expect(influenceMusic("g", cues.find(c => c.kind === "format_selected")!)).toEqual(section);
 });

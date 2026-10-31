@@ -58,6 +58,7 @@ export type PhaseMachineInput = {
 
 export type PhaseMachineEvent =
   | { type: "PHASE_COMPLETE" } // signal that current phase logic is done
+  | { type: "START_SAFETY_BOUNCE" }
   | { type: "VOTES_TALLIED"; empoweredId: UUID }
   | {
       type: "CANDIDATES_DETERMINED";
@@ -290,9 +291,16 @@ export function createPhaseMachine() {
         entry: [{ type: "emitPhaseStarted", params: { phase: Phase.FORMAT_PICK } }],
         exit: [{ type: "emitPhaseEnded", params: { phase: Phase.FORMAT_PICK } }],
         on: {
+          START_SAFETY_BOUNCE: "safety_bounce",
           PHASE_COMPLETE: "format_mingle",
           UPDATE_ALIVE_PLAYERS: { actions: ["updateAlivePlayers"] },
         },
+      },
+
+      safety_bounce: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.FORMAT_RESOLVE } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.FORMAT_RESOLVE } }],
+        on: { PHASE_COMPLETE: "format_mingle" },
       },
 
       format_mingle: {

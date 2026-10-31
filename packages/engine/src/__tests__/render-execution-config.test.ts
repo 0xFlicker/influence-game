@@ -1,17 +1,24 @@
 import { describe, expect, test } from "bun:test";
 import { renderExecutionConfig, resolveRenderExecution } from "../render-execution-config";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+const policy = readFileSync(resolve(import.meta.dir, "../../../../deployment/render-execution.json"), "utf8");
 
 describe("release-owned rendering policy", () => {
-  test("first landing keeps both deployed environments local and ignores obsolete rollout flags", () => {
-    expect(renderExecutionConfig({ INFLUENCE_DEPLOYMENT_ENVIRONMENT: "prod", POSTGAME_MEDIA_EXECUTION_MODE: "remote" }).mode).toBe("local");
+  test("the checked release policy selects modes and ignores obsolete rollout flags", () => {
+    expect(renderExecutionConfig({ INFLUENCE_DEPLOYMENT_ENVIRONMENT: "prod", POSTGAME_MEDIA_EXECUTION_MODE: "remote" }).mode).toBe(resolveRenderExecution(policy, "prod").mode);
     const stage = renderExecutionConfig({ INFLUENCE_DEPLOYMENT_ENVIRONMENT: "staging" });
-    expect(stage.mode).toBe("local");
+    expect(stage.mode).toBe(resolveRenderExecution(policy, "staging").mode);
     expect(stage.apiOrigin).toBe("https://influence-staging.tail8a79ed.ts.net");
     expect(stage.configDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
   test("existing host NODE_ENV bindings continue local rollout, explicit conflicts fail closed", () => {
     expect(renderExecutionConfig({ NODE_ENV: "production" }).environment).toBe("prod");
-    expect(renderExecutionConfig({ NODE_ENV: "staging" }).environment).toBe("staging");
+    if (resolveRenderExecution(policy, "staging").mode === "local") {
+      expect(renderExecutionConfig({ NODE_ENV: "staging" }).environment).toBe("staging");
+    } else {
+      expect(() => renderExecutionConfig({ NODE_ENV: "staging" })).toThrow("explicit INFLUENCE_DEPLOYMENT_ENVIRONMENT");
+    }
     expect(() => renderExecutionConfig({ NODE_ENV: "staging", INFLUENCE_DEPLOYMENT_ENVIRONMENT: "prod" })).toThrow("conflicts");
   });
   test("packaged releases require a binding and reject malformed policy or TLS aliases", () => {

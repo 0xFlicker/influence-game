@@ -224,3 +224,13 @@ test("late thinking text preserves the recorded cue's camera entrance clock",()=
  expect(director.getAudioPosition()).toEqual({part:"speech",offsetMs:500});
  director.dispose();
 });
+
+test('commentary holds the shared clock without pausing play intent, and respects manual pause',()=>{
+ const clock=new Clock(),director=new PresentationDirector({clock,policy});
+ director.load([{key:'one',cursor:1,baseDurationMs:1000},{key:'two',cursor:2,baseDurationMs:1000}]);
+ director.play();clock.tick(400);director.setCommentaryHeld(true);
+ clock.tick(5000);expect(director.getElapsedBaseMs()).toBe(400);expect(director.getSnapshot().activeKey).toBe('one');expect(director.getSnapshot().isPlaying).toBe(true);
+ director.setAudioPending(true);director.setAudioPending(false);clock.tick(1000);expect(director.getElapsedBaseMs()).toBe(400);
+ director.setCommentaryHeld(false);clock.tick(601);expect(director.getSnapshot().activeKey).toBe('two');
+ director.setCommentaryHeld(true);director.pause();director.setCommentaryHeld(false);clock.tick(5000);expect(director.getSnapshot().isPlaying).toBe(false);expect(director.getSnapshot().activeKey).toBe('two');
+});

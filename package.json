@@ -30,6 +30,7 @@
     "discord:setup-house": "doppler run --project social-strategy-agent --config dev -- bun scripts/setup-house-discord.ts",
     "e2e": "bun scripts/e2e-test.ts",
     "test:e2e:staging": "STAGING_RELEASE_GATE=1 bunx playwright test e2e/smoke.spec.ts --retries=0",
+    "test:e2e:house-follow": "bunx playwright test e2e/house-follow.spec.ts --project=chromium --retries=0",
     "test:e2e:identity": "PLAYWRIGHT_LOCAL_IDENTITY=1 bunx playwright test e2e/public-player-identity.spec.ts",
     "test:e2e:layered-auth": "PLAYWRIGHT_LAYERED_AUTH=deterministic bunx playwright test e2e/layered-authentication.spec.ts --project=layered-auth-deterministic",
     "test:e2e:layered-auth:clerk": "PLAYWRIGHT_LAYERED_AUTH=real-clerk bunx playwright test e2e/layered-authentication.spec.ts --project=layered-auth-real-clerk",

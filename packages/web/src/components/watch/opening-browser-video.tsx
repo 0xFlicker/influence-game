@@ -5,7 +5,7 @@ import {MediaAlignment} from "./media-alignment";
 
 export interface OpeningVideoProps {src: string; poster: string; timeMs: number; playing: boolean; speed: number; navigationRevision: number}
 /** Clock adapter only. The video never advances the presentation. */
-export function OpeningBrowserVideo({src, poster, timeMs, playing, speed, navigationRevision, className}: OpeningVideoProps & {className?: string}) {
+export function OpeningBrowserVideo({src, poster, timeMs, playing, speed, navigationRevision, className, hidden}: OpeningVideoProps & {className?: string; hidden?: boolean}) {
   const ref = useRef<HTMLVideoElement>(null);
   const [alignment] = useState(() => new MediaAlignment());
   useEffect(() => alignment.invalidate(), [src, alignment]);
@@ -22,6 +22,6 @@ export function OpeningBrowserVideo({src, poster, timeMs, playing, speed, naviga
     else if (video.paused) void video.play().catch(cause => {if (!(cause instanceof DOMException && cause.name === "AbortError")) setFailed(true);});
     return () => {video.removeEventListener("loadedmetadata", sync); video.removeEventListener("canplay", sync); video.removeEventListener("seeked", sync); video.removeEventListener("waiting", waiting);};
   }, [timeMs, playing, speed, navigationRevision, alignment, failed]);
-  return failed ? <img src={poster} alt="" className={className} data-opening-video-unavailable="" /> :
-    <video ref={ref} src={src} poster={poster} muted playsInline preload="auto" onError={() => setFailed(true)} className={className} />;
+  return failed ? <img src={poster} alt="" className={className} hidden={hidden} data-opening-video-unavailable="" /> :
+    <video ref={ref} src={src} poster={poster} muted playsInline preload="auto" onError={() => setFailed(true)} className={className} hidden={hidden} />;
 }

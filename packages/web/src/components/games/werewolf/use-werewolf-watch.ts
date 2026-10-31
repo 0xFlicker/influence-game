@@ -13,7 +13,7 @@ import {contiguousWerewolfWindows, consumedSilentTail, werewolfCues, werewolfMom
 import {isOpeningCue, werewolfOpening, werewolfPlaybackPolicy, type WerewolfOpeningCue, type WerewolfPlaybackCue} from "./werewolf-opening";
 
 /** One mounted session per game/audience. Cached head data is never the active snapshot. */
-export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutoff: string, startCursor?: number, title?: string, shared?:ReplayShareState, anonymous = false) {
+export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutoff: string, startCursor?: number, title?: string, shared?:ReplayShareState, anonymous = false, initiallyPaused = false) {
   const clock = useWatchDirector(werewolfPlaybackPolicy);
   const {director} = clock;
   const opening = useRef<WerewolfOpeningCue[]>([]);
@@ -27,11 +27,11 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
   const [error, setError] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(true);
   const [tail, setTail] = useState<WerewolfWatchWindow["moments"][number] | null>(null);
-  const [follow, setFollow] = useState(true);
+  const [follow, setFollow] = useState(!initiallyPaused);
   const request = useRef<AbortController | null>(null);
   const intent = useRef(0);
   const target = useRef(startCursor ?? 1);
-  const playIntent = useRef(true);
+  const playIntent = useRef(!initiallyPaused);
   const awaitingInitialCue = useRef(true);
   const [revision, setRevision] = useState(0);
   const [navigationRevision, setNavigationRevision] = useState(0);

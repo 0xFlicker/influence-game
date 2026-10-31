@@ -12,10 +12,14 @@ export interface WerewolfPlayer {
   contentRevisionId?: string | null;
   id: string;
   name: string;
+  /** Stored character identity frozen in werewolf.started; never inferred from a name. */
+  gender?: import("../types").AgentGender | null;
   personality: string;
   backstory: string;
   strategy: string;
   avatarUrl: string | null;
+  /** Immutable bundled art URL for House characters, frozen at game start. */
+  fullBodyReferenceUrl?: string | null;
   personaKey?: string | null;
 }
 

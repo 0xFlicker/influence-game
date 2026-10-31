@@ -5,6 +5,8 @@ export type {SpeechBoundaries} from "./thinking-timing";
 export interface WatchCue { key: string; baseDurationMs: number; thinkingOnly?: true }
 export interface WatchPolicy<C extends WatchCue> {
   position(cue: C): number | null;
+  /** Authored title sequences can retain real-time pacing before readable cast cards. */
+  playbackSpeed?(cue: C, requestedSpeed: number): number;
   speech(cue: C | null): SpeechBoundaries | null;
   /** Readable landing point shared by direct seeks and arrow-key cue steps. */
   scrubAtMs?(cue: C): number;
@@ -147,6 +149,13 @@ export class PresentationDirector<C extends WatchCue> {
   private timingRevision = 0;
   getTimingRevision(): number { return this.timingRevision; }
   private audioPending = false;
+  private commentaryHeld = false;
+  /** Hold the shared cue clock without changing operator play intent or music. */
+  setCommentaryHeld(held:boolean) {
+    if(this.commentaryHeld===held)return;
+    this.captureRemainingTime();this.clearTimer();this.commentaryHeld=held;this.ensureTimer();
+    for(const listener of this.listeners)listener();
+  }
   setAudioPending(pending:boolean) {
     if (this.audioPending === pending) return;
     this.captureRemainingTime(); this.clearTimer(); this.audioPending = pending; this.ensureTimer();
@@ -353,12 +362,17 @@ export class PresentationDirector<C extends WatchCue> {
     return this.state.cues[this.state.cursor] ?? null;
   }
 
-  /** Base presentation time for timed overlays; freezes on pause and follows playback speed. */
+  private getPlaybackSpeed(): number {
+    const cue = this.getActiveCue();
+    return cue ? this.policy.playbackSpeed?.(cue, this.state.speed) ?? this.state.speed : this.state.speed;
+  }
+
+  /** Base presentation time for timed overlays; freezes on pause and follows the active cue rate. */
   getElapsedBaseMs(): number { return this.contentTime(this.getTimelineElapsedBaseMs()); }
 
   getTimelineElapsedBaseMs(): number {
     const duration = this.activeDurationMs();
-    const elapsed = this.timerId === null ? 0 : Math.max(0, this.clock.now() - this.scheduledAt) * this.state.speed;
+    const elapsed = this.timerId === null ? 0 : Math.max(0, this.clock.now() - this.scheduledAt) * this.getPlaybackSpeed();
     return Math.max(0, Math.min(duration, duration - this.remainingBaseMs + elapsed));
   }
 
@@ -677,6 +691,7 @@ export class PresentationDirector<C extends WatchCue> {
       || !this.ready
       || this.thinkingPending
       || this.audioPending
+      || this.commentaryHeld
       || this.timerId !== null
       || (!this.state.isPlaying && !this.manualTransition)
       || this.state.waitingAtTail
@@ -708,7 +723,7 @@ export class PresentationDirector<C extends WatchCue> {
         this.remainingBaseMs = 0;
         this.advanceOne();
       },
-      remainingMs / this.state.speed,
+      remainingMs / this.getPlaybackSpeed(),
     );
   }
 
@@ -717,7 +732,7 @@ export class PresentationDirector<C extends WatchCue> {
     const elapsedRealMs = Math.max(0, this.clock.now() - this.scheduledAt);
     this.remainingBaseMs = Math.max(
       0,
-      this.remainingBaseMs - elapsedRealMs * this.state.speed,
+      this.remainingBaseMs - elapsedRealMs * this.getPlaybackSpeed(),
     );
   }
 

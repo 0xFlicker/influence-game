@@ -219,7 +219,7 @@ export async function runFormatPickPhase(
   const offeredFormats = state.offeredFormats;
   if (empoweredId && state.selectedFormat && !offeredFormats) {
     // One-format games already emitted authoritative selection in FORMAT_MENU.
-    actor.send({ type: "PHASE_COMPLETE" });
+    actor.send({ type: state.selectedFormat === "safety_bounce" && gameState.gameSchemaVersion >= 2 ? "START_SAFETY_BOUNCE" : "PHASE_COMPLETE" });
     await new Promise((r) => setTimeout(r, 0));
     return;
   }
@@ -359,7 +359,7 @@ export async function runFormatPickPhase(
     text: `${gameState.getPlayerName(empoweredId)} chose format ${displayNameForFormat(chosen)}`,
   });
 
-  actor.send({ type: "PHASE_COMPLETE" });
+  actor.send({ type: chosen === "safety_bounce" && gameState.gameSchemaVersion >= 2 ? "START_SAFETY_BOUNCE" : "PHASE_COMPLETE" });
   await new Promise((r) => setTimeout(r, 0));
 }
 
@@ -933,15 +933,27 @@ async function resolveSealedElimFormatRound(
   };
 }
 
-async function resolveSafetyBounceRound(
-  ctx: PhaseRunnerContext,
-  empoweredId: UUID,
-): Promise<FormatRoundElimination> {
+/** Restore the exact accepted chain prefix; no transcript-derived facts. */
+export function safetyBounceBoard(ctx: PhaseRunnerContext) {
+  const events = ctx.gameState.getCanonicalEvents().filter(event => event.round === ctx.gameState.round);
+  const start = events.find(event => event.type === "format.safety_bounce_started");
+  if (!start || start.type !== "format.safety_bounce_started") throw new Error("Safety Bounce has no committed starter");
+  let board = createBounceBoard(ctx.gameState.getAlivePlayerIds(), start.payload.starterId);
+  for (const event of events) {
+    if (event.type !== "format.safety_bounce_pointer") continue;
+    board = applyBouncePointer(board, event.payload);
+    const classification = board.safe.includes(event.payload.targetId) ? "safe" : "vulnerable";
+    if (classification !== event.payload.classification) throw new Error("Safety Bounce classification mismatch");
+  }
+  return board;
+}
+
+export async function startSafetyBounce(ctx: PhaseRunnerContext): Promise<void> {
   const { gameState, logger } = ctx;
-  const alive = gameState.getAlivePlayers();
-  const aliveIds = alive.map((p) => p.id);
+  if (gameState.getCanonicalEvents().some(event => event.round === gameState.round && event.type === "format.safety_bounce_started")) throw new Error("Safety Bounce already started");
+  const aliveIds = gameState.getAlivePlayerIds();
   const starterId = aliveIds[Math.floor((ctx.random ?? Math.random)() * aliveIds.length)]!;
-  let board = createBounceBoard(aliveIds, starterId);
+  const board = createBounceBoard(aliveIds, starterId);
   updateBounceBoardPressure(ctx, board);
   await assertCanAcceptCommit(ctx);
   gameState.recordSafetyBounceStarted(starterId);
@@ -951,175 +963,155 @@ async function resolveSafetyBounceRound(
     Phase.FORMAT_RESOLVE,
   );
 
-  while (board.nextActorId !== null) {
-    const actorId = board.nextActorId;
-    const agent = requireAgent(ctx, actorId, "safety-bounce pointer");
-    const phaseCtx = prepareAgentPhaseContext(
+}
+
+export async function advanceSafetyBounce(ctx: PhaseRunnerContext): Promise<void> {
+  const { gameState, logger } = ctx;
+  const empoweredId = gameState.empoweredId;
+  if (!empoweredId) throw new Error("Safety Bounce requires an empowered player");
+  let board = safetyBounceBoard(ctx);
+  if (board.nextActorId === null) throw new Error("Safety Bounce is already complete");
+  const actorId = board.nextActorId;
+  const agent = requireAgent(ctx, actorId, "safety-bounce pointer");
+  const phaseCtx = prepareAgentPhaseContext(
+    ctx,
+    agent,
+    actorId,
+    Phase.FORMAT_RESOLVE,
+    "strategic_decision",
+    { empoweredId },
+  );
+  let targetId = deterministicEngineFallback(
+    board.unclassified,
+    phaseCtx,
+    actorId,
+    "bounce-pointer",
+  );
+  let thinking: string | undefined;
+  let reasoningContext: string | undefined;
+  let strategyMetadata: StrategicDecisionMetadata = engineFallbackMetadata(
+    phaseCtx,
+    actorId,
+    "bounce-pointer",
+    "agent_method_unavailable",
+  );
+  let decisionId: UUID | undefined;
+  let provenance = fallbackFormatProvenance("agent_method_unavailable");
+
+  if (agent.getBouncePointer) {
+    const pointerFn = agent.getBouncePointer.bind(agent);
+    const boardSnapshot = {
+      safe: board.safe,
+      vulnerable: board.vulnerable,
+      unclassified: board.unclassified,
+      nextActorId: board.nextActorId,
+    };
+    const result = await withFormatAgentTimeout(
       ctx,
-      agent,
-      actorId,
       Phase.FORMAT_RESOLVE,
-      "strategic_decision",
-      { empoweredId },
+      `Safety Bounce pointer (${gameState.getPlayerName(actorId)})`,
+      () => pointerFn(phaseCtx, boardSnapshot),
+      (reason) => ({
+        targetId,
+        decisionSource: "fallback" as const,
+        fallbackReason: "tool_call_failed" as const,
+        ...engineFallbackMetadata(phaseCtx, actorId, "bounce-pointer", reason),
+      }),
     );
-    let targetId = deterministicEngineFallback(
-      board.unclassified,
-      phaseCtx,
-      actorId,
-      "bounce-pointer",
-    );
-    let thinking: string | undefined;
-    let reasoningContext: string | undefined;
-    let strategyMetadata: StrategicDecisionMetadata = engineFallbackMetadata(
-      phaseCtx,
-      actorId,
-      "bounce-pointer",
-      "agent_method_unavailable",
-    );
-    let decisionId: UUID | undefined;
-    let provenance = fallbackFormatProvenance("agent_method_unavailable");
-
-    if (agent.getBouncePointer) {
-      const pointerFn = agent.getBouncePointer.bind(agent);
-      const boardSnapshot = {
-        safe: board.safe,
-        vulnerable: board.vulnerable,
-        unclassified: board.unclassified,
-        nextActorId: board.nextActorId,
-      };
-      const result = await withFormatAgentTimeout(
-        ctx,
-        Phase.FORMAT_RESOLVE,
-        `Safety Bounce pointer (${gameState.getPlayerName(actorId)})`,
-        () => pointerFn(phaseCtx, boardSnapshot),
-        (reason) => ({
-          targetId,
-          decisionSource: "fallback" as const,
-          fallbackReason: "tool_call_failed" as const,
-          ...engineFallbackMetadata(phaseCtx, actorId, "bounce-pointer", reason),
-        }),
-      );
-      if (result.decisionSource === "fallback"
-        && result.fallbackReason === "tool_call_failed") {
-        provenance = fallbackFormatProvenance("tool_call_failed");
-        thinking = undefined;
-        reasoningContext = undefined;
-        strategyMetadata = result;
+    if (result.decisionSource === "fallback"
+      && result.fallbackReason === "tool_call_failed") {
+      provenance = fallbackFormatProvenance("tool_call_failed");
+      thinking = undefined;
+      reasoningContext = undefined;
+      strategyMetadata = result;
+    } else {
+      const pointer = { actorId, targetId: result.targetId };
+      if (isLegalBouncePointer(board, pointer)) {
+        targetId = result.targetId;
+        provenance = normalizedFormatProvenance(result);
+        if (provenance.decisionSource === "llm") decisionId = result.decisionId;
       } else {
-        const pointer = { actorId, targetId: result.targetId };
-        if (isLegalBouncePointer(board, pointer)) {
-          targetId = result.targetId;
-          provenance = normalizedFormatProvenance(result);
-          if (provenance.decisionSource === "llm") decisionId = result.decisionId;
-        } else {
-          targetId = deterministicEngineFallback(
-            board.unclassified,
-            phaseCtx,
-            actorId,
-            "bounce-pointer",
-          );
-          provenance = fallbackFormatProvenance("invalid_bounce_pointer");
-          strategyMetadata = engineFallbackMetadata(
-            phaseCtx,
-            actorId,
-            "bounce-pointer",
-            "invalid_model_output",
-          );
-        }
-        if (provenance.decisionSource === "llm") {
-          thinking = result.thinking ?? thinking;
-          reasoningContext = result.reasoningContext;
-          strategyMetadata = result;
-        } else {
-          thinking = undefined;
-          reasoningContext = undefined;
-        }
-      }
-    }
-
-    board = applyBouncePointer(board, { actorId, targetId });
-    updateBounceBoardPressure(ctx, board);
-    const classification = board.vulnerable.includes(targetId) ? "VULNERABLE" : "SAFE";
-    await assertCanAcceptCommit(ctx);
-    gameState.recordSafetyBouncePointer(
-      actorId,
-      targetId,
-      classification.toLowerCase() as "safe" | "vulnerable",
-      [
-        agentTurnSourcePointer(
+        targetId = deterministicEngineFallback(
+          board.unclassified,
+          phaseCtx,
           actorId,
           "bounce-pointer",
-          gameState.round,
-          Phase.FORMAT_RESOLVE,
-          undefined,
-          strategyMetadata.engineFallback ? undefined : decisionId,
-          strategyMetadata.engineFallback,
-        ),
-      ],
-    );
-    resolveActionStrategyCandidate(
-      agent,
-      strategyMetadata,
-      provenance.decisionSource === "llm",
-    );
-    logger.logSystem(
-      `Bounce: ${gameState.getPlayerName(actorId)} → ${gameState.getPlayerName(targetId)} (${classification})`,
-      Phase.FORMAT_RESOLVE,
-    );
-    logger.emitAgentTurn({
-      phase: Phase.FORMAT_RESOLVE,
-      action: "bounce-pointer",
-      actor: { id: actorId, name: gameState.getPlayerName(actorId), role: "player" },
-      visibility: "public",
-      response: {
-        targetId,
-        classification,
-        ...provenance,
-        ...strategicDecisionResponse(strategyMetadata),
-      },
-      thinking,
-      reasoningContext,
-      scope: "system",
-      text: `${gameState.getPlayerName(actorId)} pointed at ${gameState.getPlayerName(targetId)} (${classification})`,
-    });
+        );
+        provenance = fallbackFormatProvenance("invalid_bounce_pointer");
+        strategyMetadata = engineFallbackMetadata(
+          phaseCtx,
+          actorId,
+          "bounce-pointer",
+          "invalid_model_output",
+        );
+      }
+      if (provenance.decisionSource === "llm") {
+        thinking = result.thinking ?? thinking;
+        reasoningContext = result.reasoningContext;
+        strategyMetadata = result;
+      } else {
+        thinking = undefined;
+        reasoningContext = undefined;
+      }
+    }
   }
 
+  board = applyBouncePointer(board, { actorId, targetId });
+  updateBounceBoardPressure(ctx, board);
+  const classification = board.vulnerable.includes(targetId) ? "VULNERABLE" : "SAFE";
+  await assertCanAcceptCommit(ctx);
+  gameState.recordSafetyBouncePointer(
+    actorId,
+    targetId,
+    classification.toLowerCase() as "safe" | "vulnerable",
+    [
+      agentTurnSourcePointer(
+        actorId,
+        "bounce-pointer",
+        gameState.round,
+        Phase.FORMAT_RESOLVE,
+        undefined,
+        strategyMetadata.engineFallback ? undefined : decisionId,
+        strategyMetadata.engineFallback,
+      ),
+    ],
+  );
+  resolveActionStrategyCandidate(
+    agent,
+    strategyMetadata,
+    provenance.decisionSource === "llm",
+  );
   logger.logSystem(
-    `Bounce complete. Safe: ${board.safe.map((id) => gameState.getPlayerName(id)).join(", ")}. Vulnerable: ${board.vulnerable.map((id) => gameState.getPlayerName(id)).join(", ")}.`,
+    `Bounce: ${gameState.getPlayerName(actorId)} → ${gameState.getPlayerName(targetId)} (${classification})`,
     Phase.FORMAT_RESOLVE,
   );
+  logger.emitAgentTurn({
+    phase: Phase.FORMAT_RESOLVE,
+    action: "bounce-pointer",
+    actor: { id: actorId, name: gameState.getPlayerName(actorId), role: "player" },
+    visibility: "public",
+    response: {
+      targetId,
+      classification,
+      ...provenance,
+      ...strategicDecisionResponse(strategyMetadata),
+    },
+    thinking,
+    reasoningContext,
+    scope: "system",
+    text: `${gameState.getPlayerName(actorId)} pointed at ${gameState.getPlayerName(targetId)} (${classification})`,
+  });
+}
 
-  if (board.vulnerable.length === 1) {
-    const soleId = board.vulnerable[0]!;
-    return {
-      eliminatedId: soleId,
-      voteDisclosure: {
-        visibility: "none",
-        reason: "sole_vulnerable",
-      },
-      canonicalResolution: {
-        formatId: "safety_bounce",
-        empoweredId,
-        eliminatedId: soleId,
-        resolutionKind: "auto",
-        tiedPlayerIds: [],
-        tiebreakerId: null,
-        aggregate: {
-          capability: "public_chain",
-          starterId,
-          safePlayerIds: [...board.safe],
-          vulnerablePlayerIds: [...board.vulnerable],
-          voteTotals: {},
-        },
-      },
-      resolutionSourcePointers: [],
-    };
-  }
-
-  const voteTotals: Record<UUID, number> = {};
-  for (const id of board.vulnerable) voteTotals[id] = 0;
-  const ballots: Array<{ voterId: UUID; targetId: UUID }> = [];
-
+export async function collectSafetyBounceBallots(ctx: PhaseRunnerContext): Promise<void> {
+  const { gameState, logger } = ctx;
+  const empoweredId = gameState.empoweredId;
+  if (!empoweredId) throw new Error("Safety Bounce requires an empowered player");
+  const board = safetyBounceBoard(ctx);
+  if (board.nextActorId !== null) throw new Error("Safety Bounce vote before classification completed");
+  if (board.vulnerable.length === 1) return;
+  if (gameState.getCanonicalEvents().some(event => event.round === gameState.round && event.type === "format.ballot_cast")) throw new Error("Safety Bounce ballots already collected");
+  const alive = gameState.getAlivePlayers();
   const ballotCommits = await drainProviderCalls(alive.map(async (player) => {
     const agent = requireAgent(ctx, player.id, "safety-bounce vote");
     const phaseCtx = prepareAgentPhaseContext(
@@ -1199,8 +1191,6 @@ async function resolveSafetyBounceRound(
     }
 
     return async () => {
-      ballots.push({ voterId: player.id, targetId });
-      voteTotals[targetId] = (voteTotals[targetId] ?? 0) + 1;
       const targetName = gameState.getPlayerName(targetId);
       await assertCanAcceptCommit(ctx);
       gameState.recordFormatBallot({
@@ -1246,12 +1236,48 @@ async function resolveSafetyBounceRound(
   }));
   for (const commit of ballotCommits) await commit();
 
-  if (ballots.length !== aliveIds.length) {
-    throw new Error(`Safety Bounce incomplete ballots: ${ballots.length}/${aliveIds.length}`);
+}
+
+async function resolveSafetyBounceRound(ctx: PhaseRunnerContext, empoweredId: UUID): Promise<FormatRoundElimination> {
+  const { gameState, logger } = ctx;
+  if (gameState.gameSchemaVersion === 1) {
+    await startSafetyBounce(ctx);
+    while (safetyBounceBoard(ctx).nextActorId !== null) await advanceSafetyBounce(ctx);
+    await collectSafetyBounceBallots(ctx);
+  }
+  const board = safetyBounceBoard(ctx);
+  if (board.nextActorId !== null) throw new Error("Safety Bounce resolution before classification completed");
+  const starterId = board.starterId;
+  if (board.vulnerable.length === 1) {
+    const soleId = board.vulnerable[0]!;
+    return {
+      eliminatedId: soleId,
+      voteDisclosure: {
+        visibility: "none",
+        reason: "sole_vulnerable",
+      },
+      canonicalResolution: {
+        formatId: "safety_bounce",
+        empoweredId,
+        eliminatedId: soleId,
+        resolutionKind: "auto",
+        tiedPlayerIds: [],
+        tiebreakerId: null,
+        aggregate: {
+          capability: "public_chain",
+          starterId,
+          safePlayerIds: [...board.safe],
+          vulnerablePlayerIds: [...board.vulnerable],
+          voteTotals: {},
+        },
+      },
+      resolutionSourcePointers: [],
+    };
   }
 
+  const {ballots, voteTotals, result} = safetyBounceBallotResult(ctx);
   await assertCanAcceptCommit(ctx);
-  let resolution = resolveSafetyBounceVote(board.vulnerable, voteTotals);
+  let resolution = result;
   let resolutionSourcePointers: CanonicalSourcePointer[] = [];
   if (resolution.kind === "tie") {
     const broken = await breakFormatTie(ctx, empoweredId, resolution.tiedSet);
@@ -1301,6 +1327,22 @@ async function resolveSafetyBounceRound(
     },
     resolutionSourcePointers,
   };
+}
+
+/** Reconstruct a committed sealed collection for resolution and provider-slot planning. */
+export function safetyBounceBallotResult(ctx: PhaseRunnerContext) {
+  const {gameState} = ctx;
+  const board = safetyBounceBoard(ctx);
+  const ballots = gameState.getCanonicalEvents().flatMap(event => event.round === gameState.round && event.type === "format.ballot_cast" && event.payload.formatId === "safety_bounce" ? [event.payload] : []);
+  if (board.vulnerable.length > 1 && ballots.length !== gameState.getAlivePlayerIds().length) throw new Error("Safety Bounce resolution requires every sealed ballot");
+  const voteTotals: Record<UUID, number> = Object.fromEntries(board.vulnerable.map(id => [id, 0]));
+  const voters = new Set<string>();
+  for (const ballot of ballots) {
+    if (voters.has(ballot.voterId) || !gameState.getAlivePlayerIds().includes(ballot.voterId) || !board.vulnerable.includes(ballot.targetId)) throw new Error("Invalid committed Safety Bounce ballot");
+    voters.add(ballot.voterId);
+    voteTotals[ballot.targetId]! += 1;
+  }
+  return {ballots, voteTotals, result: resolveSafetyBounceVote(board.vulnerable, voteTotals)};
 }
 
 /** Human-readable exit outcome for chatty/transcript (includes sole vs tiebreak). */

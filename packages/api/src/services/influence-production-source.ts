@@ -1,4 +1,6 @@
+import {resolveInfluenceGameSchemaVersion} from "@influence/engine/influence-game-schema";
 import {hasLiveAudioTrack} from "./audio-frontier.js";
+import { bundledHouseBody } from "@influence/engine/house-character-art";
 import { resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import { isSpectatorHuddleSpeech } from "@influence/engine";
 import { loadPayloads } from "./payload-storage.js";
@@ -28,7 +30,7 @@ export interface InfluenceProductionSnapshot {
   gameId: string;
   gameKind: "influence";
   audience: "public";
-  projectionVersion: 3;
+  projectionVersion: 3 | 4 | 5;
   throughEventSequence: number;
   throughTurnSequence: number | null;
   transcriptPrefix: { maxId: number; maxEntrySequence: number };
@@ -58,7 +60,7 @@ export function decodeInfluenceProductionSnapshot(value: unknown): InfluenceProd
   if (!value || typeof value !== "object" || Array.isArray(value)) return fail();
   const row = value as Record<string, unknown>;
   if (Object.keys(row).sort().join() !== "acceptedCutoff,acceptedSourceHash,audience,gameId,gameKind,mediaReferences,projectionVersion,publicationCutoff,sourceHash,throughEventSequence,throughTurnSequence,transcriptPrefix"
-    || row.gameKind !== "influence" || row.audience !== "public" || row.projectionVersion !== 3
+    || row.gameKind !== "influence" || row.audience !== "public" || (row.projectionVersion !== 3 && row.projectionVersion !== 4 && row.projectionVersion !== 5)
     || typeof row.gameId !== "string" || !row.gameId || row.gameId.length > 200
     || !Number.isSafeInteger(row.throughEventSequence) || Number(row.throughEventSequence) < 0
     || row.throughTurnSequence !== null && (!Number.isSafeInteger(row.throughTurnSequence) || Number(row.throughTurnSequence) < 0)
@@ -81,7 +83,7 @@ export function decodeInfluenceProductionSnapshot(value: unknown): InfluenceProd
   if ([portraits, bodies, heads].some(map => Object.keys(map).length > 256)
     || [...Object.values(portraits), ...Object.values(bodies)].some(url => !reference(url))
     || Object.values(heads).some(head => !validHeadRectangle(head as HeadRectangle))) return fail();
-  return { gameId: row.gameId, gameKind: "influence", audience: "public", projectionVersion: 3,
+  return { gameId: row.gameId, gameKind: "influence", audience: "public", projectionVersion: row.projectionVersion as 3 | 4 | 5,
     throughEventSequence: Number(row.throughEventSequence), throughTurnSequence: row.throughTurnSequence === null ? null : Number(row.throughTurnSequence),
     transcriptPrefix: { maxId: Number(bound.maxId), maxEntrySequence: Number(bound.maxEntrySequence) },
     acceptedCutoff: row.acceptedCutoff, acceptedSourceHash: row.acceptedSourceHash,
@@ -267,7 +269,7 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
     thoughts.push({ eventSequence: row.eventSequence, actorId: row.actorId, thinking: row.payload.thinking, defaultThinking });
   }
   const gameKernel = resolveGameKernel({ stored: game.gameKernel, events: history.events.filter(event => event.sequence <= throughEventSequence).map(event => event.envelope) }).kernel;
-  const sources = buildInfluenceProductionSources({ gameId: game.id, gameKernel, transcripts: messages, frames, thoughts });
+  const sources = buildInfluenceProductionSources({ gameId: game.id, gameKernel, transcripts: messages, frames, thoughts, attachDecisionSpeech: supplied?.projectionVersion !== 3, attachTwoNamesSpeech: supplied === undefined || supplied.projectionVersion >= 5 });
   const catalog = assembleProductionCatalog({ gameId: game.id, gameKind: "influence", audience: "public", sources });
   const acceptedThoughts = thoughts.filter(thought => sources.some(source => source.kind === "influence-thinking" && source.eventSequence === thought.eventSequence && source.actorId === thought.actorId));
   const permittedScenes = new Set(sceneRows.filter(scene => scene.afterDialogueSequence <= transcriptPrefix.maxEntrySequence
@@ -293,7 +295,8 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
     if (validHeadRectangle(member.headRectangle)) fullBodyHeads[member.id] = member.headRectangle;
   }
   const portraits = Object.fromEntries(Object.entries(assets[0]?.portraits ?? {}).filter(([id]) => frozen.has(id)).map(([id, artifact]) => [id, artifactUrl(artifact)]));
-  const cutoutSources = Object.fromEntries(Object.entries(fullBodies).map(([id, url]) => [id,
+  const bundledPlayers = new Set([...frozen].filter(([, seat]) => bundledHouseBody(seat.persona.fullBodyReferenceUrl)).map(([id]) => id));
+  const cutoutSources = Object.fromEntries(Object.entries(fullBodies).filter(([id]) => !bundledPlayers.has(id)).map(([id, url]) => [id,
     url.replace(`/api/admin/production/games/${encodeURIComponent(game.id)}/visual/artifacts/`, `/api/games/${game.id}/visual/artifacts/`)]));
   const cutouts = Object.fromEntries(Object.entries(await readyCharacterCutoutUrls(db, game.id, cutoutSources, new Date(publicationCutoff)))
     .map(([id, url]) => [id, url.replace(`/api/games/${encodeURIComponent(game.id)}/cutouts/`, `/api/admin/production/games/${encodeURIComponent(game.id)}/cutouts/`)]));
@@ -322,10 +325,11 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
     return { ...seat.player, status: final?.status === "eliminated" ? "eliminated" as const : "alive" as const, shielded: final?.shielded ?? false };
   });
   const exportGame = { id: game.id, slug: game.slug, status: game.status, players, gameKernel,
+    ...(config.gameSchemaVersion === undefined ? {} : {gameSchemaVersion: resolveInfluenceGameSchemaVersion(config.gameSchemaVersion)}),
     // Preserve historical pinned source hashes: an absent version already means v1.
     ...(config.empowerRevoteVersion === undefined ? {} : { empowerRevoteVersion: resolveEmpowerRevoteVersion(config.empowerRevoteVersion) }),
     formatManifest: resolveFormatManifest(config.formatManifest ?? LEGACY_FORMAT_MANIFEST) };
-  const acceptedBoundary = { gameId: game.id, gameKind: "influence" as const, audience: "public" as const, projectionVersion: 3 as const,
+  const acceptedBoundary = { gameId: game.id, gameKind: "influence" as const, audience: "public" as const, projectionVersion: supplied?.projectionVersion ?? 5 as const,
     throughEventSequence, throughTurnSequence, transcriptPrefix, acceptedCutoff };
   const acceptedSourceHash = sha256StableJson({ acceptedBoundary, game: { ...exportGame, status: undefined }, messages, frames, acceptedThoughts, catalog });
   if (supplied && supplied.acceptedSourceHash !== acceptedSourceHash) throw new InfluenceProductionSourceError("Pinned Influence accepted source changed; reload the source explicitly");

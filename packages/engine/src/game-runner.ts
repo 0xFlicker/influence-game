@@ -1,3 +1,4 @@
+import {resolveInfluenceGameDecisionVersion} from "./influence-game-schema";
 import { beginAllianceHuddleWindow, advanceHuddleConversation } from "./phases/alliances";
 import { conversationPolicy } from "./open-conversation";
 import { seededRandom } from "./seeded-random";
@@ -8,7 +9,7 @@ import { materializeRetrospectiveContext, preflightRetrospectiveContext, type Fr
 import { assertRetrospectiveInputBinding, retrospectiveCompletionProof, type RetrospectiveInputV1 } from "./retrospective";
 import { durableProviderLogicalCallId, providerLogicalCallId } from "./provider-execution";
 import { beginMingleWindow, advanceMingleWindow, finishMingleWindow, mingleWindowRooms } from "./phases/mingle";
-import { prepareFormatMinglePressure } from "./phases/format-kernel";
+import { prepareFormatMinglePressure, startSafetyBounce, advanceSafetyBounce, safetyBounceBoard, safetyBounceBallotResult, collectSafetyBounceBallots } from "./phases/format-kernel";
 /**
  * Influence Game - Game Runner
  *
@@ -282,10 +283,11 @@ export class GameRunner {
     this.resumeFrom = options.resumeFrom ?? options.durableUpgradeFrom;
     this.gameState = this.resumeFrom
       ? GameState.fromCanonicalEvents(this.resumeFrom.canonicalEvents)
-      : new GameState(agents.map((a) => ({ id: a.id, name: a.name })), {
+      : new GameState(agents.map((a) => ({ id: a.id, name: a.name, ...(a.gender !== undefined && { gender: a.gender }) })), {
           ...gameStateOptions,
           formatManifest: resolveFormatManifest(config.formatManifest),
           empowerRevoteVersion: config.empowerRevoteVersion,
+          gameSchemaVersion: config.gameSchemaVersion,
         });
     this.houseNarrativeContinuity = createEmptyHouseNarrativeContinuity(this.gameState.gameId);
     this.config = {
@@ -294,6 +296,8 @@ export class GameRunner {
       maxRounds,
       formatManifest: [...this.gameState.formatManifest],
       empowerRevoteVersion: this.gameState.empowerRevoteVersion,
+      gameSchemaVersion: this.gameState.gameSchemaVersion,
+      ...(this.gameState.gameSchemaVersion >= 2 && {decisionContractVersion: resolveInfluenceGameDecisionVersion(this.gameState.gameSchemaVersion, config.decisionContractVersion ?? 3)}),
     };
     this.random = options.random;
     if (this.resumeFrom) {
@@ -509,6 +513,7 @@ export class GameRunner {
     const players = this.gameState.getAllPlayers().map((player) => ({
       id: player.id,
       name: player.name,
+      gender: player.gender,
     }));
     for (const agent of this.agents.values()) {
       agent.onGameStart(this.gameState.gameId, players);
@@ -519,7 +524,6 @@ export class GameRunner {
   private async prepareDurableExecutionInternal(): Promise<void> {
     const store = this.durableTurnStore;
     if (!store) throw new Error("Durable execution preparation requires a turn store");
-    this.startAgentsForGame();
 
     if (!this.durableTurnSnapshot) {
       const durable = await store.load(this.gameState.gameId);
@@ -535,6 +539,8 @@ export class GameRunner {
         }
       }
     }
+
+    this.startAgentsForGame();
 
     if (!this.durableTurnSnapshot) {
       if (this.resumeFrom && this.durableTurnStore) {
@@ -631,7 +637,7 @@ export class GameRunner {
       phase: Phase.INIT,
     });
 
-    this.startAgentsForGame();
+    if (!this.durableTurnStore) this.startAgentsForGame();
 
     if (this.durableTurnStore) {
       await this.prepareDurableExecution();
@@ -935,6 +941,7 @@ export class GameRunner {
       case "format_mingle":
         return Phase.FORMAT_MINGLE;
       case "format_resolve":
+      case "safety_bounce":
         return Phase.FORMAT_RESOLVE;
       case "post_vote_mingle":
         return Phase.POST_VOTE_MINGLE;
@@ -1105,6 +1112,7 @@ export class GameRunner {
     const previousEventHead = this.gameState.getCanonicalEvents().at(-1)?.sequence ?? 0;
     this.durableTurnSnapshot = structuredClone(snapshot);
     this.gameState = GameState.fromCanonicalEvents(snapshot.canonicalEvents);
+    this.startAgentsForGame();
     this.logger = new TranscriptLogger(this.gameState);
     this.logger.seed(snapshot.transcriptEntries);
     if (this.streamListener) this.logger.setStreamListener(this.streamListener);
@@ -1499,6 +1507,7 @@ export class GameRunner {
       || value === "vote"
       || value === "format_menu"
       || value === "format_pick"
+      || value === "safety_bounce"
       || value === "format_mingle"
       || value === "format_resolve"
       || value === "reckoning_lobby"
@@ -1762,6 +1771,9 @@ export class GameRunner {
           }],
         }, async (ctx, scratchActor) => {
           await runFormatPickPhase(ctx, scratchActor);
+          if (ctx.gameState.gameSchemaVersion >= 2 && ctx.formatKernelState.selectedFormat === "safety_bounce") {
+            return { version: 1, kind: "safety_bounce", stage: "draw" };
+          }
           return ctx.formatKernelState.selectedFormat === "two_names"
             ? {
                 version: 1,
@@ -1769,6 +1781,25 @@ export class GameRunner {
                 progress: { version: 1, stage: "setup", pleaIndex: 0 },
               }
             : { version: 1, kind: "phase_enter", actor: "format_mingle" };
+        });
+        continue;
+      }
+
+      if (phase === "safety_bounce" && cursor.kind === "safety_bounce" && cursor.stage !== "resolve") {
+        const actorId = cursor.stage === "pointer" ? safetyBounceBoard(this.buildPhaseRunnerContext()).nextActorId : null;
+        await this.executeDurableTurn({
+          branch: actorId ? "single_provider" : "engine",
+          action: actorId ? "safety-bounce-pointer" : "safety-bounce-draw",
+          actorIds: actorId ? [actorId] : [],
+          providerActions: actorId ? [{ actorId, action: "bounce-pointer", contractId: "agent-bounce-pointer-v3" }] : [],
+        }, async (ctx, scratchActor) => {
+          if (cursor.stage === "draw") await startSafetyBounce(ctx);
+          else await advanceSafetyBounce(ctx);
+          if (safetyBounceBoard(ctx).nextActorId === null) {
+            scratchActor.send({ type: "PHASE_COMPLETE" });
+            return { version: 1, kind: "phase_enter", actor: "format_mingle" };
+          }
+          return { version: 1, kind: "safety_bounce", stage: "pointer" };
         });
         continue;
       }
@@ -2043,10 +2074,25 @@ export class GameRunner {
         continue;
       }
 
-      if (phase === "format_resolve" && cursor.kind === "phase_enter" && cursor.actor === "format_resolve") {
+      if (phase === "format_resolve" && cursor.kind === "phase_enter" && cursor.actor === "format_resolve"
+        && this.gameState.gameSchemaVersion >= 2 && this.formatKernelState.selectedFormat === "safety_bounce") {
+        const actorIds = safetyBounceBoard(this.buildPhaseRunnerContext()).vulnerable.length > 1 ? this.gameState.getAlivePlayerIds() : [];
+        await this.executeDurableTurn({
+          branch: "engine", action: "safety-bounce-ballots", actorIds,
+          providerActions: actorIds.map(actorId => ({ actorId, action: "format-safety-bounce-vote", contractId: "agent-safety-bounce-vote-v3" })),
+        }, async ctx => {
+          await collectSafetyBounceBallots(ctx);
+          return { version: 1, kind: "safety_bounce", stage: "resolve" };
+        });
+        continue;
+      }
+
+      if (phase === "format_resolve" && ((cursor.kind === "phase_enter" && cursor.actor === "format_resolve") || (cursor.kind === "safety_bounce" && cursor.stage === "resolve"))) {
         await this.executeDurableTurn({
           branch: "engine",
           action: "format-resolve",
+          ...(cursor.kind === "safety_bounce" && {providerActions: safetyBounceBallotResult(this.buildPhaseRunnerContext()).result.kind === "tie"
+            ? [{actorId: this.gameState.empoweredId!, action: "format-tiebreak", contractId: "agent-format-tiebreak-v3"}] : []}),
           actorIds: this.gameState.getAlivePlayerIds(),
           houseBeat: this.requireHouseBeat("format_resolve"),
         }, async (ctx, scratchActor) => {
@@ -2392,6 +2438,10 @@ export class GameRunner {
         await runFormatMenuPhase(prc, actor);
       } else if (state === "format_pick") {
         await runFormatPickPhase(prc, actor);
+      } else if (state === "safety_bounce") {
+        await startSafetyBounce(prc);
+        while (safetyBounceBoard(prc).nextActorId !== null) await advanceSafetyBounce(prc);
+        actor.send({ type: "PHASE_COMPLETE" });
       } else if (state === "format_mingle") {
         await runFormatMinglePhase(prc, actor, { completePhase: false });
         if (prc.formatKernelState.selectedFormat !== "two_names") {
@@ -2399,6 +2449,7 @@ export class GameRunner {
           await runAllianceHuddleWindow(prc, actor, Phase.FORMAT_MINGLE);
         }
       } else if (state === "format_resolve") {
+        if (this.gameState.gameSchemaVersion >= 2 && prc.formatKernelState.selectedFormat === "safety_bounce") await collectSafetyBounceBallots(prc);
         await runFormatResolvePhase(prc, actor);
         await this.runConfiguredDiaryRoom(Phase.FORMAT_RESOLVE);
 

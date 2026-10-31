@@ -1,4 +1,6 @@
+import {CURRENT_INFLUENCE_GAME_SCHEMA_VERSION} from "@influence/engine/influence-game-schema";
 import { CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION } from "@influence/engine/influence-decision-speech";
+import { houseFullBodyUrl } from "@influence/engine/house-character-art";
 import { CURRENT_EMPOWER_REVOTE_VERSION } from "@influence/engine/empower-revote-rules";
 import { gameModelPolicy } from "@influence/engine";
 import { DEFAULT_CONVERSATION_POLICY } from "@influence/engine";
@@ -41,8 +43,8 @@ import {
   DEFAULT_FORMAT_MANIFEST,
   MAX_NEW_GAME_PLAYERS,
   MIN_NEW_GAME_PLAYERS,
-  pickAgentNames,
-  pickArchetypes,
+  pickHouseCast,
+  getHousePortraitGender,
 } from "@influence/engine";
 import {
   validateGameStartReadiness,
@@ -278,6 +280,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       formatManifest: [...DEFAULT_FORMAT_MANIFEST],
       empowerRevoteVersion: CURRENT_EMPOWER_REVOTE_VERSION,
       decisionContractVersion: CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION,
+      gameSchemaVersion: CURRENT_INFLUENCE_GAME_SCHEMA_VERSION,
     };
 
     const user = c.get("user");
@@ -416,12 +419,10 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       slotsToFill = maxPlayers - addedPlayers.length;
       if (slotsToFill > 0) {
         const existingNames = addedPlayers.map((p) => p.agentName);
-        const names = pickAgentNames(slotsToFill, existingNames);
-        const archetypes = pickArchetypes(slotsToFill, []);
+        const cast = pickHouseCast(slotsToFill, { excludeNames: existingNames });
 
         for (let i = 0; i < slotsToFill; i++) {
-          const name = names[i] ?? `Agent-${i + 1}`;
-          const archetype = archetypes[i] ?? "strategic";
+          const { name, personality: archetype } = cast[i]!;
           const aiPlayerId = randomUUID();
           await tx.insert(schema.gamePlayers).values({
               id: aiPlayerId,
@@ -429,6 +430,8 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
               userId: null,
               persona: JSON.stringify({
                 name,
+                gender: getHousePortraitGender(name, archetype),
+                fullBodyReferenceUrl: houseFullBodyUrl(name, archetype),
                 personality: archetype,
                 strategyHints: null,
                 personaKey: archetype,

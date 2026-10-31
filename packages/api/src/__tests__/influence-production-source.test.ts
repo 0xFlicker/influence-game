@@ -257,3 +257,31 @@ test.each(["transcript", "cognition"])("huddles replay with %s thinking and sile
   expect(JSON.stringify(source)).not.toContain("PRIVATE_PASS_THINKING");
   expect(await db.select().from(schema.gameCognitiveArtifacts).where(eq(schema.gameCognitiveArtifacts.gameId, gameId))).toHaveLength(5);
 });
+
+test("Two Names production binds exact speech and thought text without changing pinned v4 action content", async () => {
+  const {createFormatKernelViewerScenario} = await import("@influence/engine/fixtures/format-kernel-viewer");
+  const {twoNamesDecisionSpeechAction} = await import("@influence/engine/influence-decision-speech");
+  const {buildInfluenceProductionSources} = await import("@influence/engine/production-moments/influence-source");
+  const {assembleProductionCatalog} = await import("@influence/engine/production-moments");
+  const {productionMomentContent} = await import("../services/production-moment-content.js");
+  const {gameId} = await fixture();
+  const base = await buildInfluenceProductionSourceSnapshot(db, gameId);
+  const scenario = createFormatKernelViewerScenario("two_names_used_tie");
+  const frames = scenario.decisions.map(event => ({...base.frames[0]!, sequence:event.sequence,eventType:event.type,round:event.round,phase:event.phase!,viewerDecisionEvent:event}));
+  const messages = scenario.decisions.flatMap((event,index) => {
+    const action = twoNamesDecisionSpeechAction(event.type);
+    const actorId = "empoweredId" in event.payload ? event.payload.empoweredId : "overrideHolderId" in event.payload ? event.payload.overrideHolderId : null;
+    return action && actorId ? [{...base.messages[0]!,id:100+index,entrySequence:100+index,firstDurableEventSequence:event.sequence,round:event.round,phase:event.phase!,fromPlayerId:actorId,text:`Exact public reason ${index}.`,thinking:`Exact private thought ${index}.`,decisionSpeech:{actorId,action}}] : [];
+  });
+  const sources = buildInfluenceProductionSources({gameId,gameKernel:"format",transcripts:messages,frames});
+  const catalog = assembleProductionCatalog({gameId,gameKind:"influence",audience:"public",sources});
+  const source = {...base,frames,messages,catalog,acceptedThoughts:[]};
+  for (const message of messages) {
+    const moments = catalog.moments.filter(moment => moment.source.kind === "influence-event" && moment.source.eventSequence === message.firstDurableEventSequence);
+    const speech = moments.find(moment => moment.part.kind === "influence-presentation" && twoNamesDecisionSpeechAction(moment.part.presentation.kind) === message.decisionSpeech.action)!;
+    const thought = moments.find(moment => moment.kind === "thinking")!;
+    expect(productionMomentContent(source,speech).text).toBe(message.text);
+    expect(productionMomentContent(source,thought).text).toBe(message.thinking);
+    expect(productionMomentContent({...source,snapshot:{...source.snapshot,projectionVersion:4}},speech).text).toBeNull();
+  }
+});

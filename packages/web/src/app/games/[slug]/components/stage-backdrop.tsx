@@ -5,7 +5,7 @@ import type { VisualShot, VisualShotPresentation } from "@influence/engine/visua
 import { PANEL_TREATMENTS, type PanelTreatment, type SceneFrame } from "./visual-scene-layout";
 import styles from "./stage-backdrop.module.css";
 
-export const SOLO_STUDIO_BACKDROP = "/visual/solo-studio-backdrop.webp";
+export const DEFAULT_ROOM_BACKDROP = "/visual/influence/rooms-v1/lobby.jpg";
 
 /** Saved panel order supplies neighboring context; never fetch future scenes. */
 export function sceneBackdropSources(imageUrl: string, shots?: VisualShotPresentation<VisualShot>) {
@@ -25,13 +25,13 @@ export function StageBackdrop({ source, left = source, right = source, frame, pa
   panelTreatment?: PanelTreatment;
 }) {
   const [failed, setFailed] = useState<ReadonlySet<string>>(() => new Set());
-  const usable = (url: string) => failed.has(url) ? failed.has(source) ? SOLO_STUDIO_BACKDROP : source : url;
+  const usable = (url: string) => failed.has(url) ? failed.has(source) ? DEFAULT_ROOM_BACKDROP : source : url;
   return <div aria-hidden="true" data-stage-backdrop data-panel-treatment={panelTreatment} className={`${styles.backdrop} ${panelTreatment === "focal" ? styles.focal : ""}`}>
     {/* eslint-disable-next-line @next/next/no-img-element -- a dim defocused base fills beyond the compressed neighbors */}
     {panelTreatment === "focal" && <img src={usable(source)} alt="" draggable={false} className={styles.focalBase} onError={() => setFailed(previous => new Set([...previous, usable(source)]))} />}
     {(["left", "right"] as const).map(side => {
       const url = usable(side === "left" ? left : right);
-      const kind = url === SOLO_STUDIO_BACKDROP ? "studio" : url === source ? "repeat" : "neighbor";
+      const kind = url === DEFAULT_ROOM_BACKDROP ? "room" : url === source ? "repeat" : "neighbor";
       const aligned = kind === "neighbor" && frame && frame.width > 0 && frame.height > 0;
       const overlap = aligned ? frame.width * (1 - PANEL_TREATMENTS[panelTreatment].spacing) : 0;
       return <div key={side} data-backdrop-side={side} data-backdrop-kind={kind}

@@ -289,3 +289,21 @@ function makeDraft(intent: GameTurnIntentV1): GameTurnCommitDraftV1 {
     acceptedProviderCallIds: [],
   };
 }
+
+test.each(["draw", "pointer", "resolve"] as const)("persists and reloads the Safety Bounce %s cursor with its committed speaking record", async stage => {
+  const db = await setupTestDB();
+  const fixture = await createFixture(db);
+  const store = createDurableGameRunnerStore(db, fixture);
+  await store.initialize({version:1,gameId:fixture.gameId,xstateSnapshot:{value:"safety_bounce"},cursor:{version:1,kind:"safety_bounce",stage:"draw"},playerContinuityCapsules:[],houseNarrativeContinuity:null,canonicalEvents:[],transcriptEntries:[]});
+  const intent = makeIntent(fixture.gameId);
+  await store.planNextTurn(intent);
+  const draft = makeDraft(intent);
+  draft.nextExecution.cursor = {version:1,kind:"safety_bounce",stage};
+  draft.nextExecution.xstateSnapshot = {value:stage === "resolve" ? "format_resolve" : "safety_bounce"};
+  draft.transcriptEntries[0] = {...draft.transcriptEntries[0]!,text:"I choose Lyra because our agreement still matters.",dialogueContext:{version:1,decisionSpeech:{actorId:"atlas",action:"bounce-pointer"}}};
+  await store.commitTurn(draft);
+  const restored = await createDurableGameRunnerStore(db, fixture).load(fixture.gameId);
+  expect(restored!.execution.cursor).toEqual({version:1,kind:"safety_bounce",stage});
+  expect(restored!.transcriptEntries[0]).toMatchObject({text:"I choose Lyra because our agreement still matters.",dialogueContext:{decisionSpeech:{actorId:"atlas",action:"bounce-pointer"}}});
+  expect((await store.planNextTurn(intent)).status).toBe("committed");
+});

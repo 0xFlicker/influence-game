@@ -68,7 +68,7 @@ export function sampleOpening(cue: WerewolfOpeningCue, elapsedMs: number, reduce
   return {timeMs: cue.opening.startMs + t, videoMs: Math.min(t, 5000),
     opacity: shot === "house" ? clamp(t / 700) : exit,
     transitionOpacity,
-    textOpacity: clamp(t / 400) * (1 - transitionOpacity),
+    textOpacity: clamp(t / 400) * (1 - transitionOpacity) * (shot === "cast" ? clamp((cue.baseDurationMs - t) / 400) : 1),
     scale: 1 + camera * 0.25, panX: -camera * 1.5, panY: -camera * 0.5,
     musicGain: clamp((cue.opening.startMs + t) / 700) * clamp((cue.opening.totalMs - 300 - cue.opening.startMs - t) / 2000),
     effectGain: shot === "house" ? 0.7 * clamp(t / 250) * clamp((5000 - t) / 500) : shot === "door" ? 0.4 * clamp(t / 150) * clamp((5000 - t) / 400) : 0};

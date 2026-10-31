@@ -1,5 +1,15 @@
 # Optional Visual Mode
 
+Default House characters use the fixed [fourteen-character cast](house-cast.md).
+New Influence and Werewolf rosters freeze their approved, already-transparent
+`full-body-v1` references. These bundled WebP assets ship beside the headshots;
+catalog URLs and SHA-256 hashes are checked before reading them. Scene preparation
+copies their verified pixels into the existing private visual-artifact store,
+without generating another full-body image. Playback, Studio and exports use the
+frozen references. Older started rosters do not acquire new bodies on reads.
+Bundled cutouts bypass both new cutout demand and cutout backfill; their approved
+pixels are never replaced by an asynchronous background-removal derivative.
+
 Portraits and timed speech bubbles are the standard presentation for every live game and replay. Visual Mode controls generated media, agent imagery and performance cues; it is selected at game creation and defaults off. A visual game always has a complete portrait-and-speech presentation. Generated images improve that presentation. Best effort is the default failure policy; Require visuals is an explicit championship setting. Cue content never causes suspension.
 
 ## Availability contract
@@ -289,7 +299,7 @@ Browser coverage verifies desktop/mobile geometry against the loaded image, alte
 
 ### Solo character presentation
 
-Introductions, accepted ballot reveals, diaries, farewells and isolated dialogue use saved full-body art with a speech bubble. The image fills the content frame vertically. Wide edges use a blurred, character-free warm-grey studio backdrop, split into two halves; a narrow mask feathers the full-body image into that background. Narrow frames trim the image's sides while preserving its full height. Speech overlays the image below the head region, with its tail pointing upward. A missing or failed full-body image uses a larger circular portrait, centered beside speech on wide frames and above it on narrow frames. Failed portraits use the deterministic persona image. No talking-head clips are generated. Both use measured, director-timed text pages, including outside fullscreen; fullscreen controls reserve bubble space without shrinking the image.
+Introductions, accepted ballot reveals, diaries, farewells and isolated dialogue use saved full-body art with a speech bubble. The image fills the content frame vertically. Wide edges use the assigned House room background; a narrow mask feathers the full-body image into that background. Narrow frames trim the image's sides while preserving its full height. Speech overlays the image below the head region, with its tail pointing upward. A missing or failed full-body image uses a larger circular portrait, centered beside speech on wide frames and above it on narrow frames. Failed portraits use the deterministic persona image. No talking-head clips are generated. Both use measured, director-timed text pages, including outside fullscreen; fullscreen controls reserve bubble space without shrinking the image.
 
 Existing upright single-character references, including `odd-lime-vine`, do not carry saved head rectangles. Their temporary presentation-only fallback reserves the top 22% of the source for the head. This is not localization evidence, must not be used for room scenes, and does not change historical assets or game state. New selections now use [confirmed character head positions](plans/2026-09-22-confirmed-character-head-positions.md). Historical games are not backfilled from current profiles.
 
@@ -365,7 +375,7 @@ The saved speaker and exact private audience supply the participants. Saved seat
 
 Portraits sit on a semicircle projected through CSS perspective. Speaker changes rotate the circular cast order toward the camera, bringing the speaker to the front center while projecting the other seats across the visible semicircle. The named bubble points toward that headshot; short landscape frames put speech beside the cast. Seat identities stay stable within the room. Reduced motion snaps to the focused speaker. Measured pages, manual show/hide, pause, speed, seek, fullscreen and canonical format overlays stay on the shared director. Mingle keeps room speech timing even without generated assets.
 
-The one reusable character-free studio asset is `/visual/solo-studio-backdrop.webp`. Its prompt and generation provenance are in [the fallback review](visual-fallback-review.md). No replay operation calls an image provider.
+The historical, no-longer-selected character-free studio asset is `/visual/solo-studio-backdrop.webp`. Its prompt and generation provenance are in [the fallback review](visual-fallback-review.md). No replay operation calls an image provider.
 
 Solo character shots keep this backdrop fixed to the stage edges, outside the thinking camera transform. Only the character moves during the close-up, so vertical camera shifts cannot expose a black band above the backdrop at wide or short aspect ratios.
 
@@ -399,3 +409,37 @@ When Show thinking is enabled, every captured thought is a separate shot before 
 ### Device playback preferences (2026-10-02)
 
 Werewolf opens playing from the first playable contribution, including when a live game is still waiting for its first line. Both House game viewers load the device's saved Show thinking and thinking order before mounting playback. The versioned localStorage key is `house:watch:viewer:v1`; Mystery hides thinking without overwriting it. Explicit production embeds can pass `preferenceScope="production"` to use a separate `house:watch:production:v1` choice. Storage failure leaves session controls usable; cleared or invalid preferences use thinking off / thinking first. This preference is browser-local, not an account setting.
+
+
+### Safety Bounce chain staging
+
+Safety Bounce uses the existing council background and resolved cast art, independently of generated lobby scenes. The starter stands apart from the crowd. Consecutive picks retain the same mounted stage and backdrop so handoffs do not reload or flash the scene. The full-body chain bypasses legacy picker entrance effects; its accepted-target marker must never trigger a fade or scale of the whole stage. Saved thinking (when enabled), public speech, structured pick, and handoff share the player clock. The picked contestant moves into the chooser position; the prior chooser moves to their existing Safe/Vulnerable pool and becomes a headshot. The terminal target joins their pool without a fabricated turn. Both pools remain visible through voting.
+
+Use transparent full-body art, ordinary full-body art in the same placement, then an avatar. Image overlap is intentional and has no collision rule. Missing art never removes a contestant. Pause, seeking and reduced motion derive from canonical before/after boards. Old games use this scene with absent speech/thinking omitted. Production source snapshots v4 attach speeches to decision moments; frozen v3 snapshots retain their existing source identities.
+
+Two Names decision beats reuse the portrait/full-body speaking scene for saved thinking and public speech before initial nominees, override use/decline, or replacement are revealed. Pause, seek, reduced motion, live current-state entry, and the sidebar share the cue's pre/post snapshots. Snapshot v5 attaches these deliveries in Studio/export; frozen v3/v4 snapshots retain their separate speech identities. Missing historical dialogue never blocks the existing silent decision scene.
+
+Two Names role introductions and nominee/replacement reveals use the visual API's frozen full-body selection (transparent cutout first, original full body when unavailable) over the council room. Missing or failed images retain the historical portrait presentation. Live playback, speech-to-reveal handoffs, and export receive the same cast artwork; role badges remain compact headshots.
+
+Two Names aggregate and elimination reveals share the council environment and full-body nominee staging, with portrait fallback for historical games without body artwork. Totals come from the published aggregate; elimination labels appear only at the canonical elimination cue. Farewell uses the council environment. Empowered tiebreak thinking and Safety Bounce export thinking also use council. Diaries use the fifth Mingle room; retrospectives and individual conversation fallbacks use the lobby. Missing decorative images also use the lobby. The old gray studio asset is no longer selected by playback or exports.
+
+
+### Presentation coverage and historical continuity
+
+**THOU SHALT NOT BREAK AN OLD GAME.** New Influence games freeze root schema v3; existing absent/v1/v2 roots retain their existing validation and rendering behavior. No historical records are upgraded. Schema v3 preserves v2 gameplay and decision contract v3 while rejecting invalid format presentation and visible events that fail to produce their declared cues. A playback error stops the viewer, never the running game.
+
+Canonical event ownership is exhaustive over the engine event union. Viewer events must declare required format cues or an explicit reason for no standalone shot (for example, sealed receipts or ownership by endgame). New events cannot be silently ignored. Visual beat dispatch and format rendering are exhaustive TypeScript branches. Format fixture tests cover every cue kind and every valid prefix under absent/v1/v2/v3 roots, including Empower ties/revotes. Missing required cues are tested as failures only for v3. Existing endgame, classic, live/reconnect, and export tests remain mandatory; declarations alone are not rendering proof.
+
+When adding a format, phase, event, or cue, extend executable fixtures and verify its actual rendering, timing, and history. Do not bypass coverage by assigning an inaccurate no-shot reason. New portrait purposes must explicitly select a room; broken or absent artwork retains portrait fallback, never a missing-renderer error.
+
+All thinking cameras transform the complete scene frame: room background, cast, labels, and any board panels move together. Thought bubbles and playback controls stay in screen space. Solo, portrait-room, generated-scene, and Safety Bounce presentations use this same behavior. Safety Bounce keeps actors at their chain-board positions during thinking. The shared thinking camera targets measured, untransformed image pixels and saved head rectangles, then returns to the exact board position. Thinking uses the shared adaptive typography and dotted thought bubble; public speech uses the same SpeechBubble component as solo presentation. Saved head rectangles are supplied for chain actors and empowered tiebreaks. Two Names decision thinking continues to use the same shared treatment.
+
+Safety Bounce public speech sits directly below the actor’s head over their body on desktop, leaving the crowd visible; on mobile it sits immediately above the actor’s head. Both placements retain the shared bubble sizing and pagination. The council backdrop fills the entire player, including the reserved controls area; the board and dialogue layout are inset above the controls, while zoomed thinking art and its vignette extend to the full player edge.
+
+Bundled `/avatars/` character images resolve on the web origin, including deployments with a separate API origin. API-hosted cutouts and visual artifacts continue to resolve on the API origin. Frozen roster artwork paths are unchanged.
+
+Influence Next/Previous scene buttons and previous-contribution navigation preserve the existing play/pause state. Navigation does not implicitly pause playback.
+
+Empower voting, ties/revotes, the empowered reveal, and format selection share the round’s “Terms and Conditions” music section without restarting at those boundaries. Elimination ballots retain “Names on the Table.”
+
+Music always runs at 1×, including Influence and Werewolf opening tracks. Changing playback speed or pausing/resuming does not seek music to the accelerated visual clock; explicit navigation still aligns it. Influence’s first 20 seconds (entrance and title) retain real-time pacing at every speed; cast cards afterward use the selected speed.

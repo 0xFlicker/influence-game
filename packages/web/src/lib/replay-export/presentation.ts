@@ -1,4 +1,5 @@
 import {werewolfPortraitRoom, werewolfBackdrop} from "../../components/games/werewolf/werewolf-room-presentation";
+import {influenceRoomBackground} from "../../app/games/[slug]/components/influence-rooms";
 import type {ExportCue, ExportPicture} from "./cues";
 import {compileTiming, type TimingProfile, type CompiledTiming} from "./timing";
 import {compileAudio, type AudioSchedule} from "./audio";
@@ -31,7 +32,7 @@ export function thinkingPicture(cue: ExportCue, actorId = cue.speech?.speakerId)
       avatarUrl:actor.avatarUrl,fullBodyReferenceUrl:actor.fullBodyReferenceUrl,
       personaKey:actor.personaKey,headRectangle:actor.headRectangle}, roleLabel:picture.cue.moment.snapshot.audience === "omniscient" ? actor.role ?? undefined : undefined,
       // Ballots use the voting set even when their accepted action has village imagery.
-      scene:picture.cue.ballot ? null : picture.scene,sourceElapsedMs,backgroundUrl:werewolfBackdrop(picture.cue),
+      scene:picture.cue.ballot ? null : picture.scene,sourceElapsedMs,backgroundUrl:werewolfBackdrop(picture.cue),ballotFraming:Boolean(picture.cue.ballot),
       ...(!picture.scene && room && {room:{number:room.roomNumber,label:room.roomLabel,players:room.participants,backgroundUrl:werewolfBackdrop(picture.cue),floorPerspective:true}})};
   }
   if (picture.kind !== "influence") throw new Error("This presentation cannot own a thought");
@@ -40,9 +41,10 @@ export function thinkingPicture(cue: ExportCue, actorId = cue.speech?.speakerId)
   const actor = beat?.kind === "portrait" && beat.player.id === actorId ? beat.player
     : beat?.kind === "portrait-room" ? beat.participants.find(player => player.id === actorId) ?? rosterActor : rosterActor;
   if (!actor) throw new Error(`Thinking actor is absent from source roster: ${actorId}`);
-  return {kind:"thinking",gameKind:"influence",actor:{...actor,persona:actor.persona ?? ""},sourceElapsedMs,
+  const backgroundUrl = beat ? influenceRoomBackground(beat,picture.ledger) : undefined;
+  return {kind:"thinking",gameKind:"influence",actor:{...actor,persona:actor.persona ?? ""},sourceElapsedMs,backgroundUrl,ballotFraming:Boolean(picture.ledger),
     scene:beat?.kind === "scene" ? picture.rooms.find(scene => scene.id === beat.sceneId) ?? null : null,
-    ...(beat?.kind === "portrait-room" && {room:{number:beat.roomNumber,label:beat.roomLabel,players:beat.participants}})};
+    ...(beat?.kind === "portrait-room" && {room:{number:beat.roomNumber,label:beat.roomLabel,players:beat.participants,backgroundUrl,floorPerspective:true}})};
 }
 
 export function thinkingSegment(cue: ExportCue, id: string, text: string, actorId?: string): ExportCue {

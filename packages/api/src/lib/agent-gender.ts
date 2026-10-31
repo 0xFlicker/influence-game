@@ -1,6 +1,7 @@
 export const AGENT_GENDER_VALUES = ["male", "female", "non-binary"] as const;
 
-export type AgentGender = typeof AGENT_GENDER_VALUES[number];
+import type { AgentGender } from "@influence/engine";
+export type { AgentGender } from "@influence/engine";
 
 export const AGENT_GENDER_LABELS: Record<AgentGender, string> = {
   male: "Male",

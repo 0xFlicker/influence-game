@@ -28,6 +28,7 @@ describe("format-kernel viewer fixture family", () => {
       "vote_bomb_clear",
       "majority_elimination_clear",
       "majority_elimination_tie",
+      "restricted_history_clear",
       "even_votes_clear",
       "even_votes_tie",
       "safety_bounce_tie",

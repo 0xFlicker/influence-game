@@ -14,3 +14,8 @@ Persist accepted speech through the existing transcript storage, with small type
 Collect sealed decisions against the same frontier concurrently, then commit in roster order. Never append ballot speech to contestant public dialogue during collection. Playback joins it to the existing canonical ballot reveal; other announcements use solo full-body/avatar scenes. Engine fallback choices have no invented contestant speech.
 
 Tests cover blank/oversized/extra-field output, prohibited vote thinking, parallel collection before any commit, preserved private evidence, a complete mock game, nominee plea thinking, exact receipt association, one reveal per ballot, and full-body/avatar background selection. Transcript persistence and public/MCP DTOs carry the same metadata.
+
+
+## Revision 3
+
+Ballots may explain their choice privately to the House in one sentence or less (320 UTF-8 bytes), without thinking. Format tiebreaks now require thinking plus public speech. Root schema v2 binds chain/tiebreak delivery to its owning decision and checks ambiguous, missing and orphan speech. Historical records remain viewable under their original requirements.

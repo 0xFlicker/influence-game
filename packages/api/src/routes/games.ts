@@ -1,4 +1,6 @@
+import {CURRENT_INFLUENCE_GAME_SCHEMA_VERSION} from "@influence/engine/influence-game-schema";
 import { CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION } from "@influence/engine/influence-decision-speech";
+import { houseFullBodyUrl } from "@influence/engine/house-character-art";
 import { audioReadySequence } from "../services/audio-frontier.js";
 import { CURRENT_EMPOWER_REVOTE_VERSION, resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import { creationModelRouting, GameModelRoutingError } from "../services/game-model-routing.js";
@@ -98,8 +100,9 @@ import {
   MAX_NEW_GAME_PLAYERS,
   MIN_NEW_GAME_PLAYERS,
   getHousePersonaDetails,
-  pickAgentNames,
-  pickArchetypes,
+  getHousePortraitGender,
+  pickHouseCast,
+  HouseCastCapacityError,
   resolveFormatManifest,
   resolveModelSelection,
   resolveProviderManifestFromGameConfig,
@@ -230,6 +233,7 @@ export function createGameRoutes(db: DrizzleDB) {
       formatManifest: frozenFormatManifest,
       empowerRevoteVersion: CURRENT_EMPOWER_REVOTE_VERSION,
       decisionContractVersion: CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION,
+      gameSchemaVersion: CURRENT_INFLUENCE_GAME_SCHEMA_VERSION,
     };
 
     const gameId = randomUUID();
@@ -339,6 +343,7 @@ export function createGameRoutes(db: DrizzleDB) {
       visualPaused: game.status === "suspended" && Boolean(config.visualPause),
           formatManifest,
           empowerRevoteVersion: resolveEmpowerRevoteVersion(config.empowerRevoteVersion),
+          gameSchemaVersion: config.gameSchemaVersion ?? 1,
           trackType: game.trackType,
           seasonId: game.seasonId ?? undefined,
           season: game.seasonId ? seasonById.get(game.seasonId) : undefined,
@@ -432,6 +437,7 @@ export function createGameRoutes(db: DrizzleDB) {
       visualPaused: game.status === "suspended" && Boolean(config.visualPause),
       formatManifest,
       empowerRevoteVersion: resolveEmpowerRevoteVersion(config.empowerRevoteVersion),
+      gameSchemaVersion: config.gameSchemaVersion ?? 1,
       seasonId: game.seasonId ?? undefined,
       season: competition
         ? {
@@ -610,17 +616,17 @@ export function createGameRoutes(db: DrizzleDB) {
         const existingArchetypes = currentPersonas.map((persona) => {
           return persona.personaKey ?? persona.personality ?? "strategic";
         });
-        const names = pickAgentNames(actualSlots, existingNames);
-        const archetypes = pickArchetypes(actualSlots, existingArchetypes);
+        const cast = pickHouseCast(actualSlots, { excludeNames: existingNames, excludeArchetypes: existingArchetypes });
 
         for (let i = 0; i < actualSlots; i++) {
-          const name = names[i] ?? `Agent-${i + 1}`;
-          const archetype = archetypes[i] ?? "strategic";
+          const { name, personality: archetype } = cast[i]!;
           const defaults = getHousePersonaDetails(archetype);
 
           const playerId = randomUUID();
           const persona = {
             name,
+            gender: getHousePortraitGender(name, archetype),
+            fullBodyReferenceUrl: houseFullBodyUrl(name, archetype),
             personality: archetype,
             strategyHints: defaults.strategyHints,
             personaKey: archetype,
@@ -646,6 +652,7 @@ export function createGameRoutes(db: DrizzleDB) {
         totalPlayers = currentPlayers.length + addedPlayers.length;
       });
     } catch (error) {
+      if (error instanceof HouseCastCapacityError) return c.json({ error: error.message }, 409);
       if (error instanceof OwnedSeatProjectionError) {
         return c.json({ error: error.message }, 409);
       }

@@ -74,6 +74,8 @@ test("a broken decorative neighbor falls back to the active image without adding
   const left = view.container.querySelector('[data-backdrop-side="left"] img')!;
   fireEvent.error(left);
   expect(left.getAttribute("src")).toBe("/current.png");
+  fireEvent.error(left);
+  expect(left.getAttribute("src")).toBe("/visual/influence/rooms-v1/lobby.jpg");
   expect(view.queryAllByRole("img")).toHaveLength(0);
 });
 
@@ -407,8 +409,11 @@ test("static Influence settings follow numbered rooms and typed ballot purpose",
   expect(background()).toBe("/visual/influence/rooms-v1/empower.jpg");
   view.rerender(frame({...portrait,purpose:"Ballot",ballotPurpose:"council",caption:"Vote to empower"}));
   expect(background()).toBe("/visual/influence/rooms-v1/council.jpg");
-  view.rerender(frame({...portrait,purpose:"Diary"}));
-  expect(background()).toBeUndefined();
+  for (const purpose of ["Decision","Night decision","Introduction","Retrospective","Ballot","Diary","Farewell","Conversation","Plea"] as const) {
+    view.rerender(frame({...portrait,purpose}));
+    expect(background()).toMatch(/^\/visual\/influence\/rooms-v1\//);
+    expect(view.container.innerHTML).not.toContain("solo-studio-backdrop");
+  }
   view.rerender(frame(beat));
   expect(background()).toBeUndefined();
 });

@@ -17,14 +17,21 @@ export const INFLUENCE_ROOMS = {
 
 /** Select from structured room/ballot identity, never the displayed caption or speech. */
 export function influenceRoomBackground(beat: VisualPresentationBeat, ledger?: VoteLedgerState | null): string | undefined {
+  if (beat.kind === "two-names-decision" || beat.kind === "nominee-selection" || beat.kind === "safety-chain") return INFLUENCE_ROOMS.council;
   if (beat.kind === "portrait-room") {
     return beat.roomNumber === null ? INFLUENCE_ROOMS.lobby
       : INFLUENCE_ROOMS.mingle[beat.roomNumber - 1] ?? INFLUENCE_ROOMS.lobby;
   }
   if (beat.kind !== "portrait") return undefined;
-  if (beat.purpose === "Decision" || beat.purpose === "Plea") return beat.ballotPurpose === "empower" ? INFLUENCE_ROOMS.empower : INFLUENCE_ROOMS.council;
+  if (beat.purpose === "Decision" || beat.purpose === "Plea" || beat.purpose === "Farewell") return beat.ballotPurpose === "empower" ? INFLUENCE_ROOMS.empower : INFLUENCE_ROOMS.council;
   if (beat.purpose === "Introduction") return INFLUENCE_ROOMS.lobby;
   if (beat.purpose === "Ballot") return (beat.ballotPurpose ?? ledger?.current.choice) === "empower"
     ? INFLUENCE_ROOMS.empower : INFLUENCE_ROOMS.council;
-  return undefined;
+  switch (beat.purpose) {
+    case "Diary": return INFLUENCE_ROOMS.mingle[4];
+    case "Retrospective": return INFLUENCE_ROOMS.lobby;
+    case "Conversation": return INFLUENCE_ROOMS.lobby;
+    case "Night decision": return INFLUENCE_ROOMS.council;
+    default: { const unsupported: never = beat.purpose; throw new Error(`Unsupported portrait purpose: ${unsupported}`); }
+  }
 }

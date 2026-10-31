@@ -9,7 +9,7 @@ import type { WerewolfEvent, WerewolfState } from "./types";
 function werewolfFact(event: WerewolfEvent, projectionVersion: 1 | 2): unknown {
   switch (event.type) {
     case "werewolf.started": return { config: { rulesVersion: event.payload.config.rulesVersion, preset: event.payload.config.preset,
-      maxDays: event.payload.config.maxDays, setup: event.payload.config.setup ?? null }, players: event.payload.players.map(player => ({ id: player.id, name: player.name, role: event.payload.roles[player.id] })) };
+      maxDays: event.payload.config.maxDays, setup: event.payload.config.setup ?? null }, players: event.payload.players.map(player => ({ id: player.id, name: player.name, ...(player.gender !== undefined && { gender: player.gender }), role: event.payload.roles[player.id] })) };
     case "werewolf.phase_started": return { phase: event.payload.phase, day: event.payload.day };
     case "werewolf.action_accepted": {
       const { actorId, action, decision, fallback } = event.payload;

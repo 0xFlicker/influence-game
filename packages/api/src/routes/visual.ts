@@ -1,4 +1,5 @@
 import { loadPayloads } from "../services/payload-storage.js";
+import { bundledHouseBody } from "@influence/engine/house-character-art";
 import { requestCharacterCutouts } from "../services/character-cutouts.js";
 import { isViewerGame } from "../services/game-visibility.js";
 import { readVisualReviewSources } from "../services/visual-shot-review.js";
@@ -41,10 +42,12 @@ export function createVisualRoutes(db: DrizzleDB) {
     // Game-start profiles and prepared cast artifacts are frozen; current agent edits
     // must not change the identity shown in a historical solo performance.
     const fullBodies: Record<string, string> = {};
+    const bundledPlayers = new Set<string>();
     const fullBodyHeads: Record<string, HeadRectangle> = {};
     for (const player of players) {
       const profile = JSON.parse(player.persona) as { fullBodyReferenceUrl?: unknown; headPosition?: CharacterHeadPosition };
       if (typeof profile.fullBodyReferenceUrl === "string" && profile.fullBodyReferenceUrl) fullBodies[player.id] = profile.fullBodyReferenceUrl;
+      if (bundledHouseBody(profile.fullBodyReferenceUrl)) bundledPlayers.add(player.id);
       const head = profile.headPosition;
       if (head?.confirmation && head.sourceUrl === fullBodies[player.id] && validHeadRectangle(head.rect)) fullBodyHeads[player.id] = head.rect;
     }
@@ -67,7 +70,8 @@ export function createVisualRoutes(db: DrizzleDB) {
     const viewerMedia = await readViewerMedia(db, game.id, snapshot);
     // Fixed export snapshots retain their original references. Live playback can
     // adopt a completed derivative on its next metadata refresh.
-    if (!rawSnapshot) Object.assign(fullBodies, await requestCharacterCutouts(db, game.id, fullBodies));
+    if (!rawSnapshot) Object.assign(fullBodies, await requestCharacterCutouts(db, game.id,
+      Object.fromEntries(Object.entries(fullBodies).filter(([id]) => !bundledPlayers.has(id)))));
     const portraits = Object.fromEntries(Object.entries(assets[0]?.portraits ?? {}).map(([id, artifact]) => [id, url(artifact)]));
     return c.json({ enabled: enabled || viewerMedia.scenes.length > 0, status: game.status !== "completed" && rows.some(row => row.status === "preparing") ? "preparing" : null,
       fullBodies, fullBodyHeads,

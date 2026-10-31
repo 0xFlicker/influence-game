@@ -1,5 +1,9 @@
 # Local Model Evaluation
 
+For API evaluations with saved characters, contestant contexts include stored gender frozen at game start. In retained provider requests from `simulate:models`, check Influence's cast identity section or Werewolf's `board.players[].gender`. Characters without stored gender remain unspecified; do not infer gender from names. Offline fixtures only include genders explicitly supplied in their roster. Paid runs still require explicit authorization.
+
+API House fills, `createAgentCast`, and both offline simulation entrypoints share the fixed `HOUSE_CAST` name/archetype/gender map. API casts include Daily Free. With Audio Mode enabled, players without saved profiles receive gender-matched defaults from their stored roster value. Verify new rosters; existing recordings keep their frozen voices. Werewolf pools need enough distinct available House characters for their unowned seats; a narrow pool cannot clone a character under another name.
+
 Native Grok uses `XAI_API_KEY` and the localhost API CLI's `--provider xai
 --model grok-4.3` selection (also 4.5, 4.6 and 4.20 multi-agent). Existing mutable
 Katana choices migrate to identical generations. Catalog discovery is verified;
@@ -671,3 +675,11 @@ See [native Anthropic](native-anthropic.md) for cutover details.
 ### Provider availability recovery
 
 Use `bun run simulate:api -- --help` for the localhost API evaluation options; keep the API game ID and inspect private attempt evidence alongside `--chatty` output. Hosted OpenAI Flex capacity fails over to explicit standard (`default`) on the same model; standard can cost more. If all permitted routes are unavailable, the API delays the same turn and eventually suspends instead of inventing decisions. Deterministic coverage uses `bun run test`, `bun run test:postgres`, and `bun run check`; these do not authorize paid probes. Preserve all sanitized attempts, requested/actual tier, usage and native reasoning. No `as any` or direct House calls. See [model routing](model-routing.md).
+
+### Safety Bounce speech and lifecycle revisions
+
+New Influence games freeze root `gameSchemaVersion: 2` and decision contract v3. Safety Bounce commits its starter draw and each public pointer separately before Format Mingle. The complete Safe/Vulnerable pools and the contestant's own status are present before the first Mingle turn. Sealed ballots follow Mingle; an empowered tiebreak requests private thinking and public speech before its structured choice. Public decision speeches enter the normal durable dialogue record: recent speech remains required under the existing context policy, and older speech remains eligible for authorized recall. No memory write is forced.
+
+Ballots request a private explanation to the House in **one sentence or less**, within the shared 320-byte speech allowance, without a thinking field. These explanations stay out of contestant dialogue and appear only at their canonical spectator reveal. Continue retaining structured thinking, available native reasoning and sanitized attempts; do not parse speech into game facts, use `as any`, or bypass direct House calls.
+
+Unversioned/root-v1 games retain their original execution order and remain viewable. Their chain scenes skip missing speech/thinking. New-root playback checks event ownership and speech consumption; unsupported records stop playback with a diagnostic rather than producing a generic event card. This does not stop the game.

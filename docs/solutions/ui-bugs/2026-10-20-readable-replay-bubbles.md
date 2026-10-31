@@ -15,6 +15,15 @@ position and tail anchor. Headshots keep centered placement; mobile keeps art
 and speech in separate stacked regions. Thought connectors fill their span with
 graduated circles while leaving clearance at both ends.
 
+Portrait-room speech uses the full space between the room heading and the
+active speaker's projected head before paginating. Rear portraits and their
+labels may be covered. The bubble can use up to 960px of width, with 16px side
+margins on narrow stages; fitted short replies still end just above the speaker.
+Keep the fixed seating budget separate from this text budget so pagination,
+short replies and empty thought shots cannot reposition the ring. The browser
+regression checks a complete conversation turn at desktop and mobile sizes,
+including text overflow and the caret's distance from the active portrait.
+
 Omniscient role labels must enter both the browser thinking context and the
 sampled Studio/export context. Use the authorized actor metadata, never parse a
 speaker label or thinking prose. Mystery remains gated out of private thinking.

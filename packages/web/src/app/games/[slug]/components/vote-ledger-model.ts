@@ -8,6 +8,7 @@ export interface RevealedVote {
 }
 export interface VoteLedgerState {
   title: string;
+  safetyPools?: {safe: string[]; vulnerable: string[]};
   abstainLabel?: string;
   complete?: boolean;
   eligibility?: {ids: string[]; label: string};
@@ -62,7 +63,7 @@ export function compileVoteLedgers(cues: readonly PresentationCue[]): (VoteLedge
     const title = cue.source === "format" && cue.visualBallot ? cue.visualBallot.revote ? "Empower revote" : "Empower vote"
       : cue.source === "format" && cue.after.activeFormatId ? displayNameForFormat(cue.after.activeFormatId)
         : current.choice === "winner" ? "Jury vote" : "Elimination vote";
-    return {title, votes: [...votes], current, total, complete: cue.voteSummary, eligibility: eligibility[index], polarity: cue.source === "format" && cue.after.activeFormatId === "save_or_eliminate"};
+    return {title, safetyPools: cue.source === "format" && cue.kind === "format_roll_call" && cue.after.safetyBounce ? {safe: cue.after.safetyBounce.safePlayerIds, vulnerable: cue.after.safetyBounce.vulnerablePlayerIds} : undefined, votes: [...votes], current, total, complete: cue.voteSummary, eligibility: eligibility[index], polarity: cue.source === "format" && cue.after.activeFormatId === "save_or_eliminate"};
   });
 }
 

@@ -18,6 +18,11 @@ export interface MusicInput {
   section: MusicSection | null; playing: boolean; muted: boolean; volume: number;
 }
 
+/** Apply one duck to music only; overlapping voices never compound the gain. */
+export function speechMusicVolume(volume: number, gameSpeaking: boolean, houseSpeaking: boolean) {
+  return volume * (gameSpeaking || houseSpeaking ? .35 : 1);
+}
+
 const FADE_SECONDS = 0.7;
 const ownership: {current: WatchMusic | null} = {current: null};
 

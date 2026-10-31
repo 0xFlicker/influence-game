@@ -21,7 +21,7 @@ export interface InfluenceRetrospectiveSeat {
  */
 function influenceFact(event: CanonicalGameEvent): unknown {
   switch (event.type) {
-    case "game.roster_initialized": return { players: event.payload.players.map(({ id, name }) => ({ id, name })), formats: event.payload.formatManifest };
+    case "game.roster_initialized": return { players: event.payload.players.map(({ id, name, gender }) => ({ id, name, ...(gender !== undefined && { gender }) })), formats: event.payload.formatManifest };
     case "game.phase_entered": return { phase: event.payload.phase, remainingPlayerIds: event.payload.remainingPlayers.map(player => player.id) };
     case "round.started": return { round: event.payload.round };
     case "shields.expired": return { expiredPlayerIds: event.payload.expiredPlayerIds };

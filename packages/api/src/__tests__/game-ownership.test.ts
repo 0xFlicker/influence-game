@@ -216,7 +216,7 @@ describe("atomic game owner claim and roster freeze", () => {
     expect(await gameRow(fixture.db, fixture.gameId)).toMatchObject({ status: "waiting" });
   });
 
-  test("renames only House-to-House collisions deterministically inside freeze", async () => {
+  test("restores distinct canonical House identities deterministically inside freeze", async () => {
     const db = await setupTestDB();
     const gameId = await insertGame(db, { minPlayers: 4, maxPlayers: 4 });
     await db.insert(schema.gamePlayers).values([
@@ -233,7 +233,7 @@ describe("atomic game owner claim and roster freeze", () => {
       .where(eq(schema.gamePlayers.gameId, gameId));
     const names = seats.sort((left, right) => left.id.localeCompare(right.id))
       .map((seat) => JSON.parse(seat.persona).name as string);
-    expect(names).toEqual(["Repeat", "Atlas", "Echo", "Mira"]);
+    expect(names).toEqual(["Atlas", "Vera", "Finn", "Mira"]);
   });
 
   test("startup failure closes exactly one owner, voids evidence, and resumes following current behavior", async () => {
@@ -282,6 +282,12 @@ describe("atomic game owner claim and roster freeze", () => {
 
   test("startup teardown commits even when the waiting roster needs profile repair", async () => {
     const fixture = await createRatedWaitingFixture();
+    // Vex is a canonical House identity outside the existing reserved-name list.
+    // A profile can adopt that name after the game freezes, then conflict when
+    // startup teardown tries to reconcile the current profile into waiting seats.
+    await fixture.db.update(schema.gamePlayers).set({
+      persona: JSON.stringify({ name: "House Quartz", personality: "broker", personaKey: "broker" }),
+    }).where(eq(schema.gamePlayers.id, "house-a"));
     const owner = await acquireGameRunOwner(fixture.db, fixture.gameId);
     expect(owner.ok).toBeTrue();
     if (!owner.ok) throw new Error(owner.error);
@@ -291,7 +297,7 @@ describe("atomic game owner claim and roster freeze", () => {
       fixture.db,
       { userId: fixture.ownerA },
       fixture.profileA.id,
-      { name: "House Quartz" },
+      { name: "Vex" },
     );
     const cleanup = await markOwnerStartupFailed(
       fixture.db,

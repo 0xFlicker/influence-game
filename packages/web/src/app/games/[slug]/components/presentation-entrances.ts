@@ -46,7 +46,10 @@ export function presentationEntrances(
   if (
     reduced ||
     cue?.source !== "format" ||
-    cue.kind !== "safety_bounce_pointer"
+    cue.kind !== "safety_bounce_pointer" ||
+    // The full-body chain owns its continuous handoff; legacy picker entrances
+    // must never fade/scale the entire stage through data-accepted-target.
+    root.querySelector("[data-safety-chain]") !== null
   )
     return entrances;
   const candidates = root.querySelectorAll<HTMLElement>(

@@ -194,6 +194,7 @@ export const PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES = [
   "vote",
   "format_menu",
   "format_pick",
+  "safety_bounce",
   "format_mingle",
   "format_resolve",
   "post_vote_mingle",
@@ -1095,6 +1096,7 @@ export interface StrategicReflectionOptions {
 export interface IAgent {
   readonly id: UUID;
   readonly name: string;
+  readonly gender?: import("./types").AgentGender | null;
   /**
    * Most recent private-decision id minted for this agent in the live run, when
    * the implementation emits private decision traces. Optional for mock agents.
@@ -1115,7 +1117,7 @@ export interface IAgent {
   /** Canonical elimination invalidates the current strategy epoch. */
   markCompactStrategyReconciliationRequired?(): CompactStrategyState;
   /** Called once when the game starts */
-  onGameStart(gameId: UUID, allPlayers: Array<{ id: UUID; name: string }>): void;
+  onGameStart(gameId: UUID, allPlayers: Array<Pick<import("./types").Player, "id" | "name" | "gender">>): void;
   /** Called at the start of each phase with current game context */
   onPhaseStart(context: PhaseContext): Promise<void>;
   /** Called to collect this agent's introduction message */

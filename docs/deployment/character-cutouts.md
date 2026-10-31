@@ -1,5 +1,11 @@
 # Optional character cutouts
 
+The fourteen default House full-body assets are preprocessed, transparent bundled
+references. New rosters pin their versioned URLs and content hashes. Playback and
+inventory recognize these references and skip redundant cutout jobs, including
+private scene-artifact copies of bundled bodies. Custom Agent Profile sources
+continue through the existing demand, worker and publication-cutoff workflow.
+
 ## Design
 
 BiRefNet runs outside the application host. Public playback records demand for its

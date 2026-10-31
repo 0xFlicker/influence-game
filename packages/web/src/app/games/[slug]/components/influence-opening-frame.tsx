@@ -25,7 +25,7 @@ export function InfluenceOpeningFrame({cue, elapsedMs, reduced = false, fullBody
 }) {
   const shot = cue.opening;
   const frame = sampleInfluenceOpening(cue, elapsedMs, reduced);
-  const media = {src: shot.entranceVideoUrl, poster: shot.posterUrl, timeMs: frame.videoMs, playing, speed, navigationRevision};
+  const media = {src: shot.entranceVideoUrl, poster: shot.posterUrl, timeMs: frame.videoMs, playing, speed: frame.entrance ? 1 : speed, navigationRevision};
   return <div className={styles.frame} data-influence-opening={shot.shot} data-opening-key={cue.key}>
     <div className={styles.picture} style={{opacity: frame.exitOpacity * frame.entranceOpacity}}>
       {frame.entrance && !reduced

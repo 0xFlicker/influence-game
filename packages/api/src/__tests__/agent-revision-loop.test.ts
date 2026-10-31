@@ -45,6 +45,7 @@ describe("agent revision update loop", () => {
       .where(eq(schema.agentRevisions.agentProfileId, profile.id)));
 
     const result = await updateOwnedAgentProfile(db, { userId: OWNER_ID }, profile.id, {
+      gender: "female",
       personality: "Patiently maps every promise, then strikes when the coalition is committed.",
       strategyStyle: "Keep precise social receipts and force decisive endgames.",
     });
@@ -65,6 +66,7 @@ describe("agent revision update loop", () => {
     expect(revisionsAfter.length).toBeGreaterThan(revisionsBefore.length);
     expect(revisionsAfter.every((revision) => revision.agentProfileId === profile.id)).toBe(true);
     expect(persona).toMatchObject({
+      gender: "female",
       personality: "Patiently maps every promise, then strikes when the coalition is committed.",
       strategyHints: "Keep precise social receipts and force decisive endgames.",
     });

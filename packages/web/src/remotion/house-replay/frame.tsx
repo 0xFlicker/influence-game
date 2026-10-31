@@ -1,4 +1,4 @@
-import {exportPreviousSpeaker} from "../../lib/replay-export/room-continuity";
+import {exportContinuedActor,exportPreviousSpeaker} from "../../lib/replay-export/room-continuity";
 import {HouseNarration, narrationWindow} from "../../components/watch/house-narration";
 import {werewolfHouseCentered} from "../../components/games/werewolf/werewolf-watch-model";
 import {WerewolfOpeningFrame} from "../../components/games/werewolf/werewolf-opening-frame";
@@ -35,6 +35,7 @@ import type { ExportCue } from "../../lib/replay-export/cues";
 import { VisualSceneView } from "../../app/games/[slug]/components/visual-scene-view";
 import { SoloPresentation } from "../../app/games/[slug]/components/solo-presentation";
 import { PortraitRoom } from "../../app/games/[slug]/components/portrait-room";
+import {voteLedgerInset} from "../../app/games/[slug]/components/vote-presentation-timing";
 
 function sceneFor(cue?: ExportCue) {
   if (!cue) return null;
@@ -159,6 +160,7 @@ export function ReplayFrame({
                 }
               : {}),
             previousSpeaker: exportPreviousSpeaker(cue, previous),
+            continuedActorId: exportContinuedActor(cue, previous),
             firstInScene:
               !scene ||
               scene.id !== previousScene?.id ||
@@ -254,16 +256,27 @@ function ThinkingFrame({picture, elapsedMs, reduced}: {
   reduced: boolean;
 }) {
   const actor = picture.actor;
+  const soloStage = useRef<HTMLDivElement>(null);
+  const [soloHeight,setSoloHeight] = useState(0);
+  useLayoutEffect(() => {
+    const element = soloStage.current;
+    if (!element || !picture.ballotFraming) return;
+    const measure = () => setSoloHeight(element.clientHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [picture]);
   if (picture.room) return <PortraitRoom beat={{kind:"portrait-room",roomNumber:picture.room.number,roomLabel:picture.room.label,
     participants:picture.room.players,speech:{id:actor.id,playerId:actor.id,speaker:actor.name,text:""}}}
     backgroundUrl={picture.room.backgroundUrl} floorPerspective={picture.room.floorPerspective}
     hideSpeech elapsedMs={elapsedMs} readingElapsedMs={elapsedMs} reducedMotion={reduced} controlsInset={0} />;
   if (picture.scene) return <VisualSceneView scene={picture.scene} speech={null}
     focusPlayerId={actor.id} focusActor={actor} elapsedMs={elapsedMs} reducedMotion={reduced} controlsInset={0} />;
-  return <SoloPresentation beat={{kind:"portrait", purpose:"Conversation", player:actor,
+  return <div ref={soloStage} className="relative flex min-h-0 flex-1 flex-col"><SoloPresentation beat={{kind:"portrait", purpose:"Conversation", player:actor,
     roleLabel:picture.roleLabel, speech:{id:actor.id, playerId:actor.id, speaker:actor.name, text:""}}}
     backgroundUrl={picture.backgroundUrl} reserveSpeechSpace
-    hideSpeech elapsedMs={elapsedMs} imageOpacity={1} reducedMotion={reduced} controlsInset={0} />;
+    hideSpeech elapsedMs={elapsedMs} imageOpacity={1} reducedMotion={reduced} controlsInset={picture.ballotFraming ? voteLedgerInset(soloHeight) : 0} /></div>;
 }
 
 /** Player buffers at the requested frame. Stale media completion cannot resume a newer seek. */

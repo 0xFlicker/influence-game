@@ -73,6 +73,7 @@ export interface FormatPresentationRosterPlayer {
   persona?: string;
   personaKey?: string;
   avatarUrl?: string;
+  fullBodyReferenceUrl?: string | null;
   currentAgent?: GamePlayer["currentAgent"];
   modelPreference?: GamePlayer["modelPreference"];
 }
@@ -139,6 +140,9 @@ export interface FormatPresentationSnapshot {
 interface SpeechCue {
   /** Accepted delivery attached to a canonical ballot; never determines its target. */
   spokenMessage?: string;
+  /** Exact accepted transcript row moved into its canonical decision shot. */
+  decisionSpeechEntry?: TranscriptEntry;
+  requiredDecisionSpeech?: {actorId: string; action: string};
   /** A separate, fully collected tally stop after a canonical roll call. */
   voteSummary?: boolean;
   /** The director stages bubbles independently from the surrounding image. */

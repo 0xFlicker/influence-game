@@ -1,3 +1,7 @@
+import {createElement} from "react";
+import {renderToStaticMarkup} from "react-dom/server";
+import {VisualPresentationFrame} from "../app/games/[slug]/components/visual-presentation";
+import type {EndgamePresentationCue} from "../app/games/[slug]/components/types";
 import { expect, test } from "bun:test";
 import { Phase } from "@influence/engine";
 import type { GameWatchReplayFrame, ViewerDecisionEvent, TranscriptEntry } from "../lib/api";
@@ -170,4 +174,21 @@ test("jury transcript receipts never duplicate canonical ballots, including live
   director.dispose();
   expect(isStoryDialogue({ ...receipts[0]!, acceptedBallot: { voterId: "Arden", targetId: "Ione", purpose: "eliminate" } })).toBe(true);
   expect(isStoryDialogue({ ...receipts[0]!, acceptedBallot: undefined, scope: "public", fromPlayerId: "Arden", text: "I vote for Ione." })).toBe(true);
+});
+
+
+test("every endgame cue has an executable renderer, including historical portrait-only games", () => {
+  const required = {endgame_ballot:true,endgame_elimination:true,endgame_winner:true} satisfies Record<EndgamePresentationCue["kind"],true>;
+  const jury = frame({...base,phase:Phase.JURY_VOTE,sequence:30,type:"jury.winner_determined",payload:{votes:{Arden:"Ione",Marnie:"Kaiya"},winnerId:"Ione"}});
+  const cues = buildEndgamePresentationCues([finalFour,ardenOut,finalThree,marnieOut,jury]);
+  const seen = new Set<string>();
+  for (const cue of cues) {
+    seen.add(cue.kind);
+    const visual = visualWatchPresentation({enabled:false,status:null,portraits:{},scenes:[]},cue,null,players);
+    expect(visual.beat).not.toBeNull();
+    const html = renderToStaticMarkup(createElement(VisualPresentationFrame,{beat:visual.beat!,rooms:[],elapsedMs:3000,reducedMotion:true}));
+    expect(html.length).toBeGreaterThan(0);
+    expect(html).not.toContain("solo-studio-backdrop");
+  }
+  expect([...seen].sort()).toEqual(Object.keys(required).sort());
 });

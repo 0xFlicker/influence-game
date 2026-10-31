@@ -2,7 +2,7 @@ import {expect, test} from "bun:test";
 import {startWerewolf, werewolfConfig} from "../../../engine/src/werewolf/rules";
 import {projectWerewolfWatch} from "../../../engine/src/werewolf/watch";
 import type {WerewolfWatchMoment} from "../../../engine/src/werewolf/watch-contract";
-import {werewolfDoctorSave, werewolfCues, werewolfMomentCues, werewolfScrubStops, consumedSilentTail, werewolfWatchPolicy} from "../components/games/werewolf/werewolf-watch-model";
+import {werewolfDoctorSave, werewolfCues, werewolfMomentCues, werewolfScrubStops, consumedSilentTail, werewolfWatchPolicy, werewolfCueMoment} from "../components/games/werewolf/werewolf-watch-model";
 import {werewolfMusic} from "../components/games/werewolf/werewolf-music";
 import type {WerewolfWatchWindow} from "@influence/engine/werewolf/watch-contract";
 import {replayMoment} from "../components/games/werewolf/replay-moment";
@@ -58,6 +58,8 @@ test("a completed retrospective ends by showing the result again instead of its 
   const cues = werewolfCues([window]);
   const reprise = cues.at(-1)!;
   expect(reprise.reprise).toBe(true);
+  expect(werewolfWatchPolicy.speech(reprise)).toBeNull();
+  expect(werewolfCueMoment(reprise)).toMatchObject({house:false,spoken:false,title:"Final results"});
   expect(reprise.moment.entry.kind).toBe("result");
   if (reprise.moment.entry.kind === "result") expect(reprise.moment.entry.outcome.faction).toBe("village");
   const before = cues.at(-2)!;

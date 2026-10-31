@@ -11,6 +11,34 @@ This source does not activate AWS, create cloud credentials, publish an image,
 modify the tailnet, change the live staging database, or launch a render. A live
 proof still requires the operator's separately reviewed release and handoff.
 
+## Publication without ordinary deployment
+
+First land the publication tooling while the main policy remains local. Create a
+single commit on `proof/staging-render-<run>` from that trusted main revision,
+changing only `deployment/render-execution.json`: staging local to remote, with
+production still local and canonical tailnet origin unchanged. Keep that policy
+commit out of main. Its PR receives normal credential-free checks.
+
+After those checks pass, the owner may manually dispatch `ci.yml` on the exact
+proof branch with `proof_publication=true`. The trusted-main verifier requires
+one policy-only commit whose parent is on main. All normal check/provider-free/
+PostgreSQL gates still apply. The three images use unique full-SHA/run/attempt
+proof tags; no `:staging` tag moves, source-map upload or staging dispatch occurs.
+For the proof web build only, a checked derivative of `Dockerfile.web` deletes
+unuploaded browser maps immediately before the unchanged final no-maps assertion.
+The release Dockerfile and ordinary upload behavior remain unchanged; unexpected
+Dockerfile assertion changes fail closed instead of producing a proof image.
+The existing exact three-image release manifest format is preserved. This is an
+image publication, not deployment, admission or proof execution.
+
+The main-only staging ECR mirror accepts this successful owner-dispatched proof
+run only after independently reading its commit, main ancestry and exact policy
+diff from GitHub. It preserves the renderer digest and existing retention/storage
+admission checks. Refresh native lifecycle previews and protect both retained and
+incoming digests before copying; no unsafe expiry is authorized. Ordinary main
+release and production evidence rules remain unchanged. Actual handoff must use
+the isolated proof route, never the ordinary staging deploy workflow.
+
 ## Fresh database and fixture
 
 Use the exact candidate's migration bundle. The CLI runs with Bun from

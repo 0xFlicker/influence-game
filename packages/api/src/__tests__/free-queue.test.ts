@@ -288,7 +288,8 @@ describe("free queue season admission", () => {
     const gameConfig = JSON.parse(game!.config);
     expect(gameConfig.minPlayers).toBe(6);
     expect(gameConfig.empowerRevoteVersion).toBe(2);
-    expect(gameConfig.decisionContractVersion).toBe(2);
+    expect(gameConfig.decisionContractVersion).toBe(3);
+    expect(gameConfig.gameSchemaVersion).toBe(3);
     expect(gameConfig.maxPlayers).toBe(12);
     expect(gameConfig.modelRouting.defaultManifest[0]).toEqual({
       catalogId: "openai:gpt-6-luna",

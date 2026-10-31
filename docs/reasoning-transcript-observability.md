@@ -1,5 +1,9 @@
 # Reasoning & Transcript Observability
 
+Contestant prompts in both games include each character's stored gender from the frozen roster, including the acting character. Influence renders cast identity in its shared system prompt; Werewolf includes `gender` in `board.players`. Missing values remain unspecified, with instructions to use names or neutral language instead of guessing. This shares no private personality, backstory, strategy, or reasoning. Existing frozen rosters are never filled from mutable profiles.
+
+New House-created casts carry fixed authored name/archetype/gender identities from `HOUSE_CAST` at fill time too. API fills, the agent factory and offline simulations use the same map. Inspect the frozen roster fields for those players; audio defaults use stored gender even without a saved profile. Historical missing values and frozen voice snapshots remain unchanged.
+
 Native xAI uses `xai.responses` with the same exact decision/semantic validators.
 Preserve encrypted reasoning items in private raw-response objects, never as
 authored `thinking` or another contestant's context. Responses output usage
@@ -882,3 +886,13 @@ See [native Anthropic](native-anthropic.md) for cutover details.
 
 
 OpenAI Flex capacity failover records a separate attempt requesting `service_tier: "default"` on the same model. Preserve both sanitized envelopes, requested tier in request evidence, actual tier in accounting, usage and the frozen per-attempt rate card. Standard usage must use standard pricing. Durable Flex cooldowns and `providerRetry` are private operational state, never contestant observations. See [routing and recovery](model-routing.md#availability-recovery). No `as any` or direct House-call bypasses.
+
+### Safety Bounce speech and lifecycle revisions
+
+New Influence games freeze root `gameSchemaVersion: 2` and decision contract v3. Safety Bounce commits its starter draw and each public pointer separately before Format Mingle. The complete Safe/Vulnerable pools and the contestant's own status are present before the first Mingle turn. Sealed ballots follow Mingle; an empowered tiebreak requests private thinking and public speech before its structured choice. Public decision speeches enter the normal durable dialogue record: recent speech remains required under the existing context policy, and older speech remains eligible for authorized recall. No memory write is forced.
+
+Ballots request a private explanation to the House in **one sentence or less**, within the shared 320-byte speech allowance, without a thinking field. These explanations stay out of contestant dialogue and appear only at their canonical spectator reveal. Continue retaining structured thinking, available native reasoning and sanitized attempts; do not parse speech into game facts, use `as any`, or bypass direct House calls.
+
+Unversioned/root-v1 games retain their original execution order and remain viewable. Their chain scenes skip missing speech/thinking. New-root playback checks event ownership and speech consumption; unsupported records stop playback with a diagnostic rather than producing a generic event card. This does not stop the game.
+
+Two Names initial nominations, override use/decline, and replacement nominations now attach their existing accepted thinking and public speech to the corresponding canonical decision. The viewer holds pre-decision facts until the speech finishes, then reveals the result. These public deliveries remain in the durable speaking record; no extra provider call or contestant-recall policy is introduced. New-root missing/ambiguous/orphan speech is covered by the same semantic checks as Safety Bounce. Historical speechless games remain viewable.

@@ -49,6 +49,9 @@ export function setApiBase(url: string): void {
 }
 
 export function resolveApiUrl(pathOrUrl: string): string {
+  // Bundled character art is served by the web app, including when API and web
+  // have separate origins. Frozen game snapshots retain these versioned paths.
+  if (pathOrUrl.startsWith("/avatars/")) return pathOrUrl;
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(pathOrUrl)) {
     return pathOrUrl;
   }
@@ -538,6 +541,7 @@ export interface GameSummary {
   modelLabel: string;
   visibility: GameVisibility;
   /** Missing historical versions use v1. */
+  gameSchemaVersion?: 1 | 2;
   empowerRevoteVersion?: EmpowerRevoteVersion;
   /** Frozen game configuration; absent only on historical/mock payloads. */
   formatManifest?: EngineLaunchFormatId[];
@@ -2800,6 +2804,7 @@ export interface GameDetail {
   modelLabel: string;
   visibility: GameVisibility;
   /** Missing historical versions use v1. */
+  gameSchemaVersion?: 1 | 2;
   empowerRevoteVersion?: EmpowerRevoteVersion;
   /** Frozen game configuration; absent only on historical/mock payloads. */
   formatManifest?: EngineLaunchFormatId[];

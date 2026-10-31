@@ -177,7 +177,7 @@ export async function checkInSceneThinking(page: Page, url: string, apiUrl: stri
   await page.locator('button[aria-label="Player settings"]').click();
   await page.waitForSelector('[role="dialog"][aria-label="Player settings"]');
   await watchText(page, 'Keyboard shortcuts');
-  await page.click('[role="dialog"] input[type="checkbox"]');
+  await page.click('aria/Show thinking');
   expect(await page.$('[aria-label="Thinking order"]')).toBeNull();
   await page.click('button[aria-label="Close settings"]');
   // Enabling thoughts preserves the current speech position. Wait for the

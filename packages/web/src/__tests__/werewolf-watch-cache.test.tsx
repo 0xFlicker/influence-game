@@ -63,6 +63,20 @@ function fixture(speeches: number[], latestCursor = 128, status = "cancelled") {
 
 const useFixtureWatch = () => useWerewolfWatch("g", "mystery", "2026-10-06T00:00:00.000Z", 1);
 
+for(const status of ["in_progress","completed"])test(`operator ${status} player stays paused after hydration until Play`,async()=>{
+  fixture([1,2],2,status);
+  const view=renderHook(()=>useWerewolfWatch("g","mystery","2026-10-06T00:00:00.000Z",1,undefined,undefined,false,true));
+  await waitFor(()=>expect(view.result.current.preparing).toBe(false));
+  expect(view.result.current.follow).toBe(false);
+  expect(view.result.current.director.getSnapshot().isPlaying).toBe(false);
+  const cue=view.result.current.director.getActiveCue()?.key;
+  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,100));});
+  expect(view.result.current.director.getActiveCue()?.key).toBe(cue);
+  act(()=>view.result.current.toggle());
+  expect(view.result.current.follow).toBe(true);
+  expect(view.result.current.director.getSnapshot().isPlaying).toBe(true);
+});
+
 test("audio interruption clears play intent and one normal toggle resumes", async () => {
   fixture([1, 2], 2);
   const view = renderHook(useFixtureWatch);
