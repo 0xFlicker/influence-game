@@ -111,8 +111,7 @@ for (const speechPresentation of ["solo","scene"] as const) for (const [width,he
     expect(rectangle()).toEqual(reserved);
     expect(camera()).not.toBe(normal);
     const backdrop = view.container.querySelector("[data-room-backdrop]")!;
-    expect(backdrop.closest("[data-thinking-camera]")).toBeNull();
-    expect(backdrop.parentElement).toBe(view.container.querySelector("[data-solo-image]"));
+    expect(backdrop.closest("[data-thinking-camera]")).toBe(view.container.querySelector("[data-thinking-camera]"));
     expect(view.container.querySelector("[data-speech-bubble]")).toBeNull();
     thinking.mockReturnValue(null);
     view.rerender(content(100000));
@@ -142,6 +141,12 @@ for (const [width,height] of [[1440,900],[390,844]]) test(`Safety Bounce ${width
   expect(view.container.querySelectorAll("[data-thought-tail]").length).toBeGreaterThan(0);
   expect(view.container.querySelector("[data-in-scene-thinking]")?.textContent).toContain(thought.text);
   expect(view.container.querySelector<HTMLElement>("[data-thinking-camera]")?.style.transform).not.toBe("translate(0px, 0px) scale(1)");
+  const camera = view.container.querySelector("[data-thinking-camera]")!;
+  expect(camera.querySelector("[data-room-backdrop]")).not.toBeNull();
+  expect(camera.querySelector("header")).not.toBeNull();
+  expect(camera.textContent).toContain("Safe ·");
+  expect(camera.textContent).toContain("Vulnerable ·");
+  expect(camera.querySelector("[data-in-scene-thinking]")).toBeNull();
   expect(view.container.querySelector("[data-speech-bubble]")).toBeNull();
   view.rerender(content(false));
   expect(view.container.querySelector("[data-in-scene-thinking]")).toBeNull();

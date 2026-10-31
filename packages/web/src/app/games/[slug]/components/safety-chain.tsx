@@ -113,13 +113,13 @@ export function SafetyChain({beat, elapsedMs, reducedMotion = false, currentStat
     : reveal ? `${name(cue.actorId)} picks ${name(cue.targetId)} · ${cue.classification === "safe" ? "Safe" : "Vulnerable"}`
       : `${name(cue.actorId)} chooses someone ${before.safePlayerIds.includes(cue.actorId) ? "Vulnerable" : "Safe"}`;
   return <section aria-label="Safety Bounce" data-safety-chain data-chain-count={after.pointers.length} data-accepted-target={cue.kind === "safety_bounce_pointer" ? cue.targetId : undefined} data-format-cue={cue.kind} className="relative min-h-0 flex-1 overflow-hidden text-white">
+    <div data-thinking-camera className="absolute inset-0" style={focus.mediaStyle}>
     <RoomBackdrop source={INFLUENCE_ROOMS.council} />
     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-black/40" />
     <div ref={frame} className="absolute inset-x-0 top-0" style={{bottom:controlsInset}}>
     <header className="absolute inset-x-2 top-3 z-20 text-center"><p className="text-xs uppercase tracking-[.2em] text-amber-100"><span>Safety Bounce</span> · Round {cue.round}</p><h2 className="mt-1 text-lg font-semibold sm:text-2xl" aria-live="polite">{title}</h2></header>
     <div className="absolute bottom-0 left-[2%] h-[22%] w-[46%] rounded-t-2xl border border-emerald-300/40 bg-emerald-950/65"><p className="pt-1 text-center text-xs font-semibold uppercase tracking-widest text-emerald-200">Safe · {board.safePlayerIds.length}</p></div>
     <div className="absolute bottom-0 right-[2%] h-[22%] w-[46%] rounded-t-2xl border border-amber-300/40 bg-amber-950/65"><p className="pt-1 text-center text-xs font-semibold uppercase tracking-widest text-amber-200">Vulnerable · {board.vulnerablePlayerIds.length}</p></div>
-    <div data-thinking-camera className="absolute inset-0" style={focus.mediaStyle}>
     {roster.filter(player => activeIds.has(player.id)).map(player => {
       const from = safetyChainPosition(before, player.id,size.width > 0 && size.width < 640), to = safetyChainPosition(after, player.id,size.width > 0 && size.width < 640);
       const mix = (a: number, b: number) => a + (b - a) * progress;
@@ -131,11 +131,11 @@ export function SafetyChain({beat, elapsedMs, reducedMotion = false, currentStat
         <span className="max-w-full truncate rounded bg-black/75 px-1.5 py-0.5 text-xs font-semibold sm:text-sm">{player.name}</span>
       </div>;
     })}
-    </div>
     {!thought && speech && !reveal && motion.speechOpacity > 0 && <SpeechBubble speaker={speech.speaker} caption="Safety Bounce" text={speech.text}
       box={bubble} opacity={motion.speechOpacity} typography={speechFit.typography} padding={speechFit.padding} elapsedMs={motion.speechElapsedMs}
       tail={{side:beside ? "top" : "bottom",style:{left:Math.max(16,Math.min(bubble.width - 24,face.left + face.width / 2 - bubble.left))}}}/>}
     {board.benchPlayerIds.length === 0 && <p className="absolute inset-x-2 top-[68%] text-center text-sm text-white/85">The pools are set.</p>}
+    </div>
     </div>
     <ThinkingFocusOverlay frame={frame} layout={focus}/>
   </section>;
