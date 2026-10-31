@@ -181,6 +181,8 @@ function DramaticReplayTheater({
   const revealedWinners = useMemo(() => compileRevealedWinnerCues(presentationCues), [presentationCues]);
   const lobbyMessages = useMemo(() => compileSafetyBounceLobbyLookup(classicCues, scenes), [classicCues, scenes]);
   const followed=useIsFollowPlayer();
+  // Live-tail waiting belongs to the game lifecycle. Navigation changes position
+  // and play intent, but must still buffer when playback catches up again.
   const {
     director,
     snapshot: directorSnapshot,
@@ -483,7 +485,7 @@ function DramaticReplayTheater({
 
   const stepBackOneCue = useCallback(() => {
     suspendMusic(); setPlayRequested(false);
-    director.pause(); director.setFollowTail(false);
+    director.pause();
     director.seek(directorSnapshot.cursor - 1);
   }, [director, directorSnapshot.cursor, suspendMusic]);
 
@@ -507,7 +509,7 @@ function DramaticReplayTheater({
       directorSnapshot.cursor,
       1,
     );
-    if (nextIndex !== null) {pausePresentation(); director.setFollowTail(false); director.seek(nextIndex);}
+    if (nextIndex !== null) {pausePresentation(); director.seek(nextIndex);}
   }, [director, directorSnapshot.cursor, presentationCues, pausePresentation]);
 
   const goToEnd = useCallback(() => {
@@ -521,12 +523,12 @@ function DramaticReplayTheater({
 
   const goToBeginning = useCallback(() => {
     restartAmbient(); restartOpening();
-    setPlayRequested(false); director.pause(); director.setFollowTail(false); director.seek(0, 0);
+    setPlayRequested(false); director.pause(); director.seek(0, 0);
   }, [director, restartAmbient, restartOpening]);
 
   const goToPrevScene = useCallback(() => {
     const previousIndex = findCueForAdjacentScene(presentationCues, directorSnapshot.cursor, -1);
-    if (previousIndex !== null) {pausePresentation(); director.setFollowTail(false); director.seek(previousIndex);}
+    if (previousIndex !== null) {pausePresentation(); director.seek(previousIndex);}
   }, [director, directorSnapshot.cursor, presentationCues, pausePresentation]);
 
   // Reset auto-hide timer helper
@@ -814,7 +816,7 @@ function DramaticReplayTheater({
             onVolume:preferences.setMusicVolume,retry:() => unlockMusic(masterMuted || preferences.musicMuted)}}
           onScrubStart={() => {ambient.beginScrub(); openingAudio.beginScrub();}}
           onScrubEnd={() => {ambient.endScrub(); openingAudio.endScrub();}}
-          goToBeginning={goToBeginning} goToPrevScene={goToPrevScene} onSeek={frame => {const target = timeline.target(frame); if (target) {suspendMusic(); director.setFollowTail(false); director.seekTimeline(target.index, target.elapsedMs);}}} timeline={timeline} goToNextScene={goToNextScene} goToEnd={goToEnd}
+          goToBeginning={goToBeginning} goToPrevScene={goToPrevScene} onSeek={frame => {const target = timeline.target(frame); if (target) {suspendMusic(); director.seekTimeline(target.index, target.elapsedMs);}}} timeline={timeline} goToNextScene={goToNextScene} goToEnd={goToEnd}
           live={live} cursor={directorSnapshot.cursor} count={presentationCues.length}
           thinking={{enabled:showThinking,onChange:setShowThinking}} />
       </div>

@@ -2070,6 +2070,38 @@ test.describe("format-aware game viewer", () => {
     });
   }
 
+  test("live Influence buffers after a seek and resumes on new gameplay without replaying the tail", async ({ page }) => {
+    await page.clock.install();
+    await observeMusic(page);
+    const slug = "live-seek-buffering";
+    const fixture = await installSafetyBounceLobby(page, slug, { live: true });
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    const lobby = page.getByRole("region", { name: "Safety Bounce in the lobby" });
+    await expect(lobby).toBeVisible();
+    await enableMusic(page);
+    // Slider navigation used to permanently disable live following.
+    const slider = page.getByRole("slider", { name: "Replay position" });
+    await slider.focus();
+    await slider.press("End");
+    await page.clock.runFor(30_000);
+    await expect(page.getByRole("status", { name: "Buffering" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Pause replay", exact: true })).toBeVisible();
+    const score = async () => (await musicState(page)).find(audio => audio.src?.includes("/music/influence/") && !audio.paused);
+    await expect.poll(async () => (await score())?.time ?? -1).toBeGreaterThan(0);
+    const musicTime = (await score())!.time;
+    await expect.poll(async () => (await score())?.time ?? -1).toBeGreaterThan(musicTime + .2);
+    await page.getByRole("button", { name: "Pause replay", exact: true }).click();
+    await expect(page.getByRole("status", { name: "Buffering" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Play replay", exact: true }).click();
+    await expect(page.getByRole("status", { name: "Buffering" })).toBeVisible();
+    fixture.setDecisionCount(5);
+    await fixture.sockets[0]!.close({ code: 1012, reason: "new gameplay" });
+    await page.clock.runFor(1250);
+    await expect(lobby.locator("[data-chain-arrow]")).toHaveCount(2);
+    await expect(page.getByRole("status", { name: "Buffering" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Pause replay", exact: true })).toBeVisible();
+  });
+
   test("Safety Bounce lobby reconnect keeps accepted arrows and settles on the next chooser", async ({ page }) => {
     await page.clock.install();
     const slug = "safety-lobby-live";
