@@ -103,7 +103,7 @@ test("new games default both routes to native fallbacks while explicit and histo
   const defaults = await creationModelRouting(db, "owner", {});
   expect(defaults.defaultManifest.slice(1)).toEqual([...DEFAULT_GAME_FALLBACKS]);
   expect(defaults.houseManifest).toEqual(defaults.defaultManifest);
-  const explicit = [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "low" }];
+  const explicit = [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "low" as const }];
   const custom = await creationModelRouting(db, "admin", { providerManifest: explicit });
   expect(custom.defaultManifest).toEqual(explicit);
   expect(custom.houseManifest).toEqual(explicit);

@@ -10,7 +10,7 @@ The coordinated gameplay path disables SDK/legacy transport retries so every act
 - Existing durable health machinery stores a Flex-only scope. Calls bypass Flex for 5–15 minutes, bounded by Retry-After; ordinary calls can try Flex after expiry. Standard success does not clear the Flex cooldown.
 - Each actual dispatch retains its own durable attempt identity, sanitized evidence, requested/actual tier, usage and frozen rate card. Strict schema, semantic validation, context identity, reasoning and canonical acceptance fences remain in force. Availability/indeterminate attempts do not exhaust semantic-output repair limits.
 - Exhausted operational routes raise a distinct deferred error. Influence and Werewolf preserve the unfinished turn and accepted sibling results, release ownership and retry after 1, 2, 4, 8, 16, then 30 minutes. Recovery suspends after 24 waves; permanent blockers suspend sooner when no temporarily unavailable route remains. Cancellation and malformed-output policies remain distinct.
-- New-game recommendations include native Anthropic Haiku 5.5 and native xAI Grok 4.3, the economical supported audited options, with 1,000-call fallback caps. Admin creation uses configured/available recommendations for contestants and House; Daily shares the defaults. Existing sealed manifests and explicit custom policies are unchanged.
+- New-game recommendations include native Anthropic Haiku 5.5 and native xAI Grok 4.3, the economical supported audited options, with 1,000-call fallback caps. Admin creation uses configured/available recommendations for contestants and House. API creation without an explicit policy and the weekly cron/free-queue draw share the defaults for both routes. Existing sealed manifests and explicit custom policies are unchanged.
 
 ## Coverage and verification
 
@@ -22,15 +22,22 @@ Final required baselines:
 
 | Command | Result |
 |---|---|
-| `bun run test` | 3,117 passed, 5 skipped, 0 failed; 329 files |
-| `bun run test:postgres` | 2,266 passed, 0 failed; 203 files; sequential local PostgreSQL run |
+| `bun run test` | 3,203 passed, 5 skipped, 0 failed; 336 files |
+| `bun run test:postgres` | 2,286 passed, 0 failed; 206 files; sequential local PostgreSQL run |
 | `bun run check` | All workspace type checks and lint passed |
 | `git diff --check` | Passed |
 
-The first full runs exposed old expectations for provider-unavailable behavior and Daily fallback defaults, plus a retrospective journal-exhaustion classification regression. The expectations were updated and the classification corrected; the final complete baselines above were rerun after those changes.
+The first full runs exposed old expectations for provider-unavailable behavior and Daily fallback defaults, plus a retrospective journal-exhaustion classification regression. The expectations were updated and the classification corrected; the final complete baselines above were rerun after those changes, the creation-default review fix and integration with current main.
 
 ## Limits
 
 A crash after remote dispatch but before durable terminalization is indeterminate. Without provider idempotency, duplicate remote inference/billing cannot be ruled out; accepted results and canonical effects remain fenced against duplication. After bounded suspension, operator repair is required; no generic provider-suspension resume endpoint is added here. Frozen fallback budgets still apply.
 
-Validation is against the requested local checkout, which started clean and was behind its cached upstream reference by 29 commits; no upstream integration, deployment or production mutation was performed. Changes remain uncommitted for review.
+The requested checkout started clean. The PR branch integrates upstream main through `f8a1b2bd`; conflicts preserved the incoming game-schema and playback changes alongside availability recovery. No deployment or production mutation was performed.
+
+
+## Follow-up review
+
+Manual review found that API creation without an explicit model policy still used a primary-only route. Defaults now apply at `creationModelRouting`, shared by Influence creation, Werewolf creation and Werewolf lobbies. Explicit policies and historical reads remain exact. Added regression assertions cover both contestant/House creation defaults, explicit-policy preservation, and both routes in weekly free-queue draws. The weekly scheduler calls the free-queue API; no infrastructure change is needed.
+
+External Grok review was attempted with read-only snapshots, then retried with a smaller source diff and noninteractive execution. It returned no findings or completed review before being stopped; this is inconclusive, not a clean external review. Manual review found no further actionable defects after the creation-default fix.
