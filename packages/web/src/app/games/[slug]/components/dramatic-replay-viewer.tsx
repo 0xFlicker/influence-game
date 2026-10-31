@@ -511,10 +511,8 @@ function DramaticReplayTheater({
   }, [director, unlockMusic, preferences.musicMuted, masterMuted]);
 
   const stepBackOneCue = useCallback(() => {
-    suspendMusic(); setPlayRequested(false);
-    director.pause();
     director.seek(directorSnapshot.cursor - 1);
-  }, [director, directorSnapshot.cursor, suspendMusic]);
+  }, [director, directorSnapshot.cursor]);
 
   const pausePresentation = useCallback(() => {
     suspendMusic(); setPlayRequested(false);
@@ -536,8 +534,8 @@ function DramaticReplayTheater({
       directorSnapshot.cursor,
       1,
     );
-    if (nextIndex !== null) {pausePresentation(); director.seek(nextIndex);}
-  }, [director, directorSnapshot.cursor, presentationCues, pausePresentation]);
+    if (nextIndex !== null) director.seek(nextIndex);
+  }, [director, directorSnapshot.cursor, presentationCues]);
 
   const goToEnd = useCallback(() => {
     if (presentationCues.length > 0) {
@@ -555,8 +553,8 @@ function DramaticReplayTheater({
 
   const goToPrevScene = useCallback(() => {
     const previousIndex = findCueForAdjacentScene(presentationCues, directorSnapshot.cursor, -1);
-    if (previousIndex !== null) {pausePresentation(); director.seek(previousIndex);}
-  }, [director, directorSnapshot.cursor, presentationCues, pausePresentation]);
+    if (previousIndex !== null) director.seek(previousIndex);
+  }, [director, directorSnapshot.cursor, presentationCues]);
 
   // Reset auto-hide timer helper
   const resetControlsTimer = useCallback(() => {

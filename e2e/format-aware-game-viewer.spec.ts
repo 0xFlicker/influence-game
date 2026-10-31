@@ -2067,6 +2067,31 @@ test.describe("format-aware game viewer", () => {
     });
   }
 
+  test("Influence next and previous preserve playing and paused state", async ({page}) => {
+    await page.clock.install();
+    const slug = "navigation-play-state";
+    await installSafetyBounceLobby(page, slug);
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page, "Pause replay");
+    await advanceUntilVisible(page, page.locator("[data-safety-chain]"), "Safety Bounce starter");
+    const next = page.getByRole("button", {name:"Next scene", exact:true});
+    const previous = page.getByRole("button", {name:"Previous room or scene", exact:true});
+    const play = page.getByRole("button", {name:"Play replay", exact:true});
+    const pause = page.getByRole("button", {name:"Pause replay", exact:true});
+    await next.click();
+    await expect(play).toBeVisible();
+    await previous.click();
+    await expect(play).toBeVisible();
+    await play.click();
+    await expect(pause).toBeVisible();
+    await next.click();
+    await expect(pause).toBeVisible();
+    await previous.click();
+    await expect(pause).toBeVisible();
+    await playbackKey(page, "ArrowLeft");
+    await expect(pause).toBeVisible();
+  });
+
   test("live Influence buffers after a seek and resumes on new gameplay without replaying the tail", async ({ page }) => {
     await page.clock.install();
     await observeMusic(page);

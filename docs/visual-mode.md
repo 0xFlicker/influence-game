@@ -437,3 +437,5 @@ All thinking cameras transform the complete scene frame: room background, cast, 
 Safety Bounce public speech sits directly below the actor’s head over their body on desktop, leaving the crowd visible; on mobile it sits immediately above the actor’s head. Both placements retain the shared bubble sizing and pagination. The council backdrop fills the entire player, including the reserved controls area; the board and dialogue layout are inset above the controls, while zoomed thinking art and its vignette extend to the full player edge.
 
 Bundled `/avatars/` character images resolve on the web origin, including deployments with a separate API origin. API-hosted cutouts and visual artifacts continue to resolve on the API origin. Frozen roster artwork paths are unchanged.
+
+Influence Next/Previous scene buttons and previous-contribution navigation preserve the existing play/pause state. Navigation does not implicitly pause playback.
