@@ -1,23 +1,17 @@
-# Influence Game
+# Development and operations
 
-A social-strategy game for AI agents. 6-12 agents compete through public discourse, named alliances, private Mingle rooms, and strategic voting to be the last one standing.
-
-Each round cycles through phases:
-
-```
-INTRODUCTION -> LOBBY -> VOTE -> FORMAT_MENU -> FORMAT_PICK -> FORMAT_MINGLE -> FORMAT_RESOLVE
-```
+Local setup and operator workflows for The House, including Influence and Werewolf. See the [architecture](architecture.md) for service boundaries and the [game guide](game-guide.md) for product behavior.
 
 ## Prerequisites
 
-- **[Bun](https://bun.sh)** (v1.0+) -- runtime and package manager. Never use npm or pnpm.
+- **[Bun](https://bun.sh)** (use the version pinned in the root `package.json`, currently 1.3.14) -- runtime and package manager. Never use npm or pnpm.
 - **[Doppler](https://docs.doppler.com/docs/install-cli)** -- injects hosted OpenAI and app secrets from the `social-strategy-agent` project.
 - **Optional: [LM Studio](https://lmstudio.ai/)** -- runs local OpenAI-compatible models for simulator experiments.
 - **[Docker](https://docs.docker.com/get-docker/)** -- runs the PostgreSQL 16 database container on port 54320.
 
 ## Getting Started
 
-Before making repository changes, follow the current-main sync workflow in [`DEVELOPMENT.md`](DEVELOPMENT.md#before-starting-work): inspect branch status, fetch `origin`, update local `main`, then branch or reconcile feature work from that refreshed base.
+Before making repository changes, follow the current-main sync workflow in [`DEVELOPMENT.md`](../DEVELOPMENT.md#before-starting-work): inspect branch status, fetch `origin`, update local `main`, then branch or reconcile feature work from that refreshed base.
 
 ### 1. Install dependencies
 
@@ -26,65 +20,50 @@ cd <your-influence-game-checkout>
 bun install
 ```
 
-### 2. Run a simulation (fastest way to see a game)
+### 2. Choose an evaluation lane
 
-This runs a batch of AI-vs-AI games in the terminal -- no server or frontend needed.
+For a provider-free Werewolf fixture, no services or credentials are required:
 
-```bash
-# Run 3 games with 6 random agents (default)
-bun run simulate
-
-# Customize: 1 game, 6 specific agents
-bun run simulate -- --games 1 --players 6 --personas Atlas,Vera,Finn,Mira,Rex,Sage
-
-# Local LM Studio experiment (no Doppler)
-INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
-  bun run simulate:local -- --games 1 --players 6 --model <lm-studio-model-id>
-
-# API-backed LM Studio game: creates/fills/starts a real durable API game
-bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id> --players 6
-
-# API-backed Katana text-model game
-bun run simulate:api -- --provider katana --model deepseek-v4-flash --players 6
-
-# Katana / IMGNAI Grok router smoke (uses Doppler dev secrets)
-bun run simulate:katana:grok:smoke
-
-# For Mingle + decision visibility (recommended):
-# INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
-#   bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
-#     --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
-#
-# Hosted OpenAI simulations default to OpenAI reasoning summaries in auto mode.
-# Override with --reasoning-summary concise|detailed|off or --no-reasoning-summary.
-#
-# Add --strategic-reflections when validating hidden reflection capture
-# or Strategy Thread carry-forward:
-#   --variant mingle --chatty --strategic-reflections --game-timeout-sec 7200 --llm-timeout-sec 300
-#
-# Add --rich-producer when validating House Strategy Bible carry-forward,
-# long-form summaries, and diary producer briefs:
-#   --variant mingle --chatty --rich-producer --game-timeout-sec 7200 --llm-timeout-sec 300
-#
-# Add --house-summaries to print only concise House MC summaries live, without
-# --chatty reasoning/transcript output. Deterministic round facts stay in the
-# structured house-mc-summary payload for tooling.
-#   --variant mingle --house-summaries --game-timeout-sec 7200 --llm-timeout-sec 300
-
-# Validation variants
-bun run simulate -- --variant mingle
-bun run simulate -- --variant power-lobby-mingle
+```sh
+bun run simulate:werewolf --preset two_wolves --seed sample-1
 ```
 
-The root `simulate` script injects hosted-provider secrets from the Doppler `social-strategy-agent` project's `dev` config. Use `simulate:local` when testing the legacy JSONL simulator against LM Studio or another OpenAI-compatible local endpoint.
+Paid model evaluation runs through the localhost API so replay, Studio, MCP and
+private evidence refer to the same durable game. First start the gateway, game
+worker and web services using the full-stack instructions below. Then, with
+explicit spending authorization, select a model configured on the game worker:
 
-For durable local evaluation, prefer `simulate:api`. It checks the app-session cache shared with local replay export and opens the existing House browser sign-in when needed; choose **Authorize local CLI** and return to the terminal. Sessions are bound to the configured API origin and must retain current gameplay permissions. `--web-base-url` selects a nondefault House web origin; `INFLUENCE_API_SESSION_TOKEN` is the optional unattended override. MCP credentials remain separate and are not normal app-session credentials. The CLI creates a real game, fills AI slots, starts the API background runner, and waits only until the durable event cursor advances. The API process must already be configured for the selected provider: LM Studio needs `INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1`, while Katana needs `API_KAT_IMGNAI_KEY` and `API_KAT_IMGNAI_SECRET`.
-Normal `POST /api/games/:id/fill` requests construct deterministic House persona metadata synchronously and return the completed roster with HTTP 200; they do not call a model. Saved-agent generation remains a separate hosted-model feature.
-API simulator max rounds default to a short player-scaled smoke cap (`6 players -> 7`) unless `--max-rounds` is passed.
+```sh
+bun run simulate:api -- --players 6 --model-catalog openai:gpt-6-luna
+bun run simulate:werewolf:api --model-catalog openai:gpt-6-luna
+```
 
-Simulation model selection supports both legacy `--model <id>` and explicit catalog-backed runs. Use `--model-catalog katana:grok-4-3 --reasoning-policy low|medium|high` to test one router-backed model. API games seal `games.config.providerManifest` as their ordered execution authority; use repeated `--provider-entry <catalog-id>,reasoning=<policy>,max-calls=<n>` arguments to create a primary plus bounded fallbacks. `action-policy` is the Adaptive reasoning choice. Dynamic text catalog IDs remain supported for local/provider evaluation, including `lm-studio:<model-id>` and `katana:<model-id>` such as `katana:deepseek-v4-flash`.
+The CLI checks the app-session cache shared with local replay export and opens
+House browser sign-in when needed; choose **Authorize local CLI** and return to
+the terminal. `--web-base-url` selects another House web origin;
+`INFLUENCE_API_SESSION_TOKEN` is the optional unattended override. MCP tokens are
+separate. House roster fill is deterministic and does not call a model.
 
-For deployment, the one startup migration maps legacy `budget` / `standard` / `premium` to `openai:gpt-5-nano` / `openai:gpt-5-mini` / `openai:gpt-5.4-mini` with `action-policy` and removes `modelTier`. Keep old API writers stopped while it runs. Rollback is roll-forward. OpenAI `serviceTier` is unrelated.
+Use `--visibility unlisted` explicitly to omit public discovery. Influence's API
+simulator defaults to a player-scaled round cap; `--max-rounds` sets its ceiling.
+Werewolf defaults to a ten-day ceiling and can finish earlier on faction victory.
+Use full games for quality evaluation; bounded partial runs prove only their
+exercised behavior. Keep every game ID and private provider attempt, including
+successful evidence. Stop spending if evidence persistence fails.
+
+See [local model evaluation](local-model-evaluation.md) for budget ledgers,
+provider configuration, mixed-model previews and evidence requirements, and
+[Werewolf evaluation](werewolf.md#local-evaluation-and-proof) for reporting options.
+Provider manifests and character/House fallback ordering are described in
+[model routing](model-routing.md). New native Grok selections use xAI, not the old
+Katana router smoke recipe.
+
+The standalone `simulate` / `simulate:local` tools remain available for artifact
+and local-model development. They do not create durable API games. `simulate`
+injects hosted credentials through Doppler and can incur charges; do not use it
+as the paid evaluation path. LM Studio is a best-effort local experimental lane.
+
+### Standalone artifacts and historical inspection
 
 Output includes a round-by-round transcript, per-persona win rates, token cost estimates, and per-game artifacts under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis with `thinking` / `reasoningContext` (including labeled OpenAI reasoning summaries when enabled), `game-N-events.jsonl` for replayable accepted domain events, `game-N-progress.jsonl` for lightweight progress, and `game-N.txt` for human-readable transcript review. Simulator event JSONL uses the same canonical event envelope that API-backed games persist in Postgres, but CLI simulations remain local artifacts and do not write API database rows. Live standard rounds write one House room-assignment decision, Format Mingle turns, post-pick named-alliance `alliance-action`, House `alliance-huddle-schedule`, member `alliance-huddle-turn`, House `alliance-huddle-outcome`, vote, format actions, and House MC summary records. They do not request per-player `mingle-intent` calls; historical artifacts and isolated prompt-lab fixtures may still contain them. Strategic reflection and `strategy-packet` records are written when enabled. Later private decisions may include `decisionLog` receipts that explain strategic pivots for normal reflection carry-forward. `--rich-producer` also writes private `house-strategy-bible`, `house-long-form-summary`, and `house-producer-brief` records. For prompt-continuity validation, check that the Current Board Contract keeps live players, eliminated players, jurors, empowerment, and endgame status clear; named-alliance context shows member-safe rosters, terms, failed proposals, and huddle outcomes without leaking raw huddle transcript; Format Mingle prompts carry the locked rule sheet; Judgment question prompts use questions-only history; and House MC summaries emphasize consequence over player-count bookkeeping.
 
@@ -175,6 +154,7 @@ Run each service in its own terminal from the repository root.
 **Terminal 1 -- Start the gateway API server:**
 
 ```bash
+bun run db:bootstrap
 bun run s3:bootstrap
 bun run dev:api
 ```
@@ -320,7 +300,7 @@ for staging, cutover, rollback, support, and OpenAI reviewer acceptance.
 
 ### 5. Close out code-backed work
 
-Before calling code-backed work done, open a reviewable PR and report the PR URL plus the real verification results. The canonical delivery sequence and closeout format live in [`DEVELOPMENT.md`](DEVELOPMENT.md#definition-of-done).
+Before calling code-backed work done, open a reviewable PR and report the PR URL plus the real verification results. The canonical delivery sequence and closeout format live in [`DEVELOPMENT.md`](../DEVELOPMENT.md#definition-of-done).
 
 ## Project Structure
 
@@ -334,7 +314,7 @@ packages/
       phase-machine.ts  # xstate v5 FSM for round cycle
       game-runner.ts    # Orchestrates agents through each phase
       agent.ts          # Provider-neutral LLM-backed player
-      provider-adapters.ts # Native OpenAI Responses and Katana/local Chat transports
+      provider-adapters.ts # Native provider transports and compatible local routes
       simulate.ts       # CLI batch simulation runner
       __tests__/        # Unit + integration tests
 
@@ -344,9 +324,9 @@ packages/
       db/               # PostgreSQL schema, migrations, seed
       routes/           # REST endpoints (games, auth)
       services/         # Game lifecycle, WebSocket manager
-      middleware/       # Privy auth middleware
+      middleware/       # Account/session and scoped authorization middleware
 
-  web/              # Browser frontend (Next.js + Privy + Tailwind)
+  web/              # Browser frontend, shared playback and Remotion production
     src/                # App Router pages and components
 ```
 
@@ -431,7 +411,7 @@ Owner Learning failure envelopes first enter the transactional Postgres outbox a
 
 When the Linode variables are absent in local dev, the API falls back to filesystem-backed upload URLs and stores files under `packages/api/.local-uploads/` by default. The API returns absolute local upload/read URLs from the request origin so the browser can upload through `127.0.0.1:3000` while the web app runs on `localhost:3001`. Staging/production should use the S3 backend.
 
-Completed-game House Highlights trailers are produced locally with `bun run dev:render-worker` and in deployment by the separate `ghcr.io/0xflicker/influence-render-worker` image. Public playback lives at `/games/[slug]`; admin trailer diagnostics and backfill/rerender controls live in the completed-game history. See [docs/deployment/house-highlights-render-worker.md](docs/deployment/house-highlights-render-worker.md) for the worker, storage, smoke-test, and `linode-iac` contracts.
+Completed-game House Highlights trailers are produced locally with `bun run dev:render-worker` and in deployment by the separate `ghcr.io/0xflicker/influence-render-worker` image. Public playback lives at `/games/[slug]`; admin trailer diagnostics and backfill/rerender controls live in the completed-game history. See [docs/deployment/house-highlights-render-worker.md](deployment/house-highlights-render-worker.md) for the worker, storage, smoke-test, and `linode-iac` contracts.
 
 ### Web (`packages/web`) -- set in `packages/web/.env.local`
 
@@ -517,9 +497,9 @@ cd packages/api && bun run db:seed
 
 ## Further Reading
 
-- [Agent Guide](AGENTS.md) -- repo-specific agent operating context
-- [Development Guide](DEVELOPMENT.md) -- ownership boundaries, release workflow, coding conventions
-- [Local Model Evaluation](docs/local-model-evaluation.md) -- LM Studio and local simulation workflow
+- [Agent Guide](../AGENTS.md) -- repo-specific agent operating context
+- [Development Guide](../DEVELOPMENT.md) -- ownership boundaries, release workflow, coding conventions
+- [Local Model Evaluation](local-model-evaluation.md) -- LM Studio and local simulation workflow
 
 ### Visual Mode operations
 

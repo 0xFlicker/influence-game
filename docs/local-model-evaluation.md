@@ -87,7 +87,7 @@ full-game validation still runs through the localhost API with retained game IDs
 
 For Influence runs through `bun run simulate:api`, inspect structured recipients when evaluating conversational responsiveness: A → B → A → B excludes A from B's next recipient choices, but B → C gives C the next opportunity. A new pair resets the exchange counter. Group addresses and passes return to fair scheduling; the shared speech allowance still bounds the conversation.
 
-Werewolf v10 solo night turns (Doctor, Seer and one surviving wolf) request `targetId`, one spoken `text` explanation and nullable `cue`, with no separate required `thinking`. Multi-wolf discussion keeps private thinking. Preserve raw responses and available native reasoning in private evidence; do not invent a missing explanation. Omniscient replay and exports show each Doctor/Seer explanation before its role result, in a distinct room. Mystery and contestant observations never receive these asides. New games freeze v10 and its output policy at creation; existing games keep their saved version. `bun run simulate:werewolf:api` and `bun run simulate:models --game werewolf` use that same API contract. No `as any`; House calls remain direct.
+Werewolf v10 solo night turns (Doctor, Seer and one surviving wolf) request `targetId`, one spoken `text` explanation and nullable `cue`, with no separate required `thinking`. Multi-wolf discussion keeps private thinking. Preserve raw responses and available native reasoning in private evidence; do not invent a missing explanation. Omniscient replay and exports show each Doctor/Seer explanation before its role result, in a distinct room. Mystery and contestant observations never receive these asides. New games freeze v11 (including daily speaking priority and the v10 solo-night output policy) at creation; existing games keep their saved version. `bun run simulate:werewolf:api` and `bun run simulate:models --game werewolf` use that same API contract. No `as any`; House calls remain direct.
 
 Recovery identity can be checked without paid inference: run `bun docs/solutions/runtime-errors/durable-context-recovery-probe.ts /absolute/path/to/authorized-private-capture.json`. The [fixture contract and incident proof](solutions/runtime-errors/jsonb-order-changed-context-identity.md) restore the saved pending turn and stop before dispatch or commit. JSONB key order alone must not change its source hash; genuine changes remain errors. Preserve private attempts, exact types without `as any`, and direct House calls.
 
@@ -683,3 +683,18 @@ New Influence games freeze root `gameSchemaVersion: 2` and decision contract v3.
 Ballots request a private explanation to the House in **one sentence or less**, within the shared 320-byte speech allowance, without a thinking field. These explanations stay out of contestant dialogue and appear only at their canonical spectator reveal. Continue retaining structured thinking, available native reasoning and sanitized attempts; do not parse speech into game facts, use `as any`, or bypass direct House calls.
 
 Unversioned/root-v1 games retain their original execution order and remain viewable. Their chain scenes skip missing speech/thinking. New-root playback checks event ownership and speech consumption; unsupported records stop playback with a diagnostic rather than producing a generic event card. This does not stop the game.
+
+## Mixed-model roster preview
+
+Preview routing without authentication, API requests or generation:
+
+```sh
+bun run simulate:models --game werewolf --players 6 --models openai:gpt-6-luna,anthropic:claude-haiku-5-5,meta-muse:muse-spark-1.3-contributor,openai:gpt-6-luna,anthropic:claude-haiku-5-5,meta-muse:muse-spark-1.3-contributor --house-entry openai:gpt-6-luna --preview
+```
+
+Removing `--preview` creates a localhost API game and can incur charges; paid
+runs require explicit authorization. The default visibility is public; add
+`--visibility unlisted` explicitly when needed. Provider discovery is not gameplay
+qualification. See [model routing](model-routing.md) for current eligibility,
+per-character preferences and independent House fallbacks. Keep direct House
+calls, exact schemas and types without `as any`.
