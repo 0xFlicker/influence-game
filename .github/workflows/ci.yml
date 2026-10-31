@@ -300,10 +300,15 @@ jobs:
             -t ${{ matrix.image }}:${{ steps.sha.outputs.short }} \
             "${mutable_tag_args[@]}" \
             .
+          if [ "$PROOF_PUBLICATION" = true ] && [ "${{ matrix.target }}" != web ]; then
+            docker run --rm --entrypoint cat ${{ matrix.image }}:${{ steps.sha.outputs.short }} /app/deployment/render-execution.json > packaged-policy.json
+            cmp deployment/render-execution.json packaged-policy.json
+          fi
           if [ "${{ matrix.target }}" = "render-worker" ]; then
             docker run --rm --entrypoint sh ${{ matrix.image }}:${{ steps.sha.outputs.short }} -ec '
               ffmpeg -version >/dev/null
               chromium --version >/dev/null
+              timeout --version >/dev/null
               test "$(find /app/music/house-highlights-variants -name "*.m4a" | wc -l)" -ge 24
             '
           fi
