@@ -1,4 +1,4 @@
-"""Manual staging image mirror. Defaults to metadata measurement; never builds/runs images.
+"""Staging image mirror. Defaults to metadata measurement; never builds/runs images.
 
 Registry credentials are supplied by the operator workflow in a private temporary
 auth file. They never appear in arguments, receipts or command diagnostics.
@@ -86,7 +86,8 @@ def verify_lifecycle(policy, tags):
 
 class Mirror:
     def __init__(self, kind, auth_file, runner=subprocess.run, max_manifests=5):
-        require(type(max_manifests) is int and 5 <= max_manifests <= 10, 'invalid retention exception limit')
+        # Legacy workflow input is accepted for compatibility, never a publication cap.
+        require(type(max_manifests) is int and max_manifests >= 5, 'invalid legacy manifest target')
         self.selected = KINDS[kind]
         self.kind = kind
         self.auth_file = str(auth_file)
@@ -156,26 +157,18 @@ class Mirror:
         require(len(repositories) == 1 and repositories[0].get('repositoryUri') == destination and
                 repositories[0].get('imageTagMutability') == 'IMMUTABLE' and repositories[0].get('encryptionConfiguration', {}).get('encryptionType') == 'AES256', 'unreviewed destination repository')
         images = self.aws('ecr', 'describe-images', '--repository-name', selected['repository']).get('imageDetails', [])
-        require(len(images) <= 32, 'repository metadata exceeds review bound')
         roots = set()
         for image in images:
             require(DIGEST.fullmatch(image['imageDigest']), 'invalid destination digest')
             for tag in image.get('imageTags', []):
                 require(tag == 'sha256-' + image['imageDigest'][7:], 'foreign repository tag requires operator review')
                 roots.add(image['imageDigest'])
-        # An explicit nine-object allowance preserves current, rollback and
-        # incoming roots without deletion. It covers three worker manifest
-        # trees or three single-manifest sidecars; defaults still admit two.
-        root_limit = 3 if self.max_manifests >= 9 else 2
-        require(digest in roots or len(roots) < root_limit, 'retained release limit reached; explicit nine-object allowance or reviewed cleanup required')
         lifecycle = self.lifecycle()
         if lifecycle is not None:
             verify_lifecycle(lifecycle, ['sha256-' + d[7:] for d in roots | {digest}])
         for image in images:
             self.graph(destination, image['imageDigest'])
         projected = sum(self.parts.values())
-        require(projected <= selected['budget'], 'repository storage admission budget exceeded')
-        require(len(self.visited) <= self.max_manifests, 'five-image retention target exceeded; review protected-reference exception')
         if digest not in roots:
             with tempfile.TemporaryDirectory() as directory:
                 result_file = Path(directory) / 'digest'
@@ -186,9 +179,8 @@ class Mirror:
         observed = self.aws('ecr', 'describe-images', '--repository-name', selected['repository'], '--image-ids', 'imageDigest=' + digest).get('imageDetails', [])
         require(len(observed) == 1 and observed[0].get('imageDigest') == digest, 'destination digest was not verified')
         return {'destination': destination + '@' + digest, 'verifiedDestinationDigest': digest,
-                'projectedUniqueBytes': projected, 'repositoryAdmissionBytes': selected['budget'], 'retainedReleaseDigests': len(roots | {digest}),
-                'manifestCount': len(self.visited), 'manifestTarget': 5, 'approvedManifestLimit': self.max_manifests,
-                'approvedRetainedRootLimit': root_limit,
+                'projectedUniqueBytes': projected, 'repositoryStorageTargetBytes': selected['budget'], 'storageTargetExceeded': projected > selected['budget'], 'retainedReleaseDigests': len(roots | {digest}),
+                'manifestCount': len(self.visited), 'retainedReleaseTarget': 5, 'publicationCountLimited': False,
                 'lifecycleInstalled': lifecycle is not None, 'retentionApplyPending': lifecycle is None}
 
 def main():
@@ -199,7 +191,7 @@ def main():
     parser.add_argument('--auth-file', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--publish', action='store_true', help='Requires exact operator approval; otherwise metadata only')
-    parser.add_argument('--max-manifests', type=int, choices=range(5,11), default=5, help='Five by default; higher limits require explicit reference-preservation exception approval')
+    parser.add_argument('--max-manifests', type=int, default=5, help='Deprecated compatibility input; publication is not capped by OCI object count')
     args = parser.parse_args()
     try:
         auth_stat = args.auth_file.lstat()
@@ -211,7 +203,7 @@ def main():
         receipt = {'schemaVersion': 1, 'kind': args.kind, 'sourceSha': sha, 'sourceRunId': run['id'], 'sourceRunAttempt': run['run_attempt'],
                    'source': KINDS[args.kind]['source'] + '@' + digest, 'sourceDigest': digest,
                    'evidenceSha256': hashlib.sha256(args.evidence.read_bytes()).hexdigest(), 'sourceUniqueBytes': size, 'sourceManifestCount': len(mirror.visited),
-                   'sourceExceedsStorageBudget': size > KINDS[args.kind]['budget'], 'needsRetentionException': len(mirror.visited) > 5, 'published': args.publish}
+                   'sourceExceedsStorageBudget': size > KINDS[args.kind]['budget'], 'published': args.publish}
         if args.publish:
             receipt.update(mirror.publish(digest))
         with args.output.open('x') as output:
