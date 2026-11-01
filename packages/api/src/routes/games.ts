@@ -2,6 +2,7 @@ import {CURRENT_INFLUENCE_GAME_SCHEMA_VERSION} from "@influence/engine/influence
 import { CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION } from "@influence/engine/influence-decision-speech";
 import { houseFullBodyUrl } from "@influence/engine/house-character-art";
 import { audioReadySequence } from "../services/audio-frontier.js";
+import { readGamePresentation } from "../services/game-presentation.js";
 import { CURRENT_EMPOWER_REVOTE_VERSION, resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import { creationModelRouting, GameModelRoutingError } from "../services/game-model-routing.js";
 import { DEFAULT_CONVERSATION_POLICY } from "@influence/engine";
@@ -1088,6 +1089,13 @@ export function createGameRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
   // GET /api/games/:id/replay-watch-frames — trusted replay or live catch-up frames
   // -------------------------------------------------------------------------
+
+  app.get("/api/games/:id/presentation", async (c) => {
+    const afterSequence = Number(c.req.query("afterSequence") ?? 0);
+    if (![afterSequence].every(value => Number.isSafeInteger(value) && value >= 0)) return c.json({ error: "Invalid presentation cursor" }, 400);
+    const result = await readGamePresentation(db, c.req.param("id"), afterSequence);
+    return result ? c.json(result) : c.json({ error: "Game presentation not found" }, 404);
+  });
 
   app.get("/api/games/:id/replay-watch-frames", async (c) => {
     const idOrSlug = c.req.param("id");
