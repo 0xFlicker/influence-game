@@ -42,7 +42,7 @@ for role in gateway game-worker; do
     -e JWT_SECRET=provider-free-image-check-secret-only \
     -e ADMIN_ADDRESS=0x1111111111111111111111111111111111111111 \
     -e MANAGED_AUTH_MODE=disabled -e INFLUENCE_API_STARTUP_MODE=validation \
-    -e INFLUENCE_API_ROLE="$role" "$image" >/dev/null
+    -e INFLUENCE_API_ROLE="$role" -e INFLUENCE_DEPLOYMENT_ENVIRONMENT=prod "$image" >/dev/null
   healthy=false
   for attempt in {1..120}; do
     if docker exec "$api" bun -e '
