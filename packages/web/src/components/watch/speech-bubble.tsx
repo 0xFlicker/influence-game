@@ -1,5 +1,6 @@
 "use client";
 import type {CSSProperties} from "react";
+import {normalizeAudioDelivery} from "@influence/engine/audio-delivery";
 import type {BubbleTypography} from "./bubble-typography";
 import {TimedSpeech} from "@/app/games/[slug]/components/timed-speech";
 import type {SceneFrame} from "@/app/games/[slug]/components/visual-scene-layout";
@@ -19,7 +20,7 @@ export function SpeechBubble({speaker, caption, roleLabel, text, box, opacity, t
       {roleLabel && <p className="h-5 text-white/50">{caption}</p>}
     </div>
     <blockquote className="flex min-h-0 flex-1 flex-col">
-      {staticSpeech ? <p className="break-words" style={{fontSize:typography?.fontSize,lineHeight:1.4}}>{text}</p>
+      {staticSpeech ? <p className="break-words" style={{fontSize:typography?.fontSize,lineHeight:1.4}}>{normalizeAudioDelivery(text).cleanText}</p>
         : <TimedSpeech text={text} elapsedMs={elapsedMs} typography={typography}/>}
     </blockquote>
     <span aria-hidden="true" data-speech-tail className={`absolute h-4 w-4 rotate-45 border-white/25 bg-black ${tail.side === "left" ? "-left-2 border-l border-b" : tail.side === "bottom" ? "-bottom-2 border-r border-b" : "-top-2 border-l border-t"}`} style={tail.style}/>

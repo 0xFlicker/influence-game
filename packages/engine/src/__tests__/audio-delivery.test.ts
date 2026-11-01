@@ -37,11 +37,29 @@ describe("audio delivery normalization", () => {
     });
   }
 
-  test("does not mistake unknown brackets, math, HTML or escaped examples for delivery tags", () => {
-    const source = "[Ada] [unknown] <candidate>Ada</candidate> <3 &lt;soft&gt; 2 < 3 > 1";
+  test("preserves unknown square brackets, math and escaped examples", () => {
+    const source = "[Ada] [unknown] [a thoughtful aside] <3 &lt;soft&gt; 2 < 3 > 1";
     const result = normalizeAudioDelivery(source);
     expect(result.cleanText).toBe(source);
     expect(result.annotations).toEqual([]);
+  });
+
+  test.each([
+    ["<warm>Haiku, quite the elegant puzzle.</warm>", "Haiku, quite the elegant puzzle."],
+    ["<voice:tone mood=\"a > b\"><WARM>🐺Ada</WARM></voice:tone><br/>", "🐺Ada"],
+    ["<tag_2 x='a > b'>A</tag_2><tag.name />B", "AB"],
+    ["<warm>A<soft>B</soft></warm>[unknown]", "AB[unknown]"],
+  ])("strips unsupported XML while preserving speech and evidence: %s", (source, clean) => {
+    const result = compileAudioDelivery(source, "speech");
+    expect(result.sourceText).toBe(source);
+    expect(result.cleanText).toBe(clean);
+    expect(result.synthesisText).toBe(source.includes("<soft>") ? "A<soft>B</soft>[unknown]" : clean);
+    expect(result.diagnostics.some(item => item.code === "unsupported-control")).toBe(true);
+    expect(result.sourceMap.map(span => source.slice(span.sourceStart, span.sourceEnd)).join("")).toBe(clean);
+    for (const span of result.sourceMap) {
+      expect(source.slice(span.sourceStart, span.sourceEnd)).toBe(clean.slice(span.textStart, span.textEnd));
+    }
+    expect(normalizeAudioDelivery(result.synthesisText).cleanText).toBe(clean);
   });
 
   test("maps Unicode and repeated words back to their exact original spans", () => {

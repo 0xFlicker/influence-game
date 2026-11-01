@@ -221,6 +221,13 @@ test("audio source keeps accepted night speech tags at their later reveal",async
  const after=await readAudioSource(db,gameId);
  expect(after.lines.find(row=>row.momentId===line.momentId)?.synthesisText).toBe(delivery.synthesisText);
  expect(after.lines.find(row=>row.momentId===line.momentId)?.text).toBe(line.text);
+ // Older private annotations can contain unsupported wrappers. Clean new
+ // synthesis from them without replacing the saved annotation or source text.
+ const historical = {...delivery, synthesisText:`<warm>${delivery.synthesisText}</warm>`};
+ await db.update(schema.providerLogicalCalls).set({audioDelivery:await storeJson({version:1,fields:[{path:["text"],delivery:historical}]})}).where(eq(schema.providerLogicalCalls.id,"night-call"));
+ const cleaned=await readAudioSource(db,gameId);
+ expect(cleaned.lines.find(row=>row.momentId===line.momentId)?.synthesisText).toBe(delivery.synthesisText);
+ expect(cleaned.lines.find(row=>row.momentId===line.momentId)?.text).toBe(line.text);
 });
 
 test("a newly started Influence audio game can pass its empty accepted prefix",async()=>{

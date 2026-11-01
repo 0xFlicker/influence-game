@@ -165,7 +165,7 @@ export async function readAudioSource(db: DrizzleDB | Parameters<Parameters<Driz
       : !call.turnId && typeof sequence === "number" && sequence <= throughEventSequence && (line.annotationSequence ?? line.eventSequence) === sequence))) {
       const fields = delivery.fields.filter(field => field.delivery.cleanText === line.text && field.delivery.context === line.context);
       if (fields.length > 1 && new Set(fields.map(field => field.delivery.synthesisText)).size > 1) throw new Error("Ambiguous accepted audio annotations");
-      if (fields[0]) line.synthesisText = fields[0].delivery.synthesisText;
+      if (fields[0]) line.synthesisText = compileAudioDelivery(fields[0].delivery.synthesisText, line.context).synthesisText;
     }
   }
   return { version: 1, gameId, throughEventSequence, lines };

@@ -50,6 +50,8 @@ import { HOUSE_CAST } from "./house-personas";
  * its clean-text limit remains 2,000 UTF-16 code units.
  * Thinking prefers higher-pitch by day, lower-pitch at night; night speech softly
  * guides delivery without forced wrapping. No TTS or audio DSP occurs here.
+ * XML-style tags are removed from clean speech/thinking; unknown square brackets
+ * remain literal. Original provider responses remain private evidence.
  * Influence decision speech uses strict message fields; ballots, format picks and
  * tiebreaks omit thinking. Sealed ballots collect concurrently, then reveal in
  * roster order only after every dispatched call has settled and saved evidence.

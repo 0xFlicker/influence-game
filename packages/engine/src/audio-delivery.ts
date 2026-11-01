@@ -2,7 +2,7 @@
  * Vocabulary checked against https://docs.x.ai/developers/model-capabilities/audio/text-to-speech
  * on 2026-10-24. Bump the version when normalization or the vocabulary changes.
  */
-export const AUDIO_DELIVERY_VERSION = 1;
+export const AUDIO_DELIVERY_VERSION = 2;
 export const AUDIO_WRAPPING_TAGS = [
   "soft", "whisper", "loud", "build-intensity", "decrease-intensity",
   "higher-pitch", "lower-pitch", "slow", "fast", "sing-song", "singing", "emphasis",
@@ -18,7 +18,8 @@ export type AudioDeliveryContext = "speech" | "night-speech" | "thinking" | "nig
 /** Explicit schema-owned field paths; * visits array items only, never arbitrary object keys. */
 export interface AudioDeliveryPolicy { fields: readonly string[]; nighttime: boolean }
 export interface AcceptedAudioDelivery {
-  version: typeof AUDIO_DELIVERY_VERSION;
+  /** Stored v1 evidence remains readable; new normalization emits v2. */
+  version: 1 | typeof AUDIO_DELIVERY_VERSION;
   fields: Array<{ path: string[]; delivery: CompiledAudioDelivery }>;
 }
 
@@ -62,7 +63,7 @@ export type AudioDeliveryAnnotation =
   | { kind: "wrap"; tag: AudioWrappingTag; textStart: number; textEnd: number }
   | { kind: "inline"; tag: AudioInlineTag; textStart: number };
 export interface AudioDeliveryDiagnostic {
-  code: "malformed-control" | "unmatched-control" | "crossed-control" | "empty-wrapper" | "duplicate-wrapper";
+  code: "unsupported-control" | "malformed-control" | "unmatched-control" | "crossed-control" | "empty-wrapper" | "duplicate-wrapper";
   sourceStart: number;
   sourceEnd: number;
 }
@@ -70,7 +71,7 @@ export interface AudioDeliveryDiagnostic {
  * Only cleanText belongs in presentation or subsequent contestant context.
  */
 export interface AudioDeliveryDocument {
-  version: typeof AUDIO_DELIVERY_VERSION;
+  version: 1 | typeof AUDIO_DELIVERY_VERSION;
   sourceText: string;
   cleanText: string;
   sourceMap: AudioTextSpan[];
@@ -94,7 +95,7 @@ type Token = {
 type Piece = { text: string } | { token: number };
 
 /** Tolerant, iterative normalization. Broken delivery controls are diagnostics,
- * never structured-decision failures. Unknown bracketed prose is left literal.
+ * never structured-decision failures. XML tags are removed; unknown square-bracketed prose stays literal.
  * No trimming, whitespace collapsing, punctuation rewriting or HTML decoding.
  */
 export function normalizeAudioDelivery(sourceText: string): AudioDeliveryDocument {
@@ -118,16 +119,22 @@ export function normalizeAudioDelivery(sourceText: string): AudioDeliveryDocumen
   const diagnose = (token: Pick<Token, "sourceStart" | "sourceEnd">, code: AudioDeliveryDiagnostic["code"]) => {
     diagnostics.push({ code, sourceStart: token.sourceStart, sourceEnd: token.sourceEnd });
   };
-  // Unknown prose stays literal; recognized controls with attributes or a
-  // missing final delimiter are inert. Never eat words after an unfinished tag.
-  const candidates = /<\/?([a-zA-Z][a-zA-Z-]*)(?:\s+[^<>]*|\s*\/)?\s*>|\[\/?([a-zA-Z][a-zA-Z-]*)(?:\s+[^\[\]]*)?\]|<\/?([a-zA-Z][a-zA-Z-]*)$|\[\/?([a-zA-Z][a-zA-Z-]*)$/gu;
+  // Strip XML-style tags, including namespaced names and quoted attributes.
+  // Unknown square brackets stay literal. Never eat words after an unfinished tag.
+  const candidates = /<\/?([a-zA-Z_][\w:.-]*)(?:\s+(?:[^<>"']|"[^"]*"|'[^']*')*)?\s*\/?>|\[\/?([a-zA-Z][a-zA-Z-]*)(?:\s+[^\[\]]*)?\]|<\/?([a-zA-Z][a-zA-Z-]*)$|\[\/?([a-zA-Z][a-zA-Z-]*)$/gu;
   for (const match of sourceText.matchAll(candidates)) {
     const raw = match[0];
     const name = (match[1] ?? match[2] ?? match[3] ?? match[4])!;
     const tag = name.toLowerCase();
     const isWrapper = wrapping.has(tag);
     const isInline = inline.has(tag);
-    if (!isWrapper && !isInline) continue;
+    if (!isWrapper && !isInline) {
+      if (!raw.startsWith("<") || !raw.endsWith(">")) continue;
+      append(cursor, match.index);
+      cursor = match.index + raw.length;
+      diagnostics.push({ code: "unsupported-control", sourceStart: match.index, sourceEnd: cursor });
+      continue;
+    }
     append(cursor, match.index);
     cursor = match.index + raw.length;
     const closing = raw.startsWith("</");
@@ -250,5 +257,6 @@ export function audioDeliveryGuidance(nighttime: boolean): string {
       ? "Prefer <soft> around nighttime speech and <lower-pitch> around nighttime thinking; other tags and mixtures are welcome."
       : "Prefer <higher-pitch> around thinking; other tags and mixtures are welcome.",
     "Use tags sparingly and only in requested speech/thinking fields. Never add a thinking field when it is absent from the schema. Preserve the exact requested JSON shape. Do not put tags in IDs, targets, votes or other machine-interpreted fields.",
+    "Use only the listed delivery tags; do not invent XML tags such as <warm> or bracketed emotion labels.",
   ].join("\n");
 }
