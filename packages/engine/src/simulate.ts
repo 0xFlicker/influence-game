@@ -4,6 +4,11 @@
 import {CURRENT_INFLUENCE_GAME_SCHEMA_VERSION} from "./influence-game-schema";
 import { HOUSE_CAST } from "./house-personas";
 /**
+ * House Cuts v3 are postgame editorial cards: summaries and paraphrases retain
+ * audience-scoped source references, not exact-text requirements. Evaluate via
+ * the localhost Cuts API harness; retain journals, native reasoning, failures,
+ * accepted cards and cumulative recovery costs. No direct House-call bypass.
+ *
  * Hosted OpenAI Flex capacity retries the same model on explicit standard (default).
  * API availability exhaustion durably delays the same turn, then suspends; it never
  * invents ballots or skips required speech. Retain each attempt and its tier-aware cost.

@@ -703,3 +703,9 @@ per-character preferences and independent House fallbacks. Keep direct House
 calls, exact schemas and types without `as any`.
 
 Visual Mode permits text-only contestant models, including preferred and recovery routes. Each provider attempt sends scene images only to image-capable models; text-only models receive canonical room participants, observable cues, and performance instructions. Private request evidence records the actual adapted context.
+
+### House Cuts editorial evaluation
+
+House Cuts v3 lets the House paraphrase and publish independently valid cards; exact quotation matching and overlapping-source rejection are removed. The final House invocation edits finished cards. An explicit editorial zero is distinct from exhausted generation. See [the source and recovery contract](solutions/architecture-patterns/house-cuts-editorial-source-boundaries.md).
+
+For an explicitly approved paid evaluation, use `packages/api/src/scripts/evaluate-house-cuts.ts` with a fresh localhost `influence_cuts_eval_*` PostgreSQL database, local private object storage, `DRIZZLE_MIGRATIONS_DIR=packages/api/drizzle`, OpenAI credentials and `CUTS_EVALUATION_OUTPUT`. It exercises authenticated HTTP recovery and published API reads, with three $0.75 audience ceilings. Retain the database and private evidence files; never run it against production or the shared test database. Keep source/game IDs, every sanitized attempt, available native reasoning, rejected responses and usage. No `as any` or direct-House-call bypasses.

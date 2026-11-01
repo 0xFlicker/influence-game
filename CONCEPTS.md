@@ -1004,3 +1004,7 @@ New Influence games freeze root `gameSchemaVersion: 2` and decision contract v3.
 Ballots request a private explanation to the House in **one sentence or less**, within the shared 320-byte speech allowance, without a thinking field. These explanations stay out of contestant dialogue and appear only at their canonical spectator reveal. Continue retaining structured thinking, available native reasoning and sanitized attempts; do not parse speech into game facts, use `as any`, or bypass direct House calls.
 
 Unversioned/root-v1 games retain their original execution order and remain viewable. Their chain scenes skip missing speech/thinking. New-root playback checks event ownership and speech consumption; unsupported records stop playback with a diagnostic rather than producing a generic event card. This does not stop the game.
+
+### House Cuts editorial cards
+
+A House Cut is a postgame, player-focused editorial card. The House may summarize, paraphrase, combine and polish dialogue. Audience-scoped source references provide provenance and replay navigation; code derives ordering and attribution without interpreting prose. Discovery proposes finished cards; a final House pass edits and selects zero to five. One card is success; explicit editorial zero is success; exhausted generation is not zero. Invalid cards are isolated from valid siblings. Private recovery revisions preserve attempts and cumulative audience spending.

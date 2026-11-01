@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { createLlmProviderRuntimesFromEnv, type LlmProviderRuntime } from "../llm-client";
 import { resolveProviderManifest } from "../model-catalog";
 import { executeModelInvocation } from "../provider-adapters";
-import { ProviderExecutionCoordinator, isFlexCapacityFailure, type ProviderAttemptIntent, type ProviderAttemptRecord } from "../provider-execution";
+import { ProviderAttemptError, ProviderExecutionCoordinator, isFlexCapacityFailure, type ProviderAttemptIntent, type ProviderAttemptRecord } from "../provider-execution";
 import { createExactStructuredOutputArtifact, type StructuredDomainDecodeResult } from "../structured-output";
 import { estimateCostForKnownModel, estimateTierAwareOpenAICost } from "../token-tracker";
-import { CUT_EDITORIAL_MODEL, CUT_EDITORIAL_VERSION, CUT_EDITORIAL_PROMPT, CUT_PROPOSAL_SCHEMA, discoverCuts, planCutDiscovery, type DiscoveryReport } from "./editorial";
-import { CUT_SELECTION_PROMPT, CUT_SELECTION_SCHEMA, validateCutSelection } from "./selection";
+import { CUT_EDITORIAL_MODEL, CUT_EDITORIAL_VERSION, CUT_EDITORIAL_PROMPT, CUT_PROPOSAL_SCHEMA, discoverCuts, planCutDiscovery } from "./editorial";
+import { CUT_SELECTION_PROMPT, CUT_SELECTION_SCHEMA, cutSelectionWindow, validateCutSelection } from "./selection";
 import type { CutSource } from "./source";
 
 export const CUT_TRIAL_LIMITS = { maxCalls: 40, maxInputBytesPerCall: 32_000, maxOutputTokensPerCall: 4_000 };
@@ -22,6 +23,8 @@ export interface CutTrialJournal {
   binding: string;
   budgetUsd: number;
   attempts: CutTrialAttempt[];
+  /** Explicit recovery keeps every previous receipt and charges it to the same audience budget. */
+  recovery?: { key: string; previous: CutTrialJournal; failure: string | null; requestedBy: string; requestedAt: string };
 }
 function binding(source: CutSource) {
   return createHash("sha256").update(JSON.stringify({ source, version: CUT_EDITORIAL_VERSION, model: CUT_EDITORIAL_MODEL, prompt: CUT_EDITORIAL_PROMPT, schema: CUT_PROPOSAL_SCHEMA, selectionPrompt: CUT_SELECTION_PROMPT, selectionSchema: CUT_SELECTION_SCHEMA, limits: CUT_TRIAL_LIMITS })).digest("hex");
@@ -33,8 +36,9 @@ export function newCutTrialJournal(source: CutSource, budgetUsd: number): CutTri
 }
 
 /** Unknown/failed transport usage retains the full reservation; never call it free. */
-export function cutTrialSpend(journal: CutTrialJournal) {
-  return journal.attempts.reduce((n, a) => n + (a.estimatedCostUsd ?? a.reservedUsd), 0);
+export function cutTrialSpend(journal: CutTrialJournal): number {
+  return (journal.recovery ? cutTrialSpend(journal.recovery.previous) : 0)
+    + journal.attempts.reduce((n, a) => n + (a.estimatedCostUsd ?? a.reservedUsd), 0);
 }
 function reserveCost(inputBytes: number, outputTokens: number) {
   // One token per UTF-8 byte plus envelope allowance deliberately over-reserves input.
@@ -66,7 +70,12 @@ function artifact<T>(request: TrialInvocation<T>) {
   };
   return createExactStructuredOutputArtifact<unknown, T>({ action: CUT_EDITORIAL_VERSION,
     name: "house_cut_candidates", schema: request.schema, acceptedValueUsesProviderSchema: true,
-    decodeProviderPayload: decode, decodeAcceptedValue: decode });
+    independentItemArray: "candidates",
+    decodeProviderPayload: decode, decodeAcceptedValue: value => {
+      const result = decode(value);
+      return result.status === "valid" && !isDeepStrictEqual(result.value, value)
+        ? { status: "invalid", message: "Accepted House Cuts changed after validation" } : result;
+    } });
 }
 export function createCutTrialRuntimes(env: NodeJS.ProcessEnv = process.env) {
   const runtimes = createLlmProviderRuntimesFromEnv(resolveProviderManifest([{ catalogId: CUT_EDITORIAL_MODEL, reasoningPolicy: "low" }]), env,
@@ -85,10 +94,13 @@ export async function runCutTrial(options: {
   if (runtimes.length !== 1 || runtimes[0]?.catalogId !== CUT_EDITORIAL_MODEL) throw new Error("Editorial trial requires its approved model");
   if (journal.attempts.some(a => !a.terminal)) throw new Error("A prior dispatch has an unknown outcome. Inspect the journal before starting another trial; it may have incurred cost.");
   const plan = planCutDiscovery(source, CUT_TRIAL_LIMITS);
+  if (!plan.windows.length) throw new Error("House Cuts has no source windows; no editorial decision was made");
   const remaining = plan.windows.filter(w => !journal.attempts.some(a => a.windowId === w.id && a.terminal?.acceptedValue !== undefined));
   const upper = remaining.reduce((n, w) => n + 3 * reserveCost(Buffer.byteLength(JSON.stringify(w)) + 8000, plan.maxOutputTokensPerCall), 0);
   if (cutTrialSpend(journal) + upper > journal.budgetUsd) throw new Error(`Full trial with retries exceeds $${journal.budgetUsd} budget. No calls started.`);
-  return discoverCuts(source, request => executeCutTrialInvocation(options, request), CUT_TRIAL_LIMITS);
+  const report = await discoverCuts(source, request => executeCutTrialInvocation(options, request), CUT_TRIAL_LIMITS);
+  if (!report.candidates.length && report.failures.length) throw new Error(`House Cuts discovery produced no cards after ${report.failures.length} failed windows; this is not an editorial zero`);
+  return report;
 }
 
 export async function executeCutTrialInvocation<T>(options: {
@@ -102,6 +114,12 @@ export async function executeCutTrialInvocation<T>(options: {
     progress?.(request.window.id);
     const attempts = () => journal.attempts.filter(a => a.windowId === request.window.id);
     const capacityAttempts = () => attempts().filter(a => a.terminal && isFlexCapacityFailure(a.terminal)).length;
+    if (!attempts().some(a => a.terminal?.acceptedValue !== undefined)
+      && (attempts().at(-1)?.terminal?.disposition === "exhausted" || attempts().length - capacityAttempts() >= 2)) {
+      const terminal = attempts().at(-1)?.terminal;
+      if (terminal && terminal.outcome.kind !== "usable") throw new ProviderAttemptError(terminal);
+      throw new Error("Exhausted House Cuts window has no terminal failure receipt");
+    }
     const coordinator = new ProviderExecutionCoordinator({ hooks: {
       async onResolveOpenAIServiceTier() {
         const failure = attempts().findLast(a => a.terminal && isFlexCapacityFailure(a.terminal))?.terminal;
@@ -134,8 +152,10 @@ export async function executeCutTrialInvocation<T>(options: {
       action: "house_cut_discovery", semantic: { version: 1, kind: "house_cut_discovery", sourceHash: source.hash,
         windowId: request.window.id, editorialVersion: CUT_EDITORIAL_VERSION } });
     const execute = () => executeModelInvocation({ call, runtimes, maxAttempts: 2, requestSignalFactory: () => options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000),
-      invocation: { messages: [{ role: "system", content: request.prompt }, { role: "user", content: JSON.stringify(request.window) }],
-        result: { kind: "structured", artifact: artifact(request) }, outputTokenLimit: request.maxOutputTokens, reasoning: { effort: "low" } },
+      invocation: () => ({ messages: [{ role: "system", content: request.prompt }, { role: "user", content: JSON.stringify(request.window) },
+        ...attempts().filter(a => a.terminal?.outcome.kind === "malformed_output").slice(-1).map(a => ({ role: "system" as const,
+          content: `The previous response was rejected: ${JSON.stringify(a.terminal!.outcome)}. Correct it using the supplied references and required schema. Return zero cards only if that is your editorial choice.` }))],
+        result: { kind: "structured", artifact: artifact(request) }, outputTokenLimit: request.maxOutputTokens, reasoning: { effort: "low" } }),
       validate: (_outcome, value) => value ? { status: "usable", value }
         : { status: "unusable", kind: "undecodable_structured_output", message: "Missing Cut batch" },
     });
@@ -147,16 +167,11 @@ export async function executeCutTrialInvocation<T>(options: {
 }
 
 
-export async function runAutomaticCutTrial(options: Parameters<typeof runCutTrial>[0]): Promise<{ report: DiscoveryReport; selectedKeys: string[] }> {
+export async function runAutomaticCutTrial(options: Parameters<typeof runCutTrial>[0]) {
   const report = await runCutTrial(options);
-  if (!report.candidates.length) return { report, selectedKeys: [] };
-  const window = { id: "selection", audience: report.source.audience, cast: report.source.cast,
-    candidates: report.candidates.map(c => ({ key: c.key, proposal: c.proposal })), evidence: report.source.evidence };
-  if (Buffer.byteLength(JSON.stringify(window)) > 128_000) throw new Error("Selection context exceeds budget; no incomplete selection published");
+  if (!report.candidates.length) return { report, selection: { sourceHash: report.source.hash, windowId: "selection", candidates: [] } };
+  const window = { ...cutSelectionWindow(report), candidates: report.candidates.map(c => c.proposal) };
   const selected = await executeCutTrialInvocation(options, { prompt: CUT_SELECTION_PROMPT, schema: CUT_SELECTION_SCHEMA,
-    window, maxOutputTokens: 1000, accept: value => {
-      const selectedKeys = validateCutSelection(value, report);
-      return { selectedKeys };
-    } });
-  return { report, selectedKeys: selected.decoded.selectedKeys };
+    window, maxOutputTokens: 6000, accept: value => validateCutSelection(value, report) });
+  return { report, selection: selected.decoded };
 }

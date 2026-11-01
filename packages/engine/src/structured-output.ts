@@ -30,6 +30,8 @@ export interface ExactStructuredOutputArtifactInput<TProviderPayload, TValue> {
    * their dedicated decoder instead.
    */
   acceptedValueUsesProviderSchema?: boolean;
+  /** Independently publishable items: reject malformed items, never repair them or manufacture an empty result. */
+  independentItemArray?: string;
   /** Preserve opaque optional performance metadata separately from exact gameplay validation. */
   optionalPerformanceCue?: boolean;
   audioDelivery?: AudioDeliveryPolicy;
@@ -51,6 +53,7 @@ export interface ExactStructuredOutputArtifact<TValue> {
     value: unknown,
   ) => StructuredDomainDecodeResult<TValue>;
   readonly acceptedValueUsesProviderSchema: boolean;
+  readonly independentItemArray?: string;
   readonly optionalPerformanceCue: boolean;
   readonly audioDelivery?: AudioDeliveryPolicy;
 }
@@ -225,6 +228,7 @@ export function createExactStructuredOutputArtifact<TProviderPayload, TValue>(
     decodeProviderPayload: (payload: unknown) => input.decodeProviderPayload(payload as TProviderPayload),
     decodeAcceptedValue: input.decodeAcceptedValue,
     acceptedValueUsesProviderSchema: input.acceptedValueUsesProviderSchema ?? false,
+    ...(input.independentItemArray && { independentItemArray: input.independentItemArray }),
     optionalPerformanceCue: input.optionalPerformanceCue ?? false,
     ...(input.audioDelivery && { audioDelivery: deepFreeze(structuredClone(input.audioDelivery)) }),
   });
@@ -369,7 +373,28 @@ export class ExactStructuredOutputRegistry {
       representation === "provider"
       || artifact.acceptedValueUsesProviderSchema
     ) {
-      const schemaResult = this.validateProviderSchema(artifact, value);
+      let schemaResult = this.validateProviderSchema(artifact, value);
+      // A complete parsed document may contain independent cards. Preserve the exact
+      // native schema and raw response; drop only items with item-local schema errors.
+      // Envelope errors and an all-invalid collection remain failed attempts.
+      if (schemaResult && representation === "provider" && artifact.independentItemArray && isDecisionRecord(value)) {
+        const field = artifact.independentItemArray;
+        const items = value[field];
+        const invalid = new Set<number>();
+        const itemOnly = schemaResult.issues.every(issue => {
+          const [root, index] = issue.instancePath.split("/").slice(1);
+          if (root !== field || index === undefined || !/^\d+$/.test(index)) return false;
+          invalid.add(Number(index));
+          return true;
+        });
+        if (itemOnly && invalid.size && Array.isArray(items)) {
+          const remaining = items.filter((_, index) => !invalid.has(index));
+          if (remaining.length) {
+            const candidate = { ...value, [field]: remaining };
+            if (!this.validateProviderSchema(artifact, candidate)) { value = candidate; schemaResult = undefined; }
+          }
+        }
+      }
       if (schemaResult) return representation === "provider" && schemaResult.feedback && isDecisionRecord(rejectedDecision)
         ? { ...schemaResult, feedback: { ...schemaResult.feedback, rejectedDecision } }
         : schemaResult;

@@ -21,8 +21,8 @@ const source = influenceCutSource(input.events, input.dialogue, "fixture-influen
 const limits = { maxCalls: 100, maxInputBytesPerCall: 32_000, maxOutputTokensPerCall: 4_000 };
 const window = planCutDiscovery(source, limits).windows[0]!;
 const batch = (w: CutWindow = window): CutProposalBatch => ({ sourceHash: w.sourceHash, windowId: w.id, candidates: [{ id: "warm-audit", title: "A warm audit", context: "Trust meets a question.", angle: "An affectionate contradiction.", payoff: null,
-  sourceRefs: w.evidence.slice(0, 2).map(e => e.id), participantIds: w.evidence.slice(0, 2).flatMap(e => e.participantIds),
-  quotes: w.evidence.slice(0, 2).map(e => ({ sourceRef: e.id, excerpt: e.content.kind === "dialogue" ? e.content.text : "" })), factRefs: [], rationale: "A standalone exchange." }] });
+  sourceRefs: w.evidence.slice(0, 2).map(e => e.id),
+  quotes: w.evidence.slice(0, 2).map(e => ({ sourceRef: e.id, excerpt: e.content.kind === "dialogue" ? e.content.text : "" })), rationale: "A standalone exchange." }] });
 
  test("Influence adapter strips private fields and refuses guessed identity/replay positions", () => {
   const withSecrets = input.dialogue.map(e => ({ ...e, thinking: "PRIVATE_THINKING", reasoningContext: "RAW_REASONING" }));
@@ -70,20 +70,25 @@ const batch = (w: CutWindow = window): CutProposalBatch => ({ sourceHash: w.sour
   for (const invalid of ["not JSON", "{}", "```json\n{}\n```", {}, { candidates: [] }, { ...batch(), extra: true }]) test(`reject malformed output ${JSON.stringify(invalid).slice(0, 45)}`, () => {
     expect(() => validateCutProposals(invalid, window)).toThrow("Invalid Cut output");
   });
-  test("reject invented quote, source, participant and fact; schema extras and omissions", () => {
-    const changes = [
-      (b: ReturnType<typeof batch>) => { b.candidates[0]!.quotes[0]!.excerpt = "A made-up admission"; },
-      (b: ReturnType<typeof batch>) => { b.candidates[0]!.sourceRefs[0] = "another-game"; },
-      (b: ReturnType<typeof batch>) => { b.candidates[0]!.participantIds[0] = "not-a-player"; },
-      (b: ReturnType<typeof batch>) => { b.candidates[0]!.factRefs = [window.evidence[0]!.id]; },
-      (b: ReturnType<typeof batch>) => { b.candidates[0]!.sourceRefs.reverse(); },
-      (b: ReturnType<typeof batch>) => { b.sourceHash = "other-audience"; },
-      (b: ReturnType<typeof batch>) => { b.windowId = "other-window"; },
-      (b: ReturnType<typeof batch>) => { Object.assign(b.candidates[0]!, { invented: true }); },
-      (b: ReturnType<typeof batch>) => { Reflect.deleteProperty(b.candidates[0]!, "payoff"); },
-      (b: ReturnType<typeof batch>) => { b.candidates.push(structuredClone(b.candidates[0]!)); },
-    ];
-    for (const mutate of changes) { const b = batch(); mutate(b); expect(() => validateCutProposals(b, window)).toThrow(); }
+  test("reject foreign references and malformed envelopes", () => {
+    for (const mutate of [
+      (b: CutProposalBatch) => { b.candidates[0]!.sourceRefs[0] = "another-game"; },
+      (b: CutProposalBatch) => { b.candidates[0]!.quotes[0]!.sourceRef = "another-audience"; },
+      (b: CutProposalBatch) => { b.sourceHash = "other-audience"; },
+      (b: CutProposalBatch) => { b.windowId = "other-window"; },
+      (b: CutProposalBatch) => { Object.assign(b.candidates[0]!, { invented: true }); },
+      (b: CutProposalBatch) => { Reflect.deleteProperty(b.candidates[0]!, "payoff"); },
+    ]) { const value = batch(); mutate(value); expect(() => validateCutProposals(value, window)).toThrow(); }
+  });
+  test("paraphrases and unordered sources work; invalid cards do not reject valid siblings", () => {
+    const value = batch();
+    value.candidates[0]!.quotes[0]!.excerpt = "Trust, with a little vote-counting on the side.";
+    value.candidates[0]!.sourceRefs.reverse();
+    value.candidates.push({ ...value.candidates[0]!, id: "bad", sourceRefs: ["foreign"] });
+    const accepted = validateCutProposals(value, window);
+    expect(accepted.candidates).toHaveLength(1);
+    expect(accepted.candidates[0]!.sourceRefs).toEqual(batch().candidates[0]!.sourceRefs);
+    expect(accepted.candidates[0]!.quotes[0]!.excerpt).toContain("vote-counting");
   });
  });
 
@@ -110,7 +115,7 @@ const batch = (w: CutWindow = window): CutProposalBatch => ({ sourceHash: w.sour
   }, limits)).rejects.toThrow("Invalid Cut output");
  });
 
- test("selection keeps single/empty stories, explains rejected duplicates and validates ranking", async () => {
+ test("local review allows overlapping stories and validates ranking", async () => {
   const report = await discoverCuts(source, async request => ({ decoded: request.window.id === window.id ? batch(request.window)
     : { sourceHash: request.window.sourceHash, windowId: request.window.id, candidates: [] }, kind: "fixture", costUsd: 0 }), limits);
   expect(editCutSelection(report, []).selected).toHaveLength(0);
@@ -118,7 +123,7 @@ const batch = (w: CutWindow = window): CutProposalBatch => ({ sourceHash: w.sour
   const duplicate = { ...first, key: "alternate", proposal: { ...first.proposal, title: "Another angle" } };
   report.candidates.push(duplicate);
   const selection = editCutSelection(report, [first.key, duplicate.key]);
-  expect(selection.selected).toHaveLength(1); expect(selection.rejected[0]!.reason).toContain("Overlapping");
+  expect(selection.selected).toHaveLength(2); expect(selection.rejected).toHaveLength(0);
   expect(() => editCutSelection(report, ["missing"])).toThrow();
   expect(() => editCutSelection(report, [first.key, first.key])).toThrow();
  });
@@ -172,7 +177,7 @@ const batch = (w: CutWindow = window): CutProposalBatch => ({ sourceHash: w.sour
   const packet = planCutDiscovery(mystery, limits).windows.find(w => w.evidence[0]?.group === "night:1")!;
   const fact = packet.evidence.find(e => e.content.kind === "fact")!;
   expect(fact.participantIds).toEqual([]);
-  const candidate = { ...batch().candidates[0]!, title: "Everyone made it to morning", sourceRefs: [fact.id], participantIds: [], quotes: [], factRefs: [fact.id] };
+  const candidate = { ...batch().candidates[0]!, title: "Everyone made it to morning", sourceRefs: [fact.id], quotes: [] };
   expect(validateCutProposals({ sourceHash: packet.sourceHash, windowId: packet.id, candidates: [candidate] }, packet).candidates).toHaveLength(1);
-  expect(() => validateCutProposals({ sourceHash: packet.sourceHash, windowId: packet.id, candidates: [{ ...candidate, factRefs: [] }] }, packet)).toThrow("no quote or fact");
+  expect(validateCutProposals({ sourceHash: packet.sourceHash, windowId: packet.id, candidates: [candidate] }, packet).candidates[0]!.quotes).toHaveLength(0);
  });

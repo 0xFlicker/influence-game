@@ -22,7 +22,7 @@ async function fixture() {
   return { id, slug };
 }
 const generate: NonNullable<Parameters<typeof runHouseCutJob>[1]> = async ({ source }) => ({
-  report: await discoverCuts(source, async r => ({ decoded: { sourceHash: source.hash, windowId: r.window.id, candidates: [] }, kind: "fixture", costUsd: 0 }), { maxCalls: 100, maxInputBytesPerCall: 32000, maxOutputTokensPerCall: 4000 }), selectedKeys: [],
+  report: await discoverCuts(source, async r => ({ decoded: { sourceHash: source.hash, windowId: r.window.id, candidates: [] }, kind: "fixture", costUsd: 0 }), { maxCalls: 100, maxInputBytesPerCall: 32000, maxOutputTokensPerCall: 4000 }), selection: { sourceHash: source.hash, windowId: "selection", candidates: [] },
 });
 test("completion enqueue is idempotent; direct reads and MCP never queue paid work", async () => {
   const { id, slug } = await fixture();
