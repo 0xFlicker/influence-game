@@ -70,44 +70,18 @@ class MirrorTests(unittest.TestCase):
         self.repo['imageTagMutability'] = 'MUTABLE'
         with self.assertRaisesRegex(ValueError, 'repository'): self.mirror.publish(self.digest)
         self.assertFalse(any('copy' in a for a in self.calls))
-    def test_two_retained_releases_and_foreign_tags_require_operator_review(self):
+    def test_foreign_tags_still_require_review(self):
         self.mirror.measure(self.digest)
-        self.images = [{'imageDigest':'sha256:'+c*64,'imageTags':['sha256-'+c*64]} for c in ['a','b']]
-        with self.assertRaisesRegex(ValueError, 'retained release limit'): self.mirror.publish(self.digest)
         self.images = [{'imageDigest':self.digest,'imageTags':['latest']}]
         with self.assertRaisesRegex(ValueError, 'foreign'): self.mirror.publish(self.digest)
         self.assertFalse(any('copy' in a for a in self.calls))
-    def test_storage_admission_blocks_before_copy(self):
+    def test_storage_target_reports_without_blocking_release_or_deleting(self):
         self.mirror.measure(self.digest)
         self.mirror.selected = {**self.mirror.selected, 'budget': 1}
-        with self.assertRaisesRegex(ValueError, 'storage'): self.mirror.publish(self.digest)
-        self.assertFalse(any('copy' in a for a in self.calls))
-    def test_third_sidecar_root_requires_explicit_allowance_and_counts_real_objects(self):
-        manifests={}; roots=[]
-        for n in range(3):
-            raw,digest=body_digest({'schemaVersion':2,'mediaType':'application/vnd.oci.image.manifest.v1+json',
-                'config':{'digest':'sha256:'+hashlib.sha256(str(n).encode()).hexdigest(),'size':100},
-                'layers':[{'digest':'sha256:'+'d'*64,'size':1024}]})
-            manifests[digest]=raw; roots.append(digest)
-        self.identity['Arn']=self.identity['Arn'].replace('WorkerImagePublisher','TailnetImagePublisher')
-        self.repo['repositoryUri']=self.repo['repositoryUri'].replace('-worker','-tailnet')
-        self.images=[{'imageDigest':d,'imageTags':['sha256-'+d[7:]]} for d in roots[:2]]
-        self.digest=roots[2]; self.copied_digest=self.digest
-        self.lifecycle={'rules':[{'rulePriority':i+1,'selection':{'tagStatus':'tagged','tagPatternList':['sha256-'+d[7:]],'countType':'imageCountMoreThan','countNumber':1}} for i,d in enumerate(roots)]}
-        self.lifecycle['rules'].append({'rulePriority':4,'selection':{'tagStatus':'any','countType':'imageCountMoreThan','countNumber':5}})
-        def runner(argv,**kwargs):
-            if '--raw' in argv:return SimpleNamespace(returncode=0,stdout=manifests[argv[-1].split('@')[1]])
-            return self.runner(argv,**kwargs)
-        default=m.Mirror('tailnet','/private/test-auth',runner);default.measure(self.digest)
-        with self.assertRaisesRegex(ValueError,'retained release limit'):default.publish(self.digest)
-        self.assertFalse(any('copy' in a for a in self.calls))
-        explicit=m.Mirror('tailnet','/private/test-auth',runner,max_manifests=9);explicit.measure(self.digest)
-        result=explicit.publish(self.digest)
-        self.assertEqual(result['manifestCount'],3);self.assertEqual(result['retainedReleaseDigests'],3)
-        self.assertEqual(result['approvedRetainedRootLimit'],3)
+        receipt = self.mirror.publish(self.digest)
+        self.assertTrue(receipt['storageTargetExceeded'])
+        self.assertTrue(any('copy' in a for a in self.calls))
         self.assertFalse(any(any('delete' in x.lower() for x in a) for a in self.calls))
-        self.images.append({'imageDigest':self.digest,'imageTags':['sha256-'+self.digest[7:]]})
-        with self.assertRaisesRegex(ValueError,'retained release limit'):explicit.publish('sha256:'+'e'*64)
     def test_existing_verified_digest_is_idempotent_and_never_deleted(self):
         self.mirror.measure(self.digest)
         self.images = [{'imageDigest':self.digest,'imageTags':['sha256-'+self.digest[7:]]}]
@@ -138,7 +112,7 @@ class MirrorTests(unittest.TestCase):
         mirror=m.Mirror('worker','/private/test-auth',runner)
         self.assertEqual(mirror.measure(root_digest),len(self.raw)+len(other)+len(root)+100+200+1024)
         self.assertEqual(len(mirror.visited),3)
-    def test_five_counts_manifests_not_tags_and_exception_requires_explicit_limit(self):
+    def test_multiarch_dependencies_do_not_block_publication(self):
         manifests={}
         children=[]
         for i in range(5):
@@ -153,40 +127,34 @@ class MirrorTests(unittest.TestCase):
             return self.runner(argv,**kwargs)
         mirror=m.Mirror('worker','/private/test-auth',runner)
         mirror.measure(digest)
-        with self.assertRaisesRegex(ValueError,'five-image'):mirror.publish(digest)
-        self.assertFalse(any('copy' in a for a in self.calls))
-        mirror.max_manifests=6
         self.assertEqual(mirror.publish(digest)['manifestCount'],6)
-    def test_third_worker_root_requires_nine_object_allowance_and_preserves_all_references(self):
+        self.assertFalse(any(any('delete' in x.lower() for x in a) for a in self.calls))
+
+    def test_fourth_worker_root_can_copy_without_deleting_retained_trees(self):
         manifests={}; roots=[]; inventories=[]
-        for family in range(3):
+        for family in range(4):
             children=[]
             for child in range(2):
                 raw,digest=body_digest({'schemaVersion':2,'mediaType':'application/vnd.oci.image.manifest.v1+json',
                     'config':{'digest':'sha256:'+hashlib.sha256(f'{family}-{child}'.encode()).hexdigest(),'size':100},
                     'layers':[{'digest':'sha256:'+'d'*64,'size':1024}]})
                 manifests[digest]=raw; children.append({'digest':digest,'platform':{'os':'linux','architecture':'amd64'}})
-                if family<2:inventories.append({'imageDigest':digest})
+                if family<3:inventories.append({'imageDigest':digest})
             raw,root=body_digest({'schemaVersion':2,'mediaType':'application/vnd.oci.image.index.v1+json','manifests':children})
             manifests[root]=raw; roots.append(root)
-            if family<2:inventories.append({'imageDigest':root,'imageTags':['sha256-'+root[7:]]})
-        self.images=inventories; self.digest=roots[2]; self.copied_digest=self.digest
+            if family<3:inventories.append({'imageDigest':root,'imageTags':['sha256-'+root[7:]]})
+        self.images=inventories; self.digest=roots[3]; self.copied_digest=self.digest
         self.lifecycle={'rules':[{'rulePriority':n+1,'selection':{'tagStatus':'tagged','tagPatternList':['sha256-'+d[7:]],'countType':'imageCountMoreThan','countNumber':1}} for n,d in enumerate(roots)]
             +[{'rulePriority':4,'selection':{'tagStatus':'any','countType':'imageCountMoreThan','countNumber':5}}]}
         def runner(argv,**kwargs):
             if '--raw' in argv:return SimpleNamespace(returncode=0,stdout=manifests[argv[-1].split('@')[1]])
             return self.runner(argv,**kwargs)
-        for limit in [5,6,8]:
-            mirror=m.Mirror('worker','/private/test-auth',runner,max_manifests=limit);mirror.measure(self.digest)
-            with self.assertRaisesRegex(ValueError,'retained release limit'):mirror.publish(self.digest)
-        self.assertFalse(any('copy' in a for a in self.calls))
-        mirror=m.Mirror('worker','/private/test-auth',runner,max_manifests=9);mirror.measure(self.digest)
+        mirror=m.Mirror('worker','/private/test-auth',runner);mirror.measure(self.digest)
         result=mirror.publish(self.digest)
-        self.assertEqual(result['manifestCount'],9);self.assertEqual(result['retainedReleaseDigests'],3)
-        self.assertEqual(result['approvedRetainedRootLimit'],3)
+        self.assertEqual(result['manifestCount'],12)
+        self.assertEqual(result['retainedReleaseDigests'],4)
+        self.assertFalse(result['publicationCountLimited'])
         self.assertFalse(any(any('delete' in arg.lower() for arg in call) for call in self.calls))
-        self.images.append({'imageDigest':'sha256:'+'e'*64,'imageTags':['sha256-'+'e'*64]})
-        with self.assertRaisesRegex(ValueError,'retained release limit'):mirror.publish(self.digest)
 
 class EvidenceTests(unittest.TestCase):
     def setUp(self):

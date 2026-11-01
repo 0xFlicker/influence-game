@@ -34,30 +34,17 @@ cross-repository GHCR access or a permanent registry credential. Temporary
 registry auth files are private and removed; errors suppress credential-bearing
 tool diagnostics. Nothing runs on PRs except credential-free helper tests.
 
-Each private repository targets **five image/manifest objects**, not five tags,
-and admits at most two deployment roots (current and rollback). Multi-architecture
-indexes, platform manifests and attestations all count. The default limit is five;
-the manual `max_manifests` input may be increased, up to ten, only after explicit
-approval of a protected-reference exception. The helper surfaces the count and
-stops before copying when the chosen limit would be exceeded. Before copy,
-the helper walks all source/destination manifest metadata and deduplicates
-compressed layers/configs/manifests. Worker repository admission is capped at
-3 GiB; sidecar admission is 512 MiB. The combined conservative storage allowance
-is about $0.376/month at $0.10 per decimal GB-month, before credits/tax. Actual
-bytes are recorded in measurement and publication receipts. The helper stops
-before a third retained release or budget overflow; publisher roles cannot
-delete images. Operator-approved, release-aware cleanup must preserve current
-and rollback references. No age-based lifecycle can silently delete them.
-If a lifecycle policy is installed, publication also requires exact higher-priority
-protections for every current/rollback and incoming digest tag before copying.
-Missing policies are reported as pending apply; the publisher cannot install or
-delete a policy. Native previews and deletion confirmation remain operator steps.
-These are admission limits, not AWS billing caps: failed uploads/concurrent
-administrator writes can leave additional transient storage requiring review.
+The retention target is five release images, with current, running and rollback
+images preserved. OCI indexes, platform manifests and attestations are dependencies
+of a release image; their physical object count is reported, not a pre-publication
+limit. Publication must not wait for asynchronous lifecycle expiration. The legacy
+`max_manifests` input remains accepted for workflow compatibility and has no admission
+effect. Compressed unique bytes and the former storage target remain visible in the
+receipt so storage growth can be monitored without blocking a valid release.
 
-Repository/role creation, the staging execution boundary update, tailnet policy,
-OAuth/SSM credential installation and paid proof remain separate action-time
-confirmations. Four standard SecureString parameters use `alias/aws/ssm`; no
-registry Secrets Manager entry is needed. No subscription or company-tailnet
-migration is part of this setup. See the companion FalseFloor infra approval
-packet and the linode-iac isolated proof runbook before activation.
+The mirror still verifies the exact source and destination digest, publisher identity,
+immutable destination repository, and lifecycle protection of retained/incoming roots.
+It never deletes images. The existing policy pins previously reviewed digests; those
+pins do not rotate themselves. Until automated reference rotation is installed,
+additive protection can admit a new release without deleting an old one. This is a
+safe transition, not a claim that routine unused-image cleanup is complete.
