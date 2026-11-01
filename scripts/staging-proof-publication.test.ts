@@ -121,3 +121,14 @@ test('ordinary staging activates only after successful source CI and verified mi
   expect(JSON.stringify(release.jobs.release.steps)).not.toContain('workflow_run.head_sha');
   expect(ci.jobs['trigger-deploy']).toBeUndefined();
 });
+
+test('reusable publication receipts are attempt bound and preserve main-only AWS scope', () => {
+  const workflow = Bun.YAML.parse(readFileSync('.github/workflows/staging-renderer-ecr.yml', 'utf8'));
+  expect(workflow.on.workflow_call.inputs.source_run_attempt.type).toBe('string');
+  expect(workflow.jobs.mirror.if).toContain("github.ref == 'refs/heads/main'");
+  const aws = workflow.jobs.mirror.steps.find((step: Step) => step.name === 'Assume the dedicated publisher only for an approved copy');
+  expect(JSON.stringify(aws)).toContain('HouseRenderStagingWorkerImagePublisher');
+  const receipt = workflow.jobs.mirror.steps.find((step: Step) => step.name === 'Upload attempt-bound worker publication evidence');
+  expect(receipt.with.name).toBe('staging-worker-publication-${{ github.run_id }}-${{ github.run_attempt }}');
+  expect(receipt.with.path).toBe('mirror-receipt.json');
+});

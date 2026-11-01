@@ -30,7 +30,7 @@ class SourceTests(unittest.TestCase):
     def test_tooling_only_ci_does_not_redeploy(self):
         self.count=0;self.assertEqual(m.select_release(self.run,self.request),{'eligible':'false'})
     def test_untrusted_or_nonterminal_source_never_downloads(self):
-        for key,value in [('status','in_progress'),('conclusion','failure'),('head_branch','other'),('event','pull_request'),('repository',{'id':1}),('head_repository',{'id':1}),('proofSource',{'purpose':'isolated-staging-render-proof'})]:
+        for key,value in [('status','in_progress'),('conclusion','failure'),('head_branch','other'),('event','pull_request'),('repository',{'id':1}),('head_repository',{'id':1}),('head_repository',{}),('proofSource',{'purpose':'isolated-staging-render-proof'})]:
             with self.subTest(key=key),self.assertRaises(ValueError):m.select_release({**self.run,key:value},lambda _:self.fail('untrusted source downloaded'))
     def test_wrong_attempt_or_family_rejected(self):
         for key,value in [('build_run_attempt',3),('candidate_sha','f'*40),('images',{'api':{'digest':'sha256:'+'c'*64}})]:
