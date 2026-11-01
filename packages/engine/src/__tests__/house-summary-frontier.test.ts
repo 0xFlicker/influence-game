@@ -144,7 +144,7 @@ const diaryEntries = [{
 
 function compile(beatClass: "ordinary" | "milestone") {
   const events = formatPickEvents();
-  return compileHouseNarrationContext({
+  return compileHouseNarrationContext({playerGendersById: {},
     actorCoordinate: "format_pick",
     round: 1,
     phase: Phase.FORMAT_PICK,
@@ -271,7 +271,7 @@ describe("House narration context V2", () => {
         },
       }),
     ];
-    const context = compileHouseNarrationContext({
+    const context = compileHouseNarrationContext({playerGendersById: {},
       actorCoordinate: "format_resolve",
       round: 1,
       phase: Phase.FORMAT_RESOLVE,
@@ -362,7 +362,7 @@ describe("House narration context V2", () => {
         payload: { playerId: BLAIR, message: "Unprojected payload canary" },
       }),
     ];
-    const context = compileHouseNarrationContext({
+    const context = compileHouseNarrationContext({playerGendersById: {},
       actorCoordinate: "council",
       round: 1,
       phase: Phase.COUNCIL,
@@ -449,7 +449,7 @@ describe("House narration context V2", () => {
   expect(context.resultFocus).toMatchObject({sequence:5,type:"format.selected",data:{selectedFormat:{id:"short_list"}}});
   expect(context.resultFocus?.rule).toContain("fewest");
   const events = formatPickEvents();
-  const noResult = compileHouseNarrationContext({actorCoordinate:"lobby",round:1,phase:Phase.LOBBY,beatClass:"ordinary",events,projection:replayCanonicalEvents(events),transcript:[],diaryEntries:[],afterCanonicalSequence:0,afterDialogueSequence:0});
+  const noResult = compileHouseNarrationContext({playerGendersById: {},actorCoordinate:"lobby",round:1,phase:Phase.LOBBY,beatClass:"ordinary",events,projection:replayCanonicalEvents(events),transcript:[],diaryEntries:[],afterCanonicalSequence:0,afterDialogueSequence:0});
   expect(noResult.resultFocus).toBeNull();
 });
 
@@ -459,12 +459,12 @@ it.each([1,2] as const)("MC revote focus uses the final assignment and frozen v%
   state.startRound();
   state.recordVote("a","b");state.recordVote("b","a");state.recordVote("c","a");state.recordVote("d","b");
   state.tallyEmpowerVotes();
-  const unresolved=compileHouseNarrationContext({actorCoordinate:"vote",round:1,phase:Phase.VOTE,beatClass:"milestone",events:state.getCanonicalEvents(),projection:state.getDomainProjection(),transcript:[],diaryEntries:[],afterCanonicalSequence:0,afterDialogueSequence:0,empowerRevoteVersion:version});
+  const unresolved=compileHouseNarrationContext({playerGendersById: {},actorCoordinate:"vote",round:1,phase:Phase.VOTE,beatClass:"milestone",events:state.getCanonicalEvents(),projection:state.getDomainProjection(),transcript:[],diaryEntries:[],afterCanonicalSequence:0,afterDialogueSequence:0,empowerRevoteVersion:version});
   expect(unresolved.resultFocus).toBeNull();
   state.clearEmpowerVote("c");state.clearEmpowerVote("d");
   state.recordEmpowerReVote("c","a");state.recordEmpowerReVote("d","a");
   state.setEmpowered("a","revote");
-  const context=compileHouseNarrationContext({actorCoordinate:"vote",round:1,phase:Phase.VOTE,beatClass:"milestone",events:state.getCanonicalEvents(),projection:state.getDomainProjection(),transcript:[],diaryEntries:[],afterCanonicalSequence:0,afterDialogueSequence:0,empowerRevoteVersion:version});
+  const context=compileHouseNarrationContext({playerGendersById: {},actorCoordinate:"vote",round:1,phase:Phase.VOTE,beatClass:"milestone",events:state.getCanonicalEvents(),projection:state.getDomainProjection(),transcript:[],diaryEntries:[],afterCanonicalSequence:0,afterDialogueSequence:0,empowerRevoteVersion:version});
   expect(context.resultFocus).toMatchObject({sequence:state.getCanonicalEvents().at(-1)!.sequence,type:"vote.empowered_set",data:{empowered:"A",method:"revote",counts:version===1?[{player:"A",value:3},{player:"B",value:1}]:[{player:"A",value:2},{player:"B",value:0}]}});
 });
 
@@ -476,7 +476,7 @@ it.each(["save_or_eliminate_clear","vote_bomb_clear","majority_elimination_tie",
   if (!resolved || resolved.type!=="format.resolved") throw new Error("Resolved fixture required");
   const canonical:Extract<CanonicalGameEvent,{type:"format.resolved"}>={...resolved,gameId:GAME_ID,source:"phase",visibility:"public",payloadVersion:2,sourcePointers:[]};
   const projection=new GameState(fixture.roster,{gameId:GAME_ID}).getDomainProjection();
-  const context=compileHouseNarrationContext({actorCoordinate:"format_resolve",round:canonical.round,phase:Phase.FORMAT_RESOLVE,beatClass:"milestone",events:[canonical],projection,transcript:[],diaryEntries:[],afterCanonicalSequence:0,afterDialogueSequence:0});
+  const context=compileHouseNarrationContext({playerGendersById: {},actorCoordinate:"format_resolve",round:canonical.round,phase:Phase.FORMAT_RESOLVE,beatClass:"milestone",events:[canonical],projection,transcript:[],diaryEntries:[],afterCanonicalSequence:0,afterDialogueSequence:0});
   expect(context.resultFocus?.data.aggregate).toEqual(resolved.payload.aggregate);
   expect(context.resultFocus?.rule).toBeTruthy();
   expect(context.resultFocus?.sequence).toBe(resolved.sequence);

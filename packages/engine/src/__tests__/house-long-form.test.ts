@@ -33,6 +33,7 @@ function context(): HouseGameplaySummaryContext {
         dialogueHead: 80,
       },
       material: true,
+      playerGendersById: {},
       playerNamesById: {},
       canonicalEvents: [],
       projection: null,

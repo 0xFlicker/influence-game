@@ -4,7 +4,7 @@ import { FORMAT_PRESENTATION_METADATA, displayNameForFormat } from "./format-pre
 import { formatSurfaceId, type FormatSurfaceId } from "./format-vocabulary";
 import type { CanonicalGameProjection } from "./game-projection";
 import type { StructuredDomainDecodeResult } from "./structured-output";
-import { Phase, type UUID } from "./types";
+import { Phase, type AgentGender, type UUID } from "./types";
 
 /** House narrative state is presentation continuity, never game-state authority. */
 export const HOUSE_NARRATIVE_CONTINUITY_VERSION = 2 as const;
@@ -182,6 +182,8 @@ export interface HouseNarrationContext {
   material: boolean;
   /** One roster lookup for any canonical payload fields that still carry player IDs. */
   playerNamesById: Record<string, string>;
+  /** Frozen game identity, supplied on every beat including after the roster delta. */
+  playerGendersById: Record<string, AgentGender | null>;
   canonicalEvents: HouseNarrationCanonicalEvent[];
   projection: HouseNarrationProjection | null;
   publicDialogue: HouseNarrationDialogue[];
@@ -191,6 +193,7 @@ export interface HouseNarrationContext {
 }
 
 export interface CompileHouseNarrationContextInput {
+  playerGendersById: Readonly<Record<string, AgentGender | null>>;
   empowerRevoteVersion?:EmpowerRevoteVersion;
   actorCoordinate: HouseSummaryActorCoordinate;
   round: number;
@@ -648,6 +651,7 @@ export function compileHouseNarrationContext(input: CompileHouseNarrationContext
     material: canonicalEvents.length > 0 || projection !== null || publicDialogue.length > 0
       || privateDialogueAndDecisions.length > 0 || diaryEntries.length > 0,
     playerNamesById,
+    playerGendersById: Object.fromEntries(input.projection.playerOrder.map(id => [id, input.playerGendersById[id] ?? null])),
     canonicalEvents,
     projection,
     publicDialogue,

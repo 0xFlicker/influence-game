@@ -210,3 +210,7 @@ Final local validation:
 - Additional focused tests cover frozen revote rules, six format result families, live metadata arrival, short recorded announcements, text recovery, ten-second buffering recovery, retained winner speech, and frozen/fresh Studio selection.
 
 No deployment, historical speech regeneration, image-generation spend, or paid provider evaluation was performed. The drain prerequisite and real-voice quality review remain deployment/evaluation responsibilities, respectively.
+
+### Frozen identity correction
+
+Every House summary prompt receives `playerGendersById` from the frozen game roster, independent of the canonical delta and including exited players. Missing gender stays null; the House uses names instead of guessing and honors explicitly stated pronouns. Earlier summaries and notebooks cannot override frozen identity. Existing accepted speech and recordings are preserved. Tests cover all stored gender values, omitted/null historical values, later beats, and provider request propagation.

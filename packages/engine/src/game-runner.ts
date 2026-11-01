@@ -2937,6 +2937,7 @@ export class GameRunner {
       continuity.examinedCanonicalHead,
     );
     const narrationContext = compileHouseNarrationContext({
+      playerGendersById: Object.fromEntries(context.gameState.getAllPlayers().map(player => [player.id, player.gender ?? null])),
       empowerRevoteVersion: context.gameState.empowerRevoteVersion,
       actorCoordinate,
       round,
