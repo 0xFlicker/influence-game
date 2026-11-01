@@ -49,3 +49,13 @@ No development, staging, or production conversion or deployment was performed.
 Only disposable local test databases and fixture images were used. Historical
 Influence games without a pinned image identity may keep opaque art. Transient
 image errors may leave an image temporarily blank, but cannot select opaque art.
+
+## Browser fallback regression follow-up
+
+The Format viewer CI job exposed three outdated browser assertions: the opening
+test counted only the failed image GET, omitting its confirming HEAD; both Two
+Names tests expected a network abort to select a portrait. Tests now distinguish
+transient failures from confirmed 404s and check both policies on desktop and
+mobile. The four affected Chromium cases passed locally after the branch's merge
+from main. Typecheck/lint passed; the provider-free baseline again passed 3,217
+tests with 5 skips. This follow-up changes tests and documentation only.
