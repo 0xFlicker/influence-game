@@ -1,12 +1,11 @@
 // Development-only generator; the checked-in schemas have no generator runtime dependency.
-// Pass the absolute module path of typescript-json-schema@0.65.1 (see W2 review).
 const path = require("node:path");
-const modulePath = process.argv[2];
-if (!modulePath)
-  throw Error("Pass an absolute path to typescript-json-schema@0.65.1");
-if (require(path.join(modulePath, "package.json")).version !== "0.65.1")
+const check = process.argv.includes("--check");
+if (process.argv.slice(2).some(argument => argument !== "--check"))
+  throw Error("Usage: bun run mcp:schemas [--check]");
+if (require("typescript-json-schema/package.json").version !== "0.65.1")
   throw Error("Use the pinned generator version 0.65.1");
-const TJS = require(modulePath);
+const TJS = require("typescript-json-schema");
 const fs = require("fs");
 const root = path.resolve(__dirname, "..");
 // The generator embeds TS 5.5; use the repository compiler as the authority
@@ -60,7 +59,12 @@ for (const schema of Object.values(out)) {
       definition.additionalProperties = { type: "string" };
   }
 }
-fs.writeFileSync(
-  root + "/packages/api/src/game-mcp/house-output-schemas.json",
-  JSON.stringify(out, null, 2) + "\n",
-);
+const outputPath = root + "/packages/api/src/game-mcp/house-output-schemas.json";
+const generated = JSON.stringify(out, null, 2) + "\n";
+if (check) {
+  if (fs.readFileSync(outputPath, "utf8") !== generated)
+    throw Error("House MCP output schemas are stale. Run bun run mcp:schemas and commit the regenerated schema.");
+  console.log("House MCP output schemas are current.");
+} else {
+  fs.writeFileSync(outputPath, generated);
+}

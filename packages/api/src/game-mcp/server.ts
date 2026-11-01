@@ -11,6 +11,7 @@ import { readHouseCuts } from "../services/house-cut-publication.js";
 import { readHouseGameRetrospective, type RetrospectiveReadInput } from "../services/house-game-retrospective.js";
 import { resumeHouseGameRetrospective, type HouseRetrospectiveResumeInput } from "../services/house-retrospective-recovery.js";
 import { houseContent, houseInputSchemas, houseOutputSchemas, isHouseTool, validateHouseInput } from "./house-contracts.js";
+import { assertMcpToolResult } from "./output-validation.js";
 import { HouseInspectionError, type HouseCollection } from "../services/house-game-access.js";
 import { readHouseGame, readHouseGameThinking, readHouseInspectionResults, type HouseInspectionInput, type HouseThinkingInput } from "../services/house-game-inspection.js";
 import { GenerationAdmissionError, generationContacts } from "../services/generation-admission-error.js";
@@ -222,16 +223,21 @@ export class ProductionGameMcpJsonRpcServer {
         auth,
         toolName,
       );
+      const result = await this.route(
+        request.method,
+        request.params,
+        auth,
+        eligibility,
+        toolName,
+      );
+      if (request.method === "tools/call" && toolName && eligibility) {
+        const descriptor = productionGameMcpTools(auth, eligibility).find(tool => tool.name === toolName);
+        if (descriptor?.outputSchema) assertMcpToolResult(toolName, descriptor.outputSchema, result);
+      }
       return {
         jsonrpc: "2.0",
         id: request.id ?? null,
-        result: await this.route(
-          request.method,
-          request.params,
-          auth,
-          eligibility,
-          toolName,
-        ),
+        result,
       };
     } catch (error) {
       return {
