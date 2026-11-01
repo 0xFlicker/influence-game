@@ -863,7 +863,7 @@ test.describe("format-aware game viewer", () => {
     await expect(left).toHaveAttribute("src", /stage-left.svg$/);
     await expect(right).toHaveAttribute("src", /stage-right.svg$/);
     await expect(left).toHaveCSS("filter", /blur\(8px\)/);
-    await expect(room).toHaveAttribute("data-panel-treatment", "focal");
+    await expect(room).toHaveAttribute("data-panel-treatment", "separate");
     await expect(room.getByRole("img")).toHaveCount(1);
     await room.screenshot({ path: testInfo.outputPath("room-content-edges.png") });
     await page.getByRole("button", { name: "Enter fullscreen", exact: true }).click();
@@ -902,7 +902,7 @@ test.describe("format-aware game viewer", () => {
     await room.screenshot({ path: testInfo.outputPath("room-at-strip-edge.png") });
   });
 
-  test("focal lobby camera centers successive speakers and blurs frame zero before it disappears", async ({ page }, testInfo) => {
+  test("separate lobby views keep full framing across speakers and blur outgoing scenes", async ({ page }, testInfo) => {
     await page.clock.install();
     await page.addInitScript(() => Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: false }));
     await page.setViewportSize({ width: 1920, height: 1080 });
@@ -926,7 +926,12 @@ test.describe("format-aware game viewer", () => {
     await page.getByRole("button", { name: "Enter fullscreen", exact: true }).click();
     await page.clock.runFor(1000);
     const speakerCenter = (x: number) => room.getByRole("img").evaluate((image, point) => { const rect = image.getBoundingClientRect(); return rect.left + rect.width * point; }, x);
-    expect(await speakerCenter(.2)).toBeCloseTo(960, 0);
+    await expect(room).toHaveAttribute("data-panel-treatment", "separate");
+    const firstFrame = (await room.getByRole("img").boundingBox())!;
+    expect(firstFrame.x + firstFrame.width / 2).toBeCloseTo(960, 0);
+    const roomFrame = (await room.boundingBox())!;
+    expect(firstFrame.x).toBeGreaterThanOrEqual(roomFrame.x);
+    expect(firstFrame.x + firstFrame.width).toBeLessThanOrEqual(roomFrame.x + roomFrame.width);
     await page.getByRole("button", { name: /Pause/ }).filter({ visible: true }).click();
     say(1);
     say(2);
@@ -942,7 +947,8 @@ test.describe("format-aware game viewer", () => {
     expect(focus).toBeLessThan(76);
     await page.clock.runFor(600);
     await expect(room.locator("[data-speech-bubble]")).toContainText("Accepted line 2.");
-    expect(await speakerCenter(.76)).toBeCloseTo(960, 0);
+    expect(await room.getByRole("img").boundingBox()).toEqual(firstFrame);
+    expect(await speakerCenter(.76)).toBeCloseTo(firstFrame.x + firstFrame.width * .76, 0);
     await room.screenshot({ path: testInfo.outputPath("centered-second-speaker.png") });
     await room.click();
     await page.clock.runFor(200);
@@ -959,7 +965,8 @@ test.describe("format-aware game viewer", () => {
     await page.clock.runFor(800);
     await expect(room.locator('[data-scene-exiting="true"]')).toHaveCount(0);
     await expect(room.getByRole("img")).toHaveAttribute("src", /camera-1.svg$/);
-    expect(await speakerCenter(.4)).toBeCloseTo(960, 0);
+    expect(await room.getByRole("img").boundingBox()).toEqual(firstFrame);
+    expect(await speakerCenter(.4)).toBeCloseTo(firstFrame.x + firstFrame.width * .4, 0);
     await expect(room.locator("[data-speech-bubble]")).toContainText("Accepted line 3.");
   });
 

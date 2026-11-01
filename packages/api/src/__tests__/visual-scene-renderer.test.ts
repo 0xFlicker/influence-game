@@ -9,7 +9,7 @@ import { initialGameTranscriptStateValues } from "../services/transcript-capture
 import { createInitialGameExecutionStateV1, initializeGameExecutionAuthority } from "../services/game-turn-commit.js";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import sharp from "sharp";
-import { planVisualScene, visualRenderGroups } from "@influence/engine/visual-scene-plan";
+import { planVisualScene, visualRoomCropGroups } from "@influence/engine/visual-scene-plan";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { prepareVisualScene, readCurrentVisualScene, storeVisualArtifact } from "../services/visual-scene-store.js";
@@ -67,17 +67,28 @@ test("renders and verifies a small scene once, then resumes entirely from durabl
   expect(await readVisualRenderAccounting(db, "game")).toMatchObject({ unpricedAttempts: 1, uncertainAttempts: 0 });
 });
 
-test("harmonizes multi-panel scenes, verifies the whole cast and retains original panels", async () => {
-  const planned = await scene(12);
+test.each([9, 10, 12, 14])("renders %i contestants into distinct room regions with no harmonization", async size => {
+  const bands = await sharp({ create: { width: 3072, height: 1536, channels: 3, background: "red" } }).composite([{ input: await sharp({ create: { width: 1536, height: 1536, channels: 3, background: "blue" } }).png().toBuffer(), left: 1536, top: 0 }]).png().toBuffer();
+  artifactId = await storeVisualArtifact(db, "game", bands);
+  const mock = globalThis.fetch, backdrops: string[] = [];
+  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).includes("/v1/images/")) {
+      const inputs = (init?.body as FormData).getAll("image[]");
+      expect(inputs.length).toBeLessThanOrEqual(5);
+      backdrops.push(Buffer.from(await (inputs[0] as Blob).arrayBuffer()).toString("base64"));
+    }
+    return mock(url, init);
+  }, { preconnect: originalFetch.preconnect });
+  const planned = await scene(size), count = Math.ceil(size / 4);
   const ready = await renderPlannedVisualScene(db, planned);
-  expect(ready.shots?.groups.flatMap(s => s.anchors)).toHaveLength(12);
-  expect(ready.shots?.mode).toBe("scene");
-  expect(ready.shots?.overview?.visibleParticipantIds).toHaveLength(12);
-  expect(ready.anchors).toHaveLength(12);
-  expect(imageCalls).toBe(visualRenderGroups(planned.plan).length + 1);
-  expect(visionCalls).toBe((visualRenderGroups(planned.plan).length + 1) * 3);
+  expect(ready.shots?.mode).toBe("groups");
+  expect(ready.shots?.overview).toBeNull();
+  expect(ready.shots?.groups.flatMap(s => s.visibleParticipantIds).sort()).toEqual(planned.plan.cast.map(m => m.id).sort());
+  expect(ready.shots?.groups).toHaveLength(count);
+  expect(new Set(backdrops).size).toBeGreaterThan(1);
+  expect([imageCalls, visionCalls]).toEqual([count, count * 3]);
   await renderPlannedVisualScene(db, planned);
-  expect(imageCalls).toBe(visualRenderGroups(planned.plan).length + 1);
+  expect([imageCalls, visionCalls]).toEqual([count, count * 3]);
 });
 
 test("failed identity verification pauses the scene without another automatic paid attempt", async () => {
@@ -100,7 +111,7 @@ test("loss of the boundary retains paid output but prevents subsequent dispatch 
   expect(await readVisualRenderAccounting(db, "game")).toMatchObject({ unpricedAttempts: 1, uncertainAttempts: 0 });
   const resumed = await renderPlannedVisualScene(db, planned);
   expect(resumed.status).toBe("ready");
-  expect(imageCalls).toBe(visualRenderGroups(planned.plan).length + 1);
+  expect(imageCalls).toBe(3);
 });
 
 test("checks the boundary again before xAI availability fallback", async () => {
@@ -322,9 +333,9 @@ test("best effort discards a duplicate-filled group while keeping the other grou
   const ready = await renderPlannedVisualScene(db, planned, undefined, undefined, true);
   expect(ready.status).toBe("ready");
   expect(ready.shots?.mode).toBe("groups");
-  expect(ready.shots?.groups).toHaveLength(visualRenderGroups(planned.plan).length - 1);
+  expect(ready.shots?.groups).toHaveLength(visualRoomCropGroups(planned.plan).length - 1);
   expect(ready.imageArtifactId).toBe(ready.shots!.groups[0]!.imageArtifactId);
-  expect(ready.candidateArtifactId).not.toBe(ready.imageArtifactId);
+  expect(ready.candidateArtifactId).toBe(ready.imageArtifactId);
   expect(ready.plan.cast).toHaveLength(6);
   const callsBefore = imageCalls;
   expect((await renderPlannedVisualScene(db, ready, undefined, undefined, true)).id).toBe(ready.id);
@@ -332,57 +343,14 @@ test("best effort discards a duplicate-filled group while keeping the other grou
 });
 
 
-test("rejects a duplicated harmonized cast without losing original panels", async () => {
-  const mock = globalThis.fetch;
-  const planned = await scene(6);
-  const groupCount = visualRenderGroups(planned.plan).length;
-  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
-    if (String(url).endsWith("/responses") && imageCalls > groupCount) rejectIdentity = true;
-    return mock(url, init);
-  }, { preconnect: originalFetch.preconnect });
-  const ready = await renderPlannedVisualScene(db, planned);
-  expect(ready.status).toBe("ready");
-  expect(ready.shots?.mode).toBe("groups");
-  expect(ready.shots?.overview).toBeNull();
-  expect(ready.shots?.groups.flatMap(shot => shot.visibleParticipantIds)).toHaveLength(6);
-  expect((await loadPayloads(db.select().from(schema.visualOperationEvents))).some(event => event.event.message === "Harmonized image rejected; retaining verified original panels")).toBe(true);
+test("large-cast identity rejection retains the rejected region without harmonization", async () => {
+  rejectIdentity = true;
+  await expect(renderPlannedVisualScene(db, await scene(10))).rejects.toThrow("unexpected occupant count");
+  const stored = await readCurrentVisualScene(db, "game", "lobby");
+  expect(stored?.candidateArtifactId).toBeTruthy();
+  expect(stored?.status).toBe("failed");
+  expect([imageCalls, visionCalls]).toEqual([1, 1]);
 });
-
-test("harmonization strictly verifies all identities even under best effort", async () => {
-  const mock = globalThis.fetch;
-  const planned = await scene(6);
-  const groupCount = visualRenderGroups(planned.plan).length;
-  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
-    if (String(url).endsWith("/responses") && imageCalls > groupCount) {
-      expect(JSON.parse(String(init?.body)).text.format.schema.required).not.toContain("missingParticipantIds");
-    }
-    return mock(url, init);
-  }, { preconnect: originalFetch.preconnect });
-  const ready = await renderPlannedVisualScene(db, planned, undefined, undefined, true);
-  expect(ready.shots?.overview?.visibleParticipantIds).toHaveLength(6);
-  expect(ready.shots?.mode).toBe("scene");
-});
-
-
-test("optional harmonization provider failure retains verified panels and its receipt", async () => {
-  const mock = globalThis.fetch;
-  const planned = await scene(6);
-  const groups = visualRenderGroups(planned.plan).length;
-  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
-    if (String(url).includes("/v1/images/") && imageCalls >= groups) {
-      imageCalls += 1;
-      return Response.json({error:"Fixture rejection"}, {status:400});
-    }
-    return mock(url, init);
-  }, {preconnect:originalFetch.preconnect});
-  const ready = await renderPlannedVisualScene(db, planned);
-  expect(ready.status).toBe("ready");
-  expect(ready.shots?.mode).toBe("groups");
-  expect(ready.shots?.groups.flatMap(shot=>shot.visibleParticipantIds)).toHaveLength(6);
-  expect(imageCalls).toBe(groups + 1);
-  expect((await loadPayloads(db.select().from(schema.visualRenderAttempts))).some(attempt=>attempt.receipt?.status===400)).toBe(true);
-});
-
 
 test("huddle scenes reuse only an exact cast, freeze the speech binding, and leave ordinary rooms alone", async () => {
   const cast = Array.from({length: 3}, (_, i) => ({ id: `p${i}`, name: `Player ${i}`, referenceArtifactId: artifactId, performanceInstructions: "Calm" }));

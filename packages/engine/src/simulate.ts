@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 /** Visual Mode supports text-only routes using canonical room text and performance cues. */
+/** New room imagery populates distinct crops of one wide room; visible IDs describe each verified view, never change the canonical audience. */
 import {CURRENT_INFLUENCE_GAME_SCHEMA_VERSION} from "./influence-game-schema";
 import { HOUSE_CAST } from "./house-personas";
 /**
