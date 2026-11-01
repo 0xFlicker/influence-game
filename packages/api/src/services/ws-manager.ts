@@ -45,6 +45,7 @@ export interface PublicWsTranscriptEntry {
   speakerPlayerId?: string | null;
   presentationPurpose?: "farewell";
   acceptedBallot?: import("@influence/engine").TranscriptDialogueContext["acceptedBallot"];
+  houseResult?: import("@influence/engine").TranscriptDialogueContext["houseResult"];
   visualScene?: import("@influence/engine").TranscriptDialogueContext["visualScene"];
   /** Durable game-local transcript identity. Present on current-capture dialogue. */
   entrySequence?: number;
@@ -181,6 +182,7 @@ function buildPublicTranscriptEntry(entry: TranscriptEntry): PublicWsTranscriptE
     ...(!entry.anonymous && entry.speakerPlayerId && { speakerPlayerId: entry.speakerPlayerId }),
     ...(entry.entrySequence !== undefined && { entrySequence: entry.entrySequence }),
     ...(entry.dialogueContext?.acceptedBallot && { acceptedBallot: entry.dialogueContext.acceptedBallot }),
+    ...(entry.dialogueContext?.houseResult && { houseResult: entry.dialogueContext.houseResult }),
     ...(entry.dialogueContext?.visualScene && { visualScene: entry.dialogueContext.visualScene }),
     ...(entry.dialogueContext?.presentationPurpose && { presentationPurpose: entry.dialogueContext.presentationPurpose }),
     round: entry.round,

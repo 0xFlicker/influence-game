@@ -12,15 +12,18 @@ import {MediaAlignment} from "./media-alignment";
 export { matchesAudioWatch } from "./audio-watch-coordinate";
 
 /** HTML audio follows the existing director clock, including exact in-clip seeks. */
-export function useWatchVoice<C extends WatchCue>({ director, gameId, audience, thinking, coordinate, coordinateForCue, onPause, onSpeech, masterMuted = false, suspended = false, live = false }: {
+export function useWatchVoice<C extends WatchCue>({ director, gameId, audience, thinking, coordinate, coordinateForCue, onPause, onSpeech, masterMuted = false, suspended = false, live = false, allowTextFallback = false }: {
   director: PresentationDirector<C>; gameId: string; audience: ProductionAudience; thinking: boolean;
-  coordinate: AudioWatchCoordinate | null; coordinateForCue?: (cue:C)=>AudioWatchCoordinate|null; onPause: () => void; onSpeech?: (speaking:boolean,speakerId:string|null)=>void; live?: boolean; masterMuted?: boolean; suspended?:boolean;
+  coordinate: AudioWatchCoordinate | null; coordinateForCue?: (cue:C)=>AudioWatchCoordinate|null; onPause: () => void; onSpeech?: (speaking:boolean,speakerId:string|null)=>void; live?: boolean; masterMuted?: boolean; suspended?:boolean; allowTextFallback?:boolean;
 }) {
   const [muted, setMuted] = useState(false), [volume, setVolume] = useState(1), [error, setError] = useState<string | null>(null);
   const speechObserver = useRef(onSpeech);
   useEffect(()=>{speechObserver.current=onSpeech;},[onSpeech]);
   const [speaking, setSpeaking] = useState(false);
   const activeKey = director.getActiveCue()?.key;
+  const [textOnly, setTextOnly] = useState<ReadonlySet<string>>(new Set());
+  const textKey = `${gameId}:${activeKey}`;
+  const useText = allowTextFallback && textOnly.has(textKey);
   const player = useRef<HTMLAudioElement | null>(null);
   const resumePlayer = useRef<(() => boolean) | null>(null);
   const generation = useRef(0);
@@ -90,8 +93,8 @@ export function useWatchVoice<C extends WatchCue>({ director, gameId, audience, 
   const coordinateKey = JSON.stringify(coordinate);
   const clipKey = JSON.stringify(useMemo(() => {
     const position = JSON.parse(coordinateKey) as AudioWatchCoordinate | null;
-    return findClips(position);
-  },[findClips,coordinateKey]));
+    return useText ? [] : findClips(position);
+  },[findClips,coordinateKey,useText]));
   const clips = useMemo(() => JSON.parse(clipKey) as PublishedAudioClip[],[clipKey]);
   const speech = clips.filter(clip => clip.watch?.part === "speech"), thoughts = thinking ? clips.filter(clip => clip.watch?.part === "thinking") : [];
   const speechMs = speech.reduce((sum,clip) => sum+clip.durationMs,0), thinkingMs = thoughts.reduce((sum,clip) => sum+clip.durationMs,0);
@@ -104,20 +107,25 @@ export function useWatchVoice<C extends WatchCue>({ director, gameId, audience, 
       previousCues = cues;
       for (const cue of cues) {
         const position = coordinateForCue(cue);
-        const matches = findClips(position);
+        const matches = allowTextFallback && textOnly.has(`${gameId}:${cue.key}`) ? [] : findClips(position);
         const speechMs = matches.filter(clip => clip.watch?.part === "speech").reduce((sum,clip)=>sum+clip.durationMs,0);
         const thinkingMs = thinking ? matches.filter(clip => clip.watch?.part === "thinking").reduce((sum,clip)=>sum+clip.durationMs,0) : 0;
         director.setRecordings(cue.key,{...(speechMs && {speechMs}),...(thinkingMs && {thinkingMs})});
       }
     };
     sync();return director.subscribe(sync);
-  },[director,findClips,thinking,coordinateForCue]);
+  },[director,findClips,thinking,coordinateForCue,allowTextFallback,textOnly,gameId]);
   useEffect(() => {
     if (activeKey) director.setRecordings(activeKey,{...(speechMs && {speechMs}),...(thinkingMs && {thinkingMs})});
-    if (metadataError) {director.pause();pausePlayback.current();}
-    director.setAudioPending(loading);
+    if (metadataError && !useText) {director.pause();pausePlayback.current();}
+    director.setAudioPending(loading && !useText);
     return () => director.setAudioPending(false);
-  },[director,activeKey,speechMs,thinkingMs,loading,metadataError]);
+  },[director,activeKey,speechMs,thinkingMs,loading,metadataError,useText]);
+  useEffect(() => {
+    if (!allowTextFallback || !loading || useText) return;
+    const timer = setTimeout(() => {director.pause();pausePlayback.current();setError("Voice is taking too long to load. Retry or continue with text.");},10000);
+    return () => clearTimeout(timer);
+  },[allowTextFallback,loading,useText,director]);
   useEffect(() => {
     if (!clips.length) return;
     // Retain the element across cues so a user gesture unlocks the whole replay.
@@ -125,7 +133,15 @@ export function useWatchVoice<C extends WatchCue>({ director, gameId, audience, 
     let disposed = false, selected: PublishedAudioClip | undefined, starting = false, wasSpeaking = false;
     const alignment = new MediaAlignment();
     let pending = false;
-    const hold = (value: boolean) => {pending = value;director.setAudioPending(value);};
+    let stallTimer: ReturnType<typeof setTimeout> | undefined;
+    const hold = (value: boolean) => {
+      if (value && !pending && allowTextFallback) stallTimer = setTimeout(() => {
+        if (disposed) return;
+        pause();setError("Voice buffering did not recover. Retry or continue with text.");
+      },10000);
+      if (!value) {clearTimeout(stallTimer);stallTimer=undefined;}
+      pending = value;director.setAudioPending(value);
+    };
     const speechClips = clips.filter(clip => clip.watch?.part === "speech");
     const thoughtClips = clips.filter(clip => clip.watch?.part === "thinking");
     let audible=false, mediaPlaying=false;
@@ -206,13 +222,14 @@ export function useWatchVoice<C extends WatchCue>({ director, gameId, audience, 
     sample();
     const unsubscribe = sampleWatch(director, sample);
     return () => {disposed=true;resumePlayer.current=null;unsubscribe();audio.onwaiting=null;audio.oncanplay=null;audio.onplaying=null;audio.onloadedmetadata=null;audio.onseeked=null;audio.onerror=null;stop();audio.onpause=null;audio.onended=null;audio.onemptied=null;audio.onvolumechange=null;};
-  },[director,activeKey,clips]);
+  },[director,activeKey,clips,allowTextFallback]);
   const houseNarrationAvailable = speech.some(clip => clip.speakerId === null);
   const getHouseNarration = () => {
     const position = director.getAudioPosition();
     return houseNarrationAvailable && position?.part === "speech" && !director.getSnapshot().waitingAtTail
       ? narrationWindow(position.offsetMs, speechMs) : null;
   };
-  return {available:!!data?.clips.length,houseNarrationAvailable,getHouseNarration,muted,volume,speaking,error: error ?? metadataError ?? null,setMuted,setVolume,
+  return {available:!!data?.clips.length,houseNarrationAvailable,getHouseNarration,muted,volume,speaking,error: useText ? null : error ?? metadataError ?? null,setMuted,setVolume,
+    continueWithText:() => {setTextOnly(previous => new Set([...previous,textKey]));setError(null);director.setAudioPending(false);},
     resume:() => {setError(null);if (metadataError) setRetry(value => value+1);if (!resumePlayer.current?.()) prime();}};
 }

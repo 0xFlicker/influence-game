@@ -46,7 +46,14 @@ export function StageBackdrop({ source, left = source, right = source, frame, pa
   </div>;
 }
 
-export function RoomBackdrop({source}: {source: string}) {
-  return <div aria-hidden="true" data-room-backdrop={source} className="pointer-events-none absolute inset-0 bg-cover bg-top"
+export function RoomBackdrop({source, resilient = false}: {source: string; resilient?:boolean}) {
+  const [failed, setFailed] = useState<string | null>(null);
+  if (!resilient) return <div aria-hidden="true" data-room-backdrop={source} className="pointer-events-none absolute inset-0 bg-cover bg-top"
     style={{backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,.12), rgba(0,0,0,.42)), url("${source}")`}} />;
+  const url = failed === source ? DEFAULT_ROOM_BACKDROP : source;
+  return <div aria-hidden="true" data-room-backdrop={url} className="pointer-events-none absolute inset-0 overflow-hidden bg-amber-950">
+    {/* eslint-disable-next-line @next/next/no-img-element -- bundled or accepted decorative scenery */}
+    <img src={url} alt="" className="h-full w-full object-cover object-top" onError={() => setFailed(source)} />
+    <div className="absolute inset-0 bg-gradient-to-b from-black/10 to-black/40" />
+  </div>;
 }

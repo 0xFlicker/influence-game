@@ -408,6 +408,7 @@ export class TranscriptLogger {
     reasoningContext?: string,
     kind: TranscriptDialogueKind = "system_announcement",
     acceptedBallot?: TranscriptDialogueContext["acceptedBallot"],
+    houseResult?: TranscriptDialogueContext["houseResult"],
   ): void {
     const entry: TranscriptEntry = {
       round: this.gameState.round,
@@ -420,7 +421,7 @@ export class TranscriptLogger {
       entrySequence: this.nextDialogueSequence(),
       dialogueKind: kind,
       audiencePlayerIds: [],
-      dialogueContext: { version: 1, ...(acceptedBallot && { acceptedBallot }) },
+      dialogueContext: { version: 1, ...(acceptedBallot && { acceptedBallot }), ...(houseResult && { houseResult }) },
       ...(thinking && { thinking }),
       ...(reasoningContext && { reasoningContext }),
     };

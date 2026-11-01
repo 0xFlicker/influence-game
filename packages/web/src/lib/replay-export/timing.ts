@@ -14,6 +14,7 @@ export interface SpeechRecording {
 export interface TimingInput {
   key: string;
   baseDurationMs: number;
+  minimumDurationMs?: number;
   kind: "opening" | "thinking" | "speech" | "ballot" | "tally" | "scene" | "result";
   speech: SpeechBoundaries | null;
   thinking: string | null;
@@ -177,6 +178,10 @@ export function compileTiming(
             ? (settings.tallyHoldMs ?? input.baseDurationMs)
             : input.baseDurationMs * motion;
       add("hold", 0, input.baseDurationMs, duration);
+    }
+    if (input.minimumDurationMs !== undefined) {
+      if (!Number.isFinite(input.minimumDurationMs) || input.minimumDurationMs < 0) throw new Error(`Invalid reading minimum: ${input.key}`);
+      if (time < input.minimumDurationMs) add("hold",input.baseDurationMs,input.baseDurationMs,input.minimumDurationMs-time);
     }
     if (time <= 0 || !Number.isFinite(cursor + time))
       throw new Error(`Cue has no finite playable duration: ${input.key}`);

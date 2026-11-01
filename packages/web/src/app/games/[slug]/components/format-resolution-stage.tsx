@@ -1,3 +1,4 @@
+import {AgentAvatar} from "@/components/agent-avatar";
 import type {
   FormatPresentationCue,
   FormatPresentationRosterPlayer,
@@ -34,14 +35,15 @@ export function FormatResolutionStage({
       </header>
 
       {aggregate.capability === "sealed_polarity" ? (
-        <SaveOrEliminateAggregate resolution={resolution} roster={roster} />
+        <SaveOrEliminateAggregate resolution={resolution} roster={roster} showPortraits={cue.resultsPresentation} />
       ) : null}
       {aggregate.capability === "sealed_elim" ? (
-        <SealedEliminationAggregate resolution={resolution} roster={roster} />
+        <SealedEliminationAggregate resolution={resolution} roster={roster} showPortraits={cue.resultsPresentation} />
       ) : null}
       {aggregate.capability === "public_chain" ? (
         <SafetyBounceAggregate
           resolution={resolution}
+          showPortraits={cue.resultsPresentation}
           roster={roster}
           ballotPresentationStatus={cue.ballotPresentationStatus}
         />
@@ -53,6 +55,7 @@ export function FormatResolutionStage({
 function SaveOrEliminateAggregate({
   resolution,
   roster,
+  showPortraits,
 }: AggregateProps) {
   const facts = resolution.aggregate;
   if (facts.capability !== "sealed_polarity") return null;
@@ -60,6 +63,7 @@ function SaveOrEliminateAggregate({
   const ids = orderedIds(facts.nets, roster);
   return (
     <AggregateTotals
+      roster={showPortraits ? roster : undefined}
       caption="Save-or-Exit aggregate"
       columns={["Agent", "Saves", "Exits", "Net", "Status"]}
       rows={ids.map((playerId) => [
@@ -77,7 +81,7 @@ function SaveOrEliminateAggregate({
   );
 }
 
-function SealedEliminationAggregate({ resolution, roster }: AggregateProps) {
+function SealedEliminationAggregate({ resolution, roster, showPortraits }: AggregateProps) {
   const facts = resolution.aggregate;
   if (facts.capability !== "sealed_elim") return null;
   const registration = getFormatRegistration(resolution.formatId);
@@ -117,6 +121,7 @@ function SealedEliminationAggregate({ resolution, roster }: AggregateProps) {
   };
   return (
     <AggregateTotals
+      roster={showPortraits ? roster : undefined}
       caption={`${displayNameForFormat(resolution.formatId)} aggregate`}
       columns={["Agent", "Votes", "Status"]}
       rows={ids.map((playerId) => [
@@ -140,6 +145,7 @@ function SafetyBounceAggregate({
   resolution,
   roster,
   ballotPresentationStatus,
+  showPortraits,
 }: AggregateProps & {
   ballotPresentationStatus: "revealed" | "not_applicable";
 }) {
@@ -175,6 +181,7 @@ function SafetyBounceAggregate({
         </p>
       ) : (
         <AggregateTotals
+      roster={showPortraits ? roster : undefined}
           caption="Safety Bounce final vote aggregate"
           columns={["Vulnerable agent", "Final votes", "Status"]}
           rows={ids.map((playerId) => [
@@ -237,7 +244,9 @@ function AggregateTotals({
   rows,
   rowIds,
   rowState,
+  roster,
 }: {
+  roster?: readonly FormatPresentationRosterPlayer[];
   caption: string;
   columns: readonly string[];
   rows: readonly (readonly string[])[];
@@ -249,9 +258,10 @@ function AggregateTotals({
       {rows.map((cells, rowIndex) => {
         const playerId = rowIds[rowIndex]!;
         const state = rowState(playerId);
+        const player = roster?.find(player => player.id === playerId);
         return <div key={playerId} data-aggregate-player={playerId} data-aggregate-state={state}
           className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-b border-white/10 pb-3 last:border-0">
-          <dt className="font-medium text-white">{cells[0]}</dt>
+          <dt className="flex items-center gap-2 font-medium text-white">{player && <AgentAvatar name={player.name} persona={player.persona ?? ""} personaKey={player.personaKey} avatarUrl={player.avatarUrl} size="8" />}{cells[0]}</dt>
           <dd className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm text-white/75">
             {cells.slice(1, -1).map((cell, index) => <span key={columns[index + 1]}><strong className="text-xl font-semibold">{cell}</strong> <span className="text-xs text-white/45">{columns[index + 1]}</span></span>)}
             <span className={`text-xs ${AGGREGATE_STATUS_CLASS[state]}`}>{cells.at(-1)}</span>
@@ -272,6 +282,7 @@ const AGGREGATE_STATUS_CLASS: Record<
 };
 
 interface AggregateProps {
+  showPortraits?: boolean;
   resolution: FormatResolutionPresentation;
   roster: readonly FormatPresentationRosterPlayer[];
 }

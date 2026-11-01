@@ -306,7 +306,7 @@ export function publicTranscriptEntry(row: {
   thinking: string | null;
   timestamp: number;
   dialogueKind: PublicWsTranscriptEntry["dialogueKind"];
-  safeContext: { decisionSpeech?: import("@influence/engine").TranscriptDialogueContext["decisionSpeech"]; anonymous?: boolean; acceptedBallot?: import("@influence/engine").TranscriptDialogueContext["acceptedBallot"]; presentationPurpose?: "farewell"; visualScene?: import("@influence/engine").TranscriptDialogueContext["visualScene"] } | null;
+  safeContext: { houseResult?: import("@influence/engine").TranscriptDialogueContext["houseResult"]; decisionSpeech?: import("@influence/engine").TranscriptDialogueContext["decisionSpeech"]; anonymous?: boolean; acceptedBallot?: import("@influence/engine").TranscriptDialogueContext["acceptedBallot"]; presentationPurpose?: "farewell"; visualScene?: import("@influence/engine").TranscriptDialogueContext["visualScene"] } | null;
 }): PublicWsTranscriptEntry {
   const from = row.safeContext?.anonymous ? "Anonymous" : row.speakerPlayerId
     ?? row.fromPlayerId
@@ -321,6 +321,7 @@ export function publicTranscriptEntry(row: {
     ...(row.entrySequence !== null && { entrySequence: row.entrySequence }),
     ...(row.safeContext?.decisionSpeech && { decisionSpeech: row.safeContext.decisionSpeech }),
     ...(row.safeContext?.acceptedBallot && { acceptedBallot: row.safeContext.acceptedBallot }),
+    ...(row.safeContext?.houseResult && { houseResult: row.safeContext.houseResult }),
     ...(row.safeContext?.visualScene && { visualScene: row.safeContext.visualScene }),
     ...(row.safeContext?.presentationPurpose && { presentationPurpose: row.safeContext.presentationPurpose }),
     round: row.round,

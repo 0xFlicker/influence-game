@@ -1,5 +1,6 @@
 import { decisionSpeechPolicy, twoNamesDecisionSpeechAction } from "@influence/engine/influence-decision-speech";
 import {voteSceneIdentity} from "./vote-ledger-model";
+import {resultRoom} from "./influence-rooms";
 import type { AcceptedVisualScene } from "@influence/engine/visual-mode";
 import type { GamePlayer, GameWatchReplayFrame, TranscriptEntry } from "@/lib/api";
 import { visualSpeechDurationMs } from "@influence/engine/visual-speech";
@@ -58,6 +59,20 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
     }
   }
   let beat: VisualPresentationBeat | null = null;
+  if (cue?.source === "classic" && cue.houseResultCue && message) {
+    const result = visualWatchPresentation(data, cue.houseResultCue, null, players, priorMessages, frames);
+    if (result.beat) return {rooms: result.rooms, beat:{kind:"house-result", result:result.beat, text:message.text}};
+  }
+  if (cue?.source === "classic" && cue.resultsPresentation && cue.houseSummary && message?.houseResult) {
+    const event = frames.find(frame => frame.sequence === message.houseResult!.eventSequence)?.viewerDecisionEvent;
+    const named = (id:string) => players.find(player=>player.id===id)?.name ?? "Player";
+    if (event?.type === "council.elimination_resolved" || event?.type === "power.candidates_resolved") {
+      const ids = event.type === "council.elimination_resolved" ? [event.payload.eliminated] : event.payload.autoEliminated ? [event.payload.autoEliminated] : event.payload.candidates ?? [];
+      const headline = event.type === "council.elimination_resolved" ? `${named(event.payload.eliminated)} leaves the game` : event.payload.autoEliminated ? `${named(event.payload.autoEliminated)} leaves automatically` : "Council candidates";
+      const detail = event.type === "council.elimination_resolved" ? `${event.payload.method} · ${players.map(player => ({name:player.name,count:Object.values(event.payload.tally.votes).filter(id=>id===player.id).length})).filter(row=>row.count>0).map(row=>`${row.name}: ${row.count}`).join(" · ")}` : event.payload.method;
+      return {rooms,beat:{kind:"house-result",text:message.text,result:{kind:"canonical-result",headline,detail,players:players.filter(player=>ids.includes(player.id)).map(player=>({...player,avatarUrl:data.portraits[player.id] ?? player.avatarUrl}))}}};
+    }
+  }
   const portrait = (id: string, text: string, purpose: Extract<VisualPresentationBeat, {kind: "portrait"}>["purpose"], caption?: string, ballotPurpose?: "empower" | "council") => {
     const player = players.find((entry) => entry.id === id);
     if (player) beat = { kind: "portrait", purpose, caption, ballotPurpose, player: { ...player, avatarUrl: data.portraits[id] ?? player.avatarUrl, fullBodyReferenceUrl: data.fullBodies?.[id], headRectangle: data.fullBodyHeads?.[id] }, speech: { id: cue?.key ?? String(message?.id), playerId: id, speaker: player.name, text } };
@@ -65,7 +80,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
   if (cue?.source === "endgame") {
     if (cue.kind === "endgame_winner") {
       const winner = players.find(player => player.id === cue.playerId);
-      if (winner) beat = { kind: "winner", winner: { ...winner, avatarUrl: data.portraits[winner.id] ?? winner.avatarUrl, fullBodyReferenceUrl: data.fullBodies?.[winner.id] },
+      if (winner) beat = { kind: "winner", ...(cue.resultsPresentation && {backgroundUrl:resultRoom("END"), ...(cue.resultVotes && {counts:players.map(p=>({name:p.name,votes:Object.values(cue.resultVotes!).filter(id=>id===p.id).length})).filter(row=>row.votes>0)})}), winner: { ...winner, avatarUrl: data.portraits[winner.id] ?? winner.avatarUrl, fullBodyReferenceUrl: data.fullBodies?.[winner.id] },
         standings: players.filter(player => player.id !== winner.id).map(player => ({ ...player,
           avatarUrl: data.portraits[player.id] ?? player.avatarUrl,
           placement: cue.standings?.find(entry => entry.playerId === player.id)?.placement ?? null,
@@ -76,8 +91,12 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
       if (target) portrait(cue.ballot.voterId, cue.spokenMessage ?? target.name, "Ballot", cue.ballot.purpose === "winner" ? "Vote for winner" : cue.ballot.juryTiebreaker ? "Jury tiebreak · Vote to eliminate" : "Vote to eliminate");
     } else {
       const name = players.find((player) => player.id === cue.playerId)?.name ?? "Player";
-      beat = { kind: "house", text: `${name} is out.` };
+      const player = players.find(player => player.id === cue.playerId);
+      beat = cue.resultsPresentation && player
+        ? {kind:"elimination-result", player:{...player, avatarUrl:data.portraits[player.id] ?? player.avatarUrl}, ...(cue.resultJuryVotes && Object.keys(cue.resultJuryVotes).length > 0 && {juryCounts:players.map(p=>({name:p.name,votes:Object.values(cue.resultJuryVotes!).filter(id=>id===p.id).length})).filter(row=>row.votes>0)}), ...(cue.resultVotes && {counts:players.map(p => ({name:p.name,votes:Object.values(cue.resultVotes!).filter(id=>id===p.id).length})).filter(row=>row.votes>0)})}
+        : { kind: "house", text: `${name} is out.` };
     }
+    if (cue.resultsPresentation && beat && message?.dialogueKind === "house_summary") return {rooms,beat:{kind:"house-result",result:beat,text:message.text}};
     return { rooms, beat };
   }
   if (cue?.source === "format") {
@@ -126,9 +145,10 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
       const text = ballot.forfeited ? "Ballot forfeited." : target ? target : null;
       if (text) portrait(ballot.voterId, cue.spokenMessage ?? text, "Ballot", ballot.polarity === "save" ? "Vote to save" : "Vote to eliminate");
     }
+    if (!beat && cue.resultsPresentation) beat = {kind:"format-result", cue, roster:twoNamesRoster()};
     return { rooms, beat };
   }
-  if (cue?.source === "house") return { rooms, beat: { kind: "house", text: null, title: cue.title } };
+  if (cue?.source === "house") return { rooms, beat: { kind: "house", text: null, title: cue.title, ...(cue.resultsPresentation && {backgroundUrl:resultRoom(cue.phase)}) } };
   if (!message) return { rooms, beat };
   const speakerToken = message.anonymous ? null : message.speakerPlayerId ?? message.fromPlayerId;
   const speaker = resolveTranscriptPlayer(speakerToken, players);
@@ -197,7 +217,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
     else if (!beat && speakerId) {
       portrait(speakerId, message.text, "Conversation");
     }
-    if (!speakerId && !message.anonymous) beat = { kind: "house", text: message.text };
+    if (!speakerId && !message.anonymous) beat = { kind: "house", text: message.text, ...(cue?.resultsPresentation && {backgroundUrl:resultRoom(cue.phase)}) };
   }
   // Keep unresolved saved attribution readable in every speech phase without assigning it to a seat.
   if (!beat && speakerId) {

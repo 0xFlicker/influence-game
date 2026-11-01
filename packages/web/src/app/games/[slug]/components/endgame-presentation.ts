@@ -6,7 +6,7 @@ import { soloPresentationDurationMs } from "./solo-presentation-timing";
 export function buildEndgamePresentationCues(frames: readonly GameWatchReplayFrame[]): EndgamePresentationCue[] {
   const cues: EndgamePresentationCue[] = [];
   const eliminatedIds: string[] = [];
-  let pendingElimination: { playerId: string; round: number } | null = null;
+  let pendingElimination: { playerId: string; round: number; resultEventSequence: number; resultVotes: Record<string,string>; resultJuryVotes:Record<string,string> } | null = null;
   for (const frame of frames) {
     // Reuse the accepted result only after the full retrospective commits.
     // Its own boundary keeps live append, seeking and exports in chronological order.
@@ -44,7 +44,7 @@ export function buildEndgamePresentationCues(frames: readonly GameWatchReplayFra
       appendBallots(event.payload.votes, false);
       if (event.type === "endgame.elimination_resolved") {
         appendBallots(event.payload.juryTiebreakerVotes, true);
-        pendingElimination = { playerId: event.payload.eliminatedId, round: event.round };
+        pendingElimination = { playerId: event.payload.eliminatedId, round: event.round, resultEventSequence:event.sequence, resultVotes:event.payload.votes, resultJuryVotes:event.payload.juryTiebreakerVotes };
       } else {
         const remaining = frame.players.filter(player => player.id !== event.payload.winnerId && !eliminatedIds.includes(player.id) && player.status === "alive");
         // A truncated replay must not assign the first observed exit last place.
@@ -55,10 +55,10 @@ export function buildEndgamePresentationCues(frames: readonly GameWatchReplayFra
             : eliminatedIndex >= 0 && completeExitOrder ? frame.players.length - eliminatedIndex
             : remaining.length === 1 && remaining[0]!.id === player.id ? 2 : null };
         }).sort((a, b) => (a.placement ?? Infinity) - (b.placement ?? Infinity));
-        cues.push({ ...base, phase, key: `endgame:${event.sequence}:winner`, kind: "endgame_winner", playerId: event.payload.winnerId, standings, juryVoterIds: Object.keys(event.payload.votes), baseDurationMs: 4000 });
+        cues.push({ ...base, phase, key: `endgame:${event.sequence}:winner`, kind: "endgame_winner", playerId: event.payload.winnerId, resultVotes:event.payload.votes, standings, juryVoterIds: Object.keys(event.payload.votes), baseDurationMs: 4000 });
       }
     } else if (event.type === "player.eliminated" && pendingElimination?.playerId === event.payload.playerId && pendingElimination.round === event.round) {
-      cues.push({ ...base, phase: "VOTE", key: `endgame:${event.sequence}:elimination`, kind: "endgame_elimination", playerId: event.payload.playerId, baseDurationMs: 4000 });
+      cues.push({ ...base, phase: "VOTE", key: `endgame:${event.sequence}:elimination`, kind: "endgame_elimination", playerId: event.payload.playerId, resultEventSequence:pendingElimination.resultEventSequence, resultVotes:pendingElimination.resultVotes, resultJuryVotes:pendingElimination.resultJuryVotes, baseDurationMs: 4000 });
       pendingElimination = null;
     }
   }

@@ -158,7 +158,7 @@ function speechBoundaries(cue: PresentationCue | null) {
     hiddenAtMs: soloPresentationDurationMs(cue.spokenMessage),
   };
   if (cue?.source === "classic" && cue.houseSummary) return {
-    showAtMs:0,readAtMs:0,hideAtMs:cue.baseDurationMs,hiddenAtMs:cue.baseDurationMs,
+    showAtMs:0,readAtMs:0,hideAtMs:cue.baseDurationMs - (cue.resultsPresentation ? 2000 : 0),hiddenAtMs:cue.baseDurationMs - (cue.resultsPresentation ? 2000 : 0),
   };
   if (cue && voteSceneIdentity(cue) && !cue.voteSummary && cue.spokenMessage) return {
     showAtMs:SOLO_SPEECH_START_MS,readAtMs:SOLO_READ_START_MS,hideAtMs:cue.baseDurationMs-SOLO_EXIT_MS,hiddenAtMs:cue.baseDurationMs,
@@ -176,6 +176,10 @@ function speechBoundaries(cue: PresentationCue | null) {
 
 /** Backfilled narration can replace a title in history, but cannot interrupt a title already on air. */
 function retainActiveHouseBridge(cues: PresentationCue[], active: PresentationCue | null): PresentationCue[] {
+  if (active) {
+    const index = cues.findIndex(cue => cue.key === active.key);
+    if (index >= 0 && cues[index]!.baseDurationMs < active.baseDurationMs) cues[index] = {...cues[index]!, baseDurationMs:active.baseDurationMs};
+  }
   if (active?.source !== "house" || cues.some((cue) => cue.key === active.key)) return cues;
   const following = cues.findIndex((cue) => cue.key === active.followingCueKey);
   if (following >= 0) cues.splice(following, 0, active);

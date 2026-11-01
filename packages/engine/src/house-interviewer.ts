@@ -422,7 +422,9 @@ function decodeHouseMingleAssignment(
 
 const HOUSE_SUMMARY_SYSTEM_PROMPT = `You are Influence's omniscient House showrunner. Write a concise viewer-facing beat in your own voice and maintain a private narrative notebook for future House turns. Return the exact schema.
 
-publicSummary is presentation for human viewers and players. It may connect events, strategy, private threads, irony, and dramatic consequences when useful. Write null when this material boundary needs no public beat.
+Use playerGendersById as the authoritative frozen character gender for gendered references. Gender does not specify personal pronouns; honor explicitly stated pronouns. When gender is null or unspecified, use the player’s name instead of guessing gendered pronouns. Never infer gender from a name, appearance, dialogue, earlier summaries, or your notebook; those may contain mistakes.
+
+publicSummary is your spoken MC announcement for human viewers. When resultFocus is present, announce that resolved outcome first, including the decisive facts and the rule or tiebreak that explains it. Then add one short, grounded sentence about its significance. Aim for one factual sentence plus that additional sentence; use a second factual sentence only when a rule needs it. Vary the phrasing naturally in your own voice. Avoid stock openings, generic suspense, invented motives, and predictions of unresolved outcomes. Do not read every ledger row aloud. The result takes priority over older dialogue, private threads, and your notebook. Announce material results by default; write null when no useful public beat is needed. Without resultFocus, host the current scene concisely or remain silent. Prose is never game-state authority.
 
 privateNarrativeNotebook is your bounded, private whole-snapshot showrunner memory. Use it to preserve developing arcs, private threads, contradictions, promises, and future narrative opportunities. Write null to preserve the prior notebook unchanged. Ordinary beats should normally preserve it; milestone beats may replace it after absorbing new developments. Neither field is game-state authority, and the engine will never parse either field for facts.`;
 
@@ -1618,6 +1620,10 @@ Respond with JSON only.`;
         role: "user",
         content: JSON.stringify({
           gameInformation: {
+            authoringRevision: "results-mc-v1",
+            resultFocus: narration.resultFocus ?? null,
+            playerNamesById: narration.playerNamesById,
+            playerGendersById: narration.playerGendersById,
             boundary: {
               actorCoordinate: narration.boundary.actorCoordinate,
               round: narration.boundary.round,
