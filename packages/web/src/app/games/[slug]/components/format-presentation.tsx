@@ -1,3 +1,4 @@
+import {getFormatRegistration} from "@influence/engine/format-rules";
 import type { ReactNode } from "react";
 import type { FormatPresentationCue, FormatPresentationRosterPlayer } from "./types";
 import { ActiveFormatLabel } from "./active-format-label";
@@ -8,8 +9,20 @@ import { FormatResolutionStage } from "./format-resolution-stage";
 import { SafetyBounceStage } from "./safety-bounce-stage";
 import { TwoNamesRoleAnchors, TwoNamesStage, TwoNamesVoteStage, TwoNamesResultStage } from "./two-names-stage";
 import { FORMAT_PRESENTATION_METADATA } from "@influence/engine/format-presentation-metadata";
+import {ResultStage, formatResultPlayers} from "./result-stage";
+import {resultRoom} from "./influence-rooms";
 
-export function FormatPresentation({
+export function FormatPresentation(props: Parameters<typeof FormatPresentationContent>[0]) {
+  const {cue, roster} = props;
+  const specialized = cue.kind.startsWith("two_names_") || cue.kind.startsWith("safety_bounce_")
+    || cue.after.activeFormatId === "two_names";
+  const content = <FormatPresentationContent {...props} />;
+  return cue.resultsPresentation && !specialized
+    ? <ResultStage players={formatResultPlayers(cue, roster)} background={resultRoom(cue.phase)}>{content}</ResultStage>
+    : content;
+}
+
+function FormatPresentationContent({
   cue,
   roster,
   currentStateEntry,
@@ -179,9 +192,10 @@ export function FormatPresentation({
           <h2 className="mt-3 text-2xl font-semibold text-white">
             {playerName(cue.eliminatedId, roster)} is eliminated
           </h2>
-          <p className="mt-3 text-sm capitalize text-white/45">
+          {cue.resultsPresentation && cue.after.resolution && <ResolvedFacts resolution={cue.after.resolution} playerId={cue.eliminatedId} />}
+          {!cue.resultsPresentation && <p className="mt-3 text-sm capitalize text-white/45">
             {cue.resolutionKind} resolution
-          </p>
+          </p>}
         </section>
       </PresentationShell>
     );
@@ -227,4 +241,20 @@ function playerName(
   roster: readonly FormatPresentationRosterPlayer[],
 ): string {
   return roster.find((player) => player.id === playerId)?.name ?? playerId;
+}
+
+/** Display only the accepted aggregate; never infer the method from House prose. */
+function ResolvedFacts({resolution,playerId}:{resolution:import("./types").FormatResolutionPresentation;playerId:string}) {
+  const aggregate = resolution.aggregate;
+  const facts = aggregate.capability === "sealed_elim" || aggregate.capability === "two_names"
+    ? aggregate.totals[playerId] === undefined ? "Vote total unavailable" : `${aggregate.totals[playerId]} votes`
+    : aggregate.capability === "sealed_polarity"
+      ? aggregate.nets[playerId] === undefined ? "Totals unavailable" : `${aggregate.savesReceived[playerId]} saves · ${aggregate.eliminateReceived[playerId]} exits · net ${aggregate.nets[playerId]}`
+      : aggregate.vulnerablePlayerIds.length === 1 ? "Automatic exit · no final ballot"
+        : aggregate.voteTotals[playerId] === undefined ? "Vote total unavailable" : `${aggregate.voteTotals[playerId]} final votes`;
+  const registration = getFormatRegistration(resolution.formatId);
+  const rule = registration.capability === "sealed_elim"
+    ? registration.presentation.scoring === "highest_even" && aggregate.capability === "sealed_elim" && Object.values(aggregate.totals).every(total=>total%2!==0) ? "All totals odd · Empowered chooses" : {highest_total:"Highest total exits",fewest_positive:"Fewest positive votes exits",highest_even:"Highest qualifying even total exits"}[registration.presentation.scoring]
+    : aggregate.capability === "sealed_polarity" ? "Lowest net score exits" : aggregate.capability === "two_names" ? "Higher nominee total exits" : "Final vulnerable vote";
+  return <div className="mt-3 space-y-2 text-sm text-white/80"><p>{facts}</p><p>{rule}</p>{resolution.tiebreakerId && <p>Resolved by a deciding vote</p>}</div>;
 }

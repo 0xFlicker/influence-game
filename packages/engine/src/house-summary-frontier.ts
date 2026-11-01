@@ -1,5 +1,6 @@
+import {tallyEmpowerRevote, type EmpowerRevoteVersion} from "./empower-revote-rules";
 import type { CanonicalGameEvent, CanonicalGameEventType } from "./canonical-events";
-import { displayNameForFormat } from "./format-presentation-metadata";
+import { FORMAT_PRESENTATION_METADATA, displayNameForFormat } from "./format-presentation-metadata";
 import { formatSurfaceId, type FormatSurfaceId } from "./format-vocabulary";
 import type { CanonicalGameProjection } from "./game-projection";
 import type { StructuredDomainDecodeResult } from "./structured-output";
@@ -17,6 +18,25 @@ export const HOUSE_SUMMARY_ACTOR_COORDINATES = [
 ] as const;
 
 export type HouseSummaryActorCoordinate = (typeof HOUSE_SUMMARY_ACTOR_COORDINATES)[number];
+/** Exact result event owned by each MC boundary, including historical durable turns. */
+export const HOUSE_RESULT_EVENTS: Partial<Record<HouseSummaryActorCoordinate, CanonicalGameEventType>> = {
+  vote: "vote.empower_tally_resolved", format_pick: "format.selected", format_resolve: "format.resolved",
+  power: "power.candidates_resolved", council: "council.elimination_resolved",
+  reckoning_vote: "endgame.elimination_resolved", tribunal_vote: "endgame.elimination_resolved", judgment_jury_vote: "jury.winner_determined",
+};
+/** Empower can finish at its initial tally or a later accepted revote/wheel assignment. */
+export function selectHouseResultEvent(actor:HouseSummaryActorCoordinate, events:readonly CanonicalGameEvent[], round:number):CanonicalGameEvent|null {
+  if (actor !== "vote") return events.findLast(event=>event.round===round && event.type===HOUSE_RESULT_EVENTS[actor]) ?? null;
+  let result:CanonicalGameEvent|null=null, pending=false;
+  for (const event of events) {
+    if (event.round !== round) continue;
+    if (event.type === "vote.empower_tally_resolved") {
+      pending=event.payload.method === "tie_pending";
+      result=pending ? null : event;
+    } else if (event.type === "vote.empowered_set" && (pending || !result)) {result=event;pending=false;}
+  }
+  return result;
+}
 export type HouseBeatClass = "ordinary" | "milestone";
 export type HouseBeatStatus = "emitted" | "preflight_skipped" | "model_skipped" | "failed";
 
@@ -156,6 +176,8 @@ export interface HouseNarrationDiaryEntry {
 /** Direct, bounded creative context. No aliases, source maps, claims, or fact reads. */
 export interface HouseNarrationContext {
   version: typeof HOUSE_NARRATIVE_CONTINUITY_VERSION;
+  /** Engine-selected outcome for the MC; never inferred from House prose. */
+  resultFocus?: (HouseNarrationCanonicalEvent & {rule?:string}) | null;
   boundary: HouseSummaryBoundary;
   material: boolean;
   /** One roster lookup for any canonical payload fields that still carry player IDs. */
@@ -169,6 +191,7 @@ export interface HouseNarrationContext {
 }
 
 export interface CompileHouseNarrationContextInput {
+  empowerRevoteVersion?:EmpowerRevoteVersion;
   actorCoordinate: HouseSummaryActorCoordinate;
   round: number;
   phase: Phase;
@@ -336,6 +359,11 @@ function narrationEvent(
         resolutionKind: event.payload.resolutionKind,
         tied: event.payload.tiedPlayerIds.map((id) => playerName(projection, id)),
         tiebreaker: playerName(projection, event.payload.tiebreakerId),
+        aggregate: event.payload.aggregate ?? {
+          saveOrEliminate: event.payload.saveOrEliminate,
+          voteBomb: event.payload.voteBomb,
+          safetyBounce: event.payload.safetyBounce,
+        },
       },
     };
     case "power.action_set": return {
@@ -363,6 +391,7 @@ function narrationEvent(
         candidates: event.payload.candidates.map((id) => playerName(projection, id)),
         exitedPlayer: playerName(projection, event.payload.eliminated),
         method: event.payload.method,
+        tally: event.payload.tally,
       },
     };
     case "player.eliminated": return {
@@ -383,8 +412,10 @@ function narrationEvent(
       type: "endgame.exit_resolved",
       data: {
         stage: event.payload.stage,
+        juryTiebreakerVotes: event.payload.juryTiebreakerVotes ?? {},
         exitedPlayer: playerName(projection, event.payload.eliminated),
         method: event.payload.method,
+        tally: event.payload.tally,
       },
     };
     case "jury.winner_determined": return {
@@ -592,8 +623,27 @@ export function compileHouseNarrationContext(input: CompileHouseNarrationContext
       }))
     : [];
   const projection = deltaEvents.some((event) => PROJECTION_TRIGGER_TYPES.has(event.type)) ? compileProjection(input.projection) : null;
+  const resultEvent = selectHouseResultEvent(input.actorCoordinate,deltaEvents,input.round);
+  const focalEvent = resultEvent ? narrationEvent(resultEvent, input.projection) : null;
+  if (focalEvent && resultEvent?.type === "vote.empowered_set") {
+    const pending = deltaEvents.findLast(event=>event.round===input.round && event.sequence<resultEvent.sequence && event.type==="vote.empower_tally_resolved");
+    if (pending?.type === "vote.empower_tally_resolved" && pending.payload.tied) {
+      const active=new Map<string,string>(), revotes=new Map<string,string>();
+      for (const event of deltaEvents) {
+        if (event.round !== input.round || event.sequence >= resultEvent.sequence) continue;
+        if (event.type === "vote.cast") active.set(event.payload.voterId,event.payload.empowerTarget);
+        if (event.type === "vote.empower_vote_cleared") active.delete(event.payload.voterId);
+        if (event.type === "vote.empower_revote_cast") {active.set(event.payload.voterId,event.payload.target);revotes.set(event.payload.voterId,event.payload.target);}
+      }
+      const version=input.empowerRevoteVersion ?? 1;
+      const tally=tallyEmpowerRevote(version,pending.payload.tied,active,revotes);
+      focalEvent.data={...focalEvent.data,counts:namedCounts(input.projection,tally.counts),countedRule:version===2?"new revote ballots only":"active ballots"};
+    }
+  }
+  const resultFocus = focalEvent && resultEvent ? {...focalEvent, ...((resultEvent.type === "format.selected" || resultEvent.type === "format.resolved") && {rule:FORMAT_PRESENTATION_METADATA[resultEvent.payload.formatId].conciseRules})} : null;
   return {
     version: 2,
+    resultFocus,
     boundary,
     material: canonicalEvents.length > 0 || projection !== null || publicDialogue.length > 0
       || privateDialogueAndDecisions.length > 0 || diaryEntries.length > 0,

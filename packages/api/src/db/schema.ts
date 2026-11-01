@@ -690,6 +690,7 @@ export type TranscriptSafeContextV1 = {
   presentationPurpose?: "farewell";
   decisionSpeech?: import("@influence/engine").TranscriptDialogueContext["decisionSpeech"];
   acceptedBallot?: import("@influence/engine").TranscriptDialogueContext["acceptedBallot"];
+  houseResult?: import("@influence/engine").TranscriptDialogueContext["houseResult"];
   visualScene?: { id: string; roomId: import("@influence/engine/visual-mode").VisualRoomId };
   /**
    * Durable private-decision id for narrative correlation. Optional; forward-path

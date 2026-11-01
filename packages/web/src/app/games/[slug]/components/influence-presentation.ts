@@ -5,15 +5,17 @@ import type {GamePlayer} from "@/lib/api";
 import {resolveAgentAvatarUrl} from "@/components/agent-avatar";
 import {influenceOpening} from "./influence-opening";
 import {withHouseBridges} from "./house-story";
+import {withResultPresentation} from "./result-presentation";
 import {paceVisualBallots, type VisualWatchData} from "./visual-watch-model";
 import type {PresentationCue, ReplayScene} from "./types";
 
 /** Editorial composition shared by the live player, Studio and the exporter. */
-export function composeInfluencePresentation(gameId: string, canonical: readonly PresentationCue[], players: readonly GamePlayer[], scenes: ReplayScene[], gameSchemaVersion = 1, options: {attachDecisionSpeech?: boolean; attachTwoNamesSpeech?: boolean; speechPrefixComplete?: boolean} = {}): PresentationCue[] {
-  return canonical.length ? [
+export function composeInfluencePresentation(gameId: string, canonical: readonly PresentationCue[], players: readonly GamePlayer[], scenes: ReplayScene[], gameSchemaVersion = 1, options: {attachDecisionSpeech?: boolean; attachTwoNamesSpeech?: boolean; speechPrefixComplete?: boolean; resultsPresentation?: boolean} = {}): PresentationCue[] {
+  const cues: PresentationCue[] = canonical.length ? [
     ...influenceOpening(gameId, players),
     ...withHouseBridges(withBallotSpeech(paceVisualBallots(canonical, players), scenes, gameSchemaVersion, options.attachDecisionSpeech !== false, options.speechPrefixComplete !== false, options.attachTwoNamesSpeech !== false), scenes),
   ] : [];
+  return options.resultsPresentation === false ? cues : withResultPresentation(cues, scenes);
 }
 
 /** Cast art is independent of scene generation and uses the same fallback order everywhere. */

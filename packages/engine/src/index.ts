@@ -32,6 +32,7 @@ export {
   isHouseSummaryActorCoordinate,
 } from "./house-summary-frontier";
 export type { HouseSummaryActorCoordinate } from "./house-summary-frontier";
+export {HOUSE_RESULT_EVENTS,selectHouseResultEvent} from "./house-summary-frontier";
 export {
   COMPACT_STRATEGY_LIMITS,
   applyStrategyCandidate,

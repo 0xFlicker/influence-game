@@ -102,3 +102,13 @@ test("recorded speech duration replaces the silent reading estimate", () => {
     recording:{assetId:"speech.mp3",durationMs:2000}}],parseTimingProfile(),30);
   expect(cue!.speech!.hideAtMs-cue!.speech!.readAtMs).toBe(2000);
 });
+
+test("result announcements retain the reading minimum and two seconds after recorded speech", () => {
+  for (const durationMs of [1000,9000]) {
+    const [cue] = compileTiming([{key:"mc-result",kind:"speech",baseDurationMs:8000,minimumDurationMs:6000,
+      speech:{showAtMs:0,readAtMs:0,hideAtMs:6000,hiddenAtMs:6000},thinking:null,recording:{assetId:"mc",durationMs}}],parseTimingProfile(),30);
+    expect(cue!.endMs).toBe(Math.max(6000,durationMs+2000));
+    expect(cue!.recording!.startMs).toBe(0);
+    expect(cue!.speech!.hideAtMs).toBe(durationMs);
+  }
+});

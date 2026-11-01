@@ -138,6 +138,9 @@ export interface FormatPresentationSnapshot {
 }
 
 interface SpeechCue {
+  /** Frozen presentation revision: absent on previously prepared exports. */
+  resultsPresentation?: true;
+  minimumDurationMs?: number;
   /** Accepted delivery attached to a canonical ballot; never determines its target. */
   spokenMessage?: string;
   /** Exact accepted transcript row moved into its canonical decision shot. */
@@ -269,6 +272,7 @@ export type FormatPresentationCue =
     });
 
 export interface ClassicPresentationCue extends SpeechCue {
+  houseResultCue?: FormatPresentationCue | EndgamePresentationCue;
   /** Historical dialogue is navigable but must not resume live playback. */
   liveCatchUp?: boolean;
   source: "classic";
@@ -298,6 +302,9 @@ export interface HousePresentationCue extends SpeechCue {
 }
 
 export interface EndgamePresentationCue extends SpeechCue {
+  resultEventSequence?: number;
+  resultVotes?: Record<string,string>;
+  resultJuryVotes?: Record<string,string>;
   source: "endgame";
   key: string;
   canonicalSequence: number;

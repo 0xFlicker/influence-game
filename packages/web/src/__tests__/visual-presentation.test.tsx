@@ -437,3 +437,17 @@ test("a confirmed 404 allows a full-body fallback, but a reload selects transpar
   const reloaded = render(<VisualPresentationFrame beat={solo} rooms={[]} elapsedMs={SOLO_READ_START_MS} paused />);
   expect(reloaded.getByRole("img").getAttribute("src")).toBe("/characters/saved.png");
 });
+
+test("recorded House captions never remove the result, affected cast, or scenery", () => {
+  const result:VisualPresentationBeat={kind:"house-result",text:"Accepted historical narration.",result:{kind:"elimination-result",player:{id:"p1",name:"Arden",persona:"",avatarUrl:"/arden.png"},counts:[{name:"Arden",votes:4}]}};
+  const view=render(<VisualPresentationFrame beat={result} rooms={[]} elapsedMs={1200} hideHouseNarration fullscreen />);
+  expect(view.container.querySelector("[data-result-stage]")).not.toBeNull();
+  expect(view.container.querySelector("[data-room-backdrop]")).not.toBeNull();
+  expect(view.container.textContent).toContain("Arden leaves the game");
+  expect(view.container.textContent).toContain("Arden: 4");
+  expect(view.container.textContent).not.toContain("Accepted historical narration.");
+  view.rerender(<VisualPresentationFrame beat={{kind:"house",text:"Accepted historical narration.",backgroundUrl:"/missing-room.jpg"}} rooms={[]} elapsedMs={1200} hideHouseNarration fullscreen />);
+  expect(view.container.querySelector("[data-room-backdrop]")).not.toBeNull();
+  fireEvent.error(view.container.querySelector('[data-room-backdrop] img')!);
+  expect(view.container.querySelector("[data-room-backdrop]")?.getAttribute("data-room-backdrop")).toBe("/visual/influence/rooms-v1/lobby.jpg");
+});

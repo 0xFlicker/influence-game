@@ -4,6 +4,9 @@
 import {CURRENT_INFLUENCE_GAME_SCHEMA_VERSION} from "./influence-game-schema";
 import { HOUSE_CAST } from "./house-personas";
 /**
+ * Influence House summaries use results-mc-v1: canonical result facts plus one
+ * grounded sentence. Preserve accepted speech/evidence; paid review uses the localhost API.
+ * Deploy only after all old-version games and calls have drained.
  * Hosted OpenAI Flex capacity retries the same model on explicit standard (default).
  * API availability exhaustion durably delays the same turn, then suspends; it never
  * invents ballots or skips required speech. Retain each attempt and its tier-aware cost.

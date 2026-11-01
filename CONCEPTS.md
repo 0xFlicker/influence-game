@@ -1004,3 +1004,13 @@ New Influence games freeze root `gameSchemaVersion: 2` and decision contract v3.
 Ballots request a private explanation to the House in **one sentence or less**, within the shared 320-byte speech allowance, without a thinking field. These explanations stay out of contestant dialogue and appear only at their canonical spectator reveal. Continue retaining structured thinking, available native reasoning and sanitized attempts; do not parse speech into game facts, use `as any`, or bypass direct House calls.
 
 Unversioned/root-v1 games retain their original execution order and remain viewable. Their chain scenes skip missing speech/thinking. New-root playback checks event ownership and speech consumption; unsupported records stop playback with a diagnostic rather than producing a generic event card. This does not stop the game.
+
+## Influence result announcements (`results-mc-v1`)
+
+The existing direct House summary call receives an exact canonical `resultFocus` and the applicable format rule. The House acts as MC: announce the decisive facts, then add one grounded sentence in its own naturally varied voice. Null or failed authoring leaves a readable silent result; no prose parser, template fallback, extra commentary call, or `as any` shortcut determines facts.
+
+Accepted House transcript metadata carries `houseResult.eventSequence` and `authoringRevision`. Historical associations are recovered read-only only from an exact accepted boundary in the committing turn. Missing or ambiguous evidence retains the original speech over room scenery. Saved words, recordings, provider evidence, and contestant observations remain unchanged. New production snapshots use composition version 6; versions 3–5 retain their prior composition.
+
+**Deployment prerequisite:** stop admission and drain all in-progress games and provider calls on the old workers before replacing them. Recover interrupted old-version games on the old version first. The journal does not persist recoverable pre-dispatch request bodies, so this change does not support an in-flight prompt cutover.
+
+For quality evaluation, inspect a sequence of recorded announcements for correct facts, relevance, and natural variation. Paid runs require separate authorization and use the localhost API with durable game IDs, sanitized requests/responses, reasoning when available, usage, retries, and failures. Deterministic tests do not establish real voice quality.
