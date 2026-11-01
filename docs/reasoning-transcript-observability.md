@@ -142,7 +142,7 @@ New default simulations and games use `openai:gpt-6-luna`; their sealed manifest
 
 Lobby, every Mingle turn, and private alliance huddles use one final `# CONSTITUTION.md` dialogue driver across all models: one short paragraph, usually 1–3 sentences, under 100 tokens, with every word serving gameplay or the audience. The driver follows dynamic context and any visual/performance instructions. Private prompt/request traces include the same final text sent to the provider. It stays outside the stable system prefix without changing cache keys; providers do not expose a per-line guarantee against caching. This is speech guidance, not truncation, a schema constraint, or a smaller completion budget. Thinking, strategy, typed facts, legal silence, introductions, and formal speeches retain their existing contracts. Judge actual brevity and watchability from fresh outputs; prompt tests prove placement, not model compliance.
 
-[Visual Mode](visual-mode.md) introduces a separate observable-performance contract. New close group images use distinct crops of one wide room background; each region is populated and verified independently. Heads describe the final region pixels, never planned seats. A close group image carries explicit visible IDs alongside the full canonical room roster; missing or off-camera characters remain room participants. Producer speech pointers never become identity evidence. Published corrections affect only future matching image context, leaving accepted provider traces unchanged.
+[Visual Mode](visual-mode.md) introduces a separate observable-performance contract. New close group images use distinct crops of one wide room background; each region is populated and verified independently, then complete sets are assembled and automatically harmonized into one continuous image. Verify the full cast and localize heads again on the final composite pixels; source-view anchors never substitute for composite geometry. A close group image carries explicit visible IDs alongside the full canonical room roster; missing or off-camera characters remain room participants. Producer speech pointers never become identity evidence. Published corrections affect only future matching image context, leaving accepted provider traces unchanged.
 
 Final 4 pleas use the lobby scene with exactly the remaining four players. Viewer endgame ballots come from sanitized `endgame.elimination_resolved` and `jury.winner_determined` tallies; eliminations change cast status at `player.eliminated`. Narration and image membership never establish who is still competing, and jurors can appear in Finals imagery while remaining OUT.
 
@@ -902,3 +902,44 @@ Unversioned/root-v1 games retain their original execution order and remain viewa
 Two Names initial nominations, override use/decline, and replacement nominations now attach their existing accepted thinking and public speech to the corresponding canonical decision. The viewer holds pre-decision facts until the speech finishes, then reveals the result. These public deliveries remain in the durable speaking record; no extra provider call or contestant-recall policy is introduced. New-root missing/ambiguous/orphan speech is covered by the same semantic checks as Safety Bounce. Historical speechless games remain viewable.
 
 Visual Mode permits text-only contestant models, including preferred and recovery routes. Each provider attempt sends scene images only to image-capable models; text-only models receive canonical room participants, observable cues, and performance instructions. Private request evidence records the actual adapted context.
+
+### Spectator strategy deltas
+
+The player Strategy tab shows event-anchored `strategyCandidate` delta text as “Proposed strategy delta,” with the originating action and replay context. Capture records the proposal, not its post-guard application result, so these cards do not assert that the engine applied the change. Null, blank, replacement-baseline and unanchored candidates are omitted. The existing thinking privacy filters, active/redaction status, selected-player scope and replay/audio frontier also constrain this projection. Full compact state, prior epochs, reasoning, provider evidence and diagnostics remain private; spectator cards never enter contestant context.
+## Influence result announcements (`results-mc-v1`)
+
+The existing direct House summary call receives an exact canonical `resultFocus` and the applicable format rule. The House acts as MC: announce the decisive facts, then add one grounded sentence in its own naturally varied voice. Null or failed authoring leaves a readable silent result; no prose parser, template fallback, extra commentary call, or `as any` shortcut determines facts.
+
+Accepted House transcript metadata carries `houseResult.eventSequence` and `authoringRevision`. Historical associations are recovered read-only only from an exact accepted boundary in the committing turn. Missing or ambiguous evidence retains the original speech over room scenery. Saved words, recordings, provider evidence, and contestant observations remain unchanged. New production snapshots use composition version 6; versions 3–5 retain their prior composition.
+
+**Deployment prerequisite:** stop admission and drain all in-progress games and provider calls on the old workers before replacing them. Recover interrupted old-version games on the old version first. The journal does not persist recoverable pre-dispatch request bodies, so this change does not support an in-flight prompt cutover.
+
+For quality evaluation, inspect a sequence of recorded announcements for correct facts, relevance, and natural variation. Paid runs require separate authorization and use the localhost API with durable game IDs, sanitized requests/responses, reasoning when available, usage, retries, and failures. Deterministic tests do not establish real voice quality.
+
+House MC prompts include every player’s frozen game gender on every beat, including exited players. Missing historical gender remains null; use names instead of guessing, honor explicitly stated pronouns, and do not copy gender mistakes from earlier summaries or notebooks. Provider-free coverage checks roster-to-prompt propagation; quality probes should also inspect gendered references. Existing accepted speech and recordings remain unchanged.
+
+## Provider images and deadline attribution
+
+New API gameplay provider attempts store image bytes once in private binary payload storage.
+Prepared requests, captured HTTP evidence and frozen Visual Mode contexts retain
+`influence-image:<sha256>:<byteLength>:<mediaType>` references. The provider receives a
+fresh signed HTTPS GET URL for each attempt; URLs last 15 minutes and are replaced by
+stable references in evidence. S3 signing credentials are redacted even when echoed.
+Native reasoning (including opaque encrypted reasoning) is retained unchanged.
+
+Generation defaults to 300 seconds through `INFLUENCE_LLM_REQUEST_TIMEOUT_MS` (maximum
+300 seconds). Influence, Werewolf and episode generation use that setting. House
+and retrospective generation no longer impose shorter 45/75/120-second limits.
+Explicit operator cancellation and ownership loss still interrupt promptly.
+
+Timeout evidence records `timeoutSource` (`client_deadline`, `provider`, `transport`,
+or `unknown`), the effective `timeoutMs` when known, error class, available HTTP
+status/code/request ID, and separate transport timestamps. Our deadline means remote
+completion and billing may be unknown; it does not open a shared provider-health
+circuit. Total attempt latency includes reservation work; transport timing isolates
+the fetch/response read. Signed-image preparation precedes transport timing.
+
+Existing evidence is deliberately untouched: no migration, rewrite, hash replacement
+or deletion. Historical ambiguous timeouts retain their original evidence. Never
+infer a timeout source from the old message alone. This change concerns gameplay
+provider journals, not separate moderation or asset-generation workflows.

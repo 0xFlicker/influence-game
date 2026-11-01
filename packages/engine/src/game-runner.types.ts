@@ -1547,6 +1547,8 @@ export type TranscriptDialogueKind =
  */
 export interface TranscriptDialogueContextV1 {
   version: 1;
+  /** Engine-owned MC association; never inferred from the spoken text. */
+  houseResult?: { eventSequence: number; authoringRevision: "results-mc-v1" | "historical" };
   presentationPurpose?: "farewell";
   decisionSpeech?: { action: string; actorId: UUID; receiptEntrySequence?: number };
   acceptedBallot?: { voterId: UUID; targetId: UUID; purpose: "empower" | "eliminate" | "winner" };

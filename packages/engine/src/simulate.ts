@@ -1,9 +1,18 @@
 #!/usr/bin/env bun
 /** Visual Mode supports text-only routes using canonical room text and performance cues. */
-/** New room imagery populates distinct crops of one wide room; visible IDs describe each verified view, never change the canonical audience. */
+/** New room imagery populates distinct crops of one wide room, then harmonizes complete view sets into a verified continuous image; visible IDs never change the canonical audience. */
+
+/** API provider evidence retains immutable image references, never repeated base64 scene bytes.
+ * Signed URLs are minted at dispatch. Generation defaults to 300 seconds and timeout evidence
+ * distinguishes client deadlines, remote timeouts and network failures. Paid tests use localhost API.
+ */
 import {CURRENT_INFLUENCE_GAME_SCHEMA_VERSION} from "./influence-game-schema";
 import { HOUSE_CAST } from "./house-personas";
 /**
+ * House summaries receive frozen roster gender; inspect gendered references without inferring missing values.
+ * Influence House summaries use results-mc-v1: canonical result facts plus one
+ * grounded sentence. Preserve accepted speech/evidence; paid review uses the localhost API.
+ * Deploy only after all old-version games and calls have drained.
  * Hosted OpenAI Flex capacity retries the same model on explicit standard (default).
  * API availability exhaustion durably delays the same turn, then suspends; it never
  * invents ballots or skips required speech. Retain each attempt and its tier-aware cost.

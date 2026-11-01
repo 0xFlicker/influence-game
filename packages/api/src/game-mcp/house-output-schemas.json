@@ -1417,6 +1417,26 @@
                             "voterId"
                           ]
                         },
+                        "houseResult": {
+                          "type": "object",
+                          "properties": {
+                            "eventSequence": {
+                              "type": "number"
+                            },
+                            "authoringRevision": {
+                              "enum": [
+                                "historical",
+                                "results-mc-v1"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "authoringRevision",
+                            "eventSequence"
+                          ]
+                        },
                         "visualScene": {
                           "type": "object",
                           "properties": {

@@ -348,3 +348,40 @@ test('an in-flight play aborted by House hold does not clear the operator play i
  await act(async()=>rejectPlay(new DOMException('interrupted','AbortError')));
  expect(pauses).toBe(0);expect(director.getSnapshot().isPlaying).toBe(true);expect(audio.paused).toBe(true);
 });
+
+test("explicit text recovery releases a failed recording only for the selected cue", async () => {
+  const hook = renderHook(({cursor}) => useWatchVoice({director,gameId:"g",audience:"public",thinking:false,
+    coordinate:coordinate(cursor),coordinateForCue:cue=>coordinate(cue.key==="one"?1:2),allowTextFallback:true,onPause:()=>{}}),{initialProps:{cursor:1}});
+  await act(async()=>{});
+  act(()=>director.seekTimeline(0,1200));await frame();
+  const audio = FakeAudio.instances[0]!;
+  act(()=>audio.onerror?.());
+  expect(hook.result.current.error).toContain("could not load");
+  act(()=>hook.result.current.continueWithText());await frame();
+  expect(hook.result.current.error).toBeNull();
+  expect(director.getAudioPosition()).toBeNull();
+  act(()=>{director.seekTimeline(1,1200);hook.rerender({cursor:2});});await frame();
+  expect(director.getAudioPosition()?.part).toBe("speech");
+});
+
+test("Influence buffering exposes recovery after ten wall-clock seconds without advancing the cue", async () => {
+  const timers=globalThis.setTimeout;
+  let timeout: (()=>void)|undefined;
+  Object.defineProperty(globalThis,"setTimeout",{configurable:true,value:(callback:()=>void,delay?:number,...args:unknown[])=>{
+    if(delay===10000) timeout=callback;
+    return timers(callback,delay,...args);
+  }});
+  try {
+    const hook=renderHook(()=>useWatchVoice({director,gameId:"g",audience:"public",thinking:false,coordinate:coordinate(1),allowTextFallback:true,onPause:()=>{}}));
+    await act(async()=>{});
+    act(()=>{director.seekTimeline(0,1200);director.play();});await frame();
+    const audio=FakeAudio.instances[0]!;
+    act(()=>{audio.readyState=2;audio.onwaiting?.();});
+    const position=director.getTimelineElapsedBaseMs();
+    expect(timeout).toBeDefined();
+    act(()=>timeout!());
+    expect(hook.result.current.error).toContain("buffering did not recover");
+    expect(director.getSnapshot().isPlaying).toBe(false);
+    expect(director.getTimelineElapsedBaseMs()).toBe(position);
+  } finally {globalThis.setTimeout=timers;}
+});

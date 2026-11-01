@@ -12,6 +12,7 @@ import {
   ne,
   not,
   or,
+  sql,
 } from "drizzle-orm";
 import {
   buildRevealedRoundFacts,
@@ -231,7 +232,11 @@ export async function getPublicWatchIntelligence(
     contextRound,
     contextPhase,
   ).slice(0, limit);
-  const strategyCards: PublicWatchIntelligenceCard[] = [];
+  const strategyCards = rankCards(
+    artifactCards.filter((card) => card.kind === "strategy"),
+    contextRound,
+    contextPhase,
+  ).slice(0, limit);
 
   return {
     ok: true,
@@ -240,7 +245,7 @@ export async function getPublicWatchIntelligence(
     context,
     intelligence: {
       thinking: cardsSection(thinkingCards, "No public thinking has been captured for this player yet."),
-      strategy: cardsSection(strategyCards, "No public strategy notes have been captured for this player yet."),
+      strategy: cardsSection(strategyCards, "No strategy deltas have been captured for this player at this point in the replay."),
       receipts,
     },
   };
@@ -293,43 +298,59 @@ async function loadArtifactCards(
     throughTranscriptSequence?: number;
   },
 ): Promise<PublicWatchIntelligenceCard[]> {
-  const rows = await loadPayloads(db
-    .select()
-    .from(schema.gameCognitiveArtifacts)
-    .where(and(
-      eq(schema.gameCognitiveArtifacts.gameId, params.gameId),
-      params.throughEventSequence === undefined ? undefined : lte(schema.gameCognitiveArtifacts.eventSequence, params.throughEventSequence),
-      eq(schema.gameCognitiveArtifacts.actorPlayerId, params.actorPlayerId),
-      eq(schema.gameCognitiveArtifacts.visibilityStatus, "active"),
-      eq(schema.gameCognitiveArtifacts.redactionStatus, "active"),
-      eq(schema.gameCognitiveArtifacts.artifactType, "thinking"),
-      inArray(schema.gameCognitiveArtifacts.actorRole, ["player", "juror"]),
-      ne(schema.gameCognitiveArtifacts.action, "alliance-action"),
-      not(like(schema.gameCognitiveArtifacts.action, "alliance-huddle-%")),
-      // Ballot cognition stays private; the separate sanitized accepted-ballot
-      // receipts remain operator-readable immediately through canonical facts.
-      ne(schema.gameCognitiveArtifacts.action, "format-ballot"),
-      ne(schema.gameCognitiveArtifacts.action, "format-save-or-eliminate-ballot"),
-      ne(schema.gameCognitiveArtifacts.action, "format-vote-bomb-ballot"),
-      ne(schema.gameCognitiveArtifacts.action, "format-majority-elimination-ballot"),
-      ne(schema.gameCognitiveArtifacts.action, "format-even-votes-ballot"),
-      ne(schema.gameCognitiveArtifacts.action, "format-safety-bounce-vote"),
-      or(
-        isNull(schema.gameCognitiveArtifacts.phase),
-        and(
-          ne(schema.gameCognitiveArtifacts.phase, "MINGLE_I"),
-          ne(schema.gameCognitiveArtifacts.phase, "PRE_VOTE_HUDDLE"),
-          ne(schema.gameCognitiveArtifacts.phase, "PRE_COUNCIL_HUDDLE"),
-        ),
-      ),
-      or(isNull(schema.gameCognitiveArtifacts.round), lte(schema.gameCognitiveArtifacts.round, params.round)),
-    ))
-    .orderBy(desc(schema.gameCognitiveArtifacts.eventSequence), desc(schema.gameCognitiveArtifacts.createdAt))
-    .limit(cardScanLimit(params.limit)));
+  // Scan each section independently so frequent thoughts cannot crowd out deltas.
+  const sections = await Promise.all((["thinking", "strategy"] as const).map(async (artifactType) => {
+    const cards: PublicWatchIntelligenceCard[] = [];
+    const scanLimit = cardScanLimit(params.limit);
+    let cursor: ArtifactRow | undefined;
+    for (;;) {
+      const rows = await loadPayloads(db
+        .select()
+        .from(schema.gameCognitiveArtifacts)
+        .where(and(
+          eq(schema.gameCognitiveArtifacts.gameId, params.gameId),
+          params.throughEventSequence === undefined ? undefined : lte(schema.gameCognitiveArtifacts.eventSequence, params.throughEventSequence),
+          eq(schema.gameCognitiveArtifacts.actorPlayerId, params.actorPlayerId),
+          eq(schema.gameCognitiveArtifacts.visibilityStatus, "active"),
+          eq(schema.gameCognitiveArtifacts.redactionStatus, "active"),
+          eq(schema.gameCognitiveArtifacts.artifactType, artifactType),
+          artifactType === "strategy" ? isNotNull(schema.gameCognitiveArtifacts.eventSequence) : undefined,
+          cursor ? sql`(${schema.gameCognitiveArtifacts.eventSequence}, ${schema.gameCognitiveArtifacts.createdAt}, ${schema.gameCognitiveArtifacts.id}) < (${cursor.eventSequence}, ${cursor.createdAt}, ${cursor.id})` : undefined,
+          inArray(schema.gameCognitiveArtifacts.actorRole, ["player", "juror"]),
+          ne(schema.gameCognitiveArtifacts.action, "alliance-action"),
+          not(like(schema.gameCognitiveArtifacts.action, "alliance-huddle-%")),
+          // Ballot cognition stays private; the separate sanitized accepted-ballot
+          // receipts remain operator-readable immediately through canonical facts.
+          ne(schema.gameCognitiveArtifacts.action, "format-ballot"),
+          ne(schema.gameCognitiveArtifacts.action, "format-save-or-eliminate-ballot"),
+          ne(schema.gameCognitiveArtifacts.action, "format-vote-bomb-ballot"),
+          ne(schema.gameCognitiveArtifacts.action, "format-majority-elimination-ballot"),
+          ne(schema.gameCognitiveArtifacts.action, "format-even-votes-ballot"),
+          ne(schema.gameCognitiveArtifacts.action, "format-safety-bounce-vote"),
+          or(
+            isNull(schema.gameCognitiveArtifacts.phase),
+            and(
+              ne(schema.gameCognitiveArtifacts.phase, "MINGLE_I"),
+              ne(schema.gameCognitiveArtifacts.phase, "PRE_VOTE_HUDDLE"),
+              ne(schema.gameCognitiveArtifacts.phase, "PRE_COUNCIL_HUDDLE"),
+            ),
+          ),
+          or(isNull(schema.gameCognitiveArtifacts.round), lte(schema.gameCognitiveArtifacts.round, params.round)),
+        ))
+        .orderBy(desc(schema.gameCognitiveArtifacts.eventSequence), desc(schema.gameCognitiveArtifacts.createdAt), desc(schema.gameCognitiveArtifacts.id))
+        .limit(scanLimit));
+      cards.push(...rows
+        .filter((row) => isAtOrBeforeReplayContext(row.round, row.phase, params.round, params.phase))
+        .flatMap((row) => artifactCardsFromRow(row, params)));
+      // Null/no-change candidates are common; continue to older delta pages.
+      if (artifactType === "thinking" || cards.length >= params.limit || rows.length < scanLimit) break;
+      // Keyset pagination remains stable when live capture inserts newer rows.
+      cursor = rows.at(-1);
+    }
+    return cards;
+  }));
 
-  return rows
-    .filter((row) => isAtOrBeforeReplayContext(row.round, row.phase, params.round, params.phase))
-    .flatMap((row) => artifactCardsFromRow(row, params));
+  return sections.flat();
 }
 
 function artifactCardsFromRow(
@@ -340,6 +361,32 @@ function artifactCardsFromRow(
     phase: string;
   },
 ): PublicWatchIntelligenceCard[] {
+  if (row.artifactType === "strategy") {
+    // Capture stores proposals, not the post-guard strategy application result.
+    // Only project the delta text; never expose the private state or trace.
+    const candidate = row.payload.strategyCandidate;
+    if (row.eventSequence === null || row.payload.stage !== "proposal"
+      || !candidate || typeof candidate !== "object" || Array.isArray(candidate)
+      || !("operation" in candidate) || candidate.operation !== "delta"
+      || !("submittedValue" in candidate)) return [];
+    const text = normalizeText(candidate.submittedValue);
+    if (!text || text === "null") return [];
+    return [{
+      id: row.id,
+      kind: "strategy",
+      source: "cognitive_artifact",
+      actorPlayerId: context.actorPlayerId,
+      title: `Proposed strategy delta · ${actionTitle(row.action, "Decision")}`,
+      text,
+      context: contextPrecision(row.round, row.phase, context.round, context.phase),
+      ...(row.round !== null && { round: row.round }),
+      ...(row.phase && { phase: row.phase }),
+      action: row.action,
+      eventSequence: row.eventSequence,
+      createdAt: row.createdAt,
+    }];
+  }
+
   if (row.artifactType === "thinking") {
     const text = textFromPayloadField(row.payload, "thinking");
     if (!text) return [];

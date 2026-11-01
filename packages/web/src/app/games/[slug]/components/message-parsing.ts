@@ -112,6 +112,7 @@ export function wsEntryToTranscriptEntry(
     speakerPlayerId: entry.speakerPlayerId,
     presentationPurpose: entry.presentationPurpose,
     acceptedBallot: entry.acceptedBallot,
+    houseResult: entry.houseResult,
     decisionSpeech: entry.decisionSpeech,
     visualScene: entry.visualScene,
     anonymous: entry.anonymous,

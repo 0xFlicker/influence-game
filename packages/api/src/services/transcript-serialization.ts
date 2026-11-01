@@ -161,6 +161,7 @@ function modernFieldsForCurrentCapture(
     ...(entry.anonymous && { anonymous: true }),
     ...(entry.dialogueContext?.decisionSpeech && { decisionSpeech: entry.dialogueContext.decisionSpeech }),
     ...(entry.dialogueContext?.acceptedBallot && { acceptedBallot: entry.dialogueContext.acceptedBallot }),
+    ...(entry.dialogueContext?.houseResult && { houseResult: entry.dialogueContext.houseResult }),
     ...(entry.dialogueContext?.visualScene && { visualScene: entry.dialogueContext.visualScene }),
     ...(entry.dialogueContext?.presentationPurpose && { presentationPurpose: entry.dialogueContext.presentationPurpose }),
     ...(entry.dialogueContext?.roomId != null && { roomId: entry.dialogueContext.roomId }),
@@ -408,6 +409,7 @@ function sanitizeSafeContext(
   if (value.anonymous) out.anonymous = true;
   if (value.decisionSpeech) out.decisionSpeech = { ...value.decisionSpeech };
   if (value.acceptedBallot) out.acceptedBallot = { ...value.acceptedBallot };
+  if (value.houseResult) out.houseResult = { ...value.houseResult };
   if (value.visualScene) out.visualScene = { ...value.visualScene };
   if (value.presentationPurpose === "farewell") out.presentationPurpose = "farewell";
   return out;

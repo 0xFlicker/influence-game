@@ -1,3 +1,4 @@
+import { providerRequestTimeoutMs } from "./provider-request-timeout.js";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -55,7 +56,7 @@ export function decodeEpisodeCopy(raw: string): EpisodeCopy {
   return { title: copy.title.trim(), description: copy.description.trim() };
 }
 export async function generateEpisodeCopy(cast: Array<{ name: string; personality: string }>, signal: AbortSignal, gameKind: EpisodeGame["gameKind"], routing: { gameId: string; ownerEpoch: string; revision: number; config: Record<string, unknown>; hooks: ProviderExecutionHooks }): Promise<EpisodeCopy> {
-  const runtimes = createLlmProviderRuntimesFromEnv(actorProviderManifest(routing.config, { role: "house" }), process.env, { timeout: 45_000, openAIServiceTier: "flex" });
+  const runtimes = createLlmProviderRuntimesFromEnv(actorProviderManifest(routing.config, { role: "house" }), process.env, { timeout: providerRequestTimeoutMs(process.env), openAIServiceTier: "flex" });
   if (!runtimes?.length) throw new Error("House naming provider is not configured");
   const decode = (value: unknown) => {
     try { return { status: "valid" as const, value: decodeEpisodeCopy(JSON.stringify(value)) }; }

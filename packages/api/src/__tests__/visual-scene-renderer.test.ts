@@ -13,7 +13,7 @@ import { planVisualScene, visualRoomCropGroups } from "@influence/engine/visual-
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { prepareVisualScene, readCurrentVisualScene, storeVisualArtifact } from "../services/visual-scene-store.js";
-import { renderPlannedVisualScene } from "../services/visual-scene-renderer.js";
+import { renderPlannedVisualScene, renderVisualCandidate } from "../services/visual-scene-renderer.js";
 import { readVisualRenderAccounting } from "../services/visual-render-journal.js";
 const originalFetch = globalThis.fetch;
 const originalKey = process.env.OPENAI_API_KEY;
@@ -67,7 +67,7 @@ test("renders and verifies a small scene once, then resumes entirely from durabl
   expect(await readVisualRenderAccounting(db, "game")).toMatchObject({ unpricedAttempts: 1, uncertainAttempts: 0 });
 });
 
-test.each([9, 10, 12, 14])("renders %i contestants into distinct room regions with no harmonization", async size => {
+test.each([9, 10, 12, 14])("renders %i contestants into distinct room regions and harmonizes a continuous scene", async size => {
   const bands = await sharp({ create: { width: 3072, height: 1536, channels: 3, background: "red" } }).composite([{ input: await sharp({ create: { width: 1536, height: 1536, channels: 3, background: "blue" } }).png().toBuffer(), left: 1536, top: 0 }]).png().toBuffer();
   artifactId = await storeVisualArtifact(db, "game", bands);
   const mock = globalThis.fetch, backdrops: string[] = [];
@@ -81,14 +81,14 @@ test.each([9, 10, 12, 14])("renders %i contestants into distinct room regions wi
   }, { preconnect: originalFetch.preconnect });
   const planned = await scene(size), count = Math.ceil(size / 4);
   const ready = await renderPlannedVisualScene(db, planned);
-  expect(ready.shots?.mode).toBe("groups");
-  expect(ready.shots?.overview).toBeNull();
+  expect(ready.shots?.mode).toBe("scene");
+  expect(ready.shots?.overview?.visibleParticipantIds).toHaveLength(size);
   expect(ready.shots?.groups.flatMap(s => s.visibleParticipantIds).sort()).toEqual(planned.plan.cast.map(m => m.id).sort());
   expect(ready.shots?.groups).toHaveLength(count);
   expect(new Set(backdrops).size).toBeGreaterThan(1);
-  expect([imageCalls, visionCalls]).toEqual([count, count * 3]);
+  expect([imageCalls, visionCalls]).toEqual([count + 1, (count + 1) * 3]);
   await renderPlannedVisualScene(db, planned);
-  expect([imageCalls, visionCalls]).toEqual([count, count * 3]);
+  expect([imageCalls, visionCalls]).toEqual([count + 1, (count + 1) * 3]);
 });
 
 test("failed identity verification pauses the scene without another automatic paid attempt", async () => {
@@ -111,7 +111,7 @@ test("loss of the boundary retains paid output but prevents subsequent dispatch 
   expect(await readVisualRenderAccounting(db, "game")).toMatchObject({ unpricedAttempts: 1, uncertainAttempts: 0 });
   const resumed = await renderPlannedVisualScene(db, planned);
   expect(resumed.status).toBe("ready");
-  expect(imageCalls).toBe(3);
+  expect(imageCalls).toBe(4);
 });
 
 test("checks the boundary again before xAI availability fallback", async () => {
@@ -381,4 +381,52 @@ test("huddle scenes reuse only an exact cast, freeze the speech binding, and lea
   expect((await prepareCommittedHuddleScene(db, input))?.id).toBe(first?.id);
   expect((await readCurrentVisualScene(db, "game", "mingle-1"))?.id).toBe(fullRoom.id);
   expect([imageCalls, visionCalls]).toEqual(counts);
+});
+
+test.each(["village", "pack", "hunt"] as const)("preserves frozen Werewolf %s direction and individual staging with a supplied background", async purpose => {
+  const { planWerewolfScene } = await import("../services/werewolf-scene-plan");
+  const size = purpose === "village" ? 8 : purpose === "pack" ? 2 : 3;
+  const cast = Array.from({ length: size }, (_, i) => ({ id: `p${i}`, name: `Player ${i}`, referenceArtifactId: artifactId, performanceInstructions: "Calm" }));
+  const plan = await planWerewolfScene(db, "game", { purpose, roomId: purpose === "village" ? "lobby" : purpose === "pack" ? "mingle-1" : "mingle-2", boundarySequence: 1, day: 1, participantIds: cast.map(m => m.id), wolfIds: [], targetId: purpose === "hunt" ? "p2" : null }, cast);
+  const mock = globalThis.fetch, prompts: string[] = [];
+  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).includes("/v1/images/")) prompts.push(String((init?.body as FormData).get("prompt")));
+    return mock(url, init);
+  }, { preconnect: originalFetch.preconnect });
+  const prepared = await prepareVisualScene(db, { gameId: "game", boundarySequence: 1, plan });
+  await renderPlannedVisualScene(db, prepared);
+  const regions = Math.ceil(size / 4);
+  expect(prompts).toHaveLength(regions + (regions > 1 ? 1 : 0));
+  for (const prompt of prompts) expect(prompt).toContain(plan.direction!.roomDirection);
+  for (const placement of plan.placements) expect(prompts.filter(prompt => prompt.includes(JSON.stringify(placement.position)))).toHaveLength(1);
+  if (size > 4) for (const prompt of prompts.slice(0, regions)) expect(prompt).toContain("Do not reconstruct the entire room");
+});
+
+
+test("generic repair defaults do not impose whole-room staging on a supplied crop", async () => {
+  const mock = globalThis.fetch, prompts: string[] = [];
+  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).includes("/v1/images/")) prompts.push(String((init?.body as FormData).get("prompt")));
+    return mock(url, init);
+  }, { preconnect: originalFetch.preconnect });
+  await renderVisualCandidate(db, await scene(9), undefined, undefined, { renderContext: { style: "Preserve reference style", roomName: "Lobby", roomDirection: "Rebuild an entire modern kitchen" } });
+  expect(prompts).toHaveLength(4);
+  for (const prompt of prompts) {
+    expect(prompt).not.toContain("Rebuild an entire modern kitchen");
+    expect(prompt).not.toContain('"position":');
+  }
+  for (const prompt of prompts.slice(0, 3)) expect(prompt).toContain("Do not reconstruct the entire room");
+});
+
+test("automatic stitching rejects missing identities and retains the verified source views", async () => {
+  const mock = globalThis.fetch;
+  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).endsWith("/responses") && imageCalls > 3) rejectIdentity = true;
+    return mock(url, init);
+  }, { preconnect: originalFetch.preconnect });
+  const ready = await renderPlannedVisualScene(db, await scene(12));
+  expect(imageCalls).toBe(4);
+  expect(ready.shots?.mode).toBe("groups");
+  expect(ready.shots?.overview).toBeNull();
+  expect(ready.shots?.groups.flatMap(shot => shot.visibleParticipantIds)).toHaveLength(12);
 });

@@ -2754,6 +2754,7 @@ export interface WsRoomMetadata {
 }
 
 export interface TranscriptEntry {
+  houseResult?: import("@influence/engine").TranscriptDialogueContext["houseResult"];
   retrospectiveSource?: { eventSequence: number; ordinal: number };
   dialogueKind?: import("@influence/engine").TranscriptDialogueKind | null;
   firstDurableEventSequence?: number | null;
@@ -2825,6 +2826,7 @@ export interface GameDetail {
 
 /** Public transcript entry received over WebSocket (matches PublicWsTranscriptEntry in packages/api) */
 export interface WsTranscriptEntry {
+  houseResult?: import("@influence/engine").TranscriptDialogueContext["houseResult"];
   dialogueKind?: import("@influence/engine").TranscriptDialogueKind | null;
   firstDurableEventSequence?: number | null;
   speakerPlayerId?: string | null;

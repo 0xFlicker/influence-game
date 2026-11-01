@@ -41,7 +41,7 @@ test("supplies accepted annotated pixels and frozen performance instructions", a
   const result = await reader()(args());
   expect(result.performanceInstructions).toBe("Quiet delivery");
   expect(result.room?.scene.id).toBe(scene.id);
-  expect(result.room?.scene.annotatedImageUrl).toStartWith("data:image/png;base64,");
+  expect(result.room?.scene.annotatedImageUrl).toStartWith("influence-image:");
   expect(result.room?.scene.participantIds).toEqual(["p1"]);
 });
 
@@ -87,7 +87,7 @@ test("a close group image carries the full canonical room and explicit visible i
   expect(result.room?.scene.participantIds).toEqual(["p1", "p2", "p3"]);
   expect(result.room?.scene.visibleParticipantIds).toEqual(["p2"]);
   expect(result.room?.scene.anchors).toEqual([anchor]);
-  expect(result.room?.scene.annotatedImageUrl).toStartWith("data:image/png;base64,");
+  expect(result.room?.scene.annotatedImageUrl).toStartWith("influence-image:");
   expect(result.observableRoom?.participantIds).toEqual(["p1", "p2", "p3"]);
 });
 

@@ -331,7 +331,7 @@ export function createLlmClientFromEnv(
     return {
       client: new OpenAI({ apiKey, baseURL, maxRetries: 0,
         ...(options.timeout !== undefined && { timeout: options.timeout }),
-        fetch: createProviderEvidenceFetch(fetch, [apiKey]) }),
+        fetch: createProviderEvidenceFetch(fetch, [apiKey], options.timeout ?? 600_000) }),
       apiKeySource: "XAI_API_KEY", baseURL, baseURLSource: "xai-profile",
       providerLabel: "xAI", providerProfileId: "xai", flexProcessingEnabled: false,
     };
@@ -344,7 +344,7 @@ export function createLlmClientFromEnv(
         ...(options.timeout !== undefined && { timeout: options.timeout }),
         defaultHeaders: { "anthropic-version": "2026-10-21",
           ...(env.ANTHROPIC_WORKSPACE_ID?.trim() && { "anthropic-workspace-id": env.ANTHROPIC_WORKSPACE_ID.trim() }) },
-        fetch: createProviderEvidenceFetch(fetch, [apiKey]), logLevel: "off" }),
+        fetch: createProviderEvidenceFetch(fetch, [apiKey], options.timeout ?? 600_000), logLevel: "off" }),
       apiKeySource: "ANTHROPIC_API_KEY", providerLabel: "Anthropic", providerProfileId: "anthropic",
       flexProcessingEnabled: false,
     };
@@ -405,6 +405,7 @@ export function createLlmClientFromEnv(
     [apiKey, katanaKey, katanaSecret].filter((value): value is string =>
       Boolean(value),
     ),
+    options.timeout ?? (providerProfileId === "lm-studio" ? lmStudioTimeoutMs(env) : 600_000),
   );
   const providerFetch = flexProcessingEnabled && !options.coordinated
     ? createFlexProcessingFetch(evidenceFetch)

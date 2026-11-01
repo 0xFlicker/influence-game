@@ -2937,6 +2937,8 @@ export class GameRunner {
       continuity.examinedCanonicalHead,
     );
     const narrationContext = compileHouseNarrationContext({
+      playerGendersById: Object.fromEntries(context.gameState.getAllPlayers().map(player => [player.id, player.gender ?? null])),
+      empowerRevoteVersion: context.gameState.empowerRevoteVersion,
       actorCoordinate,
       round,
       phase,
@@ -3026,7 +3028,8 @@ export class GameRunner {
           scope: "system",
           text: publicSummary,
         });
-        context.logger.logSystem(publicSummary, phase, undefined, undefined, "house_summary");
+        context.logger.logSystem(publicSummary, phase, undefined, undefined, "house_summary", undefined,
+          narrationContext.resultFocus ? {eventSequence: narrationContext.resultFocus.sequence, authoringRevision: "results-mc-v1"} : undefined);
       }
       const acceptedBeat = result.beat ? structuredClone(result.beat) : null;
       const nextContinuity: HouseNarrativeContinuityV2 = {

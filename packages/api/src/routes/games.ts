@@ -1,4 +1,5 @@
 import {CURRENT_INFLUENCE_GAME_SCHEMA_VERSION} from "@influence/engine/influence-game-schema";
+import {readHistoricalHouseResults} from "../services/house-result-association.js";
 import { CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION } from "@influence/engine/influence-decision-speech";
 import { houseFullBodyUrl } from "@influence/engine/house-character-art";
 import { audioReadySequence } from "../services/audio-frontier.js";
@@ -1055,6 +1056,7 @@ export function createGameRoutes(db: DrizzleDB) {
       }
     };
 
+    const historicalResults = await readHistoricalHouseResults(db,gameId,rows.filter(row=>!row.safeContext?.houseResult));
     const entries = rows.filter(row => row.scope !== "huddle" || isSpectatorHuddleSpeech({ ...row, dialogueContext: row.safeContext })).map((row) => {
       const roomMetadata = parseJsonOrNull(row.roomMetadata);
       return {
@@ -1066,6 +1068,7 @@ export function createGameRoutes(db: DrizzleDB) {
         anonymous: row.safeContext?.anonymous === true,
         presentationPurpose: row.safeContext?.presentationPurpose,
         acceptedBallot: row.safeContext?.acceptedBallot,
+        houseResult: row.safeContext?.houseResult ?? historicalResults.get(row.id),
         decisionSpeech: row.safeContext?.decisionSpeech,
         visualScene: row.safeContext?.visualScene,
         gameId: row.gameId,
