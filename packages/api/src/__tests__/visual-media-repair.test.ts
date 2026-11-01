@@ -10,7 +10,7 @@ import { planVisualScene, visualRenderGroups } from "@influence/engine/visual-sc
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { acceptVisualScene, prepareVisualScene, storeVisualArtifact, type StoredVisualScene } from "../services/visual-scene-store.js";
-import { controlVisualMedia, readVisualMedia, type MediaControl } from "../services/visual-media-repair.js";
+import { controlVisualMedia, readVisualMedia, readVisualSceneMedia, type MediaControl } from "../services/visual-media-repair.js";
 import { claimVisualMediaJob, executeVisualMediaJob } from "../services/visual-media-worker.js";
 import { readViewerMedia } from "../services/visual-media-viewer.js";
 import { reserveVisualRender, visualImageJournal, renderDurableVisualImage, readVisualRenderAccounting, readVisualSceneAttempts, reconcileVisualAttempt } from "../services/visual-render-journal.js";
@@ -210,24 +210,26 @@ test("ambiguous identities retain candidate pixels and name the participant with
   fail = "identity"; await send(); await run();
   const latest = (await readVisualMedia(db, "media")).jobs[0]!;
   expect(latest).toMatchObject({ status: "failed", failure: "Character identity could not be verified: Player 3", candidateArtifactId: expect.any(String) });
-  expect(calls).toEqual(["image", "image", "composition"]);
+  expect(calls).toEqual(["image", "composition"]);
   expect((await readVisualMedia(db, "media")).versions).toHaveLength(0);
   expect(await readVisualRenderAccounting(db, "media")).toMatchObject({ pendingAttempts: 0, uncertainAttempts: 0 });
 });
 
-test("continue reuses successful group images and retries only the failed group", async () => {
-  fail = "second-image"; await send(); const first = await run();
-  expect(visualRenderGroups(scene.plan)).toHaveLength(2); expect(calls).toEqual(["image", "image"]);
+test("continue reuses the successful region and resumes remaining regions", async () => {
+  fail = "composition-http"; await send(); const first = await run();
+  expect(calls).toEqual(["image", "composition"]);
   expect((await readVisualMedia(db, "media")).jobs[0]?.status).toBe("failed");
-  fail = "first-image"; calls = []; await send({ expectedVersion: 1, action: "continue", sourceJobId: first.id }); const second = await run();
-  expect(calls).toEqual(["image"]);
-  fail = null; calls = []; await send({ expectedVersion: 2, action: "continue", sourceJobId: second.id }); await run();
-  expect(calls).toEqual(["image", "composition", "heads", "identities", "composition", "heads", "identities", "image", "composition", "heads", "identities"]);
+  expect((await readVisualMedia(db, "media")).jobs[0]?.candidateIsPartial).toBe(true);
+  expect((await readVisualSceneMedia(db, "media", scene.id, { offset: 0, limit: 10 })).media.jobs[0]?.candidateIsPartial).toBe(true);
+  expect(await send({ expectedVersion: 1, action: "verify", sourceVersionId: first.id })).toMatchObject({ accepted: false, code: "source_is_partial_view" });
+  expect(calls).toEqual(["image", "composition"]);
+  fail = null; calls = []; await send({ expectedVersion: 1, action: "continue", sourceJobId: first.id }); await run();
+  expect(calls).toEqual(["composition", "heads", "identities", "image", "composition", "heads", "identities"]);
 });
 
 test.each(["count", "duplicate"])("rejects %s identities without automatic regeneration", async failure => {
   fail = failure; await send(); await run(); expect((await readVisualMedia(db, "media")).versions).toHaveLength(0);
-  expect((await readVisualMedia(db, "media")).jobs[0]?.status).toBe("failed"); expect(calls.filter(c => c === "image")).toHaveLength(2);
+  expect((await readVisualMedia(db, "media")).jobs[0]?.status).toBe("failed"); expect(calls.filter(c => c === "image")).toHaveLength(1);
 });
 
 test("uncertain geometry produces no guessed anchors and can be published", async () => {

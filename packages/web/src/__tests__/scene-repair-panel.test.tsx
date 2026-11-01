@@ -16,6 +16,17 @@ const props = (media = empty()) => ({ gameId: "game", sceneId: "scene", original
 const respond = (handler: (input: string, init?: RequestInit) => Promise<Response>) => { globalThis.fetch = Object.assign(handler, { preconnect: originalFetch.preconnect }) as typeof fetch; };
 const job = (status: string): MediaRecords["jobs"][number] => ({ id: "job", sceneId: "scene", version: 1, status, step: "harmonize", failure: null, candidateArtifactId: null, sourceImageId: null, createdAt: new Date().toISOString(), startedAt: null, finishedAt: null });
 
+test("partial candidates offer continuation instead of a whole-cast recheck", async () => {
+  respond(async () => Response.json({ imageUrl: "data:image/png;base64,fixture" }));
+  const media = { ...empty(), jobs: [{ ...job("failed"), candidateArtifactId: "region", candidateIsPartial: true }] };
+  const mounted = render(<SceneRepairPanel {...props(media)} />);
+  fireEvent.click(mounted.getByText("Versions and review"));
+  expect(mounted.queryByText("Recheck image")).toBeNull();
+  expect(mounted.getByText("Continue failed repair")).not.toBeNull();
+  expect(mounted.getByText(/Partial room view/)).not.toBeNull();
+  await waitFor(() => expect(mounted.getByAltText("Unverified v1")).not.toBeNull());
+});
+
 test("character framing reads the inspected immutable version and its references only on demand",async()=>{
   const reads:string[]=[];
   respond(async url=>{reads.push(url);return Response.json({imageUrl:"data:image/png;base64,fixture"});});

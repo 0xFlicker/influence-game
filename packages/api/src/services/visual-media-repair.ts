@@ -169,6 +169,7 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
           if (source?.shots && source.shots.mode !== "scene") return reject("source_is_shot_collection", "Use Correct images to review a collection of group shots");
           const failedCandidate = history.find(j => j.id === input.sourceVersionId && j.candidateArtifactId);
           if (!source && !failedCandidate) return reject("source_missing", "Image version not found");
+          if (!source && failedCandidate && isPartialCandidate(failedCandidate)) return reject("source_is_partial_view", "This candidate contains only part of the cast. Continue failed repair or use Correct images to review its saved views.");
           sourceImageId = source?.imageArtifactId ?? failedCandidate!.candidateArtifactId; plan = source?.plan ?? failedCandidate!.plan;
         }
         if (input.action === "continue") {
@@ -208,6 +209,10 @@ function originalVersion(scene: typeof schema.visualScenes.$inferSelect) {
     verificationVersion: "gameplay-record", createdAt: scene.createdAt };
 }
 
+function isPartialCandidate(job: Pick<typeof jobs.$inferSelect, "plan" | "sourceImageId" | "sourceVersionId">) {
+  return job.plan.cast.length > 4 && !job.sourceImageId && !job.sourceVersionId;
+}
+
 export async function readVisualMedia(db: DrizzleDB, gameId: string) {
   const [jobRows, versionRows, publicationRows, requests, originals] = await loadPayloads(Promise.all([
     db.select().from(jobs).where(eq(jobs.gameId, gameId)).orderBy(desc(jobs.version)),
@@ -216,7 +221,7 @@ export async function readVisualMedia(db: DrizzleDB, gameId: string) {
     db.select().from(schema.visualMediaRequests).where(eq(schema.visualMediaRequests.gameId, gameId)).orderBy(desc(schema.visualMediaRequests.createdAt)),
     db.select().from(schema.visualScenes).where(and(eq(schema.visualScenes.gameId, gameId), eq(schema.visualScenes.status, "ready"))),
   ]));
-  return { jobs: jobRows, versions: [...versionRows, ...originals.filter(s => s.imageArtifactId && s.annotatedArtifactId && !versionRows.some(v => v.sceneId === s.id && v.version === 0)).map(originalVersion)], publications: publicationRows, requests };
+  return { jobs: jobRows.map(job => ({ ...job, candidateIsPartial: isPartialCandidate(job) })), versions: [...versionRows, ...originals.filter(s => s.imageArtifactId && s.annotatedArtifactId && !versionRows.some(v => v.sceneId === s.id && v.version === 0)).map(originalVersion)], publications: publicationRows, requests };
 }
 
 type VersionPlanMetadata = {roomId:StoredScene["roomId"];cast:{id:string;name:string;referenceArtifactId:string;variant?:{resolved?:boolean}}[]};
@@ -230,6 +235,7 @@ const versionMetadataColumns = {id:versions.id,sceneId:versions.sceneId,jobId:ve
   imageArtifactId:versions.imageArtifactId,annotatedArtifactId:versions.annotatedArtifactId,shots:versions.shots,
   verificationVersion:versions.verificationVersion,localization:versions.localization,createdAt:versions.createdAt,plan:metadataPlan(versions.plan)};
 const jobMetadataColumns = {id:jobs.id,sceneId:jobs.sceneId,reusePrefix:jobs.reusePrefix,version:jobs.version,status:jobs.status,step:jobs.step,failure:jobs.failure,
+  candidateIsPartial:sql<boolean>`jsonb_array_length(${jobs.plan}->'cast') > 4 AND ${jobs.sourceImageId} IS NULL AND ${jobs.sourceVersionId} IS NULL`,
   candidateArtifactId:jobs.candidateArtifactId,sourceImageId:jobs.sourceImageId,sourceVersionId:jobs.sourceVersionId,createdAt:jobs.createdAt,startedAt:jobs.startedAt,finishedAt:jobs.finishedAt};
 const publicationMetadataColumns = {id:publications.id,sceneId:publications.sceneId,versionId:publications.versionId,revision:publications.revision,
   createdAt:publications.createdAt,operatorId:publications.operatorId,audience:publications.audience};

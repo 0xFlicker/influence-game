@@ -3,7 +3,7 @@ import Ajv from "ajv";
 import { and, eq } from "drizzle-orm";
 import { assertVisualShot, type StoredVisualShot, type VisualShotContent, type VisualShotPresentation } from "@influence/engine/visual-mode";
 import { visualLocalizationSchema } from "@influence/engine/visual-localization";
-import { visualRenderGroups } from "@influence/engine/visual-scene-plan";
+import { visualRenderGroups, visualRoomCropGroups } from "@influence/engine/visual-scene-plan";
 import { schema, type DrizzleDB } from "../db/index.js";
 import type { VisualTransaction } from "./visual-execution-boundary.js";
 import { annotateVisualScene } from "./visual-scene-localization.js";
@@ -69,9 +69,11 @@ export async function readVisualReviewSources(db: DrizzleDB | VisualTransaction,
   for (const attempt of attempts) {
     if (!attempt.hash || attempt.key.startsWith("wolf-form:")) continue;
     const match = /:section:v2:(\d+)$/.exec(attempt.key);
+    const region = /:room-crop:v1:(\d+)$/.exec(attempt.key);
+    const placements = region ? visualRoomCropGroups(scene.plan)[Number(region[1])] : match ? groups[Number(match[1])] : undefined;
     sources.set(`attempt:${attempt.id}`, { id: `attempt:${attempt.id}`, kind: "attempt", imageId: attempt.id,
-      label: match ? `Saved group ${Number(match[1]) + 1} · ${attempt.id.slice(0, 8)}` : `Saved composition · ${attempt.id.slice(0, 8)}`,
-      participantIds: match ? groups[Number(match[1])]?.map(p => p.playerId) ?? ids : ids, anchors: [], pointers: [],
+      label: region ? `Saved region ${Number(region[1]) + 1} · ${attempt.id.slice(0, 8)}` : match ? `Saved group ${Number(match[1]) + 1} · ${attempt.id.slice(0, 8)}` : `Saved composition · ${attempt.id.slice(0, 8)}`,
+      participantIds: placements?.map(p => p.playerId) ?? ids, anchors: [], pointers: [],
     });
   }
   return [...sources.values()];
