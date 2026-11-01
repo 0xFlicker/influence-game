@@ -24,3 +24,9 @@ Current gameplay verification excludes mutable full-body art. Compatibility with
 - `bun run check`, `git diff --check`, and building the conversion CLI passed.
 
 Only disposable local test databases and fixture images were converted. No development, staging or production environment was converted or deployed. Real reader cutover remains contingent on the explicit conversion and verification in the deployment runbook. Transient image errors can temporarily leave an image blank; they do not authorize an opaque fallback.
+
+## PR review findings
+
+- **P1 — empty artwork references were skipped:** a character whose first full-body image was generated for a scene could keep its opaque scene reference after cutout completion. Reproduced before the fix. A finished image now fills an empty owner reference, with the same commit-time comparison protecting a newer selection. Coverage includes owned profiles and unowned participants without optional framing fields.
+- **P2 — disabled preparation could starve reuse:** sixteen unmatched demands permanently occupied the preparation batch when generation was disabled. Reproduced before the fix. A persisted preparation-attempt timestamp rotates skipped demands through the existing dispatcher; finished-image saves retain their independent fair ordering. Recording generated-reference demands no longer depends on generation being enabled.
+- Old-export compatibility remains explicitly outside scope. No runtime historical artwork reconstruction, playback job query, new registry, or polling service was introduced.
