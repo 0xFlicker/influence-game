@@ -36,6 +36,8 @@
     "test:e2e:layered-auth:clerk": "PLAYWRIGHT_LAYERED_AUTH=real-clerk bunx playwright test e2e/layered-authentication.spec.ts --project=layered-auth-real-clerk",
     "test:e2e:format-viewer": "PLAYWRIGHT_FORMAT_VIEWER=1 bunx playwright test e2e/format-aware-game-viewer.spec.ts --project=chromium --retries=0",
     "typecheck": "bun run --filter '*' typecheck",
+    "mcp:schemas": "bun run scripts/generate-house-mcp-schemas.cjs",
+    "mcp:schemas:check": "bun run scripts/generate-house-mcp-schemas.cjs --check",
     "lint": "bun run --filter '*' lint",
     "check": "bun run typecheck && bun run lint",
     "dev:game-worker": "doppler run --project social-strategy-agent --config dev -- env PORT=${PORT:-3002} INFLUENCE_API_ROLE=game-worker POSTGAME_MEDIA_WORKER_TOKEN=${POSTGAME_MEDIA_WORKER_TOKEN:-local-render-worker} POSTGAME_MEDIA_PUBLIC_BASE_URL=${POSTGAME_MEDIA_PUBLIC_BASE_URL:-http://127.0.0.1:3002} bun run dev:api:service",
@@ -63,6 +65,7 @@
     "cutouts:backfill": "bun run --cwd packages/api cutouts:backfill"
   },
   "devDependencies": {
+    "typescript-json-schema": "0.65.1",
     "@clerk/backend": "3.11.7",
     "@clerk/testing": "2.2.10",
     "@playwright/test": "^1.58.2",

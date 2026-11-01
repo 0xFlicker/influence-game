@@ -596,6 +596,44 @@ test("Influence read_game preserves the accepted revote result in its validated 
   });
 });
 
+test("read_game validates current and paged public decision speech for frozen game versions", async () => {
+  const { GameState } = await import("@influence/engine");
+  const { insertGame, insertOwner } = await import("./durable-run-test-utils.js");
+  const { appendGameEvents } = await import("../services/game-events.js");
+  for (const gameSchemaVersion of [1, 2, 3] as const) {
+    for (const action of ["bounce-pointer", "format-tiebreak", "format-two-names-initial-names"] as const) {
+      const id = await insertGame(db, { slug: `speech-${gameSchemaVersion}-${action}`, status: "in_progress" });
+      const state = new GameState(["a", "b", "c"].map(id => ({ id, name: id })), { gameId: id, gameSchemaVersion });
+      state.startRound();
+      const pointers = [{ kind: "agent_turn" as const, actorId: "a", action, decisionId: "accepted-decision" }];
+      if (action === "bounce-pointer") state.recordSafetyBouncePointer("a", "b", "safe", pointers);
+      else if (action === "format-two-names-initial-names") state.recordTwoNamesSetup({ empoweredId: "a", initialNomineeIds: ["b", "c"], overrideHolderId: "a" }, pointers);
+      else state.recordFormatResolution({ formatId: "save_or_eliminate", empoweredId: "a", eliminatedId: "b", resolutionKind: "clear", tiedPlayerIds: ["b", "c"], tiebreakerId: "a", aggregate: { capability: "sealed_polarity", savesReceived: { a: 1, b: 0, c: 0 }, eliminateReceived: { a: 0, b: 0, c: 0 }, nets: { a: 1, b: 0, c: 0 } } }, pointers);
+      await appendGameEvents(db, { gameId: id, ownerEpoch: await insertOwner(db, id), events: state.getCanonicalEvents() });
+      const current = await readHouseGame(db, { gameIdOrSlug: id, view: "current", limit: 20 });
+      houseContent("read_game", current);
+      if (current.gameKind !== "influence") throw new Error("Expected Influence read");
+      const speech = current.snapshot?.viewerDecisionEvent?.publicDecisionSpeech;
+      expect(speech).toEqual(gameSchemaVersion >= 2 ? [{ actorId: "a", action }] : undefined);
+      let page = await readHouseGame(db, { gameIdOrSlug: id, view: "replay", limit: 1 });
+      let sawSpeech = false;
+      while (true) {
+        houseContent("read_game", page);
+        if (page.gameKind !== "influence") throw new Error("Expected Influence page");
+        sawSpeech ||= page.facts.some(frame => Boolean(frame.viewerDecisionEvent?.publicDecisionSpeech));
+        if (!page.nextCursor) break;
+        page = await readHouseGame(db, { gameIdOrSlug: id, cursor: page.nextCursor, limit: 1 });
+      }
+      expect(sawSpeech).toBe(gameSchemaVersion >= 2);
+      const malformed = structuredClone(current);
+      if (malformed.snapshot?.viewerDecisionEvent) {
+        Object.assign(malformed.snapshot.viewerDecisionEvent, { unexpectedPrivateEvidence: "PRIVATE_RESPONSE" });
+        expect(() => houseContent("read_game", malformed)).toThrow("Invalid read_game output");
+      }
+    }
+  }
+});
+
 test("Influence canonical frames and thinking use separate exact cutoffs and the public watch policy", async () => {
   const { insertGame, insertOwner, createCanonicalEventFixture } = await import(
     "./durable-run-test-utils.js"
