@@ -102,10 +102,10 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   const backgroundUrl = influenceRoomBackground(beat, voteLedger);
   let content;
   if (beat.kind === "house-result") {
-    content = <div className="flex min-h-0 flex-1 flex-col gap-3" data-house-result>
-      <VisualPresentationFrame beat={beat.result} rooms={rooms} elapsedMs={0} currentStateEntry paused reducedMotion={reducedMotion} fullscreen={fullscreen} controlsInset={controlsInset} roster={roster} />
-      {hideHouseNarration && <div className="shrink-0" style={{height:"min(45%, 200px)"}} aria-hidden="true" />}
-      {!hideHouseNarration && <div className="relative flex h-[180px] sm:h-[120px] shrink-0 flex-col rounded-xl border border-white/20 bg-black/85 p-4" aria-label="House summary"><TimedSpeech text={beat.text} elapsedMs={readingElapsedMs} className="text-base leading-relaxed sm:text-lg" /></div>}
+    content = <div className="flex min-h-0 flex-1 flex-col gap-3" style={{paddingBottom: fullscreen ? controlsInset : 0}} data-house-result>
+      <VisualPresentationFrame beat={beat.result} rooms={rooms} elapsedMs={0} currentStateEntry paused reducedMotion={reducedMotion} fullscreen={fullscreen} controlsInset={0} roster={roster} />
+      {hideHouseNarration && <div className="shrink-0" style={{height:"clamp(56px, 20vh, 120px)"}} aria-hidden="true" />}
+      {!hideHouseNarration && <div className="relative flex shrink-0 flex-col rounded-xl border border-white/20 bg-black/85 p-3" style={{height:"clamp(56px, 20vh, 120px)"}} aria-label="House summary"><TimedSpeech text={beat.text} elapsedMs={readingElapsedMs} className="text-base leading-relaxed sm:text-lg" /></div>}
     </div>;
   } else if (beat.kind === "canonical-result") {
     content = <ResultStage players={beat.players}><h2 className="text-center text-2xl">{beat.headline}</h2><p className="mt-3 text-center text-sm">{beat.detail}</p></ResultStage>;

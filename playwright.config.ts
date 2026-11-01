@@ -20,6 +20,8 @@ const chromiumUse = {
 export default defineConfig({
   testDir: "./e2e",
   timeout: layeredAuthRun || localFormatViewerRun ? 90_000 : 30_000,
+  // Cold local hydration plus the complete phase entrance can exceed five seconds.
+  expect: { timeout: localFormatViewerRun ? 15_000 : 5_000 },
   fullyParallel: !localSerialRun,
   workers: localSerialRun ? 1 : undefined,
   retries: localSerialRun ? 0 : 1,

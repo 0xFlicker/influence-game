@@ -426,7 +426,7 @@ test.describe("format-aware game viewer", () => {
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await pauseAutoplay(page, "Pause replay");
     const position = page.getByRole("slider", {name:"Replay position",exact:true});
-    await position.fill(String(Number(await position.getAttribute("max")) - 30));
+    await position.fill(String(Number(await position.getAttribute("max")) - 1));
     await enableMusic(page);
     await page.getByRole("button", {name:"Play replay",exact:true}).click();
     await expect.poll(async () => (await musicState(page)).find(audio => audio.src?.includes("the-last-word"))?.time).toBeGreaterThan(3);
