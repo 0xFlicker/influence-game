@@ -1698,13 +1698,13 @@ test.describe("format-aware game viewer", () => {
     await expect.poll(() => fixture.readCount).toBeGreaterThan(0);
     await (await catchUp).finished();
     await expect(page.getByRole("button", { name: "Play replay", exact: true })).toBeVisible();
-    await expect(cue).toHaveText(pausedText);
+    await expect(cue).toHaveText(pausedText, {useInnerText: true});
     const completion = page.waitForResponse(response => new URL(response.url()).pathname === `/api/games/${slug}/presentation`);
     fixture.setStatus("completed");
     await fixture.publish(JSON.stringify({type:"phase_ready"}));
     await (await completion).finished();
     await expect(page.getByRole("button", { name: "Play replay", exact: true })).toBeVisible();
-    await expect(cue).toHaveText(pausedText);
+    await expect(cue).toHaveText(pausedText, {useInnerText: true});
     await expect(page.locator("[data-influence-opening]")).toHaveCount(0);
     await page.getByRole("button", { name: "Play replay", exact: true }).click();
     await expect(page.getByRole("button", { name: "Pause replay", exact: true })).toBeVisible();
