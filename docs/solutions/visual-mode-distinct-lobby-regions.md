@@ -41,3 +41,8 @@ so the failure did not establish a product regression or an infrastructure cause
 The harness now retains startup stdout/stderr under `test-results`, reports the
 child exit status and bounded log tails, and fails immediately if the child exits.
 The existing 60-second deadline and browser assertions remain unchanged.
+
+Browser coverage also checks the new separate-view contract: full room framing
+stays fixed as speakers change, while speech, blurred edge fill and outgoing
+scene transitions remain intact. The former focal-camera assertions described the
+superseded default and were updated after the exact CI failure was reproduced.
