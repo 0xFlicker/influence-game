@@ -21,7 +21,7 @@ const OVERVIEW_HOLD_MS = 200;
 export interface VisualSpeech { id: string; playerId: string | null; speaker: string; text: string; portrait?: { avatarUrl?: string | null; persona: string; personaKey?: string | null } }
 
 /** Camera, bubble pages and speech share the director's presentation time. */
-export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingElapsedMs = elapsedMs, reducedMotion = false, navigationRevision = 0, paused = false, controlsInset = 0, speechPresentation = "scene", panelTreatment = "focal", onReadyChange, focusPlayerId, focusActor }: {
+export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingElapsedMs = elapsedMs, reducedMotion = false, navigationRevision = 0, paused = false, controlsInset = 0, speechPresentation = "scene", panelTreatment = "separate", onReadyChange, focusPlayerId, focusActor }: {
   scene: AcceptedVisualScene; speech: VisualSpeech | null; elapsedMs: number;
   /** Frame a silent performance or elimination without inventing speech. */
   focusPlayerId?: string;

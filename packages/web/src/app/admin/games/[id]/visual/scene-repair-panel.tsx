@@ -10,7 +10,7 @@ import {StudioSelect} from "../../../production/studio-select";
 
 export interface MediaJob {
   id: string; sceneId: string | null; reusePrefix?: string | null; version: number; status: string; step: string; failure: string | null;
-  candidateArtifactId: string | null; sourceImageId: string | null; createdAt: string; startedAt: string | null; finishedAt: string | null;
+  candidateIsPartial?: boolean; candidateArtifactId: string | null; sourceImageId: string | null; createdAt: string; startedAt: string | null; finishedAt: string | null;
 }
 export interface MediaVersion {
   plan?: { roomId?: VisualRoomId; cast: Array<{ id: string; name: string; referenceArtifactId: string; variant?: { resolved?: boolean } }> };
@@ -180,7 +180,7 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
       {jobs.map(job => <details key={job.id}><summary className="cursor-pointer text-sm">v{job.version} · {job.status.replaceAll("_", " ")}</summary>
         <p className="break-all text-xs">{job.id} · {job.step}</p>{job.failure && <p className="text-sm text-amber-200">{job.failure}</p>}
         <ul className="text-xs text-white/60">{attempts.filter(attempt => (attempt.repairJobId === job.id || attempt.operationKey.startsWith(`media:${job.id}:`))).map(attempt => <li key={attempt.id} className="break-all">{attempt.operationKey.startsWith(`media:${job.id}:`) ? attempt.operationKey.slice(`media:${job.id}:`.length) : attempt.operationKey} · {attempt.costMicrousd === null ? "Cost unknown" : `$${(attempt.costMicrousd / 1_000_000).toFixed(4)}`} · <a href="#provider-attempts" className="underline">Receipt {attempt.id}</a></li>)}</ul>
-        {job.candidateArtifactId && !versions.some(v => v.id === job.id) && <><VersionImage gameId={gameId} artifactId={job.candidateArtifactId} label={`Unverified v${job.version}`} onOpen={onOpen} apiPrefix={readApiPrefix} />{canOperate && <button className={button} disabled={busy || !!active || uncertain || renderDisabled} onClick={() => void send({ action: "verify", sourceVersionId: job.id })}>Recheck image</button>}</>}
+        {job.candidateArtifactId && !versions.some(v => v.id === job.id) && <><VersionImage gameId={gameId} artifactId={job.candidateArtifactId} label={`Unverified v${job.version}`} onOpen={onOpen} apiPrefix={readApiPrefix} />{job.candidateIsPartial ? <p className="text-xs text-white/60">Partial room view. Continue failed repair or use Correct images to review the saved views.</p> : canOperate && <button className={button} disabled={busy || !!active || uncertain || renderDisabled} onClick={() => void send({ action: "verify", sourceVersionId: job.id })}>Recheck image</button>}</>}
       </details>)}
       <details><summary className="text-sm">Publication history</summary><ul className="space-y-2 text-xs">{publications.map(p => <li key={p.id}>Publication {p.revision} · {p.createdAt} · {p.operatorId} · {p.versionId}</li>)}</ul></details>
     </div>}

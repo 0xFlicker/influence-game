@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import puppeteer, { type Browser, type Page, type HTTPRequest, type HTTPResponse } from "puppeteer";
@@ -118,19 +118,26 @@ beforeAll(async () => {
   const webPort = 20000 + Math.floor(Math.random() * 30000); webUrl = `http://localhost:${webPort}`;
   const node = Bun.which("node");
   if (!node) throw new Error("Node.js is required to start the replay production browser test server");
+  const startupLogs = join(import.meta.dir, "../../../../test-results", `replay-production-startup-${process.pid}`);
+  await mkdir(startupLogs, { recursive: true });
+  const startupFailure = async () => {
+    const logs = await Promise.all(["stdout.log", "stderr.log"].map(async name =>
+      `${name}: ${(await Bun.file(join(startupLogs, name)).text().catch(() => "unavailable")).slice(-4000)}`));
+    return new Error(`Production web server did not start (child exit: ${web.exitCode ?? "running"}); logs: ${startupLogs}\n${logs.join("\n")}`);
+  };
   web = Bun.spawn([node, "./node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1"], {
     cwd: `${import.meta.dir}/../../../web`,
     env: { ...process.env, NODE_ENV: "development", PORT: String(webPort), API_URL: "", NEXT_PUBLIC_API_URL: "", API_BACKEND_URL: `http://127.0.0.1:${api.port}`,
       NEXT_PUBLIC_E2E_AUTH: "true", NEXT_PUBLIC_E2E_LAYERED_AUTH: "true", MANAGED_AUTH_MODE: "full",
       PRIVY_APP_ID: "e2e-test-privy-app-id-001", NEXT_PUBLIC_PRIVY_APP_ID: "e2e-test-privy-app-id-001",
       CLERK_PUBLISHABLE_KEY: "pk_test_layered_auth_e2e", NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_layered_auth_e2e" },
-    stdout: Bun.file(temporaryPath("replay-production-browser-web.log")), stderr: Bun.file(temporaryPath("replay-production-browser-web-errors.log")),
+    stdout: Bun.file(join(startupLogs, "stdout.log")), stderr: Bun.file(join(startupLogs, "stderr.log")),
   });
   const deadline = Date.now() + 60_000;
   while (true) {
     try { if ((await fetch(`${webUrl}/admin/production`, { signal: AbortSignal.timeout(1000) })).ok) break; }
     catch { /* Poll child startup until the bounded deadline. */ }
-    if (Date.now() >= deadline) throw new Error(`Production web server did not start; see ${temporaryPath("replay-production-browser-web-errors.log")}`);
+    if (web.exitCode !== null || Date.now() >= deadline) throw await startupFailure();
     await Bun.sleep(250);
   }
   // Automated pointer, layout and fullscreen proof has one headless owner.
