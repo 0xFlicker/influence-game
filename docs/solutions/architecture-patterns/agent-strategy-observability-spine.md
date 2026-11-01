@@ -174,7 +174,7 @@ bun run check
 - The first diary replacement and optional follow-up delta appear in the next eligible prompt.
 - Living-target and action legality come from typed board state, not strategy prose.
 - Private traces show the proposal; private turns show final strategy result and revision.
-- Canonical/public/WebSocket surfaces do not gain compact strategy or diagnostics.
+- Canonical/WebSocket surfaces do not gain compact strategy or diagnostics. The spectator Strategy tab projects only event-anchored submitted delta text, explicitly labeled as proposed; it does not claim application or expose baseline, state, or trace fields.
 - Capsule v2 round-trips every lifecycle and rejects obsolete versions.
 - The human-accepted Sage Round 2 fixture passes provider-free chain tests.
 - `bun run test` and `bun run check` pass.
