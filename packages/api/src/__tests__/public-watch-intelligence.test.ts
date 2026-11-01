@@ -61,7 +61,7 @@ describe("getPublicWatchIntelligence", () => {
     expect(JSON.stringify(transcriptOnly)).not.toContain("UNANCHORED THOUGHT");
   });
 
-  test("returns selected-player thinking and canonical receipts without compact strategy fields", async () => {
+  test("returns selected-player thinking, proposed deltas, and canonical receipts", async () => {
     const gameId = await seedGameWithPlayers(db, "watch-intelligence-public");
     const ownerEpoch = await insertOwner(db, gameId);
     const events = createResolvedRoundCanonicalEventFixture(gameId);
@@ -148,10 +148,11 @@ describe("getPublicWatchIntelligence", () => {
         "Transcript-level thought is still viewer-facing.",
       ]),
     );
-    expect(result.intelligence.strategy).toMatchObject({
-      status: "unavailable",
-      cards: [],
-    });
+    expect(result.intelligence.strategy.cards).toEqual([expect.objectContaining({
+      kind: "strategy",
+      title: "Proposed strategy delta · Vote",
+      text: "COMPACT_STRATEGY_SENTINEL",
+    })]);
     expect(result.intelligence.receipts.status).toBe("available");
     expect(result.intelligence.receipts.canonicalGameFacts.availability).toMatchObject({
       canonicalFactsStatus: "available",
@@ -168,7 +169,7 @@ describe("getPublicWatchIntelligence", () => {
     expect(serialized).not.toContain("RAW_RESPONSE_SENTINEL");
     expect(serialized).not.toContain("TRACE_POINTER_SENTINEL");
     expect(serialized).not.toContain("REASONING_ARTIFACT_SENTINEL");
-    expect(serialized).not.toContain("COMPACT_STRATEGY_SENTINEL");
+    expect(serialized).toContain("COMPACT_STRATEGY_SENTINEL");
     expect(serialized).not.toContain("strategyCandidate");
     expect(serialized).not.toContain("payload");
   });
@@ -360,7 +361,7 @@ describe("getPublicWatchIntelligence", () => {
     expect(JSON.stringify(result)).not.toContain("This should wait");
   });
 
-  test("never exposes compact strategy state through public watch", async () => {
+  test("projects only proposed delta text without exposing compact strategy state", async () => {
     const gameId = await seedGameWithPlayers(db, "watch-intelligence-strategy-packet");
     const ownerEpoch = await insertOwner(db, gameId);
     const events = createResolvedRoundCanonicalEventFixture(gameId);
@@ -439,14 +440,13 @@ describe("getPublicWatchIntelligence", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("Expected ok result");
-    expect(result.intelligence.strategy).toMatchObject({
-      status: "unavailable",
-      cards: [],
-    });
+    expect(result.intelligence.strategy.cards).toEqual([expect.objectContaining({
+      text: "PRIVATE_DELTA_SENTINEL",
+      title: "Proposed strategy delta · Mingle Turn",
+    })]);
     const serialized = JSON.stringify(result);
     for (const sentinel of [
       "PRIVATE_BASELINE_SENTINEL",
-      "PRIVATE_DELTA_SENTINEL",
       "PRIVATE_REPAIR_DIAGNOSTIC_SENTINEL",
       "PRIVATE_PRIOR_EPOCH_SENTINEL",
       "strategyCandidate",
@@ -528,6 +528,52 @@ describe("getPublicWatchIntelligence", () => {
     expect(voteSerialized).not.toContain("FUTURE_COUNCIL_TRANSCRIPT_SENTINEL");
   });
 
+  test("strategy deltas respect replay, player, and private-action boundaries", async () => {
+    const gameId = await seedGameWithPlayers(db, "strategy-boundaries");
+    const ownerEpoch = await insertOwner(db, gameId);
+    await appendGameEvents(db, { gameId, ownerEpoch, events: createResolvedRoundCanonicalEventFixture(gameId) });
+    for (const [id, value, sequence, actor, action] of [
+      ["visible", "Change target", 1, "atlas", "vote"],
+      ["future", "FUTURE", 3, "atlas", "vote"],
+      ["other", "OTHER", 1, "echo", "vote"],
+      ["hidden", "HIDDEN", 1, "atlas", "alliance-action"],
+      ["ballot", "BALLOT", 1, "atlas", "format-vote-bomb-ballot"],
+      ["empty", "  ", 1, "atlas", "vote"],
+      ["null-string", "null", 1, "atlas", "vote"],
+      ["null", null, 1, "atlas", "vote"],
+      ["unanchored", "UNANCHORED", undefined, "atlas", "vote"],
+    ] as const) {
+      await insertArtifact(db, { id, gameId, actorPlayerId: actor, action,
+        artifactType: "strategy", eventSequence: sequence,
+        payload: { stage: "proposal", strategyCandidate: { operation: "delta", submittedValue: value } },
+      });
+    }
+    // A page full of newer no-change proposals must not hide the last delta.
+    for (let index = 0; index < 50; index += 1) {
+      await insertArtifact(db, { gameId, actorPlayerId: "atlas", action: "vote",
+        artifactType: "strategy", eventSequence: 2,
+        payload: { stage: "proposal", strategyCandidate: { operation: "delta", submittedValue: null } },
+      });
+    }
+    for (const redactionStatus of ["redacted", "expired"] as const) {
+      await insertArtifact(db, { gameId, actorPlayerId: "atlas", action: "vote",
+        artifactType: "strategy", eventSequence: 2, redactionStatus,
+        payload: { stage: "proposal", strategyCandidate: { operation: "delta", submittedValue: "REDACTED" } },
+      });
+    }
+    for (const strategyCandidate of [null, [], "MALFORMED", {}, { operation: "delta", submittedValue: 42 }]) {
+      await insertArtifact(db, { gameId, actorPlayerId: "atlas", action: "vote",
+        artifactType: "strategy", eventSequence: 2,
+        payload: { stage: "proposal", strategyCandidate },
+      });
+    }
+    const result = await getPublicWatchIntelligence(db, {
+      gameIdOrSlug: gameId, actorPlayerId: "atlas", round: 1, phase: "VOTE", throughEventSequence: 2,
+    });
+    if (!result.ok) throw new Error("Expected strategy result");
+    expect(result.intelligence.strategy.cards.map(card => card.text)).toEqual(["Change target"]);
+  });
+
   test("returns not_found for missing games", async () => {
     const result = await getPublicWatchIntelligence(db, {
       gameIdOrSlug: "missing-game",
@@ -574,6 +620,7 @@ async function insertArtifact(
     artifactType: "reasoning" | "thinking" | "strategy";
     action: string;
     payload: Record<string, unknown>;
+    redactionStatus?: "active" | "expired" | "redacted";
     eventSequence?: number;
     round?: number;
     phase?: string;
@@ -595,6 +642,6 @@ async function insertArtifact(
     payloadByteLength,
     payload: params.payload,
     retentionClass: "debug",
-    redactionStatus: "active",
+    redactionStatus: params.redactionStatus ?? "active",
   }, {"payload":"json-gzip"}));
 }
