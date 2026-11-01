@@ -209,8 +209,8 @@ function originalVersion(scene: typeof schema.visualScenes.$inferSelect) {
     verificationVersion: "gameplay-record", createdAt: scene.createdAt };
 }
 
-function isPartialCandidate(job: Pick<typeof jobs.$inferSelect, "plan" | "sourceImageId" | "sourceVersionId">) {
-  return job.plan.cast.length > 4 && !job.sourceImageId && !job.sourceVersionId;
+function isPartialCandidate(job: Pick<typeof jobs.$inferSelect, "plan" | "sourceImageId" | "sourceVersionId" | "step">) {
+  return job.plan.cast.length > 4 && !job.sourceImageId && !job.sourceVersionId && job.step !== "verifying harmonization";
 }
 
 export async function readVisualMedia(db: DrizzleDB, gameId: string) {
@@ -235,7 +235,7 @@ const versionMetadataColumns = {id:versions.id,sceneId:versions.sceneId,jobId:ve
   imageArtifactId:versions.imageArtifactId,annotatedArtifactId:versions.annotatedArtifactId,shots:versions.shots,
   verificationVersion:versions.verificationVersion,localization:versions.localization,createdAt:versions.createdAt,plan:metadataPlan(versions.plan)};
 const jobMetadataColumns = {id:jobs.id,sceneId:jobs.sceneId,reusePrefix:jobs.reusePrefix,version:jobs.version,status:jobs.status,step:jobs.step,failure:jobs.failure,
-  candidateIsPartial:sql<boolean>`jsonb_array_length(${jobs.plan}->'cast') > 4 AND ${jobs.sourceImageId} IS NULL AND ${jobs.sourceVersionId} IS NULL`,
+  candidateIsPartial:sql<boolean>`jsonb_array_length(${jobs.plan}->'cast') > 4 AND ${jobs.sourceImageId} IS NULL AND ${jobs.sourceVersionId} IS NULL AND ${jobs.step} <> 'verifying harmonization'`,
   candidateArtifactId:jobs.candidateArtifactId,sourceImageId:jobs.sourceImageId,sourceVersionId:jobs.sourceVersionId,createdAt:jobs.createdAt,startedAt:jobs.startedAt,finishedAt:jobs.finishedAt};
 const publicationMetadataColumns = {id:publications.id,sceneId:publications.sceneId,versionId:publications.versionId,revision:publications.revision,
   createdAt:publications.createdAt,operatorId:publications.operatorId,audience:publications.audience};

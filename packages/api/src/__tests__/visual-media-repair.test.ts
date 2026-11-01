@@ -224,7 +224,7 @@ test("continue reuses the successful region and resumes remaining regions", asyn
   expect(await send({ expectedVersion: 1, action: "verify", sourceVersionId: first.id })).toMatchObject({ accepted: false, code: "source_is_partial_view" });
   expect(calls).toEqual(["image", "composition"]);
   fail = null; calls = []; await send({ expectedVersion: 1, action: "continue", sourceJobId: first.id }); await run();
-  expect(calls).toEqual(["composition", "heads", "identities", "image", "composition", "heads", "identities"]);
+  expect(calls).toEqual(["composition", "heads", "identities", "image", "composition", "heads", "identities", "image", "composition", "heads", "identities"]);
 });
 
 test.each(["count", "duplicate"])("rejects %s identities without automatic regeneration", async failure => {

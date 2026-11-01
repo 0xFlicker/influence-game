@@ -1,3 +1,4 @@
+import sharp from "sharp";
 import { VisualIdentityFailure } from "@influence/engine/visual-localization";
 import { recordVisualOperationEvent, visualFailureEvidence } from "./visual-diagnostics.js";
 import { and, eq } from "drizzle-orm";
@@ -69,23 +70,30 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
     const direction = plan.direction ?? options.renderContext;
     const common = `${direction?.style ?? VISUAL_HOUSE_STYLE}\nSetting: ${direction?.roomName ?? room.name}.\n${plan.direction ? `Staging direction: ${plan.direction.roomDirection}\n` : ""}One continuous room photographed from one camera, with consistent perspective and lighting. Preserve the room's architecture and each character's face, hair, clothing and body. Every face must be visible from the front or three-quarter view. No extra people, reflections of people, repeated furniture, panels, borders, labels or text.`;
     const ids = references.map(r => r.member.id);
-    // Explicit producer harmonization still operates on immutable saved panels.
-    // New scenes populate distinct room crops and never depend on this optional recomposition.
-    if (options.sourcePanels) {
-      if (options.sourcePanels.length < 2) throw new Error("Harmonization requires at least two saved panels");
-      for (const panel of options.sourcePanels) assertVisualShot(panel, ids);
-      const panels = await Promise.all(options.sourcePanels.map(panel => readVisualArtifact(db, gameId, panel.imageArtifactId)));
-      const shots: VisualShotPresentation<StoredVisualShot> = { mode: "groups", overview: null, groups: options.sourcePanels };
+    // Both automatic and producer-requested stitching reuse immutable verified views.
+    const harmonize = async (sourcePanels: StoredVisualShot[]) => {
+      if (sourcePanels.length < 2) throw new Error("Harmonization requires at least two saved panels");
+      for (const panel of sourcePanels) assertVisualShot(panel, ids);
+      const panels = await Promise.all(sourcePanels.map(panel => readVisualArtifact(db, gameId, panel.imageArtifactId)));
+      const shots: VisualShotPresentation<StoredVisualShot> = { mode: "groups", overview: null, groups: sourcePanels };
+      const width = 3072, height = 1536;
+      const ordered = await Promise.all(panels.map(async (image, index) => {
+        const left = Math.floor(index * width / panels.length);
+        const next = Math.floor((index + 1) * width / panels.length);
+        return { input: await sharp(image).resize(next - left, height, { fit: "contain", background: "#e5ded0" }).png().toBuffer(), left, top: 0 };
+      }));
+      const assembly = await sharp({ create: { width, height, channels: 3, background: "#e5ded0" } }).composite(ordered).png().toBuffer();
       try {
         await options.onStep?.("harmonizing");
         const rendered = await renderDurableVisualImage(db, {
           gameId, sceneId: scene.id, repairJobId: options.jobId,
           operationKey: `${renderKey}:harmonization:v2`, reuseOperationKey: reuse("harmonization:v2"),
-          allowFallback: true, signal, beforeDispatch,
-          request: { width: 3072, height: 1536, references: panels,
-            prompt: `${common}\nRecompose these saved views into one continuous wide room containing exactly ${ids.length} distinct contestants. Each person appears exactly once. Preserve every supplied identity. Do not reproduce the source panels as a collage.` },
+          allowFallback: options.jobId ? true : scene.renderRevision === 0, signal, beforeDispatch,
+          request: { width, height, references: [assembly, ...panels],
+            prompt: `${common}\nStitch these views into one continuous wide room. The FIRST reference is their ordered assembly; the remaining references are the original views in left-to-right order. Preserve EVERY original person, face, clothing, pose, and left-to-right position from the assembly. Unify architecture, lighting and perspective at the seams without deleting, merging, replacing or duplicating anyone. The final image must contain exactly ${ids.length} distinct contestants, each once. Source-view cast counts and identities: ${JSON.stringify(sourcePanels.map(panel => panel.visibleParticipantIds.map(id => ({ id, name: plan.cast.find(member => member.id === id)?.name })) ))}. Keep all faces visible. No panel borders or collage seams.` },
         });
         await options.onImage?.(await storeVisualArtifact(db, gameId, rendered.image));
+        await options.onStep?.("verifying harmonization");
         const localized = await localize(rendered.image, references, "harmonization-localization:v2", false);
         shots.overview = await shot(rendered.image, ids, localized);
         shots.mode = "scene";
@@ -100,7 +108,8 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
         const visible = [...new Set(shots.groups.flatMap(s => s.visibleParticipantIds))];
         return { imageArtifactId: shots.groups[0]!.imageArtifactId, shots, localization: { count: visible.length, anchors: [], verifiedParticipantIds: visible } };
       }
-    }
+    };
+    if (options.sourcePanels) return harmonize(options.sourcePanels);
     if (scene.repairMode !== "verify" || !scene.candidateArtifactId) {
       const plannedGroups = visualRoomCropGroups(plan);
       const groups = plannedGroups.length ? plannedGroups : [[]];
@@ -147,6 +156,7 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
         }
       }
       if (!playable.length) throw new VisualIdentityFailure("No usable room view survived verification");
+      if (groups.length > 1 && playable.length === groups.length) return harmonize(playable);
       const shots: VisualShotPresentation<StoredVisualShot> = { mode: groups.length === 1 ? "scene" : "groups", overview: groups.length === 1 ? playable[0]! : null, groups: playable };
       const visible = [...new Set(playable.flatMap(s => s.visibleParticipantIds))];
       return { imageArtifactId: playable[0]!.imageArtifactId, shots, localization: { count: visible.length, anchors: shots.overview?.anchors ?? [], verifiedParticipantIds: visible } };
