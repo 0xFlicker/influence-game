@@ -6,15 +6,21 @@ import { eq } from "drizzle-orm";
 import { createDB, closeDB, schema } from "../db/index.js";
 import { HOUSE_CAST } from "@influence/engine/house-personas";
 import { HOUSE_BODY_ART } from "@influence/engine/house-character-art";
+import { planWerewolfScene } from "../services/werewolf-scene-plan.js";
+import { resolveCharacterVariants } from "../services/visual-character-variants.js";
+import type { WerewolfScenePurpose } from "@influence/engine/werewolf/visual-scenes";
 import { planVisualScene } from "@influence/engine/visual-scene-plan";
 import { VISUAL_HOUSE_STYLE, VISUAL_ROOMS } from "@influence/engine/visual-mode";
 import { prepareVisualScene, storeVisualArtifact, readVisualArtifact } from "../services/visual-scene-store.js";
 import { renderVisualSceneBestEffort } from "../services/visual-best-effort.js";
 import { readVisualRenderAccounting, renderDurableVisualImage } from "../services/visual-render-journal.js";
 
+const purpose = process.argv[3]?.startsWith("werewolf-") ? process.argv[3].slice(9) as WerewolfScenePurpose : null;
+if (purpose && !["village", "pack", "hunt"].includes(purpose)) throw new Error("Invalid Werewolf scene purpose");
 const size = Number(process.argv[2]);
 const directory = process.env.VISUAL_PROBE_DIRECTORY;
-if (![9, 10, 12, 14].includes(size) || !directory || process.env.VISUAL_PROBE_AUTHORIZED !== "15") throw new Error("Set VISUAL_PROBE_AUTHORIZED=15 and VISUAL_PROBE_DIRECTORY, then pass 9, 10, 12 or 14");
+const allowedSizes = purpose ? { village: [9, 12], pack: [2], hunt: [3] }[purpose] : [9, 10, 12, 14];
+if (!allowedSizes.includes(size) || !directory || process.env.VISUAL_PROBE_AUTHORIZED !== "15") throw new Error("Set VISUAL_PROBE_AUTHORIZED=15 and VISUAL_PROBE_DIRECTORY, then pass 9/10/12/14, or 12 werewolf-village, 2 werewolf-pack, 3 werewolf-hunt");
 for (const value of [process.env.DATABASE_URL, process.env.LINODE_PRIVATE_CONTENT_ENDPOINT]) {
   if (!value || !["localhost", "127.0.0.1"].includes(new URL(value).hostname)) throw new Error("Probe requires localhost DB and object storage");
 }
@@ -25,7 +31,7 @@ try { reserved = JSON.parse(await readFile(ledgerPath, "utf8")).reservedUsd; }
 catch (error) { if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error; }
 if (!Number.isFinite(reserved) || reserved < 0) throw new Error("Invalid probe budget ledger");
 const previousReserved = reserved;
-const id = randomUUID(), out = resolve(directory, `${size}-${id}`);
+const id = randomUUID(), out = resolve(directory, `${purpose ?? size}-${id}`);
 await mkdir(out, { mode: 0o700 });
 const nativeFetch = globalThis.fetch;
 let requestNumber = 0;
@@ -61,9 +67,9 @@ globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: Requ
 }, { preconnect: nativeFetch.preconnect });
 const db = createDB();
 try {
-  const slug = `panorama-probe-${size}-${id.slice(0, 8)}`;
-  await db.insert(schema.games).values({ id, slug, status: "waiting", config: JSON.stringify({ visualMode: true, visualFailurePolicy: "require_visuals" }) });
-  await writeFile(resolve(out, "game.json"), JSON.stringify({ id, slug, size }), { mode: 0o600 });
+  const slug = `panorama-probe-${purpose ?? size}-${id.slice(0, 8)}`;
+  await db.insert(schema.games).values({ id, slug, gameKind: purpose ? "werewolf" : "influence", status: "waiting", config: JSON.stringify({ visualMode: true, visualFailurePolicy: "require_visuals" }) });
+  await writeFile(resolve(out, "game.json"), JSON.stringify({ id, slug, size, purpose }), { mode: 0o600 });
   const publicRoot = resolve(import.meta.dir, "../../../web/public");
   const room = VISUAL_ROOMS.lobby;
   const background = process.argv[3] === "fresh-room" ? (await renderDurableVisualImage(db, {
@@ -78,7 +84,13 @@ try {
     if (createHash("sha256").update(bytes).digest("hex") !== art.sha256) throw new Error("Reference hash mismatch");
     return { id: member.personality, name: member.name, referenceArtifactId: await storeVisualArtifact(db, id, bytes), performanceInstructions: "Natural attentive conversational posture" };
   }));
-  const scene = await prepareVisualScene(db, { gameId: id, boundarySequence: 0, plan: planVisualScene({ roomId: "lobby", backgroundArtifactId, cast }) });
+  const plan = purpose ? await resolveCharacterVariants(db, id, await planWerewolfScene(db, id, {
+    purpose, roomId: purpose === "village" ? "lobby" : purpose === "pack" ? "mingle-1" : "mingle-2",
+    boundarySequence: 0, day: 1, participantIds: cast.map(m => m.id),
+    wolfIds: purpose === "village" ? [] : cast.slice(0, 2).map(m => m.id), targetId: purpose === "hunt" ? cast[2]!.id : null,
+  }, cast)) : planVisualScene({ roomId: "lobby", backgroundArtifactId, cast });
+  if (purpose) await writeFile(resolve(out, "background.png"), await readVisualArtifact(db, id, plan.backgroundArtifactId!));
+  const scene = await prepareVisualScene(db, { gameId: id, boundarySequence: 0, plan });
   // One render per probe; a failed identity test must not spend on an identical retry.
   await db.update(schema.visualScenes).set({ repairBudgetUsed: true }).where(eq(schema.visualScenes.id, scene.id));
   const started = Date.now();

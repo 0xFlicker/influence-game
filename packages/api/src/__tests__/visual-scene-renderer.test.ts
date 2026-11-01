@@ -13,7 +13,7 @@ import { planVisualScene, visualRoomCropGroups } from "@influence/engine/visual-
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { prepareVisualScene, readCurrentVisualScene, storeVisualArtifact } from "../services/visual-scene-store.js";
-import { renderPlannedVisualScene } from "../services/visual-scene-renderer.js";
+import { renderPlannedVisualScene, renderVisualCandidate } from "../services/visual-scene-renderer.js";
 import { readVisualRenderAccounting } from "../services/visual-render-journal.js";
 const originalFetch = globalThis.fetch;
 const originalKey = process.env.OPENAI_API_KEY;
@@ -381,4 +381,38 @@ test("huddle scenes reuse only an exact cast, freeze the speech binding, and lea
   expect((await prepareCommittedHuddleScene(db, input))?.id).toBe(first?.id);
   expect((await readCurrentVisualScene(db, "game", "mingle-1"))?.id).toBe(fullRoom.id);
   expect([imageCalls, visionCalls]).toEqual(counts);
+});
+
+test.each(["village", "pack", "hunt"] as const)("preserves frozen Werewolf %s direction and individual staging with a supplied background", async purpose => {
+  const { planWerewolfScene } = await import("../services/werewolf-scene-plan");
+  const size = purpose === "village" ? 12 : purpose === "pack" ? 2 : 3;
+  const base = await scene(size);
+  const plan = await planWerewolfScene(db, "game", { purpose, roomId: purpose === "village" ? "lobby" : purpose === "pack" ? "mingle-1" : "mingle-2", boundarySequence: 1, day: 1, participantIds: base.plan.cast.map(m => m.id), wolfIds: [], targetId: purpose === "hunt" ? "p2" : null }, base.plan.cast);
+  const mock = globalThis.fetch, prompts: string[] = [];
+  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).includes("/v1/images/")) prompts.push(String((init?.body as FormData).get("prompt")));
+    return mock(url, init);
+  }, { preconnect: originalFetch.preconnect });
+  const prepared = await prepareVisualScene(db, { gameId: "game", boundarySequence: 1, plan });
+  await renderPlannedVisualScene(db, prepared);
+  expect(prompts).toHaveLength(Math.ceil(size / 4));
+  for (const prompt of prompts) expect(prompt).toContain(plan.direction!.roomDirection);
+  for (const placement of plan.placements) expect(prompts.filter(prompt => prompt.includes(JSON.stringify(placement.position)))).toHaveLength(1);
+  if (size > 4) for (const prompt of prompts) expect(prompt).toContain("Do not reconstruct the entire room");
+});
+
+
+test("generic repair defaults do not impose whole-room staging on a supplied crop", async () => {
+  const mock = globalThis.fetch, prompts: string[] = [];
+  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).includes("/v1/images/")) prompts.push(String((init?.body as FormData).get("prompt")));
+    return mock(url, init);
+  }, { preconnect: originalFetch.preconnect });
+  await renderVisualCandidate(db, await scene(9), undefined, undefined, { renderContext: { style: "Preserve reference style", roomName: "Lobby", roomDirection: "Rebuild an entire modern kitchen" } });
+  expect(prompts).toHaveLength(3);
+  for (const prompt of prompts) {
+    expect(prompt).not.toContain("Rebuild an entire modern kitchen");
+    expect(prompt).not.toContain('"position":');
+    expect(prompt).toContain("Do not reconstruct the entire room");
+  }
 });
