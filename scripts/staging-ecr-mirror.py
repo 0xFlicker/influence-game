@@ -88,6 +88,7 @@ class Mirror:
     def __init__(self, kind, auth_file, runner=subprocess.run, max_manifests=5):
         require(type(max_manifests) is int and 5 <= max_manifests <= 10, 'invalid retention exception limit')
         self.selected = KINDS[kind]
+        self.kind = kind
         self.auth_file = str(auth_file)
         self.runner = runner
         self.parts = {}
@@ -162,7 +163,12 @@ class Mirror:
             for tag in image.get('imageTags', []):
                 require(tag == 'sha256-' + image['imageDigest'][7:], 'foreign repository tag requires operator review')
                 roots.add(image['imageDigest'])
-        require(digest in roots or len(roots) < 2, 'two retained release digests already occupy this repository; operator cleanup required')
+        # The initial seed and the frozen candidate can occupy both default
+        # slots before the first ordinary staging release. An explicit nine-
+        # object allowance can preserve their three-object manifest trees while
+        # admitting that release, without deleting either retained root.
+        root_limit = 3 if self.kind == 'worker' and self.max_manifests >= 9 else 2
+        require(digest in roots or len(roots) < root_limit, 'retained release limit reached; explicit nine-object allowance or reviewed cleanup required')
         lifecycle = self.lifecycle()
         if lifecycle is not None:
             verify_lifecycle(lifecycle, ['sha256-' + d[7:] for d in roots | {digest}])
@@ -183,6 +189,7 @@ class Mirror:
         return {'destination': destination + '@' + digest, 'verifiedDestinationDigest': digest,
                 'projectedUniqueBytes': projected, 'repositoryAdmissionBytes': selected['budget'], 'retainedReleaseDigests': len(roots | {digest}),
                 'manifestCount': len(self.visited), 'manifestTarget': 5, 'approvedManifestLimit': self.max_manifests,
+                'approvedRetainedRootLimit': root_limit,
                 'lifecycleInstalled': lifecycle is not None, 'retentionApplyPending': lifecycle is None}
 
 def main():
