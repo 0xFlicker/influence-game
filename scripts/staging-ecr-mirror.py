@@ -163,11 +163,10 @@ class Mirror:
             for tag in image.get('imageTags', []):
                 require(tag == 'sha256-' + image['imageDigest'][7:], 'foreign repository tag requires operator review')
                 roots.add(image['imageDigest'])
-        # The initial seed and the frozen candidate can occupy both default
-        # slots before the first ordinary staging release. An explicit nine-
-        # object allowance can preserve their three-object manifest trees while
-        # admitting that release, without deleting either retained root.
-        root_limit = 3 if self.kind == 'worker' and self.max_manifests >= 9 else 2
+        # An explicit nine-object allowance preserves current, rollback and
+        # incoming roots without deletion. It covers three worker manifest
+        # trees or three single-manifest sidecars; defaults still admit two.
+        root_limit = 3 if self.max_manifests >= 9 else 2
         require(digest in roots or len(roots) < root_limit, 'retained release limit reached; explicit nine-object allowance or reviewed cleanup required')
         lifecycle = self.lifecycle()
         if lifecycle is not None:
