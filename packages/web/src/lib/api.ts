@@ -2933,6 +2933,21 @@ export async function getGameTranscript(
   return apiFetch(`/api/games/${id}/transcript`);
 }
 
+export interface GamePresentation {
+  gameId: string;
+  throughSequence: number;
+  phaseStartSequence: number;
+  status: GameStatus;
+  finished: boolean;
+  watchState: GameWatchState;
+  frames: GameWatchReplayFrame[];
+  messages: Array<{ id: number; entry: WsTranscriptEntry }>;
+}
+
+export function getGamePresentation(id: string, afterSequence: number, signal?: AbortSignal): Promise<GamePresentation> {
+  return apiFetch(`/api/games/${id}/presentation?afterSequence=${afterSequence}`, { signal });
+}
+
 export async function getGameReplayWatchFrames(
   id: string,
   options: {

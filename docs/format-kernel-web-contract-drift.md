@@ -98,3 +98,15 @@ representative prefixes. It must use deterministic/local agents or approved
 mocks unless paid provider execution is explicitly authorized.
 
 Empower tie presentation is committed at `vote.empower_tally_resolved`, independently of the later `vote.empowered_set`. The placeholder winner on a pending tally never becomes viewer state. Final counts derive from validated canonical revote receipts; manual decisions retain explicitly labeled original totals. At format resolution, a tiebreak context beat is followed by a `format_deciding_vote` solo cue naming the validated eliminated target, then elimination. These are viewer cues only: no added event, decision, model call or gameplay transition.
+
+
+## Closed-phase delivery
+
+The format watch/replay route consumes `/api/games/:id/presentation` for both live
+and completed games. The response pins frames, dialogue and viewer state to one
+closed canonical prefix; `throughSequence` is its resume cursor. Live clients
+poll for the next complete phase instead of compiling independent WebSocket
+speech and event arrivals. Audio and durable publication dependencies must be
+ready before release. Live join and Go Live start at the beginning of the latest
+released phase. See [the phase-delivery design](plans/2026-10-31-001-fix-live-influence-phase-buffer.md)
+for historical recordings, terminal completion and test coverage.

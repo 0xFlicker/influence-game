@@ -291,7 +291,7 @@ function assertStoredPublicationPayload(
   return payload as GamePublicationPayloadV1;
 }
 
-function publicTranscriptEntry(row: {
+export function publicTranscriptEntry(row: {
   entrySequence: number | null;
   firstDurableEventSequence: number | null;
   round: number;

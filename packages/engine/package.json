@@ -6,6 +6,7 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
+    "./viewer-phase-prefix": "./src/viewer-phase-prefix.ts",
     "./game-follow": "./src/game-follow.ts",
     "./game-follow-influence": "./src/game-follow-influence.ts",
     "./voice-catalog": "./src/voice-catalog.ts",
