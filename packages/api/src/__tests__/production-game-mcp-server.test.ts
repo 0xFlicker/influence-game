@@ -1,4 +1,6 @@
 import { houseContent } from "../game-mcp/house-contracts.js";
+import { assertMcpOutputSchema } from "../game-mcp/output-validation.js";
+import Ajv from "ajv";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { contentImageFixture } from "./content-image-fixture.js";
 import { describe, expect, test } from "bun:test";
@@ -85,56 +87,8 @@ class ProductionGameMcpJsonRpcServer extends ProductionGameMcpJsonRpcServerBase 
 }
 
 function expectMatchesJsonSchema(value: unknown, schema: unknown): void {
-  const errors = validateJsonSchema(value, schema, "$");
-  if (errors.length > 0) {
-    throw new Error(`JSON schema validation failed:\n${errors.join("\n")}`);
-  }
-}
-
-function validateJsonSchema(value: unknown, rawSchema: unknown, path: string): string[] {
-  if (!rawSchema || typeof rawSchema !== "object" || Array.isArray(rawSchema)) {
-    return [`${path}: invalid schema`];
-  }
-  const schema = rawSchema as Record<string, unknown>;
-  if (Array.isArray(schema.anyOf)) {
-    const alternatives = schema.anyOf.map((candidate) => validateJsonSchema(value, candidate, path));
-    return alternatives.some((errors) => errors.length === 0)
-      ? []
-      : [`${path}: did not match anyOf`];
-  }
-  if (Array.isArray(schema.oneOf)) {
-    const matches = schema.oneOf.filter(
-      (candidate) => validateJsonSchema(value, candidate, path).length === 0,
-    );
-    return matches.length === 1 ? [] : [`${path}: did not match exactly one oneOf branch`];
-  }
-  if ("const" in schema && value !== schema.const) return [`${path}: expected const ${String(schema.const)}`];
-  if (Array.isArray(schema.enum) && !schema.enum.includes(value)) return [`${path}: value is not in enum`];
-
-  if (schema.type === "null") return value === null ? [] : [`${path}: expected null`];
-  if (schema.type === "string") return typeof value === "string" ? [] : [`${path}: expected string`];
-  if (schema.type === "number") return typeof value === "number" ? [] : [`${path}: expected number`];
-  if (schema.type === "boolean") return typeof value === "boolean" ? [] : [`${path}: expected boolean`];
-  if (schema.type === "array") {
-    if (!Array.isArray(value)) return [`${path}: expected array`];
-    return value.flatMap((item, index) => validateJsonSchema(item, schema.items, `${path}[${index}]`));
-  }
-  if (schema.type !== "object") return [];
-  if (!value || typeof value !== "object" || Array.isArray(value)) return [`${path}: expected object`];
-
-  const record = value as Record<string, unknown>;
-  const properties = schema.properties && typeof schema.properties === "object"
-    ? schema.properties as Record<string, unknown>
-    : {};
-  const errors: string[] = [];
-  for (const required of Array.isArray(schema.required) ? schema.required : []) {
-    if (typeof required === "string" && !(required in record)) errors.push(`${path}.${required}: required`);
-  }
-  for (const [key, childValue] of Object.entries(record)) {
-    if (key in properties) errors.push(...validateJsonSchema(childValue, properties[key], `${path}.${key}`));
-    else if (schema.additionalProperties === false) errors.push(`${path}.${key}: additional property`);
-  }
-  return errors;
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) throw new Error("Missing output schema");
+  assertMcpOutputSchema("test output", schema, value);
 }
 
 interface ListedToolDescriptor {
@@ -167,6 +121,20 @@ async function listToolDescriptors(
 }
 
 describe("ProductionGameMcpJsonRpcServer", () => {
+  test("every advertised output schema compiles with full JSON Schema validation", async () => {
+    const scopes: GameMcpAuthContext["scopes"] = ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:routing", "moderation:read", "moderation:write", "assets:manage"];
+    const server = new ProductionGameMcpJsonRpcServerBase(fakeReadModel(), undefined, async () => ({
+      clientScopes: scopes, hasProducerRole: true, hasModerationRole: true, hasRetrospectiveRecoveryAccess: true,
+    }));
+    const tools = await listToolDescriptors(server, { ...PRODUCER_AUTH, scope: scopes.join(" "), scopes });
+    const validator = new Ajv({ strict: false });
+    const typedTools = tools.filter(tool => tool.outputSchema);
+    expect(typedTools).toHaveLength(38);
+    for (const tool of typedTools) {
+      expect(() => validator.compile(tool.outputSchema!)).not.toThrow();
+    }
+  });
+
   test("model routing writes require separately consented routing scope and current producer role", () => {
     const eligibility: GameMcpEligibilitySnapshot = {clientScopes: ["producer", "producer:routing"], hasProducerRole: true};
     expect(resolveGameMcpToolAccess("read_game_model_routing", PRODUCER_AUTH, eligibility).invocationAllowed).toBe(true);
@@ -966,7 +934,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         totalCount: 0,
         nextCursor: null,
       },
-    }, cognitiveIndexTool.outputSchema)).toThrow("did not match anyOf");
+    }, cognitiveIndexTool.outputSchema)).toThrow("Invalid test output");
     const traceIndexTool = tools.find(
       (tool) => (tool as { name: string }).name === "list_trace_manifests",
     ) as {
@@ -999,7 +967,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         totalCount: 0,
         nextCursor: null,
       },
-    }, traceIndexTool.outputSchema)).toThrow("did not match anyOf");
+    }, traceIndexTool.outputSchema)).toThrow("Invalid test output");
     const paginatedProducerAnalysisTool = tools.find(
       (tool) => (tool as { name: string }).name === "read_producer_game_analysis",
     ) as { description: string; outputSchema: Record<string, unknown> };
@@ -1050,7 +1018,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(() => expectMatchesJsonSchema({
       ...producerAnalysisResponse,
       schemaVersion: 2,
-    }, paginatedProducerAnalysisTool.outputSchema)).toThrow("oneOf");
+    }, paginatedProducerAnalysisTool.outputSchema)).toThrow("Invalid test output");
     for (const indexKey of ["cognitiveArtifacts", "traceManifests"] as const) {
       for (const metadataKey of ["pageSize", "totalCount", "nextCursor"] as const) {
         const invalidResponse = structuredClone(producerAnalysisResponse);
@@ -1058,7 +1026,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         expect(() => expectMatchesJsonSchema(
           invalidResponse,
           paginatedProducerAnalysisTool.outputSchema,
-        )).toThrow("oneOf");
+        )).toThrow("Invalid test output");
       }
     }
     const briefTool = tools.find((tool) => (tool as { name: string }).name === "read_game_brief");
@@ -1132,7 +1100,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     );
     expect(JSON.stringify(roundFactsTool.outputSchema)).not.toContain("sealedBallots");
     expect(JSON.stringify(roundFactsTool.outputSchema)).not.toContain("sealedBallotAccess");
-    expect(roundFactsTool.outputSchema).toMatchObject({
+    expect(structuredClone(roundFactsTool.outputSchema)).toMatchObject({
       properties: {
         schemaVersion: { const: 3 },
         game: {
@@ -1982,9 +1950,19 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         return {
           schemaVersion: 1,
           ok: true,
+          game: { id: "game-1", status: "completed", trackType: "standard", playerCount: 2, roundCount: 1 },
           postgame: {
-            executiveSummary: [{ text: "Lilith Voss defeated Kestrel 4-3." }],
-            summary: { winner: { name: "Lilith Voss" } },
+            schemaVersion: 1, source: "canonical", availability: {}, diagnostics: [],
+            executiveSummary: [{ text: "Lilith Voss defeated Kestrel 4-3.", confidence: "high", derivationMethod: "canonical" }],
+            summary: {
+              winner: { id: "lilith", name: "Lilith Voss" }, finalists: [], bootOrder: [], roundCount: 1, playerCount: 2,
+              finalVote: { status: "unavailable", winner: null, runnerUp: null, voteCounts: [], totalVotes: 0, margin: null, method: null },
+            },
+            derivedVoteCohorts: [], gameMomentum: [], roundSummaries: [], turningPoints: [],
+            jury: {
+              status: "unavailable", finalists: [], winner: null, juryNarrative: [], winnerSupporters: [], runnerUpSupporters: [],
+              finalVote: { status: "unavailable", winner: null, runnerUp: null, voteCounts: [], totalVotes: 0, margin: null, method: null },
+            },
           },
         };
       },
@@ -2470,7 +2448,17 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
       readRoundFacts: async (args: unknown) => {
         calls.push(args);
-        return { schemaVersion: 2, canonicalGameFacts: { roundFacts: { round: 2 } } };
+        return {
+          schemaVersion: 3,
+          game: { gameKernel: "format", gameKernelSource: "stored", gameKernelDiagnostics: [] },
+          canonicalGameFacts: {
+            roundFacts: {
+              round: 2, players: {}, standardVote: {},
+              format: { acceptedBallots: [], ballotPresentation: { status: "sealed", rollCall: [] } },
+            },
+            availability: {},
+          },
+        };
       },
     }));
 
@@ -2484,8 +2472,27 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(response?.error).toBeUndefined();
     expect(calls).toEqual([{ gameIdOrSlug: "game-1", round: 2 }]);
     const text = ((response?.result as { content: Array<{ text: string }> }).content[0]?.text);
-    expect(text).toContain("\"schemaVersion\": 2");
+    expect(text).toContain("\"schemaVersion\": 3");
     expect(text).toContain("\"round\": 2");
+  });
+
+  test("rejects malformed advertised outputs at the shared dispatch boundary", async () => {
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
+      readRoundFacts: async () => ({ schemaVersion: 2, canonicalGameFacts: "PRIVATE_RESPONSE" }),
+      readGameBrief: async () => ({ schemaVersion: 1, ok: true, postgame: null }),
+    }));
+    for (const [name, arguments_, auth] of [
+      ["read_round_facts", { gameIdOrSlug: "game-1", round: 2 }, PRODUCER_AUTH],
+      ["read_game_brief", { gameIdOrSlug: "game-1" }, GAMES_AUTH],
+    ] as const) {
+      const response = await server.handle({
+        jsonrpc: "2.0", id: name, method: "tools/call",
+        params: { name, arguments: arguments_ },
+      }, auth);
+      expect(response?.result).toBeUndefined();
+      expect(response?.error?.message).toContain(`Invalid ${name} output`);
+      expect(JSON.stringify(response)).not.toContain("PRIVATE_RESPONSE");
+    }
   });
 
   test("forwards producer index cursors and filters to both read models", async () => {

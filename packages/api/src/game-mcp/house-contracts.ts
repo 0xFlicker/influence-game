@@ -5,6 +5,7 @@ import {
   HOUSE_PAGE_BYTES,
 } from "../services/house-read-cursor.js";
 import Ajv from "ajv";
+import { outputContractError } from "./output-validation.js";
 import schemas from "./house-output-schemas.json";
 import { HouseInspectionError } from "../services/house-game-access.js";
 const string = { type: "string", minLength: 1, maxLength: 512 };
@@ -105,9 +106,7 @@ export function houseContent(
 ) {
   const validator = outputValidators.get(name)!;
   if (!validator(value))
-    throw new Error(
-      `Invalid ${name} output: ${ajv.errorsText(validator.errors)}`,
-    );
+    throw outputContractError(name, validator.errors);
   const structuredContent: Record<string, unknown> & {
     followUps: HouseFollowUp[];
   } = {
@@ -117,9 +116,7 @@ export function houseContent(
   for (const followUp of structuredContent.followUps)
     validateHouseInput(followUp.tool, followUp.arguments);
   if (!validator(structuredContent))
-    throw new Error(
-      `Invalid ${name} follow-ups: ${ajv.errorsText(validator.errors)}`,
-    );
+    throw outputContractError(`${name} follow-ups`, validator.errors);
   if (
     ["read_game", "read_game_thinking", "read_game_results", "read_game_retrospective"].includes(name) &&
     houseJsonBytes(structuredContent) >

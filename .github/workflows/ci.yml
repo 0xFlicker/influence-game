@@ -81,6 +81,9 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+      - name: Check generated MCP output schemas
+        run: bun run mcp:schemas:check
+
       - name: Lint
         run: bun run lint
 
