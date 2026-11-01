@@ -93,11 +93,17 @@ test("live delivery holds an entire phase, then matches replay with stable speec
   expect(heldForAudio?.messages).toEqual([]);
   await db.update(schema.games).set({config:game!.config,status:"completed"}).where(eq(schema.games.id,gameId));
   expect((await readGamePresentation(db,gameId))?.finished).toBe(true);
+  await db.insert(schema.transcripts).values({gameId,round:0,phase:Phase.INTRODUCTION,fromPlayerId:"a",scope:"public",text:"Historical unanchored speech",timestamp:1,captureVersion:null});
+  await db.update(schema.games).set({status:"in_progress"}).where(eq(schema.games.id,gameId));
+  expect((await readGamePresentation(db,gameId))?.throughSequence).toBe(0);
+  await db.update(schema.games).set({status:"completed"}).where(eq(schema.games.id,gameId));
+  const oldComplete = await readGamePresentation(db,gameId);
+  expect(oldComplete?.messages.map(row=>row.entry.text)).toContain("Historical unanchored speech");
   // Older completed recordings with no publication ledger use the same DTO and
   // retain their saved dialogue instead of silently producing an empty replay.
   await db.delete(schema.gamePublications).where(eq(schema.gamePublications.gameId,gameId));
   const historical = await readGamePresentation(db,gameId);
-  expect(historical?.messages).toEqual(completePrefix?.messages);
+  expect(historical?.messages).toEqual(oldComplete?.messages);
   expect(historical?.finished).toBe(true);
   await db.update(schema.games).set({hiddenAt:new Date().toISOString()}).where(eq(schema.games.id,gameId));
   expect(await readGamePresentation(db,gameId)).toBeNull();

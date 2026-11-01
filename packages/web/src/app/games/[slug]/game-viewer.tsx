@@ -213,6 +213,15 @@ export function GameViewer({
         while (!controller.signal.aborted) {
           const requestVersion = presentationRequestVersionRef.current;
           try {
+            if (gameRef.current && getGamePresentationRouteDecision(gameRef.current).route !== "format") {
+              const frames = await withPresentationHydrationDeadline(controller.signal, signal => getGameReplayWatchFrames(gameId, {afterSequence:replayFramesRef.current.at(-1)?.sequence ?? cursor, presentationOnly:true, signal}));
+              if (controller.signal.aborted) return false;
+              retainReplayFrames(frames, gameRef.current.id);
+              cursor = frames.at(-1)?.sequence ?? cursor;
+              if (requestVersion !== presentationRequestVersionRef.current) continue;
+              setPresentationHydration({status:"ready",retryCount:hydrationState.retryCount});
+              return true;
+            }
             const incoming = await withPresentationHydrationDeadline(
               controller.signal,
               (signal) => getGamePresentation(gameId, cursor, signal),
@@ -264,10 +273,15 @@ export function GameViewer({
     [gameId, retainReplayFrames],
   );
 
-  useEffect(() => () => {
-    const request = presentationHydrationRequestRef.current;
-    presentationHydrationRequestRef.current = null;
-    request?.controller.abort();
+  useEffect(() => {
+    presentationSequenceRef.current = 0;
+    presentationSnapshotGameIdRef.current = null;
+    presentationLiveGameIdRef.current = null;
+    return () => {
+      const request = presentationHydrationRequestRef.current;
+      presentationHydrationRequestRef.current = null;
+      request?.controller.abort();
+    };
   }, [gameId]);
 
   // Set data-phase on root for cinematic CSS cascade (live mode)

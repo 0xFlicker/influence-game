@@ -26,15 +26,20 @@ export async function readGamePresentation(db: DrizzleDB, idOrSlug: string, afte
     let dueHead = 0;
     for (const row of publications) {
       if (row.publicationSequence !== dueHead + 1) throw new Error("Presentation publication history has a gap");
-      if (row.availableAt === null || Date.parse(row.availableAt) > now) break;
+      if (row.availableAt === null) break;
+      const availableAt = Date.parse(row.availableAt);
+      if (!Number.isFinite(availableAt)) throw new Error("Presentation publication has an invalid availability time");
+      if (availableAt > now) break;
       dueHead = row.publicationSequence;
     }
     const transcriptPublications = new Map<string, number>(publications.flatMap(row => row.payload.kind === "transcript_entry" ? [[`${row.payload.turnId}:${row.payload.transcriptOrdinal}`, row.publicationSequence] as const] : []));
     const eventPublications = new Map(publications.flatMap(row => row.payload.kind === "canonical_event" ? [[row.payload.eventSequence, row.publicationSequence] as const] : []));
     const starts = events.filter(event => event.type === "game.phase_entered");
-    const dialogueStarts = new Map(transcript.map(row => [row.id, starts.findLast(event => event.round === row.round && event.phase === row.phase && event.sequence <= (row.firstDurableEventSequence ?? Infinity))?.sequence ?? 0]));
+    const dialogueStarts = new Map(transcript.map(row => [row.id, starts.findLast(event => event.round === row.round && event.phase === row.phase && event.sequence <= (row.firstDurableEventSequence ?? Infinity))?.sequence ?? starts.findLast(event => event.sequence <= (row.firstDurableEventSequence ?? 0))?.sequence ?? 0]));
+    const hasUnanchoredDialogue = transcript.some(row => row.firstDurableEventSequence === null);
     let throughSequence = 0, phaseStartSequence = 0;
     for (const phase of closedViewerPhases(events, game.status === "completed")) {
+      if (hasUnanchoredDialogue && phase.nextPhaseSequence !== null) continue;
       if (audioReady !== null && phase.throughSequence > audioReady) break;
       // A logical turn may span a phase boundary. Do not expose that partial
       // phase: wait for a later closed boundary containing its dialogue too.
@@ -47,6 +52,9 @@ export async function readGamePresentation(db: DrizzleDB, idOrSlug: string, afte
         const next = phase.nextPhaseSequence === null ? null : eventPublications.get(phase.nextPhaseSequence);
         if (phase.nextPhaseSequence !== null && next === undefined) break;
         let requiredHead = next === null ? publications.at(-1)!.publicationSequence : next! - 1;
+        for (const [sequence, publication] of eventPublications) {
+          if (sequence <= phase.throughSequence) requiredHead = Math.max(requiredHead, publication);
+        }
         // A turn emits events before dialogue. Include every transcript dependency,
         // even if its publication follows the next phase's event in the same turn.
         for (const row of transcript) {

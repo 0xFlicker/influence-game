@@ -1605,6 +1605,20 @@ test.describe("format-aware game viewer", () => {
     await expect(page.getByText("Waiting for next phase", { exact: true })).toHaveCount(0);
   });
 
+  test("classic live dialogue retains its canonical frame endpoint", async ({page}) => {
+    const slug="classic-live-frame-refresh";
+    await installDeterministicClassicGame(page,{slug,status:"in_progress",gameKernel:"classic"});
+    let frameReads=0, formatReads=0;
+    await page.route(`**/api/games/${slug}/replay-watch-frames*`,route=>{frameReads++;return route.fulfill({json:[]});});
+    await page.route(`**/api/games/${slug}/presentation*`,route=>{formatReads++;return route.fulfill({status:404});});
+    await page.routeWebSocket(new RegExp(`/ws/games/${slug}(?:\\?.*)?$`),socket=>{
+      socket.send(JSON.stringify({type:"message",entry:{entrySequence:1,firstDurableEventSequence:10,round:0,phase:"INTRODUCTION",from:"classic-atlas",scope:"public",text:"Classic dialogue retains its canonical frame refresh.",timestamp:1}}));
+    });
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await expect.poll(()=>frameReads).toBeGreaterThan(0);
+    expect(formatReads).toBe(0);
+  });
+
   for (const mobile of [false, true]) test(`normalized Save and Exit phase plays ballots, totals and tie choice before elimination (${mobile ? "mobile" : "desktop"})`, async ({page}) => {
     await page.clock.install();
     if (mobile) await page.setViewportSize({width:390,height:844});
@@ -1918,11 +1932,7 @@ test.describe("format-aware game viewer", () => {
           '[data-format-cue="safety_bounce_pointer"]',
         );
         await expect(board).toBeVisible();
-        await expect(
-          liveShell.locator(
-            '[data-presentation-current-entry="true"] [data-format-cue="safety_bounce_pointer"]',
-          ),
-        ).toBeVisible();
+        await expect(liveShell.locator('[data-presentation-current-entry="true"]')).toHaveCount(0);
         await assertBoardPartition(board);
       }
 
@@ -1967,7 +1977,7 @@ test.describe("format-aware game viewer", () => {
     });
   }
 
-  test("reconnect hydrates only higher Safety Bounce decisions and reload abandons local roll-call position", async ({
+  test("reconnect appends Safety Bounce decisions and reload begins the complete phase", async ({
     page,
   }) => {
     await page.clock.install();
@@ -1981,8 +1991,12 @@ test.describe("format-aware game viewer", () => {
       waitUntil: "domcontentloaded",
     });
 
+    const slider = page.getByRole("slider",{name:"Replay position"});
+    await expect(slider).toBeVisible();
+    await slider.focus();
+    await slider.press("End");
     const initialPointer = page.locator(
-      '[data-presentation-current-entry="true"] [data-format-cue="safety_bounce_pointer"]',
+      '[data-format-cue="safety_bounce_pointer"]',
     );
     await expect(initialPointer).toBeVisible();
     expect(await acceptedTarget(initialPointer)).toBe("echo");
@@ -1994,7 +2008,7 @@ test.describe("format-aware game viewer", () => {
       reason: "deterministic reconnect",
     });
 
-    await page.clock.runFor(1_250);
+    await page.clock.runFor(3_000);
     await expect.poll(() => routed.readCount).toBeGreaterThan(0);
     await expect
       .poll(async () => {
@@ -2025,7 +2039,7 @@ test.describe("format-aware game viewer", () => {
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(
       page.locator(
-        '[data-presentation-current-entry="true"] [data-format-cue="format_elimination"]',
+        '[data-format-cue="safety_bounce_started"]',
       ),
     ).toBeVisible();
     await expect(rollCall).toHaveCount(0);
@@ -2204,6 +2218,10 @@ test.describe("format-aware game viewer", () => {
     await page.clock.runFor(1250);
     await expect.poll(() => fixture.readCount).toBeGreaterThan(0);
     await page.reload();
+    await expect(page.locator('[data-format-cue="safety_bounce_started"]')).toBeVisible();
+    const slider = page.getByRole("slider", {name:"Replay position"});
+    await slider.focus();
+    await slider.press("End");
     await expect(chain).toHaveAttribute("data-chain-count", "2");
     await expect(chain.locator('[data-chain-player="echo"]')).toHaveAttribute("data-chooser", "true");
     await expect(chain.locator('[data-chain-player="rex"]')).toHaveAttribute("data-chain-classification", "unclassified");

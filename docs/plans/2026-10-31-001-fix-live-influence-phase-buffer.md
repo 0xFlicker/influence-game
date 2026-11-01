@@ -69,7 +69,9 @@ No incomplete phase is supplied to the format compiler.
 
 Historical completed games without a publication ledger are delivered whole
 through this same projection, preserving saved transcript content. Active games
-require the ledger. Existing canonical history and private evidence are never
+require the ledger. Historical dialogue without durable event coordinates also
+requires a complete recording, so live playback cannot omit speech that would
+appear on reload. Existing canonical history and private evidence are never
 rewritten or regenerated. Required accepted speech is validated by the existing
 presentation contract; missing speech is not invented or recovered from prose.
 
@@ -97,7 +99,9 @@ stop polling while final presentation data remains held.
   speech, suffix/reload equality, audio gating, suspension, terminal flush,
   historical recordings and hidden games.
 - Browser fixtures consume the normalized endpoint; reconnect and delayed-read
-  stories cover mounted playback and reload behavior.
+  stories cover mounted playback and reload behavior. Desktop and mobile Save and
+  Exit stories require ballots, totals, saved tie speech and the selected target
+  before elimination. Classic dialogue retains its original frame endpoint.
 - Required repository baselines are `bun run test`, `bun run test:postgres`, and
   `bun run check`, followed by the PR's CI and deterministic browser checks.
 
