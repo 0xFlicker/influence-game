@@ -790,7 +790,9 @@ export function GameViewer({
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const refresh = async () => {
-      await hydratePresentationFrames({ afterSequence: presentationSequenceRef.current, preserveScreen: replayFramesRef.current.length > 0 });
+      // An empty waiting-room prefix is still a successfully loaded screen.
+      // Background polls must not reset its connection status to loading.
+      await hydratePresentationFrames({ afterSequence: presentationSequenceRef.current, preserveScreen: true });
       if (!cancelled) { clearTimeout(timer); timer = setTimeout(() => { void refresh(); }, 1000); }
     };
     void refresh();
