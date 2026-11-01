@@ -242,6 +242,10 @@
                   "audience": {
                     "$ref": "#/definitions/WerewolfAudience"
                   },
+                  "cursor": {
+                    "description": "Audience-local cursor; private action counts/coordinates never leave the server.",
+                    "type": "number"
+                  },
                   "rulesVersion": {
                     "enum": [
                       10,
@@ -260,10 +264,6 @@
                     "type": "string"
                   },
                   "maxDays": {
-                    "type": "number"
-                  },
-                  "cursor": {
-                    "description": "Audience-local cursor; private action counts/coordinates never leave the server.",
                     "type": "number"
                   }
                 },
@@ -477,6 +477,10 @@
                     "audience": {
                       "$ref": "#/definitions/WerewolfAudience"
                     },
+                    "cursor": {
+                      "description": "Audience-local cursor; private action counts/coordinates never leave the server.",
+                      "type": "number"
+                    },
                     "rulesVersion": {
                       "enum": [
                         10,
@@ -495,10 +499,6 @@
                       "type": "string"
                     },
                     "maxDays": {
-                      "type": "number"
-                    },
-                    "cursor": {
-                      "description": "Audience-local cursor; private action counts/coordinates never leave the server.",
                       "type": "number"
                     }
                   },
@@ -2894,6 +2894,25 @@
             "type": "string",
             "const": "endgame.elimination_resolved"
           },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
+          },
           "payload": {
             "type": "object",
             "properties": {
@@ -3004,6 +3023,25 @@
             "type": "string",
             "const": "jury.winner_determined"
           },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
+          },
           "payload": {
             "type": "object",
             "properties": {
@@ -3087,6 +3125,25 @@
           "type": {
             "type": "string",
             "const": "game.phase_entered"
+          },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
           },
           "payload": {
             "type": "object",
@@ -3221,6 +3278,25 @@
             "type": "string",
             "const": "player.eliminated"
           },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
+          },
           "payload": {
             "type": "object",
             "properties": {
@@ -3304,6 +3380,25 @@
           "type": {
             "type": "string",
             "const": "vote.cast"
+          },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
           },
           "payload": {
             "type": "object",
@@ -3394,6 +3489,25 @@
           "type": {
             "type": "string",
             "const": "vote.empower_tally_resolved"
+          },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
           },
           "payload": {
             "type": "object",
@@ -3506,6 +3620,25 @@
             "type": "string",
             "const": "vote.empower_revote_cast"
           },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
+          },
           "payload": {
             "type": "object",
             "properties": {
@@ -3590,6 +3723,25 @@
             "type": "string",
             "const": "vote.empower_vote_cleared"
           },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
+          },
           "payload": {
             "type": "object",
             "properties": {
@@ -3669,6 +3821,25 @@
           "type": {
             "type": "string",
             "const": "vote.empowered_set"
+          },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
           },
           "payload": {
             "type": "object",
@@ -3759,6 +3930,25 @@
           "type": {
             "type": "string",
             "const": "format.menu_offered"
+          },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
           },
           "payload": {
             "type": "object",
@@ -3872,6 +4062,25 @@
             "type": "string",
             "const": "format.selected"
           },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
+          },
           "payload": {
             "type": "object",
             "properties": {
@@ -3967,6 +4176,25 @@
           "type": {
             "type": "string",
             "const": "format.two_names_setup"
+          },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
           },
           "payload": {
             "type": "object",
@@ -4066,6 +4294,25 @@
             "type": "string",
             "const": "format.two_names_mingle_completed"
           },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
+          },
           "payload": {
             "type": "object",
             "properties": {
@@ -4164,6 +4411,25 @@
             "type": "string",
             "const": "format.two_names_override_declined"
           },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
+          },
           "payload": {
             "type": "object",
             "properties": {
@@ -4258,6 +4524,25 @@
             "type": "string",
             "const": "format.two_names_override_used"
           },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
+          },
           "payload": {
             "type": "object",
             "properties": {
@@ -4341,6 +4626,25 @@
           "type": {
             "type": "string",
             "const": "format.two_names_replacement_named"
+          },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
           },
           "payload": {
             "type": "object",
@@ -4439,6 +4743,25 @@
           "type": {
             "type": "string",
             "const": "format.two_names_plea_recorded"
+          },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
           },
           "payload": {
             "type": "object",
@@ -4555,6 +4878,25 @@
             "type": "string",
             "const": "format.ballot_cast"
           },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
+          },
           "payload": {
             "type": "object",
             "properties": {
@@ -4658,6 +5000,25 @@
             "type": "string",
             "const": "format.ballot_forfeited"
           },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
+          },
           "payload": {
             "type": "object",
             "properties": {
@@ -4748,6 +5109,25 @@
             "type": "string",
             "const": "format.safety_bounce_started"
           },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
+          },
           "payload": {
             "type": "object",
             "properties": {
@@ -4827,6 +5207,25 @@
           "type": {
             "type": "string",
             "const": "format.safety_bounce_pointer"
+          },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
           },
           "payload": {
             "type": "object",
@@ -4919,6 +5318,25 @@
           "type": {
             "type": "string",
             "const": "format.resolved"
+          },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
           },
           "payload": {
             "type": "object",
@@ -5201,6 +5619,25 @@
             "type": "string",
             "const": "power.action_set"
           },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
+          },
           "payload": {
             "type": "object",
             "properties": {
@@ -5304,6 +5741,25 @@
           "type": {
             "type": "string",
             "const": "power.candidates_resolved"
+          },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
           },
           "payload": {
             "type": "object",
@@ -5432,6 +5888,25 @@
             "type": "string",
             "const": "council.vote_cast"
           },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
+          },
           "payload": {
             "type": "object",
             "properties": {
@@ -5515,6 +5990,25 @@
           "type": {
             "type": "string",
             "const": "council.elimination_resolved"
+          },
+          "publicDecisionSpeech": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actorId"
+              ]
+            }
           },
           "payload": {
             "type": "object",
