@@ -698,3 +698,5 @@ runs require explicit authorization. The default visibility is public; add
 qualification. See [model routing](model-routing.md) for current eligibility,
 per-character preferences and independent House fallbacks. Keep direct House
 calls, exact schemas and types without `as any`.
+
+Visual Mode permits text-only contestant models, including preferred and recovery routes. Each provider attempt sends scene images only to image-capable models; text-only models receive canonical room participants, observable cues, and performance instructions. Private request evidence records the actual adapted context.

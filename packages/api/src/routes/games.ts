@@ -104,7 +104,6 @@ import {
   pickHouseCast,
   HouseCastCapacityError,
   resolveFormatManifest,
-  resolveModelSelection,
   resolveProviderManifestFromGameConfig,
 } from "@influence/engine";
 import type { Personality } from "@influence/engine";
@@ -202,8 +201,6 @@ export function createGameRoutes(db: DrizzleDB) {
     try { modelRouting = await creationModelRouting(db, c.get("user")!.id, body); }
     catch (error) { return c.json({ error: error instanceof Error ? error.message : "Invalid model settings" }, error instanceof GameModelRoutingError ? error.status : 400); }
     const frozenProviderManifest = modelRouting.defaultManifest;
-    const primary = resolveModelSelection(frozenProviderManifest[0]);
-    if (visualMode && !primary.model.capabilities.supportsImageInput) return c.json({ error: "The default contestant model cannot receive image context" }, 400);
 
     let frozenFormatManifest;
     try {

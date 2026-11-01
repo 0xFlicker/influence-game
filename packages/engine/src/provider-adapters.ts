@@ -75,6 +75,16 @@ export interface ModelInvocationExecutionResult<TValue>
   liveOutcome?: ProviderModelOutcome;
 }
 
+/** Adapt optional scene attachments without changing frozen context authority. */
+export function withModelImageContext<T>(invocation: ModelInvocation<T>, runtime: ProviderRuntimeDescriptor): ModelInvocation<T> {
+  if (runtime.modelCapabilities.supportsImageInput) return invocation;
+  return { ...invocation, messages: invocation.messages.map(message => {
+    if (message.imageTextContext === undefined) return message;
+    const { images: _images, imageTextContext, ...textMessage } = message;
+    return { ...textMessage, content: imageTextContext };
+  }) };
+}
+
 /**
  * Execute one semantic invocation through the sealed manifest. Every entry
  * compiles and dispatches through its own adapter; no native request is reused
@@ -160,7 +170,7 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
       const compile = (attemptOrdinal: number): ProviderNativeRequest => {
         // Thinking style and delivery policy guide this attempt, like length repair.
         // It must not change the frozen gameplay context hash during recovery.
-        const semanticCall = withRepair(withOutputGuidance(current ?? invocation()));
+        const semanticCall = withRepair(withOutputGuidance(withModelImageContext(current ?? invocation(), adapterRuntime)));
         const prepared = adapterRuntime.adapter.compile(
           semanticCall,
           adapterRuntime,
@@ -177,7 +187,7 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
         contextIdentity: () => context,
         adaptContext: options.call.coordinate.semantic.kind !== "context_compaction" && Boolean(invocation().contextSpans?.length),
         compatibility: () =>
-          adapterRuntime.adapter.validate(invocation(), adapterRuntime),
+          adapterRuntime.adapter.validate(withModelImageContext(invocation(), adapterRuntime), adapterRuntime),
         preparedRequest: (attemptOrdinal) => {
           const prepared = compile(attemptOrdinal);
           return {
@@ -192,7 +202,7 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
         dispatch: async ({ attemptOrdinal, requestOptions, serviceTier }) => {
           const key = `${runtime.catalogId}:${attemptOrdinal}`;
           const compiled = compiledByAttempt.get(key);
-          const semanticCall = compiled?.invocation ?? withRepair(withOutputGuidance(invocation()));
+          const semanticCall = compiled?.invocation ?? withRepair(withOutputGuidance(withModelImageContext(invocation(), adapterRuntime)));
           const prepared = compiled?.request ?? adapterRuntime.adapter.compile(
             semanticCall,
             adapterRuntime,

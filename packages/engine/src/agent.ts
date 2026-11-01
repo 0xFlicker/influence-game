@@ -5985,7 +5985,10 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       result.push({
         role: "user",
         content: `${PERFORMANCE_CUE_GUIDANCE}\nCharacter performance instructions (character-authored direction): ${options.visual.performanceInstructions}${options.visual.observableRoom ? `\nCanonical room participants: ${JSON.stringify(options.visual.observableRoom.participantIds)}. Latest observable cues: ${JSON.stringify(options.visual.observableRoom.cues)}` : ""}${options.visual.room ? `\nCurrent scene: ${options.visual.room.scene.id}. This image shows one camera view of your room. Visible people: ${JSON.stringify(options.visual.room.scene.visibleParticipantIds ?? options.visual.room.scene.participantIds)}. People in this room outside this view or missing from the picture: ${JSON.stringify(options.visual.room.scene.participantIds.filter(id => !(options.visual!.room!.scene.visibleParticipantIds ?? options.visual!.room!.scene.participantIds).includes(id)))}. Absence from the picture does not mean absence from the room. Number labels: ${JSON.stringify(options.visual.room.scene.anchors.map(({ playerId, label }) => ({ playerId, label })))}. Your player ID: ${this.id}. Latest observable room cues: ${JSON.stringify(options.visual.room.cues)}` : ""}`,
-        ...(options.visual.room && { images: [{ url: options.visual.room.scene.annotatedImageUrl, detail: "high" as const }] }),
+        ...(options.visual.room && {
+          imageTextContext: `${PERFORMANCE_CUE_GUIDANCE}\nCharacter performance instructions (character-authored direction): ${options.visual.performanceInstructions}\nCanonical room participants: ${JSON.stringify(options.visual.room.scene.participantIds)}. Your player ID: ${this.id}. Latest observable room cues: ${JSON.stringify(options.visual.room.cues)}. Scene images are not supplied to this model.`,
+          images: [{ url: options.visual.room.scene.annotatedImageUrl, detail: "high" as const }],
+        }),
       });
     }
     // Keep the stable prefix/cache key intact. This is guidance for dialogue only,
@@ -5999,6 +6002,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       result[result.length - 1] = {
         ...lastMessage,
         content: `${lastMessage.content.trimEnd()}\n\n${SHORT_DIALOGUE_DRIVER}`,
+        ...(lastMessage.imageTextContext !== undefined && { imageTextContext: `${lastMessage.imageTextContext.trimEnd()}\n\n${SHORT_DIALOGUE_DRIVER}` }),
       };
     }
     return result;

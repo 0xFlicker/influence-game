@@ -10,6 +10,7 @@ import {
   createProviderAdapter,
   executeModelInvocation,
   OUTPUT_LANGUAGE_GUIDANCE,
+  withModelImageContext,
   normalizeOpenAIResponse,
 } from "../provider-adapters";
 import type { ModelInvocation } from "../model-invocation";
@@ -1097,4 +1098,51 @@ describe("vision invocation contracts", () => {
     expect(() => compileOpenAIResponsesRequest({ ...visual, messages: [{ role: "user", content: "test", images: [{ ...image, url: "file:///etc/passwd" }] }] }, openai))
       .toThrow("invalid image input");
   });
+});
+
+it("adapts optional game images per route while preserving required images and the source", () => {
+  const model = modelCatalogEntryById("katana:deepseek-v4-flash")!;
+  const descriptor = { catalogId: model.id, providerProfileId: model.providerProfileId, modelId: model.modelId, modelCapabilities: model.capabilities, reasoningPolicy: "action-policy" as const };
+  const source: ModelInvocation = { ...invocation, messages: [{ role: "user", content: "Image camera context", imageTextContext: "Canonical room: Atlas, Blair. Cue: waves.", images: [{ url: "https://example.com/scene.png", detail: "high" }] }] };
+  const hash = contextSourceHash(source);
+  const adapted = withModelImageContext(source, descriptor);
+  expect(adapted.messages[0]!.content).toBe("Canonical room: Atlas, Blair. Cue: waves.");
+  expect(adapted.messages[0]!.images).toBeUndefined();
+  expect(contextSourceHash(source)).toBe(hash);
+  expect(source.messages[0]!.images).toHaveLength(1);
+  expect(withModelImageContext(source, { ...descriptor, modelCapabilities: { ...model.capabilities, supportsImageInput: true } })).toBe(source);
+  const required: ModelInvocation = { ...source, messages: [{ role: "user", content: "Required image", images: source.messages[0]!.images }] };
+  expect(withModelImageContext(required, descriptor).messages[0]!.images).toHaveLength(1);
+});
+
+it.each([false, true])("dispatches text-only visual turns and records the actual text context (recovery: %s)", async recovery => {
+  const requests: unknown[] = [];
+  const client = { chat: { completions: { create: async (body: unknown) => {
+    requests.push(body);
+    return { id: "text-scene", choices: [{ finish_reason: "stop", message: { role: "assistant", content: '{"target":"Atlas"}' } }] };
+  } } } } as unknown as OpenAI;
+  const base = runtime("katana:glm-5-2", client, recovery ? 1 : 0);
+  let imageAttempts = 0;
+  const imageClient = { chat: { completions: { create: async (body: unknown) => {
+    imageAttempts += 1;
+    expect(JSON.stringify(body)).toContain("https://example.com/scene.png");
+    throw Object.assign(new Error("temporary outage"), { status: 503 });
+  } } } } as unknown as OpenAI;
+  const imageRuntime = runtime("katana:grok-4-5", imageClient);
+  const result = await executeModelInvocation({
+    call: new ProviderExecutionCoordinator({ wait: async () => {} }).startCall({ actor: { name: "Dax", role: "player" }, action: voteArtifact.action,
+      semantic: { version: 1, kind: "phase_call", phase: Phase.MINGLE, round: 0, canonicalEventSequence: 0, callSlot: 1 } }),
+    runtimes: [...(recovery ? [{ ...imageRuntime, modelCapabilities: { ...imageRuntime.modelCapabilities, supportsImageInput: true } }] : []),
+      { ...base, modelCapabilities: { ...base.modelCapabilities, supportsImageInput: false } }], maxAttempts: 1,
+    invocation: { ...invocation, messages: [{ role: "user", content: "Scene image", imageTextContext: "Canonical room: Atlas, Blair. Cue: waves.", images: [{ url: "https://example.com/scene.png", detail: "high" }] }] },
+    validate: (_outcome, value) => value ? { status: "usable", value } : { status: "unusable", kind: "malformed_output", message: "missing" },
+  });
+  expect(result.value).toEqual({ target: "Atlas" });
+  expect(imageAttempts).toBe(recovery ? 1 : 0);
+  expect(result.manifestPosition).toBe(recovery ? 1 : 0);
+  expect(requests).toHaveLength(1);
+  expect(JSON.stringify(requests)).toContain("Canonical room: Atlas, Blair. Cue: waves.");
+  expect(JSON.stringify(requests)).not.toContain("scene.png");
+  expect(result.liveOutcome?.invocationMessages?.find(message => message.role === "user")?.content).toContain("Canonical room: Atlas, Blair.");
+  expect(result.liveOutcome?.invocationMessages?.find(message => message.role === "user")?.images).toBeUndefined();
 });

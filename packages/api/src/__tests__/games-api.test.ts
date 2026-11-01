@@ -453,6 +453,34 @@ describe("Game REST API", () => {
       expect(config.slotType).toBe("all_ai");
     });
 
+    test.each(["best_effort", "require_visuals"])("visual input is optional through creation, enrollment and startup (%s)", async visualFailurePolicy => {
+      const providerManifest = [{ catalogId: "katana:deepseek-v4-flash", reasoningPolicy: "action-policy" },
+        { catalogId: "katana:deepseek-v4-pro", reasoningPolicy: "action-policy", maxCallsPerGame: 7 }];
+      const created = await app.request("/api/games", json({ playerCount: 6, visualMode: true,
+        visualFailurePolicy, providerManifest }, adminToken));
+      expect(created.status).toBe(201);
+      const { id } = await created.json() as { id: string };
+      for (let i = 0; i < 6; i++) {
+        const profile = await createOwnedAgentProfile(db, { userId: ADMIN_USER_ID }, {
+          name: `Text Competitor ${i}`, personality: "A distinct saved competitor.", personaKey: "strategic",
+          modelPreference: { catalogId: "katana:deepseek-v4-flash" },
+        });
+        const joined = await app.request(`/api/games/${id}/join`, json({ agentProfileId: profile.profile.id }, adminToken));
+        expect([200, 201]).toContain(joined.status);
+      }
+      // The deterministic runner avoids scene-generation or provider I/O.
+      const started = await app.request(`/api/games/${id}/start`, authPost(adminToken));
+      expect(started.status).toBe(200);
+      const game = (await db.select().from(schema.games).where(eq(schema.games.id, id)))[0]!;
+      expect(game.status).toBe("in_progress");
+      const config = JSON.parse(game.config);
+      expect(config.visualMode).toBe(true);
+      expect(config.visualFailurePolicy).toBe(visualFailurePolicy);
+      expect(config.modelRouting.defaultManifest).toEqual(providerManifest);
+      expect(Object.values(config.modelRouting.contestants)).toHaveLength(6);
+      for (const route of Object.values(config.modelRouting.contestants)) expect(route).toEqual(providerManifest);
+    });
+
     test("rejects malformed provider manifests with an actionable error", async () => {
       const cases: Array<[string, unknown]> = [
         ["empty", []],

@@ -185,18 +185,16 @@ describe("new game form", () => {
     ]);
   });
 
-  test("names skipped visual provider slots before submission", async () => {
+  test("explains text context for text-only visual provider slots", async () => {
     installDom();
     globalThis.fetch = (async () => jsonResponse(providerInventory())) as unknown as typeof fetch;
     const mounted = render(<CreateGameForm />);
     await configureTextFallbacks(mounted);
     fireEvent.click(mounted.getByRole("checkbox", { name: /Visual Mode/ }));
-    expect(mounted.getByRole("status").textContent).toContain("Katana GLM 5.2");
-    expect(mounted.getByRole("status").textContent).toContain("xAI Grok 4.5");
-    expect(mounted.getByRole("status").textContent).not.toContain("OpenAI gpt-5.6-luna");
+    expect(mounted.getAllByText("Receives text scene context")).toHaveLength(2);
   });
 
-  test("visual games preserve the common fallback chain and reject an incompatible primary", async () => {
+  test("visual games accept text-only primaries and preserve the fallback chain", async () => {
     installDom();
     const bodies: Array<Record<string, unknown>> = [];
     globalThis.fetch = (async (request, init) => {
@@ -207,38 +205,38 @@ describe("new game form", () => {
     const mounted = render(<CreateGameForm />);
     await configureTextFallbacks(mounted);
     fireEvent.click(mounted.getByRole("checkbox", { name: /Visual Mode/ }));
-    expect(mounted.container.querySelectorAll('[data-visual-skipped="true"]').length).toBe(2);
+    expect(mounted.container.querySelectorAll('[data-visual-skipped="true"]').length).toBe(0);
     fireEvent.click(mounted.getByRole("button", { name: "Move primary down" }));
-    fireEvent.click(mounted.getByRole("button", { name: /Create .* Game/ }));
-    expect(mounted.getByText(/primary contestant model cannot receive image context/)).not.toBeNull();
-    expect(bodies).toHaveLength(0);
-    fireEvent.click(mounted.getByRole("button", { name: "Move fallback 1 up" }));
     fireEvent.click(mounted.getByRole("button", { name: /Create .* Game/ }));
     await waitFor(() => expect(pushed).toEqual(["/games/visual-route"]));
     expect((bodies[0]!.modelRouting as { defaultManifest: unknown[] }).defaultManifest).toHaveLength(3);
     expect(bodies[0]).not.toHaveProperty("providerManifest");
   });
 
-  test("reports missing image-capable providers without submitting an empty route", async () => {
+  test("submits visual games when all providers are text-only", async () => {
     installDom();
     const inventory = providerInventory();
     inventory.models = inventory.models.filter(model => !model.capabilities.supportsImageInput);
-    let creates = 0;
-    globalThis.fetch = (async (request) => {
+    const bodies: Array<Record<string, unknown>> = [];
+    globalThis.fetch = (async (request, init) => {
       if (String(request).endsWith("/api/provider-models")) return jsonResponse(inventory);
-      creates += 1;
-      return jsonResponse({}, 500);
+      bodies.push(JSON.parse(String(init?.body)));
+      return jsonResponse({ id: "text-game", slug: "text-visual" }, 201);
     }) as typeof fetch;
     const mounted = render(<CreateGameForm />);
     await configureTextFallbacks(mounted);
     fireEvent.change(mounted.getByRole("combobox", { name: "Primary model" }), { target: { value: "katana:deepseek-v3" } });
     fireEvent.click(mounted.getByRole("checkbox", { name: /Visual Mode/ }));
     fireEvent.click(mounted.getByRole("button", { name: /Create .* Game/ }));
-    expect(mounted.getByText(/primary contestant model cannot receive image context/)).not.toBeNull();
-    expect(creates).toBe(0);
+    await waitFor(() => expect(pushed).toEqual(["/games/text-visual"]));
+    expect(bodies[0]).toMatchObject({ visualMode: true, modelRouting: { defaultManifest: [
+      expect.objectContaining({ catalogId: "katana:deepseek-v3" }),
+      expect.objectContaining({ catalogId: "katana:glm-5-2", maxCallsPerGame: 12 }),
+      expect.objectContaining({ catalogId: "katana:grok-4-5", maxCallsPerGame: 12 }),
+    ] } });
   });
 
-  test("changing a skipped slot to an image-capable model activates it", async () => {
+  test("changing image support keeps the fallback active", async () => {
     installDom();
     const inventory = providerInventory();
     inventory.models.push({ ...inventory.models[1]!, catalogId: "openai:gpt-5.6-luna", modelId: "gpt-5.6-luna", displayName: "OpenAI gpt-5.6-luna" });
@@ -247,7 +245,7 @@ describe("new game form", () => {
     await configureTextFallbacks(mounted);
     fireEvent.click(mounted.getByRole("checkbox", { name: /Visual Mode/ }));
     fireEvent.change(mounted.getByRole("combobox", { name: "Fallback 1 model" }), { target: { value: "openai:gpt-5.6-luna" } });
-    expect(mounted.container.querySelectorAll('[data-visual-skipped="true"]').length).toBe(1);
+    expect(mounted.container.querySelectorAll('[data-visual-skipped="true"]').length).toBe(0);
     expect((mounted.getByRole("spinbutton", { name: "Fallback 1 max calls per game" }) as HTMLInputElement).disabled).toBe(false);
   });
 

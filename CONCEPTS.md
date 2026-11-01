@@ -936,6 +936,8 @@ An immutable `/s/<code>` reference to a supported public House route and its val
 
 A **model preference** is an operational character setting shared by both games. **Default** means use the game creator's contestant default. Enrollment snapshots the preference; an admin's game-specific override wins, including an explicit Default override. **House model** means the independent game-scoped text model for production responsibilities, not every House-owned contestant's model.
 
+Visual Mode does not restrict model eligibility. Scene images are optional per provider attempt: text-only models receive canonical room participants and observable cues, while image-capable models also receive the image.
+
 A game's **model routing policy** defines contestant default/shared fallbacks, House primary/fallbacks, exclusions and caps. Atomic start freezes concrete routes and runtime metadata for each actor. Model choice is best effort under that policy. A **fallback reservation** counts a dispatched recovery attempt, including retries/uncertain dispatches; primary calls and accepted replay do not consume it. See [model routing](docs/model-routing.md).
 
 

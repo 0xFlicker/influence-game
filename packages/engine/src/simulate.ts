@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+/** Visual Mode supports text-only routes using canonical room text and performance cues. */
 import {CURRENT_INFLUENCE_GAME_SCHEMA_VERSION} from "./influence-game-schema";
 import { HOUSE_CAST } from "./house-personas";
 /**

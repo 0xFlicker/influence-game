@@ -610,7 +610,7 @@ export async function validateGameStartReadiness(
           : await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, gameId));
         sealGameModelRouting(policy, seats.map(seat => ({ id: seat.id, preference: seat.modelPreference })), game.gameKind !== "werewolf" && gameConfig.visualMode === true);
       }
-    } else if (gameConfig.visualMode === true && resolvedProviderManifest.some((selection) => !selection.model.capabilities.supportsImageInput)) return { error: "Visual Mode requires image-capable models" };
+    }
   } catch (error) {
     return { error: publicProviderStartupError(error) };
   }

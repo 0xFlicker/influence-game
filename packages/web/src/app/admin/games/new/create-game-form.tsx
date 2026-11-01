@@ -498,15 +498,14 @@ export function ProviderRouteEditor({
         {entries.map((entry, index) => {
           const selectedModel = models.find((model) => model.catalogId === entry.catalogId);
           const allowedPolicies = selectedModel?.allowedReasoningPolicies ?? ["action-policy"];
-          const skipped = index > 0 && visualMode && !supportsVisualMode(entry.catalogId, models);
+          const textOnly = visualMode && !supportsVisualMode(entry.catalogId, models);
           const activeIndex = activeRoute.findIndex(active => active.catalogId === entry.catalogId);
-          const error = skipped ? null : routeEntryError(entry, activeIndex, selectedModel);
+          const error = routeEntryError(entry, activeIndex, selectedModel);
           return (
             <fieldset
               key={entry.uiId}
-              data-visual-skipped={skipped || undefined}
               className={`rounded-xl border p-4 transition-colors ${
-                skipped ? "border-white/5 bg-white/[0.01]" : activeIndex === 0
+                activeIndex === 0
                   ? "border-indigo-500/45 bg-indigo-500/[0.08]"
                   : "border-white/10 bg-white/[0.025]"
               }`}
@@ -517,13 +516,13 @@ export function ProviderRouteEditor({
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <span className={`rounded-sm px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${
-                    !skipped && activeIndex === 0
+                    activeIndex === 0
                       ? "bg-indigo-500/25 text-indigo-100"
                       : "bg-white/[0.07] text-white/55"
                   }`}>
-                    {skipped ? "Skipped" : activeIndex === 0 ? "Primary" : `Fallback ${activeIndex}`}
+                    {activeIndex === 0 ? "Primary" : `Fallback ${activeIndex}`}
                   </span>
-                  {skipped && <span className="text-xs text-white/45">No image support · Skipped in Visual Mode</span>}
+                  {textOnly && <span className="text-xs text-white/45">Receives text scene context</span>}
                   {selectedModel && !selectedModel.configured && (
                     <span className="text-xs text-amber-200/70">Credentials not detected</span>
                   )}
@@ -737,14 +736,11 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
   }
 
   const { providerRoute, ...gameParams } = form;
-  const needsImageModels = form.visualMode && !isWerewolf;
-  const skippedModels = needsImageModels ? providerRoute.filter((entry, index) => index > 0 && !supportsVisualMode(entry.catalogId, models)) : [];
-  const effectiveProviderRoute: GameProviderManifestEntry[] = providerRoute.filter(entry => !skippedModels.includes(entry));
+  const hasContestantVisuals = form.visualMode && !isWerewolf;
   const cleanRoute = (entries: GameProviderManifestEntry[]) => entries.map(({ catalogId, reasoningPolicy, maxCallsPerGame }) => ({ catalogId, reasoningPolicy, ...(maxCallsPerGame !== undefined && { maxCallsPerGame }) }));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (needsImageModels && !supportsVisualMode(providerRoute[0]!.catalogId, models)) { setError("The primary contestant model cannot receive image context. Choose an image-capable primary or turn off Visual Mode."); return; }
     if (!isWerewolf && !hasOpeningFormat(form.formatManifest, form.playerCount)) {
       setError("Select at least one format available in the opening round.");
       return;
@@ -764,8 +760,8 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
       setError(routeError);
       return;
     }
-    if (effectiveProviderRoute.length === 0) {
-      setError("No image-capable model is available. Configure an image-capable provider or turn off Visual Mode.");
+    if (providerRoute.length === 0) {
+      setError("Choose at least one contestant model.");
       return;
     }
     setError(null);
@@ -839,8 +835,8 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
         <ProviderRouteEditor
           entries={form.providerRoute}
           models={models}
-          visualMode={needsImageModels}
-          activeRoute={effectiveProviderRoute}
+          visualMode={hasContestantVisuals}
+          activeRoute={providerRoute}
           onChange={(providerRoute) => {
             providerRouteEdited.current = true;
             set("providerRoute", providerRoute);
@@ -934,14 +930,8 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
         </label>
         <label className="mb-5 flex items-start gap-3">
           <input type="checkbox" checked={form.visualMode} onChange={(event) => set("visualMode", event.target.checked)} className="mt-1" />
-          <span>Visual Mode<span className="block text-sm text-white/50">{isWerewolf ? "Automatically generate village and private pack scenes during play. Uses the House image pipeline and adds image-generation cost and preparation time. Choose whether failed visuals use character art or pause for repair in Production." : "Generated rooms, agent image context and performance cues. Models without image support are automatically skipped. Adds image-generation cost and scene preparation time. Portraits and speech bubbles are available in every game. Fixed when the game is created."}</span></span>
+          <span>Visual Mode<span className="block text-sm text-white/50">{isWerewolf ? "Automatically generate village and private pack scenes during play. Uses the House image pipeline and adds image-generation cost and preparation time. Choose whether failed visuals use character art or pause for repair in Production." : "Generated rooms, agent image context and performance cues. Models without image support receive text scene context. Adds image-generation cost and scene preparation time. Portraits and speech bubbles are available in every game. Fixed when the game is created."}</span></span>
         </label>
-        {skippedModels.length > 0 && <p role="status" className="mb-4 text-sm text-white/55">
-          Skipped for this game: {skippedModels.map(entry => models.find(model => model.catalogId === entry.catalogId)?.displayName ?? entry.catalogId).join(", ")}. You can change or remove these slots. Turning off Visual Mode restores them.
-        </p>}
-        {needsImageModels && effectiveProviderRoute[0] && <p className="mb-4 text-sm text-white/55">
-          Visual Primary: {models.find(model => model.catalogId === effectiveProviderRoute[0]!.catalogId)?.displayName ?? effectiveProviderRoute[0].catalogId}.
-        </p>}
         {form.visualMode && <RadioGroup label="Visual failure policy" value={form.visualFailurePolicy}
           options={[{ value: "best_effort" as const, label: "Best effort", sublabel: "Continue with portraits when rendering fails" }, { value: "require_visuals" as const, label: "Require visuals", sublabel: "Pause for admin repair if required visuals are unavailable" }]}
           onChange={(value) => set("visualFailurePolicy", value as FormState["visualFailurePolicy"])} />}
