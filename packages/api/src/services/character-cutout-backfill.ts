@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { CUTOUT_RECIPE, prepareCutoutDemands, readCutoutSource } from "./character-cutouts.js";
+import { isSavedCharacterArt } from "./character-art-save.js";
 import { bundledHouseBody } from "@influence/engine/house-character-art";
 import { loadPayloads, payloadHash } from "./payload-storage.js";
 import { werewolfReferenceMetadata } from "./werewolf-production.js";
@@ -29,6 +30,7 @@ export async function discoverCutoutSources(db: DrizzleDB, selection: CutoutSele
     const [agent] = await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, id));
     if (!agent) { if ("agent" in selection) throw new Error(`Agent not found: ${id}`); warnings.push(`Agent not found: ${id}`); continue; }
     if (!agent.fullBodyReferenceUrl) { warnings.push(`No full-body image: ${id}`); continue; }
+    if (isSavedCharacterArt(agent.fullBodyReferenceUrl)) continue;
     let sourceKey = agent.fullBodyReferenceUrl;
     const revisionId = agent.moderationRequired ? agent.latestContentRevisionId : agent.contentRevisionId;
     if (revisionId) {
@@ -57,17 +59,17 @@ export async function discoverCutoutSources(db: DrizzleDB, selection: CutoutSele
       const players = start?.event.type === "werewolf.started" ? start.event.payload.players : [];
       if (!players.length) warnings.push(`No frozen started roster: ${gameId}`);
       for (const ref of await werewolfReferenceMetadata(db, gameId, players)) {
-        if (ref.bundled && ref.kind === "full_body") continue;
+        if (ref.bundled && ref.kind === "full_body" || isSavedCharacterArt(ref.profile.fullBodyReferenceUrl)) continue;
         if (ref.bodyHash) frozen[ref.profile.id] = `sha256:${ref.bodyHash}`;
         else warnings.push(`No frozen full-body image: ${gameId}/${ref.profile.id}`);
       }
     } else {
       for (const player of await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, gameId))) {
         const profile = JSON.parse(player.persona);
-        if (typeof profile.fullBodyReferenceUrl === "string" && profile.fullBodyReferenceUrl && !bundledHouseBody(profile.fullBodyReferenceUrl)) frozen[player.id] = profile.fullBodyReferenceUrl;
+        if (typeof profile.fullBodyReferenceUrl === "string" && profile.fullBodyReferenceUrl && !bundledHouseBody(profile.fullBodyReferenceUrl) && !isSavedCharacterArt(profile.fullBodyReferenceUrl)) frozen[player.id] = profile.fullBodyReferenceUrl;
       }
       const [assets] = await db.select().from(schema.visualGameAssets).where(eq(schema.visualGameAssets.gameId, gameId));
-      for (const member of assets?.cast ?? []) if (!member.portraitFallback && !bundledHouseBody(assets?.profiles.find(profile => profile.id === member.id)?.fullBodyReferenceUrl)) frozen[member.id] = `/api/games/${gameId}/visual/artifacts/${member.referenceArtifactId}`;
+      for (const member of assets?.cast ?? []) if (!member.portraitFallback && !bundledHouseBody(assets?.profiles.find(profile => profile.id === member.id)?.fullBodyReferenceUrl) && !isSavedCharacterArt(assets?.profiles.find(profile => profile.id === member.id)?.fullBodyReferenceUrl)) frozen[member.id] = `/api/games/${gameId}/visual/artifacts/${member.referenceArtifactId}`;
     }
     for (const [playerId, sourceKey] of Object.entries(frozen)) sources.push({ gameId, agentProfileId: null, playerId, sourceKey });
   }
@@ -137,9 +139,9 @@ export async function cutoutProgress(db: DrizzleDB, demandIds: string[], jobIds:
   const selectedDemands = demandIds.length ? await db.select().from(demands).where(inArray(demands.id, demandIds)).orderBy(asc(demands.id)) : [];
   const ids = [...new Set([...jobIds, ...selectedDemands.flatMap(d => d.cutoutId ? [d.cutoutId] : [])])];
   const selectedJobs = ids.length ? await db.select({ id: jobs.id, sourceHash: jobs.sourceHash, status: jobs.status, attempts: jobs.attempts,
-    error: jobs.error, leaseUntil: jobs.leaseUntil, batchJobId: jobs.batchJobId, readyAt: jobs.readyAt }).from(jobs).where(inArray(jobs.id, ids)).orderBy(asc(jobs.id)) : [];
+    error: jobs.error, saveError: jobs.saveError, artSavedAt: jobs.artSavedAt, leaseUntil: jobs.leaseUntil, batchJobId: jobs.batchJobId, readyAt: jobs.readyAt }).from(jobs).where(inArray(jobs.id, ids)).orderBy(asc(jobs.id)) : [];
   if (selectedDemands.length !== demandIds.length || selectedJobs.length !== ids.length) throw new Error("Selected demand/job not found");
   return { demands: selectedDemands.map(({ id, cutoutId, error }) => ({ id, jobId: cutoutId, error })), jobs: selectedJobs,
-    complete: selectedDemands.every(d => d.cutoutId && !d.error) && selectedJobs.every(j => j.status === "ready"),
+    complete: selectedDemands.every(d => d.cutoutId && !d.error) && selectedJobs.every(j => j.status === "ready" && j.artSavedAt !== null),
     failed: selectedDemands.some(d => d.error) || selectedJobs.some(j => j.status === "failed") };
 }

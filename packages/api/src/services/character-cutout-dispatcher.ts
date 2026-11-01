@@ -6,13 +6,12 @@ import { cutoutMode, expireCutoutLeases, prepareCutoutDemands, reserveCutout } f
 /** One bounded, best-effort loop; database reservations fence multiple API instances. */
 export function startCharacterCutoutDispatcher(db: DrizzleDB, canClaimWork: () => boolean) {
   const mode = cutoutMode();
-  if (mode === "disabled") return null;
   const client = mode === "aws-batch" ? new BatchClient({ region: process.env.AWS_REGION }) : null;
   let stopped = false;
   let running: Promise<void> | null = null;
   async function tick() {
     if (stopped || !canClaimWork()) return;
-    await expireCutoutLeases(db);
+    if (mode !== "disabled") await expireCutoutLeases(db);
     await prepareCutoutDemands(db);
     if (!client || !canClaimWork()) return;
     // Capacity is also bounded by the Batch compute environment. This limit avoids

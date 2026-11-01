@@ -1,5 +1,6 @@
 "use client";
 /* eslint-disable @next/next/no-img-element -- The shared frame also renders from frozen files outside Next. */
+import {characterImageError} from "@/components/character/image-error";
 import {useState, type ReactNode} from "react";
 import {OpeningBrowserVideo, type OpeningVideoProps} from "../../watch/opening-browser-video";
 import {OPENING_ASSETS, sampleOpening, type WerewolfOpeningCue} from "./werewolf-opening";
@@ -42,6 +43,6 @@ export function WerewolfOpeningFrame({cue, elapsedMs, reduced = false, playing =
 
 function CastImage({src, name, fullBody, browserLoading, reduced, onError}: {src: string; name: string; fullBody?: boolean; browserLoading: boolean; reduced: boolean; onError: () => void}) {
   const [loaded, setLoaded] = useState(false);
-  return <img className={fullBody ? styles.fullBody : undefined} src={src} alt={name} onLoad={() => setLoaded(true)} onError={onError}
+  return <img className={fullBody ? styles.fullBody : undefined} src={src} alt={name} onLoad={() => setLoaded(true)} onError={event => void characterImageError(event, onError)}
     style={browserLoading ? {opacity: loaded ? 1 : 0, transition: reduced ? undefined : "opacity 400ms ease"} : undefined} />;
 }

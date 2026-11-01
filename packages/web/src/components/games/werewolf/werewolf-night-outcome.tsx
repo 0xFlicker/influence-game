@@ -1,4 +1,5 @@
 "use client";
+import {characterImageError} from "@/components/character/image-error";
 import {WEREWOLF_ROOMS} from "./werewolf-rooms";
 import {useState} from "react";
 import type {WerewolfWatchCue} from "./werewolf-watch-model";
@@ -15,7 +16,7 @@ export function WerewolfNightOutcome({cue, elapsed, reduced, hideCaption = false
   return <section style={{backgroundImage: `linear-gradient(#0008, #000a), url("${WEREWOLF_ROOMS.village}")`, backgroundSize: "cover", backgroundPosition: "top"}} data-night-elimination className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 bg-[#100f16] p-6 text-center text-white">
     <div className="relative min-h-0 w-full max-w-sm flex-1">
       {/* eslint-disable-next-line @next/next/no-img-element -- original victim art, available in the public dawn outcome */}
-      {source && failed !== source && <img src={source} alt={victim.name} onError={() => setFailed(source)} className="h-full w-full object-contain" style={{filter: frame.settled ? "grayscale(1) brightness(.55)" : "none"}} />}
+      {source && failed !== source && <img src={source} alt={victim.name} onError={event => void characterImageError(event, () => setFailed(source))} className="h-full w-full object-contain" style={{filter: frame.settled ? "grayscale(1) brightness(.55)" : "none"}} />}
       <svg aria-hidden="true" data-night-claw className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 300 400" style={{opacity: frame.opacity}}>
         {frame.strokes.map((progress, index) => <g key={index} transform={`translate(${index * 45 - 45} 0)`}>
           <path d="M 225 105 Q 165 205 80 295" fill="none" stroke="#ad2838" strokeWidth="14" strokeLinecap="round" pathLength="1" strokeDasharray="1" strokeDashoffset={1 - progress} />

@@ -1,10 +1,8 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { and, eq } from "drizzle-orm";
-import { schema, type DrizzleDB } from "../db/index.js";
+import { type DrizzleDB } from "../db/index.js";
 import { acceptCutout, authorizedCutout, claimCutout, cutoutMode, CUTOUT_MAX_BYTES } from "../services/character-cutouts.js";
 import { readPayload } from "../services/payload-storage.js";
-import { isViewerGame } from "../services/game-visibility.js";
 
 export function createCharacterCutoutRoutes(db: DrizzleDB) {
   const app = new Hono();
@@ -36,16 +34,6 @@ export function createCharacterCutoutRoutes(db: DrizzleDB) {
       console.error("[character-cutouts] Result rejected", { jobId: c.req.param("id"), error });
       return c.json({ error: "Result validation or durable upload failed" }, 422);
     }
-  });
-  app.get("/api/games/:game/cutouts/:id", async c => {
-    const [row] = await db.select({ game: schema.games, job: schema.characterCutouts }).from(schema.characterCutoutDemands)
-      .innerJoin(schema.games, eq(schema.games.id, schema.characterCutoutDemands.gameId))
-      .innerJoin(schema.characterCutouts, eq(schema.characterCutouts.id, schema.characterCutoutDemands.cutoutId))
-      .where(and(eq(schema.characterCutoutDemands.id, c.req.param("id")), eq(schema.games.id, c.req.param("game")), eq(schema.characterCutouts.status, "ready")));
-    if (!row || !isViewerGame(row.game) || !row.job.image) return c.notFound();
-    return c.body(new Uint8Array(await readPayload(row.job.image)), 200, {
-      "Content-Type": "image/png", "Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff",
-    });
   });
   return app;
 }

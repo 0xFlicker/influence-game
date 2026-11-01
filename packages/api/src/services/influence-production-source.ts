@@ -1,12 +1,11 @@
+import { readCharacterArtwork } from "./character-art.js";
 import {resolveInfluenceGameSchemaVersion} from "@influence/engine/influence-game-schema";
 import {hasLiveAudioTrack} from "./audio-frontier.js";
-import { bundledHouseBody } from "@influence/engine/house-character-art";
 import { resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import { isSpectatorHuddleSpeech } from "@influence/engine";
 import { loadPayloads } from "./payload-storage.js";
-import { readyCharacterCutoutUrls } from "./character-cutouts.js";
 import { LEGACY_FORMAT_MANIFEST, Phase, replayCanonicalEvents, resolveFormatManifest, resolveGameKernel } from "@influence/engine";
-import { validHeadRectangle, type CharacterHeadPosition, type HeadRectangle } from "@influence/engine/character-portrait";
+import { validHeadRectangle, type HeadRectangle } from "@influence/engine/character-portrait";
 import { assembleProductionCatalog, type ProductionCatalog } from "@influence/engine/production-moments";
 import { buildInfluenceProductionSources, type InfluenceProductionThought } from "@influence/engine/production-moments/influence-source";
 import { and, asc, eq, lte, or, sql } from "drizzle-orm";
@@ -284,36 +283,27 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
   }
   const media = await readViewerMedia(db, game.id, publicationSnapshot, { includeHidden: true, artifactUrl, sceneIds });
   const fullBodies: Record<string, string> = {}, fullBodyHeads: Record<string, HeadRectangle> = {};
-  for (const [id, seat] of frozen) {
-    const url = reference(seat.persona.fullBodyReferenceUrl);
+  for (const art of await readCharacterArtwork(db, game.id)) {
+    const id = art.id;
+    if (!frozen.has(id)) continue;
+    const url = reference(art.fullBodyReferenceUrl);
     if (url) fullBodies[id] = url;
-    const head = seat.persona.headPosition as CharacterHeadPosition | undefined;
+    const head = art.headPosition;
     if (head?.confirmation && head.sourceUrl === url && validHeadRectangle(head.rect)) fullBodyHeads[id] = head.rect;
   }
-  for (const member of assets[0]?.cast ?? []) if (!member.portraitFallback && frozen.has(member.id)) {
+  for (const member of assets[0]?.cast ?? []) if (!member.portraitFallback && frozen.has(member.id) && !fullBodies[member.id]) {
     fullBodies[member.id] = artifactUrl(member.referenceArtifactId); delete fullBodyHeads[member.id];
     if (validHeadRectangle(member.headRectangle)) fullBodyHeads[member.id] = member.headRectangle;
   }
   const portraits = Object.fromEntries(Object.entries(assets[0]?.portraits ?? {}).filter(([id]) => frozen.has(id)).map(([id, artifact]) => [id, artifactUrl(artifact)]));
-  const bundledPlayers = new Set([...frozen].filter(([, seat]) => bundledHouseBody(seat.persona.fullBodyReferenceUrl)).map(([id]) => id));
-  const cutoutSources = Object.fromEntries(Object.entries(fullBodies).filter(([id]) => !bundledPlayers.has(id)).map(([id, url]) => [id,
-    url.replace(`/api/admin/production/games/${encodeURIComponent(game.id)}/visual/artifacts/`, `/api/games/${game.id}/visual/artifacts/`)]));
-  const cutouts = Object.fromEntries(Object.entries(await readyCharacterCutoutUrls(db, game.id, cutoutSources, new Date(publicationCutoff)))
-    .map(([id, url]) => [id, url.replace(`/api/games/${encodeURIComponent(game.id)}/cutouts/`, `/api/admin/production/games/${encodeURIComponent(game.id)}/cutouts/`)]));
-  const originalBodies = { ...fullBodies };
-  Object.assign(fullBodies, cutouts);
   if (pinnedMedia) {
     for (const [id, url] of Object.entries(pinnedMedia.portraits)) if (!frozen.has(id) || portraits[id] !== url)
       throw new InfluenceProductionSourceError("Pinned portrait is not a frozen reference for this actor");
-    for (const [id, url] of Object.entries(pinnedMedia.fullBodies)) if (!frozen.has(id) || fullBodies[id] !== url && originalBodies[id] !== url && reference(frozen.get(id)!.persona.fullBodyReferenceUrl) !== url)
-      throw new InfluenceProductionSourceError("Pinned fullbody is not a frozen reference for this actor");
-    for (const [id, head] of Object.entries(pinnedMedia.fullBodyHeads)) {
-      const personaHead = frozen.get(id)?.persona.headPosition as CharacterHeadPosition | undefined;
-      const expected = pinnedMedia.fullBodies[id] === reference(frozen.get(id)?.persona.fullBodyReferenceUrl) ? personaHead?.rect : fullBodyHeads[id];
-      if (!expected || sha256StableJson(head) !== sha256StableJson(expected)) throw new InfluenceProductionSourceError("Pinned head rectangle does not match its frozen reference");
-    }
+    for (const id of Object.keys(pinnedMedia.fullBodies)) if (!frozen.has(id))
+      throw new InfluenceProductionSourceError("Pinned fullbody actor does not belong to this game");
+
   }
-  const mediaReferences: InfluenceProductionMediaReferences = pinnedMedia ?? { portraits, fullBodies, fullBodyHeads, sceneIds: media.scenes.map(scene => scene.id) };
+  const mediaReferences: InfluenceProductionMediaReferences = { ...(pinnedMedia ?? { portraits, sceneIds: media.scenes.map(scene => scene.id) }), fullBodies, fullBodyHeads };
   const visibleSceneIds = new Set(mediaReferences.sceneIds);
   const visual = { enabled: config.visualMode === true || media.scenes.length > 0, status: null,
     portraits: mediaReferences.portraits, fullBodies: mediaReferences.fullBodies, fullBodyHeads: mediaReferences.fullBodyHeads,
@@ -334,8 +324,11 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
   const acceptedSourceHash = sha256StableJson({ acceptedBoundary, game: { ...exportGame, status: undefined }, messages, frames, acceptedThoughts, catalog });
   if (supplied && supplied.acceptedSourceHash !== acceptedSourceHash) throw new InfluenceProductionSourceError("Pinned Influence accepted source changed; reload the source explicitly");
   const boundary = { ...acceptedBoundary, acceptedSourceHash, publicationCutoff, mediaReferences };
-  const sourceHash = sha256StableJson({ boundary, visual });
-  if (supplied && !options.refreshVisuals && supplied.sourceHash !== sourceHash) throw new InfluenceProductionSourceError("Pinned Influence production source changed; reload the source explicitly");
+  const { fullBodies: _bodyReferences, fullBodyHeads: _headReferences, ...mediaFacts } = mediaReferences;
+  const { fullBodies: _bodyImages, fullBodyHeads: _headImages, ...visualFacts } = visual;
+  const sourceHash = sha256StableJson({ boundary: { ...boundary, mediaReferences: mediaFacts }, visual: visualFacts });
+  if (supplied && !options.refreshVisuals && supplied.sourceHash !== sourceHash)
+    throw new InfluenceProductionSourceError("Pinned Influence production source changed; reload the source explicitly");
   const snapshot: InfluenceProductionSnapshot = { ...boundary, sourceHash };
   return { snapshot, status: game.status, title: episode[0]?.title ?? undefined, game: exportGame, visual, messages, frames,
     thoughts: {} as Record<string, string>, acceptedThoughts, sources, catalog };

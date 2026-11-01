@@ -1,5 +1,6 @@
 "use client";
 
+import {characterImageError} from "@/components/character/image-error";
 import {useLayoutEffect, useRef, useState} from "react";
 import type {HeadRectangle} from "@influence/engine/character-portrait";
 import {thinkingFocus, ThinkingFocusOverlay} from "@/components/watch/thinking-focus";
@@ -146,7 +147,7 @@ function ChainCharacter({player, blend}: {player: SafetyChainBeat["roster"][numb
   const body = player.fullBodyReferenceUrl;
   return <div data-chain-character className="relative min-h-0 w-full flex-1">
     {body && failed !== body && blend < 1 && /* eslint-disable-next-line @next/next/no-img-element -- frozen full-body art */
-      <img data-chain-body src={body} alt={player.name} onError={() => setFailed(body)} className="absolute inset-0 h-full w-full object-contain object-bottom" style={{opacity: 1 - blend}} />}
+      <img data-chain-body src={body} alt={player.name} onError={event => void characterImageError(event, () => setFailed(body))} className="absolute inset-0 h-full w-full object-contain object-bottom" style={{opacity: 1 - blend}} />}
     {(!body || failed === body || blend > 0) && <div className="absolute inset-0 flex items-center justify-center" style={{opacity: !body || failed === body ? 1 : blend}}><AgentAvatar {...player} size={blend > 0 ? "8" : "16"} /></div>}
   </div>;
 }

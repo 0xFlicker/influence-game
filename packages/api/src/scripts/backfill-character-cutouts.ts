@@ -4,7 +4,7 @@ import { parseArgs } from "node:util";
 import { and, eq } from "drizzle-orm";
 import { createDB, closeDB, schema } from "../db/index.js";
 import { createCharacterCutoutRoutes } from "../routes/character-cutouts.js";
-import { cutoutMode, expireCutoutLeases, CUTOUT_RECIPE, prepareCutoutDemands, reserveCutout } from "../services/character-cutouts.js";
+import { cutoutMode, expireCutoutLeases, CUTOUT_RECIPE, prepareCutoutDemands, reserveCutout, savePendingCharacterArt } from "../services/character-cutouts.js";
 import { cutoutNeedsWork, cutoutProgress, discoverCutoutSources, enqueueCutoutSelection, inspectCutoutSources, retryCutoutFailures, selectCutoutBatch, type CutoutSelection } from "../services/character-cutout-backfill.js";
 
 export function parseCutoutCommand(args: string[], env: Record<string, string | undefined>) {
@@ -124,6 +124,7 @@ async function main() {
     let progress = await cutoutProgress(db, demandIds, jobIds);
     while (!progress.complete && !progress.failed && !interrupted && Date.now() < deadline) {
       await Bun.sleep(Math.min(2000, Math.max(0, deadline - Date.now())));
+      if (options.environment === "local") await savePendingCharacterArt(db);
       progress = await cutoutProgress(db, demandIds, jobIds);
     }
     emit({ ...progress, complete: progress.complete && !selectionIncomplete, selectionIncomplete, interrupted, waitExpired: Boolean(options.wait && !progress.complete && !progress.failed && !interrupted) });

@@ -1,5 +1,6 @@
 "use client";
 
+import {characterImageError} from "@/components/character/image-error";
 import { useState } from "react";
 import type { GamePlayer } from "@/lib/api";
 import { resolveAgentAvatarUrl } from "@/components/agent-avatar";
@@ -30,7 +31,7 @@ export function WinnerScene({ beat, fullscreen = false, controlsInset = fullscre
         </header>
         <div className={styles.winnerImage} data-winner-image={fullBody ? "full-body" : "portrait"}>
           {/* eslint-disable-next-line @next/next/no-img-element -- frozen game artwork must retain the complete body */}
-          <img key={fullBody ?? portrait} src={fullBody ?? portrait} alt={winner.name} onError={fullBody ? () => setFailedBody(fullBody) : undefined} />
+          <img key={fullBody ?? portrait} src={fullBody ?? portrait} alt={winner.name} onError={fullBody ? event => void characterImageError(event, () => setFailedBody(fullBody)) : undefined} />
         </div>
       </div>
       {finalists.length > 0 && <div className={styles.finalists}>

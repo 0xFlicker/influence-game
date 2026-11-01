@@ -623,6 +623,7 @@ export const avatarChangeEvents = pgTable("avatar_change_events", {
 
 export const gamePlayers = pgTable("game_players", {
   id: text("id").primaryKey(), // UUID
+  werewolfPlayerId: text("werewolf_player_id"), // Canonical Werewolf IDs are scoped to a game.
   gameId: text("game_id")
     .notNull()
     .references(() => games.id),
@@ -4020,6 +4021,9 @@ export const characterCutouts = pgTable("character_cutouts", {
   leaseUntil: timestamp("lease_until", { withTimezone: true, mode: "date" }),
   batchJobId: text("batch_job_id"),
   error: text("error"),
+  artSavedAt: timestamp("art_saved_at", { withTimezone: true, mode: "date" }),
+  artSaveAttemptedAt: timestamp("art_save_attempted_at", { withTimezone: true, mode: "date" }),
+  saveError: text("save_error"),
   readyAt: timestamp("ready_at", { withTimezone: true, mode: "date" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
 }, table => [
@@ -4038,6 +4042,7 @@ export const characterCutoutDemands = pgTable("character_cutout_demands", {
   recipe: text("recipe").notNull(),
   cutoutId: text("cutout_id").references(() => characterCutouts.id),
   error: text("error"),
+  preparationAttemptedAt: timestamp("preparation_attempted_at", { withTimezone: true, mode: "date" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
 }, table => [
   uniqueIndex("character_cutout_demands_source").on(table.gameId, table.playerId, table.sourceKey, table.recipe),

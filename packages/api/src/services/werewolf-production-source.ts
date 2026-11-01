@@ -11,8 +11,6 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { isViewerGame } from "./game-visibility.js";
 import { readWerewolfEvents, WerewolfGameError } from "./werewolf-games.js";
 import { bindWerewolfScene, materializeWerewolfWatch, publishedWerewolfScenes, readWerewolfCharacter } from "./werewolf-presentation.js";
-import { readyCutoutsByHash } from "./character-cutouts.js";
-import { readPayload } from "./payload-storage.js";
 import { werewolfReferenceMetadata } from "./werewolf-production.js";
 import { readWerewolfProductionThinking } from "./werewolf-thinking.js";
 import { readWerewolfVisualPause } from "./werewolf-visual-policy.js";
@@ -101,11 +99,6 @@ export async function buildWerewolfProductionSourceSnapshot(tx: DrizzleDB | Visu
   let references = await werewolfReferenceMetadata(tx, game.id, events.find(event => event.type === "werewolf.started")?.payload.players,
     { availableHashes: options.refreshVisuals ? undefined : options.snapshot?.availableCharacterAssets });
   const availableCharacterAssets = [...new Set(references.flatMap(ref => [ref.bodyHash, ref.portraitHash].filter((hash): hash is string => hash !== null)))].sort();
-  const readyCutouts = await readyCutoutsByHash(tx, references.flatMap(ref => ref.bodyHash && !ref.bundled ? [ref.bodyHash] : []), publicationCutoff);
-  let cutoutReferences = references.flatMap(ref => {
-    const job = ref.bodyHash && !ref.bundled ? readyCutouts.get(ref.bodyHash) : undefined;
-    return job?.image ? [{ playerId: ref.profile.id, sourceHash: job.sourceHash, image: job.image }] : [];
-  });
   const provenance = projectWerewolfProductionProvenance(events, options.audience);
   const thoughts = options.thinking ? (await readWerewolfProductionThinking(tx, game.id, options.audience, projection.latestCursor, { throughEventSequence, includeHidden: true })).entries : [];
   const sourceInput = { gameId: game.id, audience: options.audience, moments: projection.moments, provenance, thoughts, opening: true };
@@ -126,27 +119,16 @@ export async function buildWerewolfProductionSourceSnapshot(tx: DrizzleDB | Visu
   const contract = {...(projectionVersion && {projectionVersion}),
     ...(projectionVersion && (catalogVersion !== 3 || options.snapshot?.catalogVersion !== undefined) && {catalogVersion}),
     ...(projectionVersion && legacyPassThoughts && {legacyPassThoughts:true as const})};
-  const hashProjection = (candidateCatalog: typeof catalog, candidateReferences: typeof references, candidateCutouts: typeof cutoutReferences) => sha256StableJson({
+  const hashProjection = (candidateCatalog: typeof catalog, candidateReferences: typeof references) => sha256StableJson({
     ...contract, gameId: game.id, audience: options.audience, thinking: options.thinking, throughEventSequence, publicationCutoff,
     ...(retakes.size ? {retakes: [...retakes]} : {}),
-    events, thoughts, catalog:candidateCatalog, references:candidateReferences, ...(candidateCutouts.length ? { cutoutReferences:candidateCutouts } : {}), publications: rows.map(({ scene, publication, version }) => ({ scene: { id: scene.id, roomId: scene.roomId, boundarySequence: scene.boundarySequence }, publication, version })), artifacts });
-  let sourceHash = hashProjection(catalog,references,cutoutReferences);
-  // Older descriptors did not record a projection version. Identify only the
-  // finite contracts that actually shipped, using their complete original hash.
-  // No data, reference, source hash or selection is repaired to make a pin pass.
-  if (options.snapshot && !options.refreshVisuals && !projectionVersion && options.snapshot.sourceHash !== sourceHash) {
-    const originalReferences = references.map(ref => {const {headPosition:_head,...profile}=ref.profile; return {...ref,profile};});
-    historical: for (const version of [3,2,1] as const) for (const passes of [false,true]) {
-      const candidate = assemble(version,passes);
-      for (const refs of [references,originalReferences]) for (const cutouts of [cutoutReferences,[]]) {
-        const hash = hashProjection(candidate,refs,cutouts);
-        if (hash !== options.snapshot.sourceHash) continue;
-        catalog=candidate;catalogVersion=version;legacyPassThoughts=passes;references=refs;cutoutReferences=cutouts;sourceHash=hash;
-        break historical;
-      }
-    }
-  }
-  if (options.snapshot && !options.refreshVisuals && options.snapshot.sourceHash !== sourceHash) throw new WerewolfGameError("Production source snapshot changed; refresh the source", 409);
+    events, thoughts, catalog:candidateCatalog,
+    // Body art is saved presentation state, never an accepted-game boundary.
+    references:candidateReferences.map(ref => ({ id: ref.profile.id, name: ref.profile.name,
+      personaKey: ref.profile.personaKey, performanceInstructions: ref.profile.performanceInstructions,
+      portraitHash: ref.portraitHash, bundled: ref.bundled })), publications: rows.map(({ scene, publication, version }) => ({ scene: { id: scene.id, roomId: scene.roomId, boundarySequence: scene.boundarySequence }, publication, version })), artifacts });
+  const sourceHash = hashProjection(catalog,references);
+  if (options.snapshot && !options.refreshVisuals && options.snapshot.sourceHash !== sourceHash) throw new WerewolfGameError("Production source snapshot changed or uses obsolete artwork-bound hashing; open this game in Studio to create a fresh descriptor", 409);
   const snapshot: WerewolfProductionSnapshot = { ...contract, gameId: game.id, gameKind: "werewolf", audience: options.audience, thinking: options.thinking, throughEventSequence, throughCursor: projection.latestCursor, publicationCutoff, availableCharacterAssets, sourceHash };
   // Transport the verified catalog contract; it was not a field in old hashes.
   catalog = {...catalog,werewolfCatalogVersion:catalogVersion,...(legacyPassThoughts && {werewolfLegacyPassThoughts:true as const})};
@@ -154,7 +136,7 @@ export async function buildWerewolfProductionSourceSnapshot(tx: DrizzleDB | Visu
   const permittedMedia = new Set<string>();
   for (const moment of projection.moments) for (const assetId of bindWerewolfScene(rows, game.id, options.audience, moment.cursor, publicationCutoff, moment.staging).permitted) permittedMedia.add(assetId);
   const [episode] = await tx.select({ title: schema.gameEpisodePresentations.title, description: schema.gameEpisodePresentations.description }).from(schema.gameEpisodePresentations).where(eq(schema.gameEpisodePresentations.gameId, game.id));
-  return { snapshot, status: game.status, title: episode?.title ?? "Werewolf", description: episode?.description ?? null, window, provenance, thoughts, catalog, permittedMedia, cutoutReferences };
+  return { snapshot, status: game.status, title: episode?.title ?? "Werewolf", description: episode?.description ?? null, window, provenance, thoughts, catalog, permittedMedia };
 }
 
 /** Source pages carry no thought copy or scene imagery outside their window. */
@@ -194,14 +176,13 @@ export async function readWerewolfProductionMedia(db: DrizzleDB, id: string, ass
   }, { isolationLevel: "repeatable read", accessMode: "read only" });
 }
 
-/** Frozen character bytes use the same producer pin, including hidden games. */
+/** Verify pinned gameplay and producer access; body bytes come from the current artwork owner. */
 export async function readWerewolfProductionCharacter(db: DrizzleDB, id: string, playerId: string, options: { snapshot: WerewolfProductionSnapshot; image?: "portrait" | "body" }) {
   return db.transaction(async tx => {
     const snapshot = options.snapshot;
     const source = await buildWerewolfProductionSourceSnapshot(tx, id, { audience: snapshot?.audience, thinking: snapshot?.thinking, snapshot });
     if (!source.window.players.some(player => player.id === playerId)) throw new WerewolfGameError("Character is not available in this production source", 404);
-    const cutout = options.image === "body" ? source.cutoutReferences.find(ref => ref.playerId === playerId) : undefined;
-    const bytes = cutout ? await readPayload(cutout.image) : await readWerewolfCharacter(tx, source.snapshot.gameId, playerId, options.image, source.snapshot.availableCharacterAssets);
+    const bytes = await readWerewolfCharacter(tx, source.snapshot.gameId, playerId, options.image, source.snapshot.availableCharacterAssets);
     if (!bytes) throw new WerewolfGameError("Frozen character reference unavailable", 404);
     const contentType = bytes[0] === 0xff ? "image/jpeg" : bytes.toString("ascii", 0, 4) === "RIFF" ? "image/webp" : "image/png";
     return { bytes: new Uint8Array(bytes), contentType };

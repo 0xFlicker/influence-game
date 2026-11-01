@@ -1,3 +1,4 @@
+import { isSavedCharacterArt } from "./character-art-save.js";
 import { authorizedModelPreference, GameModelRoutingError } from "./game-model-routing.js";
 import { normalizeModelPreference, type ModelPreference } from "@influence/engine";
 import { loadPayloads } from "./payload-storage.js";
@@ -156,6 +157,7 @@ export interface AgentProfileManagementContext {
   avatarChangeSource?: AvatarChangeSource;
   avatarGenerationRequestId?: string;
   contentAssets?: ContentAssetEvidence;
+  submittedBodyUrl?: string | null;
 }
 
 export interface ListOwnedAgentsInput extends AgentProfileManagementContext {
@@ -665,6 +667,10 @@ export async function updateOwnedAgentProfile(
   catch (error) { if (error instanceof ContentSubmissionConflict) throw new AgentProfileManagementError("agent_profile_stale", error.message, 409); throw error; }
   if (context.avatarGenerationRequestId) throw new AgentProfileManagementError("invalid_agent_input", "Select the completed portrait before submitting.", 400);
   const startingDraft = await latestSubmittedProfile(db, startingProfile);
+  const sourceRevisionId = startingProfile.contentRevisionId ?? startingProfile.latestContentRevisionId;
+  const [submitted] = sourceRevisionId ? await loadPayloads(db.select({ snapshot: schema.agentContentRevisions.snapshot })
+    .from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, sourceRevisionId))) : [];
+  const submittedBodyUrl = typeof submitted?.snapshot.fullBodyReferenceUrl === "string" ? submitted.snapshot.fullBodyReferenceUrl : null;
   const prepared = prepareAgentProfileUpdates(context, input, startingDraft.avatarUrl);
   await assertAvailableProfileName(db, prepared.name ?? startingDraft.name, agentId);
   const savedAssets = await readSavedContentAssets(db, startingDraft);
@@ -707,7 +713,7 @@ export async function updateOwnedAgentProfile(
           || (learningReview.gameKind === "werewolf" && (locked.existing.moderationRequired || locked.existing.latestContentRevisionId !== locked.existing.contentRevisionId))
         )) throw new OwnerLearningResolutionError("review_state_conflict", 409);
         const mutation = await updateOwnedAgentProfileInLockedTransaction(tx, {
-          context: { ...context, contentAssets },
+          context: { ...context, contentAssets, submittedBodyUrl },
           agentId,
           input: { ...input, submissionId: contentSubmissionId },
           locked,
@@ -838,6 +844,17 @@ export async function updateOwnedAgentProfileInLockedTransaction(
   }
   const draft = await latestSubmittedProfile(tx, existing);
   const updates = prepareAgentProfileUpdates(input.context, input.input, draft.avatarUrl);
+  // Only the obsolete submitted source is stale. A different selected picture
+  // is intentional, and geometry edits against the current picture remain valid.
+  const obsolete = input.context.submittedBodyUrl;
+  if (isSavedCharacterArt(existing.fullBodyReferenceUrl) && obsolete && obsolete !== existing.fullBodyReferenceUrl) {
+    if (updates.fullBodyReferenceUrl === obsolete) updates.fullBodyReferenceUrl = existing.fullBodyReferenceUrl;
+    if (updates.headPosition?.sourceUrl === obsolete) updates.headPosition = existing.headPosition;
+    if (updates.portraitCrop?.sourceUrl === obsolete) updates.portraitCrop = existing.portraitCrop;
+  }
+  if (isSavedCharacterArt(existing.fullBodyReferenceUrl) && updates.fullBodyReferenceUrl !== undefined
+    && updates.fullBodyReferenceUrl !== existing.fullBodyReferenceUrl && input.input.expectedContentRevisionId === undefined)
+    throw new ContentSubmissionConflict("Select the current character revision before replacing its artwork.");
   updates.headPosition = await confirmProfileHead({ ...draft, ...updates }, draft, input.context.userId, input.context.contentAssets);
   if (existing.moderationRequired) {
     // A correction is intake evidence, not a profile/rating/roster mutation.

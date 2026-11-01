@@ -23,10 +23,10 @@ export async function confirmProfileHead(next: HeadProfile, previous: HeadProfil
   head.sourceUrl = next.fullBodyReferenceUrl;
   if (next.portraitCrop && sourceIdentity(next.portraitCrop.sourceUrl) === sourceIdentity(head.sourceUrl)
     && !portraitHeadRectangle(head, { ...next.portraitCrop, sourceUrl: head.sourceUrl })) fail("Include the entire head box inside the portrait crop.");
+  if (previous?.headPosition?.confirmation && JSON.stringify(parseCharacterHeadPosition(previous.headPosition)) === JSON.stringify(head)) return previous.headPosition;
   const bytes = evidence?.[head.sourceUrl]?.bytes ?? await readVisualProfileImage(head.sourceUrl, { name: "", personaKey: "" });
   const hash = createHash("sha256").update(bytes).digest("hex");
   const size = await sharp(await sharp(bytes).rotate().toBuffer()).metadata();
   if (hash !== head.sourceHash || size.width !== head.sourceWidth || size.height !== head.sourceHeight) fail("The source image changed. Reopen Character images and confirm its head position.");
-  if (previous?.headPosition?.confirmation && JSON.stringify(parseCharacterHeadPosition(previous.headPosition)) === JSON.stringify(head)) return previous.headPosition;
   return { ...head, confirmation: { userId, at: new Date().toISOString() } };
 }

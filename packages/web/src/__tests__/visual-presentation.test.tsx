@@ -15,6 +15,7 @@ import { panelTransition } from "../app/games/[slug]/components/scene-image";
 const globals = ["window", "document", "navigator", "Element", "HTMLElement", "Node", "Event", "ResizeObserver", "getComputedStyle"] as const;
 const original = new Map(globals.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
 let dom: HappyDOMWindow;
+const originalFetch = globalThis.fetch;
 beforeEach(() => {
   dom = new HappyDOMWindow({ url: "http://localhost:3000" });
   Object.defineProperty(dom.document, "fonts", { value: { ready: Promise.resolve() } });
@@ -23,6 +24,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => {});
   cleanup();
+  globalThis.fetch = originalFetch;
   dom.close();
   for (const key of globals) {
     const descriptor = original.get(key);
@@ -218,7 +220,7 @@ test("a replay without a winner tableau holds a readable last frame only at the 
   expect(view.getByRole("region", { name: "House summary" }).style.opacity).toBe("1");
 });
 
-test("winner tableau survives elapsed playback and failed full-body art without losing headshots or ranks", () => {
+test("winner tableau retains transparent art after a transient image failure", () => {
   const body = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jGz4AAAAASUVORK5CYII=";
   const winner: VisualPresentationBeat = { kind: "winner", winner: { id: "w", name: "Winner", persona: "social", status: "alive", shielded: false, fullBodyReferenceUrl: body, avatarUrl: "/winner-head.png" },
     standings: [{ id: "r", name: "Runner-up", persona: "social", status: "alive", shielded: false, avatarUrl: "/runner-head.png", placement: 2, juryMember: false }] };
@@ -227,7 +229,7 @@ test("winner tableau survives elapsed playback and failed full-body art without 
   view.rerender(<VisualPresentationFrame beat={winner} rooms={[]} elapsedMs={60_000} paused fullscreen reducedMotion />);
   expect(view.getByRole("region", { name: "Final standings" }).style.opacity).not.toBe("0");
   fireEvent.error(view.getByRole("img", { name: "Winner" }));
-  expect(view.getByRole("img", { name: "Winner" }).getAttribute("src")).toBe("/winner-head.png");
+  expect(view.getByRole("img", { name: "Winner" }).getAttribute("src")).toBe(body);
   expect(view.getByRole("img", { name: "Runner-up" }).getAttribute("src")).toBe("/runner-head.png");
   expect(view.getByText("Place 2")).not.toBeNull();
 });
@@ -359,7 +361,7 @@ test.each(["Introduction", "Ballot", "Farewell", "Diary", "Conversation"] as con
     expect(view.container.querySelector("blockquote")?.textContent).toBe(speech.text);
     expect(view.container.querySelector("video")).toBeNull();
     fireEvent.error(view.getByRole("img"));
-    expect(view.getByRole("img").getAttribute("src")).toBe("/head.png");
+    expect(view.getByRole("img").getAttribute("src")).toBe(solo.player.fullBodyReferenceUrl!);
 });
 
 test("group shots follow the speaker and a missing character keeps portrait speech over the image", () => {
@@ -416,4 +418,15 @@ test("static Influence settings follow numbered rooms and typed ballot purpose",
   }
   view.rerender(frame(beat));
   expect(background()).toBeUndefined();
+});
+
+test("a confirmed 404 allows a full-body fallback, but a reload selects transparent art again", async () => {
+  globalThis.fetch = (async () => new Response(null, { status: 404 })) as unknown as typeof fetch;
+  const solo: VisualPresentationBeat = { kind: "portrait", purpose: "Introduction", player: { id: "p1", name: "Arden", persona: "diplomat", avatarUrl: "/head.png", fullBodyReferenceUrl: "/characters/saved.png" }, speech };
+  const view = render(<VisualPresentationFrame beat={solo} rooms={[]} elapsedMs={SOLO_READ_START_MS} paused />);
+  await act(async () => { fireEvent.error(view.getByRole("img")); });
+  expect(view.getByRole("img").getAttribute("src")).toBe("/head.png");
+  view.unmount();
+  const reloaded = render(<VisualPresentationFrame beat={solo} rooms={[]} elapsedMs={SOLO_READ_START_MS} paused />);
+  expect(reloaded.getByRole("img").getAttribute("src")).toBe("/characters/saved.png");
 });

@@ -49,6 +49,17 @@ describe("whole-revision moderation decisions", () => {
       previewFingerprint: preview.fingerprint, expectedDisposition: preview.beforeDisposition,
       disposition: preview.afterDisposition, reason: "Whole snapshot reviewed" };
   }
+  test("publishing a pending text edit cannot restore the pre-cutout picture", async () => {
+    const first = await create();
+    await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: "/avatars/personas/full-body-v1/honest.webp" }).where(eq(schema.agentProfiles.id, first.profile.id));
+    const base = await edit(first.profile.id, "Published source");
+    const pending = await edit(first.profile.id, "Pending text edit");
+    const transparent = `/characters/${"a".repeat(64)}.png`;
+    await db.update(schema.agentProfiles).set({ contentRevisionId: base.profile.contentRevisionId,
+      personality: "Published source", fullBodyReferenceUrl: transparent, moderationRequired: true }).where(eq(schema.agentProfiles.id, first.profile.id));
+    await decideModerationReview(db, moderator, await command(pending.receipt.moderationRecordId!, "accept"));
+    expect(await profile(first.profile.id)).toMatchObject({ personality: "Pending text edit", fullBodyReferenceUrl: transparent });
+  });
   test("owner content loads an absent head position as unconfirmed but rejects malformed geometry", async () => {
     const created = await create();
     const current = await profile(created.profile.id);

@@ -1,4 +1,5 @@
 "use client";
+import {characterImageError} from "@/components/character/image-error";
 import {useEffect, useState} from "react";
 import type {WerewolfWatchCue} from "./werewolf-watch-model";
 import {WEREWOLF_ROOMS} from "./werewolf-rooms";
@@ -22,7 +23,7 @@ export function WerewolfVoteOutcome({cue, elapsed, reduced, hideCaption = false,
     style={{backgroundImage:`linear-gradient(#0008,#000a),url("${WEREWOLF_ROOMS.vote}")`,backgroundSize:"cover",backgroundPosition:"top"}}>
     <div className="relative min-h-0 w-full max-w-sm flex-1">
       {/* eslint-disable-next-line @next/next/no-img-element -- same immutable character artwork as night elimination */}
-      {source && failed !== source && <img src={source} alt={victim.name} onLoad={()=>onReady?.(true)} onError={()=>{setFailed(source);onReady?.(true);}} className="h-full w-full object-contain" style={villageEliminationFrame(elapsed,reduced)} />}
+      {source && failed !== source && <img src={source} alt={victim.name} onLoad={()=>onReady?.(true)} onError={event => void characterImageError(event, () => {setFailed(source);onReady?.(true);})} className="h-full w-full object-contain" style={villageEliminationFrame(elapsed,reduced)} />}
     </div>
     {!hideCaption && <div className="shrink-0"><p className="text-xs uppercase tracking-[.2em] text-rose-200/70">The village has voted</p><h2 className="mt-2 text-xl font-semibold sm:text-2xl">{victim.name} is eliminated.</h2></div>}
   </section>;

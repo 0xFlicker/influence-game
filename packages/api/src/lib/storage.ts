@@ -246,7 +246,16 @@ export async function storePublicAvatarImage(
   body: ArrayBuffer,
   publicBaseUrl?: string,
 ): Promise<StoredPublicAvatarResult> {
-  validatePublicAvatarImage(key, contentType, body);
+  return storePublicImage(key, contentType, body, publicBaseUrl, LOCAL_UPLOAD_MAX_BYTES);
+}
+
+/** Trusted background-removal output uses the cutout upload limit. */
+export async function storePublicCharacterImage(key: string, body: ArrayBuffer, publicBaseUrl?: string): Promise<StoredPublicAvatarResult> {
+  return storePublicImage(key, "image/png", body, publicBaseUrl, 32 * 1024 * 1024);
+}
+
+async function storePublicImage(key: string, contentType: string, body: ArrayBuffer, publicBaseUrl: string | undefined, maxBytes: number): Promise<StoredPublicAvatarResult> {
+  validatePublicAvatarImage(key, contentType, body, maxBytes);
 
   const backend = getStorageBackend();
   if (backend === "disabled") {
@@ -254,7 +263,7 @@ export async function storePublicAvatarImage(
   }
 
   if (backend === "local") {
-    await writeLocalUpload(key, contentType, body);
+    await writeLocalImage(key, contentType, body, maxBytes);
     return {
       key,
       publicUrl: absolutizeApiUrl(getLocalPublicUploadPath(key), publicBaseUrl),
@@ -308,13 +317,14 @@ function validatePublicAvatarImage(
   key: string,
   contentType: string,
   body: ArrayBuffer,
+  maxBytes = LOCAL_UPLOAD_MAX_BYTES,
 ): void {
   validateLocalKey(key);
   if (!["image/png", "image/jpeg", "image/webp"].includes(contentType)) {
     throw new LocalUploadError(400, "Unsupported image content type");
   }
-  if (body.byteLength > LOCAL_UPLOAD_MAX_BYTES) {
-    throw new LocalUploadError(413, "File must be under 2 MB");
+  if (body.byteLength > maxBytes) {
+    throw new LocalUploadError(413, `File exceeds the ${maxBytes}-byte image upload limit`);
   }
 }
 
@@ -430,10 +440,14 @@ export async function writeLocalUpload(
   contentType: string,
   body: ArrayBuffer,
 ): Promise<void> {
+  return writeLocalImage(key, contentType, body, LOCAL_UPLOAD_MAX_BYTES);
+}
+
+async function writeLocalImage(key: string, contentType: string, body: ArrayBuffer, maxBytes: number): Promise<void> {
   validateLocalKey(key);
 
-  if (body.byteLength > LOCAL_UPLOAD_MAX_BYTES) {
-    throw new LocalUploadError(413, "File must be under 2 MB");
+  if (body.byteLength > maxBytes) {
+    throw new LocalUploadError(413, `File exceeds ${maxBytes} bytes`);
   }
 
   const filePath = getLocalUploadPath(key);

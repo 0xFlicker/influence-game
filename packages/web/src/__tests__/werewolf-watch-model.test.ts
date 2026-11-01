@@ -242,3 +242,14 @@ test("spoken public ballots retain speech and solo timing in replay exports; sil
   expect(silent.timing.speech).toBeNull();
   expect(silent.timing.baseDurationMs).toBe(2200);
 });
+
+test("saved body changes update an overlapping moment without accepting changed game facts", () => {
+  const speech: WerewolfWatchMoment = { ...template, entry: { kind: "conversation", day: 1, id: 1, actorId: "p0", text: "My accepted speech", cue: null, recipientId: null, replyToContributionId: null, unavailable: false, remainingBytes: 2000 } };
+  const window: WerewolfWatchWindow = { ...projection, moments: [speech], audience: "mystery", slug: "art", status: "in_progress", publicationCutoff: "now", media: {} };
+  const updated: WerewolfWatchWindow = { ...window, moments: [{ ...speech, snapshot: { ...speech.snapshot,
+    players: speech.snapshot.players.map(player => ({ ...player, fullBodyReferenceUrl: "/characters/transparent.png", headRectangle: { x: .2, y: .1, width: .3, height: .2 } })) } }] };
+  const cues = werewolfCues([window, updated]);
+  expect(cues[0]!.moment.snapshot.players[0]!.fullBodyReferenceUrl).toBe("/characters/transparent.png");
+  const forged = { ...updated, moments: [{ ...updated.moments[0]!, snapshot: { ...updated.moments[0]!.snapshot, players: updated.moments[0]!.snapshot.players.map(player => ({ ...player, name: "Forged" })) } }] };
+  expect(() => werewolfCues([window, forged])).toThrow("Committed Werewolf playback changed");
+});

@@ -18,6 +18,8 @@ An AI competitor participating in a game under The House. Agents make in-game de
 
 ## Agent Profile
 
+Transparent full-body art is saved presentation state. A completed background-removal result replaces the character-owned picture; existing games join to that picture; playback does not select cutout jobs or require a new acceptance. Original submission evidence is separate from the displayed art.
+
 Stored gender is shared contestant identity in both games. The game freezes it with the roster; missing gender remains unspecified, and contestants must not guess from names. Gender is not a separate pronoun preference. Personality, backstory, and strategy remain private character instructions.
 
 Default House players use fixed name, archetype, gender and portrait identities from `HOUSE_CAST`; casting shuffles whole characters. Existing waiting House seats reconcile to this catalog at start, keeping distinct archetypes where possible. Automatic voices use the stored gender. Historical rosters are never rewritten during reads. See [the cast map](docs/house-cast.md).

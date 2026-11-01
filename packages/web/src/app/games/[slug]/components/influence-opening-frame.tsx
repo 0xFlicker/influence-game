@@ -1,5 +1,6 @@
 "use client";
 /* eslint-disable @next/next/no-img-element -- Public packaged artwork and runtime cast URLs. */
+import {characterImageError} from "@/components/character/image-error";
 import {useState, type ReactNode} from "react";
 import {OpeningBrowserVideo, type OpeningVideoProps} from "@/components/watch/opening-browser-video";
 import type {InfluenceOpeningCue} from "./types";
@@ -15,7 +16,7 @@ function CastPortrait({name, fullBodyUrl, headshotUrls}: {name: string; fullBody
   const selected = candidates.find(image => !failed.includes(image.src));
   return selected
     ? <img className={selected.kind === "headshot" ? styles.headshot : undefined} data-cast-image={selected.kind}
-        src={selected.src} alt={name} onError={() => setFailed(previous => [...previous, selected.src])} />
+        src={selected.src} alt={name} onError={event => void characterImageError(event, () => setFailed(previous => [...previous, selected.src]))} />
     : <div className={styles.monogram} aria-label={`${name} portrait unavailable`}>{name.slice(0, 1)}</div>;
 }
 

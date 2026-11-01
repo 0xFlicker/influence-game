@@ -1,4 +1,5 @@
-import { cutoutMode, CUTOUT_RECIPE } from "./character-cutouts.js";
+import { isSavedCharacterArt } from "./character-art-save.js";
+import { CUTOUT_RECIPE } from "./character-cutouts.js";
 import { loadPayloads, storeFields } from "./payload-storage.js";
 import { enqueueAgentScreening } from "./agent-screening-queue.js";
 import { parseCharacterHeadPosition } from "@influence/engine/character-portrait";
@@ -97,9 +98,12 @@ export async function recordContentSubmission(tx: Tx, mutation: AgentProfileMuta
   // prevents an unavailable cutout lane from rejecting ordinary character edits.
   try {
     const bodyHash = profile.fullBodyReferenceUrl ? assets[profile.fullBodyReferenceUrl] : null;
-    if (bodyHash && cutoutMode() !== "disabled") await tx.transaction(async savepoint => {
+    if (bodyHash && !isSavedCharacterArt(profile.fullBodyReferenceUrl)) await tx.transaction(async savepoint => {
       await savepoint.insert(schema.characterCutoutDemands).values({ id: randomUUID(), agentProfileId: profile.id,
-        playerId: profile.id, sourceKey: `sha256:${bodyHash}`, recipe: CUTOUT_RECIPE }).onConflictDoNothing();
+        playerId: profile.id, sourceKey: `sha256:${bodyHash}`, recipe: CUTOUT_RECIPE }).onConflictDoUpdate({
+          target: [schema.characterCutoutDemands.agentProfileId, schema.characterCutoutDemands.sourceKey, schema.characterCutoutDemands.recipe],
+          set: { cutoutId: null, error: null },
+        });
     });
   } catch (error) { console.error("[character-cutouts] Agent demand unavailable", { agentId: profile.id, error }); }
   await enqueueAgentScreening(tx, revisionId!);
@@ -174,7 +178,7 @@ export async function readOwnerContent(db: Pick<DrizzleDB, "select">, profile: P
   const [review] = latest ? await db.select().from(schema.agentModerationReviews).where(eq(schema.agentModerationReviews.contentRevisionId, latest.id)) : [];
   return {
     published: profile.contentRevisionId ? contentSnapshot(profile) : null,
-    submitted: latest ? { revisionId: latest.id, content: decodeContentSnapshot(latest.snapshot, profile),
+    submitted: latest ? { revisionId: latest.id, content: latest.id === profile.contentRevisionId ? contentSnapshot(profile) : decodeContentSnapshot(latest.snapshot, profile),
       disposition: review?.disposition ?? null, held: review?.held ?? false, status: review?.status ?? null } : null,
     availability: profile.archivedAt ? "archived" as const : profile.moderationRequired && !profile.contentRevisionId ? "withheld" as const : "available" as const,
     moderationVersion: profile.moderationVersion,

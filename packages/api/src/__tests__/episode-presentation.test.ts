@@ -121,7 +121,7 @@ describe("episode presentation", () => {
     expect(called).toBe(false);
   });
 
-  test("Werewolf packaging uses the original public cast and never creates Influence rows or reads private scenes", async () => {
+  test("Werewolf packaging uses the original public cast and retains relational participants without reading private scenes", async () => {
     const id = crypto.randomUUID(), slug = "lantern-test";
     const events = await werewolfResultsFixture("village", id);
     await db.insert(schema.games).values({id, slug, gameKind:"werewolf", status:"completed", startedAt:new Date().toISOString(), config:JSON.stringify({visibility:"public",providerManifest:[{catalogId:DEFAULT_MODEL_CATALOG_ID}]})});
@@ -136,7 +136,7 @@ describe("episode presentation", () => {
     expect(preview.frames.every(f=>f.kind !== "scene")).toBe(true);
     const text=JSON.stringify(preview);
     for (const secret of ["SECRET_SEED","SECRET_STRATEGY","SECRET_PACK","SECRET_THINKING","roles","personality"]) expect(text).not.toContain(secret);
-    expect(await db.select().from(schema.gamePlayers)).toHaveLength(0);
+    expect((await db.select().from(schema.gamePlayers)).every(player => player.werewolfPlayerId !== null)).toBe(true);
     expect(await db.select().from(schema.gameEpisodePresentations)).toHaveLength(0);
     // Copy is presentation; direct links retain the slug. Reads neither queue nor generate.
     await db.insert(schema.gameEpisodePresentations).values({gameId:id,title:"Lanterns and Lies",description:"Six contrasting voices gather in the village.",status:"ready",locked:true});
@@ -174,7 +174,7 @@ describe("episode presentation", () => {
     expect(calls).toBe(1);
     const [row] = await db.select().from(schema.gameEpisodePresentations).where(eq(schema.gameEpisodePresentations.gameId, id));
     expect(row).toMatchObject({ status: "ready", title: "Company by Candlelight" });
-    expect(await db.select().from(schema.gamePlayers)).toHaveLength(0);
+    expect((await db.select().from(schema.gamePlayers)).every(player => player.werewolfPlayerId !== null)).toBe(true);
   });
 
   test("repeated queue requests preserve active work and edits made after a preview", async () => {

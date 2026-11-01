@@ -165,14 +165,14 @@ test("unrevealed accepted sealed-ballot thinking never enters source pages", asy
   expect(source.acceptedThoughts).toEqual([]); expect(JSON.stringify(source)).not.toContain("SEALED_THOUGHT");
 });
 
-test("pinned absent cast references and scene availability survive later backfill until explicit visual refresh", async () => {
+test("saved cast art updates without refresh while scene publication stays pinned", async () => {
   const { gameId } = await fixture(); await dialogue(gameId, 1);
   const first = await readInfluenceProductionSource(db, gameId);
   expect(first.visual.scenes).toEqual([]); expect(first.visual.fullBodies).toEqual({});
   const image = await asset(gameId), savedScene = await scene(gameId, image);
   await db.insert(schema.visualGameAssets).values({ gameId, profiles: [], cast: [{ id: "atlas", name: "Atlas", referenceArtifactId: image, portraitFallback: false, performanceInstructions: "Frozen" }], portraits: { atlas: image } });
   const pinned = await readInfluenceProductionSource(db, gameId, { snapshot: first.snapshot });
-  expect(pinned.snapshot).toEqual(first.snapshot); expect(pinned.visual.scenes).toEqual([]); expect(pinned.visual.fullBodies).toEqual({}); expect(pinned.visual.portraits).toEqual({});
+  expect(pinned.snapshot.acceptedSourceHash).toBe(first.snapshot.acceptedSourceHash); expect(pinned.visual.scenes).toEqual([]); expect(pinned.visual.fullBodies.atlas).toEndWith(image); expect(pinned.visual.portraits).toEqual({});
   const refreshed = await readInfluenceProductionSource(db, gameId, { snapshot: first.snapshot, refreshVisuals: true });
   expect(refreshed.snapshot.acceptedSourceHash).toBe(first.snapshot.acceptedSourceHash);
   expect(refreshed.visual.scenes.map(row => row.id)).toEqual([savedScene.id]);
@@ -232,7 +232,8 @@ test("forged game, audience, head, hash and reference snapshots cannot enter a s
   await expect(readInfluenceProductionSource(db, gameId, { snapshot: { ...first.snapshot, gameId: "another" } })).rejects.toThrow("another game");
   await expect(readInfluenceProductionSource(db, gameId, { snapshot: { ...first.snapshot, throughEventSequence: 99999 } })).rejects.toThrow("accepted event prefix");
   await expect(readInfluenceProductionSource(db, gameId, { snapshot: { ...first.snapshot, sourceHash: `sha256:${"0".repeat(64)}` } })).rejects.toThrow("production source changed");
-  await expect(readInfluenceProductionSource(db, gameId, { snapshot: { ...first.snapshot, mediaReferences: { ...first.snapshot.mediaReferences, fullBodies: { atlas: "https://example.test/forged.png" } } } })).rejects.toThrow("frozen reference");
+  const alteredArt = await readInfluenceProductionSource(db, gameId, { snapshot: { ...first.snapshot, mediaReferences: { ...first.snapshot.mediaReferences, fullBodies: { atlas: "https://example.test/forged.png" } } } });
+  expect(alteredArt.visual.fullBodies).toEqual(first.visual.fullBodies);
   await expect(readInfluenceProductionSource(db, gameId, { snapshot: { ...first.snapshot, acceptedSourceHash: `sha256:${"0".repeat(64)}` }, refreshVisuals: true })).rejects.toThrow("accepted source changed");
 });
 

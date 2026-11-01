@@ -4,46 +4,43 @@ The fourteen default House full-body assets are preprocessed, transparent bundle
 references. New rosters pin their versioned URLs and content hashes. Playback and
 inventory recognize these references and skip redundant cutout jobs, including
 private scene-artifact copies of bundled bodies. Custom Agent Profile sources
-continue through the existing demand, worker and publication-cutoff workflow.
+use background removal once, then save the result as ordinary character art.
 
-## Design
+## Saved artwork and identity
 
-BiRefNet runs outside the application host. Public playback records demand for its
-frozen full-body references; it continues displaying the original while work is
-missing, pending or failed. Current Agent Profile edits never select historical
-game art. Studio and export snapshots pin the completed cutout or original available
-at their publication cutoff; later arrivals require an explicit visual refresh.
-Werewolf live windows also pin character bytes to their publication cutoff. Their
-character URLs resolve ready derivatives by frozen source hash, so asynchronous
-demand association cannot change an existing moment or briefly hide an already
-ready cutout. A new publication cutoff adopts newly completed derivatives; the
-viewer retains its strict committed-moment equality check.
+An owned character's `agent_profiles.full_body_reference_url` is its current full-body picture. Existing and new games join to that profile when loading presentation. Archived profiles keep their identity. Unowned characters own their picture in their durable participant row. House catalogue images are already transparent.
 
-PostgreSQL owns demand, leases, retries and source-to-result relationships. The
-existing private payload bucket owns source bytes and finished PNGs. Jobs deduplicate
-by source SHA-256 and recipe (model digest, dependency version and processing).
-Dimensions are preserved so existing head coordinates remain valid.
+Werewolf originally had only event-local participant identities, with IDs scoped to a game. Migration 0142 adds a `werewolf_player_id` coordinate to `game_players` and atomically inserts relational participants when a start event is saved. A unique `(game_id, werewolf_player_id)` key prevents cross-game identity collisions. Historical rows are created by the explicit conversion. Canonical events remain untouched.
 
-The API dispatcher submits AWS Batch Fargate jobs with 2 vCPU / 16 GiB. Each submission
-gets a fresh random capability, stored only as a hash in PostgreSQL. A worker must
-atomically claim that capability before reading source bytes or uploading a result.
-Expired capabilities cannot publish; duplicate submissions cannot both claim.
-Three attempts are allowed. There is no game execution dependency on these jobs.
+Completion first retains the finished PNG, uploads it to `characters/<sha256>.png`, and verifies public readback hash and length. It then saves the reference on its owner, including when a generated full-body reference is the character's first picture. It does not update owned seats, content revisions or production artifacts. Submitted snapshots remain evidence, not picture selectors. Stale submissions of the replaced source preserve the saved transparent URL. Intentional selection of a different image uses the current content-revision precondition; framing edits against the current image remain editable.
 
-The worker downloads source bytes from the authenticated API, verifies the source
-digest, and uploads PNG bytes through the same API. It has no database, object-store
-or broad application credentials. The API checks format, dimensions and real alpha,
-then durably stores the bytes before committing a ready reference. Content-addressed
-uploads left by interrupted transactions are safe to reuse and are retained. The
-payload inventory includes both new body columns. No eager orphan deletion runs;
-an operator must prove an object is unreferenced before any later pruning.
+`ready` means generation finished; `artSavedAt` means the save committed. Failed publication/save retains the finished bytes and `saveError`. The existing dispatcher retries saving, including when generation is disabled. It never repeats removal for a ready result. Each attempt records `artSaveAttemptedAt` before storage I/O; the dispatcher selects the least recently attempted finished saves (using completion time for unattempted work). Persistent failures cannot occupy the first 16 slots forever, and restarting does not reset retry order. Demand preparation uses its own persisted attempt time for the same reason: disabled generation must not let older unmatched sources block reuse of a later finished image. Upload, verification and source inspection occur outside database locks. The short save transaction rechecks demand membership and current source URLs. Demand attachment and completion serialize on the job row; profile edits and saves serialize on the affected profile. No playback query touches jobs or demands.
+
+Gameplay source hashes exclude current body art and head geometry. Existing video files remain unchanged. Compatibility with export descriptors created before this change is outside the agreed scope. Their artwork-bound hashes are not accepted by the new verifier. New Studio snapshots and exports remain valid across subsequent body-art and framing edits; no refresh or acceptance is required for those edits. There is no historical hash reconstruction or acceptance mapping.
+
+Full-body image errors retain their URL unless a separate HTTP status probe confirms 404. Other errors retry the same URL once. Ordinary metadata refresh behavior is unchanged; there is no sticky-URL protocol or new polling loop.
+
+### Explicit conversion before reader cutover
+
+Stop character/game writers and the cutout dispatcher for the conversion. Keep the old release serving reads. Stage the new runtime image without directing traffic to it, then run:
+
+```sh
+bun packages/api/src/scripts/save-character-art.ts --env local --all
+# With each deployed environment's database and bucket configuration:
+bun dist/save-character-art.js --env staging --all
+bun dist/save-character-art.js --env production --all
+bun dist/save-character-art.js --env production --verify
+```
+
+The command applies migration 0142, creates historical Werewolf participant rows, matches current character sources to existing ready jobs, and publishes/saves finished bytes. Re-running it is safe; it never requests inference. A failed run retains completed work and can resume. The explicit `--verify` command rejects missing historical participant rows or ready results whose save is pending. Run it as the release gate before enabling readers. It does not run on ordinary API restarts: temporary save failures must leave the dispatcher able to start and retry. Do not roll back to an old writer after cutover: it can restore obsolete profile URLs.
+
+No development, staging or production conversion is implied by unit/regression tests. Record each actual environment's conversion result separately. Legacy cases with no recoverable character/art source require explicit handling; do not guess identity from a name.
 
 ## Environments
 
 `CHARACTER_CUTOUT_MODE=local|aws-batch|disabled` defaults to disabled.
 `INFLUENCE_DEPLOYMENT_ENVIRONMENT=staging` or `NODE_ENV=staging` always disables new
-demand and worker dispatch. Existing ready cutouts remain readable through their
-normal authorization and publication-cutoff checks, including frozen exports.
+demand for new work and worker dispatch. Saved character art remains readable without generation or publication-cutoff checks.
 AWS mode requires the explicit
 `prod` binding and a public HTTPS `CUTOUT_API_URL`. Local mode accepts loopback API
 origins and Docker's `host.docker.internal`. Render-worker Tailscale policy is separate
@@ -69,17 +66,14 @@ an explicit list of nine profile IDs in `character-cutout-backfill.ts`, not a na
 search. Inventory reports absent cohort profiles. It covers current reusable agent
 body images plus the full cast of every associated game. Influence membership comes
 from `game_players`; Werewolf membership comes from the canonical started roster,
-not mutable lobby seats. Game sources match playback: frozen Influence personas and
-prepared cast artifacts, or immutable Werewolf content revisions. Current profile
-art is never substituted into a game. Portrait fallbacks are excluded. No historical
-assets are regenerated. Missing frozen images remain originals/fallbacks in playback.
+not mutable lobby seats. Game source inventory includes retained source evidence. Finished results save the current artwork owner; existing games see the owner through ordinary relational reads. Portrait fallbacks are excluded. No gameplay is regenerated.
 
 Agent images have agent-owned durable demands; game images retain game/player-owned
 demands. Normal character creation/editing records an optional demand against the
 already-captured body hash. Image work cannot reject the character submission. Both
 inventory paths converge on the existing SHA-256 + recipe job uniqueness constraint.
 A ready/active shared job can need a new demand association for another game; linking
-that association does not run inference again.
+an existing ready result saves it as character art without running inference again.
 
 `run` requires `--limit 1..100`, measured in **source references**, including new
 associations to existing jobs. Stable cohort/game/player order and durable associations
@@ -221,9 +215,8 @@ into an isolated Compose container using the accepted API image and its runtime 
 Later images include the bundle directly. Use Compose for the deployed runtime env
 file: its multiline quoted values are not compatible with `docker run --env-file`.
 
-Keep mode disabled to stop new demand and dispatch; existing derivatives, originals
-and accepted game state remain available. Do not truncate jobs, reset active leases, or rewrite frozen
-references to recover a failed derivative.
+Keep mode disabled to stop new demand and dispatch; saved transparent character art
+remains available. Do not reset active worker leases to recover a failed job.
 
 ## Local Docker validation
 
@@ -249,7 +242,7 @@ independent of cwd; set `INFLUENCE_LOCAL_UPLOAD_DIR` for a different existing st
 `--input /inputs --output /outputs` with read-only input mounts and a fresh output
 directory; the operator CLI accepts server-selected IDs rather than file/URL manifests.
 
-For localhost playback set `CHARACTER_CUTOUT_MODE=local` and
+To generate new cutouts locally, set `CHARACTER_CUTOUT_MODE=local` and
 `CUTOUT_API_URL=http://host.docker.internal:3018` on API/game-worker processes. No paid
 image generation or game simulations are needed. See the
 [backfill validation record](../solutions/infrastructure/character-cutout-backfill.md)
