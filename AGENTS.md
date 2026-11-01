@@ -23,6 +23,8 @@
 
 ## Product Direction
 
+- Visual input to contestant models is optional, including in Visual Mode and under Require visuals. Never reject enrollment, creation, or startup, or skip/replace a primary or fallback model, solely because it lacks image input. Send canonical room text and observable cues to text-only models; attach scene images only to capable models. Require visuals governs scene generation, not contestant model eligibility. Preserve this distinction in API, routing, provider-dispatch, and UI regression tests.
+
 - The House is the venue; Influence and Werewolf are separate games. `games.gameKind` selects the game, while Influence's `classic` / `format` kernels remain Influence-only.
 - Current Werewolf v10 discussion is sequential: publish each original contribution before the next speaker acts. It uses one shared byte allowance, permits silence and directed conversation, then proceeds to one public sequential vote. Preserve optional cues as production notes; do not reintroduce House rewriting or a separate should-speak call.
 - Discussion passes and scheduler metadata are private to execution/debugging. Contestant history and reply references count spoken contributions only. Playback always skips discussion passes, including when Show thinking is enabled. Preserve canonical pass events and their thinking for debugging. Ballot abstentions remain public.

@@ -76,13 +76,30 @@ describe("frozen game model routing", () => {
     expect(config.modelRouting.contestants["seat-2"].map((entry: { catalogId: string }) => entry.catalogId)).toEqual(["katana:deepseek-v4-flash", "openai:gpt-6-luna"]);
     expect(config.modelRouting.houseManifest[1].maxCallsPerGame).toBe(2);
   });
-  test("exclusions and known input limitations reject primaries, skip incompatible fallbacks, and permit empty recovery", () => {
+  test("exclusions reject models while visual games preserve text-only primaries and recovery", () => {
     expect(() => normalizeGameModelRouting({ ...policy(), excludedCatalogIds: ["katana:deepseek-v4-flash"] })).toThrow("excluded");
-    expect(() => contestantManifest(policy(), { catalogId: "katana:deepseek-v4-flash" }, true)).toThrow("image context");
-    expect(contestantManifest(policy(), "default", true)).toHaveLength(1);
+    expect(contestantManifest(policy(), { catalogId: "katana:deepseek-v4-flash" }, true)[0]!.catalogId).toBe("katana:deepseek-v4-flash");
+    expect(contestantManifest(policy(), "default", true)).toEqual(contestantManifest(policy(), "default", false));
     expect(() => contestantManifest(policy(), { catalogId: "katana:gpt-6-luna" })).toThrow("Flex");
     expect(() => sealGameModelRouting({ ...policy(), overrides: { ghost: "default" } }, [])).toThrow("missing cast");
     expect(gameModelPolicy({ providerManifest: [{ catalogId: "openai:gpt-5-mini" }] }).houseManifest).toHaveLength(1);
+  });
+  test("visual input is optional when sealing and resuming an entirely text-only cast", () => {
+    const routing = normalizeGameModelRouting({ ...policy(), defaultManifest: [
+      { catalogId: "katana:deepseek-v4-flash" },
+      { catalogId: "katana:deepseek-v4-pro", maxCallsPerGame: 7 },
+    ] });
+    const seats = [{ id: "default-seat", preference: "default" as const },
+      { id: "preferred-seat", preference: { catalogId: "katana:deepseek-v4-flash" } }];
+    const visual = sealGameModelRouting(routing, seats, true);
+    expect(visual.contestants).toEqual(sealGameModelRouting(routing, seats, false).contestants);
+    const saved = JSON.parse(JSON.stringify({ modelRouting: visual }));
+    for (const seat of seats) {
+      const route = actorProviderManifest(saved, { id: seat.id, role: "player" });
+      expect(route.map(entry => entry.catalogId)).toEqual(routing.defaultManifest.map(entry => entry.catalogId));
+      expect(route.every(entry => !entry.model.capabilities.supportsImageInput)).toBe(true);
+      expect(route[1]!.maxCallsPerGame).toBe(7);
+    }
   });
   test("offline simulation uses the production resolver and rejects seat-count mismatch", () => {
     const roster = { policy: policy(), seats: [{ id: "one", preference: "default" as const }] };

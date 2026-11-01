@@ -71,7 +71,7 @@ export function normalizeGameModelRouting(value: unknown): GameModelRouting {
     ...(input.contestants !== undefined && { contestants: Object.fromEntries(Object.entries(record(input.contestants)).map(([id, route]) => [id, normalize(route)])) }) };
 }
 
-export function contestantManifest(policy: GameModelRouting, preference: ModelPreference, visualMode = false): GameProviderManifest {
+export function contestantManifest(policy: GameModelRouting, preference: ModelPreference, _visualMode = false): GameProviderManifest {
   const primary = preference === "default" ? policy.defaultManifest[0]! : preference;
   if (primary.catalogId.startsWith("katana:gpt-6-luna")) throw new Error("Luna must use the OpenAI Flex route");
   if (policy.excludedCatalogIds.includes(primary.catalogId)) throw new Error(`Model ${primary.catalogId} is excluded from this game`);
@@ -79,9 +79,7 @@ export function contestantManifest(policy: GameModelRouting, preference: ModelPr
     entry.catalogId === policy.defaultManifest[0]!.catalogId
       ? { ...entry, maxCallsPerGame: policy.defaultModelMaxFallbackCalls ?? DEFAULT_CONTESTANT_RECOVERY_CALLS } : entry);
   const route = normalizeProviderManifest([primary, ...recovery]);
-  const resolved = resolveProviderManifest(route);
-  if (visualMode && !resolved[0]!.model.capabilities.supportsImageInput) throw new Error(`Model ${primary.catalogId} cannot receive this game's image context`);
-  return route.filter((_, i) => i === 0 || !visualMode || resolved[i]!.model.capabilities.supportsImageInput);
+  return route;
 }
 
 export function sealGameModelRouting(policy: GameModelRouting, seats: Array<{ id: string; preference?: ModelPreference }>, visualMode = false): GameModelRouting {

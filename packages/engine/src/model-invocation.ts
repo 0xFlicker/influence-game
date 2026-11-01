@@ -15,6 +15,8 @@ export interface ModelInvocationMessage {
   content: string | null;
   /** Image attachments are accepted only on user messages and by vision-capable models. */
   images?: readonly ModelInvocationImage[];
+  /** Equivalent canonical text for optional game scene images on text-only routes. */
+  imageTextContext?: string;
   name?: string;
   toolCallId?: string;
   toolCalls?: readonly ModelInvocationToolCall[];

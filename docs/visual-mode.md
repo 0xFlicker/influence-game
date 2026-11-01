@@ -131,7 +131,7 @@ The replay theater no longer branches on Visual Mode to render scrolling chat fe
 
 For historical reference, the removed theater branches are in `packages/web/src/app/games/[slug]/components/dramatic-replay-viewer.tsx` at commit `d2e11ad8548bba6c0329f6b52b1a8a64189cb9e4` (`git show <commit>:<path>`). They are not an alternate replay mode to restore.
 
-Visual admission checks every provider slot, including fallbacks. The create-game form marks image-incompatible slots as Skipped and excludes them from the submitted manifest while keeping model selection and removal available. It promotes the first compatible slot to Primary without a fallback call cap. If every selected slot is incompatible, it visibly chooses an available image-capable primary, preferring GPT-6 Luna. Turning Visual Mode off restores the selected route and budgets. If no image-capable provider is configured, creation shows an actionable configuration error. The API still rejects incompatible submitted manifests. Portrait playback does not require vision-capable models.
+Visual input to contestant models is optional, including when Visual Mode and Require visuals are enabled. Creation, enrollment, startup, and recovery must accept text-only models without skipping, replacing, or reordering their routes or changing their call caps. Require visuals governs generated scene availability, not model eligibility. Image-capable models may receive annotated scene images; text-only models receive canonical room participants, observable cues, and performance instructions. A visual game can use an entirely text-only contestant route.
 
 ## Character submissions
 
@@ -443,3 +443,7 @@ Influence Next/Previous scene buttons and previous-contribution navigation prese
 Empower voting, ties/revotes, the empowered reveal, and format selection share the round’s “Terms and Conditions” music section without restarting at those boundaries. Elimination ballots retain “Names on the Table.”
 
 Music always runs at 1×, including Influence and Werewolf opening tracks. Changing playback speed or pausing/resuming does not seek music to the accelerated visual clock; explicit navigation still aligns it. Influence’s first 20 seconds (entrance and title) retain real-time pacing at every speed; cast cards afterward use the selected speed.
+
+## Text-only contestant models
+
+Visual Mode does not restrict contestant admission or remove recovery models. Text-only models receive canonical room participants, observable cues, and performance instructions; image-capable models also receive the scene image. Adaptation happens per provider attempt without rewriting sealed assignments or frozen context authority. Private provider evidence records the actual request. Required image inputs outside this optional scene contract still fail validation when unsupported.
