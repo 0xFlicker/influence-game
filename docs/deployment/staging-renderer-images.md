@@ -48,3 +48,20 @@ It never deletes images. The existing policy pins previously reviewed digests; t
 pins do not rotate themselves. Until automated reference rotation is installed,
 additive protection can admit a new release without deleting an old one. This is a
 safe transition, not a claim that routine unused-image cleanup is complete.
+
+
+## Ordinary staging release ordering
+
+The original image-producing CI attempt must complete successfully before the
+`Publish and deploy exact staging release` workflow selects its immutable manifest.
+Tooling-only CI has no manifest and does not redeploy. The privileged workflow runs
+trusted main code, accepts only this repository's successful ordinary main CI, and
+preserves the original build run ID and attempt throughout publication and dispatch.
+
+For remote staging, the reusable ECR mirror verifies and copies that exact worker
+digest before dispatching the host release. An attempt-bound `mirror-receipt.json`
+artifact records the verified destination. The host independently verifies its hash,
+source attempt, manifest hash, destination and image identity before Tailscale/SSH
+access. Publication failure prevents handoff. Manual measurements and proof branch
+builds never trigger ordinary staging. Production's approval and three-image release
+identity remain unchanged.

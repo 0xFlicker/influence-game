@@ -27,8 +27,7 @@ test('proof publication builds all three images but can never dispatch ordinary 
       ['workflow_dispatch', 'refs/heads/proof/staging-render-one', true, '97764360', 'other'],
     ] as const) expect(allowed(job, event, ref, proof, actor, repo)).toBe(false);
   }
-  expect(allowed('trigger-deploy', 'workflow_dispatch', 'refs/heads/proof/staging-render-one', true)).toBe(false);
-  expect(allowed('trigger-deploy', 'workflow_dispatch', 'refs/heads/main', true)).toBe(false);
+  expect(ci.jobs['trigger-deploy']).toBeUndefined();
   expect(ci.jobs['docker-build-push'].strategy.matrix.include.map((x) => x.target).sort()).toEqual(['api', 'render-worker', 'web']);
   expect(ci.jobs['release-manifest'].needs).toEqual(['check', 'provider-free', 'api-postgres', 'docker-build-push']);
   const build = ci.jobs['docker-build-push'].steps.find((x) => x.name === 'Build and push ${{ matrix.target }}')!;
@@ -94,4 +93,31 @@ test('actual release-scope command excludes only the policy test, while policy e
       expect(readFileSync(output, 'utf8').trim()).toBe(`release_required=${expected}`); base = head;
     }
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('ordinary staging activates only after successful source CI and verified mirror', () => {
+  const release = Bun.YAML.parse(readFileSync('.github/workflows/staging-release.yml', 'utf8'));
+  expect(release.on.workflow_run).toEqual({ workflows: ['CI'], types: ['completed'], branches: ['main'] });
+  const guard = release.jobs.release.if;
+  const source = { conclusion: 'success', head_branch: 'main', head_repository: { id: 1183905474 } };
+  const allowedRelease = (workflowRun: typeof source, repo = '1183905474') => Boolean(new Function('github', `return (${guard});`)({
+    repository_id: repo, repository_owner_id: '97764360', event: { workflow_run: workflowRun },
+  }));
+  expect(allowedRelease(source)).toBe(true);
+  expect(allowedRelease({ ...source, conclusion: 'failure' })).toBe(false);
+  expect(allowedRelease({ ...source, head_branch: 'proof/staging-render-one' })).toBe(false);
+  expect(allowedRelease({ ...source, head_repository: { id: 1 } })).toBe(false);
+  expect(allowedRelease(source, 'fork')).toBe(false);
+  expect(release.jobs.mirror.needs).toBe('release');
+  expect(release.jobs['trigger-deploy'].needs).toEqual(['release', 'mirror']);
+  expect(release.jobs['trigger-deploy'].if).not.toContain('always()');
+  expect(release.jobs.mirror.uses).toBe('./.github/workflows/staging-renderer-ecr.yml');
+  expect(release.jobs.mirror.permissions['id-token']).toBe('write');
+  const trigger = release.jobs['trigger-deploy'].steps.find((step: Step) => step.name === 'Trigger staging only after mirror admission succeeds').with.script;
+  expect(trigger).toContain('build_run_id: process.env.BUILD_RUN_ID');
+  expect(trigger).toContain('build_run_attempt: process.env.BUILD_RUN_ATTEMPT');
+  expect(trigger).toContain('worker_mirror_receipt_digest: process.env.WORKER_MIRROR_RECEIPT_DIGEST');
+  expect(JSON.stringify(release.jobs['trigger-deploy'].env)).not.toContain('github.run_id');
+  expect(JSON.stringify(release.jobs.release.steps)).not.toContain('workflow_run.head_sha');
+  expect(ci.jobs['trigger-deploy']).toBeUndefined();
 });
