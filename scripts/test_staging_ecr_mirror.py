@@ -196,4 +196,19 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(m.evidence_identity('tailnet',evidence,run),('a'*40,'sha256:'+'c'*64))
         with self.assertRaises(ValueError): m.evidence_identity('tailnet',{**evidence,'platform':'linux/arm64'},run)
 
+class ProductionSourceTests(unittest.TestCase):
+    def test_production_uses_same_release_evidence_but_rejects_proof_and_foreign_repository(self):
+        run={'id':123,'run_attempt':1,'repository':{'id':1183905474},'path':'.github/workflows/ci.yml','head_branch':'main','conclusion':'success','event':'push','head_sha':'a'*40}
+        self.assertEqual(m.source_run('prod-worker',run),'a'*40)
+        self.assertEqual(m.KINDS['prod-worker']['repository'],'house-render-prod-worker')
+        self.assertEqual(m.KINDS['prod-worker']['role'],'HouseRenderProdWorkerImagePublisher')
+        for field,value in [('head_branch','proof/staging-render-one'),('event','pull_request'),('repository',{'id':1})]:
+            with self.subTest(field=field),self.assertRaises(ValueError):m.source_run('prod-worker',{**run,field:value})
+    def test_automatic_publication_is_main_only_and_explicitly_disabled_until_setup(self):
+        text=Path('.github/workflows/production-renderer-ecr.yml').read_text()
+        self.assertIn("vars.HOUSE_PROD_RENDER_IMAGES_ENABLED == 'true'",text)
+        self.assertIn("github.ref == 'refs/heads/main'",text)
+        self.assertIn("m.source_run('prod-worker'",text)
+        self.assertNotIn('staging-proof-source.py',text)
+
 if __name__ == '__main__': unittest.main()
