@@ -72,17 +72,31 @@ def evidence_identity(kind, evidence, run):
     return sha, digest
 
 def verify_lifecycle(policy, tags):
-    """Only the reviewed exact-tag protection + five-object policy is accepted."""
+    """Accept the legacy transition or reference-aware logical-release policy."""
     rules = sorted(policy.get('rules', []), key=lambda r:r.get('rulePriority',0))
-    require(rules and rules[-1].get('selection') == {'tagStatus':'any','countType':'imageCountMoreThan','countNumber':5}, 'unreviewed lifecycle policy')
+    logical = (len(rules) >= 2 and rules[-2].get('selection') ==
+               {'tagStatus':'tagged','tagPatternList':['*'],'countType':'imageCountMoreThan','countNumber':5}
+               and rules[-1].get('selection') ==
+               {'tagStatus':'untagged','countType':'sinceImagePushed','countUnit':'days','countNumber':1})
+    if logical:
+        require(all(rule.get('action') == {'type':'expire'} for rule in rules), 'unreviewed lifecycle action')
+        pins = rules[:-2]
+    else:
+        require(rules and rules[-1].get('selection') == {'tagStatus':'any','countType':'imageCountMoreThan','countNumber':5}, 'unreviewed lifecycle policy')
+        pins = rules[:-1]
     protected = set()
-    for rule in rules[:-1]:
+    for rule in pins:
         selection = rule.get('selection', {})
         patterns = selection.get('tagPatternList', [])
         require(selection.get('tagStatus') == 'tagged' and selection.get('countType') == 'imageCountMoreThan' and
                 selection.get('countNumber') == 1 and len(patterns) == 1 and '*' not in patterns[0], 'unreviewed lifecycle protection rule')
         protected.add(patterns[0])
-    require(set(tags) <= protected, 'lifecycle must protect current/rollback and incoming digest tags before copying')
+    # Routine policy rotation owns required references. Unused roots are allowed
+    # to age out; new copies join the five most recently pushed release roots.
+    # Host admission independently refreshes/pins its incoming image before use.
+    if not logical:
+        require(set(tags) <= protected, 'lifecycle must protect current/rollback and incoming digest tags before copying')
+    return 'logical-release' if logical else 'legacy-additive'
 
 class Mirror:
     def __init__(self, kind, auth_file, runner=subprocess.run, max_manifests=5):
@@ -119,9 +133,12 @@ class Mirror:
 
     def graph(self, repository, digest, depth=0):
         require(DIGEST.fullmatch(digest) and depth <= 4, 'invalid manifest graph')
+        if depth == 0:
+            self.walk_seen = set()
         if digest in self.visited:
             return
-        require(len(self.visited) < 64, 'manifest graph exceeds review bound')
+        require(len(self.walk_seen) < 64, 'one image manifest graph exceeds review bound')
+        self.walk_seen.add(digest)
         self.visited.add(digest)
         raw = self.call(['skopeo', 'inspect', '--raw', '--authfile', self.auth_file, 'docker://' + repository + '@' + digest])
         require(len(raw) <= 1024**2, 'manifest metadata exceeds review bound')
@@ -164,8 +181,9 @@ class Mirror:
                 require(tag == 'sha256-' + image['imageDigest'][7:], 'foreign repository tag requires operator review')
                 roots.add(image['imageDigest'])
         lifecycle = self.lifecycle()
+        lifecycle_mode = None
         if lifecycle is not None:
-            verify_lifecycle(lifecycle, ['sha256-' + d[7:] for d in roots | {digest}])
+            lifecycle_mode = verify_lifecycle(lifecycle, ['sha256-' + d[7:] for d in roots | {digest}])
         for image in images:
             self.graph(destination, image['imageDigest'])
         projected = sum(self.parts.values())
@@ -181,7 +199,7 @@ class Mirror:
         return {'destination': destination + '@' + digest, 'verifiedDestinationDigest': digest,
                 'projectedUniqueBytes': projected, 'repositoryStorageTargetBytes': selected['budget'], 'storageTargetExceeded': projected > selected['budget'], 'retainedReleaseDigests': len(roots | {digest}),
                 'manifestCount': len(self.visited), 'retainedReleaseTarget': 5, 'publicationCountLimited': False,
-                'lifecycleInstalled': lifecycle is not None, 'retentionApplyPending': lifecycle is None}
+                'lifecycleInstalled': lifecycle is not None, 'retentionApplyPending': lifecycle is None, 'retentionPolicyMode': lifecycle_mode}
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
