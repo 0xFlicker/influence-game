@@ -149,7 +149,7 @@ async function freezeReplayReferences(db: DrizzleDB, gameId: string, participant
     if (!profile || profile.name !== participant.name) throw new ReplayVisualError("Recorded cast does not match the frozen character profiles", "cast_mismatch");
     const artwork = frozenArt.get(profile.id);
     const referenceArtifactId = artwork?.sourceArtifactId ?? await storeVisualArtifact(db, gameId, await readVisualProfileImage(profile.fullBodyReferenceUrl ?? profile.avatarUrl, profile));
-    cast.push({ id: profile.id, name: profile.name, referenceArtifactId, performanceInstructions: profile.performanceInstructions, portraitFallback: !profile.fullBodyReferenceUrl });
+    cast.push({ id: profile.id, name: profile.name, referenceArtifactId, headRectangle: artwork?.headRectangle, performanceInstructions: profile.performanceInstructions, portraitFallback: !profile.fullBodyReferenceUrl });
   }
   await db.transaction(async tx => {
     const [current] = await tx.select().from(schema.visualGameAssets).where(eq(schema.visualGameAssets.gameId, gameId)).for("update");

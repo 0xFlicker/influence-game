@@ -112,6 +112,6 @@ test("ordinary profile publication freezes approved source, portrait and head in
   expect(oldWolf.snapshot.sourceHash).toBe(oldSource.snapshot.sourceHash);
   expect(oldWolf.window.players.find(player => player.id === old.player)?.fullBodyReferenceUrl).toBe(transparent.publicUrl);
   expect((await readWerewolfWatch(db, fresh.wolf, "mystery", 1, 64)).players.find(player => player.id === fresh.player)?.fullBodyReferenceUrl).not.toBe(transparent.publicUrl);
-  await expect((async () => { await db.update(schema.agentContentAssets).set({ hash: "0".repeat(64) }).where(eq(schema.agentContentAssets.hash, payloadHash(original))); })()).rejects.toThrow("Accepted character evidence is immutable");
+  await expect((async () => { await db.update(schema.agentContentAssets).set({ hash: "0".repeat(64) }).where(eq(schema.agentContentAssets.hash, payloadHash(original))); })()).rejects.toMatchObject({ cause: { message: "Accepted character evidence is immutable" } });
 
 });
