@@ -39,7 +39,9 @@ the host and renderer do not receive it. Never log credential values.
    ECR, and require equal source/destination digests. Refresh exact retained and
    incoming root protections and native previews before policy changes. Default
    retention targets five objects; an explicit nine-object allowance permits
-   three three-object worker roots without deleting existing images. Ten
+   three three-object worker roots or three single-manifest sidecar roots
+   without deleting existing images. A sidecar repair therefore keeps three
+   image objects, still below the five-object target. Ten
    objects and the existing 3 GiB worker-storage cap remain hard admissions.
    Stop if those bounds cannot accommodate the image; do not delete to fit.
 5. Verify the accepted cloud/API generation, images and released host locks,
