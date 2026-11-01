@@ -124,7 +124,7 @@ export function sameVisualArrangement(left: VisualScenePlan, right: VisualSceneP
   return normalized(left) === normalized(right);
 }
 
-/** At most four character references plus the common room image per edit. */
+/** Frozen grouping for inspecting historical section:v2 provider evidence. New renders populate distinct crops of a wide background. */
 export function visualRenderGroups(plan: VisualScenePlan): VisualPlacement[][] {
   if (plan.cast.length <= 4) return plan.cast.length ? [[...plan.placements]] : [];
   const result: VisualPlacement[][] = [];
@@ -133,4 +133,12 @@ export function visualRenderGroups(plan: VisualScenePlan): VisualPlacement[][] {
     for (let index = 0; index < members.length; index += 4) result.push(members.slice(index, index + 4));
   }
   return result;
+}
+
+/** Ordered distinct room regions, with no more than four character references per region. */
+export function visualRoomCropGroups(plan: VisualScenePlan): VisualPlacement[][] {
+  const ordered = VISUAL_ROOMS[plan.roomId].sections.flatMap(section => plan.placements.filter(p => p.sectionId === section.id));
+  const ids = new Set(plan.cast.map(member => member.id));
+  if (ordered.length !== ids.size || ids.size !== plan.cast.length || new Set(ordered.map(p => p.playerId)).size !== ids.size || ordered.some(p => !ids.has(p.playerId))) throw new Error("Scene placements do not cover the frozen cast");
+  return Array.from({ length: Math.ceil(ordered.length / 4) }, (_, index) => ordered.slice(index * 4, index * 4 + 4));
 }

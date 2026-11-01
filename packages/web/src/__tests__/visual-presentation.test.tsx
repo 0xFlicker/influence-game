@@ -60,6 +60,13 @@ const rooms: AcceptedVisualScene[] = [1, 2].map((number) => ({
 const speech = { id: "speech-1", playerId: "p1", speaker: "Arden", text: "I want to hear your plan." };
 const beat: VisualPresentationBeat = { kind: "scene", sceneId: "scene-1", roomId: "mingle-1", speech };
 
+test("room views default to separate framing without compressed overlapping panels", () => {
+  const scene = rooms[0]!;
+  const group = (imageUrl: string) => ({ imageUrl, annotatedImageUrl: "", participantIds: ["p1"], visibleParticipantIds: ["p1"], anchors: scene.anchors.map(a => ({ ...a })), pointers: [] });
+  const view = render(<VisualSceneView scene={{ ...scene, shots: { mode: "groups", overview: null, groups: [group("/left.png"), group("/right.png")] } }} speech={speech} elapsedMs={1000} />);
+  expect(view.container.querySelector('[aria-label="Current room"]')?.getAttribute("data-panel-treatment")).toBe("separate");
+});
+
 test("group shots borrow only accepted adjacent panels and crop the active image at either end", () => {
   const group = (imageUrl: string) => ({ imageUrl, annotatedImageUrl: "", participantIds: ["p1"], visibleParticipantIds: ["p1"], anchors: [], pointers: [] });
   const shots = { mode: "groups" as const, overview: null, groups: [group("/left.png"), group("/center.png"), group("/right.png")] };

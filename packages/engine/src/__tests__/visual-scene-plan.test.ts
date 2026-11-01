@@ -1,7 +1,16 @@
 import { expect, test } from "bun:test";
-import { planVisualScene, sameVisualArrangement, visualRenderGroups } from "../visual-scene-plan";
+import { planVisualScene, sameVisualArrangement, visualRenderGroups, visualRoomCropGroups } from "../visual-scene-plan";
 const cast = Array.from({ length: 12 }, (_, index) => ({ id: `p${index}`, name: `Player ${index}`, referenceArtifactId: `ref-${index}`, performanceInstructions: "Still and attentive" }));
 const base = { roomId: "lobby" as const, backgroundArtifactId: "lobby-v1", cast };
+
+test.each([9, 10, 11, 12])("%i lobby occupants use three disjoint room regions", count => {
+  const plan = planVisualScene({ ...base, cast: cast.slice(0, count) });
+  const groups = visualRoomCropGroups(plan);
+  expect(groups).toHaveLength(3);
+  expect(groups.every(group => group.length <= 4)).toBe(true);
+  expect(groups.flat().map(p => p.playerId).sort()).toEqual(cast.slice(0, count).map(p => p.id).sort());
+  expect(() => visualRoomCropGroups({ ...plan, placements: [...plan.placements.slice(1), plan.placements[1]!] })).toThrow("cover the frozen cast");
+});
 
 test("groups explicit allies, excludes absent identities and uses small render groups", () => {
   const plan = planVisualScene({ ...base, allianceGroups: [["p8", "p1", "p3", "absent"], ["p8", "p2"]] });
