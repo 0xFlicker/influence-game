@@ -21,6 +21,9 @@ KINDS = {
     'worker': {'source': 'ghcr.io/0xflicker/influence-render-worker', 'repository': 'house-render-staging-worker',
                'role': 'HouseRenderStagingWorkerImagePublisher', 'repository_id': 1183905474,
                'workflow': '.github/workflows/ci.yml', 'budget': 3 * 1024**3},
+    'prod-worker': {'source': 'ghcr.io/0xflicker/influence-render-worker', 'repository': 'house-render-prod-worker',
+                    'role': 'HouseRenderProdWorkerImagePublisher', 'repository_id': 1183905474,
+                    'workflow': '.github/workflows/ci.yml', 'budget': 3 * 1024**3},
     'tailnet': {'source': 'ghcr.io/falsefloor/house-render-tailnet', 'repository': 'house-render-staging-tailnet',
                'role': 'HouseRenderStagingTailnetImagePublisher', 'repository_id': 1405952636,
                'workflow': '.github/workflows/house-render-tailnet-image.yml', 'budget': 512 * 1024**2},
@@ -54,7 +57,7 @@ def source_run(kind, run):
 def evidence_identity(kind, evidence, run):
     selected = KINDS[kind]
     sha = source_run(kind, run)
-    if kind == 'worker':
+    if kind in ['worker', 'prod-worker']:
         require(set(evidence) == {'schema_version', 'candidate_sha', 'build_run_id', 'build_run_attempt', 'migration_set', 'images'} and
                 evidence['schema_version'] == 1 and evidence['candidate_sha'] == sha and
                 evidence['build_run_id'] == run['id'] and evidence['build_run_attempt'] == run['run_attempt'], 'release manifest provenance mismatch')
