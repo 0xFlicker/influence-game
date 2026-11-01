@@ -1,3 +1,4 @@
+import { providerRequestTimeoutMs } from "./provider-request-timeout.js";
 import { ProviderDeferredError } from "@influence/engine";
 import { deferProviderGame } from "./provider-game-retry.js";
 import { freezeLiveAudio, ensureLiveAudio, pauseLiveAudio, LiveAudioBlocked } from "./audio-live.js";
@@ -45,7 +46,7 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
     return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Fixture choice" }
       : { kind: "speech", cue: null, text: "I will compare the claims with today's vote." };
   } };
-  const runtimeOptions = { openAIServiceTier: "flex" as const, timeout: 120_000 };
+  const runtimeOptions = { openAIServiceTier: "flex" as const, timeout: providerRequestTimeoutMs(process.env) };
   const contestantRuntimes = new Map(Object.keys((config.modelRouting as GameModelRouting | undefined)?.contestants ?? {}).map(id => [id,
     createLlmProviderRuntimesFromEnv(actorProviderManifest(config, { id, role: "player" }), process.env, runtimeOptions) ?? []]));
   const agent = agentOverride ?? (process.env.INFLUENCE_API_TEST_MOCK_RUNNER === "true" ? mockAgent : new WerewolfModelAgent({

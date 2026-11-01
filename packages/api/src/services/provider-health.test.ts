@@ -76,6 +76,19 @@ describe("provider health circuit authority", () => {
     db = await setupTestDB();
   });
 
+  test("our generation deadlines do not open a shared provider circuit", async () => {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await db.transaction(tx => recordProviderHealthOutcomeInTransaction(tx, {
+        providerProfileId: "xai", catalogId: "xai:grok-4.6",
+        outcome: { kind: "transport_timeout", message: "Our deadline expired", retryable: true, timeoutSource: "client_deadline", timeoutMs: 300_000 },
+      }, TEST_POLICY));
+    }
+    expect(await listProviderHealth(db)).toEqual([]);
+    await expect(db.transaction(tx => assertProviderDispatchHealthInTransaction(tx, {
+      providerProfileId: "xai", catalogId: "xai:grok-4.6",
+    }))).resolves.toBeUndefined();
+  });
+
 
   test("Flex capacity cooldown survives new callers, admits standard, and expires within the bounded policy", async () => {
     const route = { providerProfileId: "openai", catalogId: "openai:gpt-6-luna" };

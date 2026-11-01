@@ -245,6 +245,9 @@ export async function recordProviderHealthOutcomeInTransaction(
     return {};
   }
 
+  // Our patience is not evidence of a provider outage. Preserve the failed attempt,
+  // but do not open a shared circuit and displace other contestants' chosen models.
+  if (input.outcome.kind === "transport_timeout" && input.outcome.timeoutSource === "client_deadline") return {};
   const reason = input.outcome.kind === "rate_limit" && (input.outcome.retryAfterMs || input.flexCapacity) ? "rate_limit" : breakerReason(input.outcome.kind);
   if (!reason) return {};
   const scope = input.flexCapacity && input.catalogId ? providerHealthFlexScope(input.catalogId)

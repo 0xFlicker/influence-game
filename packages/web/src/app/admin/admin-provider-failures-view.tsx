@@ -380,7 +380,8 @@ function AttemptEvidence({
       )}
       {attempt.evidence.state === "available" ? (
         <details className="rounded-md border border-white/10 bg-black/20 p-3">
-          <summary className="cursor-pointer text-sm text-sky-200">Exact request and response evidence</summary>
+          <summary className="cursor-pointer text-sm text-sky-200">Request and response evidence</summary>
+          <p className="mt-2 text-xs text-white/50">New image attachments use durable private references; signed access credentials are omitted.</p>
           <div className="mt-3">
             {raw.state === "idle" && (
               <button type="button" onClick={() => onLoad(0)} className="rounded-md border border-sky-700/50 px-3 py-1.5 text-xs text-sky-200 hover:bg-sky-950/30">

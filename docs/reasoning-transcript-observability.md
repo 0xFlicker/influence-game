@@ -917,3 +917,29 @@ Accepted House transcript metadata carries `houseResult.eventSequence` and `auth
 For quality evaluation, inspect a sequence of recorded announcements for correct facts, relevance, and natural variation. Paid runs require separate authorization and use the localhost API with durable game IDs, sanitized requests/responses, reasoning when available, usage, retries, and failures. Deterministic tests do not establish real voice quality.
 
 House MC prompts include every player’s frozen game gender on every beat, including exited players. Missing historical gender remains null; use names instead of guessing, honor explicitly stated pronouns, and do not copy gender mistakes from earlier summaries or notebooks. Provider-free coverage checks roster-to-prompt propagation; quality probes should also inspect gendered references. Existing accepted speech and recordings remain unchanged.
+
+## Provider images and deadline attribution
+
+New API gameplay provider attempts store image bytes once in private binary payload storage.
+Prepared requests, captured HTTP evidence and frozen Visual Mode contexts retain
+`influence-image:<sha256>:<byteLength>:<mediaType>` references. The provider receives a
+fresh signed HTTPS GET URL for each attempt; URLs last 15 minutes and are replaced by
+stable references in evidence. S3 signing credentials are redacted even when echoed.
+Native reasoning (including opaque encrypted reasoning) is retained unchanged.
+
+Generation defaults to 300 seconds through `INFLUENCE_LLM_REQUEST_TIMEOUT_MS` (maximum
+300 seconds). Influence, Werewolf and episode generation use that setting. House
+and retrospective generation no longer impose shorter 45/75/120-second limits.
+Explicit operator cancellation and ownership loss still interrupt promptly.
+
+Timeout evidence records `timeoutSource` (`client_deadline`, `provider`, `transport`,
+or `unknown`), the effective `timeoutMs` when known, error class, available HTTP
+status/code/request ID, and separate transport timestamps. Our deadline means remote
+completion and billing may be unknown; it does not open a shared provider-health
+circuit. Total attempt latency includes reservation work; transport timing isolates
+the fetch/response read. Signed-image preparation precedes transport timing.
+
+Existing evidence is deliberately untouched: no migration, rewrite, hash replacement
+or deletion. Historical ambiguous timeouts retain their original evidence. Never
+infer a timeout source from the old message alone. This change concerns gameplay
+provider journals, not separate moderation or asset-generation workflows.

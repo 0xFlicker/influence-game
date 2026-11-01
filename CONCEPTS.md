@@ -1014,3 +1014,7 @@ Accepted House transcript metadata carries `houseResult.eventSequence` and `auth
 **Deployment prerequisite:** stop admission and drain all in-progress games and provider calls on the old workers before replacing them. Recover interrupted old-version games on the old version first. The journal does not persist recoverable pre-dispatch request bodies, so this change does not support an in-flight prompt cutover.
 
 For quality evaluation, inspect a sequence of recorded announcements for correct facts, relevance, and natural variation. Paid runs require separate authorization and use the localhost API with durable game IDs, sanitized requests/responses, reasoning when available, usage, retries, and failures. Deterministic tests do not establish real voice quality.
+
+### Provider image reference and request deadline
+
+A provider image reference identifies immutable private image bytes by SHA-256, byte length and media type. It is stable game-context/evidence data; a signed URL is temporary transport access and never context authority. A client deadline means The House stopped waiting; a provider-reported timeout means the remote API explicitly returned a timeout. Neither alone proves remote billing stopped. New API gameplay evidence distinguishes these sources; historical evidence remains unchanged.

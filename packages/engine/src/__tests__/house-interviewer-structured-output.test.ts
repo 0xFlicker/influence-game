@@ -965,8 +965,8 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
     await expect(house.assignMingleRooms(makeAssignmentContext())).rejects.toBeInstanceOf(ProviderDeferredError);
     expect(requests).toHaveLength(2);
     expect(attempts.map((record) => record.outcome)).toEqual([
-      { kind: "transport_timeout", message: "Request was aborted.", retryable: true },
-      { kind: "transport_timeout", message: "Request was aborted.", retryable: true },
+      expect.objectContaining({ kind: "transport_timeout", message: "Timeout source unknown: Request was aborted.", retryable: true, timeoutSource: "unknown" }),
+      expect.objectContaining({ kind: "transport_timeout", message: "Timeout source unknown: Request was aborted.", retryable: true, timeoutSource: "unknown" }),
     ]);
   });
 
