@@ -1,7 +1,7 @@
 ---
 module: character-cutouts
 problem_type: ui_bug
-status: in_progress
+status: resolved
 tags: [cutouts, playback, character-art, influence]
 ---
 
@@ -29,6 +29,23 @@ persisted attempt ordering. Playback reads no jobs or demands. Only a confirmed 
 permits fallback. Studio verification excludes derivative URLs but preserves frozen
 revision and gameplay facts. Old-export compatibility is outside the agreed scope.
 
-Validation of this corrected design is in progress. Earlier owner-based test counts
-are not evidence for this replacement. No development, staging, or production
-conversion or deployment has been performed.
+## Local verification — 2026-10-31
+
+- `bun run test`: 3,217 passed, 5 skipped, zero failures.
+- `bun run check`: typecheck and lint passed.
+- `bun run test:postgres`: 2,284 passed, 3 failed across 206 files. The failures
+  were test assertions: Werewolf metadata now selects the derivative URL; new
+  Influence seats include their content revision ID; Drizzle wraps the immutable
+  evidence rejection in `cause`. All three assertions were corrected.
+- Final rerun of all eight affected suites: 95 passed, zero failures. This covers
+  the three baseline failures plus both game types' revision isolation, unchanged
+  Studio hashes after derivative publication, retained render framing, finished-byte
+  retries/fairness, and job-independent playback.
+- Conversion CLI build and `git diff --check` passed. The full PostgreSQL command
+  was not repeated after the assertion corrections; the final focused rerun is
+  separate evidence, not a claim that the earlier full command passed.
+
+No development, staging, or production conversion or deployment was performed.
+Only disposable local test databases and fixture images were used. Historical
+Influence games without a pinned image identity may keep opaque art. Transient
+image errors may leave an image temporarily blank, but cannot select opaque art.
