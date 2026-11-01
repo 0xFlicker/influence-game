@@ -22,3 +22,5 @@ The saved 12-player Influence views from game `58f370d5-127d-4db8-ab70-42a2ccd3e
 Private source inputs, complete sanitized requests/responses, candidates, stitched images and the local gallery are retained under `packages/engine/docs/simulations/stitch-repair-2026-11-01/` and the existing local DB/object-storage journal. No production images or historical records were replaced.
 
 Validation: provider-free baseline 3,233 passed, five skipped; type checks and lint passed. Database-owned tests were updated for the harmonization call, strict rejection, durable reuse and continued recovery; PostgreSQL tests remain skipped at the user's request.
+
+Correction: Werewolf supports at most eight players. The retained twelve-player village evidence above exceeds that supported size and is not representative Werewolf acceptance coverage. It is retained as historical evidence, not a supported-game test. The current probe and representative renderer fixture use eight players.

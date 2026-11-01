@@ -385,9 +385,9 @@ test("huddle scenes reuse only an exact cast, freeze the speech binding, and lea
 
 test.each(["village", "pack", "hunt"] as const)("preserves frozen Werewolf %s direction and individual staging with a supplied background", async purpose => {
   const { planWerewolfScene } = await import("../services/werewolf-scene-plan");
-  const size = purpose === "village" ? 12 : purpose === "pack" ? 2 : 3;
-  const base = await scene(size);
-  const plan = await planWerewolfScene(db, "game", { purpose, roomId: purpose === "village" ? "lobby" : purpose === "pack" ? "mingle-1" : "mingle-2", boundarySequence: 1, day: 1, participantIds: base.plan.cast.map(m => m.id), wolfIds: [], targetId: purpose === "hunt" ? "p2" : null }, base.plan.cast);
+  const size = purpose === "village" ? 8 : purpose === "pack" ? 2 : 3;
+  const cast = Array.from({ length: size }, (_, i) => ({ id: `p${i}`, name: `Player ${i}`, referenceArtifactId: artifactId, performanceInstructions: "Calm" }));
+  const plan = await planWerewolfScene(db, "game", { purpose, roomId: purpose === "village" ? "lobby" : purpose === "pack" ? "mingle-1" : "mingle-2", boundarySequence: 1, day: 1, participantIds: cast.map(m => m.id), wolfIds: [], targetId: purpose === "hunt" ? "p2" : null }, cast);
   const mock = globalThis.fetch, prompts: string[] = [];
   globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
     if (String(url).includes("/v1/images/")) prompts.push(String((init?.body as FormData).get("prompt")));

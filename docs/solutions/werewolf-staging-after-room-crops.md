@@ -30,3 +30,14 @@ All three scene-only probes used the production planner, approved backgrounds, d
 Visual inspection confirmed the intended staging. This follow-up cost $1.157884; combined spend is $4.619763 of the authorized $15. All requests/responses, reference inputs, receipts and output images remain private in local DB/object storage and `packages/engine/docs/simulations/werewolf-staging-2026-11-01/`, including a local preview gallery. These samples demonstrate the requested scenes, not a statistical reliability claim.
 
 Validation: provider-free baseline 3,233 passed, five skipped; type checks and lint passed. PostgreSQL suite explicitly skipped/cancelled at user request to avoid interference with other chats.
+
+Correction: Werewolf supports at most eight players. The retained twelve-player village evidence above exceeds that supported size and is not representative Werewolf acceptance coverage. It is retained as historical evidence, not a supported-game test. The current probe and representative renderer fixture use eight players.
+
+
+## Representative eight-player review
+
+Werewolf supports up to eight players. Local game `87f143b9-b9a6-42a1-a92d-e082a265ce31` exercised the complete eight-player village path with two source views and automatic stitching. The final continuous image passed strict verification of all eight identities, with eight localized head anchors. Total scene time was 186.368 seconds, demonstrating why the former 180-second deadline was insufficient even for a supported roster. Cost was $0.686614; cumulative task spending is $6.100645 of $15.
+
+The current Werewolf probe accepts an eight-player village roster. Added eight-player shared grouping coverage passed (ten provider-free scene-plan tests total); types and lint passed. Evidence and the preview are retained privately under `packages/engine/docs/simulations/werewolf-eight-player-2026-11-01/`.
+
+Review also identified the CI village fixture collision: it first prepared an Influence lobby, then tried to write a different Werewolf plan at the same immutable boundary. The fixture now builds cast references without preparing that extra scene. The production immutable-plan guard is unchanged. PostgreSQL tests remain skipped locally per user instruction; the updated fixture is for CI.

@@ -19,8 +19,8 @@ const purpose = process.argv[3]?.startsWith("werewolf-") ? process.argv[3].slice
 if (purpose && !["village", "pack", "hunt"].includes(purpose)) throw new Error("Invalid Werewolf scene purpose");
 const size = Number(process.argv[2]);
 const directory = process.env.VISUAL_PROBE_DIRECTORY;
-const allowedSizes = purpose ? { village: [9, 12], pack: [2], hunt: [3] }[purpose] : [9, 10, 12, 14];
-if (!allowedSizes.includes(size) || !directory || process.env.VISUAL_PROBE_AUTHORIZED !== "15") throw new Error("Set VISUAL_PROBE_AUTHORIZED=15 and VISUAL_PROBE_DIRECTORY, then pass 9/10/12/14, or 12 werewolf-village, 2 werewolf-pack, 3 werewolf-hunt");
+const allowedSizes = purpose ? { village: [8], pack: [2], hunt: [3] }[purpose] : [9, 10, 12, 14];
+if (!allowedSizes.includes(size) || !directory || process.env.VISUAL_PROBE_AUTHORIZED !== "15") throw new Error("Set VISUAL_PROBE_AUTHORIZED=15 and VISUAL_PROBE_DIRECTORY, then pass 9/10/12/14, or 8 werewolf-village, 2 werewolf-pack, 3 werewolf-hunt");
 for (const value of [process.env.DATABASE_URL, process.env.LINODE_PRIVATE_CONTENT_ENDPOINT]) {
   if (!value || !["localhost", "127.0.0.1"].includes(new URL(value).hostname)) throw new Error("Probe requires localhost DB and object storage");
 }
