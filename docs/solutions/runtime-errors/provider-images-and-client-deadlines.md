@@ -33,3 +33,8 @@ client timers. PostgreSQL tests cover binary identity and health isolation.
 
 Scope explicitly excludes converting or deleting existing evidence. Original
 historical objects, references and hashes remain untouched.
+
+Release with the stack’s stopped-writer/drain procedure: newly prepared visual
+contexts use image identities instead of data URLs, which changes context hashes.
+Do not replace a live writer midway through an unfinished logical call. Existing
+frozen evidence is not rewritten to match the new representation.
