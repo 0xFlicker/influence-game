@@ -36,8 +36,14 @@ and missing-pitch treatment remain in effect.
   suppression. Identical nested wrappers collapse; distinct tags and separate
   spans remain. Compiling an already compiled rendition is idempotent.
 - Broken recognized controls produce diagnostics rather than a game-decision
-  error. Their words remain. Unknown brackets remain literal text; this parser
+  error. Their words remain. Compiler v2 removes unsupported XML-style tags
+  (including attributes and self-closing tags) from clean text and synthesis,
+  retaining their enclosed words and original private evidence. Unknown square
+  brackets remain literal text, including `[Ada]` and `[unknown]`; this parser
   is not an HTML sanitizer and must never be used with raw HTML rendering.
+- Studio/watch timed and static speech also hide XML in existing saved dialogue.
+  Frozen pagination and audio offsets remain based on the original text; no
+  accepted history, existing audio bytes or export artifacts are rewritten.
 - `audioDeliveryGuidance` prepares the default prompt directions for both audio
   and non-audio games. Structured Influence, Werewolf, House narration and
   retrospective invocations now include it by default.

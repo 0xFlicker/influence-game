@@ -76,6 +76,7 @@ The model must shorten the field while preserving intent and other valid choices
 The provider output budget remains 8,192 tokens. No paid rerun was requested.
 
 Default delivery-tag evaluation: inspect clean speech and thinking in `--chatty`
+(`<warm>Hello</warm>` must retain only `Hello`; unknown `[Ada]` stays literal)
 and the localhost API transcript, then inspect private provider evidence for the
 original tags. Both audio and non-audio games preserve annotations for later
 production; no TTS call is made by text acceptance. Check that the next actor's

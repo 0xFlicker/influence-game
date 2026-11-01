@@ -1,3 +1,5 @@
+import {normalizeAudioDelivery} from "@influence/engine/audio-delivery";
+
 /** Split measured prose without rewriting it. Every character belongs to one page. */
 export function paginateSpeech(text: string, fits: (text: string) => boolean): string[] {
   if (!text || fits(text)) return [text];
@@ -38,4 +40,17 @@ export function speechPageIndex(pages: readonly string[], progress: number): num
   let end = 0;
   for (let i = 0; i < weights.length; i++) { end += weights[i]; if (position < end) return i; }
   return Math.max(0, pages.length - 1);
+}
+
+/** Clean a historical page without changing frozen pagination or audio offsets.
+ * Normalize the whole source so tags split across page boundaries also disappear.
+ */
+export function cleanSpeechPage(pages: readonly string[], index: number): string {
+  const start = pages.slice(0, index).reduce((length, page) => length + page.length, 0);
+  const end = start + (pages[index]?.length ?? 0);
+  const source = pages.join("");
+  return normalizeAudioDelivery(source).sourceMap.map(span => {
+    const from = Math.max(start, span.sourceStart), to = Math.min(end, span.sourceEnd);
+    return from < to ? source.slice(from, to) : "";
+  }).join("");
 }

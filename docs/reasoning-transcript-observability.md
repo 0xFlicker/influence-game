@@ -869,6 +869,10 @@ Sealed collection stays private and concurrent. Save-or-Exit, sealed elimination
 
 
 Audio Mode adds separate bucket-backed TTS attempts and clip/version records.
+Delivery compiler v2 strips XML-style tags from accepted presentation fields,
+preserving enclosed words, supported audio annotations and original private
+provider evidence. Unknown square-bracketed text remains literal. Existing
+Studio/watch speech hides XML at rendering without rewriting accepted history.
 It consumes only accepted production speech and saved spectator thinking; native
 provider reasoning is never synthesized. Thought tags remain private delivery
 evidence, while visible text and future contestant context stay clean. TTS
