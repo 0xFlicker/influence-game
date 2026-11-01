@@ -1,6 +1,11 @@
 #!/usr/bin/env bun
 /** Visual Mode supports text-only routes using canonical room text and performance cues. */
 /** New room imagery populates distinct crops of one wide room, then harmonizes complete view sets into a verified continuous image; visible IDs never change the canonical audience. */
+
+/** API provider evidence retains immutable image references, never repeated base64 scene bytes.
+ * Signed URLs are minted at dispatch. Generation defaults to 300 seconds and timeout evidence
+ * distinguishes client deadlines, remote timeouts and network failures. Paid tests use localhost API.
+ */
 import {CURRENT_INFLUENCE_GAME_SCHEMA_VERSION} from "./influence-game-schema";
 import { HOUSE_CAST } from "./house-personas";
 /**

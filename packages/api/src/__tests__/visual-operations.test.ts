@@ -80,7 +80,7 @@ test.each([
       method, turnId: `turn-${finalist.id}`, committedHeads: snapshot.execution.heads, committedCursor: snapshot.execution.cursor });
     expect(context.room?.scene.id).toBe(scene.id);
     expect(context.room?.scene.participantIds).toEqual(expectedIds);
-    expect(context.room?.scene.annotatedImageUrl).toStartWith("data:image/png;base64,");
+    expect(context.room?.scene.annotatedImageUrl).toStartWith("influence-image:");
   }
   expect(calls).toBe(0);
   expect((await db.select().from(schema.games))[0]?.status).toBe("in_progress");
@@ -173,7 +173,7 @@ test("rebuilds an unused incorrect Finals plan at the same boundary, preserving 
       round: state.round, phase: Phase.OPENING_STATEMENTS, endgameStage: "judgment", alivePlayers: cast.slice(0, 2), jury: state.jury.slice(1), publicMessages: [], mingleMessages: [] },
       method: "getOpeningStatement", turnId: `repaired-${finalist.id}`, committedHeads: snapshot.execution.heads, committedCursor: snapshot.execution.cursor });
     expect(context.room?.scene.participantIds).toEqual(ids);
-    expect(context.room?.scene.annotatedImageUrl).toStartWith("data:image/png;base64,");
+    expect(context.room?.scene.annotatedImageUrl).toStartWith("influence-image:");
   }
 });
 

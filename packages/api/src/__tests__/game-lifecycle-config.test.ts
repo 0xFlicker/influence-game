@@ -29,11 +29,11 @@ describe("game lifecycle engine config", () => {
   });
 
   test("bounds API provider request deadlines", () => {
-    expect(providerRequestTimeoutMs({})).toBe(45_000);
+    expect(providerRequestTimeoutMs({})).toBe(300_000);
     expect(providerRequestTimeoutMs({ INFLUENCE_LLM_REQUEST_TIMEOUT_MS: "15000" })).toBe(15_000);
     expect(providerRequestTimeoutMs({ INFLUENCE_LLM_REQUEST_TIMEOUT_MS: "1" })).toBe(1_000);
     expect(providerRequestTimeoutMs({ INFLUENCE_LLM_REQUEST_TIMEOUT_MS: "600000" })).toBe(300_000);
-    expect(providerRequestTimeoutMs({ INFLUENCE_LLM_REQUEST_TIMEOUT_MS: "invalid" })).toBe(45_000);
+    expect(providerRequestTimeoutMs({ INFLUENCE_LLM_REQUEST_TIMEOUT_MS: "invalid" })).toBe(300_000);
   });
 
   test("hydrates the frozen format manifest and rejects corrupt stored ids", () => {

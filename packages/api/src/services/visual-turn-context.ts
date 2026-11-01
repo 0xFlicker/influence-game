@@ -8,7 +8,7 @@ import type { VisualCastMember } from "@influence/engine/visual-scene-plan";
 import type { DrizzleDB } from "../db/index.js";
 import { visualExecutionBoundaryGuard } from "./visual-execution-boundary.js";
 import { stableJson } from "./stable-hash.js";
-import { applyPublishedVisualScene, readCurrentVisualScene, readVisualArtifact } from "./visual-scene-store.js";
+import { applyPublishedVisualScene, readCurrentVisualScene, readVisualArtifactImageUri } from "./visual-scene-store.js";
 
 const CONVERSATIONAL_METHODS = new Set(["getLobbyMessage", "sendRoomMessage", "takeMingleTurn", "getAccusation", "getDefense", "getOpeningStatement", "getJuryQuestion", "getJuryAnswer", "getClosingArgument", "getPlea"]);
 
@@ -83,18 +83,18 @@ export function createVisualTurnContextReader(db: DrizzleDB, input: {
         if (!shot) return result;
         assertVisualShot(shot, participantIds);
         assertVisualAnchors(shot.anchors, shot.visibleParticipantIds);
-        const annotated = await readVisualArtifact(db, input.gameId, shot.annotatedArtifactId);
+        const annotated = await readVisualArtifactImageUri(db, input.gameId, shot.annotatedArtifactId);
         await assertCurrent();
-        result.room = { scene: { id: scene.id, roomId, version: scene.boundarySequence, imageUrl: "", annotatedImageUrl: `data:image/png;base64,${annotated.toString("base64")}`,
+        result.room = { scene: { id: scene.id, roomId, version: scene.boundarySequence, imageUrl: "", annotatedImageUrl: annotated,
           participantIds, visibleParticipantIds: shot.visibleParticipantIds, anchors: shot.anchors }, cues: result.observableRoom.cues.map(entry => ({ ...entry, sceneId: scene.id, turnId: "observable" })) };
         return result;
       }
       // Verified composition can be displayed without anchors, but agents get text only.
       try { assertVisualAnchors(scene.anchors, participantIds); }
       catch (error) { return unavailable("anchors", error); }
-      const annotated = await readVisualArtifact(db, input.gameId, scene.annotatedArtifactId);
+      const annotated = await readVisualArtifactImageUri(db, input.gameId, scene.annotatedArtifactId);
       await assertCurrent();
-      result.room = { scene: { id: scene.id, roomId, version: scene.boundarySequence, imageUrl: "", annotatedImageUrl: `data:image/png;base64,${annotated.toString("base64")}`, participantIds, anchors: scene.anchors },
+      result.room = { scene: { id: scene.id, roomId, version: scene.boundarySequence, imageUrl: "", annotatedImageUrl: annotated, participantIds, anchors: scene.anchors },
         cues: result.observableRoom.cues.map((entry) => ({ ...entry, sceneId: scene.id, turnId: "observable" })) };
     } catch (error) { await recordVisualOperationEvent(db, input.gameId, `context:${turnId}:${context.selfId}`, { sceneId: scene.id, boundarySequence: committedHeads.turnSequence, kind: "failure", outcome: "failed", message: "Verified imagery could not be loaded into agent context" }, visualFailureEvidence(error, "internal")); }
     return result;

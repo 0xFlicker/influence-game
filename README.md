@@ -22,3 +22,5 @@ The runtime validates model decisions and records canonical events before presen
 | Deployment and recovery | [Game workers](docs/deployment/game-worker-operations.md) · [Render workers](docs/deployment/house-highlights-render-worker.md) · [Storage cutover](docs/deployment/private-payload-storage-cutover.md) |
 
 [Source](https://github.com/0xFlicker/influence-game) · [Selected-work page](https://www.flick.ing/~/projects#the-house)
+
+API generation defaults to a 300-second deadline. Gameplay image evidence stores private binary references, with signed image URLs created only for dispatch. See [local evaluation](docs/local-model-evaluation.md) and [evidence diagnostics](docs/reasoning-transcript-observability.md) for storage reachability and timeout attribution.

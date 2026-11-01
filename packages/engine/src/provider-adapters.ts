@@ -1,3 +1,5 @@
+import { parseProviderImageUri } from "./provider-images";
+import { providerDeadlineSignal, requestDeadlineError } from "./provider-deadline";
 import { compactionOrientation, compactInvocation, contextSourceHash, contextComponentHashes, contextSummaryArtifact, ContextSourceConflictError, CONTEXT_SUMMARY_INSTRUCTIONS, CONTEXT_MAX_REVISIONS } from "./context-adaptation";
 import { audioDeliveryGuidance } from "./audio-delivery";
 import { THINKING_CONTENT_GUIDANCE } from "./thinking-guidance";
@@ -209,7 +211,7 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
           );
           compiledByAttempt.delete(key);
           const requestSignal = runtime.providerProfileId === "lm-studio"
-            ? AbortSignal.timeout(runtime.localRequestTimeoutMs ?? DEFAULT_LM_STUDIO_TIMEOUT_MS)
+            ? providerDeadlineSignal(runtime.localRequestTimeoutMs ?? DEFAULT_LM_STUDIO_TIMEOUT_MS)
             : options.requestSignalFactory?.();
           const dispatched = serviceTier ? { ...prepared, body: { ...(prepared.body as Record<string, unknown>), service_tier: serviceTier } } : prepared;
           const outcome = await adapterRuntime.adapter.dispatch(dispatched, {
@@ -219,6 +221,9 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
                 ? AbortSignal.any([requestOptions.signal, requestSignal])
                 : requestOptions.signal ?? requestSignal,
             }),
+          }).catch(error => {
+            if (!options.cancellationSignal?.aborted) throw requestDeadlineError(requestSignal, error) ?? error;
+            throw error;
           });
           // Traces must reflect the actual guidance/repair/context sent to the provider.
           outcome.invocationMessages = semanticCall.messages;
@@ -937,7 +942,7 @@ function imageInvocationError(invocation: ModelInvocation, runtime: ProviderRunt
   if (messages.some((message) => message.role !== "user")) return "image inputs require a user message";
   if (messages.some((message) => message.images?.some((image) =>
     !["low", "high", "auto"].includes(image.detail)
-    || !/^(https:\/\/[^\s]+|data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*)$/.test(image.url)
+    || (!parseProviderImageUri(image.url) && !/^(https:\/\/[^\s]+|data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*)$/.test(image.url))
   ))) return "invalid image input";
   return undefined;
 }

@@ -1,5 +1,6 @@
 import { actorProviderManifest, modelRateCard, withLocalTaskBudget, isFlexCapacityFailure, isProviderAvailabilityFailure } from "@influence/engine";
 import { storeJson, Hydrated, loadPayloads, storeFields } from "./payload-storage.js";
+import { providerImageStorage } from "./provider-images.js";
 import { assertWerewolfProviderTurn } from "./werewolf-games.js";
 import { ProviderJournalEntryExhaustedError, retrospectiveAttemptsPerModel } from "@influence/engine";
 import { and, eq, getTableColumns, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
@@ -1391,6 +1392,7 @@ export function createApiProviderExecutionHooks(
   options: CreateApiProviderExecutionHooksOptions,
 ): ProviderExecutionHooks {
   return withLocalTaskBudget({
+    images: providerImageStorage,
     onResolveOpenAIServiceTier: catalogId => resolveOpenAIServiceTier(db, catalogId),
     onReadLengthFeedback: (coordinate) => readLengthFeedback(db, options, coordinate),
     onReadAccepted: (coordinate) => readAcceptedResult(db, options, coordinate),

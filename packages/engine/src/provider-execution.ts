@@ -4,6 +4,8 @@ import { compileAudioDelivery } from "./audio-delivery";
 import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
 import type { ProviderProfileId } from "./model-catalog";
 import { Phase, type UUID } from "./types";
+import { ProviderImageAttachments, ProviderImageStorageError, type ProviderImageStorage } from "./provider-images";
+import { ProviderDeadlineError } from "./provider-deadline";
 
 const providerAdmissionGuard = new AsyncLocalStorage<() => void>();
 
@@ -25,7 +27,7 @@ const CREDENTIAL_FIELD =
 const CREDENTIAL_FIELD_SUFFIX =
   /(?:^|[-_])(?:api[-_]?key|access[-_]?token|refresh[-_]?token|auth[-_]?token|client[-_]?secret|password|secret)$/i;
 const CREDENTIAL_QUERY_PARAM =
-  /^(?:api[-_]?key|access[-_]?token|token|key|secret|signature|sig)$/i;
+  /^(?:api[-_]?key|access[-_]?token|token|key|secret|signature|sig|x-amz-.+)$/i;
 
 export type ProviderAttemptFailureKind =
   | "refusal"
@@ -347,6 +349,9 @@ export interface ProviderAttemptFailureOutcome {
   httpStatus?: number;
   errorCode?: string;
   retryAfterMs?: number;
+  timeoutSource?: "client_deadline" | "provider" | "transport" | "unknown";
+  timeoutMs?: number;
+  errorClass?: string;
   /** Private feedback for a regenerated attempt; never accepted game state. */
   feedback?: LengthFeedback;
 }
@@ -402,6 +407,8 @@ export interface ProviderAttemptIntent {
 }
 
 export interface ProviderAttemptRecord extends ProviderAttemptIntent {
+  /** Separate remote wait from reservation/storage overhead. Historical records may omit these. */
+  transportTiming?: { dispatchedAt: string; completedAt: string; elapsedMs: number; timeoutMs?: number; responseHeadersAt?: string };
   /** Private production metadata, never returned as the accepted gameplay value. */
   audioDelivery?: import("./audio-delivery").AcceptedAudioDelivery;
   completedAt: string;
@@ -460,6 +467,8 @@ export class ProviderDeferredError extends Error {
 }
 
 export interface ProviderExecutionHooks {
+  /** Durable binary attachments; implementations must verify upload before returning a reference. */
+  images?: ProviderImageStorage;
   onResolveOpenAIServiceTier?(catalogId: string): Promise<"flex" | "default">;
 
   onReadLengthFeedback?(coordinate: ProviderLogicalCallCoordinate): Promise<LengthFeedback | undefined> | LengthFeedback | undefined;
@@ -568,6 +577,12 @@ interface MutableTransportCapture {
   credentialValues: readonly string[];
   request?: SanitizedProviderRequestEvidence;
   response?: SanitizedProviderResponseEvidence;
+  images?: ProviderImageAttachments;
+  timing?: ProviderAttemptRecord["transportTiming"];
+  timeoutMs?: number;
+  errorClass?: string;
+  errorCode?: string;
+  fatalEvidenceError?: ProviderImageStorageError;
 }
 
 const activeTransportCaptures = new Map<string, MutableTransportCapture>();
@@ -940,13 +955,17 @@ export class ProviderLogicalCallExecution {
       }
       const transportCapture: MutableTransportCapture = {
         credentialValues: preparedRequest.credentialValues ?? [],
+        ...(this.hooks?.images && { images: new ProviderImageAttachments(this.hooks.images) }),
       };
+      const requestEvidence = transportCapture.images
+        ? await transportCapture.images.evidence(sanitizePreparedRequest(preparedRequest))
+        : sanitizePreparedRequest(preparedRequest);
       const intent: ProviderAttemptIntent = {
         coordinate: this.coordinate,
         ...(options.contextIdentity?.() && { context: options.contextIdentity!() }),
         attemptOrdinal,
         attemptId,
-        preparedRequest: sanitizePreparedRequest(preparedRequest),
+        preparedRequest: requestEvidence,
         startedAt: new Date(startedAtMs).toISOString(),
       };
       transportCapture.request = intent.preparedRequest;
@@ -990,6 +1009,8 @@ export class ProviderLogicalCallExecution {
         });
         dispatchResult = { status: "success", response };
       } catch (error) {
+        if (transportCapture.fatalEvidenceError) throw transportCapture.fatalEvidenceError;
+        if (error instanceof ProviderImageStorageError) throw error;
         if (error instanceof ProviderAttemptError) throw error;
         const completedAtMs = this.now();
         const classified = options.classifyError?.(
@@ -1000,6 +1021,15 @@ export class ProviderLogicalCallExecution {
           transportCapture.response ??
           rawResponseFromError(error, transportCapture.credentialValues);
         const outcome = withTransportDiagnostics(classified, rawResponse, completedAtMs);
+        if (outcome.kind === "transport_timeout") {
+          outcome.timeoutMs ??= transportCapture.timeoutMs;
+          if (outcome.timeoutSource === "client_deadline") outcome.message = `Our ${outcome.timeoutMs === undefined ? "client" : `${outcome.timeoutMs / 1000}-second`} deadline expired; provider completion unknown`;
+          else if (outcome.timeoutSource === "provider") outcome.message = `Provider reported a timeout: ${outcome.message}`;
+          else if (outcome.timeoutSource === "transport") outcome.message = `Network transport timed out; provider completion unknown: ${outcome.message}`;
+          else outcome.message = `Timeout source unknown: ${outcome.message}`;
+        }
+        if (transportCapture.errorClass && !outcome.errorClass) outcome.errorClass = transportCapture.errorClass;
+        if (transportCapture.errorCode && !outcome.errorCode) outcome.errorCode = transportCapture.errorCode;
         const accounting = extractProviderAttemptAccounting(
           asRecord(error).accounting,
           rawResponse.body,
@@ -1113,6 +1143,9 @@ export class ProviderLogicalCallExecution {
       } else {
         capturedRecord = dispatchResult.record;
       }
+
+      if (transportCapture.timing) capturedRecord.transportTiming = transportCapture.timing;
+      if (transportCapture.images) capturedRecord = await transportCapture.images.evidence(capturedRecord);
 
       const flexFailover = isFlexCapacityFailure(capturedRecord);
       const contextRetry = capturedRecord.outcome.kind === "context_overflow"
@@ -1271,7 +1304,7 @@ export function sanitizeProviderEvidence(
         input,
       );
       return withoutKnownCredentials.replace(
-        /([?&](?:api[-_]?key|access[-_]?token|token|key|secret|signature|sig)=)[^&#\s]*/gi,
+        /([?&](?:api[-_]?key|access[-_]?token|token|key|secret|signature|sig|x-amz-[\w-]+)=)[^&#\s]*/gi,
         "$1[REDACTED]",
       );
     }
@@ -1422,6 +1455,7 @@ function firstFiniteNumber(...values: unknown[]): number | undefined {
 export function createProviderEvidenceFetch(
   baseFetch: ProviderEvidenceFetch = fetch,
   credentialValues: readonly string[] = [],
+  timeoutMs?: number,
 ): typeof fetch {
   return (async (
     input: string | URL | Request,
@@ -1435,10 +1469,18 @@ export function createProviderEvidenceFetch(
     const capture = attemptId
       ? activeTransportCaptures.get(attemptId)
       : undefined;
+    try {
     const outgoingHeaders = new Headers(incoming.headers);
     for (const header of INTERNAL_TRANSPORT_HEADERS)
       outgoingHeaders.delete(header);
-    const outgoing = new Request(incoming, { headers: outgoingHeaders });
+    let outgoing = new Request(incoming, { headers: outgoingHeaders });
+    if (capture) capture.timeoutMs = timeoutMs;
+    if (capture?.images && outgoing.body) {
+      const body = await outgoing.clone().text();
+      const resolved = await capture.images.request(JSON.parse(body));
+      outgoingHeaders.delete("content-length");
+      outgoing = new Request(outgoing, { headers: outgoingHeaders, body: JSON.stringify(resolved) });
+    }
 
     if (capture) {
       const actualCredentialValues = uniqueCredentialValues([
@@ -1457,14 +1499,26 @@ export function createProviderEvidenceFetch(
         model: capture.request?.model ?? "unknown",
         url: sanitizeUrl(outgoing.url, actualCredentialValues),
         headers: sanitizeHeaders(outgoing.headers, actualCredentialValues),
-        body: await sanitizeBodyText(
-          await outgoing.clone().text(),
-          actualCredentialValues,
-        ),
+        body: capture.images
+          ? sanitizeProviderEvidence(await capture.images.evidence(JSON.parse(await outgoing.clone().text())), actualCredentialValues)
+          : await sanitizeBodyText(await outgoing.clone().text(), actualCredentialValues),
       };
     }
 
-    const response = await baseFetch(outgoing);
+    const dispatchedAt = Date.now();
+    let response: Response;
+    try { response = await baseFetch(outgoing); }
+    catch (error) {
+      if (capture) {
+        const cause = asRecord(asRecord(error).cause);
+        capture.errorClass = readString(cause.name) || (error instanceof Error ? error.constructor.name : readString(asRecord(error).name));
+        capture.errorCode = readString(cause.code) || readString(asRecord(error).code);
+        capture.timing = { dispatchedAt: new Date(dispatchedAt).toISOString(), completedAt: new Date().toISOString(), elapsedMs: Date.now() - dispatchedAt,
+          ...(timeoutMs !== undefined && { timeoutMs }) };
+      }
+      throw error;
+    }
+    const responseHeadersAt = new Date().toISOString();
     if (capture) {
       const actualCredentialValues = uniqueCredentialValues([
         ...credentialValues,
@@ -1474,13 +1528,26 @@ export function createProviderEvidenceFetch(
       capture.response = {
         status: response.status,
         headers: sanitizeHeaders(response.headers, actualCredentialValues),
-        body: await sanitizeBodyText(
-          await response.clone().text(),
-          actualCredentialValues,
-        ),
+        body: null,
       };
+      try {
+        capture.response.body = await sanitizeBodyText(await response.clone().text(), actualCredentialValues);
+        if (capture.images) capture.response = await capture.images.evidence(capture.response);
+      } catch (error) {
+        const cause = asRecord(asRecord(error).cause);
+        capture.errorClass = readString(cause.name) || (error instanceof Error ? error.constructor.name : readString(asRecord(error).name));
+        capture.errorCode = readString(cause.code) || readString(asRecord(error).code);
+        throw error;
+      } finally {
+        capture.timing = { dispatchedAt: new Date(dispatchedAt).toISOString(), responseHeadersAt,
+          completedAt: new Date().toISOString(), elapsedMs: Date.now() - dispatchedAt, ...(timeoutMs !== undefined && { timeoutMs }) };
+      }
     }
     return response;
+    } catch (error) {
+      if (capture && error instanceof ProviderImageStorageError) capture.fatalEvidenceError = error;
+      throw error;
+    }
   }) as typeof fetch;
 }
 
@@ -1653,12 +1720,25 @@ export function classifyProviderError(
   if (cancellationSignal?.aborted) {
     return { kind: "cancellation", message, retryable: false };
   }
+  if (error instanceof ProviderDeadlineError) return { kind: "transport_timeout", message, retryable: true,
+    timeoutSource: "client_deadline", timeoutMs: error.timeoutMs, errorClass: error.name };
+  const errorClass = constructorName && constructorName !== "Object" ? constructorName : name;
+  // A remote HTTP response takes precedence over SDK class/message heuristics.
+  if (status !== undefined) return { ...classifyProviderFailureDetails({ status, code, message }), httpStatus: status, errorClass };
+  if ([name, constructorName].some(value => value === "APIConnectionTimeoutError" || value === "APITimeoutError")) {
+    return { kind: "transport_timeout", message, retryable: true, timeoutSource: "client_deadline", errorClass };
+  }
+  const cause = asRecord(record.cause);
+  const transportCode = readString(cause.code) || readString(record.code);
+  if (/^(?:ETIMEDOUT|UND_ERR_(?:CONNECT|HEADERS|BODY)_TIMEOUT)$/.test(transportCode)) {
+    return { kind: "transport_timeout", message, retryable: true, timeoutSource: "transport", errorClass, errorCode: transportCode };
+  }
   if (
     name === "APIUserAbortError" ||
     constructorName === "APIUserAbortError" ||
     name === "AbortError"
   ) {
-    return { kind: "transport_timeout", message, retryable: true };
+    return { kind: "transport_timeout", message, retryable: true, timeoutSource: "unknown", errorClass };
   }
   if (
     name === "APITimeoutError" ||
@@ -1666,7 +1746,7 @@ export function classifyProviderError(
     lowerMessage.includes("timed out") ||
     lowerMessage.includes("timeout")
   ) {
-    return { kind: "transport_timeout", message, retryable: true };
+    return { kind: "transport_timeout", message, retryable: true, timeoutSource: "unknown", errorClass };
   }
   if (name === "APIConnectionError" || name === "TypeError") {
     return { kind: "transport_error", message, retryable: true };
@@ -1716,12 +1796,13 @@ function classifyProviderFailureDetails(input: {
   }
   if (
     input.status === 408 ||
+    input.status === 504 ||
     code.includes("timeout") ||
     code.includes("timed_out") ||
     lowerMessage.includes("timed out") ||
     lowerMessage.includes("timeout")
   ) {
-    return { kind: "transport_timeout", message: input.message, retryable: true };
+    return { kind: "transport_timeout", message: input.message, retryable: true, timeoutSource: "provider" };
   }
   if (
     (input.status !== undefined && input.status >= 500) ||

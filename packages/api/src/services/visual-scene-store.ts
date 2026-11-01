@@ -1,4 +1,5 @@
 import { storeFields, loadPayloads } from "./payload-storage.js";
+import { providerImageUri } from "@influence/engine/provider-images";
 import type { VisualBoundaryGuard, VisualTransaction } from "./visual-execution-boundary.js";
 import { createHash, randomUUID } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
@@ -28,6 +29,13 @@ export async function readVisualArtifact(db: DrizzleDB | VisualTransaction, game
   const [artifact] = await loadPayloads(db.select({ image: artifacts.image }).from(artifacts).where(and(eq(artifacts.id, artifactId), eq(artifacts.gameId, gameId))));
   if (!artifact) throw new Error("Visual artifact is unavailable for this game");
   return artifact.image;
+}
+
+/** Preserve authorization and stable identity without embedding binary bytes in frozen contexts. */
+export async function readVisualArtifactImageUri(db: DrizzleDB | VisualTransaction, gameId: string, artifactId: string): Promise<string> {
+  const [artifact] = await db.select({ image: artifacts.image }).from(artifacts).where(and(eq(artifacts.id, artifactId), eq(artifacts.gameId, gameId)));
+  if (!artifact || artifact.image.codec !== "binary") throw new Error("Visual artifact is unavailable for this game");
+  return providerImageUri({ sha256: artifact.image.sha256, byteLength: artifact.image.byteLength, mediaType: "image/png" });
 }
 
 /** Called at a canonical committed boundary. Only a short planning transaction is held. */

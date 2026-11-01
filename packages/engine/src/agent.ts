@@ -1,3 +1,4 @@
+import { providerDeadlineSignal } from "./provider-deadline";
 import { CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION, type InfluenceDecisionContractVersion, withDecisionSpeech, validateDecisionSpeech, decisionSpeechPolicy } from "./influence-decision-speech";
 import { speechDraftingGuidance } from "./speech-budget";
 import { HOUSE_CAST } from "./house-personas";
@@ -2385,7 +2386,7 @@ export class InfluenceAgent implements IAgent {
     const result = await executeModelInvocation({
       onContextSummary: (outcome, runtime) => { this.rememberProviderMetadata(outcome, runtime); this.recordTokenUsage(outcome, `${this.name}/context-summary`); },
       call, runtimes: prepared.runtimes, invocation: prepared.invocation, beforeDispatch: prepared.beforeDispatch, maxAttempts: this.structuredCallMaxAttempts ?? retrospectiveAttemptsPerModel("influence"),
-      cancellationSignal: options?.signal, requestSignalFactory: () => AbortSignal.timeout(120_000),
+      cancellationSignal: options?.signal, requestSignalFactory: () => providerDeadlineSignal(300_000),
       validate: (_outcome, value) => value ? { status: "usable", value }
         : { status: "unusable", kind: "undecodable_structured_output", message: "Missing retrospective statement" },
     });

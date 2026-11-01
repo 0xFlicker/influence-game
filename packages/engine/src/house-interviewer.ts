@@ -1,3 +1,4 @@
+import { providerDeadlineSignal } from "./provider-deadline";
 import { ContextSpans } from "./context-adaptation";
 /**
  * Influence Game - House Interviewer
@@ -289,12 +290,12 @@ const HOUSE_SUMMARY_LIMITS = {
   // Reasoning shares the completion allowance; short prose still needs room
   // for reasoning and the private notebook before the JSON document closes.
   ordinary: {
-    wallClockMs: 45_000,
+    wallClockMs: 300_000,
     maxCompletionTokens: 8192,
     maxProseCharacters: houseSummaryCharacterLimit("ordinary"),
   },
   milestone: {
-    wallClockMs: 75_000,
+    wallClockMs: 300_000,
     maxCompletionTokens: 8192,
     maxProseCharacters: houseSummaryCharacterLimit("milestone"),
   },
@@ -741,7 +742,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     this.privateTraceSink = options.privateTraceSink;
     this.privateTraceGameId = options.gameId;
     this.privateTraceOwnerEpoch = options.ownerEpoch;
-    this.structuredOutputTimeoutMs = options.structuredOutputTimeoutMs ?? 45_000;
+    this.structuredOutputTimeoutMs = options.structuredOutputTimeoutMs ?? 300_000;
     this.houseSummaryTimeoutMs = options.houseSummaryTimeoutMs;
     this.providerExecution = new ProviderExecutionCoordinator({
       hooks: options.providerExecutionHooks,
@@ -1174,7 +1175,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
 
   private structuredOutputSignalFactory(): (() => AbortSignal) | undefined {
     if (this.structuredOutputTimeoutMs < 1) return undefined;
-    return () => AbortSignal.timeout(this.structuredOutputTimeoutMs);
+    return () => providerDeadlineSignal(this.structuredOutputTimeoutMs);
   }
 
   private async callHouseJsonSchema<TValue extends object>(params: {
@@ -1708,7 +1709,7 @@ Respond with JSON only.`;
           0.65,
         ),
         maxAttempts: 1,
-        requestSignalFactory: () => AbortSignal.timeout(remainingMs),
+        requestSignalFactory: () => providerDeadlineSignal(remainingMs),
         validate: (_response, decoded) => decoded
           ? { status: "usable", value: decoded }
           : {
