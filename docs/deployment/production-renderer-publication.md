@@ -1,0 +1,7 @@
+# Production renderer publication
+
+The production copy uses the existing immutable three-image release manifest from terminal ordinary main CI. The worker digest is copied unchanged from GHCR into house-render-prod-worker in account978355607658, us-west-1. The publisher role is HouseRenderProdWorkerImagePublisher, trusted only to this repository's main ref. It has no task launch, lifecycle-policy, deletion or secret-store permission. Existing Actions package access reads GHCR; Fargate later pulls ECR with its execution role, without registry credentials.
+
+Automatic copying defaults off. Enable HOUSE_PROD_RENDER_IMAGES_ENABLED only after separately approved repository/IAM setup and an initial safe native retention policy. Manual workflow_dispatch can measure or copy a reviewed existing main CI family. Tooling-only CI with no image manifest is skipped, and production refuses staging proof branches. Attempt-bound production-worker-publication receipts bind source CI attempt, manifest hash and source/destination digest. Production promotion verifies that receipt before host access, then adds incoming/current/rollback protections before admission. Routine native cleanup targets five logical releases and one-day orphan expiry; physical OCI child counts do not limit publication.
+
+This publication preparation does not change deployment/render-execution.json, choose remote production, create credentials or launch a task. Production remains local until its separately approved fenced cutover.
