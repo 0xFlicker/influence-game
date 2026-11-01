@@ -51,11 +51,18 @@ export function contiguousWerewolfWindows(windows: readonly WerewolfWatchWindow[
   }
   return group.length && group[0]!.fromCursor <= cursor && cursor <= end ? group : [];
 }
+/** Saved body artwork may change without changing a committed game moment. */
+function momentFacts(moment: WerewolfWatchMoment) {
+  const facts = (snapshot: WerewolfWatchMoment["snapshot"]) => ({ ...snapshot,
+    players: snapshot.players.map(player => { const identity = { ...player }; delete identity.fullBodyReferenceUrl; delete identity.headRectangle; return identity; }) });
+  return { ...moment, snapshot: facts(moment.snapshot),
+    ...(moment.night ? { night: { ...moment.night, before: facts(moment.night.before) } } : {}) };
+}
 export function werewolfCues(windows: readonly WerewolfWatchWindow[], houseNarration = true): WerewolfWatchCue[] {
   const moments = new Map<number, WerewolfWatchMoment>();
   for (const window of windows) for (const moment of window.moments) {
     const existing = moments.get(moment.cursor);
-    if (existing && JSON.stringify(existing) !== JSON.stringify(moment)) throw new Error("Committed Werewolf playback changed at an existing position");
+    if (existing && JSON.stringify(momentFacts(existing)) !== JSON.stringify(momentFacts(moment))) throw new Error("Committed Werewolf playback changed at an existing position");
     moments.set(moment.cursor, moment);
   }
   const cues = [...moments.values()].sort((a,b) => a.cursor - b.cursor).filter(m => isWerewolfPlayable(m.entry)).flatMap(moment => werewolfMomentCues(moment,houseNarration));

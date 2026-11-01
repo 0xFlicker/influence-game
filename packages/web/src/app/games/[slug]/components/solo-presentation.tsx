@@ -1,5 +1,6 @@
 "use client";
 
+import {characterImageError} from "@/components/character/image-error";
 import {validHeadRectangle} from "@influence/engine/character-portrait";
 import {useSampledStage} from "@/components/watch/sampled-stage";
 import {useBubbleTypography} from "@/components/watch/use-bubble-typography";
@@ -89,10 +90,10 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
         setLoaded({ source, width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight });
         onImageReady?.(source);
       }}
-      onError={() => {
+      onError={event => void characterImageError(event, () => {
         setFailedImages(previous => new Set(previous).add(source));
         onImageReady?.(null);
-      }}
+      })}
       className={`absolute max-w-none ${fullBody ? `object-contain ${backdropStyles.featheredBody}` : "rounded-full object-cover shadow-2xl ring-1 ring-white/30"}`} style={{ ...geometry.image, opacity: imageOpacity ?? portraitOpacity }} />
     </div>
     {!thought && !hideSpeech && motion.speechOpacity > 0 && <SpeechBubble speaker={player.name} caption={beat.caption ?? beat.purpose} roleLabel={beat.roleLabel}

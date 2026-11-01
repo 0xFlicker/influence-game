@@ -3684,6 +3684,7 @@ export const agentContentRevisions = pgTable("agent_content_revisions", {
   ...payloadChecks("agent_content_revisions", { snapshot: [table.snapshot, "json-gzip"] }),index("agent_content_revisions_profile_idx").on(table.agentProfileId, table.createdAt)]);
 export const agentContentAssets = pgTable("agent_content_assets", {
   hash: text("hash").primaryKey(),
+  transparentUrl: text("transparent_url"),
   bytes: payloadColumn("bytes_object", "binary").notNull().$type<StoredPayload<Buffer>>(),
 }, table => [
   ...payloadChecks("agent_content_assets", { bytes: [table.bytes, "binary"] }),
@@ -4020,6 +4021,9 @@ export const characterCutouts = pgTable("character_cutouts", {
   leaseUntil: timestamp("lease_until", { withTimezone: true, mode: "date" }),
   batchJobId: text("batch_job_id"),
   error: text("error"),
+  artSavedAt: timestamp("art_saved_at", { withTimezone: true, mode: "date" }),
+  artSaveAttemptedAt: timestamp("art_save_attempted_at", { withTimezone: true, mode: "date" }),
+  saveError: text("save_error"),
   readyAt: timestamp("ready_at", { withTimezone: true, mode: "date" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
 }, table => [
@@ -4038,6 +4042,7 @@ export const characterCutoutDemands = pgTable("character_cutout_demands", {
   recipe: text("recipe").notNull(),
   cutoutId: text("cutout_id").references(() => characterCutouts.id),
   error: text("error"),
+  preparationAttemptedAt: timestamp("preparation_attempted_at", { withTimezone: true, mode: "date" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
 }, table => [
   uniqueIndex("character_cutout_demands_source").on(table.gameId, table.playerId, table.sourceKey, table.recipe),

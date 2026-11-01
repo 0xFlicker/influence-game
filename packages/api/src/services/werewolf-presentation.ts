@@ -1,7 +1,6 @@
 import { audioReadySequence } from "./audio-frontier.js";
 import { readRetrospectivePresentation } from "./retrospective-retakes.js";
-import { loadPayloads, readPayload } from "./payload-storage.js";
-import { readyCutoutsByHash, requestCharacterCutouts } from "./character-cutouts.js";
+import { loadPayloads } from "./payload-storage.js";
 import { werewolfVisualPause } from "./werewolf-visual-policy.js";
 import { isViewerGame } from "./game-visibility.js";
 import { inArray, and, desc, eq, isNull, lte, or } from "drizzle-orm";
@@ -27,33 +26,27 @@ export async function readWerewolfPresentation(db: DrizzleDB, id: string, audien
   if (ready === 0) {frame.view={...frame.view,entries:[],cursor:0};frame.latestCursor=0;}
   const rows = await publishedWerewolfScenes(db, game.id, publicationCutoff);
   const references = await werewolfReferenceMetadata(db, game.id, events.find(event => event.type === "werewolf.started")?.payload.players);
-  await requestCharacterCutouts(db, game.id, Object.fromEntries(references.flatMap(ref => ref.bodyHash && !ref.bundled ? [[ref.profile.id, `sha256:${ref.bodyHash}`]] : [])));
   const { scene, permitted } = bindWerewolfScene(rows, game.id, audience, frame.view.cursor, publicationCutoff, frame);
   const root = `/api/werewolf/${encodeURIComponent(game.id)}`;
   const query = `audience=${audience}&cursor=${frame.view.cursor}&publishedBefore=${encodeURIComponent(publicationCutoff)}`;
   const view = { ...frame.view, players: frame.view.players.map(player => {
     const reference = references.find(ref => ref.profile.id === player.id);
     return { ...player, avatarUrl: `${root}/characters/${encodeURIComponent(player.id)}?${query}`,
-      fullBodyReferenceUrl: reference?.kind === "full_body" ? `${root}/characters/${encodeURIComponent(player.id)}?${query}&image=body` : null,
+      fullBodyReferenceUrl: reference?.kind === "full_body" ? reference.transparentUrl ?? `${root}/characters/${encodeURIComponent(player.id)}?${query}&image=body` : null,
       ...(reference?.profile.headPosition ? { headRectangle: reference.profile.headPosition.rect } : {}) };
   }) };
   const presentation: WerewolfPresentation = { slug: game.slug, status: game.status, latestCursor: frame.latestCursor, publicationCutoff,
     view, scene };
   return { presentation, permitted };
 }
-export async function readWerewolfCharacter(db: Pick<DrizzleDB, "select">, gameId: string, playerId: string, image: "portrait" | "body" = "portrait", availableHashes?: readonly string[], publicationCutoff?: string) {
+export async function readWerewolfCharacter(db: Pick<DrizzleDB, "select">, gameId: string, playerId: string, image: "portrait" | "body" = "portrait", availableHashes?: readonly string[]) {
   const players = (await readWerewolfEvents(db, gameId)).find(event => event.type === "werewolf.started")?.payload.players ?? [];
   const ref = (await werewolfReferenceMetadata(db, gameId, players, { availableHashes })).find(ref => ref.profile.id === playerId);
   if (!ref) return null;
   const hash = image === "body" ? (ref.kind === "full_body" ? ref.bodyHash : null) : ref.portraitHash;
+  if (image === "body" && ref.transparentUrl) return readVisualProfileImage(ref.transparentUrl, ref.profile);
   if (image === "body" && ref.bundled && ref.kind === "full_body") return readVisualProfileImage(ref.profile.fullBodyReferenceUrl, ref.profile);
   if (hash) {
-    // Resolve by frozen source hash, independent of asynchronous demand linking.
-    // The same publication URL must keep the same bytes after a worker finishes.
-    if (image === "body" && publicationCutoff) {
-      const cutout = (await readyCutoutsByHash(db, [hash], publicationCutoff)).get(hash);
-      if (cutout?.image) return readPayload(cutout.image);
-    }
     const [asset] = await loadPayloads(db.select({ bytes: schema.agentContentAssets.bytes }).from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, hash)));
     return asset?.bytes ?? null;
   }
@@ -134,7 +127,6 @@ export async function readWerewolfWatch(db: DrizzleDB, id: string, audience: Wer
   const seats = await db.select({ id: schema.werewolfLobbySeats.id, modelPreference: schema.werewolfLobbySeats.modelPreference })
     .from(schema.werewolfLobbySeats).where(eq(schema.werewolfLobbySeats.gameId, game.id));
   const preferences = new Map(seats.map(seat => [seat.id, seat.modelPreference]));
-  await requestCharacterCutouts(db, game.id, Object.fromEntries(references.flatMap(ref => ref.bodyHash && !ref.bundled ? [[ref.profile.id, `sha256:${ref.bodyHash}`]] : [])));
   const watch = materializeWerewolfWatch(projection, { id: game.id, slug: game.slug, status: game.status, visualPaused: game.status === "suspended" && Boolean(werewolfVisualPause(config)) }, audience, publicationCutoff, rows, references);
   return { ...watch, ...(ready === 0 && {moments:[],navigation:[],playback:[],media:{},latestCursor:0,fromCursor:1,throughCursor:0}), players: watch.players.map(player => ({ ...player, ...gamePlayerModelPreference(config, player.id, preferences.get(player.id)) })) };
 }
@@ -153,7 +145,11 @@ export function materializeWerewolfWatch(projection: ReturnType<typeof projectWe
   // of advertising a 404 or reading today's mutable Agent Profile.
   const portrait = (id: string) => productionSnapshot && !referenceByPlayer.get(id)?.bundled && !referenceByPlayer.get(id)?.portraitHash
     ? null : character(id);
-  const body = (id: string) => referenceByPlayer.get(id)?.kind === "full_body" ? `${character(id)}&image=body` : null;
+  const body = (id: string) => {
+    const reference = referenceByPlayer.get(id);
+    if (reference?.kind !== "full_body") return null;
+    return reference.transparentUrl ?? `${character(id)}&image=body`;
+  };
   const identity = <T extends { id: string }>(player: T) => {
     const head = referenceByPlayer.get(player.id)?.profile.headPosition;
     return { ...player, avatarUrl: portrait(player.id), fullBodyReferenceUrl: body(player.id),

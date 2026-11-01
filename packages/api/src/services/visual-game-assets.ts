@@ -12,6 +12,8 @@ import { bundledHouseBody } from "@influence/engine/house-character-art";
 import { readLocalUpload } from "../lib/storage.js";
 import { renderVisualAssetBestEffort } from "./visual-render-journal.js";
 import { readVisualArtifact, storeVisualArtifact } from "./visual-scene-store.js";
+import { CUTOUT_RECIPE } from "./character-cutouts.js";
+import sharp from "sharp";
 
 export class VisualRecoveryRequired extends Error {
   constructor(message: string) { super(message); this.name = "VisualRecoveryRequired"; }
@@ -46,10 +48,11 @@ export async function readVisualProfileImage(url: string | null, profile: Pick<F
   const bucket = process.env.LINODE_OBJ_BUCKET;
   const host = endpoint ? new URL(endpoint).host : null;
   if (parsed.protocol !== "https:" || !host || !bucket || ![host, `${bucket}.${host}`].includes(parsed.host)) throw new Error("Visual reference must use application image storage");
+  const maxBytes = /^\/characters\/[a-f0-9]{64}\.png$/.test(parsed.pathname) ? 32 * 1024 * 1024 : 16_000_000;
   const response = await fetch(parsed, { redirect: "error", signal: AbortSignal.timeout(30_000) });
-  if (!response.ok || Number(response.headers.get("content-length") ?? 0) > 16_000_000) throw new Error("Visual reference download failed");
+  if (!response.ok || Number(response.headers.get("content-length") ?? 0) > maxBytes) throw new Error("Visual reference download failed");
   const image = Buffer.from(await response.arrayBuffer());
-  if (image.length > 16_000_000) throw new Error("Visual reference exceeds 16 MB");
+  if (image.length > maxBytes) throw new Error("Visual reference exceeds the image upload limit");
   return image;
 }
 
@@ -92,6 +95,11 @@ export async function prepareVisualGameAssets(db: DrizzleDB, gameId: string, ass
         && createHash("sha256").update(preparedReference).digest("hex") === head.sourceHash && validHeadRectangle(head.rect) ? head.rect : undefined;
       assets.cast.push({ headRectangle, id: profile.id, name: profile.name, referenceArtifactId: await storeVisualArtifact(db, gameId, reference), portraitFallback: !preparedReference, performanceInstructions: profile.performanceInstructions });
       await save();
+      if (preparedReference && (await sharp(preparedReference).stats()).isOpaque) {
+        const member = assets.cast.at(-1)!;
+        await write(tx => tx.insert(schema.characterCutoutDemands).values({ id: crypto.randomUUID(), gameId, playerId: profile.id,
+          sourceKey: `/api/games/${gameId}/visual/artifacts/${member.referenceArtifactId}`, recipe: CUTOUT_RECIPE }).onConflictDoNothing());
+      }
     }
     for (const room of Object.values(VISUAL_ROOMS)) {
       if (assets.backgrounds[room.id]) continue;

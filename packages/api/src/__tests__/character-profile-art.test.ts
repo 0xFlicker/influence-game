@@ -100,4 +100,18 @@ test("ordinary profile publication freezes approved source, portrait and head in
   const reread = await db.transaction(tx => buildWerewolfProductionSourceSnapshot(tx, old.wolf, { audience: "mystery", thinking: false, snapshot: oldSource.snapshot }, true));
   expect(reread.snapshot).toEqual(oldSource.snapshot);
   expect(reread.window).toEqual(oldSource.window);
+
+  // Transparency belongs to the old image, not to the character's latest revision.
+  const transparent = await storePublicAvatarImage(createOpaqueAvatarStorageKey("uploaded", "png"), "image/png", new Uint8Array(original).buffer, context.publicBaseUrl);
+  await db.update(schema.agentContentAssets).set({ transparentUrl: transparent.publicUrl }).where(eq(schema.agentContentAssets.hash, payloadHash(original)));
+  const oldWithCutout = await (await createVisualRoutes(db).request(`/api/games/${old.influence}/visual`)).json() as { fullBodies: Record<string, string> };
+  expect(oldWithCutout.fullBodies).toContainValue(transparent.publicUrl);
+  const newWithCutout = await (await createVisualRoutes(db).request(`/api/games/${fresh.influence}/visual`)).json() as { fullBodies: Record<string, string> };
+  expect(newWithCutout.fullBodies).toContainValue(replacement.fullBodyReferenceUrl);
+  const oldWolf = await db.transaction(tx => buildWerewolfProductionSourceSnapshot(tx, old.wolf, { audience: "mystery", thinking: false, snapshot: oldSource.snapshot }, true));
+  expect(oldWolf.snapshot.sourceHash).toBe(oldSource.snapshot.sourceHash);
+  expect(oldWolf.window.players.find(player => player.id === old.player)?.fullBodyReferenceUrl).toBe(transparent.publicUrl);
+  expect((await readWerewolfWatch(db, fresh.wolf, "mystery", 1, 64)).players.find(player => player.id === fresh.player)?.fullBodyReferenceUrl).not.toBe(transparent.publicUrl);
+  await expect((async () => { await db.update(schema.agentContentAssets).set({ hash: "0".repeat(64) }).where(eq(schema.agentContentAssets.hash, payloadHash(original))); })()).rejects.toMatchObject({ cause: { message: "Accepted character evidence is immutable" } });
+
 });

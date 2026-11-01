@@ -1,4 +1,5 @@
 "use client";
+import {characterImageError} from "@/components/character/image-error";
 import {WEREWOLF_ROOMS} from "./werewolf-rooms";
 import { useEffect, useState } from "react";
 import type { AcceptedVisualScene } from "@influence/engine/visual-mode";
@@ -34,7 +35,7 @@ export function WerewolfHuntStage({ cue, scene, onReady }: { cue: WerewolfWatchC
     {save ? <aside data-doctor-save className="z-10 mx-auto flex w-full max-w-xl shrink-0 items-center gap-3 rounded-xl border border-emerald-200/30 bg-[#102923] p-3 text-emerald-50 sm:gap-4 sm:p-4">
       {doctorUrl && failedDoctorUrl !== doctorUrl ?
         // eslint-disable-next-line @next/next/no-img-element -- frozen doctor portrait
-        <img src={doctorUrl} alt={save.doctor.name} onError={() => setFailedDoctorUrl(doctorUrl)} className={`size-14 shrink-0 rounded-lg border border-emerald-200/30 bg-black/20 sm:size-16 ${save.doctor.avatarUrl ? "object-cover" : "object-contain"}`} />
+        <img src={doctorUrl} alt={save.doctor.name} onError={event => void characterImageError(event, () => setFailedDoctorUrl(doctorUrl))} className={`size-14 shrink-0 rounded-lg border border-emerald-200/30 bg-black/20 sm:size-16 ${save.doctor.avatarUrl ? "object-cover" : "object-contain"}`} />
         : <span aria-hidden="true" className="flex size-14 shrink-0 items-center justify-center rounded-lg border border-emerald-200/30 text-2xl">+</span>}
       <div className="min-w-0">
         <p className="text-balance text-base font-semibold sm:text-lg">{save.target.name} was saved by the Doctor.</p>
@@ -48,5 +49,5 @@ function HuntPortrait({player, wolfUrl}: {player: {name: string; avatarUrl: stri
   const [failed, setFailed] = useState<ReadonlySet<string>>(new Set());
   const source = [wolfUrl, player.fullBodyReferenceUrl, player.avatarUrl].find(url => url && !failed.has(url));
   // The caption remains when all available pictures fail.
-  return source ? <img src={source} alt={player.name} className="max-h-[38cqh] w-full object-contain" onError={() => setFailed(previous => new Set(previous).add(source))} /> : null; // eslint-disable-line @next/next/no-img-element
+  return source ? <img src={source} alt={player.name} className="max-h-[38cqh] w-full object-contain" onError={event => void characterImageError(event, () => setFailed(previous => new Set(previous).add(source)))} /> : null; // eslint-disable-line @next/next/no-img-element
 }

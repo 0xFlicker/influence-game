@@ -1,37 +1,42 @@
-import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import * as imageStorage from "../services/visual-game-assets.js";
+import { storePublicAvatarImage } from "../lib/storage.js";
+import { createOpaqueAvatarStorageKey } from "../lib/avatar-storage-keys.js";
+import { convertCharacterArt } from "../scripts/convert-character-art.js";
+import { readCharacterArtwork } from "../services/character-art.js";
+import { afterEach, beforeEach, expect, test, spyOn } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
-import { acceptCutout, claimCutout, cutoutMode, CUTOUT_RECIPE, enqueueCutout, expireCutoutLeases, prepareCutoutDemands, readyCharacterCutoutUrls, readyCutoutsByHash, requestCharacterCutouts, reserveCutout } from "../services/character-cutouts.js";
-import { createCharacterCutoutRoutes } from "../routes/character-cutouts.js";
-import { createVisualReplayProductionRoutes } from "../routes/visual-replay-production.js";
-import { createSessionToken } from "../middleware/auth.js";
-import { grantTestAuthority } from "./rbac-fixtures.js";
-import { storeBinary, storeJson } from "../services/payload-storage.js";
+import { acceptCutout, claimCutout, CUTOUT_RECIPE, enqueueCutout, expireCutoutLeases, reserveCutout, prepareCutoutDemands, savePendingCharacterArt } from "../services/character-cutouts.js";
+import { loadPayloads, storeBinary, storeJson } from "../services/payload-storage.js";
+import { saveReadyCharacterArt, isSavedCharacterArt } from "../services/character-art-save.js";
 import { createVisualRoutes } from "../routes/visual.js";
-import { createWerewolfRoutes } from "../routes/werewolf.js";
-import { completedWerewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
-import { readWerewolfWatch } from "../services/werewolf-presentation.js";
-import { readWerewolfProductionCharacter, readWerewolfProductionSource } from "../services/werewolf-production-source.js";
+import { contentSnapshot } from "../services/agent-content-submissions.js";
+import { werewolfReferenceMetadata } from "../services/werewolf-production.js";
 
-let db: DrizzleDB;
-let source: Buffer, cutout: Buffer;
+let db: DrizzleDB, source: Buffer, cutout: Buffer, directory: string;
 const saved = { ...process.env };
+const keys = ["INFLUENCE_STORAGE_BACKEND", "INFLUENCE_LOCAL_UPLOAD_DIR", "CHARACTER_CUTOUT_MODE", "CUTOUT_API_URL", "INFLUENCE_DEPLOYMENT_ENVIRONMENT"] as const;
 beforeEach(async () => {
   db = await setupTestDB();
+  directory = await mkdtemp(join(tmpdir(), "character-art-"));
+  process.env.INFLUENCE_STORAGE_BACKEND = "local";
+  process.env.INFLUENCE_LOCAL_UPLOAD_DIR = directory;
   delete process.env.INFLUENCE_DEPLOYMENT_ENVIRONMENT;
   process.env.CHARACTER_CUTOUT_MODE = "local";
-  process.env.CUTOUT_API_URL = "http://host.docker.internal:3018";
+  process.env.CUTOUT_API_URL = "http://localhost:3018";
   source = await sharp({ create: { width: 8, height: 12, channels: 3, background: "red" } }).png().toBuffer();
   const pixels = Buffer.alloc(8 * 12 * 4, 255); pixels[3] = 0;
   cutout = await sharp(pixels, { raw: { width: 8, height: 12, channels: 4 } }).png().toBuffer();
-  await db.insert(schema.games).values({ id: "cutouts-game", slug: "cutouts-game", status: "completed", config: "{}" });
+  await db.insert(schema.games).values({ id: "art-game", slug: "art-game", status: "completed", config: "{}" });
 });
-afterEach(() => {
-  for (const key of ["CHARACTER_CUTOUT_MODE", "CUTOUT_API_URL", "INFLUENCE_DEPLOYMENT_ENVIRONMENT", "JWT_SECRET"]) {
-    if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
-  }
+afterEach(async () => {
+  for (const key of keys) { if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; }
+  if (directory) await rm(directory, { recursive: true, force: true });
 });
 
 test("sources deduplicate; duplicate workers and stale leases cannot publish", async () => {
@@ -57,250 +62,172 @@ test("sources deduplicate; duplicate workers and stale leases cannot publish", a
   expect(await acceptCutout(db, first.id, retry.token, cutout)).toBe(false);
 });
 
-test("playback keeps original until ready; exact binding and hidden-game checks protect output", async () => {
-  const job = await enqueueCutout(db, source);
-  await db.insert(schema.agentContentAssets).values({ hash: job.sourceHash, bytes: await storeBinary(source) });
-  const sources = { p1: `sha256:${job.sourceHash}` };
-  expect(await requestCharacterCutouts(db, "cutouts-game", sources)).toEqual({});
-  await prepareCutoutDemands(db);
-  const reservation = (await reserveCutout(db, job.id))!;
-  const app = createCharacterCutoutRoutes(db);
-  const auth = { Authorization: `Bearer ${reservation.token}` };
-  expect((await app.request(`/api/internal/cutouts/${job.id}/source`, { headers: auth })).status).toBe(404);
-  expect(await (await app.request(`/api/internal/cutouts/${job.id}/claim`, { method: "POST", headers: auth, body: JSON.stringify({ recipe: CUTOUT_RECIPE }) })).json()).toEqual({ claimed: true, sourceHash: job.sourceHash });
-  expect(Buffer.from(await (await app.request(`/api/internal/cutouts/${job.id}/source`, { headers: auth })).arrayBuffer())).toEqual(Buffer.from(source));
-  expect((await app.request(`/api/internal/cutouts/${job.id}/result`, { method: "PUT", headers: auth, body: cutout })).status).toBe(200);
-  const ready = await requestCharacterCutouts(db, "cutouts-game", sources);
-  expect(ready.p1).toContain("/cutouts/");
-  expect(await requestCharacterCutouts(db, "cutouts-game", { p1: "changed-source" })).toEqual({});
-  const response = await app.request(ready.p1!);
-  expect(response.status).toBe(200);
-  expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from(cutout));
-  process.env.CHARACTER_CUTOUT_MODE = "disabled";
-  expect(await requestCharacterCutouts(db, "cutouts-game", sources)).toEqual(ready);
-  expect(Buffer.from(await (await app.request(ready.p1!)).arrayBuffer())).toEqual(Buffer.from(cutout));
-  const existingDemands = await db.select().from(schema.characterCutoutDemands);
-  expect(await requestCharacterCutouts(db, "cutouts-game", { p2: "unprepared-source" })).toEqual({});
-  expect(await db.select().from(schema.characterCutoutDemands)).toEqual(existingDemands);
-  expect((await app.request(ready.p1!.replace("cutouts-game", "another-game"))).status).toBe(404);
-  await db.update(schema.games).set({ hiddenAt: new Date().toISOString() }).where(eq(schema.games.id, "cutouts-game"));
-  expect((await app.request(ready.p1!)).status).toBe(404);
-});
 
-test("Influence metadata adopts a cutout while fixed snapshots retain their original", async () => {
-  await db.insert(schema.visualArtifacts).values({ id: "body-art", gameId: "cutouts-game", image: await storeBinary(source), contentHash: "source", width: 8, height: 12 });
-  await db.insert(schema.visualGameAssets).values({ gameId: "cutouts-game", profiles: [], cast: [{ id: "p1", name: "Example", referenceArtifactId: "body-art", performanceInstructions: "", portraitFallback: false }] });
-  const route = createVisualRoutes(db);
-  const read = async (path: string) => (await (await route.request(path)).json()) as { fullBodies: Record<string, string> };
-  const before = await read("/api/games/cutouts-game/visual");
-  expect(before.fullBodies.p1).toBe("/api/games/cutouts-game/visual/artifacts/body-art");
-  await prepareCutoutDemands(db);
-  const [job] = await db.select().from(schema.characterCutouts);
-  const reservation = (await reserveCutout(db, job!.id))!;
-  await claimCutout(db, job!.id, reservation.token, CUTOUT_RECIPE);
-  await acceptCutout(db, job!.id, reservation.token, cutout);
-  expect((await read("/api/games/cutouts-game/visual")).fullBodies.p1).toContain("/cutouts/");
-  expect((await read("/api/games/cutouts-game/visual?snapshot=%7B%7D")).fullBodies.p1).toBe(before.fullBodies.p1);
-});
-
-test("disabled generation preserves authorized producer cutout reads while hidden games stay private", async () => {
+async function characterFixture() {
   const job = await enqueueCutout(db, source);
-  await db.insert(schema.agentContentAssets).values({ hash: job.sourceHash, bytes: await storeBinary(source) });
-  const sources = { p1: `sha256:${job.sourceHash}` };
-  await requestCharacterCutouts(db, "cutouts-game", sources);
-  await prepareCutoutDemands(db);
-  const reserved = (await reserveCutout(db, job.id))!;
-  await claimCutout(db, job.id, reserved.token, CUTOUT_RECIPE);
-  await acceptCutout(db, job.id, reserved.token, cutout);
-  const ready = await readyCharacterCutoutUrls(db, "cutouts-game", sources);
-  const url = ready.p1!.replace("/api/games/", "/api/admin/production/games/");
-  await db.insert(schema.users).values({ id: "cutout-producer" });
-  await grantTestAuthority(db, "cutout-producer", [], "producer");
-  process.env.JWT_SECRET = "cutout-producer-regression";
-  const token = await createSessionToken("cutout-producer");
-  const app = createVisualReplayProductionRoutes(db);
-  process.env.CHARACTER_CUTOUT_MODE = "disabled";
-  await db.update(schema.games).set({ hiddenAt: new Date().toISOString() }).where(eq(schema.games.id, "cutouts-game"));
-  expect((await createCharacterCutoutRoutes(db).request(ready.p1!)).status).toBe(404);
-  expect((await app.request(url)).status).toBe(401);
-  const headers = { Authorization: `Bearer ${token}` };
-  expect((await app.request(url.replace("cutouts-game", "other-game"), { headers })).status).toBe(404);
-  const response = await app.request(url, { headers });
-  expect(response.status).toBe(200);
-  expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from(cutout));
-});
-
-test("live cutout reads include an accepted result within the current JavaScript millisecond", async () => {
-  const job = await enqueueCutout(db, source);
-  await db.insert(schema.agentContentAssets).values({ hash: job.sourceHash, bytes: await storeBinary(source) });
-  const sources = { p1: `sha256:${job.sourceHash}` };
-  await requestCharacterCutouts(db, "cutouts-game", sources);
-  await prepareCutoutDemands(db);
-  const reserved = (await reserveCutout(db, job.id))!;
-  expect((await claimCutout(db, job.id, reserved.token, CUTOUT_RECIPE))?.status).toBe("running");
-  expect(await acceptCutout(db, job.id, reserved.token, cutout)).toBe(true);
-  // Keep a half-millisecond that Date cannot represent, safely before the real
-  // acceptance time so the database clock never sees a future fixture result.
-  const [ready] = await db.update(schema.characterCutouts)
-    .set({ readyAt: sql`date_trunc('milliseconds', ready_at) - interval '500 microseconds'` })
-    .where(eq(schema.characterCutouts.id, job.id)).returning();
-  expect(ready!.status).toBe("ready");
-  const [demand] = await db.select().from(schema.characterCutoutDemands);
-  expect(demand!.cutoutId).toBe(job.id);
-  const cutoff = ready!.readyAt!;
-  setSystemTime(cutoff);
-  try {
-    expect((await readyCharacterCutoutUrls(db, "cutouts-game", sources)).p1).toContain("/cutouts/");
-    expect(await readyCharacterCutoutUrls(db, "cutouts-game", sources, cutoff)).toEqual({});
-    expect((await readyCharacterCutoutUrls(db, "cutouts-game", sources, new Date(cutoff.getTime() + 1))).p1).toContain("/cutouts/");
-  } finally { setSystemTime(); }
-});
-
-test("failed jobs stop after three leases and viewers do not reset retry budgets", async () => {
-  const job = await enqueueCutout(db, source);
-  for (let i = 0; i < 3; i++) {
-    expect(await reserveCutout(db, job.id)).not.toBeNull();
-    await expireCutoutLeases(db, new Date(Date.now() + 2 * 3600_000));
-  }
-  expect(await reserveCutout(db, job.id)).toBeNull();
-  const [failed] = await db.select().from(schema.characterCutouts).where(eq(schema.characterCutouts.id, job.id));
-  expect(failed!.status).toBe("failed"); expect(failed!.attempts).toBe(3);
-});
-
-test("completion cutoff pins both absent and ready cutouts for production exports", async () => {
-  const before = new Date(Date.now() - 1000);
-  const job = await enqueueCutout(db, source);
-  await db.insert(schema.agentContentAssets).values({ hash: job.sourceHash, bytes: await storeBinary(source) });
-  const sources = { p1: `sha256:${job.sourceHash}` };
-  await requestCharacterCutouts(db, "cutouts-game", sources);
-  await prepareCutoutDemands(db);
-  const reserved = (await reserveCutout(db, job.id))!;
-  await claimCutout(db, job.id, reserved.token, CUTOUT_RECIPE);
-  await acceptCutout(db, job.id, reserved.token, cutout);
-  expect(await readyCharacterCutoutUrls(db, "cutouts-game", sources, before)).toEqual({});
-  expect((await readyCutoutsByHash(db, [job.sourceHash], before.toISOString())).size).toBe(0);
-  const after = new Date(Date.now() + 1000);
-  expect((await readyCharacterCutoutUrls(db, "cutouts-game", sources, after)).p1).toContain("/cutouts/");
-  expect((await readyCutoutsByHash(db, [job.sourceHash], after.toISOString())).get(job.sourceHash)?.image?.sha256).toBeDefined();
-});
-
-async function werewolfCutoutFixture() {
-  const job = await enqueueCutout(db, source);
-  const events = await completedWerewolfResultsFixture("saved", "cutouts-game");
-  const started = events[0]!;
-  if (started.type !== "werewolf.started") throw new Error("Expected fixture start");
-  const player = started.payload.players[0]!;
-  player.agentProfileId = "example-profile"; player.contentRevisionId = "example-revision";
   await db.insert(schema.users).values({ id: "owner" });
-  await db.insert(schema.agentContentRevisions).values({ id: "example-revision", agentProfileId: "example-profile", userId: "owner", fingerprint: "fixture",
-    snapshot: await storeJson({ avatarUrl: "portrait", fullBodyReferenceUrl: "body", assets: { portrait: job.sourceHash, body: job.sourceHash } }) });
+  await db.insert(schema.agentProfiles).values({ id: "character", userId: "owner", name: "Example", personality: "Patient", fullBodyReferenceUrl: "/old-body.png" });
+  const [created] = await db.select().from(schema.agentProfiles);
+  const snapshot = { ...contentSnapshot(created!), assets: { "/old-body.png": job.sourceHash } };
   await db.insert(schema.agentContentAssets).values({ hash: job.sourceHash, bytes: await storeBinary(source) });
-  await db.update(schema.games).set({ gameKind: "werewolf", startedAt: "2026-09-01T00:00:00.000Z" }).where(eq(schema.games.id, "cutouts-game"));
-  await db.insert(schema.werewolfEvents).values(events.map(event => ({ gameId: "cutouts-game", sequence: event.sequence, event })));
-  return { job, player };
+  await db.insert(schema.agentContentRevisions).values({ id: "revision", agentProfileId: "character", userId: "owner", fingerprint: "before", snapshot: await storeJson(snapshot) });
+  await db.update(schema.agentProfiles).set({ contentRevisionId: "revision", latestContentRevisionId: "revision" }).where(eq(schema.agentProfiles.id, "character"));
+  await db.insert(schema.gamePlayers).values({ id: "player", gameId: "art-game", agentProfileId: "character", agentConfig: "{}", persona: JSON.stringify({ name: "Example", contentRevisionId: "revision", fullBodyReferenceUrl: "/old-body.png", personality: "Patient" }) });
+  await db.insert(schema.visualArtifacts).values({ id: "old-art", gameId: "art-game", contentHash: job.sourceHash, image: await storeBinary(source), width: 8, height: 12 });
+  await db.insert(schema.visualGameAssets).values({ gameId: "art-game", profiles: [{ id: "player", name: "Example", personaKey: "", fullBodyReferenceUrl: "/old-body.png", avatarUrl: null, performanceInstructions: "" }],
+    cast: [{ id: "player", name: "Example", referenceArtifactId: "old-art", performanceInstructions: "", portraitFallback: false }] });
+  await db.insert(schema.characterCutoutDemands).values({ id: "demand", agentProfileId: "character", playerId: "character", sourceKey: `sha256:${job.sourceHash}`, recipe: CUTOUT_RECIPE, cutoutId: job.id });
+  return job;
 }
-
-test("Werewolf fixed windows and character bytes stay pinned while a fresh cutoff adopts ready cutouts", async () => {
-  const { job, player } = await werewolfCutoutFixture();
-  const cutoff = new Date(Date.now() - 2000).toISOString();
-  const watch = await readWerewolfWatch(db, "cutouts-game", "mystery", 1, 64, cutoff);
-  expect(watch.players[0]!.fullBodyReferenceUrl).toContain("image=body");
-  const route = createWerewolfRoutes(db);
-  const body = async (url: string) => {
-    const response = await route.request(url);
-    expect(response.status).toBe(200);
-    return Buffer.from(await response.arrayBuffer());
-  };
-  expect(await body(watch.players[0]!.fullBodyReferenceUrl!)).toEqual(Buffer.from(source));
-  const pinned = await readWerewolfProductionSource(db, "cutouts-game", { audience: "mystery", thinking: false });
-  await prepareCutoutDemands(db);
-  const reserved = (await reserveCutout(db, job.id))!;
-  await claimCutout(db, job.id, reserved.token, CUTOUT_RECIPE);
-  await acceptCutout(db, job.id, reserved.token, cutout);
-  expect(await readWerewolfWatch(db, "cutouts-game", "mystery", 1, 64, cutoff)).toEqual(watch);
-  expect(await body(watch.players[0]!.fullBodyReferenceUrl!)).toEqual(Buffer.from(source));
-  const live = await readWerewolfWatch(db, "cutouts-game", "mystery", 1, 64, new Date(Date.now() + 1000).toISOString());
-  expect(await body(live.players[0]!.fullBodyReferenceUrl!)).toEqual(Buffer.from(cutout));
-  expect(await body(live.players[0]!.avatarUrl!)).toEqual(Buffer.from(source));
-  expect(live.players[0]!.avatarUrl?.split("?")[0]).toBe(watch.players[0]!.avatarUrl?.split("?")[0]);
-  const reread = await readWerewolfProductionSource(db, "cutouts-game", { audience: "mystery", thinking: false, snapshot: pinned.snapshot });
-  expect(reread.snapshot).toEqual(pinned.snapshot);
-  expect((await readWerewolfProductionCharacter(db, "cutouts-game", player.id, { snapshot: pinned.snapshot, image: "body" })).bytes).toEqual(new Uint8Array(source));
-  const refreshed = await readWerewolfProductionSource(db, "cutouts-game", { audience: "mystery", thinking: false, snapshot: pinned.snapshot, refreshVisuals: true });
-  expect((await readWerewolfProductionCharacter(db, "cutouts-game", player.id, { snapshot: refreshed.snapshot, image: "body" })).bytes).toEqual(new Uint8Array(cutout));
-  expect((await readWerewolfProductionCharacter(db, "cutouts-game", player.id, { snapshot: refreshed.snapshot, image: "portrait" })).bytes).toEqual(new Uint8Array(source));
-});
-
-test("Werewolf uses a preexisting ready cutout before and after asynchronous demand association", async () => {
-  const { job } = await werewolfCutoutFixture();
-  const reserved = (await reserveCutout(db, job.id))!;
-  await claimCutout(db, job.id, reserved.token, CUTOUT_RECIPE);
-  await acceptCutout(db, job.id, reserved.token, cutout);
-  const cutoff = new Date(Date.now() + 1000).toISOString();
-  const watch = await readWerewolfWatch(db, "cutouts-game", "mystery", 1, 64, cutoff);
-  const [pending] = await db.select().from(schema.characterCutoutDemands);
-  expect(pending!.cutoutId).toBeNull();
-  const route = createWerewolfRoutes(db);
-  const response = await route.request(watch.players[0]!.fullBodyReferenceUrl!);
-  expect(response.status).toBe(200);
-  expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from(cutout));
-  await prepareCutoutDemands(db);
-  const [linked] = await db.select().from(schema.characterCutoutDemands);
-  expect(linked!.cutoutId).toBe(job.id);
-  expect(await readWerewolfWatch(db, "cutouts-game", "mystery", 1, 64, cutoff)).toEqual(watch);
-});
-
-test("disabling generation preserves frozen Werewolf bytes, source hashes and cutoff exclusions", async () => {
-  const { job, player } = await werewolfCutoutFixture();
-  const original = await readWerewolfProductionSource(db, "cutouts-game", { audience: "mystery", thinking: false });
-  const reserved = (await reserveCutout(db, job.id))!;
-  await claimCutout(db, job.id, reserved.token, CUTOUT_RECIPE);
-  await acceptCutout(db, job.id, reserved.token, cutout);
-  const pinned = await readWerewolfProductionSource(db, "cutouts-game", { audience: "mystery", thinking: false });
-  const watch = await readWerewolfWatch(db, "cutouts-game", "mystery", 1, 64, pinned.snapshot.publicationCutoff);
-  const route = createWerewolfRoutes(db);
-  const url = watch.players[0]!.fullBodyReferenceUrl!;
-  const body = async () => {
-    const response = await route.request(url);
-    expect(response.status).toBe(200);
-    return Buffer.from(await response.arrayBuffer());
-  };
-  expect(await body()).toEqual(Buffer.from(cutout));
-  const demands = await db.select().from(schema.characterCutoutDemands);
-  for (const environment of ["disabled", "staging"] as const) {
-    process.env.CHARACTER_CUTOUT_MODE = "disabled";
-    if (environment === "staging") process.env.INFLUENCE_DEPLOYMENT_ENVIRONMENT = "staging";
-    expect(await body()).toEqual(Buffer.from(cutout));
-    const reread = await readWerewolfProductionSource(db, "cutouts-game", { audience: "mystery", thinking: false, snapshot: pinned.snapshot });
-    expect(reread.snapshot).toEqual(pinned.snapshot);
-    expect(await readWerewolfWatch(db, "cutouts-game", "mystery", 1, 64, pinned.snapshot.publicationCutoff)).toEqual(watch);
-    expect((await readWerewolfProductionCharacter(db, "cutouts-game", player.id, { snapshot: pinned.snapshot, image: "body" })).bytes).toEqual(new Uint8Array(cutout));
-    expect((await readWerewolfProductionCharacter(db, "cutouts-game", player.id, { snapshot: original.snapshot, image: "body" })).bytes).toEqual(new Uint8Array(source));
-    expect(await db.select().from(schema.characterCutoutDemands)).toEqual(demands);
-  }
-});
-
-test("staging is disabled even when AWS configuration is present", async () => {
-  expect(cutoutMode({ CHARACTER_CUTOUT_MODE: "aws-batch", INFLUENCE_DEPLOYMENT_ENVIRONMENT: "staging" })).toBe("disabled");
-  expect(cutoutMode({ CHARACTER_CUTOUT_MODE: "local", NODE_ENV: "staging" })).toBe("disabled");
-  expect(() => cutoutMode({ CHARACTER_CUTOUT_MODE: "local", CUTOUT_API_URL: "http://example.com" })).toThrow("localhost");
-  process.env.INFLUENCE_DEPLOYMENT_ENVIRONMENT = "staging";
-  expect(await requestCharacterCutouts(db, "cutouts-game", { p: "ignored" })).toEqual({});
-  expect(await db.select().from(schema.characterCutoutDemands)).toHaveLength(0);
-  expect((await createCharacterCutoutRoutes(db).request("/api/internal/cutouts/test/source")).status).toBe(404);
-});
-
-test("failed derivatives preserve original playback and fixed export references", async () => {
-  await db.insert(schema.visualArtifacts).values({ id: "failed-body", gameId: "cutouts-game", image: await storeBinary(source), contentHash: "source", width: 8, height: 12 });
-  await db.insert(schema.visualGameAssets).values({ gameId: "cutouts-game", profiles: [], cast: [{ id: "p1", name: "Example", referenceArtifactId: "failed-body", performanceInstructions: "", portraitFallback: false }] });
+async function complete(id: string) {
+  const reservation = (await reserveCutout(db, id))!;
+  await claimCutout(db, id, reservation.token, CUTOUT_RECIPE);
+  expect(await acceptCutout(db, id, reservation.token, cutout)).toBe(true);
+}
+test("revision-specific transparent artwork serves old and new seats without job records", async () => {
+  const job = await characterFixture();
+  await complete(job.id);
+  const [profile] = await db.select().from(schema.agentProfiles);
+  expect(profile!.fullBodyReferenceUrl).toBe("/old-body.png");
+  expect(isSavedCharacterArt((await db.select().from(schema.agentContentAssets))[0]!.transparentUrl)).toBe(true);
+  const [original] = await db.select().from(schema.gamePlayers);
+  expect(JSON.parse(original!.persona).fullBodyReferenceUrl).toBe("/old-body.png");
+  await db.insert(schema.gamePlayers).values({ id: "new-player", gameId: "art-game", agentProfileId: "character", persona: JSON.stringify({ name: "Example", contentRevisionId: "revision", fullBodyReferenceUrl: "/old-body.png" }), agentConfig: "{}" });
+  await db.delete(schema.characterCutoutDemands); await db.delete(schema.characterCutouts);
   const route = createVisualRoutes(db);
-  const read = async (suffix = "") => (await (await route.request(`/api/games/cutouts-game/visual${suffix}`)).json()) as { fullBodies: Record<string, string> };
-  const original = (await read()).fullBodies.p1;
+  for (let reload = 0; reload < 2; reload++) {
+    const response = await route.request("/api/games/art-game/visual");
+    const result = await response.json() as { fullBodies: Record<string, string> };
+    expect(result.fullBodies.player).toBe((await db.select().from(schema.agentContentAssets))[0]!.transparentUrl!);
+    expect(result.fullBodies["new-player"]).toBe((await db.select().from(schema.agentContentAssets))[0]!.transparentUrl!);
+  }
+  const [revision] = await loadPayloads(db.select().from(schema.agentContentRevisions));
+  expect(revision!.snapshot.fullBodyReferenceUrl).toBe("/old-body.png");
+  const refs = await werewolfReferenceMetadata(db, "art-game", [{ id: "player", name: "Example", personality: "Patient", backstory: "", strategy: "", avatarUrl: null, agentProfileId: "character", contentRevisionId: "revision" }]);
+  expect(refs[0]!.transparentUrl).toBe((await db.select().from(schema.agentContentAssets))[0]!.transparentUrl!);
+});
+
+test("temporary publication failure retries finished bytes without another generation", async () => {
+  const job = await characterFixture();
+  process.env.INFLUENCE_STORAGE_BACKEND = "disabled";
+  await complete(job.id);
+  const [finished] = await db.select().from(schema.characterCutouts);
+  expect(finished!.status).toBe("ready"); expect(finished!.artSavedAt).toBeNull();
+  process.env.INFLUENCE_STORAGE_BACKEND = "local";
+  await saveReadyCharacterArt(db, job.id);
+  const [saved] = await db.select().from(schema.characterCutouts);
+  expect(saved!.image).toEqual(finished!.image);
+  expect(saved!.attempts).toBe(finished!.attempts);
+  expect(saved!.artSavedAt).not.toBeNull();
+});
+
+test("attaching a character after completion reuses the finished image", async () => {
+  const job = await characterFixture();
+  await db.delete(schema.characterCutoutDemands);
+  await complete(job.id);
+  await db.insert(schema.characterCutoutDemands).values({ id: "late", agentProfileId: "character", playerId: "character", sourceKey: `sha256:${job.sourceHash}`, recipe: CUTOUT_RECIPE });
   await prepareCutoutDemands(db);
-  const [job] = await db.select().from(schema.characterCutouts);
-  for (let i = 0; i < 3; i++) { await reserveCutout(db, job!.id); await expireCutoutLeases(db, new Date(Date.now() + 3600_001)); }
-  expect((await read()).fullBodies.p1).toBe(original);
-  expect((await read("?snapshot=%7B%7D")).fullBodies.p1).toBe(original);
-  const [failed] = await db.select().from(schema.characterCutouts);
-  expect(failed?.status).toBe("failed"); expect(failed?.attempts).toBe(3);
+  const [profile] = await db.select().from(schema.agentProfiles);
+  expect(profile!.fullBodyReferenceUrl).toBe("/old-body.png");
+  expect(isSavedCharacterArt((await db.select().from(schema.agentContentAssets))[0]!.transparentUrl)).toBe(true);
+  const [saved] = await db.select().from(schema.characterCutouts);
+  expect(saved!.attempts).toBe(1);
+});
+
+test("saving one owner ignores malformed unrelated seats and revision payloads", async () => {
+  const job = await characterFixture();
+  await db.insert(schema.gamePlayers).values({ id: "unrelated", gameId: "art-game", persona: "not json", agentConfig: "{}" });
+  await complete(job.id);
+  const [profile] = await db.select().from(schema.agentProfiles);
+  expect(profile!.fullBodyReferenceUrl).toBe("/old-body.png");
+  expect(isSavedCharacterArt((await db.select().from(schema.agentContentAssets))[0]!.transparentUrl)).toBe(true);
+});
+
+test("conversion discovers unassociated finished images and is repeatable without generation", async () => {
+  const job = await characterFixture();
+  await db.delete(schema.characterCutoutDemands);
+  await db.update(schema.characterCutouts).set({ status: "ready", image: await storeBinary(cutout), readyAt: new Date() }).where(eq(schema.characterCutouts.id, job.id));
+  await convertCharacterArt(db);
+  const first = await readCharacterArtwork(db, "art-game");
+  expect(isSavedCharacterArt(first[0]!.fullBodyReferenceUrl)).toBe(true);
+  await convertCharacterArt(db);
+  expect(await readCharacterArtwork(db, "art-game")).toEqual(first);
+  expect((await db.select().from(schema.characterCutouts))[0]!.attempts).toBe(0);
+});
+
+test.each(["before", "after"] as const)("game creation %s completion needs no artwork propagation", async order => {
+  const job = await characterFixture();
+  const create = () => db.insert(schema.gamePlayers).values({ id: "concurrent-player", gameId: "art-game", agentProfileId: "character", persona: JSON.stringify({ name: "Example", contentRevisionId: "revision", fullBodyReferenceUrl: "/old-body.png", personality: "Concurrent" }), agentConfig: "{}" });
+  if (order === "before") await create();
+  await complete(job.id);
+  if (order === "after") await create();
+  const art = (await readCharacterArtwork(db, "art-game")).find(row => row.id === "concurrent-player");
+  expect(isSavedCharacterArt(art!.fullBodyReferenceUrl)).toBe(true);
+
+});
+
+test("public verification and uncaptured source reads finish outside the save transaction", async () => {
+  const job = await characterFixture();
+  const uploaded = await storePublicAvatarImage(createOpaqueAvatarStorageKey("uploaded", "png"), "image/png", Uint8Array.from(source).buffer);
+  await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: uploaded.publicUrl, contentRevisionId: null }).where(eq(schema.agentProfiles.id, "character"));
+  await db.update(schema.characterCutouts).set({ status: "ready", image: await storeBinary(cutout), readyAt: new Date() }).where(eq(schema.characterCutouts.id, job.id));
+  let inTransaction = false;
+  const original = imageStorage.readVisualProfileImage;
+  const reads = spyOn(imageStorage, "readVisualProfileImage").mockImplementation(async (...args) => {
+    expect(inTransaction).toBe(false); return original(...args);
+  });
+  const observed = new Proxy(db, { get(target, key, receiver) {
+    if (key !== "transaction") return Reflect.get(target, key, receiver);
+    return (callback: (tx: Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0]) => Promise<unknown>) => target.transaction(async tx => {
+      inTransaction = true;
+      try { return await callback(tx); } finally { inTransaction = false; }
+    });
+  } });
+  try {
+    await saveReadyCharacterArt(observed, job.id);
+    expect(reads).toHaveBeenCalledTimes(1);
+    expect(isSavedCharacterArt((await readCharacterArtwork(db, "art-game"))[0]!.fullBodyReferenceUrl)).toBe(true);
+  } finally { reads.mockRestore(); }
+});
+
+test("disabled generation still reuses a ready image and never creates a new job", async () => {
+  const job = await characterFixture();
+  await db.update(schema.characterCutoutDemands).set({ cutoutId: null });
+  await db.update(schema.characterCutouts).set({ status: "ready", image: await storeBinary(cutout), readyAt: new Date() }).where(eq(schema.characterCutouts.id, job.id));
+  process.env.CHARACTER_CUTOUT_MODE = "disabled";
+  await db.insert(schema.characterCutoutDemands).values(Array.from({ length: 16 }, (_, index) => ({
+    id: `disabled-${index}`, agentProfileId: "character", playerId: "character",
+    sourceKey: `sha256:${(index + 1).toString(16).padStart(64, "0")}`, recipe: CUTOUT_RECIPE,
+    createdAt: new Date(1000 + index),
+  })));
+  await prepareCutoutDemands(db);
+  await prepareCutoutDemands(db);
+  expect(isSavedCharacterArt((await readCharacterArtwork(db, "art-game"))[0]!.fullBodyReferenceUrl)).toBe(true);
+  await db.insert(schema.characterCutoutDemands).values({ id: "no-generation", agentProfileId: "character", playerId: "character", sourceKey: `sha256:${"f".repeat(64)}`, recipe: CUTOUT_RECIPE });
+  await prepareCutoutDemands(db);
+  expect(await db.select().from(schema.characterCutouts)).toHaveLength(1);
+  expect((await db.select().from(schema.characterCutouts))[0]!.attempts).toBe(0);
+});
+
+test("finished save retries do not starve behind sixteen persistently failing images", async () => {
+  const valid = await characterFixture();
+  const image = await storeBinary(cutout);
+  const badImage = { ...image, sha256: "0".repeat(64), key: "payloads/v1/binary/" + "0".repeat(64) };
+  await db.insert(schema.characterCutouts).values(Array.from({ length: 16 }, (_, index) => ({
+    id: `failed-save-${index}`, sourceHash: String(index).padStart(64, "0"), recipe: CUTOUT_RECIPE,
+    source: image, image: badImage, width: 8, height: 12, status: "ready" as const,
+    readyAt: new Date(1000 + index), attempts: 1,
+  })));
+  await db.update(schema.characterCutouts).set({ status: "ready", image, readyAt: new Date(2000), attempts: 1 }).where(eq(schema.characterCutouts.id, valid.id));
+  for (let tick = 0; tick < 3; tick++) await savePendingCharacterArt(db);
+  const rows = await db.select().from(schema.characterCutouts);
+  expect(rows.find(row => row.id === valid.id)!.artSavedAt).not.toBeNull();
+  expect(isSavedCharacterArt((await db.select().from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, valid.sourceHash)))[0]!.transparentUrl)).toBe(true);
+  const failed = rows.filter(row => row.id !== valid.id);
+  expect(failed).toHaveLength(16);
+  expect(failed.every(row => row.status === "ready" && row.artSavedAt === null && row.saveError)).toBe(true);
+  expect(rows.every(row => row.attempts === 1)).toBe(true);
+  await db.update(schema.characterCutouts).set({ image }).where(eq(schema.characterCutouts.id, failed[0]!.id));
+  for (let tick = 0; tick < 2; tick++) await savePendingCharacterArt(db);
+  expect((await db.select().from(schema.characterCutouts).where(eq(schema.characterCutouts.id, failed[0]!.id)))[0]!.artSavedAt).not.toBeNull();
 });

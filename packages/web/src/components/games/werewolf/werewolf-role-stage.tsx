@@ -1,4 +1,5 @@
 "use client";
+import {characterImageError} from "@/components/character/image-error";
 import {WEREWOLF_ROOMS} from "./werewolf-rooms";
 import {useState} from "react";
 import type {WerewolfNightAction, WerewolfWatchMoment} from "@influence/engine/werewolf/watch-contract";
@@ -37,7 +38,7 @@ function NightPlayer({player, label}: {player: Player; label: string}) {
   return <figure className="flex min-h-0 min-w-0 max-w-64 flex-1 flex-col">
     <div className="relative min-h-12 flex-1 rounded-lg bg-black/20">{url && failedUrl !== url ?
       // eslint-disable-next-line @next/next/no-img-element -- match-frozen original character art
-      <img src={url} alt={player.name} onError={() => setFailedUrl(url)} className="absolute inset-0 h-full w-full rounded-lg object-contain" />
+      <img src={url} alt={player.name} onError={event => void characterImageError(event, () => setFailedUrl(url))} className="absolute inset-0 h-full w-full rounded-lg object-contain" />
       : <div aria-hidden="true" className="absolute inset-0 flex items-center justify-center rounded-lg border border-white/15 bg-white/5 text-4xl text-white/40">{player.name.slice(0, 1)}</div>}</div>
     <figcaption className="mt-3 shrink-0 break-words text-sm font-semibold text-white sm:text-base">{player.name}<span className="mt-1 block text-xs font-normal text-white/60">{label}</span></figcaption>
   </figure>;

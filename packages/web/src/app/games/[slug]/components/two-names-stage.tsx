@@ -1,5 +1,6 @@
 "use client";
 
+import {characterImageError} from "@/components/character/image-error";
 import { useState, type CSSProperties } from "react";
 import { GamePlayerAvatarPreview } from "@/components/game-player-avatar-preview";
 import { RoomBackdrop } from "./stage-backdrop";
@@ -349,7 +350,7 @@ function CharacterArt({player: source, prominent = false, portraitScale = 1}: {p
   if (!body || body === failedSource) return <div data-two-names-art="portrait" className="flex min-h-0 flex-1 items-center justify-center"><div style={{transform:`scale(${portraitScale})`}}><Avatar player={source} size={prominent ? "32" : "16"} /></div></div>;
   return <div data-two-names-art="full-body" className="relative mx-auto min-h-0 w-full flex-1">
     {/* eslint-disable-next-line @next/next/no-img-element -- frozen cutout with historical portrait fallback */}
-    <img src={body} alt={source.name} className="absolute inset-0 h-full w-full object-contain object-bottom" onError={() => setFailedSource(body)} />
+    <img src={body} alt={source.name} className="absolute inset-0 h-full w-full object-contain object-bottom" onError={event => void characterImageError(event, () => setFailedSource(body))} />
   </div>;
 }
 

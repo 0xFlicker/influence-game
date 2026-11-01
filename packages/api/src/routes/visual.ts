@@ -1,9 +1,8 @@
+import { readCharacterArtwork } from "../services/character-art.js";
 import { loadPayloads } from "../services/payload-storage.js";
-import { bundledHouseBody } from "@influence/engine/house-character-art";
-import { requestCharacterCutouts } from "../services/character-cutouts.js";
 import { isViewerGame } from "../services/game-visibility.js";
 import { readVisualReviewSources } from "../services/visual-shot-review.js";
-import { validHeadRectangle, type CharacterHeadPosition, type HeadRectangle } from "@influence/engine/character-portrait";
+import { validHeadRectangle, type HeadRectangle } from "@influence/engine/character-portrait";
 import { readViewerMedia } from "../services/visual-media-viewer.js";
 import { controlVisualMedia } from "../services/visual-media-repair.js";
 import { decodeVisualMediaControl } from "../services/visual-media-control.js";
@@ -29,6 +28,7 @@ export function createVisualRoutes(db: DrizzleDB) {
   app.use("/api/admin/games/:id/visual", legacyWerewolfGuard);
   app.use("/api/admin/games/:id/visual/*", legacyWerewolfGuard);
   app.get("/api/games/:id/visual", async (c) => {
+    c.header("Cache-Control", "no-store");
     const [game] = await db.select().from(schema.games).where(or(eq(schema.games.id, c.req.param("id")), eq(schema.games.slug, c.req.param("id"))));
     if (!game || game.gameKind === "werewolf" || !isViewerGame(game)) return c.json({ error: "Game not found" }, 404);
     const enabled = (JSON.parse(game.config) as { visualMode?: boolean }).visualMode === true;
@@ -36,23 +36,19 @@ export function createVisualRoutes(db: DrizzleDB) {
     const [rows, assets, players] = await Promise.all([
       db.select().from(schema.visualScenes).where(eq(schema.visualScenes.gameId, game.id)).orderBy(asc(schema.visualScenes.boundarySequence)),
       db.select().from(schema.visualGameAssets).where(eq(schema.visualGameAssets.gameId, game.id)),
-      db.select({ id: schema.gamePlayers.id, persona: schema.gamePlayers.persona }).from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, game.id)),
+      readCharacterArtwork(db, game.id),
     ]);
     const url = (id: string) => `/api/games/${game.id}/visual/artifacts/${id}`;
-    // Game-start profiles and prepared cast artifacts are frozen; current agent edits
-    // must not change the identity shown in a historical solo performance.
+    // Each frozen picture may use its own transparent derivative.
     const fullBodies: Record<string, string> = {};
-    const bundledPlayers = new Set<string>();
     const fullBodyHeads: Record<string, HeadRectangle> = {};
     for (const player of players) {
-      const profile = JSON.parse(player.persona) as { fullBodyReferenceUrl?: unknown; headPosition?: CharacterHeadPosition };
+      const profile = player;
       if (typeof profile.fullBodyReferenceUrl === "string" && profile.fullBodyReferenceUrl) fullBodies[player.id] = profile.fullBodyReferenceUrl;
-      if (bundledHouseBody(profile.fullBodyReferenceUrl)) bundledPlayers.add(player.id);
-      const head = profile.headPosition;
-      if (head?.confirmation && head.sourceUrl === fullBodies[player.id] && validHeadRectangle(head.rect)) fullBodyHeads[player.id] = head.rect;
+      if (validHeadRectangle(player.headRectangle)) fullBodyHeads[player.id] = player.headRectangle;
     }
     for (const member of assets[0]?.cast ?? []) {
-      if (!member.portraitFallback) {
+      if (!member.portraitFallback && !fullBodies[member.id]) {
         fullBodies[member.id] = url(member.referenceArtifactId);
         delete fullBodyHeads[member.id];
         if (validHeadRectangle(member.headRectangle)) fullBodyHeads[member.id] = member.headRectangle;
@@ -68,10 +64,6 @@ export function createVisualRoutes(db: DrizzleDB) {
       } catch { return c.json({ error: "Invalid publication snapshot" }, 400); }
     }
     const viewerMedia = await readViewerMedia(db, game.id, snapshot);
-    // Fixed export snapshots retain their original references. Live playback can
-    // adopt a completed derivative on its next metadata refresh.
-    if (!rawSnapshot) Object.assign(fullBodies, await requestCharacterCutouts(db, game.id,
-      Object.fromEntries(Object.entries(fullBodies).filter(([id]) => !bundledPlayers.has(id)))));
     const portraits = Object.fromEntries(Object.entries(assets[0]?.portraits ?? {}).map(([id, artifact]) => [id, url(artifact)]));
     return c.json({ enabled: enabled || viewerMedia.scenes.length > 0, status: game.status !== "completed" && rows.some(row => row.status === "preparing") ? "preparing" : null,
       fullBodies, fullBodyHeads,

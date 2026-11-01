@@ -1,10 +1,10 @@
 import { createHash, randomBytes } from "node:crypto";
-import { bundledHouseBody } from "@influence/engine/house-character-art";
-import { and, asc, eq, inArray, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import sharp from "sharp";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { payloadHash, readPayload, storeBinary } from "./payload-storage.js";
 import { readVisualProfileImage } from "./visual-game-assets.js";
+import { saveReadyCharacterArt } from "./character-art-save.js";
 
 export const CUTOUT_RECIPE = "birefnet-general-58f621f0-rembg2.0.86-r1";
 export const CUTOUT_MAX_BYTES = 32 * 1024 * 1024;
@@ -26,37 +26,6 @@ export function cutoutMode(env: Record<string, string | undefined> = process.env
   return mode;
 }
 
-/** Only server-selected frozen references enter this queue. No caller-supplied URLs. */
-export async function requestCharacterCutouts(db: DrizzleDB, gameId: string, sources: Record<string, string>): Promise<Record<string, string>> {
-  sources = Object.fromEntries(Object.entries(sources).filter(([, url]) => !bundledHouseBody(url)));
-  if (!Object.keys(sources).length) return {};
-  try {
-    if (cutoutMode() !== "disabled") await db.insert(demands).values(Object.entries(sources).map(([playerId, sourceKey]) => ({
-      id: crypto.randomUUID(), gameId, playerId, sourceKey, recipe: CUTOUT_RECIPE,
-    }))).onConflictDoNothing();
-    return await readyCharacterCutoutUrls(db, gameId, sources);
-  } catch (error) {
-    // Optional media must never block a game or playback; report the operational failure.
-    console.error("[character-cutouts] Demand unavailable", { gameId, error });
-    return {};
-  }
-}
-
-/** Read-only pinning survives disabled generation and excludes arrivals after the cutoff. */
-export async function readyCharacterCutoutUrls(db: Pick<DrizzleDB, "select">, gameId: string, sources: Record<string, string>, before?: Date) {
-  // Live reads share the worker's database clock and sub-millisecond precision.
-  const cutoff = before ?? sql`clock_timestamp()`;
-  const ready = await db.select({ demand: demands }).from(demands).innerJoin(jobs, eq(demands.cutoutId, jobs.id))
-    .where(and(eq(demands.gameId, gameId), eq(demands.recipe, CUTOUT_RECIPE), eq(jobs.status, "ready"), lte(jobs.readyAt, cutoff), lte(demands.createdAt, cutoff)));
-  return Object.fromEntries(ready.filter(row => sources[row.demand.playerId] === row.demand.sourceKey)
-    .map(row => [row.demand.playerId, `/api/games/${encodeURIComponent(gameId)}/cutouts/${row.demand.id}`]));
-}
-
-export async function readyCutoutsByHash(db: Pick<DrizzleDB, "select">, hashes: string[], before: string) {
-  if (!hashes.length) return new Map<string, typeof jobs.$inferSelect>();
-  const rows = await db.select().from(jobs).where(and(inArray(jobs.sourceHash, hashes), eq(jobs.recipe, CUTOUT_RECIPE), eq(jobs.status, "ready"), lte(jobs.readyAt, new Date(before))));
-  return new Map(rows.map(row => [row.sourceHash, row]));
-}
 
 /** Store source bytes before publishing a durable job reference. */
 export async function enqueueCutout(db: DrizzleDB, bytes: Buffer) {
@@ -95,17 +64,39 @@ export async function readCutoutSource(db: Pick<DrizzleDB, "select">, demand: { 
 export async function prepareCutoutDemands(db: DrizzleDB, ids?: string[]) {
   if (ids && !ids.length) return;
   const pending = await db.select().from(demands).where(and(eq(demands.recipe, CUTOUT_RECIPE), isNull(demands.cutoutId), isNull(demands.error), ids ? inArray(demands.id, ids) : undefined))
-    .orderBy(asc(demands.createdAt), asc(demands.id)).limit(ids ? ids.length : 16);
+    .orderBy(sql`coalesce(${demands.preparationAttemptedAt}, ${demands.createdAt})`, asc(demands.id)).limit(ids ? ids.length : 16);
   for (const demand of pending) {
     try {
-      const bytes = await readCutoutSource(db, demand);
-      const job = await enqueueCutout(db, bytes);
+      await db.update(demands).set({ preparationAttemptedAt: sql`clock_timestamp()` }).where(eq(demands.id, demand.id));
+      let hash = demand.sourceKey.startsWith("sha256:") ? demand.sourceKey.slice(7) : null;
+      if (!hash && demand.gameId && demand.sourceKey.startsWith(`/api/games/${demand.gameId}/visual/artifacts/`)) {
+        const [artifact] = await db.select({ image: schema.visualArtifacts.image }).from(schema.visualArtifacts)
+          .where(and(eq(schema.visualArtifacts.gameId, demand.gameId), eq(schema.visualArtifacts.id, demand.sourceKey.split("/").at(-1)!)));
+        hash = artifact?.image.sha256 ?? null;
+      }
+      const [existing] = hash ? await db.select().from(jobs).where(and(eq(jobs.sourceHash, hash), eq(jobs.recipe, CUTOUT_RECIPE))) : [];
+      // A finished job already owns verified bytes. Reuse it without downloading
+      // its original or rerunning removal, even if source storage is unavailable.
+      if (!existing && cutoutMode() === "disabled") continue;
+      const job = existing ?? await enqueueCutout(db, await readCutoutSource(db, demand));
       await db.update(demands).set({ cutoutId: job.id }).where(and(eq(demands.id, demand.id), isNull(demands.cutoutId), isNull(demands.error)));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Source preparation failed";
       await db.update(demands).set({ error: message.slice(0, 1000) }).where(and(eq(demands.id, demand.id), isNull(demands.cutoutId), isNull(demands.error)));
       console.error("[character-cutouts] Source preparation failed", { demandId: demand.id, error });
     }
+  }
+  await savePendingCharacterArt(db);
+
+}
+
+/** The existing dispatcher retries finished-image saves separately from inference.
+ * A failed public upload never consumes another generation attempt. */
+export async function savePendingCharacterArt(db: DrizzleDB) {
+  const pending = await db.select({ id: jobs.id }).from(jobs).where(and(eq(jobs.status, "ready"), isNull(jobs.artSavedAt))).orderBy(sql`coalesce(${jobs.artSaveAttemptedAt}, ${jobs.readyAt}, ${jobs.createdAt})`, asc(jobs.id)).limit(16);
+  for (const job of pending) {
+    try { await saveReadyCharacterArt(db, job.id); }
+    catch (error) { console.error("[character-art] Finished image save pending retry", { jobId: job.id, error }); }
   }
 }
 
@@ -148,8 +139,13 @@ export async function acceptCutout(db: DrizzleDB, id: string, token: string, byt
   const alpha = await decoder.extractChannel("alpha").raw().toBuffer();
   if (!alpha.some(value => value === 0) || !alpha.some(value => value >= 250)) throw new Error("Cutout must contain foreground and transparent background");
   const image = await storeBinary(bytes);
-  const changed = await db.update(jobs).set({ image, status: "ready", readyAt: sql`clock_timestamp()`, tokenHash: null, leaseUntil: null, error: null })
-    .where(and(eq(jobs.id, id), eq(jobs.status, "running"), eq(jobs.tokenHash, cutoutTokenHash(token)), sql`${jobs.leaseUntil} > now()`))
-    .returning({ id: jobs.id });
-  return changed.length === 1;
+  // Persist finished bytes before public publication. A storage outage after this
+  // commit retries only saving these bytes, never the background-removal worker.
+  const [finished] = await db.update(jobs).set({ image, status: "ready", readyAt: sql`clock_timestamp()`, artSavedAt: null,
+    tokenHash: null, leaseUntil: null, error: null }).where(and(eq(jobs.id, id), eq(jobs.status, "running"),
+    eq(jobs.tokenHash, cutoutTokenHash(token)), sql`${jobs.leaseUntil} > now()`)).returning({ id: jobs.id });
+  if (!finished) return false;
+  try { await saveReadyCharacterArt(db, id); }
+  catch (error) { console.error("[character-art] Finished image retained; saving will retry", { jobId: id, error }); }
+  return true;
 }

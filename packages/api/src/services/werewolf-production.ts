@@ -40,8 +40,9 @@ export async function werewolfReferenceMetadata(db: Pick<DrizzleDB, "select">, g
     return { player, snapshot, bodyHash: bundled?.sha256 ?? hashFor("fullBodyReferenceUrl"), portraitHash: hashFor("avatarUrl") };
   });
   const hashes = members.flatMap(member => [member.bodyHash, member.portraitHash].filter((hash): hash is string => hash !== null));
-  const available = new Set(hashes.length ? (await db.select({ hash: schema.agentContentAssets.hash }).from(schema.agentContentAssets)
-    .where(inArray(schema.agentContentAssets.hash, hashes))).map(asset => asset.hash) : []);
+  const assets = hashes.length ? await db.select({ hash: schema.agentContentAssets.hash, transparentUrl: schema.agentContentAssets.transparentUrl }).from(schema.agentContentAssets)
+    .where(inArray(schema.agentContentAssets.hash, hashes)) : [];
+  const available = new Set(assets.map(asset => asset.hash));
   for (const member of members) if (!member.player.agentProfileId && bundledHouseBody(member.player.fullBodyReferenceUrl) && member.bodyHash) available.add(member.bodyHash);
   if (options.availableHashes) {
     if (options.availableHashes.some(hash => !hashes.includes(hash))) throw new WerewolfReferenceError("Pinned character asset is not an immutable game-start reference");
@@ -60,7 +61,7 @@ export async function werewolfReferenceMetadata(db: Pick<DrizzleDB, "select">, g
       fullBodyReferenceUrl: kind === "full_body" ? bundled ? player.fullBodyReferenceUrl! : String(snapshot!.fullBodyReferenceUrl) : null,
       ...(headPosition ? { headPosition } : {}),
       performanceInstructions: typeof snapshot?.performanceInstructions === "string" ? snapshot.performanceInstructions : "" };
-    return { profile, kind, bodyHash: body, portraitHash: portrait, bundled };
+    return { profile, kind, bodyHash: body, portraitHash: portrait, bundled, transparentUrl: assets.find(asset => asset.hash === body)?.transparentUrl ?? null };
   });
 }
 
@@ -71,7 +72,7 @@ export async function werewolfReferences(db: DrizzleDB, gameId: string) {
   const assets = hashes.length ? await loadPayloads(db.select().from(schema.agentContentAssets).where(inArray(schema.agentContentAssets.hash, hashes))) : [];
   const bytes = (hash: string | null) => assets.find(asset => asset.hash === hash)?.bytes ?? null;
   return Promise.all(refs.map(async ref => ({ ...ref,
-    bytes: ref.bundled && ref.kind === "full_body" ? await readVisualProfileImage(ref.profile.fullBodyReferenceUrl, ref.profile) : bytes(ref.bodyHash ?? ref.portraitHash),
+    bytes: ref.transparentUrl ? await readVisualProfileImage(ref.transparentUrl, ref.profile) : ref.bundled && ref.kind === "full_body" ? await readVisualProfileImage(ref.profile.fullBodyReferenceUrl, ref.profile) : bytes(ref.bodyHash ?? ref.portraitHash),
     portraitBytes: bytes(ref.portraitHash) })));
 }
 
@@ -82,7 +83,7 @@ export async function freezeWerewolfReferences(db: DrizzleDB, gameId: string, pa
   const cast: VisualCastMember[] = [];
   for (const participant of participants) {
     const saved = assets?.cast.find(member => member.id === participant.id);
-    if (saved) { cast.push(saved); continue; }
+    if (saved && !refs.find(ref => ref.profile.id === participant.id)?.transparentUrl) { cast.push(saved); continue; }
     const ref = refs.find(ref => ref.profile.id === participant.id && ref.profile.name === participant.name);
     if (!ref || ref.kind === "missing") throw new WerewolfReferenceError(`Frozen reference unavailable for ${participant.name}. No current profile was substituted.`);
     const bytes = ref.bytes ?? await readVisualProfileImage(null, ref.profile);

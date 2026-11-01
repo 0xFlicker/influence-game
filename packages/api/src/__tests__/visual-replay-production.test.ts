@@ -207,3 +207,14 @@ test("regeneration acknowledgement is an exact bounded list and cannot be suppli
   expect(result.status).toBe(400);
   expect((await readVisualMedia(db, gameId)).jobs).toHaveLength(0);
 });
+
+test("new renders retain the frozen reference artifact and its head framing", async () => {
+  const bytes = await sharp({ create: { width: 32, height: 48, channels: 4, background: "transparent" } }).png().toBuffer();
+  const referenceArtifactId = await storeVisualArtifact(db, gameId, bytes);
+  const headRectangle = { x: .2, y: .1, width: .4, height: .3 };
+  await db.insert(schema.visualGameAssets).values({ gameId, profiles: [], cast: [{ id: "p0", name: "Player 0", referenceArtifactId, headRectangle, performanceInstructions: "", portraitFallback: false }] });
+  await render((await readReplayVisualProduction(db, gameId)).scenes[0]!);
+  const job = (await claimVisualMediaJob(db, "test-worker"))!;
+  expect(job.plan.cast.find(member => member.id === "p0")).toMatchObject({ referenceArtifactId, headRectangle });
+  expect(calls).toBe(0);
+});

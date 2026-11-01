@@ -293,8 +293,8 @@ test.describe("format-aware game viewer", () => {
         enabled:false, status:null, scenes:[], fullBodies:{[roster[0]!.id]:mobile ? "/missing-opening-body.png" : "/opening-body.svg"},
         portraits:{[roster[0]!.id]:viewerUrl("/avatars/personas/diplomat.png"), [roster[1]!.id]:"/missing-opening-portrait.png"},
       }}));
-      let bodyRequests = 0;
-      await page.route("**/missing-opening-body.png", route => {bodyRequests++;return route.fulfill({status:404,body:"missing"});});
+      const bodyRequests: string[] = [];
+      await page.route("**/missing-opening-body.png", route => {bodyRequests.push(route.request().method());return route.fulfill({status:404,body:"missing"});});
       await page.route("**/opening-body.svg", route => route.fulfill({contentType:"image/svg+xml",body:'<svg xmlns="http://www.w3.org/2000/svg" width="200" height="400"><rect width="200" height="400" fill="#bda278"/></svg>'}));
       await page.route("**/missing-opening-portrait.png", route => route.fulfill({status:404,body:"missing"}));
       await page.goto(viewerUrl(`/games/${slug}/replay`));
@@ -342,7 +342,7 @@ test.describe("format-aware game viewer", () => {
       await expect(opening.getByRole("heading", {name:"Alexandria Montgomery"})).toBeVisible();
       await expect(opening.locator("[data-cast-image]")).toHaveAttribute("data-cast-image", mobile ? "headshot" : "full-body");
       await expect(opening.locator("[data-cast-image]")).toHaveAttribute("src", mobile ? /\/avatars\/personas\/diplomat\.png$/ : /\/opening-body\.svg$/);
-      expect(bodyRequests).toBe(mobile ? 1 : 0);
+      expect(bodyRequests).toEqual(mobile ? ["GET", "HEAD"] : []);
       await assertLocatorInsideViewport(opening.getByRole("heading", {name:"Alexandria Montgomery"}), mobile ? 390 : 1440);
       await page.screenshot({path:testInfo.outputPath("opening-cast.png")});
       await expect(page.getByRole("button", {name:"Play replay",exact:true})).toBeVisible();
@@ -2214,13 +2214,27 @@ test.describe("format-aware game viewer", () => {
       await expect(stage.locator('[data-two-names-art="full-body"]')).toHaveCount(kind === "two_names_empowered_intro" || kind === "two_names_override_draw" ? 1 : 2);
       await stage.screenshot({path:testInfo.outputPath(`${kind}-body.png`)});
     }
-    // A failed cutout must still leave the historical decision watchable.
-    await page.route("**/two-names-body.svg",route => route.abort());
+    // A network failure must retain the selected full body, including after its retry.
+    const failedRequests: string[] = [];
+    await page.route("**/two-names-body.svg",route => {failedRequests.push(route.request().method());return route.abort();});
     await page.reload();
     await pauseAutoplay(page,"Pause replay");
     const intro = page.locator('[data-format-cue="two_names_empowered_intro"]');
-    await advanceUntilVisible(page,intro,"portrait fallback intro");
+    await advanceUntilVisible(page,intro,"network failure intro");
+    await expect.poll(() => failedRequests.includes("HEAD")).toBe(true);
+    await page.clock.runFor(1100);
+    await expect(intro.locator('[data-two-names-art="full-body"] img')).toHaveAttribute("src", /\/two-names-body\.svg$/);
+    await expect(intro.locator('[data-two-names-art="portrait"]')).toHaveCount(0);
+    await expect(intro).toContainText("Atlas");
+
+    // Only a confirmed HTTP 404 permits the portrait fallback.
+    const missingRequests: string[] = [];
+    await page.route("**/two-names-body.svg",route => {missingRequests.push(route.request().method());return route.fulfill({status:404,body:"missing"});});
+    await page.reload();
+    await pauseAutoplay(page,"Pause replay");
+    await advanceUntilVisible(page,intro,"confirmed missing image intro");
     await expect(intro.locator('[data-two-names-art="portrait"]')).toBeVisible();
+    expect(missingRequests).toEqual(expect.arrayContaining(["GET", "HEAD"]));
     await expect(intro).toContainText("Atlas");
   });
 
