@@ -20,6 +20,7 @@ import {
   displayNameForFormat,
 } from "../packages/engine/src/format-presentation-metadata";
 import {
+  setFormatTranscript,
   installDeterministicClassicGame,
   installDeterministicCompletedClassicGame,
   installDeterministicFormatGame,
@@ -373,7 +374,7 @@ test.describe("format-aware game viewer", () => {
       type:"jury.winner_determined", sequence:10, round:2, phase:Phase.JURY_VOTE,
       timestamp:"2026-09-23T00:00:00.000Z", payload:{votes:{atlas:"rex"}, winnerId:"rex"},
     }]});
-    await page.route(`**/api/games/${slug}/transcript*`, route => route.fulfill({json:[]}));
+    await setFormatTranscript(page, slug, []);
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await enableMusic(page);
     const keepsPlaying = async (track: string) => {
@@ -421,7 +422,7 @@ test.describe("format-aware game viewer", () => {
       type:"jury.winner_determined", sequence:10, round:2, phase:Phase.JURY_VOTE,
       timestamp:"2026-09-23T00:00:00.000Z", payload:{votes:{atlas:"rex"}, winnerId:"rex"},
     }]});
-    await page.route(`**/api/games/${slug}/transcript*`, route => route.fulfill({json:[]}));
+    await setFormatTranscript(page, slug, []);
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await pauseAutoplay(page, "Pause replay");
     const position = page.getByRole("slider", {name:"Replay position",exact:true});
@@ -448,7 +449,7 @@ test.describe("format-aware game viewer", () => {
       type:"jury.winner_determined", sequence:10, round:2, phase:Phase.JURY_VOTE,
       timestamp:"2026-09-23T00:00:00.000Z", payload:{votes:{atlas:"rex"}, winnerId:"rex"},
     }]});
-    await page.route(`**/api/games/${slug}/transcript*`, route => route.fulfill({json:[]}));
+    await setFormatTranscript(page, slug, []);
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await pauseAutoplay(page, "Pause replay");
     const position = page.getByRole("slider", {name:"Replay position",exact:true});
@@ -499,8 +500,8 @@ test.describe("format-aware game viewer", () => {
     const scenario = createFormatKernelViewerScenario("two_names_declined");
     const fixture = await installDeterministicFormatGame(page, {slug, scenarioId:"two_names_declined", status:"in_progress", initialDecisionCount:0});
     await page.goto(viewerUrl(`/games/${slug}/replay`));
-    await expect.poll(() => fixture.sockets.length).toBe(1);
-    fixture.sockets[0]!.send(JSON.stringify({type:"message", entry:{
+    await expect.poll(() => fixture.readCount).toBeGreaterThan(0);
+    fixture.publish(JSON.stringify({type:"message", entry:{
       entrySequence:1, round:0, phase:"INTRODUCTION", from:scenario.roster[0]!.id,
       scope:"public", text:"I want to hear your explanation before deciding where I stand.",
       thinking:"One precise question may reveal whether their story holds together.", timestamp:Date.now(),
@@ -613,8 +614,8 @@ test.describe("format-aware game viewer", () => {
     const slug="bubble-pages-fixture", scenario=createFormatKernelViewerScenario("two_names_declined");
     const fixture=await installDeterministicFormatGame(page,{slug,scenarioId:"two_names_declined",status:"in_progress",initialDecisionCount:0});
     await page.goto(viewerUrl(`/games/${slug}/replay`));
-    await expect.poll(()=>fixture.sockets.length).toBe(1);
-    fixture.sockets[0]!.send(JSON.stringify({type:"message",entry:{entrySequence:1,round:0,phase:"INTRODUCTION",from:scenario.roster[0]!.id,
+    await expect.poll(()=>fixture.readCount).toBeGreaterThan(0);
+    fixture.publish(JSON.stringify({type:"message",entry:{entrySequence:1,round:0,phase:"INTRODUCTION",from:scenario.roster[0]!.id,
       scope:"public",text:"You changed your vote before anyone answered my question. Explain what convinced you, and who you trust now. ".repeat(15),timestamp:Date.now()}}));
     const bubble=page.locator('[data-speech-bubble]');
     await expect(bubble).toHaveCSS("opacity","1");
@@ -789,9 +790,9 @@ test.describe("format-aware game viewer", () => {
     const fixture = await installDeterministicFormatGame(page, { slug, scenarioId: "two_names_declined", status: "in_progress", initialDecisionCount: 0 });
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
-    await expect.poll(() => fixture.sockets.length).toBe(1);
+    await expect.poll(() => fixture.readCount).toBeGreaterThan(0);
     const speech = "We can make this plan work together. ".repeat(70);
-    fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: {
+    fixture.publish(JSON.stringify({ type: "message", entry: {
       entrySequence: 1, round: 0, phase: "INTRODUCTION", from: scenario.roster[0]!.id,
       scope: "public", text: speech, timestamp: Date.now(),
     } }));
@@ -853,8 +854,8 @@ test.describe("format-aware game viewer", () => {
     for (const [side, color] of [["left", "#856849"], ["center", "#a09583"], ["right", "#5f705b"]]) await page.route(`**/stage-${side}.svg`, route => route.fulfill({ contentType: "image/svg+xml", body: `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1200"><defs><linearGradient id="wall"><stop stop-color="${color}"/><stop offset="1" stop-color="#d2c5ac"/></linearGradient></defs><rect width="800" height="1200" fill="url(#wall)"/><path d="M0 860H800V1200H0Z" fill="${color}"/><circle cx="400" cy="212" r="72" fill="#c3a380"/><path d="M330 290H470L490 730H440V1150H395V730H375V1150H335V730H310Z" fill="#485144"/></svg>` }));
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
-    await expect.poll(() => fixture.sockets.length).toBe(1);
-    fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: { entrySequence: 1, round: 0, phase: "LOBBY", from: actor.id, scope: "public", text: "The room stays clear while the edges extend around us.", visualScene: { id: "room", roomId: "lobby" }, timestamp: Date.now() } }));
+    await expect.poll(() => fixture.readCount).toBeGreaterThan(0);
+    fixture.publish(JSON.stringify({ type: "message", entry: { entrySequence: 1, round: 0, phase: "LOBBY", from: actor.id, scope: "public", text: "The room stays clear while the edges extend around us.", visualScene: { id: "room", roomId: "lobby" }, timestamp: Date.now() } }));
     const room = page.getByRole("region", { name: "Current room" });
     await expect(room.locator("[data-speech-bubble]")).toHaveCSS("opacity", "1");
     await page.getByRole("button", { name: /Pause/ }).filter({ visible: true }).click();
@@ -878,7 +879,7 @@ test.describe("format-aware game viewer", () => {
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.clock.pauseAt(new Date(Date.now() + 1000));
     const next = createFormatKernelViewerScenario("two_names_declined").roster[1]!;
-    fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: { entrySequence: 2, round: 0, phase: "LOBBY", from: next.id, scope: "public", text: "Now the neighboring panel comes into view.", visualScene: { id: "room", roomId: "lobby" }, timestamp: Date.now() } }));
+    fixture.publish(JSON.stringify({ type: "message", entry: { entrySequence: 2, round: 0, phase: "LOBBY", from: next.id, scope: "public", text: "Now the neighboring panel comes into view.", visualScene: { id: "room", roomId: "lobby" }, timestamp: Date.now() } }));
     await playbackKey(page, "ArrowRight");
     await page.clock.runFor(200);
     await playbackKey(page, "ArrowRight");
@@ -917,9 +918,9 @@ test.describe("format-aware game viewer", () => {
     for (const index of [0, 1]) await page.route(`**/camera-${index}.svg`, route => route.fulfill({ contentType: "image/svg+xml", body: `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1200"><rect width="800" height="1200" fill="${index ? "#6c7568" : "#9c886f"}"/><path d="M0 860H800V1200H0Z" fill="#4c443c"/>${(index ? [.4] : [.2, .76]).map(x => `<circle cx="${800 * x}" cy="216" r="55" fill="#c3a380"/><rect x="${800 * x - 42}" y="285" width="84" height="800" fill="#485144"/>`).join("")}</svg>` }));
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
-    await expect.poll(() => fixture.sockets.length).toBe(1);
+    await expect.poll(() => fixture.readCount).toBeGreaterThan(0);
     await page.clock.pauseAt(new Date(Date.now() + 1000));
-    const say = (index: number) => fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: { entrySequence: index + 1, round: 0, phase: "LOBBY", from: cast[index]!.id, scope: "public", text: `Accepted line ${index + 1}.`, visualScene: { id: "room", roomId: "lobby" }, timestamp: Date.now() } }));
+    const say = (index: number) => fixture.publish(JSON.stringify({ type: "message", entry: { entrySequence: index + 1, round: 0, phase: "LOBBY", from: cast[index]!.id, scope: "public", text: `Accepted line ${index + 1}.`, visualScene: { id: "room", roomId: "lobby" }, timestamp: Date.now() } }));
     say(0);
     const room = page.getByRole("region", { name: "Current room", exact: true });
     await expect(room.getByRole("img")).toHaveAttribute("src", /camera-0.svg$/);
@@ -973,8 +974,8 @@ test.describe("format-aware game viewer", () => {
       portraits: Object.fromEntries(cast.map((player, index) => [player.id, viewerUrl(`/avatars/personas/${["honest", "social", "aggressive"][index]}.png`)])), fullBodies: {}, scenes: [] } }));
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
-    await expect.poll(() => fixture.sockets.length).toBe(1);
-    const say = (index: number, sequence: number) => fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: { entrySequence: sequence, round: 1, phase: "FORMAT_MINGLE", from: cast[index]!.id, scope: "mingle", to: cast.filter((_, seat) => seat !== index).map(player => player.id), roomId: 2, text: index ? "We can make this room work together." : "Who wants to make a plan?", timestamp: Date.now() } }));
+    await expect.poll(() => fixture.readCount).toBeGreaterThan(0);
+    const say = (index: number, sequence: number) => fixture.publish(JSON.stringify({ type: "message", entry: { entrySequence: sequence, round: 1, phase: "FORMAT_MINGLE", from: cast[index]!.id, scope: "mingle", to: cast.filter((_, seat) => seat !== index).map(player => player.id), roomId: 2, text: index ? "We can make this room work together." : "Who wants to make a plan?", timestamp: Date.now() } }));
     say(0, 1);
     const room = page.getByRole("region", { name: "Mingle room 2" });
     await expect(room.locator("[data-room-backdrop]")).toHaveAttribute("data-room-backdrop", "/visual/influence/rooms-v1/mingle-2.jpg");
@@ -1039,9 +1040,9 @@ test.describe("format-aware game viewer", () => {
     const fixture = await installDeterministicFormatGame(page, { slug, scenarioId: "two_names_declined", roster, status: "in_progress", initialDecisionCount: 0 });
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
-    await expect.poll(() => fixture.sockets.length).toBe(1);
+    await expect.poll(() => fixture.readCount).toBeGreaterThan(0);
     const text = "I’d probably take the aunt’s notes and pretend they were part of the recipe all along. But first I’d ask everyone what they noticed, because someone always remembers the detail that changes the whole story. If we compare those details now, we can make a plan together instead of guessing who to trust.";
-    fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: {
+    fixture.publish(JSON.stringify({ type: "message", entry: {
       entrySequence: 1, round: 0, phase: "LOBBY", from: roster[0]!.id,
       scope: "public", text, timestamp: Date.now(),
     } }));
@@ -1090,10 +1091,10 @@ test.describe("format-aware game viewer", () => {
       await page.route("**/speech-room.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><rect width="1600" height="900" fill="#34324b"/><circle cx="300" cy="240" r="85" fill="#bfa989"/><circle cx="1260" cy="240" r="85" fill="#99bfa9"/></svg>' }));
       await page.goto(viewerUrl(`/games/${slug}/replay`));
       await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
-      await expect.poll(() => fixture.sockets.length).toBe(1);
+      await expect.poll(() => fixture.readCount).toBeGreaterThan(0);
       await page.clock.pauseAt(new Date(Date.now() + 1000));
       for (const [index, player] of [first!, second!].entries()) {
-        fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: {
+        fixture.publish(JSON.stringify({ type: "message", entry: {
           entrySequence: index + 1, round: 0, phase, from: player.id, scope: "public",
           text: index === 0 ? "The first accepted line." : "The second accepted line.",
           visualScene: { id: "room", roomId }, timestamp: Date.now() + index,
@@ -1141,8 +1142,8 @@ test.describe("format-aware game viewer", () => {
     const fixture = await installDeterministicFormatGame(page, { slug, scenarioId: "two_names_declined", status: "in_progress", initialDecisionCount: 0 });
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
-    await expect.poll(() => fixture.sockets.length).toBe(1);
-    fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: {
+    await expect.poll(() => fixture.readCount).toBeGreaterThan(0);
+    fixture.publish(JSON.stringify({ type: "message", entry: {
       entrySequence: 1, round: 0, phase: "INTRODUCTION", from: scenario.roster[0]!.id,
       scope: "public", text: "The same speech stays on screen. ".repeat(20), timestamp: Date.now(),
     } }));
@@ -1190,9 +1191,9 @@ test.describe("format-aware game viewer", () => {
     await page.route("**/solo-click.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600"><rect width="400" height="600" fill="#393532"/></svg>' }));
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
-    await expect.poll(() => fixture.sockets.length).toBe(1);
+    await expect.poll(() => fixture.readCount).toBeGreaterThan(0);
     await page.clock.pauseAt(new Date(Date.now() + 1000));
-    const send = (entry: Record<string, unknown>) => fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry }));
+    const send = (entry: Record<string, unknown>) => fixture.publish(JSON.stringify({ type: "message", entry }));
     send({ entrySequence: 1, round: 0, phase: "INTRODUCTION", from: actor.id, scope: "public", text: "I intend to win your trust.", timestamp: Date.now() });
     const solo = page.locator('[data-solo-image="full-body"]');
     await expect(solo).toBeVisible();
@@ -1240,8 +1241,8 @@ test.describe("format-aware game viewer", () => {
       await page.setViewportSize({ width: 1280, height: 800 });
       await page.goto(viewerUrl(`/games/${slug}/replay`));
       await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
-      await expect.poll(() => fixture.sockets.length).toBe(1);
-      fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: { entrySequence: 1, round: 0, phase: "INTRODUCTION", from: actor.id, scope: "public", text: "I intend to win your trust.", timestamp: Date.now() } }));
+      await expect.poll(() => fixture.readCount).toBeGreaterThan(0);
+      fixture.publish(JSON.stringify({ type: "message", entry: { entrySequence: 1, round: 0, phase: "INTRODUCTION", from: actor.id, scope: "public", text: "I intend to win your trust.", timestamp: Date.now() } }));
       const solo = page.locator('[data-solo-image="full-body"]');
       await expect(solo).toBeVisible();
       await expect(solo.getByRole("img")).toHaveAttribute("src", /\/solo-fixture\.svg$/);
@@ -1284,7 +1285,7 @@ test.describe("format-aware game viewer", () => {
         expect(Math.round((await backdrop.boundingBox())!.width)).toBe(size.width);
         await solo.screenshot({ path: testInfo.outputPath(`solo-edges-${size.width}.png`) });
       }
-      fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: { entrySequence: 2, round: 0, phase: "INTRODUCTION", from: null, scope: "system", dialogueKind: "house_summary", text: "The House has heard their promises. Now the game begins.", timestamp: Date.now() } }));
+      fixture.publish(JSON.stringify({ type: "message", entry: { entrySequence: 2, round: 0, phase: "INTRODUCTION", from: null, scope: "system", dialogueKind: "house_summary", text: "The House has heard their promises. Now the game begins.", timestamp: Date.now() } }));
       await expect(page.getByRole("button", { name: "Next scene", exact: true })).toBeEnabled();
       await playbackKey(page, "ArrowRight");
       const house = page.getByRole("region", { name: "House summary" });
@@ -1366,12 +1367,12 @@ test.describe("format-aware game viewer", () => {
       timestamp: "2026-09-23T00:00:00.000Z", payload: { votes, winnerId: "rex" },
     }];
     await installDeterministicFormatGame(page, { slug, scenarioId: "majority_elimination_tie", status: "completed", decisions });
-    await page.route(`**/api/games/${slug}/transcript*`, route => route.fulfill({ json: voters.map((voter, i) => ({
+    await setFormatTranscript(page, slug, voters.map((voter, i) => ({
       id: i + 1, gameId: slug, entrySequence: i + 1, firstDurableEventSequence: 7 + i,
       phase: "JURY_VOTE", round: 2, scope: "system", dialogueKind: "system_announcement",
       fromPlayerId: null, fromPlayerName: "The House", toPlayerIds: null, text: "Recorded vote receipt", timestamp: i,
       acceptedBallot: { purpose: "winner", voterId: voter.id, targetId: "rex" },
-    })) }));
+    })));
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await skipOpening(page);
     await expect(page.getByRole("region", { name: "Ballot: Atlas" }).locator("blockquote").locator("..")).toHaveCSS("opacity", "1");
@@ -1409,11 +1410,11 @@ test.describe("format-aware game viewer", () => {
       await installDeterministicFormatGame(page, { slug, scenarioId: "majority_elimination_tie", status: "completed", decisions,
         roster: [...createFormatKernelViewerScenario("majority_elimination_tie").roster, { id: "sage", name: "Sage" }, { id: "nova", name: "Nova" }],
       });
-      await page.route(`**/api/games/${slug}/transcript*`, route => route.fulfill({ json: [{
+      await setFormatTranscript(page, slug, [{
         id: 1, gameId: slug, entrySequence: 1, firstDurableEventSequence: 11, phase: "JURY_VOTE", round: 2,
         scope: "system", dialogueKind: "house_summary", fromPlayerId: null, fromPlayerName: "The House", toPlayerIds: null,
         text: "The game is complete.", timestamp: 1,
-      }] }));
+      }]);
       await page.route(`**/api/games/${slug}/visual`, route => route.fulfill({ json: { enabled: true, status: null, portraits: Object.fromEntries(["atlas", "echo", "lyra", "sage", "nova"].map(id => [id, "/winner-head.svg"])), fullBodies: { rex: "/winner-body.svg" }, scenes: [] } }));
       await page.route("**/winner-head.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128"><rect width="128" height="128" fill="#403b32"/><circle cx="64" cy="52" r="30" fill="#bd9d70"/><path d="M20 128V110Q64 64 108 110V128Z" fill="#ded4c0"/></svg>' }));
       await page.route("**/winner-body.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600"><circle cx="200" cy="70" r="45" fill="#bd9d70"/><path d="M160 120H240L260 350H230V570H205V350H195V570H170V350H140Z" fill="#ded4c0"/></svg>' }));
@@ -1574,11 +1575,11 @@ test.describe("format-aware game viewer", () => {
     page.on("request", (request) => { if (request.url().endsWith("/visual")) visualRequests++; });
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
-    await expect.poll(() => fixture.sockets.length).toBe(1);
+    await expect.poll(() => fixture.readCount).toBeGreaterThan(0);
     const actor = scenario.roster[0]!;
     const mingleAudience = scenario.roster.slice(1, 3);
     for (const [index, phase] of ["INTRODUCTION", "LOBBY", "FORMAT_MINGLE"].entries()) {
-      fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: {
+      fixture.publish(JSON.stringify({ type: "message", entry: {
         entrySequence: index + 1, round: phase === "INTRODUCTION" ? 0 : 1,
         phase, from: actor.id, scope: phase === "FORMAT_MINGLE" ? "mingle" : "public",
         ...(phase === "FORMAT_MINGLE" && {to: mingleAudience.map(player => player.id)}),
@@ -1604,6 +1605,55 @@ test.describe("format-aware game viewer", () => {
     await expect(page.getByText("Waiting for next phase", { exact: true })).toHaveCount(0);
   });
 
+  for (const mobile of [false, true]) test(`normalized Save and Exit phase plays ballots, totals and tie choice before elimination (${mobile ? "mobile" : "desktop"})`, async ({page}) => {
+    await page.clock.install();
+    if (mobile) await page.setViewportSize({width:390,height:844});
+    const slug = `normalized-save-exit-${mobile}`;
+    const scenario = createFormatKernelViewerScenario("save_or_eliminate_clear");
+    const decisions: typeof scenario.decisions = [
+      ...scenario.decisions.slice(0,2),
+      {type:"game.phase_entered", sequence:12, round:2, phase:Phase.FORMAT_RESOLVE, timestamp:scenario.decisions[0]!.timestamp,
+        payload:{phase:Phase.FORMAT_RESOLVE,remainingPlayers:[...scenario.roster]}},
+      ...scenario.decisions.slice(2),
+    ].map((event,index) => ({...event,sequence:index+10}));
+    const fixture = await installDeterministicFormatGame(page,{slug,scenarioId:"save_or_eliminate_clear",status:"in_progress",decisions,initialDecisionCount:0,frameResponseDelayMs:100});
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await expect.poll(()=>fixture.readCount).toBeGreaterThan(0);
+    await expect(page.locator("[data-format-cue]")).toHaveCount(0);
+    setFormatTranscript(page,slug,[{id:1,entrySequence:1,firstDurableEventSequence:17,round:2,phase:Phase.FORMAT_RESOLVE,scope:"public",fromPlayerId:"atlas",speakerPlayerId:"atlas",text:"I break the tie and choose Lyra.",timestamp:1,decisionSpeech:{actorId:"atlas",action:"format-tiebreak"}}]);
+    fixture.setDecisionCount(decisions.length);
+    await fixture.publish(JSON.stringify({type:"phase_ready"}));
+    await expect(page.getByRole("region",{name:"Ballot: Atlas",exact:true})).toBeVisible();
+    await page.clock.runFor(1500);
+    await pauseAutoplay(page,"Pause replay");
+    const verifyPhase = async () => {
+      for (const voter of scenario.roster) {
+        const ballot=scenario.decisions.find(event=>event.type==="format.ballot_cast"&&event.payload.voterId===voter.id);
+        if (ballot?.type!=="format.ballot_cast") throw new Error("Missing fixture ballot");
+        await assertSoloBallot(page,voter.name,scenario.roster.find(player=>player.id===ballot.payload.targetId)!.name);
+        await playbackKey(page,"ArrowRight");
+      }
+      const totals=page.locator('[data-format-cue="format_aggregate"]');
+      await advanceUntilVisible(page,totals,"save/exit totals");
+      await expect(totals).toContainText(/net/i);
+      const tie=page.getByText("I break the tie and choose Lyra.",{exact:true});
+      await advanceUntilVisible(page,tie,"empowered tie");
+      await expect(tie).toContainText("I break the tie and choose Lyra.");
+      const choice=page.locator('[data-nominee="lyra"][data-selected="true"]');
+      await page.getByRole("button",{name:"Play replay",exact:true}).click();
+      await advanceClockUntilVisible(page,choice,"deciding target",15000);
+      await pauseAutoplay(page,"Pause replay");
+      await expect(choice).toBeVisible();
+      await advanceUntilVisible(page,page.locator('[data-format-cue="format_elimination"]'),"elimination after tie");
+    };
+    await verifyPhase();
+    await page.reload();
+    await expect(page.getByRole("region",{name:"Ballot: Atlas",exact:true})).toBeVisible();
+    await page.clock.runFor(1500);
+    await pauseAutoplay(page,"Pause replay");
+    await verifyPhase();
+  });
+
   test("Two Names stays paused after reconnect and can resume", async ({ page }) => {
     const slug = "catchup-two-names-paused";
     const scenario = createFormatKernelViewerScenario("two_names_declined");
@@ -1614,38 +1664,46 @@ test.describe("format-aware game viewer", () => {
     });
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
-    const cue = page.locator("[data-format-cue]").first();
+    const cue = page.getByRole("region",{name:"Plea: Lyra",exact:true});
     await expect(cue).toBeVisible();
     await page.getByRole("button", { name: "Pause replay", exact: true }).click();
-    const pausedKind = await cue.getAttribute("data-format-cue");
+    const pausedText = await cue.innerText();
     const catchUp = page.waitForResponse(response => {
       const url = new URL(response.url());
-      return url.pathname === `/api/games/${slug}/replay-watch-frames`
+      return url.pathname === `/api/games/${slug}/presentation`
         && Number(url.searchParams.get("afterSequence")) > 0;
     });
     fixture.setDecisionCount(scenario.decisions.length);
-    fixture.sockets.at(-1)!.close({ code: 1001, reason: "test reconnect" });
-    await expect.poll(() => fixture.sockets.length).toBe(2);
+    fixture.disconnect({ code: 1001, reason: "test reconnect" });
+    await expect.poll(() => fixture.readCount).toBeGreaterThan(0);
     await (await catchUp).finished();
     await expect(page.getByRole("button", { name: "Play replay", exact: true })).toBeVisible();
-    await expect(cue).toHaveAttribute("data-format-cue", pausedKind!);
+    await expect(cue).toHaveText(pausedText);
+    const completion = page.waitForResponse(response => new URL(response.url()).pathname === `/api/games/${slug}/presentation`);
+    fixture.setStatus("completed");
+    await fixture.publish(JSON.stringify({type:"phase_ready"}));
+    await (await completion).finished();
+    await expect(page.getByRole("button", { name: "Play replay", exact: true })).toBeVisible();
+    await expect(cue).toHaveText(pausedText);
+    await expect(page.locator("[data-influence-opening]")).toHaveCount(0);
     await page.getByRole("button", { name: "Play replay", exact: true }).click();
     await expect(page.getByRole("button", { name: "Pause replay", exact: true })).toBeVisible();
   });
 
   for (const frameResponseDelayMs of [0, 500]) {
     test(`Two Names live catch-up preserves current round with frame delay ${frameResponseDelayMs}`, async ({ page }) => {
+      await page.clock.install();
       const slug = `catchup-two-names-${frameResponseDelayMs}`;
       await installDeterministicFormatGame(page, {
         slug, scenarioId: "two_names_declined", status: "in_progress",
         historicalCatchUp: true, frameResponseDelayMs,
       });
       await page.goto(viewerUrl(`/games/${slug}/replay`));
-      await expect(page.locator('[data-format-cue="format_elimination"]')).toBeVisible();
+      await expect(page.getByRole("region",{name:"Plea: Lyra",exact:true})).toBeVisible();
       await expect(page.locator("[data-presentation-animation-boundary]").getByText("Historical introduction must not restart live playback.", { exact: true })).toHaveCount(0);
       await expect(page.getByText("Presentation incomplete", { exact: true })).toHaveCount(0);
       await page.reload();
-      await expect(page.locator('[data-format-cue="format_elimination"]')).toBeVisible();
+      await expect(page.getByRole("region",{name:"Plea: Lyra",exact:true})).toBeVisible();
       await expect(page.locator("[data-presentation-animation-boundary]").getByText("Historical introduction must not restart live playback.", { exact: true })).toHaveCount(0);
       await expect(page.getByText("Presentation incomplete", { exact: true })).toHaveCount(0);
     });
@@ -1656,17 +1714,17 @@ test.describe("format-aware game viewer", () => {
     const slug = "live-endgame-cast";
     const fixture = await installDeterministicFormatGame(page, { slug, scenarioId: "two_names_declined", status: "in_progress", initialDecisionCount: 1 });
     await page.goto(viewerUrl(`/games/${slug}/replay`));
-    await expect.poll(() => fixture.sockets.length).toBe(1);
+    await expect.poll(() => fixture.readCount).toBeGreaterThan(0);
     await pauseAutoplay(page, "⏸ Pause");
     await expect(page.getByRole("button", { name: "Inspect Atlas", exact: true })).toContainText("In");
     const players = fixture.currentGame().players.map(player => ({ ...player, status: player.id === "atlas" || player.id === "lyra" ? "eliminated" : "alive" }));
     let reads = 0;
-    await page.route(`**/api/games/${slug}/replay-watch-frames*`, async route => {
+    await page.route(`**/api/games/${slug}/presentation*`, async route => {
       reads++;
-      await route.fulfill({ json: [{ schemaVersion: 3, gameId: slug, sequence: 100, round: 4, phase: "OPENING_STATEMENTS", eventType: "game.phase_entered", timestamp: Date.now(), players,
-        counts: { totalPlayers: 5, alivePlayers: 3, eliminatedPlayers: 2, unknownPlayers: 0 } }] });
+      await route.fulfill({ json: {gameId:slug, throughSequence:100, phaseStartSequence:100, status:"in_progress", finished:false, watchState:{...fixture.currentGame().watchState,players}, messages:[{id:1,entry:{entrySequence:1, firstDurableEventSequence:100, round:4, phase:"OPENING_STATEMENTS", from:"echo", speakerPlayerId:"echo", scope:"public", text:"This is my final case.",timestamp:100}}], frames:[{ schemaVersion: 3, gameId: slug, sequence: 100, round: 4, phase: "OPENING_STATEMENTS", eventType: "game.phase_entered", timestamp: Date.now(), players,
+        counts: { totalPlayers: 5, alivePlayers: 3, eliminatedPlayers: 2, unknownPlayers: 0 } }] } });
     });
-    fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: { entrySequence: 1, firstDurableEventSequence: 100, round: 4, phase: "OPENING_STATEMENTS", from: "echo", speakerPlayerId: "echo", scope: "public", text: "This is my final case.", timestamp: Date.now() } }));
+    fixture.publish(JSON.stringify({ type: "message", entry: { entrySequence: 1, firstDurableEventSequence: 100, round: 4, phase: "OPENING_STATEMENTS", from: "echo", speakerPlayerId: "echo", scope: "public", text: "This is my final case.", timestamp: Date.now() } }));
     await expect.poll(() => reads).toBeGreaterThan(0);
     for (let i = 0; i < 5; i++) {
       if (await page.getByRole("button", { name: "Inspect Atlas", exact: true }).textContent().then(text => text?.includes("Out"))) break;
@@ -1928,18 +1986,16 @@ test.describe("format-aware game viewer", () => {
     );
     await expect(initialPointer).toBeVisible();
     expect(await acceptedTarget(initialPointer)).toBe("echo");
-    await expect.poll(() => routed.sockets.length).toBe(1);
+    await expect.poll(() => routed.readCount).toBeGreaterThan(0);
 
     routed.setDecisionCount(6);
-    await routed.sockets[0]!.close({
+    await routed.disconnect({
       code: 1012,
       reason: "deterministic reconnect",
     });
-    await expect(
-      page.getByText("Reconnecting", { exact: true }).first(),
-    ).toBeVisible();
+
     await page.clock.runFor(1_250);
-    await expect.poll(() => routed.sockets.length).toBe(2);
+    await expect.poll(() => routed.readCount).toBeGreaterThan(0);
     await expect
       .poll(async () => {
         const pointer = page.locator(
@@ -1957,7 +2013,7 @@ test.describe("format-aware game viewer", () => {
       "safety_bounce_tie",
     ).decisions.slice(6);
     for (const decision of remainingDecisions) {
-      routed.sockets.at(-1)!.send(JSON.stringify({
+      routed.publish(JSON.stringify({
         type: "viewer_decision_event",
         gameId: "deterministic-safety-reconnect",
         event: decision,
@@ -2127,7 +2183,7 @@ test.describe("format-aware game viewer", () => {
     await page.getByRole("button", { name: "Play replay", exact: true }).click();
     await expect(page.getByRole("status", { name: "Buffering" })).toBeVisible();
     fixture.setDecisionCount(5);
-    await fixture.sockets[0]!.close({ code: 1012, reason: "new gameplay" });
+    await fixture.disconnect({ code: 1012, reason: "new gameplay" });
     await page.clock.runFor(1250);
     await expect(lobby).toHaveAttribute("data-chain-count", "2");
     await expect(page.getByRole("status", { name: "Buffering" })).toHaveCount(0);
@@ -2142,11 +2198,11 @@ test.describe("format-aware game viewer", () => {
     const chain = page.locator("[data-safety-chain]");
     await expect(chain).toBeVisible();
     await expect(chain).toHaveAttribute("data-chain-count", "1");
-    await expect.poll(() => fixture.sockets.length).toBe(1);
+    await expect.poll(() => fixture.readCount).toBeGreaterThan(0);
     fixture.setDecisionCount(5);
-    await fixture.sockets[0]!.close({code:1012,reason:"chain reconnect"});
+    await fixture.disconnect({code:1012,reason:"chain reconnect"});
     await page.clock.runFor(1250);
-    await expect.poll(() => fixture.sockets.length).toBe(2);
+    await expect.poll(() => fixture.readCount).toBeGreaterThan(0);
     await page.reload();
     await expect(chain).toHaveAttribute("data-chain-count", "2");
     await expect(chain.locator('[data-chain-player="echo"]')).toHaveAttribute("data-chooser", "true");
@@ -2257,7 +2313,7 @@ test.describe("format-aware game viewer", () => {
       const kind = event.type === "format.two_names_setup" ? "two_names_initial_names" : event.type === "format.two_names_override_used" ? "two_names_override_removed" : event.type === "format.two_names_override_declined" ? "two_names_override_declined" : "two_names_replacement";
       return action && actorId ? [{kind,id:index+1,entrySequence:index+1,firstDurableEventSequence:event.sequence,gameId:slug,round:event.round,phase:event.phase,scope:"public",fromPlayerId:actorId,fromPlayerName:actorId,toPlayerIds:null,text:`I choose trust for decision ${index}.`,thinking:`I weigh trust for decision ${index}.`,timestamp:Date.parse(event.timestamp),decisionSpeech:{actorId,action}}] : [];
     });
-    await page.route(`**/api/games/${slug}/transcript`,route => route.fulfill({json:actions.map(({kind,...message})=>{void kind;return message;})}));
+    await setFormatTranscript(page, slug, actions.map(({kind,...message})=>{void kind;return message;}));
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await pauseAutoplay(page,"Pause replay");
     await page.getByRole("button",{name:"Player settings",exact:true}).click();
@@ -2294,7 +2350,7 @@ test.describe("format-aware game viewer", () => {
         thinking:tie ? "My tie decision protects my next round." : `My private chain reasoning ${index}. I want to protect the promise I made earlier while keeping my options open. This choice leaves both sides with a reason to work with me, but I still need to hear what the next player says before deciding who I can trust.`,timestamp:Date.parse(event.timestamp),decisionSpeech:{actorId,action:tie ? "format-tiebreak" : "bounce-pointer"}}];
     });
     const ballots = scenario.decisions.flatMap((event,index) => event.type === "format.ballot_cast" ? [{id:100+index,entrySequence:100+index,firstDurableEventSequence:event.sequence,gameId:slug,round:event.round,phase:event.phase,scope:"system",fromPlayerId:event.payload.voterId,fromPlayerName:event.payload.voterId,toPlayerIds:[],text:`I vote ${event.payload.targetId} because I cannot trust them.`,timestamp:Date.parse(event.timestamp),decisionSpeech:{actorId:event.payload.voterId,action:"format-ballot"}}] : []);
-    await page.route(`**/api/games/${slug}/transcript`, route => route.fulfill({json:[...speeches,...ballots]}));
+    await setFormatTranscript(page, slug, [...speeches,...ballots]);
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await pauseAutoplay(page, "Pause replay");
     await page.getByRole("button",{name:"Player settings",exact:true}).click();
@@ -2579,11 +2635,11 @@ test.describe("format-aware game viewer", () => {
 async function installSafetyBounceLobby(page: Page, slug: string, options: { uncertain?: boolean; live?: boolean } = {}) {
   const scenario = createFormatKernelViewerScenario("safety_bounce_tie");
   const fixture = await installDeterministicFormatGame(page, { slug, scenarioId: "safety_bounce_tie", status: options.live ? "in_progress" : "completed", initialDecisionCount: options.live ? 4 : undefined });
-  await page.route(`**/api/games/${slug}/transcript`, route => route.fulfill({ json: [{
+  await setFormatTranscript(page, slug, [{
     id: 1, entrySequence: 1, firstDurableEventSequence: 29, gameId: slug, round: 2,
     phase: "LOBBY", scope: "public", fromPlayerId: "atlas", fromPlayerName: "Atlas", toPlayerIds: null,
     text: "The House is ready for the next round.", timestamp: 1, visualScene: { id: "bounce-lobby", roomId: "lobby" },
-  }] }));
+  }]);
   await page.route(`**/api/games/${slug}/visual`, route => route.fulfill({ json: {
     enabled: true, status: null, portraits: {}, fullBodies: Object.fromEntries(scenario.roster.map(player => [player.id, "/bounce-body.svg"])), scenes: [{
       id: "bounce-lobby", roomId: "lobby", version: 1, imageUrl: "/bounce-lobby.svg", afterDialogueSequence: 0,
@@ -2599,17 +2655,6 @@ async function installSafetyBounceLobby(page: Page, slug: string, options: { unc
     '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><rect width="1600" height="900" fill="#24212c"/><path d="M0 600H1600V900H0Z" fill="#443849"/>'
     + scenario.roster.map((player, index) => `<g><rect x="${130 + index * 400}" y="350" width="140" height="320" rx="60" fill="#75667c"/><ellipse cx="${200 + index * 400}" cy="297" rx="40" ry="45" fill="#c9bbaa"/><text x="${200 + index * 400}" y="740" fill="white" text-anchor="middle" font-family="sans-serif" font-size="26">${player.name}</text></g>`).join("") + '</svg>',
   }));
-  if (options.live) {
-    await page.routeWebSocket(new RegExp(`/ws/games/${slug}(?:\\?.*)?$`), socket => {
-      fixture.sockets.push(socket);
-      setTimeout(() => {
-        socket.send(JSON.stringify({ type: "publication", gameId: slug, publicationSequence: 1, turnSequence: 1, payload: {
-          type: "message", entry: { entrySequence: 1, firstDurableEventSequence: 29, round: 2, phase: "LOBBY", from: "atlas", scope: "public", text: "The House is ready for the next round.", timestamp: 1, visualScene: { id: "bounce-lobby", roomId: "lobby" } },
-        } }));
-        socket.send(JSON.stringify({ type: "watch_state", throughPublicationSequence: 1, state: fixture.currentGame().watchState }));
-      }, 25);
-    });
-  }
   return fixture;
 }
 

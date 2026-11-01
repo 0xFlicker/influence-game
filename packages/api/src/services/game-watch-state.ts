@@ -161,6 +161,8 @@ export interface GameWatchReplayFrame {
 }
 
 export interface GameWatchReplayFrameOptions {
+  /** Pinned presentation prefix; excludes every later event before projection. */
+  throughSequence?: number;
   /** Bound an offline export page without changing canonical sequence identity. */
   limit?: number;
   /** Return only frames after this trusted canonical sequence. */
@@ -231,6 +233,7 @@ export async function getGameWatchState(
 export async function buildGameWatchState(
   db: GameWatchDB,
   game: GameRow,
+  throughSequence?: number,
 ): Promise<GameWatchState> {
   const shouldLoadResult = game.status === "completed" || game.status === "cancelled";
   let [players, result, persistedEvents] = await Promise.all([
@@ -238,10 +241,11 @@ export async function buildGameWatchState(
     shouldLoadResult ? loadTerminalResult(db, game.id) : Promise.resolve(null),
     getPersistedGameEvents(db, game.id),
   ]);
-  const audioReady = await audioReadySequence(db, game.id);
+  const audioHead = await audioReadySequence(db, game.id);
+  const audioReady = throughSequence === undefined ? audioHead : Math.min(throughSequence, audioHead ?? Infinity);
   if (audioReady !== null && persistedEvents.events.some(event => event.sequence > audioReady)) {
     const events = persistedEvents.events.filter(event => event.sequence <= audioReady);
-    persistedEvents = {...persistedEvents, events, eventCount:events.length, persistedHead:events.at(-1)};
+    persistedEvents = {...persistedEvents, events, eventCount:events.length, validPrefixLength:events.length, lastTrustedSequence:events.at(-1)?.sequence ?? 0, persistedHead:events.at(-1)};
     result = null; game = {...game,status:game.status === "completed" ? "in_progress" : game.status};
   }
   const config = parseConfig(game.config);
@@ -346,6 +350,7 @@ export async function getGameWatchReplayFrames(
     getPersistedGameEvents(db, game.id),
   ]);
   const audioReady = acceptedLivePrefix ? null : await audioReadySequence(db,game.id);
+  if (options.throughSequence !== undefined) persistedEvents.events = persistedEvents.events.filter(event => event.sequence <= options.throughSequence!);
   if (audioReady !== null) persistedEvents.events = persistedEvents.events.filter(event => event.sequence <= audioReady);
   if (persistedEvents.events.length === 0) return [];
 
@@ -363,7 +368,7 @@ export async function getGameWatchReplayFrames(
       options.presentationOnly
       && !viewerDecisionEvent
       && event.eventType !== "retrospective.completed"
-      && event.sequence !== lastPersistedSequence
+      && (options.throughSequence !== undefined || event.sequence !== lastPersistedSequence)
     ) {
       continue;
     }

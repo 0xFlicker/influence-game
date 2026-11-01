@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   getGame,
+  getGamePresentation,
   getGameReplayWatchFrames,
   getGameTranscript,
   type GameDetail,
@@ -13,6 +14,7 @@ import {
   type WsViewerEvent,
   type PhaseKey,
 } from "@/lib/api";
+import { WatchWaiting } from "@/components/watch/watch-waiting";
 import { useAuth } from "@/hooks/use-auth";
 import { audioCue } from "@/lib/audio-cues";
 import { completedGameModeHref } from "@/lib/game-links";
@@ -77,23 +79,27 @@ export function GameViewer({
   initialPostgameMedia,
   startSequence,
 }: GameViewerProps) {
+  const bufferedInitial = initialGame && getGamePresentationRouteDecision(initialGame).route === "format";
   const { authenticated } = useAuth();
   const router = useRouter();
   const [game, setGame] = useState<GameDetail | null>(initialGame ?? null);
   const [messages, setMessages] = useState<TranscriptEntry[]>(
-    initialMessages ?? [],
+    bufferedInitial ? [] : initialMessages ?? [],
   );
   const [replayFrames, setReplayFrames] = useState<GameWatchReplayFrame[]>(
-    initialReplayFrames ?? [],
+    bufferedInitial ? [] : initialReplayFrames ?? [],
   );
   const replayFramesRef = useRef<GameWatchReplayFrame[]>(
-    initialReplayFrames ?? [],
+    bufferedInitial ? [] : initialReplayFrames ?? [],
   );
-  const initialPresentationSequence = (initialReplayFrames ?? []).reduce(
+  const initialPresentationSequence = (bufferedInitial ? [] : initialReplayFrames ?? []).reduce(
     (sequence, frame) => Math.max(sequence, frame.sequence),
     0,
   );
   const presentationRequestVersionRef = useRef(0);
+  const presentationSequenceRef = useRef(0);
+  const presentationSnapshotGameIdRef = useRef<string | null>(null);
+  const presentationLiveGameIdRef = useRef<string | null>(null);
   const presentationHydrationRequestRef = useRef<{
     afterSequence: number;
     controller: AbortController;
@@ -209,18 +215,23 @@ export function GameViewer({
           try {
             const incoming = await withPresentationHydrationDeadline(
               controller.signal,
-              (signal) => getGameReplayWatchFrames(gameId, {
-                ...(cursor > 0 ? { afterSequence: cursor } : {}),
-                presentationOnly: true,
-                signal,
-              }),
+              (signal) => getGamePresentation(gameId, cursor, signal),
             );
             if (controller.signal.aborted) return false;
+            // Both lanes come from one repeatable-read, closed-phase prefix.
+            // React batches these updates; no render sees a farewell without its votes.
+            const entries = incoming.messages.map(row => wsEntryToTranscriptEntry(row.entry, incoming.gameId, row.id));
+            const replaceMessages = cursor === 0;
+            setMessages(current => replaceMessages ? entries : [...current, ...entries.filter(entry => !current.some(existing => existing.id === entry.id))]);
+            presentationSequenceRef.current = incoming.throughSequence;
+            presentationSnapshotGameIdRef.current = incoming.gameId;
+            if (incoming.status === "in_progress" || incoming.status === "suspended") presentationLiveGameIdRef.current = incoming.gameId;
+            setGame(current => current ? { ...applyWatchStateToGameDetail(current, incoming.watchState), status: incoming.status === "completed" && !incoming.finished ? "in_progress" : incoming.status } : current);
             retainReplayFrames(
-              incoming,
-              gameRef.current?.id ?? incoming[0]?.gameId,
+              incoming.frames,
+              incoming.gameId,
             );
-            cursor = replayFramesRef.current.at(-1)?.sequence ?? cursor;
+            cursor = incoming.throughSequence;
             if (requestVersion !== presentationRequestVersionRef.current) continue;
             setPresentationHydration({
               status: "ready",
@@ -257,7 +268,7 @@ export function GameViewer({
     const request = presentationHydrationRequestRef.current;
     presentationHydrationRequestRef.current = null;
     request?.controller.abort();
-  }, []);
+  }, [gameId]);
 
   // Set data-phase on root for cinematic CSS cascade (live mode)
   useEffect(() => {
@@ -284,18 +295,12 @@ export function GameViewer({
       const isFormat =
         getGamePresentationRouteDecision(replayGame).route === "format";
       if (isFormat) {
-        const [transcriptResult] = await Promise.all([
-          getGameTranscript(id).then(
-            (transcript) => ({ ok: true as const, transcript }),
-            () => ({ ok: false as const }),
-          ),
-          hydratePresentationFrames({
+        presentationSequenceRef.current = 0;
+        await hydratePresentationFrames({
             afterSequence: 0,
             preserveScreen: replayFramesRef.current.length > 0,
-          }),
-        ]);
+          });
         if (!cancelled) {
-          setMessages(transcriptResult.ok ? transcriptResult.transcript : []);
           setReplayIndex(0);
           setLoadError(null);
           setReplayLoading(false);
@@ -334,9 +339,9 @@ export function GameViewer({
       watchFinalStatusRef.current = initialGame.watchState?.final.status;
       currentPhaseRef.current = (initialGame.watchState?.currentPhase ??
         initialGame.currentPhase) as PhaseKey;
-      if (initialMessages) {
+      if (initialMessages && !bufferedInitial) {
         setMessages(initialMessages);
-        retainReplayFrames(initialReplayFrames ?? [], initialGame.id);
+        if (!bufferedInitial) retainReplayFrames(initialReplayFrames ?? [], initialGame.id);
         setReplayIndex(0);
         setReplayLoading(false);
       } else if (
@@ -345,12 +350,12 @@ export function GameViewer({
       ) {
         void loadReplayData(gameId, initialGame);
       } else {
-        retainReplayFrames(initialReplayFrames ?? [], initialGame.id);
+        if (!bufferedInitial) retainReplayFrames(initialReplayFrames ?? [], initialGame.id);
         setReplayLoading(false);
       }
       const initialRoute = getGamePresentationRouteDecision(initialGame);
       const replayLoadRequested =
-        !initialMessages
+        (!initialMessages || bufferedInitial)
         && (initialGame.status === "completed" || initialGame.status === "cancelled")
         && completedMode === "replay";
       const needsCurrentFormatPrefix =
@@ -367,7 +372,7 @@ export function GameViewer({
       if (
         needsCurrentFormatPrefix
         && !replayLoadRequested
-        && (initialReplayFrames?.length ?? 0) === 0
+        && (bufferedInitial || (initialReplayFrames?.length ?? 0) === 0)
       ) {
         void hydratePresentationFrames({
           afterSequence: 0,
@@ -432,6 +437,7 @@ export function GameViewer({
     completedMode,
     hydratePresentationFrames,
     initialGame,
+    bufferedInitial,
     initialMessages,
     initialReplayFrames,
     retainReplayFrames,
@@ -662,7 +668,7 @@ export function GameViewer({
           // viewer_decision_event. Their following dialogue still needs fresh
           // canonical status frames, including throughout the endgame.
           if ((ev.entry.firstDurableEventSequence ?? 0) > (replayFramesRef.current.at(-1)?.sequence ?? 0)) {
-            void hydratePresentationFrames({ afterSequence: replayFramesRef.current.at(-1)?.sequence ?? 0, preserveScreen: replayFramesRef.current.length > 0 });
+            void hydratePresentationFrames({ afterSequence: presentationSequenceRef.current, preserveScreen: replayFramesRef.current.length > 0 });
           }
           const id = ev.publicationSequence !== undefined ? -ev.publicationSequence : msgIdRef.current--;
           const msg = {
@@ -755,12 +761,28 @@ export function GameViewer({
     ],
   );
 
-  const wsStatus = useGameWebSocket(
+  const isBufferedFormat = game ? getGamePresentationRouteDecision(game).route === "format" : false;
+  const socketStatus = useGameWebSocket(
     gameId,
     game?.id ?? gameId,
-    game?.status,
+    isBufferedFormat ? undefined : game?.status,
     handleWsEvent,
   );
+  const wsStatus = isBufferedFormat ? presentationHydration.status === "ready" ? "live" : presentationHydration.status === "idle" || presentationHydration.status === "loading" ? "connecting" : "reconnecting" : socketStatus;
+  // Live and replay use the same endpoint. Live only polls for the next closed
+  // phase; it never subscribes to the independently released dialogue lane.
+  useEffect(() => {
+    if (!isBufferedFormat || !["in_progress", "suspended"].includes(game?.status ?? "")) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = async () => {
+      await hydratePresentationFrames({ afterSequence: presentationSequenceRef.current, preserveScreen: replayFramesRef.current.length > 0 });
+      if (!cancelled) { clearTimeout(timer); timer = setTimeout(() => { void refresh(); }, 1000); }
+    };
+    void refresh();
+    window.addEventListener("online", refresh);
+    return () => { cancelled = true; clearTimeout(timer); window.removeEventListener("online", refresh); };
+  }, [isBufferedFormat, game?.status, hydratePresentationFrames]);
   // Operational pauses do not advance the canonical presentation cursor. Poll
   // their status separately so repair/resume preserves the mounted watch scene.
   useEffect(() => {
@@ -789,28 +811,6 @@ export function GameViewer({
     return () => { cancelled = true; clearTimeout(timer); };
   }, [gameId, game?.visualMode, game?.status]);
 
-  const previousWsStatusRef = useRef(wsStatus);
-
-  useEffect(() => {
-    const previous = previousWsStatusRef.current;
-    previousWsStatusRef.current = wsStatus;
-    if (
-      wsStatus === "live"
-      && (previous === "reconnecting" || previous === "disconnected")
-      && game
-      && getGamePresentationRouteDecision(game).route === "format"
-    ) {
-      void hydratePresentationFrames({
-        afterSequence: replayFramesRef.current.at(-1)?.sequence ?? 0,
-        preserveScreen: replayFramesRef.current.length > 0,
-      });
-    }
-  }, [
-    game,
-    hydratePresentationFrames,
-    wsStatus,
-  ]);
-
   const connStatus = isReplay
     ? "replay"
     : wsStatus === "live"
@@ -836,12 +836,19 @@ export function GameViewer({
     );
   }
 
+  const playbackCompletedMode = completedMode ?? (presentationLiveGameIdRef.current === game.id ? "replay" : null);
   const gamePresentation = getGamePresentationRouteDecision(game);
   const hasTypedFormatReplay =
     gamePresentation.route === "format"
     && replayFrames.some((frame) => frame.viewerDecisionEvent);
 
-  if (completedMode === "results") return <CompletedResultsReview gameId={game.slug} game={game} />;
+  if (playbackCompletedMode === "results") return <CompletedResultsReview gameId={game.slug} game={game} />;
+
+  if (isBufferedFormat && game.status !== "waiting" && (game.status !== "completed" || playbackCompletedMode === "replay") && presentationSnapshotGameIdRef.current !== game.id) {
+    return <div><WatchWaiting label={presentationHydration.status === "unavailable" ? "Playback could not load." : "Preparing playback…"} />
+      {presentationHydration.status === "unavailable" && <button onClick={() => { void hydratePresentationFrames({afterSequence:0,preserveScreen:false}); }}>Retry playback</button>}
+    </div>;
+  }
 
   if (game.status === "suspended" && !game.visualPaused && !game.watchState?.retrospective.outcome) {
     const health = game.kernelHealth;
@@ -939,7 +946,7 @@ export function GameViewer({
 
   if (
     game.status === "completed"
-    && completedMode === "replay"
+    && playbackCompletedMode === "replay"
     && replayLoading
     && messages.length === 0
     && !hasTypedFormatReplay
@@ -953,7 +960,7 @@ export function GameViewer({
 
   if (
     game.status === "completed"
-    && completedMode === "replay"
+    && playbackCompletedMode === "replay"
     && messages.length === 0
     && !hasTypedFormatReplay
   ) {
@@ -976,12 +983,12 @@ export function GameViewer({
     );
   }
 
-  if (game.status === "completed" && completedMode !== "replay") {
+  if (game.status === "completed" && playbackCompletedMode !== "replay") {
     return (
       <CompletedGameEntry
         key={`completed-entry:${game.slug}`}
         gameId={game.slug}
-        hasReplay={messages.length > 0 || completedMode !== "results"}
+        hasReplay={messages.length > 0 || playbackCompletedMode !== "results"}
         initialMedia={initialPostgameMedia}
       />
     );
@@ -994,11 +1001,13 @@ export function GameViewer({
   const matchWatchDecision = getMatchWatchRouteDecision(
     game,
     messages,
-    completedMode,
+    playbackCompletedMode,
     replayFrames,
   );
   if (matchWatchDecision.eligible) {
-    const matchWatchKey = matchWatchDecision.mode === "live"
+    const matchWatchKey = isBufferedFormat
+      ? `format:${game.id}:${startSequence ?? "start"}`
+      : matchWatchDecision.mode === "live"
       ? `live:${game.id}`
       : `replay:${game.id}:${messages.length}:${messages[0]?.id ?? "start"}:${messages[messages.length - 1]?.id ?? "end"}:${startSequence ?? "start"}`;
     return (
@@ -1015,7 +1024,7 @@ export function GameViewer({
           replayFrames={replayFrames}
           live={matchWatchDecision.mode === "live"}
           connStatus={connStatus}
-          presentationHydrationStatus={matchWatchDecision.mode === "live" && !game.visualPaused && wsStatus !== "live"
+          presentationHydrationStatus={isBufferedFormat ? presentationHydration.status : matchWatchDecision.mode === "live" && !game.visualPaused && wsStatus !== "live"
             ? (wsStatus === "connecting" ? "loading" : "reconnecting")
             : presentationHydration.status}
           startSequence={startSequence}

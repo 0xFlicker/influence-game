@@ -191,7 +191,12 @@ function DramaticReplayTheater({
       replayFrames,
     ],
   );
-  const presentationCues = useMemo(() => composeInfluencePresentation(game.id, canonicalPresentationCues, players, scenes, game.gameSchemaVersion, {speechPrefixComplete: !live && (presentationHydrationStatus === undefined || presentationHydrationStatus === "ready")}), [canonicalPresentationCues, game.id, players, scenes, game.gameSchemaVersion, live, presentationHydrationStatus]);
+  const presentationCues = useMemo(() => composeInfluencePresentation(game.id, canonicalPresentationCues, players, scenes, game.gameSchemaVersion, {speechPrefixComplete: isFormatGame || !live || game.status === "completed" || game.status === "cancelled"}), [canonicalPresentationCues, game.id, players, scenes, game.gameSchemaVersion, isFormatGame, live, game.status]);
+  const latestFrame = replayFrames.at(-1);
+  const latestPhaseStart = replayFrames.findLast(frame => frame.eventType === "game.phase_entered")?.sequence
+    ?? replayFrames.find(frame => frame.round === latestFrame?.round && frame.phase === latestFrame.phase)?.sequence ?? 0;
+  const phaseCueIndex = presentationCues.findIndex(cue => cue.source !== "opening" && (cue.canonicalSequence ?? 0) >= latestPhaseStart);
+  const latestPhaseIndex = phaseCueIndex >= 0 ? phaseCueIndex : Math.max(0, presentationCues.length - 1);
   const voteLedgers = useMemo(() => compileVoteLedgers(presentationCues), [presentationCues]);
   const revealedWinners = useMemo(() => compileRevealedWinnerCues(presentationCues), [presentationCues]);
   const lobbyMessages = useMemo(() => compileSafetyBounceLobbyLookup(classicCues, scenes), [classicCues, scenes]);
@@ -217,7 +222,7 @@ function DramaticReplayTheater({
 
   const fallbackCue = presentationCues[startSequence !== undefined
     ? findPresentationCueIndexForSequence(presentationCues, startSequence)
-    : live ? presentationCues.length - 1 : 0] ?? null;
+    : live ? isFormatGame ? latestPhaseIndex : presentationCues.length - 1 : 0] ?? null;
   const activeCue = director.getActiveCue() ?? fallbackCue;
   const openingCue = activeCue?.source === "opening" ? activeCue : null;
   const openingPlayer = openingCue?.opening.player ? players.find(player => player.id === openingCue.opening.player?.id) : undefined;
@@ -407,7 +412,7 @@ function DramaticReplayTheater({
       live
       && (
         presentationHydrationStatus !== "ready"
-        || reconnectHydrationPendingRef.current
+        || (!isFormatGame && reconnectHydrationPendingRef.current)
       )
     ) {
       return;
@@ -431,6 +436,11 @@ function DramaticReplayTheater({
       return;
     }
     if (live && director.getSnapshot().cueKeys.length === 0) {
+      if (isFormatGame) {
+        director.load(presentationCues, latestPhaseIndex);
+        if (!followed) director.play();
+        return;
+      }
       const latest = presentationCues.at(-1);
       if (latest?.source === "classic" && !latest.liveCatchUp) {
         // A newly published first speech needs its full reading time. Historical
@@ -453,6 +463,8 @@ function DramaticReplayTheater({
     director.append(presentationCues);
   }, [
     followed,
+    isFormatGame,
+    latestPhaseIndex,
     director,
     directorSnapshot.cueKeys.length,
     live,
@@ -463,7 +475,7 @@ function DramaticReplayTheater({
   ]);
 
   useEffect(() => {
-    if (!live) return;
+    if (!live || isFormatGame) return;
     if (presentationHydrationStatus === "reconnecting") {
       reconnectHydrationPendingRef.current = true;
       return;
@@ -485,6 +497,7 @@ function DramaticReplayTheater({
     director,
     directorSnapshot.isPlaying,
     live,
+    isFormatGame,
     presentationCues,
     presentationHydrationStatus,
   ]);
@@ -541,10 +554,10 @@ function DramaticReplayTheater({
     if (presentationCues.length > 0) {
       pausePresentation();
       director.setFollowTail(live);
-      director.seek(presentationCues.length - 1);
+      director.seek(live && isFormatGame ? latestPhaseIndex : presentationCues.length - 1);
       if (live) {setPlayRequested(true); director.play();}
     }
-  }, [director, pausePresentation, presentationCues.length, live]);
+  }, [director, pausePresentation, presentationCues.length, live, isFormatGame, latestPhaseIndex]);
 
   const goToBeginning = useCallback(() => {
     restartAmbient(); restartOpening();
