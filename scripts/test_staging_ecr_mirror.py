@@ -156,6 +156,28 @@ class MirrorTests(unittest.TestCase):
         self.assertFalse(result['publicationCountLimited'])
         self.assertFalse(any(any('delete' in arg.lower() for arg in call) for call in self.calls))
 
+    def test_logical_policy_allows_new_release_and_unused_roots_without_pin_accumulation(self):
+        self.mirror.measure(self.digest)
+        self.lifecycle={'rules':[
+            {'rulePriority':1,'selection':{'tagStatus':'tagged','tagPatternList':['*'],'countType':'imageCountMoreThan','countNumber':5},'action':{'type':'expire'}},
+            {'rulePriority':2,'selection':{'tagStatus':'untagged','countType':'sinceImagePushed','countUnit':'days','countNumber':1},'action':{'type':'expire'}}]}
+        result=self.mirror.publish(self.digest)
+        self.assertEqual(result['retentionPolicyMode'],'logical-release')
+        self.assertTrue(any('copy' in argv for argv in self.calls))
+        self.assertFalse(any(any('delete' in arg.lower() for arg in argv) for argv in self.calls))
+        for key,value in [('countNumber',1),('tagPatternList',['sha256-*'])]:
+            old=dict(self.lifecycle['rules'][0]['selection']);self.lifecycle['rules'][0]['selection'][key]=value
+            with self.assertRaises(ValueError):m.verify_lifecycle(self.lifecycle,[])
+            self.lifecycle['rules'][0]['selection']=old
+    def test_logical_policy_rejects_wildcard_pins_and_unreviewed_actions(self):
+        rules=[{'rulePriority':1,'selection':{'tagStatus':'tagged','tagPatternList':['*'],'countType':'imageCountMoreThan','countNumber':5},'action':{'type':'expire'}},
+            {'rulePriority':2,'selection':{'tagStatus':'untagged','countType':'sinceImagePushed','countUnit':'days','countNumber':1},'action':{'type':'expire'}}]
+        rules[0]['action']={'type':'transition'}
+        with self.assertRaises(ValueError):m.verify_lifecycle({'rules':rules},[])
+        rules[0]['action']={'type':'expire'}
+        rules.insert(0,{'rulePriority':0,'selection':{'tagStatus':'tagged','tagPatternList':['keep-*'],'countType':'imageCountMoreThan','countNumber':1},'action':{'type':'expire'}})
+        with self.assertRaises(ValueError):m.verify_lifecycle({'rules':rules},[])
+
 class EvidenceTests(unittest.TestCase):
     def setUp(self):
         self.run = {'repository':{'id':1183905474},'path':'.github/workflows/ci.yml','head_branch':'main','conclusion':'success','event':'push','head_sha':'a'*40,'id':123,'run_attempt':2}
