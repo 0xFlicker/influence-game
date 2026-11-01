@@ -21,7 +21,6 @@ bun -e '
 const workflow = Bun.YAML.parse(await Bun.file(process.argv[1]).text());
 const required = {
   "release-manifest": ["check", "provider-free", "api-postgres", "docker-build-push"],
-  "trigger-deploy": ["release-manifest"],
 };
 for (const [name, dependencies] of Object.entries(required)) {
   const job = workflow.jobs[name];
@@ -60,9 +59,11 @@ require_literal "$ci_workflow" "staging web digest" "web_digest"
 require_literal "$ci_workflow" "staging worker digest" "worker_digest"
 require_literal "$ci_workflow" "manifest content identity" "manifest_digest"
 require_literal "$ci_workflow" "Docker push digest parser" "awk '\$2 == \"digest:\" { print \$3 }'"
-require_literal "$ci_workflow" "manifest-gated staging dispatch" "needs: release-manifest"
-require_literal "$ci_workflow" "build run ID pass-through" "build_run_id: String(context.runId)"
-require_literal "$ci_workflow" "actual build attempt pass-through" "build_run_attempt: process.env.GITHUB_RUN_ATTEMPT"
+require_literal ".github/workflows/staging-release.yml" "terminal CI orchestration" "types: [completed]"
+require_literal ".github/workflows/staging-release.yml" "mirror-gated staging dispatch" "needs: [release, mirror]"
+require_literal ".github/workflows/staging-release.yml" "original build run ID pass-through" "build_run_id: process.env.BUILD_RUN_ID"
+require_literal ".github/workflows/staging-release.yml" "original build attempt pass-through" "build_run_attempt: process.env.BUILD_RUN_ATTEMPT"
+require_literal ".github/workflows/staging-release.yml" "attempt-bound mirror evidence" "worker_mirror_receipt_digest: process.env.WORKER_MIRROR_RECEIPT_DIGEST"
 
 require_literal "$e2e_workflow" "staging deploy run input" "staging_run_id"
 require_literal "$e2e_workflow" "staging deploy attempt input" "staging_run_attempt"

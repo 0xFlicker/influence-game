@@ -34,6 +34,9 @@ jobs:
       - name: Check character worker platform diagnostics
         run: python3 -m unittest discover -s workers/character-cutouts -p 'test_*.py'
 
+      - name: Check staging release source guards
+        run: python3 -m unittest discover -s scripts -p 'test_staging_release_source.py'
+
       - name: Check isolated proof publication source guards
         run: python3 -m unittest discover -s scripts -p 'test_staging_proof_source.py'
 
@@ -442,48 +445,3 @@ jobs:
           path: release-manifest.json
           if-no-files-found: error
           retention-days: 14
-
-  trigger-deploy:
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && !inputs.proof_publication
-    needs: release-manifest
-    runs-on: ubuntu-latest
-    env:
-      CANDIDATE_SHA: ${{ needs.release-manifest.outputs.candidate_sha }}
-      API_DIGEST: ${{ needs.release-manifest.outputs.api_digest }}
-      WEB_DIGEST: ${{ needs.release-manifest.outputs.web_digest }}
-      WORKER_DIGEST: ${{ needs.release-manifest.outputs.worker_digest }}
-      MIGRATION_SET: ${{ needs.release-manifest.outputs.migration_set }}
-      RELEASE_MANIFEST_ARTIFACT: ${{ needs.release-manifest.outputs.artifact_name }}
-      RELEASE_MANIFEST_DIGEST: ${{ needs.release-manifest.outputs.manifest_digest }}
-    steps:
-      - name: Generate GitHub App token
-        id: app-token
-        uses: actions/create-github-app-token@v3
-        with:
-          client-id: ${{ vars.GH_APP_CLIENT_ID }}
-          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-          owner: 0xFlicker
-          repositories: linode-iac
-
-      - name: Trigger staging deploy
-        uses: actions/github-script@v8
-        with:
-          github-token: ${{ steps.app-token.outputs.token }}
-          script: |
-            await github.rest.actions.createWorkflowDispatch({
-              owner: '0xFlicker',
-              repo: 'linode-iac',
-              workflow_id: 'deploy-staging.yml',
-              ref: 'main',
-              inputs: {
-                candidate_sha: process.env.CANDIDATE_SHA,
-                api_digest: process.env.API_DIGEST,
-                web_digest: process.env.WEB_DIGEST,
-                worker_digest: process.env.WORKER_DIGEST,
-                migration_set: process.env.MIGRATION_SET,
-                build_run_id: String(context.runId),
-                build_run_attempt: process.env.GITHUB_RUN_ATTEMPT,
-                release_manifest_artifact: process.env.RELEASE_MANIFEST_ARTIFACT,
-                release_manifest_digest: process.env.RELEASE_MANIFEST_DIGEST
-              }
-            });

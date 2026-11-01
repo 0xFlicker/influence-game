@@ -1,0 +1,103 @@
+name: Publish and deploy exact staging release
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: staging-renderer-release
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.repository_id == '1183905474' && github.repository_owner_id == '97764360' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.id == 1183905474
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      eligible: ${{ steps.release.outputs.eligible }}
+      mode: ${{ steps.release.outputs.mode }}
+      candidate_sha: ${{ steps.release.outputs.candidate_sha }}
+      build_run_id: ${{ steps.release.outputs.build_run_id }}
+      build_run_attempt: ${{ steps.release.outputs.build_run_attempt }}
+      release_manifest_artifact: ${{ steps.release.outputs.release_manifest_artifact }}
+      release_manifest_digest: ${{ steps.release.outputs.release_manifest_digest }}
+      migration_set: ${{ steps.release.outputs.migration_set }}
+      api_digest: ${{ steps.release.outputs.api_digest }}
+      web_digest: ${{ steps.release.outputs.web_digest }}
+      worker_digest: ${{ steps.release.outputs.worker_digest }}
+    steps:
+      # workflow_run is privileged: execute trusted main code, never source-run code.
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Verify terminal source CI and exact release evidence
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: |
+          [[ "$SOURCE_RUN_ID" =~ ^[1-9][0-9]*$ && "$SOURCE_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/attempts/$SOURCE_ATTEMPT" > source-run.json
+          python3 scripts/staging-release-source.py --run-metadata source-run.json --output release-selection.json
+  mirror:
+    needs: release
+    if: needs.release.outputs.eligible == 'true'
+    uses: ./.github/workflows/staging-renderer-ecr.yml
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+      id-token: write
+    with:
+      source_run_id: ${{ needs.release.outputs.build_run_id }}
+      publish: ${{ needs.release.outputs.mode == 'remote' }}
+      source_run_attempt: ${{ needs.release.outputs.build_run_attempt }}
+  trigger-deploy:
+    needs: [release, mirror]
+    if: needs.release.outputs.eligible == 'true'
+    runs-on: ubuntu-latest
+    env:
+      CANDIDATE_SHA: ${{ needs.release.outputs.candidate_sha }}
+      API_DIGEST: ${{ needs.release.outputs.api_digest }}
+      WEB_DIGEST: ${{ needs.release.outputs.web_digest }}
+      WORKER_DIGEST: ${{ needs.release.outputs.worker_digest }}
+      MIGRATION_SET: ${{ needs.release.outputs.migration_set }}
+      BUILD_RUN_ID: ${{ needs.release.outputs.build_run_id }}
+      BUILD_RUN_ATTEMPT: ${{ needs.release.outputs.build_run_attempt }}
+      RELEASE_MANIFEST_ARTIFACT: ${{ needs.release.outputs.release_manifest_artifact }}
+      RELEASE_MANIFEST_DIGEST: ${{ needs.release.outputs.release_manifest_digest }}
+      WORKER_MIRROR_RUN_ID: ${{ needs.mirror.outputs.mirror_run_id }}
+      WORKER_MIRROR_RUN_ATTEMPT: ${{ needs.mirror.outputs.mirror_run_attempt }}
+      WORKER_MIRROR_RECEIPT_DIGEST: ${{ needs.mirror.outputs.mirror_receipt_digest }}
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.GH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: 0xFlicker
+          repositories: linode-iac
+      - name: Trigger staging only after mirror admission succeeds
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: '0xFlicker', repo: 'linode-iac', workflow_id: 'deploy-staging.yml', ref: 'main',
+              inputs: {
+                candidate_sha: process.env.CANDIDATE_SHA,
+                api_digest: process.env.API_DIGEST, web_digest: process.env.WEB_DIGEST,
+                worker_digest: process.env.WORKER_DIGEST, migration_set: process.env.MIGRATION_SET,
+                build_run_id: process.env.BUILD_RUN_ID, build_run_attempt: process.env.BUILD_RUN_ATTEMPT,
+                release_manifest_artifact: process.env.RELEASE_MANIFEST_ARTIFACT,
+                release_manifest_digest: process.env.RELEASE_MANIFEST_DIGEST,
+                worker_mirror_run_id: process.env.WORKER_MIRROR_RUN_ID,
+                worker_mirror_run_attempt: process.env.WORKER_MIRROR_RUN_ATTEMPT,
+                worker_mirror_receipt_digest: process.env.WORKER_MIRROR_RECEIPT_DIGEST
+              }
+            });

@@ -1,5 +1,26 @@
-name: Mirror staging renderer to ECR manually
+name: Mirror staging renderer to ECR
 on:
+  workflow_call:
+    inputs:
+      source_run_id:
+        required: true
+        type: string
+      source_run_attempt:
+        default: ''
+        type: string
+      publish:
+        required: true
+        type: boolean
+      max_manifests:
+        default: '5'
+        type: string
+    outputs:
+      mirror_run_id:
+        value: ${{ jobs.mirror.outputs.mirror_run_id }}
+      mirror_run_attempt:
+        value: ${{ jobs.mirror.outputs.mirror_run_attempt }}
+      mirror_receipt_digest:
+        value: ${{ jobs.mirror.outputs.mirror_receipt_digest }}
   pull_request:
     paths:
       - .github/workflows/staging-renderer-ecr.yml
@@ -16,7 +37,7 @@ on:
         type: boolean
         default: false
       max_manifests:
-        description: Five image objects by default; higher requires exact protected-reference exception approval
+        description: Deprecated compatibility input; OCI object count does not limit publication
         type: choice
         options: ['5', '6', '7', '8', '9', '10']
         default: '5'
@@ -35,7 +56,7 @@ jobs:
       - run: python3 -m unittest discover -s scripts -p 'test_staging_ecr_mirror.py'
   mirror:
     # The owner may inspect metadata on a review branch. AWS publication remains main-only.
-    if: github.event_name == 'workflow_dispatch' && github.repository_id == '1183905474' && github.repository_owner_id == '97764360' && (github.ref == 'refs/heads/main' || (!inputs.publish && github.actor_id == '97764360'))
+    if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.id == 1183905474)) && github.repository_id == '1183905474' && github.repository_owner_id == '97764360' && (github.ref == 'refs/heads/main' || (!inputs.publish && github.actor_id == '97764360'))
     needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -44,6 +65,10 @@ jobs:
       actions: read
       packages: read
       id-token: write
+    outputs:
+      mirror_run_id: ${{ github.run_id }}
+      mirror_run_attempt: ${{ github.run_attempt }}
+      mirror_receipt_digest: ${{ steps.receipt.outputs.digest }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -52,9 +77,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_ATTEMPT: ${{ inputs.source_run_attempt }}
         run: |
           [[ "$SOURCE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" > source-run.json
+          endpoint="repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID"
+          if [ -n "$SOURCE_ATTEMPT" ]; then
+            [[ "$SOURCE_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+            endpoint="$endpoint/attempts/$SOURCE_ATTEMPT"
+          fi
+          gh api "$endpoint" > source-run.json
           source_branch="$(python3 -c 'import json; print(json.load(open("source-run.json"))["head_branch"])')"
           if [ "$source_branch" != main ]; then
             python3 scripts/staging-proof-source.py --run-metadata source-run.json --output verified-proof-run.json
@@ -96,6 +127,18 @@ jobs:
         env:
           MANIFEST_LIMIT: ${{ inputs.max_manifests }}
         run: python3 scripts/staging-ecr-mirror.py --kind worker --run-metadata source-run.json --evidence source-evidence/release-manifest.json --auth-file "$RUNNER_TEMP/staging-ecr-auth.json" --output mirror-receipt.json --max-manifests "$MANIFEST_LIMIT" --publish
+      - name: Bind verified publication to this exact workflow attempt
+        if: inputs.publish && github.ref == 'refs/heads/main'
+        id: receipt
+        run: echo "digest=sha256:$(sha256sum mirror-receipt.json | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+      - name: Upload attempt-bound worker publication evidence
+        if: inputs.publish && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v6
+        with:
+          name: staging-worker-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: mirror-receipt.json
+          if-no-files-found: error
+          retention-days: 30
       - uses: actions/upload-artifact@v6
         with:
           name: staging-worker-image-receipt
