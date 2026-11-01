@@ -112,6 +112,18 @@ describe("timeout attribution", () => {
     expect(records[0]?.rawResponse?.status).toBeUndefined();
   });
 
+  test("response body failures retain received headers and transport timing", async () => {
+    const records: ProviderAttemptRecord[] = [];
+    const client = new OpenAI({ apiKey: "test", maxRetries: 0, fetch: createProviderEvidenceFetch(async () =>
+      new Response(new ReadableStream({ start(controller) { controller.error(new Error("body disconnected")); } }),
+        { status: 200, headers: { "x-request-id": "received-headers" } }), [], 300_000) });
+    const call = new ProviderExecutionCoordinator({ hooks: { onTerminal: record => { records.push(record); } } }).startCall(coordinate);
+    await expect(call.execute({ preparedRequest: { transport: "xai.responses", providerProfileId: "xai", model: "test", body: request }, maxAttempts: 1,
+      dispatch: ({ requestOptions }) => client.responses.create(request, requestOptions), validate: () => ({ status: "usable", value: "accepted" }) })).rejects.toThrow();
+    expect(records[0]?.rawResponse).toMatchObject({ status: 200, headers: { "x-request-id": "received-headers" }, body: null });
+    expect(records[0]?.transportTiming).toMatchObject({ responseHeadersAt: expect.any(String), completedAt: expect.any(String), timeoutMs: 300_000 });
+  });
+
   test("SDK deadline, remote timeout, network timeout, unknown and cancellation stay distinct", async () => {
     expect(classifyProviderError(new APIConnectionTimeoutError())).toMatchObject({ timeoutSource: "client_deadline" });
     for (const status of [408, 504]) expect(classifyProviderError({ status, message: "timeout" })).toMatchObject({ timeoutSource: "provider", httpStatus: status });

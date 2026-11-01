@@ -1528,14 +1528,20 @@ export function createProviderEvidenceFetch(
       capture.response = {
         status: response.status,
         headers: sanitizeHeaders(response.headers, actualCredentialValues),
-        body: await sanitizeBodyText(
-          await response.clone().text(),
-          actualCredentialValues,
-        ),
+        body: null,
       };
-      if (capture.images) capture.response = await capture.images.evidence(capture.response);
-      capture.timing = { dispatchedAt: new Date(dispatchedAt).toISOString(), responseHeadersAt,
-        completedAt: new Date().toISOString(), elapsedMs: Date.now() - dispatchedAt, ...(timeoutMs !== undefined && { timeoutMs }) };
+      try {
+        capture.response.body = await sanitizeBodyText(await response.clone().text(), actualCredentialValues);
+        if (capture.images) capture.response = await capture.images.evidence(capture.response);
+      } catch (error) {
+        const cause = asRecord(asRecord(error).cause);
+        capture.errorClass = readString(cause.name) || (error instanceof Error ? error.constructor.name : readString(asRecord(error).name));
+        capture.errorCode = readString(cause.code) || readString(asRecord(error).code);
+        throw error;
+      } finally {
+        capture.timing = { dispatchedAt: new Date(dispatchedAt).toISOString(), responseHeadersAt,
+          completedAt: new Date().toISOString(), elapsedMs: Date.now() - dispatchedAt, ...(timeoutMs !== undefined && { timeoutMs }) };
+      }
     }
     return response;
     } catch (error) {
