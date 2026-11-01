@@ -59,7 +59,7 @@ test("new Werewolf casts use frozen bundled bodies through playback and visual p
     expect(payloadHash(bytes!)).toBe(ref.bodyHash!);
   }
   const watch = await readWerewolfWatch(db, gameId, "mystery", 1, 64);
-  expect(watch.players.every(player => bundledHouseBody(player.fullBodyReferenceUrl) !== null)).toBe(true);
+  expect(watch.players.every(player => player.fullBodyReferenceUrl?.includes("image=body"))).toBe(true);
   expect(await db.select().from(schema.characterCutoutDemands)).toHaveLength(0);
   const prepared = await freezeWerewolfReferences(db, gameId, cast);
   for (const member of prepared.cast) {
@@ -72,7 +72,7 @@ test("new Werewolf casts use frozen bundled bodies through playback and visual p
   }
   // Replay/export pins contain the bundled hash; excluding it cannot advertise a body.
   const excluded = await werewolfReferenceMetadata(db, gameId, undefined, { availableHashes: [] });
-  expect(excluded.every(ref => ref.kind === "full_body" && ref.bodyHash !== null)).toBe(true);
+  expect(excluded.every(ref => ref.kind === "portrait" && ref.bodyHash === null)).toBe(true);
 });
 
 test("historical Werewolf rosters never acquire new bundled full-bodies on reads", async () => {
@@ -94,7 +94,7 @@ test("Influence playback exposes bundled bodies and does not requeue background 
   const response = await createVisualRoutes(db).request(`/api/games/${gameId}/visual`);
   expect(response.status).toBe(200);
   const visual = await response.json() as { fullBodies: Record<string, string> };
-  expect(visual.fullBodies[playerId]).toBe(profile.fullBodyReferenceUrl!);
+  expect(visual.fullBodies[playerId]).toBe(`/api/games/${gameId}/visual/artifacts/${artifact}`);
   expect(await db.select().from(schema.characterCutoutDemands)).toHaveLength(0);
   expect(bundledHouseBody(fullBodyReferenceUrl)).not.toBeNull();
 });

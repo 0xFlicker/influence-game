@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Hono } from "hono";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { GameState, Phase } from "@influence/engine";
 import { completedWerewolfResultsFixture as werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { replayWerewolf, werewolfActionPlans } from "@influence/engine/werewolf";
@@ -20,8 +20,8 @@ import { createVisualReplayProductionRoutes } from "../routes/visual-replay-prod
 import { appendGameEvents } from "../services/game-events.js";
 import { createInitialGameExecutionStateV1, initializeGameExecutionAuthority } from "../services/game-turn-commit.js";
 import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
-import { readInfluenceProductionSource, decodeInfluenceProductionSnapshot } from "../services/influence-production-source.js";
-import { buildWerewolfProductionSourceSnapshot, readWerewolfProductionSource, decodeWerewolfProductionSnapshot } from "../services/werewolf-production-source.js";
+import { readInfluenceProductionSource } from "../services/influence-production-source.js";
+import { buildWerewolfProductionSourceSnapshot, readWerewolfProductionSource } from "../services/werewolf-production-source.js";
 import { readWerewolfWatch } from "../services/werewolf-presentation.js";
 import { createResolvedRoundCanonicalEventFixture, insertGame, insertOwner, withJuryWinner, withRetrospective, insertRetrospectiveTranscriptFixture } from "./durable-run-test-utils.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
@@ -129,12 +129,11 @@ test("missing frozen character art uses presentation fallback while available bo
   legacy.agentProfileId = "legacy-without-revision"; legacy.contentRevisionId = null;
   bodyOnly.agentProfileId = "body-only-profile"; bodyOnly.contentRevisionId = "body-only-revision";
   lostPortrait.agentProfileId = "lost-portrait-profile"; lostPortrait.contentRevisionId = "lost-portrait-revision";
-  const bodyBytes = await readFile(new URL("../../../web/public/avatars/personas/full-body-v1/observer.webp", import.meta.url));
+  const bodyBytes = await readFile(new URL("../../../web/public/avatars/personas/observer.png", import.meta.url));
   const portraitBytes = await readFile(new URL("../../../web/public/avatars/personas/honest.png", import.meta.url));
   const bodyHash = createHash("sha256").update(bodyBytes).digest("hex"), portraitHash = createHash("sha256").update(portraitBytes).digest("hex");
   await db.insert(schema.agentProfiles).values([legacy,bodyOnly,lostPortrait].map(player => ({
     id:player.agentProfileId!,userId:"operator",name:`Today's ${player.name}`,personality:"Changed",avatarUrl:"/api/uploads/local?key=unsubmitted-current.png",
-    fullBodyReferenceUrl: player.id === bodyOnly.id ? "/avatars/personas/full-body-v1/observer.webp" : null,
   })));
   await db.insert(schema.agentContentRevisions).values(await storeFields([
     {id:bodyOnly.contentRevisionId,agentProfileId:bodyOnly.agentProfileId,userId:"operator",fingerprint:"body-only",snapshot:{fullBodyReferenceUrl:"/original-body.png",assets:{"/original-body.png":bodyHash}}},
@@ -149,7 +148,8 @@ test("missing frozen character art uses presentation fallback while available bo
     for (const players of [read.window.players,...read.window.moments.flatMap(moment=>[moment.snapshot.players,...(moment.night ? [moment.night.before.players] : [])])]) {
       for (const player of [legacy,bodyOnly,lostPortrait]) expect(players.find(identity=>identity.id===player.id)?.avatarUrl).toBeNull();
       expect(players.find(player=>player.id===legacy.id)?.fullBodyReferenceUrl).toBeNull();
-      expect(players.find(player=>player.id===bodyOnly.id)?.fullBodyReferenceUrl).toBe("/avatars/personas/full-body-v1/observer.webp");
+      expect(players.find(player=>player.id===bodyOnly.id)?.fullBodyReferenceUrl).toContain(`/source/characters/${bodyOnly.id}?`);
+      expect(players.find(player=>player.id===bodyOnly.id)?.fullBodyReferenceUrl).toEndWith("&image=body");
     }
     expect(JSON.stringify(read.window)).not.toContain("unsubmitted-current");
     if (audience === "mystery") expect(read.catalog.moments.some(moment=>moment.kind==="thinking")).toBe(false);
@@ -157,8 +157,7 @@ test("missing frozen character art uses presentation fallback while available bo
   const publicWatch = await readWerewolfWatch(db,id,"mystery",1,10);
   expect(publicWatch.players.find(player=>player.id===legacy.id)?.avatarUrl).toContain(`/api/werewolf/${id}/characters/${legacy.id}`);
   const bodyUrl = source.window.players.find(player=>player.id===bodyOnly.id)!.fullBodyReferenceUrl!;
-  expect(bodyUrl).toBe("/avatars/personas/full-body-v1/observer.webp");
-  const body = await request(`${root(id)}/source/characters/${bodyOnly.id}?snapshot=${encodeURIComponent(JSON.stringify(source.snapshot))}&image=body`); expect(body.status).toBe(200); expect(Buffer.from(await body.arrayBuffer())).toEqual(bodyBytes);
+  const body = await request(bodyUrl); expect(body.status).toBe(200); expect(Buffer.from(await body.arrayBuffer())).toEqual(bodyBytes);
   const legacyUrl = `${root(id)}/source/characters/${legacy.id}?snapshot=${encodeURIComponent(JSON.stringify(source.snapshot))}`;
   expect((await request(legacyUrl)).status).toBe(404);
   const thought = source.catalog.moments.find(moment=>moment.kind==="thinking" && moment.actorId===legacy.id)!;
@@ -176,8 +175,7 @@ test("missing frozen character art uses presentation fallback while available bo
   expect(refreshed.window.players.find(player=>player.id===lostPortrait.id)?.avatarUrl).toContain(`/source/characters/${lostPortrait.id}`);
   expect(refreshed.window.players.find(player=>player.id===legacy.id)?.avatarUrl).toBeNull();
   const tamperedBody = `${root(id)}/source/characters/${bodyOnly.id}?snapshot=${encodeURIComponent(JSON.stringify({...source.snapshot,availableCharacterAssets:[]}))}&image=body`;
-  // Body artwork is authoritative saved presentation, not a caller-selectable pin.
-  expect((await request(tamperedBody)).status).toBe(200);
+  expect((await request(tamperedBody)).status).toBe(409);
 });
 
 test.each([true, false])("Influence without a retrospective remains editable in Studio (canonical history: %s)", async canonicalHistory => {
@@ -479,38 +477,4 @@ test('follow context requires a producer and applies the requested playback audi
   expect((await request(`${root(f.id)}/follow-context`,{...position,part})).status).toBe(400);
  for(const source of [null,{}, {kind:'influence-event',eventSequence:-1}, {kind:'influence-bridge',following:null,followingPart:{kind:'speech'}}])
   expect((await request(`${root(f.id)}/follow-context`,{kind:'influence',source,part:{kind:'speech'}})).status).toBe(400);
-});
-
-
-test.each(["influence", "werewolf"] as const)("%s current export remains usable after character artwork changes", async kind => {
-  await producer();
-  const gameId = kind === "influence" ? (await influence()).gameId : (await wolf()).id;
-  const audience = kind === "influence" ? "public" : "omniscient";
-  const source = kind === "influence" ? await readInfluenceProductionSource(db, gameId)
-    : await readWerewolfProductionSource(db, gameId, { audience: "omniscient", thinking: true });
-  const moment = source.catalog.moments.find(moment => moment.kind === "speech")!;
-  const response = await request(`${root(gameId)}/selection`, { snapshot: source.snapshot, audience, thinking: true,
-    selection: { mode: "ids", thinking: true, ids: [moment.id] }, expectedMomentIds: [moment.id], settings, copy: {} });
-  expect(response.status).toBe(200);
-  const descriptor = await response.json() as ProductionExportDescriptor;
-  const [seat] = await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, gameId));
-  const url = `/characters/${"b".repeat(64)}.png`;
-  await db.insert(schema.agentProfiles).values({ id: "export-character", userId: "operator", name: "Character", personality: "Patient", fullBodyReferenceUrl: url });
-  await db.update(schema.gamePlayers).set({ agentProfileId: "export-character" }).where(eq(schema.gamePlayers.id, seat!.id));
-  expect((await request(`${root(gameId)}/selection/validate`, descriptor)).status).toBe(200);
-  const updated = kind === "influence" ? await readInfluenceProductionSource(db, gameId, { snapshot: decodeInfluenceProductionSnapshot(descriptor.sourceSnapshot) })
-    : await readWerewolfProductionSource(db, gameId, { audience: "omniscient", thinking: true, snapshot: decodeWerewolfProductionSnapshot(descriptor.sourceSnapshot) });
-  expect(updated.snapshot.sourceHash).toBe(source.snapshot.sourceHash);
-  if ("visual" in updated) expect(updated.visual.fullBodies[seat!.id]).toBe(url);
-  else expect(updated.window.players.find(player => player.id === seat!.werewolfPlayerId)?.fullBodyReferenceUrl).toBe(url);
-  // A real accepted-fact edit still invalidates the exact same descriptor.
-  if (kind === "influence") await db.update(schema.transcripts).set({ text: "Changed accepted speech" }).where(and(eq(schema.transcripts.gameId, gameId), eq(schema.transcripts.phase, Phase.LOBBY)));
-  else {
-    const [start] = await db.select().from(schema.werewolfEvents).where(eq(schema.werewolfEvents.gameId, gameId)).orderBy(schema.werewolfEvents.sequence).limit(1);
-    if (start!.event.type !== "werewolf.started") throw new Error("Missing start event");
-    await db.update(schema.werewolfEvents).set({ event: { ...start!.event, payload: { ...start!.event.payload, players: start!.event.payload.players.map((player, index) => index === 0 ? { ...player, personality: "Changed accepted personality" } : player) } } }).where(and(eq(schema.werewolfEvents.gameId, gameId), eq(schema.werewolfEvents.sequence, start!.sequence)));
-  }
-  const rejected = await request(`${root(gameId)}/selection/validate`, descriptor);
-  expect(rejected.status).toBe(kind === "influence" ? 400 : 409);
-  expect((await rejected.json() as { error: string }).error).toMatch(/source.*changed/i);
 });

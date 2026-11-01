@@ -79,13 +79,7 @@ export async function prepareCutoutDemands(db: DrizzleDB, ids?: string[]) {
       // its original or rerunning removal, even if source storage is unavailable.
       if (!existing && cutoutMode() === "disabled") continue;
       const job = existing ?? await enqueueCutout(db, await readCutoutSource(db, demand));
-      await db.transaction(async tx => {
-        // All reference creation serializes with the save transaction. Mark the
-        // existing result unsaved before linking; completion cannot miss it.
-        await tx.select({ id: jobs.id }).from(jobs).where(eq(jobs.id, job.id)).for("update");
-        const attached = await tx.update(demands).set({ cutoutId: job.id }).where(and(eq(demands.id, demand.id), isNull(demands.cutoutId), isNull(demands.error))).returning({ id: demands.id });
-        if (attached.length) await tx.update(jobs).set({ artSavedAt: null }).where(eq(jobs.id, job.id));
-      });
+      await db.update(demands).set({ cutoutId: job.id }).where(and(eq(demands.id, demand.id), isNull(demands.cutoutId), isNull(demands.error)));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Source preparation failed";
       await db.update(demands).set({ error: message.slice(0, 1000) }).where(and(eq(demands.id, demand.id), isNull(demands.cutoutId), isNull(demands.error)));

@@ -1,5 +1,3 @@
-import { enqueueCutout, CUTOUT_RECIPE, prepareCutoutDemands, reserveCutout, claimCutout, acceptCutout } from "../services/character-cutouts.js";
-import { isSavedCharacterArt } from "../services/character-art-save.js";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -21,7 +19,7 @@ import { readWerewolfCharacter, readWerewolfWatch } from "../services/werewolf-p
 import { buildWerewolfProductionSourceSnapshot } from "../services/werewolf-production-source.js";
 import { readEpisodePresentations } from "../services/episode-presentation.js";
 import { createVisualRoutes } from "../routes/visual.js";
-import { loadPayloads } from "../services/payload-storage.js";
+import { loadPayloads, payloadHash } from "../services/payload-storage.js";
 
 let db: DrizzleDB, directory: string;
 const saved = { ...process.env };
@@ -59,7 +57,7 @@ async function games(agentProfileId: string) {
   return { influence: id, persona: JSON.parse(frozen.seats[0]!.persona), wolf: wolf.id, player: seat.playerId };
 }
 
-test("profile publication updates body presentation in existing games while gameplay and portraits remain frozen", async () => {
+test("ordinary profile publication freezes approved source, portrait and head in new games without changing old games", async () => {
   const original = await sharp({ create: { width: 100, height: 150, channels: 3, background: "blue" } }).png().toBuffer();
   const firstArt = await upload(original, { x: 0, y: 0, width: 1, height: 2 / 3 }, { x: .4, y: .1, width: .2, height: .2 });
   const first = await createOwnedAgentProfile(db, context, { name: "Approved character", personality: "Observant", personaKey: "observer", ...firstArt });
@@ -74,9 +72,10 @@ test("profile publication updates body presentation in existing games while game
   const replacement = await upload(approved, manifest.portraitCrop, manifest.headPosition.rect);
   const updated = await updateOwnedAgentProfile(db, context, first.profile.id, { ...replacement, submissionId: crypto.randomUUID(), expectedContentRevisionId: first.profile.contentRevisionId });
   const fresh = await games(first.profile.id);
-  expect(fresh.persona.fullBodyReferenceUrl).toBeUndefined();
+  expect(fresh.persona.fullBodyReferenceUrl).toBe(replacement.fullBodyReferenceUrl);
   expect(fresh.persona.avatarUrl).toBe(replacement.avatarUrl);
-  expect(fresh.persona.headPosition).toBeUndefined();
+  expect(fresh.persona.headPosition.sourceHash).toBe(payloadHash(approved));
+  expect(fresh.persona.headPosition.confirmation.userId).toBe(context.userId);
   const [revision] = await loadPayloads(db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, updated.profile.contentRevisionId!)));
   expect(revision!.snapshot.assets).toMatchObject({ [replacement.fullBodyReferenceUrl]: manifest.assets["full-body.png"].sha256, [replacement.avatarUrl]: manifest.assets["portrait.webp"].sha256 });
 
@@ -95,48 +94,24 @@ test("profile publication updates body presentation in existing games while game
   const episode = (await readEpisodePresentations(db, [oldGame!])).get(old.influence)!;
   expect(episode.cast[0]!.avatarUrl).toBe(firstArt.avatarUrl);
   expect(await readWerewolfEvents(db, old.wolf)).toEqual(oldEvents);
-  expect(await readWerewolfCharacter(db, old.wolf, old.player, "body")).toEqual(approved);
+  expect(await readWerewolfCharacter(db, old.wolf, old.player, "body")).toEqual(original);
   const oldVisual = await (await createVisualRoutes(db).request(`/api/games/${old.influence}/visual`)).json() as { fullBodies: Record<string, string> };
-  expect(oldVisual.fullBodies).toContainValue(replacement.fullBodyReferenceUrl);
+  expect(oldVisual.fullBodies).toContainValue(firstArt.fullBodyReferenceUrl);
   const reread = await db.transaction(tx => buildWerewolfProductionSourceSnapshot(tx, old.wolf, { audience: "mystery", thinking: false, snapshot: oldSource.snapshot }, true));
-  expect(reread.snapshot.sourceHash).toBe(oldSource.snapshot.sourceHash);
-  expect(reread.window.players.find(player => player.id === old.player)?.fullBodyReferenceUrl).toBe(replacement.fullBodyReferenceUrl);
-});
+  expect(reread.snapshot).toEqual(oldSource.snapshot);
+  expect(reread.window).toEqual(oldSource.window);
 
-test("saved transparent art survives an old editor form and appears in existing and new games without job records", async () => {
-  const original = await sharp({ create: { width: 100, height: 150, channels: 3, background: "blue" } }).png().toBuffer();
-  const art = await upload(original, { x: 0, y: 0, width: 1, height: 2 / 3 }, { x: .4, y: .1, width: .2, height: .2 });
-  const first = await createOwnedAgentProfile(db, context, { name: "Saved art", personality: "Observant", personaKey: "observer", ...art });
-  const old = await games(first.profile.id);
-  const job = await enqueueCutout(db, original);
-  await db.insert(schema.characterCutoutDemands).values({ id: "save-demand", agentProfileId: first.profile.id, playerId: first.profile.id, sourceKey: `sha256:${job.sourceHash}`, recipe: CUTOUT_RECIPE }).onConflictDoNothing();
-  await prepareCutoutDemands(db);
-  const reservation = (await reserveCutout(db, job.id))!;
-  await claimCutout(db, job.id, reservation.token, CUTOUT_RECIPE);
-  const pixels = Buffer.alloc(100 * 150 * 4, 255); pixels[3] = 0;
-  const transparent = await sharp(pixels, { raw: { width: 100, height: 150, channels: 4 } }).png().toBuffer();
-  expect(await acceptCutout(db, job.id, reservation.token, transparent)).toBe(true);
-  await db.delete(schema.characterCutoutDemands); await db.delete(schema.characterCutouts);
-  const updated = await updateOwnedAgentProfile(db, context, first.profile.id, { ...art, personality: "Still observant", submissionId: crypto.randomUUID(), expectedContentRevisionId: first.profile.contentRevisionId });
-  expect(isSavedCharacterArt(updated.profile.fullBodyReferenceUrl)).toBe(true);
-  const fresh = await games(first.profile.id);
-  expect(fresh.persona.fullBodyReferenceUrl).toBeUndefined();
-  for (const gameId of [old.influence, fresh.influence]) {
-    const visual = await (await createVisualRoutes(db).request(`/api/games/${gameId}/visual`)).json() as { fullBodies: Record<string, string> };
-    expect(Object.values(visual.fullBodies)).toContain(updated.profile.fullBodyReferenceUrl!);
-  }
-  expect((await readWerewolfWatch(db, old.wolf, "mystery", 1, 64)).players.find(player => player.id === old.player)!.fullBodyReferenceUrl).toBe(updated.profile.fullBodyReferenceUrl);
-  expect(await readWerewolfCharacter(db, old.wolf, old.player, "body")).toEqual(transparent);
-  expect(await readWerewolfCharacter(db, fresh.wolf, fresh.player, "body")).toEqual(transparent);
-  const reframed = await updateOwnedAgentProfile(db, context, first.profile.id, {
-    headPosition: { ...updated.profile.headPosition!, rect: { ...updated.profile.headPosition!.rect, x: .41 } },
-    expectedContentRevisionId: updated.profile.latestContentRevisionId, submissionId: crypto.randomUUID(),
-  });
-  expect(reframed.profile.fullBodyReferenceUrl).toBe(updated.profile.fullBodyReferenceUrl);
-  expect(reframed.profile.headPosition!.rect.x).toBe(.41);
-  const replacement = await upload(await sharp(transparent).tint("green").png().toBuffer(), { x: 0, y: 0, width: 1, height: 2 / 3 }, { x: .4, y: .1, width: .2, height: .2 });
-  const replaced = await updateOwnedAgentProfile(db, context, first.profile.id, { ...replacement,
-    expectedContentRevisionId: reframed.profile.latestContentRevisionId, submissionId: crypto.randomUUID(),
-  });
-  expect(replaced.profile.fullBodyReferenceUrl).toBe(replacement.fullBodyReferenceUrl);
+  // Transparency belongs to the old image, not to the character's latest revision.
+  const transparent = await storePublicAvatarImage(createOpaqueAvatarStorageKey("uploaded", "png"), "image/png", new Uint8Array(original).buffer, context.publicBaseUrl);
+  await db.update(schema.agentContentAssets).set({ transparentUrl: transparent.publicUrl }).where(eq(schema.agentContentAssets.hash, payloadHash(original)));
+  const oldWithCutout = await (await createVisualRoutes(db).request(`/api/games/${old.influence}/visual`)).json() as { fullBodies: Record<string, string> };
+  expect(oldWithCutout.fullBodies).toContainValue(transparent.publicUrl);
+  const newWithCutout = await (await createVisualRoutes(db).request(`/api/games/${fresh.influence}/visual`)).json() as { fullBodies: Record<string, string> };
+  expect(newWithCutout.fullBodies).toContainValue(replacement.fullBodyReferenceUrl);
+  const oldWolf = await db.transaction(tx => buildWerewolfProductionSourceSnapshot(tx, old.wolf, { audience: "mystery", thinking: false, snapshot: oldSource.snapshot }, true));
+  expect(oldWolf.snapshot.sourceHash).toBe(oldSource.snapshot.sourceHash);
+  expect(oldWolf.window.players.find(player => player.id === old.player)?.fullBodyReferenceUrl).toBe(transparent.publicUrl);
+  expect((await readWerewolfWatch(db, fresh.wolf, "mystery", 1, 64)).players.find(player => player.id === fresh.player)?.fullBodyReferenceUrl).not.toBe(transparent.publicUrl);
+  await expect((async () => { await db.update(schema.agentContentAssets).set({ hash: "0".repeat(64) }).where(eq(schema.agentContentAssets.hash, payloadHash(original))); })()).rejects.toThrow("Accepted character evidence is immutable");
+
 });

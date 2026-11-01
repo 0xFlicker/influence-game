@@ -91,8 +91,8 @@ export async function inspectCutoutSources(db: DrizzleDB, sources: CutoutSource[
     rows.push({ ...source, demandId: demand?.id ?? null, jobId: job?.id ?? null, sourceHash: job?.sourceHash ?? sourceHash,
       status: error ? "source-failed" as const : job?.status ?? "missing" as const,
       error: error ?? job?.error ?? null, attempts: job?.attempts ?? 0, leaseUntil: job?.leaseUntil ?? null, batchJobId: job?.batchJobId ?? null,
-      // Linking a preexisting derivative is necessary for Influence playback. It
-      // consumes a selection slot but never creates another inference job.
+      // Keep the operator selection linked for progress reporting; playback does
+      // not depend on this association. Reuse never creates another inference job.
       needsAssociation: !demand?.cutoutId && !demand?.error,
     });
   }

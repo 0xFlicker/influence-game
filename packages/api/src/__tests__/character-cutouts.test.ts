@@ -72,7 +72,7 @@ async function characterFixture() {
   await db.insert(schema.agentContentAssets).values({ hash: job.sourceHash, bytes: await storeBinary(source) });
   await db.insert(schema.agentContentRevisions).values({ id: "revision", agentProfileId: "character", userId: "owner", fingerprint: "before", snapshot: await storeJson(snapshot) });
   await db.update(schema.agentProfiles).set({ contentRevisionId: "revision", latestContentRevisionId: "revision" }).where(eq(schema.agentProfiles.id, "character"));
-  await db.insert(schema.gamePlayers).values({ id: "player", gameId: "art-game", agentProfileId: "character", agentConfig: "{}", persona: JSON.stringify({ name: "Example", fullBodyReferenceUrl: "/old-body.png", personality: "Patient" }) });
+  await db.insert(schema.gamePlayers).values({ id: "player", gameId: "art-game", agentProfileId: "character", agentConfig: "{}", persona: JSON.stringify({ name: "Example", contentRevisionId: "revision", fullBodyReferenceUrl: "/old-body.png", personality: "Patient" }) });
   await db.insert(schema.visualArtifacts).values({ id: "old-art", gameId: "art-game", contentHash: job.sourceHash, image: await storeBinary(source), width: 8, height: 12 });
   await db.insert(schema.visualGameAssets).values({ gameId: "art-game", profiles: [{ id: "player", name: "Example", personaKey: "", fullBodyReferenceUrl: "/old-body.png", avatarUrl: null, performanceInstructions: "" }],
     cast: [{ id: "player", name: "Example", referenceArtifactId: "old-art", performanceInstructions: "", portraitFallback: false }] });
@@ -84,26 +84,27 @@ async function complete(id: string) {
   await claimCutout(db, id, reservation.token, CUTOUT_RECIPE);
   expect(await acceptCutout(db, id, reservation.token, cutout)).toBe(true);
 }
-test("saved profile artwork serves old and new seats without any job records", async () => {
+test("revision-specific transparent artwork serves old and new seats without job records", async () => {
   const job = await characterFixture();
   await complete(job.id);
   const [profile] = await db.select().from(schema.agentProfiles);
-  expect(isSavedCharacterArt(profile!.fullBodyReferenceUrl)).toBe(true);
+  expect(profile!.fullBodyReferenceUrl).toBe("/old-body.png");
+  expect(isSavedCharacterArt((await db.select().from(schema.agentContentAssets))[0]!.transparentUrl)).toBe(true);
   const [original] = await db.select().from(schema.gamePlayers);
   expect(JSON.parse(original!.persona).fullBodyReferenceUrl).toBe("/old-body.png");
-  await db.insert(schema.gamePlayers).values({ id: "new-player", gameId: "art-game", agentProfileId: "character", persona: JSON.stringify({ name: "Example" }), agentConfig: "{}" });
+  await db.insert(schema.gamePlayers).values({ id: "new-player", gameId: "art-game", agentProfileId: "character", persona: JSON.stringify({ name: "Example", contentRevisionId: "revision", fullBodyReferenceUrl: "/old-body.png" }), agentConfig: "{}" });
   await db.delete(schema.characterCutoutDemands); await db.delete(schema.characterCutouts);
   const route = createVisualRoutes(db);
   for (let reload = 0; reload < 2; reload++) {
     const response = await route.request("/api/games/art-game/visual");
     const result = await response.json() as { fullBodies: Record<string, string> };
-    expect(result.fullBodies.player).toBe(profile!.fullBodyReferenceUrl!);
-    expect(result.fullBodies["new-player"]).toBe(profile!.fullBodyReferenceUrl!);
+    expect(result.fullBodies.player).toBe((await db.select().from(schema.agentContentAssets))[0]!.transparentUrl!);
+    expect(result.fullBodies["new-player"]).toBe((await db.select().from(schema.agentContentAssets))[0]!.transparentUrl!);
   }
   const [revision] = await loadPayloads(db.select().from(schema.agentContentRevisions));
   expect(revision!.snapshot.fullBodyReferenceUrl).toBe("/old-body.png");
   const refs = await werewolfReferenceMetadata(db, "art-game", [{ id: "player", name: "Example", personality: "Patient", backstory: "", strategy: "", avatarUrl: null, agentProfileId: "character", contentRevisionId: "revision" }]);
-  expect(refs[0]!.profile.fullBodyReferenceUrl).toBe(profile!.fullBodyReferenceUrl!);
+  expect(refs[0]!.transparentUrl).toBe((await db.select().from(schema.agentContentAssets))[0]!.transparentUrl!);
 });
 
 test("temporary publication failure retries finished bytes without another generation", async () => {
@@ -127,7 +128,8 @@ test("attaching a character after completion reuses the finished image", async (
   await db.insert(schema.characterCutoutDemands).values({ id: "late", agentProfileId: "character", playerId: "character", sourceKey: `sha256:${job.sourceHash}`, recipe: CUTOUT_RECIPE });
   await prepareCutoutDemands(db);
   const [profile] = await db.select().from(schema.agentProfiles);
-  expect(isSavedCharacterArt(profile!.fullBodyReferenceUrl)).toBe(true);
+  expect(profile!.fullBodyReferenceUrl).toBe("/old-body.png");
+  expect(isSavedCharacterArt((await db.select().from(schema.agentContentAssets))[0]!.transparentUrl)).toBe(true);
   const [saved] = await db.select().from(schema.characterCutouts);
   expect(saved!.attempts).toBe(1);
 });
@@ -137,7 +139,8 @@ test("saving one owner ignores malformed unrelated seats and revision payloads",
   await db.insert(schema.gamePlayers).values({ id: "unrelated", gameId: "art-game", persona: "not json", agentConfig: "{}" });
   await complete(job.id);
   const [profile] = await db.select().from(schema.agentProfiles);
-  expect(isSavedCharacterArt(profile!.fullBodyReferenceUrl)).toBe(true);
+  expect(profile!.fullBodyReferenceUrl).toBe("/old-body.png");
+  expect(isSavedCharacterArt((await db.select().from(schema.agentContentAssets))[0]!.transparentUrl)).toBe(true);
 });
 
 test("conversion discovers unassociated finished images and is repeatable without generation", async () => {
@@ -154,35 +157,13 @@ test("conversion discovers unassociated finished images and is repeatable withou
 
 test.each(["before", "after"] as const)("game creation %s completion needs no artwork propagation", async order => {
   const job = await characterFixture();
-  const create = () => db.insert(schema.gamePlayers).values({ id: "concurrent-player", gameId: "art-game", agentProfileId: "character", persona: JSON.stringify({ name: "Example", personality: "Concurrent" }), agentConfig: "{}" });
+  const create = () => db.insert(schema.gamePlayers).values({ id: "concurrent-player", gameId: "art-game", agentProfileId: "character", persona: JSON.stringify({ name: "Example", contentRevisionId: "revision", fullBodyReferenceUrl: "/old-body.png", personality: "Concurrent" }), agentConfig: "{}" });
   if (order === "before") await create();
   await complete(job.id);
   if (order === "after") await create();
   const art = (await readCharacterArtwork(db, "art-game")).find(row => row.id === "concurrent-player");
   expect(isSavedCharacterArt(art!.fullBodyReferenceUrl)).toBe(true);
-  await db.update(schema.gamePlayers).set({ persona: JSON.stringify({ name: "Updated", fullBodyReferenceUrl: "/obsolete.png" }) }).where(eq(schema.gamePlayers.id, "concurrent-player"));
-  expect((await readCharacterArtwork(db, "art-game")).find(row => row.id === "concurrent-player")).toEqual(art);
-});
 
-test.each(["before-link", "after-link"] as const)("completion %s is safe even after preparation read a running job", async order => {
-  const job = await characterFixture();
-  await db.update(schema.characterCutoutDemands).set({ cutoutId: null });
-  const lease = (await reserveCutout(db, job.id))!;
-  await claimCutout(db, job.id, lease.token, CUTOUT_RECIPE);
-  let firstTransaction = true;
-  const controlled = new Proxy(db, { get(target, key, receiver) {
-    if (key !== "transaction") return Reflect.get(target, key, receiver);
-    return async (callback: (tx: Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0]) => Promise<unknown>) => {
-      const attachment = firstTransaction; firstTransaction = false;
-      if (attachment && order === "before-link") await acceptCutout(db, job.id, lease.token, cutout);
-      const result = await target.transaction(callback);
-      if (attachment && order === "after-link") await acceptCutout(db, job.id, lease.token, cutout);
-      return result;
-    };
-  } });
-  await prepareCutoutDemands(controlled);
-  expect(isSavedCharacterArt((await readCharacterArtwork(db, "art-game"))[0]!.fullBodyReferenceUrl)).toBe(true);
-  expect((await db.select().from(schema.characterCutouts))[0]!.attempts).toBe(1);
 });
 
 test("public verification and uncaptured source reads finish outside the save transaction", async () => {
@@ -204,7 +185,7 @@ test("public verification and uncaptured source reads finish outside the save tr
   } });
   try {
     await saveReadyCharacterArt(observed, job.id);
-    expect(reads).toHaveBeenCalledTimes(2);
+    expect(reads).toHaveBeenCalledTimes(1);
     expect(isSavedCharacterArt((await readCharacterArtwork(db, "art-game"))[0]!.fullBodyReferenceUrl)).toBe(true);
   } finally { reads.mockRestore(); }
 });
@@ -241,7 +222,7 @@ test("finished save retries do not starve behind sixteen persistently failing im
   for (let tick = 0; tick < 3; tick++) await savePendingCharacterArt(db);
   const rows = await db.select().from(schema.characterCutouts);
   expect(rows.find(row => row.id === valid.id)!.artSavedAt).not.toBeNull();
-  expect(isSavedCharacterArt((await db.select().from(schema.agentProfiles))[0]!.fullBodyReferenceUrl)).toBe(true);
+  expect(isSavedCharacterArt((await db.select().from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, valid.sourceHash)))[0]!.transparentUrl)).toBe(true);
   const failed = rows.filter(row => row.id !== valid.id);
   expect(failed).toHaveLength(16);
   expect(failed.every(row => row.status === "ready" && row.artSavedAt === null && row.saveError)).toBe(true);
@@ -249,19 +230,4 @@ test("finished save retries do not starve behind sixteen persistently failing im
   await db.update(schema.characterCutouts).set({ image }).where(eq(schema.characterCutouts.id, failed[0]!.id));
   for (let tick = 0; tick < 2; tick++) await savePendingCharacterArt(db);
   expect((await db.select().from(schema.characterCutouts).where(eq(schema.characterCutouts.id, failed[0]!.id)))[0]!.artSavedAt).not.toBeNull();
-});
-
-
-test("a generated full-body result fills an empty character artwork reference", async () => {
-  const job = await characterFixture();
-  await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: null, contentRevisionId: null }).where(eq(schema.agentProfiles.id, "character"));
-  await db.insert(schema.gamePlayers).values({ id: "empty-unowned", gameId: "art-game", persona: JSON.stringify({ name: "Unowned" }), agentConfig: "{}" });
-  await db.insert(schema.characterCutoutDemands).values({ id: "empty-demand", gameId: "art-game", playerId: "empty-unowned",
-    sourceKey: `sha256:${job.sourceHash}`, recipe: CUTOUT_RECIPE, cutoutId: job.id });
-  await complete(job.id);
-  const [profile] = await db.select().from(schema.agentProfiles);
-  expect(isSavedCharacterArt(profile!.fullBodyReferenceUrl)).toBe(true);
-  const art = await readCharacterArtwork(db, "art-game");
-  expect(art.every(character => character.fullBodyReferenceUrl === profile!.fullBodyReferenceUrl)).toBe(true);
-  expect(art.find(character => character.id === "empty-unowned")?.headPosition).toBeNull();
 });

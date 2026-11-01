@@ -123,10 +123,8 @@ export async function buildWerewolfProductionSourceSnapshot(tx: DrizzleDB | Visu
     ...contract, gameId: game.id, audience: options.audience, thinking: options.thinking, throughEventSequence, publicationCutoff,
     ...(retakes.size ? {retakes: [...retakes]} : {}),
     events, thoughts, catalog:candidateCatalog,
-    // Body art is saved presentation state, never an accepted-game boundary.
-    references:candidateReferences.map(ref => ({ id: ref.profile.id, name: ref.profile.name,
-      personaKey: ref.profile.personaKey, performanceInstructions: ref.profile.performanceInstructions,
-      portraitHash: ref.portraitHash, bundled: ref.bundled })), publications: rows.map(({ scene, publication, version }) => ({ scene: { id: scene.id, roomId: scene.roomId, boundarySequence: scene.boundarySequence }, publication, version })), artifacts });
+    // Frozen revision facts remain verified; publishing their derivative changes no facts.
+    references:candidateReferences.map(({ transparentUrl: _transparent, ...reference }) => reference), publications: rows.map(({ scene, publication, version }) => ({ scene: { id: scene.id, roomId: scene.roomId, boundarySequence: scene.boundarySequence }, publication, version })), artifacts });
   const sourceHash = hashProjection(catalog,references);
   if (options.snapshot && !options.refreshVisuals && options.snapshot.sourceHash !== sourceHash) throw new WerewolfGameError("Production source snapshot changed or uses obsolete artwork-bound hashing; open this game in Studio to create a fresh descriptor", 409);
   const snapshot: WerewolfProductionSnapshot = { ...contract, gameId: game.id, gameKind: "werewolf", audience: options.audience, thinking: options.thinking, throughEventSequence, throughCursor: projection.latestCursor, publicationCutoff, availableCharacterAssets, sourceHash };
@@ -176,7 +174,7 @@ export async function readWerewolfProductionMedia(db: DrizzleDB, id: string, ass
   }, { isolationLevel: "repeatable read", accessMode: "read only" });
 }
 
-/** Verify pinned gameplay and producer access; body bytes come from the current artwork owner. */
+/** Verify pinned gameplay and producer access; body bytes use the frozen revision’s transparent derivative. */
 export async function readWerewolfProductionCharacter(db: DrizzleDB, id: string, playerId: string, options: { snapshot: WerewolfProductionSnapshot; image?: "portrait" | "body" }) {
   return db.transaction(async tx => {
     const snapshot = options.snapshot;

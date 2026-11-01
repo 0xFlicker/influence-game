@@ -623,7 +623,6 @@ export const avatarChangeEvents = pgTable("avatar_change_events", {
 
 export const gamePlayers = pgTable("game_players", {
   id: text("id").primaryKey(), // UUID
-  werewolfPlayerId: text("werewolf_player_id"), // Canonical Werewolf IDs are scoped to a game.
   gameId: text("game_id")
     .notNull()
     .references(() => games.id),
@@ -3685,6 +3684,7 @@ export const agentContentRevisions = pgTable("agent_content_revisions", {
   ...payloadChecks("agent_content_revisions", { snapshot: [table.snapshot, "json-gzip"] }),index("agent_content_revisions_profile_idx").on(table.agentProfileId, table.createdAt)]);
 export const agentContentAssets = pgTable("agent_content_assets", {
   hash: text("hash").primaryKey(),
+  transparentUrl: text("transparent_url"),
   bytes: payloadColumn("bytes_object", "binary").notNull().$type<StoredPayload<Buffer>>(),
 }, table => [
   ...payloadChecks("agent_content_assets", { bytes: [table.bytes, "binary"] }),

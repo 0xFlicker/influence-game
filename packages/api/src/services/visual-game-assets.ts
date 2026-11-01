@@ -1,4 +1,3 @@
-import { readCharacterArtwork } from "./character-art.js";
 import { loadPayloads, storeFields } from "./payload-storage.js";
 import { createHash } from "node:crypto";
 import { validHeadRectangle } from "@influence/engine/character-portrait";
@@ -63,12 +62,11 @@ export async function prepareVisualGameAssets(db: DrizzleDB, gameId: string, ass
   let [assets] = await db.select().from(schema.visualGameAssets).where(eq(schema.visualGameAssets.gameId, gameId));
   if (!assets) {
     const players = await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, gameId));
-    const currentArt = new Map((await readCharacterArtwork(db, gameId)).map(art => [art.id, art]));
     const profiles: FrozenVisualProfile[] = players.map((player) => {
       const persona = JSON.parse(player.persona) as Record<string, unknown>;
       const string = (key: string) => typeof persona[key] === "string" ? persona[key] : null;
       return { id: player.id, name: string("name") ?? player.id, personaKey: string("personaKey") ?? "",
-        headPosition: currentArt.get(player.id)?.headPosition ?? undefined, avatarUrl: string("avatarUrl"), fullBodyReferenceUrl: currentArt.get(player.id)?.fullBodyReferenceUrl ?? null, performanceInstructions: string("performanceInstructions") ?? "" };
+        headPosition: persona.headPosition as FrozenVisualProfile["headPosition"], avatarUrl: string("avatarUrl"), fullBodyReferenceUrl: string("fullBodyReferenceUrl"), performanceInstructions: string("performanceInstructions") ?? "" };
     });
     await write(async (tx) => tx.insert(schema.visualGameAssets).values({ gameId, profiles }).onConflictDoNothing());
     [assets] = await db.select().from(schema.visualGameAssets).where(eq(schema.visualGameAssets.gameId, gameId));

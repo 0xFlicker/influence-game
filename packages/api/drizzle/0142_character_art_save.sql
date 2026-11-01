@@ -2,24 +2,18 @@ ALTER TABLE character_cutouts ADD COLUMN art_saved_at timestamptz, ADD COLUMN ar
 --> statement-breakpoint
 ALTER TABLE character_cutout_demands ADD COLUMN preparation_attempted_at timestamptz;
 --> statement-breakpoint
-ALTER TABLE game_players ADD COLUMN werewolf_player_id text;
+ALTER TABLE agent_content_assets ADD COLUMN transparent_url text;
 --> statement-breakpoint
-CREATE UNIQUE INDEX game_players_werewolf_identity ON game_players (game_id, werewolf_player_id);
+DROP TRIGGER agent_content_assets_immutable ON agent_content_assets;
 --> statement-breakpoint
--- A Werewolf participant needs the same durable relational presentation identity
--- as an Influence participant. This is created atomically with its start event.
-CREATE FUNCTION create_werewolf_participants() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION protect_agent_content_asset() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF NEW.event->>'type' = 'werewolf.started' THEN
-    INSERT INTO game_players (id, game_id, werewolf_player_id, agent_profile_id, persona, agent_config)
-    SELECT gen_random_uuid()::text, NEW.game_id, player->>'id', profile.id,
-      CASE WHEN profile.id IS NULL THEN player::text ELSE jsonb_build_object('name', player->>'name')::text END, '{}'
-    FROM jsonb_array_elements(NEW.event->'payload'->'players') player
-    LEFT JOIN agent_profiles profile ON profile.id = player->>'agentProfileId'
-    ON CONFLICT (game_id, werewolf_player_id) DO NOTHING;
+  IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'Accepted character evidence is immutable'; END IF;
+  IF NEW.hash IS DISTINCT FROM OLD.hash OR NEW.bytes_object IS DISTINCT FROM OLD.bytes_object THEN
+    RAISE EXCEPTION 'Accepted character evidence is immutable';
   END IF;
   RETURN NEW;
 END $$;
 --> statement-breakpoint
-CREATE TRIGGER werewolf_participant_identity AFTER INSERT ON werewolf_events
-FOR EACH ROW EXECUTE FUNCTION create_werewolf_participants();
+CREATE TRIGGER agent_content_assets_immutable BEFORE UPDATE OR DELETE ON agent_content_assets
+FOR EACH ROW EXECUTE FUNCTION protect_agent_content_asset();

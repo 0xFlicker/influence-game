@@ -39,14 +39,13 @@ export function createVisualRoutes(db: DrizzleDB) {
       readCharacterArtwork(db, game.id),
     ]);
     const url = (id: string) => `/api/games/${game.id}/visual/artifacts/${id}`;
-    // Artwork is current character presentation, independent of gameplay history.
+    // Each frozen picture may use its own transparent derivative.
     const fullBodies: Record<string, string> = {};
     const fullBodyHeads: Record<string, HeadRectangle> = {};
     for (const player of players) {
       const profile = player;
       if (typeof profile.fullBodyReferenceUrl === "string" && profile.fullBodyReferenceUrl) fullBodies[player.id] = profile.fullBodyReferenceUrl;
-      const head = profile.headPosition;
-      if (head?.confirmation && head.sourceUrl === fullBodies[player.id] && validHeadRectangle(head.rect)) fullBodyHeads[player.id] = head.rect;
+      if (validHeadRectangle(player.headRectangle)) fullBodyHeads[player.id] = player.headRectangle;
     }
     for (const member of assets[0]?.cast ?? []) {
       if (!member.portraitFallback && !fullBodies[member.id]) {

@@ -152,14 +152,10 @@ test("ordinary new-agent creation records captured body demand without inference
   expect((await cutoutProgress(db, [rows[0]!.id])).jobs[0]?.status).toBe("pending");
 });
 
-test("staging-disabled generation retains a reusable demand but creates no inference job", async () => {
+test("ordinary agent creation succeeds while cutouts are staging-disabled", async () => {
   process.env.INFLUENCE_DEPLOYMENT_ENVIRONMENT = "staging";
   const url = await contentImageFixture("avatars/cutout-staging.png");
   const created = await createOwnedAgentProfile(db, { userId: "cutout-owner" }, { name: "Staging cutout agent", personality: "Patient", fullBodyReferenceUrl: url, headPosition: await headPositionFixture(url) });
   expect(created.profile.fullBodyReferenceUrl).toBe(url);
-  const [demand] = await db.select().from(schema.characterCutoutDemands);
-  expect(demand?.agentProfileId).toBe(created.profile.id);
-  expect(demand?.sourceKey).toMatch(/^sha256:/);
-  await prepareCutoutDemands(db);
-  expect(await db.select().from(schema.characterCutouts)).toHaveLength(0);
+  expect(await db.select().from(schema.characterCutoutDemands)).toHaveLength(0);
 });

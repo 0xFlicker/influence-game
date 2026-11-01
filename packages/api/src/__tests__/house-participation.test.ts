@@ -51,8 +51,7 @@ test("owner/public routes share frozen participation, enforce discovery visibili
   expect(history.map(h=>h.gameSlug)).toEqual(["unlisted","public","influence"]);
   expect(history[1]).toMatchObject({gameKind:"werewolf",result:{outcome:"win",faction:"village",alive:false}});
   expect(history[2]).toMatchObject({gameKind:"influence",result:null}); // A terminal row alone is not canonical outcome evidence.
-  expect((await db.select().from(schema.gamePlayers)).filter(player => player.werewolfPlayerId === null)).toHaveLength(1);
-  expect(await db.select().from(schema.werewolfLobbySeats)).toHaveLength(0);
+  expect(await db.select().from(schema.gamePlayers)).toHaveLength(1); // no Werewolf lobby seats
   const response = await createPublicPlayerRoutes(db).request("/api/players/history-owner");
   expect(response.status).toBe(200);
   const body = await response.json() as Extract<PublicPlayerProfileEnvelope, {status:"found"}>;

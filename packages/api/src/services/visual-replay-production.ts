@@ -133,12 +133,12 @@ async function freezeReplayReferences(db: DrizzleDB, gameId: string, participant
     }
   }
   const players = await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, gameId));
-  const currentArt = new Map((await readCharacterArtwork(db, gameId)).map(art => [art.id, art]));
+  const frozenArt = new Map((await readCharacterArtwork(db, gameId)).map(art => [art.id, art]));
   const profiles: FrozenVisualProfile[] = players.map(player => {
     const persona = JSON.parse(player.persona) as Record<string, unknown>;
     const string = (field: string) => typeof persona[field] === "string" ? persona[field] : null;
     return { id: player.id, name: string("name") ?? player.id, personaKey: string("personaKey") ?? "", avatarUrl: string("avatarUrl"),
-      fullBodyReferenceUrl: currentArt.get(player.id)?.fullBodyReferenceUrl ?? null, performanceInstructions: string("performanceInstructions") ?? "" };
+      fullBodyReferenceUrl: frozenArt.get(player.id)?.fullBodyReferenceUrl ?? null, performanceInstructions: string("performanceInstructions") ?? "" };
   });
   await db.insert(schema.visualGameAssets).values({ gameId, profiles }).onConflictDoNothing();
   const [assets] = await db.select().from(schema.visualGameAssets).where(eq(schema.visualGameAssets.gameId, gameId));
@@ -147,13 +147,14 @@ async function freezeReplayReferences(db: DrizzleDB, gameId: string, participant
   for (const participant of participants) {
     const profile = profiles.find(member => member.id === participant.id);
     if (!profile || profile.name !== participant.name) throw new ReplayVisualError("Recorded cast does not match the frozen character profiles", "cast_mismatch");
-    const referenceArtifactId = await storeVisualArtifact(db, gameId, await readVisualProfileImage(profile.fullBodyReferenceUrl ?? profile.avatarUrl, profile));
+    const artwork = frozenArt.get(profile.id);
+    const referenceArtifactId = artwork?.sourceArtifactId ?? await storeVisualArtifact(db, gameId, await readVisualProfileImage(profile.fullBodyReferenceUrl ?? profile.avatarUrl, profile));
     cast.push({ id: profile.id, name: profile.name, referenceArtifactId, performanceInstructions: profile.performanceInstructions, portraitFallback: !profile.fullBodyReferenceUrl });
   }
   await db.transaction(async tx => {
     const [current] = await tx.select().from(schema.visualGameAssets).where(eq(schema.visualGameAssets.gameId, gameId)).for("update");
     if (!current) throw new ReplayVisualError("Frozen character references are unavailable", "references_missing");
-    await tx.update(schema.visualGameAssets).set({ cast: [...new Map([...current.cast, ...cast].map(member => [member.id, member])).values()] }).where(eq(schema.visualGameAssets.gameId, gameId));
+    await tx.update(schema.visualGameAssets).set({ cast: [...current.cast, ...cast.filter(member => !current.cast.some(saved => saved.id === member.id))] }).where(eq(schema.visualGameAssets.gameId, gameId));
   });
   return { cast };
 }

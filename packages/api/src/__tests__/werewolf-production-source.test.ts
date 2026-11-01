@@ -1,5 +1,5 @@
 import { sha256StableJson } from "../services/stable-hash.js";
-import { storeFields } from "../services/payload-storage.js";
+import { storeFields, storeBinary, storeJson } from "../services/payload-storage.js";
 import { beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { completedWerewolfResultsFixture as werewolfResultsFixture, completedCurrentWerewolfFixture } from "@influence/engine/fixtures/werewolf-results";
@@ -168,13 +168,18 @@ test("saved body art changes preserve Studio gameplay verification without refre
   if (started.type !== "werewolf.started") throw new Error("Fixture requires a start event");
   const player = started.payload.players[0]!;
   player.agentProfileId = "current-profile";
+  player.contentRevisionId = "frozen-revision";
   await db.insert(schema.users).values({ id: "owner" });
   await db.insert(schema.agentProfiles).values({ id: "current-profile", userId: "owner", name: "Current character", personality: "Patient", fullBodyReferenceUrl: "/original.png" });
   await db.insert(schema.games).values({ id, slug: id, gameKind: "werewolf", status: "completed", startedAt: "2026-09-01T00:00:00.000Z", config: "{}" });
   await db.insert(schema.werewolfEvents).values(events.map(event => ({ gameId: id, sequence: event.sequence, event })));
+  const image = await storeBinary(Buffer.from("original retained bytes"));
+  await db.insert(schema.agentContentAssets).values({ hash: image.sha256, bytes: image });
+  await db.insert(schema.agentContentRevisions).values({ id: "frozen-revision", agentProfileId: "current-profile", userId: "owner", fingerprint: "frozen", snapshot: await storeJson({ fullBodyReferenceUrl: "/original.png", assets: { "/original.png": image.sha256 } }) });
   const first = await readWerewolfProductionSource(db, id, { audience: "mystery", thinking: false });
   const transparent = `/characters/${"a".repeat(64)}.png`;
-  await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: transparent }).where(eq(schema.agentProfiles.id, "current-profile"));
+  await db.update(schema.agentContentAssets).set({ transparentUrl: transparent }).where(eq(schema.agentContentAssets.hash, image.sha256));
+  await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: "/later-revision.png" }).where(eq(schema.agentProfiles.id, "current-profile"));
   const next = await readWerewolfProductionSource(db, id, { audience: "mystery", thinking: false, snapshot: first.snapshot });
   expect(next.snapshot.sourceHash).toBe(first.snapshot.sourceHash);
   expect(next.window.players.find(value => value.id === player.id)?.fullBodyReferenceUrl).toBe(transparent);

@@ -32,7 +32,7 @@ export async function readWerewolfPresentation(db: DrizzleDB, id: string, audien
   const view = { ...frame.view, players: frame.view.players.map(player => {
     const reference = references.find(ref => ref.profile.id === player.id);
     return { ...player, avatarUrl: `${root}/characters/${encodeURIComponent(player.id)}?${query}`,
-      fullBodyReferenceUrl: reference?.kind === "full_body" ? reference.profile.fullBodyReferenceUrl : null,
+      fullBodyReferenceUrl: reference?.kind === "full_body" ? reference.transparentUrl ?? `${root}/characters/${encodeURIComponent(player.id)}?${query}&image=body` : null,
       ...(reference?.profile.headPosition ? { headRectangle: reference.profile.headPosition.rect } : {}) };
   }) };
   const presentation: WerewolfPresentation = { slug: game.slug, status: game.status, latestCursor: frame.latestCursor, publicationCutoff,
@@ -44,7 +44,8 @@ export async function readWerewolfCharacter(db: Pick<DrizzleDB, "select">, gameI
   const ref = (await werewolfReferenceMetadata(db, gameId, players, { availableHashes })).find(ref => ref.profile.id === playerId);
   if (!ref) return null;
   const hash = image === "body" ? (ref.kind === "full_body" ? ref.bodyHash : null) : ref.portraitHash;
-  if (image === "body" && ref.kind === "full_body") return readVisualProfileImage(ref.profile.fullBodyReferenceUrl, ref.profile);
+  if (image === "body" && ref.transparentUrl) return readVisualProfileImage(ref.transparentUrl, ref.profile);
+  if (image === "body" && ref.bundled && ref.kind === "full_body") return readVisualProfileImage(ref.profile.fullBodyReferenceUrl, ref.profile);
   if (hash) {
     const [asset] = await loadPayloads(db.select({ bytes: schema.agentContentAssets.bytes }).from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, hash)));
     return asset?.bytes ?? null;
@@ -147,7 +148,7 @@ export function materializeWerewolfWatch(projection: ReturnType<typeof projectWe
   const body = (id: string) => {
     const reference = referenceByPlayer.get(id);
     if (reference?.kind !== "full_body") return null;
-    return reference.profile.fullBodyReferenceUrl;
+    return reference.transparentUrl ?? `${character(id)}&image=body`;
   };
   const identity = <T extends { id: string }>(player: T) => {
     const head = referenceByPlayer.get(player.id)?.profile.headPosition;

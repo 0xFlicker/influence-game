@@ -1,4 +1,3 @@
-import { isSavedCharacterArt, savedCharacterArtHash } from "./character-art-save.js";
 import { Hydrated, loadPayloads } from "./payload-storage.js";
 import { readAgentScreening } from "./agent-screening-read.js";
 import { SCREENING_POLICY_VERSION } from "./agent-screening-policy.js";
@@ -106,13 +105,6 @@ async function resolveModerationEffect(tx: Reader, profile: Profile, states: Par
       try { content = decodeContentSnapshot(selected.revision.snapshot, profile); }
       catch (error) { if (!(error instanceof ContentSubmissionConflict)) throw error; recovery = error.message; effectiveId = null; }
       if (content) {
-        const original = states.find(state => state.revision.id === profile.contentRevisionId)?.revision.snapshot.fullBodyReferenceUrl;
-        if (isSavedCharacterArt(profile.fullBodyReferenceUrl) && original && content.fullBodyReferenceUrl === original) {
-          content.fullBodyReferenceUrl = profile.fullBodyReferenceUrl;
-          if (content.headPosition?.sourceUrl === original) content.headPosition = { ...content.headPosition,
-            sourceUrl: profile.fullBodyReferenceUrl!, sourceHash: savedCharacterArtHash(profile.fullBodyReferenceUrl)! };
-          if (content.portraitCrop?.sourceUrl === original) content.portraitCrop = { ...content.portraitCrop, sourceUrl: profile.fullBodyReferenceUrl! };
-        }
         await requireRetainedEvidence(tx, selected.revision.snapshot);
         const [conflict] = await tx.select({ id: schema.agentProfiles.id }).from(schema.agentProfiles)
           .where(and(sql`lower(btrim(${schema.agentProfiles.name})) = lower(btrim(${content.name}))`, not(eq(schema.agentProfiles.id, profile.id))));
@@ -425,12 +417,6 @@ export async function decideModerationReview(db: DrizzleDB, userId: string, inpu
       moderationRequired: profile.moderationRequired || input.disposition === "rejected", updatedAt: now,
     }).where(eq(schema.agentProfiles.id, profile.id)).returning();
     if (effectiveId && effectiveId !== profile.contentRevisionId) {
-      // Activating an intentionally different picture reuses any finished result
-      // through the existing write queue; it never needs a playback repair.
-      const selected = states.find(state => state.revision.id === effectiveId)!;
-      const hash = effective!.fullBodyReferenceUrl ? (selected.revision.snapshot.assets as Record<string, string> | undefined)?.[effective!.fullBodyReferenceUrl] : null;
-      if (hash) await tx.update(schema.characterCutoutDemands).set({ cutoutId: null, error: null }).where(and(
-        eq(schema.characterCutoutDemands.agentProfileId, profile.id), eq(schema.characterCutoutDemands.sourceKey, `sha256:${hash}`)));
       // Archive controls availability, not which competitive revision describes the profile.
       await ensureActiveAgentRevisionInTransaction(tx, { profile: effective!, effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(effective!), trigger: "moderation" });
       for (const game of games) {

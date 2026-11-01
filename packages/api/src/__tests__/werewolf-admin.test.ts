@@ -1,4 +1,3 @@
-import { readVisualProfileImage } from "../services/visual-game-assets.js";
 import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@influence/engine";
 import { werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
@@ -229,7 +228,7 @@ test("incomplete games cannot start production and new House casts use bundled f
   const refs = await werewolfReferences(db, g.id); expect(refs).toHaveLength(8); expect(refs.every(r => r.kind === "full_body" && r.bundled)).toBe(true);
 });
 
-test("production uses current body art while retaining frozen identity and portrait evidence", async () => {
+test("production reads captured revision bytes, never a later character edit", async () => {
   const bytes = await sharp({ create: { width: 32, height: 48, channels: 3, background: "#113355" } }).png().toBuffer();
   const hash = "sha256:frozen-reference";
   const portraitBytes = await sharp({ create: { width: 20, height: 20, channels: 3, background: "#556677" } }).png().toBuffer();
@@ -239,8 +238,7 @@ test("production uses current body art while retaining frozen identity and portr
   await db.insert(schema.agentContentRevisions).values(await storeFields({ id: "original-content", agentProfileId: "custom", userId: "owner", ancestryKnown: true, fingerprint: "original-content", snapshot: { ...contentSnapshot(profile!), assets: { "/old-full.png": hash, "/old.png": "portrait-hash" } } }, {"snapshot":"json-gzip"}));
   await db.update(schema.agentProfiles).set({ contentRevisionId: "original-content" }).where(eq(schema.agentProfiles.id, "custom"));
   const g = await createWerewolfGame(db, "owner", { preset: "one_wolf", agentProfileIds: ["custom"], maxDays: 1 });
-  await db.update(schema.agentProfiles).set({ name: "Edited Arden Vale", fullBodyReferenceUrl: "/avatars/personas/full-body-v1/observer.webp" }).where(eq(schema.agentProfiles.id, "custom"));
-  const currentBytes = await readVisualProfileImage("/avatars/personas/full-body-v1/observer.webp", { name: "", personaKey: "" });
+  await db.update(schema.agentProfiles).set({ name: "Edited Arden Vale", fullBodyReferenceUrl: "/new-full.png" }).where(eq(schema.agentProfiles.id, "custom"));
   const refs = await werewolfReferences(db, g.id);
   const saved = refs.find(r => r.profile.name === "Arden Vale")!;
   expect(saved.portraitBytes).toEqual(portraitBytes);
@@ -249,19 +247,19 @@ test("production uses current body art while retaining frozen identity and portr
   const select = spyOn(db, "select");
   try {
     const metadata = await werewolfReferenceMetadata(db, g.id, players);
-    expect(select).toHaveBeenCalledTimes(3);
-    expect(select.mock.calls[2]).toEqual([{hash:schema.agentContentAssets.hash}]);
-    expect(metadata.find(ref=>ref.profile.id===saved.profile.id)).toMatchObject({kind:"full_body",portraitHash:"portrait-hash"});
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(select.mock.calls[1]).toEqual([{hash:schema.agentContentAssets.hash}]);
+    expect(metadata.find(ref=>ref.profile.id===saved.profile.id)).toMatchObject({kind:"full_body",bodyHash:hash,portraitHash:"portrait-hash"});
     expect(metadata.every(ref=>!("bytes" in ref) && !("portraitBytes" in ref))).toBe(true);
   } finally {select.mockRestore();}
 
   expect(await readWerewolfCharacter(db,g.id,saved.profile.id)).toEqual(portraitBytes);
-  expect(await readWerewolfCharacter(db,g.id,saved.profile.id,"body")).toEqual(currentBytes);
+  expect(await readWerewolfCharacter(db,g.id,saved.profile.id,"body")).toEqual(bytes);
   const identity=(await readWerewolfWatch(db,g.id,"mystery",1,10)).players.find(p=>p.id===saved.profile.id)!;
-  expect(identity.fullBodyReferenceUrl).toBe("/avatars/personas/full-body-v1/observer.webp");
+  expect(identity.fullBodyReferenceUrl).toContain("image=body");
   expect(identity.avatarUrl).not.toContain("image=body");
-  expect(saved.kind).toBe("full_body"); expect(saved.bytes).toEqual(currentBytes);
-  const [portraitProfile] = await db.insert(schema.agentProfiles).values({ id: "portrait-only", userId: "owner", name: "Rowan Finch", personality: "Quiet", avatarUrl: "/old.png", fullBodyReferenceUrl: null }).returning();
+  expect(saved.kind).toBe("full_body"); expect(saved.bytes).toEqual(bytes); expect(JSON.stringify(refs)).not.toContain("new-full");
+  const [portraitProfile] = await db.insert(schema.agentProfiles).values({ id: "portrait-only", userId: "owner", name: "Rowan Finch", personality: "Quiet", avatarUrl: "/old.png", fullBodyReferenceUrl: "/uncaptured-full.png" }).returning();
   await db.insert(schema.agentContentRevisions).values(await storeFields({ id: "portrait-content", agentProfileId: "portrait-only", userId: "owner", ancestryKnown: true, fingerprint: "portrait-content", snapshot: { ...contentSnapshot(portraitProfile!), assets: { "/old.png": "portrait-hash" } } }, {"snapshot":"json-gzip"}));
   await db.update(schema.agentProfiles).set({ contentRevisionId: "portrait-content" }).where(eq(schema.agentProfiles.id, "portrait-only"));
   const portraitGame = await createWerewolfGame(db, "owner", { preset: "one_wolf", agentProfileIds: ["portrait-only"], maxDays: 1 });
@@ -275,12 +273,15 @@ test("producer discovery cannot grant itself game visibility controls", async ()
   expect((await app.request(`/api/admin/werewolf/${g.id}/visibility`, { method: "PATCH", headers, body: '{"hidden":true}' })).status).toBe(403);
 });
 
-test("invalid current artwork is rejected at the storage boundary before production", async () => {
+test("missing frozen references reject production without reading a current profile URL", async () => {
   await db.insert(schema.agentProfiles).values({ id: "unfrozen", userId: "owner", name: "Rowan Finch", personality: "Direct", fullBodyReferenceUrl: "https://example.invalid/current.png" });
   const g = await game(true, ["unfrozen"]);
   const inventory = await readReplayVisualProduction(db, g.id);
-  expect(inventory.warnings).toEqual([]);
-  await expect(werewolfReferences(db, g.id)).rejects.toThrow("application image storage");
+  expect(inventory.warnings.join(" ")).toContain("Rowan Finch");
+  const lobby = inventory.scenes.find(scene => scene.roomId === "lobby")!;
+  const app = createVisualReplayProductionRoutes(db), headers = await operator("producer");
+  const response = await app.request(`/api/admin/production/games/${g.id}/visual/missing`, { method: "POST", headers, body: JSON.stringify({ key: lobby.key, previewHash: lobby.previewHash, requestId: "missing-reference" }) });
+  expect(response.status).toBe(409); expect(await response.text()).toContain("Frozen reference unavailable");
   expect((await readVisualMedia(db, g.id)).jobs).toHaveLength(0);
 });
 

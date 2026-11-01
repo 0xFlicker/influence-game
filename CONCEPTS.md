@@ -18,7 +18,7 @@ An AI competitor participating in a game under The House. Agents make in-game de
 
 ## Agent Profile
 
-Transparent full-body art is saved presentation state. A completed background-removal result replaces the character-owned picture; existing games join to that picture; playback does not select cutout jobs or require a new acceptance. Original submission evidence is separate from the displayed art.
+Character pictures belong to content revisions. Games keep their selected revision's picture; later revisions do not back-propagate. Background removal publishes a transparent derivative of the exact source hash in `agent_content_assets`; playback may use that derivative without changing the revision or consulting cutout jobs.
 
 Stored gender is shared contestant identity in both games. The game freezes it with the roster; missing gender remains unspecified, and contestants must not guess from names. Gender is not a separate pronoun preference. Personality, backstory, and strategy remain private character instructions.
 

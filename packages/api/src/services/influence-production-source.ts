@@ -283,13 +283,12 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
   }
   const media = await readViewerMedia(db, game.id, publicationSnapshot, { includeHidden: true, artifactUrl, sceneIds });
   const fullBodies: Record<string, string> = {}, fullBodyHeads: Record<string, HeadRectangle> = {};
-  for (const art of await readCharacterArtwork(db, game.id)) {
+  for (const art of await readCharacterArtwork(db, game.id, artifactUrl)) {
     const id = art.id;
     if (!frozen.has(id)) continue;
     const url = reference(art.fullBodyReferenceUrl);
     if (url) fullBodies[id] = url;
-    const head = art.headPosition;
-    if (head?.confirmation && head.sourceUrl === url && validHeadRectangle(head.rect)) fullBodyHeads[id] = head.rect;
+    if (validHeadRectangle(art.headRectangle)) fullBodyHeads[id] = art.headRectangle;
   }
   for (const member of assets[0]?.cast ?? []) if (!member.portraitFallback && frozen.has(member.id) && !fullBodies[member.id]) {
     fullBodies[member.id] = artifactUrl(member.referenceArtifactId); delete fullBodyHeads[member.id];

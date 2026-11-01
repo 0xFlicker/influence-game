@@ -213,6 +213,9 @@ describe("queue enrollment service", () => {
       strategyHints: profile.strategyStyle,
       personaKey: profile.personaKey,
       avatarUrl: profile.avatarUrl,
+      fullBodyReferenceUrl: profile.fullBodyReferenceUrl,
+      headPosition: profile.headPosition,
+      portraitCrop: profile.portraitCrop,
       performanceInstructions: profile.performanceInstructions,
     });
     expect(revision.effectiveRuntimeSnapshot).toMatchObject({

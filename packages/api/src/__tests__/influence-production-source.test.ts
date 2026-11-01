@@ -286,3 +286,22 @@ test("Two Names production binds exact speech and thought text without changing 
     expect(productionMomentContent({...source,snapshot:{...source.snapshot,projectionVersion:4}},speech).text).toBeNull();
   }
 });
+
+test("publishing the frozen image's derivative preserves an existing Studio snapshot", async () => {
+  const { gameId } = await fixture();
+  const imageId = await asset(gameId);
+  const [artifact] = await db.select().from(schema.visualArtifacts).where(eq(schema.visualArtifacts.id, imageId));
+  await db.insert(schema.visualGameAssets).values({ gameId, profiles: [], cast: [{ id: "atlas", name: "Atlas", referenceArtifactId: imageId, performanceInstructions: "", portraitFallback: false }] });
+  await db.insert(schema.agentContentAssets).values({ hash: artifact!.image.sha256, bytes: artifact!.image });
+  const before = await readInfluenceProductionSource(db, gameId);
+  expect(before.visual.fullBodies.atlas).toBe(`/api/admin/production/games/${gameId}/visual/artifacts/${imageId}`);
+  const transparentUrl = "/characters/transparent.png";
+  await db.update(schema.agentContentAssets).set({ transparentUrl }).where(eq(schema.agentContentAssets.hash, artifact!.image.sha256));
+  const after = await readInfluenceProductionSource(db, gameId, { snapshot: before.snapshot });
+  expect(after.visual.fullBodies.atlas).toBe(transparentUrl);
+  expect(after.snapshot.sourceHash).toBe(before.snapshot.sourceHash);
+  expect(after.snapshot.acceptedSourceHash).toBe(before.snapshot.acceptedSourceHash);
+  expect(after.catalog).toEqual(before.catalog);
+  expect(await db.select().from(schema.characterCutouts)).toHaveLength(0);
+  expect(await db.select().from(schema.characterCutoutDemands)).toHaveLength(0);
+});
