@@ -32,3 +32,12 @@ Final validation: `bun run check` passed; `bun run test` passed (3,222 passed, f
 - **Retained requirement — historical review grouping:** `section:v2` grouping is used only to inspect immutable existing evidence; new rendering uses the distinct-region grouping. Removing it would mislabel accepted historical artifacts.
 
 Review-fix validation: focused API suite 56 passed; recovery/read-model rerun 33 passed; viewer/repair UI suite 49 passed; `bun run check` passed. No additional paid renders were needed.
+
+## CI startup diagnostics
+
+The initial browser run timed out starting the Studio test web server before its
+assertions ran. Its logs were written outside the uploaded artifact directory,
+so the failure did not establish a product regression or an infrastructure cause.
+The harness now retains startup stdout/stderr under `test-results`, reports the
+child exit status and bounded log tails, and fails immediately if the child exits.
+The existing 60-second deadline and browser assertions remain unchanged.
