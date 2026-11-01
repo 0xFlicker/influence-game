@@ -23,3 +23,12 @@ also cleans saved annotations, without changing existing clips or saved history.
 Regression coverage includes unsupported wrappers, attributes containing `>`,
 namespaced/self-closing tags, Unicode offsets, retained square brackets, split
 page tags and both static and timed speech rendering.
+
+## Browser CI follow-up
+
+The shared-moment-link test raced initial hydration: it saw the initial paused
+transport, skipped its pause click, then autoplay started before its final
+paused-state assertion. The CI trace showed no pause click after the short-link
+navigation. Wait for the expected autoplay state before pausing on both initial
+and shared-link navigation; retain the assertions that sharing preserves both
+paused and playing intent. No playback behavior change is needed for this race.

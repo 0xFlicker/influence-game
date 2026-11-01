@@ -585,6 +585,9 @@ test.describe("format-aware game viewer", () => {
       return {href, target};
     };
     await page.goto(viewerUrl(`/games/${slug}/replay/16`));
+    // The initial transport can render paused before hydration starts autoplay.
+    // Observe that start before pausing so this test owns the paused intent.
+    await expect(page.getByRole("button", {name:"Pause replay", exact:true})).toBeVisible();
     await pauseAutoplay(page, "Pause replay");
     const {href, target} = await copyMoment();
     expect(target.pathname).toBe(`/games/${slug}/replay/16`);
@@ -593,7 +596,9 @@ test.describe("format-aware game viewer", () => {
     expect((await copyMoment()).target.href).toBe(target.href);
     expect(Number(await page.getByRole("slider", { name: "Replay position", exact: true }).inputValue())).toBeGreaterThan(1);
     await page.goto(href);
+    await expect(page.getByRole("button", {name:"Pause replay", exact:true})).toBeVisible();
     await pauseAutoplay(page, "Pause replay");
+    await expect(page.getByRole("button", {name:"Play replay", exact:true})).toBeVisible();
     const restored = (await copyMoment()).target;
     expect(restored.pathname).toBe(target.pathname);
     expect(restored.searchParams.get("cue")).toBe(target.searchParams.get("cue"));
