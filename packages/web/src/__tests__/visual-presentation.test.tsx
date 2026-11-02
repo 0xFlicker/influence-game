@@ -445,6 +445,10 @@ test("recorded House captions never remove the result, affected cast, or scenery
   expect(view.container.querySelector("[data-room-backdrop]")).not.toBeNull();
   expect(view.container.textContent).toContain("Arden leaves the game");
   expect(view.container.textContent).toContain("Arden: 4");
+  expect(view.container.textContent).toContain("Accepted historical narration.");
+  expect(view.container.querySelectorAll("[data-house-message]")).toHaveLength(1);
+  expect(view.getByRole("img",{name:"The House"})).toBeDefined();
+  view.rerender(<VisualPresentationFrame beat={result} rooms={[]} elapsedMs={1200} hideHouseNarration naturalHouseMessages={false} fullscreen />);
   expect(view.container.textContent).not.toContain("Accepted historical narration.");
   view.rerender(<VisualPresentationFrame beat={{kind:"house",text:"Accepted historical narration.",backgroundUrl:"/missing-room.jpg"}} rooms={[]} elapsedMs={1200} hideHouseNarration fullscreen />);
   expect(view.container.querySelector("[data-room-backdrop]")).not.toBeNull();

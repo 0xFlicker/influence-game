@@ -21,7 +21,7 @@ import {
   useBufferState,
 } from "remotion";
 import { WerewolfContentFrame } from "../../components/games/werewolf/werewolf-watch-stage";
-import { VisualPresentationFrame } from "../../app/games/[slug]/components/visual-presentation";
+import { VisualPresentationFrame, hasInlineHouseMessage } from "../../app/games/[slug]/components/visual-presentation";
 import { FormatPresentation } from "../../app/games/[slug]/components/format-presentation";
 import { FitPresentation } from "../../app/games/[slug]/components/fit-presentation";
 import { SceneThinkingProvider } from "../../components/watch/watch-thinking";
@@ -190,6 +190,8 @@ export function ReplayFrame({
                 />
               ) : picture.beat ? (
                 <VisualPresentationFrame
+                  naturalHouseMessages={picture.cue.compactEmpower === true}
+                  houseLogoUrl={staticFile("logo.png")}
                   hideHouseNarration={Boolean(houseAudio)}
                   beat={picture.beat}
                   rooms={picture.rooms}
@@ -210,7 +212,7 @@ export function ReplayFrame({
                   />
                 </FitPresentation>
               ) : null}
-              <HouseNarration readable={picture.kind === "influence" && picture.cue.resultsPresentation} centered={picture.kind === "werewolf" && werewolfHouseCentered(picture.cue)} text={cue.speech?.text ?? ""} window={houseWindow} logoUrl={staticFile("logo.png")} />
+              {!(picture.kind === "influence" && picture.cue.compactEmpower && hasInlineHouseMessage(picture.beat)) && <HouseNarration readable={picture.kind === "influence" && picture.cue.resultsPresentation} centered={picture.kind === "werewolf" && werewolfHouseCentered(picture.cue)} text={cue.speech?.text ?? ""} window={houseWindow} logoUrl={staticFile("logo.png")} />}
             </div>
           </div>
         </SampledStageProvider>

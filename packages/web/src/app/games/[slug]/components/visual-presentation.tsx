@@ -1,4 +1,6 @@
 "use client";
+import {RoomBackdrop} from "./stage-backdrop";
+import {HouseMessage} from "@/components/watch/house-message";
 
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import {useSceneThinking} from "@/components/watch/watch-thinking";
@@ -71,9 +73,11 @@ export function VisualPresentation({ director, retainTail = true, ...props }: Om
   return <VisualPresentationFrame {...props} {...clock} onSceneReadyChange={onSceneReadyChange} holdAtTail={holdAtTail} elapsedMs={elapsedMs} readingElapsedMs={director.getSpeechElapsedBaseMs()} paused={!state.isPlaying && !director.isAnimating()} speechPresentation={director.getActiveCue()?.speechPresentation} navigationRevision={director.getNavigationRevision()} />;
 }
 
-export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs, readingElapsedMs: readingTime = elapsedMs, holdAtTail = false, paused = false, reducedMotion = false, status, fullscreen = false, controlsInset = fullscreen ? 140 : 0, navigationRevision = 0, speechPresentation, currentStateEntry = false, voteLedger, roster = [], onSceneReadyChange, hideHouseNarration = false }: {
+export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs, readingElapsedMs: readingTime = elapsedMs, holdAtTail = false, paused = false, reducedMotion = false, status, fullscreen = false, controlsInset = fullscreen ? 140 : 0, navigationRevision = 0, speechPresentation, currentStateEntry = false, voteLedger, roster = [], onSceneReadyChange, hideHouseNarration = false, naturalHouseMessages = true, houseLogoUrl }: {
   beat: VisualPresentationBeat;
   hideHouseNarration?: boolean;
+  naturalHouseMessages?: boolean;
+  houseLogoUrl?: string;
   /** Only saved scene versions applicable at the current replay/presentation sequence. */
   rooms: readonly AcceptedVisualScene[];
   retainedScene?: AcceptedVisualScene | null;
@@ -104,8 +108,9 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   if (beat.kind === "house-result") {
     content = <div className="flex min-h-0 flex-1 flex-col gap-3" style={{paddingBottom: fullscreen ? controlsInset : 0}} data-house-result>
       <VisualPresentationFrame beat={beat.result} rooms={rooms} elapsedMs={0} currentStateEntry paused reducedMotion={reducedMotion} fullscreen={fullscreen} controlsInset={0} roster={roster} />
-      {hideHouseNarration && <div className="shrink-0" style={{height:"clamp(56px, 20vh, 120px)"}} aria-hidden="true" />}
-      {!hideHouseNarration && <div className="relative flex shrink-0 flex-col rounded-xl border border-white/20 bg-black/85 p-3" style={{height:"clamp(56px, 20vh, 120px)"}} aria-label="House summary"><TimedSpeech text={beat.text} elapsedMs={readingElapsedMs} className="text-base leading-relaxed sm:text-lg" /></div>}
+      {!naturalHouseMessages && hideHouseNarration && <div className="shrink-0" style={{height:"clamp(56px, 20vh, 120px)"}} aria-hidden="true" />}
+      {naturalHouseMessages && <HouseMessage text={beat.text} logoUrl={houseLogoUrl} />}
+      {!naturalHouseMessages && !hideHouseNarration && <div className="relative flex shrink-0 flex-col rounded-xl border border-white/20 bg-black/85 p-3" style={{height:"clamp(56px, 20vh, 120px)"}} aria-label="House summary"><TimedSpeech text={beat.text} elapsedMs={readingElapsedMs} className="text-base leading-relaxed sm:text-lg" /></div>}
     </div>;
   } else if (beat.kind === "canonical-result") {
     content = <ResultStage players={beat.players}><h2 className="text-center text-2xl">{beat.headline}</h2><p className="mt-3 text-center text-sm">{beat.detail}</p></ResultStage>;
@@ -134,7 +139,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
     content = <section aria-label="Anonymous speech" className={`mx-auto w-full max-w-2xl py-10 ${fullscreen ? "flex min-h-0 flex-1 flex-col px-4" : ""}`}><p className="mb-4 text-xs text-white/50">Anonymous</p>{opacity > 0 && <blockquote data-speech-bubble style={{ opacity }} className={`rounded-2xl border border-white/20 bg-black/85 p-5 ${fullscreen ? "flex min-h-0 flex-1 flex-col" : ""}`}>{fullscreen ? <TimedSpeech text={beat.speech.text} elapsedMs={readingElapsedMs - SCENE_SPEECH_START_MS} /> : beat.speech.text}</blockquote>}</section>;
   } else if (beat.kind === "house") {
     const segment = hideHouseNarration && beat.text !== null ? null : <HouseSegment fullscreen={fullscreen} text={beat.text} title={beat.title} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} />;
-    content = beat.backgroundUrl ? <ResultStage label="House summary" background={beat.backgroundUrl}>
+    content = naturalHouseMessages && beat.backgroundUrl && beat.text !== null ? <div className="relative isolate flex min-h-0 flex-1 flex-col justify-end overflow-auto p-4"><RoomBackdrop source={beat.backgroundUrl} resilient /><HouseMessage text={beat.text} logoUrl={houseLogoUrl} /></div> : beat.backgroundUrl ? <ResultStage label="House summary" background={beat.backgroundUrl}>
       <p className="mb-4 text-center text-sm tracking-widest text-amber-100">THE HOUSE</p>
       {!hideHouseNarration && beat.text !== null ? <div className="flex h-[clamp(100px,30vh,240px)] flex-col"><TimedSpeech text={beat.text} elapsedMs={readingElapsedMs} className="text-base leading-relaxed sm:text-xl" /></div> : <h2 className="py-8 text-center text-2xl">{beat.title}</h2>}
     </ResultStage> : segment;
@@ -175,4 +180,9 @@ function TwoNamesDecision({beat, elapsedMs, currentStateEntry, reducedMotion, co
   return <div data-two-names-decision-speech={beat.cue.kind} className="flex min-h-0 flex-1 flex-col">
     <SoloPresentation backgroundUrl={influenceRoomBackground(beat)} beat={{kind:"portrait",purpose:"Decision",caption:"Two Names",player:beat.player,speech:beat.speech}} elapsedMs={elapsedMs} reducedMotion={reducedMotion} controlsInset={controlsInset} />
   </div>;
+}
+
+/** Natural House copy lives with its scenery/result, including when audio is present. */
+export function hasInlineHouseMessage(beat: VisualPresentationBeat | null | undefined): boolean {
+  return beat?.kind === "house-result" || beat?.kind === "house" && Boolean(beat.backgroundUrl) && beat.text !== null;
 }

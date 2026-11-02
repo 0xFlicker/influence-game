@@ -1545,6 +1545,12 @@ test.describe("format-aware game viewer", () => {
     })).toBe(true);
     const summary = combined.getByLabel("House summary");
     await expect(summary).toBeVisible();
+    const logoBox = await summary.locator("[data-house-message-logo]").boundingBox();
+    const panelBox = await summary.boundingBox();
+    expect(logoBox!.y).toBeLessThan(panelBox!.y);
+    expect(logoBox!.y + logoBox!.height).toBeGreaterThan(panelBox!.y);
+    expect(Math.abs(logoBox!.x + logoBox!.width / 2 - (panelBox!.x + panelBox!.width / 2))).toBeLessThan(1);
+    expect(await summary.locator("[data-house-message-text]").evaluate(el => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
     const resultBox = await tie.boundingBox();
     const summaryBox = await summary.boundingBox();
     expect(resultBox!.y + resultBox!.height).toBeLessThanOrEqual(summaryBox!.y);

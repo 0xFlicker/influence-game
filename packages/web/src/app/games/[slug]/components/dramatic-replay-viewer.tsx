@@ -824,7 +824,7 @@ function DramaticReplayTheater({
 
         </div>
         </WatchThinking>}
-        {voice.houseNarrationAvailable && <WatchClock director={director}>{() => <HouseNarration readable text={currentMessage?.text ?? ""} window={voice.getHouseNarration()} bottom={expanded ? 140 : 16} />}</WatchClock>}
+        {voice.houseNarrationAvailable && !(visual?.beat?.kind === "house-result" || visual?.beat?.kind === "house" && visual.beat.backgroundUrl && visual.beat.text !== null) && <WatchClock director={director}>{() => <HouseNarration readable text={currentMessage?.text ?? ""} window={voice.getHouseNarration()} bottom={expanded ? 140 : 16} />}</WatchClock>}
         {live && isPlaying && directorSnapshot.waitingAtTail && activeCue && <WatchBuffering />}
       </div>
 
