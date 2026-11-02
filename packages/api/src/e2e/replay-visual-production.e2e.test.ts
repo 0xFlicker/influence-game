@@ -1726,7 +1726,9 @@ test("Studio cloud render orders recover lost responses and survive navigation",
   };
   try {
     await page.setViewport({width:1440,height:1000});await page.waitForSelector('[data-composition-frame]');
-    await configureStudioCut(page,"Smart","None");await clickStudioButton(page,"Selected cut");
+    // This story tests render ordering, independently of labels edited by the
+    // preceding stories in this shared browser fixture.
+    await configureStudioCut(page,"All","None");await clickStudioButton(page,"Selected cut");
     await page.waitForFunction("document.querySelector('[data-preview-view]')?.getAttribute('data-preview-view')==='cut' && !!document.querySelector('[data-composition-frame]')");
     await openStudioDialog(page,"Export selected cut");
     await page.setRequestInterception(true);page.on("request",intercept);
@@ -1753,6 +1755,10 @@ test("Studio cloud render orders recover lost responses and survive navigation",
     const [retried]=await database.db.select().from(schema.renderJobs).where(eq(schema.renderJobs.id,jobs[0]!.id));
     expect(retried?.executionId).not.toBe(jobs[0]!.executionId);
     await page.screenshot({path:temporaryPath("studio-cloud-render-order.png")});
+  }catch(error) {
+    console.error("[Studio cloud render order]",await page.evaluate("document.body.innerText"));
+    await page.screenshot({path:temporaryPath("studio-cloud-render-order-failure.png"),fullPage:true});
+    throw error;
   }finally {page.off("request",intercept);await page.setRequestInterception(false);await page.close();}
 },180_000);
 
