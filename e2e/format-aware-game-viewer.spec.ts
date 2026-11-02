@@ -1553,6 +1553,12 @@ test.describe("format-aware game viewer", () => {
           return [...el.querySelectorAll("[data-format-card],figure,header")].every(item=>{const r=item.getBoundingClientRect();return r.bottom<=scene.bottom+1 && r.top>=scene.top-1 && r.right<=scene.right+1 && r.left>=scene.left-1;});
         })).toBe(true);
         await expect.poll(()=>combined.locator("[data-speech-page-copy]").evaluate(copy=>copy.getBoundingClientRect().height<=copy.parentElement!.clientHeight-21)).toBe(true);
+        if(width===1920 && mode==="theater") {
+          const caption=combined.locator("[data-speech-page-copy]");
+          await expect.poll(()=>caption.evaluate(copy=>parseFloat(getComputedStyle(copy).fontSize))).toBeGreaterThan(16);
+          const sizing=await caption.evaluate(copy=>({height:copy.getBoundingClientRect().height,line:parseFloat(getComputedStyle(copy).lineHeight)}));
+          expect(sizing.height).toBeLessThanOrEqual(sizing.line+1);
+        }
         if(artwork && width===1920) {const image=combined.locator("[data-format-menu-fullbody] img");await expect(image).toBeVisible();await expect.poll(()=>image.evaluate(img=>(img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);}
         await page.screenshot({path:testInfo.outputPath(`format-menu-${artwork ? "body" : "portrait"}-${width}x${height}-${mode}.png`)});
         if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
