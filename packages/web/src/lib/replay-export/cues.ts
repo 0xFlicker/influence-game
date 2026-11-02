@@ -260,7 +260,7 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
           transcriptSequence: message.entrySequence,
         }),
       },
-      label: `Round ${cue.round} · ${cue.phase}`,
+      label: `Round ${cue.round} · ${message?.allianceIntroduction?.allianceName ?? message?.allianceSession?.allianceName ?? cue.phase}`,
       speech:
         message?.dialogueKind === "house_summary"
           ? {

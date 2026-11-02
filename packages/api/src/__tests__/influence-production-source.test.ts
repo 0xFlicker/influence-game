@@ -13,9 +13,34 @@ import { acceptVisualScene, prepareVisualScene, storeVisualArtifact } from "../s
 import { readViewerMedia } from "../services/visual-media-viewer.js";
 import { createCanonicalEventFixture, createResolvedRoundCanonicalEventFixture, insertGame, insertOwner, withJuryWinner, withRetrospective, insertRetrospectiveTranscriptFixture } from "./durable-run-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
+import { sha256StableJson } from "../services/stable-hash.js";
 
 let db: DrizzleDB;
 beforeEach(async () => { db = await setupTestDB(); });
+
+test("v7 adds alliance presentation without changing a pinned v6 source or selection identity", async () => {
+  const { gameId, events } = await fixture();
+  await db.insert(schema.transcripts).values({ gameId, round: 1, phase: Phase.FORMAT_MINGLE, scope: "huddle", text: "Our promises still matter.",
+    timestamp: Date.now(), entrySequence: 1, firstDurableEventSequence: events[5]!.sequence, speakerPlayerId: "atlas", fromPlayerId: "atlas",
+    audiencePlayerIds: ["atlas", "echo"], toPlayerIds: '["echo"]', captureVersion: 1, dialogueKind: "huddle_speech",
+    safeContext: { version: 1, allianceId: "ae", allianceName: "Night Shift", sessionId: "meeting-ae", sessionAudiencePlayerIds: ["atlas", "echo"] } });
+  const current = await buildInfluenceProductionSourceSnapshot(db, gameId);
+  expect(current.snapshot.projectionVersion).toBe(7);
+  expect(current.messages.find(row => row.entrySequence === 1)?.allianceSession?.allianceName).toBe("Night Shift");
+  const { gameKind, audience, throughEventSequence, throughTurnSequence, transcriptPrefix, acceptedCutoff } = current.snapshot;
+  const acceptedBoundary = { gameId, gameKind, audience, projectionVersion: 6 as const, throughEventSequence, throughTurnSequence, transcriptPrefix, acceptedCutoff };
+  const messages = current.messages.map(({ allianceSession: _session, allianceIntroduction: _intro, ...row }) => { void _session; void _intro; return row; });
+  const acceptedSourceHash = sha256StableJson({ acceptedBoundary, game: { ...current.game, status: undefined }, messages, frames: current.frames, acceptedThoughts: current.acceptedThoughts, catalog: current.catalog });
+  const { fullBodies: _bodies, fullBodyHeads: _heads, ...mediaFacts } = current.snapshot.mediaReferences;
+  const { fullBodies: _images, fullBodyHeads: _imageHeads, ...visualFacts } = current.visual;
+  void _bodies; void _heads; void _images; void _imageHeads;
+  const boundary = { ...acceptedBoundary, acceptedSourceHash, publicationCutoff: current.snapshot.publicationCutoff, mediaReferences: current.snapshot.mediaReferences };
+  const snapshot = { ...boundary, sourceHash: sha256StableJson({ boundary: { ...boundary, mediaReferences: mediaFacts }, visual: visualFacts }) };
+  const frozen = await buildInfluenceProductionSourceSnapshot(db, gameId, { snapshot });
+  expect(frozen.snapshot).toEqual(snapshot);
+  expect(frozen.messages.some(row => "allianceSession" in row || "allianceIntroduction" in row)).toBeFalse();
+  expect(frozen.catalog.moments.map(moment => moment.id)).toEqual(current.catalog.moments.map(moment => moment.id));
+});
 async function fixture(id = "production-influence", resolved = true, duplicatePointer = false) {
   const gameId = await insertGame(db, { id, slug: id, status: "completed", config: { visualMode: true, privateConfig: "CONFIG_SENTINEL" } });
   await db.insert(schema.gamePlayers).values(["atlas", "echo", "mira", "nyx"].map(id => ({ id, gameId,

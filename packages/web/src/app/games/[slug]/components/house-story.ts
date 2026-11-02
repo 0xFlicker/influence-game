@@ -2,6 +2,7 @@ import type { TranscriptEntry } from "@/lib/api";
 import type { PresentationCue, ReplayScene } from "./types";
 import { phaseToRoomType, PHASE_LABELS } from "./constants";
 import { isInfluenceProductionStoryDialogue } from "@influence/engine/production-moments/influence-source";
+import { orderAllianceIntroductions } from "@influence/engine/alliance-introductions";
 
 /** Prose is never used to classify a beat. Operational records remain in the transcript. */
 export function isStoryDialogue(message: TranscriptEntry): boolean {
@@ -11,7 +12,7 @@ export function isStoryDialogue(message: TranscriptEntry): boolean {
 /** Keep conversation order; room allocation is metadata, never a separate scene. */
 export function buildStoryScenes(messages: readonly TranscriptEntry[]): ReplayScene[] {
   const scenes: ReplayScene[] = [];
-  for (const message of messages) {
+  for (const message of orderAllianceIntroductions(messages)) {
     if (!isStoryDialogue(message)) continue;
     let scene = scenes.at(-1);
     if (!scene || scene.round !== message.round || scene.phase !== message.phase) {

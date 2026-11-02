@@ -8,6 +8,7 @@ import type { GameStreamEvent } from "../game-runner.types";
 import { TranscriptLogger } from "../transcript-logger";
 import { DEFAULT_CONFIG, Phase } from "../types";
 import { MockAgent } from "./mock-agent";
+import { buildAllianceIntroductionContext } from "../alliance-introductions";
 
 const PLAYERS = [
   { id: "alice", name: "Alice" },
@@ -49,6 +50,7 @@ function createHuddleHarness(players = PLAYERS) {
     eliminationOrder: [],
     diaryRoom: {},
     houseInterviewer: new TemplateHouseInterviewer(),
+    formatKernelState: { selectedFormat: "vote_bomb", offeredFormats: null, pressure: null, lastSelectedFormat: null },
   } as unknown as PhaseRunnerContext;
 
   return { gameState, logger, actor, ctx, phaseCompleteEvents };
@@ -74,6 +76,62 @@ function activatePair(gameState: GameState, allianceId: string, lineageId: strin
 }
 
 describe("private conversational alliance huddles", () => {
+  it("authors a batch only after every selected conversation, without adding narration to contestant context", async () => {
+    const { ctx, gameState, actor, logger, phaseCompleteEvents } = createHuddleHarness();
+    activatePair(gameState, "ab", "lab", "vab", "alice", "bob");
+    activatePair(gameState, "cd", "lcd", "vcd", "charlie", "dana");
+    let calls = 0;
+    class EditorialHouse extends TemplateHouseInterviewer {
+      override async generateAllianceIntroductions(context: Parameters<TemplateHouseInterviewer["generateAllianceIntroductions"]>[0]) {
+        calls++;
+        expect(Object.values(gameState.getDomainProjection().allianceHuddleSessions)).toHaveLength(2);
+        expect(phaseCompleteEvents).toEqual([]);
+        expect(context.meetings).toHaveLength(2);
+        expect(context.meetings.every(meeting => meeting.dialogue.length === 2)).toBeTrue();
+        expect(context.canonicalEvents.some(event => event.type === "format.ballot_cast")).toBeFalse();
+        return { introductions: context.meetings.map(meeting => ({ sessionId: meeting.sessionId, text: "Only viewers hear this secret teaser." })) };
+      }
+    }
+    ctx.houseInterviewer = new EditorialHouse();
+    await runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE);
+    expect(calls).toBe(1);
+    const introductions = logger.transcript.filter(entry => entry.dialogueContext?.allianceIntroduction);
+    expect(introductions).toHaveLength(2);
+    for (const entry of introductions) {
+      const metadata = entry.dialogueContext!.allianceIntroduction!;
+      expect(entry.entrySequence!).toBeGreaterThan(metadata.beforeEntrySequence);
+      expect(logger.transcript.find(row => row.entrySequence === metadata.beforeEntrySequence)?.dialogueContext?.sessionId).toBe(metadata.sessionId);
+    }
+    for (const player of PLAYERS) {
+      expect(JSON.stringify(ctx.contextBuilder.buildPhaseContext(player.id, Phase.FORMAT_RESOLVE))).not.toContain("Only viewers hear");
+    }
+  });
+
+  it("retrieves first- and second-degree alliance history by membership without following a third edge", async () => {
+    const { ctx, gameState, actor } = createHuddleHarness();
+    activatePair(gameState, "ab", "lab", "vab", "alice", "bob");
+    activatePair(gameState, "bc", "lbc", "vbc", "bob", "charlie");
+    activatePair(gameState, "cd", "lcd", "vcd", "charlie", "dana");
+    activatePair(gameState, "de", "lde", "vde", "dana", "echo");
+    await runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE);
+    const schedule = gameState.getAllianceHuddleSchedules().find(item => item.allianceId === "ab" && item.decision === "scheduled")!;
+    const context = buildAllianceIntroductionContext(ctx, [schedule.id], Phase.FORMAT_MINGLE);
+    expect(context.relatedAlliances.map(alliance => alliance.id).sort()).toEqual(["ab", "bc", "cd"]);
+  });
+
+  it("continues with large valid context while retaining the editorially relevant meaning", async () => {
+    const { ctx, gameState, actor, logger } = createHuddleHarness();
+    activatePair(gameState, "ab", "lab", "vab", "alice", "bob");
+    const longHistory = "Alice promised Bob support, but another pact competes with that promise. ".repeat(8_000);
+    logger.logPublic("alice", longHistory, Phase.LOBBY);
+    await runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE);
+    const scheduled = gameState.getAllianceHuddleSchedules().filter(item => item.decision === "scheduled");
+    const context = buildAllianceIntroductionContext(ctx, scheduled.map(item => item.id), Phase.FORMAT_MINGLE);
+    expect(context.recentDialogue.find(entry => entry.text === longHistory)?.from).toBe("Alice");
+    expect(logger.transcript.some(entry => entry.dialogueContext?.allianceIntroduction)).toBeTrue();
+    expect(context.upcomingDecision.nextAction).toBe("locked_format_resolution");
+  });
+
   it("reconstructs proposal, counter, and amendment identities from canonical boundaries", () => {
     const first = createHuddleHarness().gameState;
     const restored = GameState.fromCanonicalEvents(first.getCanonicalEvents());
@@ -105,7 +163,7 @@ describe("private conversational alliance huddles", () => {
     expect(normalize(run(first))).toEqual(normalize(run(restored)));
   });
 
-  it("creates stable distinct sessions without tactical outcomes or House summaries", async () => {
+  it("creates stable distinct sessions with viewer introductions and no tactical outcomes", async () => {
     const run = async () => {
       const { gameState, actor, ctx, logger } = createHuddleHarness();
       activatePair(gameState,"ab","lab","vab","alice","bob");
@@ -117,7 +175,7 @@ describe("private conversational alliance huddles", () => {
       expect(gameState.getAllianceHuddleOutcomes()).toEqual([]);
       expect(gameState.getCanonicalEvents().some(e=>e.type==="alliance.huddle_outcome_recorded")).toBeFalse();
       expect(logger.transcript.filter(e=>e.scope==="huddle")).toHaveLength(4);
-      expect(logger.transcript.every(e=>e.scope==="huddle")).toBeTrue();
+      expect(logger.transcript.filter(e=>e.dialogueContext?.allianceIntroduction)).toHaveLength(2);
       return sessions.map(s=>s.id);
     };
     expect(await run()).toEqual(await run());

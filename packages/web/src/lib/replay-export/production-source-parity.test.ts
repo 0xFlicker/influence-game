@@ -28,6 +28,29 @@ function referenceKeys(cues: readonly PresentationCue[], scenes: readonly Replay
   }))];
 }
 
+test("late alliance introductions retain the same source order and portraits in viewer, Studio and export", async () => {
+  const players = ["a", "b"].map(id => ({ id, name: id.toUpperCase(), persona: "", status: "alive" as const, shielded: false }));
+  const session = { sessionId: "s", allianceId: "ab", allianceName: "Night Shift", memberIds: ["a", "b"] };
+  const speech: TranscriptEntry = { id: 1, entrySequence: 1, firstDurableEventSequence: 10, gameId: "g", round: 1, phase: "FORMAT_MINGLE",
+    fromPlayerId: "a", speakerPlayerId: "a", fromPlayerName: "A", scope: "huddle", toPlayerIds: ["b"], text: "Our promises still matter.", timestamp: 1,
+    dialogueKind: "huddle_speech", allianceSession: session };
+  const intro: TranscriptEntry = { ...speech, id: 2, entrySequence: 2, firstDurableEventSequence: 12, timestamp: 2,
+    fromPlayerId: null, speakerPlayerId: null, scope: "system", toPlayerIds: null, dialogueKind: "house_summary", text: "A shared pact, and two different priorities.",
+    allianceSession: undefined, allianceIntroduction: { ...session, beforeEntrySequence: 1 } };
+  const messages = [speech, intro];
+  const source: Extract<ReplaySource, {kind:"influence"}> = { kind: "influence", projectionVersion: 6,
+    game: { id: "g", slug: "g", status: "completed", gameKernel: "classic", players }, messages, frames: [], thoughts: {},
+    visual: { enabled: false, status: null, portraits: { a: "/frozen-a.png" }, scenes: [] } };
+  const sources = buildInfluenceProductionSources({ gameId: "g", gameKernel: "classic", transcripts: messages, frames: [] });
+  const catalog = assembleProductionCatalog({ gameId: "g", gameKind: "influence", audience: "public", sources });
+  const exported = buildExportCues(source);
+  const story = exported.filter(cue => cue.source.kind === "influence");
+  expect(story.map(cue => cue.speech?.text)).toEqual([intro.text, speech.text]);
+  expect(story[0]?.picture).toMatchObject({ kind: "influence", beat: { kind: "alliance-introduction", allianceName: "Night Shift", participants: [{ id: "a", avatarUrl: "/frozen-a.png" }, { id: "b" }] } });
+  const bound = await bindInfluenceProductionPresentation({ source, catalog, thoughts: [] });
+  expect(bound.flatMap(moment => moment.segments).map(cue => cue.speech?.text)).toEqual(exported.map(cue => cue.speech?.text));
+});
+
 test("production inventory preserves classic history, endgame ballots and both jury tally groups", async () => {
   const players = ["a", "b", "c"].map(id => ({ id, name: id.toUpperCase(), persona: "", status: "alive" as const, shielded: false, currentAgent: null }));
   const events: ViewerDecisionEvent[] = [

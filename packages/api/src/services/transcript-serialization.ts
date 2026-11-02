@@ -166,6 +166,8 @@ function modernFieldsForCurrentCapture(
     ...(entry.dialogueContext?.presentationPurpose && { presentationPurpose: entry.dialogueContext.presentationPurpose }),
     ...(entry.dialogueContext?.roomId != null && { roomId: entry.dialogueContext.roomId }),
     ...(entry.dialogueContext?.allianceId && { allianceId: entry.dialogueContext.allianceId }),
+    ...(entry.dialogueContext?.allianceName && { allianceName: entry.dialogueContext.allianceName }),
+    ...(entry.dialogueContext?.allianceIntroduction && { allianceIntroduction: structuredClone(entry.dialogueContext.allianceIntroduction) }),
     ...(entry.dialogueContext?.scheduleId && { scheduleId: entry.dialogueContext.scheduleId }),
     ...(entry.dialogueContext?.sessionId && { sessionId: entry.dialogueContext.sessionId }),
     ...(entry.dialogueContext?.window && { window: entry.dialogueContext.window }),
@@ -394,6 +396,8 @@ function sanitizeSafeContext(
   const out: TranscriptSafeContext = { version: 1 };
   if (typeof value.roomId === "number") out.roomId = value.roomId;
   if (typeof value.allianceId === "string") out.allianceId = value.allianceId;
+  if (typeof value.allianceName === "string") out.allianceName = value.allianceName;
+  // Introduction metadata is viewer-only and intentionally absent from owner DTOs.
   if (typeof value.scheduleId === "string") out.scheduleId = value.scheduleId;
   if (typeof value.sessionId === "string") out.sessionId = value.sessionId;
   if (typeof value.window === "string") out.window = value.window;

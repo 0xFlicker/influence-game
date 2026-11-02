@@ -9,6 +9,7 @@ import type { VisualPresentationBeat } from "./visual-presentation";
 import { soloPresentationDurationMs } from "./solo-presentation-timing";
 import { sceneSpeechDurationMs } from "./scene-speech-timing";
 import { isSafetyBounceSceneCue, safetyBounceLobbyScene } from "./safety-bounce-scene-model";
+import { allianceIntroductionDurationMs } from "@influence/engine/alliance-introductions";
 
 /** Historical speaker/audience fields are seat IDs or exact frozen names, never dialogue prose. */
 export function resolveTranscriptPlayer(token: string | null | undefined, players: readonly GamePlayer[]) {
@@ -30,6 +31,7 @@ export function isSoloTranscript(message: TranscriptEntry): boolean {
 }
 
 export function transcriptPresentationDurationMs(message: TranscriptEntry, players: readonly GamePlayer[] = []) {
+  if (message.allianceIntroduction) return allianceIntroductionDurationMs(message.text, message.allianceIntroduction.memberIds.length);
   const text = message.acceptedBallot ? players.find(player => player.id === message.acceptedBallot!.targetId)?.name ?? message.text : message.text;
   return isSoloTranscript(message) ? soloPresentationDurationMs(text)
     : message.anonymous || message.speakerPlayerId || message.fromPlayerId
@@ -150,6 +152,15 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
   }
   if (cue?.source === "house") return { rooms, beat: { kind: "house", text: null, title: cue.title, ...(cue.resultsPresentation && {backgroundUrl:resultRoom(cue.phase)}) } };
   if (!message) return { rooms, beat };
+  if (message.allianceIntroduction) {
+    const introduction = message.allianceIntroduction;
+    return { rooms, beat: { kind: "alliance-introduction", allianceName: introduction.allianceName,
+      participants: introduction.memberIds.map(id => {
+        const player = players.find(player => player.id === id);
+        if (!player) throw new Error("Alliance introduction member is missing from the frozen roster");
+        return { ...player, avatarUrl: data.portraits[id] ?? player.avatarUrl };
+      }), text: message.text } };
+  }
   const speakerToken = message.anonymous ? null : message.speakerPlayerId ?? message.fromPlayerId;
   const speaker = resolveTranscriptPlayer(speakerToken, players);
   const speakerId = speaker?.id ?? speakerToken;
@@ -189,7 +200,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
         speech: { id: String(message.id), playerId: speaker.id, speaker: speaker.name, text: message.text } } };
     }
     if (isMingleDialogue(message) && speaker) {
-      const audience = message.toPlayerIds ?? target?.participantIds ?? [];
+      const audience = message.allianceSession?.memberIds ?? message.toPlayerIds ?? target?.participantIds ?? [];
       const ids = new Set([speaker.id, ...audience.flatMap(token => {
         const player = resolveTranscriptPlayer(token, players);
         return player ? [player.id] : [];
@@ -197,6 +208,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
       const participants = players.filter(player => ids.has(player.id));
       if (!target || participants.some(player => !data.fullBodies?.[player.id])) {
         return { rooms, beat: { kind: "portrait-room", roomNumber: message.roomId ?? null,
+          roomLabel: message.allianceSession?.allianceName,
           participants: participants.map(player => ({ ...player, avatarUrl: data.portraits[player.id] ?? player.avatarUrl })),
           speech: { id: String(message.id), playerId: speaker.id, speaker: speaker.name, text: message.text } } };
       }
@@ -207,7 +219,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
       const index = rooms.findIndex(room => room.roomId === target.roomId);
       if (index >= 0) rooms[index] = { ...target, annotatedImageUrl: "" };
       else rooms.push({ ...target, annotatedImageUrl: "" });
-      beat = { kind: "scene", sceneId: target.id, roomId: target.roomId, speech: speakerId || message.anonymous ? {
+      beat = { kind: "scene", sceneId: target.id, roomId: target.roomId, roomLabel: message.allianceSession?.allianceName, speech: speakerId || message.anonymous ? {
         id: String(message.id), playerId: message.anonymous ? null : speakerId,
         portrait: speakerId ? { avatarUrl: data.portraits[speakerId] ?? players.find(p => p.id === speakerId)?.avatarUrl, persona: players.find(p => p.id === speakerId)?.persona ?? "", personaKey: players.find(p => p.id === speakerId)?.personaKey } : undefined,
         speaker: message.anonymous ? "Anonymous" : players.find((player) => player.id === speakerId)?.name ?? message.fromPlayerName ?? "Player", text: message.text,

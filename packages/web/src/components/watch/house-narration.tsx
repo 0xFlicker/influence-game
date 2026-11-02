@@ -1,7 +1,7 @@
 "use client";
 
-import {HouseMessage} from "./house-message";
 import {useLayoutEffect, useRef} from "react";
+import {HouseMessage} from "./house-message";
 
 export type NarrationWindow = {elapsedMs: number; durationMs: number};
 
@@ -50,7 +50,7 @@ export function HouseNarration({text, window, logoUrl = "/logo.png", bottom = 16
     <section ref={content} aria-label="The House narration" className={centered ? "absolute inset-x-0 top-1/2 mx-auto flex max-w-4xl -translate-y-1/2 flex-col items-center justify-center gap-4 p-6 text-center text-white" : "absolute inset-x-3 mx-auto flex max-w-3xl items-center gap-3 rounded-2xl border border-white/25 bg-black/90 px-4 py-3 text-white shadow-2xl sm:inset-x-6"} style={centered ? undefined : {bottom}}>
       {/* eslint-disable-next-line @next/next/no-img-element -- existing bundled House logo, shared with exports */}
       <img src={logoUrl} alt="The House" className={centered ? "shrink-0 object-contain" : "h-12 w-12 shrink-0 object-contain"} style={centered ? {width:"clamp(56px, 19cqh, 144px)",height:"clamp(56px, 19cqh, 144px)"} : undefined} />
-      <div className={centered ? "min-w-0 w-full" : "min-w-0 flex-1"}><p className="mb-2 text-[10px] uppercase tracking-[.2em] text-amber-100">The House</p>
+      <div className={centered ? "min-w-0 w-full" : "min-w-0 flex-1"}>
         <p ref={copy} className={`break-words ${centered ? "text-[clamp(18px,min(4.5cqw,6cqh),40px)] font-medium leading-snug" : "text-sm leading-snug sm:text-lg"}`} data-house-narration-text>{text}</p>
       </div>
     </section>

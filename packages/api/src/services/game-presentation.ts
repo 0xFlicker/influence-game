@@ -73,7 +73,7 @@ export async function readGamePresentation(db: DrizzleDB, idOrSlug: string, afte
     const messages = transcript.filter(row => row.firstDurableEventSequence === null
       ? finished && afterSequence === 0
       : row.firstDurableEventSequence > afterSequence && row.firstDurableEventSequence <= throughSequence)
-      .map(row => ({ id: row.id, entry: publicTranscriptEntry(row) }));
+      .map(row => ({ id: row.id, entry: publicTranscriptEntry(row, events) }));
     const frames = await getGameWatchReplayFrames(tx, game.id, { afterSequence, throughSequence, presentationOnly: true });
     const watchState = await buildGameWatchState(tx, game, throughSequence);
     return { gameId: game.id, throughSequence, phaseStartSequence, status: game.status, finished, watchState, frames: frames ?? [], messages };

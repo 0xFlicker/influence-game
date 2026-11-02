@@ -1,4 +1,4 @@
-import { isSpectatorHuddleSpeech } from "@influence/engine";
+import { isSpectatorHuddleSpeech, allianceSessionPresentation, type CanonicalGameEvent } from "@influence/engine";
 import {
   assertCanonicalGameEvent,
   projectViewerDecisionEvent,
@@ -306,8 +306,8 @@ export function publicTranscriptEntry(row: {
   thinking: string | null;
   timestamp: number;
   dialogueKind: PublicWsTranscriptEntry["dialogueKind"];
-  safeContext: { houseResult?: import("@influence/engine").TranscriptDialogueContext["houseResult"]; decisionSpeech?: import("@influence/engine").TranscriptDialogueContext["decisionSpeech"]; anonymous?: boolean; acceptedBallot?: import("@influence/engine").TranscriptDialogueContext["acceptedBallot"]; presentationPurpose?: "farewell"; visualScene?: import("@influence/engine").TranscriptDialogueContext["visualScene"] } | null;
-}): PublicWsTranscriptEntry {
+  safeContext: import("../db/schema.js").TranscriptSafeContext | null;
+}, events: readonly CanonicalGameEvent[] = []): PublicWsTranscriptEntry {
   const from = row.safeContext?.anonymous ? "Anonymous" : row.speakerPlayerId
     ?? row.fromPlayerId
     ?? (row.dialogueKind === "house_summary" ? "House" : "SYSTEM");
@@ -315,6 +315,8 @@ export function publicTranscriptEntry(row: {
   const roomMetadata = parseRoomMetadata(row.roomMetadata);
   return {
     dialogueKind: row.dialogueKind,
+    allianceIntroduction: row.safeContext?.allianceIntroduction,
+    allianceSession: allianceSessionPresentation(row.safeContext, events, row.firstDurableEventSequence ?? undefined),
     firstDurableEventSequence: row.firstDurableEventSequence,
     ...(!row.safeContext?.anonymous && row.speakerPlayerId && { speakerPlayerId: row.speakerPlayerId }),
     ...(row.safeContext?.anonymous && { anonymous: true }),

@@ -87,6 +87,12 @@ describe("transcript visibility policy", () => {
       dialogueKind: "house_summary",
     }), evidence)).toBe("system");
 
+    expect(classifyAuthorizedTranscriptRow(baseRow({ scope: "system", captureVersion: 1, entrySequence: 3,
+      audiencePlayerIds: [], dialogueKind: "house_summary", safeContext: { version: 1,
+        allianceIntroduction: { sessionId: "s", allianceId: "a", allianceName: "Night Shift", memberIds: ["other"], beforeEntrySequence: 1 },
+      },
+    }), evidence)).toBeNull();
+
     expect(classifyAuthorizedTranscriptRow(baseRow({
       scope: "system",
       captureVersion: 1,

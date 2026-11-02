@@ -23,6 +23,7 @@ import {
 } from "./phase-runner-context";
 import { engineFallbackMetadata } from "../engine-fallback";
 import { isProviderFallbackEligible, ProviderUnavailableError } from "../provider-execution";
+import { buildAllianceIntroductionContext, allianceIntroductionArtifact } from "../alliance-introductions";
 
 const MAX_HUDDLE_SESSIONS_PER_ALLIANCE = 2;
 
@@ -659,7 +660,7 @@ export async function advanceHuddleConversation(ctx: PhaseRunnerContext, prior: 
   await assertCanAcceptCommit(ctx);
   const message = turn.providerAbsence || turn.noReply ? null : turn.message;
   if (message) ctx.logger.logHuddleMessage(speakerId, schedule.memberIds.filter(id => id !== speakerId), message, phase,
-    turn.thinking, turn.reasoningContext, { allianceId: alliance.id, scheduleId: schedule.id, sessionId, window: schedule.window, sessionAudiencePlayerIds: schedule.memberIds, decisionId: turn.decisionId });
+    turn.thinking, turn.reasoningContext, { allianceId: alliance.id, allianceName: alliance.name, scheduleId: schedule.id, sessionId, window: schedule.window, sessionAudiencePlayerIds: schedule.memberIds, decisionId: turn.decisionId });
   if (!turn.providerAbsence) resolveActionStrategyCandidate(agent, turn, turn.strategyGameplayAccepted !== false);
   ctx.logger.emitAgentTurn({ phase, action: "alliance-huddle-turn", actor: { id: speakerId, name: ctx.gameState.getPlayerName(speakerId), role: "player" }, visibility: "private",
     response: { sessionId, scheduleId: schedule.id, allianceId: alliance.id, message, noReply: !message,
@@ -911,8 +912,30 @@ export async function runAllianceHuddleWindow(ctx: PhaseRunnerContext, actor: Ph
   options: { completePhase?: boolean } = {}): Promise<void> {
   let progress = await beginAllianceHuddleWindow(ctx, phase);
   while (progress.index < progress.scheduleIds.length) progress = await advanceHuddleConversation(ctx, progress);
+  await emitAllianceIntroductions(ctx, progress.scheduleIds, phase);
   if (options.completePhase ?? true) {
     actor.send({ type: "PHASE_COMPLETE" });
     await new Promise(resolve => setTimeout(resolve, 0));
+  }
+}
+
+/** One journaled House batch per completed window; never a contestant observation. */
+export async function emitAllianceIntroductions(ctx: PhaseRunnerContext, scheduleIds: readonly string[], phase: AllianceHuddlePhase): Promise<void> {
+  if (!scheduleIds.length || ctx.config.enableHouseRoundSummaries === false) return;
+  const context = buildAllianceIntroductionContext(ctx, scheduleIds, phase);
+  if (!context.meetings.length) return;
+  const result = await ctx.houseInterviewer.generateAllianceIntroductions(context);
+  ctx.logger.emitAgentTurn({ phase, action: "house-alliance-introductions", actor: { id: "house", name: "House", role: "house" },
+    visibility: "private", response: { status: result ? "emitted" : "provider_exhausted", sessionIds: context.meetings.map(meeting => meeting.sessionId),
+      canonicalHead: context.canonicalHead, dialogueHead: context.dialogueHead, ...(result && { introductions: result.introductions }) } });
+  if (!result) return;
+  const validated = allianceIntroductionArtifact(context.meetings.map(meeting => meeting.sessionId)).decodeAcceptedValue(result);
+  if (validated.status !== "valid") throw new Error("House returned invalid alliance introductions");
+  await assertCanAcceptCommit(ctx);
+  for (const introduction of validated.value.introductions) {
+    const meeting = context.meetings.find(item => item.sessionId === introduction.sessionId)!;
+    const { sessionId, allianceId, allianceName, memberIds, beforeEntrySequence } = meeting;
+    ctx.logger.logSystem(introduction.text, phase, undefined, undefined, "house_summary", undefined, undefined,
+      { sessionId, allianceId, allianceName, memberIds, beforeEntrySequence });
   }
 }

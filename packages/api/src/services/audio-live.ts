@@ -30,7 +30,6 @@ async function generateRequiredLiveAudio(db: DrizzleDB, gameId: string, ownerEpo
   if (!track) throw new LiveAudioBlocked("Audio Mode has no frozen voice track");
   if (track.status === "failed") throw new LiveAudioBlocked(track.error ?? "Required audio is unavailable");
   const source = await readAudioSource(db, gameId, true);
-  if (track.readyEventSequence >= source.throughEventSequence) return;
   const voices = await readJson(track.voices), manifest = await storeJson(source);
   const existing = new Map((await db.select().from(clips).where(eq(clips.trackId, track.id))).map(clip => [clip.momentId, clip]));
   const additions: (typeof clips.$inferInsert)[] = [];
@@ -47,6 +46,9 @@ async function generateRequiredLiveAudio(db: DrizzleDB, gameId: string, ownerEpo
     characters += audioCharacters(recipe.synthesisText) * 3;
     additions.push({ trackId: track.id, momentId: line.momentId, sourceHash: audioSourceHash(line), recipeHash, recipe: await storeJson(recipe) });
   }
+  // Dialogue and editorial copy may commit without advancing the canonical head.
+  // Reconcile clip identities before treating that head as audio-complete.
+  if (!additions.length && track.status === "ready" && track.readyEventSequence >= source.throughEventSequence) return;
   await db.transaction(async tx => {
     const [owner] = await tx.select().from(schema.gameRunOwners).where(and(eq(schema.gameRunOwners.gameId, gameId), eq(schema.gameRunOwners.ownerEpoch, ownerEpoch), eq(schema.gameRunOwners.status, "active"))).for("update");
     if (!owner || !owner.expiresAt || Date.parse(owner.expiresAt) <= Date.now()) throw new LiveAudioBlocked("Audio execution owner changed");
@@ -63,7 +65,7 @@ async function generateRequiredLiveAudio(db: DrizzleDB, gameId: string, ownerEpo
     if (owner?.status !== "active" || !owner.expiresAt || Date.parse(owner.expiresAt) <= Date.now()) throw new LiveAudioBlocked("Audio execution owner changed");
     const [current] = await db.select().from(tracks).where(eq(tracks.id, track.id));
     if (!current || !current.active || current.status === "failed") throw new LiveAudioBlocked(current?.error ?? "Required audio track unavailable");
-    if (current.readyEventSequence >= source.throughEventSequence) return;
+    if (current.status === "ready" && current.readyEventSequence >= source.throughEventSequence) return;
     await new Promise<void>((resolve, reject) => {
       const abort = () => { clearTimeout(timer); reject(signal?.reason); };
       const timer = setTimeout(() => { signal?.removeEventListener("abort", abort); resolve(); }, 500);

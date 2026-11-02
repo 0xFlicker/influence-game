@@ -507,7 +507,7 @@ function DramaticReplayTheater({
   const isEmpowerPresentation = formatCue?.kind === "empowered_tally" || formatCue?.kind === "empowered_tie";
   const usesFullHeightContent = Boolean(openingCue) || expanded || isEmpowerPresentation || formatCue?.kind === "two_names_plea" || visual.beat !== null;
   const isSoloPresentation = visual.beat?.kind === "portrait" || visual.beat?.kind === "nominee-selection";
-  const isRoomPresentation = visual.beat?.kind === "house-result" || visual.beat?.kind === "scene" || visual.beat?.kind === "portrait-room" || visual.beat?.kind === "safety-bounce" || visual.beat?.kind === "winner" || visual.beat?.kind === "two-names-stage" || visual.beat?.kind === "two-names-decision";
+  const isRoomPresentation = visual.beat?.kind === "alliance-introduction" || visual.beat?.kind === "house-result" || visual.beat?.kind === "scene" || visual.beat?.kind === "portrait-room" || visual.beat?.kind === "safety-bounce" || visual.beat?.kind === "winner" || visual.beat?.kind === "two-names-stage" || visual.beat?.kind === "two-names-decision";
   useEffect(() => {
     if (!scene || !onPlaybackStateChange) return;
     onPlaybackStateChange({
@@ -824,7 +824,7 @@ function DramaticReplayTheater({
 
         </div>
         </WatchThinking>}
-        {voice.houseNarrationAvailable && !(visual?.beat?.kind === "house-result" || visual?.beat?.kind === "house" && visual.beat.text !== null) && <WatchClock director={director}>{() => <HouseNarration readable text={currentMessage?.text ?? ""} window={voice.getHouseNarration()} bottom={expanded ? 140 : 16} />}</WatchClock>}
+        {voice.houseNarrationAvailable && !(visual?.beat?.kind === "alliance-introduction" || visual?.beat?.kind === "house-result" || visual?.beat?.kind === "house" && visual.beat.text !== null) && <WatchClock director={director}>{() => <HouseNarration readable text={currentMessage?.text ?? ""} window={voice.getHouseNarration()} bottom={expanded ? 140 : 16} />}</WatchClock>}
         {live && isPlaying && directorSnapshot.waitingAtTail && activeCue && <WatchBuffering />}
       </div>
 

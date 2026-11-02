@@ -4,6 +4,7 @@ import {resolveInfluenceGameSchemaVersion} from "@influence/engine/influence-gam
 import {hasLiveAudioTrack} from "./audio-frontier.js";
 import { resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import { isSpectatorHuddleSpeech } from "@influence/engine";
+import { allianceSessionPresentation } from "@influence/engine/alliance-introductions";
 import { loadPayloads } from "./payload-storage.js";
 import { LEGACY_FORMAT_MANIFEST, Phase, replayCanonicalEvents, resolveFormatManifest, resolveGameKernel } from "@influence/engine";
 import { validHeadRectangle, type HeadRectangle } from "@influence/engine/character-portrait";
@@ -210,6 +211,9 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
   if (frames.length !== throughEventSequence) throw new InfluenceProductionSourceError("Influence source has an incomplete accepted prefix");
   const historicalResults: Awaited<ReturnType<typeof readHistoricalHouseResults>> = !supplied || supplied.projectionVersion >= 6
     ? await readHistoricalHouseResults(db,game.id,selectedRows.filter(row=>!row.safeContext?.houseResult),history.events.map(event=>event.envelope)) : new Map();
+  const allianceEvents = selectedRows.some(row => row.safeContext?.sessionId && !row.safeContext.allianceName)
+    ? history.events.map(event => event.envelope) : [];
+  const includeAlliancePresentation = !supplied || supplied.projectionVersion >= 7;
   const messages = selectedRows.map(row => {
     if (!Object.values(Phase).includes(row.phase as Phase)) throw new InfluenceProductionSourceError("Unknown accepted transcript phase");
     const anonymous = row.safeContext?.anonymous === true;
@@ -220,6 +224,8 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
       throw new InfluenceProductionSourceError("Retrospective dialogue does not match its canonical speech");
     return { id: row.id, gameId: game.id, round: row.round, phase: row.phase as Phase, scope: row.scope,
       entrySequence: row.entrySequence ?? undefined, dialogueKind: row.dialogueKind,
+      ...(includeAlliancePresentation && { allianceIntroduction: row.safeContext?.allianceIntroduction,
+        allianceSession: allianceSessionPresentation(row.safeContext, allianceEvents, row.firstDurableEventSequence ?? undefined) }),
       firstDurableEventSequence: row.firstDurableEventSequence, speakerPlayerId: anonymous ? null : row.speakerPlayerId,
       anonymous, presentationPurpose: row.safeContext?.presentationPurpose, acceptedBallot: row.safeContext?.acceptedBallot, houseResult: row.safeContext?.houseResult ?? historicalResults.get(row.id),
         decisionSpeech: row.safeContext?.decisionSpeech,
