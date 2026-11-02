@@ -45,3 +45,9 @@ No `as any` or direct-House-call bypasses. Synthetic fixtures prove integration,
 Completed games expose **Tools → House Cuts** to Admin/Sysop operators (or the House Cuts toolbar action outside the editorial workspace). Diagnostics include the expected audiences even when their jobs are missing, plus available actions, card count and blocked-retry reasons. The panel shows spending and generation progress and handles stale-state checks and exact retries after uncertain HTTP responses.
 
 `POST /api/games/:id/cuts/backfill` accepts exactly `{ audience }`. It checks the current operator role, completed visible game and game-specific audience before inserting a queued job under the game row lock. The unique game/audience constraint makes duplicate submissions idempotent. Existing failed, running and ready jobs are returned unchanged; recovery remains a separate action. No historical generation occurs until an operator clicks Generate missing Cuts.
+
+### Share landing pages and artwork
+
+A `?scene=…&audience=…` link opens a server-rendered moment landing page: the Cut title is the main heading, followed by one context sentence, replay and agent-creation actions, attributed excerpts and a single editorial angle. Game overview, full replay and audience-local gallery navigation remain available. When a frozen Cut has no replay coordinate, the action opens the full audience-specific replay instead of inventing a moment. Invalid/cross-audience IDs remain unavailable.
+
+Gallery cards, moment pages and 1200×630 social previews reuse bundled House background artwork. Selection is decorative and stable by Cut ID, never inferred from dialogue or used as game authority. Open Graph and Twitter metadata preserve the selected audience and canonical moment URL. Social images embed local artwork without remote image dependencies or new generation spend; publication content is unchanged.
