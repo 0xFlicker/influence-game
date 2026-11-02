@@ -25,7 +25,16 @@ cancellation and retry retain their authority. A worker cannot submit a new
 finalization request after its upload lease expires.
 
 Focused regressions exercise ordinary local reconciliation after worker lease
-expiry and cancellation racing storage verification. The normal localhost worker
+expiry, cancellation racing storage verification, and an old integrity failure
+returning after a newer retry has already reached verification. Both success and
+failure updates compare the captured execution/state/lease identity.
+The normal localhost worker
 recovered the existing output to `succeeded` at 100%; no re-encode or history
 mutation was required. The completed per-render child formerly serving port 3003
 was terminated cleanly, preserving the polling parent, API and web services.
+
+The final render-job suite passed all 12 cases. Fresh native browser/MCP proof at
+`.renders/order-proof-1793654994286/proof.json` completed both game exports through
+the ordinary shared reconciler and verified private downloads, with its temporary
+database removed. The companion browser order/monitor stories also passed. These
+local results do not establish cloud execution or long-duration staging behavior.

@@ -112,6 +112,31 @@ Both companion PR checks are green:
 Post-merge candidate checks and fresh browser/encoded proof are recorded below
 before review readiness. These checks do not establish cloud/staging acceptance.
 
+### Post-merge review evidence
+
+- Current-main merge is resolved in all three affected files. The standalone CLI
+  keeps its browser override; assigned workers pass their configured browser
+  through the same layout prepass and final encode.
+- Provider-free baseline: 3,304 passed, five existing skips. Typecheck, lint,
+  frozen-lockfile installation and MCP schema freshness passed.
+- Render finalization regressions: 12 passed, including worker lease expiry,
+  cancellation during verification and an older integrity failure racing a retry.
+- Affected real-browser stories: three passed (Studio order recovery, monitor
+  navigation/filter/actions and producer revocation), with disposable DB cleanup.
+- Fresh native/browser/MCP proof:
+  `.renders/order-proof-1793654994286/proof.json`. Both games rendered successfully
+  through the ordinary shared reconciler; private downloads matched SHA-256 and
+  byte length in both API/MCP and browser paths. The disposable DB was removed.
+- Fresh viewer/Studio-export proof:
+  `.renders/batch-review-parity-us8ykY/comparison.json`. Forty sampled comparisons
+  at 1280×720 and 640×360 matched exactly, including reverse-order sampling. Two
+  new H.264 videos were decoded and checked; encoded-frame mean differences were
+  1.88–3.03 on the 0–255 channel scale. Images were inspected. This is the existing
+  deterministic fixture matrix, not a new full-game or six-hour cloud proof.
+- Full PostgreSQL baseline and exact-head CI results are recorded in application
+  PR #278. The later verification-fence change is API-only; it does not change
+  the rendered picture or require replacing the saved browser/encode evidence.
+
 - Exact app/host/infra revisions and PRs, immutable image family, mirror receipt,
   raw policy digest, synthesized templates and reviewed IAM proposal hashes.
 - Required application baselines plus host/infra contract checks and successful
