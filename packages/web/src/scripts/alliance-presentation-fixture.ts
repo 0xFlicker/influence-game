@@ -17,7 +17,7 @@ export async function alliancePresentationFixture(count = 3, historical = false,
     text:"The Night Shift meets with a shared target and an uneven supply of trust. Another promise pulls Alexandria in the opposite direction. They may have a plan, but there is still a decision to make—and agreement around this table is only the beginning.",timestamp:12};
   if(plainSummary) delete intro.allianceIntroduction;
   const messages=historical ? [speech] : [speech,intro];
-  const source:Extract<ReplaySource,{kind:"influence"}>={kind:"influence",projectionVersion:7,
+  const source:Extract<ReplaySource,{kind:"influence"}>={kind:"influence",projectionVersion:8,
     game:{id:"alliance-proof",slug:"alliance-proof",status:"completed",gameKernel:"classic",players},messages,frames:[],thoughts:{},
     visual:{enabled:false,status:null,portraits:Object.fromEntries(cast.map(player=>[player.id,"/avatars/personas/strategic.png"])),scenes:[]}};
   const catalog=assembleProductionCatalog({gameId:source.game.id,gameKind:"influence",audience:"public",sources:buildInfluenceProductionSources({gameId:source.game.id,gameKernel:"classic",transcripts:messages,frames:[]})});

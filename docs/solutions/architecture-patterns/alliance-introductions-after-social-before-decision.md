@@ -18,7 +18,7 @@ Provider exhaustion retains its evidence and omits the optional teaser. Silent s
 
 Audio readiness also reconciles clip identities at an unchanged canonical head: accepted dialogue can grow without a new game event. The required post-commit audio hook waits for the track to be ready before phase closure, including after restart. Previously recorded clips retain their IDs and versions; only the new House line is synthesized. The logo follows the shared House narration treatment, without an extra text title.
 
-Production source v7 carries alliance session/intro metadata. Pinned v3–v6 source projections omit the new fields so their accepted-source hashes and selection identities remain unchanged. Refresh Source explicitly to use v7; prepare a new bundle and encode a new output. Existing immutable bundles and videos are not rewritten.
+Production source v8 carries alliance session/intro metadata. Pinned v3–v7 source projections omit the new fields so their accepted-source hashes and selection identities remain unchanged. Refresh Source explicitly to use v8; prepare a new bundle and encode a new output. Existing immutable bundles and videos are not rewritten.
 
 The player picture has no scrollable containers. Casts over four members page on the shared clock, reserving at least 3.5 seconds per cast page; ordinary keyboard/click transport advancement remains available. Long narration pages in `HouseMessage`, the shared caption container whose border crosses the logo midpoint. Recorded alliance captions use the same in-beat container and read clock, avoiding a second caption overlay. Viewer, Source/Selected cut and export use the same layout.
 

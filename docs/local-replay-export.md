@@ -37,8 +37,9 @@ Portrait rooms keep one floor anchor across short/long speeches and independent
 thinking shots. Thinking retains the room backdrop and perspective; a selected
 thought followed by its own spoken ballot keeps the established character visible
 through the handoff. Selecting the ballot alone still uses its normal entrance.
-House narration fits the complete message on one screen for the recording's full
-duration, shrinking type when needed instead of switching to a short overflow page.
+House narration uses the shared logo/card treatment and readable clock-driven
+pages. It reserves space for the complete recording without scrolling or shrinking
+required text below its readable floor.
 Completed Werewolf retrospectives close on a silent final cast and elimination
 recap, with winner/role/survivor labels and canonical night/day elimination coordinates.
 The spoken result remains before retrospectives. Prepare a fresh bundle and

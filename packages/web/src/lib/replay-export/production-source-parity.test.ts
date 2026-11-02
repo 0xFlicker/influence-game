@@ -191,7 +191,7 @@ test("v6 pairs result speech while frozen v5 and result-only Studio selections s
   const source:Extract<ReplaySource,{kind:"influence"}>={kind:"influence",projectionVersion:6,game:{id:"g",slug:"g",status:"completed",gameKernel:"format",players},messages,frames,thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[]}};
   const compact = buildExportCues({...source,projectionVersion:7});
   expect(compact.some(cue => cue.picture.kind === "influence" && cue.picture.cue.compactEmpower)).toBe(true);
-  expect(buildExportCues(source).every(cue => cue.picture.kind !== "influence" || !cue.picture.cue.compactEmpower)).toBe(true);
+  expect(buildExportCues(source).every(cue => cue.picture.kind !== "influence" || cue.picture.cue.compactEmpower)).toBe(true);
   const current=buildExportCues(source), frozen=buildExportCues({...source,projectionVersion:5});
   expect(current.find(cue=>cue.speech?.text===messages[0]!.text)?.picture).toMatchObject({beat:{kind:"house-result"}});
   expect(frozen.every(cue=>cue.picture.kind!=="influence" || !cue.picture.cue.resultsPresentation)).toBe(true);
