@@ -1,8 +1,12 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, useSyncExternalStore } from "react";
 import { createHouseShareLink } from "@/lib/house-share-link";
 import { shareHouseLink } from "@/lib/share-link";
+
+const subscribe = () => () => {};
+const clientReady = () => true;
+const serverReady = () => false;
 
 export function ShareIcon() {
   return <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
@@ -14,6 +18,8 @@ export function HouseShareButton({ href, getHref, label = "Share", title = "The 
   href?: string; getHref?: () => string; label?: string; title?: string; text?: string; description?: string;
 }) {
   const titleId = useId();
+  // Server-rendered cards arrive before their share dialog can handle clicks.
+  const ready = useSyncExternalStore(subscribe, clientReady, serverReady);
   const dialog = useRef<HTMLDialogElement>(null);
   const request = useRef(0);
   const captured = useRef("");
@@ -48,7 +54,7 @@ export function HouseShareButton({ href, getHref, label = "Share", title = "The 
     setFeedback(result.message);
   }
   return <>
-    <button type="button" aria-label={label} title={label} onClick={open} className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-white/80 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"><ShareIcon /></button>
+    <button type="button" aria-label={label} title={label} disabled={!ready} onClick={open} className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-white/80 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white disabled:opacity-50"><ShareIcon /></button>
     <dialog ref={dialog} aria-labelledby={titleId} onCancel={() => { request.current++; }} className="m-auto w-[min(24rem,90vw)] rounded-xl border border-white/25 bg-zinc-950 p-5 text-white shadow-2xl backdrop:bg-black/60" onClick={event => event.stopPropagation()}>
       <div className="mb-3 flex items-center justify-between gap-4"><h2 id={titleId} className="font-semibold">{label}</h2><button type="button" aria-label="Close share" onClick={close}>✕</button></div>
       {description && <p className="mb-3 text-sm text-white/60">{description}</p>}
