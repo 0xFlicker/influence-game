@@ -47,3 +47,10 @@ Current compact Empower results measure each player cell with a CSS size contain
 Browser previews cover 2-, 3-, 4-, 6-, and 12-way ties across 320×568, 390×844, 600×600, 1280×400, 844×390, 1920×634 and 1920×1080, in inline and theater modes. Each case verifies the cell threshold, loaded artwork, visible cast, absence of result scrolling, and readable House pagination.
 
 The 160px cell-height threshold leaves at least 100px for uncropped art on wide short stages. Three- and four-way ties at 1280×400 theater size explicitly require full-body staging; a roomy but short cell must not stay a tiny portrait merely because it is below 220px tall.
+
+
+## Format menu and House speech share one stage
+
+`format_menu` now maps to canonical `format.menu_offered` facts, including read-only historical recovery from the exact accepted boundary and committing turn. Current composition retains that offer during its associated House speech. An adjacent menu cue is a 500ms entrance into the narrated offer, including existing games; source keys, accepted words, recordings and canonical events remain intact. Unlinked or ambiguous speech is never matched by prose or round proximity. Pinned noncompact compositions keep their original layout and timing.
+
+The menu gives the Empowered player a dedicated column: full-body art on sufficiently roomy stages, a larger portrait in compact layouts, and an explicit Empowered label. Both offered format names remain on screen with paginated House speech. Current viewer, Studio and exports share this component. Browser previews cover seven sizes in inline/theater modes, with and without full-body art (28 combinations), including 320×568 and 1280×400.

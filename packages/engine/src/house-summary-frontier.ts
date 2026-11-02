@@ -21,7 +21,7 @@ export type HouseSummaryActorCoordinate = (typeof HOUSE_SUMMARY_ACTOR_COORDINATE
 /** Exact result event owned by each MC boundary, including historical durable turns. */
 export const HOUSE_RESULT_EVENTS: Partial<Record<HouseSummaryActorCoordinate, CanonicalGameEventType>> = {
   empower_runoff: "vote.empower_tally_resolved",
-  vote: "vote.empower_tally_resolved", format_pick: "format.selected", format_resolve: "format.resolved",
+  vote: "vote.empower_tally_resolved", format_menu: "format.menu_offered", format_pick: "format.selected", format_resolve: "format.resolved",
   power: "power.candidates_resolved", council: "council.elimination_resolved",
   reckoning_vote: "endgame.elimination_resolved", tribunal_vote: "endgame.elimination_resolved", judgment_jury_vote: "jury.winner_determined",
 };

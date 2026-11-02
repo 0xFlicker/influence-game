@@ -957,3 +957,6 @@ infer a timeout source from the old message alone. This change concerns gameplay
 provider journals, not separate moderation or asset-generation workflows.
 
 Empower runoff now has a separate direct House summary boundary (`empower_runoff`) after the tied tally and before any runoff ballot. Its structured focus supplies tied names/counts, eligible revoters, and the next rule; the final vote boundary still announces the resolved winner. Both calls retain strict output validation, frozen roster gender, and durable provider evidence. Review tie → announcement → runoff → result; never fabricate historical speech.
+
+
+Format-menu MC checks: the `format_menu` boundary supplies canonical `format.menu_offered` facts (Empowered player and both offered formats). Review facts plus one grounded sentence without implying the unresolved selection. Playback retains the menu during the saved summary, including historical summaries recovered from their exact committing turn. Use the localhost API for paid review, retain strict schemas and native/provider evidence, and never fabricate or regenerate historical speech.

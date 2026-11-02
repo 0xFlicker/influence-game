@@ -1,6 +1,6 @@
 import { storeFields } from "../services/payload-storage.js";
 import { beforeEach, expect, test } from "bun:test";
-import { Phase, type GameTurnIntentV1 } from "@influence/engine";
+import { Phase, type CanonicalGameEvent, type GameTurnIntentV1 } from "@influence/engine";
 import { planVisualScene } from "@influence/engine/visual-scene-plan";
 import { and, eq, gt } from "drizzle-orm";
 import sharp from "sharp";
@@ -333,19 +333,22 @@ test("publishing the frozen image's derivative preserves an existing Studio snap
   expect(await db.select().from(schema.characterCutoutDemands)).toHaveLength(0);
 });
 
-test("historical House result recovery requires the exact accepted boundary and committing turn", async () => {
+for(const actor of ["council","format_menu"] as const) test(`historical ${actor} House result recovery requires the exact accepted boundary and committing turn`, async () => {
   const {readHistoricalHouseResults} = await import("../services/house-result-association.js");
   const {createEmptyHouseNarrativeContinuity} = await import("@influence/engine");
-  const {gameId,events,ownerEpoch} = await fixture("historical-house-result");
-  const event = events.find(event=>event.type === "council.elimination_resolved");
-  if (!event) throw new Error("Fixture requires Council result");
+  const {gameId,events:baseEvents,ownerEpoch} = await fixture(`historical-house-result-${actor}`);
+  const council=baseEvents.find(event=>event.type === "council.elimination_resolved");
+  if(!council) throw new Error("Fixture requires a resolved round");
+  const event:CanonicalGameEvent=actor === "council" ? council : {...council,type:"format.menu_offered",phase:Phase.FORMAT_MENU,payload:{empoweredId:"atlas",offeredFormatIds:["safety_bounce","save_or_eliminate"]}};
+  const events=baseEvents.map(row=>row.sequence===event.sequence ? event : row);
+  const phase=actor === "council" ? Phase.COUNCIL : Phase.FORMAT_MENU;
   const continuity = createEmptyHouseNarrativeContinuity(gameId);
-  continuity.recentBeats = [{version:2,boundary:{version:2,id:"historical-beat",gameId,actorCoordinate:"council",round:event.round,phase:Phase.COUNCIL,beatClass:"milestone",canonicalHead:event.sequence,dialogueHead:99},publicSummary:"Original broad summary"}];
-  const state = createInitialGameExecutionStateV1({gameId,ownerEpoch,xstateSnapshot:{value:"council"},cursor:{version:1,kind:"phase_enter",actor:"council"},houseNarrativeContinuity:continuity});
+  continuity.recentBeats = [{version:2,boundary:{version:2,id:"historical-beat",gameId,actorCoordinate:actor,round:event.round,phase,beatClass:"milestone",canonicalHead:event.sequence,dialogueHead:99},publicSummary:"Original broad summary"}];
+  const state = createInitialGameExecutionStateV1({gameId,ownerEpoch,xstateSnapshot:{value:actor},cursor:{version:1,kind:"phase_enter",actor},houseNarrativeContinuity:continuity});
   const intent:GameTurnIntentV1={version:1,gameId,turnId:"historical-turn",turnSequence:1,seed:"fixture",baseHeads:state.heads,branch:{version:1,kind:"engine",action:"round_start"},actorIds:[],targetIds:[],handles:[],participantIds:[],providerSubcalls:[]};
   const commitResult:import("@influence/engine").GameTurnCommitResultV1={version:1,gameId,turnId:intent.turnId,turnSequence:1,intentHash:`sha256:${"a".repeat(64)}`,effectHash:`sha256:${"b".repeat(64)}`,committedAt:new Date().toISOString(),state,canonicalEvents:[{sequence:event.sequence,eventHash:hashCanonicalEvent(event),event}],dialogueSequences:[100],publications:[],alreadyCommitted:false};
   await db.insert(schema.gameTurns).values(await storeFields({id:intent.turnId,gameId,turnSequence:1,plannedOwnerEpoch:ownerEpoch,baseEventSequence:0,baseDialogueSequence:0,basePublicationSequence:0,intent,intentHash:`sha256:${"a".repeat(64)}`,status:"committed",committedOwnerEpoch:ownerEpoch,effectHash:commitResult.effectHash,committedAt:commitResult.committedAt,commitResult},{intent:"json-gzip",commitResult:"json-gzip"}));
-  const row = {id:1,gameTurnId:intent.turnId,entrySequence:100,dialogueKind:"house_summary",round:event.round,phase:Phase.COUNCIL};
+  const row = {id:1,gameTurnId:intent.turnId,entrySequence:100,dialogueKind:"house_summary",round:event.round,phase};
   const before = JSON.stringify(events);
   expect(await readHistoricalHouseResults(db,gameId,[row],events)).toEqual(new Map([[1,{eventSequence:event.sequence,authoringRevision:"historical"}]]));
   for (const invalid of [{...row,entrySequence:99},{...row,gameTurnId:null},{...row,round:999},{...row,dialogueKind:"public"}])
