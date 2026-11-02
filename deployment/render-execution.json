@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "environments": {
     "prod": {
-      "mode": "local",
+      "mode": "remote",
       "network": "direct"
     },
     "staging": {

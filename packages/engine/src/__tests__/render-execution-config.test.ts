@@ -12,12 +12,14 @@ describe("release-owned rendering policy", () => {
     expect(stage.apiOrigin).toBe("https://influence-staging.tail8a79ed.ts.net");
     expect(stage.configDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
-  test("existing host NODE_ENV bindings continue local rollout, explicit conflicts fail closed", () => {
-    expect(renderExecutionConfig({ NODE_ENV: "production" }).environment).toBe("prod");
-    if (resolveRenderExecution(policy, "staging").mode === "local") {
-      expect(renderExecutionConfig({ NODE_ENV: "staging" }).environment).toBe("staging");
-    } else {
-      expect(() => renderExecutionConfig({ NODE_ENV: "staging" })).toThrow("explicit INFLUENCE_DEPLOYMENT_ENVIRONMENT");
+  test("local releases permit inherited host bindings; remote releases require explicit bindings", () => {
+    for (const [environment, nodeEnv] of [["prod", "production"], ["staging", "staging"]] as const) {
+      if (resolveRenderExecution(policy, environment).mode === "local") {
+        expect(renderExecutionConfig({ NODE_ENV: nodeEnv }).environment).toBe(environment);
+      } else {
+        expect(() => renderExecutionConfig({ NODE_ENV: nodeEnv })).toThrow("explicit INFLUENCE_DEPLOYMENT_ENVIRONMENT");
+        expect(renderExecutionConfig({ NODE_ENV: nodeEnv, INFLUENCE_DEPLOYMENT_ENVIRONMENT: environment }).environment).toBe(environment);
+      }
     }
     expect(() => renderExecutionConfig({ NODE_ENV: "staging", INFLUENCE_DEPLOYMENT_ENVIRONMENT: "prod" })).toThrow("conflicts");
   });
