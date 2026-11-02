@@ -10,6 +10,10 @@ Export a completed Influence or Werewolf game through the Production Studio's sh
 
 Install the repository's Bun dependencies and have `ffmpeg` / `ffprobe` on PATH. Remotion uses its installed Chromium renderer (its first run can download the browser). Run from the repository root:
 
+Set `REPLAY_BROWSER_EXECUTABLE` to an installed Chrome executable when the local
+Headless Shell cannot start reliably. Preparation and encoding both use that same
+executable; an invalid path fails rather than switching browsers silently.
+
 ```sh
 bun run replay:export -- hazy-ruby-sand \
   --api-base-url http://127.0.0.1:3000 \

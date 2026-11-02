@@ -75,7 +75,7 @@ try {
       return {...config,resolve:{...config.resolve,alias:{...config.resolve?.alias,"@":join(webRoot,"src")}}};
     }});
   await cp(join(webRoot,"public"),serveUrl,{recursive:true});
-  const browser=await openBrowser("chrome");
+  const browser=await openBrowser("chrome",{browserExecutable:process.env.REPLAY_BROWSER_EXECUTABLE});
   try {
     for(const [width,height] of [[1280,720],[640,360]] as const) for(const item of cases) {
       const profile=parseTimingProfile({ending:{holdMs:0}}),fps=30;
