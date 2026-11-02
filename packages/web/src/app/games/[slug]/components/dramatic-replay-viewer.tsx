@@ -507,7 +507,8 @@ function DramaticReplayTheater({
   const isEmpowerPresentation = formatCue?.kind === "empowered_tally" || formatCue?.kind === "empowered_tie";
   const usesFullHeightContent = Boolean(openingCue) || expanded || isEmpowerPresentation || Boolean(formatCue) || visual.beat !== null;
   const isSoloPresentation = visual.beat?.kind === "portrait" || visual.beat?.kind === "nominee-selection";
-  const isRoomPresentation = visual.beat?.kind === "alliance-introduction" || visual.beat?.kind === "house-result" || visual.beat?.kind === "scene" || visual.beat?.kind === "portrait-room" || visual.beat?.kind === "safety-bounce" || visual.beat?.kind === "winner" || visual.beat?.kind === "two-names-stage" || visual.beat?.kind === "two-names-decision";
+  const isHousePresentation = visual.beat?.kind === "house" && (visual.beat.text !== null || Boolean(visual.beat.backgroundUrl));
+  const isRoomPresentation = isHousePresentation || visual.beat?.kind === "alliance-introduction" || visual.beat?.kind === "house-result" || visual.beat?.kind === "scene" || visual.beat?.kind === "portrait-room" || visual.beat?.kind === "safety-bounce" || visual.beat?.kind === "winner" || visual.beat?.kind === "two-names-stage" || visual.beat?.kind === "two-names-decision";
   useEffect(() => {
     if (!scene || !onPlaybackStateChange) return;
     onPlaybackStateChange({
@@ -780,13 +781,14 @@ function DramaticReplayTheater({
 
       {/* Center — bounded presentation; transport stays outside the picture. */}
       <div
+        data-influence-stage
         className={`relative isolate flex-1 min-h-0 flex flex-col ${
           usesFullHeightContent
             ? "items-stretch overflow-hidden"
             : "items-stretch"
         } justify-center ${openingCue ? "" : expanded ? isRoomPresentation || isSoloPresentation ? "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]" : "pb-[140px] pt-[env(safe-area-inset-top)]" : isSoloPresentation || isRoomPresentation ? "" : isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
       >
-        {!openingCue && <div className="pointer-events-none absolute inset-0 -z-10"><RoomBackdrop source={resultRoom(activeCue?.phase ?? scene.phase)} resilient /></div>}
+        {!openingCue && !isHousePresentation && <div className="pointer-events-none absolute inset-0 -z-10"><RoomBackdrop source={resultRoom(activeCue?.phase ?? scene.phase)} resilient /></div>}
         {openingCue ? <>
           <WatchClock director={director}>{elapsed => <InfluenceOpeningFrame cue={openingCue} elapsedMs={elapsed} navigationRevision={director.getNavigationRevision()} reduced={reducedMotion} playing={isPlaying} speed={speed}
             {...influenceCastArt(openingPlayer, visualData)} />}</WatchClock>

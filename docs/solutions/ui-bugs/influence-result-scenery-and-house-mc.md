@@ -57,3 +57,8 @@ The menu gives the Empowered player a dedicated column: full-body art on suffici
 
 
 House captions grow the complete message toward a single line, up to 32px, when measured width and available reading height allow it. They retain their responsive 14/16px floor and normal wrapping/pagination when the full message cannot fit one line. Sizing uses the full accepted message rather than the active page, so pages and seeks do not change font size. The same measured typography and page capture serve viewer, Studio and export.
+
+
+Standalone House background ownership: the live viewer must treat a House scene with text or its own backdrop as a full-stage room presentation. Its scene owns the sole backdrop; the viewer's fallback scenery must be suppressed. Otherwise the inline wrapper's padding and max-width crop a second copy of the same room into an obvious inset rectangle, while theater mode merely hides the mismatch by giving both copies similar bounds. Browser coverage requires exactly one backdrop with bounds equal to the stage across inline/theater screen sizes.
+
+Standalone House captions reserve a 90px row, including logo clearance, padding, a desktop text line and pagination footer. Short watch pages reclaim the banner/footer/cast-strip space for these captions just as they do for result captions.
