@@ -1,3 +1,4 @@
+import {AgentAvatar} from "@/components/agent-avatar";
 import type { FormatEmpowerVoteReceipt, FormatPresentationRosterPlayer } from "./types";
 import { VoteLedger } from "./vote-presentation";
 
@@ -33,18 +34,16 @@ export function FormatEmpowerVoteStage({
     const featuredIds = empoweredId ? [empoweredId] : tiedPlayerIds;
     const featured = roster.filter(player => featuredIds.includes(player.id));
     const otherVotes = Object.entries(counts).reduce((total, [id, count]) => total + (featuredIds.includes(id) ? 0 : count), 0);
-    return <section data-format-cue={empoweredId ? "empowered_tally" : "empowered_tie"} data-compact-empower aria-label="Empower result" className="mx-auto w-full max-w-xl text-center">
-      <p className="text-xs uppercase tracking-widest text-amber-100/60">{empoweredId ? isRevote ? "Runoff result" : "Vote result" : "Runoff"}</p>
-      <h2 className="mt-2 text-xl font-semibold sm:text-2xl">{empoweredId ? `${playerName(empoweredId, names)} is Empowered` : "Tied for Empower"}</h2>
-      <dl aria-label="Empowered vote totals" className="mt-4 flex flex-wrap justify-center gap-4">
-        {featured.map(player => <div key={player.id} data-empower-total={player.id} className="min-w-0 rounded-xl bg-white/5 px-4 py-2">
-          <dt className="text-sm">{player.name}</dt><dd className="text-2xl font-semibold text-amber-200">{counts[player.id] ?? 0} <span className="text-xs font-normal">votes</span></dd>
+    const sharedCount = !empoweredId && featured.every(player => counts[player.id] === counts[featured[0]?.id ?? ""]);
+    return <section data-format-cue={empoweredId ? "empowered_tally" : "empowered_tie"} data-compact-empower aria-label="Empower result" className="flex min-h-0 flex-1 flex-col text-center">
+      <h2 className="mb-2 shrink-0 text-sm font-semibold sm:text-base">{empoweredId ? `${playerName(empoweredId, names)} is Empowered` : `${featured.length}-way tie for Empower`}{sharedCount && <span className="font-normal text-amber-200"> · {counts[featured[0]!.id]} vote{counts[featured[0]!.id] === 1 ? "" : "s"} each</span>}</h2>
+      <div aria-label="Result players" className="grid min-h-0 flex-1 gap-1" style={{gridTemplateColumns:`repeat(auto-fit, minmax(min(100%, 80px), 1fr))`,gridAutoRows:"minmax(28px, 1fr)"}}>
+        {featured.map(player => <div key={player.id} data-empower-total={player.id} title={`${player.name}: ${counts[player.id] ?? 0} votes`} className="flex min-w-0 items-center justify-center gap-1 rounded-lg bg-white/5 px-1 py-0.5">
+          <div className="shrink-0"><AgentAvatar name={player.name} persona={player.persona ?? ""} personaKey={player.personaKey} avatarUrl={player.avatarUrl} size="6" /></div>
+          <div className="min-w-0"><p className="truncate text-xs">{player.name}</p>{!sharedCount && <p className="text-xs text-amber-200">{counts[player.id] ?? 0} votes</p>}</div>
         </div>)}
-      </dl>
-      {otherVotes > 0 && <p className="mt-3 text-sm text-white/60">Other votes: {otherVotes}</p>}
-      {!empoweredId && <p className="mt-3 text-xs text-white/60">{hasRevoters ? "Runoff pending" : "Wheel pending"}</p>}
-      {resolutionMethod === "wheel" && <p className="mt-3 text-sm text-amber-200">Decided by the wheel</p>}
-      {resolutionMethod === "manual" && <p className="mt-3 text-sm text-white/60">Manual decision · original totals</p>}
+      </div>
+      {(otherVotes > 0 || resolutionMethod) && <p className="mt-1 shrink-0 text-xs text-white/60">{otherVotes > 0 ? `Other votes: ${otherVotes}` : ""}{resolutionMethod === "wheel" ? " · Wheel decision" : resolutionMethod === "revote" ? " · Runoff result" : resolutionMethod === "manual" ? " · Manual decision" : ""}</p>}
     </section>;
   }
 

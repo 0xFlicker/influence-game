@@ -2,7 +2,7 @@
 import {RoomBackdrop} from "./stage-backdrop";
 import {HouseMessage} from "@/components/watch/house-message";
 
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState, useRef } from "react";
 import {useSceneThinking} from "@/components/watch/watch-thinking";
 import {FormatPresentation} from "./format-presentation";
 import type {FormatPresentationCue} from "./types";
@@ -96,6 +96,16 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   roster?: readonly FormatPresentationRosterPlayer[];
   onSceneReadyChange?: (ready: boolean) => void;
 }) {
+  const resultLayout = useRef<HTMLDivElement>(null);
+  const [wideResult, setWideResult] = useState(false);
+  useLayoutEffect(() => {
+    const element = resultLayout.current;
+    if (!element) return;
+    const update = () => setWideResult(element.clientWidth >= 500 && (element.clientHeight - (fullscreen ? controlsInset : 0)) < 400 && element.clientWidth > (element.clientHeight - (fullscreen ? controlsInset : 0)) * 2);
+    const observer = new ResizeObserver(update);
+    observer.observe(element); update();
+    return () => observer.disconnect();
+  }, [beat.kind, fullscreen, controlsInset]);
   const [pinnedRoom, setPinnedRoom] = useState<VisualRoomId | null>(null);
   // Older runs without a final tableau still leave a readable last frame.
   const tailTime = beat.kind === "portrait" ? soloPresentationDurationMs(beat.speech.text) - SOLO_EXIT_MS - 1
@@ -106,10 +116,10 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   const backgroundUrl = influenceRoomBackground(beat, voteLedger);
   let content;
   if (beat.kind === "house-result") {
-    content = <div className="flex min-h-0 flex-1 flex-col gap-3" style={{paddingBottom: fullscreen ? controlsInset : 0}} data-house-result>
+    content = <div ref={resultLayout} className={naturalHouseMessages ? "grid min-h-0 flex-1 gap-2 p-2" : "flex min-h-0 flex-1 flex-col gap-3"} style={{paddingBottom: fullscreen ? controlsInset : 0, ...(naturalHouseMessages && {gridTemplateColumns:wideResult ? "minmax(0, 2fr) minmax(180px, 1fr)" : "minmax(0, 1fr)", gridTemplateRows:wideResult ? "minmax(0, 1fr)" : "minmax(0, 1fr) minmax(86px, 28%)"})}} data-house-result>
       <VisualPresentationFrame beat={beat.result} rooms={rooms} elapsedMs={0} currentStateEntry paused reducedMotion={reducedMotion} fullscreen={fullscreen} controlsInset={0} roster={roster} />
       {!naturalHouseMessages && hideHouseNarration && <div className="shrink-0" style={{height:"clamp(56px, 20vh, 120px)"}} aria-hidden="true" />}
-      {naturalHouseMessages && <HouseMessage text={beat.text} logoUrl={houseLogoUrl} />}
+      {naturalHouseMessages && <HouseMessage text={beat.text} elapsedMs={readingElapsedMs} logoUrl={houseLogoUrl} />}
       {!naturalHouseMessages && !hideHouseNarration && <div className="relative flex shrink-0 flex-col rounded-xl border border-white/20 bg-black/85 p-3" style={{height:"clamp(56px, 20vh, 120px)"}} aria-label="House summary"><TimedSpeech text={beat.text} elapsedMs={readingElapsedMs} className="text-base leading-relaxed sm:text-lg" /></div>}
     </div>;
   } else if (beat.kind === "canonical-result") {
@@ -139,7 +149,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
     content = <section aria-label="Anonymous speech" className={`mx-auto w-full max-w-2xl py-10 ${fullscreen ? "flex min-h-0 flex-1 flex-col px-4" : ""}`}><p className="mb-4 text-xs text-white/50">Anonymous</p>{opacity > 0 && <blockquote data-speech-bubble style={{ opacity }} className={`rounded-2xl border border-white/20 bg-black/85 p-5 ${fullscreen ? "flex min-h-0 flex-1 flex-col" : ""}`}>{fullscreen ? <TimedSpeech text={beat.speech.text} elapsedMs={readingElapsedMs - SCENE_SPEECH_START_MS} /> : beat.speech.text}</blockquote>}</section>;
   } else if (beat.kind === "house") {
     const segment = hideHouseNarration && beat.text !== null ? null : <HouseSegment fullscreen={fullscreen} text={beat.text} title={beat.title} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} />;
-    content = naturalHouseMessages && beat.backgroundUrl && beat.text !== null ? <div className="relative isolate flex min-h-0 flex-1 flex-col justify-end overflow-auto p-4"><RoomBackdrop source={beat.backgroundUrl} resilient /><HouseMessage text={beat.text} logoUrl={houseLogoUrl} /></div> : beat.backgroundUrl ? <ResultStage label="House summary" background={beat.backgroundUrl}>
+    content = naturalHouseMessages && beat.backgroundUrl && beat.text !== null ? <div className="relative isolate flex min-h-0 flex-1 flex-col justify-end overflow-auto p-4 [&>[data-house-message]]:h-1/3 [&>[data-house-message]]:shrink-0"><RoomBackdrop source={beat.backgroundUrl} resilient /><HouseMessage text={beat.text} elapsedMs={readingElapsedMs} logoUrl={houseLogoUrl} /></div> : beat.backgroundUrl ? <ResultStage label="House summary" background={beat.backgroundUrl}>
       <p className="mb-4 text-center text-sm tracking-widest text-amber-100">THE HOUSE</p>
       {!hideHouseNarration && beat.text !== null ? <div className="flex h-[clamp(100px,30vh,240px)] flex-col"><TimedSpeech text={beat.text} elapsedMs={readingElapsedMs} className="text-base leading-relaxed sm:text-xl" /></div> : <h2 className="py-8 text-center text-2xl">{beat.title}</h2>}
     </ResultStage> : segment;

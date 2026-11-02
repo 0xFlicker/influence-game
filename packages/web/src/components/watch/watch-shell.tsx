@@ -18,7 +18,7 @@ export function WatchShell({mode, header, cast, mobileCast, theater, inspector, 
   <div className="pointer-events-none absolute inset-0 influence-phase-vignette" />
   {header}<McpBanner />
   <div className="relative flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden px-2 pb-2 pt-1.5 lg:gap-3 lg:px-3 lg:pb-3 lg:pt-2 xl:grid xl:grid-cols-[18rem_minmax(0,1fr)_22rem]">
-   {cast}{mobileCast}{theater}{inspector}
+   {cast}<div data-watch-mobile-cast className="contents">{mobileCast}</div>{theater}{inspector}
   </div>{footer}
  </main>;
 }

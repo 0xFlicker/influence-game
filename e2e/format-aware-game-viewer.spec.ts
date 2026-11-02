@@ -1488,6 +1488,52 @@ test.describe("format-aware game viewer", () => {
     });
   }
 
+  test("twelve-way tie keeps cast and paginated House visible across screen shapes", async ({page},testInfo) => {
+    await page.clock.install();
+    const slug="twelve-way-tie-layout";
+    const roster=["Atlas","Vera","Finn","Mira","Rex","Lyra","Kael","Echo","Sage","Jace","Rune","Wren"].map(name=>({id:name.toLowerCase(),name}));
+    const counts=Object.fromEntries(roster.map(p=>[p.id,1]));
+    const meta={round:1,phase:Phase.VOTE,timestamp:"2026-11-01T00:00:00.000Z"};
+    const decisions:ReturnType<typeof createFormatKernelViewerScenario>["decisions"]=[...roster.map((p,i)=>({...meta,sequence:i+1,type:"vote.cast" as const,payload:{voterId:p.id,empowerTarget:roster[(i+1)%12]!.id}})),{...meta,sequence:13,type:"vote.empower_tally_resolved",payload:{counts,empowered:"atlas",tied:roster.map(p=>p.id),method:"tie_pending",cumulativeEmpowerVotes:counts}}];
+    await installDeterministicFormatGame(page,{slug,scenarioId:"majority_elimination_tie",status:"completed",roster,decisions,empowerRevoteVersion:2});
+    const text="Atlas, Vera, Finn, Mira, Rex, Lyra, Kael, Echo, Sage, Jace, Rune, and Wren are tied with one vote each. Everyone is in the tie, so nobody is eligible to revote and the wheel will decide who becomes Empowered. Twelve different choices have left the entire cast on exactly equal footing.";
+    setFormatTranscript(page,slug,[{id:900,entrySequence:900,round:1,phase:"VOTE",scope:"system",dialogueKind:"house_summary",text,timestamp:Date.now(),firstDurableEventSequence:13,houseResult:{eventSequence:13,authoringRevision:"results-mc-v1"}}]);
+    await page.goto(viewerUrl(`/games/${slug}/replay`));await pauseAutoplay(page,"⏸ Pause");
+    const combined=page.locator("[data-house-result]");await advanceUntilVisible(page,combined,"twelve-way House result",100);
+    const measurements=[];
+    for(const [width,height] of [[390,844],[320,568],[600,600],[480,480],[1280,720],[1280,400],[844,390],[1920,1080]]) {
+      await page.setViewportSize({width:width!,height:height!});
+      for(const mode of ["inline","theater"]) {
+        if(mode==="theater") await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
+        await expect(combined.locator("[data-empower-total]")).toHaveCount(12);
+        await expect.poll(() => combined.evaluate(el => {
+          const stage=el.querySelector<HTMLElement>("[data-result-stage]")!, box=stage.getBoundingClientRect();
+          return [...stage.querySelectorAll("[data-empower-total]")].filter(cell=>{const r=cell.getBoundingClientRect();return r.top>=box.top && r.bottom<=box.bottom+1;}).length;
+        })).toBe(12);
+        await expect.poll(() => combined.locator("[data-speech-page-copy]").evaluate(copy => copy.getBoundingClientRect().height <= copy.parentElement!.clientHeight - 22 + 1)).toBe(true);
+        const measurement=await combined.evaluate(el=>{
+          const stage=el.querySelector<HTMLElement>("[data-result-stage]")!,message=el.querySelector<HTMLElement>("[data-house-message]")!;
+          const box=stage.getBoundingClientRect(),caption=message.getBoundingClientRect(),parent=el.getBoundingClientRect();
+          const cells=[...stage.querySelectorAll("[data-empower-total]")];
+          return {stageHeight:Math.round(box.height),scrolls:stage.scrollHeight>stage.clientHeight+1,visiblePlayers:cells.filter(cell=>{const r=cell.getBoundingClientRect();return r.top>=box.top && r.bottom<=box.bottom+1 && r.left>=box.left && r.right<=box.right+1;}).length,captionHeight:Math.round(caption.height),captionFits:caption.top>=parent.top && caption.bottom<=parent.bottom+1,caption:message.textContent};
+        });
+        measurements.push({width,height,mode,...measurement});
+        await page.screenshot({path:testInfo.outputPath(`tie-12-${width}x${height}-${mode}.png`)});
+        if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
+      }
+    }
+    await testInfo.attach("layout-measurements",{body:JSON.stringify(measurements,null,2),contentType:"application/json"});
+    for(const row of measurements) {expect(row,JSON.stringify(row)).toMatchObject({visiblePlayers:12,scrolls:false,captionFits:true});expect(row.captionHeight).toBeGreaterThanOrEqual(74);}
+    await page.setViewportSize({width:320,height:568});
+    const caption = combined.getByLabel("House summary");
+    await expect(caption.getByLabel(/^Page 1 of/)).toBeVisible();
+    const firstPage = await caption.locator("[data-speech-page-copy]").textContent();
+    await page.getByRole("button",{name:"Play replay",exact:true}).click();
+    await page.clock.runFor(8000);
+    await expect(caption.locator("[data-speech-page-copy]")).not.toHaveText(firstPage!);
+    await expect(combined.locator("[data-empower-total]")).toHaveCount(12);
+  });
+
   test("Empower tie separates original votes, nominees, revotes and final totals", async ({ page }, testInfo) => {
     await page.clock.install();
     const slug = "empower-revote-beats";
@@ -1525,10 +1571,10 @@ test.describe("format-aware game viewer", () => {
     await expect(page.locator("[data-vote-complete]")).toContainText("All votes are in");
     await playbackKey(page, "ArrowRight");
     const tie = page.locator('[data-format-cue="empowered_tie"]');
-    await expect(tie).toContainText("Tied for Empower");
+    await expect(tie).toContainText("2-way tie for Empower");
     await expect(tie.locator("[data-vote-ledger]")).toHaveCount(0);
     await expect(tie).not.toContainText("is Empowered");
-    await expect(tie.locator('[data-empower-total="atlas"] dd')).toHaveText("2 votes");
+    await expect(tie).toContainText("2 votes each");
     await page.screenshot({ path: testInfo.outputPath("empower-tie.png") });
     await next();
     const combined = page.locator("[data-house-result]");
@@ -1537,7 +1583,7 @@ test.describe("format-aware game viewer", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(tie).toBeVisible();
     await assertLocatorInsideViewport(tie, 390);
-    const totals = tie.getByLabel("Empowered vote totals");
+    const totals = tie.getByLabel("Result players");
     await expect.poll(() => totals.evaluate(el => {
       const stage = el.closest('[data-presentation-animation-boundary]')!.getBoundingClientRect();
       const box = el.getBoundingClientRect();
@@ -1550,7 +1596,7 @@ test.describe("format-aware game viewer", () => {
     expect(logoBox!.y).toBeLessThan(panelBox!.y);
     expect(logoBox!.y + logoBox!.height).toBeGreaterThan(panelBox!.y);
     expect(Math.abs(logoBox!.x + logoBox!.width / 2 - (panelBox!.x + panelBox!.width / 2))).toBeLessThan(1);
-    expect(await summary.locator("[data-house-message-text]").evaluate(el => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+    expect(await summary.locator("[data-speech-page-copy]").evaluate(el => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
     const resultBox = await tie.boundingBox();
     const summaryBox = await summary.boundingBox();
     expect(resultBox!.y + resultBox!.height).toBeLessThanOrEqual(summaryBox!.y);
@@ -1569,7 +1615,7 @@ test.describe("format-aware game viewer", () => {
     await expect(result).toContainText("Runoff result");
     await expect(result).toContainText("Lyra is Empowered");
     await expect(result.locator('[data-empower-total="atlas"]')).toHaveCount(0);
-    await expect(result.locator('[data-empower-total="lyra"] dd')).toHaveText("2 votes");
+    await expect(result.locator('[data-empower-total="lyra"]')).toContainText("2 votes");
     await expect(result.locator('[data-empower-receipt]')).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath("empower-revote-result.png") });
   });

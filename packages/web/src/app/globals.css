@@ -956,3 +956,12 @@ a {
   background-color: rgba(12, 8, 20, .65);
   border-color: rgba(226, 190, 112, .25);
 }
+
+/* Keep combined results readable in short viewports; the stage already contains the cast. */
+@media (max-height: 600px) {
+  [data-testid="match-watch-shell"]:has([data-house-result], [data-compact-empower]) > a[href="/get-mcp"],
+  [data-testid="match-watch-shell"]:has([data-house-result], [data-compact-empower]) > footer,
+  [data-testid="match-watch-shell"]:has([data-house-result], [data-compact-empower]) [data-watch-mobile-cast] {
+    display: none;
+  }
+}

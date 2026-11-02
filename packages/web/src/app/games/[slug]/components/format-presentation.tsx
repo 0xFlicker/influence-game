@@ -18,7 +18,7 @@ export function FormatPresentation(props: Parameters<typeof FormatPresentationCo
     || cue.after.activeFormatId === "two_names";
   const content = <FormatPresentationContent {...props} />;
   return cue.resultsPresentation && !specialized
-    ? <ResultStage players={formatResultPlayers(cue, roster)} background={resultRoom(cue.phase)}>{content}</ResultStage>
+    ? <ResultStage packed={Boolean(cue.compactEmpower && (cue.kind === "empowered_tally" || cue.kind === "empowered_tie"))} players={cue.compactEmpower && (cue.kind === "empowered_tally" || cue.kind === "empowered_tie") ? [] : formatResultPlayers(cue, roster)} background={resultRoom(cue.phase)}>{content}</ResultStage>
     : content;
 }
 

@@ -772,7 +772,7 @@ it("compact Empower results feature only the leaders and do not repeat the ballo
   const {FormatEmpowerVoteStage} = await import("../app/games/[slug]/components/format-empower-vote-stage");
   const props = {counts:{p1:2,p2:2,p3:1},roster,receipts:[]};
   const tie = renderToString(<FormatEmpowerVoteStage {...props} compact empoweredId={null} tiedPlayerIds={["p1","p2"]} />);
-  expect(tie).toContain("Tied for Empower");
+  expect(tie).toContain("2-way tie for Empower");
   expect(tie).toContain("Lyra");
   expect(tie).not.toContain("Echo");
   expect(tie).toContain("Other votes:");
