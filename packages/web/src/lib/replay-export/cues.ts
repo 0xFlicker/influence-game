@@ -58,6 +58,7 @@ export type ExportPicture =
       backgroundUrl?: string;
       /** Reserve the response's ledger geometry without including its votes. */
       ballotFraming?: boolean;
+      chain?: import("../../app/games/[slug]/components/safety-chain").SafetyChainThinkingBeat;
       room?: {number: number | null; label?: string; backgroundUrl?: string; floorPerspective?: boolean; players: Extract<VisualPresentationBeat, {kind:"portrait-room"}>["participants"]};
     }
   | {kind: "werewolf-opening"; cue: WerewolfOpeningCue}

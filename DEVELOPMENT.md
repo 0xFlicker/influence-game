@@ -1,5 +1,14 @@
 # Development Guide
 
+## Required presentation parity gate
+
+Before changing a beat, scene, camera, caption, timing or audio treatment, follow
+[the viewer–Studio–video parity checklist](docs/presentation-parity.md). The same
+branch must cover the viewer, Studio Source/Selected cut and freshly prepared
+exports, with targeted regressions and a fresh rendered/encoded comparison.
+Shared component imports or a viewer-only screenshot do not establish parity.
+Report any missing consumer/proof as incomplete, and document bundle refresh steps.
+
 For direct Grok game routing, see [native xAI](docs/native-xai.md). Both gateway
 and game worker need `XAI_API_KEY`. Migration 0141 preserves model generations
 and frozen history; paid native gameplay qualification remains outstanding.

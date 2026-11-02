@@ -1,5 +1,10 @@
 # Watch-player frame timeline
 
+Changes to timing, seeks, transitions or held frames must satisfy the
+[viewer–Studio–export parity checklist](presentation-parity.md), including isolated
+cuts and fresh random-access/encoded proof. Sharing `compileTiming` alone does not
+prove that every renderer samples the same clock and context.
+
 Influence and Werewolf use a 30 fps presentation-time scrubber. The range value is a zero-based frame, not an event number or cue ordinal. Keyboard arrows on the focused range move one frame. Selecting a position seeks within speech, thinking, openings, transformations and ballot/tally holds. Previous/Next still navigate meaningful scene/cue boundaries. Shared links still identify canonical source positions, not elapsed time.
 
 `watch-timeline.ts` uses the same `compileTiming` function as Studio/export. Absolute boundaries are rounded once, preventing drift from rounding each cue separately. The shared presentation director remains the playback clock; frame sampling does not create a second scheduler. Playback speed changes wall-clock pace, not frame coordinates. A seek preserves play/pause intent. Dragging previews the thumb locally and commits the selected frame on release, avoiding a network request for every pointer movement.

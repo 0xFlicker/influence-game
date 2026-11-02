@@ -1,5 +1,10 @@
 # Optional Visual Mode
 
+Presentation changes, including portrait-only mode, must satisfy the
+[viewer–Studio–export parity gate](presentation-parity.md). Update the production
+binding, independent thought framing, frozen media/layouts and sampled renderer
+where affected; verify the new treatment in fresh rendered and encoded output.
+
 Default House characters use the fixed [fourteen-character cast](house-cast.md).
 New Influence and Werewolf rosters freeze their approved, already-transparent
 `full-body-v1` references. These bundled WebP assets ship beside the headshots;

@@ -1,5 +1,10 @@
 # Audio Mode implementation
 
+Changes to voice timing, House captions, music or effects must satisfy the
+[viewer–Studio–export parity checklist](presentation-parity.md). Verify recorded
+and unrecorded presentation plus actual encoded audio timing; visual frame
+comparisons alone do not establish audio parity.
+
 Producer audio reads use authenticated Studio media routes, including for hidden
 games. Public audio routes continue to reject hidden games. Studio and the export
 CLI resolve frozen versions through the same game, audience, recipe and published
