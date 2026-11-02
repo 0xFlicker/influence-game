@@ -19,3 +19,9 @@ Production snapshot version 6 opts fresh cuts into the composition. Versions 3â€
 Text panels must provide an actual reading height to `TimedSpeech`. An unconstrained content-height panel collapses its measurement allowance and can paginate a short sentence into individual characters. Keep a bounded responsive reading area and verify the rendered layout in a browser, not only with DOM tests.
 
 Validation covers exact and ambiguous associations, historical speech, recorded minimums, Studio result-only selection, frozen composition versions, scenery with suppressed captions, image failure, and explicit text recovery. Real LLM voice quality remains a separate authorized localhost API evaluation.
+
+## Compact Empower follow-up
+
+Ballot expansion copies the tally cue's kind and canonical sequence into individual vote shots and the ballot-complete frame. Matching by event and kind alone therefore made a legitimate Empower result association ambiguous. Current composition excludes `visualBallot` and `voteSummary` copies when selecting the result; it keeps their preceding ballot evidence intact. A browser regression follows initial votes, the compact tie, its House speech, runoff ballots, and the compact winner at desktop and mobile widths.
+
+Result cards show only the winner/tied cast, their counts, and combined other votes. The separate `empower_runoff` House boundary commits after the initial tie and before runoff ballots. Its facts include eligible revoters and the applicable next step; final narration still uses the frozen revote counting rule. Old games gain compact playback but no fabricated retrospective speech. Fresh exports use composition v7; pinned v3â€“v6 remain unchanged.

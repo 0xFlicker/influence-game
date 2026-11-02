@@ -14,6 +14,7 @@ import { HOUSE_CAST } from "./house-personas";
  * the localhost Cuts API harness; retain journals, native reasoning, failures,
  * accepted cards and cumulative recovery costs. No direct House-call bypass.
  *
+ * Empower runoff has its own House announcement before revoting, separate from the final result.
  * House summaries receive frozen roster gender; inspect gendered references without inferring missing values.
  * Influence House summaries use results-mc-v1: canonical result facts plus one
  * grounded sentence. Preserve accepted speech/evidence; paid review uses the localhost API.

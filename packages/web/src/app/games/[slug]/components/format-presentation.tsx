@@ -40,6 +40,7 @@ function FormatPresentationContent({
   if (cue.kind === "empowered_tally" || cue.kind === "empowered_tie") {
     return (
       <FormatEmpowerVoteStage
+        compact={cue.compactEmpower}
         empoweredId={cue.kind === "empowered_tally" ? cue.empoweredId : null}
         tiedPlayerIds={cue.kind === "empowered_tie" ? cue.tiedPlayerIds : []}
         resolutionMethod={cue.kind === "empowered_tally" ? cue.resolutionMethod : undefined}

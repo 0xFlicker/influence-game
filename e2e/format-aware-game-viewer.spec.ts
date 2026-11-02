@@ -1504,6 +1504,7 @@ test.describe("format-aware game viewer", () => {
       { ...meta, sequence: 10, type: "vote.empowered_set", payload: { empowered: "lyra", method: "revote" } },
     ];
     await installDeterministicFormatGame(page, { slug, scenarioId: "majority_elimination_tie", status: "completed", decisions, empowerRevoteVersion: 2 });
+    setFormatTranscript(page,slug,[{id:900,entrySequence:900,round:1,phase:"VOTE",scope:"system",dialogueKind:"house_summary",fromPlayerId:null,text:"Atlas and Lyra are tied on two votes. Echo and Rex will decide the runoff.",timestamp:Date.now(),firstDurableEventSequence:7,houseResult:{eventSequence:5,authoringRevision:"results-mc-v1"}}]);
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await skipOpening(page);
     await expect(page.getByRole("region", { name: "Ballot: Atlas" }).locator("blockquote").locator("..")).toHaveCSS("opacity", "1");
@@ -1524,11 +1525,14 @@ test.describe("format-aware game viewer", () => {
     await expect(page.locator("[data-vote-complete]")).toContainText("All votes are in");
     await playbackKey(page, "ArrowRight");
     const tie = page.locator('[data-format-cue="empowered_tie"]');
-    await expect(tie).toContainText("A tie for Empower");
-    await expect(tie).toContainText("Atlas · Lyra are tied");
+    await expect(tie).toContainText("Tied for Empower");
+    await expect(tie.locator("[data-vote-ledger]")).toHaveCount(0);
     await expect(tie).not.toContainText("is Empowered");
-    await expect(tie.locator('[data-empower-total="atlas"] dd')).toHaveText("2votes");
+    await expect(tie.locator('[data-empower-total="atlas"] dd')).toHaveText("2 votes");
     await page.screenshot({ path: testInfo.outputPath("empower-tie.png") });
+    await next();
+    const combined = page.locator("[data-house-result]");
+    await expect(combined).toContainText("Echo and Rex will decide");
     const desktop = page.viewportSize()!;
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(tie).toBeVisible();
@@ -1539,6 +1543,11 @@ test.describe("format-aware game viewer", () => {
       const box = el.getBoundingClientRect();
       return box.top >= stage.top && box.bottom <= stage.bottom;
     })).toBe(true);
+    const summary = combined.getByLabel("House summary");
+    await expect(summary).toBeVisible();
+    const resultBox = await tie.boundingBox();
+    const summaryBox = await summary.boundingBox();
+    expect(resultBox!.y + resultBox!.height).toBeLessThanOrEqual(summaryBox!.y);
     await page.screenshot({ path: testInfo.outputPath("empower-tie-mobile.png") });
     await page.setViewportSize(desktop);
     await next();
@@ -1551,10 +1560,10 @@ test.describe("format-aware game viewer", () => {
     await expect(page.locator('[data-vote-ledger] [data-ledger-voter]')).toHaveCount(2);
     await next();
     const result = page.locator('[data-format-cue="empowered_tally"]');
-    await expect(result).toContainText("Empower revote");
+    await expect(result).toContainText("Runoff result");
     await expect(result).toContainText("Lyra is Empowered");
-    await expect(result.locator('[data-empower-total="atlas"] dd')).toHaveText("0votes");
-    await expect(result.locator('[data-empower-total="lyra"] dd')).toHaveText("2votes");
+    await expect(result.locator('[data-empower-total="atlas"]')).toHaveCount(0);
+    await expect(result.locator('[data-empower-total="lyra"] dd')).toHaveText("2 votes");
     await expect(result.locator('[data-empower-receipt]')).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath("empower-revote-result.png") });
   });

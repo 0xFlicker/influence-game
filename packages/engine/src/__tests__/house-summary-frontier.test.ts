@@ -461,10 +461,14 @@ it.each([1,2] as const)("MC revote focus uses the final assignment and frozen v%
   state.tallyEmpowerVotes();
   const unresolved=compileHouseNarrationContext({playerGendersById: {},actorCoordinate:"vote",round:1,phase:Phase.VOTE,beatClass:"milestone",events:state.getCanonicalEvents(),projection:state.getDomainProjection(),transcript:[],diaryEntries:[],afterCanonicalSequence:0,afterDialogueSequence:0,empowerRevoteVersion:version});
   expect(unresolved.resultFocus).toBeNull();
+  const runoff = compileHouseNarrationContext({playerGendersById:{},actorCoordinate:"empower_runoff",round:1,phase:Phase.VOTE,beatClass:"ordinary",events:state.getCanonicalEvents(),projection:state.getDomainProjection(),transcript:[],diaryEntries:[],afterCanonicalSequence:0,afterDialogueSequence:0});
+  expect(runoff.resultFocus).toMatchObject({data:{empowered:null,tied:["A","B"],eligibleRevoters:["C","D"]}});
+  expect(runoff.resultFocus?.data.nextStep).toContain("revote");
+  const runoffHead = state.getCanonicalEvents().at(-1)!.sequence;
   state.clearEmpowerVote("c");state.clearEmpowerVote("d");
   state.recordEmpowerReVote("c","a");state.recordEmpowerReVote("d","a");
   state.setEmpowered("a","revote");
-  const context=compileHouseNarrationContext({playerGendersById: {},actorCoordinate:"vote",round:1,phase:Phase.VOTE,beatClass:"milestone",events:state.getCanonicalEvents(),projection:state.getDomainProjection(),transcript:[],diaryEntries:[],afterCanonicalSequence:0,afterDialogueSequence:0,empowerRevoteVersion:version});
+  const context=compileHouseNarrationContext({playerGendersById: {},actorCoordinate:"vote",round:1,phase:Phase.VOTE,beatClass:"milestone",events:state.getCanonicalEvents(),projection:state.getDomainProjection(),transcript:[],diaryEntries:[],afterCanonicalSequence:runoffHead,afterDialogueSequence:0,empowerRevoteVersion:version});
   expect(context.resultFocus).toMatchObject({sequence:state.getCanonicalEvents().at(-1)!.sequence,type:"vote.empowered_set",data:{empowered:"A",method:"revote",counts:version===1?[{player:"A",value:3},{player:"B",value:1}]:[{player:"A",value:2},{player:"B",value:0}]}});
 });
 

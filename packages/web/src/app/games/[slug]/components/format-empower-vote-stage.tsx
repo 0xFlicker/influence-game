@@ -2,6 +2,7 @@ import type { FormatEmpowerVoteReceipt, FormatPresentationRosterPlayer } from ".
 import { VoteLedger } from "./vote-presentation";
 
 export function FormatEmpowerVoteStage({
+  compact = false,
   empoweredId,
   counts,
   roster,
@@ -10,6 +11,7 @@ export function FormatEmpowerVoteStage({
   countedVotes,
   receipts,
 }: {
+  compact?: boolean;
   empoweredId: string | null;
   counts: Readonly<Record<string, number>>;
   roster: readonly FormatPresentationRosterPlayer[];
@@ -26,6 +28,25 @@ export function FormatEmpowerVoteStage({
     const targetId = isRevote ? receipt.revoteTargetId : receipt.targetId;
     return targetId ? [{ voterId: receipt.voterId, targetId }] : [];
   });
+
+  if (compact) {
+    const featuredIds = empoweredId ? [empoweredId] : tiedPlayerIds;
+    const featured = roster.filter(player => featuredIds.includes(player.id));
+    const otherVotes = Object.entries(counts).reduce((total, [id, count]) => total + (featuredIds.includes(id) ? 0 : count), 0);
+    return <section data-format-cue={empoweredId ? "empowered_tally" : "empowered_tie"} data-compact-empower aria-label="Empower result" className="mx-auto w-full max-w-xl text-center">
+      <p className="text-xs uppercase tracking-widest text-amber-100/60">{empoweredId ? isRevote ? "Runoff result" : "Vote result" : "Runoff"}</p>
+      <h2 className="mt-2 text-xl font-semibold sm:text-2xl">{empoweredId ? `${playerName(empoweredId, names)} is Empowered` : "Tied for Empower"}</h2>
+      <dl aria-label="Empowered vote totals" className="mt-4 flex flex-wrap justify-center gap-4">
+        {featured.map(player => <div key={player.id} data-empower-total={player.id} className="min-w-0 rounded-xl bg-white/5 px-4 py-2">
+          <dt className="text-sm">{player.name}</dt><dd className="text-2xl font-semibold text-amber-200">{counts[player.id] ?? 0} <span className="text-xs font-normal">votes</span></dd>
+        </div>)}
+      </dl>
+      {otherVotes > 0 && <p className="mt-3 text-sm text-white/60">Other votes: {otherVotes}</p>}
+      {!empoweredId && <p className="mt-3 text-xs text-white/60">{hasRevoters ? "Runoff pending" : "Wheel pending"}</p>}
+      {resolutionMethod === "wheel" && <p className="mt-3 text-sm text-amber-200">Decided by the wheel</p>}
+      {resolutionMethod === "manual" && <p className="mt-3 text-sm text-white/60">Manual decision · original totals</p>}
+    </section>;
+  }
 
   return (
     <section

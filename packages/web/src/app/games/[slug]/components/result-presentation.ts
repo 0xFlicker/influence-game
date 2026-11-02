@@ -13,8 +13,8 @@ export function resultReadingMs(cue: PresentationCue): number | null {
 }
 
 /** Exact engine associations only. Historical unbound speech keeps its original position. */
-export function withResultPresentation(cues: readonly PresentationCue[], scenes: readonly ReplayScene[]): PresentationCue[] {
-  const result: PresentationCue[] = cues.map(cue => ({...cue, resultsPresentation: true,
+export function withResultPresentation(cues: readonly PresentationCue[], scenes: readonly ReplayScene[], compactEmpower = true): PresentationCue[] {
+  const result: PresentationCue[] = cues.map(cue => ({...cue, resultsPresentation: true, compactEmpower,
     baseDurationMs: Math.max(cue.baseDurationMs + (cue.source === "classic" && cue.houseSummary ? 2000 : 0), resultReadingMs(cue) ?? 0)}));
   for (let index = 0; index < result.length; index++) {
     const cue = result[index]!;
@@ -23,8 +23,9 @@ export function withResultPresentation(cues: readonly PresentationCue[], scenes:
     const association = message?.houseResult;
     if (!association) continue;
     const matches = result.slice(0,index).filter(candidate => (candidate.source === "endgame" ? candidate.resultEventSequence ?? candidate.canonicalSequence : candidate.canonicalSequence) === association.eventSequence
-      && candidate.round === cue.round && (candidate.source === "format" || candidate.source === "endgame")
-      && ["empowered_tally", "format_selected", "format_elimination", "endgame_elimination", "endgame_winner"].includes(candidate.kind));
+      && candidate.round === cue.round && (!compactEmpower || candidate.source !== "format" || !candidate.visualBallot && !candidate.voteSummary)
+      && (candidate.source === "format" || candidate.source === "endgame")
+      && ["empowered_tally", "empowered_tie", "format_selected", "format_elimination", "endgame_elimination", "endgame_winner"].includes(candidate.kind));
     // A rules-reveal stage is the final selected-format frame, not the preceding menu reveal.
     const candidates = matches.filter(candidate => candidate.kind !== "format_selected" || candidate.stage === "rules_reveal");
     if (candidates.length !== 1) continue;

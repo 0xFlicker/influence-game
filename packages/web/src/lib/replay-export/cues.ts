@@ -187,6 +187,7 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
     scenes,
     game.gameSchemaVersion,
     {attachDecisionSpeech: source.projectionVersion !== 3, attachTwoNamesSpeech: source.projectionVersion === undefined || source.projectionVersion >= 5,
+      compactEmpower: source.projectionVersion === undefined || source.projectionVersion >= 7,
       resultsPresentation: source.projectionVersion === undefined || source.projectionVersion >= 6},
   );
   const frameForSequence = compileReplayFrameLookup(frames);
