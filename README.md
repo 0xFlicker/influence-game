@@ -6,6 +6,8 @@ Built as a TypeScript/Bun monorepo with a Next.js/React frontend, Hono API, dura
 
 The runtime validates model decisions and records canonical events before presenting them. Replay and results derive from those events; private model evidence stays separate from contestant and public views.
 
+Influence alliance introductions show the alliance name and members with House teasers authored after the conversations, before the next decision. Live playback releases the completed social phase together; commentary stays out of contestant knowledge. See [narration evaluation](docs/local-model-evaluation.md#house-narrative-evaluation).
+
 ## Documentation
 
 | Start here | Guide |

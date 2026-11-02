@@ -376,6 +376,7 @@ export function ownedMembershipTokens(
 }
 
 function classifySystemRow(row: TranscriptRowAuthInput): TranscriptVisibilityClass | null {
+  if (row.safeContext?.allianceIntroduction) return null;
   // Version-0 / null capture has no trustworthy safe-kind discriminator (KTD10).
   if (row.captureVersion == null || row.captureVersion < 1) {
     return null;

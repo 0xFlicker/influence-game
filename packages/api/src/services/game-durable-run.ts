@@ -151,7 +151,7 @@ export interface DurableRunFinaleIntegrity {
 }
 
 export type DurableRunExecutionCursorSummary =
-  | { kind: "huddle_conversation" | "lobby_conversation" }
+  | { kind: "huddle_conversation" | "alliance_introductions" | "lobby_conversation" }
   | { kind: "safety_bounce"; coordinate: "safety_bounce"; stage: "draw" | "pointer" | "resolve" }
   | { kind: "retrospective"; coordinate: "initialize" | "statement" | "complete" }
   | { kind: "phase_enter"; coordinate: string }
@@ -653,6 +653,7 @@ function summarizeExecutionCursor(
         pass: cursor.pass ?? null,
       };
     case "huddle_conversation":
+    case "alliance_introductions":
     case "lobby_conversation":
       return { kind: cursor.kind };
     case "mingle":

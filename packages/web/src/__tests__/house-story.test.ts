@@ -15,6 +15,20 @@ function compile(messages: TranscriptEntry[]) {
 }
 const summary = (id: number, patch: Partial<TranscriptEntry> = {}) => entry(id, { dialogueKind: "house_summary", scope: "system", fromPlayerId: null, text: "The room is listening.", ...patch });
 
+test("late-authored alliance introductions play immediately before their exact conversation", () => {
+  const speech = entry(10, { phase: "FORMAT_MINGLE", scope: "huddle", firstDurableEventSequence: 20 });
+  const other = entry(11, { phase: "FORMAT_MINGLE", scope: "huddle", firstDurableEventSequence: 21 });
+  const introduction = summary(12, { phase: "FORMAT_MINGLE", firstDurableEventSequence: 25,
+    allianceIntroduction: { sessionId: "session", allianceId: "alliance", allianceName: "Night Shift", memberIds: ["p1", "p2"], beforeEntrySequence: 10 } });
+  const scenes = buildStoryScenes([speech, other, introduction]);
+  expect(scenes.flatMap(scene => scene.messages.map(message => message.id))).toEqual([12, 10, 11]);
+  const cues = buildClassicPresentationCues(scenes, []).sort(comparePresentationCues);
+  expect(cues.map(cue => cue.key)).toEqual(["classic:12:done", "classic:10:done", "classic:11:done"]);
+  expect(cues.map(cue => cue.canonicalSequence)).toEqual([20, 20, 21]);
+  // A partial page must not play the introduction at its authoring position.
+  expect(buildStoryScenes([introduction])).toEqual([]);
+});
+
 test("operational records never occupy a beat, regardless of their prose", () => {
   const kinds = ["system_phase_banner", "system_room_allocation", "system_announcement", "system_elimination"] as const;
   for (const dialogueKind of kinds) expect(isStoryDialogue(entry(1, { scope: "system", fromPlayerId: null, dialogueKind, text: "The room is listening." }))).toBe(false);

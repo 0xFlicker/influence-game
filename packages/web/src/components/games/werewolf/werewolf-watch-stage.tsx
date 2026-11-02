@@ -4,6 +4,7 @@ import {WerewolfEnding} from "./werewolf-ending";
 import {WEREWOLF_ROOMS} from "./werewolf-rooms";
 import {HouseResultLayout} from "@/components/watch/house-result-layout";
 import {HouseNarration, type NarrationWindow} from "@/components/watch/house-narration";
+import {HouseMessage} from "@/components/watch/house-message";
 import {WerewolfVoteOutcome} from "./werewolf-vote-outcome";
 import {WerewolfTransformationStage} from "./werewolf-transformation-stage";
 import {WerewolfNightOutcome} from "./werewolf-night-outcome";
@@ -124,9 +125,8 @@ export function WerewolfContentFrame({compactResults = false, cue, scene, elapse
     {visual ? <VisualSceneView paused={paused} navigationRevision={navigationRevision} scene={scene} focusPlayerId={moment.actor?.id} speech={moment.spoken && moment.actor ? {id: cue.key, playerId: moment.actor.id, speaker: moment.speaker, text: moment.text, portrait: {avatarUrl: moment.actor.avatarUrl, persona: "", personaKey: moment.actor.personaKey}} : null} elapsedMs={sceneElapsed} readingElapsedMs={readingElapsed} reducedMotion={reduced} onReadyChange={onReady} /> : room ? <PortraitRoom previousSpeakerId={previousRoomSpeakerId} floorPerspective backgroundUrl={backgroundUrl} beat={room} elapsedMs={sceneElapsed} readingElapsedMs={readingElapsed} reducedMotion={reduced} controlsInset={0} speechPresentation="scene" onImageReady={() => onReady?.(true)} /> : beat ? <WerewolfSoloShot cue={cue} previousCue={previousCue} nextCue={nextCue} backgroundUrl={backgroundUrl} beat={beat} elapsedMs={sceneElapsed} readingElapsedMs={readingElapsed}
       paused={paused} speechPresentation={moment.retrospective || cue.nightDecision ? "solo" : "scene"} reducedMotion={reduced} hideSpeech={!moment.spoken || moment.house} onImageReady={() => onReady?.(true)} /> : <RoomBackdrop source={backgroundUrl} />}
     {moment.house && !hideHouseCaption && !cue.ballot && <HouseNarration centered={werewolfHouseCentered(cue)} text={moment.text} window={{elapsedMs: sceneElapsed, durationMs: Math.max(cue.baseDurationMs, sceneElapsed + 1)}} />}
-    {!moment.spoken && !moment.house && <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 mx-auto max-h-[80%] max-w-xl overflow-y-auto rounded-xl border border-white/15 bg-black/90 p-5 text-center">
-      <p className="text-xs text-white/50">The House</p><h2 className="mt-2 text-2xl text-white">{moment.text}</h2>
-      {moment.details.length > 0 && <ul className="mt-4 space-y-1 text-sm text-white/65">{moment.details.map((detail,index) => <li key={index}>{detail}</li>)}</ul>}
+    {!moment.spoken && !moment.house && <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 mx-auto h-[60%] max-w-xl text-center">
+      <HouseMessage text={[moment.text,...moment.details].join("\n")} elapsedMs={sceneElapsed} />
     </div>}
   </>;
 }

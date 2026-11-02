@@ -2754,6 +2754,8 @@ export interface WsRoomMetadata {
 }
 
 export interface TranscriptEntry {
+  allianceIntroduction?: import("@influence/engine/alliance-introductions").AllianceIntroduction;
+  allianceSession?: import("@influence/engine/alliance-introductions").AllianceSessionPresentation;
   houseResult?: import("@influence/engine").TranscriptDialogueContext["houseResult"];
   retrospectiveSource?: { eventSequence: number; ordinal: number };
   dialogueKind?: import("@influence/engine").TranscriptDialogueKind | null;
@@ -2826,6 +2828,8 @@ export interface GameDetail {
 
 /** Public transcript entry received over WebSocket (matches PublicWsTranscriptEntry in packages/api) */
 export interface WsTranscriptEntry {
+  allianceIntroduction?: import("@influence/engine/alliance-introductions").AllianceIntroduction;
+  allianceSession?: import("@influence/engine/alliance-introductions").AllianceSessionPresentation;
   houseResult?: import("@influence/engine").TranscriptDialogueContext["houseResult"];
   dialogueKind?: import("@influence/engine").TranscriptDialogueKind | null;
   firstDurableEventSequence?: number | null;

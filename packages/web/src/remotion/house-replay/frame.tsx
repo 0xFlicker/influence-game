@@ -215,7 +215,7 @@ export function ReplayFrame({
                   />
                 </FitPresentation>
               ) : null}
-              {picture.kind !== "werewolf" && !(picture.kind === "influence" && picture.cue.compactEmpower && hasInlineHouseMessage(picture.beat)) && <HouseNarration readable={picture.kind === "influence" && picture.cue.resultsPresentation} text={cue.speech?.text ?? ""} window={houseWindow} logoUrl={staticFile("logo.png")} />}
+              {picture.kind !== "werewolf" && !(picture.kind === "influence" && (picture.beat?.kind === "alliance-introduction" || picture.cue.compactEmpower && hasInlineHouseMessage(picture.beat))) && <HouseNarration readable={picture.kind === "influence" && picture.cue.resultsPresentation} text={cue.speech?.text ?? ""} window={houseWindow} logoUrl={staticFile("logo.png")} />}
             </div>
           </div>
         </SampledStageProvider>

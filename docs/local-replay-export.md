@@ -10,6 +10,10 @@ Export a completed Influence or Werewolf game through the Production Studio's sh
 
 Install the repository's Bun dependencies and have `ffmpeg` / `ffprobe` on PATH. Remotion uses its installed Chromium renderer (its first run can download the browser). Run from the repository root:
 
+Set `REPLAY_BROWSER_EXECUTABLE` to an installed Chrome executable when the local
+Headless Shell cannot start reliably. Preparation and encoding both use that same
+executable; an invalid path fails rather than switching browsers silently.
+
 ```sh
 bun run replay:export -- hazy-ruby-sand \
   --api-base-url http://127.0.0.1:3000 \
@@ -37,8 +41,9 @@ Portrait rooms keep one floor anchor across short/long speeches and independent
 thinking shots. Thinking retains the room backdrop and perspective; a selected
 thought followed by its own spoken ballot keeps the established character visible
 through the handoff. Selecting the ballot alone still uses its normal entrance.
-House narration fits the complete message on one screen for the recording's full
-duration, shrinking type when needed instead of switching to a short overflow page.
+House narration uses the shared logo/card treatment and readable clock-driven
+pages. It reserves space for the complete recording without scrolling or shrinking
+required text below its readable floor.
 Completed Werewolf retrospectives close on a silent final cast and elimination
 recap, with winner/role/survivor labels and canonical night/day elimination coordinates.
 The spoken result remains before retrospectives. Prepare a fresh bundle and

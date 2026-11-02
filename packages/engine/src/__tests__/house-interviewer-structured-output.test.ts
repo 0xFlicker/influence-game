@@ -21,6 +21,7 @@ import { TokenTracker } from "../token-tracker";
 import { Phase } from "../types";
 import { LAUNCH_FORMAT_IDS, displayNameForFormat } from "../format-presentation-metadata";
 import { ruleSheetForFormat } from "../format-pressure";
+import type { AllianceIntroductionContext } from "../alliance-introductions";
 import {
   ProviderAcceptedValueIntegrityError,
   type ProviderAttemptRecord,
@@ -432,6 +433,37 @@ function allianceProposerSelectionContent(overrides: Record<string, unknown> = {
 }
 
 describe("LLMHouseInterviewer structured alliance huddle scheduling", () => {
+  const introductionContext: AllianceIntroductionContext = { round: 1, phase: Phase.FORMAT_MINGLE, canonicalHead: 10, dialogueHead: 12,
+    canonicalEvents: [], upcomingDecision: { nextAction: "locked_format_resolution", selectedFormat: "vote_bomb", rules: "A sealed elimination vote.", window: "format" },
+    players: [{ id: "a", name: "Mara", gender: null }], meetings: [{ sessionId: "s", allianceId: "ab", allianceName: "Night Shift",
+      memberIds: ["a", "b"], beforeEntrySequence: 5, purpose: "Coordinate", pass: 1, dialogue: [] }], relatedAlliances: [], recentDialogue: [], relatedHistory: [] };
+
+  it("authors strict retrospective teasers with an explicit pre-decision boundary", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const result = { introductions: [{ sessionId: "s", text: "The Night Shift has a plan—and competing promises." }] };
+    const house = new LLMHouseInterviewer(makeOpenAIStub(requests, [{ content: `Here is the JSON:\n\`\`\`json\n${JSON.stringify(result)}\n\`\`\`` }]), "test-model");
+    expect(await house.generateAllianceIntroductions(introductionContext)).toEqual(result);
+    expect(requests[0]?.response_format).toMatchObject({ type: "json_schema", json_schema: { name: "alliance_introductions", strict: true } });
+    const messages = requests[0]!.messages as Array<{ content: string }>;
+    expect(messages[0]!.content).toContain("You may know and use what everyone is about to discuss");
+    expect(messages[0]!.content).toContain("The next vote/decision has NOT happened");
+    expect(JSON.parse(messages[1]!.content)).toMatchObject({ canonicalHead: 10, dialogueHead: 12, meetings: [{ beforeEntrySequence: 5 }] });
+  });
+
+  it.each(["not JSON", "{broken", "{}", '{"introductions":[]}', '{"introductions":[{"sessionId":"s"}]}',
+    '{"introductions":[{"sessionId":"s","text":"Hi","extra":true}]}', '{"introductions":[{"sessionId":"foreign","text":"Hi"}]}',
+    '{"introductions":[{"sessionId":"s","text":"Hi"},{"sessionId":"s","text":"Again"}]}'])
+    ("retains typed exhaustion and omits malformed editorial output: %s", async content => {
+      const requests: Array<Record<string, unknown>> = [];
+      const attempts: ProviderAttemptRecord[] = [];
+      const house = new LLMHouseInterviewer(makeOpenAIStub(requests, [{ content }]), "test-model", {
+        providerExecutionHooks: { onTerminal: async record => { attempts.push(record); } },
+      });
+      expect(await house.generateAllianceIntroductions(introductionContext)).toBeNull();
+      expect(requests).toHaveLength(2);
+      expect(attempts).toHaveLength(2);
+    });
+
   it("requests strict JSON schema output for huddle scheduling", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const house = new LLMHouseInterviewer(

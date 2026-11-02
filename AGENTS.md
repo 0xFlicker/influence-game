@@ -89,6 +89,9 @@
 
 ## Validation
 
+- Player pictures must never depend on scrolling: no horizontal/vertical `overflow-auto` or `overflow-scroll`, hidden-scrollbar panes, outer-scene scrolling, or scripted scrolling to reveal cast, names, captions, or results. Fit/reflow required content or paginate it on the shared presentation clock with adequate readable holds; never substitute clipping, ellipsis, unreadably small type, or a separate required paging UI. Normal keyboard/click advancement under the established player transport rules remains allowed. This applies equally to viewer, Studio Source/Selected cut previews, and encoded exports. Editorial lists/timelines outside the rendered player are separate.
+- Presentation changes require parity proof across viewer, Studio Source and Selected cut, and a freshly prepared encoded export, including omitted-neighbor cuts, recorded/unrecorded captions, long names/copy, large casts, narrow/short/fullscreen geometries, entrance/read/exit and reverse/direct-seek sampling. Reuse the current shared renderers and retain deterministic evidence plus bundle-refresh instructions. Frozen source ordering and asset identities remain explicit.
+
 - Use Bun only; do not use npm or pnpm.
 - Fast provider-free baseline: `bun run test` (classification plus automatic engine/web/protocol discovery).
 - Saved source snapshots under `docs/simulations/` are debugging evidence, excluded from test discovery; preserve them rather than deleting them to make a test run pass.
