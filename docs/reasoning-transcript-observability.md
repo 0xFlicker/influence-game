@@ -903,6 +903,10 @@ Two Names initial nominations, override use/decline, and replacement nominations
 
 Visual Mode permits text-only contestant models, including preferred and recovery routes. Each provider attempt sends scene images only to image-capable models; text-only models receive canonical room participants, observable cues, and performance instructions. Private request evidence records the actual adapted context.
 
+### House Cuts editorial v3
+
+House Cuts are postgame editorial artifacts, not contestant actions. Player-focused excerpts may be paraphrased. Source references preserve audience scope and replay navigation; they do not demand exact text. Private journals retain sanitized requests/responses, native reasoning, failed attempts, accepted cards and recovery history. Corrective retries include the saved validation failure. Operator Cuts diagnostics expose status, per-window attempt outcomes and cumulative spend; public reads expose only publication/status. A rejected card does not reject valid siblings, and exhausted discovery windows do not prevent later windows from producing cards. Zero publication must be an explicit editorial result, never a substitute for failed generation. Use the localhost API evaluation harness and retain its game IDs and private evidence. Keep typed contracts with no `as any` and no direct-House-call bypass.
+
 ### Spectator strategy deltas
 
 The player Strategy tab shows event-anchored `strategyCandidate` delta text as “Proposed strategy delta,” with the originating action and replay context. Capture records the proposal, not its post-guard application result, so these cards do not assert that the engine applied the change. Null, blank, replacement-baseline and unanchored candidates are omitted. The existing thinking privacy filters, active/redaction status, selected-player scope and replay/audio frontier also constrain this projection. Full compact state, prior epochs, reasoning, provider evidence and diagnostics remain private; spectator cards never enter contestant context.

@@ -10,9 +10,41 @@ import { readHouseGameRetrospective } from "../services/house-game-retrospective
 import { HouseInspectionError } from "../services/house-game-access.js";
 import { assertRetrospectiveResumeInput, resumeHouseGameRetrospective } from "../services/house-retrospective-recovery.js";
 import { requireAuth, type AuthEnv } from "../middleware/auth.js";
+import { assertCutRecoveryInput, backfillHouseCuts, readCutDiagnostics, recoverHouseCuts } from "../services/house-cut-recovery.js";
 
 export function createGameResultsRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
+  app.post("/api/games/:id/cuts/backfill", requireAuth(db), async c => {
+    c.header("Cache-Control", "private, no-store");
+    try {
+      let input: unknown;
+      try { input = await c.req.json(); } catch { throw new HouseInspectionError("invalid_input", "A JSON backfill body is required"); }
+      return c.json(await backfillHouseCuts(db, c.req.param("id"), input, c.get("user").id));
+    } catch (error) {
+      if (error instanceof HouseInspectionError) return c.json({ error: error.message }, error.code === "not_accessible" ? 403 : error.code === "invalid_input" ? 400 : 409);
+      throw error;
+    }
+  });
+  app.get("/api/games/:id/cuts/diagnostics", requireAuth(db), async c => {
+    c.header("Cache-Control", "private, no-store");
+    try { return c.json(await readCutDiagnostics(db, c.req.param("id"), c.get("user").id)); }
+    catch (error) {
+      if (error instanceof HouseInspectionError) return c.json({ error: error.message }, error.code === "not_accessible" ? 403 : 409);
+      throw error;
+    }
+  });
+  app.post("/api/games/:id/cuts/recover", requireAuth(db), async c => {
+    c.header("Cache-Control", "private, no-store");
+    try {
+      let input: unknown;
+      try { input = await c.req.json(); } catch { throw new HouseInspectionError("invalid_input", "A JSON recovery body is required"); }
+      assertCutRecoveryInput(input);
+      return c.json(await recoverHouseCuts(db, c.req.param("id"), input, c.get("user").id));
+    } catch (error) {
+      if (error instanceof HouseInspectionError) return c.json({ error: error.message }, error.code === "not_accessible" ? 403 : error.code === "invalid_input" ? 400 : 409);
+      throw error;
+    }
+  });
   app.get("/api/games/:id/retrospective", async c => {
     c.header("Cache-Control", "private, no-store");
     try {

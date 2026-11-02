@@ -33,7 +33,7 @@ export function WerewolfTrailerBeat({ manifest, segmentId }: { manifest: Werewol
       </div>
       <div>
         <div style={{ ...kicker, color: "#b49a6b", marginBottom: 36 }}>AT THE TABLE</div>
-        <blockquote style={{ ...title, fontSize: quote.text.length > 150 ? 52 : 64, margin: 0, lineHeight: 1.18 }}>“{quote.text}”</blockquote>
+        <blockquote style={{ ...title, fontSize: quote.text.length > 150 ? 52 : 64, margin: 0, lineHeight: 1.18 }}>{quote.text}</blockquote>
         <p style={{ fontSize: 32, color: "#cdbd9d", marginTop: 38 }}>{speaker.name}</p>
       </div>
     </div> : ending ? <div style={{ opacity, position: "absolute", inset: "240px 130px 160px", display: "flex", flexDirection: "column", justifyContent: "center", textAlign: "center" }}>

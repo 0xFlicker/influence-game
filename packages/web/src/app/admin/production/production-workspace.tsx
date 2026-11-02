@@ -1,4 +1,5 @@
 "use client";
+import { HouseCutsPanel } from "./house-cuts-panel";
 import { AudioGenerationPanel } from "./audio-generation-panel";
 import { attachGeneratedAudio } from "../../../lib/replay-export/generated-audio";
 import { productionMediaIds } from "./production-media-selection";
@@ -39,8 +40,8 @@ import "../../games/episodes.css";
 
 
 const initialSettings: ProductionPresentationSettings = {width: 1280, height: 720, fps: 30, reducedMotion: false, music: true, volume: .3, profile: parseTimingProfile()};
-const panelTitles = {presentation:"Presentation",recordings:"Local recordings",export:"Export selected cut",cut:"Selected cut rule",scene:"Scene versions & production",tools:"Workspace",navigation:"The House navigation",source:"Source settings",keyboard:"Keyboard hints",episode:"Episode presentation",trailer:"Trailer & poster",recovery:"Game production and recovery"};
-const gamePanels = ["episode","trailer","recovery"] as const;
+const panelTitles = {presentation:"Presentation",recordings:"Local recordings",export:"Export selected cut",cut:"Selected cut rule",scene:"Scene versions & production",tools:"Workspace",navigation:"The House navigation",source:"Source settings",keyboard:"Keyboard hints",episode:"Episode presentation",trailer:"Trailer & poster",recovery:"Game production and recovery",cuts:"House Cuts"};
+const gamePanels = ["episode","trailer","recovery","cuts"] as const;
 type GamePanel = typeof gamePanels[number];
 type GamePanelContent = Record<GamePanel,ReactNode>;
 const toolPanels = ["presentation","recordings","source","keyboard","scene",...gamePanels,"tools"] as const;
@@ -86,6 +87,7 @@ function GameWorkspace({game,review}: {game: ProductionLibraryGame;review?:Produ
   }
   const identity = <div className={styles.identity}><Link href={`/admin/production?${library}`} aria-label="Back to production library">←</Link><div><h1>{game.title ?? game.slug}</h1><p>{game.gameKind === "werewolf" ? "Werewolf" : "Influence"} · {game.status === "suspended" ? "Paused accepted prefix" : game.status === "completed" ? "Completed episode" : `Game visual operations · ${game.status.replaceAll("_", " ")}`}</p></div></div>;
   const gameContent: GamePanelContent = {
+    cuts: game.status === "completed" && !game.hidden && (roles.includes("admin") || roles.includes("sysop")) ? <HouseCutsPanel gameId={game.id} slug={game.slug} /> : null,
     episode: game.capabilities.episodeEdit && episodeEdit ? <EpisodeEditor gameId={game.id} onSaved={async () => {await client.invalidateQueries({queryKey:["admin",session.scope,root]});}} /> : null,
     trailer: game.capabilities.trailerRead && episodeRead ? <AdminPostgameMediaPanel game={{id:game.id,slug:game.slug}} canManage={game.capabilities.trailerRender && episodeEdit} /> : null,
     recovery: visualRead ? game.gameKind === "influence" && (influenceRecovery || !editorial) ? <VisualOperations gameId={game.id} hideIndependentMedia={editorial} /> : <GameProductionRecovery gameId={game.id} /> : null,

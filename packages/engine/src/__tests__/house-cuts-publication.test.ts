@@ -3,30 +3,32 @@ import { cutFixtureReports } from "../house-cuts/fixtures";
 import { validateCutSelection } from "../house-cuts/selection";
 import { publishCutSelection } from "../house-cuts/publication";
 const reports = await cutFixtureReports();
-test("selection accepts zero or two without a quota, rejecting unknown/duplicate/overlapping keys", () => {
+const selection = (report: typeof reports[number]) => ({ sourceHash: report.source.hash, windowId: "selection", candidates: [structuredClone(report.candidates[0]!.proposal)] });
+test("House can rewrite, combine, overlap and explicitly select zero", () => {
   const report = reports[2]!;
-  const keys = report.candidates.slice(0, 2).map(c => c.key);
-  expect(validateCutSelection({ selectedKeys: [] }, report)).toEqual([]);
-  expect(validateCutSelection({ selectedKeys: keys }, report)).toEqual(keys);
-  for (const value of [null, {}, "{}", { selectedKeys: keys, extra: true }, { selectedKeys: ["invented"] }, { selectedKeys: [keys[0], keys[0]] }]) {
-    expect(() => validateCutSelection(value, report)).toThrow();
-  }
-  const original = report.candidates[0]!;
-  const duplicate = { ...original, key: "duplicate" };
-  expect(() => validateCutSelection({ selectedKeys: [original.key, duplicate.key] }, { ...report, candidates: [...report.candidates, duplicate] })).toThrow("overlapping");
+  const value = selection(report);
+  value.candidates[0]!.title = "A fresh editorial angle";
+  value.candidates[0]!.quotes[0]!.excerpt = "An entertaining paraphrase.";
+  value.candidates.push({ ...value.candidates[0]!, id: "another-angle" });
+  expect(validateCutSelection(value, report).candidates).toHaveLength(2);
+  expect(validateCutSelection({ ...value, candidates: [] }, report).candidates).toHaveLength(0);
+  value.candidates.push({ ...value.candidates[0]!, id: "bad", sourceRefs: ["foreign-audience"] });
+  expect(validateCutSelection(value, report).candidates).toHaveLength(2);
+  expect(() => validateCutSelection({ ...value, candidates: [value.candidates[2]] }, report)).toThrow("No usable");
 });
-test("publication revalidates against canonical context and excludes internal diagnostics", () => {
+test("publication derives attribution and replay from frozen source, allowing paraphrases", () => {
   for (const report of reports.slice(0, 3)) {
-    const selected = report.candidates[0]!;
-    const publication = publishCutSelection(report, [selected.key], "version");
-    expect(publication.audience).toBe(report.source.audience);
+    const value = selection(report);
+    value.candidates[0]!.quotes[0]!.excerpt = "A polished exchange.";
+    const publication = publishCutSelection(report, value, "version");
+    expect(publication.cuts[0]!.quotes[0]!.text).toBe("A polished exchange.");
     expect(publication.cuts[0]!.quotes[0]!.name).toBeTruthy();
     expect(JSON.stringify(publication)).not.toMatch(/rationale|PRIVATE_|attempts|rejected|sourceHash/);
     const tampered = structuredClone(report);
     tampered.candidates[0]!.context = [];
     tampered.candidates[0]!.replayHref = "https://evil.test";
-    expect(publishCutSelection(tampered, [selected.key], "version")).toEqual(publication);
-    tampered.candidates[0]!.proposal.quotes[0]!.excerpt = "invented speech";
-    expect(() => publishCutSelection(tampered, [selected.key], "version")).toThrow();
+    expect(publishCutSelection(tampered, value, "version")).toEqual(publication);
+    value.candidates[0]!.sourceRefs = ["foreign-audience"];
+    expect(() => publishCutSelection(report, value, "version")).toThrow();
   }
 });

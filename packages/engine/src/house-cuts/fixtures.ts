@@ -56,8 +56,8 @@ function fixtureResponse(request: CutInvocation) {
   const pack = request.window.evidence[0]?.group.endsWith(":pack");
   const candidates: CutProposal[] = selected.length < 2 ? [] : [{ id: "exchange", title: request.window.game.kind === "influence" ? "The warmest audit" : pack ? "The quiet plan" : "A question about questions",
     context: pack ? "The pack negotiates away from the village." : "An exchange in the conversation.", angle: pack ? "Even a secret meeting has an audience." : "Trust sounds different when someone asks for specifics.", payoff: null,
-    sourceRefs: selected.map(e => e.id), participantIds: [...new Set(selected.flatMap(e => e.participantIds))],
-    quotes: selected.map(e => ({ sourceRef: e.id, excerpt: e.content.kind === "dialogue" ? e.content.text : "" })), factRefs: [],
+    sourceRefs: selected.map(e => e.id),
+    quotes: selected.map(e => ({ sourceRef: e.id, excerpt: e.content.kind === "dialogue" ? e.content.text : "" })),
     rationale: "Fixture-only example of dialogue without an elimination or forced payoff." }];
   return request.accept({ sourceHash: request.window.sourceHash, windowId: request.window.id, candidates });
 }

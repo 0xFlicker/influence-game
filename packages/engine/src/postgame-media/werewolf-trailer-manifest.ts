@@ -81,10 +81,11 @@ export function buildWerewolfTrailerManifest(input: {
   for (const cut of input.cuts.publication?.cuts ?? []) {
     if (!cut.sourceRefs.length || cut.sourceRefs.some(ref => !eligible.has(ref))) continue;
     for (const quote of cut.quotes) {
-      // Publications identify quotes by display name; ambiguous attribution is not guessed.
+      // New edited excerpts carry provenance. Historical publications lacked this field.
       const matches = cut.sourceRefs.filter(ref => {
         const source = eligible.get(ref)!;
-        return cast.find(p => p.id === source.speakerId)?.name === quote.name && source.text.includes(quote.text);
+        return quote.sourceRef ? ref === quote.sourceRef
+          : cast.find(p => p.id === source.speakerId)?.name === quote.name && source.text.includes(quote.text);
       });
       if (matches.length !== 1 || !quote.text.trim() || quote.text.length > 230 || quote.text.includes("\n")) continue;
       const ref = matches[0]!;

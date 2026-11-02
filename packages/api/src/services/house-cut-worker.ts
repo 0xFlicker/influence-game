@@ -37,7 +37,7 @@ export async function runHouseCutJob(db: DrizzleDB, generate: Generate = runAuto
     const result = await generate({ source, journal, runtimes: generate === runAutomaticCutTrial ? createCutTrialRuntimes() : [], save, signal });
     signal?.throwIfAborted();
     if (result.report.source.hash !== source.hash || result.report.source.audience !== job.audience) throw new Error("Publication source mismatch");
-    const publication = publishCutSelection(result.report, result.selectedKeys, job.id);
+    const publication = publishCutSelection(result.report, result.selection, job.id);
     await db.transaction(async tx => {
       const [game] = await tx.select().from(schema.games).where(eq(schema.games.id, job.gameId)).for("update");
       if (!game || !isViewerGame(game) || game.status !== "completed") throw new Error("Game no longer available for publication");
@@ -56,7 +56,7 @@ export async function runHouseCutJob(db: DrizzleDB, generate: Generate = runAuto
       if (requeued) return true;
     }
     await db.update(table).set({ status: "failed", failure: error instanceof Error ? error.message : "House Cuts failed", leaseToken: null, leaseUntil: null, updatedAt: new Date() }).where(guard);
-    console.error("[house-cuts] Job failed", { gameId: job.gameId, audience: job.audience });
+    console.error("[house-cuts] Job failed", { gameId: job.gameId, audience: job.audience, failure: error instanceof Error ? error.message : "unknown" });
   }
   if (job.audience === "mystery") {
     try { await reconcilePostgameMediaForGame(db, job.gameId); }

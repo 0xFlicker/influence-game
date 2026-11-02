@@ -39,7 +39,7 @@ export function HouseCutsView({ slug, data, selectedId }: { slug: string; data: 
       <p className="text-xs uppercase tracking-widest text-white/45">{data?.audience === "omniscient" ? "Full spoilers" : "The House"}</p>
       <h2 className="mt-4 text-3xl font-semibold leading-tight sm:text-4xl">{c.title}</h2>
       <p className="mt-5 leading-relaxed text-white/70">{c.context}</p>
-      {c.quotes.length > 0 && <div className="mt-8 grid gap-8 sm:grid-cols-2">{c.quotes.map((q, i) => <figure key={i}><figcaption className="text-sm font-semibold text-amber-200/80">{q.name}</figcaption><blockquote className="mt-3 text-xl leading-relaxed">“{q.text}”</blockquote></figure>)}</div>}
+      {c.quotes.length > 0 && <div className="mt-8 grid gap-8 sm:grid-cols-2">{c.quotes.map((q, i) => <figure key={i}><figcaption className="text-sm font-semibold text-amber-200/80">{q.name}</figcaption><blockquote className="mt-3 text-xl leading-relaxed">{q.text}</blockquote></figure>)}</div>}
       <p className="mt-7 font-serif text-xl italic text-amber-100/80">{c.angle}</p>
       {c.payoff && <p className="mt-4 leading-relaxed text-white/65">{c.payoff}</p>}
       <footer className="mt-8 flex flex-wrap gap-5 border-t border-white/10 pt-5 text-sm">

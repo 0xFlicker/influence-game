@@ -24,6 +24,15 @@ async function fixture(scenario: "village" | "saved" = "village") {
 }
 
 describe("Werewolf House trailer", () => {
+  test("edited excerpts use explicit provenance without exact text matching", async () => {
+    const f = await fixture();
+    f.cut.quotes[0] = { name: "The displayed name is not authority", text: "A fresh greeting to the village.", sourceRef: f.cut.sourceRefs[0]! };
+    const manifest = buildWerewolfTrailerManifest(f);
+    expect(manifest.story.quotes[0]!.text).toBe("A fresh greeting to the village.");
+    expect(manifest.story.quotes[0]!.sourceRef).toBe(f.cut.sourceRefs[0]!);
+    f.cut.quotes[0]!.sourceRef = "foreign-audience";
+    expect(buildWerewolfTrailerManifest(f).story.quotes).toHaveLength(0);
+  });
   test("pins permitted quotes, normal identities and provenance without editorial hindsight", async () => {
     const f = await fixture(); const manifest = buildWerewolfTrailerManifest(f);
     expect(manifest.story.quotes).toHaveLength(1);

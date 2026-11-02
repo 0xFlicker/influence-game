@@ -162,6 +162,10 @@
 .dialog>header button { font-size:22px; padding:0; width:44px; height:44px; border:0; background:transparent; }
 .dialogBody { padding:20px; overflow:auto; min-height:0; overscroll-behavior:contain; display:flex; flex-direction:column; gap:18px; }
 .dialogIntro { font-size:12px; line-height:1.6; color:rgb(var(--text-secondary)); max-width:65ch; }
+.cutsPanel { display:flex; flex-direction:column; gap:20px; }
+.cutsAudience { display:flex; flex-direction:column; align-items:flex-start; gap:10px; padding:16px; border:1px solid rgb(var(--border-active)); border-radius:8px; font-size:13px; overflow-wrap:anywhere; }
+.cutsAudience h3 { font-size:15px; font-weight:600; }
+.cutsAudience a { text-decoration:underline; text-underline-offset:3px; }
 .settingsGrid { display:grid; grid-template-columns:1fr 1fr; gap:22px 18px; }
 .settingField { display:flex; flex-direction:column; gap:8px; font-size:12px; }
 .settingField small { font-size:10px; color:rgb(var(--text-secondary)); line-height:1.5; }

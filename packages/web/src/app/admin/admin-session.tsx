@@ -103,6 +103,7 @@ export const accessDenied = (error: unknown) => error instanceof ApiError && (er
 export function adminAccessResource(url: string): string {
   return url.match(/^\/api\/admin\/production\/library(?=\?|$)/)?.[0]
     ?? url.match(/^\/api\/admin\/production\/games\/[^/]+/)?.[0]
+    ?? url.match(/^\/api\/games\/[^/]+\/cuts(?=\/|$)/)?.[0]
     ?? url.match(/^\/api\/admin\/werewolf\/[^/]+/)?.[0]
     ?? url.match(/^\/api\/admin\/games\/[^/]+\/visual/)?.[0]
     ?? url;

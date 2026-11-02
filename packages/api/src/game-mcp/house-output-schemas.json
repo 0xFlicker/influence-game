@@ -11595,6 +11595,9 @@
                 },
                 "text": {
                   "type": "string"
+                },
+                "sourceRef": {
+                  "type": "string"
                 }
               },
               "additionalProperties": false,
