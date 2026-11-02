@@ -146,10 +146,10 @@ interface LocalFormatViewerHarness {
 let harnessProcess: LocalHarnessProcess;
 let harness: LocalFormatViewerHarness;
 
-async function installWerewolfGame(page: Page, slug: string) {
+async function installWerewolfGame(page: Page, slug: string, completed = false) {
   // The engine fixture uses Bun's TypeScript support (including declare
   // class fields), outside Playwright's narrower Babel transformation.
-  const events = JSON.parse(execFileSync("bun", ["-e", `import {werewolfResultsFixture} from './packages/engine/src/fixtures/werewolf-results'; console.log(JSON.stringify(await werewolfResultsFixture('village', ${JSON.stringify(slug)})));`], {encoding:"utf8",maxBuffer:10*1024*1024})) as Parameters<typeof projectWerewolfWatch>[0];
+  const events = JSON.parse(execFileSync("bun", ["-e", `import {werewolfResultsFixture, completedCurrentWerewolfFixture} from './packages/engine/src/fixtures/werewolf-results'; console.log(JSON.stringify(await ${completed ? `completedCurrentWerewolfFixture(${JSON.stringify(slug)},11)` : `werewolfResultsFixture('village', ${JSON.stringify(slug)})`}));`], {encoding:"utf8",maxBuffer:10*1024*1024})) as Parameters<typeof projectWerewolfWatch>[0];
   await page.route(`**/api/game-entries/${slug}`, route => route.fulfill({json:{id:slug,slug,gameKind:"werewolf"}}));
   await page.route(`**/api/werewolf/${slug}/lobby`, route => route.fulfill({json:{id:slug,slug,visibility:"public",status:"completed",started:true,playerCount:6,modelLabel:"Fixture",preset:"one_wolf",players:[]}}));
   await page.route(`**/api/games/${slug}/audio*`, route => route.fulfill({json:null}));
@@ -1487,6 +1487,49 @@ test.describe("format-aware game viewer", () => {
       await expect(page.locator("[data-winner-scene]")).toHaveCount(0);
     });
   }
+
+  test("Werewolf House captions reserve readable space on small and short screens", async ({page},testInfo) => {
+    await page.clock.install();
+    const slug="werewolf-house-layout";
+    const view=await installWerewolfGame(page,slug,true);
+    await page.goto(viewerUrl(`/games/${slug}/replay?audience=mystery`));
+    await pauseAutoplay(page,"Pause replay");
+    await page.getByRole("button",{name:"Skip opening",exact:true}).click();
+    const cues=werewolfCues([view]);
+    const index=cues.findIndex(cue=>werewolfCueMoment(cue).house && !cue.ballot && !cue.reprise && cue.moment.entry.kind === "vote");
+    const before=cues.slice(0,index).reduce((sum,cue)=>sum+cue.baseDurationMs,0);
+    const opening=werewolfOpening(view).at(-1)!.opening.totalMs;
+    await page.getByRole("slider",{name:"Replay position",exact:true}).fill(String(Math.round((opening+before+100)*30/1000)));
+    const layout=page.locator("[data-house-result]");
+    await expect(layout).toBeVisible();
+    for(const [width,height] of [[320,568],[480,480],[1280,400],[844,390]]) {
+      await page.setViewportSize({width:width!,height:height!});
+      for(const mode of ["inline","theater"]) {
+        if(mode==="theater") await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
+        await expect(layout.locator("[data-house-message-logo]")).toBeVisible();
+        await expect.poll(() => layout.evaluate(el => {
+          const caption=el.querySelector<HTMLElement>("[data-house-message]")!, copy=caption.querySelector<HTMLElement>("[data-speech-page-copy]")!;
+          const a=el.getBoundingClientRect(),b=caption.getBoundingClientRect(),scene=el.querySelector("[data-house-result-scene]")!.getBoundingClientRect();
+          return b.height>=74 && b.bottom<=a.bottom+1 && b.top>=a.top && copy.getBoundingClientRect().height<=copy.parentElement!.clientHeight-21 && (b.top>=scene.bottom || b.left>=scene.right);
+        })).toBe(true);
+        await page.screenshot({path:testInfo.outputPath(`werewolf-house-${width}x${height}-${mode}.png`)});
+        if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
+      }
+    }
+    const slider=page.getByRole("slider",{name:"Replay position",exact:true});
+    await slider.fill((await slider.getAttribute("max"))!);
+    const ending=page.locator("[data-werewolf-ending]");
+    await expect(ending).toBeVisible();
+    await expect(ending.locator("li")).toHaveCount(view.moments[0]!.snapshot.players.length);
+    for(const [width,height] of [[320,568],[480,480],[1280,400]]) {
+      await page.setViewportSize({width:width!,height:height!});
+      await expect.poll(()=>ending.evaluate(el=>{
+        const box=el.getBoundingClientRect();
+        return [...el.querySelectorAll("li")].every(cell=>{const r=cell.getBoundingClientRect();return r.bottom<=box.bottom+1 && r.right<=box.right+1;});
+      })).toBe(true);
+      await page.screenshot({path:testInfo.outputPath(`werewolf-ending-${width}x${height}.png`)});
+    }
+  });
 
   test("twelve-way tie keeps cast and paginated House visible across screen shapes", async ({page},testInfo) => {
     await page.clock.install();

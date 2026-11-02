@@ -5,6 +5,7 @@ import { VISUAL_SPEECH_FADE_MS } from "@influence/engine/visual-speech";
 import type { AcceptedVisualScene } from "@influence/engine/visual-mode";
 import { soloPresentationDurationMs, SOLO_READ_START_MS, SOLO_EXIT_MS, SOLO_SPEECH_FADE_MS } from "../app/games/[slug]/components/solo-presentation-timing";
 import { sceneSpeechDurationMs, sceneSpeechOpacity, SCENE_SPEECH_START_MS, SCENE_READ_START_MS, SCENE_EXIT_HOLD_MS } from "../app/games/[slug]/components/scene-speech-timing";
+import {INFLUENCE_ROOMS} from "../app/games/[slug]/components/influence-rooms";
 import { VisualPresentationFrame, type VisualPresentationBeat } from "../app/games/[slug]/components/visual-presentation";
 import { VisualSceneView } from "../app/games/[slug]/components/visual-scene-view";
 import { StageBackdrop, sceneBackdropSources } from "../app/games/[slug]/components/stage-backdrop";
@@ -224,7 +225,7 @@ test("a replay without a winner tableau holds a readable last frame only at the 
   expect(view.getByRole("img").style.opacity).toBe("1");
   view.rerender(<VisualPresentationFrame beat={{ kind: "house", text: "The House closes." }} rooms={[]} elapsedMs={60_000} holdAtTail reducedMotion />);
   expect(view.getByText("The House closes.")).not.toBeNull();
-  expect(view.getByRole("region", { name: "House summary" }).style.opacity).toBe("1");
+  expect(view.getByRole("region", { name: "House summary" }).querySelector("[data-speech-page-copy]")?.textContent).toBe("The House closes.");
 });
 
 test("winner tableau retains transparent art after a transient image failure", () => {
@@ -339,8 +340,8 @@ test("House uses its logo and preserves full narration on paused seeks and reduc
   const text = "The room waits.\n\n" + "Everyone has something to lose. ".repeat(40);
   const view = render(<VisualPresentationFrame beat={{ kind: "house", text }} rooms={[]} elapsedMs={0} paused />);
   const segment = view.getByRole("region", { name: "House summary" });
-  expect(segment.style.opacity).toBe("1");
-  expect(segment.querySelector("[data-house-copy]")?.textContent).toBe(text);
+  expect(segment.querySelector("[data-speech-page-copy]")?.textContent).toBe(text);
+  expect(view.container.innerHTML).toContain(INFLUENCE_ROOMS.lobby);
   expect(view.getByRole("img", { name: "The House" }).getAttribute("src")).toBe("/logo.png");
   view.rerender(<VisualPresentationFrame beat={{ kind: "house", text: null, title: "Mingle" }} rooms={[]} elapsedMs={0} reducedMotion />);
   expect(view.getByRole("heading", { name: "Mingle" })).not.toBeNull();

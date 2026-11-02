@@ -1,15 +1,16 @@
 "use client";
 import {RoomBackdrop} from "./stage-backdrop";
+import {HouseResultLayout} from "@/components/watch/house-result-layout";
 import {HouseMessage} from "@/components/watch/house-message";
 
-import { useCallback, useEffect, useLayoutEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import {useSceneThinking} from "@/components/watch/watch-thinking";
 import {FormatPresentation} from "./format-presentation";
 import type {FormatPresentationCue} from "./types";
 import {sampleWatch} from "@/components/watch/watch-sampling";
 import { VISUAL_ROOMS, type AcceptedVisualScene, type VisualRoomId } from "@influence/engine/visual-mode";
 import {NomineeSelection, type NomineeSelectionBeat} from "./nominee-selection";
-import { influenceRoomBackground } from "./influence-rooms";
+import { influenceRoomBackground, INFLUENCE_ROOMS } from "./influence-rooms";
 import { SoloPresentation } from "./solo-presentation";
 import type { PresentationDirector } from "./influence-presentation-director";
 import { TimedSpeech } from "./timed-speech";
@@ -96,16 +97,6 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   roster?: readonly FormatPresentationRosterPlayer[];
   onSceneReadyChange?: (ready: boolean) => void;
 }) {
-  const resultLayout = useRef<HTMLDivElement>(null);
-  const [wideResult, setWideResult] = useState(false);
-  useLayoutEffect(() => {
-    const element = resultLayout.current;
-    if (!element) return;
-    const update = () => setWideResult(element.clientWidth >= 500 && (element.clientHeight - (fullscreen ? controlsInset : 0)) < 400 && element.clientWidth > (element.clientHeight - (fullscreen ? controlsInset : 0)) * 2);
-    const observer = new ResizeObserver(update);
-    observer.observe(element); update();
-    return () => observer.disconnect();
-  }, [beat.kind, fullscreen, controlsInset]);
   const [pinnedRoom, setPinnedRoom] = useState<VisualRoomId | null>(null);
   // Older runs without a final tableau still leave a readable last frame.
   const tailTime = beat.kind === "portrait" ? soloPresentationDurationMs(beat.speech.text) - SOLO_EXIT_MS - 1
@@ -116,14 +107,15 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   const backgroundUrl = influenceRoomBackground(beat, voteLedger);
   let content;
   if (beat.kind === "house-result") {
-    content = <div ref={resultLayout} className={naturalHouseMessages ? "grid min-h-0 flex-1 gap-2 p-2" : "flex min-h-0 flex-1 flex-col gap-3"} style={{paddingBottom: fullscreen ? controlsInset : 0, ...(naturalHouseMessages && {gridTemplateColumns:wideResult ? "minmax(0, 2fr) minmax(180px, 1fr)" : "minmax(0, 1fr)", gridTemplateRows:wideResult ? "minmax(0, 1fr)" : "minmax(0, 1fr) minmax(86px, 28%)"})}} data-house-result>
-      <VisualPresentationFrame beat={beat.result} rooms={rooms} elapsedMs={0} currentStateEntry paused reducedMotion={reducedMotion} fullscreen={fullscreen} controlsInset={0} roster={roster} />
-      {!naturalHouseMessages && hideHouseNarration && <div className="shrink-0" style={{height:"clamp(56px, 20vh, 120px)"}} aria-hidden="true" />}
-      {naturalHouseMessages && <HouseMessage text={beat.text} elapsedMs={readingElapsedMs} logoUrl={houseLogoUrl} />}
-      {!naturalHouseMessages && !hideHouseNarration && <div className="relative flex shrink-0 flex-col rounded-xl border border-white/20 bg-black/85 p-3" style={{height:"clamp(56px, 20vh, 120px)"}} aria-label="House summary"><TimedSpeech text={beat.text} elapsedMs={readingElapsedMs} className="text-base leading-relaxed sm:text-lg" /></div>}
-    </div>;
+    const result = <VisualPresentationFrame beat={beat.result} rooms={rooms} elapsedMs={0} currentStateEntry paused reducedMotion={reducedMotion} fullscreen={fullscreen} controlsInset={0} roster={roster} />;
+    content = naturalHouseMessages ? <HouseResultLayout text={beat.text} elapsedMs={readingElapsedMs} logoUrl={houseLogoUrl} controlsInset={fullscreen ? controlsInset : 0}>{result}</HouseResultLayout>
+      : <div className="flex min-h-0 flex-1 flex-col gap-3" style={{paddingBottom:fullscreen ? controlsInset : 0}} data-house-result>
+        {result}
+        {hideHouseNarration ? <div className="shrink-0" style={{height:"clamp(56px, 20vh, 120px)"}} aria-hidden="true" />
+          : <div className="relative flex shrink-0 flex-col rounded-xl border border-white/20 bg-black/85 p-3" style={{height:"clamp(56px, 20vh, 120px)"}} aria-label="House summary"><TimedSpeech text={beat.text} elapsedMs={readingElapsedMs} className="text-base leading-relaxed sm:text-lg" /></div>}
+      </div>;
   } else if (beat.kind === "canonical-result") {
-    content = <ResultStage players={beat.players}><h2 className="text-center text-2xl">{beat.headline}</h2><p className="mt-3 text-center text-sm">{beat.detail}</p></ResultStage>;
+    content = <ResultStage compactCast={naturalHouseMessages} players={beat.players}><h2 className="text-center text-2xl">{beat.headline}</h2><p className="mt-3 text-center text-sm">{beat.detail}</p></ResultStage>;
   } else if (beat.kind === "elimination-result") {
     content = <ResultStage players={[beat.player]}><p className="text-center text-sm text-rose-200">Eliminated</p><h2 className="mt-3 text-center text-2xl">{beat.player.name} leaves the game</h2>{beat.counts && <p className="mt-3 text-center text-sm">{beat.counts.map(row => `${row.name}: ${row.votes}`).join(" · ")}</p>}{beat.juryCounts && <p className="mt-2 text-center text-sm">Jury tiebreak · {beat.juryCounts.map(row=>`${row.name}: ${row.votes}`).join(" · ")}</p>}</ResultStage>;
   } else if (beat.kind === "two-names-stage" || beat.kind === "format-result") {
@@ -149,7 +141,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
     content = <section aria-label="Anonymous speech" className={`mx-auto w-full max-w-2xl py-10 ${fullscreen ? "flex min-h-0 flex-1 flex-col px-4" : ""}`}><p className="mb-4 text-xs text-white/50">Anonymous</p>{opacity > 0 && <blockquote data-speech-bubble style={{ opacity }} className={`rounded-2xl border border-white/20 bg-black/85 p-5 ${fullscreen ? "flex min-h-0 flex-1 flex-col" : ""}`}>{fullscreen ? <TimedSpeech text={beat.speech.text} elapsedMs={readingElapsedMs - SCENE_SPEECH_START_MS} /> : beat.speech.text}</blockquote>}</section>;
   } else if (beat.kind === "house") {
     const segment = hideHouseNarration && beat.text !== null ? null : <HouseSegment fullscreen={fullscreen} text={beat.text} title={beat.title} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} />;
-    content = naturalHouseMessages && beat.backgroundUrl && beat.text !== null ? <div className="relative isolate flex min-h-0 flex-1 flex-col justify-end overflow-auto p-4 [&>[data-house-message]]:h-1/3 [&>[data-house-message]]:shrink-0"><RoomBackdrop source={beat.backgroundUrl} resilient /><HouseMessage text={beat.text} elapsedMs={readingElapsedMs} logoUrl={houseLogoUrl} /></div> : beat.backgroundUrl ? <ResultStage label="House summary" background={beat.backgroundUrl}>
+    content = naturalHouseMessages && beat.text !== null ? <div style={{paddingBottom:fullscreen ? controlsInset + 8 : 8}} className="relative isolate flex min-h-0 flex-1 flex-col justify-end overflow-hidden p-2 [&>[data-house-message]]:h-1/3 [&>[data-house-message]]:shrink-0"><RoomBackdrop source={beat.backgroundUrl ?? INFLUENCE_ROOMS.lobby} resilient /><HouseMessage text={beat.text} elapsedMs={readingElapsedMs} logoUrl={houseLogoUrl} /></div> : beat.backgroundUrl ? <ResultStage label="House summary" background={beat.backgroundUrl}>
       <p className="mb-4 text-center text-sm tracking-widest text-amber-100">THE HOUSE</p>
       {!hideHouseNarration && beat.text !== null ? <div className="flex h-[clamp(100px,30vh,240px)] flex-col"><TimedSpeech text={beat.text} elapsedMs={readingElapsedMs} className="text-base leading-relaxed sm:text-xl" /></div> : <h2 className="py-8 text-center text-2xl">{beat.title}</h2>}
     </ResultStage> : segment;
@@ -194,5 +186,5 @@ function TwoNamesDecision({beat, elapsedMs, currentStateEntry, reducedMotion, co
 
 /** Natural House copy lives with its scenery/result, including when audio is present. */
 export function hasInlineHouseMessage(beat: VisualPresentationBeat | null | undefined): boolean {
-  return beat?.kind === "house-result" || beat?.kind === "house" && Boolean(beat.backgroundUrl) && beat.text !== null;
+  return beat?.kind === "house-result" || beat?.kind === "house" && beat.text !== null;
 }
