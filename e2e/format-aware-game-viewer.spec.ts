@@ -146,10 +146,10 @@ interface LocalFormatViewerHarness {
 let harnessProcess: LocalHarnessProcess;
 let harness: LocalFormatViewerHarness;
 
-async function installWerewolfGame(page: Page, slug: string) {
+async function installWerewolfGame(page: Page, slug: string, completed = false) {
   // The engine fixture uses Bun's TypeScript support (including declare
   // class fields), outside Playwright's narrower Babel transformation.
-  const events = JSON.parse(execFileSync("bun", ["-e", `import {werewolfResultsFixture} from './packages/engine/src/fixtures/werewolf-results'; console.log(JSON.stringify(await werewolfResultsFixture('village', ${JSON.stringify(slug)})));`], {encoding:"utf8",maxBuffer:10*1024*1024})) as Parameters<typeof projectWerewolfWatch>[0];
+  const events = JSON.parse(execFileSync("bun", ["-e", `import {werewolfResultsFixture, completedCurrentWerewolfFixture} from './packages/engine/src/fixtures/werewolf-results'; console.log(JSON.stringify(await ${completed ? `completedCurrentWerewolfFixture(${JSON.stringify(slug)},11)` : `werewolfResultsFixture('village', ${JSON.stringify(slug)})`}));`], {encoding:"utf8",maxBuffer:10*1024*1024})) as Parameters<typeof projectWerewolfWatch>[0];
   await page.route(`**/api/game-entries/${slug}`, route => route.fulfill({json:{id:slug,slug,gameKind:"werewolf"}}));
   await page.route(`**/api/werewolf/${slug}/lobby`, route => route.fulfill({json:{id:slug,slug,visibility:"public",status:"completed",started:true,playerCount:6,modelLabel:"Fixture",preset:"one_wolf",players:[]}}));
   await page.route(`**/api/games/${slug}/audio*`, route => route.fulfill({json:null}));
@@ -1488,6 +1488,203 @@ test.describe("format-aware game viewer", () => {
     });
   }
 
+  test("Werewolf House captions reserve readable space on small and short screens", async ({page},testInfo) => {
+    await page.clock.install();
+    const slug="werewolf-house-layout";
+    const view=await installWerewolfGame(page,slug,true);
+    await page.goto(viewerUrl(`/games/${slug}/replay?audience=mystery`));
+    await pauseAutoplay(page,"Pause replay");
+    await page.getByRole("button",{name:"Skip opening",exact:true}).click();
+    const cues=werewolfCues([view]);
+    const index=cues.findIndex(cue=>werewolfCueMoment(cue).house && !cue.ballot && !cue.reprise && cue.moment.entry.kind === "vote");
+    const before=cues.slice(0,index).reduce((sum,cue)=>sum+cue.baseDurationMs,0);
+    const opening=werewolfOpening(view).at(-1)!.opening.totalMs;
+    await page.getByRole("slider",{name:"Replay position",exact:true}).fill(String(Math.round((opening+before+100)*30/1000)));
+    const layout=page.locator("[data-house-result]");
+    await expect(layout).toBeVisible();
+    for(const [width,height] of [[320,568],[480,480],[1280,400],[844,390]]) {
+      await page.setViewportSize({width:width!,height:height!});
+      for(const mode of ["inline","theater"]) {
+        if(mode==="theater") await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
+        await expect(layout.locator("[data-house-message-logo]")).toBeVisible();
+        await expect.poll(() => layout.evaluate(el => {
+          const caption=el.querySelector<HTMLElement>("[data-house-message]")!, copy=caption.querySelector<HTMLElement>("[data-speech-page-copy]")!;
+          const a=el.getBoundingClientRect(),b=caption.getBoundingClientRect(),scene=el.querySelector("[data-house-result-scene]")!.getBoundingClientRect();
+          return b.height>=74 && b.bottom<=a.bottom+1 && b.top>=a.top && copy.getBoundingClientRect().height<=copy.parentElement!.clientHeight-21 && (b.top>=scene.bottom || b.left>=scene.right);
+        })).toBe(true);
+        await page.screenshot({path:testInfo.outputPath(`werewolf-house-${width}x${height}-${mode}.png`)});
+        if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
+      }
+    }
+    const slider=page.getByRole("slider",{name:"Replay position",exact:true});
+    await slider.fill((await slider.getAttribute("max"))!);
+    const ending=page.locator("[data-werewolf-ending]");
+    await expect(ending).toBeVisible();
+    await expect(ending.locator("li")).toHaveCount(view.moments[0]!.snapshot.players.length);
+    for(const [width,height] of [[320,568],[480,480],[1280,400]]) {
+      await page.setViewportSize({width:width!,height:height!});
+      await expect.poll(()=>ending.evaluate(el=>{
+        const box=el.getBoundingClientRect();
+        return [...el.querySelectorAll("li")].every(cell=>{const r=cell.getBoundingClientRect();return r.bottom<=box.bottom+1 && r.right<=box.right+1;});
+      })).toBe(true);
+      await page.screenshot({path:testInfo.outputPath(`werewolf-ending-${width}x${height}.png`)});
+    }
+  });
+
+  test("standalone House scenery fills one stage without an inset duplicate",async({page},testInfo)=>{
+    await page.clock.install();
+    const slug="standalone-house-background";
+    await installDeterministicFormatGame(page,{slug,scenarioId:"save_or_eliminate_clear",status:"completed"});
+    setFormatTranscript(page,slug,[{id:900,entrySequence:900,round:1,phase:"FORMAT_MENU",scope:"system",dialogueKind:"house_summary",text:"The House is ready. The next choice will set the stakes for everyone.",timestamp:Date.now(),firstDurableEventSequence:10}]);
+    await page.goto(viewerUrl(`/games/${slug}/replay`));await pauseAutoplay(page,"⏸ Pause");
+    await page.addStyleTag({content:"nextjs-portal {display:none}"});
+    const stage=page.locator("[data-influence-stage]");
+    await advanceUntilVisible(page,stage.locator("[data-house-message]"),"standalone House scene",100);
+    await expect(stage.locator("[data-house-result]")).toHaveCount(0);
+    for(const [width,height] of [[320,568],[390,844],[600,600],[1280,720],[1280,400],[1920,1080]]) {
+      await page.setViewportSize({width:width!,height:height!});
+      for(const mode of ["inline","theater"]) {
+        if(mode==="theater") await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
+        await expect(stage.locator("[data-room-backdrop]")).toHaveCount(1);
+        await expect.poll(()=>stage.evaluate(el=>{
+          const a=el.getBoundingClientRect(),b=el.querySelector("[data-room-backdrop]")!.getBoundingClientRect();
+          return Math.max(Math.abs(a.left-b.left),Math.abs(a.top-b.top),Math.abs(a.width-b.width),Math.abs(a.height-b.height));
+        })).toBeLessThanOrEqual(1);
+        await expect.poll(()=>stage.locator("[data-speech-page-copy]").evaluate(copy=>copy.getBoundingClientRect().height<=copy.parentElement!.clientHeight-21)).toBe(true);
+        await page.screenshot({path:testInfo.outputPath(`house-background-${width}x${height}-${mode}.png`)});
+        if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
+      }
+    }
+  });
+
+  for(const artwork of [true,false]) test(`historical format offer stays with House speech (${artwork ? "full body" : "portrait"})`,async({page},testInfo)=>{
+    await page.clock.install();
+    const slug=`historical-menu-${artwork}`;
+    const decisions:ReturnType<typeof createFormatKernelViewerScenario>["decisions"]=[{sequence:10,round:1,phase:Phase.FORMAT_MENU,timestamp:"2026-11-02T00:00:00.000Z",type:"format.menu_offered",payload:{empoweredId:"atlas",offeredFormatIds:["safety_bounce","save_or_eliminate"]}}];
+    await installDeterministicFormatGame(page,{slug,scenarioId:"save_or_eliminate_clear",status:"completed",decisions});
+    await page.route(`**/api/games/${slug}/visual`,route=>route.fulfill({json:{enabled:true,status:null,portraits:{},fullBodies:artwork ? {atlas:"/avatars/personas/full-body-v1/strategic.webp"} : {},scenes:[]}}));
+    const text="Atlas’s first advantage comes with a choice: Safety Bounce or Save-or-Exit. The format they select will set the stakes for everyone.";
+    setFormatTranscript(page,slug,[{id:900,entrySequence:900,round:1,phase:"FORMAT_MENU",scope:"system",dialogueKind:"house_summary",text,timestamp:Date.now(),firstDurableEventSequence:10,houseResult:{eventSequence:10,authoringRevision:"historical"}}]);
+    await page.goto(viewerUrl(`/games/${slug}/replay`));await pauseAutoplay(page,"⏸ Pause");
+    await page.addStyleTag({content:"nextjs-portal {display:none}"});
+    const combined=page.locator("[data-house-result]");await advanceUntilVisible(page,combined,"historical combined format menu",100);
+    await expect(combined.getByRole("group",{name:"House format offer"})).toBeVisible();
+    await expect(combined.getByRole("figure",{name:"Empowered: Atlas"})).toBeVisible();
+    for(const [width,height] of [[320,568],[390,844],[600,600],[480,480],[1280,400],[844,390],[1920,1080]]) {
+      await page.setViewportSize({width:width!,height:height!});
+      for(const mode of ["inline","theater"]) {
+        if(mode==="theater") await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
+        await expect.poll(()=>combined.evaluate(el=>{
+          const scene=el.querySelector("[data-house-result-scene]")!.getBoundingClientRect();
+          return [...el.querySelectorAll("[data-format-card],figure,header")].every(item=>{const r=item.getBoundingClientRect();return r.bottom<=scene.bottom+1 && r.top>=scene.top-1 && r.right<=scene.right+1 && r.left>=scene.left-1;});
+        })).toBe(true);
+        await expect.poll(()=>combined.locator("[data-speech-page-copy]").evaluate(copy=>copy.getBoundingClientRect().height<=copy.parentElement!.clientHeight-21)).toBe(true);
+        if(width===1920 && mode==="theater") {
+          const caption=combined.locator("[data-speech-page-copy]");
+          await expect.poll(()=>caption.evaluate(copy=>parseFloat(getComputedStyle(copy).fontSize))).toBeGreaterThan(16);
+          const sizing=await caption.evaluate(copy=>({height:copy.getBoundingClientRect().height,line:parseFloat(getComputedStyle(copy).lineHeight)}));
+          expect(sizing.height).toBeLessThanOrEqual(sizing.line+1);
+        }
+        if(artwork && width===1920) {const image=combined.locator("[data-format-menu-fullbody] img");await expect(image).toBeVisible();await expect.poll(()=>image.evaluate(img=>(img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);}
+        await page.screenshot({path:testInfo.outputPath(`format-menu-${artwork ? "body" : "portrait"}-${width}x${height}-${mode}.png`)});
+        if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
+      }
+    }
+  });
+
+  for (const tiedCount of [2,3,4,6,12]) test(`Empower full bodies adapt to space for a ${tiedCount}-way tie`, async ({page},testInfo) => {
+    await page.clock.install();
+    const slug=`empower-body-${tiedCount}`;
+    const names=["Atlas","Vera","Finn","Mira","Rex","Lyra","Kael","Echo","Sage","Jace","Rune","Wren"];
+    const personas=["strategic","social","observer","diplomat","aggressive","deceptive","loyalist","wildcard","honest","broker","martyr","contrarian"];
+    const roster=names.map(name=>({id:name.toLowerCase(),name}));
+    const tied=roster.slice(0,tiedCount);
+    const counts=Object.fromEntries(roster.map((p,i)=>[p.id,i<tiedCount ? 12/tiedCount : 0]));
+    const meta={round:1,phase:Phase.VOTE,timestamp:"2026-11-02T00:00:00.000Z"};
+    const decisions:ReturnType<typeof createFormatKernelViewerScenario>["decisions"]=[...roster.map((p,i)=>({...meta,sequence:i+1,type:"vote.cast" as const,payload:{voterId:p.id,empowerTarget:tied[i%tiedCount]!.id}})),{...meta,sequence:13,type:"vote.empower_tally_resolved",payload:{counts,empowered:tied[0]!.id,tied:tied.map(p=>p.id),method:"tie_pending",cumulativeEmpowerVotes:counts}}];
+    await installDeterministicFormatGame(page,{slug,scenarioId:"majority_elimination_tie",status:"completed",roster,decisions,empowerRevoteVersion:2});
+    await page.route(`**/api/games/${slug}/visual`,route=>route.fulfill({json:{enabled:true,status:null,portraits:{},fullBodies:Object.fromEntries(roster.map((p,i)=>[p.id,`/avatars/personas/full-body-v1/${personas[i]}.webp`])),scenes:[]}}));
+    const text=`${tied.map(p=>p.name).join(", ")} are tied with ${12/tiedCount} vote${tiedCount===12 ? "" : "s"} each. ${tiedCount===12 ? "Everyone is tied, so the wheel will decide." : "The other players will revote between them."} The next decision will determine who holds the power.`;
+    setFormatTranscript(page,slug,[{id:900,entrySequence:900,round:1,phase:"VOTE",scope:"system",dialogueKind:"house_summary",text,timestamp:Date.now(),firstDurableEventSequence:13,houseResult:{eventSequence:13,authoringRevision:"results-mc-v1"}}]);
+    await page.goto(viewerUrl(`/games/${slug}/replay`));await pauseAutoplay(page,"⏸ Pause");
+    await page.addStyleTag({content:"nextjs-portal { display:none; }"});
+    const combined=page.locator("[data-house-result]");await advanceUntilVisible(page,combined,"House result",100);
+    const measurements=[];
+    for(const [width,height] of [[320,568],[390,844],[600,600],[1280,400],[844,390],[1920,634],[1920,1080]]) {
+      await page.setViewportSize({width:width!,height:height!});
+      for(const mode of ["inline","theater"]) {
+        if(mode==="theater") await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
+        await expect(combined.locator("[data-empower-total]")).toHaveCount(tiedCount);
+        await expect.poll(()=>combined.evaluate(el=>{
+          const stage=el.querySelector<HTMLElement>("[data-result-stage]")!,box=stage.getBoundingClientRect();
+          return [...el.querySelectorAll<HTMLElement>("[data-empower-total]")].every(cell=>{
+            const r=cell.getBoundingClientRect(),art=cell.querySelector<HTMLElement>("[data-empower-fullbody]")!;
+            return r.bottom<=box.bottom+1 && r.right<=box.right+1 && (getComputedStyle(art).display!=="none")===(cell.clientWidth>=112 && cell.clientHeight>=160);
+          }) && stage.scrollHeight<=stage.clientHeight+1;
+        })).toBe(true);
+        await expect.poll(()=>combined.locator("[data-speech-page-copy]").evaluate(copy=>copy.getBoundingClientRect().height<=copy.parentElement!.clientHeight-21)).toBe(true);
+        const cells=await combined.locator("[data-empower-total]").evaluateAll(cells=>cells.map(cell=>({width:cell.clientWidth,height:cell.clientHeight,body:getComputedStyle(cell.querySelector("[data-empower-fullbody]")!).display!=="none"})));
+        measurements.push({width,height,mode,tiedCount,cells});
+        if(width===1280 && height===400 && mode==="theater" && tiedCount<=4) {
+          expect(cells.every(cell=>cell.body)).toBe(true);
+          for(const art of await combined.locator("[data-empower-fullbody]").all()) expect((await art.boundingBox())!.height).toBeGreaterThanOrEqual(100);
+        }
+        for(const art of await combined.locator("[data-empower-fullbody]:visible img").all()) await expect.poll(()=>art.evaluate(img=>(img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+        await page.screenshot({path:testInfo.outputPath(`tie-${tiedCount}-${width}x${height}-${mode}.png`)});
+        if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
+      }
+    }
+    expect(measurements.some(row=>row.cells.some(cell=>cell.body))).toBe(true);
+    expect(measurements.some(row=>row.cells.every(cell=>!cell.body))).toBe(true);
+    await testInfo.attach("fullbody-layouts",{body:JSON.stringify(measurements,null,2),contentType:"application/json"});
+  });
+
+  test("twelve-way tie keeps cast and paginated House visible across screen shapes", async ({page},testInfo) => {
+    await page.clock.install();
+    const slug="twelve-way-tie-layout";
+    const roster=["Atlas","Vera","Finn","Mira","Rex","Lyra","Kael","Echo","Sage","Jace","Rune","Wren"].map(name=>({id:name.toLowerCase(),name}));
+    const counts=Object.fromEntries(roster.map(p=>[p.id,1]));
+    const meta={round:1,phase:Phase.VOTE,timestamp:"2026-11-01T00:00:00.000Z"};
+    const decisions:ReturnType<typeof createFormatKernelViewerScenario>["decisions"]=[...roster.map((p,i)=>({...meta,sequence:i+1,type:"vote.cast" as const,payload:{voterId:p.id,empowerTarget:roster[(i+1)%12]!.id}})),{...meta,sequence:13,type:"vote.empower_tally_resolved",payload:{counts,empowered:"atlas",tied:roster.map(p=>p.id),method:"tie_pending",cumulativeEmpowerVotes:counts}}];
+    await installDeterministicFormatGame(page,{slug,scenarioId:"majority_elimination_tie",status:"completed",roster,decisions,empowerRevoteVersion:2});
+    const text="Atlas, Vera, Finn, Mira, Rex, Lyra, Kael, Echo, Sage, Jace, Rune, and Wren are tied with one vote each. Everyone is in the tie, so nobody is eligible to revote and the wheel will decide who becomes Empowered. Twelve different choices have left the entire cast on exactly equal footing.";
+    setFormatTranscript(page,slug,[{id:900,entrySequence:900,round:1,phase:"VOTE",scope:"system",dialogueKind:"house_summary",text,timestamp:Date.now(),firstDurableEventSequence:13,houseResult:{eventSequence:13,authoringRevision:"results-mc-v1"}}]);
+    await page.goto(viewerUrl(`/games/${slug}/replay`));await pauseAutoplay(page,"⏸ Pause");
+    const combined=page.locator("[data-house-result]");await advanceUntilVisible(page,combined,"twelve-way House result",100);
+    const measurements=[];
+    for(const [width,height] of [[390,844],[320,568],[600,600],[480,480],[1280,720],[1280,400],[844,390],[1920,1080]]) {
+      await page.setViewportSize({width:width!,height:height!});
+      for(const mode of ["inline","theater"]) {
+        if(mode==="theater") await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
+        await expect(combined.locator("[data-empower-total]")).toHaveCount(12);
+        await expect.poll(() => combined.evaluate(el => {
+          const stage=el.querySelector<HTMLElement>("[data-result-stage]")!, box=stage.getBoundingClientRect();
+          return [...stage.querySelectorAll("[data-empower-total]")].filter(cell=>{const r=cell.getBoundingClientRect();return r.top>=box.top && r.bottom<=box.bottom+1;}).length;
+        })).toBe(12);
+        await expect.poll(() => combined.locator("[data-speech-page-copy]").evaluate(copy => copy.getBoundingClientRect().height <= copy.parentElement!.clientHeight - 22 + 1)).toBe(true);
+        const measurement=await combined.evaluate(el=>{
+          const stage=el.querySelector<HTMLElement>("[data-result-stage]")!,message=el.querySelector<HTMLElement>("[data-house-message]")!;
+          const box=stage.getBoundingClientRect(),caption=message.getBoundingClientRect(),parent=el.getBoundingClientRect();
+          const cells=[...stage.querySelectorAll("[data-empower-total]")];
+          return {stageHeight:Math.round(box.height),scrolls:stage.scrollHeight>stage.clientHeight+1,visiblePlayers:cells.filter(cell=>{const r=cell.getBoundingClientRect();return r.top>=box.top && r.bottom<=box.bottom+1 && r.left>=box.left && r.right<=box.right+1;}).length,captionHeight:Math.round(caption.height),captionFits:caption.top>=parent.top && caption.bottom<=parent.bottom+1,caption:message.textContent};
+        });
+        measurements.push({width,height,mode,...measurement});
+        await page.screenshot({path:testInfo.outputPath(`tie-12-${width}x${height}-${mode}.png`)});
+        if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
+      }
+    }
+    await testInfo.attach("layout-measurements",{body:JSON.stringify(measurements,null,2),contentType:"application/json"});
+    for(const row of measurements) {expect(row,JSON.stringify(row)).toMatchObject({visiblePlayers:12,scrolls:false,captionFits:true});expect(row.captionHeight).toBeGreaterThanOrEqual(70); /* 86px row includes the 16px logo clearance. */}
+    await page.setViewportSize({width:320,height:568});
+    const caption = combined.getByLabel("House summary");
+    await expect(caption.getByLabel(/^Page 1 of/)).toBeVisible();
+    const firstPage = await caption.locator("[data-speech-page-copy]").textContent();
+    await page.getByRole("button",{name:"Play replay",exact:true}).click();
+    await page.clock.runFor(8000);
+    await expect(caption.locator("[data-speech-page-copy]")).not.toHaveText(firstPage!);
+    await expect(combined.locator("[data-empower-total]")).toHaveCount(12);
+  });
+
   test("Empower tie separates original votes, nominees, revotes and final totals", async ({ page }, testInfo) => {
     await page.clock.install();
     const slug = "empower-revote-beats";
@@ -1504,6 +1701,7 @@ test.describe("format-aware game viewer", () => {
       { ...meta, sequence: 10, type: "vote.empowered_set", payload: { empowered: "lyra", method: "revote" } },
     ];
     await installDeterministicFormatGame(page, { slug, scenarioId: "majority_elimination_tie", status: "completed", decisions, empowerRevoteVersion: 2 });
+    setFormatTranscript(page,slug,[{id:900,entrySequence:900,round:1,phase:"VOTE",scope:"system",dialogueKind:"house_summary",fromPlayerId:null,text:"Atlas and Lyra are tied on two votes. Echo and Rex will decide the runoff.",timestamp:Date.now(),firstDurableEventSequence:7,houseResult:{eventSequence:5,authoringRevision:"results-mc-v1"}}]);
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await skipOpening(page);
     await expect(page.getByRole("region", { name: "Ballot: Atlas" }).locator("blockquote").locator("..")).toHaveCSS("opacity", "1");
@@ -1524,21 +1722,35 @@ test.describe("format-aware game viewer", () => {
     await expect(page.locator("[data-vote-complete]")).toContainText("All votes are in");
     await playbackKey(page, "ArrowRight");
     const tie = page.locator('[data-format-cue="empowered_tie"]');
-    await expect(tie).toContainText("A tie for Empower");
-    await expect(tie).toContainText("Atlas · Lyra are tied");
+    await expect(tie).toContainText("2-way tie for Empower");
+    await expect(tie.locator("[data-vote-ledger]")).toHaveCount(0);
     await expect(tie).not.toContainText("is Empowered");
-    await expect(tie.locator('[data-empower-total="atlas"] dd')).toHaveText("2votes");
+    await expect(tie).toContainText("2 votes each");
     await page.screenshot({ path: testInfo.outputPath("empower-tie.png") });
+    await next();
+    const combined = page.locator("[data-house-result]");
+    await expect(combined).toContainText("Echo and Rex will decide");
     const desktop = page.viewportSize()!;
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(tie).toBeVisible();
     await assertLocatorInsideViewport(tie, 390);
-    const totals = tie.getByLabel("Empowered vote totals");
+    const totals = tie.getByLabel("Result players");
     await expect.poll(() => totals.evaluate(el => {
       const stage = el.closest('[data-presentation-animation-boundary]')!.getBoundingClientRect();
       const box = el.getBoundingClientRect();
       return box.top >= stage.top && box.bottom <= stage.bottom;
     })).toBe(true);
+    const summary = combined.getByLabel("House summary");
+    await expect(summary).toBeVisible();
+    const logoBox = await summary.locator("[data-house-message-logo]").boundingBox();
+    const panelBox = await summary.boundingBox();
+    expect(logoBox!.y).toBeLessThan(panelBox!.y);
+    expect(logoBox!.y + logoBox!.height).toBeGreaterThan(panelBox!.y);
+    expect(Math.abs(logoBox!.x + logoBox!.width / 2 - (panelBox!.x + panelBox!.width / 2))).toBeLessThan(1);
+    expect(await summary.locator("[data-speech-page-copy]").evaluate(el => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+    const resultBox = await tie.boundingBox();
+    const summaryBox = await summary.boundingBox();
+    expect(resultBox!.y + resultBox!.height).toBeLessThanOrEqual(summaryBox!.y);
     await page.screenshot({ path: testInfo.outputPath("empower-tie-mobile.png") });
     await page.setViewportSize(desktop);
     await next();
@@ -1551,10 +1763,10 @@ test.describe("format-aware game viewer", () => {
     await expect(page.locator('[data-vote-ledger] [data-ledger-voter]')).toHaveCount(2);
     await next();
     const result = page.locator('[data-format-cue="empowered_tally"]');
-    await expect(result).toContainText("Empower revote");
+    await expect(result).toContainText("Runoff result");
     await expect(result).toContainText("Lyra is Empowered");
-    await expect(result.locator('[data-empower-total="atlas"] dd')).toHaveText("0votes");
-    await expect(result.locator('[data-empower-total="lyra"] dd')).toHaveText("2votes");
+    await expect(result.locator('[data-empower-total="atlas"]')).toHaveCount(0);
+    await expect(result.locator('[data-empower-total="lyra"]')).toContainText("2 votes");
     await expect(result.locator('[data-empower-receipt]')).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath("empower-revote-result.png") });
   });

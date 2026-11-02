@@ -13,6 +13,17 @@ const data: VisualWatchData = { enabled: true, status: null, portraits: { a: "/f
   { id: "old", roomId: "lobby", version: 1, afterDialogueSequence: 2, imageUrl: "/old.png", participantIds: ["a"], anchors: [] },
   { id: "new", roomId: "lobby", version: 2, afterDialogueSequence: 5, imageUrl: "/new.png", participantIds: ["a"], anchors: [] },
 ] };
+test("alliance introductions show frozen session members, and the following room keeps the alliance name", () => {
+  const roster = [player, { ...player, id: "b", name: "Bea" }, { ...player, id: "c", name: "Cy" }];
+  const session = { sessionId: "s", allianceId: "ab", allianceName: "Night Shift", memberIds: ["a", "b"] };
+  const intro: TranscriptEntry = { ...message, scope: "system", fromPlayerId: null, speakerPlayerId: null,
+    dialogueKind: "house_summary", allianceIntroduction: { ...session, beforeEntrySequence: 5 } };
+  expect(visualWatchPresentation(data, null, intro, roster).beat).toMatchObject({ kind: "alliance-introduction", allianceName: "Night Shift", participants: [{ id: "a", avatarUrl: "/frozen.png" }, { id: "b" }] });
+  expect(() => visualWatchPresentation(data, null, { ...intro, allianceIntroduction: { ...intro.allianceIntroduction!, memberIds: ["a", "unknown"] } }, roster)).toThrow("missing from the frozen roster");
+  const speech = { ...message, visualScene: undefined, phase: "FORMAT_MINGLE" as const, scope: "huddle" as const, toPlayerIds: ["b"], allianceSession: session };
+  expect(visualWatchPresentation(data, null, speech, roster).beat).toMatchObject({ kind: "portrait-room", roomLabel: "Night Shift", participants: [{ id: "a" }, { id: "b" }] });
+  expect(visualWatchPresentation(data, null, { ...speech, text: "A different alliance name in prose" }, roster).beat).toMatchObject({ roomLabel: "Night Shift" });
+});
 test("accepted retrospectives use introduction portraits and solo pacing even when room art is bound", () => {
   const retrospective: TranscriptEntry = { ...message, phase: "RETROSPECTIVE" };
   const picture = visualWatchPresentation(data, null, retrospective, [{...player, status: "eliminated"}]);

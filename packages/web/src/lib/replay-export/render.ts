@@ -39,6 +39,7 @@ export async function withPreparedReplay<T>(
     manifest: ReplayManifest,
     cancelSignal: ReturnType<typeof makeCancelSignal>["cancelSignal"],
   ) => Promise<T>,
+  browserExecutable = process.env.REPLAY_BROWSER_EXECUTABLE,
 ): Promise<T> {
   const scratch = await mkdtemp(join(tmpdir(), "house-replay-"));
   // Remotion's Chromium runner exits synchronously on SIGINT. Own files still need cleanup.
@@ -105,14 +106,14 @@ export async function withPreparedReplay<T>(
         pages = { ...manifest.pages };
       const preparation = { manifest, prepare: true };
       const measured = await selectComposition({
-        browserExecutable:process.env.REMOTION_BROWSER_EXECUTABLE,
+        browserExecutable,
         serveUrl,
         id: "HouseReplay",
         inputProps: preparation,
         timeoutInMilliseconds: 60000,
       });
       await renderFrames({
-        browserExecutable:process.env.REMOTION_BROWSER_EXECUTABLE,
+        browserExecutable,
         composition: measured,
         serveUrl,
         inputProps: preparation,
@@ -154,8 +155,9 @@ export async function renderReplay(
   output: string,
   overwrite: boolean,
   signal: AbortSignal,
-  options: {onProgress?:(progress:number)=>void} = {},
+  options: {onProgress?:(progress:number)=>void;browserExecutable?:string} = {},
 ) {
+  const browserExecutable = options.browserExecutable ?? process.env.REPLAY_BROWSER_EXECUTABLE;
   const concurrency = Number(process.env.REPLAY_RENDER_CONCURRENCY ?? 1);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 8) throw new Error("REPLAY_RENDER_CONCURRENCY must be an integer from 1 to 8");
   await mkdir(dirname(output), { recursive: true });
@@ -171,7 +173,7 @@ export async function renderReplay(
       async (serveUrl, manifest, cancelSignal) => {
         const inputProps = { manifest };
         const composition = await selectComposition({
-          browserExecutable:process.env.REMOTION_BROWSER_EXECUTABLE,
+          browserExecutable,
           serveUrl,
           id: "HouseReplay",
           inputProps,
@@ -182,7 +184,7 @@ export async function renderReplay(
         let rendered = false;
         try {
           await renderMedia({
-            browserExecutable:process.env.REMOTION_BROWSER_EXECUTABLE,
+            browserExecutable,
             composition,
             serveUrl,
             inputProps,
@@ -256,6 +258,7 @@ export async function renderReplay(
           `Saved ${output} (${receipt.elapsedSeconds.toFixed(1)}s rendering, ${(identity.byteLength / 1024 / 1024).toFixed(1)} MiB)`,
         );
       },
+      browserExecutable,
     );
   } finally {
     await rm(partial, { force: true });

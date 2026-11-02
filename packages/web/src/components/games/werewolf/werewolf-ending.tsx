@@ -1,14 +1,32 @@
+import {AgentAvatar} from "@/components/agent-avatar";
 import type {WerewolfWatchMoment} from "@influence/engine/werewolf/watch-contract";
 import {werewolfOutcomeReason, werewolfOutcomeTitle} from "@influence/engine/werewolf/results-contract";
 import {FitPresentation} from "@/app/games/[slug]/components/fit-presentation";
 import {RoomBackdrop} from "@/app/games/[slug]/components/stage-backdrop";
 
 /** Final audience-safe snapshot owns roles and elimination coordinates, even on a direct seek. */
-export function WerewolfEnding({snapshot, backgroundUrl}: {snapshot: WerewolfWatchMoment["snapshot"]; backgroundUrl: string}) {
+export function WerewolfEnding({snapshot, backgroundUrl, compact = false}: {compact?:boolean; snapshot: WerewolfWatchMoment["snapshot"]; backgroundUrl: string}) {
   const {outcome,players} = snapshot;
   if (!outcome) return null;
   const exits = players.filter(player => player.elimination).sort((a,b) =>
     a.elimination!.day - b.elimination!.day || Number(a.elimination!.kind === "vote") - Number(b.elimination!.kind === "vote"));
+  if (compact) return <section className="relative isolate flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2 text-white" data-werewolf-ending>
+    <RoomBackdrop source={backgroundUrl} />
+    <header className="relative shrink-0 rounded-xl bg-black/80 p-2 text-center">
+      <h2 className="text-lg font-semibold">{werewolfOutcomeTitle(outcome)}</h2>
+      <p className="text-xs text-white/70">{werewolfOutcomeReason(outcome)}</p>
+    </header>
+    <ul aria-label="Final cast" className="relative grid min-h-0 flex-1 gap-1" style={{gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,90px),1fr))",gridAutoRows:"minmax(72px,1fr)"}}>
+      {[...players].sort((a,b)=>Number(outcome.winnerIds.includes(b.id))-Number(outcome.winnerIds.includes(a.id))).map(player=><li key={player.id} className="flex min-w-0 flex-col justify-center rounded-lg border border-white/15 bg-black/80 p-1 text-xs leading-4">
+        <div className="flex min-w-0 items-center gap-1"><AgentAvatar name={player.name} persona="" personaKey={player.personaKey} avatarUrl={player.avatarUrl ?? undefined} size="6" />
+          <p className="truncate font-semibold" title={player.name}>{player.name}</p>
+        </div>
+        <p className="capitalize text-amber-100">{player.role}</p>
+        <p>{outcome.winnerIds.includes(player.id) ? "Winner" : outcome.faction === null ? "Draw" : "Defeated"}</p>
+        <p className="text-white/65">{player.alive ? "Survived" : player.elimination ? `${player.elimination.kind === "night" ? "Night" : "Day"} ${player.elimination.day}` : "Eliminated"}</p>
+      </li>)}
+    </ul>
+  </section>;
   return <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden" data-werewolf-ending>
     <RoomBackdrop source={backgroundUrl} />
     <div className="absolute inset-0 bg-black/75" />

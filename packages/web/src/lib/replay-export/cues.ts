@@ -58,6 +58,7 @@ export type ExportPicture =
       backgroundUrl?: string;
       /** Reserve the response's ledger geometry without including its votes. */
       ballotFraming?: boolean;
+      chain?: import("../../app/games/[slug]/components/safety-chain").SafetyChainThinkingBeat;
       room?: {number: number | null; label?: string; backgroundUrl?: string; floorPerspective?: boolean; players: Extract<VisualPresentationBeat, {kind:"portrait-room"}>["participants"]};
     }
   | {kind: "werewolf-opening"; cue: WerewolfOpeningCue}
@@ -187,6 +188,8 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
     scenes,
     game.gameSchemaVersion,
     {attachDecisionSpeech: source.projectionVersion !== 3, attachTwoNamesSpeech: source.projectionVersion === undefined || source.projectionVersion >= 5,
+      // Frozen source versions pin facts and media, not an obsolete visual layout.
+      compactEmpower: true,
       resultsPresentation: source.projectionVersion === undefined || source.projectionVersion >= 6},
   );
   const frameForSequence = compileReplayFrameLookup(frames);
@@ -258,7 +261,7 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
           transcriptSequence: message.entrySequence,
         }),
       },
-      label: `Round ${cue.round} · ${cue.phase}`,
+      label: `Round ${cue.round} · ${message?.allianceIntroduction?.allianceName ?? message?.allianceSession?.allianceName ?? cue.phase}`,
       speech:
         message?.dialogueKind === "house_summary"
           ? {

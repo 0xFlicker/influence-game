@@ -674,6 +674,8 @@ export type TranscriptSafeContextV1 = {
   version: 1;
   roomId?: number;
   allianceId?: string;
+  allianceName?: string;
+  allianceIntroduction?: import("@influence/engine").TranscriptDialogueContext["allianceIntroduction"];
   scheduleId?: string;
   sessionId?: string;
   window?: string;

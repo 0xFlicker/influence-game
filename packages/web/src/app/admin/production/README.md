@@ -1,5 +1,11 @@
 # Production Studio
 
+**Implementation gate:** follow the mandatory
+[viewer–Studio–export parity checklist](../../../../../../docs/presentation-parity.md)
+for any presentation change. Verify Source, Selected cut and freshly encoded output
+in the same branch; browser-only layout/props and missing independent-thought
+context are known divergence points. Missing parity evidence is unfinished work.
+
 The workspace entry point is `/admin/production`. The bounded library links to `/admin/production/games/<game-id>` for completed Influence/Werewolf episodes and validated paused prefixes. Producer/Sysop grants protect editorial source, moments and cuts; existing Influence visual operators retain their existing visual services. Public replay behavior is separate.
 
 ## Editing loop

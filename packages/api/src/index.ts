@@ -5,7 +5,7 @@ import { localTaskBudgetPath, localTaskBudgetIdentity } from "@influence/engine"
 import { createCharacterCutoutRoutes } from "./routes/character-cutouts.js";
 import { startCharacterCutoutDispatcher } from "./services/character-cutout-dispatcher.js";
 import { renderExecutionConfig } from "@influence/engine/render-execution-config";
-import { remoteRenderingEnabled, startRenderWakeDispatcher } from "./services/postgame-media-execution.js";
+import { startRenderWakeDispatcher } from "./services/postgame-media-execution.js";
 import { startHouseCutWorker } from "./services/house-cut-worker.js";
 import { startAgentScreeningWorker } from "./services/agent-screening-worker.js";
 import { createAgentScreeningProvider } from "./services/agent-screening-provider.js";
@@ -518,7 +518,7 @@ async function finishBackgroundRuntimeStartup(
     : null;
   executionScanTimer?.unref();
 
-  const renderWakeDispatcher = gameExecutionWorker && remoteRenderingEnabled()
+  const renderWakeDispatcher = gameExecutionWorker
     ? startRenderWakeDispatcher(db, () => !stopping && runtimeActivation.canClaimWork())
     : null;
 

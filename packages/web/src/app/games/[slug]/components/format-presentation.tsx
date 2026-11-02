@@ -4,6 +4,7 @@ import type { FormatPresentationCue, FormatPresentationRosterPlayer } from "./ty
 import { ActiveFormatLabel } from "./active-format-label";
 import { FormatBallotReveal } from "./format-ballot-reveal";
 import { FormatEmpowerVoteStage } from "./format-empower-vote-stage";
+import {FormatMenuStage} from "./format-menu-stage";
 import { FormatOfferStage } from "./format-offer-stage";
 import { FormatResolutionStage } from "./format-resolution-stage";
 import { SafetyBounceStage } from "./safety-bounce-stage";
@@ -14,11 +15,16 @@ import {resultRoom} from "./influence-rooms";
 
 export function FormatPresentation(props: Parameters<typeof FormatPresentationContent>[0]) {
   const {cue, roster} = props;
+  if(cue.kind === "format_menu" && cue.resultsPresentation && cue.compactEmpower) {
+    const player=roster.find(player=>player.id===cue.empoweredId);
+    if(!player) throw new Error("Format menu references a missing Empowered player");
+    return <ResultStage packed background={resultRoom(cue.phase)}><FormatMenuStage player={player} offeredFormatIds={cue.offeredFormatIds} /></ResultStage>;
+  }
   const specialized = cue.kind.startsWith("two_names_") || cue.kind.startsWith("safety_bounce_")
     || cue.after.activeFormatId === "two_names";
   const content = <FormatPresentationContent {...props} />;
   return cue.resultsPresentation && !specialized
-    ? <ResultStage players={formatResultPlayers(cue, roster)} background={resultRoom(cue.phase)}>{content}</ResultStage>
+    ? <ResultStage compactCast={cue.compactEmpower} packed={Boolean(cue.compactEmpower && (cue.kind === "empowered_tally" || cue.kind === "empowered_tie"))} players={cue.compactEmpower && (cue.kind === "empowered_tally" || cue.kind === "empowered_tie") ? [] : formatResultPlayers(cue, roster)} background={resultRoom(cue.phase)}>{content}</ResultStage>
     : content;
 }
 
@@ -40,6 +46,7 @@ function FormatPresentationContent({
   if (cue.kind === "empowered_tally" || cue.kind === "empowered_tie") {
     return (
       <FormatEmpowerVoteStage
+        compact={cue.compactEmpower}
         empoweredId={cue.kind === "empowered_tally" ? cue.empoweredId : null}
         tiedPlayerIds={cue.kind === "empowered_tie" ? cue.tiedPlayerIds : []}
         resolutionMethod={cue.kind === "empowered_tally" ? cue.resolutionMethod : undefined}

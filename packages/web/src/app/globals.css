@@ -956,3 +956,18 @@ a {
   background-color: rgba(12, 8, 20, .65);
   border-color: rgba(226, 190, 112, .25);
 }
+
+/* Keep combined results readable in short viewports; the stage already contains the cast. */
+@media (max-height: 600px) {
+  [data-testid="match-watch-shell"]:has([data-house-message], [data-house-result], [data-result-stage], [data-werewolf-ending], [data-winner-scene]) > a[href="/get-mcp"],
+  [data-testid="match-watch-shell"]:has([data-house-message], [data-house-result], [data-result-stage], [data-werewolf-ending], [data-winner-scene]) > footer,
+  [data-testid="match-watch-shell"]:has([data-house-message], [data-house-result], [data-result-stage], [data-werewolf-ending], [data-winner-scene]) [data-watch-mobile-cast] {
+    display: none;
+  }
+}
+
+/* In-flow House captions already own their space; old overlays needed clearance. */
+[data-house-result-scene] [data-night-role],
+[data-house-result-scene] [data-night-hunt] { padding: 8px !important; gap: 8px; }
+[data-house-result-scene] [data-village-elimination],
+[data-house-result-scene] [data-night-elimination] { padding: 8px; gap: 8px; }

@@ -158,7 +158,21 @@ The initial staging stack allows one trailer and one Studio execution. Each task
 | Tailscale OAuth | Existing staging-only SSM parameter, broker-only. Worker and sidecar do not receive OAuth. |
 | Runtime permissions boundary | New reviewed `HouseRenderBatch...RuntimeBoundary` under the staging protected policy path; supplied by ARN, never created by the runtime stack. |
 
-Before deploying, review and apply the separate IAM change: the existing direct-ECS deploy role/boundary does not authorize this stack. Companion source `house-render-batch-iam.ts` defines the retained runtime boundary and an additive CloudFormation execution permission proposal; `house-render-batch-staging-iam-app.ts` synthesizes that boundary. Review the four role names under `/house/render/staging/runtime/`, Batch resource actions, `batch:TagResource`, asset prefix `house-render/staging/batch/`, workflow stack allowlist, and the service-linked-role prerequisite. Reuse the foundation's imported subnets/security group and exact staging ECR worker/sidecar repositories. No deployment, new persistent authority or credential installation has occurred in this task.
+Before deploying, review and apply the separate IAM change: the existing direct-ECS deploy role/boundary does not authorize this stack. Companion source `house-render-batch-iam.ts` defines the retained runtime boundary and dedicated `HouseRenderBatchStagingGitHubDeploy` / `HouseRenderBatchStagingCloudFormationExecution` roles; `house-render-batch-staging-iam-app.ts` synthesizes the operator-owned IAM stack. Review `docs/batch-deployment-access-staging.json`, the four runtime role names under `/house/render/staging/runtime/`, Batch resource actions, `batch:TagResource`, asset prefix `house-render/staging/batch/`, workflow stack allowlist, and the existing Batch service-linked-role prerequisite. Reuse the foundation's imported subnets/security group and exact staging ECR worker/sidecar repositories. No deployment, new persistent authority or credential installation has occurred in this task.
+
+The new manual `house-render-batch-staging-deploy.yml` workflow packages and
+verifies `HouseRenderBatch-staging` before using its dedicated deploy role. It
+accepts exact worker/sidecar image references and parameter ARNs, never secret
+values. `scripts/render-deploy.py --environment staging --renderer batch`
+rejects old-renderer/production replay, foreign asset destinations, changed
+checksums and an unprotected runtime role. The existing renderer workflow remains
+available during migration. The host capability PR accepts workload targets and
+checks selected Batch runtime credentials and the exact release-family worker
+digest before draining staging services. Neither source merge selects Batch.
+
+See [release preparation](batch-render-release-preparation.md) for the coordinated
+three-repository landing order and the acceptance boundary while localhost
+evaluation remains underway.
 
 Credential-free companion checks:
 

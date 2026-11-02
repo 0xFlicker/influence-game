@@ -16,7 +16,8 @@ import {createRenderJobRoutes} from "../routes/render-jobs";
 import {createPostgameMediaWorkerRoutes} from "../routes/postgame-media-worker";
 import {createMcpRoutes} from "../routes/mcp";
 import {createProductionGameMcpServer} from "../game-mcp/server";
-import {renderJob,renderExecutionToken,verifyPendingRenders} from "../services/render-jobs";
+import {renderJob,renderExecutionToken} from "../services/render-jobs";
+import {startRenderWakeDispatcher} from "../services/postgame-media-execution";
 import {readJson} from "../services/payload-storage";
 import {recordCurrentLegalAcceptance} from "../services/legal-acceptance";
 import {MCP_OAUTH_CLIENT_ID,MCP_OAUTH_AUDIENCE,MCP_OAUTH_PURPOSE,hashOpaqueSecret} from "../services/mcp-oauth";
@@ -39,7 +40,7 @@ const directory=resolve(".renders",`order-proof-${Date.now()}`);await mkdir(dire
 const execution:RenderExecution=native?{environment:"development",mode:"local",network:"direct",configDigest:process.env.RENDER_JOB_WORKER_DIGEST}
   :{environment:"staging",mode:"remote",network:"tailnet",configDigest:process.env.RENDER_JOB_WORKER_DIGEST,targets:{trailer:"existing","studio-export":"aws-batch"}};
 process.env.POSTGAME_MEDIA_WORKER_TOKEN=crypto.randomUUID();
-let api:ReturnType<typeof Bun.serve>|undefined,proxy:ReturnType<typeof Bun.serve>|undefined,verifier:ReturnType<typeof setInterval>|undefined,workerEnv:string|undefined;
+let api:ReturnType<typeof Bun.serve>|undefined,proxy:ReturnType<typeof Bun.serve>|undefined,verifier:ReturnType<typeof startRenderWakeDispatcher>|undefined,workerEnv:string|undefined;
 let monitor:Awaited<ReturnType<typeof openLocalRenderMonitor>>|undefined;
 try {
   await admin.unsafe(`CREATE DATABASE ${name}`);
@@ -58,7 +59,7 @@ try {
     const url=new URL(request.url);if(![origin,endpoint.origin].includes(url.origin))return new Response("Forbidden",{status:403});
     return fetch(url,{method:request.method,headers:request.headers,body:request.body,redirect:"manual"});
   }});
-  let verifying=false;verifier=setInterval(()=>{if(verifying)return;verifying=true;verifyPendingRenders(db).finally(()=>{verifying=false;});},1000);
+  verifier=startRenderWakeDispatcher(db,()=>true);
   if(process.argv.includes("--browser"))monitor=await openLocalRenderMonitor(origin,fixture.producer.token,directory);
   async function rpc<T>(tool:string,args:unknown):Promise<T> {
     const response=await fetch(`${origin}/mcp`,{method:"POST",headers:{Authorization:`Bearer ${bearer}`,"Content-Type":"application/json",Accept:"application/json, text/event-stream"},
@@ -106,7 +107,7 @@ try {
 } finally {
   await cleanupE2eResources([
     ["monitor browser",async()=>{await monitor?.close();}],
-    ["local servers",async()=>{if(verifier)clearInterval(verifier);api?.stop(true);proxy?.stop(true);}],
+    ["local servers",async()=>{await verifier?.stop();api?.stop(true);proxy?.stop(true);}],
     ["worker credentials",async()=>{if(workerEnv)await rm(workerEnv,{force:true});}],
     ["database connection",()=>closeDB(connection.toString())],
     ["proof database",async()=>{await admin.unsafe(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);}],

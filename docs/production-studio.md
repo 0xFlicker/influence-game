@@ -35,6 +35,13 @@ OAuth consent in addition to current Producer/Sysop authority. `producer:edit`
 continues to cover tags only. No missing media is generated. See [the staging
 runbook](deployment/batch-render-staging.md) for activation, consent and CORS setup.
 
+**Contributor requirement:** every presentation change must also reach Studio
+Source, Selected cut and encoded exports in the same branch. Follow the mandatory
+[presentation parity checklist](presentation-parity.md), including isolated cuts,
+recorded/unrecorded captions, actual export geometry and fresh render evidence.
+An updated viewer component does not prove that Studio's adapters supply its data
+or props. Missing parity is unfinished work, not a post-merge follow-up.
+
 Werewolf ballot shots and their thinking close-ups share the voting backdrop in
 Studio and offline exports. Camera focus must not switch the scene to the daytime
 village. Existing encoded movies require a new export to receive this presentation fix;

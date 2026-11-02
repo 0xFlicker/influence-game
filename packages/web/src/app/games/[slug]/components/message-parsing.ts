@@ -108,6 +108,8 @@ export function wsEntryToTranscriptEntry(
     id,
     entrySequence: entry.entrySequence,
     dialogueKind: entry.dialogueKind,
+    allianceIntroduction: entry.allianceIntroduction,
+    allianceSession: entry.allianceSession,
     firstDurableEventSequence: entry.firstDurableEventSequence,
     speakerPlayerId: entry.speakerPlayerId,
     presentationPurpose: entry.presentationPurpose,

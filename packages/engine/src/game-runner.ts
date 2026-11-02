@@ -1,5 +1,5 @@
 import {resolveInfluenceGameDecisionVersion} from "./influence-game-schema";
-import { beginAllianceHuddleWindow, advanceHuddleConversation } from "./phases/alliances";
+import { beginAllianceHuddleWindow, advanceHuddleConversation, emitAllianceIntroductions } from "./phases/alliances";
 import { conversationPolicy } from "./open-conversation";
 import { seededRandom } from "./seeded-random";
 import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
@@ -931,6 +931,7 @@ export class GameRunner {
       case "pre_vote_huddle":
         return Phase.PRE_VOTE_HUDDLE;
       case "vote":
+      case "empower_runoff":
       case "reckoning_vote":
       case "tribunal_vote":
         return Phase.VOTE;
@@ -1680,6 +1681,7 @@ export class GameRunner {
         await this.executeDurableTurn({
           branch: "engine",
           action: "empower-tally",
+          houseBeat: this.requireHouseBeat("empower_runoff"),
         }, async (ctx) => {
           const tally = await tallyEmpowerVote(ctx);
           return tally.tied
@@ -1946,8 +1948,22 @@ export class GameRunner {
         const speakerId = cursor.progress.conversation && !cursor.progress.conversation.ended ? cursor.progress.conversation.nextActorId : undefined;
         await this.executeDurableTurn({ branch: speakerId ? "single_provider" : "engine", action: "huddle-conversation", actorIds: speakerId ? [speakerId] : [],
           providerActions: speakerId ? [{ actorId: speakerId, action: "alliance-huddle-turn", contractId: "agent-huddle-conversation-v1" }] : [],
-        }, async (ctx, scratchActor) => {
+        }, async (ctx) => {
           if (cursor.progress.index < cursor.progress.scheduleIds.length) return { ...cursor, progress: await advanceHuddleConversation(ctx, cursor.progress) };
+          return { version: 1, kind: "alliance_introductions", completion: cursor.completion, scheduleIds: [...cursor.progress.scheduleIds], authored: false };
+        });
+        continue;
+      }
+
+      if (phase === "format_mingle" && cursor.kind === "alliance_introductions") {
+        await this.executeDurableTurn({ branch: "engine", action: cursor.authored ? "alliance-social-complete" : "house-alliance-introductions", actorIds: [],
+          providerActions: !cursor.authored && cursor.scheduleIds.length > 0
+            ? [{ actorId: null, action: "house-alliance-introductions", contractId: "house-alliance-introductions-v1" }] : [],
+        }, async (ctx, scratchActor) => {
+          if (!cursor.authored) {
+            await emitAllianceIntroductions(ctx, cursor.scheduleIds, Phase.FORMAT_MINGLE);
+            return { ...cursor, authored: true };
+          }
           if (cursor.completion === "format_resolve") {
             scratchActor.send({ type: "PHASE_COMPLETE" });
             await new Promise(resolve => setTimeout(resolve, 0));
@@ -2433,7 +2449,7 @@ export class GameRunner {
       } else if (state === "lobby") {
         await runLobbyPhase(prc, actor);
       } else if (state === "vote") {
-        await runVotePhase(prc, actor);
+        await runVotePhase(prc, actor, () => this.emitHousePhaseBeat("empower_runoff", Phase.VOTE, "ordinary"));
       } else if (state === "format_menu") {
         await runFormatMenuPhase(prc, actor);
       } else if (state === "format_pick") {
@@ -2933,9 +2949,8 @@ export class GameRunner {
       return continuity;
     }
     const projection = context.gameState.getDomainProjection();
-    const events = context.gameState.getCanonicalEventsAfter(
-      continuity.examinedCanonicalHead,
-    );
+    const events = context.gameState.getCanonicalEvents();
+    if (actorCoordinate === "empower_runoff" && !events.some(event => event.round === round && event.type === "vote.empower_tally_resolved" && event.payload.method === "tie_pending")) return continuity;
     const narrationContext = compileHouseNarrationContext({
       playerGendersById: Object.fromEntries(context.gameState.getAllPlayers().map(player => [player.id, player.gender ?? null])),
       empowerRevoteVersion: context.gameState.empowerRevoteVersion,

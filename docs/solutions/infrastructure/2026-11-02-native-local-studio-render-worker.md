@@ -8,6 +8,9 @@ date: 2026-11-02
 # Native localhost Studio export worker
 
 The ordinary local render poller now handles Studio exports as well as trailers.
+The game-worker runtime also runs the shared output reconciler in local mode;
+accepted verification survives renderer exit. See the
+[finalization recovery](2026-11-02-native-render-finalization-recovery.md).
 Use `bun run dev:render-worker` alongside the API and web, then choose
 **Selected cut → Export → Render video**. The export remains visible at
 `/admin/production/renders`, including orders placed over MCP with

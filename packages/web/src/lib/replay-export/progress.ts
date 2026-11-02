@@ -21,8 +21,11 @@ export function createRenderProgress({ stream = process.stderr, now = () => perf
     if (final === undefined && (stream.isTTY
       ? time - lastPrinted < 250
       : bucket === lastBucket && time - lastPrinted < 30_000)) return;
-    const estimate = fraction > 0 && elapsed >= 3000
-      ? Math.max(frameEstimate, elapsed * (1 - fraction) / fraction) : null;
+    // Remotion rounds overall progress to whole percent steps. Long movies can
+    // render for minutes at 0% while already supplying a useful frame ETA.
+    const estimate = elapsed < 3000 ? null : fraction > 0
+      ? Math.max(frameEstimate, elapsed * (1 - fraction) / fraction)
+      : frameEstimate > 0 ? frameEstimate : null;
     const remaining = final === true ? "00:00" : estimate === null ? "estimating…" : `~${duration(estimate, true)}`;
     const label = final === false ? "Stopped" : final === true ? "Rendered" : stage;
     const detail = `${percent}% | ${duration(elapsed)} elapsed | ${remaining} left`;

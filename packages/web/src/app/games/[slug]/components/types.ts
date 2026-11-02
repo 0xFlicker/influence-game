@@ -140,6 +140,7 @@ export interface FormatPresentationSnapshot {
 interface SpeechCue {
   /** Frozen presentation revision: absent on previously prepared exports. */
   resultsPresentation?: true;
+  compactEmpower?: boolean;
   minimumDurationMs?: number;
   /** Accepted delivery attached to a canonical ballot; never determines its target. */
   spokenMessage?: string;

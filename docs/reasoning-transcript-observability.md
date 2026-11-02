@@ -216,6 +216,14 @@ Phase runners receive the rich result, record only the narrow game-state value w
 
 ### House-authored narrative and telemetry
 
+`house-alliance-introductions` is a direct House call after every selected alliance conversation in a social window is durably complete and before its next decision is dispatched. Its exact schema covers each non-silent session once, with a `sessionId` and at most 420 characters of teaser text. Context includes accepted canonical events, complete meeting dialogue, current-round dialogue, and older dialogue retrieved through first- and second-degree alliance membership edges. Large context uses the shared context-span compaction path; never fail a game because that source is large. No `as any` or prose-based fact/participant extraction is involved.
+
+The House may use the upcoming conversations as editorial foreknowledge and tease plans or tension. It must distinguish intent from future fact, avoid verbatim upcoming speech and conversation payoffs, and use natural meeting language rather than internal scheduling terminology. Source dialogue and thinking remain untrusted evidence. Accepted viewer copy is stored as `house_summary` with typed `allianceIntroduction` metadata and an exact first-speech anchor; browser playback, Studio and export reposition it before that conversation while preserving its durable identity. It never enters contestant context or owner transcript pages. Provider exhaustion retains attempt evidence and omits only the optional teaser. Entirely silent meetings have no introduction beat.
+
+The authoring batch commits before a separate phase-close turn. The live complete-phase publication gate therefore withholds conversations until their introductions are committed and due (and audio-ready where applicable). Recovery after the authoring commit advances to closure without another author call. Each conversation retains its own durable provider slots. Historical recordings receive alliance-name labels from structured session/event metadata, without generating new narration or changing saved history.
+
+For Audio Mode, `ensureLiveAudio` reconciles new clip identities even when a dialogue-only commit leaves the canonical head unchanged, and waits for the track's ready status before returning. The required post-commit hook (also checked before recovery starts) therefore holds phase closure until the new narration is ready. Previously accepted recordings are reused.
+
 House creative turns keep exact schemas for routing and typed failure, not for factual proof. The cadence schema contains exactly two required nullable fields: `publicSummary` and `privateNarrativeNotebook`. Long-form producer output has one authored `summary` plus optional presentation reasoning. These schemas contain no claims, aliases, receipts, source coordinates, or fact-read action.
 
 The engine validates authored copy only as presentation: expected shape, non-empty strings, control characters, and the existing 180-character ordinary / 360-character milestone beat bounds. It does not grade, rewrite, fact-check, or render the prose. Provider refusal, malformed output, or exhaustion emits no fabricated summary and preserves the prior notebook. Pending delta still follows the bounded carry/drop cadence policy.
@@ -947,3 +955,8 @@ Existing evidence is deliberately untouched: no migration, rewrite, hash replace
 or deletion. Historical ambiguous timeouts retain their original evidence. Never
 infer a timeout source from the old message alone. This change concerns gameplay
 provider journals, not separate moderation or asset-generation workflows.
+
+Empower runoff now has a separate direct House summary boundary (`empower_runoff`) after the tied tally and before any runoff ballot. Its structured focus supplies tied names/counts, eligible revoters, and the next rule; the final vote boundary still announces the resolved winner. Both calls retain strict output validation, frozen roster gender, and durable provider evidence. Review tie → announcement → runoff → result; never fabricate historical speech.
+
+
+Format-menu MC checks: the `format_menu` boundary supplies canonical `format.menu_offered` facts (Empowered player and both offered formats). Review facts plus one grounded sentence without implying the unresolved selection. Playback retains the menu during the saved summary, including historical summaries recovered from their exact committing turn. Use the localhost API for paid review, retain strict schemas and native/provider evidence, and never fabricate or regenerate historical speech.

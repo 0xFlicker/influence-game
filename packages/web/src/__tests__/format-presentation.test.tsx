@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { renderToString } from "react-dom/server";
-import { createFormatKernelViewerScenario } from "@influence/engine/fixtures/format-kernel-viewer";
+import { createFormatKernelViewerScenario, FORMAT_KERNEL_VIEWER_SCENARIO_IDS } from "@influence/engine/fixtures/format-kernel-viewer";
 import { compileFormatPresentationPrefix } from "../app/games/[slug]/components/format-presentation-model";
 import {
   FORMAT_PRESENTATION_METADATA,
@@ -21,6 +21,23 @@ const roster: FormatPresentationRosterPlayer[] = [
 ];
 
 describe("FormatPresentation", () => {
+  it("renders every legal format stage without scroll-dependent content", () => {
+    const covered = new Set<string>();
+    for (const id of FORMAT_KERNEL_VIEWER_SCENARIO_IDS.filter(id => !id.startsWith("malformed"))) {
+      const scenario = createFormatKernelViewerScenario(id);
+      const compiled = compileFormatPresentationPrefix({gameId:id,gameKernel:"format",roster:scenario.roster,
+        decisions:scenario.decisions,formatManifest:Object.keys(FORMAT_PRESENTATION_METADATA) as LaunchFormatId[]});
+      expect(compiled.diagnostic).toBeNull();
+      for (const cue of compiled.cues) {
+        const html = renderToString(<FormatPresentation cue={cue} roster={scenario.roster} currentStateEntry elapsedMs={1200} />);
+        expect(html).not.toMatch(/overflow-(?:[xy]-)?(?:auto|scroll)/);
+        covered.add(cue.kind);
+      }
+    }
+    expect(covered.has("two_names_plea")).toBeTrue();
+    expect(covered.has("safety_bounce_pointer")).toBeTrue();
+  });
+
   it("keeps Two Names visible at rest and reveals only the current ballot prefix before the result", () => {
     const scenario = createFormatKernelViewerScenario("two_names_declined");
     const compiled = compileFormatPresentationPrefix({ gameId: "two-names", gameKernel: "format", roster: scenario.roster, decisions: scenario.decisions, formatManifest: ["two_names", "vote_bomb"] });
@@ -766,3 +783,22 @@ function resolvedBefore(
 function withoutReactMarkers(html: string): string {
   return html.replaceAll("<!-- -->", "");
 }
+
+
+it("compact Empower results feature only the leaders and do not repeat the ballot ledger", async () => {
+  const {FormatEmpowerVoteStage} = await import("../app/games/[slug]/components/format-empower-vote-stage");
+  const props = {counts:{p1:2,p2:2,p3:1},roster,receipts:[]};
+  const tie = renderToString(<FormatEmpowerVoteStage {...props} compact empoweredId={null} tiedPlayerIds={["p1","p2"]} />);
+  expect(tie).toContain("2-way tie for Empower");
+  expect(tie).toContain("Lyra");
+  expect(tie).not.toContain("Echo");
+  expect(tie).toContain("Other votes:");
+  expect(tie).not.toContain("votes shown");
+  expect(tie).not.toContain("The other players revote");
+  const final = renderToString(<FormatEmpowerVoteStage {...props} compact empoweredId="p1" resolutionMethod="revote" />);
+  expect(final).toContain("Runoff result");
+  expect(final).not.toContain("Lyra");
+  const frozen = renderToString(<FormatEmpowerVoteStage {...props} empoweredId={null} tiedPlayerIds={["p1","p2"]} />);
+  expect(frozen).toContain("The other players revote");
+  expect(frozen).toContain("Echo");
+});

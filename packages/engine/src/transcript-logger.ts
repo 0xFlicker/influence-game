@@ -329,6 +329,7 @@ export class TranscriptLogger {
     reasoningContext?: string,
     huddleContext?: {
       allianceId: string;
+      allianceName?: string;
       scheduleId: string;
       sessionId: string;
       window?: string;
@@ -347,6 +348,7 @@ export class TranscriptLogger {
       sessionAudiencePlayerIds: sessionAudience,
       ...(this.visualScenes.has(fromId) && { visualScene: this.visualScenes.get(fromId) }),
       ...(huddleContext?.allianceId && { allianceId: huddleContext.allianceId }),
+      ...(huddleContext?.allianceName && { allianceName: huddleContext.allianceName }),
       ...(huddleContext?.scheduleId && { scheduleId: huddleContext.scheduleId }),
       ...(huddleContext?.sessionId && { sessionId: huddleContext.sessionId }),
       ...(huddleContext?.window && { window: huddleContext.window }),
@@ -409,6 +411,7 @@ export class TranscriptLogger {
     kind: TranscriptDialogueKind = "system_announcement",
     acceptedBallot?: TranscriptDialogueContext["acceptedBallot"],
     houseResult?: TranscriptDialogueContext["houseResult"],
+    allianceIntroduction?: TranscriptDialogueContext["allianceIntroduction"],
   ): void {
     const entry: TranscriptEntry = {
       round: this.gameState.round,
@@ -421,7 +424,7 @@ export class TranscriptLogger {
       entrySequence: this.nextDialogueSequence(),
       dialogueKind: kind,
       audiencePlayerIds: [],
-      dialogueContext: { version: 1, ...(acceptedBallot && { acceptedBallot }), ...(houseResult && { houseResult }) },
+      dialogueContext: { version: 1, ...(acceptedBallot && { acceptedBallot }), ...(houseResult && { houseResult }), ...(allianceIntroduction && { allianceIntroduction }) },
       ...(thinking && { thinking }),
       ...(reasoningContext && { reasoningContext }),
     };

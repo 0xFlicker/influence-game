@@ -38,7 +38,7 @@ export async function dispatchRenderJobs(db:DrizzleDB) {
       AND m.current_ready_render_version=${schema.renderJobs.sourceRenderVersion}
       AND m.current_ready_artifact_metadata IS NOT NULL)`);
   const expired=await db.update(schema.renderJobs).set({state:"failed",failure:"worker_lease_expired",leaseExpiresAt:null,updatedAt:new Date().toISOString()})
-    .where(sql`state IN ('rendering','uploading','verifying') AND lease_expires_at <= ${new Date().toISOString()}`).returning();
+    .where(sql`state IN ('rendering','uploading') AND lease_expires_at <= ${new Date().toISOString()}`).returning();
   for(const row of expired)await failAssignedTrailer(db,row);
   const interruptedFailures=await db.select({job:schema.renderJobs}).from(schema.renderJobs).innerJoin(schema.gamePostgameMedia,
     and(eq(schema.gamePostgameMedia.gameId,schema.renderJobs.gameId),eq(schema.gamePostgameMedia.renderVersion,schema.renderJobs.sourceRenderVersion)))

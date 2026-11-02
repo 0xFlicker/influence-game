@@ -40,7 +40,6 @@ function validateRecordingMoments(catalog:ProductionCatalog,ids:readonly string[
       throw new Error("Recording belongs to a moment outside the selected cut");
   }
 }
-
 async function validateGeneratedRecordings(db:Pick<DrizzleDB,"select">,source:Awaited<ReturnType<typeof completeSource>>,recordings:readonly ProductionRecording[]) {
   const catalog = source.catalog;
   const generated = recordings.filter(recording => recording.versionId);
@@ -105,4 +104,3 @@ export async function validateProductionSelection(db:DrizzleDB,id:string,input:u
       return {descriptor,source};
     },{isolationLevel:"repeatable read",accessMode:"read only"});
 }
-

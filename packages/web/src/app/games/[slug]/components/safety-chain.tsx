@@ -27,6 +27,15 @@ export interface SafetyChainBeat {
   speech?: VisualSpeech;
 }
 
+/** Pre-choice framing only: no future target, response text or after-state. */
+export interface SafetyChainThinkingBeat {
+  kind: "safety-chain-thinking";
+  board: SafetyBouncePresentationSnapshot;
+  actorId: string;
+  round: number;
+  roster: SafetyChainBeat["roster"];
+}
+
 /** All positions derive from the accepted prefix, including when entering mid-chain. */
 export function safetyChainPosition(board: SafetyBouncePresentationSnapshot, id: string, mobile = false) {
   const complete = board.benchPlayerIds.length === 0;
@@ -58,16 +67,18 @@ export function chainSpeechBox(width:number,height:number,face:SceneFrame): Scen
 }
 
 export function SafetyChain({beat, elapsedMs, reducedMotion = false, currentStateEntry = false, controlsInset = 0}: {
-  beat: SafetyChainBeat; elapsedMs: number; reducedMotion?: boolean; currentStateEntry?: boolean; controlsInset?: number;
+  beat: SafetyChainBeat | SafetyChainThinkingBeat; elapsedMs: number; reducedMotion?: boolean; currentStateEntry?: boolean; controlsInset?: number;
 }) {
-  const {cue, speech, roster} = beat;
+  const {roster} = beat;
+  const cue = beat.kind === "safety-chain" ? beat.cue : null;
+  const speech = beat.kind === "safety-chain" ? beat.speech : undefined;
   const thought = useSceneThinking();
-  const actorId = cue.kind === "safety_bounce_pointer" ? cue.actorId : cue.starterId;
+  const actorId = beat.kind === "safety-chain-thinking" ? beat.actorId : beat.cue.kind === "safety_bounce_pointer" ? beat.cue.actorId : beat.cue.starterId;
   const actor = roster.find(player => player.id === actorId);
-  const after = cue.after.safetyBounce!;
-  const before = cue.kind === "safety_bounce_pointer" ? cue.before.safetyBounce! : after;
+  const after = beat.kind === "safety-chain-thinking" ? beat.board : beat.cue.after.safetyBounce!;
+  const before = cue?.kind === "safety_bounce_pointer" ? cue.before.safetyBounce! : after;
   const revealAt = speech ? soloPresentationDurationMs(speech.text) : 1200;
-  const reveal = !thought && (currentStateEntry || elapsedMs >= revealAt);
+  const reveal = beat.kind === "safety-chain" && !thought && (currentStateEntry || elapsedMs >= revealAt);
   const progress = !reveal ? 0 : reducedMotion || currentStateEntry ? 1 : Math.min(1, (elapsedMs - revealAt) / 1000);
   const board = progress === 1 ? after : before;
   const frame = useRef<HTMLDivElement>(null);
@@ -99,7 +110,7 @@ export function SafetyChain({beat, elapsedMs, reducedMotion = false, currentStat
     setFace(chainCharacterHead({left,top,width:area.clientWidth,height:area.clientHeight},
       body ? {width:image.naturalWidth,height:image.naturalHeight} : {width:image.offsetWidth,height:image.offsetHeight},body,head));
     setPortrait(!body);
-  },[actorId,cue.key,size.width,size.height,mediaRevision,position.x,position.y,head]);
+  },[actorId,cue?.key,size.width,size.height,mediaRevision,position.x,position.y,head]);
   const focus = thinkingFocus(size.width,size.height,face,thought?.focus ?? 0,portrait,reducedMotion);
   const beside = size.width >= 640;
   const speechBox = chainSpeechBox(size.width,size.height,face);
@@ -110,15 +121,15 @@ export function SafetyChain({beat, elapsedMs, reducedMotion = false, currentStat
   const motion = soloPresentationMotion(speech?.text ?? "", elapsedMs, false, reducedMotion);
   const activeIds = new Set([...after.safePlayerIds, ...after.vulnerablePlayerIds, ...after.benchPlayerIds]);
   const name = (id: string) => roster.find(player => player.id === id)?.name ?? id;
-  const title = cue.kind === "safety_bounce_started" ? `${name(cue.starterId)} starts the chain`
-    : reveal ? `${name(cue.actorId)} picks ${name(cue.targetId)} · ${cue.classification === "safe" ? "Safe" : "Vulnerable"}`
-      : `${name(cue.actorId)} chooses someone ${before.safePlayerIds.includes(cue.actorId) ? "Vulnerable" : "Safe"}`;
-  return <section aria-label="Safety Bounce" data-safety-chain data-chain-count={after.pointers.length} data-accepted-target={cue.kind === "safety_bounce_pointer" ? cue.targetId : undefined} data-format-cue={cue.kind} className="relative min-h-0 flex-1 overflow-hidden text-white">
+  const title = cue?.kind === "safety_bounce_started" ? `${name(cue.starterId)} starts the chain`
+    : reveal && cue?.kind === "safety_bounce_pointer" ? `${name(cue.actorId)} picks ${name(cue.targetId)} · ${cue.classification === "safe" ? "Safe" : "Vulnerable"}`
+      : `${name(actorId)} chooses someone ${before.safePlayerIds.includes(actorId) ? "Vulnerable" : "Safe"}`;
+  return <section aria-label="Safety Bounce" data-safety-chain data-chain-count={after.pointers.length} data-accepted-target={cue?.kind === "safety_bounce_pointer" ? cue.targetId : undefined} data-format-cue={cue?.kind} className="relative min-h-0 flex-1 overflow-hidden text-white">
     <div data-thinking-camera className="absolute inset-0" style={focus.mediaStyle}>
     <RoomBackdrop source={INFLUENCE_ROOMS.council} />
     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-black/40" />
     <div ref={frame} className="absolute inset-x-0 top-0" style={{bottom:controlsInset}}>
-    <header className="absolute inset-x-2 top-3 z-20 text-center"><p className="text-xs uppercase tracking-[.2em] text-amber-100"><span>Safety Bounce</span> · Round {cue.round}</p><h2 className="mt-1 text-lg font-semibold sm:text-2xl" aria-live="polite">{title}</h2></header>
+    <header className="absolute inset-x-2 top-3 z-20 text-center"><p className="text-xs uppercase tracking-[.2em] text-amber-100"><span>Safety Bounce</span> · Round {beat.kind === "safety-chain-thinking" ? beat.round : beat.cue.round}</p><h2 className="mt-1 text-lg font-semibold sm:text-2xl" aria-live="polite">{title}</h2></header>
     <div className="absolute bottom-0 left-[2%] h-[22%] w-[46%] rounded-t-2xl border border-emerald-300/40 bg-emerald-950/65"><p className="pt-1 text-center text-xs font-semibold uppercase tracking-widest text-emerald-200">Safe · {board.safePlayerIds.length}</p></div>
     <div className="absolute bottom-0 right-[2%] h-[22%] w-[46%] rounded-t-2xl border border-amber-300/40 bg-amber-950/65"><p className="pt-1 text-center text-xs font-semibold uppercase tracking-widest text-amber-200">Vulnerable · {board.vulnerablePlayerIds.length}</p></div>
     {roster.filter(player => activeIds.has(player.id)).map(player => {

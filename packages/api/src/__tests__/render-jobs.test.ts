@@ -7,6 +7,7 @@ import {setRenderObjectStorageForTests} from "../services/render-object-storage.
 import {readProductionRender} from "../game-mcp/render-contracts";
 import {grantTestAuthority} from "./rbac-fixtures";
 import {dispatchRenderJobs,reconcileBatchTrailers} from "../services/render-job-dispatch";
+import {startRenderWakeDispatcher} from "../services/postgame-media-execution";
 
 let db:DrizzleDB,verified:string[],corrupt=false;
 beforeEach(async()=> {
@@ -60,6 +61,37 @@ test("wrong image or retired execution cannot claim",async()=> {
   const a=await create();await queueRenderJob(db,a.id);
   await expect(claimRenderJob(db,a.id,"worker",`sha256:${"f".repeat(64)}`,a.executionId)).rejects.toThrow("not claimable");
   await expect(claimRenderJob(db,a.id,"worker",digest,crypto.randomUUID())).rejects.toThrow("not claimable");
+});
+test("local background reconciliation completes accepted output after worker lease expiry",async()=> {
+  const job=await create();await queueRenderJob(db,job.id);
+  const claim=await claimRenderJob(db,job.id,"local-worker",digest,job.executionId);
+  await outputTarget(db,job.id,claim.leaseToken,"e".repeat(64),100);
+  await requestRenderFinalization(db,job.id,claim.leaseToken,receipt);
+  await db.update(schema.renderJobs).set({leaseExpiresAt:new Date(0).toISOString()}).where(eq(schema.renderJobs.id,job.id));
+  const keys=["INFLUENCE_DEPLOYMENT_ENVIRONMENT","NODE_ENV","RENDER_JOB_DISPATCH_URL","RENDER_JOB_DISPATCH_SECRET"] as const;
+  const previous=Object.fromEntries(keys.map(key=>[key,process.env[key]]));
+  delete process.env.INFLUENCE_DEPLOYMENT_ENVIRONMENT;process.env.NODE_ENV="test";
+  delete process.env.RENDER_JOB_DISPATCH_URL;delete process.env.RENDER_JOB_DISPATCH_SECRET;
+  const runtime=startRenderWakeDispatcher(db,()=>true);
+  try {
+    const deadline=Date.now()+3000;
+    while((await renderJob(db,job.id)).state!=="succeeded"&&Date.now()<deadline)await Bun.sleep(10);
+    expect(await renderJob(db,job.id)).toMatchObject({state:"succeeded",progress:100,leaseExpiresAt:null});
+    expect(verified).toContain((await renderJob(db,job.id)).outputKey!);
+  } finally {
+    await runtime.stop();
+    for(const key of keys)if(previous[key]===undefined)delete process.env[key];else process.env[key]=previous[key];
+  }
+});
+test("cancellation during durable verification fences its late completion",async()=> {
+  const job=await create();await queueRenderJob(db,job.id);
+  const claim=await claimRenderJob(db,job.id,"worker",digest,job.executionId);
+  await outputTarget(db,job.id,claim.leaseToken,"e".repeat(64),100);
+  await requestRenderFinalization(db,job.id,claim.leaseToken,receipt);
+  setRenderObjectStorageForTests({upload:async()=>{throw new Error("unexpected upload");},download:async()=>{throw new Error("unexpected download");},
+    verify:async()=>{await cancelRenderJob(db,job.id);}});
+  await verifyPendingRenders(db);
+  expect((await renderJob(db,job.id)).state).toBe("cancelled");
 });
 test("retry verifies frozen objects before compute and an old retry never starts another attempt",async()=> {
   const prior=process.env.RENDER_JOB_WORKER_DIGEST;process.env.RENDER_JOB_WORKER_DIGEST=digest;

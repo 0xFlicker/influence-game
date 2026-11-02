@@ -6,6 +6,8 @@
 
 // Core types
 export * from "./types";
+export * from "./alliance-introductions";
+export * from "./alliance-introduction-presentation";
 export * from "./empower-revote-rules";
 export * from "./retrospective";
 export * from "./retrospective-progress";

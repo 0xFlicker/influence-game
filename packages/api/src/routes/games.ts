@@ -4,6 +4,7 @@ import { CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION } from "@influence/engine/i
 import { houseFullBodyUrl } from "@influence/engine/house-character-art";
 import { audioReadySequence } from "../services/audio-frontier.js";
 import { readGamePresentation } from "../services/game-presentation.js";
+import { allianceSessionPresentation } from "@influence/engine/alliance-introductions";
 import { CURRENT_EMPOWER_REVOTE_VERSION, resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import { creationModelRouting, GameModelRoutingError } from "../services/game-model-routing.js";
 import { DEFAULT_CONVERSATION_POLICY } from "@influence/engine";
@@ -1057,12 +1058,17 @@ export function createGameRoutes(db: DrizzleDB) {
     };
 
     const historicalResults = await readHistoricalHouseResults(db,gameId,rows.filter(row=>!row.safeContext?.houseResult));
+    const allianceHistory = rows.some(row => row.safeContext?.sessionId && !row.safeContext.allianceName)
+      ? await getPersistedGameEvents(db, gameId) : null;
+    const allianceEvents = allianceHistory?.status === "complete" ? allianceHistory.events.map(event => event.envelope) : [];
     const entries = rows.filter(row => row.scope !== "huddle" || isSpectatorHuddleSpeech({ ...row, dialogueContext: row.safeContext })).map((row) => {
       const roomMetadata = parseJsonOrNull(row.roomMetadata);
       return {
         id: row.id,
         entrySequence: row.entrySequence ?? undefined,
         dialogueKind: row.dialogueKind,
+        allianceIntroduction: row.safeContext?.allianceIntroduction,
+        allianceSession: allianceSessionPresentation(row.safeContext, allianceEvents, row.firstDurableEventSequence ?? undefined),
         firstDurableEventSequence: row.firstDurableEventSequence,
         speakerPlayerId: row.safeContext?.anonymous ? null : row.speakerPlayerId,
         anonymous: row.safeContext?.anonymous === true,

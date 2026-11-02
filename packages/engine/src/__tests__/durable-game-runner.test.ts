@@ -1120,7 +1120,16 @@ describe("GameRunner durable logical turns", () => {
       new ScriptedVoteAgent(ids[2]!, "Gamma", ids[0]!, 10, 20),
       new ScriptedVoteAgent(ids[3]!, "Delta", ids[1]!, 1, 1),
     ];
-    const runner = new GameRunner(agents, TEST_GAME_CONFIG, undefined, {
+    const contexts: HouseNarrativeTurnContext[] = [];
+    class RunoffHouse extends TemplateHouseInterviewer {
+      override async generateHouseSummary(context: HouseNarrativeTurnContext): Promise<HouseSummaryAttemptResult> {
+        contexts.push(structuredClone(context));
+        if (context.narrationContext.boundary.actorCoordinate !== "empower_runoff") return super.generateHouseSummary(context);
+        return {status:"emitted",providerCalls:1,usage:[],boundary:context.narrationContext.boundary,
+          beat:{version:2,boundary:context.narrationContext.boundary,publicSummary:"Alpha and Beta are tied. The others will decide."},privateNarrativeNotebook:null};
+      }
+    }
+    const runner = new GameRunner(agents, TEST_GAME_CONFIG, new RunoffHouse(), {
       durableTurnStore: store,
     });
     store.onCommit = (draft) => {
@@ -1131,6 +1140,13 @@ describe("GameRunner durable logical turns", () => {
     };
 
     await expectAborted(runner.run());
+    const runoff = contexts.find(context => context.narrationContext.boundary.actorCoordinate === "empower_runoff");
+    expect(runoff?.narrationContext.resultFocus).toMatchObject({data:{empowered:null,tied:["Alpha","Beta"]}});
+    const summary = store.snapshot!.transcriptEntries.find(entry => entry.text === "Alpha and Beta are tied. The others will decide.");
+    expect(summary?.dialogueContext?.houseResult?.eventSequence).toBe(runoff?.narrationContext.resultFocus?.sequence);
+    const tallyCommit = store.committedDrafts.find(draft => draft.transcriptEntries.some(entry => entry.text === summary?.text));
+    expect(tallyCommit).toBeDefined();
+
 
     expect(
       store.snapshot!.canonicalEvents
@@ -1630,4 +1646,51 @@ it("restarts every new Safety Bounce chain commit and restores the public board 
   expect(store.snapshot!.transcriptEntries.filter(entry => entry.text === "My public deciding explanation.")).toHaveLength(1);
   expect(store.plannedIntentForAction("format-resolve")!.providerSubcalls).toEqual([expect.objectContaining({action:"format-tiebreak"})]);
   expect(store.committedActions.filter(action => action === "safety-bounce-pointer")).toHaveLength(5);
+});
+
+it("commits alliance introductions before phase closure and resumes without reauthoring or seeing the next vote", async () => {
+  const store = new MemoryDurableTurnStore();
+  const ids = Array.from({ length: 6 }, () => createUUID());
+  const names = ["Alpha", "Beta", "Gamma", "Delta", "Echo", "Foxtrot"];
+  const config = { ...TEST_GAME_CONFIG, maxRounds: 1, minPlayers: 6, formatManifest: ["vote_bomb" as const] };
+  const agents = () => ids.map((id, index) => {
+    const agent = new MockAgent(id, names[index]!);
+    agent.getAllianceAction = async (_ctx, opportunity) => opportunity.kind === "response"
+      ? { action: "accept", lineageId: opportunity.lineageId, versionId: opportunity.versionId }
+      : { action: "propose", name: `${agent.name} pair`, memberNames: [agent.name, names[(index + 1) % names.length]!], purpose: "Keep our promises." };
+    return agent;
+  });
+  let calls = 0;
+  class EditorialHouse extends TemplateHouseInterviewer {
+    override async generateAllianceIntroductions(context: Parameters<TemplateHouseInterviewer["generateAllianceIntroductions"]>[0]) {
+      calls++;
+      expect(context.meetings.length).toBeGreaterThan(0);
+      expect(context.meetings.every(meeting => meeting.dialogue.length > 0)).toBeTrue();
+      expect(context.canonicalEvents.some(event => event.type === "format.ballot_cast")).toBeFalse();
+      return super.generateAllianceIntroductions(context);
+    }
+  }
+  const house = new EditorialHouse();
+  const first = new GameRunner(agents(), config, house, { durableTurnStore: store, maxRoundsMode: "exact" });
+  store.onCommit = (_draft, snapshot) => {
+    if (snapshot.execution.cursor.kind === "alliance_introductions" && snapshot.execution.cursor.authored) first.abort();
+  };
+  await expectAborted(first.run());
+  expect(calls).toBe(1);
+  const authorIndex = store.committedActions.indexOf("house-alliance-introductions");
+  const draft = store.committedDrafts[authorIndex]!;
+  expect(draft.canonicalEvents).toEqual([]);
+  expect(draft.transcriptEntries.length).toBeGreaterThan(0);
+  expect(store.plannedIntentForAction("house-alliance-introductions")?.providerSubcalls).toEqual([
+    expect.objectContaining({ actorId: null, action: "house-alliance-introductions", contractId: "house-alliance-introductions-v1" }),
+  ]);
+  const saved = store.snapshot!.transcriptEntries.filter(entry => entry.dialogueContext?.allianceIntroduction);
+  expect(saved).toHaveLength(draft.transcriptEntries.length);
+  expect(store.snapshot!.canonicalEvents.some(event => event.type === "format.ballot_cast")).toBeFalse();
+  const resumed = new GameRunner(agents(), config, house, { gameId: store.snapshot!.execution.gameId, durableTurnStore: store, maxRoundsMode: "exact" });
+  store.onCommit = next => { if (next.canonicalEvents.some(event => event.type === "format.ballot_cast")) resumed.abort(); };
+  await expectAborted(resumed.run());
+  expect(calls).toBe(1);
+  expect(store.snapshot!.transcriptEntries.filter(entry => entry.dialogueContext?.allianceIntroduction)).toEqual(saved);
+  expect(store.committedActions.indexOf("alliance-social-complete")).toBeGreaterThan(authorIndex);
 });

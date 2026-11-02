@@ -1,0 +1,15 @@
+.cell { position: relative; min-width: 0; container: empower-player / size; border-radius: 8px; background: #ffffff08; }
+.content { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px; padding: 2px 4px; }
+.art { display: none; position: relative; width: 100%; max-width: 320px; flex: 1; min-height: 0; }
+.art img { position: absolute; width: 100%; height: 100%; object-fit: contain; object-position: center bottom; }
+.identity { display: flex; min-width: 0; max-width: 100%; align-items: center; justify-content: center; gap: 4px; }
+.name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.count { font-size: 12px; color: #fde68a; }
+/* Measure the player's actual cell after the House caption and controls get space. */
+@container empower-player (min-width: 112px) and (min-height: 160px) {
+  .withBody { justify-content: end; padding: 8px; }
+  .withBody .art { display: block; }
+  .withBody .avatar { display: none; }
+  .withBody .name { font-size: 16px; }
+  .withBody .count { font-size: 14px; }
+}

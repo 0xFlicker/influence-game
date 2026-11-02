@@ -104,7 +104,7 @@ export async function runBatchRender(env:NodeJS.ProcessEnv=process.env) {
     for(const [path,expected] of Object.entries(manifest.staticFiles)) if((await fileIdentity(bundlePath(scratch,path))).sha256!==expected)throw new Error("Stage art checksum mismatch");
     for(const asset of Object.values(manifest.assets)) if((await fileIdentity(bundlePath(scratch,asset.path))).sha256!==asset.sha256)throw new Error("Asset checksum mismatch");
     const output=join(scratch,"video.mp4");
-    await renderReplay(manifest,scratch,output,false,abort.signal,{onProgress:value=>{progress=Math.min(95,Math.floor(value*95));}});
+    await renderReplay(manifest,scratch,output,false,abort.signal,{browserExecutable:remotionMediaOptions(env.POSTGAME_MEDIA_HTTP_PROXY?{...env,REMOTION_BROWSER_EXECUTABLE:"/usr/local/bin/chromium-tailnet"}:env).browserExecutable,onProgress:value=>{progress=Math.min(95,Math.floor(value*95));}});
     const identity=await fileIdentity(output);
     const target=await post<{url:string;headers:Record<string,string>}>("output",{leaseToken:claim.leaseToken,...identity});
     const uploaded=await fetch(target.url,{method:"PUT",redirect:"error",headers:target.headers,body:Bun.file(output),signal:abort.signal,

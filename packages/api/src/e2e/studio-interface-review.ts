@@ -26,7 +26,8 @@ export async function setStudioInput(page: Page, label: string, value: string) {
 export async function openStudioDialog(page: Page, title: StudioDialog) {
   if (await page.$(`dialog[open][aria-label="${title}"]`)) return;
   const trigger = {Presentation: "Presentation", "Local recordings": "Recordings", "Export selected cut": "Export…", "Selected cut rule": "Cut rule", "Scene versions & production": "Scene versions…", "Source settings": "Source settings", "Workspace": "Workspace"}[title];
-  if (!await page.$('dialog[open]') && ["Presentation", "Local recordings", "Source settings", "Workspace"].includes(title)) await clickStudioButton(page, "Tools");
+  // Use the stable toolbar while source loading replaces the properties pane.
+  if (!await page.$('dialog[open]') && ["Presentation", "Local recordings", "Source settings", "Workspace", "Scene versions & production"].includes(title)) await clickStudioButton(page, "Tools");
   if (title === "Selected cut rule") {
     const expression = "Array.from(document.querySelectorAll('button')).find(node => node.textContent?.trim().startsWith('Cut rule') && node.getClientRects().length > 0)";
     await page.locator(new Function(`return ${expression}`) as () => NodeFor<"button">).click();

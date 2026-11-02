@@ -1412,6 +1412,15 @@ test("Omniscient thinking visibility keeps the source pin and freezes independen
 
 test("Sysop opens game recovery from the bounded studio library without generating images", async () => {
   const page = await createAuthenticatedPage(browser, sysopToken, `${webUrl}/admin/production`);
+  let releaseSource!: () => void;
+  const sourceGate = new Promise<void>(resolve => { releaseSource = resolve; });
+  let sourceStarted!: () => void;
+  const sourceRequested = new Promise<void>(resolve => { sourceStarted = resolve; });
+  const isSource = (request: HTTPRequest) => request.url().includes(`/production/games/${gameId}/source?`);
+  const holdSource = async (request: HTTPRequest) => {
+    if (isSource(request)) { sourceStarted(); await sourceGate; }
+    if (!request.isInterceptResolutionHandled()) await request.continue();
+  };
   try {
     await page.setViewport({ width: 1440, height: 1000 });
     const open = `a[href^="/admin/production/games/${gameId}?"]`;
@@ -1419,9 +1428,16 @@ test("Sysop opens game recovery from the bounded studio library without generati
     expect(await page.$('select[aria-label="Game for replay images"]')).toBeNull();
     expect(await page.$('[aria-label="Replay image production"]')).toBeNull();
     expect(await page.$('a[href^="/admin/production/games/replay-waiting?"]')).toBeNull();
-    await page.click(open);
+    // Recovery must remain reachable before replay preparation completes. The
+    // properties-pane shortcut is replaced during that transition; use Tools.
+    await page.setRequestInterception(true); page.on("request", holdSource);
+    await page.click(open); await sourceRequested;
     await openStudioDialog(page, "Scene versions & production");
     await page.waitForSelector('[aria-label="Scene inspector"] [role="combobox"]');
+    expect(await page.$('[data-composition-frame]')).toBeNull();
+    releaseSource();
+    await page.waitForSelector('[data-composition-frame]', { visible: true });
+    expect(await page.$('dialog[open][aria-label="Scene versions & production"]')).not.toBeNull();
     expect(await page.$('[aria-label="Replay image production"]')).toBeNull();
     await clickButton(page, "Game production and recovery");
     await page.waitForSelector('dialog[open][aria-label="Game production and recovery"]');
@@ -1433,7 +1449,7 @@ test("Sysop opens game recovery from the bounded studio library without generati
     expect(await page.$('[aria-label="Replay image production"]')).toBeNull();
     expect((await database.db.select().from(schema.visualScenes)).filter(scene => scene.gameId === gameId)).toHaveLength(0);
     expect(await loadPayloads(database.db.select().from(schema.visualRepairJobs))).toHaveLength(0);
-  } finally { await page.close(); }
+  } finally { releaseSource(); await page.close(); }
 }, 60_000);
 
 test("Producer preserves exact lost-request controls, reviews and explicitly publishes from studio game tools", async () => {

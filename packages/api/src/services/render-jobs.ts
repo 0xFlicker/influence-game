@@ -130,8 +130,11 @@ export async function verifyPendingRenders(db:DrizzleDB) {
         .where(and(eq(schema.renderJobs.id,job.id),eq(schema.renderJobs.state,"verifying")));
       continue; // transport failures retain durable verification intent
     }
+    // Accepted finalization transfers ownership to the durable verifier. Worker
+    // exit/lease expiry cannot discard uploaded output; cancel/retry still fence
+    // completion through the current execution, state and lease identity.
     await db.update(schema.renderJobs).set({state:"succeeded",progress:100,leaseExpiresAt:null,updatedAt:time()})
-      .where(and(eq(schema.renderJobs.id,job.id),eq(schema.renderJobs.state,"verifying"),eq(schema.renderJobs.leaseHash,job.leaseHash!),sql`${schema.renderJobs.leaseExpiresAt} > ${time()}`));
+      .where(and(eq(schema.renderJobs.id,job.id),eq(schema.renderJobs.state,"verifying"),eq(schema.renderJobs.executionId,job.executionId),eq(schema.renderJobs.leaseHash,job.leaseHash!)));
   }
 }
 export async function cancelRenderJob(db:DrizzleDB,id:string) {

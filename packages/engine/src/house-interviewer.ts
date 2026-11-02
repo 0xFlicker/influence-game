@@ -1,5 +1,7 @@
 import { providerDeadlineSignal } from "./provider-deadline";
 import { ContextSpans } from "./context-adaptation";
+import { ALLIANCE_INTRODUCTION_INSTRUCTIONS, allianceIntroductionArtifact,
+  type AllianceIntroductionContext, type AllianceIntroductionResult } from "./alliance-introductions";
 /**
  * Influence Game - House Interviewer
  *
@@ -252,6 +254,8 @@ export interface IHouseInterviewer {
   ): Promise<HouseAllianceProposerSelectionResult>;
   /** Recommend scarce named-alliance huddles from active eligible alliances. The engine validates and repairs output. */
   planAllianceHuddles(context: HouseAllianceHuddleScheduleContext): Promise<HouseAllianceHuddleScheduleResult>;
+  /** Viewer-only teasers authored after the social window, before its next decision. */
+  generateAllianceIntroductions(context: AllianceIntroductionContext): Promise<AllianceIntroductionResult | null>;
   /** Author viewer copy and optionally replace the private House notebook. */
   generateHouseSummary(context: HouseNarrativeTurnContext): Promise<HouseSummaryAttemptResult>;
   /** Generate richer House-authored producer copy without feeding it back into game state. */
@@ -425,7 +429,7 @@ const HOUSE_SUMMARY_SYSTEM_PROMPT = `You are Influence's omniscient House showru
 
 Use playerGendersById as the authoritative frozen character gender for gendered references. Gender does not specify personal pronouns; honor explicitly stated pronouns. When gender is null or unspecified, use the player’s name instead of guessing gendered pronouns. Never infer gender from a name, appearance, dialogue, earlier summaries, or your notebook; those may contain mistakes.
 
-publicSummary is your spoken MC announcement for human viewers. When resultFocus is present, announce that resolved outcome first, including the decisive facts and the rule or tiebreak that explains it. Then add one short, grounded sentence about its significance. Aim for one factual sentence plus that additional sentence; use a second factual sentence only when a rule needs it. Vary the phrasing naturally in your own voice. Avoid stock openings, generic suspense, invented motives, and predictions of unresolved outcomes. Do not read every ledger row aloud. The result takes priority over older dialogue, private threads, and your notebook. Announce material results by default; write null when no useful public beat is needed. Without resultFocus, host the current scene concisely or remain silent. Prose is never game-state authority.
+publicSummary is your spoken MC announcement for human viewers. When resultFocus is present, announce that resolved outcome first, including the decisive facts and the rule or tiebreak that explains it. Then add one short, grounded sentence about its significance. Aim for one factual sentence plus that additional sentence; use a second factual sentence only when a rule needs it. Vary the phrasing naturally in your own voice. Avoid stock openings, generic suspense, invented motives, and predictions of unresolved outcomes. Do not read every ledger row aloud. For an empower_runoff boundary, announce who is tied and their vote totals, explain the supplied next step, and add one short grounded reaction. Do not name a winner before the runoff resolves. The result takes priority over older dialogue, private threads, and your notebook. Announce material results by default; write null when no useful public beat is needed. Without resultFocus, host the current scene concisely or remain silent. Prose is never game-state authority.
 
 privateNarrativeNotebook is your bounded, private whole-snapshot showrunner memory. Use it to preserve developing arcs, private threads, contradictions, promises, and future narrative opportunities. Write null to preserve the prior notebook unchanged. Ordinary beats should normally preserve it; milestone beats may replace it after absorbing new developments. Neither field is game-state authority, and the engine will never parse either field for facts.`;
 
@@ -1608,6 +1612,36 @@ Respond with JSON only.`;
     }
   }
 
+  async generateAllianceIntroductions(context: AllianceIntroductionContext): Promise<AllianceIntroductionResult | null> {
+    this.contextSpans.clear();
+    const artifact = allianceIntroductionArtifact(context.meetings.map(meeting => meeting.sessionId));
+    const messages: Array<{ role: "system" | "user"; content: string }> = [
+      { role: "system", content: withInfluenceGamePromptContext(ALLIANCE_INTRODUCTION_INSTRUCTIONS) },
+      { role: "user", content: JSON.stringify({ ...context,
+        canonicalEvents: this.contextSpans.json(context.canonicalEvents),
+        meetings: context.meetings.map(meeting => ({ ...meeting, dialogue: this.contextSpans.json(meeting.dialogue) })),
+        relatedAlliances: this.contextSpans.json(context.relatedAlliances),
+        recentDialogue: this.contextSpans.json(context.recentDialogue), relatedHistory: this.contextSpans.json(context.relatedHistory),
+      }) },
+    ];
+    try {
+      const { value, response } = await this.callHouseJsonSchema({
+        action: "house-alliance-introductions", artifactAction: artifact.action, source: "House/alliance-introductions",
+        round: context.round, phase: context.phase, messages, schemaName: artifact.name, schema: artifact.schema,
+        decoder: { decodeProvider: value => artifact.decodeAcceptedValue(value), decodeAccepted: value => artifact.decodeAcceptedValue(value) },
+        maxTokens: 2400, temperature: 0.7,
+      });
+      if (response) await this.emitPrivateDecisionTrace({
+        context: this.privateTraceContext("house-alliance-introductions", context.round, context.phase), messages, response, output: value,
+      });
+      return value;
+    } catch (error) {
+      // Editorial copy is optional. Provider evidence and retries have already been retained.
+      if (!(error instanceof ProviderUnavailableError)) throw error;
+      return null;
+    }
+  }
+
   async generateHouseSummary(context: HouseNarrativeTurnContext): Promise<HouseSummaryAttemptResult> {
     this.contextSpans.clear();
     const narration = context.narrationContext;
@@ -2070,6 +2104,11 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
         })),
       rationale: "Template House used deterministic active-alliance order.",
     };
+  }
+
+  async generateAllianceIntroductions(context: AllianceIntroductionContext): Promise<AllianceIntroductionResult> {
+    return { introductions: context.meetings.map(meeting => ({ sessionId: meeting.sessionId,
+      text: `${meeting.allianceName} comes together with a decision ahead and promises to weigh.` })) };
   }
 
   async generateHouseSummary(context: HouseNarrativeTurnContext): Promise<HouseSummaryAttemptResult> {

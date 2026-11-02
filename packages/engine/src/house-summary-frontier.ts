@@ -10,7 +10,7 @@ import { Phase, type AgentGender, type UUID } from "./types";
 export const HOUSE_NARRATIVE_CONTINUITY_VERSION = 2 as const;
 
 export const HOUSE_SUMMARY_ACTOR_COORDINATES = [
-  "introduction", "lobby", "vote", "format_menu", "format_pick", "format_mingle",
+  "introduction", "lobby", "vote", "empower_runoff", "format_menu", "format_pick", "format_mingle",
   "format_resolve", "post_vote_mingle", "power", "reveal", "pre_council_huddle",
   "council", "reckoning_lobby", "reckoning_plea", "reckoning_vote", "tribunal_lobby",
   "tribunal_accusation", "tribunal_defense", "tribunal_vote", "judgment_opening",
@@ -20,12 +20,14 @@ export const HOUSE_SUMMARY_ACTOR_COORDINATES = [
 export type HouseSummaryActorCoordinate = (typeof HOUSE_SUMMARY_ACTOR_COORDINATES)[number];
 /** Exact result event owned by each MC boundary, including historical durable turns. */
 export const HOUSE_RESULT_EVENTS: Partial<Record<HouseSummaryActorCoordinate, CanonicalGameEventType>> = {
-  vote: "vote.empower_tally_resolved", format_pick: "format.selected", format_resolve: "format.resolved",
+  empower_runoff: "vote.empower_tally_resolved",
+  vote: "vote.empower_tally_resolved", format_menu: "format.menu_offered", format_pick: "format.selected", format_resolve: "format.resolved",
   power: "power.candidates_resolved", council: "council.elimination_resolved",
   reckoning_vote: "endgame.elimination_resolved", tribunal_vote: "endgame.elimination_resolved", judgment_jury_vote: "jury.winner_determined",
 };
 /** Empower can finish at its initial tally or a later accepted revote/wheel assignment. */
 export function selectHouseResultEvent(actor:HouseSummaryActorCoordinate, events:readonly CanonicalGameEvent[], round:number):CanonicalGameEvent|null {
+  if (actor === "empower_runoff") return events.findLast(event => event.round === round && event.type === "vote.empower_tally_resolved" && event.payload.method === "tie_pending") ?? null;
   if (actor !== "vote") return events.findLast(event=>event.round===round && event.type===HOUSE_RESULT_EVENTS[actor]) ?? null;
   let result:CanonicalGameEvent|null=null, pending=false;
   for (const event of events) {
@@ -629,10 +631,10 @@ export function compileHouseNarrationContext(input: CompileHouseNarrationContext
   const resultEvent = selectHouseResultEvent(input.actorCoordinate,deltaEvents,input.round);
   const focalEvent = resultEvent ? narrationEvent(resultEvent, input.projection) : null;
   if (focalEvent && resultEvent?.type === "vote.empowered_set") {
-    const pending = deltaEvents.findLast(event=>event.round===input.round && event.sequence<resultEvent.sequence && event.type==="vote.empower_tally_resolved");
+    const pending = input.events.findLast(event=>event.round===input.round && event.sequence<resultEvent.sequence && event.type==="vote.empower_tally_resolved");
     if (pending?.type === "vote.empower_tally_resolved" && pending.payload.tied) {
       const active=new Map<string,string>(), revotes=new Map<string,string>();
-      for (const event of deltaEvents) {
+      for (const event of input.events) {
         if (event.round !== input.round || event.sequence >= resultEvent.sequence) continue;
         if (event.type === "vote.cast") active.set(event.payload.voterId,event.payload.empowerTarget);
         if (event.type === "vote.empower_vote_cleared") active.delete(event.payload.voterId);
@@ -642,6 +644,11 @@ export function compileHouseNarrationContext(input: CompileHouseNarrationContext
       const tally=tallyEmpowerRevote(version,pending.payload.tied,active,revotes);
       focalEvent.data={...focalEvent.data,counts:namedCounts(input.projection,tally.counts),countedRule:version===2?"new revote ballots only":"active ballots"};
     }
+  }
+  if (focalEvent && input.actorCoordinate === "empower_runoff" && resultEvent?.type === "vote.empower_tally_resolved") {
+    const tied = resultEvent.payload.tied ?? [];
+    const eligible = input.projection.playerOrder.filter(id => input.projection.players[id]?.status === "alive" && !tied.includes(id));
+    focalEvent.data = {...focalEvent.data, empowered: null, eligibleRevoters: eligible.map(id => playerName(input.projection, id)), nextStep: eligible.length ? "The other living players revote between the tied players; tied players do not vote." : "No eligible revoters remain; the tiebreak wheel will decide."};
   }
   const resultFocus = focalEvent && resultEvent ? {...focalEvent, ...((resultEvent.type === "format.selected" || resultEvent.type === "format.resolved") && {rule:FORMAT_PRESENTATION_METADATA[resultEvent.payload.formatId].conciseRules})} : null;
   return {
