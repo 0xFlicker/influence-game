@@ -1120,7 +1120,16 @@ describe("GameRunner durable logical turns", () => {
       new ScriptedVoteAgent(ids[2]!, "Gamma", ids[0]!, 10, 20),
       new ScriptedVoteAgent(ids[3]!, "Delta", ids[1]!, 1, 1),
     ];
-    const runner = new GameRunner(agents, TEST_GAME_CONFIG, undefined, {
+    const contexts: HouseNarrativeTurnContext[] = [];
+    class RunoffHouse extends TemplateHouseInterviewer {
+      override async generateHouseSummary(context: HouseNarrativeTurnContext): Promise<HouseSummaryAttemptResult> {
+        contexts.push(structuredClone(context));
+        if (context.narrationContext.boundary.actorCoordinate !== "empower_runoff") return super.generateHouseSummary(context);
+        return {status:"emitted",providerCalls:1,usage:[],boundary:context.narrationContext.boundary,
+          beat:{version:2,boundary:context.narrationContext.boundary,publicSummary:"Alpha and Beta are tied. The others will decide."},privateNarrativeNotebook:null};
+      }
+    }
+    const runner = new GameRunner(agents, TEST_GAME_CONFIG, new RunoffHouse(), {
       durableTurnStore: store,
     });
     store.onCommit = (draft) => {
@@ -1131,6 +1140,13 @@ describe("GameRunner durable logical turns", () => {
     };
 
     await expectAborted(runner.run());
+    const runoff = contexts.find(context => context.narrationContext.boundary.actorCoordinate === "empower_runoff");
+    expect(runoff?.narrationContext.resultFocus).toMatchObject({data:{empowered:null,tied:["Alpha","Beta"]}});
+    const summary = store.snapshot!.transcriptEntries.find(entry => entry.text === "Alpha and Beta are tied. The others will decide.");
+    expect(summary?.dialogueContext?.houseResult?.eventSequence).toBe(runoff?.narrationContext.resultFocus?.sequence);
+    const tallyCommit = store.committedDrafts.find(draft => draft.transcriptEntries.some(entry => entry.text === summary?.text));
+    expect(tallyCommit).toBeDefined();
+
 
     expect(
       store.snapshot!.canonicalEvents

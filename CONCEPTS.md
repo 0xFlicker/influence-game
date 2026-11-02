@@ -1022,3 +1022,5 @@ For quality evaluation, inspect a sequence of recorded announcements for correct
 ### Provider image reference and request deadline
 
 A provider image reference identifies immutable private image bytes by SHA-256, byte length and media type. It is stable game-context/evidence data; a signed URL is temporary transport access and never context authority. A client deadline means The House stopped waiting; a provider-reported timeout means the remote API explicitly returned a timeout. Neither alone proves remote billing stopped. New API gameplay evidence distinguishes these sources; historical evidence remains unchanged.
+
+Empower result screens emphasize the winner or tied cast and their totals, with other votes combined. Detailed voter receipts remain in the preceding ballot view. Live playback and new composition-v7 exports use this compact layout; pinned v3–v6 exports retain their layouts. The House can announce a pending runoff separately from its eventual winner.

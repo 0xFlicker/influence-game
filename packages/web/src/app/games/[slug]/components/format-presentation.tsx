@@ -18,7 +18,7 @@ export function FormatPresentation(props: Parameters<typeof FormatPresentationCo
     || cue.after.activeFormatId === "two_names";
   const content = <FormatPresentationContent {...props} />;
   return cue.resultsPresentation && !specialized
-    ? <ResultStage players={formatResultPlayers(cue, roster)} background={resultRoom(cue.phase)}>{content}</ResultStage>
+    ? <ResultStage compactCast={cue.compactEmpower} packed={Boolean(cue.compactEmpower && (cue.kind === "empowered_tally" || cue.kind === "empowered_tie"))} players={cue.compactEmpower && (cue.kind === "empowered_tally" || cue.kind === "empowered_tie") ? [] : formatResultPlayers(cue, roster)} background={resultRoom(cue.phase)}>{content}</ResultStage>
     : content;
 }
 
@@ -40,6 +40,7 @@ function FormatPresentationContent({
   if (cue.kind === "empowered_tally" || cue.kind === "empowered_tie") {
     return (
       <FormatEmpowerVoteStage
+        compact={cue.compactEmpower}
         empoweredId={cue.kind === "empowered_tally" ? cue.empoweredId : null}
         tiedPlayerIds={cue.kind === "empowered_tie" ? cue.tiedPlayerIds : []}
         resolutionMethod={cue.kind === "empowered_tally" ? cue.resolutionMethod : undefined}

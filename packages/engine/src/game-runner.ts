@@ -931,6 +931,7 @@ export class GameRunner {
       case "pre_vote_huddle":
         return Phase.PRE_VOTE_HUDDLE;
       case "vote":
+      case "empower_runoff":
       case "reckoning_vote":
       case "tribunal_vote":
         return Phase.VOTE;
@@ -1680,6 +1681,7 @@ export class GameRunner {
         await this.executeDurableTurn({
           branch: "engine",
           action: "empower-tally",
+          houseBeat: this.requireHouseBeat("empower_runoff"),
         }, async (ctx) => {
           const tally = await tallyEmpowerVote(ctx);
           return tally.tied
@@ -2433,7 +2435,7 @@ export class GameRunner {
       } else if (state === "lobby") {
         await runLobbyPhase(prc, actor);
       } else if (state === "vote") {
-        await runVotePhase(prc, actor);
+        await runVotePhase(prc, actor, () => this.emitHousePhaseBeat("empower_runoff", Phase.VOTE, "ordinary"));
       } else if (state === "format_menu") {
         await runFormatMenuPhase(prc, actor);
       } else if (state === "format_pick") {
@@ -2933,9 +2935,8 @@ export class GameRunner {
       return continuity;
     }
     const projection = context.gameState.getDomainProjection();
-    const events = context.gameState.getCanonicalEventsAfter(
-      continuity.examinedCanonicalHead,
-    );
+    const events = context.gameState.getCanonicalEvents();
+    if (actorCoordinate === "empower_runoff" && !events.some(event => event.round === round && event.type === "vote.empower_tally_resolved" && event.payload.method === "tie_pending")) return continuity;
     const narrationContext = compileHouseNarrationContext({
       playerGendersById: Object.fromEntries(context.gameState.getAllPlayers().map(player => [player.id, player.gender ?? null])),
       empowerRevoteVersion: context.gameState.empowerRevoteVersion,

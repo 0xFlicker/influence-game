@@ -8,6 +8,7 @@ import {projectWerewolfProductionWatch} from "@influence/engine/werewolf/watch";
 import {WerewolfContentFrame} from "../components/games/werewolf/werewolf-watch-stage";
 import {villageEliminationFrame} from "../components/games/werewolf/werewolf-vote-outcome";
 import type {WerewolfWatchMoment} from "@influence/engine/werewolf/watch-contract";
+import {WerewolfEnding} from "../components/games/werewolf/werewolf-ending";
 import {SoloPresentation} from "../app/games/[slug]/components/solo-presentation";
 import {SampledStageProvider} from "../components/watch/sampled-stage";
 
@@ -100,3 +101,18 @@ test("House owns backdrop-only scenes and every private action has its own spoke
     }
   }
 });
+
+ test("current captions use the shared logo box while frozen narration retains its layout",()=>{
+  const html=renderToStaticMarkup(<HouseNarration readable text="The vote is tied." window={{elapsedMs:1000,durationMs:5000}}/>);
+  expect(html).toContain("data-house-message-logo");
+  expect(html).toContain("data-speech-page-copy");
+  expect(html.match(/alt="The House"/g)).toHaveLength(1);
+ });
+ test("compact Werewolf ending keeps all twelve identities and canonical outcomes",()=>{
+  const players=Array.from({length:12},(_,index)=>({id:String(index),name:`Player ${index}`,personaKey:null,avatarUrl:null,alive:index<3,role:"villager" as const,...(index>=3 ? {elimination:{day:index,kind:"vote" as const}} : {})}));
+  const snapshot={...moment.snapshot,players,outcome:{faction:"village" as const,winnerIds:players.map(p=>p.id),reason:"wolves_eliminated" as const}};
+  const html=renderToStaticMarkup(<WerewolfEnding compact snapshot={snapshot} backgroundUrl="/room.png"/>);
+  for(const player of players) expect(html).toContain(player.name);
+  expect(html).toContain("Day 11");expect(html).toContain("Survived");
+  expect(html).not.toContain("How the game unfolded");
+ });

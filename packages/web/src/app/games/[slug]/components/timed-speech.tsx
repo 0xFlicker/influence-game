@@ -7,7 +7,7 @@ import { visualSpeechDurationMs, VISUAL_SPEECH_FADE_MS } from "@influence/engine
 import { cleanSpeechPage, paginateSpeech, speechPageIndex } from "./speech-pages";
 
 /** Measured pages use the existing beat's reading position, never their own timer. */
-export function TimedSpeech({ text, elapsedMs, className = "", typography }: { typography?: BubbleTypography | null; text: string; elapsedMs: number; className?: string; onNaturalHeight?: (height: number) => void }) {
+export function TimedSpeech({ text, elapsedMs, className = "", typography, progress }: { progress?:number; typography?: BubbleTypography | null; text: string; elapsedMs: number; className?: string; onNaturalHeight?: (height: number) => void }) {
   const sampled = useSampledStage();
   const frame = useRef<HTMLDivElement>(null);
   const measure = useRef<HTMLDivElement>(null);
@@ -43,10 +43,10 @@ export function TimedSpeech({ text, elapsedMs, className = "", typography }: { t
   }, [text, typography, frozenPages, capturePages]);
   const pages = typography?.pages ?? (pagination.text === text ? pagination.pages : [text]);
   const readingDuration = visualSpeechDurationMs(text) - 2 * VISUAL_SPEECH_FADE_MS;
-  const page = sampled?.speech?.text === text ? alignedPage(pages,text,sampled.speech.alignment,sampled.speech.elapsedMs) : speechPageIndex(pages, (elapsedMs - VISUAL_SPEECH_FADE_MS) / readingDuration);
+  const page = sampled?.speech?.text === text ? alignedPage(pages,text,sampled.speech.alignment,sampled.speech.elapsedMs) : speechPageIndex(pages, progress ?? (elapsedMs - VISUAL_SPEECH_FADE_MS) / readingDuration);
   return <div ref={frame} className={`relative min-h-0 flex-1 ${className}`} style={typography ? {fontSize:typography.fontSize,lineHeight:typography.lineHeight} : undefined}>
     <div ref={measure} aria-hidden="true" className="pointer-events-none invisible absolute inset-x-0 top-0 whitespace-pre-wrap [overflow-wrap:anywhere]" />
-    <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{cleanSpeechPage(pages, page)}</div>
+    <div data-speech-page-copy className="whitespace-pre-wrap [overflow-wrap:anywhere]">{cleanSpeechPage(pages, page)}</div>
     {pages.length > 1 && <div aria-label={`Page ${page + 1} of ${pages.length}`} className="absolute right-0 text-xs leading-5 text-white/50" style={typography && typography.footerHeight === 0 ? {top:-typography.headerHeight} : {bottom:0}}>{page + 1} / {pages.length}</div>}
   </div>;
 }

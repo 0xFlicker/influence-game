@@ -13,3 +13,5 @@ The current provider journal does not retain a recoverable prepared request body
 Rollback after starting new-version games requires the same drain discipline. Never resume a new-version unfinished call on an older prompt implementation.
 
 No historical content migration or speech regeneration is required. Existing games receive scenery, cast treatment, readable timing, and exact result association where durable evidence supports it. Missing or ambiguous associations retain speech at its original position over the phase room. Frozen cuts are never silently upgraded; prepare a fresh snapshot for the improved export.
+
+The compact Empower follow-up adds an `empower_runoff` House call inside the vote phase and composition version 7 for fresh exports. Apply the same drained-game prerequisite before deploying this cadence change. Old games get compact playback without generating new historical summaries or audio; pinned composition versions 3–6 are unchanged.

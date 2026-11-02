@@ -408,6 +408,7 @@ export function finishEmpowerVote(
 export async function runVotePhase(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
+  announceRunoff?: () => Promise<void>,
 ): Promise<void> {
   const { gameState, agents, logger, contextBuilder } = ctx;
 
@@ -521,6 +522,7 @@ export async function runVotePhase(
   if (tied) {
     const tiedNames = tied.map((id) => gameState.getPlayerName(id)).join(", ");
     logger.logSystem(`Empower TIED between: ${tiedNames}. Re-vote!`, Phase.VOTE);
+    await announceRunoff?.();
 
     const reVoters = alivePlayers.filter((p) => !tied.includes(p.id));
     for (const rv of reVoters) {

@@ -55,3 +55,19 @@ test("the retained winner still displays accepted unrecorded closing speech", as
   const view=visualWatchPresentation({enabled:false,status:null,portraits:{},scenes:[]},{...result,kind:"endgame_winner",resultsPresentation:true},message,[{id:"p1",name:"Winner",persona:"",status:"alive",shielded:false}]);
   expect(view.beat).toMatchObject({kind:"house-result",text:message.text,result:{kind:"winner"}});
 });
+
+
+test("ballot shots sharing the tally event do not make its House association ambiguous", async () => {
+  const {paceVisualBallots} = await import("../app/games/[slug]/components/visual-watch-model");
+  const {compileFormatPresentationPrefix} = await import("../app/games/[slug]/components/format-presentation-model");
+  const {createFormatKernelViewerScenario} = await import("@influence/engine/fixtures/format-kernel-viewer");
+  const fixture = createFormatKernelViewerScenario("majority_elimination_clear");
+  const compiled = compileFormatPresentationPrefix({gameId:"g",gameKernel:"format",roster:fixture.roster,decisions:fixture.decisions});
+  const tally = {...compiled.cues[0]!,kind:"empowered_tally" as const,round:1,phase:"VOTE" as const,empoweredId:"atlas",counts:{atlas:2,lyra:0},receipts:[{voterId:"lyra",targetId:"atlas",revoteTargetId:null}]};
+  expect(tally).toBeDefined();
+  const players = fixture.roster.map(player => ({...player,persona:"",status:"alive" as const,shielded:false}));
+  const expanded = paceVisualBallots([tally], players);
+  expect(expanded.length).toBeGreaterThan(1);
+  const cues = withResultPresentation([...expanded,house], scenes("results-mc-v1",tally.canonicalSequence));
+  expect(cues.at(-1)).toMatchObject({houseResultCue:{key:tally.key}});
+});

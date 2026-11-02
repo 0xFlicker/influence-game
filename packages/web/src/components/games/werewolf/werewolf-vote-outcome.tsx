@@ -1,4 +1,5 @@
 "use client";
+import {AgentAvatar} from "@/components/agent-avatar";
 import {characterImageError} from "@/components/character/image-error";
 import {useEffect, useState} from "react";
 import type {WerewolfWatchCue} from "./werewolf-watch-model";
@@ -10,8 +11,8 @@ export function villageEliminationFrame(elapsedMs: number, reduced: boolean) {
 }
 
 /** Only the actual outcome cue owns this treatment, never individual ballot receipts. */
-export function WerewolfVoteOutcome({cue, elapsed, reduced, hideCaption = false, onReady}: {
-  cue: WerewolfWatchCue; elapsed: number; reduced: boolean; hideCaption?: boolean; onReady?: (ready: boolean) => void;
+export function WerewolfVoteOutcome({cue, elapsed, reduced, compact = false, hideCaption = false, onReady}: {
+  cue: WerewolfWatchCue; elapsed: number; reduced: boolean; compact?:boolean; hideCaption?: boolean; onReady?: (ready: boolean) => void;
 }) {
   const entry = cue.moment.entry;
   if (entry.kind !== "vote" || !entry.result.eliminatedId || cue.ballot) throw new Error("Vote elimination requires the recorded outcome reveal");
@@ -22,9 +23,10 @@ export function WerewolfVoteOutcome({cue, elapsed, reduced, hideCaption = false,
   return <section data-village-elimination className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-6 text-center text-white"
     style={{backgroundImage:`linear-gradient(#0008,#000a),url("${WEREWOLF_ROOMS.vote}")`,backgroundSize:"cover",backgroundPosition:"top"}}>
     <div className="relative min-h-0 w-full max-w-sm flex-1">
+      {compact && (!source || failed === source) && <div className="flex h-full items-center justify-center"><AgentAvatar name={victim.name} persona="" personaKey={victim.personaKey} avatarUrl={victim.avatarUrl ?? undefined} size="16" /></div>}
       {/* eslint-disable-next-line @next/next/no-img-element -- same immutable character artwork as night elimination */}
       {source && failed !== source && <img src={source} alt={victim.name} onLoad={()=>onReady?.(true)} onError={event => void characterImageError(event, () => {setFailed(source);onReady?.(true);})} className="h-full w-full object-contain" style={villageEliminationFrame(elapsed,reduced)} />}
     </div>
-    {!hideCaption && <div className="shrink-0"><p className="text-xs uppercase tracking-[.2em] text-rose-200/70">The village has voted</p><h2 className="mt-2 text-xl font-semibold sm:text-2xl">{victim.name} is eliminated.</h2></div>}
+    {(!hideCaption || compact) && <div className="shrink-0"><p className="text-xs uppercase tracking-[.2em] text-rose-200/70">The village has voted</p><h2 className="mt-2 text-xl font-semibold sm:text-2xl">{victim.name} is eliminated.</h2></div>}
   </section>;
 }

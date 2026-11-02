@@ -1,4 +1,5 @@
 "use client";
+import {AgentAvatar} from "@/components/agent-avatar";
 import {characterImageError} from "@/components/character/image-error";
 import {WEREWOLF_ROOMS} from "./werewolf-rooms";
 import {useState} from "react";
@@ -6,7 +7,7 @@ import type {WerewolfWatchCue} from "./werewolf-watch-model";
 import {nightClawFrame} from "./werewolf-night-motion";
 
 /** The accent is part of the recorded death outcome, never a standalone flash frame. */
-export function WerewolfNightOutcome({cue, elapsed, reduced, hideCaption = false}: {cue: WerewolfWatchCue; elapsed: number; reduced: boolean; hideCaption?: boolean}) {
+export function WerewolfNightOutcome({cue, elapsed, reduced, compact = false, hideCaption = false}: {cue: WerewolfWatchCue; elapsed: number; reduced: boolean; compact?:boolean; hideCaption?: boolean}) {
   const entry = cue.moment.entry;
   if (entry.kind !== "night" || !entry.killedId) throw new Error("Night elimination requires a recorded victim");
   const victim = cue.moment.snapshot.players.find(player => player.id === entry.killedId)!;
@@ -15,6 +16,7 @@ export function WerewolfNightOutcome({cue, elapsed, reduced, hideCaption = false
   const frame = nightClawFrame(elapsed, reduced);
   return <section style={{backgroundImage: `linear-gradient(#0008, #000a), url("${WEREWOLF_ROOMS.village}")`, backgroundSize: "cover", backgroundPosition: "top"}} data-night-elimination className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 bg-[#100f16] p-6 text-center text-white">
     <div className="relative min-h-0 w-full max-w-sm flex-1">
+      {compact && (!source || failed === source) && <div className="flex h-full items-center justify-center"><AgentAvatar name={victim.name} persona="" personaKey={victim.personaKey} avatarUrl={victim.avatarUrl ?? undefined} size="16" /></div>}
       {/* eslint-disable-next-line @next/next/no-img-element -- original victim art, available in the public dawn outcome */}
       {source && failed !== source && <img src={source} alt={victim.name} onError={event => void characterImageError(event, () => setFailed(source))} className="h-full w-full object-contain" style={{filter: frame.settled ? "grayscale(1) brightness(.55)" : "none"}} />}
       <svg aria-hidden="true" data-night-claw className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 300 400" style={{opacity: frame.opacity}}>
@@ -24,6 +26,6 @@ export function WerewolfNightOutcome({cue, elapsed, reduced, hideCaption = false
         </g>)}
       </svg>
     </div>
-    {!hideCaption && <div className="shrink-0"><p className="text-xs uppercase tracking-[.2em] text-rose-200/70">At dawn</p><h2 className="mt-2 text-xl font-semibold sm:text-2xl">{victim.name} died during the night.</h2></div>}
+    {(!hideCaption || compact) && <div className="shrink-0"><p className="text-xs uppercase tracking-[.2em] text-rose-200/70">At dawn</p><h2 className="mt-2 text-xl font-semibold sm:text-2xl">{victim.name} died during the night.</h2></div>}
   </section>;
 }

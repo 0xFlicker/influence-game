@@ -10,12 +10,12 @@ import {paceVisualBallots, type VisualWatchData} from "./visual-watch-model";
 import type {PresentationCue, ReplayScene} from "./types";
 
 /** Editorial composition shared by the live player, Studio and the exporter. */
-export function composeInfluencePresentation(gameId: string, canonical: readonly PresentationCue[], players: readonly GamePlayer[], scenes: ReplayScene[], gameSchemaVersion = 1, options: {attachDecisionSpeech?: boolean; attachTwoNamesSpeech?: boolean; speechPrefixComplete?: boolean; resultsPresentation?: boolean} = {}): PresentationCue[] {
+export function composeInfluencePresentation(gameId: string, canonical: readonly PresentationCue[], players: readonly GamePlayer[], scenes: ReplayScene[], gameSchemaVersion = 1, options: {attachDecisionSpeech?: boolean; attachTwoNamesSpeech?: boolean; speechPrefixComplete?: boolean; resultsPresentation?: boolean; compactEmpower?: boolean} = {}): PresentationCue[] {
   const cues: PresentationCue[] = canonical.length ? [
     ...influenceOpening(gameId, players),
     ...withHouseBridges(withBallotSpeech(paceVisualBallots(canonical, players), scenes, gameSchemaVersion, options.attachDecisionSpeech !== false, options.speechPrefixComplete !== false, options.attachTwoNamesSpeech !== false), scenes),
   ] : [];
-  return options.resultsPresentation === false ? cues : withResultPresentation(cues, scenes);
+  return options.resultsPresentation === false ? cues : withResultPresentation(cues, scenes, options.compactEmpower !== false);
 }
 
 /** Cast art is independent of scene generation and uses the same fallback order everywhere. */

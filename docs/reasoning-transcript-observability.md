@@ -947,3 +947,5 @@ Existing evidence is deliberately untouched: no migration, rewrite, hash replace
 or deletion. Historical ambiguous timeouts retain their original evidence. Never
 infer a timeout source from the old message alone. This change concerns gameplay
 provider journals, not separate moderation or asset-generation workflows.
+
+Empower runoff now has a separate direct House summary boundary (`empower_runoff`) after the tied tally and before any runoff ballot. Its structured focus supplies tied names/counts, eligible revoters, and the next rule; the final vote boundary still announces the resolved winner. Both calls retain strict output validation, frozen roster gender, and durable provider evidence. Review tie → announcement → runoff → result; never fabricate historical speech.

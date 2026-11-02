@@ -140,7 +140,7 @@ describe("MatchWatchShell", () => {
     expect(sharedShellSource).toContain("Cross-examine this game with your AI.");
     expect(sharedShellSource).toContain("Analyze this game");
     expect(sharedShellSource.indexOf("<McpBanner />")).toBeLessThan(
-      sharedShellSource.indexOf("{cast}{mobileCast}{theater}"),
+      sharedShellSource.indexOf("{cast}"),
     );
   });
 
