@@ -549,7 +549,18 @@ test.describe("format-aware game viewer", () => {
   });
 
   for (const status of ["completed", "in_progress"] as const) test(`shared Influence moment links open their canonical action and preserve playback intent (${status})`, async ({ page }) => {
+    await page.clock.install();
     const slug = "shared-action-fixture";
+    const openMoment = async (url: string) => {
+      // Autoplay is intentional, but browser/CI latency must not consume a short
+      // bridge before this test can take ownership of the paused position.
+      await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+      await page.goto(url, { waitUntil: "domcontentloaded" });
+      await expect.poll(async () => {
+        await page.clock.runFor(10);
+        return page.getByRole("button", { name: "Pause replay", exact: true }).isVisible();
+      }).toBe(true);
+    };
     await installDeterministicFormatGame(page, { slug, scenarioId: "save_or_eliminate_clear", status });
     // This viewer uses a synthetic game. Model the short-link boundary here;
     // player-card.e2e.test.ts exercises persistence and resolution through the API.
@@ -585,20 +596,22 @@ test.describe("format-aware game viewer", () => {
       await dialog.getByRole("button", {name:"Close share", exact:true}).click();
       return {href, target};
     };
-    await page.goto(viewerUrl(`/games/${slug}/replay/16`));
+    await openMoment(viewerUrl(`/games/${slug}/replay/16`));
     // The initial transport can render paused before hydration starts autoplay.
     // Observe that start before pausing so this test owns the paused intent.
     await expect(page.getByRole("button", {name:"Pause replay", exact:true})).toBeVisible();
     await pauseAutoplay(page, "Pause replay");
+    await page.clock.resume();
     const {href, target} = await copyMoment();
     expect(target.pathname).toBe(`/games/${slug}/replay/16`);
     expect(target.searchParams.get("cue")).toBeTruthy();
     await expect(page.getByRole("button", { name: "Play replay", exact: true })).toBeVisible();
     expect((await copyMoment()).target.href).toBe(target.href);
     expect(Number(await page.getByRole("slider", { name: "Replay position", exact: true }).inputValue())).toBeGreaterThan(1);
-    await page.goto(href);
+    await openMoment(href);
     await expect(page.getByRole("button", {name:"Pause replay", exact:true})).toBeVisible();
     await pauseAutoplay(page, "Pause replay");
+    await page.clock.resume();
     await expect(page.getByRole("button", {name:"Play replay", exact:true})).toBeVisible();
     const restored = (await copyMoment()).target;
     expect(restored.pathname).toBe(target.pathname);
