@@ -6,7 +6,7 @@
 .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .count { font-size: 12px; color: #fde68a; }
 /* Measure the player's actual cell after the House caption and controls get space. */
-@container empower-player (min-width: 112px) and (min-height: 220px) {
+@container empower-player (min-width: 112px) and (min-height: 160px) {
   .withBody { justify-content: end; padding: 8px; }
   .withBody .art { display: block; }
   .withBody .avatar { display: none; }

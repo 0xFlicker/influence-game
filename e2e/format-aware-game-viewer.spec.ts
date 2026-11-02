@@ -1531,7 +1531,7 @@ test.describe("format-aware game viewer", () => {
     }
   });
 
-  for (const tiedCount of [2,3,6,12]) test(`Empower full bodies adapt to space for a ${tiedCount}-way tie`, async ({page},testInfo) => {
+  for (const tiedCount of [2,3,4,6,12]) test(`Empower full bodies adapt to space for a ${tiedCount}-way tie`, async ({page},testInfo) => {
     await page.clock.install();
     const slug=`empower-body-${tiedCount}`;
     const names=["Atlas","Vera","Finn","Mira","Rex","Lyra","Kael","Echo","Sage","Jace","Rune","Wren"];
@@ -1549,7 +1549,7 @@ test.describe("format-aware game viewer", () => {
     await page.addStyleTag({content:"nextjs-portal { display:none; }"});
     const combined=page.locator("[data-house-result]");await advanceUntilVisible(page,combined,"House result",100);
     const measurements=[];
-    for(const [width,height] of [[320,568],[390,844],[600,600],[1280,400],[844,390],[1920,1080]]) {
+    for(const [width,height] of [[320,568],[390,844],[600,600],[1280,400],[844,390],[1920,634],[1920,1080]]) {
       await page.setViewportSize({width:width!,height:height!});
       for(const mode of ["inline","theater"]) {
         if(mode==="theater") await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
@@ -1558,12 +1558,16 @@ test.describe("format-aware game viewer", () => {
           const stage=el.querySelector<HTMLElement>("[data-result-stage]")!,box=stage.getBoundingClientRect();
           return [...el.querySelectorAll<HTMLElement>("[data-empower-total]")].every(cell=>{
             const r=cell.getBoundingClientRect(),art=cell.querySelector<HTMLElement>("[data-empower-fullbody]")!;
-            return r.bottom<=box.bottom+1 && r.right<=box.right+1 && (getComputedStyle(art).display!=="none")===(cell.clientWidth>=112 && cell.clientHeight>=220);
+            return r.bottom<=box.bottom+1 && r.right<=box.right+1 && (getComputedStyle(art).display!=="none")===(cell.clientWidth>=112 && cell.clientHeight>=160);
           }) && stage.scrollHeight<=stage.clientHeight+1;
         })).toBe(true);
         await expect.poll(()=>combined.locator("[data-speech-page-copy]").evaluate(copy=>copy.getBoundingClientRect().height<=copy.parentElement!.clientHeight-21)).toBe(true);
         const cells=await combined.locator("[data-empower-total]").evaluateAll(cells=>cells.map(cell=>({width:cell.clientWidth,height:cell.clientHeight,body:getComputedStyle(cell.querySelector("[data-empower-fullbody]")!).display!=="none"})));
         measurements.push({width,height,mode,tiedCount,cells});
+        if(width===1280 && height===400 && mode==="theater" && tiedCount<=4) {
+          expect(cells.every(cell=>cell.body)).toBe(true);
+          for(const art of await combined.locator("[data-empower-fullbody]").all()) expect((await art.boundingBox())!.height).toBeGreaterThanOrEqual(100);
+        }
         for(const art of await combined.locator("[data-empower-fullbody]:visible img").all()) await expect.poll(()=>art.evaluate(img=>(img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
         await page.screenshot({path:testInfo.outputPath(`tie-${tiedCount}-${width}x${height}-${mode}.png`)});
         if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();

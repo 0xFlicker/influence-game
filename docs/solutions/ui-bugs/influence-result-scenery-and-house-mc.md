@@ -42,6 +42,8 @@ Validation covers the twelve-way Empower tie at eight sizes in inline/theater mo
 
 ## Full-body Empower staging
 
-Current compact Empower results measure each player cell with a CSS size container. Saved full-body artwork appears when the cell is at least 112px wide and 220px tall, after result headings, House speech and playback controls receive their space. The artwork uses `object-fit: contain`; names and vote counts remain visible. Smaller cells keep the packed portrait/name layout. Missing artwork keeps portraits, and only a confirmed 404 permits replacing a saved full-body reference. This applies to both tied players and a resolved Empower winner; frozen noncompact exports keep their layout.
+Current compact Empower results measure each player cell with a CSS size container. Saved full-body artwork appears when the cell is at least 112px wide and 160px tall, after result headings, House speech and playback controls receive their space. The artwork uses `object-fit: contain`; names and vote counts remain visible. Smaller cells keep the packed portrait/name layout. Missing artwork keeps portraits, and only a confirmed 404 permits replacing a saved full-body reference. This applies to both tied players and a resolved Empower winner; frozen noncompact exports keep their layout.
 
-Browser previews cover 2-, 3-, 6-, and 12-way ties across 320×568, 390×844, 600×600, 1280×400, 844×390 and 1920×1080, in inline and theater modes. Each case verifies the cell threshold, loaded artwork, visible cast, absence of result scrolling, and readable House pagination.
+Browser previews cover 2-, 3-, 4-, 6-, and 12-way ties across 320×568, 390×844, 600×600, 1280×400, 844×390, 1920×634 and 1920×1080, in inline and theater modes. Each case verifies the cell threshold, loaded artwork, visible cast, absence of result scrolling, and readable House pagination.
+
+The 160px cell-height threshold leaves at least 100px for uncropped art on wide short stages. Three- and four-way ties at 1280×400 theater size explicitly require full-body staging; a roomy but short cell must not stay a tiny portrait merely because it is below 220px tall.
