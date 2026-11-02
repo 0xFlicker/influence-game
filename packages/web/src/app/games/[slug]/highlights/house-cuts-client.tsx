@@ -31,7 +31,7 @@ export function HouseCutsView({ slug, data, selectedId }: { slug: string; data: 
     <nav className={styles.breadcrumbs} aria-label="Cut navigation"><Link href={gameHref(slug)}>← Game overview</Link><Link href={allHref}>All House Cuts</Link></nav>
     <article>
       <header className={styles.hero}>
-        <Backdrop cut={selected} />
+        <Backdrop cut={selected} gameKind={data.game.kind} />
         <p className={styles.eyebrow}>House Cuts / {label}</p>
         <h1>{selected.title}</h1>
         <p className={styles.lede}>{selected.context}</p>
@@ -55,7 +55,7 @@ export function HouseCutsView({ slug, data, selectedId }: { slug: string; data: 
     </header>
     {selectedId || !cuts.length ? <div className={styles.empty} role="status"><p>{data.status === "not_prepared" ? "House Cuts have not been prepared for this game." : data.status === "pending" ? "House Cuts aren’t ready yet. You can watch the replay while they’re prepared." : data.status === "failed" ? "House Cuts couldn’t be prepared. The replay is still available." : selectedId ? "This Cut is unavailable in this viewing mode." : "No House Cuts selected for this game."}</p>{selectedId && <Link className={styles.textLink} href={allHref}>All House Cuts</Link>}</div>
       : <div className={styles.gallery}>{cuts.map(c => <article key={c.id} className={styles.card}>
-        <Backdrop cut={c} />
+        <Backdrop cut={c} gameKind={data.game.kind} />
         <p className={styles.eyebrow}>House Cuts / {label}</p><h2><Link href={cutHref(slug, c.id, data.audience)}>{c.title}</Link></h2>
         <p className={styles.lede}>{c.context}</p><Quotes cut={c} />
         <div className={styles.actions}><Link className={styles.primary} href={c.replayHref ?? replay}>{c.replayHref ? "Watch this moment" : "Watch the replay"} ↗</Link><Link className={styles.secondary} href={cutHref(slug, c.id, data.audience)}>Open Cut</Link><HouseShareButton href={cutHref(slug, c.id, data.audience)} label={`Share this Cut: ${c.title}`} title={`${c.title} — House Cuts`} text={c.context} /></div>
@@ -63,10 +63,10 @@ export function HouseCutsView({ slug, data, selectedId }: { slug: string; data: 
   </main>;
 }
 
-function Backdrop({ cut }: { cut: PublishedHouseCut }) {
+function Backdrop({ cut, gameKind }: { cut: PublishedHouseCut; gameKind: HouseCutsResponse["game"]["kind"] }) {
   // Bundled decorative art is shared with the social image renderer.
   // eslint-disable-next-line @next/next/no-img-element
-  return <img className={styles.art} src={cutBackdrop(cut)} alt="" aria-hidden="true" />;
+  return <img className={styles.art} src={cutBackdrop(cut, gameKind)} alt="" aria-hidden="true" />;
 }
 function Quotes({ cut }: { cut: PublishedHouseCut }) {
   return <div className={styles.quotes}>{cut.quotes.map((q, i) => <figure className={styles.quote} key={i}><figcaption>{q.name}</figcaption><blockquote>{q.text}</blockquote></figure>)}</div>;

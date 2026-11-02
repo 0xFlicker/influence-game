@@ -13,6 +13,7 @@ test("shared gallery renders selected cards and audience-specific links for both
     expect(html).toContain("Watch this moment");
     expect(html).toContain(`scene=v1-1&amp;audience=${audience}`);
     expect(html).not.toContain("rationale");
+    expect(html).toContain(audience === "public" ? "/house-highlights/generated/" : "/visual/werewolf/");
   }
 });
 test("empty, failed, unprepared and crossed-audience cards never invent content", () => {
@@ -38,7 +39,8 @@ test("shared Cut is a landing page with a single headline, background and workin
   cut.replayHref = null;
   const html = renderToString(<HouseCutsView slug={data.game.slug} data={data} selectedId={cut.id} />);
   expect(html.match(/<h1/g)).toHaveLength(1);
-  expect(html).toContain("/house-highlights/generated/");
+  expect(html).toContain("/visual/werewolf/");
+  expect(html).not.toContain("/house-highlights/generated/");
   expect(html).toContain('href="/agents/create"');
   expect(html).toContain('href="/games/edge-smoke-dusk/replay?audience=mystery"');
   expect(html).toContain("Watch the replay");

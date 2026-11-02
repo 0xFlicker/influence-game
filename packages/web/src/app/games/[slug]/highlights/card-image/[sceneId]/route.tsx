@@ -15,7 +15,7 @@ export async function GET(request: Request, context: { params: Promise<{ slug: s
       const data = await getServerHouseCuts(slug, audience);
       const cut = data.publication?.cuts.find(c => c.id === sceneId);
       if (!cut) return new Response(null, { status: 404, headers });
-      const asset = cutBackdrop(cut);
+      const asset = cutBackdrop(cut, data.game.kind);
       const publicRoot = process.cwd().endsWith("packages/web") ? "public" : "packages/web/public";
       const background = `data:image/jpeg;base64,${(await readFile(resolve(process.cwd(), publicRoot, asset.slice(1)))).toString("base64")}`;
       const title = cut.title.length > 135 ? `${cut.title.slice(0, 132)}…` : cut.title;
