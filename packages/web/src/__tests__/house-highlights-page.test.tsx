@@ -13,6 +13,7 @@ test("shared gallery renders selected cards and audience-specific links for both
     expect(html).toContain("Watch this moment");
     expect(html).toContain(`scene=v1-1&amp;audience=${audience}`);
     expect(html).not.toContain("rationale");
+    expect(html).toContain(audience === "public" ? "/house-highlights/generated/" : "/visual/werewolf/");
   }
 });
 test("empty, failed, unprepared and crossed-audience cards never invent content", () => {
@@ -27,7 +28,23 @@ test("empty, failed, unprepared and crossed-audience cards never invent content"
 test("share metadata uses published text and preserves explicit spoiler audience", async () => {
   globalThis.fetch = (async () => Response.json(houseCutsFixture("omniscient"))) as unknown as typeof fetch;
   const metadata = await generateMetadata({ params: Promise.resolve({ slug: "edge-smoke-dusk" }), searchParams: Promise.resolve({ scene: "v1-1", audience: "omniscient" }) });
-  expect(metadata.title).toContain("A Seer claim changes the argument");
-  expect(metadata.title).toContain("Full spoilers");
+  expect(JSON.stringify(metadata.title)).toContain("A Seer claim changes the argument");
+  expect(JSON.stringify(metadata.title)).toContain("Full spoilers");
   expect(JSON.stringify(metadata.openGraph?.images)).toContain("?audience=omniscient");
+});
+
+test("shared Cut is a landing page with a single headline, background and working next steps", () => {
+  const data = houseCutsFixture("mystery");
+  const cut = data.publication!.cuts[0]!;
+  cut.replayHref = null;
+  const html = renderToString(<HouseCutsView slug={data.game.slug} data={data} selectedId={cut.id} />);
+  expect(html.match(/<h1/g)).toHaveLength(1);
+  expect(html).toContain("/visual/werewolf/");
+  expect(html).not.toContain("/house-highlights/generated/");
+  expect(html).toContain('href="/agents/create"');
+  expect(html).toContain('href="/games/edge-smoke-dusk/replay?audience=mystery"');
+  expect(html).toContain("Watch the replay");
+  expect(html).toContain("Explore this game");
+  expect(html).not.toContain("Open Cut");
+  expect(html).not.toContain("audience=omniscient");
 });
