@@ -53,7 +53,7 @@ export interface PrivateTraceStorageConfig {
 let privateTraceS3Client: S3Client | null = null;
 let privateTraceS3ClientKey: string | null = null;
 
-function getPrivateTraceS3Client(): S3Client {
+export function getPrivateTraceS3Client(): S3Client {
   const config = getPrivateTraceStorageConfig();
   const clientKey = JSON.stringify([
     config.endpoint,

@@ -426,7 +426,7 @@ test.describe("format-aware game viewer", () => {
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await pauseAutoplay(page, "Pause replay");
     const position = page.getByRole("slider", {name:"Replay position",exact:true});
-    await position.fill(String(Number(await position.getAttribute("max")) - 30));
+    await position.fill(String(Number(await position.getAttribute("max")) - 1));
     await enableMusic(page);
     await page.getByRole("button", {name:"Play replay",exact:true}).click();
     await expect.poll(async () => (await musicState(page)).find(audio => audio.src?.includes("the-last-word"))?.time).toBeGreaterThan(3);
@@ -1297,12 +1297,11 @@ test.describe("format-aware game viewer", () => {
       await playbackKey(page, "ArrowRight");
       const house = page.getByRole("region", { name: "House summary" });
       await advanceUntilVisible(page, house, "House summary after hiding solo speech");
-      const halves = await house.evaluate(el => {
-        const stage = el.getBoundingClientRect();
-        return { mid: stage.top + stage.height / 2, logoBottom: el.querySelector("img")!.getBoundingClientRect().bottom, textTop: el.querySelector("[data-house-copy]")!.getBoundingClientRect().top };
-      });
-      expect(halves.logoBottom).toBeLessThanOrEqual(halves.mid);
-      expect(halves.textTop).toBeCloseTo(halves.mid, 0);
+      await expect(house.locator("[data-room-backdrop]")).toBeVisible();
+      await expect(house).toContainText("The House has heard their promises.");
+      const bounds = await house.boundingBox();
+      expect(bounds!.width).toBeGreaterThan(300);
+      await house.screenshot({path:testInfo.outputPath("house-summary-scenery.png")});
     });
   }
 
@@ -1699,13 +1698,13 @@ test.describe("format-aware game viewer", () => {
     await expect.poll(() => fixture.readCount).toBeGreaterThan(0);
     await (await catchUp).finished();
     await expect(page.getByRole("button", { name: "Play replay", exact: true })).toBeVisible();
-    await expect(cue).toHaveText(pausedText);
+    await expect(cue).toHaveText(pausedText, {useInnerText: true});
     const completion = page.waitForResponse(response => new URL(response.url()).pathname === `/api/games/${slug}/presentation`);
     fixture.setStatus("completed");
     await fixture.publish(JSON.stringify({type:"phase_ready"}));
     await (await completion).finished();
     await expect(page.getByRole("button", { name: "Play replay", exact: true })).toBeVisible();
-    await expect(cue).toHaveText(pausedText);
+    await expect(cue).toHaveText(pausedText, {useInnerText: true});
     await expect(page.locator("[data-influence-opening]")).toHaveCount(0);
     await page.getByRole("button", { name: "Play replay", exact: true }).click();
     await expect(page.getByRole("button", { name: "Pause replay", exact: true })).toBeVisible();
@@ -2565,6 +2564,31 @@ test.describe("format-aware game viewer", () => {
       testInfo,
       "dark-coral-horn-results-mobile.png",
     );
+  });
+
+  test("result MC keeps outcome and scenery visible at desktop and narrow widths", async ({page},testInfo) => {
+    await page.clock.install();
+    const slug="result-mc-fixture";
+    const scenario=createFormatKernelViewerScenario("majority_elimination_clear");
+    const result=scenario.decisions.findLast(event=>event.type === "format.resolved")!;
+    await installDeterministicFormatGame(page,{slug,scenarioId:"majority_elimination_clear",status:"completed"});
+    setFormatTranscript(page,slug,[{id:900,entrySequence:900,round:result.round,phase:"FORMAT_RESOLVE",scope:"system",dialogueKind:"house_summary",fromPlayerId:null,text:"The votes have settled this round. The margin speaks for itself.",timestamp:Date.now(),firstDurableEventSequence:result.sequence,houseResult:{eventSequence:result.sequence,authoringRevision:"results-mc-v1"}}]);
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page,"⏸ Pause");
+    const combined=page.locator("[data-house-result]");
+    await advanceUntilVisible(page,combined,"combined result announcement",80);
+    for(const width of [1280,390,320]) {
+      await page.setViewportSize({width,height:900});
+      await expect(combined).toContainText("is eliminated");
+      await expect(combined.getByLabel("Result players")).toBeVisible();
+      const portraitBox=await combined.getByLabel("Result players").boundingBox();
+      const stageBox=await combined.boundingBox();
+      expect(portraitBox!.y).toBeGreaterThanOrEqual(stageBox!.y);
+      await expect(combined).toContainText("The votes have settled");
+      await expect(combined.locator("[data-room-backdrop]").first()).toBeVisible();
+      expect(await combined.evaluate(el=>el.scrollWidth <= el.clientWidth+1)).toBe(true);
+      await combined.screenshot({path:testInfo.outputPath(`result-mc-${width}.png`)});
+    }
   });
 
   test("stages completed ballot evidence as roster-ordered roll call then aggregate", async ({

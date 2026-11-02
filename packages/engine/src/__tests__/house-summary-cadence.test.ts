@@ -145,6 +145,20 @@ class NarrativeVariantHouse extends TemplateHouseInterviewer {
 }
 
 describe("House-authored narrative cadence", () => {
+  it("supplies the frozen gender of every player on every House beat", async () => {
+    const genders = ["female", "male", "non-binary", null, undefined] as const;
+    const cast = agents().map((agent, index) => Object.assign(agent, {gender: genders[index]}));
+    const expected = Object.fromEntries(cast.map(agent => [agent.id, agent.gender ?? null]));
+    const house = new AuthoredNarrativeHouse();
+    const runner = new GameRunner(cast, CONFIG, house, {gameId: "house-frozen-genders"});
+    await runner.run();
+    expect(house.contexts.length).toBeGreaterThan(1);
+    expect(house.contexts.some(context => context.narrationContext.boundary.actorCoordinate === "format_resolve")).toBe(true);
+    for (const context of house.contexts) {
+      expect(context.narrationContext.playerGendersById).toEqual(expected);
+    }
+  });
+
   it("publishes byte-exact House copy only after its matching beat and notebook are checkpointed", async () => {
     const house = new AuthoredNarrativeHouse();
     const checkpoints: GameCheckpointCapsule[] = [];

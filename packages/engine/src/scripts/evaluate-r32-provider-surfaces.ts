@@ -441,7 +441,7 @@ function createHouseNarrationComparisonSlice(gameId: UUID): {
 } {
   const allEvents = houseSummaryCanonicalEvents(gameId);
   const ordinaryEvents = allEvents.slice(0, 5);
-  const ordinaryNarration = compileHouseNarrationContext({
+  const ordinaryNarration = compileHouseNarrationContext({playerGendersById: {},
     actorCoordinate: "format_pick",
     round: 1,
     phase: Phase.FORMAT_PICK,
@@ -473,7 +473,7 @@ function createHouseNarrationComparisonSlice(gameId: UUID): {
     examinedCanonicalHead: ordinaryBeat.boundary.canonicalHead,
     examinedDialogueHead: ordinaryBeat.boundary.dialogueHead,
   };
-  const milestoneNarration = compileHouseNarrationContext({
+  const milestoneNarration = compileHouseNarrationContext({playerGendersById: {},
     actorCoordinate: "format_resolve",
     round: 1,
     phase: Phase.FORMAT_RESOLVE,

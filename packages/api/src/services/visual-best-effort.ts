@@ -6,7 +6,7 @@ import type { VisualBoundaryGuard } from "./visual-execution-boundary.js";
 import { renderPlannedVisualScene } from "./visual-scene-renderer.js";
 import { failVisualScene, type StoredVisualScene } from "./visual-scene-store.js";
 
-export const VISUAL_ATTEMPT_TIMEOUT_MS = 180_000;
+export const VISUAL_ATTEMPT_TIMEOUT_MS = 600_000;
 
 /** Each arrangement gets its initial attempt and at most one safe repair, durably. */
 export async function renderVisualSceneBestEffort(db: DrizzleDB, initial: StoredVisualScene, guard: VisualBoundaryGuard, timeoutMs = VISUAL_ATTEMPT_TIMEOUT_MS, allowMissing = true): Promise<StoredVisualScene | null> {

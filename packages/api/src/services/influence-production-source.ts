@@ -1,4 +1,5 @@
 import { readCharacterArtwork } from "./character-art.js";
+import {readHistoricalHouseResults} from "./house-result-association.js";
 import {resolveInfluenceGameSchemaVersion} from "@influence/engine/influence-game-schema";
 import {hasLiveAudioTrack} from "./audio-frontier.js";
 import { resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
@@ -29,7 +30,7 @@ export interface InfluenceProductionSnapshot {
   gameId: string;
   gameKind: "influence";
   audience: "public";
-  projectionVersion: 3 | 4 | 5;
+  projectionVersion: 3 | 4 | 5 | 6;
   throughEventSequence: number;
   throughTurnSequence: number | null;
   transcriptPrefix: { maxId: number; maxEntrySequence: number };
@@ -59,7 +60,7 @@ export function decodeInfluenceProductionSnapshot(value: unknown): InfluenceProd
   if (!value || typeof value !== "object" || Array.isArray(value)) return fail();
   const row = value as Record<string, unknown>;
   if (Object.keys(row).sort().join() !== "acceptedCutoff,acceptedSourceHash,audience,gameId,gameKind,mediaReferences,projectionVersion,publicationCutoff,sourceHash,throughEventSequence,throughTurnSequence,transcriptPrefix"
-    || row.gameKind !== "influence" || row.audience !== "public" || (row.projectionVersion !== 3 && row.projectionVersion !== 4 && row.projectionVersion !== 5)
+    || row.gameKind !== "influence" || row.audience !== "public" || (row.projectionVersion !== 3 && row.projectionVersion !== 4 && row.projectionVersion !== 5 && row.projectionVersion !== 6)
     || typeof row.gameId !== "string" || !row.gameId || row.gameId.length > 200
     || !Number.isSafeInteger(row.throughEventSequence) || Number(row.throughEventSequence) < 0
     || row.throughTurnSequence !== null && (!Number.isSafeInteger(row.throughTurnSequence) || Number(row.throughTurnSequence) < 0)
@@ -82,7 +83,7 @@ export function decodeInfluenceProductionSnapshot(value: unknown): InfluenceProd
   if ([portraits, bodies, heads].some(map => Object.keys(map).length > 256)
     || [...Object.values(portraits), ...Object.values(bodies)].some(url => !reference(url))
     || Object.values(heads).some(head => !validHeadRectangle(head as HeadRectangle))) return fail();
-  return { gameId: row.gameId, gameKind: "influence", audience: "public", projectionVersion: row.projectionVersion as 3 | 4 | 5,
+  return { gameId: row.gameId, gameKind: "influence", audience: "public", projectionVersion: row.projectionVersion as 3 | 4 | 5 | 6,
     throughEventSequence: Number(row.throughEventSequence), throughTurnSequence: row.throughTurnSequence === null ? null : Number(row.throughTurnSequence),
     transcriptPrefix: { maxId: Number(bound.maxId), maxEntrySequence: Number(bound.maxEntrySequence) },
     acceptedCutoff: row.acceptedCutoff, acceptedSourceHash: row.acceptedSourceHash,
@@ -207,6 +208,8 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
     }),
   }; });
   if (frames.length !== throughEventSequence) throw new InfluenceProductionSourceError("Influence source has an incomplete accepted prefix");
+  const historicalResults: Awaited<ReturnType<typeof readHistoricalHouseResults>> = !supplied || supplied.projectionVersion >= 6
+    ? await readHistoricalHouseResults(db,game.id,selectedRows.filter(row=>!row.safeContext?.houseResult),history.events.map(event=>event.envelope)) : new Map();
   const messages = selectedRows.map(row => {
     if (!Object.values(Phase).includes(row.phase as Phase)) throw new InfluenceProductionSourceError("Unknown accepted transcript phase");
     const anonymous = row.safeContext?.anonymous === true;
@@ -218,7 +221,7 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
     return { id: row.id, gameId: game.id, round: row.round, phase: row.phase as Phase, scope: row.scope,
       entrySequence: row.entrySequence ?? undefined, dialogueKind: row.dialogueKind,
       firstDurableEventSequence: row.firstDurableEventSequence, speakerPlayerId: anonymous ? null : row.speakerPlayerId,
-      anonymous, presentationPurpose: row.safeContext?.presentationPurpose, acceptedBallot: row.safeContext?.acceptedBallot,
+      anonymous, presentationPurpose: row.safeContext?.presentationPurpose, acceptedBallot: row.safeContext?.acceptedBallot, houseResult: row.safeContext?.houseResult ?? historicalResults.get(row.id),
         decisionSpeech: row.safeContext?.decisionSpeech,
       ...(retrospective ? { retrospectiveSource: { eventSequence: retrospective.eventSequence, ordinal: retrospective.ordinal } } : {}),
       visualScene: row.safeContext?.visualScene, fromPlayerId, fromPlayerName: fromPlayerId ? frozen.get(fromPlayerId)?.player.name ?? null : null,
@@ -318,7 +321,7 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
     // Preserve historical pinned source hashes: an absent version already means v1.
     ...(config.empowerRevoteVersion === undefined ? {} : { empowerRevoteVersion: resolveEmpowerRevoteVersion(config.empowerRevoteVersion) }),
     formatManifest: resolveFormatManifest(config.formatManifest ?? LEGACY_FORMAT_MANIFEST) };
-  const acceptedBoundary = { gameId: game.id, gameKind: "influence" as const, audience: "public" as const, projectionVersion: supplied?.projectionVersion ?? 5 as const,
+  const acceptedBoundary = { gameId: game.id, gameKind: "influence" as const, audience: "public" as const, projectionVersion: supplied?.projectionVersion ?? 6 as const,
     throughEventSequence, throughTurnSequence, transcriptPrefix, acceptedCutoff };
   const acceptedSourceHash = sha256StableJson({ acceptedBoundary, game: { ...exportGame, status: undefined }, messages, frames, acceptedThoughts, catalog });
   if (supplied && supplied.acceptedSourceHash !== acceptedSourceHash) throw new InfluenceProductionSourceError("Pinned Influence accepted source changed; reload the source explicitly");

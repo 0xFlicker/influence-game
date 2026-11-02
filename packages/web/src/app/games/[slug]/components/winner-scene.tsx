@@ -8,6 +8,8 @@ import styles from "./winner-scene.module.css";
 
 export interface WinnerSceneBeat {
   kind: "winner";
+  backgroundUrl?: string;
+  counts?:Array<{name:string;votes:number}>;
   winner: GamePlayer & { fullBodyReferenceUrl?: string | null };
   standings: Array<GamePlayer & { placement: number | null; juryMember: boolean }>;
 }
@@ -22,12 +24,13 @@ export function WinnerScene({ beat, fullscreen = false, controlsInset = fullscre
   const remaining = beat.standings.filter(player => player.placement === null || player.placement > 4);
   const jury = remaining.filter(player => player.juryMember);
   const rest = remaining.filter(player => !player.juryMember);
-  return <section aria-label="Final standings" data-winner-scene className={styles.scene} data-fullscreen={fullscreen} style={{"--winner-controls-inset":`${controlsInset}px`} as React.CSSProperties}>
+  return <section aria-label="Final standings" data-winner-scene className={styles.scene} data-fullscreen={fullscreen} style={{"--winner-controls-inset":`${controlsInset}px`, ...(beat.backgroundUrl && {backgroundImage:`linear-gradient(90deg,rgba(0,0,0,.25),rgba(0,0,0,.45)),url("${beat.backgroundUrl}")`, backgroundSize:"cover",backgroundPosition:"center"})} as React.CSSProperties}>
     <div className={styles.layout}>
       <div className={styles.winner}>
         <header className={styles.heading}>
           <p className={styles.eyebrow}>Winner</p>
           <h2>{winner.name} wins The House.</h2>
+          {beat.counts && <p className="mt-3 rounded-lg bg-black/70 p-2 text-sm text-white">Jury vote · {beat.counts.map(row=>`${row.name}: ${row.votes}`).join(" · ")}</p>}
         </header>
         <div className={styles.winnerImage} data-winner-image={fullBody ? "full-body" : "portrait"}>
           {/* eslint-disable-next-line @next/next/no-img-element -- frozen game artwork must retain the complete body */}

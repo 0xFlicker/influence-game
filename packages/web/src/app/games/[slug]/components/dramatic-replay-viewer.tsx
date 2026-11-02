@@ -4,6 +4,8 @@ import {twoNamesDecisionSpeechAction} from "@influence/engine/influence-decision
 import type {PresentationCue} from "./types";
 import type {AudioWatchCoordinate} from "@influence/engine/audio-watch";
 import {HouseNarration} from "@/components/watch/house-narration";
+import {RoomBackdrop} from "./stage-backdrop";
+import {resultRoom} from "./influence-rooms";
 import {influencePresentationPolicy} from "./influence-presentation-director";
 import {influenceProductionReference} from "@/lib/replay-export/influence-production-reference";
 import {useGamePlayback,useIsFollowPlayer} from "@/components/watch/game-playback";
@@ -361,7 +363,7 @@ function DramaticReplayTheater({
   },[director]);
   const {onSpeech:onHouseSpeech,houseSpeaking,houseHolding} = useGamePlayback({id:game.id,slug:game.slug,kind:"influence"},followPosition,players,{director,concluded,revealAtMs:activeCue?influencePresentationPolicy.scrubAtMs?.(activeCue)??0:0});
   const [masterMuted, setMasterMuted] = useState(true);
-  const voice = useWatchVoice({suspended:houseHolding,masterMuted,director,gameId:game.id,audience:"public",thinking:preferences.thinking,live,onPause:() => setPlayRequested(false),
+  const voice = useWatchVoice({allowTextFallback:true,suspended:houseHolding,masterMuted,director,gameId:game.id,audience:"public",thinking:preferences.thinking,live,onPause:() => setPlayRequested(false),
     coordinate:activeCue ? coordinateForCue(activeCue) : null,coordinateForCue,onSpeech:onHouseSpeech});
   const currentStateEntry = Boolean(live && formatCue && directorSnapshot.hydrationWatermark !== null
     && formatCue.canonicalSequence <= directorSnapshot.hydrationWatermark);
@@ -505,7 +507,7 @@ function DramaticReplayTheater({
   const isEmpowerPresentation = formatCue?.kind === "empowered_tally" || formatCue?.kind === "empowered_tie";
   const usesFullHeightContent = Boolean(openingCue) || expanded || isEmpowerPresentation || formatCue?.kind === "two_names_plea" || visual.beat !== null;
   const isSoloPresentation = visual.beat?.kind === "portrait" || visual.beat?.kind === "nominee-selection";
-  const isRoomPresentation = visual.beat?.kind === "scene" || visual.beat?.kind === "portrait-room" || visual.beat?.kind === "safety-bounce" || visual.beat?.kind === "winner" || visual.beat?.kind === "two-names-stage" || visual.beat?.kind === "two-names-decision";
+  const isRoomPresentation = visual.beat?.kind === "house-result" || visual.beat?.kind === "scene" || visual.beat?.kind === "portrait-room" || visual.beat?.kind === "safety-bounce" || visual.beat?.kind === "winner" || visual.beat?.kind === "two-names-stage" || visual.beat?.kind === "two-names-decision";
   useEffect(() => {
     if (!scene || !onPlaybackStateChange) return;
     onPlaybackStateChange({
@@ -778,12 +780,13 @@ function DramaticReplayTheater({
 
       {/* Center — phase-aware content (scrolls; scrub controls stay pinned below) */}
       <div
-        className={`relative flex-1 min-h-0 flex flex-col ${
+        className={`relative isolate flex-1 min-h-0 flex flex-col ${
           usesFullHeightContent
             ? "items-stretch overflow-hidden"
             : "items-start overflow-y-auto overscroll-y-contain"
         } justify-center ${openingCue ? "" : expanded ? isRoomPresentation || isSoloPresentation ? "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]" : "pb-[140px] pt-[env(safe-area-inset-top)]" : isSoloPresentation || isRoomPresentation ? "" : isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
       >
+        {!openingCue && <div className="pointer-events-none absolute inset-0 -z-10"><RoomBackdrop source={resultRoom(activeCue?.phase ?? scene.phase)} resilient /></div>}
         {openingCue ? <>
           <WatchClock director={director}>{elapsed => <InfluenceOpeningFrame cue={openingCue} elapsedMs={elapsed} navigationRevision={director.getNavigationRevision()} reduced={reducedMotion} playing={isPlaying} speed={speed}
             {...influenceCastArt(openingPlayer, visualData)} />}</WatchClock>
@@ -821,7 +824,7 @@ function DramaticReplayTheater({
 
         </div>
         </WatchThinking>}
-        {voice.houseNarrationAvailable && <WatchClock director={director}>{() => <HouseNarration text={currentMessage?.text ?? ""} window={voice.getHouseNarration()} bottom={expanded ? 140 : 16} />}</WatchClock>}
+        {voice.houseNarrationAvailable && <WatchClock director={director}>{() => <HouseNarration readable text={currentMessage?.text ?? ""} window={voice.getHouseNarration()} bottom={expanded ? 140 : 16} />}</WatchClock>}
         {live && isPlaying && directorSnapshot.waitingAtTail && activeCue && <WatchBuffering />}
       </div>
 
@@ -838,7 +841,7 @@ function DramaticReplayTheater({
         }`}
       >
         {shared?.cue && presentationCues.length > 0 && !presentationCues.some(cue => cue.key === shared.cue) && <p role="alert">This replay moment is no longer available.</p>}
-        {voice.error && <div role="alert">{voice.error}</div>}
+        {voice.error && <div role="alert">{voice.error}<button type="button" className="ml-3 underline" onClick={() => {voice.resume();setPlayRequested(true);director.play();}}>Retry voice</button><button type="button" className="ml-3 underline" onClick={() => {voice.continueWithText();setPlayRequested(true);director.play();}}>Continue with text</button></div>}
 
         <WatchTransport getShareHref={() => {
           const cue = director.getActiveCue();

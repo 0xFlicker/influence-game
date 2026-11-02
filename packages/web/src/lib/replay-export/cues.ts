@@ -186,7 +186,8 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
       game.players,
     scenes,
     game.gameSchemaVersion,
-    {attachDecisionSpeech: source.projectionVersion !== 3, attachTwoNamesSpeech: source.projectionVersion === undefined || source.projectionVersion >= 5},
+    {attachDecisionSpeech: source.projectionVersion !== 3, attachTwoNamesSpeech: source.projectionVersion === undefined || source.projectionVersion >= 5,
+      resultsPresentation: source.projectionVersion === undefined || source.projectionVersion >= 6},
   );
   const frameForSequence = compileReplayFrameLookup(frames);
   const lobbyMessages = compileSafetyBounceLobbyLookup(classic, scenes);
@@ -233,6 +234,7 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
       timing: {
         key: cue.key,
         baseDurationMs: cue.baseDurationMs,
+        minimumDurationMs:cue.minimumDurationMs,
         kind: ledger
           ? ledger.complete
             ? "tally"

@@ -78,6 +78,15 @@ export function compilePresentation(input: {
     return moment.segments.map((cue,index): ExportCue => ({...cue,momentId:moment.id,
       timing:{...cue.timing,key:moment.segments.length === 1 ? moment.id : `${moment.id}:segment:${index}`}}));
   });
+  // A selected result must remain readable when its following announcement was omitted.
+  for (let index = 0; index < cues.length; index++) {
+    const cue = cues[index]!;
+    if (cue.picture.kind !== "influence" || !cue.picture.cue.resultsPresentation || cue.timing.baseDurationMs !== 500) continue;
+    const next = cues[index+1]?.picture;
+    if (next?.kind !== "influence" || next.cue.source !== "classic" || next.cue.houseResultCue?.key !== cue.picture.cue.key) {
+      cues[index] = {...cue, timing:{...cue.timing,baseDurationMs:6000},picture:{...cue.picture,cue:{...cue.picture.cue,baseDurationMs:6000}}};
+    }
+  }
   const segmentKeys = new Set(cues.map(cue => cue.timing.key));
   const sourceIds = new Set(input.source.map(moment => moment.id));
   const keysByMoment = new Map<string,string[]>();

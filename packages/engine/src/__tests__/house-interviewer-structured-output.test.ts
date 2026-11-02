@@ -147,6 +147,7 @@ function makeHouseSummaryContext(
       version: 2,
       boundary,
       material: true,
+      playerGendersById: { "player-ada": "female", "player-blair": "non-binary", "player-unknown": null },
       playerNamesById: { "player-ada": "Ada", "player-blair": "Blair" },
       canonicalEvents: [{
         sequence: 5,
@@ -964,8 +965,8 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
     await expect(house.assignMingleRooms(makeAssignmentContext())).rejects.toBeInstanceOf(ProviderDeferredError);
     expect(requests).toHaveLength(2);
     expect(attempts.map((record) => record.outcome)).toEqual([
-      { kind: "transport_timeout", message: "Request was aborted.", retryable: true },
-      { kind: "transport_timeout", message: "Request was aborted.", retryable: true },
+      expect.objectContaining({ kind: "transport_timeout", message: "Timeout source unknown: Request was aborted.", retryable: true, timeoutSource: "unknown" }),
+      expect.objectContaining({ kind: "transport_timeout", message: "Timeout source unknown: Request was aborted.", retryable: true, timeoutSource: "unknown" }),
     ]);
   });
 
@@ -1399,6 +1400,10 @@ describe("LLMHouseInterviewer authored House summaries", () => {
 
       expect((await house.generateHouseSummary(makeHouseSummaryContext(beatClass))).status).toBe("emitted");
       expect(requests).toHaveLength(1);
+      const sent = JSON.stringify(requests[0]?.params);
+      const genders = JSON.stringify(makeHouseSummaryContext(beatClass).narrationContext.playerGendersById);
+      expect(sent).toContain(JSON.stringify(genders).slice(1, -1));
+      expect(sent).toContain("Never infer gender from a name");
       expect(requests[0]?.params).toMatchObject({
         max_output_tokens: 8192,
         reasoning: { effort: "medium" },
@@ -1470,6 +1475,9 @@ describe("LLMHouseInterviewer authored House summaries", () => {
         privateNarrativeNotebook: string;
       };
     };
+    expect(producerPayload.gameInformation).toMatchObject({playerGendersById: {
+      "player-ada": "female", "player-blair": "non-binary", "player-unknown": null,
+    }});
     const engineOwnedGameInformation = JSON.stringify(producerPayload.gameInformation);
     expect(engineOwnedGameInformation).toContain('"id":"short_list"');
     expect(engineOwnedGameInformation).toContain('"remainingPlayers"');

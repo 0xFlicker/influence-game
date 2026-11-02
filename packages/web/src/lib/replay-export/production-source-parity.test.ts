@@ -158,3 +158,23 @@ for (const overrideHolderId of ["atlas", "rex"]) for (const projectionVersion of
   expect(catalog.moments.filter(moment => moment.kind === "thinking")).toHaveLength(messages.length);
   expect(catalog.moments.filter(moment => moment.source.kind === "influence-transcript" && moment.kind !== "thinking")).toHaveLength(projectionVersion < 5 ? messages.length : 0);
 });
+
+test("v6 pairs result speech while frozen v5 and result-only Studio selections stay readable", async () => {
+  const fixture=createFormatKernelViewerScenario("majority_elimination_clear");
+  const players=fixture.roster.map(player=>({...player,persona:"",status:"alive" as const,shielded:false}));
+  const result=fixture.decisions.findLast(event=>event.type==="format.resolved")!;
+  const messages:TranscriptEntry[]=[{id:900,entrySequence:900,firstDurableEventSequence:result.sequence,gameId:"g",round:result.round,phase:"FORMAT_RESOLVE",scope:"system",fromPlayerId:null,fromPlayerName:null,toPlayerIds:null,text:"An accepted result announcement.",dialogueKind:"house_summary",timestamp:Date.parse(result.timestamp),houseResult:{eventSequence:result.sequence,authoringRevision:"results-mc-v1"}}];
+  const frames:GameWatchReplayFrame[]=fixture.decisions.map(event=>({schemaVersion:3,gameId:"g",slug:"g",sequence:event.sequence,eventType:event.type,timestamp:Date.parse(event.timestamp),round:event.round,phase:event.phase ?? "INIT",players,viewerDecisionEvent:event,counts:{totalPlayers:players.length,alivePlayers:players.length,eliminatedPlayers:0,unknownPlayers:0}}));
+  const source:Extract<ReplaySource,{kind:"influence"}>={kind:"influence",projectionVersion:6,game:{id:"g",slug:"g",status:"completed",gameKernel:"format",players},messages,frames,thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[]}};
+  const current=buildExportCues(source), frozen=buildExportCues({...source,projectionVersion:5});
+  expect(current.find(cue=>cue.speech?.text===messages[0]!.text)?.picture).toMatchObject({beat:{kind:"house-result"}});
+  expect(frozen.every(cue=>cue.picture.kind!=="influence" || !cue.picture.cue.resultsPresentation)).toBe(true);
+  expect(current.map(cue=>cue.source)).toEqual(frozen.map(cue=>cue.source));
+  const catalog=assembleProductionCatalog({gameId:"g",gameKind:"influence",audience:"public",sources:buildInfluenceProductionSources({gameId:"g",gameKernel:"format",transcripts:messages,frames})});
+  const bound=await bindInfluenceProductionPresentation({source,catalog,thoughts:[]});
+  const entrance=bound.find(moment=>moment.segments.some(cue=>cue.timing.baseDurationMs===500))!;
+  expect(entrance).toBeDefined();
+  const solo=compilePresentation({source:bound,selectedIds:[entrance.id],profile:parseTimingProfile(),fps:30,assets:{},music:false});
+  expect(solo.timeline[0]!.endMs-solo.timeline[0]!.startMs).toBeGreaterThanOrEqual(6000);
+  expect(solo.cues.every(cue=>!cue.speech)).toBe(true);
+});

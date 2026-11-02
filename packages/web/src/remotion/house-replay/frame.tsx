@@ -1,3 +1,5 @@
+import {RoomBackdrop} from "../../app/games/[slug]/components/stage-backdrop";
+import {resultRoom} from "../../app/games/[slug]/components/influence-rooms";
 import {exportContinuedActor,exportPreviousSpeaker} from "../../lib/replay-export/room-continuity";
 import {HouseNarration, narrationWindow} from "../../components/watch/house-narration";
 import {werewolfHouseCentered} from "../../components/games/werewolf/werewolf-watch-model";
@@ -173,8 +175,9 @@ export function ReplayFrame({
             </div>}
             <div
               ref={stage}
-              className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+              className="relative isolate flex min-h-0 flex-1 flex-col overflow-hidden"
             >
+              {picture.kind === "influence" && picture.cue.resultsPresentation && <div className="absolute inset-0 -z-10"><RoomBackdrop source={resultRoom(picture.cue.phase)} resilient /></div>}
               {picture.kind === "influence-opening" ? <InfluenceOpeningFrame {...picture} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} video={renderOpeningVideo} /> : picture.kind === "thinking" ? <ThinkingFrame picture={picture} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} /> : picture.kind === "werewolf-opening" ? <WerewolfOpeningFrame cue={picture.cue} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} video={renderOpeningVideo} /> : picture.kind === "werewolf" ? (
                 <WerewolfContentFrame
                   hideHouseCaption={Boolean(houseAudio)}
@@ -207,7 +210,7 @@ export function ReplayFrame({
                   />
                 </FitPresentation>
               ) : null}
-              <HouseNarration centered={picture.kind === "werewolf" && werewolfHouseCentered(picture.cue)} text={cue.speech?.text ?? ""} window={houseWindow} logoUrl={staticFile("logo.png")} />
+              <HouseNarration readable={picture.kind === "influence" && picture.cue.resultsPresentation} centered={picture.kind === "werewolf" && werewolfHouseCentered(picture.cue)} text={cue.speech?.text ?? ""} window={houseWindow} logoUrl={staticFile("logo.png")} />
             </div>
           </div>
         </SampledStageProvider>
