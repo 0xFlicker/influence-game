@@ -24,12 +24,38 @@ export async function readCutDiagnostics(db: DrizzleDB, gameIdOrSlug: string, us
   const [game] = await db.select().from(schema.games).where(or(eq(schema.games.id, gameIdOrSlug), eq(schema.games.slug, gameIdOrSlug)));
   if (!game || !isViewerGame(game)) throw new HouseInspectionError("not_accessible", "Game unavailable");
   const jobs = await loadPayloads(db.select().from(schema.houseCutJobs).where(eq(schema.houseCutJobs.gameId, game.id)));
-  return jobs.map(job => ({ id: job.id, audience: job.audience, status: job.status, failure: job.failure,
+  const audiences = game.gameKind === "werewolf" ? ["mystery", "omniscient"] as const : ["public"] as const;
+  return audiences.map(audience => {
+    const job = jobs.find(job => job.audience === audience);
+    if (!job) return { audience, status: "missing" as const, budgetUsd: 1, spentUsd: 0, action: game.status === "completed" ? "backfill" as const : null };
+    const blockedReason = !job.source || !job.journal ? "Saved source or journal is missing. Operator inspection is required."
+      : job.journal.attempts.some(a => !a.terminal) ? "A provider request has an unknown outcome. Operator inspection is required."
+      : job.journal.budgetUsd > 1 || cutTrialSpend(job.journal) >= job.journal.budgetUsd ? "The audience budget is exhausted or invalid." : null;
+    return { id: job.id, audience: job.audience, status: job.status, failure: job.failure,
+    action: game.status === "completed" && job.status === "failed" && !job.publication && !blockedReason ? "recover" as const : null,
+    blockedReason: job.status === "failed" ? blockedReason : null, cardCount: job.publication?.cuts.length,
     expectedUpdatedAt: job.updatedAt.toISOString(), budgetUsd: job.journal?.budgetUsd ?? 1,
     spentUsd: job.journal ? cutTrialSpend(job.journal) : 0,
     attempts: job.journal?.attempts.map(a => ({ windowId: a.windowId, ordinal: a.intent.attemptOrdinal,
       status: a.terminal?.disposition ?? "unknown", outcome: a.terminal?.outcome })) ?? [],
-  }));
+  }; });
+}
+
+/** Insert only a missing audience. The unique game/audience key makes retries idempotent. */
+export async function backfillHouseCuts(db: DrizzleDB, gameIdOrSlug: string, input: unknown, userId: string) {
+  await authorize(db, userId);
+  if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).length !== 1 || !("audience" in input)
+    || typeof input.audience !== "string" || !["public", "mystery", "omniscient"].includes(input.audience)) throw new HouseInspectionError("invalid_input", "A valid audience is required");
+  const audience = input.audience as CutRecoveryInput["audience"];
+  return db.transaction(async tx => {
+    const [game] = await tx.select().from(schema.games).where(or(eq(schema.games.id, gameIdOrSlug), eq(schema.games.slug, gameIdOrSlug))).for("update");
+    if (!game || !isViewerGame(game) || game.status !== "completed") throw new HouseInspectionError("not_accessible", "Completed game unavailable");
+    if (game.gameKind === "werewolf" ? audience === "public" : audience !== "public") throw new HouseInspectionError("invalid_input", "Audience does not match this game");
+    await tx.insert(schema.houseCutJobs).values({ gameId: game.id, audience }).onConflictDoNothing();
+    const [job] = await tx.select({ id: schema.houseCutJobs.id, status: schema.houseCutJobs.status }).from(schema.houseCutJobs)
+      .where(and(eq(schema.houseCutJobs.gameId, game.id), eq(schema.houseCutJobs.audience, audience)));
+    return job!;
+  });
 }
 export async function recoverHouseCuts(db: DrizzleDB, gameIdOrSlug: string, input: CutRecoveryInput, userId: string) {
   assertCutRecoveryInput(input);

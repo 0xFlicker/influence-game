@@ -61,9 +61,41 @@ test("HTTP diagnostics and recovery require current operator roles", async () =>
   try {
     const app = createGameResultsRoutes(db);
     expect((await app.request("/api/games/cuts-recovery/cuts/diagnostics")).status).toBe(401);
+    expect((await app.request("/api/games/cuts-recovery/cuts/backfill", { method: "POST" })).status).toBe(401);
     const token = await createSessionToken("cuts-reader", { roles: ["admin"] });
     expect((await app.request("/api/games/cuts-recovery/cuts/diagnostics", { headers: { authorization: `Bearer ${token}` } })).status).toBe(403);
     expect((await app.request("/api/games/cuts-recovery/cuts/recover", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify({ audience: "public", expectedUpdatedAt: "stale", idempotencyKey: "unauthorized" }) })).status).toBe(403);
+    expect((await app.request("/api/games/cuts-recovery/cuts/backfill", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ audience: "public" }) })).status).toBe(403);
   } finally { if (previous === undefined) delete process.env.JWT_SECRET; else process.env.JWT_SECRET = previous; }
+});
+
+test("backfill exposes missing audiences and creates each job once without replacing existing work", async () => {
+  const { backfillHouseCuts } = await import("../services/house-cut-recovery");
+  const { job } = await fixture();
+  await db.delete(schema.houseCutJobs).where(eq(schema.houseCutJobs.id, job.id));
+  expect((await readCutDiagnostics(db, "cuts-recovery", "cuts-operator"))[0]).toMatchObject({ status: "missing", action: "backfill" });
+  await expect(backfillHouseCuts(db, "cuts-recovery", { audience: "public" }, "cuts-reader")).rejects.toThrow("operator");
+  await expect(backfillHouseCuts(db, "cuts-recovery", { audience: "mystery" }, "cuts-operator")).rejects.toThrow("Audience");
+  await expect(backfillHouseCuts(db, "cuts-recovery", { audience: "public", extra: true }, "cuts-operator")).rejects.toThrow("valid audience");
+  await expect(backfillHouseCuts(db, "cuts-recovery", { audience: ["public"] }, "cuts-operator")).rejects.toThrow("valid audience");
+  const first = await backfillHouseCuts(db, "cuts-recovery", { audience: "public" }, "cuts-operator");
+  expect(first.status).toBe("queued");
+  expect(await backfillHouseCuts(db, "cuts-recovery", { audience: "public" }, "cuts-operator")).toEqual(first);
+  await db.update(schema.houseCutJobs).set({ status: "ready" }).where(eq(schema.houseCutJobs.id, first.id));
+  expect(await backfillHouseCuts(db, "cuts-recovery", { audience: "public" }, "cuts-operator")).toEqual({ ...first, status: "ready" });
+});
+
+test("backfill requires a completed visible game and keeps Werewolf audiences independent", async () => {
+  const { backfillHouseCuts } = await import("../services/house-cut-recovery");
+  await fixture();
+  await db.insert(schema.games).values({ id: "cuts-wolf", slug: "cuts-wolf", gameKind: "werewolf", status: "completed", config: '{}' });
+  expect((await readCutDiagnostics(db, "cuts-wolf", "cuts-operator")).map(row => row.audience)).toEqual(["mystery", "omniscient"]);
+  await backfillHouseCuts(db, "cuts-wolf", { audience: "mystery" }, "cuts-operator");
+  expect((await readCutDiagnostics(db, "cuts-wolf", "cuts-operator")).map(row => row.status)).toEqual(["queued", "missing"]);
+  await db.update(schema.games).set({ status: "in_progress" }).where(eq(schema.games.id, "cuts-wolf"));
+  await expect(backfillHouseCuts(db, "cuts-wolf", { audience: "omniscient" }, "cuts-operator")).rejects.toThrow("Completed game");
+  await db.update(schema.games).set({ status: "completed", hiddenAt: new Date().toISOString() }).where(eq(schema.games.id, "cuts-wolf"));
+  await expect(backfillHouseCuts(db, "cuts-wolf", { audience: "omniscient" }, "cuts-operator")).rejects.toThrow("Completed game");
 });

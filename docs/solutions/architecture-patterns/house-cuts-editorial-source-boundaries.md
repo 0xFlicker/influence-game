@@ -39,3 +39,9 @@ Provider-free tests cover paraphrases, source ordering, mixed valid/invalid card
 `packages/api/src/scripts/evaluate-house-cuts.ts` is an explicitly paid localhost API harness. Use a fresh dedicated `influence_cuts_eval_*` database, local private bucket, OpenAI credentials, and a fresh private output directory. It seeds canonical fixtures, starts the actual authenticated Cuts API, requests recovery over HTTP, runs the real worker and reads published cards over HTTP. Three audience journals are each capped at $0.75 ($2.25 maximum total). It retains the database, source/journal objects, publications and sanitized private receipts; no shared test DB truncation or production writes. The retained exclusive run lock prevents accidental repeats. A new run requires fresh spending authorization within the task's remaining allowance.
 
 No `as any` or direct-House-call bypasses. Synthetic fixtures prove integration, not real-game editorial quality; inspect final cards as well as status.
+
+### Studio operator controls
+
+Completed games expose **Tools → House Cuts** to Admin/Sysop operators (or the House Cuts toolbar action outside the editorial workspace). Diagnostics include the expected audiences even when their jobs are missing, plus available actions, card count and blocked-retry reasons. The panel shows spending and generation progress and handles stale-state checks and exact retries after uncertain HTTP responses.
+
+`POST /api/games/:id/cuts/backfill` accepts exactly `{ audience }`. It checks the current operator role, completed visible game and game-specific audience before inserting a queued job under the game row lock. The unique game/audience constraint makes duplicate submissions idempotent. Existing failed, running and ready jobs are returned unchanged; recovery remains a separate action. No historical generation occurs until an operator clicks Generate missing Cuts.
