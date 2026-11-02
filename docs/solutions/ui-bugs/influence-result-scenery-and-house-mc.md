@@ -38,3 +38,10 @@ Current House result messages use a bounded in-flow box with a centered overlapp
 - Influence's winner tableau already uses container-responsive artwork and standings. Its desktop/mobile regression remains covered; its secondary jury list can still scroll. This follow-up does not claim that every detailed ballot ledger or final standings panel fits arbitrary heights without scrolling.
 
 Validation covers the twelve-way Empower tie at eight sizes in inline/theater modes, Werewolf vote results at four small/short sizes in both modes, the Werewolf closing cast, and existing Influence final-tableau desktop/mobile checks. Keep the tests measuring rendered bounds after ResizeObserver settles; static markup cannot prove fit.
+
+
+## Full-body Empower staging
+
+Current compact Empower results measure each player cell with a CSS size container. Saved full-body artwork appears when the cell is at least 112px wide and 220px tall, after result headings, House speech and playback controls receive their space. The artwork uses `object-fit: contain`; names and vote counts remain visible. Smaller cells keep the packed portrait/name layout. Missing artwork keeps portraits, and only a confirmed 404 permits replacing a saved full-body reference. This applies to both tied players and a resolved Empower winner; frozen noncompact exports keep their layout.
+
+Browser previews cover 2-, 3-, 6-, and 12-way ties across 320×568, 390×844, 600×600, 1280×400, 844×390 and 1920×1080, in inline and theater modes. Each case verifies the cell threshold, loaded artwork, visible cast, absence of result scrolling, and readable House pagination.
