@@ -1,9 +1,11 @@
 "use client";
 import { HouseCutsPanel } from "./house-cuts-panel";
+import {RenderJobsPanel} from "./render-jobs-panel";
 import { AudioGenerationPanel } from "./audio-generation-panel";
 import { attachGeneratedAudio } from "../../../lib/replay-export/generated-audio";
 import { productionMediaIds } from "./production-media-selection";
 import type { PublishedAudioTrack } from "@influence/engine/audio-track";
+import type {ProductionExportDescriptor} from "@influence/engine/production-moments/export";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
@@ -129,6 +131,9 @@ function MomentWorkspace({game, audience, thinking, review, readScopeGeneration,
   const [refreshed, setRefreshed] = useState<{scope: string; source: LoadedProductionSource} | null>(null);
   const selectionOperationKey = `operation:${root}/selection`;
   const [selectionOperation] = useAdminValue<Operation | undefined>(selectionOperationKey, undefined);
+  const cloudOperationKey=`operation:${root}/render-orders`;
+  const [cloudOperation]=useAdminValue<Operation|undefined>(cloudOperationKey,undefined);
+  const [cloudBusy,setCloudBusy]=useState(false);
   const [speechImport, setSpeechImport] = useState<{id: string; value: BrowserSpeechImport} | null>(null), [importing, setImporting] = useState(false);
   const importRequest = useRef<AbortController | null>(null);
   const anchor = useRef<PresentationAnchor>(params.get("moment") ? {momentId: params.get("moment")!, offsetMs: 0} : null);
@@ -298,6 +303,44 @@ function MomentWorkspace({game, audience, thinking, review, readScopeGeneration,
       setNotice("Frozen selected IDs downloaded. Run the local command shown in Export to encode the movie.");
     } catch (error) {if (alive.current) {if (error instanceof ApiError && error.status === 409) setCutConflict(true); setNotice(message(error));}}
   }
+  async function orderCloud(retryExact=false) {
+    if(cloudBusy||!retryExact&&(!loaded||!base||!selectedIds.length||selectionError||cutConflict||cutNeedsReview||reviewPending))return;
+    setCloudBusy(true);setNotice(null);preview.current?.pauseAndRetainAnchor();
+    try {
+      let body:Record<string,unknown>;
+      if(retryExact&&cloudOperation)body=cloudOperation.body;
+      else {
+        const descriptor=await session.execute<ProductionExportDescriptor>(selectionOperationKey,`${root}/selection`,{snapshot:loaded!.snapshot,audience,thinking:sourceThinking,
+          selection,expectedMomentIds:stableSelectedIds,recordings:selectedRecordings?.filter(r=>stableSelectedIds.includes(r.momentId))??[],settings,copy:{title:loaded!.title??game.title??game.slug}});
+        if(!descriptor)return;
+        const files=[...new Set(descriptor.recordings.filter(r=>!r.versionId).map(r=>r.sha256))].map(hash=> {
+          const recording=descriptor.recordings.find(r=>r.sha256===hash)!;
+          const file=speechImport?.value.bindings.get(recording.momentId)?.file;
+          if(!file)throw new Error("Choose the imported recording files before ordering this cut");
+          return {path:`assets/${hash}`,sha256:hash,byteLength:file.size};
+        });
+        body={descriptor,files,requestKey:crypto.randomUUID()};
+      }
+      const job=await session.execute<{id:string;state:string}>(cloudOperationKey,`${root}/render-orders`,body);
+      if(!job)return;
+      if(job.state==="uploading_inputs") {
+        const path=`/api/admin/renders/${job.id}/input-targets`;
+        const targets=await session.read<{files:Array<{path:string;sha256:string;url:string;headers:Record<string,string>}>}>(path,undefined,()=>apiFetch(path,{method:"POST"}));
+        for(const target of targets.files) {
+          const descriptor=body.descriptor as ProductionExportDescriptor,recording=descriptor.recordings.find(r=>r.sha256===target.sha256);
+          const file=recording&&speechImport?.value.bindings.get(recording.momentId)?.file;
+          if(!file)throw new Error("Reselect the same imported recordings to finish this upload");
+          const response=await fetch(target.url,{method:"PUT",headers:target.headers,body:file,redirect:"error"});
+          if(!response.ok&&response.status!==412)throw new Error("Recording upload failed; resume this exact render order");
+        }
+        await session.execute(`operation:${root}/render-orders/${job.id}/queue`,`/api/admin/renders/${job.id}/queue`,{});
+      }
+      await client.invalidateQueries({predicate:query=>query.queryKey[0]==="admin"&&query.queryKey[1]===session.scope&&String(query.queryKey[2]).startsWith("/api/admin/renders/jobs")});
+      session.delete(cloudOperationKey);
+      if(alive.current)setNotice(`Render ordered: ${job.id}. You can leave and return to check Render jobs.`);
+    }catch(error){if(alive.current)setNotice(message(error));}
+    finally {if(alive.current)setCloudBusy(false);}
+  }
   async function refreshTags() {
     if (!loaded) return;
     preview.current?.pauseAndRetainAnchor(); setRefreshing(true); setNotice(null);
@@ -313,7 +356,7 @@ function MomentWorkspace({game, audience, thinking, review, readScopeGeneration,
     try {
       const value = await importBrowserSpeech(files, loaded.presentation, request.signal);
       if (request.signal.aborted || !alive.current) {disposeBrowserSpeech(value); return;}
-      setSpeechImport({id: crypto.randomUUID(), value}); setNotice(`${value.bindings.size} local recording references imported. Audio stays in this browser; use the same manifest and files for local export.`);
+      setSpeechImport({id: crypto.randomUUID(), value}); setNotice(`${value.bindings.size} local recording references imported. Recordings stay in this browser until you order a cloud render. Keep the same manifest and files for local export.`);
     } catch (error) {if (!request.signal.aborted && alive.current) setNotice(message(error));} finally {if (!request.signal.aborted && alive.current) setImporting(false);}
   }
   const header = <header className={styles.commandBar}>{identity}<div className={styles.commands}><div className={styles.segmented}><button {...studioShortcutProps("source",characterShortcuts)} aria-pressed={view === "source"} onClick={() => changeView("source")}>Source</button><button {...studioShortcutProps("cut",characterShortcuts)} aria-pressed={view === "cut"} onClick={() => changeView("cut")}>Selected cut</button></div><button aria-label="Cut rules" title={recipeSummary(selection)} disabled={!loaded} onClick={() => openPanel("cut")}><span className={styles.cutRulesPrefix}>Cut </span>rules</button><button onClick={() => openPanel(loaded ? "presentation" : "source")}>Tools</button><button {...studioShortcutProps("export",characterShortcuts)} disabled={!loaded} className={styles.primary} onClick={() => openPanel("export")}>Export…</button><button aria-label="The House navigation" title="The House navigation" onClick={() => openPanel("navigation")}>☰</button></div></header>;
@@ -361,11 +404,15 @@ function MomentWorkspace({game, audience, thinking, review, readScopeGeneration,
         {(["readingRate","thinkingRate","conversationGapMs","motionScale"] as const).map(key => <label key={key} className={styles.settingField}><span>{{readingRate:"Speech reading rate",thinkingRate:"Thought reading rate",conversationGapMs:"Conversation gap",motionScale:"Motion scale"}[key]}</span><small>{key === "conversationGapMs" ? "Milliseconds between conversations" : key === "motionScale" ? "Camera and fade duration multiplier" : "1× is the game default; higher reads faster"}</small><div><input aria-label={key} type="number" min={key === "conversationGapMs" ? 0 : .1} step={key === "conversationGapMs" ? 50 : .1} value={settings.profile[key] ?? ""} placeholder={key === "conversationGapMs" ? "Game default" : "1.0"} onChange={event => setTiming(key,event.target.value)} /><span>{key === "conversationGapMs" ? "ms" : "×"}</span><button onClick={() => setTiming(key,"")}>Reset</button></div></label>)}
       </div></>}
       {panel === "cut" && <><StudioCutRules recipe={selection} onChange={next => edit(() => setSelection(next))} kinds={[...new Set(visibleMoments.map(moment => moment.kind))] as ProductionMomentKind[]} />{selectionError && <p role="alert" className={styles.warning}>{selectionError}</p>}<p className={styles.dialogIntro}>{recipeSummary(selection)}. {selectedIds.length} moments in this cut · {clock(cutDuration,settings.fps)}.</p><div className={styles.actions}><button disabled={!!selectionError} className={styles.primary} onClick={() => {changeView("cut"); setPanel(null);}}>Watch selected cut</button><button disabled={refreshing} onClick={() => void refreshTags()}>Refresh saved tags</button>{cutNeedsReview && <button onClick={() => {changeView("cut"); setCutNeedsReview(false); setPanel(null);}}>Review refreshed cut</button>}</div></>}
-      {panel === "recordings" && <><AudioGenerationPanel root={root} /><button onClick={()=>edit(()=>{void audioPublication.refetch();})}>Load ready audio into this preview</button>{audioPublication.error && <p role="alert">{audioPublication.error.message}</p>}<p className={styles.dialogIntro}>Choose an existing speech manifest and its audio files together. Speaker, text and alignment must match accepted speech exactly. Audio stays in this browser; use the same files for local export.</p><label className={styles.settingField}>Speech manifest and audio<input aria-label="Import local recordings" type="file" multiple accept=".json,audio/*,.wav,.mp3,.m4a,.ogg" disabled={importing} onChange={event => {const files=[...(event.target.files ?? [])]; event.target.value=""; if (files.length) void importRecordings(files);}} /></label>{importing && <p role="status">Validating the complete permitted speech manifest…</p>}{speechImport && <><p>{speechImport.value.bindings.size} recording references imported. No audio is uploaded.</p><button onClick={() => edit(() => setSpeechImport(null))}>Remove local recordings</button></>}</>}
+      {panel === "recordings" && <><AudioGenerationPanel root={root} /><button onClick={()=>edit(()=>{void audioPublication.refetch();})}>Load ready audio into this preview</button>{audioPublication.error && <p role="alert">{audioPublication.error.message}</p>}<p className={styles.dialogIntro}>Choose an existing speech manifest and its audio files together. Speaker, text and alignment must match accepted speech exactly. Recordings stay in this browser until you order a cloud render. Keep the same files for local export.</p><label className={styles.settingField}>Speech manifest and audio<input aria-label="Import local recordings" type="file" multiple accept=".json,audio/*,.wav,.mp3,.m4a,.ogg" disabled={importing} onChange={event => {const files=[...(event.target.files ?? [])]; event.target.value=""; if (files.length) void importRecordings(files);}} /></label>{importing && <p role="status">Validating the complete permitted speech manifest…</p>}{speechImport && <><p>{speechImport.value.bindings.size} recording references imported. Audio uploads only when you order a cloud render.</p><button onClick={() => edit(() => setSpeechImport(null))}>Remove local recordings</button></>}</>}
       {panel === "export" && <><p className={styles.dialogIntro}>{selectedIds.length} saved moments · {ratio} · {clock(cutDuration,settings.fps)}. Export uses the reviewed presentation and pinned visuals.</p><div className={styles.settingsGrid}><StudioSelect label="Output size" value={String(Math.max(settings.width,settings.height))} onChange={value => edit(() => setSettings({...settings,...geometry(ratio,Number(value))}))} options={[{value:"640",label:"640 pixels · draft"},{value:"1280",label:"1280 pixels · HD"},{value:"1920",label:"1920 pixels · full HD"}]} /><StudioSelect label="Frames per second" value={String(settings.fps)} onChange={value => edit(() => setSettings({...settings,fps:Number(value)}))} options={[{value:"24",label:"24 fps"},{value:"30",label:"30 fps"},{value:"60",label:"60 fps"}]} /></div><div className={styles.exportSummary}><strong>{settings.width} × {settings.height} / {settings.fps} fps</strong><p>Download the selection, then run the command below from the <strong>influence-game repository root</strong>. It reads the selection from Downloads and saves the movie in <code>.renders/</code>. If your browser renamed the file or saved it elsewhere, update <code>--selection</code> to its actual path. Browser sign-in opens when needed.</p>{exportCommand && <code>{exportCommand}</code>}</div>
         {game.status === "suspended" && <p className={styles.warning}>Paused games preview a fixed accepted prefix. Local export requires a completed game.</p>}{view !== "cut" && <button onClick={() => changeView("cut")}>Watch selected cut</button>}{cutConflict && <p role="alert" className={styles.warning}>Saved tags changed after this cut was reviewed. Refresh saved tags and review the refreshed cut before downloading.</p>}{cutNeedsReview && <button onClick={() => {changeView("cut"); setCutNeedsReview(false); setPanel(null);}}>Review refreshed cut</button>}{(cutConflict || cutNeedsReview) && <button disabled={refreshing} onClick={() => void refreshTags()}>Refresh saved tags</button>}{selectionError && <p role="alert" className={styles.warning}>{selectionError}</p>}
         {selectionOperation?.phase === "unknown" && <div role="alert" className={styles.warning}><strong>Export response unavailable</strong><p>Your exact request is retained. Retry it before starting another export; later cut changes do not replace this request.</p><button onClick={() => void freeze(true)}>Retry exact export request</button></div>}
         <button className={styles.primary} disabled={view !== "cut" || !base || !selectedIds.length || !!selectionError || cutConflict || cutNeedsReview || reviewPending || game.status !== "completed" || selectionOperation?.phase === "submitting" || selectionOperation?.phase === "unknown"} onClick={() => void freeze()}>{selectionOperation?.phase === "submitting" ? "Freezing selection…" : "Download selected export"}</button>
+        <RenderJobsPanel gameId={game.id}/>
+        <p>Rendering runs in the background and can take hours. The selected cut stays fixed after ordering. Imported recordings upload before rendering begins.</p>
+        {cloudOperation && <button disabled={cloudBusy} onClick={()=>void orderCloud(true)}>Resume exact render order</button>}
+        <button disabled={cloudBusy||!!cloudOperation||view!=="cut"||!base||!selectedIds.length||!!selectionError||cutConflict||cutNeedsReview||reviewPending||game.status!=="completed"||selectionOperation?.phase==="submitting"||selectionOperation?.phase==="unknown"} onClick={()=>void orderCloud()}>{cloudBusy?"Ordering render…":"Render video"}</button>
       </>}
       {panel === "scene" && <><ProductionSceneInspector game={game} source={loaded ?? undefined} audience={audience} contextSceneId={contextSceneId} onOpenGameTools={() => openPanel("recovery")} /><div className={styles.actions}><button disabled={!loaded || refreshing} onClick={() => void refreshPublished()}>Refresh published visuals</button></div><p className={styles.dialogIntro}>Publishing and gameplay resume are separate. Refresh explicitly to use published visuals at the same source boundary.</p></>}
       {gamePanels.some(key => key === panel) && (gameContent[panel as GamePanel] ?? <p>These tools are unavailable with your current permissions.</p>)}

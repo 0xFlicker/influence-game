@@ -1497,6 +1497,28 @@ describe("admin route RBAC", () => {
     });
   });
 
+  test("admin discovery keeps incomplete model configurations inspectable without hiding valid games", async () => {
+    const validId = await insertGame(db, { slug: "valid-admin-game" });
+    const invalidConfigs = [
+      JSON.stringify({ visualMode: true, visualFailurePolicy: "require_visuals" }),
+      JSON.stringify({ modelSelection: { catalogId: "invalid-model" } }),
+    ];
+    const ids = invalidConfigs.map(() => randomUUID());
+    await db.insert(schema.games).values(invalidConfigs.map((config, index) => ({
+      id: ids[index]!, slug: `invalid-admin-probe-${index}`, gameKind: "influence" as const, status: "waiting" as const, config,
+    })));
+    const response = await app.request("/api/admin/games", { headers: { Authorization: `Bearer ${adminToken}` } });
+    expect(response.status).toBe(200);
+    const rows = await response.json() as Array<{ id: string; modelLabel: string; errorInfo?: string }>;
+    expect(rows).toHaveLength(3);
+    expect(rows.find(row => row.id === validId)?.modelLabel).not.toBe("Invalid model configuration");
+    for (const [index, id] of ids.entries()) {
+      expect(rows.find(row => row.id === id)).toMatchObject({modelLabel: "Invalid model configuration", errorInfo: "Model configuration is missing or invalid. Inspect this game before starting it."});
+      expect((await db.select().from(schema.games).where(eq(schema.games.id, id)))[0]?.config).toBe(invalidConfigs[index]);
+    }
+    expect((await app.request("/api/admin/games")).status).toBe(401);
+  });
+
   test.each(["Atlas", "null", " NULL ", "undefined", " UNDEFINED "])("auto-suffixes reserved imported profile %s without rewriting historical persona", async (reservedName) => {
     const existingOwner = await createUser(
       db,

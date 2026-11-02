@@ -45,6 +45,8 @@ import { createMcpRoutes } from "./routes/mcp.js";
 import { createAnonymousAgentCreationRoutes } from "./routes/anonymous-agent-creation.js";
 import { createVisualReplayProductionRoutes } from "./routes/visual-replay-production.js";
 import {createProductionStudioRoutes} from "./routes/production-studio.js";
+import {createRenderJobRoutes} from "./routes/render-jobs.js";
+import {configureLocalRenderJobs} from "./services/render-jobs.js";
 import { createAgentProfileRoutes } from "./routes/agent-profiles.js";
 import { createAdminRoutes } from "./routes/admin.js";
 import { createFreeQueueRoutes } from "./routes/free-queue.js";
@@ -569,6 +571,7 @@ app.use(
 
 // Health check (both paths: /health for direct access, /api/health for reverse-proxy)
 const releaseRenderExecution = renderExecutionConfig();
+configureLocalRenderJobs(releaseRenderExecution);
 const healthResponse = () => ({
   renderExecution: releaseRenderExecution,
   status: "ok" as const,
@@ -669,6 +672,7 @@ app.route("/", agentProfileRoutes);
 app.route("/", createAnonymousAgentCreationRoutes(db));
 app.route("/", createVisualReplayProductionRoutes(db));
 app.route("/",createProductionStudioRoutes(db));
+app.route("/",createRenderJobRoutes(db));
 app.route("/", createModerationRoutes(db));
 app.route("/", createAccountInferenceRoutes(db));
 

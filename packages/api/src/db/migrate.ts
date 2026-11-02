@@ -83,6 +83,7 @@ const REVIEWED_CLAIM_CLEANUP_MIGRATIONS = new Map([
 // input size gate. 0129 replaces game-owner FKs with equivalent generated-column
 // FKs for game calls, allowing separately lease-fenced episode calls. All retain rows.
 const REVIEWED_CONSTRAINT_REMOVAL_MIGRATIONS = new Map([
+  ["0144_producer_render_scope.sql", "d6f9bb2160ea55b4b190ec63629550cde7021ea1c29839836caa3e7ee8d43e21"],
   ["0108_house_owner_learning.sql", "518ef175bb2cd547d7a5ca5c5b282025d578cd8e404439f54cbcd5f95b543ae6"],
   ["0118_retrospective_input_size.sql", "442eadf1385878d9526e7b3d7dcc059da36f4a4fdea232ec04a0cc9efd9fe13a"],
   ["0129_provider_journal_house_authority.sql", "69b99577dbdf92ab76d694a7ed859524a7091b09034fb3eded50de850ff9bcb7"],

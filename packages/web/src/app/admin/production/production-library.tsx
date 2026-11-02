@@ -4,10 +4,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAdminRead, useAdminSession, useAdminValue, type Operation } from "../admin-session";
 import { productionLibraryFilters, type ProductionLibraryPage } from "@/lib/production-studio";
 import styles from "./studio.module.css";
+import {usePermissions} from "@/hooks/use-permissions";
 
 type NamingReview = {gameIds: string[]; calls: number; skipped: number; queued: boolean};
 type NamingBaseline = Record<string,{revision:number;status:string}>;
 export function ProductionLibrary() {
+  const {roles}=usePermissions(),producer=roles.includes("producer")||roles.includes("sysop");
   const params = useSearchParams(), router = useRouter(), session = useAdminSession();
   const filters = productionLibraryFilters(new URLSearchParams(params));
   const query = new URLSearchParams(filters); query.set("limit", "25");
@@ -64,7 +66,7 @@ export function ProductionLibrary() {
     finally {if (!session.get<boolean>(`access-denied:${resource}`)) setPreparing(false);}
   }
   return <section className={styles.studio} aria-label="Production library" data-production-library>
-    <header className={styles.heading}><div><p className={styles.label}>The House / Production</p><h1>Production Studio</h1><p className={styles.subtitle}>Watch, edit and repair completed episodes or accepted paused prefixes.</p></div><button onClick={() => void page.refresh()}>Refresh library</button></header>
+    <header className={styles.heading}><div><p className={styles.label}>The House / Production</p><h1>Production Studio</h1><p className={styles.subtitle}>Watch, edit and repair completed episodes or accepted paused prefixes.</p></div><div className={styles.tagActions}>{producer&&<Link className={styles.nextPage} href="/admin/production/renders">Render jobs →</Link>}<button onClick={() => void page.refresh()}>Refresh library</button></div></header>
     <div className={styles.libraryFilters}>
       <label>Game<select disabled={busy || unknown} aria-label="Game filter" value={filters.get("kind") ?? ""} onChange={event => change("kind", event.target.value)}><option value="">Both games</option><option value="influence">Influence</option><option value="werewolf">Werewolf</option></select></label>
       <label>Status<select disabled={busy || unknown} aria-label="Production status" value={filters.get("status") ?? ""} onChange={event => change("status", event.target.value)}><option value="">Completed and paused</option><option value="completed">Completed</option><option value="suspended">Paused</option></select></label>

@@ -101,7 +101,8 @@ export function useAdminValue<T>(key: string, initial: T) {
 }
 export const accessDenied = (error: unknown) => error instanceof ApiError && (error.status === 401 || error.status === 403);
 export function adminAccessResource(url: string): string {
-  return url.match(/^\/api\/admin\/production\/library(?=\?|$)/)?.[0]
+  return url.match(/^\/api\/admin\/renders(?=\/|\?|$)/)?.[0]
+    ?? url.match(/^\/api\/admin\/production\/library(?=\?|$)/)?.[0]
     ?? url.match(/^\/api\/admin\/production\/games\/[^/]+/)?.[0]
     ?? url.match(/^\/api\/games\/[^/]+\/cuts(?=\/|$)/)?.[0]
     ?? url.match(/^\/api\/admin\/werewolf\/[^/]+/)?.[0]

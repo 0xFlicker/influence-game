@@ -122,14 +122,14 @@ async function listToolDescriptors(
 
 describe("ProductionGameMcpJsonRpcServer", () => {
   test("every advertised output schema compiles with full JSON Schema validation", async () => {
-    const scopes: GameMcpAuthContext["scopes"] = ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:routing", "moderation:read", "moderation:write", "assets:manage"];
+    const scopes: GameMcpAuthContext["scopes"] = ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:render", "producer:routing", "moderation:read", "moderation:write", "assets:manage"];
     const server = new ProductionGameMcpJsonRpcServerBase(fakeReadModel(), undefined, async () => ({
       clientScopes: scopes, hasProducerRole: true, hasModerationRole: true, hasRetrospectiveRecoveryAccess: true,
     }));
     const tools = await listToolDescriptors(server, { ...PRODUCER_AUTH, scope: scopes.join(" "), scopes });
     const validator = new Ajv({ strict: false });
     const typedTools = tools.filter(tool => tool.outputSchema);
-    expect(typedTools).toHaveLength(38);
+    expect(typedTools).toHaveLength(43);
     for (const tool of typedTools) {
       expect(() => validator.compile(tool.outputSchema!)).not.toThrow();
     }
@@ -786,7 +786,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       resource: GAMES_AUTH.resource,
       needsProducerRole: true,
     })).resolves.toEqual({
-      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:routing", "moderation:read", "moderation:write", "assets:manage"],
+      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:render", "producer:routing", "moderation:read", "moderation:write", "assets:manage"],
       hasProducerRole: false, hasModerationRole: false, hasRetrospectiveRecoveryAccess: false,
     });
     await expect(resolveEligibility({
@@ -804,7 +804,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       resource: GAMES_AUTH.resource,
       needsProducerRole: false,
     })).resolves.toEqual({
-      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:routing", "moderation:read", "moderation:write", "assets:manage"],
+      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:render", "producer:routing", "moderation:read", "moderation:write", "assets:manage"],
       hasProducerRole: false, hasModerationRole: false, hasRetrospectiveRecoveryAccess: false,
     });
     await expect(resolveEligibility({
@@ -862,6 +862,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "search_rules",
       "read_production_moments",
       "preview_production_cut",
+      "get_production_render",
+      "get_production_render_download",
       "read_producer_season_diagnostics",
       "read_producer_visual_production",
       "inspect_durable_run",

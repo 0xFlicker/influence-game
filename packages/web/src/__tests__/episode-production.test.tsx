@@ -30,6 +30,7 @@ test("shared library naming preserves drafts, queues exact reviewed IDs and reco
     expect({ code, errors: code ? stdout + stderr : "" }).toEqual({ code: 0, errors: "" }); return;
   }
   mock.module("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(), useRouter: () => ({ replace() {} }) }));
+  mock.module("@/hooks/use-permissions",()=>({usePermissions:()=>({roles:["producer"]})}));
   const { ProductionLibrary } = await import("../app/admin/production/production-library");
   const writes: Array<{ gameIds: string[]; regenerate: boolean; preview: boolean }> = [];
   let outcome: "success" | "unknown" | "denied" = "success", failEpisodeRead = false;

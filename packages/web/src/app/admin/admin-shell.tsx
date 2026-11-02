@@ -46,10 +46,11 @@ function ProductionAccessBoundary() {
     const privateResource = (url: string) => {
       const path = url.split("?")[0]!;
       const metadata = path === `${prefix}library` || /^\/api\/admin\/production\/games\/[^/]+$/.test(path);
-      return url.startsWith(prefix) && (!discoveryAllowed || !metadata);
+      return url.startsWith("/api/admin/renders") || url.startsWith(prefix) && (!discoveryAllowed || !metadata);
     };
     session.invalidateReadsMatching(privateResource);
-    session.clearMatching(key => key.includes(prefix) && ((key.startsWith("draft:") || key.startsWith("operation:") || key.startsWith("ui:")) || privateResource(key.slice(key.indexOf(prefix)))));
+    session.clearMatching(key => key.includes(prefix) && ((key.startsWith("draft:") || key.startsWith("operation:") || key.startsWith("ui:")) || privateResource(key.slice(key.indexOf(prefix))))
+      || key.includes("/api/admin/renders") && (key.startsWith("draft:") || key.startsWith("operation:") || key.startsWith("ui:")));
     const filter = { predicate: (query: { queryKey: readonly unknown[] }) => query.queryKey[0] === "admin" && query.queryKey[1] === session.scope && privateResource(String(query.queryKey[2])) };
     void client.cancelQueries(filter); client.removeQueries(filter);
   }, [allowed, discoveryAllowed, session, client]);

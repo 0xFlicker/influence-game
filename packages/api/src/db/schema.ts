@@ -2463,6 +2463,39 @@ export const gameCostAccountingAuditEvents = pgTable("game_cost_accounting_audit
 // Postgame Media (durable House Highlights render state)
 // ---------------------------------------------------------------------------
 
+export const renderJobs = pgTable("render_jobs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  gameId: text("game_id").notNull().references(() => games.id),
+  requestedBy: text("requested_by").references(() => users.id),
+  requestKey: text("request_key").notNull(),
+  requestHash: text("request_hash").notNull(),
+  executionId: uuid("execution_id").notNull().defaultRandom(),
+  workload: text("workload").notNull().$type<"trailer" | "studio-export">(),
+  sourceRenderVersion: integer("source_render_version"),
+  input: payloadColumn("input_object", "json-gzip").notNull().$type<StoredPayload<import("@influence/engine/render-job").RenderInput>>(),
+  receipt: payloadColumn("receipt_object", "json-gzip").$type<StoredPayload<Record<string,unknown>>>(),
+  state: text("state").notNull().default("uploading_inputs"),
+  rendererDigest: text("renderer_digest").notNull(),
+  attempt: integer("attempt").notNull().default(0),
+  leaseHash: text("lease_hash"),
+  leaseExpiresAt: text("lease_expires_at"),
+  workerId: text("worker_id"),
+  batchId: text("batch_id"),
+  progress: integer("progress").notNull().default(0),
+  failure: text("failure"),
+  outputKey: text("output_key"),
+  outputHash: text("output_hash"),
+  outputBytes: bigint("output_bytes", {mode:"number"}),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, t => [unique("render_jobs_request_idx").on(t.requestedBy,t.requestKey).nullsNotDistinct(),
+  uniqueIndex("render_jobs_trailer_version_idx").on(t.gameId,t.sourceRenderVersion).where(sql`${t.workload}='trailer'`),
+  index("render_jobs_state_idx").on(t.state,t.createdAt),
+  ...payloadChecks("render_jobs", {input:[t.input,"json-gzip"],receipt:[t.receipt,"json-gzip"]}),
+  check("render_jobs_workload_check",sql`${t.workload} IN ('trailer','studio-export')`),
+  check("render_jobs_state_check",sql`${t.state} IN ('uploading_inputs','queued','rendering','uploading','verifying','succeeded','failed','cancelled')`),
+]);
+
 export const gamePostgameMedia = pgTable("game_postgame_media", {
   gameId: text("game_id")
     .notNull()

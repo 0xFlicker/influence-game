@@ -160,6 +160,7 @@ const OWNER_LEARNING_WRITE_TOOLS = [
 ] as const;
 
 const PRODUCER_TOOLS = [
+  "get_production_render", "get_production_render_download",
   "read_production_moments", "preview_production_cut",
   "read_game_model_routing",
   "read_producer_visual_production",
@@ -175,6 +176,7 @@ const PRODUCER_TOOLS = [
 ] as const;
 
 export type GameMcpToolName =
+  | "order_production_render" | "cancel_production_render" | "retry_production_render"
   | "set_game_model_routing"
   | "update_production_moment_tags"
   | "resume_game_retrospective"
@@ -227,6 +229,7 @@ const OWNER_LEARNING_WRITE_ALTERNATIVE: GameMcpToolScopeAlternative = {
 };
 
 export const GAME_MCP_TOOL_ACCESS = {
+  ...specsFor(["order_production_render","cancel_production_render","retry_production_render"] as const,[{requiredScopes:["producer","producer:render"],catalogBaselineScopes:["producer"],clientEnvelopeScopes:["producer","producer:render"],requiredRole:"producer"}]),
   set_game_model_routing: {name:"set_game_model_routing",scopeAlternatives:[{requiredScopes:["producer","producer:routing"],catalogBaselineScopes:["producer"],clientEnvelopeScopes:["producer","producer:routing"],requiredRole:"producer"}]},
   update_production_moment_tags: {name:"update_production_moment_tags",scopeAlternatives:[{requiredScopes:["producer","producer:edit"],catalogBaselineScopes:["producer"],clientEnvelopeScopes:["producer","producer:edit"],requiredRole:"producer"}]},
   resume_game_retrospective: { name: "resume_game_retrospective", scopeAlternatives: [RETROSPECTIVE_RECOVERY_ALTERNATIVE] },

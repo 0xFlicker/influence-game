@@ -25,6 +25,7 @@ import {
 import { probe, runProcess, sha256 } from "./assets";
 import type { ReplayManifest } from "./manifest";
 import { createRenderProgress } from "./progress";
+import {fileIdentity,rendererProvenance} from "./provenance";
 const webRoot = resolve(import.meta.dir, "../../.."),
   repoRoot = resolve(webRoot, "../..");
 
@@ -104,12 +105,14 @@ export async function withPreparedReplay<T>(
         pages = { ...manifest.pages };
       const preparation = { manifest, prepare: true };
       const measured = await selectComposition({
+        browserExecutable:process.env.REMOTION_BROWSER_EXECUTABLE,
         serveUrl,
         id: "HouseReplay",
         inputProps: preparation,
         timeoutInMilliseconds: 60000,
       });
       await renderFrames({
+        browserExecutable:process.env.REMOTION_BROWSER_EXECUTABLE,
         composition: measured,
         serveUrl,
         inputProps: preparation,
@@ -151,6 +154,7 @@ export async function renderReplay(
   output: string,
   overwrite: boolean,
   signal: AbortSignal,
+  options: {onProgress?:(progress:number)=>void} = {},
 ) {
   const concurrency = Number(process.env.REPLAY_RENDER_CONCURRENCY ?? 1);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 8) throw new Error("REPLAY_RENDER_CONCURRENCY must be an integer from 1 to 8");
@@ -167,6 +171,7 @@ export async function renderReplay(
       async (serveUrl, manifest, cancelSignal) => {
         const inputProps = { manifest };
         const composition = await selectComposition({
+          browserExecutable:process.env.REMOTION_BROWSER_EXECUTABLE,
           serveUrl,
           id: "HouseReplay",
           inputProps,
@@ -177,6 +182,7 @@ export async function renderReplay(
         let rendered = false;
         try {
           await renderMedia({
+            browserExecutable:process.env.REMOTION_BROWSER_EXECUTABLE,
             composition,
             serveUrl,
             inputProps,
@@ -188,7 +194,7 @@ export async function renderReplay(
             concurrency,
             cancelSignal,
             timeoutInMilliseconds: 60000,
-            onProgress: progress.update,
+            onProgress: value=> {progress.update(value);options.onProgress?.(value.progress);},
           });
           rendered = true;
         } finally {
@@ -217,28 +223,16 @@ export async function renderReplay(
           )
         )
           throw new Error("Encoded replay is missing audio");
-        const bytes = await readFile(partial),
+        const identity = await fileIdentity(partial),
           receipt = {
             schema: "house.replay-export-receipt",
             manifestHash: sha256(JSON.stringify(manifest)),
             preparedRevision: manifest.revision,
             preparedDirty: manifest.dirty,
-            revision: (
-              await runProcess("git", ["-C", repoRoot, "rev-parse", "HEAD"])
-            ).trim(),
-            dirty: Boolean(
-              (
-                await runProcess("git", [
-                  "-C",
-                  repoRoot,
-                  "status",
-                  "--porcelain",
-                ])
-              ).trim(),
-            ),
+            ...await rendererProvenance(repoRoot),
             range: manifest.range,
-            outputHash: sha256(bytes),
-            bytes: bytes.length,
+            outputHash: identity.sha256,
+            bytes: identity.byteLength,
             durationSeconds: expected,
             width: manifest.width,
             height: manifest.height,
@@ -259,7 +253,7 @@ export async function renderReplay(
           JSON.stringify(receipt, null, 2),
         );
         console.log(
-          `Saved ${output} (${receipt.elapsedSeconds.toFixed(1)}s rendering, ${(bytes.length / 1024 / 1024).toFixed(1)} MiB)`,
+          `Saved ${output} (${receipt.elapsedSeconds.toFixed(1)}s rendering, ${(identity.byteLength / 1024 / 1024).toFixed(1)} MiB)`,
         );
       },
     );

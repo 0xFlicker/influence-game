@@ -1,5 +1,7 @@
 /** Exhaustive body-column cutover registry. Every entry migrates existing rows. */
 export const STORAGE_PAYLOAD_COLUMNS = [
+  {"table":"render_jobs","column":"input","kind":"json","primaryKey":["id"]},
+  {"table":"render_jobs","column":"receipt","kind":"json","primaryKey":["id"]},
   {"table": "character_cutouts", "column": "source", "kind": "binary", "primaryKey": ["id"]},
   {"table": "character_cutouts", "column": "image", "kind": "binary", "primaryKey": ["id"]},
   {"table": "agent_screenings", "column": "result", "kind": "json", "primaryKey": ["id"]},

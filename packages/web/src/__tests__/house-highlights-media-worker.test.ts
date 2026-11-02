@@ -26,6 +26,7 @@ import {
   runHouseHighlightsMediaWorker,
   runHouseHighlightsMediaWorkerAttempt,
   runHouseHighlightsMediaWorkerOnce,
+  runLocalStudioExport,
   writeHouseHighlightsMediaWorkerDrainAcknowledgement,
   withWorkerReachableAssetUrls,
 } from "../scripts/render-house-highlights-media-worker";
@@ -41,6 +42,22 @@ describe("House Highlights media worker bundle", () => {
     POSTGAME_MEDIA_WORKER_INSTANCE_ID: "11111111-1111-4111-8111-111111111111",
     POSTGAME_MEDIA_MIN_FREE_BYTES: "1",
   };
+
+  it("local polling can discover Studio exports and passes only the assigned execution identity to the shared runner",async()=> {
+    const config=houseHighlightsMediaWorkerConfig({POSTGAME_MEDIA_API_URL:"http://127.0.0.1:3000",POSTGAME_MEDIA_WORKER_TOKEN:"local-worker"});
+    expect(config.localExports).toBe(true);
+    const assignment={jobId:crypto.randomUUID(),executionId:crypto.randomUUID(),rendererDigest:`sha256:${"a".repeat(64)}`,token:"b".repeat(64)};
+    let ran:NodeJS.ProcessEnv|undefined;
+    expect(await runLocalStudioExport(config,(async(input,init)=> {
+      expect(String(input)).toEndWith("/api/internal/local-renders/assignment");
+      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer local-worker");
+      return Response.json({assignment});
+    }) as typeof fetch,async env=>{ran=env;})).toBe("completed");
+    expect(ran).toMatchObject({RENDER_JOB_ID:assignment.jobId,RENDER_JOB_EXECUTION_ID:assignment.executionId,RENDER_JOB_TOKEN:assignment.token});
+    expect(await runLocalStudioExport(config,(async()=>Response.json({assignment:null})) as unknown as typeof fetch,async()=>{throw new Error("must not render");})).toBe("idle");
+    expect(remoteConfig(remoteEnv).localExports).toBe(false);
+    await expect(runLocalStudioExport(remoteConfig(remoteEnv))).rejects.toThrow("disabled");
+  });
 
   it("defaults to local execution and rejects incomplete or unbounded remote configuration", () => {
     expect(houseHighlightsMediaWorkerConfig({ POSTGAME_MEDIA_API_URL: "http://api.test", POSTGAME_MEDIA_WORKER_TOKEN: "test" }).executionMode).toBe("local");
@@ -483,7 +500,7 @@ describe("House Highlights media worker bundle", () => {
     const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async () => {
       requests += 1;
       await release.promise;
-      return Response.json({ claim: null });
+      return Response.json({ claim: null, assignment:null });
     } });
     const parent = Bun.spawn([process.execPath,
       join(import.meta.dir, "../scripts/render-house-highlights-media-worker.ts")], {
@@ -509,7 +526,7 @@ describe("House Highlights media worker bundle", () => {
       expect(parent.exitCode).toBeNull();
       release.resolve();
       expect(await parent.exited).toBe(0);
-      expect(requests).toBe(1);
+      expect(requests).toBe(2); // One in-flight attempt checks trailers, then exports.
     } finally {
       release.resolve();
       clearTimeout(timeout);
@@ -524,7 +541,7 @@ describe("House Highlights media worker bundle", () => {
     const root = await mkdtemp(join(tmpdir(), "render-cli-exit-"));
     const preload = join(root, "retained-handle.ts");
     await writeFile(preload, "setInterval(() => {}, 1000);\n");
-    const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => Response.json({ claim: null }) });
+    const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => Response.json({ claim: null, assignment:null }) });
     const child = Bun.spawn([process.execPath, "--preload", preload,
       join(import.meta.dir, "../scripts/render-house-highlights-media-worker.ts"), "--once"], {
       env: { ...process.env, POSTGAME_MEDIA_API_URL: `http://127.0.0.1:${server.port}`,

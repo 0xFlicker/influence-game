@@ -82,6 +82,7 @@ export async function fetchReplay(
   api: URL,
   token: string | undefined,
   signal: AbortSignal,
+  fetcher:typeof fetch=fetch,
 ): Promise<Response> {
   for (let redirect = 0; redirect < 6; redirect++) {
     if (
@@ -90,7 +91,7 @@ export async function fetchReplay(
       url.password
     )
       throw new Error("Unsupported asset URL");
-    const response = await fetch(url, {
+    const response = await fetcher(url, {
       headers:
         token && url.origin === api.origin
           ? { Authorization: `Bearer ${token}` }
@@ -122,6 +123,7 @@ export class ReplayAssets {
     private api: URL,
     private signal: AbortSignal,
     private token?: string,
+    private fetcher:typeof fetch=fetch,
   ) {}
   async cache(source: string, local = false): Promise<string> {
     const found = this.sources.get(source);
@@ -137,6 +139,7 @@ export class ReplayAssets {
         this.api,
         this.token,
         AbortSignal.any([this.signal, AbortSignal.timeout(60000)]),
+        this.fetcher,
       );
       if (!/^(image|audio|video)\//.test(response.headers.get("content-type") ?? ""))
         throw new Error("Selected replay asset is not image/audio/video content");
