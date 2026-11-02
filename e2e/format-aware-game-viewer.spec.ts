@@ -1531,6 +1531,32 @@ test.describe("format-aware game viewer", () => {
     }
   });
 
+  test("standalone House scenery fills one stage without an inset duplicate",async({page},testInfo)=>{
+    await page.clock.install();
+    const slug="standalone-house-background";
+    await installDeterministicFormatGame(page,{slug,scenarioId:"save_or_eliminate_clear",status:"completed"});
+    setFormatTranscript(page,slug,[{id:900,entrySequence:900,round:1,phase:"FORMAT_MENU",scope:"system",dialogueKind:"house_summary",text:"The House is ready. The next choice will set the stakes for everyone.",timestamp:Date.now(),firstDurableEventSequence:10}]);
+    await page.goto(viewerUrl(`/games/${slug}/replay`));await pauseAutoplay(page,"⏸ Pause");
+    await page.addStyleTag({content:"nextjs-portal {display:none}"});
+    const stage=page.locator("[data-influence-stage]");
+    await advanceUntilVisible(page,stage.locator("[data-house-message]"),"standalone House scene",100);
+    await expect(stage.locator("[data-house-result]")).toHaveCount(0);
+    for(const [width,height] of [[320,568],[390,844],[600,600],[1280,720],[1280,400],[1920,1080]]) {
+      await page.setViewportSize({width:width!,height:height!});
+      for(const mode of ["inline","theater"]) {
+        if(mode==="theater") await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
+        await expect(stage.locator("[data-room-backdrop]")).toHaveCount(1);
+        await expect.poll(()=>stage.evaluate(el=>{
+          const a=el.getBoundingClientRect(),b=el.querySelector("[data-room-backdrop]")!.getBoundingClientRect();
+          return Math.max(Math.abs(a.left-b.left),Math.abs(a.top-b.top),Math.abs(a.width-b.width),Math.abs(a.height-b.height));
+        })).toBeLessThanOrEqual(1);
+        await expect.poll(()=>stage.locator("[data-speech-page-copy]").evaluate(copy=>copy.getBoundingClientRect().height<=copy.parentElement!.clientHeight-21)).toBe(true);
+        await page.screenshot({path:testInfo.outputPath(`house-background-${width}x${height}-${mode}.png`)});
+        if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
+      }
+    }
+  });
+
   for(const artwork of [true,false]) test(`historical format offer stays with House speech (${artwork ? "full body" : "portrait"})`,async({page},testInfo)=>{
     await page.clock.install();
     const slug=`historical-menu-${artwork}`;
