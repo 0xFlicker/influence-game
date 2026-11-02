@@ -3,7 +3,7 @@ import {eq} from "drizzle-orm";
 import {schema,type DrizzleDB} from "../db/index.js";
 import {setupTestDB} from "./test-utils.js";
 import {createRenderJob,queueRenderJob,claimRenderJob,heartbeatRenderJob,cancelRenderJob,requestRenderFinalization,verifyPendingRenders,outputTarget,renderJob,retryRenderJob} from "../services/render-jobs.js";
-import {setRenderObjectStorageForTests} from "../services/render-object-storage.js";
+import {RenderObjectIntegrityError,setRenderObjectStorageForTests} from "../services/render-object-storage.js";
 import {readProductionRender} from "../game-mcp/render-contracts";
 import {grantTestAuthority} from "./rbac-fixtures";
 import {dispatchRenderJobs,reconcileBatchTrailers} from "../services/render-job-dispatch";
@@ -92,6 +92,32 @@ test("cancellation during durable verification fences its late completion",async
     verify:async()=>{await cancelRenderJob(db,job.id);}});
   await verifyPendingRenders(db);
   expect((await renderJob(db,job.id)).state).toBe("cancelled");
+});
+test("late integrity failure cannot overwrite a retry already verifying new output",async()=> {
+  const job=await create();await queueRenderJob(db,job.id);
+  const claim=await claimRenderJob(db,job.id,"old-worker",digest,job.executionId);
+  await outputTarget(db,job.id,claim.leaseToken,"e".repeat(64),100);
+  await requestRenderFinalization(db,job.id,claim.leaseToken,receipt);
+  const previous=process.env.RENDER_JOB_WORKER_DIGEST;process.env.RENDER_JOB_WORKER_DIGEST=digest;
+  let interrupted=false;
+  setRenderObjectStorageForTests({upload:async()=>({url:"https://storage.invalid/output",headers:{}}),download:async()=>"https://storage.invalid/input",
+    verify:async key=>{
+      if(interrupted||!key.endsWith("video.mp4"))return;
+      interrupted=true;await cancelRenderJob(db,job.id);
+      const retried=await retryRenderJob(db,job.id,job.executionId,{environment:"staging",mode:"remote",network:"tailnet",configDigest:digest,
+        targets:{trailer:"existing","studio-export":"aws-batch"}});
+      const next=await claimRenderJob(db,job.id,"new-worker",digest,retried.executionId);
+      await outputTarget(db,job.id,next.leaseToken,"f".repeat(64),100);
+      await requestRenderFinalization(db,job.id,next.leaseToken,{...receipt,outputHash:"f".repeat(64)});
+      throw new RenderObjectIntegrityError("old output was corrupt");
+    }});
+  try {
+    await verifyPendingRenders(db);
+    const current=await renderJob(db,job.id);
+    expect(current.executionId).not.toBe(job.executionId);
+    expect(current.state).toBe("verifying");expect(current.failure).toBeNull();
+    await verifyPendingRenders(db);expect((await renderJob(db,job.id)).state).toBe("succeeded");
+  } finally {if(previous===undefined)delete process.env.RENDER_JOB_WORKER_DIGEST;else process.env.RENDER_JOB_WORKER_DIGEST=previous;}
 });
 test("retry verifies frozen objects before compute and an old retry never starts another attempt",async()=> {
   const prior=process.env.RENDER_JOB_WORKER_DIGEST;process.env.RENDER_JOB_WORKER_DIGEST=digest;

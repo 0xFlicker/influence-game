@@ -124,17 +124,18 @@ export async function verifyPendingRenders(db:DrizzleDB) {
   const jobs=await db.select().from(schema.renderJobs).where(eq(schema.renderJobs.state,"verifying")).limit(2);
   for(const job of jobs) {
     if(!job.outputKey||!job.outputHash||!job.outputBytes||!job.receipt)continue;
+    const pending=and(eq(schema.renderJobs.id,job.id),eq(schema.renderJobs.state,"verifying"),eq(schema.renderJobs.executionId,job.executionId),eq(schema.renderJobs.leaseHash,job.leaseHash!));
     try {await verifyRenderObject(job.outputKey,{byteLength:job.outputBytes,sha256:job.outputHash});}
     catch(error) {
       if(error instanceof RenderObjectIntegrityError)await db.update(schema.renderJobs).set({state:"failed",failure:"output_integrity",leaseExpiresAt:null,updatedAt:time()})
-        .where(and(eq(schema.renderJobs.id,job.id),eq(schema.renderJobs.state,"verifying")));
+        .where(pending);
       continue; // transport failures retain durable verification intent
     }
     // Accepted finalization transfers ownership to the durable verifier. Worker
     // exit/lease expiry cannot discard uploaded output; cancel/retry still fence
     // completion through the current execution, state and lease identity.
     await db.update(schema.renderJobs).set({state:"succeeded",progress:100,leaseExpiresAt:null,updatedAt:time()})
-      .where(and(eq(schema.renderJobs.id,job.id),eq(schema.renderJobs.state,"verifying"),eq(schema.renderJobs.executionId,job.executionId),eq(schema.renderJobs.leaseHash,job.leaseHash!)));
+      .where(pending);
   }
 }
 export async function cancelRenderJob(db:DrizzleDB,id:string) {
