@@ -7,7 +7,7 @@ import { visualSpeechDurationMs, VISUAL_SPEECH_FADE_MS } from "@influence/engine
 import { cleanSpeechPage, paginateSpeech, speechPageIndex } from "./speech-pages";
 
 /** Measured pages use the existing beat's reading position, never their own timer. */
-export function TimedSpeech({ text, elapsedMs, className = "", typography, progress }: { progress?:number; typography?: BubbleTypography | null; text: string; elapsedMs: number; className?: string; onNaturalHeight?: (height: number) => void }) {
+export function TimedSpeech({ text, elapsedMs, className = "", typography, progress, growToLine = false }: { growToLine?:boolean; progress?:number; typography?: BubbleTypography | null; text: string; elapsedMs: number; className?: string; onNaturalHeight?: (height: number) => void }) {
   const sampled = useSampledStage();
   const frame = useRef<HTMLDivElement>(null);
   const measure = useRef<HTMLDivElement>(null);
@@ -23,6 +23,32 @@ export function TimedSpeech({ text, elapsedMs, className = "", typography, progr
       if (!active) return;
       const height = Math.max(1, container.clientHeight - 22);
       if (!container.clientWidth || !container.clientHeight) return;
+      if (growToLine) {
+        // Start from responsive CSS each time; size the complete message, never its current page.
+        container.style.removeProperty("font-size");
+        container.style.removeProperty("line-height");
+        const base = getComputedStyle(container);
+        const floor = parseFloat(base.fontSize);
+        let low = floor, high = Math.max(floor, Math.min(32, Math.floor(height / 1.4)));
+        probe.textContent = text;
+        const fitsLine = (size:number) => {
+          container.style.fontSize = `${size}px`;
+          container.style.lineHeight = `${size * 1.4}px`;
+          return probe.scrollHeight <= size * 1.4 + 1 && probe.scrollWidth <= container.clientWidth;
+        };
+        if (fitsLine(floor)) {
+          while (low < high) {
+            const middle = Math.ceil((low + high) / 2);
+            if (fitsLine(middle)) low = middle;
+            else high = middle - 1;
+          }
+        }
+        if (low > floor) fitsLine(low);
+        else {
+          container.style.removeProperty("font-size");
+          container.style.removeProperty("line-height");
+        }
+      }
       const style = getComputedStyle(container);
       const key = JSON.stringify([text,container.clientWidth,height,style.fontSize,style.lineHeight,style.fontFamily]);
       if (frozenPages?.[key]) {setPagination({text,pages:frozenPages[key]});return;}
@@ -40,7 +66,7 @@ export function TimedSpeech({ text, elapsedMs, className = "", typography, progr
     update();
     void document.fonts?.ready.then(update);
     return () => { active = false; observer.disconnect(); };
-  }, [text, typography, frozenPages, capturePages]);
+  }, [text, typography, frozenPages, capturePages, growToLine]);
   const pages = typography?.pages ?? (pagination.text === text ? pagination.pages : [text]);
   const readingDuration = visualSpeechDurationMs(text) - 2 * VISUAL_SPEECH_FADE_MS;
   const page = progress !== undefined ? speechPageIndex(pages,progress)

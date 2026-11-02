@@ -71,3 +71,19 @@ test("ballot shots sharing the tally event do not make its House association amb
   const cues = withResultPresentation([...expanded,house], scenes("results-mc-v1",tally.canonicalSequence));
   expect(cues.at(-1)).toMatchObject({houseResultCue:{key:tally.key}});
 });
+
+ test("historical format-menu speech retains the canonical offer without guessing from text",async()=>{
+  const {compileFormatPresentationPrefix}=await import("../app/games/[slug]/components/format-presentation-model");
+  const {createFormatKernelViewerScenario}=await import("@influence/engine/fixtures/format-kernel-viewer");
+  const fixture=createFormatKernelViewerScenario("save_or_eliminate_clear");
+  const compiled=compileFormatPresentationPrefix({gameId:"g",gameKernel:"format",roster:fixture.roster,decisions:fixture.decisions});
+  const menu=compiled.cues.find(cue=>cue.kind==="format_menu")!;
+  expect(menu).toBeDefined();
+  const speech={...house,phase:menu.phase,round:menu.round};
+  const linked=withResultPresentation([menu,speech],scenes("historical",menu.canonicalSequence));
+  expect(linked[1]).toMatchObject({houseResultCue:{key:menu.key,kind:"format_menu"}});
+  expect(linked[0]!.baseDurationMs).toBe(500);
+  expect(linked[1]!.baseDurationMs).toBeGreaterThanOrEqual(6000);
+  expect(withResultPresentation([menu,speech],scenes("historical",menu.canonicalSequence),false)[1]).not.toHaveProperty("houseResultCue");
+  expect(withResultPresentation([menu,{...menu,key:"ambiguous"},speech],scenes("historical",menu.canonicalSequence)).at(-1)).not.toHaveProperty("houseResultCue");
+ });

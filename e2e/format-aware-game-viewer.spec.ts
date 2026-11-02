@@ -1531,6 +1531,41 @@ test.describe("format-aware game viewer", () => {
     }
   });
 
+  for(const artwork of [true,false]) test(`historical format offer stays with House speech (${artwork ? "full body" : "portrait"})`,async({page},testInfo)=>{
+    await page.clock.install();
+    const slug=`historical-menu-${artwork}`;
+    const decisions:ReturnType<typeof createFormatKernelViewerScenario>["decisions"]=[{sequence:10,round:1,phase:Phase.FORMAT_MENU,timestamp:"2026-11-02T00:00:00.000Z",type:"format.menu_offered",payload:{empoweredId:"atlas",offeredFormatIds:["safety_bounce","save_or_eliminate"]}}];
+    await installDeterministicFormatGame(page,{slug,scenarioId:"save_or_eliminate_clear",status:"completed",decisions});
+    await page.route(`**/api/games/${slug}/visual`,route=>route.fulfill({json:{enabled:true,status:null,portraits:{},fullBodies:artwork ? {atlas:"/avatars/personas/full-body-v1/strategic.webp"} : {},scenes:[]}}));
+    const text="Atlas’s first advantage comes with a choice: Safety Bounce or Save-or-Exit. The format they select will set the stakes for everyone.";
+    setFormatTranscript(page,slug,[{id:900,entrySequence:900,round:1,phase:"FORMAT_MENU",scope:"system",dialogueKind:"house_summary",text,timestamp:Date.now(),firstDurableEventSequence:10,houseResult:{eventSequence:10,authoringRevision:"historical"}}]);
+    await page.goto(viewerUrl(`/games/${slug}/replay`));await pauseAutoplay(page,"⏸ Pause");
+    await page.addStyleTag({content:"nextjs-portal {display:none}"});
+    const combined=page.locator("[data-house-result]");await advanceUntilVisible(page,combined,"historical combined format menu",100);
+    await expect(combined.getByRole("group",{name:"House format offer"})).toBeVisible();
+    await expect(combined.getByRole("figure",{name:"Empowered: Atlas"})).toBeVisible();
+    for(const [width,height] of [[320,568],[390,844],[600,600],[480,480],[1280,400],[844,390],[1920,1080]]) {
+      await page.setViewportSize({width:width!,height:height!});
+      for(const mode of ["inline","theater"]) {
+        if(mode==="theater") await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
+        await expect.poll(()=>combined.evaluate(el=>{
+          const scene=el.querySelector("[data-house-result-scene]")!.getBoundingClientRect();
+          return [...el.querySelectorAll("[data-format-card],figure,header")].every(item=>{const r=item.getBoundingClientRect();return r.bottom<=scene.bottom+1 && r.top>=scene.top-1 && r.right<=scene.right+1 && r.left>=scene.left-1;});
+        })).toBe(true);
+        await expect.poll(()=>combined.locator("[data-speech-page-copy]").evaluate(copy=>copy.getBoundingClientRect().height<=copy.parentElement!.clientHeight-21)).toBe(true);
+        if(width===1920 && mode==="theater") {
+          const caption=combined.locator("[data-speech-page-copy]");
+          await expect.poll(()=>caption.evaluate(copy=>parseFloat(getComputedStyle(copy).fontSize))).toBeGreaterThan(16);
+          const sizing=await caption.evaluate(copy=>({height:copy.getBoundingClientRect().height,line:parseFloat(getComputedStyle(copy).lineHeight)}));
+          expect(sizing.height).toBeLessThanOrEqual(sizing.line+1);
+        }
+        if(artwork && width===1920) {const image=combined.locator("[data-format-menu-fullbody] img");await expect(image).toBeVisible();await expect.poll(()=>image.evaluate(img=>(img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);}
+        await page.screenshot({path:testInfo.outputPath(`format-menu-${artwork ? "body" : "portrait"}-${width}x${height}-${mode}.png`)});
+        if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
+      }
+    }
+  });
+
   for (const tiedCount of [2,3,4,6,12]) test(`Empower full bodies adapt to space for a ${tiedCount}-way tie`, async ({page},testInfo) => {
     await page.clock.install();
     const slug=`empower-body-${tiedCount}`;
