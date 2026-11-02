@@ -6,6 +6,8 @@ Built as a TypeScript/Bun monorepo with a Next.js/React frontend, Hono API, dura
 
 The runtime validates model decisions and records canonical events before presenting them. Replay and results derive from those events; private model evidence stays separate from contestant and public views.
 
+Influence alliance introductions show the alliance name and members with House teasers authored after the conversations, before the next decision. Live playback releases the completed social phase together; commentary stays out of contestant knowledge. See [narration evaluation](docs/local-model-evaluation.md#house-narrative-evaluation).
+
 ## Documentation
 
 | Start here | Guide |
@@ -17,6 +19,7 @@ The runtime validates model decisions and records canonical events before presen
 | Characters and models | [House cast](docs/house-cast.md) · [Character creation](docs/agent-creation-assistant.md) · [Model routing](docs/model-routing.md) |
 | Local evaluation and private evidence | [Model evaluation](docs/local-model-evaluation.md) · [Reasoning and transcripts](docs/reasoning-transcript-observability.md) |
 | Replay, audio and production | [Watch timeline](docs/watch-timeline.md) · [Audio Mode](docs/audio-mode.md) · [Visual Mode](docs/visual-mode.md) · [Production Studio](docs/production-studio.md) |
+| Required checks when changing presentation | [Viewer, Studio and video parity](docs/presentation-parity.md) |
 | Postgame speeches and analysis | [Retrospectives](docs/game-retrospective-runtime.md) · [Analysis design](docs/endgame-analysis-v0.1.0.md) |
 | Integrations and identity | [MCP and OAuth](docs/game-mcp-production-oauth.md) · [Authentication](docs/authentication/layered-identity-rollout.md) |
 | Deployment and recovery | [Game workers](docs/deployment/game-worker-operations.md) · [Render workers](docs/deployment/house-highlights-render-worker.md) · [Storage cutover](docs/deployment/private-payload-storage-cutover.md) |

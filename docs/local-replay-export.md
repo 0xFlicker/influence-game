@@ -1,8 +1,18 @@
 # Local replay video export
 
+**Changing presentation code?** Follow the mandatory
+[viewer–Studio–export parity checklist](presentation-parity.md). Changes to a
+scene, caption, camera, clock or audio treatment require same-branch consumer
+updates, regression coverage and a fresh encoded comparison of the affected beat.
+Do not treat a shared import or an old prepared bundle as proof of current parity.
+
 Export a completed Influence or Werewolf game through the Production Studio's shared moment catalog, presentation compiler, sampled composition and audio schedule. Full exports retain their existing content coverage; selected exports contain the exact reviewed moments. Controls, settings and inspectors are omitted. This command never generates artwork or speech, spends provider credits, uploads or publishes anything.
 
 Install the repository's Bun dependencies and have `ffmpeg` / `ffprobe` on PATH. Remotion uses its installed Chromium renderer (its first run can download the browser). Run from the repository root:
+
+Set `REPLAY_BROWSER_EXECUTABLE` to an installed Chrome executable when the local
+Headless Shell cannot start reliably. Preparation and encoding both use that same
+executable; an invalid path fails rather than switching browsers silently.
 
 ```sh
 bun run replay:export -- hazy-ruby-sand \
@@ -31,8 +41,9 @@ Portrait rooms keep one floor anchor across short/long speeches and independent
 thinking shots. Thinking retains the room backdrop and perspective; a selected
 thought followed by its own spoken ballot keeps the established character visible
 through the handoff. Selecting the ballot alone still uses its normal entrance.
-House narration fits the complete message on one screen for the recording's full
-duration, shrinking type when needed instead of switching to a short overflow page.
+House narration uses the shared logo/card treatment and readable clock-driven
+pages. It reserves space for the complete recording without scrolling or shrinking
+required text below its readable floor.
 Completed Werewolf retrospectives close on a silent final cast and elimination
 recap, with winner/role/survivor labels and canonical night/day elimination coordinates.
 The spoken result remains before retrospectives. Prepare a fresh bundle and
@@ -99,6 +110,39 @@ To refresh an older export that predates the opening or thinking camera:
 bun run replay:export -- hazy-ruby-sand --audience omniscient --thinking on \
   --output ~/Movies/hazy-ruby-sand-omniscient-v2.mp4 --overwrite
 ```
+
+## Refresh an existing export after presentation updates
+
+An MP4 is finished video, a `.bundle` is prepared picture/timing/media data, and
+`*-selection.json` is the Studio cut recipe. Updating the local checkout does not
+rebuild saved bundle data. In particular, older Safety Bounce thinking pictures
+lack their chain board; reusing those bundles cannot restore it.
+
+With the updated local exporter, prepare and render from your existing selection
+in one command (use the API origin where that cut was created):
+
+```sh
+bun run replay:export -- --selection ~/Downloads/episode-selection.json \
+  --api-base-url https://thehouse.game --web-base-url https://thehouse.game \
+  --output ./exports/episode-updated.mp4
+```
+
+This preserves the selected IDs, settings and pinned media, but rebuilds the
+presentation and layout with the current local code. A new output name preserves
+the previous movie/bundle; `--overwrite` explicitly replaces them. If the cut used
+imported recordings, also provide its original `--speech-manifest`. You do not
+need to generate a new game, artwork, or audio, or render an intermediate MP4.
+Download a fresh Studio selection only when changing the cut/settings or moving
+off an older frozen source projection; reload the updated Studio to review it.
+
+Without a selection JSON, pass the game slug instead of `--selection` and repeat
+your original audience/thinking/music/timing settings. This prepares a full movie,
+not an exact reconstruction of a previously selected cut. `--inspect` prepares the
+fresh bundle without encoding; you can subsequently render that new bundle offline.
+
+The viewer, Studio and exporter share Werewolf's compact results and reserved
+House captions. Safety Bounce thoughts preserve the pre-choice chain stage and
+camera without including the omitted response, target, or after-state.
 
 ## Presentation timing
 

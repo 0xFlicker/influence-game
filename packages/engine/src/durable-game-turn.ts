@@ -200,6 +200,7 @@ export type GameExecutionCursorV1 =
       pass?: number;
     }
   | { version: 1; kind: "huddle_conversation"; completion: MingleProgressV1["completion"]; progress: import("./phases/alliances").HuddleConversationProgress }
+  | { version: 1; kind: "alliance_introductions"; completion: MingleProgressV1["completion"]; scheduleIds: string[]; authored: boolean }
   | { version: 1; kind: "lobby_conversation"; conversation: ConversationState }
   | { version: 1; kind: "mingle"; progress: MingleProgressV1 }
   | { version: 1; kind: "alliance"; progress: AllianceProgressV1 }
@@ -624,6 +625,12 @@ function validateCursor(value: unknown): string[] {
       validateBoundedUniqueStrings(value.progress.scheduleIds, "huddle schedules", errors);
       requireBoundedIndex(value.progress.index, value.progress.scheduleIds, true, "huddle index", errors);
       if (value.progress.conversation !== null) errors.push(...validateConversationState(value.progress.conversation));
+      break;
+    case "alliance_introductions":
+      if (!exactRecord(value, ["version", "kind", "completion", "scheduleIds", "authored"])) return ["Invalid alliance introductions cursor"];
+      if (!["format_resolve", "two_names_override", "two_names_plea"].includes(String(value.completion))) errors.push("Invalid alliance introduction completion");
+      validateBoundedUniqueStrings(value.scheduleIds, "alliance introduction schedules", errors);
+      if (typeof value.authored !== "boolean") errors.push("Invalid alliance introduction authoring state");
       break;
     case "lobby_conversation":
       if (!exactRecord(value, ["version", "kind", "conversation"])) return ["Invalid Lobby cursor"];

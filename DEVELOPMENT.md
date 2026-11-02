@@ -1,5 +1,14 @@
 # Development Guide
 
+## Required presentation parity gate
+
+Before changing a beat, scene, camera, caption, timing or audio treatment, follow
+[the viewer–Studio–video parity checklist](docs/presentation-parity.md). The same
+branch must cover the viewer, Studio Source/Selected cut and freshly prepared
+exports, with targeted regressions and a fresh rendered/encoded comparison.
+Shared component imports or a viewer-only screenshot do not establish parity.
+Report any missing consumer/proof as incomplete, and document bundle refresh steps.
+
 For direct Grok game routing, see [native xAI](docs/native-xai.md). Both gateway
 and game worker need `XAI_API_KEY`. Migration 0141 preserves model generations
 and frozen history; paid native gameplay qualification remains outstanding.
@@ -609,6 +618,8 @@ Provider failures use a separate private evidence type. Admin and sysop can open
 `InfluenceAgent` and the House build provider-neutral model invocations selected from the per-game model catalog. The retry/budget coordinator selects one sealed manifest entry, then that entry's native adapter compiles and dispatches the invocation. Hosted OpenAI models that support Responses always use the Responses API, including when Katana fallbacks are present; Katana uses its native `/v1/chat/completions` contract. Adding, removing, or reordering fallbacks cannot change another entry's endpoint, reasoning, structured-output format, token limit, service tier, or response decoding. Unsupported essential capabilities skip only the incompatible entry without downgrading the invocation. Hosted OpenAI uses `OPENAI_API_KEY`; local OpenAI-compatible servers use `INFLUENCE_LLM_BASE_URL` with LM Studio; Katana / IMGNAI uses `API_KAT_IMGNAI_KEY` plus `API_KAT_IMGNAI_SECRET` only when a game or simulator run explicitly selects a Katana catalog entry. Meta Muse uses `META_MUSE_API_KEY` only when a run explicitly selects a `meta-muse:` catalog entry; its adapter dispatches the Meta Responses endpoint with strict JSON Schema in `text.format`. The `muse-spark-1.3-contributor` entry is roughly 95% cheaper because Meta may train on its prompts and completions; that use is disclosed in the Privacy Policy, and sensitive or personal information must never be sent to it. API game start preflights the selected provider/model before claiming the durable run owner; set `INFLUENCE_LLM_PREFLIGHT=off` only for local OpenAI-compatible servers that can generate normally but do not implement model metadata retrieval. Hosted OpenAI agent prompts request Responses API reasoning summaries by default with `INFLUENCE_OPENAI_REASONING_SUMMARY=auto`; accepted values are `auto`, `concise`, `detailed`, and `off`, with `INFLUENCE_LLM_REASONING_SUMMARY` accepted as an alias. Local base URLs stay on Chat Completions compatibility paths and do not request hosted OpenAI reasoning summaries.
 
 New games seal an ordered provider manifest. Each entry uses `catalogId` and `reasoningPolicy`; fallbacks require bounded `maxCallsPerGame`. GPT-6 Luna remains the primary baseline; the shared fallback is native `xai:grok-4.6` (24 calls). Mutable Katana Grok choices migrate at the same generation; frozen games keep their original routes. Native xAI entries remain evaluation candidates pending paid qualification. See [native xAI](docs/native-xai.md) and the dated historical Katana results in `docs/local-model-evaluation.md`.
+
+Influence's `--chatty` output also retains `house-alliance-introductions`: one direct, journaled House author batch after alliance conversations and before the next decision. Check the accepted teaser against the forthcoming conversation and its pre-decision context. Playback moves the saved copy before its exact speech anchor; complete-phase live delivery holds it with the conversations. It is viewer-only, excluded from contestant prompts and owner transcript pages. Keep direct House calls and no `as any`; see [narration evaluation](docs/local-model-evaluation.md#house-narrative-evaluation).
 
 Create an API-backed simulation with the same ordered fallback shape using data-only CLI arguments:
 

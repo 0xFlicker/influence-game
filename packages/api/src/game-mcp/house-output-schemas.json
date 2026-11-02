@@ -145,16 +145,6 @@
                   "day": {
                     "type": "number"
                   },
-                  "conversation": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/definitions/WerewolfConversationState"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
                   "phase": {
                     "enum": [
                       "complete",
@@ -165,6 +155,16 @@
                       "vote"
                     ],
                     "type": "string"
+                  },
+                  "conversation": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/definitions/WerewolfConversationState"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "setup": {
                     "$ref": "#/definitions/WerewolfSetup"
@@ -380,16 +380,6 @@
                     "day": {
                       "type": "number"
                     },
-                    "conversation": {
-                      "anyOf": [
-                        {
-                          "$ref": "#/definitions/WerewolfConversationState"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
                     "phase": {
                       "enum": [
                         "complete",
@@ -400,6 +390,16 @@
                         "vote"
                       ],
                       "type": "string"
+                    },
+                    "conversation": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/definitions/WerewolfConversationState"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "setup": {
                       "$ref": "#/definitions/WerewolfSetup"
@@ -1345,6 +1345,12 @@
                         },
                         "allianceId": {
                           "type": "string"
+                        },
+                        "allianceName": {
+                          "type": "string"
+                        },
+                        "allianceIntroduction": {
+                          "$ref": "#/definitions/AllianceIntroduction"
                         },
                         "scheduleId": {
                           "type": "string"
@@ -6149,6 +6155,38 @@
         "additionalProperties": false,
         "required": [
           "playerIds"
+        ]
+      },
+      "AllianceIntroduction": {
+        "description": "Browser-safe viewer metadata, independent of House providers and context compilation.",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "allianceId": {
+            "type": "string"
+          },
+          "allianceName": {
+            "type": "string"
+          },
+          "memberIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "beforeEntrySequence": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "allianceId",
+          "allianceName",
+          "beforeEntrySequence",
+          "memberIds",
+          "sessionId"
         ]
       },
       "VisualRoomId": {

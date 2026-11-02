@@ -15,7 +15,7 @@ export function resultReadingMs(cue: PresentationCue): number | null {
 /** Exact engine associations only. Historical unbound speech keeps its original position. */
 export function withResultPresentation(cues: readonly PresentationCue[], scenes: readonly ReplayScene[], compactEmpower = true): PresentationCue[] {
   const result: PresentationCue[] = cues.map(cue => ({...cue, resultsPresentation: true, compactEmpower,
-    baseDurationMs: Math.max(cue.baseDurationMs + (cue.source === "classic" && cue.houseSummary ? 2000 : 0), resultReadingMs(cue) ?? 0)}));
+    baseDurationMs: Math.max(cue.baseDurationMs + (cue.source === "classic" && cue.houseSummary && !scenes[cue.sceneIndex]?.messages[cue.messageIndex]?.allianceIntroduction ? 2000 : 0), resultReadingMs(cue) ?? 0)}));
   for (let index = 0; index < result.length; index++) {
     const cue = result[index]!;
     if (cue.source !== "classic" || !cue.houseSummary) continue;

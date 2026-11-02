@@ -5,6 +5,7 @@ import { useState, type CSSProperties } from "react";
 import { GamePlayerAvatarPreview } from "@/components/game-player-avatar-preview";
 import { RoomBackdrop } from "./stage-backdrop";
 import { INFLUENCE_ROOMS } from "./influence-rooms";
+import { TimedSpeech } from "./timed-speech";
 import type {
   FormatPresentationCue,
   FormatPresentationRosterPlayer,
@@ -124,7 +125,7 @@ export function TwoNamesStage({
         ) : null}
 
         {cue.kind === "two_names_plea" ? (
-          <Plea cue={cue} roster={roster} />
+          <Plea cue={cue} roster={roster} elapsedMs={elapsedMs} />
         ) : null}
 
       </div>
@@ -318,9 +319,10 @@ function DossierPair({ ids, roster, removedId, enteringId, reveal = false }: {
   );
 }
 
-function Plea({ cue, roster }: {
+function Plea({ cue, roster, elapsedMs }: {
   cue: Extract<TwoNamesCue, { kind: "two_names_plea" }>;
   roster: readonly FormatPresentationRosterPlayer[];
+  elapsedMs: number;
 }) {
   const source = player(cue.speakerId, roster);
   return (
@@ -332,8 +334,8 @@ function Plea({ cue, roster }: {
           <h2 className="mt-2 break-words font-serif text-3xl md:text-4xl">{source.name}</h2>
         </div>
       </div>
-      <blockquote tabIndex={0} aria-label={`${source.name}'s final plea`} className="min-h-0 overflow-y-auto overscroll-contain break-words pr-2 font-serif text-lg leading-relaxed text-white/85 md:text-xl">
-        {cue.status === "accepted" ? `“${cue.text}”` : "No plea was received"}
+      <blockquote aria-label={`${source.name}'s final plea`} className="flex min-h-0 flex-1 flex-col break-words font-serif text-lg leading-relaxed text-white/85 md:text-xl">
+        <TimedSpeech text={cue.status === "accepted" ? `“${cue.text}”` : "No plea was received"} elapsedMs={elapsedMs} />
       </blockquote>
     </div>
   );

@@ -37,6 +37,12 @@ test("live delivery holds an entire phase, then matches replay with stable speec
   await db.insert(schema.gamePublications).values({gameId,turnId,turnSequence:1,turnPublicationOrdinal:publicationSequence,publicationSequence,kind:"transcript_entry",payload:{version:1,kind:"transcript_entry",turnId,transcriptOrdinal:1},availableAt:null});
   const open = await readGamePresentation(db, gameId);
   expect(open?.messages).toEqual([]);
+  // Editorial copy arrives after the dialogue, and must be ready in the same
+  // complete-phase release before the next decision's facts become visible.
+  publicationSequence++;
+  const allianceIntroduction = { sessionId: "meeting-ab", allianceId: "ab", allianceName: "Night Shift", memberIds: ["a", "b"], beforeEntrySequence: 1 };
+  await db.insert(schema.transcripts).values({gameId,round:1,phase:Phase.FORMAT_MINGLE,fromPlayerId:null,speakerPlayerId:null,scope:"system",text:"A shared pact, and competing promises.",timestamp:Date.now()+1,entrySequence:2,firstDurableEventSequence:before.at(-1)!.sequence,audiencePlayerIds:[],captureVersion:1,dialogueKind:"house_summary",safeContext:{version:1,allianceIntroduction},gameTurnId:turnId,gameTurnTranscriptOrdinal:2});
+  await db.insert(schema.gamePublications).values({gameId,turnId,turnSequence:1,turnPublicationOrdinal:publicationSequence,publicationSequence,kind:"transcript_entry",payload:{version:1,kind:"transcript_entry",turnId,transcriptOrdinal:2},availableAt:null});
   state.recordPhaseEntered(Phase.FORMAT_RESOLVE);
   const boundary = state.getCanonicalEvents().at(-1)!;
   await appendGameEvents(db, {gameId,ownerEpoch,events:[boundary]});
@@ -45,7 +51,7 @@ test("live delivery holds an entire phase, then matches replay with stable speec
   await db.update(schema.gamePublications).set({availableAt:"2026-01-01T00:00:00Z"}).where(eq(schema.gamePublications.gameId,gameId));
   const live = await readGamePresentation(db,gameId);
   expect(live?.throughSequence).toBe(boundary.sequence-1);
-  expect(live?.messages).toMatchObject([{entry:{text:"Accepted speech",entrySequence:1}}]);
+  expect(live?.messages).toMatchObject([{entry:{text:"Accepted speech",entrySequence:1}}, {entry:{text:"A shared pact, and competing promises.",entrySequence:2,allianceIntroduction}}]);
   expect(live?.frames.some(frame=>frame.sequence===boundary.sequence)).toBe(false);
   const reload = await readGamePresentation(db,gameId);
   expect(reload).toEqual(live);
@@ -68,8 +74,8 @@ test("live delivery holds an entire phase, then matches replay with stable speec
     await db.insert(schema.gamePublications).values({gameId,turnId,turnSequence:1,turnPublicationOrdinal:publicationSequence,publicationSequence,kind:"canonical_event",payload:{version:1,kind:"canonical_event",eventSequence:event.sequence},availableAt:"2026-01-01T00:00:00Z"});
   }
   publicationSequence++;
-  await db.insert(schema.transcripts).values({gameId,round:1,phase:Phase.FORMAT_RESOLVE,fromPlayerId:"a",speakerPlayerId:"a",scope:"public",text:"I break the tie and choose B.",timestamp:Date.now()+1,entrySequence:2,firstDurableEventSequence:resolved.at(-1)!.sequence,audiencePlayerIds:["a","b"],captureVersion:1,dialogueKind:"public_speech",safeContext:{version:1,decisionSpeech:{actorId:"a",action:"format-tiebreak"}},gameTurnId:turnId,gameTurnTranscriptOrdinal:2});
-  await db.insert(schema.gamePublications).values({gameId,turnId,turnSequence:1,turnPublicationOrdinal:publicationSequence,publicationSequence,kind:"transcript_entry",payload:{version:1,kind:"transcript_entry",turnId,transcriptOrdinal:2},availableAt:"2026-01-01T00:00:00Z"});
+  await db.insert(schema.transcripts).values({gameId,round:1,phase:Phase.FORMAT_RESOLVE,fromPlayerId:"a",speakerPlayerId:"a",scope:"public",text:"I break the tie and choose B.",timestamp:Date.now()+2,entrySequence:3,firstDurableEventSequence:resolved.at(-1)!.sequence,audiencePlayerIds:["a","b"],captureVersion:1,dialogueKind:"public_speech",safeContext:{version:1,decisionSpeech:{actorId:"a",action:"format-tiebreak"}},gameTurnId:turnId,gameTurnTranscriptOrdinal:3});
+  await db.insert(schema.gamePublications).values({gameId,turnId,turnSequence:1,turnPublicationOrdinal:publicationSequence,publicationSequence,kind:"transcript_entry",payload:{version:1,kind:"transcript_entry",turnId,transcriptOrdinal:3},availableAt:"2026-01-01T00:00:00Z"});
   const unresolved = await readGamePresentation(db,gameId,live!.throughSequence);
   expect(unresolved?.frames).toEqual([]);
   expect(unresolved?.messages).toEqual([]);

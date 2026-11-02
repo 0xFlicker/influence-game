@@ -23,13 +23,14 @@ export function buildClassicPresentationCues(
     roundFrames.push(frame);
     framesByRound.set(frame.round, roundFrames);
   }
+  const messagesBySequence = new Map(scenes.flatMap(scene => scene.messages.map(message => [message.entrySequence, message] as const)));
   return scenes.flatMap((scene, sceneIndex) =>
     scene.messages.map((message, messageIndex) => ({
       source: "classic" as const,
       liveCatchUp: message.liveCatchUp,
       key: `classic:${message.entrySequence ?? message.id}:done`,
       houseSummary: message.dialogueKind === "house_summary",
-      canonicalSequence: message.firstDurableEventSequence ?? latestFrameSequenceAtOrBefore(
+      canonicalSequence: (message.allianceIntroduction ? messagesBySequence.get(message.allianceIntroduction.beforeEntrySequence)?.firstDurableEventSequence : undefined) ?? message.firstDurableEventSequence ?? latestFrameSequenceAtOrBefore(
         framesByRound.get(scene.round) ?? [], message.timestamp,
       ),
       round: scene.round,

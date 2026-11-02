@@ -104,12 +104,14 @@ export async function withPreparedReplay<T>(
         pages = { ...manifest.pages };
       const preparation = { manifest, prepare: true };
       const measured = await selectComposition({
+        browserExecutable: process.env.REPLAY_BROWSER_EXECUTABLE,
         serveUrl,
         id: "HouseReplay",
         inputProps: preparation,
         timeoutInMilliseconds: 60000,
       });
       await renderFrames({
+        browserExecutable: process.env.REPLAY_BROWSER_EXECUTABLE,
         composition: measured,
         serveUrl,
         inputProps: preparation,
@@ -167,6 +169,7 @@ export async function renderReplay(
       async (serveUrl, manifest, cancelSignal) => {
         const inputProps = { manifest };
         const composition = await selectComposition({
+          browserExecutable: process.env.REPLAY_BROWSER_EXECUTABLE,
           serveUrl,
           id: "HouseReplay",
           inputProps,
@@ -177,6 +180,7 @@ export async function renderReplay(
         let rendered = false;
         try {
           await renderMedia({
+            browserExecutable: process.env.REPLAY_BROWSER_EXECUTABLE,
             composition,
             serveUrl,
             inputProps,

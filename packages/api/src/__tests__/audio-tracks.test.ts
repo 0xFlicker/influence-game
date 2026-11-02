@@ -240,3 +240,54 @@ test("a newly started Influence audio game can pass its empty accepted prefix",a
  expect((await db.select().from(schema.gameAudioTracks))[0]!.readyEventSequence).toBe(0);
  expect((await db.select().from(schema.gameAudioClips))).toHaveLength(0);
 });
+
+test("new alliance narration at an already-ready event head waits for its own audio without regenerating earlier clips", async () => {
+  const { seedFormatAwareGameViewerFixtures } = await import("../e2e/format-aware-game-viewer-fixture.js");
+  const { insertOwner } = await import("./durable-run-test-utils.js");
+  const { freezeLiveAudio, ensureLiveAudio } = await import("../services/audio-live.js");
+  const { readAudioSource } = await import("../services/audio-source.js");
+  await seedFormatAwareGameViewerFixtures(db);
+  const gameId = "e2e-dark-coral-horn";
+  const [game] = await db.select().from(schema.games).where(eq(schema.games.id, gameId));
+  await db.update(schema.games).set({ status: "in_progress", config: JSON.stringify({ ...JSON.parse(game!.config), audioMode: true }) }).where(eq(schema.games.id, gameId));
+  const epoch = await insertOwner(db, gameId, { expiresAt: new Date(Date.now() + 60_000).toISOString() });
+  await freezeLiveAudio(db, gameId);
+  const head = (await readAudioSource(db, gameId, true)).throughEventSequence;
+  const seats = await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, gameId));
+  const members = seats.slice(0, 2).map(seat => seat.id);
+  const originalRows = await db.select().from(schema.transcripts).where(eq(schema.transcripts.gameId, gameId));
+  const lastOriginal = Math.max(...originalRows.map(row => row.entrySequence ?? 0));
+  const [anchor] = await db.insert(schema.transcripts).values({ gameId, round: 1, phase: "FORMAT_MINGLE", scope: "huddle", text: "Our promises still matter.",
+    fromPlayerId: members[0], speakerPlayerId: members[0], toPlayerIds: JSON.stringify(members.slice(1)), timestamp: Date.now(), entrySequence: lastOriginal + 1,
+    firstDurableEventSequence: head, audiencePlayerIds: members, captureVersion: 1, dialogueKind: "huddle_speech",
+    safeContext: { version: 1, sessionId: "meeting-ab", allianceId: "ab", allianceName: "Night Shift", sessionAudiencePlayerIds: members } }).returning();
+  const flush = async () => {
+    const abort = new AbortController();
+    let finished = false;
+    const pending = ensureLiveAudio(db, gameId, epoch, abort.signal).then(() => { finished = true; return null; }, error => error);
+    try {
+      for (let index = 0; index < 500; index++) {
+        const [track] = await db.select().from(schema.gameAudioTracks).where(eq(schema.gameAudioTracks.gameId, gameId));
+        if (track?.status === "queued" || finished) break;
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      expect(finished).toBeFalse();
+      await runAudioTrack(db, success);
+      expect(await pending).toBeNull();
+    } finally { abort.abort(); await pending; }
+  };
+  await flush();
+  const initial = await readAudioSource(db, gameId, true);
+  const prior = await db.select().from(schema.gameAudioClips);
+  const transcripts = await db.select().from(schema.transcripts).where(eq(schema.transcripts.gameId, gameId));
+  const lastSequence = Math.max(...transcripts.map(row => row.entrySequence ?? 0));
+  await db.insert(schema.transcripts).values({ gameId, round: anchor!.round, phase: anchor!.phase, scope: "system", text: "A shared pact, and competing promises.",
+    timestamp: Date.now(), entrySequence: lastSequence + 1, firstDurableEventSequence: initial.throughEventSequence, audiencePlayerIds: [], captureVersion: 1,
+    dialogueKind: "house_summary", safeContext: { version: 1, allianceIntroduction: { sessionId: "meeting-ab", allianceId: "ab", allianceName: "Night Shift",
+      memberIds: members, beforeEntrySequence: anchor!.entrySequence! } } });
+  expect((await readAudioSource(db, gameId, true)).throughEventSequence).toBe(initial.throughEventSequence);
+  await flush();
+  const after = await db.select().from(schema.gameAudioClips);
+  expect(after).toHaveLength(prior.length + 1);
+  for (const clip of prior) expect(after.find(row => row.id === clip.id)?.activeVersionId).toBe(clip.activeVersionId);
+}, 30_000);
