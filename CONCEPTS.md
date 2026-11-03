@@ -1037,3 +1037,6 @@ Studio and local video rendering share Werewolf's compact result/cast layout and
 
 
 **Publication pointer reconciliation** is a guarded delivery-location update for an already accepted public artifact. It preserves original media/source hashes and publication identity, verifies target versions first, and compares the entire current row under the publication lock order. A pointer inverse alone is not whole-application rollback.
+
+
+**Historical reference audit** is a read-only inspection of an explicitly supplied document set and hash-verified payload bodies. It classifies delivery references while preserving canonical keys/prose; completeness is scoped to those inputs and cannot authorize source retirement.

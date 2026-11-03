@@ -1,6 +1,6 @@
 # Historical storage references — preparation census
 
-Revision 2, 2026-11-03. [Issue #281](https://github.com/0xFlicker/influence-game/issues/281). This is a code-path census and synthetic validation record, not a census of live user records.
+Revision 3, 2026-11-03. [Issue #281](https://github.com/0xFlicker/influence-game/issues/281). This is a code-path census and synthetic validation record, not a census of live user records.
 
 | Boundary | Prepared behavior / remaining work |
 | --- | --- |
@@ -44,3 +44,22 @@ bun scripts/rehearse-public-playback-pointer.ts --run-disposable-postgres
 ```
 
 It creates its own memory-backed PostgreSQL 17 container with no host port, network or mounted user data, and removes only that container afterward. The actual SQL passes forward application, exact retry, pre-write inverse, stale-publication rejection, later-accepted-write preservation and schema-drift rejection. This exercises the relevant synthetic table shape, not live database privileges or all application constraints. Three provider-free tests cover preparation and corruption/environment drift. Live source coverage, object upload/readback, final manifests, controller execution and browser/Studio/export acceptance remain outstanding.
+
+
+## Read-only historical document audit
+
+The file-only `scripts/audit-storage-reference-file.ts` now audits supplied JSON plus locally retained `private-payload-v1` objects. It checks both stored and decoded SHA-256/lengths before traversing JSON/text bodies, handles repeated references without changing source identity, and reports missing/corrupt/conflicting references. It recognizes public aliases, explicit source versions, unfamiliar provider hosts, canonical URL map keys, embedded/encoded provider references, legacy S3 URIs and provider/bucket identifiers. Other object keys are marked for their own object census; it does not pretend every locator is a payload reference.
+
+```sh
+bun scripts/audit-storage-reference-file.ts \
+  --input /private/operator/export.json --input-sha256 <file-sha256> \
+  --delivery /private/operator/delivery.json --delivery-sha256 <file-sha256> \
+  --payload-directory /private/operator/retained-payloads \
+  --output /private/operator/new-reference-audit.json
+```
+
+Payload files live beneath the local directory using their exact `payloads/v1/<codec>/<sha256>` key. The tool never downloads them. Paths resolving outside that directory are rejected. Inputs are rechecked before writing a new private 0600 report; an existing report is never replaced. Terminal output contains only aggregate categories/counts. Reports contain private JSON paths and must remain private.
+
+`payloadBodiesComplete` describes only recognized payload references in the supplied documents. It does not cover omitted database rows, separate public JSON/evidence/export documents, externally held URLs or every historical consumer. `retirementReady` is always false. The operator still needs a complete versioned export/census and the actual viewer/Studio/export acceptance matrix. Supported aliases do not authorize rewriting canonical map keys or prose.
+
+Synthetic coverage includes frozen URL-indexed asset maps, nested owner revisions, copied-episode locator metadata, raw API URLs, encoded/S3 references, version-pinned links, missing/corrupt bodies and conflicting stored metadata. The test compares the original document byte representation before/after and exercises the actual private-output CLI. No live historical records or bodies were read.

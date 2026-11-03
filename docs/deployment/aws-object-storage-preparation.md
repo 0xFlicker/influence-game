@@ -70,3 +70,6 @@ Infrastructure, copy/verification tooling, stopped-writer sequencing, cost revie
 
 
 The historical pointer follow-up adds an offline full-row PostgreSQL reconciliation planner and a disposable synthetic SQL rehearsal; see [reference census](aws-storage-reference-census.md). Latest provider-free run: 3,320 passed, 5 skipped, 0 failed. Workspace checks and a separate strict TypeScript check of the new operator scripts passed. Three focused pointer tests and all six SQL rehearsal cases passed. The initial sandbox run blocked existing localhost socket tests; the same complete suite passed with loopback access allowed. The earlier API fixed-port baseline limitation remains; this follow-up changes no API service implementation and touches no shared database.
+
+
+The read-only historical audit follow-up passes the provider-free baseline (3,323 passed, 5 skipped), workspace checks and strict operator-script type checking. Six focused audit/pointer tests pass, including custom legacy origins and rejected out-of-root payload paths. It follows only supplied, hash-verified payloads and explicitly leaves separate-object/live/external coverage unresolved; see the reference census. No live historical records were accessed.

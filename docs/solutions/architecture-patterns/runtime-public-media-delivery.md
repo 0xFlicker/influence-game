@@ -12,3 +12,6 @@ Resolve storage locations at presentation/fetch boundaries while retaining origi
 
 
 Historical publication reconciliation now has a file-only planner in `scripts/public-playback-pointer.ts`. It requires verified target versions and original/current metadata identity before producing a full-row compare-and-swap. Lock game then media, preserve concurrent attempt fields and publication identity, and refuse inverse updates after any later accepted row change. The PostgreSQL rehearsal is isolated from shared databases. A successful SQL rehearsal is not evidence that the live reference census or writer fence is complete.
+
+
+For historical coverage, audit stored bodies as well as their relational references. `storage-reference-audit.ts` verifies compressed and decoded payload identity before traversal and preserves URL-indexed keys/prose. Separate-object locators and externally held URLs stay explicit gaps; a successful scan of supplied documents cannot establish whole-estate retirement readiness.
