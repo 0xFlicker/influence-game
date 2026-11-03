@@ -10,7 +10,7 @@
       "network": "tailnet",
       "apiOrigin": "https://influence-staging.tail8a79ed.ts.net",
       "targets": {
-        "trailer": "existing",
+        "trailer": "aws-batch",
         "studio-export": "aws-batch"
       }
     }
