@@ -7,6 +7,7 @@ import {
   InviteCodesSection,
   LoginMethodsSection,
   ProfileIdentitySummary,
+  ProfileAwards,
 } from "../app/dashboard/profile/profile-content";
 
 const source = readFileSync(
@@ -109,4 +110,13 @@ describe("private profile public identity controls", () => {
     expect(existingOnly).not.toContain("Add email/password");
     expect(existingOnly).toContain("temporarily unavailable");
   });
+});
+
+it("shows earned account badges without an empty panel or persistent badge text", () => {
+  expect(renderToString(createElement(ProfileAwards, { profile: { displayName: "Flick", awards: [] } }))).toBe("");
+  const html = renderToString(createElement(ProfileAwards, { profile: { displayName: "Flick", awards: [{ id: "award", code: "season-0-account-participant", title: "Season 0 Participant", theme: "season-0", awardedAt: "2026-11-03T00:00:00Z", sourceSeasonId: "s0", sourceEventId: null }] } }));
+  expect(html).toContain("Season 0 honors");
+  expect(html).toContain('aria-label="Flick: Season 0 Participant"');
+  expect(html).toContain('type="button"');
+  expect(html).not.toContain(">Season 0 Participant<");
 });

@@ -3741,6 +3741,7 @@ export type FreeTrackLeaderboardEntry = LeaderboardEntry;
 // ---------------------------------------------------------------------------
 
 export interface PlayerProfile extends AuthenticatedPublicIdentity {
+  awards?: import("./championship").PublicAward[];
   id: string;
   walletAddress: string | null;
   email: string | null;
