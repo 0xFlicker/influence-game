@@ -29,14 +29,19 @@ release; preparing or merging infrastructure source does not run production jobs
 5. Obtain regional quota headroom before activation. The audited Fargate
    On-Demand quota was 8 vCPU; request
    `8422c2249f5b412da0f7d10cdc1464b2GQGmBpKD` asks for 16 and was pending at
-   preparation time. Recheck its disposition and the actual quota. Both staging
-   lanes can reserve 8 vCPU together; both production lanes reserve 4, with other
-   Fargate workloads sharing the quota. Separate queues cannot reserve regional
-   quota against unrelated tasks. Do not activate while staging can exhaust it.
+   preparation time. Staging render compute environments were explicitly paused
+   (`DISABLED`, `VALID`) with no nonterminal jobs on 2026-11-03; the infrastructure
+   proposal preserves that pause. Idle staging now consumes zero Fargate vCPU.
+   Both production lanes reserve 4 vCPU total, with other Fargate workloads sharing
+   the quota. Recheck actual usage/headroom before activation. Re-enabling both
+   staging lanes would require another 8 vCPU; separate queues cannot reserve
+   regional quota against unrelated tasks.
 6. Merge the application policy PR. Ordinary main CI publishes the exact
    API/web/worker family, performs staging admission/deployment and staging E2E,
-   and mirrors the same worker digest to production ECR. Repeat a small staging
-   order and a release-overlap test for the retained-definition path.
+   and mirrors the same worker digest to production ECR. Additional staging render
+   orders are deferred while its compute environments remain paused. The existing
+   staging acceptance evidence remains available; verify the retained-definition
+   path with the production canary and release-overlap checks below.
 7. Review the resulting exact-candidate production approval request. After the
    existing public `production` environment approval is consumed, the private
    host workflow automatically dispatches infra's production Batch workflow.
