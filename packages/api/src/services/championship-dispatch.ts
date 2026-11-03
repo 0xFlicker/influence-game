@@ -66,8 +66,10 @@ export async function dispatchChampionshipMatch(db: DrizzleDB, eventId: string, 
     const recipe = await readJson(event.execution);
     if (recipe.version !== 1) throw new Error("Unknown championship execution version");
     const gameId = randomUUID();
-    await tx.insert(schema.games).values({ id: gameId, slug: `championship-${match.id}`, gameKind: match.gameKind, seasonId: null, trackType: "custom",
+    await tx.insert(schema.games).values({ id: gameId, slug: `championship-${match.id}-${gameId}`, gameKind: match.gameKind, seasonId: null, trackType: "custom",
       status: "waiting", minPlayers: 8, maxPlayers: 8, createdById: event.createdById, config: "{}", ...currentCaptureVersionFields() });
+    const previousAttempts = await tx.select({ gameId: schema.championshipMatchAttempts.gameId }).from(schema.championshipMatchAttempts).where(eq(schema.championshipMatchAttempts.matchId, match.id));
+    await tx.insert(schema.championshipMatchAttempts).values({ gameId, matchId: match.id, seatPrefix: previousAttempts.length ? gameId : match.id });
     await tx.update(schema.championshipMatches).set({ gameId }).where(eq(schema.championshipMatches.id, match.id));
     const roster = (await championshipGameRoster(tx, gameId))!;
     if (match.gameKind === "influence") {
@@ -127,4 +129,32 @@ export async function dispatchDueChampionshipMatches(db: DrizzleDB, now = new Da
     catch (error) { results.push({ ...match, error: error instanceof Error ? error.message : "Dispatch failed" }); }
   }
   return results;
+}
+
+/** Explicit replay of a cancelled attempt, never a draw or a rewrite of accepted history. */
+export async function replayCancelledChampionshipMatch(db: DrizzleDB, input: {
+  eventId: string; ordinal: number; expectedGameId: string; actorId: string; requestId: string; reason: string;
+}, now = new Date().toISOString()) {
+  if (!input.requestId.trim() || !input.reason.trim() || !input.expectedGameId) throw new ChampionshipError("Replay requires an exact game, reason and idempotency key");
+  await db.transaction(async tx => {
+    const [event] = await tx.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, input.eventId)).for("update");
+    if (!event || event.status !== "running") throw new ChampionshipError("Activate the event before replaying a cancelled match", 409);
+    const action = `match_replay:${input.ordinal}:${input.expectedGameId}`;
+    const [prior] = await tx.select().from(schema.competitionAudit).where(and(eq(schema.competitionAudit.actorId, input.actorId), eq(schema.competitionAudit.requestId, input.requestId)));
+    if (prior) {
+      if (prior.eventId !== input.eventId || prior.action !== action || prior.reason !== input.reason.trim()) throw new ChampionshipError("Idempotency key already belongs to another operation", 409);
+      return;
+    }
+    const [match] = await tx.select().from(schema.championshipMatches).where(and(eq(schema.championshipMatches.eventId, input.eventId), eq(schema.championshipMatches.ordinal, input.ordinal))).for("update");
+    if (!match || match.gameId !== input.expectedGameId || match.status === "completed") throw new ChampionshipError("The exact unsettled match attempt changed", 409);
+    const [game] = await tx.select().from(schema.games).where(eq(schema.games.id, input.expectedGameId)).for("update");
+    if (game?.status !== "cancelled") throw new ChampionshipError("Only cancelled games can be replayed; recover interrupted games from their existing cursor", 409);
+    const settled = await tx.select().from(schema.championshipResults).where(eq(schema.championshipResults.matchId, match.id));
+    if (settled.length) throw new ChampionshipError("Scored matches require a separate result correction", 409);
+    await tx.insert(schema.championshipMatchAttempts).values({ gameId: game.id, matchId: match.id, seatPrefix: match.id }).onConflictDoNothing();
+    await tx.update(schema.championshipMatches).set({ gameId: null, status: "scheduled" }).where(eq(schema.championshipMatches.id, match.id));
+    await tx.insert(schema.competitionAudit).values({ id: randomUUID(), eventId: event.id, actorId: input.actorId, requestId: input.requestId, action, reason: input.reason.trim() });
+  });
+  // If a process exits here, the ordinary dispatcher adopts this same scheduled match.
+  return dispatchChampionshipMatch(db, input.eventId, input.ordinal, now);
 }

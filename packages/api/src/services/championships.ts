@@ -6,7 +6,7 @@ import { readSeasonFinalizationSnapshot } from "./season-finalization-snapshot.j
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, or } from "drizzle-orm";
 import {
-  championshipSchedule, createBalancedRoleSchedule, EMPTY_CHAMPIONSHIP_POLICIES,
+  championshipSchedule, createBalancedRoleSchedule, SEASON_ZERO_CHAMPIONSHIP_POLICIES,
   publicRoleLineups, qualifyAgents, unresolvedChampionshipPolicies, parseChampionshipPolicies,
   type ChampionshipPolicies,
 } from "@influence/engine/championship";
@@ -39,7 +39,7 @@ export async function createChampionshipDraft(db: DrizzleDB, input: { slug: stri
     if (!season) throw new ChampionshipError("Season not found", 404);
     const [event] = await tx.insert(schema.championshipEvents).values({
       id: randomUUID(), slug: input.slug, name: nonempty(input.name, "Event name"), sourceSeasonId: season.id,
-      policies: structuredClone(EMPTY_CHAMPIONSHIP_POLICIES), createdById: input.actorId,
+      policies: structuredClone(SEASON_ZERO_CHAMPIONSHIP_POLICIES), createdById: input.actorId,
     }).onConflictDoNothing({ target: schema.championshipEvents.slug }).returning();
     if (event) return event;
     const [existing] = await tx.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.slug, input.slug));
@@ -136,7 +136,7 @@ export async function readChampionship(db: DrizzleDB, idOrSlug: string, producer
     rank: schema.championshipEntries.qualificationRank, seasonPoints: schema.championshipEntries.seasonPoints })
     .from(schema.championshipEntries).where(eq(schema.championshipEntries.eventId, event.id)).orderBy(asc(schema.championshipEntries.qualificationRank));
   const matches = await db.select({ ordinal: schema.championshipMatches.ordinal, gameKind: schema.championshipMatches.gameKind,
-    scheduledAt: schema.championshipMatches.scheduledAt, status: schema.championshipMatches.status, gameSlug: schema.games.slug, ...(producer ? { gameStatus: schema.games.status } : {}) })
+    scheduledAt: schema.championshipMatches.scheduledAt, status: schema.championshipMatches.status, gameSlug: schema.games.slug, ...(producer ? { gameStatus: schema.games.status, gameId: schema.games.id } : {}) })
     .from(schema.championshipMatches).leftJoin(schema.games, eq(schema.games.id, schema.championshipMatches.gameId))
     .where(eq(schema.championshipMatches.eventId, event.id)).orderBy(asc(schema.championshipMatches.ordinal));
   const standings = await championshipStandings(db, event.id);

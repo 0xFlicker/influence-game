@@ -15,7 +15,13 @@ describe("championship presentation", () => {
       lineups: [{ id: "opaque-lineup", roles: { agent: "werewolf" } }],
       policies: { points: null, roleComposition: null, equalScoreFallback: null, participationMinimumCompletedGames: null, ownerAttribution: null }, startDate: "2026-12-01",
     };
+    view.standings = { series: [
+      { agentId: "agent", name: "Finalist", points: 8.5, played: 16, wins: 8, seasonPoints: 2646 },
+      { agentId: "other", name: "Other", points: 8.5, played: 16, wins: 8, seasonPoints: 2646 },
+    ], werewolfWinners: ["agent", "other"], influenceWinners: [], resolutionPending: false };
     const html = renderToStaticMarkup(<ChampionshipEventView event={view} />);
+    expect(html).toContain("8.5");
+    expect(html.match(/· Champion/g)).toHaveLength(2);
     expect(html).toContain("Werewolf series");
     expect(html).toContain("Influence finale");
     expect(html).toContain("00:00 UTC");

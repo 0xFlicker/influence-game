@@ -124,7 +124,7 @@ export async function projectOwnedSeatInTransaction(
     overrides?: OwnedSeatOverrides;
   },
 ): Promise<OwnedSeatProjection> {
-  const [competition] = await tx.select({ id: schema.championshipMatches.id }).from(schema.championshipMatches).where(eq(schema.championshipMatches.gameId, input.game.id));
+  const [competition] = await tx.select({ id: schema.championshipMatchAttempts.gameId }).from(schema.championshipMatchAttempts).where(eq(schema.championshipMatchAttempts.gameId, input.game.id));
   if (competition) throw projectionError("Championship seats use their locked competition revision.", "invalid_state", "game_not_waiting");
   await tx.execute(sql`
     SELECT id

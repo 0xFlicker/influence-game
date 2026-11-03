@@ -4281,14 +4281,21 @@ export const seasonFinalizations = pgTable("season_finalizations", {
   snapshot: payloadColumn("snapshot_object", "json-gzip").notNull().$type<StoredPayload<import("../services/season-finalization-snapshot.js").SeasonFinalizationSnapshot>>(),
 }, table => [...payloadChecks("season_finalizations", { snapshot: [table.snapshot, "json-gzip"] })]);
 
+/** Every accepted attempt remains bound to its frozen competition roster. */
+export const championshipMatchAttempts = pgTable("championship_match_attempts", {
+  gameId: text("game_id").primaryKey().references(() => games.id),
+  matchId: text("match_id").notNull().references(() => championshipMatches.id),
+  seatPrefix: text("seat_prefix").notNull(),
+}, table => [index("championship_attempt_match").on(table.matchId)]);
+
 export const championshipResults = pgTable("championship_results", {
   matchId: text("match_id").notNull().references(() => championshipMatches.id),
   entryId: text("entry_id").notNull().references(() => championshipEntries.id),
   outcome: text("outcome").notNull().$type<"win" | "loss" | "draw">(),
-  points: integer("points").notNull(),
+  points: doublePrecision("points").notNull(),
   policyVersion: text("policy_version").notNull(),
   canonicalSequence: integer("canonical_sequence"),
-}, table => [primaryKey({ columns: [table.matchId, table.entryId] }), check("championship_result_outcome", sql`${table.outcome} IN ('win','loss','draw')`)]);
+}, table => [primaryKey({ columns: [table.matchId, table.entryId] }), check("championship_result_outcome", sql`${table.outcome} IN ('win','loss','draw')`), check("championship_result_points", sql`${table.points} >= 0 AND ${table.points} <= 2147483647 AND ${table.points} * 2 = floor(${table.points} * 2)`)]);
 
 export const championshipAwardAllocations = pgTable("championship_award_allocations", {
   id: text("id").primaryKey(),

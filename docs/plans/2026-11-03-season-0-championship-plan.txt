@@ -1,3 +1,6 @@
+CONFIRMED UPDATE — 2026-11-03 15:34 UTC
+Werewolf scoring: 1 point per winning-faction agent including eliminated teammates, 0 loss, 0.5 true draw. Crashed/aborted games are replayed, not draws. Series tie: exact frozen Season 0 score, then shared championship. This supersedes all undecided scoring/fallback text below. Integer-only implementation still needs half-point support; no live configuration changed.
+
 THE HOUSE — SEASON 0 CLOSEOUT, AWARDS, AND CHAMPIONSHIP
 Technical plan • 2026-11-03 • Revised with user decisions; planning only
 

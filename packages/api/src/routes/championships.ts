@@ -1,5 +1,5 @@
 import { listProducerChampionships, previewChampionshipAwards, listEventAwards, readAwardHistory } from "../services/championship-producer.js";
-import { activateChampionship, pauseChampionship, dispatchChampionshipMatch } from "../services/championship-dispatch.js";
+import { activateChampionship, pauseChampionship, dispatchChampionshipMatch, replayCancelledChampionshipMatch } from "../services/championship-dispatch.js";
 import { reconcileChampionships } from "../services/championship-runtime.js";
 import { isPostgresUniqueViolation } from "../lib/postgres-errors.js";
 import { resolvePublicPlayer } from "../services/public-player-identity.js";
@@ -79,6 +79,12 @@ export function createChampionshipRoutes(db: DrizzleDB) {
     const ordinal = Number(c.req.param("ordinal"));
     if (!Number.isInteger(ordinal) || ordinal < 1 || ordinal > 17) return c.json({ error: "Choose an exact match from 1 to 17" }, 400);
     return c.json(await dispatchChampionshipMatch(db, c.req.param("id"), ordinal));
+  });
+  app.post("/api/admin/championships/:id/matches/:ordinal/replay", async c => {
+    const ordinal = Number(c.req.param("ordinal"));
+    const body = await parseJsonBody(c, "Replay cancelled championship match");
+    if (!Number.isInteger(ordinal) || ordinal < 1 || ordinal > 17 || typeof body?.expectedGameId !== "string" || typeof body?.reason !== "string") return c.json({ error: "Choose an exact cancelled match and provide a reason" }, 400);
+    return c.json(await replayCancelledChampionshipMatch(db, { eventId: c.req.param("id"), ordinal, expectedGameId: body.expectedGameId, reason: body.reason, actorId: c.get("user")!.id, requestId: c.req.header("Idempotency-Key") ?? "" }));
   });
   app.post("/api/admin/championships/:id/publication", async c => {
     const body = await parseJsonBody(c, "Publish championship");

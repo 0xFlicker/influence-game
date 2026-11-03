@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { seededRandom } from "./seeded-random";
 import type { WerewolfRole } from "./werewolf/types";
 
-export const CHAMPIONSHIP_POLICY_VERSION = "season-0-v1";
+export const CHAMPIONSHIP_POLICY_VERSION = "season-0-v2";
 export const ROLE_SCHEDULE_VERSION = "balanced-roles-v1";
 export const FINALIST_COUNT = 8;
 export const WEREWOLF_MATCH_COUNT = 16;
@@ -18,6 +18,10 @@ export type ChampionshipPolicies = {
 export const EMPTY_CHAMPIONSHIP_POLICIES: ChampionshipPolicies = {
   roleComposition: null, points: null, equalScoreFallback: null,
   participationMinimumCompletedGames: null, ownerAttribution: null,
+};
+/** Confirmed Season 0 scoring; other policies remain deliberately unanswered. */
+export const SEASON_ZERO_CHAMPIONSHIP_POLICIES: ChampionshipPolicies = {
+  ...EMPTY_CHAMPIONSHIP_POLICIES, points: { win: 1, loss: 0, draw: 0.5 }, equalScoreFallback: "shared_place",
 };
 export type Qualification = { agentId: string; ownerId: string; name: string; rank: number; seasonPoints: number };
 export type RoleLineup = { id: string; roles: Record<string, WerewolfRole> };
@@ -139,7 +143,7 @@ export function unresolvedChampionshipPolicies(policies: ChampionshipPolicies): 
   const unresolved: string[] = [];
   if (!policies.roleComposition) unresolved.push("roleComposition"); else validateRoleComposition(policies.roleComposition);
   if (!policies.points) unresolved.push("points");
-  else if (Object.keys(policies.points).sort().join(",") !== "draw,loss,win" || Object.values(policies.points).some(n => !Number.isSafeInteger(n) || n < 0 || n > 2_147_483_647)) throw new Error("Points must be explicit nonnegative 32-bit integers");
+  else if (Object.keys(policies.points).sort().join(",") !== "draw,loss,win" || Object.values(policies.points).some(n => !Number.isSafeInteger(n * 2) || n < 0 || n > 2_147_483_647)) throw new Error("Points must be nonnegative half-point increments within the 32-bit integer range");
   if (!policies.equalScoreFallback) unresolved.push("equalScoreFallback");
   else if (!["season_rank", "shared_place"].includes(policies.equalScoreFallback)) throw new Error("Unknown equal-score policy");
   if (policies.participationMinimumCompletedGames === null) unresolved.push("participationMinimumCompletedGames");

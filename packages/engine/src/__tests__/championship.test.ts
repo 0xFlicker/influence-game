@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   championshipSchedule, compareChampionshipScores, createBalancedRoleSchedule,
-  EMPTY_CHAMPIONSHIP_POLICIES, publicRoleLineups, qualifyAgents, SEASON_ZERO_AWARDS,
+  EMPTY_CHAMPIONSHIP_POLICIES, SEASON_ZERO_CHAMPIONSHIP_POLICIES, publicRoleLineups, qualifyAgents, SEASON_ZERO_AWARDS,
   unresolvedChampionshipPolicies, type RoleComposition,
 } from "../championship";
 
@@ -63,6 +63,15 @@ describe("championship contract", () => {
   test("point policies reject values that cannot be stored by result settlement", () => {
     expect(() => unresolvedChampionshipPolicies({ ...EMPTY_CHAMPIONSHIP_POLICIES, points: { win: 2_147_483_648, loss: 0, draw: 0 } })).toThrow("32-bit");
     expect(unresolvedChampionshipPolicies({ ...EMPTY_CHAMPIONSHIP_POLICIES, points: { win: 2_147_483_647, loss: 0, draw: 0 } })).not.toContain("points");
+  });
+  test("confirmed scoring supports exact half points and shared champions after the season tie-break", () => {
+    expect(SEASON_ZERO_CHAMPIONSHIP_POLICIES.points).toEqual({ win: 1, loss: 0, draw: 0.5 });
+    expect(unresolvedChampionshipPolicies(SEASON_ZERO_CHAMPIONSHIP_POLICIES)).toEqual(["roleComposition", "participationMinimumCompletedGames", "ownerAttribution"]);
+    const first = { ...standings[0]!, points: 8.5 };
+    const second = { ...standings[1]!, points: 8.5, seasonPoints: first.seasonPoints };
+    expect(compareChampionshipScores(first, second, "shared_place")).toBe(0);
+    expect(compareChampionshipScores(first, { ...second, seasonPoints: 1 }, "shared_place")).toBeLessThan(0);
+    for (const draw of [0.1, 0.25, -0.5, NaN, Infinity]) expect(() => unresolvedChampionshipPolicies({ ...SEASON_ZERO_CHAMPIONSHIP_POLICIES, points: { win: 1, loss: 0, draw } })).toThrow("half-point");
   });
   test("all approved award contexts have distinct keys and Season 0 names", () => {
     expect(new Set(SEASON_ZERO_AWARDS.map(row => row.code)).size).toBe(10);

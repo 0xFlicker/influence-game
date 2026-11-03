@@ -6,7 +6,8 @@ type Tx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 
 /** Membership, rather than a client-controlled configuration flag, selects frozen admission. */
 export async function championshipGameRoster(tx: Pick<DrizzleDB, "select">, gameId: string) {
-  const [match] = await tx.select().from(schema.championshipMatches).where(eq(schema.championshipMatches.gameId, gameId));
+  const [attempt] = await tx.select().from(schema.championshipMatchAttempts).where(eq(schema.championshipMatchAttempts.gameId, gameId));
+  const [match] = await tx.select().from(schema.championshipMatches).where(attempt ? eq(schema.championshipMatches.id, attempt.matchId) : eq(schema.championshipMatches.gameId, gameId));
   if (!match) return null;
   const [event] = await tx.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, match.eventId));
   if (!event?.execution) throw new Error("Competition execution recipe is missing");
@@ -17,7 +18,7 @@ export async function championshipGameRoster(tx: Pick<DrizzleDB, "select">, game
   const cast = await Promise.all(entries.map(async entry => {
     const build = await readJson(entry.build);
     if (build.version !== 1 || build.competitionRevisionId !== entry.id || build.agentId !== entry.agentId || build.ownerId !== entry.ownerId) throw new Error("Championship build identity mismatch");
-    return { entry, build, seatId: `${match.id}:${entry.id}` };
+    return { entry, build, seatId: `${attempt?.seatPrefix ?? match.id}:${entry.id}` };
   }));
   const base = structuredClone(cast[0]!.build.modelRouting);
   if (!base.frozenRoutes) throw new Error("Competition routing was not frozen");

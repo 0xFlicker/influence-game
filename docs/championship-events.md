@@ -16,7 +16,7 @@ All 17 schedule records are generated at midnight UTC from an explicit start dat
 
 Only explicitly activated events dispatch. Creation and dispatch lock the exact event/match identity; duplicate calls return the same game. They never select a newest waiting game. A crash after Influence game creation resumes its existing waiting game, and a crash after accepted start uses the normal durable worker adoption path. Existing deployment admission/maintenance fences remain in force. Temporary dispatch errors remain retryable and do not invalidate the field. Award and result-reconciliation failures do not prevent due gameplay dispatch. No monetary ceilings, reserves or spend-based stops were added.
 
-The clock is a not-before boundary, not a promise of second-exact execution. Delayed starts catch up in scheduled order. Multiple overdue matches may overlap following an outage; accepted games retain independent durable leases. Activation/pause request identities are audited even for no-ops; delayed retries cannot reverse a later producer decision. Operators can explicitly pause future starts; that does not abort accepted games. There is no automatic cancellation or replacement after a game failure.
+The clock is a not-before boundary, not a promise of second-exact execution. Delayed starts catch up in scheduled order. Multiple overdue matches may overlap following an outage; accepted games retain independent durable leases. Activation/pause request identities are audited even for no-ops; delayed retries cannot reverse a later producer decision. Operators can explicitly pause future starts; that does not abort accepted games. There is no automatic cancellation after a game failure. Interrupted games recover their existing durable cursor. A cancelled attempt can be explicitly replayed from the producer panel with its exact game ID, a reason and an idempotency key; this preserves the abandoned game and its frozen membership, uses the same field/role lineup, and creates distinct seat identities. Delayed requests cannot replace a newer attempt. Crashes and cancellations receive no points and never become draws. Completed/scored matches cannot use this replay operation.
 
 ## Balanced roles and spectator presentation
 
@@ -28,7 +28,7 @@ Public views receive only unordered, opaque lineup IDs and role maps. Seeds, fut
 
 ## Results and awards
 
-Settlement reads canonical Werewolf outcomes or the normal Influence completion receipt. Unique match/entry rows store one outcome and point award per contestant; transaction locking prevents duplicate counting. Werewolf ranking compares configured series points, then exact frozen Season 0 score, then the explicitly chosen equal-score fallback. Influence's canonical winner wins its separate championship. An Influence draw remains unresolved pending a product decision; completed gameplay is retained rather than rerun automatically.
+Settlement reads canonical Werewolf outcomes or the normal Influence completion receipt. Unique match/entry rows store one outcome and point award per contestant; transaction locking prevents duplicate counting. New drafts use the confirmed Season 0 policy: faction win 1 (including eliminated teammates), loss 0, genuine day-limit draw 0.5; rank by series points then exact frozen Season 0 score, sharing the championship when both tie. Existing event policies remain unchanged. Policy version `season-0-v2` supports exact half-point increments; migration 0145 widens historical integer scores without rescaling them or rewriting their version. Binary halves and every old int32 value are represented exactly. Shared winners each receive champion and architect awards. Influence's canonical winner wins its separate championship. An Influence draw remains unresolved pending a product decision; completed gameplay is retained rather than rerun automatically.
 
 All 17 completed results finalize the event when winner resolution is complete. Finalization is audited. Result reconciliation and finalization also work while future dispatch is paused.
 
@@ -38,7 +38,7 @@ Automatic allocation uses three independent phases: the locked field after activ
 
 ## Producer workflow and badge correction
 
-`/admin/championships` is available to accounts with `manage_championships`. It lists up to 100 recent events and connects draft creation, explicit policy/date entry, top-eight roster lock, publication, activation/resume, pause, exact-match retry, and event-scoped reconciliation. Source-season operations remain in the existing Seasons screen; the championship panel never closes a season implicitly. Blank policies remain undecided. A draft-create retry with the same slug/actor/source/name returns the same event; conflicting reuse is rejected.
+`/admin/championships` is available to accounts with `manage_championships`. It lists up to 100 recent events and connects draft creation, explicit policy/date entry, top-eight roster lock, publication, activation/resume, pause, exact-match retry, and event-scoped reconciliation. Source-season operations remain in the existing Seasons screen; the championship panel never closes a season implicitly. Only confirmed scoring and shared-champion fallback are prefilled in new drafts; other blank policies remain undecided. A draft-create retry with the same slug/actor/source/name returns the same event; conflicting reuse is rejected.
 
 Publication does not activate the schedule. Activation permits due games and automatic awards; overdue starts can overlap. Reconciliation from this panel targets only its selected event. Match rows show the actual game status when it differs from event progress, with links to existing game pages. Event audit history and operation receipts support recovery. Unknown browser operations retain their original request/body in the account-scoped admin session for a deliberate retry; this in-memory continuity does not survive a full browser reload.
 
@@ -61,6 +61,7 @@ Public reads: `GET /api/championships/:slug` (published only), `GET /api/award-d
 - `POST /api/admin/championships/:id/activate`: explicit activation or resume, with `Idempotency-Key`.
 - `POST /api/admin/championships/:id/pause`: pause future starts, with `Idempotency-Key`.
 - `POST /api/admin/championships/:id/matches/:ordinal/dispatch`: retry one exact due match.
+- `POST /api/admin/championships/:id/matches/:ordinal/replay`: replay a cancelled unscored attempt; requires `expectedGameId`, `reason` and `Idempotency-Key`. The worker can recover a crash between accepting replay and starting its new attempt.
 - `POST /api/admin/championships/:id/reconcile`: reconcile only this event.
 - `GET /api/admin/championships/:id/award-preview`: read-only allocation preview; also requires `manage_awards`.
 
@@ -72,7 +73,7 @@ Public reads: `GET /api/championships/:slug` (published only), `GET /api/award-d
 
 Additive migrations 0143–0144 and payload inventory entries must deploy together with the API. Only isolated local test databases have been migrated by this task. Bucket references are verified before commit; rolled-back uploads may leave content-addressed orphan objects for normal inventory/retention handling. Coordinate these additions with the separate AWS storage migration.
 
-Do not activate a real event until its start date, role composition, win/loss/draw points, equal-score fallback, participation threshold and owner-attribution policy are chosen. An Influence draw policy also needs a product decision before a drawn finale can be finalized. Test values are fixtures, not production defaults.
+Do not activate a real event until its start date, role composition, participation threshold and owner-attribution policy are chosen. An Influence draw policy also needs a product decision before a drawn finale can be finalized. Test values are fixtures, not production defaults.
 
 Still to implement/review: genuine-unavailability alternate selection and evidence, recipient/evidence replacement or canonical-result correction workflows, and any desired final badge-art refinement. In-player branding was not changed; existing viewer/Studio/export rendering remains the authority. The event page and profile award shelves are outside the player picture.
 

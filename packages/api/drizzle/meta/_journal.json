@@ -1016,6 +1016,20 @@
       "when": 1792952785114,
       "tag": "0144_championship_execution",
       "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "7",
+      "when": 1792952785115,
+      "tag": "0145_championship_half_points",
+      "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "7",
+      "when": 1792952785116,
+      "tag": "0146_championship_replay_attempts",
+      "breakpoints": true
     }
   ]
 }
