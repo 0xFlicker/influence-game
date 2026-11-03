@@ -16,6 +16,7 @@ import { schema } from "./index.js";
 
 const PERMISSIONS = [
   { name: "manage_award_definitions", description: "Define reusable account and agent awards" },
+  { name: "dispatch_championship", description: "Dispatch and reconcile explicitly activated championship events" },
   { name: "manage_championships", description: "Manage competition drafts and frozen fields" },
   { name: "manage_awards", description: "Grant and revoke evidence-backed account and agent awards" },
   { name: "manage_invites", description: "Manage signup policy and redeemable invite codes" },
@@ -72,6 +73,7 @@ const ROLES = [
       "manage_provider_health",
       "manage_seasons",
       "manage_championships",
+      "dispatch_championship",
       "manage_awards",
       "retry_game_settlement",
     ],

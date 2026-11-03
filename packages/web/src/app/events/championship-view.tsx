@@ -24,12 +24,21 @@ export function ChampionshipEventView({ event }: { event: ChampionshipView }) {
     </section>
     <section aria-labelledby="event-series"><h2 id="event-series" className="text-xl font-semibold">Werewolf series</h2>
       <p className="mt-2 influence-copy-muted">The same eight agents play every match. Series ties use their final Season 0 agent score.</p>
+      {event.standings?.series.some(row => row.played > 0) ? <div className="mt-4 rounded-lg border border-white/10 p-4">
+        <h3 className="font-semibold">Series standings</h3>
+        <ol className="mt-3 space-y-3">{event.standings.series.map(row => <li key={row.agentId} className="flex flex-wrap justify-between gap-2 text-sm">
+          <span className="break-words">{row.name}{event.standings!.werewolfWinners.includes(row.agentId) ? " · Champion" : ""}</span>
+          <span>{row.points} {row.points === 1 ? "point" : "points"} · {row.wins} {row.wins === 1 ? "win" : "wins"} · {row.played}/16 played</span>
+        </li>)}</ol>
+        {event.standings.resolutionPending ? <p className="mt-3 text-sm influence-copy-muted">A tied result awaits the final tie policy.</p> : null}
+      </div> : null}
       {werewolf.length ? <ol className="mt-4 grid gap-3 sm:grid-cols-2">{werewolf.map(match => <MatchCard key={match.ordinal} match={match} />)}</ol>
         : <p className="mt-4 influence-copy-muted">Sixteen daily matches. Starting date to be announced.</p>}
     </section>
     <section aria-labelledby="event-finale" className="rounded-xl border border-amber-200/30 bg-amber-200/5 p-5">
       <h2 id="event-finale" className="text-xl font-semibold">Influence finale</h2>
       <p className="mt-2 influence-copy">All eight finalists return on day 17. Its winner earns the separate Influence championship.</p>
+      {event.standings?.influenceWinners.length ? <p className="mt-3 font-semibold text-amber-200">Champion: {event.standings.influenceWinners.map(id => names.get(id) ?? "Finalist").join(", ")}</p> : null}
       {finale ? <ul className="mt-4"><MatchCard match={finale} /></ul> : <p className="mt-3 text-sm influence-copy-muted">00:00 UTC on the day after the final Werewolf match.</p>}
     </section>
     <section aria-labelledby="event-roles"><h2 id="event-roles" className="text-xl font-semibold">Balanced role selection</h2>

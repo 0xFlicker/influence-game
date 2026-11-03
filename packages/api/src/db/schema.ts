@@ -4197,6 +4197,7 @@ export const championshipEvents = pgTable("championship_events", {
   published: boolean("published").notNull().default(false),
   policies: jsonb("policies").notNull().$type<import("@influence/engine/championship").ChampionshipPolicies>(),
   startDate: text("start_date"),
+  execution: payloadColumn("execution_object", "json-gzip").$type<StoredPayload<import("../services/championship-execution-config.js").ChampionshipExecutionConfig>>(),
   qualification: payloadColumn("qualification_object", "json-gzip").$type<StoredPayload<import("@influence/engine/championship").Qualification[]>>(),
   roleSchedule: payloadColumn("role_schedule_object", "json-gzip").$type<StoredPayload<import("@influence/engine/championship").PrivateRoleSchedule>>(),
   createdById: text("created_by_id").notNull().references(() => users.id),
@@ -4204,7 +4205,7 @@ export const championshipEvents = pgTable("championship_events", {
   lockedAt: text("locked_at"),
 }, table => [
   check("championship_events_status", sql`${table.status} IN ('draft','locked','running','paused','final')`),
-  ...payloadChecks("championship_events", { qualification: [table.qualification, "json-gzip"], roleSchedule: [table.roleSchedule, "json-gzip"] }),
+  ...payloadChecks("championship_events", { execution: [table.execution, "json-gzip"], qualification: [table.qualification, "json-gzip"], roleSchedule: [table.roleSchedule, "json-gzip"] }),
 ]);
 export const championshipEntries = pgTable("championship_entries", {
   id: text("id").primaryKey(),
@@ -4274,3 +4275,25 @@ export const competitionAudit = pgTable("competition_audit", {
   requestId: text("request_id").notNull(),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
 }, table => [unique("competition_audit_request").on(table.actorId, table.requestId)]);
+
+export const seasonFinalizations = pgTable("season_finalizations", {
+  seasonId: text("season_id").primaryKey().references(() => seasons.id),
+  snapshot: payloadColumn("snapshot_object", "json-gzip").notNull().$type<StoredPayload<import("../services/season-finalization-snapshot.js").SeasonFinalizationSnapshot>>(),
+}, table => [...payloadChecks("season_finalizations", { snapshot: [table.snapshot, "json-gzip"] })]);
+
+export const championshipResults = pgTable("championship_results", {
+  matchId: text("match_id").notNull().references(() => championshipMatches.id),
+  entryId: text("entry_id").notNull().references(() => championshipEntries.id),
+  outcome: text("outcome").notNull().$type<"win" | "loss" | "draw">(),
+  points: integer("points").notNull(),
+  policyVersion: text("policy_version").notNull(),
+  canonicalSequence: integer("canonical_sequence"),
+}, table => [primaryKey({ columns: [table.matchId, table.entryId] }), check("championship_result_outcome", sql`${table.outcome} IN ('win','loss','draw')`)]);
+
+export const championshipAwardAllocations = pgTable("championship_award_allocations", {
+  id: text("id").primaryKey(),
+  eventId: text("event_id").notNull().references(() => championshipEvents.id),
+  phase: text("phase").notNull(),
+  grants: payloadColumn("grants_object", "json-gzip").notNull().$type<StoredPayload<import("../services/championship-awards.js").PlannedAward[]>>(),
+  deliveredAt: text("delivered_at"),
+}, table => [unique("championship_awards_phase").on(table.eventId, table.phase), ...payloadChecks("championship_award_allocations", { grants: [table.grants, "json-gzip"] })]);

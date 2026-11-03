@@ -1,13 +1,14 @@
 import type { PublicAward } from "@/lib/championship";
 
 /** Shared account/agent award presentation; source-specific names preserve achievement context. */
-export function AwardShelf({ awards, title = "Season 0 honors" }: { awards: PublicAward[]; title?: string }) {
+export function AwardShelf({ awards, title }: { awards: PublicAward[]; title?: string }) {
   if (!awards.length) return null;
-  return <section className="influence-panel rounded-xl p-5" aria-label={title}>
-    <h2 className="influence-section-title">{title}</h2>
+  const heading = title ?? (awards.every(award => award.theme === "season-0") ? "Season 0 honors" : "Honors");
+  return <section className="influence-panel rounded-xl p-5" aria-label={heading}>
+    <h2 className="influence-section-title">{heading}</h2>
     <ul className="mt-4 flex flex-wrap gap-4">
       {awards.map(award => <li key={award.id} className="flex max-w-64 items-center gap-3 rounded-lg border border-amber-300/25 bg-amber-300/5 p-3">
-        <SeasonZeroMark code={award.code} />
+        {award.theme === "season-0" ? <SeasonZeroMark code={award.code} /> : <svg aria-hidden="true" viewBox="0 0 64 72" className="h-16 w-14 shrink-0 text-amber-200" fill="none"><path d="M32 3 58 16v29L32 68 6 45V16Z" stroke="currentColor" strokeWidth="2" /><path d="m32 17 5 12 13 1-10 9 3 13-11-7-11 7 3-13-10-9 13-1Z" stroke="currentColor" strokeWidth="2" /></svg>}
         <div><p className="text-sm font-semibold text-text-primary">{award.title}</p>
           <time dateTime={award.awardedAt} className="text-xs influence-copy-muted">{new Date(award.awardedAt).toISOString().slice(0, 10)}</time>
         </div>

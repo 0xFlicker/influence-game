@@ -1009,6 +1009,13 @@
       "when": 1792952785113,
       "tag": "0143_championship_foundations",
       "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1792952785114,
+      "tag": "0144_championship_execution",
+      "breakpoints": true
     }
   ]
 }

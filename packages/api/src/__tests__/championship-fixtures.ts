@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
 import type { ChampionshipPolicies } from "@influence/engine/championship";
 import { schema } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
-import { storeJson } from "../services/payload-storage.js";
+import { ensureActiveAgentRevision, resolveFreeTrackEffectiveRuntimeSnapshot } from "../services/agent-revisions.js";
 import { createChampionshipDraft } from "../services/championships.js";
 
 // Test-only choices are explicit fixtures, not production policy defaults.
@@ -20,12 +19,10 @@ export async function championshipFixture() {
   const gameId = randomUUID();
   await db.insert(schema.games).values({ id: gameId, slug: `source-${gameId}`, status: "completed", config: "{}", seasonId, minPlayers: 8, maxPlayers: 8 });
   for (let index = 0; index < 8; index++) {
-    const id = randomUUID(), revision = randomUUID(); agents.push(id);
-    await db.insert(schema.agentProfiles).values({ id, userId: actorId, name: `Finalist ${index}`, personality: "Frozen personality", strategyStyle: "Influence strategy", werewolfStrategyStyle: "Werewolf strategy" });
-    await db.insert(schema.agentRevisions).values({ id: revision, agentProfileId: id, ordinal: 1, trigger: "profile_create", magnitude: "initial", fingerprint: `test-${id}`,
-      behaviorSnapshot: await storeJson({}), effectiveRuntimeSnapshot: await storeJson({}), revisionPolicyVersion: "test" });
-    await db.update(schema.agentProfiles).set({ currentRevisionId: revision }).where(eq(schema.agentProfiles.id, id));
-    await db.insert(schema.competitionReceipts).values({ id: randomUUID(), seasonId, gameId, ownerId: actorId, agentProfileId: id, agentRevisionId: revision,
+    const id = randomUUID(); agents.push(id);
+    const [profile] = await db.insert(schema.agentProfiles).values({ id, userId: actorId, name: `Finalist ${index}`, personality: "Frozen personality", strategyStyle: "Influence strategy", werewolfStrategyStyle: "Werewolf strategy" }).returning();
+    const { revision } = await ensureActiveAgentRevision(db, { profile: profile!, effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile!), trigger: "profile_create" });
+    await db.insert(schema.competitionReceipts).values({ id: randomUUID(), seasonId, gameId, ownerId: actorId, agentProfileId: id, agentRevisionId: revision.id,
       agentNameSnapshot: `Finalist ${index}`, eligibilityStatus: "eligible", lobbySize: 8, placement: index + 1,
       basePoints: 100 - index, totalPoints: 100 - index, scoringPolicyVersion: "test", earnedAt: "2026-10-01T00:00:00.000Z" });
   }

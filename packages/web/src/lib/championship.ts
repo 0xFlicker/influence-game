@@ -5,6 +5,7 @@ export interface ChampionshipView {
   season: { id: string; slug: string; name: string };
   entries: Array<{ agentId: string; name: string; rank: number; seasonPoints: number }>;
   matches: Array<{ ordinal: number; gameKind: "werewolf" | "influence"; scheduledAt: string; status: string; gameSlug: string | null }>;
+  standings?: { series: Array<{ agentId: string; name: string; points: number; played: number; wins: number; seasonPoints: number }>; werewolfWinners: string[]; influenceWinners: string[]; resolutionPending: boolean } | null;
   lineups: PublicRoleLineup[];
   policies: ChampionshipPolicies; startDate: string | null;
 }

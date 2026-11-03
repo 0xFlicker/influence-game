@@ -1,9 +1,11 @@
+import { activateChampionship, pauseChampionship, dispatchChampionshipMatch } from "../services/championship-dispatch.js";
+import { reconcileChampionships } from "../services/championship-runtime.js";
 import { isPostgresUniqueViolation } from "../lib/postgres-errors.js";
 import { resolvePublicPlayer } from "../services/public-player-identity.js";
 import { Hono } from "hono";
 import { championshipSchedule, parseChampionshipPolicies } from "@influence/engine/championship";
 import type { DrizzleDB } from "../db/index.js";
-import { requireAuth, requirePermission, type AuthEnv } from "../middleware/auth.js";
+import { requireAuth, requirePermission, requireServiceAuth, type AuthEnv } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import { ChampionshipError, configureChampionshipDraft, createChampionshipDraft, lockChampionshipRoster, publishChampionship, readChampionship } from "../services/championships.js";
 import { grantAward, revokeAward, publicAgentAwards, publicAccountAwards, createAwardDefinition, publicAwardDefinitions } from "../services/awards.js";
@@ -25,6 +27,7 @@ export function createChampionshipRoutes(db: DrizzleDB) {
     return player ? c.json({ awards: await publicAccountAwards(db, player.internalUserId) }) : c.json({ error: "Player not found" }, 404);
   });
   app.get("/api/award-definitions", async c => c.json({ definitions: await publicAwardDefinitions(db) }));
+  app.post("/api/internal/championships/reconcile", requireServiceAuth(db, "dispatch_championship"), requirePermission("dispatch_championship"), async c => c.json(await reconcileChampionships(db)));
   app.use("/api/admin/championships/*", requireAuth(db), requirePermission("manage_championships"));
   app.post("/api/admin/championships", requireAuth(db), requirePermission("manage_championships"), async c => {
     const body = await parseJsonBody(c, "Create championship draft");
@@ -51,6 +54,13 @@ export function createChampionshipRoutes(db: DrizzleDB) {
   app.post("/api/admin/championships/:id/lock", async c => {
     const event = await lockChampionshipRoster(db, c.req.param("id"), c.get("user")!.id, c.req.header("Idempotency-Key") ?? "");
     return c.json({ id: event.id, status: event.status });
+  });
+  app.post("/api/admin/championships/:id/activate", async c => c.json(await activateChampionship(db, c.req.param("id"), c.get("user")!.id, c.req.header("Idempotency-Key") ?? "")));
+  app.post("/api/admin/championships/:id/pause", async c => c.json(await pauseChampionship(db, c.req.param("id"), c.get("user")!.id, c.req.header("Idempotency-Key") ?? "")));
+  app.post("/api/admin/championships/:id/matches/:ordinal/dispatch", async c => {
+    const ordinal = Number(c.req.param("ordinal"));
+    if (!Number.isInteger(ordinal) || ordinal < 1 || ordinal > 17) return c.json({ error: "Choose an exact match from 1 to 17" }, 400);
+    return c.json(await dispatchChampionshipMatch(db, c.req.param("id"), ordinal));
   });
   app.post("/api/admin/championships/:id/publication", async c => {
     const body = await parseJsonBody(c, "Publish championship");

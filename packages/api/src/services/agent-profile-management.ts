@@ -877,7 +877,8 @@ export async function updateOwnedAgentProfileInLockedTransaction(
 
   const references: AgentMutationWaitingSeatReference[] = [];
   for (const game of lockedGames) {
-    if (game.status === "waiting" && !game.startedAt) {
+    const [competition] = await tx.select({ id: schema.championshipMatches.id }).from(schema.championshipMatches).where(eq(schema.championshipMatches.gameId, game.id));
+    if (game.status === "waiting" && !game.startedAt && !competition) {
       try {
         const reconciliations = await reconcileOwnedProfileSeatsInLockedGame(tx, {
           game,

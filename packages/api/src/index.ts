@@ -1,3 +1,4 @@
+import { reconcileChampionships } from "./services/championship-runtime.js";
 import { createChampionshipRoutes } from "./routes/championships.js";
 import { createAudioRoutes } from "./routes/audio.js";
 import { startAudioWorker } from "./services/audio-tracks.js";
@@ -518,6 +519,17 @@ async function finishBackgroundRuntimeStartup(
     }, 2_000)
     : null;
   executionScanTimer?.unref();
+  let championshipReconciling = false;
+  const championshipTimer = gameExecutionWorker ? setInterval(() => {
+    if (stopping || championshipReconciling || !gameExecutionWorker.canClaimGames()) return;
+    championshipReconciling = true;
+    void reconcileChampionships(db).then(result => {
+      if (result.diagnostics.length || result.dispatched.some(item => "error" in item)) console.warn("[championship] Retry diagnostics", result);
+    }).catch(error => console.warn("[championship] Reconciliation deferred", error))
+      .finally(() => { championshipReconciling = false; });
+  }, 30_000) : null;
+  championshipTimer?.unref();
+
 
   const renderWakeDispatcher = gameExecutionWorker
     ? startRenderWakeDispatcher(db, () => !stopping && runtimeActivation.canClaimWork())
@@ -535,6 +547,7 @@ async function finishBackgroundRuntimeStartup(
       await agentScreeningWorker?.stop();
       if (reconciliationTimer) clearInterval(reconciliationTimer);
       if (executionScanTimer) clearInterval(executionScanTimer);
+      if (championshipTimer) clearInterval(championshipTimer);
       if (executionScan) {
         try { await executionScan; } catch (error) {
           console.warn("[game-worker] Scan ended during shutdown", error);

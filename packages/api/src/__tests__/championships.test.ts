@@ -77,6 +77,18 @@ describe("championship foundations", () => {
     const grant = await grantAward(db, { actorId, definitionCode: definition.code, recipient: { type: "account", id: actorId }, sourceKey: "manual:helper", evidence: { contribution: "fixture" }, reason: "Fixture contribution", requestId: randomUUID() });
     expect(grant.created).toBe(true);
   });
+  test("championship wakeup requires its dedicated service scope", async () => {
+    const { db, actorId } = await fixture();
+    await db.insert(schema.servicePrincipals).values({ userId: actorId });
+    const app = new Hono().route("/", createChampionshipRoutes(db));
+    const queueToken = await createSessionToken(actorId, { permissions: ["schedule_free_game"], roles: [] });
+    expect((await app.request("/api/internal/championships/reconcile", { method: "POST", headers: { Authorization: `Bearer ${queueToken}` } })).status).toBe(403);
+    const eventToken = await createSessionToken(actorId, { permissions: ["dispatch_championship"], roles: [] });
+    expect((await app.request("/api/internal/championships/reconcile", { method: "POST", headers: { Authorization: `Bearer ${eventToken}` } })).status).toBe(200);
+    expect((await db.select().from(schema.games))).toHaveLength(1);
+    await db.update(schema.servicePrincipals).set({ enabled: false }).where(eq(schema.servicePrincipals.userId, actorId));
+    expect((await app.request("/api/internal/championships/reconcile", { method: "POST", headers: { Authorization: `Bearer ${eventToken}` } })).status).toBe(403);
+  });
   test("producer routes require explicit authority; public drafts do not leak", async () => {
     const { db, actorId, event } = await fixture();
     const app = new Hono().route("/", createChampionshipRoutes(db));

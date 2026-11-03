@@ -1,3 +1,4 @@
+import { freezeChampionshipInfluenceRoster } from "./championship-game-roster.js";
 import { authorizedModelPreference } from "./game-model-routing.js";
 import { Hydrated } from "./payload-storage.js";
 import { randomUUID } from "node:crypto";
@@ -123,6 +124,8 @@ export async function projectOwnedSeatInTransaction(
     overrides?: OwnedSeatOverrides;
   },
 ): Promise<OwnedSeatProjection> {
+  const [competition] = await tx.select({ id: schema.championshipMatches.id }).from(schema.championshipMatches).where(eq(schema.championshipMatches.gameId, input.game.id));
+  if (competition) throw projectionError("Championship seats use their locked competition revision.", "invalid_state", "game_not_waiting");
   await tx.execute(sql`
     SELECT id
     FROM agent_profiles
@@ -296,6 +299,8 @@ export async function projectWaitingOwnedRosterInTransaction(
   options: { allowHouseNameCollisions?: boolean } = {},
 ): Promise<{ game: GameRow; seats: PlayerRow[] }> {
   const game = await lockWaitingGameForRosterWrite(tx, gameId);
+  const frozen = await freezeChampionshipInfluenceRoster(tx, gameId);
+  if (frozen) return { game: frozen.game, seats: frozen.seats };
   const players = await tx.select().from(schema.gamePlayers)
     .where(eq(schema.gamePlayers.gameId, game.id))
     .orderBy(asc(schema.gamePlayers.id));

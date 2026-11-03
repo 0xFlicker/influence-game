@@ -33,5 +33,9 @@ describe("championship presentation", () => {
     expect(html).toContain("Season 0 Top 8");
     expect(html).toContain('aria-hidden="true"');
     expect(renderToStaticMarkup(<AwardShelf awards={[]} />)).toBe("");
+    const custom = renderToStaticMarkup(<AwardShelf awards={[{ id: "custom", code: "helper", title: "Community helper", theme: "house", awardedAt: "2026-12-01T00:00:00Z", sourceSeasonId: null, sourceEventId: null }]} />);
+    expect(custom).toContain("Community helper");
+    expect(custom).not.toContain("Season 0 honors");
+    expect(custom).not.toContain(">S0<");
   });
 });

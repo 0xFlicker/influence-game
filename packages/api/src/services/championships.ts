@@ -1,3 +1,6 @@
+import { championshipStandings } from "./championship-results.js";
+import { freezeChampionshipExecutionConfig } from "./championship-execution-config.js";
+import { readSeasonFinalizationSnapshot } from "./season-finalization-snapshot.js";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, or } from "drizzle-orm";
 import {
@@ -62,7 +65,8 @@ export async function lockChampionshipRoster(db: DrizzleDB, eventId: string, act
     if (season?.status !== "final") throw new ChampionshipError("Finalize the source season before locking its qualifying field", 409);
     const pending = unresolvedChampionshipPolicies(event.policies);
     if (pending.length || !event.startDate) throw new ChampionshipError(`Decisions still needed: ${[...pending, ...(!event.startDate ? ["startDate"] : [])].join(", ")}`, 409);
-    const standings = await readChampionshipQualification(tx, season.id);
+    const finalization = await readSeasonFinalizationSnapshot(tx, season.id);
+    const standings = finalization?.qualification ?? await readChampionshipQualification(tx, season.id);
     const qualified = qualifyAgents(standings);
     const frozenAt = new Date().toISOString();
     const modelRouting = await creationModelRouting(tx, actorId, {});
@@ -87,13 +91,15 @@ export async function lockChampionshipRoster(db: DrizzleDB, eventId: string, act
       await tx.insert(schema.championshipEntries).values({ id, eventId, agentId: profile.id, ownerId: profile.userId,
         name, qualificationRank: candidate.rank, seasonPoints: candidate.seasonPoints, sourceRevisionId: profile.currentRevisionId, build: stored });
     }
+    const execution = await storeJson(freezeChampionshipExecutionConfig(event.policies.roleComposition!));
+    await readJson(execution);
     const qualification = await storeJson(standings);
     const roleSchedule = await storeJson(createBalancedRoleSchedule(qualified.map(row => row.agentId), event.policies.roleComposition!, randomUUID()));
     await Promise.all([readJson(qualification), readJson(roleSchedule)]);
     await tx.insert(schema.championshipMatches).values(championshipSchedule(event.startDate).map(match => ({
       id: randomUUID(), eventId, ordinal: match.ordinal, gameKind: match.kind, scheduledAt: match.scheduledAt,
     })));
-    const [locked] = await tx.update(schema.championshipEvents).set({ status: "locked", lockedAt: frozenAt, qualification, roleSchedule })
+    const [locked] = await tx.update(schema.championshipEvents).set({ status: "locked", lockedAt: frozenAt, qualification, roleSchedule, execution })
       .where(eq(schema.championshipEvents.id, eventId)).returning();
     await tx.insert(schema.competitionAudit).values({ id: randomUUID(), eventId, actorId, action: "roster_locked",
       reason: "Final season qualification and immutable competition builds", requestId });
@@ -124,12 +130,14 @@ export async function readChampionship(db: DrizzleDB, idOrSlug: string, producer
     scheduledAt: schema.championshipMatches.scheduledAt, status: schema.championshipMatches.status, gameSlug: schema.games.slug })
     .from(schema.championshipMatches).leftJoin(schema.games, eq(schema.games.id, schema.championshipMatches.gameId))
     .where(eq(schema.championshipMatches.eventId, event.id)).orderBy(asc(schema.championshipMatches.ordinal));
+  const standings = await championshipStandings(db, event.id);
   return {
+    standings: standings ? { ...standings, series: standings.series.map(({ ownerId: _owner, ...row }) => row) } : null,
     id: event.id, slug: event.slug, name: event.name, status: event.status, season, entries, matches,
     lineups: event.roleSchedule ? publicRoleLineups(await readJson(event.roleSchedule)) : [],
     policies: event.policies, startDate: event.startDate,
     ...(producer ? { unresolvedPolicies: unresolvedChampionshipPolicies(event.policies), published: event.published,
-      executionAvailable: false, executionNote: "Draft foundation: game execution adapters are not installed" } : {}),
+      executionAvailable: Boolean(event.execution), executionNote: event.execution ? "Explicit activation required; exact-match durable execution" : "Lock the roster to freeze execution configuration" } : {}),
   };
 }
 export async function publishChampionship(db: DrizzleDB, eventId: string, published: boolean) {
