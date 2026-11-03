@@ -1,3 +1,4 @@
+import { ensureActiveAgentRevisionInTransaction, resolveFreeTrackEffectiveRuntimeSnapshot } from "./agent-revisions.js";
 import { championshipStandings } from "./championship-results.js";
 import { freezeChampionshipExecutionConfig } from "./championship-execution-config.js";
 import { readSeasonFinalizationSnapshot } from "./season-finalization-snapshot.js";
@@ -74,6 +75,10 @@ export async function lockChampionshipRoster(db: DrizzleDB, eventId: string, act
     for (const candidate of [...qualified].sort((a, b) => a.agentId.localeCompare(b.agentId))) {
       const [profile] = await tx.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, candidate.agentId)).for("update");
       if (!profile || !hasEligibleAgentContent(profile)) throw new ChampionshipError(`Qualifier ${candidate.name} is unavailable; record an alternate decision rather than silently substituting`, 409);
+      // Legacy profiles may predate revision pointers. Establish evidence now, not on day 17.
+      const sourceRevisionId = profile.currentRevisionId ?? (await ensureActiveAgentRevisionInTransaction(tx, {
+        profile, effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile), trigger: "profile_create",
+      })).revision.id;
       const preference = await authorizedModelPreference(tx, profile.userId, profile.modelPreference);
       const id = randomUUID();
       const { name, personality, backstory, strategyStyle, werewolfStrategyStyle, personaKey, gender, contentRevisionId,
@@ -81,7 +86,7 @@ export async function lockChampionshipRoster(db: DrizzleDB, eventId: string, act
       const sealedRouting = sealGameModelRouting(modelRouting, [{ id, preference }], false);
       const build: FrozenCompetitionBuild = {
         version: 1, competitionRevisionId: id, agentId: profile.id, ownerId: profile.userId,
-        sourceRevisionId: profile.currentRevisionId, frozenAt,
+        sourceRevisionId, frozenAt,
         character: { name, personality, backstory, strategyStyle, werewolfStrategyStyle, personaKey, gender, contentRevisionId,
           avatarUrl, fullBodyReferenceUrl, headPosition, portraitCrop, performanceInstructions, visualDesign },
         modelRouting: sealedRouting, contestantManifest: sealedRouting.contestants![id]!, crossGameMemory: "disabled",
@@ -89,7 +94,7 @@ export async function lockChampionshipRoster(db: DrizzleDB, eventId: string, act
       const stored = await storeJson(build);
       await readJson(stored); // Verify referenced bytes before committing the immutable manifest reference.
       await tx.insert(schema.championshipEntries).values({ id, eventId, agentId: profile.id, ownerId: profile.userId,
-        name, qualificationRank: candidate.rank, seasonPoints: candidate.seasonPoints, sourceRevisionId: profile.currentRevisionId, build: stored });
+        name, qualificationRank: candidate.rank, seasonPoints: candidate.seasonPoints, sourceRevisionId, build: stored });
     }
     const execution = await storeJson(freezeChampionshipExecutionConfig(event.policies.roleComposition!));
     await readJson(execution);

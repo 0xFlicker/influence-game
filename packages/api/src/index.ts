@@ -519,14 +519,13 @@ async function finishBackgroundRuntimeStartup(
     }, 2_000)
     : null;
   executionScanTimer?.unref();
-  let championshipReconciling = false;
+  let championshipReconciliation: Promise<void> | null = null;
   const championshipTimer = gameExecutionWorker ? setInterval(() => {
-    if (stopping || championshipReconciling || !gameExecutionWorker.canClaimGames()) return;
-    championshipReconciling = true;
-    void reconcileChampionships(db).then(result => {
+    if (stopping || championshipReconciliation || !gameExecutionWorker.canClaimGames()) return;
+    championshipReconciliation = reconcileChampionships(db).then(result => {
       if (result.diagnostics.length || result.dispatched.some(item => "error" in item)) console.warn("[championship] Retry diagnostics", result);
     }).catch(error => console.warn("[championship] Reconciliation deferred", error))
-      .finally(() => { championshipReconciling = false; });
+      .finally(() => { championshipReconciliation = null; });
   }, 30_000) : null;
   championshipTimer?.unref();
 
@@ -548,6 +547,7 @@ async function finishBackgroundRuntimeStartup(
       if (reconciliationTimer) clearInterval(reconciliationTimer);
       if (executionScanTimer) clearInterval(executionScanTimer);
       if (championshipTimer) clearInterval(championshipTimer);
+      if (championshipReconciliation) await championshipReconciliation;
       if (executionScan) {
         try { await executionScan; } catch (error) {
           console.warn("[game-worker] Scan ended during shutdown", error);

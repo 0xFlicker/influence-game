@@ -7,7 +7,7 @@ import { advanceWerewolf, runWerewolf, type WerewolfAgent } from "@influence/eng
 import { schema } from "../db/index.js";
 import { championshipFixture, policies } from "./championship-fixtures.js";
 import { configureChampionshipDraft, lockChampionshipRoster } from "../services/championships.js";
-import { activateChampionship, dispatchChampionshipMatch } from "../services/championship-dispatch.js";
+import { pauseChampionship, activateChampionship, dispatchChampionshipMatch } from "../services/championship-dispatch.js";
 import { settleChampionshipMatch, championshipStandings, reconcileChampionshipResults } from "../services/championship-results.js";
 import { prepareChampionshipAwards, deliverChampionshipAwards } from "../services/championship-awards.js";
 import { finalizeSeason } from "../services/seasons.js";
@@ -99,6 +99,7 @@ test("sixteen real canonical Werewolf runs settle once, survive owner replacemen
   expect(adopted.adopted).toContain(finale.gameId!);
   const deadline = Date.now() + 100000;
   while (isGameRunning(finale.gameId!) && Date.now() < deadline) await Bun.sleep(20);
+  await pauseChampionship(db, event.id, actorId, randomUUID());
   await reconcileChampionshipResults(db, event.id);
   expect((await db.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, event.id)))[0]!.status).toBe("final");
   await prepareChampionshipAwards(db, event.id); await deliverChampionshipAwards(db, event.id);

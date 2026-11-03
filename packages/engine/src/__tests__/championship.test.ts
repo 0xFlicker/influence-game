@@ -60,6 +60,10 @@ describe("championship contract", () => {
     expect(() => compareChampionshipScores(first, { ...next, seasonPoints: first.seasonPoints }, null)).toThrow("explicit tie policy");
     expect(compareChampionshipScores(first, { ...next, seasonPoints: first.seasonPoints }, "season_rank")).toBeLessThan(0);
   });
+  test("point policies reject values that cannot be stored by result settlement", () => {
+    expect(() => unresolvedChampionshipPolicies({ ...EMPTY_CHAMPIONSHIP_POLICIES, points: { win: 2_147_483_648, loss: 0, draw: 0 } })).toThrow("32-bit");
+    expect(unresolvedChampionshipPolicies({ ...EMPTY_CHAMPIONSHIP_POLICIES, points: { win: 2_147_483_647, loss: 0, draw: 0 } })).not.toContain("points");
+  });
   test("all approved award contexts have distinct keys and Season 0 names", () => {
     expect(new Set(SEASON_ZERO_AWARDS.map(row => row.code)).size).toBe(10);
     expect(SEASON_ZERO_AWARDS.every(row => row.title.startsWith("Season 0"))).toBe(true);

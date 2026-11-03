@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { championshipFixture, policies } from "./championship-fixtures.js";
 import { configureChampionshipDraft, lockChampionshipRoster } from "../services/championships.js";
-import { activateChampionship } from "../services/championship-dispatch.js";
+import { activateChampionship, pauseChampionship, dispatchChampionshipMatch } from "../services/championship-dispatch.js";
 import { prepareChampionshipAwards, deliverChampionshipAwards } from "../services/championship-awards.js";
 import { reconcileChampionships } from "../services/championship-runtime.js";
 import { testPayloadStore } from "./payload-test-store.js";
@@ -57,4 +57,37 @@ test("corrupt award evidence defers delivery without preventing a due match from
   } finally { testPayloadStore.objects.set(allocation!.grants.key, original); }
   await deliverChampionshipAwards(db, event.id);
   expect(await db.select().from(schema.awardGrants)).toHaveLength(8);
+});
+
+
+test("old activation and pause retries cannot reverse a later producer decision", async () => {
+  const { db, event, actorId } = await activatedFixture();
+  const pause = randomUUID(), resume = randomUUID(), alreadyActive = randomUUID(), alreadyPaused = randomUUID();
+  await activateChampionship(db, event.id, actorId, alreadyActive);
+  await pauseChampionship(db, event.id, actorId, pause);
+  await pauseChampionship(db, event.id, actorId, alreadyPaused);
+  await activateChampionship(db, event.id, actorId, resume);
+  expect((await pauseChampionship(db, event.id, actorId, alreadyPaused)).status).toBe("running");
+  expect((await pauseChampionship(db, event.id, actorId, pause)).status).toBe("running");
+  await pauseChampionship(db, event.id, actorId, randomUUID());
+  expect((await activateChampionship(db, event.id, actorId, resume)).status).toBe("paused");
+  expect((await activateChampionship(db, event.id, actorId, alreadyActive)).status).toBe("paused");
+  expect((await db.select().from(schema.championshipEvents))[0]!.status).toBe("paused");
+  await expect(activateChampionship(db, event.id, actorId, pause)).rejects.toThrow("another operation");
+});
+
+test("roster lock repairs a legacy revision pointer before the Influence finale is admitted", async () => {
+  const { db, event, actorId, agents } = await championshipFixture();
+  const [before] = await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, agents[0]!));
+  await db.update(schema.agentProfiles).set({ currentRevisionId: null }).where(eq(schema.agentProfiles.id, agents[0]!));
+  await configureChampionshipDraft(db, event.id, { policies, startDate: "2026-12-01" });
+  await lockChampionshipRoster(db, event.id, actorId, randomUUID());
+  const [entry] = await db.select().from(schema.championshipEntries).where(eq(schema.championshipEntries.agentId, agents[0]!));
+  expect(entry!.sourceRevisionId).toBe(before!.currentRevisionId);
+  await activateChampionship(db, event.id, actorId, randomUUID());
+  const finale = await dispatchChampionshipMatch(db, event.id, 17, "2026-12-17T00:00:00.000Z");
+  const seats = await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, finale.gameId!));
+  expect(seats).toHaveLength(8);
+  expect(seats.find(seat => seat.agentProfileId === agents[0])!.agentRevisionId).toBe(before!.currentRevisionId);
+  expect((await db.select().from(schema.games).where(eq(schema.games.id, finale.gameId!)))[0]!.status).toBe("in_progress");
 });

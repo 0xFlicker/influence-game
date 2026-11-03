@@ -139,7 +139,7 @@ export function unresolvedChampionshipPolicies(policies: ChampionshipPolicies): 
   const unresolved: string[] = [];
   if (!policies.roleComposition) unresolved.push("roleComposition"); else validateRoleComposition(policies.roleComposition);
   if (!policies.points) unresolved.push("points");
-  else if (Object.keys(policies.points).sort().join(",") !== "draw,loss,win" || Object.values(policies.points).some(n => !Number.isSafeInteger(n) || n < 0)) throw new Error("Points must be explicit nonnegative integers");
+  else if (Object.keys(policies.points).sort().join(",") !== "draw,loss,win" || Object.values(policies.points).some(n => !Number.isSafeInteger(n) || n < 0 || n > 2_147_483_647)) throw new Error("Points must be explicit nonnegative 32-bit integers");
   if (!policies.equalScoreFallback) unresolved.push("equalScoreFallback");
   else if (!["season_rank", "shared_place"].includes(policies.equalScoreFallback)) throw new Error("Unknown equal-score policy");
   if (policies.participationMinimumCompletedGames === null) unresolved.push("participationMinimumCompletedGames");

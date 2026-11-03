@@ -14,8 +14,16 @@ export async function activateChampionship(db: DrizzleDB, eventId: string, actor
   if (!requestId.trim()) throw new ChampionshipError("Idempotency key required");
   return db.transaction(async tx => {
     const [event] = await tx.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, eventId)).for("update");
+    const [prior] = await tx.select().from(schema.competitionAudit).where(and(eq(schema.competitionAudit.actorId, actorId), eq(schema.competitionAudit.requestId, requestId)));
+    if (prior) {
+      if (prior.eventId !== eventId || prior.action !== "event_activated") throw new ChampionshipError("Idempotency key already belongs to another operation", 409);
+      return { status: event!.status };
+    }
     if (!event || !event.execution || !event.roleSchedule) throw new ChampionshipError("Lock the complete event before activation", 409);
-    if (event.status === "running") return { status: event.status };
+    if (event.status === "running") {
+      await tx.insert(schema.competitionAudit).values({ id: randomUUID(), eventId, actorId, requestId, action: "event_activated", reason: "Explicit producer activation; already active" });
+      return { status: event.status };
+    }
     if (event.status !== "locked" && event.status !== "paused") throw new ChampionshipError("Event cannot be activated", 409);
     await tx.update(schema.championshipEvents).set({ status: "running" }).where(eq(schema.championshipEvents.id, eventId));
     await tx.insert(schema.competitionAudit).values({ id: randomUUID(), eventId, actorId, requestId, action: "event_activated", reason: "Explicit producer activation" });
@@ -27,7 +35,15 @@ export async function pauseChampionship(db: DrizzleDB, eventId: string, actorId:
   if (!requestId.trim()) throw new ChampionshipError("Idempotency key required");
   return db.transaction(async tx => {
     const [event] = await tx.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, eventId)).for("update");
-    if (event?.status === "paused") return { status: "paused" as const };
+    const [prior] = await tx.select().from(schema.competitionAudit).where(and(eq(schema.competitionAudit.actorId, actorId), eq(schema.competitionAudit.requestId, requestId)));
+    if (prior) {
+      if (prior.eventId !== eventId || prior.action !== "event_paused") throw new ChampionshipError("Idempotency key already belongs to another operation", 409);
+      return { status: event!.status };
+    }
+    if (event?.status === "paused") {
+      await tx.insert(schema.competitionAudit).values({ id: randomUUID(), eventId, actorId, requestId, action: "event_paused", reason: "Explicit producer pause; already paused" });
+      return { status: "paused" as const };
+    }
     if (event?.status !== "running") throw new ChampionshipError("Only an active event can be paused", 409);
     await tx.update(schema.championshipEvents).set({ status: "paused" }).where(eq(schema.championshipEvents.id, eventId));
     await tx.insert(schema.competitionAudit).values({ id: randomUUID(), eventId, actorId, requestId, action: "event_paused", reason: "Explicit producer pause of future starts; accepted games continue" });

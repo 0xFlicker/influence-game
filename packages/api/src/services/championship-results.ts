@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { CHAMPIONSHIP_POLICY_VERSION, compareChampionshipScores } from "@influence/engine/championship";
 import { replayWerewolf } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -66,7 +66,7 @@ export async function reconcileChampionshipResults(db: DrizzleDB, eventId: strin
   const standings = await championshipStandings(db, eventId);
   if (standings?.werewolfComplete && standings.influenceComplete && !standings.resolutionPending) {
     await db.transaction(async tx => {
-      const [event] = await tx.update(schema.championshipEvents).set({ status: "final" }).where(and(eq(schema.championshipEvents.id, eventId), eq(schema.championshipEvents.status, "running"))).returning();
+      const [event] = await tx.update(schema.championshipEvents).set({ status: "final" }).where(and(eq(schema.championshipEvents.id, eventId), inArray(schema.championshipEvents.status, ["running", "paused"]))).returning();
       if (event) await tx.insert(schema.competitionAudit).values({ id: randomUUID(), eventId, actorId: event.createdById,
         requestId: `event-final:${eventId}`, action: "event_finalized", reason: "All 17 canonical results settled under the frozen policy" });
     });
