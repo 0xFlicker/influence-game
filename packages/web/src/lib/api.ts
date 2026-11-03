@@ -250,6 +250,7 @@ export interface PublicPlayerIdentityRef {
 
 
 export interface PublicAgentPreview {
+  awards?: import("./championship").PublicAward[];
   name: string;
   avatarUrl: string | null;
   role: null | {

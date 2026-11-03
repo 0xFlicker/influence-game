@@ -1,3 +1,4 @@
+import { publicAgentAwardsByIds, type publicAgentAwards } from "./awards.js";
 import { publicGameFilter } from "./game-visibility.js";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
@@ -16,6 +17,7 @@ import {
 type PublicAgentPreviewDB = Pick<DrizzleDB, "select">;
 
 export interface PublicAgentPreview {
+  awards?: Awaited<ReturnType<typeof publicAgentAwards>>;
   name: string;
   avatarUrl: string | null;
   role: null | {
@@ -149,8 +151,11 @@ export async function getPublicPlayerCompetitionFacts(
   }
 
   const profileIds = profiles.map((profile) => profile.id);
-  const aggregateByAgent = await getPublicAgentCompetitionAggregates(db, profileIds, internalUserId);
-  return { agents: profiles.map(profile => buildPublicAgentPreview(profile, aggregateByAgent.get(profile.id))) };
+  const [aggregateByAgent, awardsByAgent] = await Promise.all([
+    getPublicAgentCompetitionAggregates(db, profileIds, internalUserId),
+    publicAgentAwardsByIds(db, profileIds),
+  ]);
+  return { agents: profiles.map(profile => ({ ...buildPublicAgentPreview(profile, aggregateByAgent.get(profile.id)), awards: awardsByAgent.get(profile.id) ?? [] })) };
 }
 
 async function getPublicAgentCompetitionAggregates(

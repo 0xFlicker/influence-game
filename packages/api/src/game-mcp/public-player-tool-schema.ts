@@ -48,8 +48,14 @@ const competitionSchema = closedObject(
   },
 );
 
+const awardKeys = ["id", "code", "title", "theme", "awardedAt", "sourceSeasonId", "sourceEventId"] as const;
+const awardSchema = closedObject(awardKeys, {
+  id: { type: "string" }, code: { type: "string" }, title: { type: "string" }, theme: { type: "string" }, awardedAt: { type: "string" },
+  sourceSeasonId: nullableStringSchema, sourceEventId: nullableStringSchema,
+});
+
 const agentSchema = closedObject(
-  ["name", "avatarUrl", "role", "competition"],
+  ["name", "avatarUrl", "role", "competition", "awards"],
   {
     name: { type: "string" },
     avatarUrl: nullableStringSchema,
@@ -60,6 +66,7 @@ const agentSchema = closedObject(
       ],
     },
     competition: competitionSchema,
+    awards: { type: "array", items: awardSchema },
   },
 );
 
@@ -139,12 +146,6 @@ const currentSeasonSchema = closedObject(
     ),
   },
 );
-
-const awardKeys = ["id", "code", "title", "theme", "awardedAt", "sourceSeasonId", "sourceEventId"] as const;
-const awardSchema = closedObject(awardKeys, {
-  id: { type: "string" }, code: { type: "string" }, title: { type: "string" }, theme: { type: "string" }, awardedAt: { type: "string" },
-  sourceSeasonId: nullableStringSchema, sourceEventId: nullableStringSchema,
-});
 
 const profileSchema = closedObject(
   ["identity", "currentSeason", "career", "recentResults", "agents", "awards"],
@@ -270,12 +271,16 @@ function assertProfile(value: unknown): void {
     .forEach((result, index) => assertResult(result, index));
   arrayValue(profile.agents, "profile.agents")
     .forEach((agent, index) => assertAgent(agent, index));
-  arrayValue(profile.awards, "profile.awards").forEach((award, index) => {
-    const path = `profile.awards[${index}]`;
-    const row = exactObject(award, awardKeys, path);
-    for (const key of ["id", "code", "title", "theme", "awardedAt"]) stringValue(row[key], `${path}.${key}`);
-    nullableString(row.sourceSeasonId, `${path}.sourceSeasonId`);
-    nullableString(row.sourceEventId, `${path}.sourceEventId`);
+  assertAwards(profile.awards, "profile.awards");
+}
+
+function assertAwards(value: unknown, path: string): void {
+  arrayValue(value, path).forEach((award, index) => {
+    const itemPath = `${path}[${index}]`;
+    const row = exactObject(award, awardKeys, itemPath);
+    for (const key of ["id", "code", "title", "theme", "awardedAt"]) stringValue(row[key], `${itemPath}.${key}`);
+    nullableString(row.sourceSeasonId, `${itemPath}.sourceSeasonId`);
+    nullableString(row.sourceEventId, `${itemPath}.sourceEventId`);
   });
 }
 
@@ -359,9 +364,10 @@ function assertAgent(value: unknown, index: number): void {
   const path = `profile.agents[${index}]`;
   const agent = exactObject(
     value,
-    ["name", "avatarUrl", "role", "competition"],
+    ["name", "avatarUrl", "role", "competition", "awards"],
     path,
   );
+  assertAwards(agent.awards, `${path}.awards`);
   stringValue(agent.name, `${path}.name`);
   nullableString(agent.avatarUrl, `${path}.avatarUrl`);
   if (agent.role !== null) {

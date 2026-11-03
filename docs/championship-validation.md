@@ -97,3 +97,16 @@ With explicit authorization, the normal gateway startup applied only pending mig
 Browser verification at `http://127.0.0.1:3001/admin/championships` returned HTTP200, the normal sign-in gate and zero page errors; API health returned200. A signed-in operator needs `manage_championships`, with `manage_awards` for badge/result correction. This check does not claim authenticated interaction in the user's account. Screenshot: `artifacts/championship/local-championship-login.png`; browser result: `local-browser-result.json`.
 
 An unrelated renderer raw-frame probe in worktree e9d5 listens on IPv6 port3000. It was left untouched; the web/API configuration explicitly uses127.0.0.1 to reach this gateway. The earlier full PostgreSQL correction rerun was stopped at the user's request and is not a completed passing baseline; the new results above are focused checks.
+
+## Season-close badges and public roster icons (2026-11-03)
+
+Season 0 finalization now delivers crowns and one-completed-game participation independently of a championship. The authorized localhost reconciliation delivered 19 missing grants (8 account participants, 8 agent participants, 3 crown/architect grants), preserving existing data. Actual Chrome checks confirmed public account badges and agent analysis badges; the agent analysis shelf follows the name/header at desktop and 390px width. Public player roster cards now expose icon-only agent badges with accessible labels and title/date details through hover, keyboard activation, or tap, with Escape/outside/second-tap dismissal. There is no standalone public agent page; authenticated analysis remains `/dashboard/agents/:id`.
+
+Verification:
+- Provider-free baseline rerun with localhost test-listener permission: 3,316 passed, 5 skipped, 0 failed. The first sandboxed run's 27 listener failures were environmental.
+- Full PostgreSQL baseline on disposable `championship_upgrade_55680`: 2,384 passed, 2 failed across 222 files. One failure was a new public-profile assertion loaded into a process that had already imported the prior profile implementation. The other found a genuine stale migration guard filename after the renderer-first rebase; the guard and its test now reference `0147_championship_half_points.sql`, retaining the exact reviewed SQL hash.
+- Fresh affected API rerun after the full process exited: 30 passed, 0 failed, 255 assertions across public-player-profile, migration-release-compatibility and season-awards. This also updates the exact profile fixture for empty award arrays and verifies revoked badges/private evidence do not escape into roster cards.
+- Focused public-profile UI and shared interaction-model tests: 15 passed, 0 failed. Agent-analysis positioning/award presentation: 4 passed, 0 failed. Earlier championship execution/correction tests: 17 passed, including 16 canonical fixture Werewolf runs and the fixture Influence finale.
+- Typecheck, lint, MCP output-schema check and diff whitespace check pass.
+
+The full PostgreSQL run is reported with its original two failures, not relabeled as an all-green run; the affected files passed in a fresh process after corrections. No paid providers, production actions, dev-server starts/stops or development-database resets were used. Local logs remain under `artifacts/championship/`.

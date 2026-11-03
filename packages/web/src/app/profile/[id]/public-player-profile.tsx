@@ -1,3 +1,4 @@
+import { AwardIcons } from "@/components/award-icons";
 import { AwardShelf } from "@/components/award-shelf";
 import Link from "next/link";
 import type { ParticipationFilter } from "@influence/engine/house-participation";
@@ -203,6 +204,7 @@ function AgentRosterSection({ agents }: { agents: PublicAgentPreview[] }) {
                   <p className="influence-copy-muted mt-0.5 truncate text-sm">
                     {agent.role?.label ?? "Role unavailable"}
                   </p>
+                  <AwardIcons awards={agent.awards ?? []} agentName={agent.name} />
                 </div>
               </div>
 

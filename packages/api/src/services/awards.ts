@@ -90,6 +90,24 @@ export async function publicAgentAwards(db: DrizzleDB, agentId: string) {
 export async function publicAccountAwards(db: DrizzleDB, accountId: string) {
   return publicAwards(db, { type: "account", id: accountId });
 }
+/** Batch public roster awards without exposing private evidence or internal recipient IDs. */
+export async function publicAgentAwardsByIds(db: DrizzleDB, agentIds: string[]) {
+  const byAgent = new Map<string, Awaited<ReturnType<typeof publicAgentAwards>>>();
+  if (!agentIds.length) return byAgent;
+  const rows = await db.select({ agentId: schema.awardGrants.agentId, id: schema.awardGrants.id,
+    code: schema.awardDefinitions.code, title: schema.awardDefinitions.title, theme: schema.awardDefinitions.theme,
+    awardedAt: schema.awardGrants.grantedAt, sourceSeasonId: schema.awardGrants.sourceSeasonId, sourceEventId: schema.awardGrants.sourceEventId })
+    .from(schema.awardGrants).innerJoin(schema.awardDefinitions, eq(schema.awardDefinitions.code, schema.awardGrants.definitionCode))
+    .where(and(inArray(schema.awardGrants.agentId, agentIds), isNull(schema.awardGrants.revokedAt)))
+    .orderBy(asc(schema.awardGrants.grantedAt));
+  for (const { agentId, ...award } of rows) {
+    if (!agentId) continue;
+    const awards = byAgent.get(agentId) ?? [];
+    if (awards.length < 100) awards.push(award);
+    byAgent.set(agentId, awards);
+  }
+  return byAgent;
+}
 async function publicAwards(db: DrizzleDB, recipient: AwardRecipient) {
   return db.select({ id: schema.awardGrants.id, code: schema.awardDefinitions.code, title: schema.awardDefinitions.title,
     theme: schema.awardDefinitions.theme, awardedAt: schema.awardGrants.grantedAt,
