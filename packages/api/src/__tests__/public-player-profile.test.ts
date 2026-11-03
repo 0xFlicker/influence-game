@@ -1,3 +1,5 @@
+import { grantAward } from "../services/awards.js";
+import { assertPublicPlayerProfileEnvelope } from "../game-mcp/public-player-tool-schema.js";
 import { contentImageFixture } from "./content-image-fixture.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
@@ -251,6 +253,9 @@ describe("public player profile", () => {
 
   test("REST returns deep profile parity with the MCP read model and no-store on every terminal state", async () => {
     const fixture = await seedPublicPlayerFixture(db);
+    const [recipient] = await db.select().from(schema.users).where(eq(schema.users.publicId, fixture.publicId));
+    await grantAward(db, { definitionCode: "season-0-account-participant", recipient: { type: "account", id: recipient!.id },
+      actorId: recipient!.id, sourceKey: "profile-parity", reason: "Private allocation reason", evidence: { private: "Private award evidence" }, requestId: "profile-parity" });
     const app = new Hono();
     app.route("/", createPublicPlayerRoutes(db));
 
@@ -270,6 +275,13 @@ describe("public player profile", () => {
     expect(foundResponse.status).toBe(200);
     expect(foundResponse.headers.get("Cache-Control")).toBe("no-store");
     expect(found).toEqual(mcp);
+    if (found.status === "found") {
+      expect(found.profile.awards).toHaveLength(1);
+      expect(JSON.stringify(found.profile.awards)).not.toContain("Private");
+      const injected = structuredClone(found);
+      Object.assign(injected.profile.awards[0]!, { evidence: "private" });
+      expect(() => assertPublicPlayerProfileEnvelope(injected)).toThrow("exactly");
+    }
     for (const auth of [gamesAuth("subject"), gamesAuth("producer")]) {
       const response = await server.handle({
         jsonrpc: "2.0",

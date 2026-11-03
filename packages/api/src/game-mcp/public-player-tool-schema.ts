@@ -140,8 +140,14 @@ const currentSeasonSchema = closedObject(
   },
 );
 
+const awardKeys = ["id", "code", "title", "theme", "awardedAt", "sourceSeasonId", "sourceEventId"] as const;
+const awardSchema = closedObject(awardKeys, {
+  id: { type: "string" }, code: { type: "string" }, title: { type: "string" }, theme: { type: "string" }, awardedAt: { type: "string" },
+  sourceSeasonId: nullableStringSchema, sourceEventId: nullableStringSchema,
+});
+
 const profileSchema = closedObject(
-  ["identity", "currentSeason", "career", "recentResults", "agents"],
+  ["identity", "currentSeason", "career", "recentResults", "agents", "awards"],
   {
     identity: closedObject(
       ["publicId", "handle", "displayName"],
@@ -169,6 +175,7 @@ const profileSchema = closedObject(
     ),
     recentResults: { type: "array", items: resultSchema },
     agents: { type: "array", items: agentSchema },
+    awards: { type: "array", items: awardSchema },
   },
 );
 
@@ -238,7 +245,7 @@ export function assertPublicPlayerProfileEnvelope(
 function assertProfile(value: unknown): void {
   const profile = exactObject(
     value,
-    ["identity", "currentSeason", "career", "recentResults", "agents"],
+    ["identity", "currentSeason", "career", "recentResults", "agents", "awards"],
     "profile",
   );
   const identity = exactObject(
@@ -263,6 +270,13 @@ function assertProfile(value: unknown): void {
     .forEach((result, index) => assertResult(result, index));
   arrayValue(profile.agents, "profile.agents")
     .forEach((agent, index) => assertAgent(agent, index));
+  arrayValue(profile.awards, "profile.awards").forEach((award, index) => {
+    const path = `profile.awards[${index}]`;
+    const row = exactObject(award, awardKeys, path);
+    for (const key of ["id", "code", "title", "theme", "awardedAt"]) stringValue(row[key], `${path}.${key}`);
+    nullableString(row.sourceSeasonId, `${path}.sourceSeasonId`);
+    nullableString(row.sourceEventId, `${path}.sourceEventId`);
+  });
 }
 
 function assertCurrentSeason(value: unknown): void {

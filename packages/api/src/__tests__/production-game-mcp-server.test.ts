@@ -3582,6 +3582,7 @@ function publicPlayerFoundFixture() {
         winRate: 0.625,
       },
       recentResults: [],
+      awards: [],
       agents: [{
         name: "Atlas Prime",
         avatarUrl: null,

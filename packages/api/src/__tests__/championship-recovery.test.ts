@@ -1,0 +1,60 @@
+import { expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
+import { schema, type DrizzleDB } from "../db/index.js";
+import { championshipFixture, policies } from "./championship-fixtures.js";
+import { configureChampionshipDraft, lockChampionshipRoster } from "../services/championships.js";
+import { activateChampionship } from "../services/championship-dispatch.js";
+import { prepareChampionshipAwards, deliverChampionshipAwards } from "../services/championship-awards.js";
+import { reconcileChampionships } from "../services/championship-runtime.js";
+import { testPayloadStore } from "./payload-test-store.js";
+
+async function activatedFixture() {
+  const fixture = await championshipFixture();
+  await configureChampionshipDraft(fixture.db, fixture.event.id, { policies, startDate: "2026-12-01" });
+  await lockChampionshipRoster(fixture.db, fixture.event.id, fixture.actorId, randomUUID());
+  await activateChampionship(fixture.db, fixture.event.id, fixture.actorId, randomUUID());
+  await prepareChampionshipAwards(fixture.db, fixture.event.id);
+  return fixture;
+}
+
+test("award delivery resumes after a committed partial batch without duplicate grants", async () => {
+  const { db, event } = await activatedFixture();
+  let transactions = 0;
+  type Tx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
+  const faulting = new Proxy(db, { get(target, property) {
+    if (property !== "transaction") return Reflect.get(target, property, target);
+    return async (callback: (tx: Tx) => Promise<unknown>) => {
+      if (++transactions === 2) throw new Error("Simulated delivery process failure");
+      return target.transaction(async tx => callback(tx));
+    };
+  } });
+  await expect(deliverChampionshipAwards(faulting, event.id)).rejects.toThrow("Simulated delivery process failure");
+  expect(await db.select().from(schema.awardGrants)).toHaveLength(1);
+  expect((await db.select().from(schema.championshipAwardAllocations))[0]!.deliveredAt).toBeNull();
+  await deliverChampionshipAwards(db, event.id);
+  const delivered = await db.select().from(schema.awardGrants);
+  expect(delivered).toHaveLength(8);
+  await deliverChampionshipAwards(db, event.id);
+  expect(await db.select().from(schema.awardGrants)).toEqual(delivered);
+});
+
+test("corrupt award evidence defers delivery without preventing a due match from starting", async () => {
+  const { db, event } = await activatedFixture();
+  const [allocation] = await db.select().from(schema.championshipAwardAllocations);
+  const original = testPayloadStore.objects.get(allocation!.grants.key)!;
+  testPayloadStore.objects.set(allocation!.grants.key, new Uint8Array([0]));
+  try {
+    const result = await reconcileChampionships(db, "2026-12-01T00:00:00.000Z");
+    expect(result.dispatched).toHaveLength(1);
+    expect(result.dispatched[0]).toMatchObject({ eventId: event.id, ordinal: 1, deferred: false });
+    expect(result.diagnostics.some(item => item.eventId === event.id && item.phase === "delivery")).toBe(true);
+    const [match] = await db.select().from(schema.championshipMatches).where(eq(schema.championshipMatches.ordinal, 1));
+    const [game] = await db.select().from(schema.games).where(eq(schema.games.id, match!.gameId!));
+    expect(game!.status).toBe("in_progress");
+    expect((await db.select().from(schema.championshipEvents))[0]!.status).toBe("running");
+    expect(await db.select().from(schema.awardGrants)).toHaveLength(0);
+  } finally { testPayloadStore.objects.set(allocation!.grants.key, original); }
+  await deliverChampionshipAwards(db, event.id);
+  expect(await db.select().from(schema.awardGrants)).toHaveLength(8);
+});
