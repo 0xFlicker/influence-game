@@ -4,9 +4,17 @@ Execution machine: `Flicks-MacBook-Pro-4.local`, macOS Darwin 27 arm64. Isolated
 
 PostgreSQL is local at 127.0.0.1:54320. The complete API suite uses only `championship_task2_test` with advisory lock 123456701. Focused verification and browser fixtures use `championship_task2_browser` with lock 123456702; browser servers are stopped before that database is reused. No shared development/test database, paid provider, real Season 0 state, production migration, live scheduler or deployment was used.
 
-## Completed evidence
+## Follow-up review verification
 
-- Complete PostgreSQL regression: **2,327 passed, two failed**, 31,947 assertions across 214 files (902.69 seconds). Both failures were the same stale mocked public-profile fixture missing `awards`; the fixture was corrected and the complete affected MCP/profile files then passed **70 tests, zero failures, 1,258 assertions**. No further full-suite rerun was performed after that test-only correction. There are no known remaining failures, but this is not claimed as a single all-green full-suite run.
+Commits `2091c6d4` and `397919b0` fix the concrete findings documented in `championship-review.md`. Focused championship verification passed **14 tests, zero failures, 1,777 assertions**, including all 17 games, late lifecycle retries, legacy revision repair and finalization while paused. Type checking, lint and diff whitespace checks passed.
+
+The refreshed provider-free baseline passed **3,306 tests, five skipped, zero failures**, 40,345 assertions across 346 files. The first sandboxed attempt could not bind localhost servers; it was rerun with local-network access, without code changes for those environment failures. The final complete PostgreSQL run passed **2,332 tests, zero failures**, 31,971 assertions across 214 files in 1,061.88 seconds. This run includes the corrected MCP fixture and every review fix. The final five-test recovery recheck also passed (25 assertions), including resolved fallback guidance at lock. Earlier review runs were deliberately interrupted while concrete fixes were being completed; they are not claimed as completed baselines.
+
+Final logs are preserved locally under `artifacts/championship/review/`: `postgres.log`, `provider-free.log`, `check.log`, `focused.log`, and `recovery.log`.
+
+## Earlier completed evidence
+
+- Complete PostgreSQL regression: **2,327 passed, two failed**, 31,947 assertions across 214 files (902.69 seconds). Both failures were the same stale mocked public-profile fixture missing `awards`; the fixture was corrected and the complete affected MCP/profile files then passed **70 tests, zero failures, 1,258 assertions**. That checkpoint was followed by the all-green full review run recorded above. This earlier run itself is not claimed as green.
 - Full provider-free baseline: **3,305 passed, five skipped, zero failed**, 40,340 assertions across 346 files. Final award/standings presentation changes also passed the focused web tests.
 - Final focused PostgreSQL run: **59 passed, zero failed**, 2,109 assertions across seven files. This includes championships, the execution rehearsal, season behavior/read models, payload migration, agent revisions and account/service authority.
 - One complete eight-agent event ran through **16 canonical Werewolf matches and one durable Influence finale**, with deterministic test agents and the normal database stores. It reached final event status and delivered both champion awards. The focused test includes owner replacement mid-Werewolf, duplicate dispatch/settlement/delivery, per-match planned roles, live profile changes, unchanged season receipt membership and repeated owners.
