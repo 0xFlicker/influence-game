@@ -40,8 +40,11 @@ export async function createChampionshipDraft(db: DrizzleDB, input: { slug: stri
     const [event] = await tx.insert(schema.championshipEvents).values({
       id: randomUUID(), slug: input.slug, name: nonempty(input.name, "Event name"), sourceSeasonId: season.id,
       policies: structuredClone(EMPTY_CHAMPIONSHIP_POLICIES), createdById: input.actorId,
-    }).returning();
-    return event!;
+    }).onConflictDoNothing({ target: schema.championshipEvents.slug }).returning();
+    if (event) return event;
+    const [existing] = await tx.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.slug, input.slug));
+    if (existing?.createdById !== input.actorId || existing.sourceSeasonId !== season.id || existing.name !== input.name.trim()) throw new ChampionshipError("This event slug belongs to another draft", 409);
+    return existing;
   });
 }
 export async function configureChampionshipDraft(db: DrizzleDB, eventId: string, input: { policies: ChampionshipPolicies; startDate: string | null }) {
@@ -128,12 +131,12 @@ export async function readChampionship(db: DrizzleDB, idOrSlug: string, producer
     producer ? undefined : eq(schema.championshipEvents.published, true),
   ));
   if (!event) return null;
-  const [season] = await db.select({ id: schema.seasons.id, slug: schema.seasons.slug, name: schema.seasons.name }).from(schema.seasons).where(eq(schema.seasons.id, event.sourceSeasonId));
+  const [season] = await db.select({ id: schema.seasons.id, slug: schema.seasons.slug, name: schema.seasons.name, status: schema.seasons.status }).from(schema.seasons).where(eq(schema.seasons.id, event.sourceSeasonId));
   const entries = await db.select({ agentId: schema.championshipEntries.agentId, name: schema.championshipEntries.name,
     rank: schema.championshipEntries.qualificationRank, seasonPoints: schema.championshipEntries.seasonPoints })
     .from(schema.championshipEntries).where(eq(schema.championshipEntries.eventId, event.id)).orderBy(asc(schema.championshipEntries.qualificationRank));
   const matches = await db.select({ ordinal: schema.championshipMatches.ordinal, gameKind: schema.championshipMatches.gameKind,
-    scheduledAt: schema.championshipMatches.scheduledAt, status: schema.championshipMatches.status, gameSlug: schema.games.slug })
+    scheduledAt: schema.championshipMatches.scheduledAt, status: schema.championshipMatches.status, gameSlug: schema.games.slug, ...(producer ? { gameStatus: schema.games.status } : {}) })
     .from(schema.championshipMatches).leftJoin(schema.games, eq(schema.games.id, schema.championshipMatches.gameId))
     .where(eq(schema.championshipMatches.eventId, event.id)).orderBy(asc(schema.championshipMatches.ordinal));
   const standings = await championshipStandings(db, event.id);
@@ -143,6 +146,7 @@ export async function readChampionship(db: DrizzleDB, idOrSlug: string, producer
     lineups: event.roleSchedule ? publicRoleLineups(await readJson(event.roleSchedule)) : [],
     policies: event.policies, startDate: event.startDate,
     ...(producer ? { unresolvedPolicies: unresolvedChampionshipPolicies(event.policies), published: event.published,
+      audit: await db.select().from(schema.competitionAudit).where(eq(schema.competitionAudit.eventId, event.id)).orderBy(asc(schema.competitionAudit.createdAt)),
       executionAvailable: Boolean(event.execution), executionNote: event.execution ? "Explicit activation required; exact-match durable execution" : "Lock the roster to freeze execution configuration" } : {}),
   };
 }

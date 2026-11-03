@@ -46,15 +46,25 @@ export async function grantAward(db: DrizzleDB, input: {
   });
 }
 export async function revokeAward(db: DrizzleDB, input: { grantId: string; actorId: string; reason: string; requestId: string }) {
-  if (!input.reason.trim() || !input.requestId.trim()) throw new ChampionshipError("Revocation requires a reason and request ID");
+  return changeAwardVisibility(db, input, true);
+}
+export async function reinstateAward(db: DrizzleDB, input: { grantId: string; actorId: string; reason: string; requestId: string }) {
+  return changeAwardVisibility(db, input, false);
+}
+async function changeAwardVisibility(db: DrizzleDB, input: { grantId: string; actorId: string; reason: string; requestId: string }, revoked: boolean) {
+  if (!input.reason.trim() || !input.requestId.trim()) throw new ChampionshipError("Award correction requires a reason and request ID");
+  const action = revoked ? "award_revoked" : "award_reinstated";
   return db.transaction(async tx => {
     const [grant] = await tx.select().from(schema.awardGrants).where(eq(schema.awardGrants.id, input.grantId)).for("update");
     if (!grant) throw new ChampionshipError("Award not found", 404);
-    if (grant.revokedAt) return { id: grant.id, revoked: true };
-    await tx.update(schema.awardGrants).set({ revokedAt: new Date().toISOString() }).where(eq(schema.awardGrants.id, grant.id));
-    await tx.insert(schema.competitionAudit).values({ id: randomUUID(), grantId: grant.id, actorId: input.actorId,
-      action: "award_revoked", reason: input.reason, requestId: input.requestId });
-    return { id: grant.id, revoked: true };
+    const [prior] = await tx.select().from(schema.competitionAudit).where(and(eq(schema.competitionAudit.actorId, input.actorId), eq(schema.competitionAudit.requestId, input.requestId)));
+    if (prior) {
+      if (prior.grantId !== grant.id || prior.action !== action || prior.reason !== input.reason.trim()) throw new ChampionshipError("Idempotency key already belongs to another correction", 409);
+      return { id: grant.id, revoked: grant.revokedAt !== null };
+    }
+    if ((grant.revokedAt !== null) !== revoked) await tx.update(schema.awardGrants).set({ revokedAt: revoked ? new Date().toISOString() : null }).where(eq(schema.awardGrants.id, grant.id));
+    await tx.insert(schema.competitionAudit).values({ id: randomUUID(), grantId: grant.id, actorId: input.actorId, action, reason: input.reason.trim(), requestId: input.requestId });
+    return { id: grant.id, revoked };
   });
 }
 /** Public projection deliberately excludes private evidence, actor and operational reason. */

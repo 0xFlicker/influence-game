@@ -5,6 +5,7 @@ import { AdminPanel } from "./admin-panel";
 import { UserRolesPanel } from "./user-roles-panel";
 import { AgentsAdminPanel } from "./agents-admin-panel";
 import { InviteCodesPanel } from "./invite-codes-panel";
+import { ChampionshipAdminPanel } from "./championship-admin-panel";
 import { SeasonAdminPanel } from "./season-admin-panel";
 import { FreeQueuePanel } from "./free-queue-panel";
 import { AdminOwnerLearningReviews } from "./admin-owner-learning-reviews";
@@ -20,6 +21,7 @@ export function AdminTabs({ activeTab }: { activeTab: AdminTab }) {
       {activeTab === "providers" && <AdminProviderHealth />}
       {activeTab === "reviews" && <AdminOwnerLearningReviews />}
       {activeTab === "seasons" && <SeasonAdminPanel />}
+      {activeTab === "championships" && <ChampionshipAdminPanel />}
       {activeTab === "free-queue" && <FreeQueuePanel />}
       {activeTab === "agents" && <AgentsAdminPanel />}
       {activeTab === "users" && <UserRolesPanel />}

@@ -116,10 +116,10 @@ export async function dispatchChampionshipMatch(db: DrizzleDB, eventId: string, 
   return prepared;
 }
 
-export async function dispatchDueChampionshipMatches(db: DrizzleDB, now = new Date().toISOString()) {
+export async function dispatchDueChampionshipMatches(db: DrizzleDB, now = new Date().toISOString(), eventId?: string) {
   const due = await db.select({ eventId: schema.championshipMatches.eventId, ordinal: schema.championshipMatches.ordinal }).from(schema.championshipMatches)
     .innerJoin(schema.championshipEvents, eq(schema.championshipEvents.id, schema.championshipMatches.eventId))
-    .where(and(eq(schema.championshipEvents.status, "running"), eq(schema.championshipMatches.status, "scheduled"), lte(schema.championshipMatches.scheduledAt, now)))
+    .where(and(eq(schema.championshipEvents.status, "running"), eq(schema.championshipMatches.status, "scheduled"), lte(schema.championshipMatches.scheduledAt, now), eventId ? eq(schema.championshipEvents.id, eventId) : undefined))
     .orderBy(asc(schema.championshipMatches.scheduledAt));
   const results = [];
   for (const match of due) {

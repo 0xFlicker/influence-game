@@ -36,13 +36,24 @@ Built-in Season 0 badges cover Agent Crown, Architect Crown, season agent champi
 
 Automatic allocation uses three independent phases: the locked field after activation, source-season honors/participation, and each game's championship. Each phase freezes recipient attribution and evidence in an object-backed outbox. Delivery retries preserve the allocation, use stable achievement/request keys, and never duplicate or implicitly reinstate a revoked badge. Participant counts use distinct completed game receipt identities, including otherwise ineligible scoring receipts; no production threshold is supplied. Owner attribution is explicitly qualification-time or allocation-time. A missing historical finalization snapshot defers automatic source-season allocation without blocking matches or other awards.
 
+## Producer workflow and badge correction
+
+`/admin/championships` is available to accounts with `manage_championships`. It lists up to 100 recent events and connects draft creation, explicit policy/date entry, top-eight roster lock, publication, activation/resume, pause, exact-match retry, and event-scoped reconciliation. Source-season operations remain in the existing Seasons screen; the championship panel never closes a season implicitly. Blank policies remain undecided. A draft-create retry with the same slug/actor/source/name returns the same event; conflicting reuse is rejected.
+
+Publication does not activate the schedule. Activation permits due games and automatic awards; overdue starts can overlap. Reconciliation from this panel targets only its selected event. Match rows show the actual game status when it differs from event progress, with links to existing game pages. Event audit history and operation receipts support recovery. Unknown browser operations retain their original request/body in the account-scoped admin session for a deliberate retry; this in-memory continuity does not survive a full browser reload.
+
+Accounts with `manage_awards` can preview available allocations, including before activation after roster lock. Preview reuses the allocation planner without writing allocations, grants, or payload objects. Existing allocations are marked frozen/delivered; unallocated plans are explicitly previews and may change before allocation. Champion phases await canonical outcomes; source-season allocation needs finalization evidence. Event and source-season badges are listed together, with pagination.
+
+Badge review exposes original evidence and its audit history only to authorized operators. Explicit revoke/reinstate actions require a reason, preserve the same grant identity and original evidence, and record every accepted correction. Delayed retries cannot reverse a later correction, including accepted no-ops. Automatic delivery still never reinstates a revoked badge. These controls do not rewrite recipients, evidence, scoring or canonical results; those replacement/correction policies remain separate work.
+
 ## API and authority
 
 Public reads: `GET /api/championships/:slug` (published only), `GET /api/award-definitions`, `GET /api/awards/agents/:id`, and `GET /api/awards/accounts/:publicIdentifier`.
 
 `manage_championships` authorizes:
 
-- `POST /api/admin/championships`: create a draft.
+- `GET /api/admin/championships`: list recent events.
+- `POST /api/admin/championships`: create or recover the same draft.
 - `GET /api/admin/championships/:id`: inspect the event and unresolved policy choices.
 - `PUT /api/admin/championships/:id`: configure draft policies and start date.
 - `POST /api/admin/championships/:id/lock`: freeze qualification/builds/configuration, with `Idempotency-Key`.
@@ -50,10 +61,12 @@ Public reads: `GET /api/championships/:slug` (published only), `GET /api/award-d
 - `POST /api/admin/championships/:id/activate`: explicit activation or resume, with `Idempotency-Key`.
 - `POST /api/admin/championships/:id/pause`: pause future starts, with `Idempotency-Key`.
 - `POST /api/admin/championships/:id/matches/:ordinal/dispatch`: retry one exact due match.
+- `POST /api/admin/championships/:id/reconcile`: reconcile only this event.
+- `GET /api/admin/championships/:id/award-preview`: read-only allocation preview; also requires `manage_awards`.
 
 `POST /api/internal/championships/reconcile` requires a service principal enabled in the database and a signed `dispatch_championship` scope, or a normally authenticated human with that permission. A free-queue-only token is insufficient. The route does not accept a caller-supplied clock or activation request.
 
-`manage_awards` authorizes manual grants and revocations with explicit evidence/reason and `Idempotency-Key`. `manage_award_definitions` authorizes custom definitions; built-in codes are reserved.
+`manage_awards` authorizes manual grants, revocations and explicit reinstatement with evidence/reason and `Idempotency-Key`. Producer reads use `GET /api/admin/awards?eventId=...&after=...` and `GET /api/admin/awards/:id`; reinstatement uses `POST /api/admin/awards/:id/reinstate`. `manage_award_definitions` authorizes custom definitions; built-in codes are reserved.
 
 ## Rollout and remaining decisions
 
@@ -61,6 +74,6 @@ Additive migrations 0143–0144 and payload inventory entries must deploy togeth
 
 Do not activate a real event until its start date, role composition, win/loss/draw points, equal-score fallback, participation threshold and owner-attribution policy are chosen. An Influence draw policy also needs a product decision before a drawn finale can be finalized. Test values are fixtures, not production defaults.
 
-Still to implement/review: genuine-unavailability alternate selection and evidence, richer producer controls/allocation previews, auditable correction/reinstatement workflows, and any desired final badge-art refinement. In-player branding was not changed; existing viewer/Studio/export rendering remains the authority. The event page and profile award shelves are outside the player picture.
+Still to implement/review: genuine-unavailability alternate selection and evidence, recipient/evidence replacement or canonical-result correction workflows, and any desired final badge-art refinement. In-player branding was not changed; existing viewer/Studio/export rendering remains the authority. The event page and profile award shelves are outside the player picture.
 
 See `championship-validation.md` for exact local evidence and limits. No live provider execution or production activation is claimed.

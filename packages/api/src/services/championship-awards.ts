@@ -8,11 +8,14 @@ import { championshipStandings } from "./championship-results.js";
 export interface PlannedAward { definitionCode: string; recipient: AwardRecipient; sourceKey: string; evidence: Record<string, unknown> }
 
 /** Freeze attribution once in an outbox; delivery retries never recalculate recipients. */
-export async function prepareChampionshipAwards(db: DrizzleDB, eventId: string) {
+export async function prepareChampionshipAwards(db: DrizzleDB, eventId: string, options: { preview?: boolean } = {}) {
   return db.transaction(async tx => {
-    const [event] = await tx.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, eventId)).for("update");
-    if (!event || !["running", "paused", "final"].includes(event.status)) return;
+    const query = tx.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, eventId));
+    const [event] = options.preview ? await query : await query.for("update");
+    const planned: Array<{ phase: string; grants: PlannedAward[]; frozen: boolean; deliveredAt: string | null }> = [];
+    if (!event || !["running", "paused", "final", ...(options.preview ? ["locked"] : [])].includes(event.status)) return planned;
     const existing = await tx.select().from(schema.championshipAwardAllocations).where(eq(schema.championshipAwardAllocations.eventId, eventId));
+    if (options.preview) for (const row of existing) planned.push({ phase: row.phase, grants: await readJson(row.grants), frozen: true, deliveredAt: row.deliveredAt });
     const entries = await tx.select().from(schema.championshipEntries).where(eq(schema.championshipEntries.eventId, eventId));
     const owner = async (agentId: string, qualificationOwner: string) => {
       if (event.policies.ownerAttribution === "qualification") return qualificationOwner;
@@ -21,6 +24,8 @@ export async function prepareChampionshipAwards(db: DrizzleDB, eventId: string) 
       return profile?.userId ?? null;
     };
     const save = async (phase: string, grants: PlannedAward[]) => {
+      planned.push({ phase, grants, frozen: false, deliveredAt: null });
+      if (options.preview) return;
       const payload = await storeJson(grants); await readJson(payload);
       await tx.insert(schema.championshipAwardAllocations).values({ id: randomUUID(), eventId, phase, grants: payload });
     };
@@ -63,6 +68,7 @@ export async function prepareChampionshipAwards(db: DrizzleDB, eventId: string) 
       }
       await save(kind, grants);
     }
+    return planned;
   });
 }
 

@@ -1,3 +1,4 @@
+import { listProducerChampionships, previewChampionshipAwards, listEventAwards, readAwardHistory } from "../services/championship-producer.js";
 import { activateChampionship, pauseChampionship, dispatchChampionshipMatch } from "../services/championship-dispatch.js";
 import { reconcileChampionships } from "../services/championship-runtime.js";
 import { isPostgresUniqueViolation } from "../lib/postgres-errors.js";
@@ -8,7 +9,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { requireAuth, requirePermission, requireServiceAuth, type AuthEnv } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import { ChampionshipError, configureChampionshipDraft, createChampionshipDraft, lockChampionshipRoster, publishChampionship, readChampionship } from "../services/championships.js";
-import { grantAward, revokeAward, publicAgentAwards, publicAccountAwards, createAwardDefinition, publicAwardDefinitions } from "../services/awards.js";
+import { grantAward, revokeAward, reinstateAward, publicAgentAwards, publicAccountAwards, createAwardDefinition, publicAwardDefinitions } from "../services/awards.js";
 
 export function createChampionshipRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
@@ -29,6 +30,23 @@ export function createChampionshipRoutes(db: DrizzleDB) {
   app.get("/api/award-definitions", async c => c.json({ definitions: await publicAwardDefinitions(db) }));
   app.post("/api/internal/championships/reconcile", requireServiceAuth(db, "dispatch_championship"), requirePermission("dispatch_championship"), async c => c.json(await reconcileChampionships(db)));
   app.use("/api/admin/championships/*", requireAuth(db), requirePermission("manage_championships"));
+  app.get("/api/admin/championships", requireAuth(db), requirePermission("manage_championships"), async c => c.json({ events: await listProducerChampionships(db) }));
+  app.post("/api/admin/championships/:id/reconcile", async c => {
+    if (!await readChampionship(db, c.req.param("id"), true)) return c.json({ error: "Event not found" }, 404);
+    return c.json(await reconcileChampionships(db, new Date().toISOString(), c.req.param("id")));
+  });
+  app.get("/api/admin/championships/:id/award-preview", requirePermission("manage_awards"), async c => c.json({ phases: await previewChampionshipAwards(db, c.req.param("id")) }));
+  app.get("/api/admin/awards", requireAuth(db), requirePermission("manage_awards"), async c => {
+    const eventId = c.req.query("eventId");
+    if (!eventId) return c.json({ error: "Choose an event" }, 400);
+    return c.json(await listEventAwards(db, eventId, c.req.query("after")));
+  });
+  app.get("/api/admin/awards/:id", requireAuth(db), requirePermission("manage_awards"), async c => c.json(await readAwardHistory(db, c.req.param("id"))));
+  app.post("/api/admin/awards/:id/reinstate", requireAuth(db), requirePermission("manage_awards"), async c => {
+    const body = await parseJsonBody(c, "Reinstate award");
+    if (typeof body?.reason !== "string") return c.json({ error: "A reason is required" }, 400);
+    return c.json(await reinstateAward(db, { grantId: c.req.param("id"), actorId: c.get("user")!.id, reason: body.reason, requestId: c.req.header("Idempotency-Key") ?? "" }));
+  });
   app.post("/api/admin/championships", requireAuth(db), requirePermission("manage_championships"), async c => {
     const body = await parseJsonBody(c, "Create championship draft");
     if (!body || typeof body.slug !== "string" || typeof body.name !== "string" || typeof body.sourceSeasonId !== "string") return c.json({ error: "slug, name and sourceSeasonId are required" }, 400);
