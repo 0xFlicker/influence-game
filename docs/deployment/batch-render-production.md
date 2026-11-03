@@ -4,6 +4,11 @@ Prepared 2026-11-03. This change selects AWS Batch for both production trailers
 and Studio exports. The activation follows the existing human-approved production
 release; preparing or merging infrastructure source does not run production jobs.
 
+IAM, production secrets and recording-upload CORS were applied and verified on
+2026-11-03; see the [bootstrap receipt](2026-11-03-production-batch-bootstrap.md).
+Those prerequisites are complete. Host PR #81 must still merge before application
+PR #286, followed by the ordinary production approval and acceptance below.
+
 ## Release sequence
 
 1. Merge the `falsefloor/infra` production Batch capability and the `linode-iac`
