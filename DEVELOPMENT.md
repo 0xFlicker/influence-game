@@ -9,6 +9,10 @@ exports, with targeted regressions and a fresh rendered/encoded comparison.
 Shared component imports or a viewer-only screenshot do not establish parity.
 Report any missing consumer/proof as incomplete, and document bundle refresh steps.
 
+**Scrollable containers inside the player are banned** in viewer, Studio preview
+and export. Fit/reflow content or paginate it on the shared clock; do not introduce
+scrollbars, hidden/scripted scrolling, clipped required text or unreadable type.
+
 For direct Grok game routing, see [native xAI](docs/native-xai.md). Both gateway
 and game worker need `XAI_API_KEY`. Migration 0141 preserves model generations
 and frozen history; paid native gameplay qualification remains outstanding.

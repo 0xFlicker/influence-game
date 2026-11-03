@@ -59,9 +59,9 @@ outer scene, or scroll programmatically to reveal content.
 Fit and reflow cast, labels and names within the picture. Paginate long speech,
 thoughts and House copy using the shared presentation clock and enough reading
 time. Clipping required content, shrinking it to unreadable text, or asking the
-viewer to use a separate required paging UI are not acceptable substitutes. Normal
-keyboard/click advancement following the established player transport rules remains
-allowed. Cropping decorative
+viewer to page manually or to use a separate required paging UI are not acceptable
+substitutes. Normal keyboard/click advancement following the established player
+transport rules remains allowed. Cropping decorative
 scenery is different from hiding required cast/text content. Studio's editorial
 lists, inspectors and timeline outside the rendered picture may scroll.
 
