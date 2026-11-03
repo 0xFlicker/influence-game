@@ -2,12 +2,11 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, apiFetch, listSeasons, type SeasonIdentity } from "@/lib/api";
-import type { ChampionshipPolicies } from "@influence/engine/championship";
+import { SEASON_ZERO_CHAMPIONSHIP_POLICIES } from "@influence/engine/championship";
 import type { ChampionshipView } from "@/lib/championship";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useAdminValue } from "./admin-session";
 import { ChampionshipResultCorrection } from "./championship-result-correction";
-import { ChampionshipAwardControls } from "./championship-award-controls";
 
 export const controlClass = "mt-1 block w-full rounded-lg border border-white/20 bg-surface-raised px-3 py-2 text-sm";
 export const actionClass = "influence-button-secondary rounded-lg px-3 py-2 text-sm disabled:opacity-40";
@@ -15,7 +14,6 @@ type ProducerEvent = Omit<ChampionshipView, "matches" | "season"> & { published:
   resultHistory?: Array<{ ordinal: number; revision: number; gameId: string; entryId: string; outcome: string; points: number; policyVersion: string; canonicalSequence: number | null }>;
   artwork?: Array<{ id: string; agentId: string; rank: number; selected: boolean; status: string; error: string | null; avatarUrl: string | null; bodyUrl: string | null }>;
   audit: Array<{ id: string; action: string; reason: string; createdAt: string }>; matches: Array<ChampionshipView["matches"][number] & { gameStatus?: string | null; gameId?: string | null; resultRevision?: number }> };
-const policyLabels: Record<string, string> = { roleComposition: "role composition", points: "Werewolf points", equalScoreFallback: "equal-score fallback", participationMinimumCompletedGames: "participation threshold", ownerAttribution: "architect attribution" };
 type EventSummary = Pick<ProducerEvent, "id" | "name" | "slug" | "status" | "published">;
 type Operation = { path: string; method: "POST" | "PUT"; body: unknown; key: string; label: string };
 export type RunChampionshipAction = (label: string, path: string, body?: unknown, method?: "POST" | "PUT") => Promise<void>;
@@ -60,7 +58,7 @@ export function ChampionshipAdminPanel() {
   const run: RunChampionshipAction = async (label, path, body = {}, method = "POST") => { if (!pending && !busy) await submit({ label, path, body, method, key: crypto.randomUUID() }); };
   const disabled = busy || pending !== null;
   return <section className="space-y-6" aria-labelledby="championship-operations">
-    <header><h2 id="championship-operations" className="text-2xl font-semibold">Championship operations</h2><p className="mt-2 influence-copy">Set up the field, review awards, and operate the 17-day event. Publication and activation are separate actions.</p></header>
+    <header><h2 id="championship-operations" className="text-2xl font-semibold">Championship operations</h2><p className="mt-2 influence-copy">Set up the field and operate the 17-day event. Publication and activation are separate actions.</p></header>
     {error ? <p role="alert" className="rounded-lg border border-red-400/30 p-3 text-red-300">{error}</p> : null}
     {pending && !busy ? <div className="influence-panel rounded-lg p-4"><p>The outcome of “{pending.label}” is not confirmed. Retry uses the same request.</p><button className={actionClass} onClick={() => void submit(pending)}>Retry {pending.label}</button></div> : null}
     <details className="influence-panel rounded-xl p-5"><summary className="cursor-pointer font-semibold">Create an event draft</summary>
@@ -78,7 +76,7 @@ export function ChampionshipAdminPanel() {
         <p>Eight agents · sixteen daily Werewolf matches · Influence on day 17 · 00:00 UTC</p>
         <div className="flex flex-wrap gap-3"><Link href="/admin/seasons" className="underline">Season operations</Link>{event.published ? <Link className="underline" href={`/events/${event.slug}`}>View public event</Link> : null}<button className={actionClass} disabled={busy} onClick={() => setRevision(value => value + 1)}>Refresh event</button></div>
       </div>
-      {event.status === "draft" ? <DraftPolicies key={`${event.id}:${JSON.stringify(event.policies)}:${event.startDate}`} event={event} disabled={disabled} run={run} onError={setError} /> : <p className="influence-copy">{event.status === "preparing" ? "Competition revisions are being prepared. The final field is confirmed after required artwork is ready." : "The field and competition builds are frozen. Live agent edits remain independent."}</p>}
+      {event.status === "draft" ? <ChampionshipDraftSetup key={`${event.id}:${JSON.stringify(event.policies)}:${event.startDate}`} event={event} disabled={disabled} run={run} /> : <p className="influence-copy">{event.status === "preparing" ? "Competition revisions are being prepared. The final field is confirmed after required artwork is ready." : "The field and competition builds are frozen. Live agent edits remain independent."}</p>}
       <div className="flex flex-wrap gap-3">
         {event.status === "draft" ? <button className={actionClass} disabled={disabled || event.season.status !== "final" || event.unresolvedPolicies.length > 0 || !event.startDate} onClick={() => void run("Lock roster", `/api/admin/championships/${event.id}/lock`)}>Lock top-eight roster</button> : null}
         <button className={actionClass} disabled={disabled} onClick={() => void run(event.published ? "Unpublish" : "Publish", `/api/admin/championships/${event.id}/publication`, { published: !event.published })}>{event.published ? "Unpublish event" : "Publish event"}</button>
@@ -86,36 +84,41 @@ export function ChampionshipAdminPanel() {
         {event.status === "running" ? <button className={actionClass} disabled={disabled} onClick={() => void run("Pause future starts", `/api/admin/championships/${event.id}/pause`)}>Pause future starts</button> : null}
         {["running", "paused", "final"].includes(event.status) ? <button className={actionClass} disabled={disabled} onClick={() => void run("Reconcile event", `/api/admin/championships/${event.id}/reconcile`)}>Reconcile this event</button> : null}
       </div>
-      {event.status === "draft" ? <p className="text-sm influence-copy-muted">Roster lock needs a finalized source season, a start date, and all policy choices. Open choices: {event.unresolvedPolicies.map(key => policyLabels[key] ?? key).join(", ") || "none"}.</p> : null}
+      {event.status === "draft" ? <p className="text-sm influence-copy-muted">Save the event setup and finalize the source season before locking the top-eight roster.</p> : null}
       {event.status === "locked" || event.status === "paused" ? <p className="text-sm influence-copy-muted">Activation enables scheduled starts. Overdue matches catch up and may overlap.</p> : null}
       {event.status === "preparing" ? <p role="status">Preparing required headshot and full-body artwork automatically. The roster locks when all eight are ready; owners do not need to take any action.</p> : null}
       {event.artwork?.length ? <section><h3 className="text-lg font-semibold">Championship artwork</h3><ul className="mt-3 space-y-2">{event.artwork.map(row => <li key={row.id} className="influence-panel rounded-lg p-3"><Link className="underline" href={`/agents/${row.agentId}`}>Season rank {row.rank}</Link> · {row.selected ? row.status : "Not selected"}{row.avatarUrl ? <a className="ml-3 underline" href={row.avatarUrl} target="_blank" rel="noreferrer">View headshot</a> : null}{row.bodyUrl ? <a className="ml-3 underline" href={row.bodyUrl} target="_blank" rel="noreferrer">View full body</a> : null}{row.error && row.selected ? <p className="mt-1 break-words text-sm">{row.error} · Preparation will retry. Existing evidence is retained.</p> : null}</li>)}</ul></section> : null}
       <section><h3 className="text-lg font-semibold">Match schedule</h3><ol className="mt-3 space-y-2">{event.matches.map(match => <li key={match.ordinal} className="influence-panel flex flex-wrap items-center justify-between gap-3 rounded-lg p-3"><span>Day {match.ordinal} · {match.gameKind} · {match.scheduledAt.slice(0, 10)} 00:00 UTC · {match.status}{match.gameStatus && match.gameStatus !== match.status ? ` (${match.gameStatus})` : ""}</span><div className="flex gap-3">{match.gameSlug ? <Link className="underline" href={`/games/${match.gameSlug}`}>Open game</Link> : null}{event.status === "running" && match.status === "scheduled" ? <button className={actionClass} disabled={disabled || Date.parse(match.scheduledAt) > Date.now()} onClick={() => void run(`Retry day ${match.ordinal}`, `/api/admin/championships/${event.id}/matches/${match.ordinal}/dispatch`)}>Dispatch / retry exact match</button> : null}{event.status === "running" && match.gameStatus === "cancelled" && match.gameId ? <form className="flex flex-wrap gap-2" onSubmit={e => { e.preventDefault(); void run(`Replay day ${match.ordinal}`, `/api/admin/championships/${event.id}/matches/${match.ordinal}/replay`, { expectedGameId: match.gameId, reason: replayReasons[match.gameId!] ?? "" }); }}><label>Replay reason<input required disabled={disabled} className={controlClass} value={replayReasons[match.gameId] ?? ""} onChange={e => setReplayReasons(old => ({ ...old, [match.gameId!]: e.target.value }))} /></label><button type="submit" className={actionClass} disabled={disabled || !(replayReasons[match.gameId] ?? "").trim()}>Replay cancelled match</button></form> : null}</div>{match.gameStatus === "completed" && match.gameId && hasPermission("manage_awards") ? <ChampionshipResultCorrection key={`${match.gameId}:${match.resultRevision}`} eventId={event.id} ordinal={match.ordinal} gameId={match.gameId} revision={match.resultRevision ?? 0} disabled={disabled} run={run} /> : null}</li>)}</ol></section>
       {event.resultHistory?.length ? <details className="influence-panel rounded-lg p-4"><summary>Scoring revision history</summary><ul className="mt-3 space-y-2 text-sm">{event.resultHistory.map(row => <li key={`${row.ordinal}:${row.revision}:${row.entryId}`}>Day {row.ordinal} · revision {row.revision} · {row.outcome} · {row.points} points · <Link className="underline" href={`/games/${row.gameId}`}>Original game</Link> · entry {row.entryId}</li>)}</ul></details> : null}
-      {hasPermission("manage_awards") ? <ChampionshipAwardControls key={`${event.id}:${revision}`} eventId={event.id} disabled={disabled} run={run} /> : null}
+      <p className="text-sm influence-copy-muted">Badges are awarded automatically: season crowns and participation at season finalization, Top 8 when the championship activates, and champion badges when results settle.</p>
       <details className="influence-panel rounded-xl p-4"><summary>Event audit history</summary><ol className="mt-3 space-y-2">{event.audit.map(row => <li key={row.id} className="break-words text-sm">{row.createdAt} · {row.action} · {row.reason}</li>)}</ol></details>
     </> : null}
     {receipt ? <details className="influence-panel rounded-lg p-4"><summary>Last operation receipt</summary><pre className="mt-3 whitespace-pre-wrap break-all text-xs">{JSON.stringify(receipt, null, 2)}</pre></details> : null}
   </section>;
 }
-function DraftPolicies({ event, disabled, run, onError }: { event: ProducerEvent; disabled: boolean; run: RunChampionshipAction; onError: (message: string) => void }) {
+/** Agreed Season 0 rules are fixed here; only the calendar date needs setup. */
+export function championshipDraftSetup(startDate: string) {
+  return { policies: structuredClone(SEASON_ZERO_CHAMPIONSHIP_POLICIES), startDate: startDate || null };
+}
+
+export function ChampionshipDraftSetup({ event, disabled, run }: {
+  event: Pick<ProducerEvent, "id" | "startDate">; disabled: boolean; run: RunChampionshipAction;
+}) {
   const [date, setDate] = useState(event.startDate ?? "");
-  const [roles, setRoles] = useState(Object.fromEntries(["werewolf", "seer", "doctor", "villager"].map(key => [key, String(event.policies.roleComposition?.[key as keyof NonNullable<ChampionshipPolicies["roleComposition"]>] ?? "")])));
-  const [points, setPoints] = useState(Object.fromEntries(["win", "loss", "draw"].map(key => [key, String(event.policies.points?.[key as "win" | "loss" | "draw"] ?? "")])));
-  const [tie, setTie] = useState(event.policies.equalScoreFallback ?? ""), [owner, setOwner] = useState(event.policies.ownerAttribution ?? ""), [participation, setParticipation] = useState(String(event.policies.participationMinimumCompletedGames ?? ""));
-  function numbers(values: Record<string, string>) { if (Object.values(values).every(value => value === "")) return null; if (Object.values(values).some(value => value === "")) throw new Error("Complete every value in a role or points group, or leave the whole group undecided."); return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, Number(value)])); }
-  return <form className="influence-panel space-y-4 rounded-xl p-5" onSubmit={e => { e.preventDefault(); try {
-    const policies = { roleComposition: numbers(roles), points: numbers(points), equalScoreFallback: tie || null, ownerAttribution: owner || null, participationMinimumCompletedGames: participation === "" ? null : Number(participation) };
-    void run("Save draft policies", `/api/admin/championships/${event.id}`, { policies, startDate: date || null }, "PUT");
-  } catch (cause) { onError(String(cause)); } }}>
-    <h3 className="text-lg font-semibold">Draft policies</h3><p className="text-sm influence-copy-muted">Blank choices stay undecided. Season 0 score is the first series tie-break.</p>
+  return <form className="influence-panel space-y-4 rounded-xl p-5" onSubmit={e => {
+    e.preventDefault();
+    void run("Save event setup", `/api/admin/championships/${event.id}`, championshipDraftSetup(date), "PUT");
+  }}>
+    <h3 className="text-lg font-semibold">Event setup</h3>
     <label className="block">First Werewolf day (UTC)<input type="date" className={controlClass} disabled={disabled} value={date} onChange={e => setDate(e.target.value)} /></label>
-    <fieldset disabled={disabled}><legend>Competitive roles in each eight-agent match</legend><div className="grid gap-3 sm:grid-cols-4">{Object.entries(roles).map(([key, value]) => <label key={key} className="capitalize">{key}<input type="number" min={0} step={1} className={controlClass} value={value} onChange={e => setRoles(old => ({ ...old, [key]: e.target.value }))} /></label>)}</div></fieldset>
-    <fieldset disabled={disabled}><legend>Werewolf points per match</legend><div className="grid gap-3 sm:grid-cols-3">{Object.entries(points).map(([key, value]) => <label key={key} className="capitalize">{key}<input type="number" min={0} step={0.5} className={controlClass} value={value} onChange={e => setPoints(old => ({ ...old, [key]: e.target.value }))} /></label>)}</div></fieldset>
-    <div className="grid gap-4 sm:grid-cols-2"><label>When both series and Season 0 scores tie<select aria-label="When both series and Season 0 scores tie" disabled={disabled} className={controlClass} value={tie} onChange={e => setTie(e.target.value as typeof tie)}><option value="">Undecided</option><option value="season_rank">Final season rank</option><option value="shared_place">Shared place</option></select></label>
-    <label>Minimum completed games for participation<input disabled={disabled} type="number" min={1} step={1} className={controlClass} value={participation} onChange={e => setParticipation(e.target.value)} /></label>
-    <label>Architect attribution<select aria-label="Architect attribution" disabled={disabled} className={controlClass} value={owner} onChange={e => setOwner(e.target.value as typeof owner)}><option value="">Undecided</option><option value="qualification">Recorded qualification / season evidence</option><option value="award">Owner when allocation is prepared</option></select></label></div>
-    <p className="text-sm influence-copy-muted">An Influence draw still needs an explicit product decision; no automatic rerun is selected here.</p>
-    <button type="submit" disabled={disabled} className={actionClass}>Save draft policies</button>
+    <section aria-label="Season 0 championship rules" className="space-y-2 text-sm influence-copy">
+      <h4 className="font-semibold text-text-primary">Season 0 championship rules</h4>
+      <p>The same top eight agents play 16 daily Werewolf matches, then the Influence finale on day 17. Every match starts at midnight UTC.</p>
+      <p>Each Werewolf match has 2 wolves, 1 seer, 1 doctor and 4 villagers. Balanced role selection gives each agent 4 wolf, 2 seer, 2 doctor and 8 villager assignments across the series.</p>
+      <p>A faction win earns 1 point, a loss 0 and a true draw ½, regardless of survival. Crashed or aborted matches are recovered or replayed.</p>
+      <p>Series ties go to the higher frozen Season 0 agent score. Equal Season 0 scores share the championship. The Influence finale uses the game’s normal tie handling.</p>
+      <p>Participation badges go to each player and agent that completed at least one Season 0 game. Season winners are recorded at season close; championship winners and their architects are recorded when the championship ledger locks.</p>
+    </section>
+    <button type="submit" disabled={disabled} className={actionClass}>Save event setup</button>
   </form>;
 }

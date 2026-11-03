@@ -31,6 +31,13 @@ function seasonSlug(name: string): string {
   return `${readable}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
+/** Repair historical finalizations automatically; the API preserves existing grants and corrections. */
+export async function recoverFinalizedSeasonAwards(seasons: Pick<SeasonIdentity, "id" | "name" | "status">[]) {
+  for (const season of seasons) {
+    if (season.status === "final" && season.name.trim().toLowerCase() === "season 0") await reconcileAdminSeasonAwards(season.id);
+  }
+}
+
 export function SeasonAdminPanel() {
   const [seasons, setSeasons] = useState<SeasonIdentity[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -46,6 +53,7 @@ export function SeasonAdminPanel() {
     try {
       const next = await listSeasons();
       setSeasons(next);
+      await recoverFinalizedSeasonAwards(next).catch(() => setNotice("Season badge recovery will retry when this page refreshes. Season operations remain available."));
       if (!loadedNameSuggestion.current) {
         setNewSeasonName(suggestSeasonName(next));
         loadedNameSuggestion.current = true;
@@ -143,7 +151,7 @@ export function SeasonAdminPanel() {
                   <div className="flex flex-wrap gap-2">
                     {selected.status === "active" && <button type="button" disabled={busy} onClick={() => run(() => closeAdminSeason(selected.id))} className="influence-button-secondary rounded-lg px-3 py-2 text-xs">Close admission</button>}
                     {selected.status === "closing" && <button type="button" disabled={busy} onClick={() => run(() => finalizeAdminSeason(selected.id))} className="influence-button-primary rounded-lg px-3 py-2 text-xs">Finalize crowns</button>}
-                    {selected.status === "final" && selected.name.trim().toLowerCase() === "season 0" && <button type="button" disabled={busy} onClick={() => run(async () => { await reconcileAdminSeasonAwards(selected.id); setNotice("Earned season badges are delivered. Existing grants and corrections were preserved."); })} className="influence-button-secondary rounded-lg px-3 py-2 text-xs">Deliver missing season badges</button>}
+
                   </div>
                 </PermissionGate>
               )}

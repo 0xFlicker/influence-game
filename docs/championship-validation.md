@@ -126,3 +126,9 @@ Final provider-free baseline for the public-agent addition: **3,320 passed, 5 sk
 `/dashboard/profile` now places compact earned account badges below public identity and above rating stats. The authenticated GET and PATCH profile responses include the same active award projection, preserving badges after identity edits and excluding revoked grants/private award evidence. Empty awards omit the panel. Existing account settings, identity controls and stats remain intact.
 
 Verified the actual signed-in localhost profile, desktop/390px layout, Enter reveal, Escape dismissal and click/second-click toggle. Shared controls retain hover/focus and touch-compatible buttons. Profile API tests:9 passed/49 assertions, including account scoping, revoked awards, authentication and GET/PATCH consistency. Private/public profile UI tests:15 passed/82 assertions. Typecheck and lint passed. No server starts/stops, new grants or development-database changes.
+
+## Fixed championship setup and automatic awards UX (2026-11-03)
+
+Removed editable roles, points, equal-score/architect dropdowns, participation threshold and obsolete Influence draw warning. Event setup now accepts only the first Werewolf date and submits the existing confirmed Season 0 policy constant. The normal championship UI no longer mounts the allocation-preview or individual-badge correction panel. Season management automatically calls idempotent recovery for finalized Season 0; its manual delivery button is removed. Backend finalization and championship result reconciliation already grant the awards automatically, preserving frozen evidence and existing corrections.
+
+Verified the existing local draft visually without saving, locking, publishing or activating it. UI tests:9 passed/53 assertions. Disposable PostgreSQL season-awards, championship-scoring and championship-recovery tests:13 passed/87 assertions. Typecheck and lint passed. No server starts/stops, production actions or paid calls.
