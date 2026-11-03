@@ -98,7 +98,7 @@ Public reads: `GET /api/championships/:slug` (published only), `GET /api/award-d
 
 ## Rollout and remaining decisions
 
-Additive migrations 0145–0150 and payload inventory entries must deploy together with the API. Only isolated local test databases have been migrated by this task. Bucket references are verified before commit; rolled-back uploads may leave content-addressed orphan objects for normal inventory/retention handling. Coordinate these additions with the separate AWS storage migration.
+Additive migrations 0145–0150 and payload inventory entries must deploy together with the API. After the renderer rebase and disposable upgrade proof, normal startup migrations were also applied to the existing local development database with explicit user authorization. No data reset, replacement or restore was performed. Bucket references are verified before commit; rolled-back uploads may leave content-addressed orphan objects for normal inventory/retention handling. Coordinate these additions with the separate AWS storage migration.
 
 Do not activate a real event until its start date is chosen. An Influence draw policy also needs a product decision before a drawn finale can be finalized. Test values are fixtures, not production defaults.
 
