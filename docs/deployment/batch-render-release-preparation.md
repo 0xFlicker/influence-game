@@ -6,17 +6,21 @@ and the three conflict resolutions. This packet prepares source review and a
 staging release; cloud provisioning and target activation remain separate steps.
 Keep current renderer targets until the corresponding acceptance/activation step.
 
-## Three implementation PRs
+## Coordinated implementation PRs
 
 | Repository / branch | Review scope | Landing dependency |
 | --- | --- | --- |
 | `0xFlicker/linode-iac` / `codex/batch-renderer-target-policy` | Strict workload target policy, staging Batch runtime preflight, release/rollback guidance | Land before any application policy selects Batch |
-| `falsefloor/infra` / `codex/shared-batch-rendering` | Two protected Batch lanes, signed submitter/ledger, staging network broker/cleanup, dedicated staging IAM/deploy roles and manual packaging/deployment workflow | Review source and IAM before provisioning; deploy after the exact candidate worker is mirrored |
+| `falsefloor/infra` / `codex/shared-batch-rendering` | Two protected Batch lanes, signed submitter/ledger, staging network broker/cleanup, dedicated staging IAM/deploy roles and automatic release admission | Review source and IAM before provisioning; app release invokes admission after exact worker publication |
+| `0xFlicker/linode-iac` / `codex/automatic-batch-release` | Independently verify infra admission before host access; persist submission route and derive worker digest from the verified release | Follow-up to merged #78; land before updated app release wiring |
 | `0xFlicker/influence-game` / `codex/shared-batch-rendering` | Durable jobs and object storage, worker, Studio/MCP order/status/download, global monitor, local worker and migrations | Finish localhost evaluation and required checks before capability release |
 
 PRs: [application #278](https://github.com/0xFlicker/influence-game/pull/278),
 [infrastructure #23](https://github.com/falsefloor/infra/pull/23), and
-[host #78](https://github.com/0xFlicker/linode-iac/pull/78).
+[host #78](https://github.com/0xFlicker/linode-iac/pull/78) (merged). The focused
+automatic-release host follow-up builds on that merge; #78 needs no rollback.
+The follow-up is [host #79](https://github.com/0xFlicker/linode-iac/pull/79).
+Land #79 and infra #23 before app #278's updated staging orchestration.
 
 The application capability release keeps the checked-in target policy unchanged.
 The resolved merge preserves main's presentation parity guidance and CLI
@@ -49,17 +53,18 @@ verified success without re-encoding. See the
    32 random characters. Reuse the reviewed staging-only Tailscale OAuth
    parameter and exact staging ECR sidecar. No secret values belong in PRs,
    artifacts, journals or workflow inputs.
-5. Dispatch infrastructure workflow `house-render-batch-staging-deploy.yml` on
-   reviewed main using the exact mirrored worker/sidecar references, canonical
-   `https://influence-staging.tail8a79ed.ts.net`, three SSM parameter ARNs and the
-   Batch runtime boundary ARN. Review its exact stack, IAM, quotas, subnet
-   capacity and cleanup behavior. Record the resulting `SubmitUrl` and admitted
-   definition revisions.
-6. Install staging Doppler values `RENDER_JOB_DISPATCH_URL`,
-   `RENDER_JOB_DISPATCH_SECRET`, `RENDER_JOB_SECRET`, and
-   `RENDER_JOB_WORKER_DIGEST`. Their URL, secrets and digest must match the
-   provisioned stack and candidate renderer. The host preflight checks local
-   configuration; operator proof establishes live equality and reachability.
+5. Complete one-time release automation bootstrap. Install the existing GitHub
+   App on private `falsefloor/infra`; app release needs Actions write/Contents
+   read there, host release needs read only. Configure `GH_APP_CLIENT_ID` and
+   `GH_APP_PRIVATE_KEY` in infra with a read-only installation on
+   `0xFlicker/influence-game`. Set infra variable
+   `HOUSE_RENDER_STAGING_TAILNET_IMAGE` to the reviewed immutable ECR sidecar.
+   Infra currently has none of these GitHub configuration entries installed.
+   Review stack IAM, quotas, subnet capacity and cleanup behavior before activation.
+6. Install only the distinct staging keys in Doppler as
+   `RENDER_JOB_DISPATCH_SECRET` and `RENDER_JOB_SECRET`, matching the two SSM
+   parameters. New worker digests and submission URLs are release-owned values:
+   no Doppler edit or manual Batch deployment is required for each release.
 7. Configure the existing private bucket for recording PUTs from the exact
    staging Studio origin. The packaged API helper is
    `dist/ensure-private-content-bucket.js --render-cors-origin https://influence-staging.tail8a79ed.ts.net`;
@@ -73,6 +78,17 @@ verified success without re-encoding. See the
    network/origin and production entry. The new image family, Batch definitions
    and admitted worker digest must agree for each activation release. Reuse a
    previously accepted cut; do not generate game/model/image/TTS content.
+    The normal release automatically performs CI selection → digest-preserving
+    mirror → infra Batch deployment/admission → host deployment. Infra accepts
+    only source/mirror run identities and receipt hashes, independently verifies
+    ordinary successful main CI, raw target policy and the completed mirror job,
+    and derives fixed staging parameters. It retains its own main-only AWS role.
+    The app waits for the exact dispatch-returned infra run, verifies its artifact,
+    and forwards only admission provenance to the host. The host rechecks that
+    receipt before Tailscale/SSH access, binds it to both extracted image policies,
+    journals the route, and derives the runtime worker digest from the release.
+    Missing, failed, timed-out or mismatched admission blocks host dispatch.
+    Existing-target releases skip Batch; production automation is unchanged.
 10. Prove browser order and global status at `/admin/production/renders`, MCP
     job-ID lookup, worker claim/heartbeat/upload, object verification, producer
     download, hash/length integrity, task exit and tailnet identity removal.
@@ -90,6 +106,26 @@ Production provisioning/activation is a later environment rollout. The mandatory
 legacy production renderer cleanup follows acceptance of both workloads in both
 environments and rollback-window closure; retain native local/CLI rendering.
 The cleanup remains tracked under W13 and the shared render plan.
+
+## Automatic-release follow-up validation
+
+The host target-policy PR #78 is merged. Host #79 and updated infra #23 have green
+credential-free CI. Local checks cover 17 app Python release/admission cases,
+49 infra Python cases, 79 infra Bun cases, nine sidecar cases, six host admission/
+readiness cases, six host handoff cases and the existing host deploy/storage/
+secret/network contracts. The actual helper roundtrip passed from source CI and
+mirror evidence through deployed-stack receipt construction to independent app
+and host verification. Workflow lint passed; current official token-action
+metadata confirms `client-id`, which the linter's bundled catalog predates.
+The Batch runtime assembly synthesizes and its handlers import without AWS access.
+
+One existing app workflow assertion expected dispatch immediately after mirroring.
+It now evaluates the actual guard for Batch admission success/failure/skip, mirror
+failure, existing-target bypass and cancellation. The fresh full baseline passed:
+3,304 tests, five existing skips, zero failures. Typecheck/lint and MCP schema
+freshness also passed. Earlier app CI reported Format viewer and Werewolf
+browser-story failures; current-head CI remains the authority for release checks.
+These local/offline checks do not establish deployed Batch or staging acceptance.
 
 ## Evidence to attach before activation
 

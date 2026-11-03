@@ -47,10 +47,20 @@ def select_release(run, request):
     manifest = json.loads(manifest_raw)
     mirror.evidence_identity('worker', manifest, run)
     policy = json.loads(request(f'{REPOSITORY}/contents/deployment/render-execution.json?ref={sha}'))
-    policy = json.loads(base64.b64decode(policy['content'], validate=False))
+    policy_raw = base64.b64decode(policy['content'], validate=False)
+    policy = json.loads(policy_raw)
     mode = policy.get('environments', {}).get('staging', {}).get('mode')
     require(policy.get('schemaVersion') == 1 and mode in ['local', 'remote'], 'missing staging execution policy')
+    selected = policy['environments']['staging']
+    targets = selected.get('targets', {'trailer': 'existing', 'studio-export': 'existing'})
+    require(isinstance(targets, dict) and set(targets) == {'trailer', 'studio-export'}
+            and all(target in ('existing', 'aws-batch') for target in targets.values()), 'invalid staging targets')
+    batch = 'aws-batch' in targets.values()
+    require(not batch or (mode == 'remote' and selected.get('network') == 'tailnet'
+                         and selected.get('apiOrigin') == 'https://influence-staging.tail8a79ed.ts.net'),
+            'Batch requires the canonical remote staging policy')
     return {'eligible': 'true', 'mode': mode, 'candidate_sha': sha, 'build_run_id': str(run['id']),
+            'batch_required': str(batch).lower(), 'policy_digest': 'sha256:' + hashlib.sha256(policy_raw).hexdigest(),
             'build_run_attempt': str(run['run_attempt']), 'release_manifest_artifact': name,
             'release_manifest_digest': 'sha256:' + hashlib.sha256(manifest_raw).hexdigest(),
             'migration_set': manifest['migration_set'],

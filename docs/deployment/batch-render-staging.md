@@ -154,21 +154,27 @@ The initial staging stack allows one trailer and one Studio execution. Each task
 | Dedicated Batch submission HMAC | API `RENDER_JOB_DISPATCH_SECRET`; SSM `/house/render/staging/batch-submit` read only by the submitter. Distinct from the old wake/control keys. |
 | Dedicated execution HMAC | API `RENDER_JOB_SECRET`; SSM `/house/render/staging/batch-worker` read only by the submitter. At least 32 characters. A task receives only its execution-derived bearer. |
 | Submitter URL | API `RENDER_JOB_DISPATCH_URL`, from the new stack's `SubmitUrl`. |
-| Exact worker digest | API `RENDER_JOB_WORKER_DIGEST`; must equal the digest in the admitted Batch definition. |
+| Exact worker digest | API `RENDER_JOB_WORKER_DIGEST`, derived from the verified release by staging host readiness; must equal the admitted Batch definition. |
 | Tailscale OAuth | Existing staging-only SSM parameter, broker-only. Worker and sidecar do not receive OAuth. |
 | Runtime permissions boundary | New reviewed `HouseRenderBatch...RuntimeBoundary` under the staging protected policy path; supplied by ARN, never created by the runtime stack. |
 
 Before deploying, review and apply the separate IAM change: the existing direct-ECS deploy role/boundary does not authorize this stack. Companion source `house-render-batch-iam.ts` defines the retained runtime boundary and dedicated `HouseRenderBatchStagingGitHubDeploy` / `HouseRenderBatchStagingCloudFormationExecution` roles; `house-render-batch-staging-iam-app.ts` synthesizes the operator-owned IAM stack. Review `docs/batch-deployment-access-staging.json`, the four runtime role names under `/house/render/staging/runtime/`, Batch resource actions, `batch:TagResource`, asset prefix `house-render/staging/batch/`, workflow stack allowlist, and the existing Batch service-linked-role prerequisite. Reuse the foundation's imported subnets/security group and exact staging ECR worker/sidecar repositories. No deployment, new persistent authority or credential installation has occurred in this task.
 
-The new manual `house-render-batch-staging-deploy.yml` workflow packages and
-verifies `HouseRenderBatch-staging` before using its dedicated deploy role. It
-accepts exact worker/sidecar image references and parameter ARNs, never secret
-values. `scripts/render-deploy.py --environment staging --renderer batch`
+The app staging release automatically invokes `house-render-batch-staging-deploy.yml`
+after verified ECR publication when the exact candidate policy selects a Batch
+lane. The infra-owned workflow accepts only source/mirror run identities and
+receipt hashes, independently derives the worker image and fixed staging
+parameters, and packages/verifies `HouseRenderBatch-staging` before assuming its
+dedicated main-only deploy role. A one-time repo variable pins the sidecar image;
+GitHub App installation and keys remain one-time prerequisites. No secret values
+enter workflow inputs. `scripts/render-deploy.py --environment staging --renderer batch`
 rejects old-renderer/production replay, foreign asset destinations, changed
 checksums and an unprotected runtime role. The existing renderer workflow remains
-available during migration. The host capability PR accepts workload targets and
-checks selected Batch runtime credentials and the exact release-family worker
-digest before draining staging services. Neither source merge selects Batch.
+available during migration. App and host independently verify the exact deployed
+admission receipt. The staging host journals its submission URL, derives the worker
+digest from the immutable release, and checks secrets before draining services.
+Routine releases need no manual job or per-digest Doppler edit. The capability
+release keeps current targets; a later explicit policy release activates Batch.
 
 See [release preparation](batch-render-release-preparation.md) for the coordinated
 three-repository landing order and the acceptance boundary while localhost
