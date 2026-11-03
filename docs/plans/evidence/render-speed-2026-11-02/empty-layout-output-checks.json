@@ -1,0 +1,92 @@
+[
+  {
+    "mode": "png",
+    "fixture": "handoff",
+    "frames": 735,
+    "expectedFrames": 735,
+    "exactVideoAndTiming": true,
+    "exactAudio": true,
+    "differentFrames": 0
+  },
+  {
+    "mode": "png",
+    "fixture": "thinking",
+    "frames": 535,
+    "expectedFrames": 535,
+    "exactVideoAndTiming": true,
+    "exactAudio": true,
+    "differentFrames": 0
+  },
+  {
+    "mode": "none",
+    "fixture": "handoff",
+    "frames": 735,
+    "expectedFrames": 735,
+    "exactVideoAndTiming": false,
+    "exactAudio": true,
+    "differentFrames": 1
+  },
+  {
+    "mode": "none",
+    "fixture": "thinking",
+    "frames": 535,
+    "expectedFrames": 535,
+    "exactVideoAndTiming": false,
+    "exactAudio": true,
+    "differentFrames": 111
+  },
+  {
+    "mode": "poison",
+    "fixture": "handoff",
+    "frames": 735,
+    "expectedFrames": 735,
+    "exactVideoAndTiming": true,
+    "exactAudio": true,
+    "differentFrames": 0
+  },
+  {
+    "mode": "poison",
+    "fixture": "thinking",
+    "frames": 535,
+    "expectedFrames": 535,
+    "exactVideoAndTiming": true,
+    "exactAudio": true,
+    "differentFrames": 0
+  },
+  {
+    "mode": "png-repeat",
+    "fixture": "handoff",
+    "frames": 735,
+    "expectedFrames": 735,
+    "exactVideoAndTiming": false,
+    "exactAudio": true,
+    "differentFrames": 39
+  },
+  {
+    "mode": "png-repeat",
+    "fixture": "thinking",
+    "frames": 535,
+    "expectedFrames": 535,
+    "exactVideoAndTiming": false,
+    "exactAudio": true,
+    "differentFrames": 279
+  },
+  {
+    "mode": "none-repeat",
+    "fixture": "handoff",
+    "frames": 735,
+    "expectedFrames": 735,
+    "exactVideoAndTiming": true,
+    "exactAudio": true,
+    "differentFrames": 0
+  },
+  {
+    "mode": "none-repeat",
+    "fixture": "thinking",
+    "frames": 535,
+    "expectedFrames": 535,
+    "exactVideoAndTiming": true,
+    "exactAudio": true,
+    "differentFrames": 0
+  }
+]

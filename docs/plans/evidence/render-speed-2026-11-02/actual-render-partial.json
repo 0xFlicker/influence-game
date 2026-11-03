@@ -1,0 +1,66 @@
+{
+  "status": "incomplete; closing one-worker control failed",
+  "completed": [
+    {
+      "game": "werewolf",
+      "singleMedianSeconds": 265.721440292,
+      "fourMedianSeconds": 84.85764254149998,
+      "speedup": 3.1313790052799053,
+      "trials": [
+        {
+          "id": "two-minute-gameplay-c1-r0",
+          "concurrency": 1,
+          "frames": 3600,
+          "fromFrame": 4548,
+          "seconds": 265.721440292,
+          "effectiveFps": 13.548022305027315,
+          "decodedFramesAndTimestampsExact": true,
+          "decodedAudioExact": true,
+          "differingFrames": 0
+        },
+        {
+          "id": "two-minute-gameplay-c4-r1",
+          "concurrency": 4,
+          "frames": 3600,
+          "fromFrame": 4548,
+          "seconds": 84.138062208,
+          "effectiveFps": 42.78681853998898,
+          "decodedFramesAndTimestampsExact": true,
+          "decodedAudioExact": true,
+          "differingFrames": 0
+        },
+        {
+          "id": "two-minute-gameplay-c4-r2",
+          "concurrency": 4,
+          "frames": 3600,
+          "fromFrame": 4548,
+          "seconds": 85.57722287499998,
+          "effectiveFps": 42.067268357824716,
+          "decodedFramesAndTimestampsExact": true,
+          "decodedAudioExact": true,
+          "differingFrames": 0
+        }
+      ]
+    }
+  ],
+  "failure": {
+    "game": "werewolf",
+    "concurrency": 1,
+    "run": 3,
+    "kind": "local HTTP 404 for speech audio",
+    "originalBundleAssetPresent": true,
+    "log": ".renders/actual-render-benchmark-2026-11-03/werewolf/run.log",
+    "note": "Instrumented fresh control running; cause not established. Do not count as a completed four-trial matrix."
+  },
+  "influence": "Serial matrix running with on-error asset inventory and download events",
+  "diagnosticRecovery": {
+    "seconds": 264.67869012499995,
+    "frames": 3600,
+    "decodedFramesAndTimestampsExact": true,
+    "decodedAudioExact": true,
+    "sourceAndTemporaryCopiesHashExactBeforeAndAfter": true,
+    "assetDisappearanceObserved": false,
+    "note": "Fresh one-worker control with one-second file/progress sampling; cause of prior 404 remains unestablished. This is diagnostic timing, not a clean closing trial.",
+    "artifacts": ".renders/asset-404-isolation-2026-11-03/control-0"
+  }
+}

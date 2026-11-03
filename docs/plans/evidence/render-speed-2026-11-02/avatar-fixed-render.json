@@ -1,0 +1,34 @@
+[
+  {
+    "id": "thinking-c1-r0",
+    "seconds": 42.056411666,
+    "frames": 300,
+    "differentDecodedFrames": 0,
+    "differentCapturedFrames": 0,
+    "audioEqual": true
+  },
+  {
+    "id": "thinking-c4-r1",
+    "seconds": 14.327540458000003,
+    "frames": 300,
+    "differentDecodedFrames": 0,
+    "differentCapturedFrames": 0,
+    "audioEqual": true
+  },
+  {
+    "id": "thinking-c1-r2",
+    "seconds": 41.025100791999996,
+    "frames": 300,
+    "differentDecodedFrames": 0,
+    "differentCapturedFrames": 0,
+    "audioEqual": true
+  },
+  {
+    "id": "thinking-c4-r3",
+    "seconds": 14.407097666000002,
+    "frames": 300,
+    "differentDecodedFrames": 0,
+    "differentCapturedFrames": 0,
+    "audioEqual": true
+  }
+]

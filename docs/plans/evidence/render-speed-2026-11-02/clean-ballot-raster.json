@@ -1,0 +1,45 @@
+{
+  "variants": [
+    {
+      "hash": "36d77e85bb4d375fbe217e0ba5e729ca1412666f779cb679859ea75a14556841",
+      "paths": [
+        "clean-reference-1/portrait-63.png",
+        "clean-reference-0/portrait-63.png",
+        "clean-reference-0/reverse.png",
+        "final-current-0/portrait-63.png",
+        "final-current-0/random.png",
+        "final-current-0/reverse.png",
+        "final-current-0/independent.png",
+        "final-current-0/sequential-portrait/element-63.png",
+        "final-current-1/reverse.png",
+        "clean-reference-2/reverse.png",
+        "final-current-2/reverse.png"
+      ]
+    },
+    {
+      "hash": "ef37e9359f5e30c3a017ba3b09b2e80777dd2713704b0ddad0d585eba4c500d3",
+      "paths": [
+        "clean-reference-1/reverse.png",
+        "clean-reference-0/random.png",
+        "final-current-1/portrait-63.png",
+        "clean-reference-2/portrait-63.png",
+        "final-current-2/portrait-63.png"
+      ]
+    }
+  ],
+  "pairs": [
+    {
+      "a": "36d77e85bb4d375fbe217e0ba5e729ca1412666f779cb679859ea75a14556841",
+      "b": "ef37e9359f5e30c3a017ba3b09b2e80777dd2713704b0ddad0d585eba4c500d3",
+      "pixels": 7,
+      "max": 6,
+      "total": 74,
+      "bbox": [
+        70,
+        329,
+        71,
+        332
+      ]
+    }
+  ]
+}

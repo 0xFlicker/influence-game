@@ -1,0 +1,133 @@
+{
+  "grim-amber-coal": {
+    "manifest_sha256": "2799474294efc152340b4fe8fc1578834d2732f628b9fd7e0486d88dd4b504d1",
+    "manifest_bytes": 1665312,
+    "prepared_revision": "3431acdbd0ed1595f48754f4176deffcf0c79d08",
+    "prepared_dirty": false,
+    "geometry": [
+      1920,
+      1080,
+      30
+    ],
+    "range": {
+      "fromFrame": 0,
+      "untilFrame": 45599
+    },
+    "cue_count": 130,
+    "picture_kinds": {
+      "werewolf-opening": 11,
+      "werewolf": 106,
+      "thinking": 13
+    },
+    "timeline_duration_ms": 1519957.1990000007,
+    "segment_ms": {
+      "hold": 73050.0,
+      "establish": 64200,
+      "entrance": 16250,
+      "reading": 1064435.1999999997,
+      "exit": 41000.0,
+      "gap": 0.0,
+      "thinking": 261021.99899999998
+    },
+    "page_entries": 26,
+    "layout_entries": 89,
+    "audio_clips": 130,
+    "aligned_cues": 0,
+    "asset_bytes": 61721224,
+    "static_bytes": 26261113,
+    "receipt": {
+      "revision": "3431acdbd0ed1595f48754f4176deffcf0c79d08",
+      "dirty": false,
+      "durationSeconds": 1519.9666666666667,
+      "elapsedSeconds": 3877.068,
+      "outputHash": "87ac5114b5ca9537abfed475f51ea6842c9a670bc0cc9ae073c2e4ba1a34ed78",
+      "bytes": 270716303
+    },
+    "observed_slowdown": 2.55075856926687,
+    "observed_effective_fps": 11.761207180271276
+  },
+  "hard-smoke-rune": {
+    "manifest_sha256": "dd973bb9bab52d96ed391f8a10c57aa104897f2cb1f282067bd3f718ae1d4875",
+    "manifest_bytes": 1741513,
+    "prepared_revision": "4d6281d319f5acce927baf15a49f566454d5f2e6",
+    "prepared_dirty": true,
+    "geometry": [
+      1920,
+      1080,
+      30
+    ],
+    "range": {
+      "fromFrame": 0,
+      "untilFrame": 51778
+    },
+    "cue_count": 139,
+    "picture_kinds": {
+      "werewolf-opening": 11,
+      "werewolf": 109,
+      "thinking": 19
+    },
+    "timeline_duration_ms": 1725921.4860000014,
+    "segment_ms": {
+      "hold": 77550.0,
+      "establish": 70000,
+      "entrance": 16550,
+      "reading": 1097009.9049999998,
+      "exit": 39800.0,
+      "gap": 0.0,
+      "thinking": 425011.58099999995
+    },
+    "page_entries": 33,
+    "layout_entries": 97,
+    "audio_clips": 139,
+    "aligned_cues": 0,
+    "asset_bytes": 63015882,
+    "static_bytes": 26261113,
+    "receipt": {
+      "revision": "eb0176e4760c618e1c2488fadef4fa55d693b9fe",
+      "dirty": false,
+      "durationSeconds": 1725.9333333333334,
+      "elapsedSeconds": 4535.219,
+      "outputHash": "3d34c7bfcab54c19bf13745eb5fc7a22b2f9387b7254867142d48ca8fb66735b",
+      "bytes": 304372298
+    },
+    "observed_slowdown": 2.6276907180655877,
+    "observed_effective_fps": 11.416868733351135
+  },
+  "neat-black-orb": {
+    "manifest_sha256": "4fd2401a173e66cb0bbccde88180611b8a8fefdcbc51609c77710d6cecbd2d97",
+    "manifest_bytes": 22561318,
+    "prepared_revision": "857410698c87bb4f20a41a099fc2236fa0d70024",
+    "prepared_dirty": true,
+    "geometry": [
+      1920,
+      1080,
+      30
+    ],
+    "range": {
+      "fromFrame": 0,
+      "untilFrame": 234728
+    },
+    "cue_count": 688,
+    "picture_kinds": {
+      "influence-opening": 13,
+      "influence": 635,
+      "thinking": 40
+    },
+    "timeline_duration_ms": 7671062.900999975,
+    "segment_ms": {
+      "hold": 702700.0,
+      "establish": 394350,
+      "entrance": 112050,
+      "reading": 5506964.904999999,
+      "exit": 206550.0,
+      "gap": 0.0,
+      "thinking": 748447.9959999998
+    },
+    "page_entries": 0,
+    "layout_entries": 0,
+    "audio_clips": 678,
+    "aligned_cues": 0,
+    "asset_bytes": 464747865,
+    "static_bytes": 35589572
+  }
+}

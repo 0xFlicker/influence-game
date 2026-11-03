@@ -345,7 +345,12 @@ function PreparedFrame({
       await document.fonts.ready;
       for (let pass = 0; pass < 2; pass++) {
         await Promise.all(
-          Array.from(document.images).map((image) => image.decode()),
+          Array.from(document.images).map((image) => {
+            // Responsive scenes keep lazy portraits in hidden fallbacks. Their
+            // decode can otherwise wait forever for viewport-driven loading.
+            image.loading = "eager";
+            return image.decode();
+          }),
         );
         await new Promise<void>((resolve) =>
           requestAnimationFrame(() => requestAnimationFrame(() => resolve())),

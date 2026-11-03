@@ -114,6 +114,16 @@ Inspection downloads and checks selected media, saves the logical timeline, and 
 
 A sibling `.bundle` contains the permitted cue payloads, timing, hashed media and built-in stage artwork. The renderer performs a font/image/layout prepass and saves measured speech/thinking typography before encoding. `--bundle` verifies hashes and uses local assets; it does not read the API. Game-loading options cannot be combined with `--bundle`. To pick up current presentation code or change settings, supply the game slug with `--overwrite` (or choose a new output path). `--bundle --overwrite` reuses the saved presentation; it does not refresh old cues or timing. A prepared bundle can include private Omniscient evidence; keep it local unless deliberately sharing it.
 
+The layout prepass measures the same frames in one browser tab but skips unused
+PNG captures. It still waits for fonts, image decoding and layout settling;
+hidden responsive portrait fallbacks load eagerly so decoding can finish.
+Encoding continues to render every movie frame with the existing audio schedule.
+`REPLAY_RENDER_CONCURRENCY` controls encoding workers (integer 1–8, default 1);
+it does not parallelize layout preparation. Higher values need sufficient CPU and
+memory. See the [performance experiments](plans/2026-11-02-render-speed-100x.md)
+for measured coverage and limits. These changes do not update existing MP4s or
+refresh frozen bundle content.
+
 Existing output files and prepared bundles are refused unless `--overwrite` is supplied. With a game slug, `--overwrite` downloads current game data and media and rebuilds the sibling `.bundle`, including the opening, thinking camera timing and fresh layout measurements. Preparation happens in a temporary directory; failures preserve the previous bundle and movie. With `--bundle`, `--overwrite` only replaces the output movie. Encoding writes to a temporary sibling file; the MP4 becomes visible only after ffprobe verifies its codec, dimensions, duration and expected audio track. A `.mp4.receipt.json` records hashes, revision/dirty marker, settings, duration, size, tool versions and render time. Interrupting the command cleans up rendering processes and temporary output while retaining the prepared bundle.
 
 To refresh an older export that predates the opening or thinking camera:
