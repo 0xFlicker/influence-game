@@ -2,6 +2,7 @@ import { CreateBucketCommand, HeadBucketCommand, GetBucketCorsCommand, PutBucket
 import {parseArgs} from "node:util";
 import { getPrivateTraceStorageConfig } from "../services/private-trace-storage.js";
 
+if (process.env.HOUSE_OBJECT_STORAGE_PROVIDER === "aws") throw new Error("AWS buckets and CORS are managed by falsefloor/infra; this bootstrap is for Linode/local storage");
 const { endpoint, accessKeyId, secretAccessKey, bucket } = getPrivateTraceStorageConfig();
 const {values}=parseArgs({args:process.argv.slice(2),options:{"render-cors-origin":{type:"string",multiple:true}},strict:true});
 const origins=values["render-cors-origin"]??[];

@@ -1,3 +1,4 @@
+import { objectStorageClientConfig, publicObjectAcl } from "../lib/object-storage-config.js";
 import { loadPayloads, storeFields } from "./payload-storage.js";
 import {
   CopyObjectCommand,
@@ -102,7 +103,7 @@ type AvatarStorageReferenceCategory = Exclude<keyof AvatarStorageReferenceCounts
 export function createPublicAvatarObjectStore(): AvatarObjectStore {
   const client = getPublicObjectStorageClient();
   const bucket = getPublicObjectStorageBucket();
-  const endpoint = process.env.LINODE_OBJ_ENDPOINT;
+  const endpoint = objectStorageClientConfig("public").endpoint as string;
   if (!endpoint) throw new Error("LINODE_OBJ_ENDPOINT must be set");
   const endpointHost = new URL(endpoint).host;
 
@@ -116,7 +117,7 @@ export function createPublicAvatarObjectStore(): AvatarObjectStore {
         Bucket: bucket,
         Key: destinationKey,
         CopySource: encodeCopySource(bucket, sourceKey),
-        ACL: "public-read",
+        ...publicObjectAcl(),
         MetadataDirective: "COPY",
       }));
     },

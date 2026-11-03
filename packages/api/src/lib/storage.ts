@@ -1,7 +1,7 @@
 /**
  * Object storage helpers for profile-picture uploads.
  *
- * Hosted/staging deployments use Linode Object Storage via S3-compatible
+ * Hosted/staging deployments use configured object storage via S3-compatible
  * presigned PUT URLs. Local dev can fall back to a filesystem-backed PUT
  * endpoint so the profile flow works without cloud object-storage secrets.
  */
@@ -11,6 +11,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { objectStorageBucket, objectStorageClient, objectStorageClientConfig, objectStorageProvider, publicDeliveryBaseUrl, publicObjectAcl } from "./object-storage-config.js";
 
 type StorageBackend = "s3" | "local" | "disabled";
 
@@ -29,44 +30,17 @@ const LOCAL_CONSTRAINED_UPLOADS = new Map<string, "active" | "consuming" | "used
 // Client singleton
 // ---------------------------------------------------------------------------
 
-let _client: S3Client | null = null;
-
-function getS3Client(): S3Client {
-  if (!_client) {
-    const endpoint = process.env.LINODE_OBJ_ENDPOINT;
-    const accessKeyId = process.env.LINODE_OBJ_ACCESS_KEY;
-    const secretAccessKey = process.env.LINODE_OBJ_SECRET_KEY;
-
-    if (!endpoint || !accessKeyId || !secretAccessKey) {
-      throw new Error(
-        "LINODE_OBJ_ENDPOINT, LINODE_OBJ_ACCESS_KEY, and LINODE_OBJ_SECRET_KEY must be set",
-      );
-    }
-
-    _client = new S3Client({
-      region: "us-iad",
-      endpoint,
-      credentials: { accessKeyId, secretAccessKey },
-      forcePathStyle: true,
-    });
-  }
-  return _client;
-}
+function getS3Client(): S3Client { return objectStorageClient("public"); }
 
 export function getPublicObjectStorageClient(): S3Client {
   return getS3Client();
 }
 
-export function getPublicObjectStorageBucket(): string {
-  const bucket = process.env.LINODE_OBJ_BUCKET;
-  if (!bucket) {
-    throw new Error("LINODE_OBJ_BUCKET must be set");
-  }
-  return bucket;
-}
+export function getPublicObjectStorageBucket(): string { return objectStorageBucket("public"); }
 
 function hasS3Config(): boolean {
-  return STORAGE_ENV.every((key) => !!process.env[key]);
+  if (!process.env.HOUSE_OBJECT_STORAGE_PROVIDER || process.env.HOUSE_OBJECT_STORAGE_PROVIDER === "linode") return STORAGE_ENV.every(key => !!process.env[key]);
+  try { objectStorageClientConfig("public"); publicDeliveryBaseUrl(); return true; } catch { return false; }
 }
 
 function isLocalRuntime(): boolean {
@@ -78,7 +52,7 @@ export function getStorageBackend(): StorageBackend {
 
   if (requested === "disabled") return "disabled";
   if (requested === "local") return "local";
-  if (requested === "s3") return hasS3Config() ? "s3" : "disabled";
+  if (requested === "s3" || process.env.HOUSE_OBJECT_STORAGE_PROVIDER && process.env.HOUSE_OBJECT_STORAGE_PROVIDER !== "linode") return hasS3Config() ? "s3" : "disabled";
   if (hasS3Config()) return "s3";
   if (isLocalRuntime()) return "local";
   return "disabled";
@@ -90,10 +64,13 @@ export function getStorageStatus(): {
   missingS3Env: string[];
 } {
   const backend = getStorageBackend();
+  const requiredEnv = process.env.HOUSE_OBJECT_STORAGE_PROVIDER === "aws"
+    ? ["HOUSE_OBJECT_STORAGE_REGION", "HOUSE_PUBLIC_BUCKET", "HOUSE_DATA_BUCKET", "HOUSE_EVIDENCE_BUCKET", "HOUSE_PUBLIC_BASE_URL"]
+    : STORAGE_ENV;
   return {
     backend,
     localDir: backend === "local" ? getLocalUploadDir() : undefined,
-    missingS3Env: STORAGE_ENV.filter((key) => !process.env[key]),
+    missingS3Env: requiredEnv.filter((key) => !process.env[key]),
   };
 }
 
@@ -185,15 +162,12 @@ export async function generatePresignedUpload(
     Bucket: bucket,
     Key: key,
     ContentType: contentType,
-    ACL: "public-read",
+    ...publicObjectAcl(),
   });
 
   const uploadUrl = await getSignedUrl(client, command, { expiresIn });
 
-  // Public URL: https://{bucket}.{endpoint-host}/{key}
-  const endpoint = process.env.LINODE_OBJ_ENDPOINT!;
-  const endpointHost = new URL(endpoint).host;
-  const publicUrl = `https://${bucket}.${endpointHost}/${key}`;
+  const publicUrl = publicS3UrlForKey(key);
 
   return { uploadUrl, key, publicUrl };
 }
@@ -221,12 +195,12 @@ export async function generateConstrainedPublicUpload(
     ChecksumSHA256: checksumBase64(input.sha256),
     IfNoneMatch: "*",
     CacheControl: "public, max-age=31536000, immutable",
-    ACL: "public-read",
+    ...publicObjectAcl(),
     Metadata: { sha256: normalizeSha256(input.sha256) },
   });
   const uploadUrl = await getSignedUrl(getS3Client(), command, {
     expiresIn,
-    unhoistableHeaders: new Set(["x-amz-acl"]),
+    unhoistableHeaders: new Set(objectStorageProvider() === "aws_s3" ? ["x-amz-checksum-sha256"] : ["x-amz-acl"]),
   });
   return {
     uploadUrl,
@@ -277,7 +251,7 @@ async function storePublicImage(key: string, contentType: string, body: ArrayBuf
     Key: key,
     Body: Buffer.from(body),
     ContentType: contentType,
-    ACL: "public-read",
+    ...publicObjectAcl(),
   }));
 
   return {
@@ -329,9 +303,9 @@ function validatePublicAvatarImage(
 }
 
 function publicS3UrlForKey(key: string): string {
-  const endpoint = process.env.LINODE_OBJ_ENDPOINT!;
-  const endpointHost = new URL(endpoint).host;
-  return `https://${getPublicObjectStorageBucket()}.${endpointHost}/${key}`;
+  validateLocalKey(key);
+  const encoded = objectStorageProvider() === "aws_s3" ? key.split("/").map(encodeURIComponent).join("/") : key;
+  return `${publicDeliveryBaseUrl()}/${encoded}`;
 }
 
 export function publicObjectUrlForKey(key: string, publicBaseUrl?: string): string {
@@ -339,6 +313,15 @@ export function publicObjectUrlForKey(key: string, publicBaseUrl?: string): stri
   return getStorageBackend() === "local"
     ? absolutizeApiUrl(getLocalPublicUploadPath(key), publicBaseUrl)
     : publicS3UrlForKey(key);
+}
+
+/** A delivery view only: preserve persisted snapshots, hashes and external URLs. */
+export function resolvePublicObjectDeliveryUrl(value: string): string;
+export function resolvePublicObjectDeliveryUrl(value: string | null): string | null;
+export function resolvePublicObjectDeliveryUrl(value: string | null): string | null {
+  if (value === null || objectStorageProvider() !== "aws_s3") return value;
+  const parsed = parseUrl(value);
+  return parsed ? publicObjectUrlFromConfiguredS3(parsed) ?? value : value;
 }
 
 export function ownedPublicAvatarStorageKey(
@@ -534,6 +517,11 @@ export function normalizeUploadedAvatarUrl(
     return absolutizeApiUrl(`${parsed.pathname}${parsed.search}`, publicBaseUrl ?? parsed.origin);
   }
 
+  if (objectStorageProvider() === "aws_s3") {
+    const migrated = publicObjectUrlFromConfiguredS3(parsed);
+    if (migrated) return migrated;
+  }
+
   if (!hasExpiringSignatureParams(parsed)) {
     return trimmed;
   }
@@ -614,28 +602,34 @@ function publicObjectUrlFromConfiguredS3(url: URL): string | null {
 }
 
 function publicObjectKeyFromConfiguredS3(url: URL): string | null {
-  const endpoint = process.env.LINODE_OBJ_ENDPOINT;
-  const bucket = process.env.LINODE_OBJ_BUCKET;
-  if (!endpoint || !bucket) return null;
-
-  let endpointHost: string;
+  if (url.protocol !== "https:" || url.username || url.password) return null;
+  const bases: string[] = [];
   try {
-    endpointHost = new URL(endpoint).host;
-  } catch {
-    return null;
-  }
-
-  const bucketHost = `${bucket}.${endpointHost}`;
-  if (url.host === bucketHost) {
-    return decodeObjectKey(url.pathname.replace(/^\/+/, ""));
-  }
-
-  if (url.host !== endpointHost) return null;
-
-  const pathPrefix = `/${bucket}/`;
-  if (!url.pathname.startsWith(pathPrefix)) return null;
-
-  return decodeObjectKey(url.pathname.slice(pathPrefix.length));
+    if (objectStorageProvider() === "aws_s3") {
+      bases.push(publicDeliveryBaseUrl());
+      const region = process.env.HOUSE_OBJECT_STORAGE_REGION;
+      const bucket = objectStorageBucket("public");
+      bases.push(`https://${bucket}.s3.${region}.amazonaws.com`, `https://s3.${region}.amazonaws.com/${bucket}`);
+      bases.push(...(process.env.HOUSE_LEGACY_PUBLIC_BASE_URLS ?? "").split(",").filter(Boolean));
+    } else {
+      const endpoint = process.env.LINODE_OBJ_ENDPOINT;
+      const bucket = process.env.LINODE_OBJ_BUCKET;
+      if (!endpoint || !bucket) return null;
+      const host = new URL(endpoint).host;
+      bases.push(`https://${bucket}.${host}`, `https://${host}/${bucket}`);
+    }
+    for (const value of bases) {
+      const base = new URL(value);
+      if (base.protocol !== "https:" || base.username || base.password || base.search || base.hash) throw new Error("Invalid legacy public storage base URL");
+      const prefix = base.pathname.replace(/\/$/, "") + "/";
+      if (url.origin !== base.origin || !url.pathname.startsWith(prefix)) continue;
+      const key = decodeObjectKey(url.pathname.slice(prefix.length));
+      if (!key) return null;
+      validateLocalKey(key);
+      return key;
+    }
+  } catch { return null; }
+  return null;
 }
 
 function decodeObjectKey(value: string): string | null {
@@ -723,7 +717,7 @@ function constrainedUploadHeaders(contentType: string, byteLength: number, sha25
     "content-type": contentType,
     "content-length": byteLength.toString(),
     "x-amz-checksum-sha256": checksumBase64(sha256),
-    "x-amz-acl": "public-read",
+    ...(objectStorageProvider() === "linode_object_storage" ? { "x-amz-acl": "public-read" } : {}),
     "if-none-match": "*",
   };
 }

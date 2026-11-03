@@ -6,6 +6,7 @@ import type {
 } from "../db/schema.js";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { resolvePublicObjectDeliveryUrl } from "../lib/storage.js";
 
 export type { PostgameMediaArtifactMetadata } from "../db/schema.js";
 
@@ -249,24 +250,24 @@ function publicCurrentReady(
     durationSeconds: row.currentReadyDurationMs / 1_000,
     preview: artifacts.preview,
     video: {
-      url: artifacts.video.publicUrl,
+      url: resolvePublicObjectDeliveryUrl(artifacts.video.publicUrl),
       contentType: artifacts.video.contentType,
       width: artifacts.video.width,
       height: artifacts.video.height,
     },
     poster: {
-      url: artifacts.poster.publicUrl,
+      url: resolvePublicObjectDeliveryUrl(artifacts.poster.publicUrl),
       contentType: artifacts.poster.contentType,
       altText: artifacts.poster.altText,
     },
     captions: {
-      url: artifacts.captions.publicUrl,
+      url: resolvePublicObjectDeliveryUrl(artifacts.captions.publicUrl),
       contentType: artifacts.captions.contentType,
       language: artifacts.captions.language,
       label: artifacts.captions.label,
     },
     manifest: {
-      url: artifacts.manifest.publicUrl,
+      url: resolvePublicObjectDeliveryUrl(artifacts.manifest.publicUrl),
       contentType: artifacts.manifest.contentType,
     },
   };

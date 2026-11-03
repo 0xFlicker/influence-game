@@ -358,9 +358,9 @@ function nullableCount(value: unknown): number | undefined {
   return Number.isFinite(count) ? count : undefined;
 }
 
-function safeStorageProvider(provider: string | null): "linode_object_storage" | "unknown" | null {
+function safeStorageProvider(provider: string | null): "linode_object_storage" | "aws_s3" | "unknown" | null {
   if (!provider) return null;
-  return provider === "linode_object_storage" ? "linode_object_storage" : "unknown";
+  return provider === "linode_object_storage" || provider === "aws_s3" ? provider : "unknown";
 }
 
 function emptyEvidenceSummary(): DurableEvidenceSummary {

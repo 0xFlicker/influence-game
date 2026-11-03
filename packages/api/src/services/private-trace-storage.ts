@@ -6,6 +6,8 @@ import {
   type GetObjectCommandInput,
 } from "@aws-sdk/client-s3";
 
+import { objectStorageBucket, objectStorageClient, objectStorageProvider, privateEvidenceReadBucket } from "../lib/object-storage-config.js";
+export const getPrivateTraceStorageProvider = objectStorageProvider;
 export const PRIVATE_TRACE_STORAGE_PROVIDER = "linode_object_storage";
 export const PRIVATE_TRACE_CONTENT_TYPE = "application/json";
 
@@ -50,41 +52,11 @@ export interface PrivateTraceStorageConfig {
   bucket: string;
 }
 
-let privateTraceS3Client: S3Client | null = null;
-let privateTraceS3ClientKey: string | null = null;
-
-export function getPrivateTraceS3Client(): S3Client {
-  const config = getPrivateTraceStorageConfig();
-  const clientKey = JSON.stringify([
-    config.endpoint,
-    config.accessKeyId,
-    config.secretAccessKey,
-  ]);
-
-  if (!privateTraceS3Client || privateTraceS3ClientKey !== clientKey) {
-    privateTraceS3Client = new S3Client({
-      region: "us-iad",
-      endpoint: config.endpoint,
-      credentials: {
-        accessKeyId: config.accessKeyId,
-        secretAccessKey: config.secretAccessKey,
-      },
-      forcePathStyle: true,
-    });
-    privateTraceS3ClientKey = clientKey;
-  }
-  return privateTraceS3Client;
-}
-
-export function getPrivateTraceBucket(): string {
-  const bucket = process.env.LINODE_PRIVATE_CONTENT_BUCKET;
-  if (!bucket) {
-    throw new Error("LINODE_PRIVATE_CONTENT_BUCKET must be configured for private content storage");
-  }
-  return bucket;
-}
+export function getPrivateTraceS3Client(): S3Client { return objectStorageClient("evidence"); }
+export function getPrivateTraceBucket(): string { return objectStorageBucket("evidence"); }
 
 export function getPrivateTraceStorageConfig(): PrivateTraceStorageConfig {
+  if (objectStorageProvider() !== "linode_object_storage") throw new Error("Legacy bucket bootstrap configuration is unavailable in AWS mode");
   const endpoint = process.env.LINODE_PRIVATE_CONTENT_ENDPOINT;
   const accessKeyId = process.env.LINODE_PRIVATE_CONTENT_ACCESS_KEY;
   const secretAccessKey = process.env.LINODE_PRIVATE_CONTENT_SECRET_KEY;
@@ -108,8 +80,9 @@ export class S3PrivateTraceStorageAdapter implements PrivateTraceStorageAdapter 
   constructor(private readonly client = getPrivateTraceS3Client()) {}
 
   async putObject(input: PrivateTracePutObjectInput): Promise<PrivateTracePutObjectResult> {
+    if (input.bucket !== getPrivateTraceBucket()) throw new Error("Private evidence writes require the current configured bucket");
     const response = await this.client.send(new PutObjectCommand({
-      Bucket: input.bucket,
+      Bucket: privateEvidenceReadBucket(input.bucket, input.key),
       Key: input.key,
       Body: input.body,
       ContentType: input.contentType,
@@ -135,7 +108,7 @@ export class S3PrivateTraceStorageAdapter implements PrivateTraceStorageAdapter 
     const offsetBytes = normalizeOffsetBytes(input.offsetBytes);
     const maxBytes = normalizeMaxBytes(input.maxBytes);
     const command: GetObjectCommandInput = {
-      Bucket: input.bucket,
+      Bucket: privateEvidenceReadBucket(input.bucket, input.key),
       Key: input.key,
       ...((offsetBytes > 0 || maxBytes !== undefined) && {
         Range: maxBytes === undefined
@@ -165,7 +138,7 @@ export class S3PrivateTraceStorageAdapter implements PrivateTraceStorageAdapter 
     abortSignal?: AbortSignal;
   }): Promise<{ contentLength?: number; contentType?: string }> {
     const response = await this.client.send(new HeadObjectCommand({
-      Bucket: input.bucket,
+      Bucket: privateEvidenceReadBucket(input.bucket, input.key),
       Key: input.key,
     }), input.abortSignal ? { abortSignal: input.abortSignal } : undefined);
     return {

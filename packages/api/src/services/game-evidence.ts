@@ -1,3 +1,4 @@
+import { objectStorageBucket, objectStorageProvider } from "../lib/object-storage-config.js";
 import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
@@ -33,16 +34,16 @@ export type CreateEvidenceManifestResult =
 function validatePrivateContentStoragePointer(storage?: PrivateContentStoragePointer, gameId?: string): void {
   if (!storage) return;
 
-  if (storage.provider !== "linode_object_storage") {
-    throw new Error("private content storage must use linode_object_storage");
+  if (storage.provider !== objectStorageProvider()) {
+    throw new Error(`private content storage must use ${objectStorageProvider()}`);
   }
   if (!storage.bucket || !storage.key) {
     throw new Error("private content storage requires bucket and key");
   }
-  if (process.env.LINODE_OBJ_BUCKET && storage.bucket === process.env.LINODE_OBJ_BUCKET) {
+  if ((process.env.LINODE_OBJ_BUCKET && storage.bucket === process.env.LINODE_OBJ_BUCKET) || (process.env.HOUSE_PUBLIC_BUCKET && storage.bucket === process.env.HOUSE_PUBLIC_BUCKET)) {
     throw new Error("private content storage must not use the public profile-picture bucket");
   }
-  const privateContentBucket = process.env.LINODE_PRIVATE_CONTENT_BUCKET;
+  const privateContentBucket = objectStorageBucket("evidence");
   if (!privateContentBucket) {
     throw new Error("LINODE_PRIVATE_CONTENT_BUCKET must be configured for private content storage");
   }

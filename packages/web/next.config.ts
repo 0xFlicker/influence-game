@@ -16,6 +16,8 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: { "/rules": ["../../docs/rules-page-content.md", "../../docs/werewolf-rules-page-content.md"] },
   images: {
     remotePatterns: [
+      { protocol: "https", hostname: "assets.thehouse.game" },
+      { protocol: "https", hostname: "assets-staging.thehouse.game" },
       {
         protocol: "https",
         hostname: "**.linodeobjects.com",
