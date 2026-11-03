@@ -1,3 +1,11 @@
+## Artwork review and corrected full regression — 2026-11-03
+
+The provider-free baseline passed **3,308 tests, five skipped, zero failures**, 40,371 assertions across 346 files in 212.53 seconds.
+
+Local commit `ad22fc8c` fixes cross-event preparation starvation, preserves persona/gender identity when generating absent artwork, and reuses the original verified provider request across prompt-template changes. The focused artwork suite passed **10 tests, zero failures, 82 assertions** in 8.87 seconds. It exercises the real local source-read/publication/readback path with provider HTTP stubbed, verifies original source pixels and account/agent links, and recovers accepted provider output after an interrupted preparation step without another call. Typecheck/lint passed. The dedicated review database was dropped after verifying no open sessions.
+
+The complete PostgreSQL suite against the final review code passed **2,349 tests, zero failures**, 32,171 assertions across 217 files in 1,085.74 seconds. This includes the corrected owner-edit fixture, all 17 championship matches and all new artwork regressions. Logs are preserved in `artifacts/championship/artwork-review/`. The earlier restart was deliberately interrupted while review fixes were applied; it is not a completed baseline. No paid image generation, production changes or shared-database tests were performed.
+
 ## Automatic finalist artwork and availability — 2026-11-03
 
 The complete PostgreSQL run finished with **2,345 passed, one failed**, 32,112 assertions across 217 files in 915.21 seconds. Its sole failure was the unreadable owner-edit fixture described below, subsequently fixed and covered by the fresh 12-test execution/artwork rerun. The entire PostgreSQL suite was not repeated after that fixture-only fix; do not describe this baseline as an all-green full run. Logs are retained in `artifacts/championship/artwork-validation/`. Implementation commits: `ce357438`, followed by fixture fix `27953d4a`.
