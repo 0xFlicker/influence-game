@@ -149,7 +149,7 @@ export async function replayCancelledChampionshipMatch(db: DrizzleDB, input: {
     if (!match || match.gameId !== input.expectedGameId || match.status === "completed") throw new ChampionshipError("The exact unsettled match attempt changed", 409);
     const [game] = await tx.select().from(schema.games).where(eq(schema.games.id, input.expectedGameId)).for("update");
     if (game?.status !== "cancelled") throw new ChampionshipError("Only cancelled games can be replayed; recover interrupted games from their existing cursor", 409);
-    const settled = await tx.select().from(schema.championshipResults).where(eq(schema.championshipResults.matchId, match.id));
+    const settled = await tx.select().from(schema.championshipResults).where(and(eq(schema.championshipResults.matchId, match.id), eq(schema.championshipResults.revision, match.resultRevision)));
     if (settled.length) throw new ChampionshipError("Scored matches require a separate result correction", 409);
     await tx.insert(schema.championshipMatchAttempts).values({ gameId: game.id, matchId: match.id, seatPrefix: match.id }).onConflictDoNothing();
     await tx.update(schema.championshipMatches).set({ gameId: null, status: "scheduled" }).where(eq(schema.championshipMatches.id, match.id));

@@ -1037,6 +1037,13 @@
       "when": 1792952785117,
       "tag": "0147_championship_artwork",
       "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1792952785118,
+      "tag": "0148_championship_corrections",
+      "breakpoints": true
     }
   ]
 }

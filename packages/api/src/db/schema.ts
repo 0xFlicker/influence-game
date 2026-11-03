@@ -4251,6 +4251,7 @@ export const championshipMatches = pgTable("championship_matches", {
   id: text("id").primaryKey(),
   eventId: text("event_id").notNull().references(() => championshipEvents.id),
   ordinal: integer("ordinal").notNull(),
+  resultRevision: integer("result_revision").notNull().default(0),
   gameKind: text("game_kind").notNull().$type<"werewolf" | "influence">(),
   scheduledAt: text("scheduled_at").notNull(),
   gameId: text("game_id").references(() => games.id),
@@ -4283,6 +4284,8 @@ export const awardGrants = pgTable("award_grants", {
   reason: text("reason").notNull(),
   grantedAt: text("granted_at").notNull().default(sql`now()::text`),
   revokedAt: text("revoked_at"),
+  allocationId: text("allocation_id").references(() => championshipAwardAllocations.id),
+  replacedById: text("replaced_by_id").references((): AnyPgColumn => awardGrants.id),
 }, table => [
   unique("award_grant_achievement").on(table.definitionCode, table.recipientKey, table.sourceKey),
   check("award_grant_recipient", sql`(${table.agentId} IS NOT NULL AND ${table.accountId} IS NULL AND ${table.recipientKey} = 'agent:' || ${table.agentId}) OR (${table.accountId} IS NOT NULL AND ${table.agentId} IS NULL AND ${table.recipientKey} = 'account:' || ${table.accountId})`),
@@ -4313,17 +4316,21 @@ export const championshipMatchAttempts = pgTable("championship_match_attempts", 
 
 export const championshipResults = pgTable("championship_results", {
   matchId: text("match_id").notNull().references(() => championshipMatches.id),
+  revision: integer("revision").notNull().default(0),
+  gameId: text("game_id").notNull().references(() => games.id),
   entryId: text("entry_id").notNull().references(() => championshipEntries.id),
   outcome: text("outcome").notNull().$type<"win" | "loss" | "draw">(),
   points: doublePrecision("points").notNull(),
   policyVersion: text("policy_version").notNull(),
   canonicalSequence: integer("canonical_sequence"),
-}, table => [primaryKey({ columns: [table.matchId, table.entryId] }), check("championship_result_outcome", sql`${table.outcome} IN ('win','loss','draw')`), check("championship_result_points", sql`${table.points} >= 0 AND ${table.points} <= 2147483647 AND ${table.points} * 2 = floor(${table.points} * 2)`)]);
+}, table => [primaryKey({ columns: [table.matchId, table.entryId, table.revision] }), check("championship_result_outcome", sql`${table.outcome} IN ('win','loss','draw')`), check("championship_result_points", sql`${table.points} >= 0 AND ${table.points} <= 2147483647 AND ${table.points} * 2 = floor(${table.points} * 2)`)]);
 
 export const championshipAwardAllocations = pgTable("championship_award_allocations", {
   id: text("id").primaryKey(),
   eventId: text("event_id").notNull().references(() => championshipEvents.id),
   phase: text("phase").notNull(),
+  generation: integer("generation").notNull().default(0),
+  supersededAt: text("superseded_at"),
   grants: payloadColumn("grants_object", "json-gzip").notNull().$type<StoredPayload<import("../services/championship-awards.js").PlannedAward[]>>(),
   deliveredAt: text("delivered_at"),
-}, table => [unique("championship_awards_phase").on(table.eventId, table.phase), ...payloadChecks("championship_award_allocations", { grants: [table.grants, "json-gzip"] })]);
+}, table => [unique("championship_awards_phase").on(table.eventId, table.phase, table.generation), ...payloadChecks("championship_award_allocations", { grants: [table.grants, "json-gzip"] })]);

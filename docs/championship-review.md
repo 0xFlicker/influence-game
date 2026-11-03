@@ -35,6 +35,12 @@ Production-path local tests exercise actual source reads, public image publicati
 
 ## Remaining limits
 
-Scoring, shared-champion fallback, roles, one-game participation, attribution and pre-lock alternates are confirmed and implemented. The actual start date and hypothetical Influence draw resolution remain pending. Recipient/evidence replacement and canonical-result correction policies are separate from implemented revoke/reinstate controls. Paid image quality and hosted availability are unverified. Uncertain image-provider responses need producer evidence through the reconciliation API; there is no dedicated panel form yet. Migrations 0143–0147 and payload inventory changes must be coordinated with the separate AWS storage work.
+Scoring, shared-champion fallback, roles, one-game participation, attribution and pre-lock alternates are confirmed and implemented. The actual start date and hypothetical Influence draw resolution remain pending. Audited recipient/evidence replacement and completed-result resettlement/replay are now implemented; arbitrary canonical outcome editing is intentionally absent. Paid image quality and hosted availability are unverified. Uncertain image-provider responses need producer evidence through the reconciliation API; there is no dedicated panel form yet. Migrations 0143–0148 and payload inventory changes must be coordinated with the separate AWS storage work.
 
 See `championship-validation.md` for completed test evidence. Review fixes are local only; no production mutation or paid game occurred. Authorized factual milestone updates were posted to issue #282.
+
+## Completed-result correction review
+
+Corrections lock the event before match/game or grant rows, validate the exact current attempt and result revision, and record request identity before retry-sensitive state changes. Prior canonical games, result revisions and evidence remain intact. Only current completed revisions contribute to standings. Champion allocations for the affected game kind are superseded, including legacy grant replacement descendants; old deliveries and reinstatements cannot resurrect them. Explicit manual revocations carry forward to replacement allocations until a producer reinstates the current grant.
+
+The review found and fixed two edge cases: legacy manually delivered grants needed allocation linkage propagated down their recipient-replacement chain, and historical superseded grants needed to reject new visibility actions while still accepting harmless retries of previously accepted requests. Both are covered by the focused correction suite. The producer interface shows scoring history and recipient replacement links; long audit entries wrap on mobile. No new competition or eligibility policy was introduced.

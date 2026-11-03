@@ -1,3 +1,4 @@
+import { correctChampionshipResult } from "../services/championship-corrections.js";
 import { readChampionshipArtAttempts, reconcileChampionshipArtAttempt } from "../services/championship-artwork.js";
 import { listProducerChampionships, previewChampionshipAwards, listEventAwards, readAwardHistory } from "../services/championship-producer.js";
 import { activateChampionship, pauseChampionship, dispatchChampionshipMatch, replayCancelledChampionshipMatch } from "../services/championship-dispatch.js";
@@ -10,7 +11,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { requireAuth, requirePermission, requireServiceAuth, type AuthEnv } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import { ChampionshipError, configureChampionshipDraft, createChampionshipDraft, lockChampionshipRoster, publishChampionship, readChampionship } from "../services/championships.js";
-import { grantAward, revokeAward, reinstateAward, publicAgentAwards, publicAccountAwards, createAwardDefinition, publicAwardDefinitions } from "../services/awards.js";
+import { correctAwardRecipient, grantAward, revokeAward, reinstateAward, publicAgentAwards, publicAccountAwards, createAwardDefinition, publicAwardDefinitions } from "../services/awards.js";
 
 export function createChampionshipRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
@@ -92,6 +93,21 @@ export function createChampionshipRoutes(db: DrizzleDB) {
     const body = await parseJsonBody(c, "Replay cancelled championship match");
     if (!Number.isInteger(ordinal) || ordinal < 1 || ordinal > 17 || typeof body?.expectedGameId !== "string" || typeof body?.reason !== "string") return c.json({ error: "Choose an exact cancelled match and provide a reason" }, 400);
     return c.json(await replayCancelledChampionshipMatch(db, { eventId: c.req.param("id"), ordinal, expectedGameId: body.expectedGameId, reason: body.reason, actorId: c.get("user")!.id, requestId: c.req.header("Idempotency-Key") ?? "" }));
+  });
+  app.post("/api/admin/championships/:id/matches/:ordinal/correct", requirePermission("manage_awards"), async c => {
+    const body = await parseJsonBody(c, "Correct completed championship result");
+    const ordinal = Number(c.req.param("ordinal"));
+    if (!Number.isInteger(ordinal) || ordinal < 1 || ordinal > 17 || typeof body?.expectedGameId !== "string" || !Number.isSafeInteger(body.expectedRevision)
+      || !["resettle", "replay"].includes(String(body.mode)) || typeof body.reason !== "string") return c.json({ error: "Provide the exact completed game/revision, correction mode and reason" }, 400);
+    return c.json(await correctChampionshipResult(db, { eventId: c.req.param("id"), ordinal, expectedGameId: body.expectedGameId, expectedRevision: body.expectedRevision as number,
+      mode: body.mode as "resettle" | "replay", reason: body.reason, actorId: c.get("user")!.id, requestId: c.req.header("Idempotency-Key") ?? "" }));
+  });
+  app.post("/api/admin/awards/:id/correct-recipient", requireAuth(db), requirePermission("manage_awards"), async c => {
+    const body = await parseJsonBody(c, "Correct award recipient");
+    if (!body || !["agent", "account"].includes(String(body.recipientType)) || typeof body.recipientId !== "string" || typeof body.reason !== "string"
+      || !body.evidence || typeof body.evidence !== "object" || Array.isArray(body.evidence)) return c.json({ error: "Provide recipient, reason and correction evidence" }, 400);
+    return c.json(await correctAwardRecipient(db, { grantId: c.req.param("id"), recipient: { type: body.recipientType as "agent" | "account", id: body.recipientId },
+      evidence: body.evidence as Record<string, unknown>, reason: body.reason, actorId: c.get("user")!.id, requestId: c.req.header("Idempotency-Key") ?? "" }));
   });
   app.post("/api/admin/championships/:id/publication", async c => {
     const body = await parseJsonBody(c, "Publish championship");

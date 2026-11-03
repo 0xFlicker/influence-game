@@ -64,8 +64,10 @@ test("equal series and frozen season scores award all shared champions idempoten
   await db.update(schema.championshipEntries).set({ seasonPoints: 100 }).where(eq(schema.championshipEntries.eventId, event.id));
   const matches = await db.select().from(schema.championshipMatches).where(eq(schema.championshipMatches.eventId, event.id));
   for (const match of matches.filter(row => row.gameKind === "werewolf")) {
-    await db.update(schema.championshipMatches).set({ status: "completed" }).where(eq(schema.championshipMatches.id, match.id));
-    await db.insert(schema.championshipResults).values(entries.map(entry => ({ matchId: match.id, entryId: entry.id, outcome: "draw" as const, points: 0.5, policyVersion: "season-0-v2" })));
+    const gameId = randomUUID();
+    await db.insert(schema.games).values({ id: gameId, slug: `score-${gameId}`, gameKind: "werewolf", status: "completed", config: "{}" });
+    await db.update(schema.championshipMatches).set({ status: "completed", gameId }).where(eq(schema.championshipMatches.id, match.id));
+    await db.insert(schema.championshipResults).values(entries.map(entry => ({ matchId: match.id, gameId, entryId: entry.id, outcome: "draw" as const, points: 0.5, policyVersion: "season-0-v2" })));
   }
   const standings = (await championshipStandings(db, event.id))!;
   expect(standings.werewolfWinners.sort()).toEqual(entries.map(row => row.agentId).sort());

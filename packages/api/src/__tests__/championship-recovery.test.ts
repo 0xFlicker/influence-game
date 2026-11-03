@@ -18,19 +18,24 @@ async function activatedFixture() {
   return fixture;
 }
 
-test("award delivery resumes after a committed partial batch without duplicate grants", async () => {
+test("award delivery rolls back an interrupted allocation and retries without duplicate grants", async () => {
   const { db, event } = await activatedFixture();
   let transactions = 0;
   type Tx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
   const faulting = new Proxy(db, { get(target, property) {
     if (property !== "transaction") return Reflect.get(target, property, target);
     return async (callback: (tx: Tx) => Promise<unknown>) => {
-      if (++transactions === 2) throw new Error("Simulated delivery process failure");
-      return target.transaction(async tx => callback(tx));
+      return target.transaction(async tx => callback(new Proxy(tx, { get(transaction, key) {
+        if (key !== "transaction") return Reflect.get(transaction, key, transaction);
+        return async (grant: (nested: Tx) => Promise<unknown>) => {
+          if (++transactions === 2) throw new Error("Simulated delivery process failure");
+          return transaction.transaction(grant);
+        };
+      } })));
     };
   } });
   await expect(deliverChampionshipAwards(faulting, event.id)).rejects.toThrow("Simulated delivery process failure");
-  expect(await db.select().from(schema.awardGrants)).toHaveLength(1);
+  expect(await db.select().from(schema.awardGrants)).toHaveLength(0);
   expect((await db.select().from(schema.championshipAwardAllocations))[0]!.deliveredAt).toBeNull();
   await deliverChampionshipAwards(db, event.id);
   const delivered = await db.select().from(schema.awardGrants);

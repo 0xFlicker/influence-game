@@ -29,7 +29,7 @@ export async function listEventAwards(db: DrizzleDB, eventId: string, after?: st
   if (!event) throw new ChampionshipError("Event not found", 404);
   const rows = await db.select({ id: schema.awardGrants.id, title: schema.awardDefinitions.title, recipientType: schema.awardDefinitions.recipientType,
     sourceEventId: schema.awardGrants.sourceEventId, recipientName: sql<string>`coalesce(${schema.agentProfiles.name}, ${schema.users.displayName}, ${schema.awardGrants.recipientKey})`,
-    revokedAt: schema.awardGrants.revokedAt, grantedAt: schema.awardGrants.grantedAt })
+    replacedById: schema.awardGrants.replacedById, revokedAt: schema.awardGrants.revokedAt, grantedAt: schema.awardGrants.grantedAt })
     .from(schema.awardGrants).innerJoin(schema.awardDefinitions, eq(schema.awardDefinitions.code, schema.awardGrants.definitionCode))
     .leftJoin(schema.agentProfiles, eq(schema.agentProfiles.id, schema.awardGrants.agentId)).leftJoin(schema.users, eq(schema.users.id, schema.awardGrants.accountId))
     .where(and(or(eq(schema.awardGrants.sourceEventId, eventId), and(isNull(schema.awardGrants.sourceEventId), eq(schema.awardGrants.sourceSeasonId, event.sourceSeasonId))), after ? gt(schema.awardGrants.id, after) : undefined)).orderBy(asc(schema.awardGrants.id)).limit(51);
@@ -39,5 +39,6 @@ export async function readAwardHistory(db: DrizzleDB, grantId: string) {
   const [grant] = await db.select().from(schema.awardGrants).where(eq(schema.awardGrants.id, grantId));
   if (!grant) throw new ChampionshipError("Award not found", 404);
   return { grant: { ...grant, evidence: await readJson(grant.evidence) },
+    replaces: await db.select({ id: schema.awardGrants.id, recipientKey: schema.awardGrants.recipientKey }).from(schema.awardGrants).where(eq(schema.awardGrants.replacedById, grant.id)),
     audit: await db.select().from(schema.competitionAudit).where(eq(schema.competitionAudit.grantId, grantId)).orderBy(asc(schema.competitionAudit.createdAt)) };
 }

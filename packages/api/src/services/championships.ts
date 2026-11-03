@@ -75,7 +75,7 @@ export async function readChampionship(db: DrizzleDB, idOrSlug: string, producer
     rank: schema.championshipEntries.qualificationRank, seasonPoints: schema.championshipEntries.seasonPoints })
     .from(schema.championshipEntries).where(eq(schema.championshipEntries.eventId, event.id)).orderBy(asc(schema.championshipEntries.qualificationRank));
   const matches = await db.select({ ordinal: schema.championshipMatches.ordinal, gameKind: schema.championshipMatches.gameKind,
-    scheduledAt: schema.championshipMatches.scheduledAt, status: schema.championshipMatches.status, gameSlug: schema.games.slug, ...(producer ? { gameStatus: schema.games.status, gameId: schema.games.id } : {}) })
+    scheduledAt: schema.championshipMatches.scheduledAt, status: schema.championshipMatches.status, gameSlug: schema.games.slug, ...(producer ? { gameStatus: schema.games.status, gameId: schema.games.id, resultRevision: schema.championshipMatches.resultRevision } : {}) })
     .from(schema.championshipMatches).leftJoin(schema.games, eq(schema.games.id, schema.championshipMatches.gameId))
     .where(eq(schema.championshipMatches.eventId, event.id)).orderBy(asc(schema.championshipMatches.ordinal));
   const standings = await championshipStandings(db, event.id);
@@ -84,7 +84,12 @@ export async function readChampionship(db: DrizzleDB, idOrSlug: string, producer
     id: event.id, slug: event.slug, name: event.name, status: event.status, season, entries, matches,
     lineups: event.roleSchedule ? publicRoleLineups(await readJson(event.roleSchedule)) : [],
     policies: event.policies, startDate: event.startDate,
-    ...(producer ? { unresolvedPolicies: unresolvedChampionshipPolicies(event.policies), published: event.published,
+    ...(producer ? { resultHistory: await db.select({ ordinal: schema.championshipMatches.ordinal, revision: schema.championshipResults.revision,
+      gameId: schema.championshipResults.gameId, entryId: schema.championshipResults.entryId, outcome: schema.championshipResults.outcome, points: schema.championshipResults.points,
+      policyVersion: schema.championshipResults.policyVersion, canonicalSequence: schema.championshipResults.canonicalSequence })
+      .from(schema.championshipResults).innerJoin(schema.championshipMatches, eq(schema.championshipResults.matchId, schema.championshipMatches.id))
+      .where(eq(schema.championshipMatches.eventId, event.id)).orderBy(asc(schema.championshipMatches.ordinal), asc(schema.championshipResults.revision)),
+      unresolvedPolicies: unresolvedChampionshipPolicies(event.policies), published: event.published,
       audit: await db.select().from(schema.competitionAudit).where(eq(schema.competitionAudit.eventId, event.id)).orderBy(asc(schema.competitionAudit.createdAt)),
       artwork: await db.select({ id: schema.championshipArtwork.id, agentId: schema.championshipArtwork.agentId, rank: schema.championshipArtwork.qualificationRank,
         selected: schema.championshipArtwork.selected, status: schema.championshipArtwork.status, error: schema.championshipArtwork.lastError,

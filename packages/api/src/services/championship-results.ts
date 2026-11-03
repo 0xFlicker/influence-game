@@ -8,11 +8,13 @@ import { readWerewolfEvents } from "./werewolf-games.js";
 
 export async function settleChampionshipMatch(db: DrizzleDB, matchId: string) {
   return db.transaction(async tx => {
+    const [identity] = await tx.select({ eventId: schema.championshipMatches.eventId }).from(schema.championshipMatches).where(eq(schema.championshipMatches.id, matchId));
+    if (!identity) return false;
+    const [event] = await tx.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, identity.eventId)).for("update");
     const [match] = await tx.select().from(schema.championshipMatches).where(eq(schema.championshipMatches.id, matchId)).for("update");
     if (!match?.gameId || match.status === "completed") return false;
     const [game] = await tx.select().from(schema.games).where(eq(schema.games.id, match.gameId));
     if (game?.status !== "completed") return false;
-    const [event] = await tx.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, match.eventId));
     if (!event?.policies.points) return false;
     const roster = (await championshipGameRoster(tx, game.id))!;
     let winners: string[], draw: boolean, canonicalSequence: number | null = null;
@@ -29,7 +31,7 @@ export async function settleChampionshipMatch(db: DrizzleDB, matchId: string) {
     if (winners.some(id => !roster.cast.some(item => item.seatId === id))) throw new Error("Canonical winner is outside the championship field");
     await tx.insert(schema.championshipResults).values(roster.cast.map(({ entry, seatId }) => {
       const outcome = draw ? "draw" as const : winners.includes(seatId) ? "win" as const : "loss" as const;
-      return { matchId, entryId: entry.id, outcome, points: event.policies.points![outcome], policyVersion: CHAMPIONSHIP_POLICY_VERSION, canonicalSequence };
+      return { matchId, gameId: game.id, revision: match.resultRevision, entryId: entry.id, outcome, points: event.policies.points![outcome], policyVersion: CHAMPIONSHIP_POLICY_VERSION, canonicalSequence };
     }));
     await tx.update(schema.championshipMatches).set({ status: "completed" }).where(eq(schema.championshipMatches.id, matchId));
     return true;
@@ -42,7 +44,7 @@ export async function championshipStandings(db: Pick<DrizzleDB, "select">, event
   const entries = await db.select().from(schema.championshipEntries).where(eq(schema.championshipEntries.eventId, eventId));
   const results = await db.select({ entryId: schema.championshipResults.entryId, points: schema.championshipResults.points, outcome: schema.championshipResults.outcome,
     kind: schema.championshipMatches.gameKind }).from(schema.championshipResults).innerJoin(schema.championshipMatches, eq(schema.championshipMatches.id, schema.championshipResults.matchId))
-    .where(eq(schema.championshipMatches.eventId, eventId));
+    .where(and(eq(schema.championshipMatches.eventId, eventId), eq(schema.championshipResults.revision, schema.championshipMatches.resultRevision), eq(schema.championshipResults.gameId, schema.championshipMatches.gameId), eq(schema.championshipMatches.status, "completed")));
   const matches = await db.select().from(schema.championshipMatches).where(eq(schema.championshipMatches.eventId, eventId)).orderBy(asc(schema.championshipMatches.ordinal));
   const series = entries.map(entry => {
     const rows = results.filter(row => row.entryId === entry.id && row.kind === "werewolf");
@@ -63,13 +65,18 @@ export async function championshipStandings(db: Pick<DrizzleDB, "select">, event
 export async function reconcileChampionshipResults(db: DrizzleDB, eventId: string) {
   const matches = await db.select().from(schema.championshipMatches).where(eq(schema.championshipMatches.eventId, eventId));
   for (const match of matches) await settleChampionshipMatch(db, match.id);
-  const standings = await championshipStandings(db, eventId);
-  if (standings?.werewolfComplete && standings.influenceComplete && !standings.resolutionPending) {
-    await db.transaction(async tx => {
+  return db.transaction(async tx => {
+    const [current] = await tx.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, eventId)).for("update");
+    const standings = await championshipStandings(tx, eventId);
+    if (current && standings?.werewolfComplete && standings.influenceComplete && !standings.resolutionPending) {
       const [event] = await tx.update(schema.championshipEvents).set({ status: "final" }).where(and(eq(schema.championshipEvents.id, eventId), inArray(schema.championshipEvents.status, ["running", "paused"]))).returning();
-      if (event) await tx.insert(schema.competitionAudit).values({ id: randomUUID(), eventId, actorId: event.createdById,
-        requestId: `event-final:${eventId}`, action: "event_finalized", reason: "All 17 canonical results settled under the frozen policy" });
-    });
-  }
-  return standings;
+      if (event) {
+        const revisions = await tx.select({ revision: schema.championshipMatches.resultRevision }).from(schema.championshipMatches).where(eq(schema.championshipMatches.eventId, eventId));
+        const generation = revisions.reduce((sum, row) => sum + row.revision, 0);
+        await tx.insert(schema.competitionAudit).values({ id: randomUUID(), eventId, actorId: event.createdById,
+          requestId: `event-final:${eventId}${generation ? `:${generation}` : ""}`, action: "event_finalized", reason: "All 17 current canonical results settled under the frozen policy" });
+      }
+    }
+    return standings;
+  });
 }

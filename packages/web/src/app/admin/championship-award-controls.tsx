@@ -5,12 +5,13 @@ import type { RunChampionshipAction } from "./championship-admin-panel";
 const button = "influence-button-secondary rounded-lg px-3 py-2 text-sm disabled:opacity-40";
 const input = "mt-1 block w-full rounded-lg border border-white/20 bg-surface-raised px-3 py-2 text-sm";
 type Phase = { phase: string; frozen: boolean; deliveredAt: string | null; grants: Array<{ definitionCode: string; recipientName: string; recipient: { type: string; id: string } }> };
-type Grant = { id: string; title: string; recipientType: string; recipientName: string; sourceEventId: string | null; revokedAt: string | null; grantedAt: string };
+type Grant = { replacedById?: string | null; id: string; title: string; recipientType: string; recipientName: string; sourceEventId: string | null; revokedAt: string | null; grantedAt: string };
 type History = { grant: { reason: string; evidence: Record<string, unknown> }; audit: Array<{ id: string; createdAt: string; action: string; reason: string }> };
 export function ChampionshipAwardControls({ eventId, disabled, run }: { eventId: string; disabled: boolean; run: RunChampionshipAction }) {
   const [phases, setPhases] = useState<Phase[] | null>(null), [grants, setGrants] = useState<Grant[]>([]);
   const [cursor, setCursor] = useState<string | null>(null), [error, setError] = useState<string | null>(null);
   const [chosen, setChosen] = useState<Grant | null>(null), [history, setHistory] = useState<History | null>(null), [reason, setReason] = useState("");
+  const [recipientId, setRecipientId] = useState(""), [replacementEvidence, setReplacementEvidence] = useState("");
   const [loading, setLoading] = useState(false), [denied, setDenied] = useState(false);
   function fail(cause: unknown) {
     setError(String(cause));
@@ -22,7 +23,7 @@ export function ChampionshipAwardControls({ eventId, disabled, run }: { eventId:
     return () => controller.abort();
   }, [eventId]);
   useEffect(() => {
-    const controller = new AbortController(); setHistory(null); setReason("");
+    const controller = new AbortController(); setHistory(null); setReason(""); setRecipientId(""); setReplacementEvidence("");
     if (chosen) void apiFetch<History>(`/api/admin/awards/${chosen.id}`, { signal: controller.signal }).then(result => { if (!controller.signal.aborted) setHistory(result); }).catch(cause => { if (!controller.signal.aborted) fail(cause); });
     return () => controller.abort();
   }, [chosen]);
@@ -47,9 +48,15 @@ export function ChampionshipAwardControls({ eventId, disabled, run }: { eventId:
     {cursor ? <button className={button} disabled={disabled || loading} onClick={() => void more()}>Load more badges</button> : null}
     {chosen ? <div className="space-y-3 rounded-lg border border-amber-200/30 p-4"><h4 className="font-semibold">{chosen.title} · {chosen.recipientName}</h4>
       <p className="text-sm">{chosen.revokedAt ? "Reinstating restores this same achievement and its original evidence." : "Revoking removes the public badge while retaining its evidence and history."}</p>
-      {history ? <><ol className="space-y-2 text-sm">{history.audit.map(row => <li key={row.id}>{row.createdAt} · {row.action} · {row.reason}</li>)}</ol><details><summary>Original allocation evidence</summary><pre className="mt-2 whitespace-pre-wrap break-all text-xs">{JSON.stringify(history.grant.evidence, null, 2)}</pre></details></> : <p>Loading badge history…</p>}
+      {history ? <><ol className="space-y-2 text-sm">{history.audit.map(row => <li key={row.id} className="break-words">{row.createdAt} · {row.action} · {row.reason}</li>)}</ol><details><summary>Original allocation evidence</summary><pre className="mt-2 whitespace-pre-wrap break-all text-xs">{JSON.stringify(history.grant.evidence, null, 2)}</pre></details></> : <p>Loading badge history…</p>}
       <label className="block">Reason for this correction<textarea className={input} disabled={disabled} value={reason} onChange={e => setReason(e.target.value)} /></label>
-      <button className={button} disabled={disabled || !history || !reason.trim()} onClick={() => void run(chosen.revokedAt ? "Reinstate badge" : "Revoke badge", `/api/admin/awards/${chosen.id}/${chosen.revokedAt ? "reinstate" : "revoke"}`, { reason: reason.trim() })}>{chosen.revokedAt ? "Reinstate badge" : "Revoke badge"}</button>
+      <button className={button} disabled={disabled || !history || !reason.trim() || Boolean(chosen.replacedById)} onClick={() => void run(chosen.revokedAt ? "Reinstate badge" : "Revoke badge", `/api/admin/awards/${chosen.id}/${chosen.revokedAt ? "reinstate" : "revoke"}`, { reason: reason.trim() })}>{chosen.revokedAt ? "Reinstate badge" : "Revoke badge"}</button>
+      {chosen.replacedById ? <p>This grant was replaced by {chosen.replacedById}; its original evidence is retained.</p> : !chosen.revokedAt ? <form className="space-y-3 border-t border-white/10 pt-3" onSubmit={e => { e.preventDefault(); void run("Correct badge recipient", `/api/admin/awards/${chosen.id}/correct-recipient`, { recipientType: chosen.recipientType, recipientId: recipientId.trim(), reason: reason.trim(), evidence: { note: replacementEvidence.trim(), correctsGrantId: chosen.id } }); }}>
+        <p className="text-sm">Replace the recipient by issuing a linked badge and revoking this original. Both records and their evidence remain available.</p>
+        <label className="block">Replacement {chosen.recipientType} ID<input required className={input} disabled={disabled} value={recipientId} onChange={e => setRecipientId(e.target.value)} /></label>
+        <label className="block">Evidence for this replacement<textarea required className={input} disabled={disabled} value={replacementEvidence} onChange={e => setReplacementEvidence(e.target.value)} /></label>
+        <button type="submit" className={button} disabled={disabled || !history || !reason.trim() || !recipientId.trim() || !replacementEvidence.trim()}>Replace badge recipient</button>
+      </form> : null}
     </div> : null}
   </section>;
 }

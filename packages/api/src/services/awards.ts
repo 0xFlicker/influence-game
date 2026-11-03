@@ -1,14 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { SEASON_ZERO_AWARDS } from "@influence/engine/championship";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { readJson, storeJson } from "./payload-storage.js";
 import { ChampionshipError } from "./championships.js";
 
+type AwardDatabase = Pick<DrizzleDB, "transaction">;
+type AwardTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
+
 export type AwardRecipient = { type: "agent" | "account"; id: string };
-export async function grantAward(db: DrizzleDB, input: {
+export async function grantAward(db: AwardDatabase, input: {
   definitionCode: string; recipient: AwardRecipient; sourceKey: string;
-  sourceSeasonId?: string; sourceEventId?: string; evidence: Record<string, unknown>;
+  sourceSeasonId?: string; sourceEventId?: string; allocationId?: string; evidence: Record<string, unknown>;
   actorId: string; reason: string; requestId: string;
 }) {
   const builtin = SEASON_ZERO_AWARDS.find(item => item.code === input.definitionCode);
@@ -16,6 +19,7 @@ export async function grantAward(db: DrizzleDB, input: {
   const evidence = await storeJson(input.evidence);
   await readJson(evidence);
   return db.transaction(async tx => {
+    if (input.allocationId) await requireCurrentAllocation(tx, input.allocationId);
     // The recipient row lock serializes retries, even before the first grant exists.
     if (input.recipient.type === "agent") {
       const [agent] = await tx.select({ id: schema.agentProfiles.id }).from(schema.agentProfiles).where(eq(schema.agentProfiles.id, input.recipient.id)).for("update");
@@ -32,17 +36,26 @@ export async function grantAward(db: DrizzleDB, input: {
       eq(schema.awardGrants.recipientKey, recipientKey), eq(schema.awardGrants.sourceKey, input.sourceKey)));
     if (existing) {
       if (existing.evidence.sha256 !== evidence.sha256 || existing.sourceSeasonId !== (input.sourceSeasonId ?? null) || existing.sourceEventId !== (input.sourceEventId ?? null)) throw new ChampionshipError("This achievement already has different evidence; use an audited correction", 409);
+      if (input.allocationId && !existing.allocationId) await tx.update(schema.awardGrants).set({ allocationId: input.allocationId }).where(eq(schema.awardGrants.id, existing.id));
       return { id: existing.id, revoked: existing.revokedAt !== null, created: false };
     }
+    const [visibility] = input.allocationId && input.sourceEventId ? await tx.select({ action: schema.competitionAudit.action })
+      .from(schema.competitionAudit).innerJoin(schema.awardGrants, eq(schema.awardGrants.id, schema.competitionAudit.grantId))
+      .where(and(eq(schema.awardGrants.sourceEventId, input.sourceEventId), eq(schema.awardGrants.definitionCode, definition.code),
+        eq(schema.awardGrants.recipientKey, recipientKey), inArray(schema.competitionAudit.action, ["award_revoked", "award_reinstated"])))
+      .orderBy(desc(schema.competitionAudit.createdAt), desc(schema.competitionAudit.id)).limit(1) : [];
+    const withheld = visibility?.action === "award_revoked";
     const id = randomUUID();
     await tx.insert(schema.awardGrants).values({ id, definitionCode: definition.code, recipientKey, sourceKey: input.sourceKey,
       agentId: input.recipient.type === "agent" ? input.recipient.id : null,
       accountId: input.recipient.type === "account" ? input.recipient.id : null,
-      sourceSeasonId: input.sourceSeasonId, sourceEventId: input.sourceEventId, evidence,
-      grantedById: input.actorId, reason: input.reason });
+      sourceSeasonId: input.sourceSeasonId, sourceEventId: input.sourceEventId, allocationId: input.allocationId, evidence,
+      grantedById: input.actorId, reason: input.reason, revokedAt: withheld ? new Date().toISOString() : null });
     await tx.insert(schema.competitionAudit).values({ id: randomUUID(), grantId: id, actorId: input.actorId,
       action: "award_granted", reason: input.reason, requestId: input.requestId });
-    return { id, revoked: false, created: true };
+    if (withheld) await tx.insert(schema.competitionAudit).values({ id: randomUUID(), grantId: id, actorId: input.actorId,
+      action: "award_delivery_withheld", reason: "Preserve the producer's explicit revocation across corrected result allocations", requestId: `${id}:withheld` });
+    return { id, revoked: withheld, created: true };
   });
 }
 export async function revokeAward(db: DrizzleDB, input: { grantId: string; actorId: string; reason: string; requestId: string }) {
@@ -55,6 +68,7 @@ async function changeAwardVisibility(db: DrizzleDB, input: { grantId: string; ac
   if (!input.reason.trim() || !input.requestId.trim()) throw new ChampionshipError("Award correction requires a reason and request ID");
   const action = revoked ? "award_revoked" : "award_reinstated";
   return db.transaction(async tx => {
+    await lockGrantEvent(tx, input.grantId);
     const [grant] = await tx.select().from(schema.awardGrants).where(eq(schema.awardGrants.id, input.grantId)).for("update");
     if (!grant) throw new ChampionshipError("Award not found", 404);
     const [prior] = await tx.select().from(schema.competitionAudit).where(and(eq(schema.competitionAudit.actorId, input.actorId), eq(schema.competitionAudit.requestId, input.requestId)));
@@ -62,6 +76,8 @@ async function changeAwardVisibility(db: DrizzleDB, input: { grantId: string; ac
       if (prior.grantId !== grant.id || prior.action !== action || prior.reason !== input.reason.trim()) throw new ChampionshipError("Idempotency key already belongs to another correction", 409);
       return { id: grant.id, revoked: grant.revokedAt !== null };
     }
+    if (grant.replacedById) throw new ChampionshipError("This grant was replaced; review its linked replacement", 409);
+    if (grant.allocationId) await requireCurrentAllocation(tx, grant.allocationId);
     if ((grant.revokedAt !== null) !== revoked) await tx.update(schema.awardGrants).set({ revokedAt: revoked ? new Date().toISOString() : null }).where(eq(schema.awardGrants.id, grant.id));
     await tx.insert(schema.competitionAudit).values({ id: randomUUID(), grantId: grant.id, actorId: input.actorId, action, reason: input.reason.trim(), requestId: input.requestId });
     return { id: grant.id, revoked };
@@ -104,4 +120,49 @@ export async function publicAwardDefinitions(db: DrizzleDB) {
     });
   }
   return [...definitions.values()];
+}
+
+/** Serialize all delivery/correction work for a source event before locking individual grants. */
+async function lockGrantEvent(tx: AwardTransaction, grantId: string) {
+  const [grant] = await tx.select().from(schema.awardGrants).where(eq(schema.awardGrants.id, grantId));
+  const [allocation] = grant?.allocationId ? await tx.select().from(schema.championshipAwardAllocations).where(eq(schema.championshipAwardAllocations.id, grant.allocationId)) : [];
+  const eventId = allocation?.eventId ?? grant?.sourceEventId;
+  if (eventId) await tx.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, eventId)).for("update");
+}
+async function requireCurrentAllocation(tx: AwardTransaction, allocationId: string) {
+  const [identity] = await tx.select().from(schema.championshipAwardAllocations).where(eq(schema.championshipAwardAllocations.id, allocationId));
+  if (!identity) throw new ChampionshipError("Award allocation not found", 404);
+  await tx.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, identity.eventId)).for("update");
+  const [allocation] = await tx.select().from(schema.championshipAwardAllocations).where(eq(schema.championshipAwardAllocations.id, allocationId));
+  if (allocation?.supersededAt) throw new ChampionshipError("Award allocation was superseded by a result correction", 409);
+  return allocation!;
+}
+
+/** Replace attribution without rewriting the original recipient, achievement or evidence. */
+export async function correctAwardRecipient(db: DrizzleDB, input: {
+  grantId: string; recipient: AwardRecipient; evidence: Record<string, unknown>; actorId: string; reason: string; requestId: string;
+}) {
+  if (!input.reason.trim() || !input.requestId.trim() || !input.recipient.id.trim()) throw new ChampionshipError("Recipient correction requires a recipient, reason and request ID");
+  const evidence = await storeJson(input.evidence); await readJson(evidence);
+  const action = `award_recipient_corrected:${input.recipient.type}:${input.recipient.id}:${evidence.sha256}`;
+  return db.transaction(async tx => {
+    await lockGrantEvent(tx, input.grantId);
+    const [original] = await tx.select().from(schema.awardGrants).where(eq(schema.awardGrants.id, input.grantId)).for("update");
+    if (!original) throw new ChampionshipError("Award not found", 404);
+    const [prior] = await tx.select().from(schema.competitionAudit).where(and(eq(schema.competitionAudit.actorId, input.actorId), eq(schema.competitionAudit.requestId, input.requestId)));
+    if (prior) {
+      if (prior.grantId !== original.id || prior.action !== action || prior.reason !== input.reason.trim()) throw new ChampionshipError("Idempotency key already belongs to another correction", 409);
+      return { originalId: original.id, replacementId: original.replacedById! };
+    }
+    if (original.revokedAt || original.replacedById) throw new ChampionshipError("Correct the current active grant; this grant is revoked or replaced", 409);
+    if (original.allocationId) await requireCurrentAllocation(tx, original.allocationId);
+    const replacement = await grantAward(tx, { definitionCode: original.definitionCode, recipient: input.recipient,
+      sourceKey: `${original.sourceKey}:correction:${randomUUID()}`, ...(original.sourceSeasonId ? { sourceSeasonId: original.sourceSeasonId } : {}),
+      ...(original.sourceEventId ? { sourceEventId: original.sourceEventId } : {}), ...(original.allocationId ? { allocationId: original.allocationId } : {}),
+      evidence: input.evidence, actorId: input.actorId, reason: input.reason.trim(), requestId: `replacement:${input.requestId}` });
+    await tx.update(schema.awardGrants).set({ revokedAt: new Date().toISOString(), replacedById: replacement.id }).where(eq(schema.awardGrants.id, original.id));
+    await tx.insert(schema.competitionAudit).values({ id: randomUUID(), grantId: original.id, eventId: original.sourceEventId, actorId: input.actorId,
+      action, reason: input.reason.trim(), requestId: input.requestId });
+    return { originalId: original.id, replacementId: replacement.id };
+  });
 }
