@@ -88,7 +88,8 @@ jobs:
     name: Browser Coverage / Format viewer
     runs-on: ubuntu-latest
     container: *browser-image
-    timeout-minutes: 20
+    # The serial viewer suite can exceed 20 minutes with cold CI startup.
+    timeout-minutes: 30
     services: *postgres
     steps:
       - uses: actions/checkout@v5
