@@ -1310,7 +1310,9 @@ test.describe("format-aware game viewer", () => {
       await playbackKey(page, "ArrowRight");
       const house = page.getByRole("region", { name: "House summary" });
       await advanceUntilVisible(page, house, "House summary after hiding solo speech");
-      await expect(house.locator("[data-room-backdrop]")).toBeVisible();
+      const houseStage = page.locator("[data-influence-stage]");
+      await expect(houseStage.locator("[data-room-backdrop]")).toHaveCount(1);
+      await expect(houseStage.locator("[data-room-backdrop]")).toBeVisible();
       await expect(house).toContainText("The House has heard their promises.");
       const bounds = await house.boundingBox();
       expect(bounds!.width).toBeGreaterThan(300);
@@ -1510,8 +1512,16 @@ test.describe("format-aware game viewer", () => {
         await expect.poll(() => layout.evaluate(el => {
           const caption=el.querySelector<HTMLElement>("[data-house-message]")!, copy=caption.querySelector<HTMLElement>("[data-speech-page-copy]")!;
           const a=el.getBoundingClientRect(),b=caption.getBoundingClientRect(),scene=el.querySelector("[data-house-result-scene]")!.getBoundingClientRect();
-          return b.height>=74 && b.bottom<=a.bottom+1 && b.top>=a.top && copy.getBoundingClientRect().height<=copy.parentElement!.clientHeight-21 && (b.top>=scene.bottom || b.left>=scene.right);
-        })).toBe(true);
+          const typography=getComputedStyle(copy);
+          return {
+            // Check usable text and pagination space, independent of decorative padding.
+            readableHeight:parseFloat(typography.fontSize)>=14 && parseFloat(typography.lineHeight)>=20
+              && copy.parentElement!.clientHeight>=parseFloat(typography.lineHeight)+21,
+            insideFrame:b.bottom<=a.bottom+1 && b.top>=a.top,
+            copyFits:copy.getBoundingClientRect().height<=copy.parentElement!.clientHeight-21,
+            separateFromScene:b.top>=scene.bottom || b.left>=scene.right,
+          };
+        }), {message:`House caption layout at ${width}x${height} (${mode})`}).toEqual({readableHeight:true,insideFrame:true,copyFits:true,separateFromScene:true});
         await page.screenshot({path:testInfo.outputPath(`werewolf-house-${width}x${height}-${mode}.png`)});
         if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
       }

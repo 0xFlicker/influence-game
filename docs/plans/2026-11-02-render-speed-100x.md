@@ -760,3 +760,33 @@ There is no target multiplier, frame omission, similarity reuse or quality trade
   [Batch release preparation](../deployment/batch-render-release-preparation.md),
   [Studio Player and frozen recordings](../solutions/ui-bugs/2026-10-09-production-studio-player-and-frozen-recordings.md)
   document existing source pins, verification and media ownership constraints.
+
+### Native staging qualification in progress (2026-11-03)
+
+Staging Fargate qualification uses identical pinned Influence and Werewolf cuts
+at 1920×1080/30 fps, with unchanged motion, music, reading and ending settings.
+Test frame concurrency at 1, 2 and 4 on the existing allocation: the renderer
+container receives 2 vCPU/4 GiB; the separate tailnet container receives another
+2 vCPU/4 GiB. The task total is not the renderer's allocation. Keep concurrency
+at 1 until repeat timings, failures and exact decoded video/timestamps/audio
+justify a winner. These selected staging sources have no saved voice recordings;
+the first matrix's audio proof covers music, not recorded dialogue.
+
+The initial controls use the existing deployed digest
+`sha256:bdb6970aec837bc0a5bbf5b7d19f0201e798998ab06358306dddce18d2c45f19`.
+They do not include this PR's preparation/readiness fixes. Do not attribute their
+performance to the optimized renderer or claim the final cloud default yet.
+
+A user-reported staging failure (`eeb0b48e-be94-47b5-b0c0-d2e4cb009862`)
+exited with renderer code 1: `Replay layout 9479` did not clear its readiness
+handle within 58 seconds. This identifies a frame-readiness timeout, not an
+OOM kill. The readiness fixes still require native verification before claiming
+this particular failure resolved.
+
+Cloud qualification also reproduced three existing browser assertions after the
+shared House backdrop change: two incorrectly searched inside the caption for
+the stage-owned backdrop, and one required a 74 px outer caption despite a valid
+70 px panel at 480×480. The tests now check the single stage backdrop and actual
+readable typography, text fit, pagination space and separation from the scene.
+All four focused browser tests passed, including the existing standalone-stage
+regression. No presentation code changed for these assertion corrections.
