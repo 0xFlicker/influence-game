@@ -6,6 +6,11 @@ for any presentation change. Verify Source, Selected cut and freshly encoded out
 in the same branch; browser-only layout/props and missing independent-thought
 context are known divergence points. Missing parity evidence is unfinished work.
 
+Scrollable containers inside the preview/player are banned, including hidden or
+scripted scrolling. Fit/reflow cast and labels; use clock-driven pagination for
+long copy. Test large casts and long names/copy at narrow, short and fullscreen
+sizes. Editorial lists and the timeline outside the player are separate.
+
 The workspace entry point is `/admin/production`. The bounded library links to `/admin/production/games/<game-id>` for completed Influence/Werewolf episodes and validated paused prefixes. Producer/Sysop grants protect editorial source, moments and cuts; existing Influence visual operators retain their existing visual services. Public replay behavior is separate.
 
 ## Editing loop
