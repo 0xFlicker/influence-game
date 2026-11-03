@@ -166,7 +166,7 @@ export function inspectReleaseMigrationSql(
       === createHash("sha256").update(sql).digest("hex")) continue;
     if (reviewedCutover && ["rename-column", "narrow-type", "drop-constraint"].includes(rule.rule)) continue;
     // This exact int32-to-float8 widening preserves every old value and admits exact halves.
-    if (rule.rule === "narrow-type" && path.basename(file) === "0145_championship_half_points.sql"
+    if (rule.rule === "narrow-type" && path.basename(file) === "0147_championship_half_points.sql"
       && createHash("sha256").update(sql).digest("hex") === "fb18eea31801cefed24e9664c3b3995d4244dc3478f511e51be5af5c5ea0691d") continue;
     if (rule.rule === "narrow-type") {
       const unsafeTypeChange = policyInput

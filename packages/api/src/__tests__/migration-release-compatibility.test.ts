@@ -300,7 +300,7 @@ test("accepts the exact reviewed query metadata materialization files", () => {
 });
 
 test("championship half-point widening is pinned and does not authorize other type changes", () => {
-  const file = "0145_championship_half_points.sql";
+  const file = "0147_championship_half_points.sql";
   const migration = readFileSync(new URL(`../../drizzle/${file}`, import.meta.url), "utf8");
   expect(inspectReleaseMigrationSql(file, migration)).toEqual([]);
   expect(inspectReleaseMigrationSql(file, migration + "\nALTER TABLE users ALTER COLUMN id TYPE integer;").some(row => row.rule === "narrow-type")).toBe(true);
