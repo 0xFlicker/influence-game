@@ -19,9 +19,10 @@ export const EMPTY_CHAMPIONSHIP_POLICIES: ChampionshipPolicies = {
   roleComposition: null, points: null, equalScoreFallback: null,
   participationMinimumCompletedGames: null, ownerAttribution: null,
 };
-/** Confirmed Season 0 scoring; other policies remain deliberately unanswered. */
+/** Confirmed Season 0 rules; dates and activation remain explicit producer actions. */
 export const SEASON_ZERO_CHAMPIONSHIP_POLICIES: ChampionshipPolicies = {
   ...EMPTY_CHAMPIONSHIP_POLICIES, points: { win: 1, loss: 0, draw: 0.5 }, equalScoreFallback: "shared_place",
+  roleComposition: { werewolf: 2, seer: 1, doctor: 1, villager: 4 }, participationMinimumCompletedGames: 1, ownerAttribution: "qualification",
 };
 export type Qualification = { agentId: string; ownerId: string; name: string; rank: number; seasonPoints: number };
 export type RoleLineup = { id: string; roles: Record<string, WerewolfRole> };

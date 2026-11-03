@@ -1,5 +1,14 @@
+CONFIRMED ATTRIBUTION UPDATE — 2026-11-03
+Agents do not change hands. Set Season 0 winners at closure and use the locked championship ledger for event identity/attribution; championship winners come from completed canonical results. No transfer-handling workflow. This supersedes earlier attribution questions.
+
+CONFIRMED PARTICIPATION UPDATE — 2026-11-03
+Award participation to both the player and the agent that completed at least one Season 0 game. One badge per recipient. This supersedes undecided threshold/recipient text below; attribution uses recorded season and locked championship evidence.
+
+CONFIRMED ROLE UPDATE — 2026-11-03
+Use 2 werewolves, 1 seer, 1 doctor, 4 villagers. Across 16 matches each agent receives exactly 4 wolf, 2 seer, 2 doctor and 8 villager assignments, with seeded shuffle/variety. This supersedes all undecided role-composition text below. Do not ask again.
+
 CONFIRMED UPDATE — 2026-11-03 15:34 UTC
-Werewolf scoring: 1 point per winning-faction agent including eliminated teammates, 0 loss, 0.5 true draw. Crashed/aborted games are replayed, not draws. Series tie: exact frozen Season 0 score, then shared championship. This supersedes all undecided scoring/fallback text below. Integer-only implementation still needs half-point support; no live configuration changed.
+Werewolf scoring: 1 point per winning-faction agent including eliminated teammates, 0 loss, 0.5 true draw. Crashed/aborted games are replayed, not draws. Series tie: exact frozen Season 0 score, then shared championship. This supersedes all undecided scoring/fallback text below. Half-point support is implemented locally; no live configuration changed.
 
 THE HOUSE — SEASON 0 CLOSEOUT, AWARDS, AND CHAMPIONSHIP
 Technical plan • 2026-11-03 • Revised with user decisions; planning only

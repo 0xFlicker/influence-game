@@ -65,8 +65,11 @@ describe("championship contract", () => {
     expect(unresolvedChampionshipPolicies({ ...EMPTY_CHAMPIONSHIP_POLICIES, points: { win: 2_147_483_647, loss: 0, draw: 0 } })).not.toContain("points");
   });
   test("confirmed scoring supports exact half points and shared champions after the season tie-break", () => {
+    expect(SEASON_ZERO_CHAMPIONSHIP_POLICIES.roleComposition).toEqual(composition);
+    expect(SEASON_ZERO_CHAMPIONSHIP_POLICIES.participationMinimumCompletedGames).toBe(1);
     expect(SEASON_ZERO_CHAMPIONSHIP_POLICIES.points).toEqual({ win: 1, loss: 0, draw: 0.5 });
-    expect(unresolvedChampionshipPolicies(SEASON_ZERO_CHAMPIONSHIP_POLICIES)).toEqual(["roleComposition", "participationMinimumCompletedGames", "ownerAttribution"]);
+    expect(unresolvedChampionshipPolicies(SEASON_ZERO_CHAMPIONSHIP_POLICIES)).toEqual([]);
+    expect(SEASON_ZERO_CHAMPIONSHIP_POLICIES.ownerAttribution).toBe("qualification");
     const first = { ...standings[0]!, points: 8.5 };
     const second = { ...standings[1]!, points: 8.5, seasonPoints: first.seasonPoints };
     expect(compareChampionshipScores(first, second, "shared_place")).toBe(0);
