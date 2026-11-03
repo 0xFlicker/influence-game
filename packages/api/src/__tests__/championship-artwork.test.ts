@@ -267,3 +267,14 @@ test("production artwork storage preserves source pixels, account linkage and fr
     if (oldBackend === undefined) delete process.env.INFLUENCE_STORAGE_BACKEND; else process.env.INFLUENCE_STORAGE_BACKEND = oldBackend;
   }
 });
+
+test("explicit bundled portrait references preserve the selected identity and reject lookalike paths", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const { createHash } = await import("node:crypto");
+  const bytes = await readVisualProfileImage("/avatars/personas/observer.png", { name: "Different fallback", personaKey: "honest" });
+  const original = await readFile(new URL("../../../web/public/avatars/personas/observer.png", import.meta.url));
+  expect(createHash("sha256").update(bytes).digest("hex")).toBe(createHash("sha256").update(original).digest("hex"));
+  for (const url of ["/avatars/personas/../observer.png", "/avatars/personas/unknown.png", "https://evil.test/avatars/personas/observer.png", "/avatars/personas/observer.png?other=1"]) {
+    await expect(readVisualProfileImage(url, { name: "", personaKey: "observer" })).rejects.toThrow("application image storage");
+  }
+});

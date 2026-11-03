@@ -33,15 +33,26 @@ export function ChampionshipAdminPanel() {
   }, []);
   useEffect(() => { let active = true; void reload().catch(cause => { if (active) setError(String(cause)); }); return () => { active = false; }; }, [reload]);
   useEffect(() => {
-    const controller = new AbortController(); setEvent(null);
-    if (selected) void apiFetch<ProducerEvent>(`/api/admin/championships/${selected}`, { signal: controller.signal }).then(value => { if (!controller.signal.aborted) setEvent(value); }).catch(cause => { if (!controller.signal.aborted) setError(String(cause)); });
-    return () => controller.abort();
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Retain the current view while refreshing: unmounting it loses scroll, focus and edits.
+    setEvent(current => current?.id === selected ? current : null);
+    async function refreshEvent() {
+      try {
+        const value = await apiFetch<ProducerEvent>(`/api/admin/championships/${selected}`, { signal: controller.signal });
+        if (controller.signal.aborted) return;
+        setEvent(value);
+        if (value.status === "preparing") timer = setTimeout(() => void refreshEvent(), 5000);
+      } catch (cause) {
+        if (controller.signal.aborted) return;
+        setError(String(cause));
+        if (cause instanceof ApiError && [401, 403].includes(cause.status)) setEvent(null);
+        else timer = setTimeout(() => void refreshEvent(), 5000);
+      }
+    }
+    if (selected) void refreshEvent();
+    return () => { controller.abort(); clearTimeout(timer); };
   }, [selected, revision]);
-  useEffect(() => {
-    if (event?.status !== "preparing") return;
-    const timer = setInterval(() => setRevision(value => value + 1), 5000);
-    return () => clearInterval(timer);
-  }, [event?.status]);
   async function submit(operation: Operation) {
     setBusy(true); setError(null); setPending(operation);
     try {
@@ -76,7 +87,7 @@ export function ChampionshipAdminPanel() {
         <p>Eight agents · sixteen daily Werewolf matches · Influence on day 17 · 00:00 UTC</p>
         <div className="flex flex-wrap gap-3"><Link href="/admin/seasons" className="underline">Season operations</Link>{event.published ? <Link className="underline" href={`/events/${event.slug}`}>View public event</Link> : null}<button className={actionClass} disabled={busy} onClick={() => setRevision(value => value + 1)}>Refresh event</button></div>
       </div>
-      {event.status === "draft" ? <ChampionshipDraftSetup key={`${event.id}:${JSON.stringify(event.policies)}:${event.startDate}`} event={event} disabled={disabled} run={run} /> : <p className="influence-copy">{event.status === "preparing" ? "Competition revisions are being prepared. The final field is confirmed after required artwork is ready." : "The field and competition builds are frozen. Live agent edits remain independent."}</p>}
+      {event.status === "draft" ? <ChampionshipDraftSetup key={event.id} event={event} disabled={disabled} run={run} /> : <p className="influence-copy">{event.status === "preparing" ? "Competition revisions are being prepared. The final field is confirmed after required artwork is ready." : "The field and competition builds are frozen. Live agent edits remain independent."}</p>}
       <div className="flex flex-wrap gap-3">
         {event.status === "draft" ? <button className={actionClass} disabled={disabled || event.season.status !== "final" || event.unresolvedPolicies.length > 0 || !event.startDate} onClick={() => void run("Lock roster", `/api/admin/championships/${event.id}/lock`)}>Lock top-eight roster</button> : null}
         <button className={actionClass} disabled={disabled} onClick={() => void run(event.published ? "Unpublish" : "Publish", `/api/admin/championships/${event.id}/publication`, { published: !event.published })}>{event.published ? "Unpublish event" : "Publish event"}</button>
