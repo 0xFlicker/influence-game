@@ -1,5 +1,6 @@
 "use client";
 import { publicMediaDeliveryView } from "@/lib/public-media-delivery";
+import { usePublicMediaDelivery } from "@/lib/public-media-delivery-context";
 import {werewolfPortraitRoom, werewolfBackdrop} from "./werewolf-room-presentation";
 import {WerewolfEnding} from "./werewolf-ending";
 import {WEREWOLF_ROOMS} from "./werewolf-rooms";
@@ -86,7 +87,8 @@ export function WerewolfContentFrame({compactResults = false, cue: sourceCue, sc
   compactResults?:boolean; cue: WerewolfWatchCue; scene: AcceptedVisualScene | null; elapsed: number; reduced: boolean;
   navigationRevision?: number; timedOut?: boolean; readingElapsed?: number; paused?: boolean; onReady?: (ready: boolean) => void;
 }) {
-  const {cue, scene, previousCue, nextCue} = useMemo(() => publicMediaDeliveryView({cue:sourceCue, scene:sourceScene, previousCue:sourcePreviousCue, nextCue:sourceNextCue}), [sourceCue, sourceScene, sourcePreviousCue, sourceNextCue]);
+  const publicDelivery = usePublicMediaDelivery();
+  const {cue, scene, previousCue, nextCue} = useMemo(() => publicMediaDeliveryView({cue:sourceCue, scene:sourceScene, previousCue:sourcePreviousCue, nextCue:sourceNextCue}, publicDelivery), [sourceCue, sourceScene, sourcePreviousCue, sourceNextCue, publicDelivery]);
   const moment = werewolfCueMoment(cue);
   const shot = scene?.shots ? selectVisualShot(scene.shots, moment.actor?.id) : null;
   const covered = Boolean(scene && moment.actor && (shot ? shot.visibleParticipantIds.includes(moment.actor.id) : scene.anchors.some(anchor => anchor.playerId === moment.actor?.id && anchor.confidence === "clear")));

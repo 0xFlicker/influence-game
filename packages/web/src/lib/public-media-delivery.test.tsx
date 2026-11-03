@@ -9,7 +9,9 @@ import { projectWerewolfProductionWatch } from "@influence/engine/werewolf/watch
 import { configuredPublicMediaDelivery, publicMediaDeliveryView, resolvePublicMediaUrl } from "./public-media-delivery";
 import { fetchReplay, ReplayAssets, sha256 } from "./replay-export/assets";
 import { buildExportCues } from "./replay-export/cues";
-import { resolveAgentAvatarUrl } from "../components/agent-avatar";
+import { AgentAvatar, resolveAgentAvatarUrl } from "../components/agent-avatar";
+import { RuntimeConfigProvider } from "./runtime-config";
+import { getPublicRuntimeConfig } from "./server-runtime-config";
 import { VisualPresentationFrame } from "../app/games/[slug]/components/visual-presentation";
 import { WerewolfContentFrame } from "../components/games/werewolf/werewolf-watch-stage";
 import { werewolfMomentCues } from "../components/games/werewolf/werewolf-watch-model";
@@ -17,13 +19,13 @@ import type { GameWatchReplayFrame } from "./api";
 
 const old = "https://influence-assets-stg.us-iad-10.linodeobjects.com";
 const target = "https://assets-staging.thehouse.game";
-const keys = ["NEXT_PUBLIC_HOUSE_OBJECT_STORAGE_PROVIDER", "NEXT_PUBLIC_HOUSE_PUBLIC_BASE_URL", "NEXT_PUBLIC_HOUSE_LEGACY_PUBLIC_BASE_URLS"];
+const keys = ["HOUSE_OBJECT_STORAGE_PROVIDER", "HOUSE_PUBLIC_BASE_URL", "HOUSE_LEGACY_PUBLIC_BASE_URLS"];
 let saved: Record<string, string | undefined>;
 beforeEach(() => {
   saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
-  process.env.NEXT_PUBLIC_HOUSE_OBJECT_STORAGE_PROVIDER = "aws";
-  process.env.NEXT_PUBLIC_HOUSE_PUBLIC_BASE_URL = target;
-  process.env.NEXT_PUBLIC_HOUSE_LEGACY_PUBLIC_BASE_URLS = `${old},https://us-iad-10.linodeobjects.com/influence-assets-stg`;
+  process.env.HOUSE_OBJECT_STORAGE_PROVIDER = "aws";
+  process.env.HOUSE_PUBLIC_BASE_URL = target;
+  process.env.HOUSE_LEGACY_PUBLIC_BASE_URLS = `${old},https://us-iad-10.linodeobjects.com/influence-assets-stg`;
 });
 afterEach(() => { for (const key of keys) { if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; } });
 
@@ -36,10 +38,27 @@ test("exact public origins preserve keys and reject cross-environment or credent
 });
 
 test("incomplete AWS delivery fails instead of silently fetching the old origin", () => {
-  delete process.env.NEXT_PUBLIC_HOUSE_PUBLIC_BASE_URL;
+  delete process.env.HOUSE_PUBLIC_BASE_URL;
   expect(() => configuredPublicMediaDelivery()).toThrow();
-  delete process.env.NEXT_PUBLIC_HOUSE_OBJECT_STORAGE_PROVIDER;
+  delete process.env.HOUSE_OBJECT_STORAGE_PROVIDER;
   expect(resolvePublicMediaUrl(`${old}/pfp/a.png`)).toBe(`${old}/pfp/a.png`);
+});
+
+test("the promoted image uses per-request public runtime config without sharing delivery state", () => {
+  const config = getPublicRuntimeConfig();
+  expect(config.PUBLIC_MEDIA_DELIVERY?.publicBaseUrl).toBe(target);
+  expect(Object.keys(config.PUBLIC_MEDIA_DELIVERY!)).toEqual(["version", "publicBaseUrl", "legacyBases"]);
+  delete process.env.HOUSE_OBJECT_STORAGE_PROVIDER;
+  const draw = (delivery: typeof config.PUBLIC_MEDIA_DELIVERY) => renderToStaticMarkup(
+    <RuntimeConfigProvider initialConfig={{...config, PUBLIC_MEDIA_DELIVERY:delivery}}>
+      <AgentAvatar avatarUrl={`${old}/pfp/a.png`} persona="" name="Synthetic" />
+    </RuntimeConfigProvider>);
+  expect(draw(config.PUBLIC_MEDIA_DELIVERY)).toContain(`${target}/pfp/a.png`);
+  expect(draw(null)).toContain(`${old}/pfp/a.png`);
+  process.env.HOUSE_OBJECT_STORAGE_PROVIDER = "aws";
+  // Explicit legacy configuration remains authoritative even in an AWS SSR process.
+  expect(draw(null)).toContain(`${old}/pfp/a.png`);
+  expect(draw(config.PUBLIC_MEDIA_DELIVERY)).not.toContain(old);
 });
 
 test("a display view preserves canonical source identity, map keys, prose and hashes", () => {

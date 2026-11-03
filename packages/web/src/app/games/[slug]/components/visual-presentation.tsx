@@ -1,5 +1,6 @@
 "use client";
 import { publicMediaDeliveryView } from "@/lib/public-media-delivery";
+import { usePublicMediaDelivery } from "@/lib/public-media-delivery-context";
 import {RoomBackdrop} from "./stage-backdrop";
 import {HouseResultLayout} from "@/components/watch/house-result-layout";
 import {HouseMessage} from "@/components/watch/house-message";
@@ -100,7 +101,8 @@ export function VisualPresentationFrame({ beat: sourceBeat, rooms: sourceRooms, 
   roster?: readonly FormatPresentationRosterPlayer[];
   onSceneReadyChange?: (ready: boolean) => void;
 }) {
-  const {beat, rooms, retainedScene, roster} = useMemo(() => publicMediaDeliveryView({beat:sourceBeat, rooms:sourceRooms, retainedScene:sourceRetainedScene, roster:sourceRoster}), [sourceBeat, sourceRooms, sourceRetainedScene, sourceRoster]);
+  const publicDelivery = usePublicMediaDelivery();
+  const {beat, rooms, retainedScene, roster} = useMemo(() => publicMediaDeliveryView({beat:sourceBeat, rooms:sourceRooms, retainedScene:sourceRetainedScene, roster:sourceRoster}, publicDelivery), [sourceBeat, sourceRooms, sourceRetainedScene, sourceRoster, publicDelivery]);
   const [pinnedRoom, setPinnedRoom] = useState<VisualRoomId | null>(null);
   // Older runs without a final tableau still leave a readable last frame.
   const tailTime = beat.kind === "portrait" ? soloPresentationDurationMs(beat.speech.text) - SOLO_EXIT_MS - 1

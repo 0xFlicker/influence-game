@@ -1,4 +1,4 @@
-/** Nonsecret build/runtime configuration. Never rewrite persisted source documents. */
+/** Nonsecret runtime configuration. Never rewrite persisted source documents. */
 export interface PublicMediaDelivery {
   version: 1;
   publicBaseUrl: string;
@@ -14,20 +14,21 @@ function base(value: string, originOnly = false): URL {
 }
 
 export function configuredPublicMediaDelivery(): PublicMediaDelivery | undefined {
-  // Direct NEXT_PUBLIC references are intentionally visible to Next's compiler.
-  // Worker processes receive the same nonsecret values in their release config.
-  const provider = process.env.NEXT_PUBLIC_HOUSE_OBJECT_STORAGE_PROVIDER;
+  // One immutable image is promoted between environments. Read deployed values,
+  // never NEXT_PUBLIC build substitutions. Browser callers use the React context.
+  const environment = process.env;
+  const provider = environment.HOUSE_OBJECT_STORAGE_PROVIDER;
   if (!provider || provider === "linode") return undefined;
   if (provider !== "aws") throw new Error("Invalid public media delivery provider");
-  const publicBaseUrl = process.env.NEXT_PUBLIC_HOUSE_PUBLIC_BASE_URL ?? "";
-  const legacyBases = (process.env.NEXT_PUBLIC_HOUSE_LEGACY_PUBLIC_BASE_URLS ?? "").split(",").filter(Boolean);
+  const publicBaseUrl = environment.HOUSE_PUBLIC_BASE_URL ?? "";
+  const legacyBases = (environment.HOUSE_LEGACY_PUBLIC_BASE_URLS ?? "").split(",").filter(Boolean);
   base(publicBaseUrl, true);
   if (!legacyBases.length) throw new Error("Explicit legacy public media bases are required");
   legacyBases.forEach(value => base(value));
   return { version: 1, publicBaseUrl, legacyBases };
 }
 
-export function resolvePublicMediaUrl(value: string, config = configuredPublicMediaDelivery()): string {
+export function resolvePublicMediaUrl(value: string, config: PublicMediaDelivery | null | undefined = configuredPublicMediaDelivery()): string {
   if (!config) return value;
   if (config.version !== 1) throw new Error("Unsupported public media delivery version");
   const target = base(config.publicBaseUrl, true);
@@ -55,7 +56,7 @@ export function resolvePublicMediaUrl(value: string, config = configuredPublicMe
 }
 
 /** Clone presentation props only. Map keys, text, hashes and canonical inputs stay intact. */
-export function publicMediaDeliveryView<T>(value: T, config = configuredPublicMediaDelivery()): T {
+export function publicMediaDeliveryView<T>(value: T, config: PublicMediaDelivery | null | undefined = configuredPublicMediaDelivery()): T {
   if (!config) return value;
   const walk = (item: unknown, key = "", parent = ""): unknown => {
     if (typeof item === "string" && (/url$|^src$/i.test(key) || /^(portraits|fullBodies|fullBodyReferences|wolfForms)$/.test(parent))) {

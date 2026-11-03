@@ -9,6 +9,8 @@ import {
 } from "react";
 import { setApiBase } from "@/lib/api";
 import { setWsBase } from "@/app/games/[slug]/components/use-game-websocket";
+import { PublicMediaDeliveryContext } from "./public-media-delivery-context";
+import type { PublicMediaDelivery } from "./public-media-delivery";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -17,6 +19,7 @@ import { setWsBase } from "@/app/games/[slug]/components/use-game-websocket";
 export type ManagedAuthMode = "disabled" | "existing-only" | "full";
 
 export interface RuntimeConfig {
+  PUBLIC_MEDIA_DELIVERY?: PublicMediaDelivery | null;
   POSTHOG_PROJECT_TOKEN?: string;
   PRIVY_APP_ID: string;
   CLERK_PUBLISHABLE_KEY: string;
@@ -39,6 +42,7 @@ export type PublicRuntimeConfig = Omit<RuntimeConfig, "ready">;
 const hasLocalDefaults = !!process.env.NEXT_PUBLIC_PRIVY_APP_ID;
 
 const defaults: RuntimeConfig = {
+  PUBLIC_MEDIA_DELIVERY: null,
   PRIVY_APP_ID: process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "",
   CLERK_PUBLISHABLE_KEY: "",
   MANAGED_AUTH_MODE: "disabled",
@@ -112,6 +116,6 @@ export function RuntimeConfigProvider({
   return createElement(
     RuntimeConfigContext.Provider,
     { value: config },
-    children,
+    createElement(PublicMediaDeliveryContext.Provider, { value: config.PUBLIC_MEDIA_DELIVERY ?? null }, children),
   );
 }

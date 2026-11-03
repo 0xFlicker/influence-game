@@ -7,6 +7,7 @@ import type {InfluenceOpeningCue} from "./types";
 import {sampleInfluenceOpening} from "./influence-opening";
 import styles from "./influence-opening.module.css";
 import {publicMediaDeliveryView} from "@/lib/public-media-delivery";
+import {usePublicMediaDelivery} from "@/lib/public-media-delivery-context";
 
 function CastPortrait({name, fullBodyUrl, headshotUrls}: {name: string; fullBodyUrl?: string; headshotUrls: (string | undefined)[]}) {
   const [failed, setFailed] = useState<string[]>([]);
@@ -25,7 +26,8 @@ export function InfluenceOpeningFrame({cue:sourceCue, elapsedMs, reduced = false
   cue: InfluenceOpeningCue; elapsedMs: number; reduced?: boolean; fullBodyUrl?: string; portraitUrl?: string; fallbackPortraitUrl?: string; playing?: boolean; speed?: number; navigationRevision?: number;
   video?: (props: OpeningVideoProps) => ReactNode;
 }) {
-  const {cue,fullBodyUrl,portraitUrl,fallbackPortraitUrl} = useMemo(() => publicMediaDeliveryView({cue:sourceCue,fullBodyUrl:sourceFullBodyUrl,portraitUrl:sourcePortraitUrl,fallbackPortraitUrl:sourceFallbackPortraitUrl}), [sourceCue,sourceFullBodyUrl,sourcePortraitUrl,sourceFallbackPortraitUrl]);
+  const publicDelivery = usePublicMediaDelivery();
+  const {cue,fullBodyUrl,portraitUrl,fallbackPortraitUrl} = useMemo(() => publicMediaDeliveryView({cue:sourceCue,fullBodyUrl:sourceFullBodyUrl,portraitUrl:sourcePortraitUrl,fallbackPortraitUrl:sourceFallbackPortraitUrl}, publicDelivery), [sourceCue,sourceFullBodyUrl,sourcePortraitUrl,sourceFallbackPortraitUrl, publicDelivery]);
   const shot = cue.opening;
   const frame = sampleInfluenceOpening(cue, elapsedMs, reduced);
   const media = {src: shot.entranceVideoUrl, poster: shot.posterUrl, timeMs: frame.videoMs, playing, speed: frame.entrance ? 1 : speed, navigationRevision};

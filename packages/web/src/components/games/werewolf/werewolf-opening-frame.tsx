@@ -6,13 +6,15 @@ import {OpeningBrowserVideo, type OpeningVideoProps} from "../../watch/opening-b
 import {OPENING_ASSETS, sampleOpening, type WerewolfOpeningCue} from "./werewolf-opening";
 import styles from "./werewolf-opening.module.css";
 import {publicMediaDeliveryView} from "@/lib/public-media-delivery";
+import {usePublicMediaDelivery} from "@/lib/public-media-delivery-context";
 
 /** Shared by the live webpage and the full replay renderer. No controls or independent timers. */
 export function WerewolfOpeningFrame({cue:sourceCue, elapsedMs, reduced = false, playing = false, speed = 1, navigationRevision = 0, video, browserLoading = false}: {
   cue: WerewolfOpeningCue; elapsedMs: number; reduced?: boolean; playing?: boolean; speed?: number; navigationRevision?: number;
   video?: (props: OpeningVideoProps) => ReactNode; browserLoading?: boolean;
 }) {
-  const cue = useMemo(() => publicMediaDeliveryView(sourceCue), [sourceCue]);
+  const publicDelivery = usePublicMediaDelivery();
+  const cue = useMemo(() => publicMediaDeliveryView(sourceCue, publicDelivery), [sourceCue, publicDelivery]);
   const shot = cue.opening;
   const frame = sampleOpening(cue, elapsedMs, reduced);
   const [failedImage, setFailedImage] = useState<string | null>(null);

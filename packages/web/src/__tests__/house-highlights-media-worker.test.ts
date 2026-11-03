@@ -316,11 +316,11 @@ describe("House Highlights media worker bundle", () => {
   });
 
   it("resolves frozen public media only for renderer inputs and preserves the original manifest", async () => {
-    const keys = ["NEXT_PUBLIC_HOUSE_OBJECT_STORAGE_PROVIDER", "NEXT_PUBLIC_HOUSE_PUBLIC_BASE_URL", "NEXT_PUBLIC_HOUSE_LEGACY_PUBLIC_BASE_URLS"];
+    const keys = ["HOUSE_OBJECT_STORAGE_PROVIDER", "HOUSE_PUBLIC_BASE_URL", "HOUSE_LEGACY_PUBLIC_BASE_URLS"];
     const prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
     const root = await mkdtemp(join(tmpdir(), "house-storage-render-input-"));
     try {
-      Object.assign(process.env, { NEXT_PUBLIC_HOUSE_OBJECT_STORAGE_PROVIDER: "aws", NEXT_PUBLIC_HOUSE_PUBLIC_BASE_URL: "https://assets-staging.thehouse.game", NEXT_PUBLIC_HOUSE_LEGACY_PUBLIC_BASE_URLS: "https://influence-assets-stg.us-iad-10.linodeobjects.com" });
+      Object.assign(process.env, { HOUSE_OBJECT_STORAGE_PROVIDER: "aws", HOUSE_PUBLIC_BASE_URL: "https://assets-staging.thehouse.game", HOUSE_LEGACY_PUBLIC_BASE_URLS: "https://influence-assets-stg.us-iad-10.linodeobjects.com" });
       const manifest = manifestFixture();
       manifest.cast[0]!.avatarUrl = "https://influence-assets-stg.us-iad-10.linodeobjects.com/pfp/fixture.png";
       const before = JSON.stringify(manifest), seen: string[] = [];

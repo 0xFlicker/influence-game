@@ -1,6 +1,7 @@
 import {getFormatRegistration} from "@influence/engine/format-rules";
 import { useMemo, type ReactNode } from "react";
 import { publicMediaDeliveryView } from "@/lib/public-media-delivery";
+import { usePublicMediaDelivery } from "@/lib/public-media-delivery-context";
 import type { FormatPresentationCue, FormatPresentationRosterPlayer } from "./types";
 import { ActiveFormatLabel } from "./active-format-label";
 import { FormatBallotReveal } from "./format-ballot-reveal";
@@ -15,7 +16,8 @@ import {ResultStage, formatResultPlayers} from "./result-stage";
 import {resultRoom} from "./influence-rooms";
 
 export function FormatPresentation(sourceProps: Parameters<typeof FormatPresentationContent>[0]) {
-  const delivery = useMemo(() => publicMediaDeliveryView({cue:sourceProps.cue, roster:sourceProps.roster}), [sourceProps.cue, sourceProps.roster]);
+  const publicDelivery = usePublicMediaDelivery();
+  const delivery = useMemo(() => publicMediaDeliveryView({cue:sourceProps.cue, roster:sourceProps.roster}, publicDelivery), [sourceProps.cue, sourceProps.roster, publicDelivery]);
   const props = {...sourceProps, ...delivery};
   const {cue, roster} = props;
   if(cue.kind === "format_menu" && cue.resultsPresentation && cue.compactEmpower) {

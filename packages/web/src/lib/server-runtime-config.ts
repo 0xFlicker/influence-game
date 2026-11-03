@@ -2,6 +2,7 @@ import type {
   ManagedAuthMode,
   PublicRuntimeConfig,
 } from "@/lib/runtime-config";
+import { configuredPublicMediaDelivery } from "./public-media-delivery";
 
 const MANAGED_AUTH_MODES = new Set<ManagedAuthMode>([
   "disabled",
@@ -37,6 +38,7 @@ export function getPublicRuntimeConfig(): PublicRuntimeConfig {
   }
 
   return {
+    PUBLIC_MEDIA_DELIVERY: configuredPublicMediaDelivery() ?? null,
     POSTHOG_PROJECT_TOKEN: runtimeEnvironment.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN ?? "",
     PRIVY_APP_ID:
       process.env.PRIVY_APP_ID ??
