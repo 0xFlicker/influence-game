@@ -158,14 +158,22 @@ The initial staging stack allows one trailer and one Studio execution. Each task
 | Tailscale OAuth | Existing staging-only SSM parameter, broker-only. Worker and sidecar do not receive OAuth. |
 | Runtime permissions boundary | New reviewed `HouseRenderBatch...RuntimeBoundary` under the staging protected policy path; supplied by ARN, never created by the runtime stack. |
 
-Before deploying, review and apply the separate IAM change: the existing direct-ECS deploy role/boundary does not authorize this stack. Companion source `house-render-batch-iam.ts` defines the retained runtime boundary and dedicated `HouseRenderBatchStagingGitHubDeploy` / `HouseRenderBatchStagingCloudFormationExecution` roles; `house-render-batch-staging-iam-app.ts` synthesizes the operator-owned IAM stack. Review `docs/batch-deployment-access-staging.json`, the four runtime role names under `/house/render/staging/runtime/`, Batch resource actions, `batch:TagResource`, asset prefix `house-render/staging/batch/`, workflow stack allowlist, and the existing Batch service-linked-role prerequisite. Reuse the foundation's imported subnets/security group and exact staging ECR worker/sidecar repositories. No deployment, new persistent authority or credential installation has occurred in this task.
+The separately authorized staging IAM/bootstrap is installed and verified; see
+the [bootstrap receipt](2026-11-02-staging-batch-bootstrap.md). Companion source
+`house-render-batch-iam.ts` defines the retained runtime boundary and dedicated
+`HouseRenderBatchStagingGitHubDeploy` / `HouseRenderBatchStagingCloudFormationExecution`
+roles. Their live policies/trust match the reviewed synthesized template. The old
+direct-ECS deploy role does not authorize this stack. Runtime deployment must use
+the dedicated role, protected asset prefix `house-render/staging/batch/`, imported
+staging network and exact staging ECR images. The Batch service-linked role already
+exists. The Batch runtime stack and render target remain unactivated.
 
 The app staging release automatically invokes `house-render-batch-staging-deploy.yml`
 after verified ECR publication when the exact candidate policy selects a Batch
 lane. The infra-owned workflow accepts only source/mirror run identities and
 receipt hashes, independently derives the worker image and fixed staging
 parameters, and packages/verifies `HouseRenderBatch-staging` before assuming its
-dedicated main-only deploy role. A one-time repo variable pins the sidecar image;
+dedicated main-only deploy role. A one-time repo variable pins the sidecar image.
 The dedicated **The House Render Releases** App and keys are installed; see the
 [bootstrap receipt](2026-11-02-staging-batch-bootstrap.md). App/host Batch steps
 use `HOUSE_RENDER_APP_*`; infra's source reader uses its dedicated `GH_APP_*`.
