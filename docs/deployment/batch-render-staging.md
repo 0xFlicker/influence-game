@@ -2,10 +2,10 @@
 
 Studio now orders directly from the browser or MCP. The API freezes the selected descriptor, complete permitted source metadata and existing audio publication into the private input document. The assigned worker prepares the bundle with the shared source binder/compiler and renders it. Local CLI preparation remains supported. Trailer jobs use the same execution service with the existing trailer renderer and publication verifier. No game, image, speech or music generation is needed for these tests.
 
-The checked-in staging policy selects `studio-export: aws-batch` and
-`trailer: existing`. After this policy release deploys, Studio exports use Batch;
-trailers continue through the legacy trailer controller. `existing` does not
-provide a Studio cloud-rendering service. Production's policy is unchanged.
+The checked-in staging policy selects `aws-batch` for both `studio-export` and
+`trailer`. The normal release drains the prior trailer controller and API leases
+before admitting the new image family. Both workloads then use shared render
+jobs with separate Batch queues and execution slots. Production's policy is unchanged.
 Preparing this source does not deploy the Batch runtime or submit a job. See the
 [activation and acceptance steps](batch-render-release-preparation.md#staging-studio-activation).
 
@@ -90,8 +90,10 @@ upload is interrupted. Keep the recording files selected until uploading ends.
 Use **Production → Render jobs** to monitor shared jobs across games, including
 orders placed by MCP. Filters are shareable URLs; each row links back to Studio.
 Current Producer/Sysop authority protects the list, counts, details and actions.
-Existing-controller trailers appear there only after their migration to shared
-jobs; their current per-game tools remain available during migration.
+New or explicitly queued staging trailer versions appear there through shared
+jobs. Existing published trailers remain available; migration does not enqueue
+or re-encode every ready trailer. Per-game backfill/rerender tools still own
+explicit recovery, and failed/waiting-input/waiting-music rows stay explicit.
 
 For MCP, grant `producer producer:render` through normal OAuth consent after the
 new server is deployed. Existing `producer` and `producer:edit` grants do not
@@ -192,7 +194,9 @@ admission receipt. The staging host journals its submission URL, derives the wor
 digest from the immutable release, and checks secrets before draining services.
 Routine releases need no manual job or per-digest Doppler edit. The merged
 capability release did not enable Studio cloud rendering; this policy release
-activates its staging Batch target after successful admission.
+activated its staging Batch target after successful admission. This release also
+selects Batch for trailers; the legacy claim endpoints and wake dispatcher stop
+accepting trailer work when that policy is active.
 
 See [release preparation](batch-render-release-preparation.md) for the merged
 three-repository prerequisites, staging activation and the live acceptance steps.
@@ -214,7 +218,7 @@ bunx cdk synth --app 'bun infra/house-render-batch-staging-app.ts' \
 2. Provision the reviewed Batch/IAM resources and install only staging credentials through their existing owners. Confirm the old renderer remains the selected target while checking stack readiness. Do not change production.
 3. Publish an explicit staging policy containing `targets: {"trailer":"existing","studio-export":"aws-batch"}` inside its existing environment entry. Keep its `mode`, `network` and canonical API origin. The host and both packaged images must agree on the exact raw policy digest.
 4. Order a small frozen Studio cut. Verify queued/claim/render/upload/verifying/succeeded, fresh producer download, log/receipt integrity, process exit and authoritative tailnet cleanup. AWS exit status alone is not success.
-5. Use the normal old-target drain before selecting staging `trailer: aws-batch`. Reconcile its occupied task, all old leases and uncertain uploads. The Batch reconciler assigns existing queued canonical trailer versions without regenerating input. Automatic future enqueues use the same service. Keep waiting-music/failed recovery explicit.
+5. This release selects staging `trailer: aws-batch`. Use the normal old-target drain and reconcile its occupied task, all old leases and uncertain uploads. The Batch reconciler assigns existing queued canonical trailer versions without regenerating input. Automatic future enqueues use the same service. Keep waiting-music/failed recovery explicit. Follow the [trailer migration procedure](batch-render-release-preparation.md#staging-trailer-migration).
 6. Complete one existing Influence and Werewolf trailer through claim/upload/finalize and public playback. Saturate the export lane and show a trailer can still start. Test duplicate notices, a lost submission receipt, cancellation/finalization fencing, worker loss, failed sidecar startup and missed terminal cleanup.
 7. Rehearse explicit target rollback and retain old infrastructure through the agreed rollback window. The separate cleanup PR removes the direct-ECS singleton only after both workloads are proven on Batch in staging and production. Local rendering remains supported.
 

@@ -1,10 +1,10 @@
 # Batch rendering release preparation
 
-Updated 2026-11-02. Localhost evaluation is complete, the port-3003 render process
-was cleaned up, and the capability and companion PRs are merged. This release
-prepares staging Studio-export activation. The checked-in policy selects Batch
-for Studio exports; the live target changes only after the normal release
-deploys and verifies the Batch runtime. Production activation remains separate.
+Updated 2026-11-03. Staging Studio exports are active on Batch; the first real
+browser order completed with a checksum-matched download, MCP status/download
+lookup, successful task exit and closed tailnet lease. This release selects
+Batch for staging trailers too. The live target changes after the normal release
+deploys and admits the new image family. Production activation remains separate.
 
 ## Coordinated implementation PRs
 
@@ -42,7 +42,7 @@ The policy in this release is:
 
 | Environment | Studio exports | Trailers |
 | --- | --- | --- |
-| Staging | AWS Batch | Legacy trailer controller (`existing`) |
+| Staging | AWS Batch | AWS Batch after this trailer migration release |
 | Production | Unchanged; Studio cloud rendering unavailable | Unchanged |
 
 The `existing` label refers to trailer routing; it is not an operational Studio
@@ -52,8 +52,9 @@ Merging this PR starts ordinary main CI. Successful release CI builds the exact
 API/web/worker family, mirrors the worker to staging ECR, invokes the private
 infra workflow to provision/update and admit `HouseRenderBatch-staging`, then
 dispatches the host deployment. Failed Batch admission prevents host dispatch.
-Both Batch lanes are provisioned, but only Studio exports route to Batch in this
-release. No manual Batch workflow dispatch or per-image secret edit is needed.
+Both Batch lanes are provisioned. The initial Studio activation selected only
+exports; this migration also selects trailers. No manual Batch workflow dispatch
+or per-image secret edit is needed.
 Production still requires its separate approval; this PR does not select Batch
 there. The raw shared policy digest changes, so all three images must come from
 this release even though production's selected settings are unchanged.
@@ -88,6 +89,43 @@ release's staging `targets` addition through the normal policy release. This
 disables new Studio cloud orders; it does not redirect them to another worker
 or automatically terminate an in-flight task. Keep accepted output objects and
 job evidence, and retain the Batch stack/definitions through the rollback window.
+
+## Staging trailer migration
+
+Before preparing the policy switch, staging was inventoried through its healthy
+API container and a read-only transaction against `influence_staging` as
+`influence_staging_user`. The baseline had 49 ready trailers, one failed trailer
+and nine waiting for inputs; no queued work, active/stale claims, leases or
+uncertain uploads were present. The legacy ECS cluster had no running task.
+The completed Studio smoke is job `6276bbd3-3367-44b1-a8c9-d62bbf33bc88`.
+
+1. Release the policy selecting `aws-batch` for both staging workloads through
+   ordinary main CI, ECR publication, Batch admission and the host handoff. The
+   existing handoff fences old claims and verifies leases/task drain before
+   accepting a fresh generation. Recheck the inventory at deployment time.
+2. Confirm health reports both Batch targets and the exact candidate/policy
+   digest. Confirm the old remote/local trailer claim routes deny admission and
+   legacy wake dispatch no longer sends work. Existing published versions and
+   frozen input hashes must remain intact after the policy-only release.
+3. Use the existing per-game rerender action once for an already-published
+   Influence trailer and once for Werewolf. This freezes a new render manifest
+   from existing accepted game/highlight data and music without provider calls;
+   the prior ready versions remain the playback authority until verified
+   replacement publication. Record the old/new manifest hashes and inspect any
+   change. Do not invoke generation or bulk backfill.
+4. Observe the shared jobs, exact admitted digest, trailer queue and reserved
+   slot. Verify all four public objects (video, poster, captions, metadata),
+   publication/playback, worker exit and task-specific tailnet cleanup. Record
+   the before/after render versions and frozen input hashes.
+5. Occupy the Studio-export lane with one small saved cut and prove the trailer
+   lane can start concurrently. Each lane allows one 4-vCPU task; their combined
+   8 vCPU shares the regional quota with other Fargate workloads.
+
+For rollback, drain/reconcile Batch trailer work first, then release a policy
+with `trailer: existing` and `studio-export: aws-batch` through the same fenced
+handoff. Preserve ready outputs, job evidence and both definitions. The separate
+cleanup PR removes the legacy production renderer only after both workloads pass
+in staging/production and the rollback window closes; native local rendering stays.
 
 ## Staging operator sequence
 
