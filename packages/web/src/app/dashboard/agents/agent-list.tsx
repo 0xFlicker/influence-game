@@ -1,4 +1,6 @@
 "use client";
+import { AgentProfileLink } from "@/components/agent-profile-link";
+
 
 import Link from "next/link";
 import type { AvatarCompletion, SavedAgent } from "@/lib/api";
@@ -78,7 +80,7 @@ export function AgentList({
 
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <h3 className="text-text-primary font-medium text-sm truncate">{agent.name}</h3>
+                    <h3 className="text-text-primary font-medium text-sm truncate"><AgentProfileLink agentId={agent.id} className="hover:underline focus-visible:underline">{agent.name}</AgentProfileLink></h3>
                     {persona && (
                       <span className="influence-copy-muted text-xs shrink-0">{persona.name}</span>
                     )}

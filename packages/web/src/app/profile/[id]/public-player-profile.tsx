@@ -1,3 +1,4 @@
+import { AgentProfileLink } from "@/components/agent-profile-link";
 import { AwardIcons } from "@/components/award-icons";
 import { AwardShelf } from "@/components/award-shelf";
 import Link from "next/link";
@@ -184,7 +185,7 @@ function AgentRosterSection({ agents }: { agents: PublicAgentPreview[] }) {
         <div className="mt-5 grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
           {agents.map((agent) => (
             <article
-              key={agent.name}
+              key={agent.profileHref ?? agent.name}
               className="influence-panel min-w-0 overflow-hidden rounded-xl p-5"
             >
               <div className="flex min-w-0 items-center gap-4">
@@ -199,7 +200,7 @@ function AgentRosterSection({ agents }: { agents: PublicAgentPreview[] }) {
                 />
                 <div className="min-w-0">
                   <h3 className="truncate text-lg font-semibold text-text-primary">
-                    {agent.name}
+                    <AgentProfileLink href={agent.profileHref} className="hover:underline focus-visible:underline">{agent.name}</AgentProfileLink>
                   </h3>
                   <p className="influence-copy-muted mt-0.5 truncate text-sm">
                     {agent.role?.label ?? "Role unavailable"}

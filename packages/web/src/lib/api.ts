@@ -250,6 +250,7 @@ export interface PublicPlayerIdentityRef {
 
 
 export interface PublicAgentPreview {
+  profileHref?: string;
   awards?: import("./championship").PublicAward[];
   name: string;
   avatarUrl: string | null;
@@ -263,6 +264,15 @@ export interface PublicAgentPreview {
     winRate: number;
   };
 }
+
+export interface PublicAgentProfile extends PublicAgentPreview {
+  profileHref: string;
+  owner: PublicPlayerIdentityRef | null;
+  awards: import("./championship").PublicAward[];
+  recentResults: import("@influence/engine/house-participation").HouseParticipation[];
+}
+export type PublicAgentProfileEnvelope = { schemaVersion: 1; status: "found"; profile: PublicAgentProfile }
+  | { schemaVersion: 1; status: "not_found" };
 
 export interface PublicReplayAgentPreview extends PublicAgentPreview {
   owner?: PublicPlayerIdentityRef | null;

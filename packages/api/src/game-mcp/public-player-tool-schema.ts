@@ -55,7 +55,7 @@ const awardSchema = closedObject(awardKeys, {
 });
 
 const agentSchema = closedObject(
-  ["name", "avatarUrl", "role", "competition", "awards"],
+  ["name", "avatarUrl", "role", "competition", "awards", "profileHref"],
   {
     name: { type: "string" },
     avatarUrl: nullableStringSchema,
@@ -65,6 +65,7 @@ const agentSchema = closedObject(
         { type: "null" },
       ],
     },
+    profileHref: { type: "string", pattern: "^/agents/[A-Za-z0-9_-]{1,128}$" },
     competition: competitionSchema,
     awards: { type: "array", items: awardSchema },
   },
@@ -364,10 +365,12 @@ function assertAgent(value: unknown, index: number): void {
   const path = `profile.agents[${index}]`;
   const agent = exactObject(
     value,
-    ["name", "avatarUrl", "role", "competition", "awards"],
+    ["name", "avatarUrl", "role", "competition", "awards", "profileHref"],
     path,
   );
   assertAwards(agent.awards, `${path}.awards`);
+  stringValue(agent.profileHref, `${path}.profileHref`);
+  if (!/^\/agents\/[A-Za-z0-9_-]{1,128}$/.test(agent.profileHref as string)) throw new Error("Invalid public agent link");
   stringValue(agent.name, `${path}.name`);
   nullableString(agent.avatarUrl, `${path}.avatarUrl`);
   if (agent.role !== null) {

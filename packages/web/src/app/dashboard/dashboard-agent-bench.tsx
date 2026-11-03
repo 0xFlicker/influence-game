@@ -1,3 +1,5 @@
+
+import { AgentProfileLink } from "@/components/agent-profile-link";
 import { ParticipationRow } from "@/components/participation-history";
 import Link from "next/link";
 import { AgentAvatarPreview } from "@/components/agent-avatar-preview";
@@ -99,7 +101,7 @@ export function DashboardAgentBench({ agents, loading, error }: DashboardAgentBe
                 size="8"
               />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-text-primary">{agent.name}</p>
+                <p className="truncate text-sm font-medium text-text-primary"><AgentProfileLink agentId={agent.id} className="hover:underline focus-visible:underline">{agent.name}</AgentProfileLink></p>
                 <p className="truncate influence-copy-muted text-xs">
                   {agent.gamesPlayed > 0
                     ? `Influence · ${agent.gamesWon}W / ${agent.gamesPlayed - agent.gamesWon}L`

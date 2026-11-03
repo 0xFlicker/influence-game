@@ -152,6 +152,7 @@ describe("public player profile", () => {
     expect(byHandle.profile.agents).toEqual([
       {
         name: "alpha",
+        profileHref: expect.stringMatching(/^\/agents\/[A-Za-z0-9_-]+$/),
         awards: [],
         avatarUrl: null,
         role: null,
@@ -163,6 +164,7 @@ describe("public player profile", () => {
       },
       {
         name: "Zulu",
+        profileHref: `/agents/${fixture.zuluProfileId}`,
         awards: [],
         avatarUrl: await contentImageFixture("pfp/zulu.png"),
         role: {

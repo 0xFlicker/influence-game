@@ -100,7 +100,7 @@ An unrelated renderer raw-frame probe in worktree e9d5 listens on IPv6 port3000.
 
 ## Season-close badges and public roster icons (2026-11-03)
 
-Season 0 finalization now delivers crowns and one-completed-game participation independently of a championship. The authorized localhost reconciliation delivered 19 missing grants (8 account participants, 8 agent participants, 3 crown/architect grants), preserving existing data. Actual Chrome checks confirmed public account badges and agent analysis badges; the agent analysis shelf follows the name/header at desktop and 390px width. Public player roster cards now expose icon-only agent badges with accessible labels and title/date details through hover, keyboard activation, or tap, with Escape/outside/second-tap dismissal. There is no standalone public agent page; authenticated analysis remains `/dashboard/agents/:id`.
+Season 0 finalization now delivers crowns and one-completed-game participation independently of a championship. The authorized localhost reconciliation delivered 19 missing grants (8 account participants, 8 agent participants, 3 crown/architect grants), preserving existing data. Actual Chrome checks confirmed public account badges and agent analysis badges; the agent analysis shelf follows the name/header at desktop and 390px width. Public player roster cards now expose icon-only agent badges with accessible labels and title/date details through hover, keyboard activation, or tap, with Escape/outside/second-tap dismissal. At this milestone there was no standalone public agent page; the subsequent public-agent milestone below adds it. Authenticated analysis remains `/dashboard/agents/:id`.
 
 Verification:
 - Provider-free baseline rerun with localhost test-listener permission: 3,316 passed, 5 skipped, 0 failed. The first sandboxed run's 27 listener failures were environmental.
@@ -110,3 +110,13 @@ Verification:
 - Typecheck, lint, MCP output-schema check and diff whitespace check pass.
 
 The full PostgreSQL run is reported with its original two failures, not relabeled as an all-green run; the affected files passed in a fresh process after corrections. No paid providers, production actions, dev-server starts/stops or development-database resets were used. Local logs remain under `artifacts/championship/`.
+
+## Public agent profiles (2026-11-03)
+
+Added anonymous `/agents/:id` pages and `/api/public/agents/:id`, reusing existing public identity, competition, award and participation projections. Agent filtering precedes history limits; hidden/unlisted/unfinished games and other agents’ seats are excluded. The response explicitly allows only public display fields, public owner identity, earned badges, rated Influence aggregates and completed public history. Strategies, draft content, owner contacts/wallets and private award evidence are excluded. Archived, unavailable, unapproved and synthetic-owner profiles return no-store 404s.
+
+Public roster cards, owned-agent cards/bench, analysis, Season 0 standings and championship roster/standings link to the page. Links are separate from portrait and badge controls. Actual localhost browser checks followed Arden Vale’s card link, showed his participation badge and Influence/Werewolf history, and verified desktop and 390px layout. Cookie-free HTTP requests independently returned200 for both SSR page and API with no-store. No server was started or stopped.
+
+Verification: 29 PostgreSQL tests passed with297 assertions across public-agent-profile, public-player-profile, house-participation and moderation-decisions on the disposable regression database. The focused public profile UI tests passed13 tests/71 assertions. Typecheck, lint and MCP schema validation passed. The earlier full PostgreSQL baseline and its corrected focused rerun are reported above; it was not rerun in full for this page addition.
+
+Final provider-free baseline for the public-agent addition: **3,320 passed, 5 skipped, 0 failed**, 40,433 assertions across350 files (191.64seconds). Test classification passed. Logs: `artifacts/championship/public-agent-page-{provider-free,api-tests,web-tests,check,mcp}.log`.

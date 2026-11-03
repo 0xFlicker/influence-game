@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import { AgentProfileLink } from "@/components/agent-profile-link";
 import Link from "next/link";
 import {
   getAuthToken,
@@ -493,7 +494,7 @@ export function SeasonStandings({
         <div className="grid gap-px border-b border-border-active/60 bg-border-active sm:grid-cols-2">
           <CrownHonor
             label="Agent Champion"
-            winner={dashboard.honors.agentChampion.agentName}
+            winner={<AgentProfileLink agentId={dashboard.honors.agentChampion.agentId} className="hover:underline">{dashboard.honors.agentChampion.agentName}</AgentProfileLink>}
             detail={(
               <>
                 {dashboard.honors.agentChampion.points} points ·{" "}
@@ -535,7 +536,7 @@ export function SeasonStandings({
               <tr key={standing.agentId} className="influence-table-row group">
                 <td className="px-4 py-3 font-mono text-lg text-white/45" aria-label={`Rank ${standing.rank}`}>{String(standing.rank).padStart(2, '0')}</td>
                 <td className="px-4 py-3">
-                  <span className="text-sm font-medium text-text-primary">{standing.agentName}</span>
+                  <AgentProfileLink agentId={standing.agentId} className="text-sm font-medium text-text-primary hover:underline">{standing.agentName}</AgentProfileLink>
                   <div className="influence-copy-muted text-xs">
                     <PlayerProfileLink
                       player={standing.owner}

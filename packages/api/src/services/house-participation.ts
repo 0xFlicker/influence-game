@@ -11,6 +11,7 @@ type Candidate = { game: Game; playerId: string; agentProfileId: string | null; 
 /** Visibility and ownership precede limits. No scoring or completion side effects. */
 interface ParticipationOptions {
   publicOnly?: boolean;
+  agentProfileId?: string;
   gameKind?: ParticipationFilter;
   limit?: number;
 }
@@ -31,7 +32,7 @@ async function readParticipationSnapshot(db: Pick<DrizzleDB, "select" | "selectD
     const query = db.select({ game: schema.games, player: schema.gamePlayers,
       totalPlayers: sql<number>`(SELECT count(*)::int FROM game_players seats WHERE seats.game_id = ${schema.games.id})`,
     }).from(schema.gamePlayers).innerJoin(schema.games, eq(schema.games.id, schema.gamePlayers.gameId))
-      .where(and(completed, eq(schema.games.gameKind, "influence"), eq(schema.gamePlayers.userId, ownerId)))
+      .where(and(completed, eq(schema.games.gameKind, "influence"), eq(schema.gamePlayers.userId, ownerId), options.agentProfileId ? eq(schema.gamePlayers.agentProfileId, options.agentProfileId) : undefined))
       .orderBy(desc(schema.games.endedAt), desc(schema.games.id), desc(schema.gamePlayers.id));
     const rows = await (options.limit === undefined ? query : query.limit(options.limit));
     for (const { game, player, totalPlayers } of rows) {
@@ -48,11 +49,12 @@ async function readParticipationSnapshot(db: Pick<DrizzleDB, "select" | "selectD
       .where(and(completed, eq(schema.games.gameKind, "werewolf"), sql`EXISTS (
         SELECT 1 FROM jsonb_array_elements(${schema.werewolfEvents.event}->'payload'->'players') p
         JOIN agent_profiles a ON a.id = p->>'agentProfileId' WHERE a.user_id = ${ownerId}
+        AND (${options.agentProfileId ?? null}::text IS NULL OR a.id = ${options.agentProfileId ?? null})
       )`)).orderBy(desc(schema.games.endedAt), desc(schema.games.id));
     const rows = await (options.limit === undefined ? query : query.limit(options.limit));
     if (rows.length) {
       const owned = new Set((await db.select({ id: schema.agentProfiles.id }).from(schema.agentProfiles)
-        .where(eq(schema.agentProfiles.userId, ownerId))).map(p => p.id));
+        .where(and(eq(schema.agentProfiles.userId, ownerId), options.agentProfileId ? eq(schema.agentProfiles.id, options.agentProfileId) : undefined))).map(p => p.id));
       for (const { game, event } of rows) {
         if (!isViewerGame(game) || event.type !== "werewolf.started" || event.gameId !== game.id || event.sequence !== 1) continue;
         for (const player of event.payload.players) if (player.agentProfileId && owned.has(player.agentProfileId)) {
@@ -70,7 +72,7 @@ async function readParticipationSnapshot(db: Pick<DrizzleDB, "select" | "selectD
     db.select().from(schema.competitionReceipts).where(and(inArray(schema.competitionReceipts.gameId, games.map(g => g.id)),
       eq(schema.competitionReceipts.ownerId, ownerId), eq(schema.competitionReceipts.eligibilityStatus, "eligible"))),
   ]);
-  // One canonical read per selected game, not per owned seat. Public reads project at most five games.
+  // One canonical read per selected game, not per owned seat. The caller bounds public history before result projection.
   const outcomes = new Map<string, Awaited<ReturnType<typeof readHouseGameResultsInTransaction>>>();
   for (const game of games) outcomes.set(game.id, await readHouseGameResultsInTransaction(db, game.id));
   const points = new Map(receipts.map(r => [`${r.gameId}:${r.agentProfileId}`, r.totalPoints]));

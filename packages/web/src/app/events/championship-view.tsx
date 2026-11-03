@@ -1,3 +1,4 @@
+import { AgentProfileLink } from "@/components/agent-profile-link";
 import Link from "next/link";
 import type { ChampionshipView } from "@/lib/championship";
 
@@ -18,7 +19,7 @@ export function ChampionshipEventView({ event }: { event: ChampionshipView }) {
     </header>
     <section aria-labelledby="event-finalists"><h2 id="event-finalists" className="text-xl font-semibold">The final eight</h2>
       {event.entries.length ? <ol className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{event.entries.map(entry => <li key={entry.agentId} className="influence-panel rounded-lg p-4">
-        <p className="text-xs text-amber-200">Season seed {entry.rank}</p><h3 className="mt-2 break-words font-semibold">{entry.name}</h3>
+        <p className="text-xs text-amber-200">Season seed {entry.rank}</p><h3 className="mt-2 break-words font-semibold"><AgentProfileLink agentId={entry.agentId} className="hover:underline">{entry.name}</AgentProfileLink></h3>
         <p className="mt-2 text-sm influence-copy-muted">{entry.seasonPoints.toLocaleString("en")} Season 0 points</p>
       </li>)}</ol> : <p className="mt-3 influence-copy-muted">The field will be confirmed after season results are final.</p>}
     </section>
@@ -27,7 +28,7 @@ export function ChampionshipEventView({ event }: { event: ChampionshipView }) {
       {event.standings?.series.some(row => row.played > 0) ? <div className="mt-4 rounded-lg border border-white/10 p-4">
         <h3 className="font-semibold">Series standings</h3>
         <ol className="mt-3 space-y-3">{event.standings.series.map(row => <li key={row.agentId} className="flex flex-wrap justify-between gap-2 text-sm">
-          <span className="break-words">{row.name}{event.standings!.werewolfWinners.includes(row.agentId) ? " · Champion" : ""}</span>
+          <span className="break-words"><AgentProfileLink agentId={row.agentId} className="hover:underline">{row.name}</AgentProfileLink>{event.standings!.werewolfWinners.includes(row.agentId) ? " · Champion" : ""}</span>
           <span>{row.points} {row.points === 1 ? "point" : "points"} · {row.wins} {row.wins === 1 ? "win" : "wins"} · {row.played}/16 played</span>
         </li>)}</ol>
         {event.standings.resolutionPending ? <p className="mt-3 text-sm influence-copy-muted">A tied result awaits the final tie policy.</p> : null}

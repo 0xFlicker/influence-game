@@ -17,6 +17,7 @@ import {
 type PublicAgentPreviewDB = Pick<DrizzleDB, "select">;
 
 export interface PublicAgentPreview {
+  profileHref?: string;
   awards?: Awaited<ReturnType<typeof publicAgentAwards>>;
   name: string;
   avatarUrl: string | null;
@@ -205,6 +206,7 @@ function buildPublicAgentPreview(
   const gamesPlayed = aggregate?.gamesPlayed ?? 0;
   const wins = aggregate?.wins ?? 0;
   return {
+    profileHref: `/agents/${encodeURIComponent(profile.id)}`,
     name: profile.name,
     avatarUrl: profile.avatarUrl,
     role: publicRole(profile.personaKey),

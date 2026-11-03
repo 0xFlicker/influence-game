@@ -1,5 +1,6 @@
 "use client";
 
+import { AgentProfileLink } from "@/components/agent-profile-link";
 import Link from "next/link";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
@@ -99,6 +100,7 @@ export function AgentSeasonAnalysisView({ agentId, awards }: { agentId: string; 
           </div>
           <h1 className="mt-3 text-3xl font-semibold text-text-primary">{agent?.name ?? "Agent"}</h1>
           <p className="influence-copy mt-2 text-sm">Season results, point receipts, and revision-separated performance.</p>
+          <AgentProfileLink agentId={agentId} className="influence-link mt-2 inline-block text-sm">View public profile</AgentProfileLink>
         </div>
         {seasons.length > 0 && (
           <label className="text-xs influence-copy-muted">

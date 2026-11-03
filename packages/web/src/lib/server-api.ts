@@ -5,6 +5,7 @@ import type {
   GameWatchReplayFrame,
   HouseHighlightsResponse,
   PublicPlayerProfileEnvelope,
+  PublicAgentProfileEnvelope,
   PublicPostgameMediaResponse,
   TranscriptEntry,
 } from "./api";
@@ -153,4 +154,8 @@ export function getServerPublicPlayerProfile(
 
 export function getServerHouseCuts(slug: string, audience?: string): Promise<import("@influence/engine/house-cuts/publication").HouseCutsResponse> {
   return serverApiFetch(`/api/games/${gamePathSegment(slug)}/cuts${audience ? `?audience=${encodeURIComponent(audience)}` : ""}`, { cache: "no-store" });
+}
+
+export function getServerPublicAgentProfile(id: string, gameKind: "all" | "influence" | "werewolf" = "all"): Promise<PublicAgentProfileEnvelope> {
+  return serverApiFetch(`/api/public/agents/${encodeURIComponent(id)}?game=${gameKind}`, { cache: "no-store" });
 }
