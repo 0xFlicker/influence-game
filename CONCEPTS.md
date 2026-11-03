@@ -1034,3 +1034,6 @@ A provider image reference identifies immutable private image bytes by SHA-256, 
 Empower result screens emphasize the winner or tied cast and their totals, with other votes combined. Detailed voter receipts remain in the preceding ballot view. Live playback and new composition-v7 exports use this compact layout; pinned v3–v6 exports retain their layouts. The House can announce a pending runoff separately from its eventual winner.
 
 Studio and local video rendering share Werewolf's compact result/cast layout and reserved House-caption geometry with the viewer. An independently selected Safety Bounce thought retains only its pre-choice board and character framing, never the omitted response or future choice. Presentation updates require freshly prepared export bundles; a saved selection descriptor can be reused to retain its exact cut and pinned media.
+
+
+**Publication pointer reconciliation** is a guarded delivery-location update for an already accepted public artifact. It preserves original media/source hashes and publication identity, verifies target versions first, and compares the entire current row under the publication lock order. A pointer inverse alone is not whole-application rollback.

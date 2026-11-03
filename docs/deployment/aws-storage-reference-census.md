@@ -1,6 +1,6 @@
 # Historical storage references — preparation census
 
-Revision 1, 2026-11-03. [Issue #281](https://github.com/0xFlicker/influence-game/issues/281). This is a code-path census and synthetic validation record, not a census of live user records.
+Revision 2, 2026-11-03. [Issue #281](https://github.com/0xFlicker/influence-game/issues/281). This is a code-path census and synthetic validation record, not a census of live user records.
 
 | Boundary | Prepared behavior / remaining work |
 | --- | --- |
@@ -28,3 +28,19 @@ bun scripts/prepare-public-playback-delivery.ts \
 The configuration is `{ "version": 1, "publicBaseUrl": "https://assets-staging.thehouse.game", "legacyBases": ["https://influence-assets-stg.us-iad-10.linodeobjects.com", "https://us-iad-10.linodeobjects.com/influence-assets-stg"] }`; production uses its own exact origins. Output is an exclusive private directory containing `delivery.json` and `receipt.json`. The proposed key is under `postgame-media/delivery-v1/<original-sha>/<derived-sha>.json`. An existing output directory is never overwritten. Source/destination document hashes are distinct from the preserved media hashes.
 
 The execution packet must separately bind this receipt to the original bucket/key/version, owning database row, accepted render version and expected current artifact metadata. Upload/readback verification must precede a compare-and-swap pointer update. If publication advanced concurrently, stop and replan. Retain the original pointer and document for rollback; after writers reopen, reconcile any accepted new publication before reverting. This tool does not make a live reference set complete and does not authorize changing a pointer.
+
+## Publication pointer reconciliation preparation
+
+`scripts/public-playback-pointer.ts` now prepares forward and rollback PostgreSQL transactions for the exact `game_postgame_media` row. This is a library with no connection, upload or execution entrypoint. Supply the complete `SELECT to_jsonb(row)` snapshot, original source bytes/hash, exact environment delivery map, derived-document readback bytes, and the four current target-manifest records (video, poster, captions and derived JSON). The reviewed execution packet must pin the complete source/target manifests and this subset's provenance; manually invented hashes are not verification.
+
+The planner checks source metadata, media hashes/lengths/types, object keys, preview/duration/dimensions and retained private S3 versions. It preserves source documents, media hashes, publication time, accepted render identity and unrelated row fields. It updates public delivery locations plus the new document key/hash/length. `artifact_metadata` changes only when it is the same artifact as `current_ready_artifact_metadata`; a newer in-progress attempt is retained independently.
+
+Both SQL directions lock the game before the media row, matching publication's lock order, and compare the complete row. Exact retry is a no-op; any changed attempt, publication, metadata or schema requires replanning. Metadata is encoded as hex JSON literals, preventing prose from becoming SQL. Keep the plan/SQL private because the full row may contain operational metadata. The rollback SQL is only a guarded pointer inverse; it does not authorize rollback after writers reopen or replace whole-application reconciliation.
+
+The explicit synthetic rehearsal is:
+
+```sh
+bun scripts/rehearse-public-playback-pointer.ts --run-disposable-postgres
+```
+
+It creates its own memory-backed PostgreSQL 17 container with no host port, network or mounted user data, and removes only that container afterward. The actual SQL passes forward application, exact retry, pre-write inverse, stale-publication rejection, later-accepted-write preservation and schema-drift rejection. This exercises the relevant synthetic table shape, not live database privileges or all application constraints. Three provider-free tests cover preparation and corruption/environment drift. Live source coverage, object upload/readback, final manifests, controller execution and browser/Studio/export acceptance remain outstanding.
