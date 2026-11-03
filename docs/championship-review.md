@@ -10,6 +10,8 @@ This is a separate code-review pass over the local implementation, performed aft
 4. **Shutdown did not await an in-flight championship reconciliation.** The worker retains its reconciliation promise and awaits it before aborting game workers. The timer remains single-flight and is cleared on shutdown. This closes an ordering race; it is covered by type checking and the full regression baseline, not a dedicated process-crash test.
 5. **Point policies accepted values the result column cannot store.** Policy validation now matches PostgreSQL signed 32-bit nonnegative point storage, with boundary regression coverage. This is numeric representation validation, unrelated to spending or gameplay admission budgets.
 
+6. **Default Werewolf guidance was resolved at dispatch rather than roster lock.** An agent without explicit notes could pick up a changed fallback after a code deployment. The snapshot now stores the resolved text while leaving the live profile's notes untouched. The regression verifies the canonical start uses the stored text.
+
 ## Reviewed boundaries
 
 - Public DTOs allowlist event metadata, unordered lineups, standings and badge metadata. They exclude sealed builds, seeds, private order, internal owner IDs and award evidence/reasons. REST/MCP badge schema parity and rejection of extra evidence fields are tested.

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { championshipFixture, policies } from "./championship-fixtures.js";
-import { configureChampionshipDraft, lockChampionshipRoster } from "../services/championships.js";
+import { configureChampionshipDraft, lockChampionshipRoster, readFrozenCompetitionBuild } from "../services/championships.js";
 import { activateChampionship, pauseChampionship, dispatchChampionshipMatch } from "../services/championship-dispatch.js";
 import { prepareChampionshipAwards, deliverChampionshipAwards } from "../services/championship-awards.js";
 import { reconcileChampionships } from "../services/championship-runtime.js";
@@ -90,4 +90,21 @@ test("roster lock repairs a legacy revision pointer before the Influence finale 
   expect(seats).toHaveLength(8);
   expect(seats.find(seat => seat.agentProfileId === agents[0])!.agentRevisionId).toBe(before!.currentRevisionId);
   expect((await db.select().from(schema.games).where(eq(schema.games.id, finale.gameId!)))[0]!.status).toBe("in_progress");
+});
+
+
+test("roster lock freezes the resolved Werewolf fallback without changing live owner notes", async () => {
+  const { db, event, actorId, agents } = await championshipFixture();
+  await db.update(schema.agentProfiles).set({ werewolfStrategyStyle: null, personaKey: "diplomat" }).where(eq(schema.agentProfiles.id, agents[0]!));
+  await configureChampionshipDraft(db, event.id, { policies, startDate: "2026-12-01" });
+  await lockChampionshipRoster(db, event.id, actorId, randomUUID());
+  const build = await readFrozenCompetitionBuild(db, event.id, agents[0]!);
+  expect(build.character.werewolfStrategyStyle).toContain("Compare competing cases");
+  expect((await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, agents[0]!)))[0]!.werewolfStrategyStyle).toBeNull();
+  await activateChampionship(db, event.id, actorId, randomUUID());
+  const first = await dispatchChampionshipMatch(db, event.id, 1, "2026-12-01T00:00:00.000Z");
+  const { readWerewolfEvents } = await import("../services/werewolf-games.js");
+  const initial = (await readWerewolfEvents(db, first.gameId!))[0]!;
+  if (initial.type !== "werewolf.started") throw new Error("Missing start evidence");
+  expect(initial.payload.players.find(player => player.agentProfileId === agents[0])!.strategy).toBe(build.character.werewolfStrategyStyle!);
 });

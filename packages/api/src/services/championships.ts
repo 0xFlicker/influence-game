@@ -1,3 +1,4 @@
+import { resolveWerewolfStrategy } from "@influence/engine/werewolf";
 import { ensureActiveAgentRevisionInTransaction, resolveFreeTrackEffectiveRuntimeSnapshot } from "./agent-revisions.js";
 import { championshipStandings } from "./championship-results.js";
 import { freezeChampionshipExecutionConfig } from "./championship-execution-config.js";
@@ -87,7 +88,7 @@ export async function lockChampionshipRoster(db: DrizzleDB, eventId: string, act
       const build: FrozenCompetitionBuild = {
         version: 1, competitionRevisionId: id, agentId: profile.id, ownerId: profile.userId,
         sourceRevisionId, frozenAt,
-        character: { name, personality, backstory, strategyStyle, werewolfStrategyStyle, personaKey, gender, contentRevisionId,
+        character: { name, personality, backstory, strategyStyle, werewolfStrategyStyle: resolveWerewolfStrategy(werewolfStrategyStyle, personaKey), personaKey, gender, contentRevisionId,
           avatarUrl, fullBodyReferenceUrl, headPosition, portraitCrop, performanceInstructions, visualDesign },
         modelRouting: sealedRouting, contestantManifest: sealedRouting.contestants![id]!, crossGameMemory: "disabled",
       };
