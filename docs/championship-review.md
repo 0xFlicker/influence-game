@@ -21,8 +21,20 @@ This is a separate code-review pass over the local implementation, performed aft
 - Results use canonical outcomes and unique match/entry identities. Award allocations freeze recipients/evidence before delivery; delivery failures do not block dispatch, and retries cannot duplicate or implicitly reinstate revoked grants.
 - No monetary ceiling, reserve or spend-based stop was introduced. Product choices remain explicit; fixture values are not launch defaults. Existing maintenance/provider safety and integrity boundaries remain.
 
+## Artwork review follow-up
+
+A fresh read-through traced lock request → preparation worker → provider journal → verified private/public image storage → frozen entries → both game admission paths. It checked original account linkage, normal owner edits, source-reference use, lease/retry behavior and provider receipt recovery.
+
+Three concrete defects were fixed:
+
+1. The worker's global per-tick limit let one retrying event starve other preparing events. The limit now applies per event; a regression proves the second event locks while the first retains its retry.
+2. Empty visual-design text suppressed the persona fallback, and generation omitted recorded gender. Missing-image requests now retain both identity inputs. Existing headshot pixels are still supplied unchanged as the body reference.
+3. Rebuilding request text from current code could conflict with an existing operation hash after deployment. Retries now hydrate the accepted request from verified storage, check its hash and reference-image hashes, and reuse its prompt/dimensions. Changed template tests cover known failures and reconciled uncertain outcomes. A saved successful provider output is also recovered after an interrupted preparation step without a second provider call.
+
+Production-path local tests exercise actual source reads, public image publication and readback, original profile preservation, account/agent links, and accepted pixel/hash evidence. Only the provider HTTP response is stubbed in that integration test. No paid or production execution is implied.
+
 ## Remaining limits
 
-Final scoring, equal-score fallback, role composition, participation threshold, attribution policy and start date still need choices. Influence draw resolution remains pending. Genuine-unavailability substitution, richer producer controls and audited correction/reinstatement UI remain follow-ups. There is no live-provider or hosted-availability proof. Migrations 0143–0144 and payload inventory changes must be coordinated with the separate AWS storage work.
+Scoring, shared-champion fallback, roles, one-game participation, attribution and pre-lock alternates are confirmed and implemented. The actual start date and hypothetical Influence draw resolution remain pending. Recipient/evidence replacement and canonical-result correction policies are separate from implemented revoke/reinstate controls. Paid image quality and hosted availability are unverified. Uncertain image-provider responses need producer evidence through the reconciliation API; there is no dedicated panel form yet. Migrations 0143–0147 and payload inventory changes must be coordinated with the separate AWS storage work.
 
-See `championship-validation.md` for completed test evidence. Review fixes are local only; no production mutation, paid game or issue-comment retry occurred.
+See `championship-validation.md` for completed test evidence. Review fixes are local only; no production mutation or paid game occurred. Authorized factual milestone updates were posted to issue #282.

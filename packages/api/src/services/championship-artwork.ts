@@ -146,8 +146,9 @@ export async function processChampionshipArtwork(db: DrizzleDB, options: { event
   const dependencies = testDependencies ?? production;
   const events = await db.select().from(schema.championshipEvents).where(and(eq(schema.championshipEvents.status, "preparing"), options.eventId ? eq(schema.championshipEvents.id, options.eventId) : undefined));
   const outcomes: Array<{ id: string; status: string; error?: string }> = [];
-  let processed = 0;
   for (const event of events) {
+    // Bound work per event, so a retrying event cannot starve another preparing field.
+    let processed = 0;
     try {
     await db.transaction(async tx => { const [current] = await tx.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, event.id)).for("update"); if (current?.status === "preparing") await refreshField(tx, current); });
     const jobs = await db.select().from(schema.championshipArtwork).where(and(eq(schema.championshipArtwork.eventId, event.id), eq(schema.championshipArtwork.selected, true), inArray(schema.championshipArtwork.status, ["queued", "retry", "processing"]))).orderBy(asc(schema.championshipArtwork.qualificationRank));
@@ -186,7 +187,7 @@ export async function processChampionshipArtwork(db: DrizzleDB, options: { event
           const reference = kind === "body" ? job.avatar : job.body;
           const refs = reference ? [await readPayload(reference)] : [];
           const character = input.character;
-          const prompt = `Create a photorealistic ${kind === "body" ? "full-body character reference, entire character and feet visible" : "headshot portrait, head and shoulders clearly visible"} for the adult House contestant ${character.name}. Exactly one character, plain warm grey background, no text or inset. ${refs.length ? "Preserve the reference character's exact face, species or object form, colors, clothing and distinguishing features; this is the same character, not a redesign." : "Honor the character description and any non-human or anthropomorphic identity; do not default it to a human."} Visual design: ${character.visualDesign ?? character.personaKey ?? ""}. Identity: ${character.personality}. Backstory: ${character.backstory ?? ""}. Direction: ${character.performanceInstructions ?? ""}.`;
+          const prompt = `Create a photorealistic ${kind === "body" ? "full-body character reference, entire character and feet visible" : "headshot portrait, head and shoulders clearly visible"} for the adult House contestant ${character.name}. Exactly one character, plain warm grey background, no text or inset. ${refs.length ? "Preserve the reference character's exact face, species or object form, colors, clothing and distinguishing features; this is the same character, not a redesign." : "Honor the character description and any non-human or anthropomorphic identity; do not default it to a human."} Visual design: ${character.visualDesign?.trim() || character.personaKey || ""}. Recorded gender: ${character.gender ?? "unspecified"}. Identity: ${character.personality}. Backstory: ${character.backstory ?? ""}. Direction: ${character.performanceInstructions ?? ""}.`;
           await save(kind, await dependencies.generate(db, { preparationId: job.id, kind, request: { prompt, width: 1024, height: kind === "body" ? 1536 : 1024, references: refs }, beforeDispatch: guard }));
         }
         const avatarUrl = job.avatarUrl ?? await dependencies.publish(job.avatar!);
