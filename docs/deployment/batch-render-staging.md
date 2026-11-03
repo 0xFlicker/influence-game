@@ -2,7 +2,12 @@
 
 Studio now orders directly from the browser or MCP. The API freezes the selected descriptor, complete permitted source metadata and existing audio publication into the private input document. The assigned worker prepares the bundle with the shared source binder/compiler and renders it. Local CLI preparation remains supported. Trailer jobs use the same execution service with the existing trailer renderer and publication verifier. No game, image, speech or music generation is needed for these tests.
 
-The current checked-in execution policy still selects the existing renderer. Source preparation and local tests do not activate either Batch lane.
+The checked-in staging policy selects `studio-export: aws-batch` and
+`trailer: existing`. After this policy release deploys, Studio exports use Batch;
+trailers continue through the legacy trailer controller. `existing` does not
+provide a Studio cloud-rendering service. Production's policy is unchanged.
+Preparing this source does not deploy the Batch runtime or submit a job. See the
+[activation and acceptance steps](batch-render-release-preparation.md#staging-studio-activation).
 
 ## Local commands and evidence
 
@@ -115,8 +120,9 @@ bun --env-file=<private-storage-env> packages/api/src/scripts/ensure-private-con
   --render-cors-origin https://influence-staging.tail8a79ed.ts.net
 ```
 
-This preserves unrelated CORS rules and grants no public reads. Credential/CORS
-installation remains an operator step; it has not been applied to staging here.
+This preserves unrelated CORS rules and grants no public reads. Staging
+credentials and this CORS rule were installed and verified during the
+[one-time bootstrap](2026-11-02-staging-batch-bootstrap.md).
 
 For the existing CLI flow:
 
@@ -184,12 +190,12 @@ checksums and an unprotected runtime role. The existing renderer workflow remain
 available during migration. App and host independently verify the exact deployed
 admission receipt. The staging host journals its submission URL, derives the worker
 digest from the immutable release, and checks secrets before draining services.
-Routine releases need no manual job or per-digest Doppler edit. The capability
-release keeps current targets; a later explicit policy release activates Batch.
+Routine releases need no manual job or per-digest Doppler edit. The merged
+capability release did not enable Studio cloud rendering; this policy release
+activates its staging Batch target after successful admission.
 
-See [release preparation](batch-render-release-preparation.md) for the coordinated
-three-repository landing order and the acceptance boundary while localhost
-evaluation remains underway.
+See [release preparation](batch-render-release-preparation.md) for the merged
+three-repository prerequisites, staging activation and the live acceptance steps.
 
 Credential-free companion checks:
 
