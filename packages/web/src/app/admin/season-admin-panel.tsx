@@ -6,6 +6,7 @@ import {
   closeAdminSeason,
   createAdminSeason,
   finalizeAdminSeason,
+  reconcileAdminSeasonAwards,
   getProducerSeasonDiagnostics,
   listSeasons,
   type ProducerSeasonDiagnostics,
@@ -36,6 +37,7 @@ export function SeasonAdminPanel() {
   const [diagnostics, setDiagnostics] = useState<ProducerSeasonDiagnostics | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [newSeasonName, setNewSeasonName] = useState("Season 0");
   const loadedNameSuggestion = useRef(false);
@@ -67,6 +69,7 @@ export function SeasonAdminPanel() {
   async function run(action: () => Promise<SeasonIdentity | void>) {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const result = await action();
       await refresh(result?.id ?? selectedId);
@@ -140,10 +143,12 @@ export function SeasonAdminPanel() {
                   <div className="flex flex-wrap gap-2">
                     {selected.status === "active" && <button type="button" disabled={busy} onClick={() => run(() => closeAdminSeason(selected.id))} className="influence-button-secondary rounded-lg px-3 py-2 text-xs">Close admission</button>}
                     {selected.status === "closing" && <button type="button" disabled={busy} onClick={() => run(() => finalizeAdminSeason(selected.id))} className="influence-button-primary rounded-lg px-3 py-2 text-xs">Finalize crowns</button>}
+                    {selected.status === "final" && selected.name.trim().toLowerCase() === "season 0" && <button type="button" disabled={busy} onClick={() => run(async () => { await reconcileAdminSeasonAwards(selected.id); setNotice("Earned season badges are delivered. Existing grants and corrections were preserved."); })} className="influence-button-secondary rounded-lg px-3 py-2 text-xs">Deliver missing season badges</button>}
                   </div>
                 </PermissionGate>
               )}
             </div>
+            {notice && <p role="status" className="mt-3 text-sm influence-copy-muted">{notice}</p>}
             {selected && (
               <dl className="mt-5 grid gap-3 border-t border-border-active/60 pt-5 text-xs sm:grid-cols-2">
                 <Fact label="Status" value={selected.status} />

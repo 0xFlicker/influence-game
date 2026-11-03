@@ -3,7 +3,6 @@ import { and, eq, isNull } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { readJson, storeJson } from "./payload-storage.js";
 import { grantAward, type AwardRecipient } from "./awards.js";
-import { readSeasonFinalizationSnapshot } from "./season-finalization-snapshot.js";
 import { championshipStandings } from "./championship-results.js";
 export interface PlannedAward { definitionCode: string; recipient: AwardRecipient; sourceKey: string; evidence: Record<string, unknown> }
 
@@ -31,28 +30,6 @@ export async function prepareChampionshipAwards(db: DrizzleDB, eventId: string, 
     };
     if (!existing.some(row => row.phase === "field")) await save("field", entries.map(entry => ({ definitionCode: "season-0-top-eight",
       recipient: { type: "agent", id: entry.agentId }, sourceKey: `event:${eventId}:field`, evidence: { eventId, qualificationRank: entry.qualificationRank, seasonPoints: entry.seasonPoints } })));
-    if (!existing.some(row => row.phase === "season") && event.policies.participationMinimumCompletedGames !== null && event.policies.ownerAttribution !== null) {
-      const snapshot = await readSeasonFinalizationSnapshot(tx, event.sourceSeasonId);
-      const [honor] = await tx.select().from(schema.seasonHonors).where(eq(schema.seasonHonors.seasonId, event.sourceSeasonId));
-      if (snapshot && honor) {
-        const grants: PlannedAward[] = [];
-        const add = (definitionCode: string, type: AwardRecipient["type"], id: string, evidence: Record<string, unknown>) => grants.push({ definitionCode, recipient: { type, id }, sourceKey: `season:${event.sourceSeasonId}`, evidence });
-        const crownOwner = await owner(honor.agentChampionAgentProfileId, honor.agentChampionOwnerId);
-        add("season-0-agent-crown", "agent", honor.agentChampionAgentProfileId, { seasonId: event.sourceSeasonId, points: honor.agentChampionPoints });
-        add("season-0-architect-crown", "account", honor.architectChampionOwnerId, { seasonId: event.sourceSeasonId, pointsHundredths: honor.architectChampionPointsHundredths });
-        if (crownOwner) add("season-0-agent-champions-architect", "account", crownOwner, { seasonId: event.sourceSeasonId, championAgentId: honor.agentChampionAgentProfileId });
-        const agentGames = new Map<string, Set<string>>(), accountGames = new Map<string, Set<string>>();
-        for (const receipt of snapshot.receipts) {
-          if (!snapshot.completedGameIds.includes(receipt.gameId)) continue;
-          const games = agentGames.get(receipt.agentProfileId) ?? new Set<string>(); games.add(receipt.gameId); agentGames.set(receipt.agentProfileId, games);
-          const attributed = await owner(receipt.agentProfileId, receipt.ownerId);
-          if (attributed) { const games = accountGames.get(attributed) ?? new Set<string>(); games.add(receipt.gameId); accountGames.set(attributed, games); }
-        }
-        for (const [id, games] of agentGames) if (games.size >= event.policies.participationMinimumCompletedGames) add("season-0-agent-participant", "agent", id, { seasonId: event.sourceSeasonId, completedGames: games.size, minimum: event.policies.participationMinimumCompletedGames });
-        for (const [id, games] of accountGames) if (games.size >= event.policies.participationMinimumCompletedGames) add("season-0-account-participant", "account", id, { seasonId: event.sourceSeasonId, completedGames: games.size, minimum: event.policies.participationMinimumCompletedGames });
-        await save("season", grants);
-      }
-    }
     const standings = await championshipStandings(tx, eventId);
     for (const kind of ["werewolf", "influence"] as const) {
       if (!standings || existing.some(row => row.phase === kind) || event.policies.ownerAttribution === null) continue;
@@ -84,9 +61,19 @@ export async function deliverChampionshipAwards(db: DrizzleDB, eventId: string) 
     const [allocation] = await tx.select().from(schema.championshipAwardAllocations).where(eq(schema.championshipAwardAllocations.id, identity.id));
     if (!event || !allocation || allocation.deliveredAt || allocation.supersededAt) return;
     const grants = await readJson(allocation.grants);
-    for (const [index, grant] of grants.entries()) await grantAward(tx, { ...grant, actorId: event.createdById, sourceSeasonId: event.sourceSeasonId,
+    for (const [index, grant] of grants.entries()) {
+      // Legacy season outboxes may overlap the independent season finalization delivery.
+      // Preserve existing evidence and explicit corrections, including revoked grants.
+      if (allocation.phase === "season") {
+        const [prior] = await tx.select({ id: schema.awardGrants.id }).from(schema.awardGrants).where(and(
+          eq(schema.awardGrants.definitionCode, grant.definitionCode), eq(schema.awardGrants.sourceKey, grant.sourceKey),
+          eq(schema.awardGrants.recipientKey, `${grant.recipient.type}:${grant.recipient.id}`)));
+        if (prior) continue;
+      }
+      await grantAward(tx, { ...grant, actorId: event.createdById, sourceSeasonId: event.sourceSeasonId,
       allocationId: allocation.id, ...(allocation.phase !== "season" ? { sourceEventId: eventId } : {}),
       reason: `Automatic ${allocation.phase} allocation`, requestId: `${allocation.id}:${index}` });
+    }
     await tx.update(schema.championshipAwardAllocations).set({ deliveredAt: new Date().toISOString() }).where(eq(schema.championshipAwardAllocations.id, allocation.id));
   });
 }

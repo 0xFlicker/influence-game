@@ -1,3 +1,4 @@
+import { previewSeasonAwards, reconcileSeasonAwards } from "../services/season-awards.js";
 import { Hono, type Context } from "hono";
 import type { DrizzleDB } from "../db/index.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
@@ -122,13 +123,24 @@ export function createSeasonRoutes(db: DrizzleDB) {
     requirePermission("manage_seasons"),
     async (c) => {
       try {
-        return c.json({ schemaVersion: 1, honors: await finalizeSeason(db, c.req.param("seasonId")) });
+        const seasonId = c.req.param("seasonId");
+        const honors = await finalizeSeason(db, seasonId);
+        const awards = await reconcileSeasonAwards(db, seasonId, c.get("user")!.id);
+        return c.json({ schemaVersion: 1, honors, awards });
       } catch (error) {
         return seasonError(c, error);
       }
     },
   );
 
+  app.get("/api/admin/seasons/:seasonId/awards", requireAuth(db), requirePermission("manage_seasons"), async c => {
+    try { return c.json({ grants: await previewSeasonAwards(db, c.req.param("seasonId")) }); }
+    catch (error) { return seasonError(c, error); }
+  });
+  app.post("/api/admin/seasons/:seasonId/awards/reconcile", requireAuth(db), requirePermission("manage_seasons"), async c => {
+    try { return c.json(await reconcileSeasonAwards(db, c.req.param("seasonId"), c.get("user")!.id)); }
+    catch (error) { return seasonError(c, error); }
+  });
   return app;
 }
 

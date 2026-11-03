@@ -3852,6 +3852,10 @@ export async function closeAdminSeason(id: string): Promise<SeasonIdentity> {
   return response.season;
 }
 
+export async function reconcileAdminSeasonAwards(id: string): Promise<void> {
+  await apiFetch(`/api/admin/seasons/${id}/awards/reconcile`, { method: "POST" });
+}
+
 export async function finalizeAdminSeason(id: string): Promise<void> {
   await apiFetch(`/api/admin/seasons/${id}/finalize`, { method: "POST" });
 }

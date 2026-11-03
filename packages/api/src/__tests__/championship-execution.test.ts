@@ -10,6 +10,7 @@ import { configureChampionshipDraft, lockChampionshipRoster } from "../services/
 import { pauseChampionship, activateChampionship, dispatchChampionshipMatch } from "../services/championship-dispatch.js";
 import { settleChampionshipMatch, championshipStandings, reconcileChampionshipResults } from "../services/championship-results.js";
 import { prepareChampionshipAwards, deliverChampionshipAwards } from "../services/championship-awards.js";
+import { reconcileSeasonAwards } from "../services/season-awards.js";
 import { finalizeSeason } from "../services/seasons.js";
 import { readSeasonFinalizationSnapshot } from "../services/season-finalization-snapshot.js";
 import { readJson } from "../services/payload-storage.js";
@@ -32,6 +33,7 @@ async function lockedFixture() {
   const fixture = await championshipFixture();
   await fixture.db.update(schema.seasons).set({ status: "closing" }).where(eq(schema.seasons.id, fixture.seasonId));
   await finalizeSeason(fixture.db, fixture.seasonId);
+  await reconcileSeasonAwards(fixture.db, fixture.seasonId, fixture.actorId);
   await configureChampionshipDraft(fixture.db, fixture.event.id, { policies, startDate: "2026-12-01" });
   const locked = await lockChampionshipRoster(fixture.db, fixture.event.id, fixture.actorId, randomUUID());
   await activateChampionship(fixture.db, fixture.event.id, fixture.actorId, randomUUID());

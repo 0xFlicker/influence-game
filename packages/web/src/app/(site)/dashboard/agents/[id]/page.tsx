@@ -18,8 +18,7 @@ export default async function AgentAnalysisPage({
       <Nav />
       <main className="flex-1 px-6 py-10 max-w-5xl mx-auto w-full">
         <AuthGate>
-          <AgentAwards agentId={id} />
-          <AgentSeasonAnalysisView agentId={id} />
+          <AgentSeasonAnalysisView agentId={id} awards={<AgentAwards agentId={id} />} />
         </AuthGate>
       </main>
     </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   agentSeasonExportUrl,
   getAgent,
@@ -14,7 +14,7 @@ import {
 } from "@/lib/api";
 import { OwnerLearningActivation } from "./review/owner-learning-activation";
 
-export function AgentSeasonAnalysisView({ agentId }: { agentId: string }) {
+export function AgentSeasonAnalysisView({ agentId, awards }: { agentId: string; awards?: ReactNode }) {
   const [agent, setAgent] = useState<SavedAgent | null>(null);
   const [seasons, setSeasons] = useState<SeasonIdentity[]>([]);
   const [selectedSeason, setSelectedSeason] = useState("");
@@ -113,6 +113,8 @@ export function AgentSeasonAnalysisView({ agentId }: { agentId: string }) {
           </label>
         )}
       </header>
+
+      {awards && <div className="mt-6">{awards}</div>}
 
       <div className="mt-6">
         <OwnerLearningActivation enabled contextAgentId={agentId} />
