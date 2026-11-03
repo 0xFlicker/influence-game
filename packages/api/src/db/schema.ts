@@ -4186,3 +4186,91 @@ export const gameAudioAttempts = pgTable("game_audio_attempts", {
   check("audio_attempts_characters",sql`${table.billableCharacters} >= 0`),
   check("audio_attempts_status", sql`${table.status} in ('dispatched','failed','succeeded')`),
 ]);
+
+/** Competition membership is independent of games.seasonId and its rating semantics. */
+export const championshipEvents = pgTable("championship_events", {
+  id: text("id").primaryKey(),
+  slug: text("slug").notNull().unique(),
+  name: text("name").notNull(),
+  sourceSeasonId: text("source_season_id").notNull().references(() => seasons.id),
+  status: text("status").notNull().default("draft").$type<"draft" | "locked" | "running" | "paused" | "final">(),
+  published: boolean("published").notNull().default(false),
+  policies: jsonb("policies").notNull().$type<import("@influence/engine/championship").ChampionshipPolicies>(),
+  startDate: text("start_date"),
+  qualification: payloadColumn("qualification_object", "json-gzip").$type<StoredPayload<import("@influence/engine/championship").Qualification[]>>(),
+  roleSchedule: payloadColumn("role_schedule_object", "json-gzip").$type<StoredPayload<import("@influence/engine/championship").PrivateRoleSchedule>>(),
+  createdById: text("created_by_id").notNull().references(() => users.id),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  lockedAt: text("locked_at"),
+}, table => [
+  check("championship_events_status", sql`${table.status} IN ('draft','locked','running','paused','final')`),
+  ...payloadChecks("championship_events", { qualification: [table.qualification, "json-gzip"], roleSchedule: [table.roleSchedule, "json-gzip"] }),
+]);
+export const championshipEntries = pgTable("championship_entries", {
+  id: text("id").primaryKey(),
+  eventId: text("event_id").notNull().references(() => championshipEvents.id),
+  agentId: text("agent_id").notNull().references(() => agentProfiles.id),
+  ownerId: text("owner_id").notNull().references(() => users.id),
+  name: text("name").notNull(),
+  qualificationRank: integer("qualification_rank").notNull(),
+  seasonPoints: integer("season_points").notNull(),
+  sourceRevisionId: text("source_revision_id").references(() => agentRevisions.id),
+  build: payloadColumn("build_object", "json-gzip").notNull().$type<StoredPayload<import("../services/championships.js").FrozenCompetitionBuild>>(),
+}, table => [
+  unique("championship_entry_agent").on(table.eventId, table.agentId),
+  unique("championship_entry_rank").on(table.eventId, table.qualificationRank),
+  // Deliberately no event/owner uniqueness: several agents from one owner qualify.
+  check("championship_entry_rank_positive", sql`${table.qualificationRank} > 0`),
+  ...payloadChecks("championship_entries", { build: [table.build, "json-gzip"] }),
+]);
+export const championshipMatches = pgTable("championship_matches", {
+  id: text("id").primaryKey(),
+  eventId: text("event_id").notNull().references(() => championshipEvents.id),
+  ordinal: integer("ordinal").notNull(),
+  gameKind: text("game_kind").notNull().$type<"werewolf" | "influence">(),
+  scheduledAt: text("scheduled_at").notNull(),
+  gameId: text("game_id").references(() => games.id),
+  status: text("status").notNull().default("scheduled").$type<"scheduled" | "running" | "settling" | "completed" | "void">(),
+}, table => [
+  unique("championship_match_ordinal").on(table.eventId, table.ordinal),
+  unique("championship_match_game").on(table.gameId),
+  check("championship_match_format", sql`(${table.ordinal} BETWEEN 1 AND 16 AND ${table.gameKind} = 'werewolf') OR (${table.ordinal} = 17 AND ${table.gameKind} = 'influence')`),
+  check("championship_match_status", sql`${table.status} IN ('scheduled','running','settling','completed','void')`),
+]);
+export const awardDefinitions = pgTable("award_definitions", {
+  code: text("code").primaryKey(),
+  title: text("title").notNull(),
+  recipientType: text("recipient_type").notNull().$type<"agent" | "account">(),
+  theme: text("theme").notNull().default("season-0"),
+  version: integer("version").notNull().default(1),
+}, table => [check("award_definition_recipient", sql`${table.recipientType} IN ('agent','account')`)]);
+export const awardGrants = pgTable("award_grants", {
+  id: text("id").primaryKey(),
+  definitionCode: text("definition_code").notNull().references(() => awardDefinitions.code),
+  agentId: text("agent_id").references(() => agentProfiles.id),
+  accountId: text("account_id").references(() => users.id),
+  // Non-null discriminator avoids PostgreSQL NULL uniqueness semantics.
+  recipientKey: text("recipient_key").notNull(),
+  sourceKey: text("source_key").notNull(),
+  sourceSeasonId: text("source_season_id").references(() => seasons.id),
+  sourceEventId: text("source_event_id").references(() => championshipEvents.id),
+  evidence: payloadColumn("evidence_object", "json-gzip").notNull().$type<StoredPayload<Record<string, unknown>>>(),
+  grantedById: text("granted_by_id").notNull().references(() => users.id),
+  reason: text("reason").notNull(),
+  grantedAt: text("granted_at").notNull().default(sql`now()::text`),
+  revokedAt: text("revoked_at"),
+}, table => [
+  unique("award_grant_achievement").on(table.definitionCode, table.recipientKey, table.sourceKey),
+  check("award_grant_recipient", sql`(${table.agentId} IS NOT NULL AND ${table.accountId} IS NULL AND ${table.recipientKey} = 'agent:' || ${table.agentId}) OR (${table.accountId} IS NOT NULL AND ${table.agentId} IS NULL AND ${table.recipientKey} = 'account:' || ${table.accountId})`),
+  ...payloadChecks("award_grants", { evidence: [table.evidence, "json-gzip"] }),
+]);
+export const competitionAudit = pgTable("competition_audit", {
+  id: text("id").primaryKey(),
+  eventId: text("event_id").references(() => championshipEvents.id),
+  grantId: text("grant_id").references(() => awardGrants.id),
+  actorId: text("actor_id").notNull().references(() => users.id),
+  action: text("action").notNull(),
+  reason: text("reason").notNull(),
+  requestId: text("request_id").notNull(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, table => [unique("competition_audit_request").on(table.actorId, table.requestId)]);

@@ -1,0 +1,260 @@
+THE HOUSE — SEASON 0 CLOSEOUT, AWARDS, AND CHAMPIONSHIP
+Technical plan • 2026-11-03 • Revised with user decisions; planning only
+
+Scope: build a reusable championship event linked visually to Season 0, with automatically scheduled games and reusable account/agent badges. Preserve the existing season lifecycle. This task changes no product code or live state, launches no games and grants no awards. There is no championship budget or invented monetary ceiling; ordinary gameplay must continue and recover. Season 1's possible separate game leaderboards are outside this implementation.
+
+Accepted product decisions
+
+• Qualification is the top eight Season 0 agents; multiple agents per account are allowed.
+• The same eight finalists play all 16 Werewolf matches and the one eight-player Influence finale. Werewolf does not eliminate entrants from the finale.
+• Balance competitive roles, not personas, across all 16 matches: every agent gets every enabled role where feasible, with each role’s appearances distributed as evenly as possible. Use a seeded algorithm and secondary variety goals. Pre-publish the role rosters as an unordered collection behind optional spoiler reveals; keep their shuffled binding to scheduled match order private. Public copy says “balanced role selection,” without a webpage seed-evidence requirement. Keep internal reproducibility and audit records.
+• At roster lock, freeze one competition revision of every finalist for the entire event. Owners may continue editing their live agents normally; those edits do not affect the championship snapshot. Do not disable owner editing or lock the live profile. Cross-game learned memory is desired later but unsupported and explicitly parked; it is not a prerequisite or blocker.
+• Werewolf series ties use the frozen Season 0 agent score: higher score wins. A further fallback when both scores are equal is still undecided.
+• All proposed rewards are wanted, including Season 0 participation and Season 0 Top 8 finalist badges. Every badge has Season 0 styling and achievement-specific account/agent attribution. Both Champion’s Architect contexts remain distinct: season agent champion owner and championship winner owners. Participation threshold and owner-attribution policy remain to be decided.
+• The event lasts 17 days: Werewolf matches 1–16 start at 00:00 UTC on days 1–16, one each day. The eight-player Influence finale starts at 00:00 UTC on day 17, the next day after the final Werewolf match. Start date remains to be chosen; cadence, clock time, timezone and finale placement are decided.
+• No spend-based dispatch stops, reserve budgets, or budget-exhaustion gates. Diagnostics support continuity rather than unnecessarily stopping games.
+• Localhost is the primary integration environment because staging has little season activity. A six-agent local rehearsal is an option, not the chosen production format or a decided test requirement.
+
+Evidence and confidence
+
+Live House API, read during this task: Season 0 (6fbf8671-ef4d-45fa-9f6d-0fe6034d04c7; slug season-0-543d919f) is active, with no admission close or finalization timestamp and no honors. Intuitive Iris, owned by Kelley Miller, leads Agent standings with 2,646 points; Kelley leads Architect standings with 2,728.00 weighted points. These are provisional observations, not awards or a qualifying snapshot.
+
+Initial local influence-game inspection: /Users/user/Development/influence-game, HEAD 085893915e7f53a970f49bf10a45055bf5d0e954. Existing uncommitted documentation edits were read and preserved. Current GitHub main free-queue.ts was independently fetched through the connector and confirms optional exact-game targeting plus the dangerous untargeted newest-waiting fallback. Local code is not proof of the deployed production revision.
+
+Initial local falsefloor/infra inspection: /Users/user/Development/house-render-infra, HEAD 50fbd76a83269cde4c1a6afb2d3e10c1714f4cd5, clean when inspected. Current source—not merely migration prose—contains the House cron Terraform. Local github-apps cron handlers were also inspected. No shared database tests, server restarts, fetch/reset operations, or product edits were performed.
+
+Revision inspection: influence-game has advanced concurrently to HEAD 84d2f468aef8d94966a5edd6fa412de7503c8a38. Only reads were performed. Current rules.ts dispatches versions 9–11 through rules-v9.ts and defaults new configurations to v11. Role assignment remains a seeded per-game shuffle delegated to legacy-rules.ts; both API creation/start paths currently choose randomUUID() seeds. The reducer verifies roles against that algorithm. Existing “balanced” casting in werewolf-games.ts concerns House persona selection, not balanced competitive roles across 16 matches.
+
+Verification limits: remote falsefloor/infra file access returned GitHub 404 (unavailable through this connector; not proof the file is absent). Shell GitHub API requests could not connect. AWS scheduler get-schedule for house-free-game-start in us-east-1 returned NoCredentials. Therefore AWS resource enablement, deployed Lambda artifact, IAM, retries and actual upcoming invocations are NOT live-verified. No action was denied by approval review, and no mutation has an uncertain outcome.
+
+1. CLOSING OUT SEASON 0
+
+Existing behavior to retain
+
+• packages/api/src/services/seasons.ts implements active → closing → final. closeSeason locks the season/free-pool path, records admissionClosesAt and deletes standing free-queue entries and season prompt suppressions. Closing is not a harmless display toggle: the queue deletion needs an explicit operator preview and an audit record when implementation is used.
+• Already assigned games can continue in closing. Finalization rejects assigned games outside completed/cancelled, rejects completed owned seats without competition receipts, and requires eligible receipts. Failed/recovery states must be resolved through supported recovery; do not casually cancel them to unblock finalization.
+• finalizeSeason computes Agent and Architect crowns from eligible receipts, stores season_honors, and is idempotent for an already-final season. It does not store the complete ordered qualifying field or all input evidence.
+• Existing admission validates one owned seat per account and matching revisions/rating snapshots. Existing competition settlement explicitly excludes non-Influence games and games without seasonId. Do not change these contracts merely to associate championship games with Season 0.
+
+Proposed closeout sequence
+
+1) Preview closure: exact season ID, proposed UTC cutoff plus displayed local timezone, queue impact, assigned waiting/running/suspended games, unsettled receipts, provisional standings, and known correction cases. User chooses cutoff and treatment of already-admitted games. Recommended: close new admission, let already-admitted games finish and settle, then freeze final rankings. This must be stated publicly so cutoff is not mistaken for final results time.
+2) Execute the existing close transition only under later explicit authorization. Coordinate the regular draw scheduler: closing alone can leave ordinary free games unrated when no active season exists. Decide whether the weekly free event should pause or continue unrated; do not disable the shared scheduler by assumption. Season 1 creation/admissions are a separate decision.
+3) Drain and reconcile: show each unresolved game and receipt, with links to recovery diagnostics. Do not promote partial standings to final because a game is slow. Empty seasons retain their existing no-champion behavior.
+4) Atomically finalize honors and write a versioned standings snapshot, or create a fenced finalization transaction/outbox that cannot expose final honors without an associated snapshot. Refactor shared ranking projection so preview, finalization and archive use the same policy implementation rather than copying sort logic.
+5) Derive a championship qualification snapshot from those final standings and the top-eight-agent policy allowing multiple agents per account. Preserve the entire ordered candidate list, exclusions and reserve order, not only eight winners. Produce a reviewable roster before event scheduling.
+6) Publish the season archive, crown evidence and Championship link. Award allocation can run idempotently from finalized honors; badge availability must not block the correct season finalization.
+
+Proposed records and concurrency contract
+
+• season_standings_snapshots: season ID, version, finalized/cutoff timestamps, ranking and receipt-policy versions, input digest, creator, supersedes reference. Relational snapshot rows contain Agent and Architect ranks, scores, all tie-break values, public identity snapshots and receipt references. Keep full immutable exports in private/public object storage as appropriate, with verified hash/length/object key in PostgreSQL; no large JSON/text bodies in DB.
+• event_qualification_snapshots + entries: source snapshot/version, selection-policy version, qualified agent/profile ID, owner ID at qualification, original rank, exclusion reason, reserve position, selected execution revision and content/config evidence references. A correction creates a superseding version; never silently overwrite a published field.
+• Ensure receipt settlement and finalization share a concurrency fence. A snapshot must not race a late settlement/correction. Verify existing settlement status guards and lock order before selecting implementation details. Archive read APIs select the finalized version, not a recomputation against mutable profiles.
+• Qualification uses Agent standings, not Architect standings: select the top eight agents with multiple agents per account allowed. Preserve original ranks and exact season scores. The event admission path must support this without weakening the separate one-owned-seat-per-account restriction for rated season games.
+• Preserve canonical owner IDs privately while serving only existing public identity projections. Renames, deleted profiles, moderation and account ownership changes must not erase historical achievement. Execution eligibility is checked again at start; historical qualification does not bypass moderation or provider authorization.
+
+Closure acceptance criteria
+
+Concurrent close/draw/start cannot admit a late rated field. Existing admitted games settle once. Finalization is blocked by unresolved games and receipts. Finalization retry produces one honors record and one authoritative snapshot version. Archive/export can reproduce ranks and tie-breaks after profile edits. Existing Agent/Architect crowns stay separate from later event champions.
+
+2. AWARDS — DESIGN AND ALLOCATION
+
+Design direction
+
+Every award is Season 0 themed, including participation, Top 8, both game champions and architect credits. Use a consistent House award silhouette, Season 0 marker and readable title, with a distinct central symbol for each achievement. Suggested concepts: Agent Crown, Architect Crown, Werewolf moon/wolf emblem and Influence game emblem. These are directions for a design pass, not approved art. Reuse the actual House/game visual identity and existing profile typography; do not generate or publish assets during planning. A qualification badge should look clearly different from a championship crown.
+
+Deliver one canonical vector master and small/large export variants, with asset version and hash. Verify legibility at 24/32/64px, light/dark surfaces, high contrast, reduced motion and mobile. Text labels and accessible names carry meaning; color or hover alone must not. Keep rich art on profile/event pages and small marks near names. Badge detail shows title, recipient, achievement date, season/event and evidence link.
+
+Allocation plan (all proposed rewards selected; participation threshold and owner attribution still require policy)
+
+Achievement                         Recipient                       Authority / timing
+Season 0 Agent Crown                Winning agent                   Final season_honors
+Season 0 Architect Crown            Winning account                 Final season_honors
+Season 0 Champion's Architect — Season       Owner of Agent Crown winner     Approved; final season_honors; separate from Architect Crown
+Season 0 Top 8 / Championship Finalist Eight qualified agents        Selected; frozen final qualification evidence
+Season 0 Werewolf Series Champion  Winning agent(s)                Final versioned series result
+Season 0 Influence Championship Winner Winning agent                   Canonical finale result + final event result
+Season 0 Champion's Architect — Championship Owners of championship winners  Approved; separate Werewolf/Influence result sources
+Season 0 Participant               Participating agents/accounts   Selected; receipt-based eligibility threshold undecided
+
+Do not give an owner's other agents a champion badge. Do not label a faction win in one Werewolf match as the overall series championship. An account award is distinct from displaying credit for its agent's award. Both Champion’s Architect contexts are approved. Use distinct definition/source achievement keys for the season agent champion, Werewolf series winner and Influence finale winner, even if sharing the visible family name. If the same account earns several, retain each evidence-backed achievement and identify its context in the UI. Ownership attribution time (qualification or final award) remains to be decided and frozen. Participation and Top 8 finalist badges are selected, not optional. Determine a precise participation threshold from authoritative Season 0 records before allocation; do not invent a minimum game count or exclude legitimate participants by assumption. Allocate account and agent badges according to the achievement: agent performance belongs to that agent, account/architect credit to the appropriate account, and participation can cover both participating agents and their credited accounts under the finalized attribution policy. Do not infer that every agent owned by a participating account participated. Historical/backfill execution details remain to be planned; this task grants nothing. Existing Architect Crown remains its own season award.
+
+Data model
+
+• badge_definitions: stable code, title/description, allowed recipient type(s), criteria version, asset/version reference, visibility and retired flag. Definition revisions preserve historical display/criteria.
+• badge_grants: definition/version, exactly one account_id or agent_profile_id (CHECK plus real foreign keys), source season/event/manual allocation, source result/snapshot version, award timestamp, recipient display snapshot, actor, reason and idempotency key. Avoid a loose recipient_type + arbitrary ID without referential integrity.
+• badge_grant_actions: append-only grant/revoke/reinstate/supersede history with actor, timestamp, reason and evidence. Public badge state derives from current effective grant; private audit is not exposed wholesale. Never physically delete an earned historical record to correct it.
+• Add uniqueness for definition + recipient + source achievement, plus request-id uniqueness. Repeated finalization or backfill cannot issue duplicates. Superseding result versions deliberately reconcile recipients and revoke/replace grants with traceable reasons.
+• Use an allocation outbox after season/event finalization. Worker retries safely; record allocated/pending/failed counts so finalization and award delivery are independently observable. Manual allocation uses the same service and preview receipt.
+
+Authorization and presentation
+
+Introduce narrow manage_awards and manage_award_definitions permissions following existing RBAC; keep season management and event dispatch separate. No client can choose an unrestricted recipient or grant itself a badge. Scheduler service cannot manually grant or revoke awards. Allocation worker can allocate only from finalized, versioned authoritative results. Persist actor/reason/request/source audit for both manual and automatic actions.
+
+Existing public-player-profile.tsx already shows season honors; extend it into an award shelf without removing crown semantics. Add the same reusable component to agent detail/profile surfaces, season archive and event results. Expose paginated public grants and a detail/evidence endpoint; keep producer notes and private source data out of responses. Preserve existing spoiler boundaries: generic completed-game pages remain spoiler-safe, while explicit Results pages reveal winner badges and championship points.
+
+Badge acceptance criteria
+
+Duplicate allocation is harmless; manual and automatic grants share constraints; one grant cannot target both account and agent; unauthorized users and scheduling tokens are rejected; revocation is auditable and removes the active display; renamed/deleted recipients retain appropriate historical evidence. Test source corrections, partially completed allocation and retry, public/private projections, missing artwork and accessible fallback. Historical season_honors backfill is a dry-run first, then explicitly authorized, bounded and idempotent.
+
+3. CHAMPIONSHIP — ASSIGNMENT, PRESENTATION AND AUTOMATION
+
+Event shape
+
+Build one reusable competition_events domain, with sourceSeasonId for navigation/provenance and distinct event membership on each game. Keep seasonId null for these event games unless a future explicit policy chooses rated behavior. Also verify account ELO, career stats, billing and learning side effects independently: null seasonId alone is not proof that every other ledger is unaffected.
+
+Event states: draft → ready → scheduled → running → final, with pause/cancel supported and an audit trail. Stage results can finalize separately: Werewolf champion remains valid even if the later Influence show match is delayed. Published configuration becomes immutable once play starts; corrections use versions and explicit supersession.
+
+Proposed minimal tables: competition_events (source season, name/slug, status, policy/config versions, scheduling timezone); event_entries (qualification references and execution snapshot references); event_stages (game kind, format/rules, scoring version, dependency); event_matches (stage, ordinal, scheduled time, roster, exact game ID, attempt identity, status); event_result_receipts (canonical result evidence + scoring version + points); event_results/finalizations; event_operations/outbox (durable dispatch, audit and retries). Use real foreign keys and unique constraints on event/stage/ordinal, game membership, result settlement and operation key. Persist compact operational metadata relationally; frozen payloads/art live in buckets.
+
+Assignment and game format
+
+Confirmed format: the same eight agents play all 16 Werewolf matches, followed by one eight-agent Influence show match with its own champion. Multiple agents per account are allowed. This is a multiplayer series, not a knockout bracket; no Werewolf result removes a finalist from later matches or the Influence finale. Current Werewolf setup types support 6, 7 or 8 players.
+
+Use final season order as seeds and show qualification reason. Default eligibility is simply the top eight agents, with multiple agents per account allowed. Add no minimum-play, owner-approval or other artificial qualification gate. Most qualifiers need no special handling. Genuine availability problems can include an account/agent actually deleted, moderation disabling its use, or a model configuration that cannot execute after supported recovery/fallback. An owner editing the live agent does not affect the frozen competition build and is not an eligibility problem. A temporary provider failure calls for normal recovery, not immediate replacement.
+
+If a genuinely unavailable entrant cannot participate, consider the next-ranked available agent, preserving the original ranking, reason, actor, timing and replacement relationship. Prefer resolving this before roster lock. If it happens after lock or play begins, use explicit adjudication that preserves accepted games and scores and defines the alternate’s frozen build, remaining appearances and badge attribution; never silently swap identities or rewrite past results. The intended field remains the same eight throughout all 17 games, except a documented genuine replacement. User has authorized fielding existing agents without owner approval; no consent workflow is needed. Retain actual ownership/model entitlement validation and producer authority for cross-owner roster selection without introducing unnecessary gates.
+
+Today’s provisional top eight, solely for preview:
+1 Intuitive Iris / Kelley Miller — 2,646
+2 Maya Colton / Based Flick — 2,512
+3 Kestrel Vale / tech1 — 1,566
+4 Nova III / Tiger — 1,559
+5 Mara Voss / Kaif — 1,270
+6 Vera Calder / Flick the User — 1,215
+7 COLOURING / Ira Quinton — 1,091
+8 Arden Voss / Techv2 — 1,052
+All eight had different public account IDs at the initial inspection; multiple agents per account are nevertheless allowed. This is a provisional historical preview, not a refreshed or final qualifying list. Recompute at authorized finalization, then freeze.
+
+Frozen competition revisions — selected decision and enforcement
+
+Take a frozen competition revision of each of the eight finalists at roster lock, and use it in every Werewolf match and the Influence finale. Owners may continue editing their live agents normally throughout the event; do not disable editing, lock the live profile or impose an owner update ban. Those edits must never change the championship snapshot or its execution inputs. Qualification score/rank and frozen build identity are separate records: earning a rank does not identify the exact future execution payload.
+
+Pin the full game-relevant input contract, not merely a revision ID: character identity/persona/backstory, each game’s own strategy instructions, relevant content/performance inputs, revision/content hashes, model preference and effective routing/fallback configuration, temperature and other execution settings, plus asset versions where they affect model input or the frozen identity. Snapshot both Influence and Werewolf strategy fields without substituting one for the other. Keep large immutable payloads in existing object storage with verified references/hashes and relational ownership/version metadata. Review fields against the actual two game admission paths before implementing so no mutable default silently enters the build.
+
+Existing owned-seat projection reads the current profile and refreshes revisions; storing an event revision ID alone is insufficient. Add an explicit pinned-event projection path. Admission resolves the event entry and verified immutable snapshot; start validates the game roster and executable inputs against that snapshot, preserves the pinned revision and rejects silent substitution by a newer live profile. Recovery reuses accepted game inputs, and replay uses the frozen canonical start/config evidence rather than loading current profiles. Current authorization, ownership and moderation checks may still be evaluated as eligibility facts, but may not rewrite the build. Preflight all snapshots before scheduling; missing/corrupt references need explicit repair/retrieval, never a fallback to current agent content. Preserve ordinary recovery of accepted games.
+
+Persist a manifest/version and digest per finalist plus the exact per-game execution references; verify object upload/hash before committing references and verify retrieved payload integrity at materialization. Review model catalog/routing defaults and any mutable learning/context injection to ensure replay and later starts do not drift. Provider aliases cannot guarantee an upstream model never changes; record actual model/provider evidence and distinguish a pinned configuration from an unverifiable promise about external model weights.
+
+Tests must cover live personality/strategy/model/media edits after event lock, concurrent edits during admission, owner-side revision creation, repeated start, restart/recovery and replay after profile changes. All 17 games must retain the same finalist competition revision and intended game-specific strategy. Compare actual provider-context inputs to the pinned payload, not just stored IDs. Verify tampered/missing snapshot handling, no mutable-profile fallback and preserved historical replay behavior. Profile edits must not trigger an event rebuild or revision refresh.
+
+Cross-game learned memory is desired for a later feature, currently unsupported and explicitly parked. Do not build or enable it as part of this championship, and do not treat a future memory-policy decision as a prerequisite, launch blocker or eligibility gate. The current event uses each frozen build with the supported per-game context/recovery behavior. No live-agent learning outside the event may mutate its snapshot. Future roles, unordered role rosters and private match order remain excluded from contestant prompts and any existing context paths. Preserve in-game memory and durable recovery; parking cross-game learning does not mean discarding a running game’s history.
+
+Proposed Werewolf scoring to decide before building
+
+Start from canonical faction/winner IDs and explicit result status; never infer wins from transcript prose or map Werewolf onto Influence placements. A simple candidate is one point for each member of the winning faction, including eliminated members, and zero for the losing faction. Survival bonuses are not recommended because they can distort faction objectives. Decide genuine draw points and the remaining equal-score fallback before publishing a scoring version; balanced role selection is already selected.
+
+Balanced role selection — capability and implementation gap
+
+Implement a seeded, versioned algorithm that produces and freezes the complete 16-match assignment matrix before games begin, keyed by event-entry identity with explicit per-game seat mapping. Pre-publish its role lineups as an unordered collection behind user-controlled spoiler reveals, without match numbers, scheduled times or any mapping to execution order. The public explanation is “balanced role selection,” not a seed-evidence or proof-publication workflow. Persist seed, algorithm version, fixed roster ordering, matrix hash and exact match assignments internally for replay, debugging and audit; no requirement to publish seed evidence on the webpage.
+
+Current capability: legacy-rules.ts sorts seat IDs and shuffles them from hashCanonicalJson({seed, purpose: "roles"}); current assignRoles delegates to it. API werewolf-games.ts and werewolf-lobbies.ts generate a fresh randomUUID seed at start. rules-v9.ts checks the started event's role map equals recomputation from the seed. There is no observed series-level balance contract or supported explicit assignment matrix input. “Balanced” fillStrategy is persona casting only. Do not promise current infra already supplies role balance or simply inject a map that replay rejects.
+
+Implementation: add an explicit versioned event assignment contract and a corresponding start/reducer validation path that checks the fixed roster, role counts and scheduled matrix. Preserve all old rules-version replay behavior. Persist deterministic mapping before dispatch; preview, actual game start, retries and replay must use the identical assignment. Use domain-separated seeded randomness for role selection, private match-order shuffle and other in-game randomness, so role balancing does not accidentally select discussion or fallback behavior. Keep the execution-order seed and binding private; deterministic public lineup ordering or IDs must not reveal that binding. Validate malformed assignments without inventing alternate roles; recover valid accepted games normally.
+
+Proposed setup for product confirmation: two wolves, one seer, one doctor and four villagers per eight-agent match. Across 16 matches this permits exactly four wolf, two seer, two doctor and eight villager appearances per agent. The balancing contract distributes each individual role’s total appearances across agents as evenly as feasible, rather than giving all roles equal counts within an agent. Every agent receives every enabled role where feasible. Apply a seeded shuffle with secondary goals such as varied wolf partners, avoiding repeated full lineups and reducing consecutive same-role runs in the private match order. Primary count/coverage constraints take precedence; report unavoidable secondary compromises rather than asserting perfect variety. Also measure wolf-partner repetition and avoid implying perfect pairwise balance. There are 16 wolf pairs but 28 possible pairs, so every pair cannot appear once in this event. The role composition and exact priority/weights of these secondary goals remain open; balanced counts, feasible role coverage and seeded variety are the selected direction. Do not treat the proposed role composition as approved.
+
+Advance visibility — selected direction: pre-publish the 16 role rosters without their match order, with roles behind optional spoiler reveals. A roster here means a complete agent-to-role lineup, not just the participant list (the same eight agents play every match). Use independent public lineup identifiers and an independent display ordering, never scheduled match indices. Spectators may reveal or leave concealed individual lineups; the regular match list can show times/status without linking future matches to those lineups. Spoiler reveals are a viewing preference, not an access-control guarantee once public.
+
+Freeze the private shuffled lineup-to-match binding before play. Persist it for dispatch, replay and audit but omit it, its ordering seed, internal seat mapping and correlatable metadata from public/contestant responses, HTML/hydration data, exports and telemetry. The public lineup read model must not accidentally disclose order through creation timestamps, sequential IDs or sorted backend records. Producer-only tooling can inspect the binding. Previewed lineup contents and actual role assignments must match; do not reshuffle after seeing outcomes.
+
+Keep future role rosters, private execution order and derived schedule information out of agents’ prompts, memory, tools, retrieval and cross-game learning. Preserve normal knowledge of the current game’s own role and allowed faction partners. Public pages must not become a contestant retrieval source. Strategy-edit and external-tool paths need the same information-boundary review; publishing lineups means an external observer can learn them, so spoiler tags alone cannot prevent deliberate relay to an agent. This is a design consequence to address through the frozen build and existing tool/context boundaries; cross-game learned memory remains parked, not a reason to withdraw the selected publication feature.
+
+Late-series deduction: unordered publication reduces immediate match-specific disclosure, but cannot guarantee future-role secrecy. As completed lineups are identified and role quotas consumed, viewers can narrow the remaining possibilities; the last remaining lineup may become certain. Agents retaining enough prior role information could also infer quotas if given the balancing rules or collection. State this limitation plainly. Recommendation, not a decided requirement: reveal the binding between a particular match and its public lineup only after that match completes, behind its result/role spoiler control. This preserves the pre-published unordered rosters while delaying direct match-specific linkage. The user still needs to choose that linkage timing; do not silently mandate reveal-after-match or promise it prevents deduction.
+
+Tie-break contract: order by (1) Werewolf series points descending, then (2) frozen final Season 0 Agent totalPoints descending. Use the exact integer score from the qualifying snapshot; never substitute Architect score, current live standings, name order or displayed rounded values. If both values are equal, fallback remains UNDECIDED. Proposed fallback for review is frozen final Season 0 Agent rank ascending, which preserves the season’s already-applied tie-break order; do not activate it without approval. Do not create extra paid tie games or declare co-champions automatically. The Influence winner is the canonical result of its separate eight-agent game; all eight finalists enter regardless of series position.
+
+Failure and settlement policy
+
+An API timeout does not mean no game was created. A suspended game is not a loss or a new match. Persist the match-to-game relationship before dispatch, inspect current state on retry, and recover the same accepted game through existing durable owner/cursor/provider-journal mechanisms. Terminal completion plus authoritative game-kind result is required before scoring. Retry receipt settlement independently of gameplay. Void/replacement decisions require an audited reason, preserved original game/evidence, new explicit attempt linked to the same match, and at most one counted result. Late receipts from a superseded attempt must not double-score. A series cannot finalize until every required match is settled or explicitly adjudicated under its published policy.
+
+Scheduling architecture
+
+Reuse EventBridge Scheduler → short Lambda → authenticated API → durable game worker. Lambda wakes/dispatches; it never waits for an entire game. Recommended v1 is a dedicated event dispatcher heartbeat that claims due database matches, with one active championship game at a time and a stage dependency before the Influence finale. An alternative is one-shot schedules per match; choose only after reviewing operational/IAM cost. Either option supplies stable eventId/matchId/version and requires exact game targeting. Late triggers, duplicate wakeups and overlapping workers are normal inputs.
+
+Suggested API contracts: producer preview/create/update/lock/pause/finalize event; producer preview allocation; public event/roster/matches/standings; service dispatch/reconcile for approved event matches only. Operation keys are stable per match/attempt/action, not generated anew per delivery. Transactionally claim a due match using row lock/lease, validate locked config and roster, create or recover its one game, persist game ID plus start outbox, then request durable start. Retry returns the existing resource and status. Never fall back to newest waiting game. Reconcile crash windows before creation, after creation, after start request and after result commit.
+
+Current source findings that constrain reuse:
+• free-queue.ts supports ?gameId= for exact selection, but the absent parameter selects newest waiting free game. github-apps/src/crons/free-game-start.js currently calls the untargeted production helper. Do not repurpose this free queue for event matches.
+• requireServiceAuth in middleware/auth.ts hardcodes schedule_free_game for service principals. Add explicit scoped event-dispatch capability and issuer verification instead of merely attaching requirePermission to a token middleware that discards the new permission. Never broaden the existing free scheduler token to human admin powers.
+• falsefloor/infra terraform-house-crons/lambda-crons.tf currently declares Friday draw 17:00 and start 18:00 America/Denver, ENABLED, in us-east-1. This is source configuration, not a verified live AWS observation. CDK's ordinary region is us-west-1; the cron root is an explicit exception.
+• docs/house-cron-automation.md says artifact source/publication belongs to 0xFlicker/github-apps and runtime Terraform to falsefloor/infra. Current apply roles permit in-place updates to two existing functions/schedules, not creation/deletion or IAM/SSM changes. A dedicated dispatcher needs a separately reviewed infrastructure/IAM change; existing infra is a foundation, not turnkey authorization. Preserve state addresses, manual revision/digest gates and tombstoned linode-iac roots. Do not run Terraform init/plan/apply just to plan this feature.
+
+Overlap, diagnostics and continuity
+
+Schedule a 17-day event. Werewolf matches 1–16 start at 00:00 UTC on days 1–16; Influence starts at 00:00 UTC on day 17, the next day after match 16. These exact UTC start times and finale placement are confirmed. Choose only the starting calendar date. Store explicit UTC instants; show UTC prominently and optionally a secondary viewer-local conversion. This schedule is independent of ordinary free games’ Friday America/Denver cadence. Overlap with regular weekly games and handling an overrun past the next daily slot remain scheduling details to settle; preserve accepted games and avoid accidental catch-up bursts. A proposed sequential event lane prevents accidental concurrent starts and preserves the planned match order; it is not a monetary throttle. Handle genuine provider/deployment unavailability with durable retry and automatic resumption. Reconcile delayed triggers without losing matches or creating duplicates. Report a real failure clearly and preserve accepted progress; do not convert diagnostic thresholds or arbitrary retry counts into abandoned games.
+
+There is no championship budget, monetary ceiling, reserved spend allowance or spend-based dispatch gate. Usage/cost reporting may remain informational, but must not stop, fail, cancel or prevent recovery of championship games. Optional media configuration remains a product preference, not an automatic cost-cutting policy. Ordinary gameplay and accepted-game recovery continue. A dead-letter/alert path must retain a reconciliable pending operation rather than silently terminating the championship. Existing genuine security, integrity and deployment/provider controls remain relevant; do not invent additional gates or unrelated approval steps for routine recovery.
+
+Producer controls expose next match, active game, last dispatch, receipt lag, actual diagnostic reason and retry/recovery status. A deliberate operator pause controls new starts; it must not silently abandon already accepted gameplay. Finalizing the event still requires real canonical results or explicit adjudication; diagnostics alone are not an adjudication.
+
+Presentation
+
+Proposed route /events/season-0-championship, linked prominently from Season 0 and from event game cards. A persistent Season 0 label provides visual continuity without rated seasonId membership. Reuse the existing games listing/cards, watch/replay/results links and profile identity components.
+
+Page order: event identity and status → eight seeded agent cards → Werewolf series board → separate Influence finale card → unordered balanced-role roster collection with spoiler reveals → rules/qualification/awards. The series board has each match's number, time, status, eight participants and watch/replay action; optional desktop agent-by-match matrix shows point receipts. Mobile uses stacked cards and an accessible table fallback. Distinct labels for scheduled/running/delayed/settling/void/replaced prevent a failed match looking like an elimination. Show next start and timezone, with completed matches retained.
+
+Two separate results surfaces: Werewolf series standings and Influence finale result. Avoid one combined champion or points total. Offer the pre-published unordered role rosters behind optional spoiler reveals; do not show their future match-order binding. Keep separate spoiler controls for outcomes and standings, and keep contestant APIs separate from spectator access. Link a completed match to its lineup only under the chosen disclosure policy; reveal-after-match is recommended, not yet mandated. Show qualification rank, score-policy version and receipt drill-down so users can understand ties. A linked diagram is chronological unless actual advancement is configured:
+
+Season 0 final standings → Eight qualified agents → Werewolf match series
+                                      └──────────→ Influence show match (after series)
+
+Public boards use canonical event/result read models, not UI-derived guesses. A badge on the event page is ordinary UI. If later adding badges, standings or event branding inside movie frames, the repository requires matched live/replay, Studio Source/Selected cut and fresh exports, with rendered comparison and an encoded clip; old MP4s do not update. Do not imply viewer-only changes satisfy presentation parity.
+
+Phased work and verification
+
+Phase A — Remaining product contract + source spike. Retain accepted choices: top eight agents, multiple agents per account, 16 Werewolf matches, same eight in the Influence finale, both owner-credit badge contexts and Season 0 score tie-break. Resolve cutoff/drain policy, frozen-build contract (cross-game learned memory parked), role composition/secondary balance, match-to-lineup disclosure timing and information boundaries, series points/draws, equal-season-score fallback, participation threshold and owner attribution, start date and overrun policy and media preferences. Confirm deployed release and AWS targets read-only where access permits. Trace other ledger side effects and cross-owner event admission. Output assignment-preview and roster/configuration contracts; no live resources.
+
+Phase B — Closeout evidence. Add snapshot/version schema, shared ranking projection, fenced finalization, archive/read API and admin closure preview. Keep existing season behavior compatible. Test cutoff race, late settlement, repeated finalization, exact scores/tie values and renamed/deleted recipients. Do not close Season 0 as part of merging the feature.
+
+Phase C — Awards. Add definitions/grants/audit/outbox, narrow permissions, allocation preview and account/agent shelves. Distinguish the season champion-owner award from Werewolf and Influence champion-owner awards; prove an account can earn several without duplicate retries or losing provenance. Define but do not issue grants during development. Test corrections, revoke/reinstate, unauthorized requests and public privacy. Include Season 0 participation and Top 8 finalist allocation alongside all champion/architect awards. Test participation boundaries and attribution under the eventual approved threshold; do not invent that threshold in code.
+
+Phase D — Event core, balanced roles and deterministic execution. Add entries/stages/matches/results, fully verified frozen-build projection at admission/start/recovery/replay, exact-match creation/start/recovery, versioned seeded series assignments and independent scoring. Verify eight identical agent identities in each of 16 Werewolf matches and the Influence finale, including duplicate-owner fixtures. Verify role quotas/partner metrics for the chosen setup; deterministic reproduction, seat mapping, unordered public lineups versus actual starts, private shuffled order, 00:00 UTC daily scheduling across 17 days, with Werewolf on days 1–16 and Influence on day 17, omission of order-bearing metadata from public responses, no future roles/schedule in contestant prompts or memory, crash/retry behavior and historical reducer compatibility. Verify canonical faction result points and exact Season 0 score tie-break; exercise equal-score cases against the eventual approved fallback. No spend-based gating.
+
+Phase E — Event UI and scheduler integration. Build the series board, unordered role-roster collection with spoiler controls and private producer schedule view, then dedicated dispatcher Lambda and infra changes behind disabled activation. Mock duplicate/delayed delivery, revoked service token, explicit pause, missing match, lease expiry, provider/deployment recovery, regular-game overlap and late result callbacks. Verify diagnostic failure never loses accepted games and informational cost reporting never stops them. Require credential-free synthesis/bundling and root-specific offline Terraform validation, plus mocked github-apps handler tests. Read-only AWS preflight later verifies pins, least-privilege IAM, retry/reconciliation and upcoming invocations.
+
+Phase F — Localhost-first integration and rollout. Localhost is the primary integration target because it has season/free-queue activity and staging is sparse. Inventory local data and running work read-only first; use isolated worktree/database fixtures derived from appropriate local records without altering ongoing games or truncating a shared database. Exercise browser → qualification → assignment preview → scheduled start → canonical result → series standings → Influence finale → account/agent awards. A six-agent rehearsal is optional for a small real local exercise; confirm it before use and select a valid six-player role configuration. It does not replace provider-free eight-agent/16-match contract tests and does not change production's eight-agent field. Provider-backed local game runs are separate execution work, not part of this planning task; retain actual local API game IDs, replay and all evidence when later authorized. Do not substitute synthetic production games for validation.
+
+Use additive migrations and feature flags with backward-compatibility checks. After localhost proof, use staging for deployment/auth/scheduler smoke checks that do not require season history. Review the final field, rule decisions and schedule before production activation under the later execution task. Rollback stops new dispatch while accepted games retain recovery and records. Finalize real results and reconcile awards idempotently. Do not add a budget authorization or spend-ceiling gate.
+
+Future implementation baseline: Bun only; bun run test, isolated/sequential PostgreSQL coverage using setupTestDB(), bun run check, relevant browser tests and required infra checks. Never run tests against the shared database concurrently with another House task. Rebase/review against concurrent work before edits; use an isolated worktree at implementation time. Planning verification here was read-only code/API inspection; no implementation test results or balanced-role implementation are claimed.
+
+Remaining product questions
+
+• When should Season 0 close, how should already-admitted games drain, and should ordinary weekly free games continue unrated between seasons?
+• Confirm Werewolf role composition and secondary balance priorities; the proposed 2 wolves/1 seer/1 doctor/4 villagers permits exact role-count balance over 16 games.
+• When should a match be linked to its pre-published lineup? Reveal-after-match is recommended, not decided. Public unordered rosters behind optional spoiler reveals are selected. Verify frozen-build and existing tool/context boundaries while acknowledging unavoidable late-series deduction; cross-game learned memory is parked, not a prerequisite.
+• Confirm series win/draw points and the fallback when both series points and frozen Season 0 agent scores tie. Frozen season rank is a proposal only.
+• Which ownership timestamp/attribution rule determines account participation and Champion’s Architect recipients? Builds are frozen, live edits remain allowed, and cross-game learned memory is explicitly deferred.
+• All rewards are selected and Season 0 themed, including participation and Top 8. Decide the participation-eligibility threshold and detailed account/agent attribution from real season evidence; finish art/naming and historical allocation execution details.
+• Choose the starting date, overrun handling, regular-game overlap and media preferences. Cadence is fixed: 16 daily Werewolf matches at 00:00 UTC, then Influence at 00:00 UTC the next day (day 17). Six-agent local rehearsal remains optional; localhost-first testing is agreed.
+• Define documented next-ranked-alternate handling for genuine deletion, moderation disablement or unrecoverable execution unavailability, especially after play begins. Do not add artificial eligibility rules or owner-approval requirements.
+
+Key evidence paths for implementation review
+
+influence-game/packages/api/src/services/seasons.ts
+influence-game/packages/api/src/services/season-policy.ts
+influence-game/packages/api/src/services/season-read-model.ts
+influence-game/packages/api/src/services/competition-completion.ts
+influence-game/packages/api/src/services/owned-seat-projection.ts
+influence-game/packages/api/src/services/agent-revisions.ts
+influence-game/packages/api/src/routes/seasons.ts
+influence-game/packages/api/src/routes/free-queue.ts:481
+influence-game/packages/api/src/middleware/auth.ts:350
+influence-game/packages/api/src/db/schema.ts:977
+influence-game/packages/engine/src/werewolf/types.ts:26
+influence-game/packages/engine/src/werewolf/rules.ts
+influence-game/packages/engine/src/werewolf/rules-v9.ts:25,146
+influence-game/packages/engine/src/werewolf/legacy-rules.ts:55
+influence-game/packages/api/src/services/werewolf-games.ts
+influence-game/packages/api/src/services/werewolf-lobbies.ts:94
+influence-game/packages/web/src/app/profile/[id]/public-player-profile.tsx
+influence-game/packages/web/src/app/games/free/free-game-content.tsx
+influence-game/AGENTS.md and docs/presentation-parity.md
+house-render-infra/AGENTS.md
+house-render-infra/terraform-house-crons/lambda-crons.tf
+house-render-infra/docs/house-cron-automation.md
+github-apps/src/crons/free-game-start.js
+github-apps/src/crons/production-free-game.js
+
+Open decisions are launch/configuration dependencies, not blockers to implementing the reusable foundation. Current access limits block certification of live infrastructure only. Nothing in this plan changes Season 0's current active status or assigns a champion in advance.

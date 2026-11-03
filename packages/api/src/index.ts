@@ -1,3 +1,4 @@
+import { createChampionshipRoutes } from "./routes/championships.js";
 import { createAudioRoutes } from "./routes/audio.js";
 import { startAudioWorker } from "./services/audio-tracks.js";
 import { createHouseShareRoutes } from "./routes/house-share-links.js";
@@ -688,6 +689,7 @@ const freeQueueRoutes = createFreeQueueRoutes(db);
 app.route("/", freeQueueRoutes);
 
 // Dual Crown seasons and competition data
+app.route("/", createChampionshipRoutes(db));
 const seasonRoutes = createSeasonRoutes(db);
 app.route("/", seasonRoutes);
 

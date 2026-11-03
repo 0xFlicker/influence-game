@@ -1,3 +1,4 @@
+import { AwardShelf } from "@/components/award-shelf";
 import Link from "next/link";
 import type { ParticipationFilter } from "@influence/engine/house-participation";
 import { ParticipationRows, participationFilters } from "@/components/participation-history";
@@ -44,6 +45,7 @@ export function PublicPlayerProfileView({
         </div>
       </header>
 
+      <AwardShelf awards={profile.awards ?? []} />
       <CurrentSeasonSection profile={profile} />
       <CareerSection profile={profile} />
       <section className="influence-panel min-w-0 rounded-xl p-5">

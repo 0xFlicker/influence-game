@@ -1,0 +1,14 @@
+# Championship foundation validation
+
+Execution: Flicks-MacBook-Pro-4.local, macOS Darwin 27 arm64. Isolated branch `codex/season-0-championship` in `/Users/user/Documents/Codex/2026-11-02/task-2/influence-game`, based on `84d2f468aef8d94966a5edd6fa412de7503c8a38`. Original development checkout was not modified.
+
+Local PostgreSQL at 127.0.0.1:54320. The broad database suite uses `championship_task2_test` with advisory lock 123456701. Browser fixtures and the final focused database recheck use `championship_task2_browser` with advisory lock 123456702. Browser servers were stopped before that database was reused. No shared development or test database was used. No paid providers, real game execution, production migrations, deployments, badges, season transitions or cloud schedules were invoked.
+
+- Full provider-free suite: 3,305 passed, five skipped, zero failed, 40,338 assertions. Run with local server permission; initial sandbox-restricted server tests could not bind ports. An extra profile fetch exposed an existing test contract and was removed in favor of extending the existing public profile response.
+- Final `bun run check`: all workspace type checks and lint passed.
+- Focused domain/UI suite: eight passed, 309 assertions. Tests verify seeded role determinism, per-agent role totals, qualification and exact score tie comparisons, schedule boundaries, spoiler markup and award presentation.
+- Final PostgreSQL championship + storage migration recheck: 17 passed, 102 assertions. The broad run had caught a legacy migration fixture that misclassified the four new bucket-only columns; the fixture was corrected. Foundation tests verify concurrent lock idempotency, full eight-agent field with repeated owners, 17 UTC match records without new game rows, immutable build reads after live-profile edits, payload tamper detection, public redaction, grants/revocations and role permissions.
+- Real Next.js page → local Hono API → isolated PostgreSQL and payload fixture: HTTP 200, 16 closed spoiler disclosures, reveal works, zero browser page errors, no horizontal overflow at 390px. Desktop, mobile and revealed screenshots were inspected. This proves the event presentation/storage flow, not actual championship game execution.
+- Browser servers were stopped after verification. Evidence remains in `artifacts/championship/` in this task checkout; fixture script refuses any database except `championship_task2_browser`.
+
+Remaining execution validation is explicitly listed in `docs/championship-events.md`: pinned game-start contexts, canonical role/replay validation, exact-match dispatch and restart recovery, event results/finalization, automated award allocation and cloud scheduler scope. No claims are made that those paths exist in this foundation draft.

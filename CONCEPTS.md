@@ -1030,3 +1030,7 @@ A provider image reference identifies immutable private image bytes by SHA-256, 
 Empower result screens emphasize the winner or tied cast and their totals, with other votes combined. Detailed voter receipts remain in the preceding ballot view. Live playback and new composition-v7 exports use this compact layout; pinned v3–v6 exports retain their layouts. The House can announce a pending runoff separately from its eventual winner.
 
 Studio and local video rendering share Werewolf's compact result/cast layout and reserved House-caption geometry with the viewer. An independently selected Safety Bounce thought retains only its pre-choice board and character framing, never the omitted response or future choice. Presentation updates require freshly prepared export bundles; a saved selection descriptor can be reused to retain its exact cut and pinned media.
+
+## Championship events and award grants
+
+A championship event links to a source season without reusing rated season membership for display. Its qualification evidence, frozen competition builds, private role order and game membership are separate authorities. Live owner edits do not change the frozen build. Award definitions describe achievements; evidence-backed grants attach one achievement to one account or agent and retain revocation history. See [the foundation draft](docs/championship-events.md) for current capabilities and the execution work still outstanding.

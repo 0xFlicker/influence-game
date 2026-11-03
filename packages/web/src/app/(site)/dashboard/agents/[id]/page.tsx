@@ -1,3 +1,4 @@
+import { AgentAwards } from "@/components/agent-awards";
 import { AuthGate } from "@/components/auth-gate";
 import { Nav } from "@/components/nav";
 import { AgentSeasonAnalysisView } from "@/app/dashboard/agents/[id]/agent-season-analysis";
@@ -17,6 +18,7 @@ export default async function AgentAnalysisPage({
       <Nav />
       <main className="flex-1 px-6 py-10 max-w-5xl mx-auto w-full">
         <AuthGate>
+          <AgentAwards agentId={id} />
           <AgentSeasonAnalysisView agentId={id} />
         </AuthGate>
       </main>

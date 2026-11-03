@@ -268,6 +268,7 @@ export interface PublicReplayAgentPreview extends PublicAgentPreview {
 }
 
 export interface PublicPlayerProfile {
+  awards?: import("./championship").PublicAward[];
   identity: PublicPlayerIdentityRef;
   currentSeason: null | {
     season: {
@@ -3586,6 +3587,7 @@ export interface ArchitectSeasonStanding {
 }
 
 export interface SeasonDashboard {
+  championships?: Array<{ slug: string; name: string; status: string }>;
   schemaVersion: 1 | 2;
   season: SeasonIdentity;
   agentStandings: AgentSeasonStanding[];

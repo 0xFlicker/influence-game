@@ -15,6 +15,9 @@ import { schema } from "./index.js";
 // ---------------------------------------------------------------------------
 
 const PERMISSIONS = [
+  { name: "manage_award_definitions", description: "Define reusable account and agent awards" },
+  { name: "manage_championships", description: "Manage competition drafts and frozen fields" },
+  { name: "manage_awards", description: "Grant and revoke evidence-backed account and agent awards" },
   { name: "manage_invites", description: "Manage signup policy and redeemable invite codes" },
   { name: "manage_game_imports", description: "Import uploaded game exports" },
   { name: "manage_game_assets", description: "Manage editorial game images" },
@@ -68,6 +71,8 @@ const ROLES = [
       "manage_deployment_admission",
       "manage_provider_health",
       "manage_seasons",
+      "manage_championships",
+      "manage_awards",
       "retry_game_settlement",
     ],
   },

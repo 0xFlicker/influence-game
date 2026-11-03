@@ -85,7 +85,8 @@
     "./model-route-metadata": "./src/model-route-metadata.ts",
     "./audio-track": "./src/audio-track.ts",
     "./audio-watch": "./src/audio-watch.ts",
-    "./werewolf/house-speech": "./src/werewolf/house-speech.ts"
+    "./werewolf/house-speech": "./src/werewolf/house-speech.ts",
+    "./championship": "./src/championship.ts"
   },
   "scripts": {
     "simulate:werewolf": "bun run src/werewolf/simulate.ts",
