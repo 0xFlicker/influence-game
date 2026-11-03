@@ -87,7 +87,12 @@ export function visualImageJournal(db: DrizzleDB, operation: Operation, beforeDi
       await beforeDispatch?.();
       await db.transaction(async (tx) => {
         await beforeDispatch?.(tx);
-        if (operation.userId) {
+        if (operation.operationKey.startsWith("championship-art:")) {
+          const preparationId = operation.operationKey.split(":")[1]!;
+          const [art] = await tx.select().from(schema.championshipArtwork).where(eq(schema.championshipArtwork.id, preparationId));
+          const [event] = art ? await tx.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, art.eventId)) : [];
+          if (!art || art.ownerId !== operation.userId || !art.selected || art.status !== "processing" || event?.status !== "preparing") throw new Error("Championship artwork authority is no longer active");
+        } else if (operation.userId) {
           if(operation.operationKey.startsWith('full-body:')) await dispatchInference(tx,`visual:${operation.id}`,operation.userId);
           else await checkInferenceDispatch(tx,operation.userId);
         }
@@ -358,4 +363,23 @@ async function reusableVisualAttempt(db: DrizzleDB, gameId: string | null, key: 
     key = job?.reusePrefix ? job.reusePrefix + key.slice(`media:${job.id}`.length) : undefined;
   }
   return null;
+}
+
+/** Championship preparation is event-authorized; it never consumes an owner's edit allowance. */
+export async function renderChampionshipVisualReference(db: DrizzleDB, input: {
+  preparationId: string; kind: "body" | "avatar"; request: VisualImageRequest; beforeDispatch: VisualBoundaryGuard;
+}) {
+  await input.beforeDispatch();
+  const [art] = await db.select().from(schema.championshipArtwork).where(eq(schema.championshipArtwork.id, input.preparationId));
+  if (!art) throw new Error("Championship preparation missing");
+  const operationKey = `championship-art:${art.id}:${input.kind}`;
+  const inputHash = hash(stableJson({ ...input.request, references: input.request.references.map(hash) }));
+  let operation = await reserveVisualOperation(db, null, operationKey, inputHash, art.ownerId, { ...input.request, references: input.request.references.map(hash) });
+  const prior = await loadPayloads(db.select().from(attempts).where(eq(attempts.operationId, operation.id)));
+  const completed = prior.find(entry => entry.image !== null && entry.receipt !== null && !entry.receipt.failure && !entry.receipt.chargeUncertain);
+  if (completed?.image) return completed.image;
+  if (prior.some(unresolved)) throw new VisualRenderRecoveryRequired(operation.id, "Artwork provider outcome is uncertain; retain the attempt for operator reconciliation");
+  if (prior.some(entry => entry.generation === operation.generation)) operation = await retryVisualRender(db, operation.id, operation.generation);
+  const result = await generateVisualImage(input.request, visualImageJournal(db, operation, input.beforeDispatch));
+  return Buffer.from(result.image);
 }

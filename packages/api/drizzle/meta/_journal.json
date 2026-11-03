@@ -1030,6 +1030,13 @@
       "when": 1792952785116,
       "tag": "0146_championship_replay_attempts",
       "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1792952785117,
+      "tag": "0147_championship_artwork",
+      "breakpoints": true
     }
   ]
 }

@@ -1,21 +1,14 @@
-import { resolveWerewolfStrategy } from "@influence/engine/werewolf";
-import { ensureActiveAgentRevisionInTransaction, resolveFreeTrackEffectiveRuntimeSnapshot } from "./agent-revisions.js";
 import { championshipStandings } from "./championship-results.js";
-import { freezeChampionshipExecutionConfig } from "./championship-execution-config.js";
-import { readSeasonFinalizationSnapshot } from "./season-finalization-snapshot.js";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, or } from "drizzle-orm";
 import {
-  championshipSchedule, createBalancedRoleSchedule, SEASON_ZERO_CHAMPIONSHIP_POLICIES,
-  publicRoleLineups, qualifyAgents, unresolvedChampionshipPolicies, parseChampionshipPolicies,
+  championshipSchedule, SEASON_ZERO_CHAMPIONSHIP_POLICIES,
+  publicRoleLineups, unresolvedChampionshipPolicies, parseChampionshipPolicies,
   type ChampionshipPolicies,
 } from "@influence/engine/championship";
-import { sealGameModelRouting, type GameModelRouting, type GameProviderManifest } from "@influence/engine";
+import { type GameModelRouting, type GameProviderManifest } from "@influence/engine";
 import { schema, type DrizzleDB } from "../db/index.js";
-import { readJson, storeJson } from "./payload-storage.js";
-import { readChampionshipQualification } from "./season-read-model.js";
-import { hasEligibleAgentContent } from "./agent-content-eligibility.js";
-import { authorizedModelPreference, creationModelRouting } from "./game-model-routing.js";
+import { readJson } from "./payload-storage.js";
 
 type Profile = typeof schema.agentProfiles.$inferSelect;
 export type FrozenCompetitionBuild = {
@@ -24,6 +17,7 @@ export type FrozenCompetitionBuild = {
   character: Pick<Profile, "name" | "personality" | "backstory" | "strategyStyle" | "werewolfStrategyStyle" | "personaKey" | "gender" | "contentRevisionId" | "avatarUrl" | "fullBodyReferenceUrl" | "headPosition" | "portraitCrop" | "performanceInstructions" | "visualDesign">;
   modelRouting: GameModelRouting; contestantManifest: GameProviderManifest;
   crossGameMemory: "disabled";
+  artwork?: { revisionId: string; avatarHash: string; bodyHash: string };
 };
 export class ChampionshipError extends Error {
   constructor(message: string, public readonly status: 400 | 404 | 409 = 400) { super(message); }
@@ -57,63 +51,8 @@ export async function configureChampionshipDraft(db: DrizzleDB, eventId: string,
 }
 /** Locks snapshots and creates schedule records only. It never creates/starts games or cloud schedules. */
 export async function lockChampionshipRoster(db: DrizzleDB, eventId: string, actorId: string, requestId: string) {
-  nonempty(requestId, "Request ID");
-  return db.transaction(async tx => {
-    const [event] = await tx.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, eventId)).for("update");
-    if (!event) throw new ChampionshipError("Event not found", 404);
-    if (event.status !== "draft") {
-      const [audit] = await tx.select().from(schema.competitionAudit).where(and(eq(schema.competitionAudit.eventId, event.id), eq(schema.competitionAudit.actorId, actorId), eq(schema.competitionAudit.requestId, requestId), eq(schema.competitionAudit.action, "roster_locked")));
-      if (audit) return event;
-      throw new ChampionshipError("This event roster is already locked", 409);
-    }
-    const [season] = await tx.select().from(schema.seasons).where(eq(schema.seasons.id, event.sourceSeasonId)).for("update");
-    if (season?.status !== "final") throw new ChampionshipError("Finalize the source season before locking its qualifying field", 409);
-    const pending = unresolvedChampionshipPolicies(event.policies);
-    if (pending.length || !event.startDate) throw new ChampionshipError(`Decisions still needed: ${[...pending, ...(!event.startDate ? ["startDate"] : [])].join(", ")}`, 409);
-    const finalization = await readSeasonFinalizationSnapshot(tx, season.id);
-    const standings = finalization?.qualification ?? await readChampionshipQualification(tx, season.id);
-    const qualified = qualifyAgents(standings);
-    const frozenAt = new Date().toISOString();
-    const modelRouting = await creationModelRouting(tx, actorId, {});
-    // Lock in stable ID order, avoiding profile lock inversions across producer operations.
-    for (const candidate of [...qualified].sort((a, b) => a.agentId.localeCompare(b.agentId))) {
-      const [profile] = await tx.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, candidate.agentId)).for("update");
-      if (!profile || !hasEligibleAgentContent(profile)) throw new ChampionshipError(`Qualifier ${candidate.name} is unavailable; record an alternate decision rather than silently substituting`, 409);
-      // Legacy profiles may predate revision pointers. Establish evidence now, not on day 17.
-      const sourceRevisionId = profile.currentRevisionId ?? (await ensureActiveAgentRevisionInTransaction(tx, {
-        profile, effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile), trigger: "profile_create",
-      })).revision.id;
-      const preference = await authorizedModelPreference(tx, profile.userId, profile.modelPreference);
-      const id = randomUUID();
-      const { name, personality, backstory, strategyStyle, werewolfStrategyStyle, personaKey, gender, contentRevisionId,
-        avatarUrl, fullBodyReferenceUrl, headPosition, portraitCrop, performanceInstructions, visualDesign } = profile;
-      const sealedRouting = sealGameModelRouting(modelRouting, [{ id, preference }], false);
-      const build: FrozenCompetitionBuild = {
-        version: 1, competitionRevisionId: id, agentId: profile.id, ownerId: profile.userId,
-        sourceRevisionId, frozenAt,
-        character: { name, personality, backstory, strategyStyle, werewolfStrategyStyle: resolveWerewolfStrategy(werewolfStrategyStyle, personaKey), personaKey, gender, contentRevisionId,
-          avatarUrl, fullBodyReferenceUrl, headPosition, portraitCrop, performanceInstructions, visualDesign },
-        modelRouting: sealedRouting, contestantManifest: sealedRouting.contestants![id]!, crossGameMemory: "disabled",
-      };
-      const stored = await storeJson(build);
-      await readJson(stored); // Verify referenced bytes before committing the immutable manifest reference.
-      await tx.insert(schema.championshipEntries).values({ id, eventId, agentId: profile.id, ownerId: profile.userId,
-        name, qualificationRank: candidate.rank, seasonPoints: candidate.seasonPoints, sourceRevisionId, build: stored });
-    }
-    const execution = await storeJson(freezeChampionshipExecutionConfig(event.policies.roleComposition!));
-    await readJson(execution);
-    const qualification = await storeJson(standings);
-    const roleSchedule = await storeJson(createBalancedRoleSchedule(qualified.map(row => row.agentId), event.policies.roleComposition!, randomUUID()));
-    await Promise.all([readJson(qualification), readJson(roleSchedule)]);
-    await tx.insert(schema.championshipMatches).values(championshipSchedule(event.startDate).map(match => ({
-      id: randomUUID(), eventId, ordinal: match.ordinal, gameKind: match.kind, scheduledAt: match.scheduledAt,
-    })));
-    const [locked] = await tx.update(schema.championshipEvents).set({ status: "locked", lockedAt: frozenAt, qualification, roleSchedule, execution })
-      .where(eq(schema.championshipEvents.id, eventId)).returning();
-    await tx.insert(schema.competitionAudit).values({ id: randomUUID(), eventId, actorId, action: "roster_locked",
-      reason: "Final season qualification and immutable competition builds", requestId });
-    return locked!;
-  });
+  const { requestChampionshipRosterLock } = await import("./championship-artwork.js");
+  return requestChampionshipRosterLock(db, eventId, actorId, requestId);
 }
 /** A future execution adapter must use this manifest, never project the current agent profile. */
 export async function readFrozenCompetitionBuild(db: DrizzleDB, eventId: string, agentId: string): Promise<FrozenCompetitionBuild> {
@@ -147,6 +86,9 @@ export async function readChampionship(db: DrizzleDB, idOrSlug: string, producer
     policies: event.policies, startDate: event.startDate,
     ...(producer ? { unresolvedPolicies: unresolvedChampionshipPolicies(event.policies), published: event.published,
       audit: await db.select().from(schema.competitionAudit).where(eq(schema.competitionAudit.eventId, event.id)).orderBy(asc(schema.competitionAudit.createdAt)),
+      artwork: await db.select({ id: schema.championshipArtwork.id, agentId: schema.championshipArtwork.agentId, rank: schema.championshipArtwork.qualificationRank,
+        selected: schema.championshipArtwork.selected, status: schema.championshipArtwork.status, error: schema.championshipArtwork.lastError,
+        avatarUrl: schema.championshipArtwork.avatarUrl, bodyUrl: schema.championshipArtwork.bodyUrl }).from(schema.championshipArtwork).where(eq(schema.championshipArtwork.eventId, event.id)).orderBy(asc(schema.championshipArtwork.qualificationRank)),
       executionAvailable: Boolean(event.execution), executionNote: event.execution ? "Explicit activation required; exact-match durable execution" : "Lock the roster to freeze execution configuration" } : {}),
   };
 }

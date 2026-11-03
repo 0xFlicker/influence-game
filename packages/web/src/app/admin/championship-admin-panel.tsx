@@ -11,6 +11,7 @@ import { ChampionshipAwardControls } from "./championship-award-controls";
 export const controlClass = "mt-1 block w-full rounded-lg border border-white/20 bg-surface-raised px-3 py-2 text-sm";
 export const actionClass = "influence-button-secondary rounded-lg px-3 py-2 text-sm disabled:opacity-40";
 type ProducerEvent = Omit<ChampionshipView, "matches" | "season"> & { published: boolean; unresolvedPolicies: string[]; season: ChampionshipView["season"] & { status: string };
+  artwork?: Array<{ id: string; agentId: string; rank: number; selected: boolean; status: string; error: string | null; avatarUrl: string | null; bodyUrl: string | null }>;
   audit: Array<{ id: string; action: string; reason: string; createdAt: string }>; matches: Array<ChampionshipView["matches"][number] & { gameStatus?: string | null; gameId?: string | null }> };
 const policyLabels: Record<string, string> = { roleComposition: "role composition", points: "Werewolf points", equalScoreFallback: "equal-score fallback", participationMinimumCompletedGames: "participation threshold", ownerAttribution: "architect attribution" };
 type EventSummary = Pick<ProducerEvent, "id" | "name" | "slug" | "status" | "published">;
@@ -36,6 +37,11 @@ export function ChampionshipAdminPanel() {
     if (selected) void apiFetch<ProducerEvent>(`/api/admin/championships/${selected}`, { signal: controller.signal }).then(value => { if (!controller.signal.aborted) setEvent(value); }).catch(cause => { if (!controller.signal.aborted) setError(String(cause)); });
     return () => controller.abort();
   }, [selected, revision]);
+  useEffect(() => {
+    if (event?.status !== "preparing") return;
+    const timer = setInterval(() => setRevision(value => value + 1), 5000);
+    return () => clearInterval(timer);
+  }, [event?.status]);
   async function submit(operation: Operation) {
     setBusy(true); setError(null); setPending(operation);
     try {
@@ -70,7 +76,7 @@ export function ChampionshipAdminPanel() {
         <p>Eight agents · sixteen daily Werewolf matches · Influence on day 17 · 00:00 UTC</p>
         <div className="flex flex-wrap gap-3"><Link href="/admin/seasons" className="underline">Season operations</Link>{event.published ? <Link className="underline" href={`/events/${event.slug}`}>View public event</Link> : null}<button className={actionClass} disabled={busy} onClick={() => setRevision(value => value + 1)}>Refresh event</button></div>
       </div>
-      {event.status === "draft" ? <DraftPolicies key={`${event.id}:${JSON.stringify(event.policies)}:${event.startDate}`} event={event} disabled={disabled} run={run} onError={setError} /> : <p className="influence-copy">The field and competition builds are frozen. Live agent edits remain independent.</p>}
+      {event.status === "draft" ? <DraftPolicies key={`${event.id}:${JSON.stringify(event.policies)}:${event.startDate}`} event={event} disabled={disabled} run={run} onError={setError} /> : <p className="influence-copy">{event.status === "preparing" ? "Competition revisions are being prepared. The final field is confirmed after required artwork is ready." : "The field and competition builds are frozen. Live agent edits remain independent."}</p>}
       <div className="flex flex-wrap gap-3">
         {event.status === "draft" ? <button className={actionClass} disabled={disabled || event.season.status !== "final" || event.unresolvedPolicies.length > 0 || !event.startDate} onClick={() => void run("Lock roster", `/api/admin/championships/${event.id}/lock`)}>Lock top-eight roster</button> : null}
         <button className={actionClass} disabled={disabled} onClick={() => void run(event.published ? "Unpublish" : "Publish", `/api/admin/championships/${event.id}/publication`, { published: !event.published })}>{event.published ? "Unpublish event" : "Publish event"}</button>
@@ -80,6 +86,8 @@ export function ChampionshipAdminPanel() {
       </div>
       {event.status === "draft" ? <p className="text-sm influence-copy-muted">Roster lock needs a finalized source season, a start date, and all policy choices. Open choices: {event.unresolvedPolicies.map(key => policyLabels[key] ?? key).join(", ") || "none"}.</p> : null}
       {event.status === "locked" || event.status === "paused" ? <p className="text-sm influence-copy-muted">Activation enables scheduled starts. Overdue matches catch up and may overlap.</p> : null}
+      {event.status === "preparing" ? <p role="status">Preparing required headshot and full-body artwork automatically. The roster locks when all eight are ready; owners do not need to take any action.</p> : null}
+      {event.artwork?.length ? <section><h3 className="text-lg font-semibold">Championship artwork</h3><ul className="mt-3 space-y-2">{event.artwork.map(row => <li key={row.id} className="influence-panel rounded-lg p-3"><Link className="underline" href={`/agents/${row.agentId}`}>Season rank {row.rank}</Link> · {row.selected ? row.status : "Not selected"}{row.avatarUrl ? <a className="ml-3 underline" href={row.avatarUrl} target="_blank" rel="noreferrer">View headshot</a> : null}{row.bodyUrl ? <a className="ml-3 underline" href={row.bodyUrl} target="_blank" rel="noreferrer">View full body</a> : null}{row.error && row.selected ? <p className="mt-1 break-words text-sm">{row.error} · Preparation will retry. Existing evidence is retained.</p> : null}</li>)}</ul></section> : null}
       <section><h3 className="text-lg font-semibold">Match schedule</h3><ol className="mt-3 space-y-2">{event.matches.map(match => <li key={match.ordinal} className="influence-panel flex flex-wrap items-center justify-between gap-3 rounded-lg p-3"><span>Day {match.ordinal} · {match.gameKind} · {match.scheduledAt.slice(0, 10)} 00:00 UTC · {match.status}{match.gameStatus && match.gameStatus !== match.status ? ` (${match.gameStatus})` : ""}</span><div className="flex gap-3">{match.gameSlug ? <Link className="underline" href={`/games/${match.gameSlug}`}>Open game</Link> : null}{event.status === "running" && match.status === "scheduled" ? <button className={actionClass} disabled={disabled || Date.parse(match.scheduledAt) > Date.now()} onClick={() => void run(`Retry day ${match.ordinal}`, `/api/admin/championships/${event.id}/matches/${match.ordinal}/dispatch`)}>Dispatch / retry exact match</button> : null}{event.status === "running" && match.gameStatus === "cancelled" && match.gameId ? <form className="flex flex-wrap gap-2" onSubmit={e => { e.preventDefault(); void run(`Replay day ${match.ordinal}`, `/api/admin/championships/${event.id}/matches/${match.ordinal}/replay`, { expectedGameId: match.gameId, reason: replayReasons[match.gameId!] ?? "" }); }}><label>Replay reason<input required disabled={disabled} className={controlClass} value={replayReasons[match.gameId] ?? ""} onChange={e => setReplayReasons(old => ({ ...old, [match.gameId!]: e.target.value }))} /></label><button type="submit" className={actionClass} disabled={disabled || !(replayReasons[match.gameId] ?? "").trim()}>Replay cancelled match</button></form> : null}</div></li>)}</ol></section>
       {hasPermission("manage_awards") ? <ChampionshipAwardControls key={`${event.id}:${revision}`} eventId={event.id} disabled={disabled} run={run} /> : null}
       <details className="influence-panel rounded-xl p-4"><summary>Event audit history</summary><ol className="mt-3 space-y-2">{event.audit.map(row => <li key={row.id} className="text-sm">{row.createdAt} · {row.action} · {row.reason}</li>)}</ol></details>

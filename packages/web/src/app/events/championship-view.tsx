@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ChampionshipView } from "@/lib/championship";
 
-const eventLabels: Record<string, string> = { draft: "In preparation", locked: "Field confirmed", running: "Under way", paused: "Paused", final: "Complete" };
+const eventLabels: Record<string, string> = { draft: "In preparation", preparing: "Preparing finalist artwork", locked: "Field confirmed", running: "Under way", paused: "Paused", final: "Complete" };
 const roles = { werewolf: "Werewolf", villager: "Villager", seer: "Seer", doctor: "Doctor" };
 const dateFormat = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" });
 export function ChampionshipEventView({ event }: { event: ChampionshipView }) {

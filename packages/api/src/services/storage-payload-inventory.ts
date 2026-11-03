@@ -2,6 +2,9 @@
 export const STORAGE_PAYLOAD_COLUMNS = [
   {"table":"render_jobs","column":"input","kind":"json","primaryKey":["id"]},
   {"table":"render_jobs","column":"receipt","kind":"json","primaryKey":["id"]},
+  {"table":"championship_artwork","column":"input","kind":"json","primaryKey":["id"]},
+  {"table":"championship_artwork","column":"avatar","kind":"binary","primaryKey":["id"]},
+  {"table":"championship_artwork","column":"body","kind":"binary","primaryKey":["id"]},
   {"table": "character_cutouts", "column": "source", "kind": "binary", "primaryKey": ["id"]},
   {"table": "character_cutouts", "column": "image", "kind": "binary", "primaryKey": ["id"]},
   {"table": "agent_screenings", "column": "result", "kind": "json", "primaryKey": ["id"]},

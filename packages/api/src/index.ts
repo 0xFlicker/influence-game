@@ -1,3 +1,4 @@
+import { processChampionshipArtwork } from "./services/championship-artwork.js";
 import { reconcileChampionships } from "./services/championship-runtime.js";
 import { createChampionshipRoutes } from "./routes/championships.js";
 import { createAudioRoutes } from "./routes/audio.js";
@@ -528,6 +529,15 @@ async function finishBackgroundRuntimeStartup(
       .finally(() => { championshipReconciliation = null; });
   }, 30_000) : null;
   championshipTimer?.unref();
+  // Artwork has its own lane: a slow image provider never blocks game dispatch/recovery.
+  let championshipArtworkWork: Promise<unknown> | null = null;
+  const championshipArtworkTimer = gameExecutionWorker ? setInterval(() => {
+    if (stopping || championshipArtworkWork || !gameExecutionWorker.canClaimGames()) return;
+    championshipArtworkWork = processChampionshipArtwork(db).then(results => { if (results.some(result => result.error)) console.warn("[championship-artwork] Retry diagnostics", results); }).catch(error => console.warn("[championship-artwork] Preparation deferred", error))
+      .finally(() => { championshipArtworkWork = null; });
+  }, 30_000) : null;
+  championshipArtworkTimer?.unref();
+
 
 
   const renderWakeDispatcher = gameExecutionWorker
@@ -548,6 +558,8 @@ async function finishBackgroundRuntimeStartup(
       if (executionScanTimer) clearInterval(executionScanTimer);
       if (championshipTimer) clearInterval(championshipTimer);
       if (championshipReconciliation) await championshipReconciliation;
+      if (championshipArtworkTimer) clearInterval(championshipArtworkTimer);
+      if (championshipArtworkWork) await championshipArtworkWork;
       if (executionScan) {
         try { await executionScan; } catch (error) {
           console.warn("[game-worker] Scan ended during shutdown", error);

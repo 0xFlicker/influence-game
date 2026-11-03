@@ -1,3 +1,13 @@
+## Automatic finalist artwork and availability — 2026-11-03
+
+After review, the final focused artwork suite passed **eight tests, zero failures, 60 assertions** in 9.11 seconds on a second dedicated disposable database. This includes the retry-fairness fix so one failing finalist cannot starve the others. Typecheck/lint and whitespace checks passed.
+
+The local Mac task checkout implements mandatory headshot/full-body preparation with championship-scoped revisions, original account/agent links, immutable storage, provider-journal recovery and pre-lock next-ranked fallback. No paid generation was performed. Focused artwork/storage/migration checks passed **39 tests, zero failures, 198 assertions**; existing affected championship checks passed **13 tests, zero failures, 104 assertions**. The provider-free full suite passed **3,308 tests, five skipped, zero failures**, 40,356 assertions across 346 files in 199.44 seconds.
+
+A browser rehearsal used a separate per-process PostgreSQL database and stubbed PNG generation. A single lock request automatically prepared four missing images and locked all eight finalists, with eight working headshot links and eight working body links. Original live profiles remained unchanged, and only the source fixture game existed: no championship game started. No browser page errors or mobile overflow occurred. The ready mobile screenshot was visually inspected. Evidence: `artifacts/championship/artwork-browser-result.json`, `artwork-preparing-desktop.png`, `artwork-ready-desktop.png`, and `artwork-ready-mobile.png`. Servers stopped; database `championship_task2_producer_51804` was dropped only after confirming no connections.
+
+Tests cover preserved identity despite live edits, identical artwork in both game types, concurrent preparation, publication retry without regeneration, known provider failure retry, uncertain-response producer reconciliation, no owner inference allowance, audited alternates before lock and no replacement after lock. Actual paid model output quality is intentionally unverified. Producer reconciliation is exposed through scoped APIs; the panel exposes progress/errors and image links, not a reconciliation form. Unsupported or missing source artwork remains a recoverable preparation error rather than being silently replaced with placeholder art.
+
 # Local championship verification
 
 Execution machine: `Flicks-MacBook-Pro-4.local`, macOS Darwin 27 arm64. Isolated checkout: `/Users/user/Documents/Codex/2026-11-02/task-2/influence-game`, branch `codex/season-0-championship`, based on `84d2f468aef8d94966a5edd6fa412de7503c8a38`. The original development checkout remains untouched.

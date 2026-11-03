@@ -4193,7 +4193,7 @@ export const championshipEvents = pgTable("championship_events", {
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
   sourceSeasonId: text("source_season_id").notNull().references(() => seasons.id),
-  status: text("status").notNull().default("draft").$type<"draft" | "locked" | "running" | "paused" | "final">(),
+  status: text("status").notNull().default("draft").$type<"draft" | "preparing" | "locked" | "running" | "paused" | "final">(),
   published: boolean("published").notNull().default(false),
   policies: jsonb("policies").notNull().$type<import("@influence/engine/championship").ChampionshipPolicies>(),
   startDate: text("start_date"),
@@ -4203,10 +4203,33 @@ export const championshipEvents = pgTable("championship_events", {
   createdById: text("created_by_id").notNull().references(() => users.id),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
   lockedAt: text("locked_at"),
+  lockRequestedById: text("lock_requested_by_id").references(() => users.id),
+  lockRequestId: text("lock_request_id"),
 }, table => [
-  check("championship_events_status", sql`${table.status} IN ('draft','locked','running','paused','final')`),
+  check("championship_events_status", sql`${table.status} IN ('draft','preparing','locked','running','paused','final')`),
   ...payloadChecks("championship_events", { execution: [table.execution, "json-gzip"], qualification: [table.qualification, "json-gzip"], roleSchedule: [table.roleSchedule, "json-gzip"] }),
 ]);
+/** Championship-only revision preparation: source profiles remain untouched. */
+export const championshipArtwork = pgTable("championship_artwork", {
+  id: text("id").primaryKey(),
+  eventId: text("event_id").notNull().references(() => championshipEvents.id),
+  agentId: text("agent_id").notNull().references(() => agentProfiles.id),
+  ownerId: text("owner_id").notNull().references(() => users.id),
+  qualificationRank: integer("qualification_rank").notNull(),
+  seasonPoints: integer("season_points").notNull(),
+  selected: boolean("selected").notNull().default(true),
+  status: text("status").notNull().default("queued").$type<"queued" | "processing" | "ready" | "retry">(),
+  input: payloadColumn("input_object", "json-gzip").notNull().$type<StoredPayload<import("../services/championships.js").FrozenCompetitionBuild>>(),
+  avatar: payloadColumn("avatar_object", "binary").$type<StoredPayload<Buffer>>(),
+  body: payloadColumn("body_object", "binary").$type<StoredPayload<Buffer>>(),
+  avatarUrl: text("avatar_url"), bodyUrl: text("body_url"),
+  leaseId: text("lease_id"), leaseUntil: text("lease_until"), nextAttemptAt: text("next_attempt_at"),
+  lastError: text("last_error"),
+}, table => [unique("championship_artwork_agent").on(table.eventId, table.agentId),
+  check("championship_artwork_status", sql`${table.status} IN ('queued','processing','ready','retry')`),
+  ...payloadChecks("championship_artwork", { input: [table.input, "json-gzip"], avatar: [table.avatar, "binary"], body: [table.body, "binary"] }),
+]);
+
 export const championshipEntries = pgTable("championship_entries", {
   id: text("id").primaryKey(),
   eventId: text("event_id").notNull().references(() => championshipEvents.id),

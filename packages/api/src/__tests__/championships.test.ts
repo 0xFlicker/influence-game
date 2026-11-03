@@ -27,8 +27,11 @@ describe("championship foundations", () => {
     const { db, event, actorId, agents } = await fixture();
     await configureChampionshipDraft(db, event.id, { policies, startDate: "2026-12-25" });
     const requestId = randomUUID();
-    const locked = await Promise.all([lockChampionshipRoster(db, event.id, actorId, requestId), lockChampionshipRoster(db, event.id, actorId, requestId)]);
-    expect(locked[0]!.roleSchedule).toEqual(locked[1]!.roleSchedule);
+    const responses = await Promise.all([lockChampionshipRoster(db, event.id, actorId, requestId), lockChampionshipRoster(db, event.id, actorId, requestId)]);
+    const locked = await db.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, event.id));
+    expect(locked[0]!.status).toBe("locked");
+    expect(responses.every(row => row.id === event.id && ["preparing", "locked"].includes(row.status))).toBe(true);
+    for (const response of responses.filter(row => row.status === "locked")) expect(response.roleSchedule).toEqual(locked[0]!.roleSchedule);
     expect(await db.select().from(schema.championshipEntries)).toHaveLength(8);
     expect(await db.select().from(schema.championshipMatches)).toHaveLength(17);
     const build = await readFrozenCompetitionBuild(db, event.id, agents[0]!);

@@ -1,3 +1,4 @@
+import { readChampionshipArtAttempts, reconcileChampionshipArtAttempt } from "../services/championship-artwork.js";
 import { listProducerChampionships, previewChampionshipAwards, listEventAwards, readAwardHistory } from "../services/championship-producer.js";
 import { activateChampionship, pauseChampionship, dispatchChampionshipMatch, replayCancelledChampionshipMatch } from "../services/championship-dispatch.js";
 import { reconcileChampionships } from "../services/championship-runtime.js";
@@ -34,6 +35,12 @@ export function createChampionshipRoutes(db: DrizzleDB) {
   app.post("/api/admin/championships/:id/reconcile", async c => {
     if (!await readChampionship(db, c.req.param("id"), true)) return c.json({ error: "Event not found" }, 404);
     return c.json(await reconcileChampionships(db, new Date().toISOString(), c.req.param("id")));
+  });
+  app.get("/api/admin/championships/:id/artwork/:preparation/attempts", async c => c.json({ attempts: await readChampionshipArtAttempts(db, c.req.param("id"), c.req.param("preparation")) }));
+  app.post("/api/admin/championships/:id/artwork/:preparation/attempts/:attempt/reconcile", async c => {
+    const body = await parseJsonBody(c, "Reconcile artwork provider attempt");
+    if (typeof body?.note !== "string" || !body.note.trim() || !Number.isSafeInteger(body.costMicrousd) || body.costMicrousd < 0) return c.json({ error: "Provide an evidence note and confirmed nonnegative cost in micro-USD" }, 400);
+    return c.json(await reconcileChampionshipArtAttempt(db, { eventId: c.req.param("id"), preparationId: c.req.param("preparation"), attemptId: c.req.param("attempt"), actorId: c.get("user")!.id, note: body.note, costMicrousd: body.costMicrousd }));
   });
   app.get("/api/admin/championships/:id/award-preview", requirePermission("manage_awards"), async c => c.json({ phases: await previewChampionshipAwards(db, c.req.param("id")) }));
   app.get("/api/admin/awards", requireAuth(db), requirePermission("manage_awards"), async c => {
