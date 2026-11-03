@@ -1,0 +1,631 @@
+{
+  "sourceCommit": "99819e431701a180dedefcde73d7803c0f75e858",
+  "preparationSeconds": 3.405217792,
+  "frames": 300,
+  "sourceFromFrame": 3600,
+  "sourceUntilFrame": 3900,
+  "geometry": [
+    1920,
+    1080,
+    30
+  ],
+  "remotion": "4.0.486",
+  "notes": "Historical Werewolf fixture; prepared layouts; one shared bundle; fresh browser per renderMedia; serial sweep; not fleet or full-match throughput",
+  "results": [
+    {
+      "concurrency": 1,
+      "seconds": 23.351157875000002,
+      "effectiveFps": 12.84732866806503,
+      "events": [
+        {
+          "type": "start",
+          "frameCount": 300,
+          "parallelEncoding": false,
+          "resolvedConcurrency": 1
+        },
+        {
+          "type": "stitcher",
+          "args": [
+            "-r",
+            "30",
+            "-f",
+            "image2",
+            "-s",
+            "1920x1080",
+            "-start_number",
+            "0",
+            "-i",
+            "<local-path>/element-%03d.jpeg",
+            "-i",
+            "<local-path>/audio.aac",
+            "-c:a",
+            "copy",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-video_track_timescale",
+            "90000",
+            "-crf",
+            "18",
+            "-movflags",
+            "faststart",
+            "-map_metadata",
+            "-1",
+            "-metadata",
+            "comment=Made with Remotion 4.0.486",
+            "-y",
+            "<local-path>/concurrency-1-run-0.mp4"
+          ]
+        }
+      ],
+      "result": {
+        "buffer": null,
+        "slowestFrames": [
+          {
+            "frame": 0,
+            "time": 408
+          },
+          {
+            "frame": 1,
+            "time": 79
+          },
+          {
+            "frame": 3,
+            "time": 75
+          },
+          {
+            "frame": 4,
+            "time": 75
+          },
+          {
+            "frame": 5,
+            "time": 75
+          },
+          {
+            "frame": 6,
+            "time": 75
+          },
+          {
+            "frame": 7,
+            "time": 75
+          },
+          {
+            "frame": 8,
+            "time": 75
+          },
+          {
+            "frame": 2,
+            "time": 74
+          },
+          {
+            "frame": 9,
+            "time": 74
+          }
+        ],
+        "contentType": "video/mp4"
+      }
+    },
+    {
+      "concurrency": 2,
+      "seconds": 12.307251707999995,
+      "effectiveFps": 24.375872625160753,
+      "events": [
+        {
+          "type": "start",
+          "frameCount": 300,
+          "parallelEncoding": false,
+          "resolvedConcurrency": 2
+        },
+        {
+          "type": "stitcher",
+          "args": [
+            "-r",
+            "30",
+            "-f",
+            "image2",
+            "-s",
+            "1920x1080",
+            "-start_number",
+            "0",
+            "-i",
+            "<local-path>/element-%03d.jpeg",
+            "-i",
+            "<local-path>/audio.aac",
+            "-c:a",
+            "copy",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-video_track_timescale",
+            "90000",
+            "-crf",
+            "18",
+            "-movflags",
+            "faststart",
+            "-map_metadata",
+            "-1",
+            "-metadata",
+            "comment=Made with Remotion 4.0.486",
+            "-y",
+            "<local-path>/concurrency-2-run-1.mp4"
+          ]
+        }
+      ],
+      "result": {
+        "buffer": null,
+        "slowestFrames": [
+          {
+            "frame": 1,
+            "time": 400
+          },
+          {
+            "frame": 2,
+            "time": 70
+          },
+          {
+            "frame": 4,
+            "time": 60
+          },
+          {
+            "frame": 6,
+            "time": 57
+          },
+          {
+            "frame": 8,
+            "time": 57
+          },
+          {
+            "frame": 5,
+            "time": 19
+          },
+          {
+            "frame": 7,
+            "time": 18
+          },
+          {
+            "frame": 9,
+            "time": 18
+          },
+          {
+            "frame": 3,
+            "time": 14
+          },
+          {
+            "frame": 0,
+            "time": 12
+          }
+        ],
+        "contentType": "video/mp4"
+      }
+    },
+    {
+      "concurrency": 4,
+      "seconds": 7.530404875,
+      "effectiveFps": 39.83849540360869,
+      "events": [
+        {
+          "type": "start",
+          "frameCount": 300,
+          "parallelEncoding": false,
+          "resolvedConcurrency": 4
+        },
+        {
+          "type": "stitcher",
+          "args": [
+            "-r",
+            "30",
+            "-f",
+            "image2",
+            "-s",
+            "1920x1080",
+            "-start_number",
+            "0",
+            "-i",
+            "<local-path>/element-%03d.jpeg",
+            "-i",
+            "<local-path>/audio.aac",
+            "-c:a",
+            "copy",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-video_track_timescale",
+            "90000",
+            "-crf",
+            "18",
+            "-movflags",
+            "faststart",
+            "-map_metadata",
+            "-1",
+            "-metadata",
+            "comment=Made with Remotion 4.0.486",
+            "-y",
+            "<local-path>/concurrency-4-run-2.mp4"
+          ]
+        }
+      ],
+      "result": {
+        "buffer": null,
+        "slowestFrames": [
+          {
+            "frame": 0,
+            "time": 436
+          },
+          {
+            "frame": 7,
+            "time": 36
+          },
+          {
+            "frame": 1,
+            "time": 26
+          },
+          {
+            "frame": 3,
+            "time": 24
+          },
+          {
+            "frame": 5,
+            "time": 20
+          },
+          {
+            "frame": 2,
+            "time": 17
+          },
+          {
+            "frame": 8,
+            "time": 14
+          },
+          {
+            "frame": 6,
+            "time": 13
+          },
+          {
+            "frame": 4,
+            "time": 12
+          },
+          {
+            "frame": 9,
+            "time": 12
+          }
+        ],
+        "contentType": "video/mp4"
+      }
+    },
+    {
+      "concurrency": 8,
+      "seconds": 6.015349957999999,
+      "effectiveFps": 49.87241009993455,
+      "events": [
+        {
+          "type": "start",
+          "frameCount": 300,
+          "parallelEncoding": false,
+          "resolvedConcurrency": 8
+        },
+        {
+          "type": "stitcher",
+          "args": [
+            "-r",
+            "30",
+            "-f",
+            "image2",
+            "-s",
+            "1920x1080",
+            "-start_number",
+            "0",
+            "-i",
+            "<local-path>/element-%03d.jpeg",
+            "-i",
+            "<local-path>/audio.aac",
+            "-c:a",
+            "copy",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-video_track_timescale",
+            "90000",
+            "-crf",
+            "18",
+            "-movflags",
+            "faststart",
+            "-map_metadata",
+            "-1",
+            "-metadata",
+            "comment=Made with Remotion 4.0.486",
+            "-y",
+            "<local-path>/concurrency-8-run-3.mp4"
+          ]
+        }
+      ],
+      "result": {
+        "buffer": null,
+        "slowestFrames": [
+          {
+            "frame": 1,
+            "time": 486
+          },
+          {
+            "frame": 4,
+            "time": 42
+          },
+          {
+            "frame": 5,
+            "time": 14
+          },
+          {
+            "frame": 0,
+            "time": 12
+          },
+          {
+            "frame": 3,
+            "time": 10
+          },
+          {
+            "frame": 9,
+            "time": 10
+          },
+          {
+            "frame": 2,
+            "time": 9
+          },
+          {
+            "frame": 6,
+            "time": 9
+          },
+          {
+            "frame": 8,
+            "time": 9
+          },
+          {
+            "frame": 7,
+            "time": 9
+          }
+        ],
+        "contentType": "video/mp4"
+      }
+    },
+    {
+      "concurrency": 1,
+      "seconds": 23.23848620800001,
+      "effectiveFps": 12.909618867373682,
+      "events": [
+        {
+          "type": "start",
+          "frameCount": 300,
+          "parallelEncoding": false,
+          "resolvedConcurrency": 1
+        },
+        {
+          "type": "stitcher",
+          "args": [
+            "-r",
+            "30",
+            "-f",
+            "image2",
+            "-s",
+            "1920x1080",
+            "-start_number",
+            "0",
+            "-i",
+            "<local-path>/element-%03d.jpeg",
+            "-i",
+            "<local-path>/audio.aac",
+            "-c:a",
+            "copy",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-video_track_timescale",
+            "90000",
+            "-crf",
+            "18",
+            "-movflags",
+            "faststart",
+            "-map_metadata",
+            "-1",
+            "-metadata",
+            "comment=Made with Remotion 4.0.486",
+            "-y",
+            "<local-path>/concurrency-1-run-4.mp4"
+          ]
+        }
+      ],
+      "result": {
+        "buffer": null,
+        "slowestFrames": [
+          {
+            "frame": 0,
+            "time": 383
+          },
+          {
+            "frame": 2,
+            "time": 76
+          },
+          {
+            "frame": 5,
+            "time": 76
+          },
+          {
+            "frame": 4,
+            "time": 75
+          },
+          {
+            "frame": 7,
+            "time": 75
+          },
+          {
+            "frame": 9,
+            "time": 75
+          },
+          {
+            "frame": 1,
+            "time": 74
+          },
+          {
+            "frame": 3,
+            "time": 74
+          },
+          {
+            "frame": 6,
+            "time": 74
+          },
+          {
+            "frame": 8,
+            "time": 67
+          }
+        ],
+        "contentType": "video/mp4"
+      }
+    }
+  ],
+  "verification": [
+    {
+      "concurrency": 1,
+      "run": 0,
+      "decoded_frames": 300,
+      "decoded_frames_different_from_run_0": 0,
+      "decoded_audio_matches_run_0": true,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30/1",
+          "duration": "10.000000",
+          "nb_read_frames": "300"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "duration": "10.048000",
+          "nb_read_frames": "471",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ]
+    },
+    {
+      "concurrency": 2,
+      "run": 1,
+      "decoded_frames": 300,
+      "decoded_frames_different_from_run_0": 0,
+      "decoded_audio_matches_run_0": true,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30/1",
+          "duration": "10.000000",
+          "nb_read_frames": "300"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "duration": "10.048000",
+          "nb_read_frames": "471",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ]
+    },
+    {
+      "concurrency": 4,
+      "run": 2,
+      "decoded_frames": 300,
+      "decoded_frames_different_from_run_0": 0,
+      "decoded_audio_matches_run_0": true,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30/1",
+          "duration": "10.000000",
+          "nb_read_frames": "300"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "duration": "10.048000",
+          "nb_read_frames": "471",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ]
+    },
+    {
+      "concurrency": 8,
+      "run": 3,
+      "decoded_frames": 300,
+      "decoded_frames_different_from_run_0": 0,
+      "decoded_audio_matches_run_0": true,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30/1",
+          "duration": "10.000000",
+          "nb_read_frames": "300"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "duration": "10.048000",
+          "nb_read_frames": "471",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ]
+    },
+    {
+      "concurrency": 1,
+      "run": 4,
+      "decoded_frames": 300,
+      "decoded_frames_different_from_run_0": 0,
+      "decoded_audio_matches_run_0": true,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30/1",
+          "duration": "10.000000",
+          "nb_read_frames": "300"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "duration": "10.048000",
+          "nb_read_frames": "471",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ]
+    }
+  ],
+  "browser": "Chrome Headless Shell 149.0.7790.0, mac-arm64; existing cached binary",
+  "hardware": {
+    "cpu": "Apple M5 Max",
+    "logical_cpus": 18,
+    "memory_gib": 36,
+    "host_load": "Other desktop, Docker and Bun processes active; not an isolated performance host"
+  },
+  "scope": "Warm preparation shared once; historical already-measured Werewolf fixture; no cloud, whole-match, viewer/Studio or sparse-render parity claim"
+}

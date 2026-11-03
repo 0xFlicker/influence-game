@@ -1,0 +1,104 @@
+{
+  "fixture": "Retained actual Studio Influence ballot export, frame 63",
+  "originalFailurePixels": {
+    "changedPixels": 7,
+    "maxChannelDifference": 6,
+    "meanRGBDifference": 0.00010706018518518519,
+    "bbox": [
+      70,
+      329,
+      71,
+      332
+    ]
+  },
+  "trials": [
+    {
+      "trial": "baseline-0",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "trial": "baseline-1",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "trial": "baseline-2",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "trial": "current-0",
+      "passed": false,
+      "errors": [
+        "error: Sequential frame mismatch at 63"
+      ]
+    },
+    {
+      "trial": "current-1",
+      "passed": false,
+      "errors": [
+        "error: Sequential frame mismatch at 63"
+      ]
+    },
+    {
+      "trial": "current-2",
+      "passed": false,
+      "errors": [
+        "error: Reverse frame mismatch at 63"
+      ]
+    },
+    {
+      "trial": "stable-only-0",
+      "passed": false,
+      "errors": [
+        "error: Sequential frame mismatch at 63"
+      ]
+    },
+    {
+      "trial": "stable-only-1",
+      "passed": false,
+      "errors": [
+        "error: Reverse frame mismatch at 63"
+      ]
+    },
+    {
+      "trial": "eager-only-0",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "trial": "eager-only-1",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "trial": "pending-only-0",
+      "passed": false,
+      "errors": [
+        "error: Reverse frame mismatch at 63"
+      ]
+    },
+    {
+      "trial": "pending-only-1",
+      "passed": false,
+      "errors": [
+        "error: Sequential frame mismatch at 63"
+      ]
+    },
+    {
+      "trial": "lazy-only-0",
+      "passed": false,
+      "errors": [
+        "error: Reverse frame mismatch at 63"
+      ]
+    },
+    {
+      "trial": "lazy-only-1",
+      "passed": false,
+      "errors": [
+        "error: Reverse frame mismatch at 63"
+      ]
+    }
+  ]
+}

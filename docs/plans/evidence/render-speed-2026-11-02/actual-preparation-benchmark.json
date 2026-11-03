@@ -1,0 +1,216 @@
+{
+  "status": "complete",
+  "method": "Serial PNG/none/none/PNG full-input offline preparation; current product code versus copy restoring only unused PNG captures; no diagnostic loaders.",
+  "limits": "Two observations per mode on a nonisolated M5 Max desktop; excludes source binding, remote downloads and encoding. No full-match wall-clock extrapolation.",
+  "results": [
+    {
+      "game": "werewolf",
+      "trials": [
+        {
+          "sourceHashes": {
+            "packages/web/src/lib/replay-export/render.ts": "8eb51417d6f7f94eeaa50b0fe13cb05ca99068187c2fa7a60bdb085d3c5cbb4f",
+            "packages/web/src/remotion/house-replay/frame.tsx": "524c2b5d1e99586b8cfa1ba7a70b63ff9e9e5b49a6d23354d5004b3c004e4f9f",
+            "packages/web/src/app/games/[slug]/components/safety-chain.tsx": "3ff6ff77cadc9f1db25699e3408d93fe5e75cf924d71e07e92f05985aba9f96a"
+          },
+          "mode": "png",
+          "seconds": 33.526357874999995,
+          "copySeconds": 0.008120082999999993,
+          "cues": 130,
+          "layouts": 90,
+          "pages": 51,
+          "inputSha256": "2799474294efc152340b4fe8fc1578834d2732f628b9fd7e0486d88dd4b504d1",
+          "browser": "/Users/user/Development/influence-game/node_modules/.remotion/chrome-headless-shell/mac-arm64/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+          "note": "Actual implementation for none; exact copied implementation with only PNG capture restored for control. No trace loader or per-frame instrumentation. Offline full-input preparation; excludes binding/downloads.",
+          "otherManifestFieldsExact": true,
+          "layoutsExact": true,
+          "layoutDifferences": [],
+          "emptyTextOnly": true
+        },
+        {
+          "sourceHashes": {
+            "packages/web/src/lib/replay-export/render.ts": "8eb51417d6f7f94eeaa50b0fe13cb05ca99068187c2fa7a60bdb085d3c5cbb4f",
+            "packages/web/src/remotion/house-replay/frame.tsx": "524c2b5d1e99586b8cfa1ba7a70b63ff9e9e5b49a6d23354d5004b3c004e4f9f",
+            "packages/web/src/app/games/[slug]/components/safety-chain.tsx": "3ff6ff77cadc9f1db25699e3408d93fe5e75cf924d71e07e92f05985aba9f96a"
+          },
+          "mode": "none",
+          "seconds": 15.544989708000001,
+          "copySeconds": 0.004116667000000007,
+          "cues": 130,
+          "layouts": 90,
+          "pages": 51,
+          "inputSha256": "2799474294efc152340b4fe8fc1578834d2732f628b9fd7e0486d88dd4b504d1",
+          "browser": "/Users/user/Development/influence-game/node_modules/.remotion/chrome-headless-shell/mac-arm64/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+          "note": "Actual implementation for none; exact copied implementation with only PNG capture restored for control. No trace loader or per-frame instrumentation. Offline full-input preparation; excludes binding/downloads.",
+          "otherManifestFieldsExact": true,
+          "layoutsExact": true,
+          "layoutDifferences": [],
+          "emptyTextOnly": true
+        },
+        {
+          "sourceHashes": {
+            "packages/web/src/lib/replay-export/render.ts": "8eb51417d6f7f94eeaa50b0fe13cb05ca99068187c2fa7a60bdb085d3c5cbb4f",
+            "packages/web/src/remotion/house-replay/frame.tsx": "524c2b5d1e99586b8cfa1ba7a70b63ff9e9e5b49a6d23354d5004b3c004e4f9f",
+            "packages/web/src/app/games/[slug]/components/safety-chain.tsx": "3ff6ff77cadc9f1db25699e3408d93fe5e75cf924d71e07e92f05985aba9f96a"
+          },
+          "mode": "none",
+          "seconds": 15.520934666999999,
+          "copySeconds": 0.004193292000000013,
+          "cues": 130,
+          "layouts": 90,
+          "pages": 51,
+          "inputSha256": "2799474294efc152340b4fe8fc1578834d2732f628b9fd7e0486d88dd4b504d1",
+          "browser": "/Users/user/Development/influence-game/node_modules/.remotion/chrome-headless-shell/mac-arm64/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+          "note": "Actual implementation for none; exact copied implementation with only PNG capture restored for control. No trace loader or per-frame instrumentation. Offline full-input preparation; excludes binding/downloads.",
+          "otherManifestFieldsExact": true,
+          "layoutsExact": true,
+          "layoutDifferences": [],
+          "emptyTextOnly": true
+        },
+        {
+          "sourceHashes": {
+            "packages/web/src/lib/replay-export/render.ts": "8eb51417d6f7f94eeaa50b0fe13cb05ca99068187c2fa7a60bdb085d3c5cbb4f",
+            "packages/web/src/remotion/house-replay/frame.tsx": "524c2b5d1e99586b8cfa1ba7a70b63ff9e9e5b49a6d23354d5004b3c004e4f9f",
+            "packages/web/src/app/games/[slug]/components/safety-chain.tsx": "3ff6ff77cadc9f1db25699e3408d93fe5e75cf924d71e07e92f05985aba9f96a"
+          },
+          "mode": "png",
+          "seconds": 33.502572625,
+          "copySeconds": 0.006206583999999992,
+          "cues": 130,
+          "layouts": 90,
+          "pages": 51,
+          "inputSha256": "2799474294efc152340b4fe8fc1578834d2732f628b9fd7e0486d88dd4b504d1",
+          "browser": "/Users/user/Development/influence-game/node_modules/.remotion/chrome-headless-shell/mac-arm64/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+          "note": "Actual implementation for none; exact copied implementation with only PNG capture restored for control. No trace loader or per-frame instrumentation. Offline full-input preparation; excludes binding/downloads.",
+          "otherManifestFieldsExact": true,
+          "layoutsExact": true,
+          "layoutDifferences": [],
+          "emptyTextOnly": true
+        }
+      ],
+      "pngMedianSeconds": 33.51446525,
+      "noneMedianSeconds": 15.5329621875,
+      "speedup": 2.1576351532594624,
+      "secondsSaved": 17.9815030625
+    },
+    {
+      "game": "influence",
+      "trials": [
+        {
+          "sourceHashes": {
+            "packages/web/src/lib/replay-export/render.ts": "8eb51417d6f7f94eeaa50b0fe13cb05ca99068187c2fa7a60bdb085d3c5cbb4f",
+            "packages/web/src/remotion/house-replay/frame.tsx": "524c2b5d1e99586b8cfa1ba7a70b63ff9e9e5b49a6d23354d5004b3c004e4f9f",
+            "packages/web/src/app/games/[slug]/components/safety-chain.tsx": "3ff6ff77cadc9f1db25699e3408d93fe5e75cf924d71e07e92f05985aba9f96a"
+          },
+          "mode": "png",
+          "seconds": 238.715504667,
+          "copySeconds": 0.04994316600000002,
+          "cues": 688,
+          "layouts": 583,
+          "pages": 381,
+          "inputSha256": "ec36584d9b35d058d781bd35e01a3f506fe28a8be5ec2057a4839fd0e1c95c87",
+          "browser": "/Users/user/Development/influence-game/node_modules/.remotion/chrome-headless-shell/mac-arm64/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+          "note": "Actual implementation for none; exact copied implementation with only PNG capture restored for control. No trace loader or per-frame instrumentation. Offline full-input preparation; excludes binding/downloads.",
+          "otherManifestFieldsExact": true,
+          "layoutsExact": true,
+          "layoutDifferences": [],
+          "emptyTextOnly": true
+        },
+        {
+          "sourceHashes": {
+            "packages/web/src/lib/replay-export/render.ts": "8eb51417d6f7f94eeaa50b0fe13cb05ca99068187c2fa7a60bdb085d3c5cbb4f",
+            "packages/web/src/remotion/house-replay/frame.tsx": "524c2b5d1e99586b8cfa1ba7a70b63ff9e9e5b49a6d23354d5004b3c004e4f9f",
+            "packages/web/src/app/games/[slug]/components/safety-chain.tsx": "3ff6ff77cadc9f1db25699e3408d93fe5e75cf924d71e07e92f05985aba9f96a"
+          },
+          "mode": "none",
+          "seconds": 75.18278575,
+          "copySeconds": 0.039530417,
+          "cues": 688,
+          "layouts": 583,
+          "pages": 381,
+          "inputSha256": "ec36584d9b35d058d781bd35e01a3f506fe28a8be5ec2057a4839fd0e1c95c87",
+          "browser": "/Users/user/Development/influence-game/node_modules/.remotion/chrome-headless-shell/mac-arm64/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+          "note": "Actual implementation for none; exact copied implementation with only PNG capture restored for control. No trace loader or per-frame instrumentation. Offline full-input preparation; excludes binding/downloads.",
+          "otherManifestFieldsExact": true,
+          "layoutsExact": true,
+          "layoutDifferences": [],
+          "emptyTextOnly": true
+        },
+        {
+          "sourceHashes": {
+            "packages/web/src/lib/replay-export/render.ts": "8eb51417d6f7f94eeaa50b0fe13cb05ca99068187c2fa7a60bdb085d3c5cbb4f",
+            "packages/web/src/remotion/house-replay/frame.tsx": "524c2b5d1e99586b8cfa1ba7a70b63ff9e9e5b49a6d23354d5004b3c004e4f9f",
+            "packages/web/src/app/games/[slug]/components/safety-chain.tsx": "3ff6ff77cadc9f1db25699e3408d93fe5e75cf924d71e07e92f05985aba9f96a"
+          },
+          "mode": "none",
+          "seconds": 75.176782792,
+          "copySeconds": 0.040552249999999984,
+          "cues": 688,
+          "layouts": 583,
+          "pages": 381,
+          "inputSha256": "ec36584d9b35d058d781bd35e01a3f506fe28a8be5ec2057a4839fd0e1c95c87",
+          "browser": "/Users/user/Development/influence-game/node_modules/.remotion/chrome-headless-shell/mac-arm64/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+          "note": "Actual implementation for none; exact copied implementation with only PNG capture restored for control. No trace loader or per-frame instrumentation. Offline full-input preparation; excludes binding/downloads.",
+          "otherManifestFieldsExact": true,
+          "layoutsExact": false,
+          "layoutDifferences": [
+            {
+              "key": "[\"\",844.8,970.442,\"speech\",false,28,38,46]",
+              "actual": {
+                "width": 240,
+                "height": 131,
+                "fontSize": 46,
+                "lineHeight": 1.4,
+                "pages": [
+                  ""
+                ],
+                "footerHeight": 0,
+                "headerHeight": 28
+              },
+              "reference": null
+            },
+            {
+              "key": "[\"\",844.8,484.22,\"speech\",false,28,38,46]",
+              "actual": null,
+              "reference": {
+                "width": 240,
+                "height": 131,
+                "fontSize": 46,
+                "lineHeight": 1.4,
+                "pages": [
+                  ""
+                ],
+                "footerHeight": 0,
+                "headerHeight": 28
+              }
+            }
+          ],
+          "emptyTextOnly": true
+        },
+        {
+          "sourceHashes": {
+            "packages/web/src/lib/replay-export/render.ts": "8eb51417d6f7f94eeaa50b0fe13cb05ca99068187c2fa7a60bdb085d3c5cbb4f",
+            "packages/web/src/remotion/house-replay/frame.tsx": "524c2b5d1e99586b8cfa1ba7a70b63ff9e9e5b49a6d23354d5004b3c004e4f9f",
+            "packages/web/src/app/games/[slug]/components/safety-chain.tsx": "3ff6ff77cadc9f1db25699e3408d93fe5e75cf924d71e07e92f05985aba9f96a"
+          },
+          "mode": "png",
+          "seconds": 240.806280375,
+          "copySeconds": 0.040796625,
+          "cues": 688,
+          "layouts": 583,
+          "pages": 381,
+          "inputSha256": "ec36584d9b35d058d781bd35e01a3f506fe28a8be5ec2057a4839fd0e1c95c87",
+          "browser": "/Users/user/Development/influence-game/node_modules/.remotion/chrome-headless-shell/mac-arm64/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+          "note": "Actual implementation for none; exact copied implementation with only PNG capture restored for control. No trace loader or per-frame instrumentation. Offline full-input preparation; excludes binding/downloads.",
+          "otherManifestFieldsExact": true,
+          "layoutsExact": true,
+          "layoutDifferences": [],
+          "emptyTextOnly": true
+        }
+      ],
+      "pngMedianSeconds": 239.76089252100002,
+      "noneMedianSeconds": 75.17978427099999,
+      "speedup": 3.189167072583446,
+      "secondsSaved": 164.58110825000003
+    }
+  ]
+}

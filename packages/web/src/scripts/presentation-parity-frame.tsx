@@ -28,7 +28,10 @@ function ViewerFrame({manifest,reference}:ParityProps) {
     void (async () => {
       await document.fonts.ready;
       for (let pass=0;pass<3;pass++) {
-        await Promise.all(Array.from(document.images).map(image => image.decode()));
+        await Promise.all(Array.from(document.images).map(image => {
+          image.loading = "eager";
+          return image.decode();
+        }));
         await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       }
       continueRender(ready);

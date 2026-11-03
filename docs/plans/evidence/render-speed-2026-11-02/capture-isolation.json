@@ -1,0 +1,73 @@
+{
+  "capturePairs": [
+    {
+      "format": "png",
+      "frames": [
+        300,
+        300
+      ],
+      "differentFrameIndices": []
+    },
+    {
+      "format": "jpeg",
+      "frames": [
+        300,
+        300
+      ],
+      "differentFrameIndices": []
+    }
+  ],
+  "identicalInputEncodes": {
+    "frames": [
+      300,
+      300
+    ],
+    "decodedVideoAndTimingEqual": true
+  },
+  "retainedMovieInputs": [
+    {
+      "run": 0,
+      "capture": {
+        "frames": 300,
+        "differentFrameIndices": []
+      },
+      "movie": {
+        "frames": 300,
+        "differentFrameIndices": []
+      }
+    },
+    {
+      "run": 1,
+      "capture": {
+        "frames": 300,
+        "differentFrameIndices": []
+      },
+      "movie": {
+        "frames": 300,
+        "differentFrameIndices": []
+      }
+    },
+    {
+      "run": 2,
+      "capture": {
+        "frames": 300,
+        "differentFrameIndices": []
+      },
+      "movie": {
+        "frames": 300,
+        "differentFrameIndices": []
+      }
+    },
+    {
+      "run": 3,
+      "capture": {
+        "frames": 300,
+        "differentFrameIndices": []
+      },
+      "movie": {
+        "frames": 300,
+        "differentFrameIndices": []
+      }
+    }
+  ]
+}

@@ -28,6 +28,11 @@ const frames:GameWatchReplayFrame[] = fixture.decisions.map(event => ({schemaVer
   counts:{totalPlayers:players.length,alivePlayers:players.length,eliminatedPlayers:0,unknownPlayers:0}}));
 const influence = buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"format",players},messages:[],frames,thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[],
   fullBodies:Object.fromEntries(players.map(player=>[player.id,"/avatars/personas/full-body-v1/strategic.webp"]))}});
+// Start with a fresh format-menu scene: its full-body layout hides a lazy
+// portrait, which must still finish decoding during export preparation.
+const menu = influence.find(cue=>cue.picture.kind === "influence" && cue.picture.cue.kind === "format_menu");
+if (!menu) throw new Error("Missing format-menu readiness fixture");
+cases.push({name:"format-menu",reference:menu,cue:menu});
 const pointers = influence.filter(cue=>cue.picture.kind === "influence" && cue.picture.beat?.kind === "safety-chain" && cue.picture.beat.cue.kind === "safety_bounce_pointer");
 for (const index of [0,pointers.length-1]) {
   const reference=pointers[index]!;
@@ -80,7 +85,7 @@ try {
     for(const [width,height] of [[1280,720],[640,360]] as const) for(const item of cases) {
       const profile=parseTimingProfile({ending:{holdMs:0}}),fps=30;
       const timeline=compileTiming([item.cue.timing],profile,fps);
-      let manifest:ReplayManifest={schema:"house.replay-export",version:2,game:{id:"fixture",slug:item.name,kind:item.cue.picture.kind === "thinking" ? "influence" : "werewolf"},
+      let manifest:ReplayManifest={schema:"house.replay-export",version:2,game:{id:"fixture",slug:item.name,kind:item.cue.picture.kind === "thinking" || item.cue.picture.kind === "influence" ? "influence" : "werewolf"},
         width,height,fps,reducedMotion:false,thinking:item.cue.picture.kind === "thinking",profile,cues:[item.cue],timeline,assets:{},staticFiles:{},boundary:{},audio:{clips:[],durationMs:timeline[0]!.endMs},
         range:{fromFrame:0,untilFrame:timeline[0]!.endFrame},revision:"fixture",dirty:true};
       const prefix=join(output,`${item.name}-${width}`);
@@ -88,7 +93,7 @@ try {
       const preparation={manifest,reference:item.reference,prepare:true};
       const measuring=await selectComposition({serveUrl,id:"Export",inputProps:preparation,puppeteerInstance:browser});
       const layouts:NonNullable<ReplayManifest["layouts"]>={},pages:NonNullable<ReplayManifest["pages"]>={};
-      await renderFrames({serveUrl,composition:measuring,inputProps:preparation,outputDir:join(scratch,"measure"),imageFormat:"png",concurrency:1,puppeteerInstance:browser,
+      await renderFrames({serveUrl,composition:measuring,inputProps:preparation,outputDir:join(scratch,"measure"),imageFormat:"none",concurrency:1,puppeteerInstance:browser,
         onStart:()=>{},onFrameUpdate:()=>{},onArtifact:artifact=>{const data=JSON.parse(typeof artifact.content === "string" ? artifact.content : new TextDecoder().decode(artifact.content));Object.assign(layouts,data.layouts);Object.assign(pages,data.pages);}});
       manifest={...manifest,layouts,pages};
       await writeFile(`${prefix}.manifest.json`,JSON.stringify(manifest,null,2));
@@ -112,7 +117,7 @@ try {
         await renderStill({serveUrl,composition:exported,inputProps,frame,output:path,imageFormat:"png",puppeteerInstance:browser});
         if(sha256(await readFile(path))!==results.find(row=>row.name===item.name && row.width===width && row.frame===frame)!.exportHash) throw new Error("Reverse-order render mismatch");
       }
-      if(width===640 && (item.name === "chain-0" || item.name === "winner-mystery-vote")) {
+      if(width===640 && (item.name === "format-menu" || item.name === "chain-0" || item.name === "winner-mystery-vote")) {
         await renderMedia({serveUrl,composition:exported,inputProps,codec:"h264",muted:true,outputLocation:`${prefix}.mp4`,concurrency:2,puppeteerInstance:browser});
         for(const frame of samples) {
           const encoded=`${prefix}-${frame}-encoded.png`;
@@ -126,5 +131,5 @@ try {
     }
   } finally {await browser.close({silent:true});}
   await writeFile(join(output,"comparison.json"),JSON.stringify({source:"deterministic fixtures; actual viewer components versus Studio/export composition",reverseOrder:true,frames:results,encoded:encodedResults},null,2));
-  console.log(`Saved ${results.length} comparisons and two fresh videos: ${output}`);
+  console.log(`Saved ${results.length} comparisons and ${new Set(encodedResults.map(row=>row.video)).size} fresh videos: ${output}`);
 } finally {await rm(scratch,{recursive:true,force:true});}

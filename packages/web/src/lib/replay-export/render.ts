@@ -120,7 +120,8 @@ export async function withPreparedReplay<T>(
         outputDir: join(scratch, "layout"),
         onStart: () => console.log("Layout prepass started"),
         onFrameUpdate: () => undefined,
-        imageFormat: "png",
+        // Freeze every measured layout artifact without capturing unused pixels.
+        imageFormat: "none",
         concurrency: 1,
         cancelSignal,
         timeoutInMilliseconds: 60000,

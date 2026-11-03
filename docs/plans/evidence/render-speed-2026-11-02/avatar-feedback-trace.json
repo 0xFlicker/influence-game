@@ -1,0 +1,258 @@
+{
+  "trials": [
+    {
+      "trial": 1,
+      "stableAvatarCallback": false,
+      "completed": true,
+      "preparedSeconds": 78.580467042,
+      "failure": null,
+      "completeManifestEqual": true,
+      "differentFields": [],
+      "layoutKeyDifferences": {
+        "missing": 0,
+        "extra": 0,
+        "allDifferingKeysEmptyText": true,
+        "changedCommonValues": 0
+      },
+      "readinessCounts": {
+        "start": 1376,
+        "fonts:start": 1376,
+        "fonts:end": 1376,
+        "raf:first": 2752,
+        "raf:second": 2752,
+        "settled": 1376,
+        "release": 1376,
+        "cleanup": 1375,
+        "image:start": 13558,
+        "image:end": 13558
+      },
+      "lastReadiness": {
+        "frame": 1375,
+        "stage": "release"
+      },
+      "chainLogRows": 6589,
+      "finalStateCounters": null
+    },
+    {
+      "trial": 2,
+      "stableAvatarCallback": false,
+      "completed": true,
+      "preparedSeconds": 78.725256417,
+      "failure": null,
+      "completeManifestEqual": false,
+      "differentFields": [
+        "layouts"
+      ],
+      "layoutKeyDifferences": {
+        "missing": 1,
+        "extra": 1,
+        "allDifferingKeysEmptyText": true,
+        "changedCommonValues": 0
+      },
+      "readinessCounts": {
+        "start": 1376,
+        "fonts:start": 1376,
+        "fonts:end": 1376,
+        "raf:first": 2752,
+        "raf:second": 2752,
+        "settled": 1376,
+        "release": 1376,
+        "cleanup": 1375,
+        "image:start": 13558,
+        "image:end": 13558
+      },
+      "lastReadiness": {
+        "frame": 1375,
+        "stage": "release"
+      },
+      "chainLogRows": 7220,
+      "finalStateCounters": null
+    },
+    {
+      "trial": 3,
+      "stableAvatarCallback": false,
+      "completed": false,
+      "preparedSeconds": null,
+      "failure": {
+        "message": "renderFrames() got cancelled"
+      },
+      "readinessCounts": {
+        "start": 604,
+        "fonts:start": 604,
+        "fonts:end": 604,
+        "raf:first": 1208,
+        "raf:second": 1208,
+        "settled": 604,
+        "release": 604,
+        "cleanup": 603,
+        "image:start": 6068,
+        "image:end": 6068
+      },
+      "lastReadiness": {
+        "frame": 603,
+        "stage": "release"
+      },
+      "chainLogRows": 1781786,
+      "finalStateCounters": null
+    },
+    {
+      "trial": 4,
+      "stableAvatarCallback": false,
+      "completed": true,
+      "preparedSeconds": 77.234501541,
+      "failure": null,
+      "completeManifestEqual": true,
+      "differentFields": [],
+      "layoutKeyDifferences": {
+        "missing": 0,
+        "extra": 0,
+        "allDifferingKeysEmptyText": true,
+        "changedCommonValues": 0
+      },
+      "readinessCounts": {
+        "start": 1376,
+        "fonts:start": 1376,
+        "fonts:end": 1376,
+        "raf:first": 2752,
+        "raf:second": 2752,
+        "settled": 1376,
+        "release": 1376,
+        "cleanup": 1375,
+        "image:start": 13558,
+        "image:end": 13558
+      },
+      "lastReadiness": {
+        "frame": 1375,
+        "stage": "release"
+      },
+      "chainLogRows": 123,
+      "finalStateCounters": null
+    },
+    {
+      "trial": 5,
+      "stableAvatarCallback": true,
+      "completed": true,
+      "preparedSeconds": 88.37960712499999,
+      "failure": null,
+      "completeManifestEqual": true,
+      "differentFields": [],
+      "layoutKeyDifferences": {
+        "missing": 0,
+        "extra": 0,
+        "allDifferingKeysEmptyText": true,
+        "changedCommonValues": 0
+      },
+      "readinessCounts": {
+        "start": 1376,
+        "fonts:start": 1376,
+        "fonts:end": 1376,
+        "raf:first": 2752,
+        "raf:second": 2752,
+        "settled": 1376,
+        "release": 1376,
+        "cleanup": 1375,
+        "image:start": 13558,
+        "image:end": 13558
+      },
+      "lastReadiness": {
+        "frame": 1375,
+        "stage": "release"
+      },
+      "chainLogRows": 101,
+      "finalStateCounters": null
+    },
+    {
+      "trial": 6,
+      "stableAvatarCallback": true,
+      "completed": true,
+      "preparedSeconds": 85.0154185,
+      "failure": null,
+      "completeManifestEqual": true,
+      "differentFields": [],
+      "layoutKeyDifferences": {
+        "missing": 0,
+        "extra": 0,
+        "allDifferingKeysEmptyText": true,
+        "changedCommonValues": 0
+      },
+      "readinessCounts": {
+        "start": 1376,
+        "fonts:start": 1376,
+        "fonts:end": 1376,
+        "raf:first": 2752,
+        "raf:second": 2752,
+        "settled": 1376,
+        "release": 1376,
+        "cleanup": 1375,
+        "image:start": 13558,
+        "image:end": 13558
+      },
+      "lastReadiness": {
+        "frame": 1375,
+        "stage": "release"
+      },
+      "chainLogRows": 101,
+      "finalStateCounters": null
+    },
+    {
+      "trial": 7,
+      "stableAvatarCallback": true,
+      "completed": true,
+      "preparedSeconds": 86.590080167,
+      "failure": null,
+      "completeManifestEqual": false,
+      "differentFields": [
+        "layouts"
+      ],
+      "layoutKeyDifferences": {
+        "missing": 1,
+        "extra": 1,
+        "allDifferingKeysEmptyText": true,
+        "changedCommonValues": 0
+      },
+      "readinessCounts": {
+        "start": 1376,
+        "fonts:start": 1376,
+        "fonts:end": 1376,
+        "raf:first": 2752,
+        "raf:second": 2752,
+        "settled": 1376,
+        "release": 1376,
+        "cleanup": 1375,
+        "image:start": 13558,
+        "image:end": 13558
+      },
+      "lastReadiness": {
+        "frame": 1375,
+        "stage": "release"
+      },
+      "chainLogRows": 101,
+      "finalStateCounters": {
+        "typography:effect": 2564,
+        "typography:set": 4530,
+        "chain:render": 135,
+        "chain": 135,
+        "face:set": 37
+      }
+    }
+  ],
+  "minimalBrowserProof": [
+    {
+      "fix": false,
+      "stats": {
+        "loads": 100,
+        "renders": 100
+      },
+      "errors": []
+    },
+    {
+      "fix": true,
+      "stats": {
+        "loads": 1,
+        "renders": 2
+      },
+      "errors": []
+    }
+  ],
+  "note": "Diagnostic instrumentation affects timing; do not use trial durations as speed benchmarks. Trial 3 was deliberately stopped after runaway logging."
+}

@@ -16,6 +16,7 @@ import {
 import { bundlePath, sha256,probe,runProcess } from "../lib/replay-export/assets";
 import {placeAudioClip} from "../lib/replay-export/audio";
 import {compareRecordingPcm} from "./recording-alignment";
+import {compareCapturePixels} from "./render-pixel-comparison";
 
 const bundleDir = resolve(process.argv[2] ?? ""),
   output = resolve(process.argv[3] ?? ".renders/replay-frame-proof");
@@ -137,6 +138,25 @@ await withPreparedReplay(
     }
     const samples = [...selected].concat([...thinkingFrames], [...roomFrames]),
       hashes = new Map<number, string>();
+    const references = new Map<number,string>();
+    const captureComparisons: Array<{frame:number; method:string} & ReturnType<typeof compareCapturePixels>> = [];
+    const assertCapture = async (frame:number,path:string,method:string) => {
+      if (sha256(await readFile(path)) === hashes.get(frame)) return;
+      const reference = references.get(frame);
+      if (!reference) throw new Error(`Missing reference for frame ${frame}`);
+      const image = (await probe(path)).streams.find(stream=>stream.codec_type === "video");
+      if(!image || image.width !== composition.width || image.height !== composition.height)
+        throw new Error("Capture geometry differs from composition");
+      const expectedPath=join(output,"repeat-reference.rgba"),actualPath=join(output,"repeat-actual.rgba");
+      await Promise.all([[reference,expectedPath],[path,actualPath]].map(([input,result]) =>
+        runProcess("ffmpeg",["-y","-v","error","-i",input!,"-pix_fmt","rgba","-f","rawvideo",result!])));
+      const [expected,actual]=await Promise.all([readFile(expectedPath),readFile(actualPath)]);
+      if(expected.length !== composition.width * composition.height * 4) throw new Error("Capture geometry differs from composition");
+      const difference=compareCapturePixels(expected,actual);
+      captureComparisons.push({frame,method,...difference});
+      await writeFile(join(output,"capture-comparisons.json"),JSON.stringify(captureComparisons,null,2));
+      if(!difference.matches) throw new Error(`${method} frame mismatch at ${frame}: ${JSON.stringify(difference)}`);
+    };
     const browser = await openBrowser("chrome",{browserExecutable:process.env.REPLAY_BROWSER_EXECUTABLE});
     try {
       for (const [kind, frame] of samples) {
@@ -151,6 +171,7 @@ await withPreparedReplay(
           puppeteerInstance: browser,
         });
         hashes.set(frame, sha256(await readFile(path)));
+        references.set(frame,path);
         console.log(`Sampled ${kind} at ${frame}`);
       }
       for (const [, frame] of samples.toReversed()) {
@@ -164,14 +185,13 @@ await withPreparedReplay(
           imageFormat: "png",
           puppeteerInstance: browser,
         });
-        if (sha256(await readFile(path)) !== hashes.get(frame))
-          throw new Error(`Reverse frame mismatch at ${frame}`);
+        await assertCapture(frame,path,"Reverse");
       }
       const random = [...samples].sort((a,b) => sha256(String(a[1])).localeCompare(sha256(String(b[1]))));
       for (const [,frame] of random) {
         const path = join(output,"random.png");
         await renderStill({composition,serveUrl,inputProps,frame,output:path,imageFormat:"png",puppeteerInstance:browser});
-        if (sha256(await readFile(path)) !== hashes.get(frame)) throw new Error(`Random frame mismatch at ${frame}`);
+        await assertCapture(frame,path,"Random");
       }
       for (const [kind, frame] of samples.slice(0, 3)) {
         const directory = join(output, `sequential-${kind}`);
@@ -190,12 +210,8 @@ await withPreparedReplay(
         const files = (await readdir(directory))
           .filter((file) => file.endsWith(".png"))
           .sort();
-        if (
-          files.length !== 3 ||
-          sha256(await readFile(join(directory, files[1]!))) !==
-            hashes.get(frame)
-        )
-          throw new Error(`Sequential frame mismatch at ${frame}`);
+        if (files.length !== 3) throw new Error(`Sequential frame count mismatch at ${frame}`);
+        await assertCapture(frame,join(directory,files[1]!),"Sequential");
       }
     } finally {
       await browser.close({ silent: true });
@@ -203,7 +219,7 @@ await withPreparedReplay(
     for (const [,frame] of samples) {
       const path = join(output,"independent.png");
       await renderStill({composition,serveUrl,inputProps,frame,output:path,imageFormat:"png",browserExecutable:process.env.REPLAY_BROWSER_EXECUTABLE});
-      if (sha256(await readFile(path)) !== hashes.get(frame)) throw new Error(`Independent frame mismatch at ${frame}`);
+      await assertCapture(frame,path,"Independent");
     }
     let encodedEvidence:unknown = null;
     if (encoded) {
@@ -275,6 +291,7 @@ await withPreparedReplay(
           random:true,
           sequential: samples.slice(0, 3),
           independent: true,
+          captureComparisons,
           encoded:encodedEvidence,
         },
         null,
