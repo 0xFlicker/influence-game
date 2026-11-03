@@ -166,7 +166,10 @@ lane. The infra-owned workflow accepts only source/mirror run identities and
 receipt hashes, independently derives the worker image and fixed staging
 parameters, and packages/verifies `HouseRenderBatch-staging` before assuming its
 dedicated main-only deploy role. A one-time repo variable pins the sidecar image;
-GitHub App installation and keys remain one-time prerequisites. No secret values
+The dedicated **The House Render Releases** App and keys are installed; see the
+[bootstrap receipt](2026-11-02-staging-batch-bootstrap.md). App/host Batch steps
+use `HOUSE_RENDER_APP_*`; infra's source reader uses its dedicated `GH_APP_*`.
+No secret values
 enter workflow inputs. `scripts/render-deploy.py --environment staging --renderer batch`
 rejects old-renderer/production replay, foreign asset destinations, changed
 checksums and an unprotected runtime role. The existing renderer workflow remains

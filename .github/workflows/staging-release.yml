@@ -85,8 +85,8 @@ jobs:
         id: infra-token
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ vars.GH_APP_CLIENT_ID }}
-          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          client-id: ${{ vars.HOUSE_RENDER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.HOUSE_RENDER_APP_PRIVATE_KEY }}
           owner: falsefloor
           repositories: infra
           permission-actions: write

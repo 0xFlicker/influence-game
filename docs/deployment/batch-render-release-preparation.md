@@ -21,6 +21,9 @@ PRs: [application #278](https://github.com/0xFlicker/influence-game/pull/278),
 automatic-release host follow-up builds on that merge; #78 needs no rollback.
 The follow-up is [host #79](https://github.com/0xFlicker/linode-iac/pull/79).
 Land #79 and infra #23 before app #278's updated staging orchestration.
+Both are merged. [Host #80](https://github.com/0xFlicker/linode-iac/pull/80)
+connects the dedicated App chosen during bootstrap; land it before selecting a
+Batch target. Existing-target capability deployment can proceed independently.
 
 The application capability release keeps the checked-in target policy unchanged.
 The resolved merge preserves main's presentation parity guidance and CLI
@@ -53,13 +56,14 @@ verified success without re-encoding. See the
    32 random characters. Reuse the reviewed staging-only Tailscale OAuth
    parameter and exact staging ECR sidecar. No secret values belong in PRs,
    artifacts, journals or workflow inputs.
-5. Complete one-time release automation bootstrap. Install the existing GitHub
-   App on private `falsefloor/infra`; app release needs Actions write/Contents
-   read there, host release needs read only. Configure `GH_APP_CLIENT_ID` and
-   `GH_APP_PRIVATE_KEY` in infra with a read-only installation on
-   `0xFlicker/influence-game`. Set infra variable
-   `HOUSE_RENDER_STAGING_TAILNET_IMAGE` to the reviewed immutable ECR sidecar.
-   Infra currently has none of these GitHub configuration entries installed.
+5. The one-time bootstrap is installed; see the
+   [staging bootstrap receipt](2026-11-02-staging-batch-bootstrap.md).
+   The dedicated **The House Render Releases** App has Actions write/Contents
+   read and no webhook. App and host conditional Batch steps use
+   `HOUSE_RENDER_APP_CLIENT_ID` / `HOUSE_RENDER_APP_PRIVATE_KEY`; their existing
+   `GH_APP_*` consumers stay unchanged. Infra's `GH_APP_*` values identify the
+   dedicated App and its source reader requests read only. Infra variable
+   `HOUSE_RENDER_STAGING_TAILNET_IMAGE` pins the verified deployed sidecar.
    Review stack IAM, quotas, subnet capacity and cleanup behavior before activation.
 6. Install only the distinct staging keys in Doppler as
    `RENDER_JOB_DISPATCH_SECRET` and `RENDER_JOB_SECRET`, matching the two SSM
