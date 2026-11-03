@@ -1,11 +1,12 @@
 "use client";
 /* eslint-disable @next/next/no-img-element -- Public packaged artwork and runtime cast URLs. */
 import {characterImageError} from "@/components/character/image-error";
-import {useState, type ReactNode} from "react";
+import {useMemo, useState, type ReactNode} from "react";
 import {OpeningBrowserVideo, type OpeningVideoProps} from "@/components/watch/opening-browser-video";
 import type {InfluenceOpeningCue} from "./types";
 import {sampleInfluenceOpening} from "./influence-opening";
 import styles from "./influence-opening.module.css";
+import {publicMediaDeliveryView} from "@/lib/public-media-delivery";
 
 function CastPortrait({name, fullBodyUrl, headshotUrls}: {name: string; fullBodyUrl?: string; headshotUrls: (string | undefined)[]}) {
   const [failed, setFailed] = useState<string[]>([]);
@@ -20,10 +21,11 @@ function CastPortrait({name, fullBodyUrl, headshotUrls}: {name: string; fullBody
     : <div className={styles.monogram} aria-label={`${name} portrait unavailable`}>{name.slice(0, 1)}</div>;
 }
 
-export function InfluenceOpeningFrame({cue, elapsedMs, reduced = false, fullBodyUrl, portraitUrl, fallbackPortraitUrl, playing = false, speed = 1, navigationRevision = 0, video}: {
+export function InfluenceOpeningFrame({cue:sourceCue, elapsedMs, reduced = false, fullBodyUrl:sourceFullBodyUrl, portraitUrl:sourcePortraitUrl, fallbackPortraitUrl:sourceFallbackPortraitUrl, playing = false, speed = 1, navigationRevision = 0, video}: {
   cue: InfluenceOpeningCue; elapsedMs: number; reduced?: boolean; fullBodyUrl?: string; portraitUrl?: string; fallbackPortraitUrl?: string; playing?: boolean; speed?: number; navigationRevision?: number;
   video?: (props: OpeningVideoProps) => ReactNode;
 }) {
+  const {cue,fullBodyUrl,portraitUrl,fallbackPortraitUrl} = useMemo(() => publicMediaDeliveryView({cue:sourceCue,fullBodyUrl:sourceFullBodyUrl,portraitUrl:sourcePortraitUrl,fallbackPortraitUrl:sourceFallbackPortraitUrl}), [sourceCue,sourceFullBodyUrl,sourcePortraitUrl,sourceFallbackPortraitUrl]);
   const shot = cue.opening;
   const frame = sampleInfluenceOpening(cue, elapsedMs, reduced);
   const media = {src: shot.entranceVideoUrl, poster: shot.posterUrl, timeMs: frame.videoMs, playing, speed: frame.entrance ? 1 : speed, navigationRevision};

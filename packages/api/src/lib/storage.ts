@@ -598,7 +598,17 @@ function hasExpiringSignatureParams(url: URL): boolean {
 
 function publicObjectUrlFromConfiguredS3(url: URL): string | null {
   const key = publicObjectKeyFromConfiguredS3(url);
-  return key ? publicS3UrlForKey(key) : null;
+  if (!key) return null;
+  if (objectStorageProvider() !== "aws_s3") return publicS3UrlForKey(key);
+  if ([...url.searchParams.keys()].some(name => ["versionid", "partnumber"].includes(name.toLowerCase()))) {
+    throw new Error("Versioned public media requires an explicit retained-version mapping");
+  }
+  const delivered = new URL(publicS3UrlForKey(key));
+  for (const [name, value] of url.searchParams) {
+    if (!name.toLowerCase().startsWith("x-amz-") && !["signature", "expires", "awsaccesskeyid", "securitytoken", "access_token", "token"].includes(name.toLowerCase())) delivered.searchParams.append(name, value);
+  }
+  delivered.hash = url.hash;
+  return delivered.toString();
 }
 
 function publicObjectKeyFromConfiguredS3(url: URL): string | null {

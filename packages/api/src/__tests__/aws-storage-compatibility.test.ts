@@ -82,6 +82,8 @@ describe("AWS object storage compatibility", () => {
     const external = "https://external.example.test/private?X-Amz-Signature=fixture";
     expect(resolvePublicObjectDeliveryUrl(external)).toBe(external);
     expect(resolvePublicObjectDeliveryUrl(null)).toBeNull();
+    expect(resolvePublicObjectDeliveryUrl("https://influence-assets-stg.us-iad-10.linodeobjects.com/postgame-media/fixture.mp4?view=preview&X-Amz-Signature=expired#t=1")).toBe("https://assets.thehouse.game/postgame-media/fixture.mp4?view=preview#t=1");
+    expect(() => resolvePublicObjectDeliveryUrl("https://influence-assets-stg.us-iad-10.linodeobjects.com/pfp/fixture.png?versionId=retained-source-version")).toThrow("retained-version mapping");
   });
 
   test("stable delivery origin cannot contain credentials, a path or insecure protocol", () => {

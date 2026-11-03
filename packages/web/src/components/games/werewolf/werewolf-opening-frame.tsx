@@ -1,16 +1,18 @@
 "use client";
 /* eslint-disable @next/next/no-img-element -- The shared frame also renders from frozen files outside Next. */
 import {characterImageError} from "@/components/character/image-error";
-import {useState, type ReactNode} from "react";
+import {useMemo, useState, type ReactNode} from "react";
 import {OpeningBrowserVideo, type OpeningVideoProps} from "../../watch/opening-browser-video";
 import {OPENING_ASSETS, sampleOpening, type WerewolfOpeningCue} from "./werewolf-opening";
 import styles from "./werewolf-opening.module.css";
+import {publicMediaDeliveryView} from "@/lib/public-media-delivery";
 
 /** Shared by the live webpage and the full replay renderer. No controls or independent timers. */
-export function WerewolfOpeningFrame({cue, elapsedMs, reduced = false, playing = false, speed = 1, navigationRevision = 0, video, browserLoading = false}: {
+export function WerewolfOpeningFrame({cue:sourceCue, elapsedMs, reduced = false, playing = false, speed = 1, navigationRevision = 0, video, browserLoading = false}: {
   cue: WerewolfOpeningCue; elapsedMs: number; reduced?: boolean; playing?: boolean; speed?: number; navigationRevision?: number;
   video?: (props: OpeningVideoProps) => ReactNode; browserLoading?: boolean;
 }) {
+  const cue = useMemo(() => publicMediaDeliveryView(sourceCue), [sourceCue]);
   const shot = cue.opening;
   const frame = sampleOpening(cue, elapsedMs, reduced);
   const [failedImage, setFailedImage] = useState<string | null>(null);

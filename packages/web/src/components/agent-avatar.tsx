@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { resolvePublicMediaUrl } from "@/lib/public-media-delivery";
 import {useState} from "react";
 import { resolveApiUrl } from "@/lib/api";
 import { getHousePortraitKey, HOUSE_PORTRAIT_KEYS } from "@influence/engine/house-personas";
@@ -76,7 +77,7 @@ export function resolveAgentAvatarUrl(
   name: string,
   personaKey?: string | null,
 ): string {
-  if (avatarUrl) return normalizeUploadedAvatarUrl(avatarUrl);
+  if (avatarUrl) return normalizeUploadedAvatarUrl(resolvePublicMediaUrl(avatarUrl));
   const key =
     normalizePersonaKey(personaKey) ??
     normalizePersonaKey(persona) ??

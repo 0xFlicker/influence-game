@@ -1,9 +1,10 @@
 "use client";
+import { publicMediaDeliveryView } from "@/lib/public-media-delivery";
 import {RoomBackdrop} from "./stage-backdrop";
 import {HouseResultLayout} from "@/components/watch/house-result-layout";
 import {HouseMessage} from "@/components/watch/house-message";
 
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useMemo, useCallback, useEffect, useLayoutEffect, useState } from "react";
 import {useSceneThinking} from "@/components/watch/watch-thinking";
 import {FormatPresentation} from "./format-presentation";
 import type {FormatPresentationCue} from "./types";
@@ -76,7 +77,7 @@ export function VisualPresentation({ director, retainTail = true, ...props }: Om
   return <VisualPresentationFrame {...props} {...clock} onSceneReadyChange={onSceneReadyChange} holdAtTail={holdAtTail} elapsedMs={elapsedMs} readingElapsedMs={director.getSpeechElapsedBaseMs()} paused={!state.isPlaying && !director.isAnimating()} speechPresentation={director.getActiveCue()?.speechPresentation} navigationRevision={director.getNavigationRevision()} />;
 }
 
-export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs, readingElapsedMs: readingTime = elapsedMs, holdAtTail = false, paused = false, reducedMotion = false, status, fullscreen = false, controlsInset = fullscreen ? 140 : 0, navigationRevision = 0, speechPresentation, currentStateEntry = false, voteLedger, roster = [], onSceneReadyChange, hideHouseNarration = false, naturalHouseMessages = true, houseLogoUrl }: {
+export function VisualPresentationFrame({ beat: sourceBeat, rooms: sourceRooms, retainedScene: sourceRetainedScene, elapsedMs, readingElapsedMs: readingTime = elapsedMs, holdAtTail = false, paused = false, reducedMotion = false, status, fullscreen = false, controlsInset = fullscreen ? 140 : 0, navigationRevision = 0, speechPresentation, currentStateEntry = false, voteLedger, roster: sourceRoster = [], onSceneReadyChange, hideHouseNarration = false, naturalHouseMessages = true, houseLogoUrl }: {
   beat: VisualPresentationBeat;
   hideHouseNarration?: boolean;
   naturalHouseMessages?: boolean;
@@ -99,6 +100,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   roster?: readonly FormatPresentationRosterPlayer[];
   onSceneReadyChange?: (ready: boolean) => void;
 }) {
+  const {beat, rooms, retainedScene, roster} = useMemo(() => publicMediaDeliveryView({beat:sourceBeat, rooms:sourceRooms, retainedScene:sourceRetainedScene, roster:sourceRoster}), [sourceBeat, sourceRooms, sourceRetainedScene, sourceRoster]);
   const [pinnedRoom, setPinnedRoom] = useState<VisualRoomId | null>(null);
   // Older runs without a final tableau still leave a readable last frame.
   const tailTime = beat.kind === "portrait" ? soloPresentationDurationMs(beat.speech.text) - SOLO_EXIT_MS - 1

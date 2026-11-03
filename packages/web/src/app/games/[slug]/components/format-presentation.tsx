@@ -1,5 +1,6 @@
 import {getFormatRegistration} from "@influence/engine/format-rules";
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
+import { publicMediaDeliveryView } from "@/lib/public-media-delivery";
 import type { FormatPresentationCue, FormatPresentationRosterPlayer } from "./types";
 import { ActiveFormatLabel } from "./active-format-label";
 import { FormatBallotReveal } from "./format-ballot-reveal";
@@ -13,7 +14,9 @@ import { FORMAT_PRESENTATION_METADATA } from "@influence/engine/format-presentat
 import {ResultStage, formatResultPlayers} from "./result-stage";
 import {resultRoom} from "./influence-rooms";
 
-export function FormatPresentation(props: Parameters<typeof FormatPresentationContent>[0]) {
+export function FormatPresentation(sourceProps: Parameters<typeof FormatPresentationContent>[0]) {
+  const delivery = useMemo(() => publicMediaDeliveryView({cue:sourceProps.cue, roster:sourceProps.roster}), [sourceProps.cue, sourceProps.roster]);
+  const props = {...sourceProps, ...delivery};
   const {cue, roster} = props;
   if(cue.kind === "format_menu" && cue.resultsPresentation && cue.compactEmpower) {
     const player=roster.find(player=>player.id===cue.empoweredId);

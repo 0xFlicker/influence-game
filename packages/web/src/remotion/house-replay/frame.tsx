@@ -1,4 +1,5 @@
 import {RoomBackdrop} from "../../app/games/[slug]/components/stage-backdrop";
+import {publicMediaDeliveryView} from "../../lib/public-media-delivery";
 import {resultRoom} from "../../app/games/[slug]/components/influence-rooms";
 import {exportContinuedActor,exportPreviousSpeaker} from "../../lib/replay-export/room-continuity";
 import {HouseNarration, narrationWindow} from "../../components/watch/house-narration";
@@ -67,7 +68,9 @@ export function ReplayFrame({
   preview?: boolean;
 }) {
   const frame = useCurrentFrame();
-  const data = useMemo(() => localize(manifest), [manifest]);
+  // Studio Source/Selected cut can contain original remote URLs. Prepared
+  // export bundles remain local; neither path changes the pinned manifest.
+  const data = useMemo(() => localize(publicMediaDeliveryView(manifest)), [manifest]);
   const measurementCue = prepare ? data.timeline[Math.floor(frame / 2)]! : null;
   const measuredSegment =
     measurementCue?.segments.find(
