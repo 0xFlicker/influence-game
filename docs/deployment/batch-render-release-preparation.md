@@ -1,10 +1,10 @@
 # Batch rendering release preparation
 
-Prepared 2026-11-02. The localhost render completed and its port-3003 child was
-cleaned up at the user's request. The application now incorporates current main
-and the three conflict resolutions. This packet prepares source review and a
-staging release; cloud provisioning and target activation remain separate steps.
-Keep current renderer targets until the corresponding acceptance/activation step.
+Updated 2026-11-02. Localhost evaluation is complete, the port-3003 render process
+was cleaned up, and the capability and companion PRs are merged. This release
+prepares staging Studio-export activation. The checked-in policy selects Batch
+for Studio exports; the live target changes only after the normal release
+deploys and verifies the Batch runtime. Production activation remains separate.
 
 ## Coordinated implementation PRs
 
@@ -15,17 +15,15 @@ Keep current renderer targets until the corresponding acceptance/activation step
 | `0xFlicker/linode-iac` / `codex/automatic-batch-release` | Independently verify infra admission before host access; persist submission route and derive worker digest from the verified release | Follow-up to merged #78; land before updated app release wiring |
 | `0xFlicker/influence-game` / `codex/shared-batch-rendering` | Durable jobs and object storage, worker, Studio/MCP order/status/download, global monitor, local worker and migrations | Finish localhost evaluation and required checks before capability release |
 
-PRs: [application #278](https://github.com/0xFlicker/influence-game/pull/278),
-[infrastructure #23](https://github.com/falsefloor/infra/pull/23), and
-[host #78](https://github.com/0xFlicker/linode-iac/pull/78) (merged). The focused
-automatic-release host follow-up builds on that merge; #78 needs no rollback.
-The follow-up is [host #79](https://github.com/0xFlicker/linode-iac/pull/79).
-Land #79 and infra #23 before app #278's updated staging orchestration.
-Both are merged. [Host #80](https://github.com/0xFlicker/linode-iac/pull/80)
-connects the dedicated App chosen during bootstrap; land it before selecting a
-Batch target. Existing-target capability deployment can proceed independently.
+Merged prerequisites: [application #278](https://github.com/0xFlicker/influence-game/pull/278),
+[infrastructure #23](https://github.com/falsefloor/infra/pull/23),
+[host #78](https://github.com/0xFlicker/linode-iac/pull/78),
+[host #79](https://github.com/0xFlicker/linode-iac/pull/79), and
+[host #80](https://github.com/0xFlicker/linode-iac/pull/80). The last connects the
+dedicated App chosen during bootstrap. No companion source PR is required for
+this Studio-only target selection.
 
-The application capability release keeps the checked-in target policy unchanged.
+The application capability release kept the target policy unchanged.
 The resolved merge preserves main's presentation parity guidance and CLI
 `REPLAY_BROWSER_EXECUTABLE`, and passes the worker's browser explicitly through
 replay preparation and encoding. Native source identity changes with revisions;
@@ -37,6 +35,59 @@ is now owned durably by the server and survives worker exit/lease expiry while
 remaining fenced against cancel/retry. The original uploaded movie recovered to
 verified success without re-encoding. See the
 [recovery evidence](../solutions/infrastructure/2026-11-02-native-render-finalization-recovery.md).
+
+## Staging Studio activation
+
+The policy in this release is:
+
+| Environment | Studio exports | Trailers |
+| --- | --- | --- |
+| Staging | AWS Batch | Legacy trailer controller (`existing`) |
+| Production | Unchanged; Studio cloud rendering unavailable | Unchanged |
+
+The `existing` label refers to trailer routing; it is not an operational Studio
+renderer. Native development and CLI rendering remain available.
+
+Merging this PR starts ordinary main CI. Successful release CI builds the exact
+API/web/worker family, mirrors the worker to staging ECR, invokes the private
+infra workflow to provision/update and admit `HouseRenderBatch-staging`, then
+dispatches the host deployment. Failed Batch admission prevents host dispatch.
+Both Batch lanes are provisioned, but only Studio exports route to Batch in this
+release. No manual Batch workflow dispatch or per-image secret edit is needed.
+Production still requires its separate approval; this PR does not select Batch
+there. The raw shared policy digest changes, so all three images must come from
+this release even though production's selected settings are unchanged.
+
+After deployment:
+
+1. Record the main CI, worker mirror, infra admission and host deployment run
+   identities. Confirm API health reports this candidate and its policy digest,
+   and staging OAuth discovery advertises `producer:render`.
+2. Reconnect the staging MCP client with `producer producer:render` and use a
+   producer browser session. Registration/consent may precede activation once
+   the capability release is deployed; it does not grant authority retroactively.
+3. Order a small previously accepted cut in Studio, follow its job at
+   `/admin/production/renders`, and look up the same ID through MCP. Inspect
+   worker claim/heartbeat, upload, verification and verified success; obtain a
+   fresh producer download and compare its length/hash with the accepted output.
+4. Prove a second small order through MCP, covering the other game. Retain the
+   source selection, job/execution IDs, AWS logs, output integrity and task/
+   tailnet cleanup evidence. No game/model/image/TTS generation is needed.
+
+The initial export lane admits one execution. A task reserves 4 vCPU / 8 GiB
+including its sidecar; provisioned queues do not by themselves run render tasks.
+The bootstrap observed an 8-vCPU regional Fargate ceiling shared with other
+workloads. Placement, failures/cancellation, uploads and long-runtime behavior
+still need live staging proof; a short render does not establish six-hour
+readiness. Trailer migration, reserved-lane contention tests and the explicit
+legacy-production-renderer cleanup PR remain subsequent milestones below.
+
+For rollback after activation, stop ordering new exports and inspect/cancel any
+active test execution, verifying task exit and tailnet cleanup. Revert this
+release's staging `targets` addition through the normal policy release. This
+disables new Studio cloud orders; it does not redirect them to another worker
+or automatically terminate an in-flight task. Keep accepted output objects and
+job evidence, and retain the Batch stack/definitions through the rollback window.
 
 ## Staging operator sequence
 

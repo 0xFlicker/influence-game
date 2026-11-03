@@ -8,7 +8,11 @@
     "staging": {
       "mode": "remote",
       "network": "tailnet",
-      "apiOrigin": "https://influence-staging.tail8a79ed.ts.net"
+      "apiOrigin": "https://influence-staging.tail8a79ed.ts.net",
+      "targets": {
+        "trailer": "existing",
+        "studio-export": "aws-batch"
+      }
     }
   }
 }
