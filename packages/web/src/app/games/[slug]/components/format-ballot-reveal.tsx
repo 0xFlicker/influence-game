@@ -50,10 +50,10 @@ export function FormatBallotReveal({
           {displayBallotPolarity(cue.ballot.polarity)}
         </p>
       ) : null}
-      <div className="mt-5 overflow-x-auto">
+      <div className="mt-5 min-w-0">
         <table
           data-roll-call-ledger
-          className="w-full min-w-[28rem] border-separate border-spacing-y-1 text-left text-xs"
+          className="w-full table-fixed border-separate border-spacing-y-1 text-left text-xs [&_td]:break-words [&_th]:break-words"
         >
           <caption className="sr-only">Vote record</caption>
           <thead>

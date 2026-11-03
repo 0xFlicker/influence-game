@@ -38,3 +38,27 @@ Current House result messages use a bounded in-flow box with a centered overlapp
 - Influence's winner tableau already uses container-responsive artwork and standings. Its desktop/mobile regression remains covered; its secondary jury list can still scroll. This follow-up does not claim that every detailed ballot ledger or final standings panel fits arbitrary heights without scrolling.
 
 Validation covers the twelve-way Empower tie at eight sizes in inline/theater modes, Werewolf vote results at four small/short sizes in both modes, the Werewolf closing cast, and existing Influence final-tableau desktop/mobile checks. Keep the tests measuring rendered bounds after ResizeObserver settles; static markup cannot prove fit.
+
+
+## Full-body Empower staging
+
+Current compact Empower results measure each player cell with a CSS size container. Saved full-body artwork appears when the cell is at least 112px wide and 160px tall, after result headings, House speech and playback controls receive their space. The artwork uses `object-fit: contain`; names and vote counts remain visible. Smaller cells keep the packed portrait/name layout. Missing artwork keeps portraits, and only a confirmed 404 permits replacing a saved full-body reference. This applies to both tied players and a resolved Empower winner; frozen noncompact exports keep their layout.
+
+Browser previews cover 2-, 3-, 4-, 6-, and 12-way ties across 320×568, 390×844, 600×600, 1280×400, 844×390, 1920×634 and 1920×1080, in inline and theater modes. Each case verifies the cell threshold, loaded artwork, visible cast, absence of result scrolling, and readable House pagination.
+
+The 160px cell-height threshold leaves at least 100px for uncropped art on wide short stages. Three- and four-way ties at 1280×400 theater size explicitly require full-body staging; a roomy but short cell must not stay a tiny portrait merely because it is below 220px tall.
+
+
+## Format menu and House speech share one stage
+
+`format_menu` now maps to canonical `format.menu_offered` facts, including read-only historical recovery from the exact accepted boundary and committing turn. Current composition retains that offer during its associated House speech. An adjacent menu cue is a 500ms entrance into the narrated offer, including existing games; source keys, accepted words, recordings and canonical events remain intact. Unlinked or ambiguous speech is never matched by prose or round proximity. Pinned noncompact compositions keep their original layout and timing.
+
+The menu gives the Empowered player a dedicated column: full-body art on sufficiently roomy stages, a larger portrait in compact layouts, and an explicit Empowered label. Both offered format names remain on screen with paginated House speech. Current viewer, Studio and exports share this component. Browser previews cover seven sizes in inline/theater modes, with and without full-body art (28 combinations), including 320×568 and 1280×400.
+
+
+House captions grow the complete message toward a single line, up to 32px, when measured width and available reading height allow it. They retain their responsive 14/16px floor and normal wrapping/pagination when the full message cannot fit one line. Sizing uses the full accepted message rather than the active page, so pages and seeks do not change font size. The same measured typography and page capture serve viewer, Studio and export.
+
+
+Standalone House background ownership: the live viewer must treat a House scene with text or its own backdrop as a full-stage room presentation. Its scene owns the sole backdrop; the viewer's fallback scenery must be suppressed. Otherwise the inline wrapper's padding and max-width crop a second copy of the same room into an obvious inset rectangle, while theater mode merely hides the mismatch by giving both copies similar bounds. Browser coverage requires exactly one backdrop with bounds equal to the stage across inline/theater screen sizes.
+
+Standalone House captions reserve a 90px row, including logo clearance, padding, a desktop text line and pagination footer. Short watch pages reclaim the banner/footer/cast-strip space for these captions just as they do for result captions.

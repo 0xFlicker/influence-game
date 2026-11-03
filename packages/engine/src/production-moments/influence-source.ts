@@ -1,6 +1,7 @@
 import {twoNamesDecisionSpeechAction, TWO_NAMES_PUBLIC_DECISION_ACTIONS} from "../influence-decision-speech";
 import { INFLUENCE_BALLOT_ACTIONS } from "../influence-decision-speech";
 import type { ViewerDecisionEvent } from "../viewer-decision-events";
+import { orderAllianceIntroductions, type AllianceIntroduction } from "../alliance-introduction-presentation";
 import { assembleProductionCatalog, type InfluenceProductionPresentation, type ProductionSource } from "./index";
 
 /** Structured display metadata only. Legacy prose subparts stay inside this row. */
@@ -12,6 +13,7 @@ export interface InfluenceProductionTranscript {
   decisionSpeech?: { action: string; actorId: string; receiptEntrySequence?: number };
   acceptedBallot?: { voterId: string; targetId: string; purpose: "empower" | "eliminate" | "winner" };
   thinking?: string | null;
+  allianceIntroduction?: AllianceIntroduction;
   retrospectiveSource?: { eventSequence: number; ordinal: number };
 }
 export interface InfluenceProductionFrame {
@@ -95,7 +97,8 @@ export function buildInfluenceProductionSources(input: {
   const rows: SourceRow[] = [];
   let serial = 0;
   const append = (source: ProductionSource, round: number, phase: string, sequence: number | null, lane: SourceRow["lane"], summary = false) => rows.push({ source, round, phase, sequence, lane, summary, serial: serial++ });
-  const transcripts = [...input.transcripts].sort((a, b) => a.timestamp - b.timestamp || (typeof a.id === "number" && typeof b.id === "number" ? a.id - b.id : String(a.id).localeCompare(String(b.id))));
+  const transcripts = orderAllianceIntroductions([...input.transcripts].sort((a, b) => a.timestamp - b.timestamp || (typeof a.id === "number" && typeof b.id === "number" ? a.id - b.id : String(a.id).localeCompare(String(b.id)))));
+  const byEntrySequence = new Map(transcripts.map(row => [row.entrySequence, row]));
   const transcriptIds = new Set<string>();
   for (const message of transcripts) {
     if (transcriptIds.has(String(message.id))) throw new Error("Ambiguous Influence production transcript row");
@@ -122,7 +125,8 @@ export function buildInfluenceProductionSources(input: {
     const latestFrame = frames.findLast(frame => frame.round === message.round && frame.timestamp <= message.timestamp);
     if (message.phase === "RETROSPECTIVE" && (!message.retrospectiveSource || !actorId || message.anonymous)
       || message.phase !== "RETROSPECTIVE" && message.retrospectiveSource) throw new Error("Retrospective dialogue requires exact canonical provenance");
-    const sequence = message.retrospectiveSource?.eventSequence ?? message.firstDurableEventSequence ?? latestFrame?.sequence ?? null;
+    const anchor = message.allianceIntroduction ? byEntrySequence.get(message.allianceIntroduction.beforeEntrySequence) : undefined;
+    const sequence = anchor?.firstDurableEventSequence ?? message.retrospectiveSource?.eventSequence ?? message.firstDurableEventSequence ?? latestFrame?.sequence ?? null;
     append({ kind: "influence-transcript", transcriptId: String(message.id), order: { anchor: 0, offset: 0 },
       presentation: message.acceptedBallot ? "ballot" : actorId || message.anonymous ? "speech" : "scene",
       ...(message.acceptedBallot ? { ballot: { voterId: message.acceptedBallot.voterId, purpose: message.acceptedBallot.purpose } } : {}),

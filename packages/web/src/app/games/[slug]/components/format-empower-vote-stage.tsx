@@ -1,3 +1,7 @@
+"use client";
+import {useState} from "react";
+import {characterImageError} from "@/components/character/image-error";
+import styles from "./empower-result-player.module.css";
 import {AgentAvatar} from "@/components/agent-avatar";
 import type { FormatEmpowerVoteReceipt, FormatPresentationRosterPlayer } from "./types";
 import { VoteLedger } from "./vote-presentation";
@@ -38,10 +42,7 @@ export function FormatEmpowerVoteStage({
     return <section data-format-cue={empoweredId ? "empowered_tally" : "empowered_tie"} data-compact-empower aria-label="Empower result" className="flex min-h-0 flex-1 flex-col text-center">
       <h2 className="mb-2 shrink-0 text-sm font-semibold sm:text-base">{empoweredId ? `${playerName(empoweredId, names)} is Empowered` : `${featured.length}-way tie for Empower`}{sharedCount && <span className="font-normal text-amber-200"> · {counts[featured[0]!.id]} vote{counts[featured[0]!.id] === 1 ? "" : "s"} each</span>}</h2>
       <div aria-label="Result players" className="grid min-h-0 flex-1 gap-1" style={{gridTemplateColumns:`repeat(auto-fit, minmax(min(100%, 80px), 1fr))`,gridAutoRows:"minmax(28px, 1fr)"}}>
-        {featured.map(player => <div key={player.id} data-empower-total={player.id} title={`${player.name}: ${counts[player.id] ?? 0} votes`} className="flex min-w-0 items-center justify-center gap-1 rounded-lg bg-white/5 px-1 py-0.5">
-          <div className="shrink-0"><AgentAvatar name={player.name} persona={player.persona ?? ""} personaKey={player.personaKey} avatarUrl={player.avatarUrl} size="6" /></div>
-          <div className="min-w-0"><p className="truncate text-xs">{player.name}</p>{!sharedCount && <p className="text-xs text-amber-200">{counts[player.id] ?? 0} votes</p>}</div>
-        </div>)}
+        {featured.map(player => <EmpowerResultPlayer key={player.id} player={player} votes={counts[player.id] ?? 0} sharedCount={sharedCount} />)}
       </div>
       {(otherVotes > 0 || resolutionMethod) && <p className="mt-1 shrink-0 text-xs text-white/60">{otherVotes > 0 ? `Other votes: ${otherVotes}` : ""}{resolutionMethod === "wheel" ? " · Wheel decision" : resolutionMethod === "revote" ? " · Runoff result" : resolutionMethod === "manual" ? " · Manual decision" : ""}</p>}
     </section>;
@@ -112,4 +113,21 @@ function playerName(
   names: ReadonlyMap<string, string>,
 ): string {
   return names.get(playerId) ?? playerId;
+}
+
+function EmpowerResultPlayer({player, votes, sharedCount}: {player:FormatPresentationRosterPlayer; votes:number; sharedCount:boolean}) {
+  const [missingBody, setMissingBody] = useState<string | null>(null);
+  const body = player.fullBodyReferenceUrl && player.fullBodyReferenceUrl !== missingBody ? player.fullBodyReferenceUrl : null;
+  return <div data-empower-total={player.id} title={`${player.name}: ${votes} vote${votes === 1 ? "" : "s"}`} className={styles.cell}>
+    <div className={`${styles.content} ${body ? styles.withBody : ""}`}>
+      {body && <div className={styles.art} data-empower-fullbody>
+        {/* eslint-disable-next-line @next/next/no-img-element -- frozen character art, displayed without cropping */}
+        <img src={body} alt={player.name} onError={event=>void characterImageError(event,()=>setMissingBody(body))} />
+      </div>}
+      <div className={styles.identity}>
+        <div className={`shrink-0 ${styles.avatar}`}><AgentAvatar name={player.name} persona={player.persona ?? ""} personaKey={player.personaKey} avatarUrl={player.avatarUrl} size="6" /></div>
+        <div className="min-w-0"><p className={styles.name}>{player.name}</p>{!sharedCount && <p className={styles.count}>{votes} vote{votes === 1 ? "" : "s"}</p>}</div>
+      </div>
+    </div>
+  </div>;
 }

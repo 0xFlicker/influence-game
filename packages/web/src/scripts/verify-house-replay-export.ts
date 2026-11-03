@@ -45,6 +45,7 @@ await withPreparedReplay(
   async (serveUrl, manifest) => {
     const inputProps = { manifest },
       composition = await selectComposition({
+        browserExecutable: process.env.REPLAY_BROWSER_EXECUTABLE,
         serveUrl,
         id: "HouseReplay",
         inputProps,
@@ -134,9 +135,9 @@ await withPreparedReplay(
           );
       }
     }
-    const samples = [...selected].slice(0, 14).concat([...thinkingFrames], [...roomFrames]),
+    const samples = [...selected].concat([...thinkingFrames], [...roomFrames]),
       hashes = new Map<number, string>();
-    const browser = await openBrowser("chrome");
+    const browser = await openBrowser("chrome",{browserExecutable:process.env.REPLAY_BROWSER_EXECUTABLE});
     try {
       for (const [kind, frame] of samples) {
         const path = join(output, `${kind}-${frame}.png`);
@@ -201,7 +202,7 @@ await withPreparedReplay(
     }
     for (const [,frame] of samples) {
       const path = join(output,"independent.png");
-      await renderStill({composition,serveUrl,inputProps,frame,output:path,imageFormat:"png"});
+      await renderStill({composition,serveUrl,inputProps,frame,output:path,imageFormat:"png",browserExecutable:process.env.REPLAY_BROWSER_EXECUTABLE});
       if (sha256(await readFile(path)) !== hashes.get(frame)) throw new Error(`Independent frame mismatch at ${frame}`);
     }
     let encodedEvidence:unknown = null;

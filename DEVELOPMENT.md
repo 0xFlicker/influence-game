@@ -623,6 +623,8 @@ Provider failures use a separate private evidence type. Admin and sysop can open
 
 New games seal an ordered provider manifest. Each entry uses `catalogId` and `reasoningPolicy`; fallbacks require bounded `maxCallsPerGame`. GPT-6 Luna remains the primary baseline; the shared fallback is native `xai:grok-4.6` (24 calls). Mutable Katana Grok choices migrate at the same generation; frozen games keep their original routes. Native xAI entries remain evaluation candidates pending paid qualification. See [native xAI](docs/native-xai.md) and the dated historical Katana results in `docs/local-model-evaluation.md`.
 
+Influence's `--chatty` output also retains `house-alliance-introductions`: one direct, journaled House author batch after alliance conversations and before the next decision. Check the accepted teaser against the forthcoming conversation and its pre-decision context. Playback moves the saved copy before its exact speech anchor; complete-phase live delivery holds it with the conversations. It is viewer-only, excluded from contestant prompts and owner transcript pages. Keep direct House calls and no `as any`; see [narration evaluation](docs/local-model-evaluation.md#house-narrative-evaluation).
+
 Create an API-backed simulation with the same ordered fallback shape using data-only CLI arguments:
 
 ```bash

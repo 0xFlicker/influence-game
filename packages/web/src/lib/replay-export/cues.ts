@@ -188,7 +188,8 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
     scenes,
     game.gameSchemaVersion,
     {attachDecisionSpeech: source.projectionVersion !== 3, attachTwoNamesSpeech: source.projectionVersion === undefined || source.projectionVersion >= 5,
-      compactEmpower: source.projectionVersion === undefined || source.projectionVersion >= 7,
+      // Frozen source versions pin facts and media, not an obsolete visual layout.
+      compactEmpower: true,
       resultsPresentation: source.projectionVersion === undefined || source.projectionVersion >= 6},
   );
   const frameForSequence = compileReplayFrameLookup(frames);
@@ -260,7 +261,7 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
           transcriptSequence: message.entrySequence,
         }),
       },
-      label: `Round ${cue.round} · ${cue.phase}`,
+      label: `Round ${cue.round} · ${message?.allianceIntroduction?.allianceName ?? message?.allianceSession?.allianceName ?? cue.phase}`,
       speech:
         message?.dialogueKind === "house_summary"
           ? {

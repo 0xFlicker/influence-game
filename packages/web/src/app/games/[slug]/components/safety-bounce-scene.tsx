@@ -112,7 +112,7 @@ export function SafetyBounceScene({ beat, elapsedMs, paused, reducedMotion, curr
         {!complete && <span>Unclassified {board.benchPlayerIds.length}</span>}
         {actorId && <span>White ring · chooser</span>}
       </div>
-      <ol aria-label="Safety Bounce chain" className="flex max-h-28 flex-wrap justify-center gap-1.5 overflow-y-auto text-[10px] sm:text-xs">
+      <ol aria-label="Safety Bounce chain" className="flex flex-wrap justify-center gap-1.5 text-xs">
         {[...order, ...board.benchPlayerIds].map(id => <li key={id} data-chain-member={id} aria-label={`${name(id)}: ${classification(id)}`} className="flex items-center gap-1 rounded-md border border-white/15 bg-white/5 px-2 py-1" style={{ color: colors[classification(id)] }}>
           <StatusIcon state={classification(id)} /><span>{order.includes(id) ? `${order.indexOf(id) + 1}. ` : ""}{name(id)}</span>
           {!anchors.has(id) && <span className="sr-only"> · position unavailable</span>}
