@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import { writeLocalUpload } from "../lib/storage.js";
 import { setChampionshipArtDependenciesForTests } from "../services/championship-artwork.js";
 import { readPayload } from "../services/payload-storage.js";
 const fixtureImage = sharp({ create: { width: 32, height: 48, channels: 3, background: "#987654" } }).png().toBuffer();
@@ -24,6 +25,10 @@ export const policies: ChampionshipPolicies = {
 export async function championshipFixture() {
   const db = await setupTestDB();
   installChampionshipArtFixture();
+  // Owner-edit submission captures the same real local bytes as championship preparation.
+  const image = Uint8Array.from(await fixtureImage).buffer;
+  await writeLocalUpload("fixture-head.png", "image/png", image);
+  await writeLocalUpload("fixture-body.png", "image/png", image);
   const actorId = randomUUID(), seasonId = randomUUID();
   await db.insert(schema.users).values({ id: actorId, displayName: "Championship test owner", email: `${actorId}@example.test` });
   await db.insert(schema.seasons).values({ id: seasonId, slug: `season-${seasonId}`, name: "Season 0", status: "final" });

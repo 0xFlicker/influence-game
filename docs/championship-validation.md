@@ -1,5 +1,7 @@
 ## Automatic finalist artwork and availability — 2026-11-03
 
+The broad run exposed one fixture-only failure: live-owner content submission tried to read a synthetic artwork URL. The shared championship fixture now writes real local PNG bytes. The complete artwork + championship execution rerun passed **12 tests, zero failures, 1,775 assertions** in 107.34 seconds, including all 17 canonical matches and normal owner edits during waiting-seat recovery. Typecheck/lint passed after this fix. Its separate database was cleaned up.
+
 After review, the final focused artwork suite passed **eight tests, zero failures, 60 assertions** in 9.11 seconds on a second dedicated disposable database. This includes the retry-fairness fix so one failing finalist cannot starve the others. Typecheck/lint and whitespace checks passed.
 
 The local Mac task checkout implements mandatory headshot/full-body preparation with championship-scoped revisions, original account/agent links, immutable storage, provider-journal recovery and pre-lock next-ranked fallback. No paid generation was performed. Focused artwork/storage/migration checks passed **39 tests, zero failures, 198 assertions**; existing affected championship checks passed **13 tests, zero failures, 104 assertions**. The provider-free full suite passed **3,308 tests, five skipped, zero failures**, 40,356 assertions across 346 files in 199.44 seconds.
