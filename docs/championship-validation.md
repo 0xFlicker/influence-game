@@ -1,5 +1,7 @@
 ## Automatic finalist artwork and availability — 2026-11-03
 
+The complete PostgreSQL run finished with **2,345 passed, one failed**, 32,112 assertions across 217 files in 915.21 seconds. Its sole failure was the unreadable owner-edit fixture described below, subsequently fixed and covered by the fresh 12-test execution/artwork rerun. The entire PostgreSQL suite was not repeated after that fixture-only fix; do not describe this baseline as an all-green full run. Logs are retained in `artifacts/championship/artwork-validation/`. Implementation commits: `ce357438`, followed by fixture fix `27953d4a`.
+
 The broad run exposed one fixture-only failure: live-owner content submission tried to read a synthetic artwork URL. The shared championship fixture now writes real local PNG bytes. The complete artwork + championship execution rerun passed **12 tests, zero failures, 1,775 assertions** in 107.34 seconds, including all 17 canonical matches and normal owner edits during waiting-seat recovery. Typecheck/lint passed after this fix. Its separate database was cleaned up.
 
 After review, the final focused artwork suite passed **eight tests, zero failures, 60 assertions** in 9.11 seconds on a second dedicated disposable database. This includes the retry-fairness fix so one failing finalist cannot starve the others. Typecheck/lint and whitespace checks passed.
