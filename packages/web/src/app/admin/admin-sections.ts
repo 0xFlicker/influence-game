@@ -34,6 +34,7 @@ export const ADMIN_ENTRIES: readonly AdminEntry[] = [
   { label: "Werewolf", href: "/admin/werewolf", area: "Games", access: "werewolf" },
   { label: "Seasons", href: "/admin/seasons", area: "Games", access: "visual" },
   { label: "Production", href: "/admin/production", area: "Production", access: "production" },
+  { label: "Render jobs", href: "/admin/production/renders", area: "Production", access: "producer" },
   { label: "Inference", href: "/admin/inference", area: "Operations", access: "operator" },
   { label: "Providers", href: "/admin/providers", area: "Operations", access: "operator" },
   { label: "Free queue", href: "/admin/free-queue", area: "Operations", access: "admin" },
@@ -57,7 +58,7 @@ export function permitsAdminEntry(entry: Pick<AdminEntry, "access">, user: Admin
   }
 }
 export function adminRoute(path: string): AdminEntry | undefined {
-  return ADMIN_ENTRIES.find(entry => path === entry.href || path.startsWith(`${entry.href}/`));
+  return ADMIN_ENTRIES.filter(entry => path === entry.href || path.startsWith(`${entry.href}/`)).sort((a,b)=>b.href.length-a.href.length)[0];
 }
 export function adminLanding(user: AdminAccess): string | null {
   return ADMIN_ENTRIES.find(entry => permitsAdminEntry(entry, user))?.href ?? null;

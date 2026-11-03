@@ -1,5 +1,40 @@
 # Production Studio
 
+The Export dialog offers **Render video**, with a persistent game-scoped render
+list, cancel/retry controls and fresh private downloads after verified success.
+The API freezes the reviewed selection and source metadata in private storage;
+the assigned worker prepares the shared replay bundle. Imported recordings upload
+before queuing. **Resume exact render order** retains the same request after
+a lost response. The local downloaded-selection/CLI workflow remains available.
+
+On localhost, `bun run dev:render-worker` handles trailers and queued Studio
+exports as native processes, one attempt at a time. It prioritizes ready trailers,
+then discovers exports through a worker-authenticated loopback-only API. Exports
+use the same assigned worker, claim/lease, private storage, verification and
+download path as Batch. Source identity includes the local revision and renderer
+changes; a changed build cannot claim an old queued cut. Frozen inputs are never
+silently upgraded. Staging/production keep their explicit Batch target admission.
+See [native worker validation](solutions/infrastructure/2026-11-02-native-local-studio-render-worker.md).
+
+**Production → Render jobs** (`/admin/production/renders`) is the global monitor
+for shared trailer and Studio export jobs. It shows active jobs first, status
+counts, status/type/game search, paginated history and expandable execution
+details. Filters stay in the URL. Producer/Sysop users can cancel active jobs,
+retry frozen Studio exports and request fresh private downloads after verification.
+The Production library and each game's Export panel link to it. Status refreshes
+every 15 seconds while visible; a queued job has no estimated start time.
+
+The monitor reads shared `render_jobs` metadata. Trailers still using the existing
+production controller remain in their game-owned trailer tools until that workload
+migrates to Batch. No legacy-job projection or second production queue is added.
+
+MCP `order_production_render` orders exact moment IDs and a pinned source snapshot;
+`get_production_render` and `get_production_render_download` support returning later
+by job ID. Ordering, cancellation and retries require explicit `producer:render`
+OAuth consent in addition to current Producer/Sysop authority. `producer:edit`
+continues to cover tags only. No missing media is generated. See [the staging
+runbook](deployment/batch-render-staging.md) for activation, consent and CORS setup.
+
 **Contributor requirement:** every presentation change must also reach Studio
 Source, Selected cut and encoded exports in the same branch. Follow the mandatory
 [presentation parity checklist](presentation-parity.md), including isolated cuts,

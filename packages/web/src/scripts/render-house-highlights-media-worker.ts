@@ -1,4 +1,4 @@
-import { renderExecutionConfig, type RenderExecution } from "@influence/engine/render-execution-config";
+import { renderExecutionConfig, isLocalRenderExecution, localRendererDigest, type RenderExecution } from "@influence/engine/render-execution-config";
 import { mkdir, mkdtemp, readdir, rename, rm, statfs, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
@@ -40,6 +40,7 @@ export interface HouseHighlightsMediaWorkerConfig {
   minimumFreeBytes: number;
   remotionOptions: HouseHighlightsRemotionMediaOptions;
   executionMode: "local" | "remote";
+  localExports: boolean;
   remote?: {
     generation: string;
     digest: string;
@@ -61,7 +62,7 @@ export function readHouseHighlightsMediaWorkerStartupMode(
   throw new Error("POSTGAME_MEDIA_STARTUP_MODE must be active or standby");
 }
 
-interface WorkerClaim {
+export interface WorkerClaim {
   gameId: string;
   artifactVersion: string;
   attemptNumber: number;
@@ -207,6 +208,7 @@ export function houseHighlightsMediaWorkerConfig(env: Record<string, string | un
     minimumFreeBytes: positiveInt(env.POSTGAME_MEDIA_MIN_FREE_BYTES, MIN_HOUSE_HIGHLIGHTS_MEDIA_WORKER_FREE_BYTES),
     remotionOptions: renderOptions,
     executionMode,
+    localExports: isLocalRenderExecution(execution) && ["localhost","127.0.0.1","[::1]"].includes(apiUrl.hostname),
     ...(remote ? { remote } : {}),
   };
 }
@@ -227,9 +229,26 @@ export async function runHouseHighlightsMediaWorkerOnce(config: HouseHighlightsM
   if (!await readHouseHighlightsMediaWorkerAdmission(config, fetchImpl)) return "drained";
   await assertHouseHighlightsMediaWorkerTemporarySpace(config.temporaryRoot, config.minimumFreeBytes);
   const response = await workerRequest<{ claim: WorkerClaim | null }>(config, "/api/internal/postgame-media/claim", { method: "POST" }, fetchImpl);
-  if (!response.claim) return "idle";
+  if (!response.claim) return config.localExports ? runLocalStudioExport(config,fetchImpl) : "idle";
   const claim = { ...response.claim, manifest: parseHouseHighlightsTrailerManifest(response.claim.manifest) };
   return renderClaim(config, claim, fetchImpl);
+}
+
+/** Discover only local exports, then use the exact assigned worker's atomic claim. */
+export async function runLocalStudioExport(config:HouseHighlightsMediaWorkerConfig,fetchImpl:typeof fetch=fetch,
+  run: (env:NodeJS.ProcessEnv)=>Promise<void> = async env=>(await import("./render-batch-job")).runBatchRender(env)) {
+  if(!config.localExports)throw new Error("local_export_worker_disabled");
+  const response=await workerRequest<{assignment:{jobId:string;executionId:string;rendererDigest:string;token:string}|null}>(config,
+    "/api/internal/local-renders/assignment",{method:"POST",body:JSON.stringify({rendererDigest:localRendererDigest()})},fetchImpl);
+  if(response.assignment===null)return "idle" as const;
+  const assignment=response.assignment;
+  if(!assignment||!/^[a-f0-9-]{36}$/.test(assignment.jobId)||!/^[a-f0-9-]{36}$/.test(assignment.executionId)
+    ||!/^sha256:[a-f0-9]{64}$/.test(assignment.rendererDigest)||!/^[a-f0-9]{64}$/.test(assignment.token))throw new Error("worker_api_invalid_assignment");
+  console.log(`[render-worker] Studio export ${assignment.jobId}`);
+  await run({...process.env,RENDER_JOB_API_URL:config.apiBaseUrl,RENDER_JOB_ID:assignment.jobId,RENDER_JOB_EXECUTION_ID:assignment.executionId,
+    RENDER_JOB_WORKER_DIGEST:assignment.rendererDigest,RENDER_JOB_TOKEN:assignment.token,
+    ...(config.remotionOptions.browserExecutable?{REMOTION_BROWSER_EXECUTABLE:config.remotionOptions.browserExecutable}:{})});
+  return "completed" as const;
 }
 
 export interface HouseHighlightsMediaWorkerLoopOptions {

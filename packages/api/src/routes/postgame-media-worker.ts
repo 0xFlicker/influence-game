@@ -46,6 +46,7 @@ export function createPostgameMediaWorkerRoutes(
     return c.json({ ...await getRenderRelease(db), execution });
   });
   app.post("/api/internal/postgame-media/control", async c => {
+    if(execution.targets?.trailer==="aws-batch")return c.json({admitted:false,generation:(await getRenderRelease(db)).generation,draining:true});
     if (execution.mode === "local") {
       const release = await getRenderRelease(db);
       return c.json({ admitted: release.mode === "local" && !release.draining && !parseRendererIdentity(c.req.raw.headers), generation: release.generation, draining: release.draining });

@@ -1,4 +1,8 @@
 import {createMcpRoutes} from "../routes/mcp.js";
+import {createRenderJobRoutes} from "../routes/render-jobs.js";
+import {readJson} from "../services/payload-storage.js";
+import {seedRenderMonitorFixture} from "./render-monitor-fixture.js";
+import {createRenderJob} from "../services/render-jobs.js";
 import {createAudioRoutes} from "../routes/audio.js";
 import {MCP_OAUTH_CLIENT_ID,MCP_OAUTH_AUDIENCE,MCP_OAUTH_PURPOSE,hashOpaqueSecret} from "../services/mcp-oauth.js";
 import {getMcpOAuthResourceUri} from "../services/mcp-oauth.js";
@@ -46,6 +50,7 @@ let webUrl: string, token: string, sysopToken: string;
 let studioFixture: Awaited<ReturnType<typeof seedProductionStudioFixture>>;
 const gameId = "replay-browser-game";
 const originalSecret = process.env.JWT_SECRET;
+const originalRenderDigest=process.env.RENDER_JOB_WORKER_DIGEST;
 const temporaryPath = (name: string) => join(tmpdir(), name);
 const operatorReview = process.env.STUDIO_OPERATOR_REVIEW === "1";
 const interfaceProof = operatorReview || process.env.STUDIO_INTERFACE_PROOF === "1";
@@ -53,6 +58,7 @@ const longSourceProof = process.env.STUDIO_LONG_SOURCE_PROOF === "1";
 let finishReview: (() => void) | undefined;
 beforeAll(async () => {
   process.env.JWT_SECRET = "replay-production-browser-secret";
+  process.env.RENDER_JOB_WORKER_DIGEST=`sha256:${"a".repeat(64)}`;
   database = await createIsolatedTestDb();
   console.info(`STUDIO_PROOF_DATABASE ${new URL(database.databaseUrl).pathname.slice(1)}`);
   const userId = await createTestUser(database.db, { walletAddress: "0xreplayproducer", displayName: "Producer QA", handle: "producer-qa", createdAt: "2026-06-01T00:00:00Z" });
@@ -110,7 +116,8 @@ beforeAll(async () => {
   app.route("/", createVisualReplayProductionRoutes(database.db)); app.route("/", createVisualRoutes(database.db));
   app.route("/", createAdminRoutes(database.db));
   app.route("/", createEpisodeRoutes(database.db));
-  app.route("/", createProductionStudioRoutes(database.db));
+  app.route("/", createProductionStudioRoutes(database.db,{execution:{environment:"staging",mode:"remote",network:"tailnet",configDigest:`sha256:${"a".repeat(64)}`,targets:{trailer:"existing","studio-export":"aws-batch"}}}));
+  app.route("/",createRenderJobRoutes(database.db,{execution:{environment:"staging",mode:"remote",network:"tailnet",configDigest:`sha256:${"a".repeat(64)}`,targets:{trailer:"existing","studio-export":"aws-batch"}}}));
   app.route("/",createAudioRoutes(database.db));
   app.route("/",createMcpRoutes(database.db,{auditLogger:()=>undefined,ownerLearningConnectionRecorder:async()=>undefined}));
   // No game or media worker is started; the test completes one job with deterministic pixels below.
@@ -151,7 +158,6 @@ afterAll(async () => {
     ["api", async () => { if (api) api.stop(true); }],
     ["web", async () => { if (web) { web.kill(); await web.exited; } }],
     ["operator generated route paths", async () => {
-      if (!operatorReview && !interfaceProof) return;
       if (web && web.exitCode === null) throw new Error("Stop the review's Next child before restoring generated route paths");
       // Restore only Next's generated additions, preserving any other edits
       // made while the retained operator session was open.
@@ -166,7 +172,8 @@ afterAll(async () => {
     }],
     ["database", async () => { if (database) await destroyIsolatedTestDb(database.databaseUrl); }],
   ]); if(database) console.info(`STUDIO_PROOF_DATABASE_DROPPED ${new URL(database.databaseUrl).pathname.slice(1)}`);
-  } finally { if (originalSecret === undefined) delete process.env.JWT_SECRET; else process.env.JWT_SECRET = originalSecret; }
+  } finally { if (originalSecret === undefined) delete process.env.JWT_SECRET; else process.env.JWT_SECRET = originalSecret;
+    if(originalRenderDigest===undefined)delete process.env.RENDER_JOB_WORKER_DIGEST;else process.env.RENDER_JOB_WORKER_DIGEST=originalRenderDigest; }
 }, 60_000);
 
 async function clickButton(page: Page, label: string, scope = "") {
@@ -1701,3 +1708,128 @@ test("MCP proposed cut opens exact Studio recipe, verifies voice and music, free
     await openStudioDialog(page,"Export selected cut");expect(await page.evaluate("Array.from(document.querySelectorAll('button')).find(button=>button.textContent?.trim()==='Download selected export')?.disabled")).toBe(true);
   }finally{await page.close();}
 },180_000);
+
+test("Studio cloud render orders recover lost responses and survive navigation",async()=> {
+  const page=await createAuthenticatedPage(browser,studioFixture.producer.token,`${webUrl}/admin/production/games/${studioFixture.influence.id}`);
+  let drop=true;const bodies:string[]=[];
+  const intercept=async(request:HTTPRequest)=> {
+    if(request.url().endsWith("/render-orders")&&request.method()==="POST") {
+      bodies.push(request.postData()!);
+      if(drop) {
+        drop=false;
+        const response=await fetch(`http://127.0.0.1:${api.port}/api/admin/production/games/${studioFixture.influence.id}/render-orders`,{
+          method:"POST",headers:{Authorization:`Bearer ${studioFixture.producer.token}`,"Content-Type":"application/json"},body:request.postData()});
+        expect(response.status).toBe(202);await response.arrayBuffer();await request.abort("failed");return;
+      }
+    }
+    await request.continue();
+  };
+  try {
+    await page.setViewport({width:1440,height:1000});await page.waitForSelector('[data-composition-frame]');
+    // This story tests render ordering, independently of labels edited by the
+    // preceding stories in this shared browser fixture.
+    await configureStudioCut(page,"All","None");await clickStudioButton(page,"Selected cut");
+    await page.waitForFunction("document.querySelector('[data-preview-view]')?.getAttribute('data-preview-view')==='cut' && !!document.querySelector('[data-composition-frame]')");
+    await openStudioDialog(page,"Export selected cut");
+    await page.setRequestInterception(true);page.on("request",intercept);
+    await clickStudioButton(page,"Render video");
+    await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(b=>b.textContent?.trim()==='Resume exact render order'&&!b.disabled)");
+    await chooseStudioOption(page,"Frames per second","60 fps");
+    await clickStudioButton(page,"Resume exact render order");
+    await page.waitForFunction("document.body.textContent.includes('Render ordered:')");
+    expect(bodies).toHaveLength(2);expect(bodies[1]).toBe(bodies[0]);
+    const body=JSON.parse(bodies[0]!) as {descriptor:ProductionExportDescriptor;requestKey:string};
+    const jobs=await database.db.select().from(schema.renderJobs).where(eq(schema.renderJobs.requestKey,body.requestKey));
+    expect(jobs).toHaveLength(1);expect(jobs[0]!.state).toBe("queued");
+    const input=await readJson(jobs[0]!.input);if(!("preparation" in input))throw new Error("Missing frozen source");
+    expect(input.preparation.descriptor.hash).toBe(body.descriptor.hash);
+    expect(input.preparation.descriptor.settings.fps).toBe(body.descriptor.settings.fps);
+    page.off("request",intercept);await page.setRequestInterception(false);
+    await page.reload({waitUntil:"domcontentloaded"});await page.waitForSelector('[data-composition-frame]');
+    await openStudioDialog(page,"Export selected cut");
+    await page.waitForFunction(`document.querySelector('[aria-label="Render jobs"]')?.textContent?.includes(${JSON.stringify(jobs[0]!.id)})`);
+    await clickStudioButton(page,"Cancel render");
+    await page.waitForFunction("document.querySelector('[aria-label=\"Render jobs\"]')?.textContent?.includes('cancelled')");
+    await clickStudioButton(page,"Retry render");
+    await page.waitForFunction("document.querySelector('[aria-label=\"Render jobs\"]')?.textContent?.includes('queued')");
+    const [retried]=await database.db.select().from(schema.renderJobs).where(eq(schema.renderJobs.id,jobs[0]!.id));
+    expect(retried?.executionId).not.toBe(jobs[0]!.executionId);
+    await page.screenshot({path:temporaryPath("studio-cloud-render-order.png")});
+  }catch(error) {
+    console.error("[Studio cloud render order]",await page.evaluate("document.body.innerText"));
+    await page.screenshot({path:temporaryPath("studio-cloud-render-order-failure.png"),fullPage:true});
+    throw error;
+  }finally {page.off("request",intercept);await page.setRequestInterception(false);await page.close();}
+},180_000);
+
+test("Global render monitor filters, actions, navigation and responsive localhost screenshots",async()=> {
+  const fixture=await seedRenderMonitorFixture(database.db,studioFixture.producer.userId);
+  const base=`http://127.0.0.1:${api.port}/api/admin/production/games/${studioFixture.influence.id}`;
+  const call=async(path:string,body?:unknown)=> {
+    const response=await fetch(`${base}${path}`,{method:body===undefined?"GET":"POST",headers:{Authorization:`Bearer ${studioFixture.producer.token}`,"Content-Type":"application/json"},...(body===undefined?{}:{body:JSON.stringify(body)})});
+    expect(response.ok).toBe(true);return response.json() as Promise<Record<string,unknown>>;
+  };
+  const source=await call("/source?audience=public&thinking=on");
+  const descriptor=await call("/selection",{snapshot:source.snapshot,audience:"public",thinking:true,selection:{mode:"ids",thinking:true,ids:[studioFixture.influence.speechId]},
+    expectedMomentIds:[studioFixture.influence.speechId],recordings:[],settings:{width:640,height:360,fps:24,reducedMotion:false,music:false,volume:1,profile:{ending:"finish-score",overrides:{}}},copy:{}});
+  const real=await call("/render-orders",{descriptor,files:[],requestKey:"global-monitor-real-order"});
+  const realId=String(real.id);
+  const page=await createAuthenticatedPage(browser,studioFixture.producer.token,`${webUrl}/admin/production`);
+  try {
+    await page.emulateTimezone("America/Denver");await page.setViewport({width:1440,height:1100});
+    await page.waitForSelector('[data-production-library]');
+    await page.click('[data-production-library] a[href="/admin/production/renders"]');
+    await page.waitForSelector('[aria-label="Global render monitor"] table');
+    const ordered=await page.$$eval('[data-render-job-id]',rows=>rows.map(row=>row.getAttribute("data-state")));
+    const firstTerminal=ordered.findIndex(state=>["failed","succeeded","cancelled"].includes(state!));
+    expect(firstTerminal).toBeGreaterThan(0);expect(ordered.slice(firstTerminal).every(state=>["failed","succeeded","cancelled"].includes(state!))).toBe(true);
+    await page.screenshot({path:temporaryPath("global-render-monitor-desktop.png"),fullPage:true});
+    await page.select('select[aria-label="Render status"]',"failed");
+    await page.waitForFunction("Array.from(document.querySelectorAll('[data-render-job-id]')).every(row=>row.getAttribute('data-state')==='failed') && document.querySelectorAll('[data-render-job-id]').length>0");
+    await clickStudioButton(page,"Details",`[data-render-job-id="${fixture.ids.failed}"]`);
+    await page.waitForSelector(`#render-details-${fixture.ids.failed}`);
+    expect(await page.$eval(`#render-details-${fixture.ids.failed}`,node=>node.textContent)).toContain("worker_lease_expired");
+    await page.screenshot({path:temporaryPath("global-render-monitor-failure.png"),fullPage:true});
+    await page.select('select[aria-label="Render status"]',"all");
+    await page.select('select[aria-label="Render output type"]',"trailer");
+    await page.waitForFunction("Array.from(document.querySelectorAll('[data-render-job-id]')).every(row=>row.textContent.includes('Trailer')) && document.querySelectorAll('[data-render-job-id]').length===2");
+    await page.select('select[aria-label="Render output type"]',"");
+    await page.type('input[aria-label="Search render jobs"]',"the-last-promise");await clickStudioButton(page,"Search");
+    await page.waitForFunction("location.search.includes('search=the-last-promise') && Array.from(document.querySelectorAll('[data-render-job-id]')).every(row=>row.textContent.includes('The Last Promise'))");
+    await page.reload({waitUntil:"domcontentloaded"});await page.waitForSelector('[data-render-job-id]');
+    expect(await page.$eval('input[aria-label="Search render jobs"]',input=>(input as unknown as {value:string}).value)).toBe("the-last-promise");
+    await page.goto(`${webUrl}/admin/production/renders?search=${realId}`,{waitUntil:"domcontentloaded"});
+    await page.waitForSelector(`[data-render-job-id="${realId}"]`);
+    await clickStudioButton(page,"Cancel render",`[data-render-job-id="${realId}"]`);
+    await page.waitForFunction(`document.querySelector('[data-render-job-id="${realId}"]')?.getAttribute('data-state')==='cancelled'`);
+    await clickStudioButton(page,"Retry render",`[data-render-job-id="${realId}"]`);
+    await page.waitForFunction(`document.querySelector('[data-render-job-id="${realId}"]')?.getAttribute('data-state')==='queued'`);
+    await page.goto(`${webUrl}/admin/production/renders?gameId=${fixture.werewolf}`,{waitUntil:"domcontentloaded"});
+    await page.waitForSelector('[data-render-job-id]');expect(await page.$$eval('[data-render-job-id]',rows=>rows.every(row=>row.textContent?.includes("A Wolf Among Friends")))).toBe(true);
+    await page.goto(`${webUrl}/admin/production/renders?status=active`,{waitUntil:"domcontentloaded"});
+    await page.waitForSelector('[data-render-job-id]');await page.setViewport({width:390,height:844});
+    expect(await page.evaluate("document.documentElement.scrollWidth<=innerWidth")).toBe(true);
+    await page.screenshot({path:temporaryPath("global-render-monitor-mobile.png"),fullPage:true});
+    await page.goto(`${webUrl}/admin/production/renders?search=no-such-render`,{waitUntil:"domcontentloaded"});
+    await page.waitForFunction("document.body.textContent.includes('No jobs match these filters')");
+  }finally {await page.close();}
+},180_000);
+
+test("Global render monitor hides private rows after current producer authority is revoked",async()=> {
+  const saved=await database.db.select().from(schema.userRoles).where(eq(schema.userRoles.userId,studioFixture.producer.userId));
+  const job=await createRenderJob(database.db,{gameId:studioFixture.influence.id,userId:studioFixture.producer.userId,requestKey:"monitor-revocation",rendererDigest:`sha256:${"a".repeat(64)}`,
+    input:{version:1,workload:"studio-export",selectionHash:`sha256:${"b".repeat(64)}`,files:[{path:"manifest.json",sha256:"c".repeat(64),byteLength:1}]}});
+  const page=await createAuthenticatedPage(browser,studioFixture.producer.token,`${webUrl}/admin/production/renders?search=${job.id}`);
+  try {
+    await page.waitForSelector(`[data-render-job-id="${job.id}"]`);
+    await database.db.delete(schema.userRoles).where(eq(schema.userRoles.userId,studioFixture.producer.userId));
+    await clickStudioButton(page,"Refresh");
+    await page.waitForFunction("document.body.textContent.includes('Producer access changed') || document.body.textContent.includes('do not have access')");
+    expect(await page.$('[data-render-job-id]')).toBeNull();
+    expect(await page.$('[aria-label="Render job summary"]')).toBeNull();
+  }finally {await page.close();await database.db.insert(schema.userRoles).values(saved);}
+  await recordCurrentLegalAcceptance(database.db,studioFixture.legacyVisual.userId,"existing_account","0123456789abcdef0123456789abcdef01234567");
+  const legacy=await createAuthenticatedPage(browser,studioFixture.legacyVisual.token,`${webUrl}/admin/production/renders`);
+  try {await legacy.waitForFunction("document.body.textContent.includes('do not have access')");expect(await legacy.$('[data-render-job-id]')).toBeNull();}
+  finally {await legacy.close();}
+},120_000);

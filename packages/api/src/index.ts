@@ -5,7 +5,7 @@ import { localTaskBudgetPath, localTaskBudgetIdentity } from "@influence/engine"
 import { createCharacterCutoutRoutes } from "./routes/character-cutouts.js";
 import { startCharacterCutoutDispatcher } from "./services/character-cutout-dispatcher.js";
 import { renderExecutionConfig } from "@influence/engine/render-execution-config";
-import { remoteRenderingEnabled, startRenderWakeDispatcher } from "./services/postgame-media-execution.js";
+import { startRenderWakeDispatcher } from "./services/postgame-media-execution.js";
 import { startHouseCutWorker } from "./services/house-cut-worker.js";
 import { startAgentScreeningWorker } from "./services/agent-screening-worker.js";
 import { createAgentScreeningProvider } from "./services/agent-screening-provider.js";
@@ -45,6 +45,8 @@ import { createMcpRoutes } from "./routes/mcp.js";
 import { createAnonymousAgentCreationRoutes } from "./routes/anonymous-agent-creation.js";
 import { createVisualReplayProductionRoutes } from "./routes/visual-replay-production.js";
 import {createProductionStudioRoutes} from "./routes/production-studio.js";
+import {createRenderJobRoutes} from "./routes/render-jobs.js";
+import {configureLocalRenderJobs} from "./services/render-jobs.js";
 import { createAgentProfileRoutes } from "./routes/agent-profiles.js";
 import { createAdminRoutes } from "./routes/admin.js";
 import { createFreeQueueRoutes } from "./routes/free-queue.js";
@@ -516,7 +518,7 @@ async function finishBackgroundRuntimeStartup(
     : null;
   executionScanTimer?.unref();
 
-  const renderWakeDispatcher = gameExecutionWorker && remoteRenderingEnabled()
+  const renderWakeDispatcher = gameExecutionWorker
     ? startRenderWakeDispatcher(db, () => !stopping && runtimeActivation.canClaimWork())
     : null;
 
@@ -569,6 +571,7 @@ app.use(
 
 // Health check (both paths: /health for direct access, /api/health for reverse-proxy)
 const releaseRenderExecution = renderExecutionConfig();
+configureLocalRenderJobs(releaseRenderExecution);
 const healthResponse = () => ({
   renderExecution: releaseRenderExecution,
   status: "ok" as const,
@@ -669,6 +672,7 @@ app.route("/", agentProfileRoutes);
 app.route("/", createAnonymousAgentCreationRoutes(db));
 app.route("/", createVisualReplayProductionRoutes(db));
 app.route("/",createProductionStudioRoutes(db));
+app.route("/",createRenderJobRoutes(db));
 app.route("/", createModerationRoutes(db));
 app.route("/", createAccountInferenceRoutes(db));
 

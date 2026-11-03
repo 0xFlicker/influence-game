@@ -1002,6 +1002,20 @@
       "when": 1792952785112,
       "tag": "0142_character_art_save",
       "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1792952785113,
+      "tag": "0143_render_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1792952785114,
+      "tag": "0144_producer_render_scope",
+      "breakpoints": true
     }
   ]
 }

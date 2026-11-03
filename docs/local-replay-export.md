@@ -1,5 +1,11 @@
 # Local replay video export
 
+The first cloud-render iteration can upload a selected prepared bundle with
+`--cloud --request-key <stable-key>`. It uses the same local preparation and
+Producer/Sysop session, then returns a durable job ID. The selected environment
+must explicitly admit the Batch target. See [Batch staging commands and proof
+boundaries](deployment/batch-render-staging.md). Local encoding remains the default.
+
 **Changing presentation code?** Follow the mandatory
 [viewer–Studio–export parity checklist](presentation-parity.md). Changes to a
 scene, caption, camera, clock or audio treatment require same-branch consumer
@@ -26,6 +32,12 @@ The API must run the current code. All API-backed local exports require current 
 Defaults are 1920×1080, 30fps, normal motion, thinking off, and music at 30% when a score exists. Werewolf defaults to Mystery; thinking requires explicit Omniscient. Influence uses its existing spectator projection and rejects `--audience`. Use `--thinking on`, `--music off`, `--volume 0.2`, `--reduced-motion`, and explicit `--width`, `--height`, `--fps` as needed. Thinking and speech are independent moments. A thought owns its camera entrance, isolated pages, fade and return; selecting only the thought never includes its neighboring speech. `thinkingRate` changes thought reading; `motionScale` changes camera and fades. Dimensions must be even, 128–7680; fps must be an integer, 1–120. Newly supported decision thoughts require explicit editorial selection and do not expand default full movies.
 
 ## Export a selected studio cut
+
+You can also queue the reviewed selection with **Export → Render video**. On
+localhost, `bun run dev:render-worker` processes both trailers and Studio exports
+as native processes. The resulting MP4 returns to private storage and is available
+from **Production → Render jobs** after verification. The downloaded-selection CLI
+workflow below remains available for direct offline bundles and local movie files.
 
 Replay, Studio and export use the same responsive bubble typography. At full-HD
 sizes, large speech/thinking boxes use 38–46px text; long passages paginate rather

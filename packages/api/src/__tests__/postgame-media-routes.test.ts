@@ -25,6 +25,9 @@ import { reconcilePostgameMediaForGame, requestPostgameMedia } from "../services
 import { claimPostgameMedia, finalizePostgameMedia, heartbeatPostgameMedia } from "../services/postgame-media-worker.js";
 import { insertGame, insertOwner, withRetrospective } from "./durable-run-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
+import {createRenderJobRoutes} from "../routes/render-jobs.js";
+import {cancelRenderJob,claimRenderJob,createRenderJob,outputTarget,queueRenderJob,renderExecutionToken,renderJob} from "../services/render-jobs.js";
+import {dispatchRenderJobs} from "../services/render-job-dispatch.js";
 
 describe("postgame media worker routes and leases", () => {
   let db: DrizzleDB;
@@ -85,6 +88,50 @@ describe("postgame media worker routes and leases", () => {
     expect(combined).not.toContain(row?.workerIdHash ?? "");
     expect(combined).not.toContain(row?.leaseTokenHash ?? "");
     expect(combined).not.toContain("previous-worker-token");
+  });
+
+  test("assigned Batch trailer uses scoped authority and cancellation fences its bridge",async()=> {
+    const saved=process.env.RENDER_JOB_SECRET;
+    process.env.RENDER_JOB_SECRET="batch-trailer-test-secret-32-characters";
+    try {
+      const gameId=await insertQueuedMedia(db,"batch-assigned");
+      const digest=`sha256:${"a".repeat(64)}`;
+      const job=await createRenderJob(db,{gameId,userId:null,requestKey:"batch-assigned",rendererDigest:digest,
+        input:{version:1,workload:"trailer",gameId,renderVersion:1}});
+      await queueRenderJob(db,job.id);
+      expect(await claimPostgameMedia(db,"old-polling-worker")).toBeNull();
+      const app=createRenderJobRoutes(db),token=renderExecutionToken(job.id,job.executionId);
+      const post=(operation:string,body:unknown,bearer=token)=>app.request(`/api/internal/renders/${job.id}/${operation}`,{
+        method:"POST",headers:{Authorization:`Bearer ${bearer}`,"Content-Type":"application/json"},body:JSON.stringify(body)});
+      expect((await post("claim",{workerId:"batch-one",rendererDigest:digest,executionId:job.executionId},"current-worker-token")).status).toBe(401);
+      const response=await post("claim",{workerId:"batch-one",rendererDigest:digest,executionId:job.executionId});
+      expect(response.status).toBe(200);
+      const claim=await response.json() as {leaseToken:string;trailer:{gameId:string;attemptNumber:number;leaseToken:string}};
+      expect(claim.trailer.gameId).toBe(gameId);
+      const lease={attemptNumber:claim.trailer.attemptNumber,leaseToken:claim.trailer.leaseToken};
+      expect((await post("trailer/heartbeat",lease)).status).toBe(200);
+      await expect(outputTarget(db,job.id,claim.leaseToken,"e".repeat(64),100)).rejects.toThrow();
+      await cancelRenderJob(db,job.id);
+      expect((await post("trailer/heartbeat",lease)).status).toBe(409);
+      const [media]=await db.select().from(schema.gamePostgameMedia).where(eq(schema.gamePostgameMedia.gameId,gameId));
+      expect(media?.failureCategory).toBe("cancelled");
+    } finally {restoreEnv("RENDER_JOB_SECRET",saved);}
+  });
+
+  test("publication repairs lost Batch completion even after lease expiry and matches the exact version",async()=> {
+    const gameId=await insertQueuedMedia(db,"batch-published"),digest=`sha256:${"a".repeat(64)}`;
+    const create=(version:number)=>createRenderJob(db,{gameId,userId:null,requestKey:`batch-published-${version}`,rendererDigest:digest,
+      input:{version:1,workload:"trailer",gameId,renderVersion:version}});
+    const job=await create(1);await queueRenderJob(db,job.id);
+    const claim=await claimRenderJob(db,job.id,"batch-worker",digest,job.executionId);
+    expect(claim.trailer).not.toBeNull();
+    expect(await finalizePostgameMedia(db,finalizeFixture(gameId,claim.trailer!))).toEqual({ok:true});
+    await db.update(schema.renderJobs).set({leaseExpiresAt:new Date(0).toISOString()}).where(eq(schema.renderJobs.id,job.id));
+    const other=await create(2);
+    await db.update(schema.renderJobs).set({state:"failed",failure:"worker_start_failed"}).where(eq(schema.renderJobs.id,other.id));
+    await dispatchRenderJobs(db);
+    expect(await renderJob(db,job.id)).toMatchObject({state:"succeeded",progress:100,failure:null});
+    expect((await renderJob(db,other.id)).state).toBe("failed");
   });
 
   test("keeps worker upload routing separate from the public media origin", () => {

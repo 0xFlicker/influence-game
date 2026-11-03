@@ -78,7 +78,15 @@ export function createWerewolfRoutes(db: DrizzleDB) {
       .where(inArray(schema.werewolfLobbySeats.gameId, rows.map(game => game.id))).groupBy(schema.werewolfLobbySeats.gameId) : [];
     const joined = new Map(seats.map(row => [row.gameId, row.total]));
     const episodes = await readEpisodePresentations(db, rows);
-    return c.json(rows.map(({ config, ...game }) => ({ ...game, episode: episodes.get(game.id), gameKind: "werewolf", joinedPlayers: game.status === "waiting" ? joined.get(game.id) ?? 0 : game.playerCount, modelLabel: modelLabelFromConfig(JSON.parse(config)) })));
+    const summaries = rows.flatMap(({ config, ...game }) => {
+      try {
+        return [{ ...game, episode: episodes.get(game.id), gameKind: "werewolf", joinedPlayers: game.status === "waiting" ? joined.get(game.id) ?? 0 : game.playerCount, modelLabel: modelLabelFromConfig(JSON.parse(config)) }];
+      } catch {
+        console.warn(`[werewolf] Skipping corrupt list row for game ${game.id}: invalid model configuration`);
+        return [];
+      }
+    });
+    return c.json(summaries);
   });
   for (const route of ["/api/werewolf/:id/presentation", "/api/werewolf/:id/media/:asset", "/api/werewolf/:id/characters/:player"]) {
     app.get(route, async c => {

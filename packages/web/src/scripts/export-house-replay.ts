@@ -1,4 +1,6 @@
 import { attachGeneratedAudio } from "../lib/replay-export/generated-audio";
+import {orderCloudReplay} from "../lib/replay-export/cloud";
+import {rendererProvenance} from "../lib/replay-export/provenance";
 import type { PublishedAudioTrack } from "@influence/engine/audio-track";
 import { prepareReplayBundle } from "../lib/replay-export/prepare";
 import { renderReplay } from "../lib/replay-export/render";
@@ -17,7 +19,6 @@ import {
   ReplayAssets,
   bundlePath,
   fetchReplay,
-  runProcess,
   sha256,
   snapshotStageArt,
 } from "../lib/replay-export/assets";
@@ -34,6 +35,8 @@ const options = {
   "api-base-url": { type: "string" },
   "web-base-url": { type: "string" },
   selection:{type:"string"},
+  cloud:{type:"boolean"},
+  "request-key":{type:"string"},
   audience: { type: "string" },
   thinking: { type: "string" },
   output: { type: "string" },
@@ -76,6 +79,7 @@ Usage: bun run replay:export -- <slug> --output <file.mp4> [options]
 --reduced-motion        Explicit output motion preference
 --from-cue KEY --until-cue KEY  Inclusive/exclusive range
 --inspect               Prepare the sibling .bundle and print cue IDs
+--cloud --request-key KEY  Upload a selected bundle and order a cloud render
 --overwrite             Replace output; with a slug, freshly prepare its bundle too
 Production reads reuse a cached Producer/Sysop session; browser sign-in opens when needed.
 INFLUENCE_API_SESSION_TOKEN supplies an explicit session for unattended local tooling.
@@ -86,6 +90,8 @@ Use the actual downloaded filename for --selection if your browser renamed or mo
   }
   if (!args.output || !args.output.endsWith(".mp4"))
     throw new Error("--output requires an .mp4 path");
+  if(args.cloud && (!args.selection || !args["request-key"] || args.inspect || args["from-cue"] || args["until-cue"]))
+    throw new Error("Cloud rendering requires --selection and --request-key, without --inspect or a cue range");
   if (
     args.bundle
       ? positionals.length ||
@@ -98,11 +104,13 @@ Use the actual downloaded filename for --selection if your browser renamed or mo
               "inspect",
               "from-cue",
               "until-cue",
+              ...(args.cloud?["selection","cloud","request-key","api-base-url","web-base-url"]:[]),
             ].includes(key),
         )
-      : args.selection ? positionals.length > 1 || Object.keys(args).some(key => !["selection","output","overwrite","inspect","api-base-url","web-base-url","speech-manifest"].includes(key)) : positionals.length !== 1
+      : args.selection ? positionals.length > 1 || Object.keys(args).some(key => !["selection","output","overwrite","inspect","api-base-url","web-base-url","speech-manifest","cloud","request-key"].includes(key)) : positionals.length !== 1
   )
     throw new Error("Supply one game OR --bundle; bundle settings are frozen");
+  if(args.bundle&&args.selection&&!args.cloud)throw new Error("A bundle and selection can only be combined for a cloud order");
   const descriptor = args.selection ? decodeProductionExport(JSON.parse(await readFile(resolveInput(args.selection),"utf8"))) : null;
   if (descriptor) {
     const {hash,...frozen} = descriptor;
@@ -299,14 +307,7 @@ Use the actual downloaded filename for --selection if your browser renamed or mo
             fromFrame: 0,
             untilFrame: Math.ceil((audio.durationMs * fps) / 1000),
           },
-          revision: (
-            await runProcess("git", ["-C", repoRoot, "rev-parse", "HEAD"])
-          ).trim(),
-          dirty: Boolean(
-            (
-              await runProcess("git", ["-C", repoRoot, "status", "--porcelain"])
-            ).trim(),
-          ),
+          ...await rendererProvenance(repoRoot),
         };
         validateManifest(prepared);
         abort.signal.throwIfAborted();
@@ -337,6 +338,14 @@ Use the actual downloaded filename for --selection if your browser renamed or mo
       `${manifest.game.kind}: ${manifest.cues.length} cues, ${Object.keys(manifest.assets).length} assets, ${((manifest.range.untilFrame - manifest.range.fromFrame) / manifest.fps).toFixed(2)}s at ${manifest.width}×${manifest.height}/${manifest.fps}fps`,
     );
     if (manifest.boundary.selectionHash) console.log(`Frozen selection: ${manifest.boundary.selectionHash}`);
+    if(args.cloud) {
+      if(!descriptor||!args["request-key"])throw new Error("Cloud rendering requires --selection and a stable --request-key");
+      const api=new URL(args["api-base-url"] ?? "http://127.0.0.1:3000");
+      const token=await resolveCliApiSession({apiOrigin:api.origin,webOrigin:args["web-base-url"] ?? "http://localhost:3001",requiredRoles:["producer","sysop"],signal:abort.signal});
+      const job=await orderCloudReplay({api,token,descriptor,bundleDir,requestKey:args["request-key"],signal:abort.signal});
+      console.log(`Cloud render ${job.id}: ${job.state}. Status: ${api.origin}/api/admin/renders/${job.id}`);
+      return;
+    }
     if (args.inspect) {
       for (const [index, cue] of manifest.cues.entries())
         console.log(

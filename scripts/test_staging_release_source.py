@@ -45,4 +45,16 @@ class SourceTests(unittest.TestCase):
     def test_invalid_policy_rejected(self):
         self.policy['environments']['staging']['mode']='surprise'
         with self.assertRaises(ValueError):m.select_release(self.run,self.request)
+    def test_batch_selection_binds_raw_policy_digest(self):
+        self.assertEqual(m.select_release(self.run,self.request)['batch_required'],'false')
+        self.policy['environments']['staging']['targets']={'trailer':'existing','studio-export':'aws-batch'}
+        result=m.select_release(self.run,self.request)
+        self.assertEqual(result['batch_required'],'true')
+        self.assertEqual(result['policy_digest'],'sha256:'+hashlib.sha256(json.dumps(self.policy).encode()).hexdigest())
+    def test_bad_batch_policy_cannot_skip_or_dispatch_admission(self):
+        for targets in ({'trailer':'aws-batch'}, {'trailer':'aws-batch','studio-export':'typo'}):
+            self.policy['environments']['staging']['targets']=targets
+            with self.assertRaises(ValueError):m.select_release(self.run,self.request)
+        self.policy['environments']['staging'].update(mode='local',targets={'trailer':'existing','studio-export':'aws-batch'})
+        with self.assertRaises(ValueError):m.select_release(self.run,self.request)
 if __name__=='__main__':unittest.main()

@@ -3,6 +3,7 @@ import { and, count, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { createHmac } from "node:crypto";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { claimPostgameMedia } from "./postgame-media-worker.js";
+import {dispatchRenderJobs} from "./render-job-dispatch.js";
 
 type Transaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 export type RendererIdentity = { generation: string; workerDigest: string; workerInstanceId: string };
@@ -56,6 +57,7 @@ export async function rendererControl(db: DrizzleDB, identity: RendererIdentity 
 }
 
 export async function claimRemotePostgameMedia(db: DrizzleDB, workerToken: string, identity: RendererIdentity | null) {
+  if(renderExecutionConfig().targets?.trailer==="aws-batch")return {admitted:false as const,claim:null};
   return db.transaction(async tx => {
     const row = await lockRelease(tx);
     if (!admitted(row, identity)) return { admitted: false as const, claim: null };
@@ -64,6 +66,7 @@ export async function claimRemotePostgameMedia(db: DrizzleDB, workerToken: strin
 }
 
 export async function claimLocalPostgameMedia(db: DrizzleDB, workerToken: string) {
+  if(renderExecutionConfig().targets?.trailer==="aws-batch")return {admitted:false as const,claim:null};
   return db.transaction(async tx => {
     const row = await lockRelease(tx);
     if (row.mode !== "local" || row.draining) return { admitted: false as const, claim: null };
@@ -119,6 +122,7 @@ export function signedRenderWake(body: string, secret: string, timestamp = Math.
 // Every sweep repairs lost notification/launcher/STOPPED delivery, including
 // expired leases. Terminal failed/waiting_music jobs deliberately stay terminal.
 export async function dispatchRenderWakes(db: DrizzleDB, options: { env?: NodeJS.ProcessEnv; fetch?: typeof fetch; execution?: RenderExecution; repair?: boolean } = {}) {
+  if((options.execution ?? renderExecutionConfig(options.env)).targets?.trailer==="aws-batch")return;
   const env = options.env ?? process.env;
   const execution = options.execution ?? renderExecutionConfig(env);
   if (execution.mode !== "remote") return 0;
@@ -158,7 +162,9 @@ export function startRenderWakeDispatcher(db: DrizzleDB, canDispatch: () => bool
   let running: Promise<unknown> | null = null;
   const sweep = () => {
     if (stopped || running || !canDispatch()) return;
-    running = dispatchRenderWakes(db).catch(() => console.warn("[postgame-media] Render wake delivery deferred")).finally(() => { running = null; });
+    running = Promise.allSettled([dispatchRenderWakes(db),dispatchRenderJobs(db)]).then(results=>{
+      if(results.some(result=>result.status==="rejected"))console.warn("[postgame-media] Render dispatch deferred");
+    }).finally(() => { running = null; });
   };
   const timer = setInterval(sweep, 30_000);
   timer.unref();

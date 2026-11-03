@@ -19,6 +19,8 @@ jobs:
     outputs:
       eligible: ${{ steps.release.outputs.eligible }}
       mode: ${{ steps.release.outputs.mode }}
+      batch_required: ${{ steps.release.outputs.batch_required }}
+      policy_digest: ${{ steps.release.outputs.policy_digest }}
       candidate_sha: ${{ steps.release.outputs.candidate_sha }}
       build_run_id: ${{ steps.release.outputs.build_run_id }}
       build_run_attempt: ${{ steps.release.outputs.build_run_attempt }}
@@ -56,9 +58,52 @@ jobs:
       source_run_id: ${{ needs.release.outputs.build_run_id }}
       publish: ${{ needs.release.outputs.mode == 'remote' }}
       source_run_attempt: ${{ needs.release.outputs.build_run_attempt }}
-  trigger-deploy:
+  batch-admit:
     needs: [release, mirror]
-    if: needs.release.outputs.eligible == 'true'
+    if: needs.release.outputs.batch_required == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      run_id: ${{ steps.admit.outputs.batch_admission_run_id }}
+      run_attempt: ${{ steps.admit.outputs.batch_admission_run_attempt }}
+      receipt_digest: ${{ steps.admit.outputs.batch_admission_receipt_digest }}
+    env:
+      CANDIDATE_SHA: ${{ needs.release.outputs.candidate_sha }}
+      WORKER_DIGEST: ${{ needs.release.outputs.worker_digest }}
+      RENDER_CONFIG_DIGEST: ${{ needs.release.outputs.policy_digest }}
+      BUILD_RUN_ID: ${{ needs.release.outputs.build_run_id }}
+      BUILD_RUN_ATTEMPT: ${{ needs.release.outputs.build_run_attempt }}
+      RELEASE_MANIFEST_DIGEST: ${{ needs.release.outputs.release_manifest_digest }}
+      WORKER_MIRROR_RUN_ID: ${{ needs.mirror.outputs.mirror_run_id }}
+      WORKER_MIRROR_RUN_ATTEMPT: ${{ needs.mirror.outputs.mirror_run_attempt }}
+      WORKER_MIRROR_RECEIPT_DIGEST: ${{ needs.mirror.outputs.mirror_receipt_digest }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Generate infra-only workflow token
+        id: infra-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.HOUSE_RENDER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.HOUSE_RENDER_APP_PRIVATE_KEY }}
+          owner: falsefloor
+          repositories: infra
+          permission-actions: write
+          permission-contents: read
+      - name: Deploy Batch and verify exact admission before host dispatch
+        id: admit
+        env:
+          GH_TOKEN: ${{ steps.infra-token.outputs.token }}
+        run: python3 scripts/staging-batch-release.py
+      - uses: actions/upload-artifact@v6
+        with:
+          name: staging-batch-admission-${{ github.run_id }}-${{ github.run_attempt }}
+          path: batch-admission.json
+          if-no-files-found: error
+  trigger-deploy:
+    needs: [release, mirror, batch-admit]
+    if: always() && !cancelled() && needs.release.outputs.eligible == 'true' && needs.mirror.result == 'success' && (needs.batch-admit.result == 'success' || (needs.release.outputs.batch_required == 'false' && needs.batch-admit.result == 'skipped'))
     runs-on: ubuntu-latest
     env:
       CANDIDATE_SHA: ${{ needs.release.outputs.candidate_sha }}
@@ -73,6 +118,9 @@ jobs:
       WORKER_MIRROR_RUN_ID: ${{ needs.mirror.outputs.mirror_run_id }}
       WORKER_MIRROR_RUN_ATTEMPT: ${{ needs.mirror.outputs.mirror_run_attempt }}
       WORKER_MIRROR_RECEIPT_DIGEST: ${{ needs.mirror.outputs.mirror_receipt_digest }}
+      BATCH_ADMISSION_RUN_ID: ${{ needs.batch-admit.outputs.run_id }}
+      BATCH_ADMISSION_RUN_ATTEMPT: ${{ needs.batch-admit.outputs.run_attempt }}
+      BATCH_ADMISSION_RECEIPT_DIGEST: ${{ needs.batch-admit.outputs.receipt_digest }}
     steps:
       - name: Generate GitHub App token
         id: app-token
@@ -98,6 +146,9 @@ jobs:
                 release_manifest_digest: process.env.RELEASE_MANIFEST_DIGEST,
                 worker_mirror_run_id: process.env.WORKER_MIRROR_RUN_ID,
                 worker_mirror_run_attempt: process.env.WORKER_MIRROR_RUN_ATTEMPT,
-                worker_mirror_receipt_digest: process.env.WORKER_MIRROR_RECEIPT_DIGEST
+                worker_mirror_receipt_digest: process.env.WORKER_MIRROR_RECEIPT_DIGEST,
+                batch_admission_run_id: process.env.BATCH_ADMISSION_RUN_ID,
+                batch_admission_run_attempt: process.env.BATCH_ADMISSION_RUN_ATTEMPT,
+                batch_admission_receipt_digest: process.env.BATCH_ADMISSION_RECEIPT_DIGEST
               }
             });

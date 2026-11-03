@@ -691,6 +691,25 @@ The private trace env has to be loaded into the API process before a game starts
 
 The web command is Doppler-wrapped because runtime config such as Privy, admin address, API URL, and websocket URL may come from the shared dev config. The API URL uses `127.0.0.1` rather than `localhost` so Chrome does not resolve the API to IPv6 `[::1]` and accidentally hit another local dev server.
 
+The local render worker also picks up Studio exports. In **Selected cut → Export**,
+choose **Render video**; use **Production → Render jobs** to check it later and
+download the verified output. No render container is needed. The worker finishes
+one attempt before polling again and gives ready trailers priority. Set
+`REMOTION_BROWSER_EXECUTABLE` to an installed Chromium/Chrome executable if it is
+not already configured, for example on macOS:
+
+```sh
+REMOTION_BROWSER_EXECUTABLE="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" bun run dev:render-worker
+```
+
+Native export discovery requires the development/local policy, a loopback API,
+the existing local worker credential and the matching source digest. The API
+derives local job capabilities from its development session secret; no extra
+render secret or AWS credentials are needed. Only the exact execution capability
+reaches the shared assigned worker. Queued work cannot silently move to changed
+renderer source: order a new export after such an edit. Staging/production cannot
+use this discovery endpoint and retain their existing target/image admission.
+
 ### Local Upload Storage
 
 Profile-picture uploads use Linode Object Storage when `LINODE_OBJ_ENDPOINT`, `LINODE_OBJ_ACCESS_KEY`, `LINODE_OBJ_SECRET_KEY`, and `LINODE_OBJ_BUCKET` are present. In local dev, if those vars are absent, the API automatically uses a filesystem-backed upload endpoint instead and writes files under `packages/api/.local-uploads/` by default. Local upload and read URLs are returned as absolute API-origin URLs so the browser does not resolve them against the separate web dev server origin.
@@ -703,6 +722,10 @@ INFLUENCE_STORAGE_BACKEND=s3         # require Linode/S3 vars
 INFLUENCE_STORAGE_BACKEND=disabled   # disable uploads
 INFLUENCE_LOCAL_UPLOAD_DIR=/tmp/influence-uploads
 ```
+
+Worktrees sharing the same development database must also share the directory
+containing its existing local uploads. Set `INFLUENCE_LOCAL_UPLOAD_DIR` to that
+directory for both API roles; changing worktrees does not copy those files.
 
 ### Local Private Content S3
 

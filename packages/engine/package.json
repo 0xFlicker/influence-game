@@ -80,6 +80,7 @@
     "./postgame-media/werewolf-trailer-manifest": "./src/postgame-media/werewolf-trailer-manifest.ts",
     "./werewolf/visual-scenes": "./src/werewolf/visual-scenes.ts",
     "./render-execution-config": "./src/render-execution-config.ts",
+    "./render-job": "./src/render-job.ts",
     "./game-model-routing": "./src/game-model-routing.ts",
     "./model-route-metadata": "./src/model-route-metadata.ts",
     "./audio-track": "./src/audio-track.ts",

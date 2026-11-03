@@ -5,6 +5,7 @@ export const MCP_OAUTH_SCOPE_VALUES = [
   "games:resume",
   "producer",
   "producer:edit",
+  "producer:render",
   "producer:routing",
   "moderation:read",
   "moderation:write",
@@ -71,6 +72,7 @@ export const MCP_OAUTH_SCOPE_DEFINITIONS: Record<McpOAuthScope, McpOAuthScopeDef
     group: "assets", defaultSelected: false, requiredScopes: [], requiredPermission: "manage_game_assets",
   },
   "producer:edit": {scope:"producer:edit",label:"Edit production moment tags",description:"Save shared Studio moment tags for operator cut review. Does not render, publish or change gameplay.",group:"developer",defaultSelected:false,requiredScopes:["producer"],requiredRole:"producer"},
+  "producer:render": {scope:"producer:render",label:"Order Studio renders",description:"Order private cloud video renders from reviewed Studio cuts and cancel or retry them. Rendering can incur compute costs. Does not generate speech, images or gameplay.",group:"developer",defaultSelected:false,requiredScopes:["producer"],requiredRole:"producer"},
   producer: {
     scope: "producer",
     label: "Developer access",

@@ -28,7 +28,7 @@ function deferred<T>() { let resolve!: (value: T) => void; const promise = new P
 test("producer landing and route membership match endpoint grants, not admin role shortcuts", () => {
   const producer = { roles: ["producer"], permissions: [] };
   expect(adminLanding(producer)).toBe("/admin/werewolf");
-  expect(ADMIN_ENTRIES.filter(entry => permitsAdminEntry(entry, producer)).map(entry => entry.href)).toEqual(["/admin/werewolf", "/admin/production"]);
+  expect(ADMIN_ENTRIES.filter(entry => permitsAdminEntry(entry, producer)).map(entry => entry.href)).toEqual(["/admin/werewolf", "/admin/production", "/admin/production/renders"]);
   expect(adminLanding({ roles: ["admin"], permissions: [] })).toBe("/admin/inference");
   expect(permitsAdminEntry({access:"werewolf"}, {roles:["admin"],permissions:[]})).toBe(false);
   expect(adminRoute("/admin/production/games/g")?.area).toBe("Production");

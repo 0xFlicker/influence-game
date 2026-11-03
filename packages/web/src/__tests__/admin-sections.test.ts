@@ -27,6 +27,14 @@ describe("admin section routes", () => {
     expect(permitsAdminEntry({access:"producer"},{roles:[],permissions:["view_admin"]})).toBeFalse();
     expect(permitsAdminEntry(route,{roles:[],permissions:[]})).toBeFalse();
   });
+  test("render monitor uses its specific producer route without changing the Production landing",()=> {
+    const route=adminRoute("/admin/production/renders")!;
+    expect(route.label).toBe("Render jobs");
+    expect(permitsAdminEntry(route,{roles:[],permissions:["view_admin"]})).toBeFalse();
+    expect(permitsAdminEntry(route,{roles:["producer"],permissions:[]})).toBeTrue();
+    expect(permitsAdminEntry(route,{roles:["sysop"],permissions:[]})).toBeTrue();
+    expect(adminRoute("/admin/production")?.label).toBe("Production");
+  });
 });
 
 test("invite controls require their own capability", () => {
