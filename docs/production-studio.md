@@ -7,6 +7,11 @@ recorded/unrecorded captions, actual export geometry and fresh render evidence.
 An updated viewer component does not prove that Studio's adapters supply its data
 or props. Missing parity is unfinished work, not a post-merge follow-up.
 
+**No scrollable containers inside the preview/player.** Cast, labels and captions
+must fit/reflow or use clock-driven pagination, without clipping required content
+or shrinking it to unreadable text. This ban applies equally to the viewer and
+export. Editorial lists, inspectors and the timeline outside the picture may scroll.
+
 Werewolf ballot shots and their thinking close-ups share the voting backdrop in
 Studio and offline exports. Camera focus must not switch the scene to the daytime
 village. Existing encoded movies require a new export to receive this presentation fix;

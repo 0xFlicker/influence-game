@@ -48,6 +48,26 @@ metadata; never infer these from prose. Preserve immutable source and media pins
 
 ## Required regression matrix
 
+### No scrolling inside the player — mandatory
+
+Scrollable containers are banned in the live/replay player, Studio preview and
+rendered video. This is a viewer requirement as well as an export requirement.
+Do not add horizontal or vertical `overflow: auto`/`scroll` (including Tailwind
+variants), hide the scrollbar while retaining scrolling, move overflow into an
+outer scene, or scroll programmatically to reveal content.
+
+Fit and reflow cast, labels and names within the picture. Paginate long speech,
+thoughts and House copy using the shared presentation clock and enough reading
+time. Clipping required content, shrinking it to unreadable text, or asking the
+viewer to page manually are not acceptable substitutes. Cropping decorative
+scenery is different from hiding required cast/text content. Studio's editorial
+lists, inspectors and timeline outside the rendered picture may scroll.
+
+Regression coverage must inspect the actual player/stage at narrow, short and
+fullscreen geometries with large casts and long names/copy. Reject scrollable
+content containers and assert that required content fits or appears across timed
+pages. Checking only that a scrollbar is visually hidden is insufficient.
+
 Test the relevant rows below for each changed treatment. Mark a row not applicable
 with a concrete reason; don't silently omit it. Both Studio Source and Selected
 cut must use the verified path, including the cut a user actually exports.
@@ -57,7 +77,7 @@ cut must use the verified path, including the cut a user actually exports.
 | Sequence and selection | Full sequence, entry mid-sequence, beat alone, neighbor omitted; thinking-only/speech-only/result-only when applicable |
 | Timeline | Entrance, readable page, reveal/transition, exit/held ending; next beat handoff; direct seek and reverse/random order |
 | Context | Correct cast/board at this point, historical missing art, frozen full body/headshot/scene, no omitted response or future decision in an isolated thought |
-| Geometry | Intended output size and a short/narrow supported size; full cast and long names/copy; actual pagination rather than scroll-only overflow |
+| Geometry | Intended output size and short/narrow/fullscreen sizes; large cast and long names/copy; no scrollable player containers; all required content fits or appears on clock-driven pages |
 | Audio | With/without an existing recording; complete voice duration, single House caption, page progress, music/effects timing and no duplicated audio |
 | Settings/audience | Thinking on/off, affected reduced-motion and timing settings, Mystery/Omniscient or other applicable access scopes |
 | Persistence | Fresh preparation, offline bundle rendering, explicit frozen-version behavior and missing-asset errors; same selected IDs/media pins |
