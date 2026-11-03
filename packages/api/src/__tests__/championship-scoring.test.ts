@@ -121,7 +121,7 @@ test("half-point migration preserves historical integers and policy versions", a
   await db.transaction(async tx => {
     await tx.execute(sql.raw("CREATE TEMP TABLE half_point_migration_fixture(points integer NOT NULL, policy_version text NOT NULL) ON COMMIT DROP"));
     await tx.execute(sql.raw("INSERT INTO half_point_migration_fixture VALUES (0,'season-0-v1'),(1,'season-0-v1'),(2147483647,'season-0-v1')"));
-    const migration = readFileSync(new URL("../../drizzle/0145_championship_half_points.sql", import.meta.url), "utf8").replaceAll("championship_results", "half_point_migration_fixture");
+    const migration = readFileSync(new URL("../../drizzle/0147_championship_half_points.sql", import.meta.url), "utf8").replaceAll("championship_results", "half_point_migration_fixture");
     for (const statement of migration.split("--> statement-breakpoint")) await tx.execute(sql.raw(statement));
     const rows = await tx.execute(sql.raw("SELECT points, policy_version FROM half_point_migration_fixture ORDER BY points"));
     expect(rows.map(row => row.points)).toEqual([0, 1, 2147483647]);

@@ -185,7 +185,7 @@ test("correction migration backfills historical game and allocation identities w
         INSERT INTO championship_award_allocations VALUES('allocation','event','influence');
         INSERT INTO award_grants VALUES('grant','original evidence');
         INSERT INTO competition_audit VALUES('allocation:0','award_granted','grant');`));
-      const migration = readFileSync(new URL("../../drizzle/0148_championship_corrections.sql", import.meta.url), "utf8");
+      const migration = readFileSync(new URL("../../drizzle/0150_championship_corrections.sql", import.meta.url), "utf8");
       for (const statement of migration.split("--> statement-breakpoint")) await tx.execute(sql.raw(statement));
       expect([...(await tx.execute(sql.raw("SELECT game_id,revision,points,policy_version FROM championship_results")))]).toEqual([{ game_id: "game", revision: 0, points: 0.5, policy_version: "historical" }]);
       expect([...(await tx.execute(sql.raw("SELECT allocation_id,replaced_by_id,evidence FROM award_grants")))]).toEqual([{ allocation_id: "allocation", replaced_by_id: null, evidence: "original evidence" }]);

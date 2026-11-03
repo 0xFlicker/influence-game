@@ -35,7 +35,7 @@ Production-path local tests exercise actual source reads, public image publicati
 
 ## Remaining limits
 
-Scoring, shared-champion fallback, roles, one-game participation, attribution and pre-lock alternates are confirmed and implemented. The actual start date and hypothetical Influence draw resolution remain pending. Audited recipient/evidence replacement and completed-result resettlement/replay are now implemented; arbitrary canonical outcome editing is intentionally absent. Paid image quality and hosted availability are unverified. Uncertain image-provider responses need producer evidence through the reconciliation API; there is no dedicated panel form yet. Migrations 0143–0148 and payload inventory changes must be coordinated with the separate AWS storage work.
+Scoring, shared-champion fallback, roles, one-game participation, attribution and pre-lock alternates are confirmed and implemented. The actual start date and hypothetical Influence draw resolution remain pending. Audited recipient/evidence replacement and completed-result resettlement/replay are now implemented; arbitrary canonical outcome editing is intentionally absent. Paid image quality and hosted availability are unverified. Uncertain image-provider responses need producer evidence through the reconciliation API; there is no dedicated panel form yet. Migrations 0145–0150 and payload inventory changes must be coordinated with the separate AWS storage work.
 
 See `championship-validation.md` for completed test evidence. Review fixes are local only; no production mutation or paid game occurred. Authorized factual milestone updates were posted to issue #282.
 

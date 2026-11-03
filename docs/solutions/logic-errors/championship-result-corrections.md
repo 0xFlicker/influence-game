@@ -2,7 +2,7 @@
 
 A completed championship result is derived from a canonical game. Overwriting its score row or reusing an old award allocation destroys the explanation of what changed and can resurrect a revoked badge on retry.
 
-Migration 0148 retains old results under `(match_id, entry_id, revision)` and binds each to its actual game. A correction requires the exact current game/revision, a reason, an idempotency key, and both championship and award management authority. Resettle recomputes from the same canonical game; replay retains that game and admits a fresh exact-match attempt using the frozen competition build. Neither operation edits canonical outcome evidence.
+Migration 0150 retains old results under `(match_id, entry_id, revision)` and binds each to its actual game. A correction requires the exact current game/revision, a reason, an idempotency key, and both championship and award management authority. Resettle recomputes from the same canonical game; replay retains that game and admits a fresh exact-match attempt using the frozen competition build. Neither operation edits canonical outcome evidence.
 
 Serialize correction, settlement and delivery on the event row. Supersede only champion allocations for the affected game type, revoke linked recipient-replacement descendants, and allocate a new generation after current results settle. Keep season and finalist allocations intact. Carry explicit manual revocations forward; an old allocation must never deliver or reinstate after supersession. Recipient correction creates a new linked grant with new evidence and revokes the original atomically.
 
