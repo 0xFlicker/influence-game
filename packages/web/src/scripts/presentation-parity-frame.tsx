@@ -1,6 +1,6 @@
 /** Browser entry for the opt-in, provider-free viewer/export render comparison. */
 import {useLayoutEffect, useMemo, useState} from "react";
-import {Composition, registerRoot, getInputProps, useCurrentFrame, delayRender, continueRender, cancelRender} from "remotion";
+import {Artifact, Composition, registerRoot, getInputProps, useCurrentFrame, delayRender, continueRender, cancelRender} from "remotion";
 import {ReplayFrame} from "../remotion/house-replay/frame";
 import type {ReplayManifest} from "../lib/replay-export/manifest";
 import type {ExportCue} from "../lib/replay-export/cues";
@@ -13,6 +13,44 @@ import {PresentationDirector} from "../components/watch/watch-director";
 import {ActiveFormatOverlay} from "../app/games/[slug]/components/active-format-label";
 
 export type ParityProps = {manifest:ReplayManifest; reference:ExportCue; prepare?:boolean};
+
+function FormatAudit() {
+  const frame = useCurrentFrame();
+  const [handle] = useState(() => delayRender("Format context geometry"));
+  const [result,setResult] = useState<string|null>(null);
+  useLayoutEffect(() => {
+    void (async () => {
+      await document.fonts.ready;
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      // Pagination is measured after mount; wait for that state before auditing.
+      for (let attempt = 0; attempt < 30; attempt++) {
+        const pending = Array.from(document.querySelectorAll<HTMLElement>("[data-format-rules] [data-speech-page-copy]"))
+          .some(page => page.getBoundingClientRect().bottom > page.parentElement!.getBoundingClientRect().bottom + 1);
+        if (!pending) break;
+        await new Promise<void>(resolve => requestAnimationFrame(resolve));
+      }
+      const pill = document.querySelector<HTMLElement>("[data-active-format-overlay]");
+      const label = document.querySelector<HTMLElement>("[data-room-context-label]");
+      if (pill) {
+        if (getComputedStyle(pill).position !== "absolute") throw new Error("Format context changes scene geometry");
+        const box = pill.getBoundingClientRect();
+        if (box.left < 0 || box.top < 0 || box.right > innerWidth || box.bottom > innerHeight) throw new Error("Format pill is outside the picture");
+        if (label) {
+          const room = label.getBoundingClientRect();
+          if (box.left < room.right && box.right > room.left && box.top < room.bottom && box.bottom > room.top) throw new Error("Format pill covers the room label");
+        }
+      }
+      for (const page of document.querySelectorAll<HTMLElement>("[data-format-rules] [data-speech-page-copy]")) {
+        const rect=page.getBoundingClientRect(), container=page.parentElement!.getBoundingClientRect();
+        if (rect.left < container.left - 1 || rect.right > container.right + 1 || rect.bottom > container.bottom + 1 || parseFloat(getComputedStyle(page).fontSize) < 14)
+          throw new Error(`Format rules page does not fit at readable size: ${JSON.stringify({rect,container,font:getComputedStyle(page).fontSize,text:page.textContent})}`);
+      }
+      setResult(JSON.stringify({frame,formatOverlay:!!pill,roomLabel:!!label}));
+      continueRender(handle);
+    })().catch(cancelRender);
+  },[frame,handle]);
+  return result ? <Artifact filename={`format-audit-${frame}.json`} content={result} /> : null;
+}
 
 function ViewerFrame({manifest,reference}:ParityProps) {
   const frame = useCurrentFrame();
@@ -50,13 +88,16 @@ function ViewerFrame({manifest,reference}:ParityProps) {
         <VisualPresentationFrame beat={picture.beat} rooms={picture.rooms} elapsedMs={sample.elapsedMs} reducedMotion={manifest.reducedMotion} fullscreen controlsInset={0} roster={picture.roster}/>
       </SceneThinkingProvider></div>
     </> : null}
+    <FormatAudit />
   </div>;
 }
+
+function ExportFrame(props:ParityProps) {return <><ReplayFrame {...props} />{!props.prepare && <FormatAudit />}</>;}
 
 registerRoot(() => {
   const props = getInputProps<ParityProps>();
   return <>
-    <Composition id="Export" component={ReplayFrame} width={props.manifest.width} height={props.manifest.height} fps={props.manifest.fps}
+    <Composition id="Export" component={ExportFrame} width={props.manifest.width} height={props.manifest.height} fps={props.manifest.fps}
       durationInFrames={props.prepare ? 2 : props.manifest.range.untilFrame} defaultProps={props}/>
     <Composition id="Viewer" component={ViewerFrame} width={props.manifest.width} height={props.manifest.height} fps={props.manifest.fps}
       durationInFrames={props.manifest.range.untilFrame} defaultProps={props}/>
