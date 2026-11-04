@@ -78,3 +78,7 @@ The private transport preparation supersedes the public staging-edge proposal ab
 ## Packaged environment guard
 
 Local timers and in-process launch are permitted only by runtime configuration. Read `NODE_ENV` through the runtime environment object: Bun's default deployment build folds direct `process.env.NODE_ENV` reads to its build-time value, which could incorrectly enable local adapters in staging. `local-game-runtime.test.ts` compiles the actual guard with the Docker build target and executes the bundle under staging, production, development and test environments. Staging and production reject local adapters even with a loopback database URL.
+
+### Staging container launch hop
+
+The staging gateway cannot hairpin through the host's Tailscale HTTPS listener. It uses `http://caddy/api/internal/championships/games/launch` on the existing private Docker frontend network; Caddy forwards only that POST to the existing worker on3002. The exact event-scoped launcher JWT remains required. This plaintext exception is restricted to the exact `http://caddy` origin and an explicitly staging gateway runtime; arbitrary hosts, other ports, credentials/query/fragment in URLs, other paths, worker runtimes and production reject it. AWS controller traffic into staging remains verified Tailscale HTTPS. No additional public listener is needed.
