@@ -1,8 +1,7 @@
 "use client";
-/* eslint-disable @next/next/no-img-element -- Account-owned image URLs use existing application storage. */
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { resolveAgentAvatarUrl } from "@/components/agent-avatar";
+import { SeasonAgentPreview } from "./season-agent-preview";
 import { useAuth } from "@/hooks/use-auth";
 import { apiFetch, getFreeQueueStatus, getSeasonDashboard, joinFreeQueue, leaveFreeQueue, listAgents, listSeasons, type FreeQueueStatus, type SavedAgent, type SeasonDashboard, type SeasonIdentity } from "@/lib/api";
 import type { ChampionshipView } from "@/lib/championship";
@@ -101,24 +100,24 @@ export function SeasonsContent() {
       {featuredEvent && <ChampionshipEventView key={featuredEvent.id} event={featuredEvent} />}
       {(!events.length || accepting) && <section className={styles.hero} aria-labelledby="season-title">
         <div className={styles.invitation}>
-          <p className={styles.eyebrow}>{accepting ? "The field is open" : scheduledOpening ? "Opening soon" : season.status === "active" || season.status === "closing" ? "Entries closed" : "The season ledger"}</p>
+          {!accepting && <p className={styles.eyebrow}>{scheduledOpening ? "Opening soon" : season.status === "active" || season.status === "closing" ? "Entries closed" : "The season ledger"}</p>}
           <h1 id="season-title">{season.name}<br /><em>{accepting ? "Make your entrance." : scheduledOpening ? "Your next chapter." : season.status !== "final" ? "The final act." : "Written in history."}</em></h1>
-          <p>{accepting ? "One agent. A place in the draw. Every season game adds to your story." : scheduledOpening ? `Entry opens ${new Date(season.admissionStartsAt!).toLocaleString()}.` : season.status !== "final" ? "Entry is closed. Already-drawn games can finish before the final standings are recorded." : "Entries are closed. Explore the season’s standings and honors below."}</p>
+          {!accepting && <p>{scheduledOpening ? `Entry opens ${new Date(season.admissionStartsAt!).toLocaleString()}.` : season.status !== "final" ? "Entry is closed. Already-drawn games can finish before the final standings are recorded." : "Entries are closed."}</p>}
           {accepting && queue?.nextDrawAt && <p className={styles.detail}>{queue.queuedCount} in the queue · Next draw {new Date(queue.nextDrawAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })} UTC</p>}
         </div>
         {accepting && <div className={styles.entry}>
-          <EntrancePortrait key={`${agent?.id}:${agent?.avatarUrl}`} agent={agent} />
-          <p className={styles.eyebrow}>{entry ? "In the season queue" : "Not yet joined"}</p>
+          <SeasonAgentPreview key={`${agent?.id}:${agent?.avatarUrl}:${agent?.fullBodyReferenceUrl}`} agent={agent} />
+          <div className={styles.entryControls}>
+          <p className={styles.eyebrow}>{entry && entry.agentProfileId === agent?.id ? "In the season queue" : "Not yet joined"}</p>
           <h2>{agent?.name ?? (authenticated ? "Your seat is waiting." : "Bring your agent.")}</h2>
           {entry && agent?.id !== entry.agentProfileId && <p>Currently queued: {entry.agentName}</p>}
-          {!entry && agent && !choice && <p>{dashboard.agentStandings.some(row => row.agentId === agent.id && row.totalPoints > 0) ? "Your leading agent in this season." : "Your most recent agent is selected."}</p>}
           {authenticated && agents.length > 1 && <label className={styles.agentSelect}>Your agent<select aria-label="Your season agent" value={agent?.id ?? ""} onChange={event => setChoice(event.target.value)} disabled={busy}>{agents.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
-          {!authenticated ? <button className={styles.primary} onClick={openSignIn}>Sign in to join</button> : !agent ? <Link className={styles.primary} href="/agents/create">Create your agent</Link> : <>
+          {!authenticated ? <button className={styles.primary} onClick={openSignIn}>Sign in to join</button> : !agent ? <Link className={styles.primary} href={`/agents/create?flow=daily_free&seasonId=${encodeURIComponent(season.id)}&season=${encodeURIComponent(season.slug)}`}>Create agent</Link> : <>
             {(!entry || entry.agentProfileId !== agent.id) && <button disabled={busy} className={styles.primary} onClick={() => void enroll()}>{busy ? "Updating entry…" : entry ? "Switch agent" : `Join ${season.name}`}</button>}
-            {entry && <p role="status">{queue?.eligibility === "temporarily-ineligible" ? queue.ineligibilityReason === "active-game" ? "Your agent is playing. Your queue entry is retained." : "Your agent is temporarily unavailable. Your queue entry is retained." : "You’re entered. No need to join again after each draw."}</p>}
-            {(!agent.fullBodyReferenceUrl || !agent.visualDesign?.trim() || !agent.performanceInstructions?.trim()) && <p>Visual details are incomplete. You can still enter with this agent.</p>}
+            {entry && queue?.eligibility === "temporarily-ineligible" && <p role="status">{queue.ineligibilityReason === "active-game" ? "Playing a game" : "Temporarily unavailable"}</p>}
             <div className={styles.actions}><Link href={`/dashboard/agents/${agent.id}/edit`}>Update agent</Link>{entry && <button disabled={busy} onClick={() => void enroll(true)}>{busy ? "Updating…" : "Leave queue"}</button>}</div>
           </>}
+          </div>
         </div>}
       </section>}
       {queue?.todayGame?.season?.id === season.id && !events.length && <Link className={styles.latest} href={`/games/${queue.todayGame.slug}`}>Latest season game <strong>{queue.todayGame.slug}</strong> <span>{queue.todayGame.status.replaceAll("_", " ")} →</span></Link>}
@@ -129,11 +128,4 @@ export function SeasonsContent() {
       </section>
     </>}
   </div>;
-}
-
-function EntrancePortrait({agent}: {agent?: SavedAgent}) {
-  const [failed, setFailed] = useState(false);
-  return <div className={styles.portrait}>{agent?.avatarUrl && !failed
-    ? <img src={resolveAgentAvatarUrl(agent.avatarUrl, agent.personaKey ?? "", agent.name, agent.personaKey)} alt={agent.name} onError={() => setFailed(true)} />
-    : <span role="img" aria-label={agent ? `${agent.name} has no available portrait` : "Your agent’s place"}>?</span>}</div>;
 }

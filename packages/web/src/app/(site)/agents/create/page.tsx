@@ -13,7 +13,7 @@ function createFlow(value: string | undefined): AgentCreateFlow {
 export default async function AgentCreatePage({
   searchParams,
 }: {
-  searchParams: Promise<{ flow?: string; gameId?: string }>;
+  searchParams: Promise<{ flow?: string; gameId?: string; seasonId?: string; season?: string }>;
 }) {
   const query = await searchParams;
   const flow = createFlow(query.flow);
@@ -22,7 +22,7 @@ export default async function AgentCreatePage({
     <div className="min-h-dvh flex flex-col">
       <Nav />
       <main className="flex min-h-0 w-full flex-1 flex-col">
-          <AgentCreateContent flow={flow} gameId={flow === "join_game" ? query.gameId : undefined} />
+          <AgentCreateContent flow={flow} gameId={flow === "join_game" ? query.gameId : undefined} seasonId={flow === "daily_free" ? query.seasonId : undefined} seasonSlug={flow === "daily_free" ? query.season : undefined} />
       </main>
     </div>
   );

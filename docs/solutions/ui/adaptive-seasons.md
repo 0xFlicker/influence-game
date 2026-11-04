@@ -42,3 +42,26 @@ the authoritative accepting-season ID and prompt eligibility. Onboarding cannot
 bypass season closure or admission dates. Navigation, queue-change events and
 window focus recheck eligibility; existing dismissal remains intact. Entry sends
 the displayed season ID so a stale prompt cannot silently join a later season.
+
+## Selected character and creation entry
+
+The entry preview follows the dropdown immediately, independently of the saved
+queue entry. Full-body art falls back to the saved headshot and then the existing
+persona portrait; failed URLs are tracked per source. Only the no-agent state
+uses a question mark. A selected replacement is not labeled queued until Switch
+succeeds. Queue status and the next draw remain visible without recommendation or
+repeated-entry explanatory copy.
+
+The no-agent Create action carries `flow=daily_free`, the selected immutable
+season ID and its navigation slug. Its editor draft is scoped to that season.
+Creation pins the season alongside its stable creation request, retains the
+existing saved-agent continuation across failures, and enrolls with
+`expectedSeasonId`. Retry recovers the same agent; a closed or replaced season
+leaves that agent saved and reports entry failure. Ordinary management creation
+has no enrollment continuation. The slug controls return navigation only.
+
+Local uploads are worktree-relative unless configured otherwise. If existing
+agents have image URLs but those URLs return 404 after a worktree change, inspect
+the original upload directory before generating anything. For this incident,
+missing referenced files were copied byte-for-byte from the previous checkout,
+without overwriting files or changing profile/queue records.

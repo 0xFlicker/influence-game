@@ -1055,3 +1055,7 @@ already-admitted games during closing; custom games remain independent.
 ### Startup migration serialization
 
 Gateway and game-worker startups share one database-scoped transaction advisory lock acquired before journal bootstrap/read and held through migration commit. A dedicated backend at READ COMMITTED serializes both the decision and its DDL; rollback or process failure releases it. Existing migration hashes and journal rows remain unchanged. See [migration recovery](docs/solutions/database/serialized-startup-migrations.md).
+
+### Season creation continuation
+
+An agent created from the Seasons entry action carries the selected season ID through its editor draft, stable creation request and queue admission. Creation and entry remain independently recoverable: a saved agent survives failed admission, duplicate requests reuse it, and `expectedSeasonId` prevents a closed-season continuation from entering a newer season. Ordinary agent creation does not enroll.

@@ -708,3 +708,5 @@ standings or cancel existing games.
 ## Concurrent startup migrations
 
 Gateway and worker both use `runMigrations`, which serializes journal inspection and application on one dedicated transaction/backend. Use this runner for concurrent startup; direct Drizzle migration commands and older binaries do not share its lock. After a migration error, inspect schema/journal evidence before attempting repair. A duplicate catalog error may mean another startup completed successfully; do not delete tables or journal rows. See [serialization and disposable failure tests](solutions/database/serialized-startup-migrations.md).
+
+Local public uploads default to a directory relative to the API working directory. Switching worktrees does not move those files with the shared development database. If saved image URLs return 404, inspect the former checkout's `.local-uploads` and recover the exact referenced bytes into the current directory without overwriting existing files; do not regenerate character images or reset the database to repair a missing local file.
