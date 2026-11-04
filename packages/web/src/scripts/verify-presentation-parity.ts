@@ -102,6 +102,7 @@ const scratch=await mkdtemp(join(tmpdir(),"house-parity-"));
 const results:{name:string;width:number;height:number;frame:number;meanDifference:number;exportHash:string;viewer:string;export:string}[]=[];
 const encodedResults:{name:string;frame:number;meanDifference:number;video:string}[]=[];
 const audioResults:unknown[]=[];
+const studioResults:unknown[]=[];
 async function pixels(path:string) {
   const destination=join(scratch,"pixels.rgb");
   await runProcess("ffmpeg",["-y","-v","error","-i",path,"-pix_fmt","rgb24","-f","rawvideo",destination]);
@@ -154,6 +155,8 @@ try {
       const inputProps={manifest,reference:item.reference};
       const exported=await selectComposition({serveUrl,id:"Export",inputProps,puppeteerInstance:browser});
       const viewer=await selectComposition({serveUrl,id:"Viewer",inputProps,puppeteerInstance:browser});
+      const studio = process.env.FORMAT_CONTEXT_STUDIO === "1" ? await Promise.all(["source","cut"].map(async view=>({view,
+        composition:await selectComposition({serveUrl,id:view === "source" ? "StudioSource" : "StudioCut",inputProps:{...inputProps,view},puppeteerInstance:browser})}))) : [];
       const thought=timeline[0]!.thought;
       let rulesSamples:number[]|null = null;
       if (item.name === "format-rules" && item.cue.picture.kind === "influence" && item.cue.picture.cue.source === "format" && item.cue.picture.cue.kind === "format_selected") {
@@ -212,6 +215,13 @@ try {
         results.push({name:item.name,width,height,frame,meanDifference,exportHash:sha256(await readFile(paths.export)),...paths});
         await writeFile(join(output,"comparison.json"),JSON.stringify({source:"deterministic fixtures; actual viewer components versus Studio/export composition",frames:results},null,2));
         if(meanDifference>1) throw new Error(`Viewer/export mismatch: ${item.name} ${width} frame ${frame}: ${meanDifference}`);
+        for(const {view,composition} of studio) {
+          const path=`${prefix}-${frame}-studio-${view}.png`;
+          await renderStill({serveUrl,composition,inputProps:{...inputProps,view},frame,output:path,imageFormat:"png",puppeteerInstance:browser,timeoutInMilliseconds:60000});
+          const delta=difference(await pixels(paths.export),await pixels(path));
+          studioResults.push({name:item.name,width,height,frame,view,meanDifference:delta,path});
+          if(delta>1) throw new Error(`Studio ${view} mismatch: ${item.name} ${width} frame ${frame}: ${delta}`);
+        }
       }
       if((item.name.startsWith("format-huddle-large") || item.name === "format-huddle-five") && expectedCast.some(player=>!observedCast.has(player.id))) throw new Error(`Not every huddle member appeared: ${[...observedCast].join(", ")}`);
       if(item.name.startsWith("format-huddle-large") && (observedRoomPages.size !== expectedRoomPages || observedDialoguePages.size !== expectedDialoguePages))
@@ -247,6 +257,6 @@ try {
       console.log(`Verified ${item.name} ${width}×${height}`);
     }
   } finally {await browser.close({silent:true});}
-  await writeFile(join(output,"comparison.json"),JSON.stringify({source:"deterministic fixtures; actual viewer components versus Studio/export composition",reverseOrder:true,frames:results,encoded:encodedResults,audio:audioResults},null,2));
+  await writeFile(join(output,"comparison.json"),JSON.stringify({source:"deterministic fixtures; actual viewer components versus Studio/export composition",reverseOrder:true,frames:results,studio:studioResults,encoded:encodedResults,audio:audioResults},null,2));
   console.log(`Saved ${results.length} comparisons and ${new Set(encodedResults.map(row=>row.video)).size} fresh videos: ${output}`);
 } finally {await rm(scratch,{recursive:true,force:true});}

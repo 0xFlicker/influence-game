@@ -11,6 +11,7 @@ import {WerewolfWatchStage} from "../components/games/werewolf/werewolf-watch-st
 import {werewolfWatchPolicy} from "../components/games/werewolf/werewolf-watch-model";
 import {PresentationDirector} from "../components/watch/watch-director";
 import {ActiveFormatOverlay} from "../app/games/[slug]/components/active-format-label";
+import {ProductionPreview} from "../app/admin/production/production-preview";
 
 export type ParityProps = {manifest:ReplayManifest; reference:ExportCue; prepare?:boolean};
 
@@ -136,6 +137,44 @@ function ExportFrame(props:ParityProps) {
   return <><ReplayFrame {...props} />{!props.prepare && <FormatAudit expectedFormat={cue.activeFormatId} expectedPaged={paginatable && count > 4 && (props.manifest.width < 600 || props.manifest.height < 374 || count > 8)} />}</>;
 }
 
+/** Exercise the real Studio Player with an isolated selected moment. */
+function StudioFrame({manifest,view}:ParityProps & {view:"source"|"cut"}) {
+  const frame=useCurrentFrame();
+  const id="format-context-proof", cue={...manifest.cues[0]!,momentId:id};
+  const omitted={...cue,momentId:"omitted",speech:cue.speech ? {...cue.speech,text:"OMITTED NEIGHBOR MUST NOT APPEAR"} : null};
+  const source=view === "cut" ? [{id:"omitted",segments:[omitted]},{id,segments:[cue]}] : [{id,segments:[cue]}];
+  const compiled={momentIds:[id],moments:[{id,startFrame:0,contentFrame:0,endFrame:manifest.range.untilFrame,sourceOrder:view === "cut" ? 1 : 0}],
+    cues:[cue],timeline:manifest.timeline,audio:manifest.audio};
+  const [ready]=useState(()=>delayRender("Studio Player intended frame",{timeoutInMilliseconds:60000}));
+  useLayoutEffect(()=>{
+    let active=true;
+    void (async()=>{
+      for(let attempt=0;attempt<180;attempt++) {
+        const content=document.querySelector<HTMLElement>(`[data-composition-frame="${frame}"]`);
+        if(content && Array.from(content.querySelectorAll("img")).every(image=>image.complete && image.naturalWidth>0)) {
+          await document.fonts.ready;
+          await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
+          if(document.body.textContent?.includes("OMITTED NEIGHBOR MUST NOT APPEAR")) throw new Error("Studio exposed an omitted neighboring speech");
+          if(active) continueRender(ready);
+          return;
+        }
+        await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+      }
+      throw new Error(`Studio Player did not present frame ${frame}`);
+    })().catch(cancelRender);
+    return ()=>{active=false;};
+  },[frame,ready]);
+  return <div className="format-proof-studio" style={{width:"100%",height:"100%"}}>
+    <style>{`.format-proof-studio [data-production-preview],.format-proof-studio [aria-label="Playable preview"]{width:100%;height:100%;display:flex;flex-direction:column;min-height:0;padding:0;border:0}
+      .format-proof-studio [aria-label="Playable preview"] > :first-child,.format-proof-studio [aria-label="Playable preview"] > :last-child{display:none}
+      .format-proof-studio [aria-label="Preview keyboard controls"]{width:100%;height:100%;min-height:0;flex:1;padding:0;border:0;border-radius:0}`}</style>
+    <ProductionPreview key={`${view}:${frame}`} base={manifest} source={source} compiled={compiled} selectedIds={[id]} view={view}
+      onActiveMomentChange={()=>{}} onViewChange={()=>{}} emptyLabel="Empty" readAnchor={()=>({momentId:id,offsetMs:frame*1000/manifest.fps})}
+      onAnchorChange={()=>{}} playback={{muted:true,volume:1}} onPlaybackChange={()=>{}} renderLayout={monitor=>monitor}
+      onOpenHints={()=>{}} characterShortcuts={false} keyboardAvailable={()=>true} />
+  </div>;
+}
+
 registerRoot(() => {
   const props = getInputProps<ParityProps>();
   return <>
@@ -143,5 +182,9 @@ registerRoot(() => {
       durationInFrames={props.prepare ? 2 : props.manifest.range.untilFrame} defaultProps={props}/>
     <Composition id="Viewer" component={ViewerFrame} width={props.manifest.width} height={props.manifest.height} fps={props.manifest.fps}
       durationInFrames={props.manifest.range.untilFrame} defaultProps={props}/>
+    <Composition id="StudioSource" component={StudioFrame} width={props.manifest.width} height={props.manifest.height} fps={props.manifest.fps}
+      durationInFrames={props.manifest.range.untilFrame} defaultProps={{...props,view:"source"}}/>
+    <Composition id="StudioCut" component={StudioFrame} width={props.manifest.width} height={props.manifest.height} fps={props.manifest.fps}
+      durationInFrames={props.manifest.range.untilFrame} defaultProps={{...props,view:"cut"}}/>
   </>;
 });
