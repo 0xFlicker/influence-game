@@ -32,6 +32,7 @@
     .format b { font-size: .85rem }
     .info { border: 1px solid #a9dbdf; border-radius: 50%; width: 17px; height: 17px; font: bold 11px/15px Georgia; text-align: center }
     .hint { position: absolute; top: 63px; left: 18px; color: #d9f4f5; background: #131b20; padding: 5px 9px; font-size: .7rem; border-radius: 5px; opacity: 0; pointer-events: none }
+    .theater-context { display: none; position: absolute; top: 24px; right: 20px; color: #e0e5e7; font-size: .75rem; text-shadow: 0 2px 6px #000 }
     .format:hover + .hint, .format:focus-visible + .hint { opacity: 1 }
     .room { position: absolute; top: 29%; left: 50%; width: min(72%, 480px); transform: translateX(-50%); text-align: center }
     .room-label { color: #c3b8af; text-transform: uppercase; font-size: .65rem; letter-spacing: .2em }
@@ -54,6 +55,7 @@
     .note { margin-top: 18px; max-width: 90ch; color: #b9bec9; font-size: .85rem }
     .shell[data-mode="theater"] { display: block }
     .shell[data-mode="theater"] .cast, .shell[data-mode="theater"] .heading { display: none }
+    .shell[data-mode="theater"] .theater-context { display: block }
     .shell[data-mode="theater"] .picture { height: min(62vw, 590px); min-height: 350px }
     .shell[data-mode="narrow"] { display: block; width: min(100%, 390px); margin: auto }
     .shell[data-mode="narrow"] .cast { display: none }
@@ -71,13 +73,14 @@
     <button type="button" data-mode="narrow" aria-pressed="false">Narrow</button>
   </div>
   <div class="shell" data-mode="embedded">
-    <aside class="cast" aria-label="Illustrative cast"><h2>Cast &amp; status</h2><small>PHASE</small><p>Format Mingle</p><p>Rex <small> · EMPOWERED</small></p><p>Nova</p><p>Juniper</p></aside>
+    <aside class="cast" aria-label="Illustrative cast"><h2>Cast &amp; status</h2><p>Rex <small> · EMPOWERED</small></p><p>Nova</p><p>Juniper</p></aside>
     <section class="viewer" aria-label="Illustrative player">
-      <header class="heading"><p>Round 1 / Format Mingle feed</p><strong>Format Mingle</strong></header>
+      <header class="heading"><p>Round 1</p><strong>Mingle</strong></header>
       <div class="picture">
         <button class="format" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="rules"><small>Format</small><b>Highest Count</b><span class="info" aria-hidden="true">i</span></button>
         <span class="hint" aria-hidden="true">Show format rules</span>
-        <div class="room" aria-hidden="true"><div class="room-label">The lounge · Mingle</div><div class="avatars"><div class="avatar">R</div><div class="avatar">N</div><div class="avatar">J</div></div><div class="names"><span>Rex</span><span>Nova</span><span>Juniper</span></div></div>
+        <div class="theater-context">Round 1 · Mingle</div>
+        <div class="room" aria-hidden="true"><div class="room-label">The lounge</div><div class="avatars"><div class="avatar">R</div><div class="avatar">N</div><div class="avatar">J</div></div><div class="names"><span>Rex</span><span>Nova</span><span>Juniper</span></div></div>
         <div class="speech"><strong>NOVA</strong>We need to decide where the votes are going before everyone splits up.</div>
         <div class="overlay" hidden>
           <div class="panel" id="rules" role="dialog" aria-modal="true" aria-labelledby="rule-title" aria-describedby="rule-copy">
