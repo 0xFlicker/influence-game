@@ -144,6 +144,11 @@ export function inspectReleaseMigrationSql(
     ["0122_text_operation_query_metadata.sql", "08c7280108a922f68950fbdeeac1056b49fb1c689453f296ed43ea5e7fc08332"],
   ]);
   const reviewedMaterialization = materializedCutovers.get(path.basename(file)) === createHash("sha256").update(sql).digest("hex");
+  // 0150 changes only championship tables introduced in this same release.
+  // Published main has no writers/readers for them. Preserve the applied SQL;
+  // see docs/deployment/championship-migration-review.md for upgrade/rollback limits.
+  const reviewedChampionshipCorrections = path.basename(file) === "0150_championship_corrections.sql"
+    && createHash("sha256").update(sql).digest("hex") === "10a282ea8c91ca8ac2c78be5e27f9f1a8e5b72fc41ba1000a3a11de2ee99e47b";
   const policyInput = stripSqlCommentsAndStrings(sql);
   const replacementCheckConstraints = new Set(
     [
@@ -161,6 +166,7 @@ export function inspectReleaseMigrationSql(
   );
   const violations: ReleaseMigrationPolicyViolation[] = [];
   for (const rule of RELEASE_MIGRATION_RULES) {
+    if (reviewedChampionshipCorrections && ["drop-constraint", "set-not-null"].includes(rule.rule)) continue;
     if (rule.rule === "delete" && REVIEWED_CLAIM_CLEANUP_MIGRATIONS.get(path.basename(file))
       === createHash("sha256").update(sql).digest("hex")) continue;
     if (reviewedCutover && ["rename-column", "narrow-type", "drop-constraint"].includes(rule.rule)) continue;

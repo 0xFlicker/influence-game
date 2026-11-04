@@ -17,6 +17,6 @@ season game, and concurrent draw/closeout. Tests use an isolated database.
 
 Verification: 61 focused PostgreSQL tests passed (285 assertions), covering the
 free queue, season lifecycle and queue enrollment. Typecheck/lint passed.
-Production was inspected read-only: Season 0 remained active with 22 queue entries.
-Local Season 0 was already final with an empty queue. No live closure or code
-deployment was performed; production-target confirmation remained pending.
+Production Season 0 intake was subsequently closed through the existing producer
+UI under explicit authorization: status closing, queue empty, no finalization.
+This guard is a separate code change and has not been deployed to production.

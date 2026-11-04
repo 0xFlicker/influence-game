@@ -3,7 +3,11 @@
   "environments": {
     "prod": {
       "mode": "remote",
-      "network": "direct"
+      "network": "direct",
+      "targets": {
+        "trailer": "aws-batch",
+        "studio-export": "aws-batch"
+      }
     },
     "staging": {
       "mode": "remote",

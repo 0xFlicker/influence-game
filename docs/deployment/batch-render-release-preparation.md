@@ -4,7 +4,9 @@ Updated 2026-11-03. Staging Studio exports are active on Batch; the first real
 browser order completed with a checksum-matched download, MCP status/download
 lookup, successful task exit and closed tailnet lease. This release selects
 Batch for staging trailers too. The live target changes after the normal release
-deploys and admits the new image family. Production activation remains separate.
+deploys and admits the new image family. Production activation remains separate;
+see the [production release runbook](batch-render-production.md) for bootstrap,
+merge order and environment acceptance.
 
 ## Coordinated implementation PRs
 

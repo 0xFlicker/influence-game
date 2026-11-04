@@ -1,0 +1,24 @@
+{
+  "werewolf": {
+    "completeManifestEqual": true,
+    "differingFields": [],
+    "checks": [
+      {
+        "fixture": "opening",
+        "frames": 999,
+        "decodedFramesAndTimestampsEqual": true,
+        "decodedAudioEqual": true,
+        "baselineSeconds": 26.357842124999998,
+        "candidateSeconds": 26.718037208
+      },
+      {
+        "fixture": "scene",
+        "frames": 300,
+        "decodedFramesAndTimestampsEqual": true,
+        "decodedAudioEqual": true,
+        "baselineSeconds": 7.8317901249999995,
+        "candidateSeconds": 8.069411832999998
+      }
+    ]
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "manifests": {
+    "eager-png": true,
+    "eager-none": true
+  },
+  "movies": [
+    {
+      "trial": "baseline",
+      "fixture": "opening",
+      "frames": 999,
+      "decodedFramesAndTimestampsEqual": true,
+      "decodedAudioEqual": true
+    },
+    {
+      "trial": "baseline",
+      "fixture": "scene",
+      "frames": 300,
+      "decodedFramesAndTimestampsEqual": true,
+      "decodedAudioEqual": true
+    },
+    {
+      "trial": "eager-png",
+      "fixture": "opening",
+      "frames": 999,
+      "decodedFramesAndTimestampsEqual": true,
+      "decodedAudioEqual": true
+    },
+    {
+      "trial": "eager-png",
+      "fixture": "scene",
+      "frames": 300,
+      "decodedFramesAndTimestampsEqual": true,
+      "decodedAudioEqual": true
+    },
+    {
+      "trial": "eager-none",
+      "fixture": "opening",
+      "frames": 999,
+      "decodedFramesAndTimestampsEqual": true,
+      "decodedAudioEqual": true
+    },
+    {
+      "trial": "eager-none",
+      "fixture": "scene",
+      "frames": 300,
+      "decodedFramesAndTimestampsEqual": true,
+      "decodedAudioEqual": true
+    }
+  ]
+}

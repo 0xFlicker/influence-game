@@ -74,3 +74,11 @@ Scoped-credential validation: root `bun run check` passed. All 2,415 PostgreSQL 
 ### Private staging transport follow-up
 
 The private transport preparation supersedes the public staging-edge proposal above. The AWS controller now has an invocation-owned userspace Tailscale transport to the existing staging HTTPS origin, with a locally verified pinned Linux binary layer. The current infra approval packet describes explicit reuse of `/house/render/staging/tailscale-oauth` (no secret value read during preparation), requiring approval for a new controller reader and verification of the live OAuth tag/ACL policy. No new public staging DNS/firewall/proxy is proposed. The separate authenticated staging-to-AWS ingress URL remains; removing it requires a scoped host AWS producer identity and transport change. No credentials, policy, layer publication or deployment have occurred. See `falsefloor/infra/proposals/championship-staging/README.md` for current setup and verification.
+
+## Packaged environment guard
+
+Local timers and in-process launch are permitted only by runtime configuration. Read `NODE_ENV` through the runtime environment object: Bun's default deployment build folds direct `process.env.NODE_ENV` reads to its build-time value, which could incorrectly enable local adapters in staging. `local-game-runtime.test.ts` compiles the actual guard with the Docker build target and executes the bundle under staging, production, development and test environments. Staging and production reject local adapters even with a loopback database URL.
+
+### Staging container launch hop
+
+The staging gateway cannot hairpin through the host's Tailscale HTTPS listener. It uses `http://caddy/api/internal/championships/games/launch` on the existing private Docker frontend network; Caddy forwards only that POST to the existing worker on3002. The exact event-scoped launcher JWT remains required. This plaintext exception is restricted to the exact `http://caddy` origin and an explicitly staging gateway runtime; arbitrary hosts, other ports, credentials/query/fragment in URLs, other paths, worker runtimes and production reject it. AWS controller traffic into staging remains verified Tailscale HTTPS. No additional public listener is needed.
