@@ -116,3 +116,14 @@ test("House owns backdrop-only scenes and every private action has its own spoke
   expect(html).toContain("Day 11");expect(html).toContain("Survived");
   expect(html).not.toContain("How the game unfolded");
  });
+
+ test("final cast uses only supplied frozen bodies and keeps headshot fallback and complete names",()=>{
+  const players=Array.from({length:8},(_,index)=>({id:String(index),name:`Long Frozen Contestant ${index}`,personaKey:null,avatarUrl:`/frozen-head-${index}.png`,fullBodyReferenceUrl:index ? `/frozen-body-${index}.png` : null,alive:true,role:"villager" as const}));
+  const snapshot={...moment.snapshot,players,outcome:{faction:"village" as const,winnerIds:players.map(p=>p.id),reason:"wolves_eliminated" as const}};
+  const html=renderToStaticMarkup(<WerewolfEnding compact snapshot={snapshot} backgroundUrl="/room.png"/>);
+  expect(html.match(/data-ending-art="full-body"/g)).toHaveLength(7);
+  expect(html.match(/data-ending-art="portrait"/g)).toHaveLength(1);
+  expect(html).toContain('/frozen-head-0.png');
+  for(const player of players){expect(html).toContain(player.name);if(player.fullBodyReferenceUrl)expect(html).toContain(player.fullBodyReferenceUrl);}
+  expect(html).not.toContain('truncate');expect(html).not.toContain('overflow-auto');expect(html).not.toContain('overflow-scroll');
+ });

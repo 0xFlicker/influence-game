@@ -239,6 +239,17 @@ describe("free queue season admission", () => {
     const entry = (await db.select().from(schema.freeGameQueue)
       .where(eq(schema.freeGameQueue.userId, ownerId)))[0]!;
     expect(body).toEqual(expect.objectContaining({ id: entry.id, agentProfileId: ownProfile.id }));
+    const staleHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    const staleJoin = await app.request("/api/free-queue/join", { method: "POST", headers: staleHeaders, body: JSON.stringify({agentProfileId: ownProfile.id, expectedSeasonId: "old-season"}) });
+    expect(staleJoin.status).toBe(409);
+    const staleLeave = await app.request("/api/free-queue/leave?expectedSeasonId=old-season", { method: "DELETE", headers: staleHeaders });
+    expect(staleLeave.status).toBe(409);
+    const status = await app.request("/api/free-queue", { headers: staleHeaders });
+    const statusBody = await status.json() as { acceptingSeasonId: string; nextDrawAt: string; userEntry: { agentProfileId: string } };
+    expect(statusBody.acceptingSeasonId).toBeTruthy();
+    expect(statusBody.nextDrawAt).toBe(getNextDailyFreeDrawAt());
+    expect(statusBody.userEntry.agentProfileId).toBe(ownProfile.id);
+
   });
 
   test("draw atomically binds an active season and every owned revision", async () => {

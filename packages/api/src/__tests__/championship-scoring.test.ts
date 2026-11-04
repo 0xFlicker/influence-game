@@ -20,6 +20,11 @@ import { claimWerewolfGame, createWerewolfStore, readWerewolfEvents } from "../s
 import { readJson, storeJson } from "../services/payload-storage.js";
 import { abortAllGames } from "../services/game-lifecycle.js";
 
+
+
+// Replay routes launch background execution; drain it before the next fixture truncates.
+afterEach(async () => { await abortAllGames(); });
+
 beforeAll(() => { process.env.JWT_SECRET = "championship-scoring-test"; });
 const originalMockRunner = process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
 afterEach(async () => {

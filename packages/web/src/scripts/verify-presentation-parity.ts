@@ -56,6 +56,11 @@ for (const suite of suites) for (const audience of ["mystery","omniscient"] as c
     cases.push({name:`${suite.prefix}${audience}-${kind}`,cue,reference:cue});
   }
 }
+// Optional saved, already-authorized source cases let a repair prove the actual
+// changed adapter rather than replacing its evidence with unrelated fixtures.
+const suppliedCases = process.argv[3];
+const proofSource = suppliedCases ? `Saved authorized source cases: ${resolve(suppliedCases)}` : "Deterministic fixtures; actual viewer components versus Studio/export composition";
+if (suppliedCases) cases.splice(0, cases.length, ...JSON.parse(await readFile(resolve(suppliedCases), "utf8")));
 const scratch=await mkdtemp(join(tmpdir(),"house-parity-"));
 const results:{name:string;width:number;height:number;frame:number;meanDifference:number;exportHash:string;viewer:string;export:string}[]=[];
 const encodedResults:{name:string;frame:number;meanDifference:number;video:string}[]=[];
@@ -82,7 +87,7 @@ try {
   await cp(join(webRoot,"public"),serveUrl,{recursive:true});
   const browser=await openBrowser("chrome",{browserExecutable:process.env.REPLAY_BROWSER_EXECUTABLE});
   try {
-    for(const [width,height] of [[1280,720],[640,360]] as const) for(const item of cases) {
+    for(const [width,height] of [[1280,720],[640,360],...(suppliedCases ? [[390,700] as const] : [])] as const) for(const item of cases) {
       const profile=parseTimingProfile({ending:{holdMs:0}}),fps=30;
       const timeline=compileTiming([item.cue.timing],profile,fps);
       let manifest:ReplayManifest={schema:"house.replay-export",version:2,game:{id:"fixture",slug:item.name,kind:item.cue.picture.kind === "thinking" || item.cue.picture.kind === "influence" ? "influence" : "werewolf"},
@@ -101,14 +106,14 @@ try {
       const exported=await selectComposition({serveUrl,id:"Export",inputProps,puppeteerInstance:browser});
       const viewer=await selectComposition({serveUrl,id:"Viewer",inputProps,puppeteerInstance:browser});
       const thought=timeline[0]!.thought;
-      const samples=thought ? [Math.round(thought.enterMs*.5*fps/1000),Math.round((thought.readAtMs+500)*fps/1000),Math.round((thought.returnAtMs+450)*fps/1000)] : [Math.min(60,manifest.range.untilFrame-1)];
+      const samples=thought ? [Math.round(thought.enterMs*.5*fps/1000),Math.round((thought.readAtMs+500)*fps/1000),Math.round((thought.returnAtMs+450)*fps/1000)] : (item.cue.picture.kind === "werewolf-opening" || item.cue.picture.kind === "werewolf" && item.cue.picture.cue.reprise) ? [...new Set([0, 15, 60, manifest.range.untilFrame - 1].map(frame => Math.min(frame, manifest.range.untilFrame - 1)))] : [Math.min(60,manifest.range.untilFrame-1)];
       for(const frame of samples) {
         const paths={viewer:`${prefix}-${frame}-viewer.png`,export:`${prefix}-${frame}-export.png`};
         await renderStill({serveUrl,composition:viewer,inputProps,frame,output:paths.viewer,imageFormat:"png",puppeteerInstance:browser});
         await renderStill({serveUrl,composition:exported,inputProps,frame,output:paths.export,imageFormat:"png",puppeteerInstance:browser});
         const meanDifference=difference(await pixels(paths.viewer),await pixels(paths.export));
         results.push({name:item.name,width,height,frame,meanDifference,exportHash:sha256(await readFile(paths.export)),...paths});
-        await writeFile(join(output,"comparison.json"),JSON.stringify({source:"deterministic fixtures; actual viewer components versus Studio/export composition",frames:results},null,2));
+        await writeFile(join(output,"comparison.json"),JSON.stringify({source:proofSource,frames:results},null,2));
         if(meanDifference>1) throw new Error(`Viewer/export mismatch: ${item.name} ${width} frame ${frame}: ${meanDifference}`);
       }
       // Verify random-access stability independently of the comparison order.
@@ -117,7 +122,7 @@ try {
         await renderStill({serveUrl,composition:exported,inputProps,frame,output:path,imageFormat:"png",puppeteerInstance:browser});
         if(sha256(await readFile(path))!==results.find(row=>row.name===item.name && row.width===width && row.frame===frame)!.exportHash) throw new Error("Reverse-order render mismatch");
       }
-      if(width===640 && (item.name === "format-menu" || item.name === "chain-0" || item.name === "winner-mystery-vote")) {
+      if(width===640 && (suppliedCases || item.name === "format-menu" || item.name === "chain-0" || item.name === "winner-mystery-vote")) {
         await renderMedia({serveUrl,composition:exported,inputProps,codec:"h264",muted:true,outputLocation:`${prefix}.mp4`,concurrency:2,puppeteerInstance:browser});
         for(const frame of samples) {
           const encoded=`${prefix}-${frame}-encoded.png`;
@@ -130,6 +135,6 @@ try {
       console.log(`Verified ${item.name} ${width}×${height}`);
     }
   } finally {await browser.close({silent:true});}
-  await writeFile(join(output,"comparison.json"),JSON.stringify({source:"deterministic fixtures; actual viewer components versus Studio/export composition",reverseOrder:true,frames:results,encoded:encodedResults},null,2));
-  console.log(`Saved ${results.length} comparisons and ${new Set(encodedResults.map(row=>row.video)).size} fresh videos: ${output}`);
+  await writeFile(join(output,"comparison.json"),JSON.stringify({source:proofSource,reverseOrder:true,frames:results,encoded:encodedResults},null,2));
+  console.log(`Saved ${results.length} comparisons and ${encodedResults.length} encoded-frame checks: ${output}`);
 } finally {await rm(scratch,{recursive:true,force:true});}

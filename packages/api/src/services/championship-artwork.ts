@@ -1,3 +1,4 @@
+import { CUTOUT_RECIPE } from "./character-cutouts.js";
 import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { and, asc, eq, inArray, isNull, lte, or } from "drizzle-orm";
@@ -131,6 +132,11 @@ export async function finishChampionshipRosterLock(db: DrizzleDB, eventId: strin
       build.artwork = { revisionId: row.id, avatarHash: row.avatar!.sha256, bodyHash: row.body!.sha256 };
       const stored = await storeJson(build); await readJson(stored);
       await tx.insert(schema.championshipEntries).values({ id: row.id, eventId, agentId: row.agentId, ownerId: row.ownerId, name: build.character.name, qualificationRank: row.qualificationRank, seasonPoints: row.seasonPoints, sourceRevisionId: build.sourceRevisionId, build: stored });
+      // The published source may be opaque. Register its exact bytes and request
+      // a reusable derivative without replacing the frozen build or delaying games.
+      await tx.insert(schema.agentContentAssets).values({ hash: row.body!.sha256, bytes: row.body! }).onConflictDoNothing();
+      await tx.insert(schema.characterCutoutDemands).values({ id: randomUUID(), agentProfileId: row.agentId,
+        playerId: row.id, sourceKey: row.bodyUrl!, recipe: CUTOUT_RECIPE }).onConflictDoNothing();
     }
     const execution = await storeJson(freezeChampionshipExecutionConfig(event.policies.roleComposition!));
     const roleSchedule = await storeJson(createBalancedRoleSchedule(art.map(row => row.agentId), event.policies.roleComposition!, randomUUID()));

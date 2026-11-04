@@ -1,6 +1,7 @@
+import { savedCharacterArtHash } from "./character-art-save.js";
 import { championshipStandings } from "./championship-results.js";
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, or } from "drizzle-orm";
+import { and, asc, eq, inArray, or } from "drizzle-orm";
 import {
   championshipSchedule, SEASON_ZERO_CHAMPIONSHIP_POLICIES,
   publicRoleLineups, unresolvedChampionshipPolicies, parseChampionshipPolicies,
@@ -71,9 +72,20 @@ export async function readChampionship(db: DrizzleDB, idOrSlug: string, producer
   ));
   if (!event) return null;
   const [season] = await db.select({ id: schema.seasons.id, slug: schema.seasons.slug, name: schema.seasons.name, status: schema.seasons.status }).from(schema.seasons).where(eq(schema.seasons.id, event.sourceSeasonId));
-  const entries = await db.select({ agentId: schema.championshipEntries.agentId, name: schema.championshipEntries.name,
+  const frozenEntries = await db.select({ build: schema.championshipEntries.build, agentId: schema.championshipEntries.agentId, name: schema.championshipEntries.name,
     rank: schema.championshipEntries.qualificationRank, seasonPoints: schema.championshipEntries.seasonPoints })
     .from(schema.championshipEntries).where(eq(schema.championshipEntries.eventId, event.id)).orderBy(asc(schema.championshipEntries.qualificationRank));
+  // Resolve only public visual fields from the competition build, never the mutable profile.
+  const builds = await Promise.all(frozenEntries.map(entry => readJson(entry.build)));
+  const hashFor = (build: FrozenCompetitionBuild) => build.artwork?.bodyHash ?? savedCharacterArtHash(build.character.fullBodyReferenceUrl);
+  const bodyHashes = builds.flatMap(build => { const hash = hashFor(build); return hash ? [hash] : []; });
+  const assets = bodyHashes.length ? await db.select({ hash: schema.agentContentAssets.hash, transparentUrl: schema.agentContentAssets.transparentUrl })
+    .from(schema.agentContentAssets).where(inArray(schema.agentContentAssets.hash, bodyHashes)) : [];
+  const entries = frozenEntries.map(({ build: _build, ...entry }, index) => ({ ...entry,
+    avatarUrl: builds[index]!.character.avatarUrl,
+    bodyUrl: builds[index]!.character.fullBodyReferenceUrl,
+    transparentBodyUrl: assets.find(asset => asset.hash === hashFor(builds[index]!))?.transparentUrl ?? null,
+  }));
   const matches = await db.select({ ordinal: schema.championshipMatches.ordinal, gameKind: schema.championshipMatches.gameKind,
     scheduledAt: schema.championshipMatches.scheduledAt, status: schema.championshipMatches.status, gameSlug: schema.games.slug, ...(producer ? { gameStatus: schema.games.status, gameId: schema.games.id, resultRevision: schema.championshipMatches.resultRevision } : {}) })
     .from(schema.championshipMatches).leftJoin(schema.games, eq(schema.games.id, schema.championshipMatches.gameId))

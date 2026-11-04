@@ -10,5 +10,5 @@ export default async function ChampionshipPage({ params }: { params: Promise<{ s
   let event: ChampionshipView;
   try { event = await serverApiFetch<ChampionshipView>(`/api/championships/${encodeURIComponent(slug)}`, { cache: "no-store" }); }
   catch (error) { if (error instanceof ServerApiError && error.status === 404) notFound(); throw error; }
-  return <div className="min-h-screen"><Nav /><main className="mx-auto max-w-6xl px-5 py-10"><ChampionshipEventView event={event} /></main></div>;
+  return <div className="min-h-screen"><Nav /><main className="mx-auto max-w-[1600px] px-4 py-8 sm:px-8 lg:px-12"><ChampionshipEventView event={event} /></main></div>;
 }

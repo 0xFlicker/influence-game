@@ -1,6 +1,6 @@
 import { Hydrated, loadPayloads } from "./payload-storage.js";
 import { publicGameFilter, isViewerGame } from "./game-visibility.js";
-import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import {
@@ -17,6 +17,17 @@ import {
 
 const DEFAULT_EXPORT_LIMIT = 1_000;
 const MAX_EXPORT_LIMIT = 5_000;
+
+/** Small discovery projection: no transcripts, media, provider inputs or results spoilers. */
+export async function getPublicSeasonGames(db: DrizzleDB, idOrSlug: string) {
+  const season = await resolveSeason(db, idOrSlug);
+  if (!season) return null;
+  const games = await db.select({ id: schema.games.id, slug: schema.games.slug, gameKind: schema.games.gameKind,
+    status: schema.games.status, createdAt: schema.games.createdAt, startedAt: schema.games.startedAt, endedAt: schema.games.endedAt })
+    .from(schema.games).where(and(eq(schema.games.seasonId, season.id), publicGameFilter()))
+    .orderBy(sql`CASE WHEN ${schema.games.status} = 'in_progress' THEN 0 WHEN ${schema.games.status} = 'completed' THEN 1 WHEN ${schema.games.status} = 'waiting' THEN 2 ELSE 3 END`, desc(schema.games.createdAt), desc(schema.games.id)).limit(24);
+  return { seasonId: season.id, games };
+}
 
 export interface PublicSeasonIdentity {
   id: string;

@@ -3,7 +3,7 @@ import type { ChampionshipPolicies, PublicRoleLineup } from "@influence/engine/c
 export interface ChampionshipView {
   id: string; slug: string; name: string; status: string;
   season: { id: string; slug: string; name: string };
-  entries: Array<{ agentId: string; name: string; rank: number; seasonPoints: number }>;
+  entries: Array<{ agentId: string; name: string; rank: number; seasonPoints: number; avatarUrl?: string | null; bodyUrl?: string | null; transparentBodyUrl?: string | null }>;
   matches: Array<{ ordinal: number; gameKind: "werewolf" | "influence"; scheduledAt: string; status: string; gameSlug: string | null }>;
   standings?: { series: Array<{ agentId: string; name: string; points: number; played: number; wins: number; seasonPoints: number }>; werewolfWinners: string[]; influenceWinners: string[]; resolutionPending: boolean } | null;
   lineups: PublicRoleLineup[];

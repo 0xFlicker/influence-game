@@ -8,6 +8,7 @@ import {sampleTiming} from "../lib/replay-export/timing";
 import {SceneThinkingProvider} from "../components/watch/watch-thinking";
 import {VisualPresentationFrame} from "../app/games/[slug]/components/visual-presentation";
 import {WerewolfWatchStage} from "../components/games/werewolf/werewolf-watch-stage";
+import {WerewolfOpeningFrame} from "../components/games/werewolf/werewolf-opening-frame";
 import {werewolfWatchPolicy} from "../components/games/werewolf/werewolf-watch-model";
 import {PresentationDirector} from "../components/watch/watch-director";
 
@@ -40,7 +41,7 @@ function ViewerFrame({manifest,reference}:ParityProps) {
   const actor = manifest.cues[0]!.picture;
   const thought = sample.thought ? {...sample.thought,speaker:actor.kind === "thinking" ? actor.actor.name : ""} : null;
   return <div className="flex h-full min-h-0 flex-col overflow-hidden bg-black text-white">
-    {picture.kind === "werewolf" ? <WerewolfWatchStage cue={picture.cue} scene={picture.scene} elapsed={sample.elapsedMs}
+    {picture.kind === "werewolf-opening" ? <WerewolfOpeningFrame cue={picture.cue} elapsedMs={sample.elapsedMs} reduced={manifest.reducedMotion} /> : picture.kind === "werewolf" ? <WerewolfWatchStage cue={picture.cue} scene={picture.scene} elapsed={sample.elapsedMs}
       reduced={manifest.reducedMotion} director={{manualAdvance:()=>{},setReady:()=>{},getSnapshot:()=>director.getSnapshot(),getSpeechElapsedBaseMs:()=>sample.elapsedMs}}
       holding={false} contextLabel={reference.label} /> : picture.kind === "influence" && picture.beat ? <>
       <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60">{reference.label}</div>

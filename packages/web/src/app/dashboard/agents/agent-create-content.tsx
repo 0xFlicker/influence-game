@@ -11,7 +11,6 @@ import {
   getAgent,
   getAgentByCreationRequestId,
   getGame,
-  joinFreeQueue,
   joinGame,
   updateAgent,
   type AgentProfileWriteParams,
@@ -24,6 +23,7 @@ import { getGameEntry } from "@/lib/game-entry";
 import { gameHref } from "@/lib/game-links";
 import { getWerewolfLobby, joinWerewolfLobby } from "@/lib/werewolf-api";
 import { AgentForm } from "./agent-form";
+import { enrollCreatedSeasonAgent, pinSeasonCreationTarget } from "./season-creation-target";
 import { readEditorStorage, removeEditorStorage, writeEditorStorage } from "./agent-editor-storage";
 
 export type AgentCreateFlow = "manage" | "join_game" | "daily_free";
@@ -35,9 +35,13 @@ export function AgentCreateRulesLink({ werewolf = false }: { werewolf?: boolean 
 export function AgentCreateContent({
   flow = "manage",
   gameId,
+  seasonId,
+  seasonSlug,
 }: {
   flow?: AgentCreateFlow;
   gameId?: string;
+  seasonId?: string;
+  seasonSlug?: string;
 }) {
   const router = useRouter();
   const { authenticated, ready, account } = useAuth();
@@ -50,6 +54,8 @@ export function AgentCreateContent({
     params: AgentProfileWriteParams,
     { creationRequestId }: { creationRequestId: string },
   ) {
+    const expectedSeasonId = flow === "daily_free" && seasonId
+      ? pinSeasonCreationTarget(creationRequestId, seasonId) : undefined;
     const identity = flow === "join_game" && gameId ? await getGameEntry(gameId) : null;
     const createParams: CreateAgentParams = { ...params, creationRequestId };
     const continuationKey = `influence:agent-create-continuation:${creationRequestId}`;
@@ -114,11 +120,12 @@ export function AgentCreateContent({
       return;
     }
     if (flow === "daily_free") {
-      await joinFreeQueue(agent.id);
+      // Keep both receipts on failure; retry recovers the same agent and season.
+      await enrollCreatedSeasonAgent(agent, expectedSeasonId);
       removeEditorStorage(continuationKey);
       removeEditorStorage(baselineKey);
       window.dispatchEvent(new Event("free-queue:changed"));
-      router.replace("/games/free");
+      router.replace(seasonSlug ? `/seasons?season=${encodeURIComponent(seasonSlug)}` : "/seasons");
       return;
     }
     removeEditorStorage(continuationKey);
@@ -135,10 +142,10 @@ export function AgentCreateContent({
       }
     : flow === "daily_free"
       ? {
-          title: "Create an Agent for Daily Free",
-          description: "Build a saved competitor and enter the next Daily Free game.",
+          title: "Create your season agent",
+          description: "Your new agent will join the selected season.",
           submitLabel: "Create & enter",
-          cancelPath: "/games/free",
+          cancelPath: seasonSlug ? `/seasons?season=${encodeURIComponent(seasonSlug)}` : "/seasons",
         }
       : {
           title: "Create Agent",
@@ -166,7 +173,7 @@ export function AgentCreateContent({
         guided={mode === "assistant"}
         onAdvanced={() => setMode("advanced")}
         onAssistant={() => setMode("assistant")}
-        draftScope={`create:${flow}:${gameId ?? "none"}`}
+        draftScope={`create:${flow}:${gameId ?? seasonId ?? "none"}`}
         onSubmit={handleCreate}
         onCancel={() => router.replace(authenticated ? context.cancelPath : "/games")}
         submitLabel={context.submitLabel}

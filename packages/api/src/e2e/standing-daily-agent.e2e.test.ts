@@ -253,7 +253,7 @@ describe("E2E: Standing Daily Agent", () => {
     await waitForText(playerPage, "Daily Alpha");
     await waitForText(playerPage, "Leave queue");
 
-    await playerPage.select('[aria-label="Switch Daily Free agent"]', secondAgentId);
+    await playerPage.select('[aria-label="Your season agent"]', secondAgentId);
     await clickButton(playerPage, "Switch agent");
     await waitForQueueAgent(player.userId, secondAgentId);
     await playerPage.reload({ waitUntil: "domcontentloaded" });
@@ -267,13 +267,13 @@ describe("E2E: Standing Daily Agent", () => {
     });
     await clickButton(playerPage, "Leave queue");
     await waitForQueueAgent(player.userId, null);
-    await waitForText(playerPage, "Select an agent for the queue");
+    await waitForText(playerPage, "Join Standing Browser Season");
     expect(ownerDialogs).toEqual([]);
     expect(await pageText(playerPage)).not.toContain("next season");
     expect(await pageText(playerPage)).not.toContain("Are you sure");
 
-    await clickAgentCard(playerPage, "Daily Beta");
-    await clickButton(playerPage, "Join queue");
+    await playerPage.select('[aria-label="Your season agent"]', secondAgentId);
+    await clickButton(playerPage, "Join Standing Browser Season");
     await waitForQueueAgent(player.userId, secondAgentId);
     await waitForText(playerPage, "Daily Beta");
     await waitForText(playerPage, "Leave queue");
@@ -302,15 +302,15 @@ describe("E2E: Standing Daily Agent", () => {
     });
 
     await playerPage.reload({ waitUntil: "domcontentloaded" });
-    await waitForText(playerPage, "View current game");
+    await waitForText(playerPage, "Awaiting start");
     expect(await playerPage.$eval(
       `a[href='/games/${gameSlug}']`,
       (element) => element.textContent?.trim(),
-    )).toBe("View current game");
+    )).toBe("View game →");
 
     await testDb.db.update(schema.games).set({ status: "in_progress" }).where(eq(schema.games.id, gameId));
     await playerPage.reload({ waitUntil: "domcontentloaded" });
-    await waitForText(playerPage, "View current game");
+    await waitForText(playerPage, "Watch live");
     const surfacePage = await createAuthenticatedPage(browser, surfacePlayer.jwt, `${webUrl}/games/${gameSlug}`, {
       privateKey: surfacePlayer.wallet.privateKey,
     });
@@ -325,7 +325,7 @@ describe("E2E: Standing Daily Agent", () => {
       (element) => element.getAttribute("href"),
     )).toBe(`/games/${gameSlug}`);
     await playerPage.goto(`${webUrl}/games/free`, { waitUntil: "domcontentloaded" });
-    await playerPage.waitForSelector(`a[href='/games/${gameSlug}']`, { timeout: 45_000 });
+    await playerPage.waitForSelector(`button[aria-label="Watch live: ${gameSlug}"]`, { timeout: 45_000 });
 
     const adminPage = await createAuthenticatedPage(browser, adminJwt, `${webUrl}/admin/free-queue`, {
       privateKey: admin.wallet.privateKey,
@@ -365,9 +365,9 @@ describe("E2E: Standing Daily Agent", () => {
     expect(await pageText(adminPage)).not.toContain("Are you sure");
 
     await playerPage.reload({ waitUntil: "domcontentloaded" });
-    await playerPage.waitForSelector('button[aria-label="Select Daily Alpha"]', { timeout: 45_000 });
-    await clickAgentCard(playerPage, "Daily Alpha");
-    await clickButton(playerPage, "Join queue");
+    await playerPage.waitForSelector('[aria-label="Your season agent"]', { timeout: 45_000 });
+    await playerPage.select('[aria-label="Your season agent"]', firstAgentId);
+    await clickButton(playerPage, "Join Standing Browser Season");
     await waitForQueueAgent(player.userId, firstAgentId);
     await waitForText(playerPage, "Daily Alpha");
 
@@ -498,17 +498,6 @@ async function clickButton(page: Page, label: string): Promise<void> {
     return true;
   })()`) as boolean;
   if (!clicked) throw new Error(`Button ${JSON.stringify(label)} was not available.`);
-}
-
-async function clickAgentCard(page: Page, agentName: string): Promise<void> {
-  const clicked = await page.evaluate(`(() => {
-    const button = [...document.querySelectorAll("button")]
-      .find((candidate) => candidate.querySelector("p")?.textContent?.trim() === ${JSON.stringify(agentName)});
-    if (!(button instanceof HTMLButtonElement)) return false;
-    button.click();
-    return true;
-  })()`) as boolean;
-  if (!clicked) throw new Error(`Agent card ${agentName} was not available.`);
 }
 
 async function pageText(page: Page): Promise<string> {

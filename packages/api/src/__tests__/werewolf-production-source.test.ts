@@ -64,6 +64,7 @@ test("bounded Werewolf pages reproduce the complete shared catalog with each acc
     expect(JSON.stringify(page)).not.toMatch(/"staging"|"performanceInstructions"|"strategy"|acceptedValue|semanticCoordinate|"bytes"/);
     ids.push(...page.catalog.moments.map(moment => moment.id)); thoughts.push(...page.thoughts);
     if (page.nextCursor === null) break;
+    expect(page.nextCursor).toBeGreaterThan(fromCursor);
     fromCursor = page.nextCursor;
   }
   expect(ids).toEqual(complete.catalog.moments.map(moment => moment.id));

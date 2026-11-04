@@ -13,7 +13,7 @@ describe("season standings", () => {
     expect(html).toContain("aria-selected=\"true\"");
     expect(html).toContain("Atlas");
     expect(html).toContain("120");
-    expect(html).toContain("Wins lead");
+    expect(html).not.toContain("Wins lead");
     expect(html).toContain('href="/profile/architect"');
     expect(html).not.toContain("sigma");
     expect(html).not.toContain("recalibr");

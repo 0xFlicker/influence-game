@@ -1072,6 +1072,13 @@
       "when": 1792952785122,
       "tag": "0152_championship_service",
       "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1792952785123,
+      "tag": "0153_agent_visual_updates",
+      "breakpoints": true
     }
   ]
 }

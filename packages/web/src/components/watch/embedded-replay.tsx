@@ -7,11 +7,11 @@ import type {WerewolfAudience} from "@influence/engine/werewolf/observation";
 import {WatchWaiting} from "./watch-waiting";
 const InfluencePlayer = dynamic(() => import("@/app/games/[slug]/components/dramatic-replay-viewer").then(m => m.DramaticReplayViewer), {loading:() => <WatchWaiting label="Loading player…" />});
 const WerewolfPlayer = dynamic(() => import("@/components/games/werewolf/werewolf-viewer").then(m => m.WerewolfViewer), {loading:() => <WatchWaiting label="Loading player…" />});
-export function EmbeddedReplay({game,audience,startCursor,startSequence}: {game:PlayerCardGame;audience:WerewolfAudience;startCursor?:number;startSequence?:number}) {
-  if (game.gameKind === "werewolf") return <WerewolfPlayer slug={game.slug} title={game.title} audience={audience} startCursor={startCursor} embedded />;
-  return <InfluenceReplay key={game.id} slug={game.slug} startSequence={startSequence} />;
+export function EmbeddedReplay({game,audience,startCursor,startSequence,contained = false}: {game:Pick<PlayerCardGame,"id"|"slug"|"gameKind"|"status"|"title">;audience:WerewolfAudience;startCursor?:number;startSequence?:number;contained?:boolean}) {
+  if (game.gameKind === "werewolf") return <WerewolfPlayer slug={game.slug} title={game.title} audience={audience} startCursor={startCursor} contained={contained} embedded />;
+  return <InfluenceReplay contained={contained} key={game.id} slug={game.slug} startSequence={startSequence} />;
 }
-function InfluenceReplay({slug,startSequence}: {slug:string;startSequence?:number}) {
+function InfluenceReplay({slug,startSequence,contained}: {slug:string;startSequence?:number;contained:boolean}) {
   const [data,setData] = useState<{game:GameDetail;messages:TranscriptEntry[];frames:GameWatchReplayFrame[]}>();
   const [error,setError] = useState<string>();
   const [attempt,setAttempt] = useState(0);
@@ -32,5 +32,5 @@ function InfluenceReplay({slug,startSequence}: {slug:string;startSequence?:numbe
   },[slug,attempt]);
   if (error) return <div role="alert" className="p-6">Could not load this replay. <button type="button" onClick={() => {setError(undefined);setAttempt(value => value+1);}}>Try again</button></div>;
   if (!data) return <WatchWaiting label="Loading replay…" />;
-  return <main className="fixed inset-0 overflow-hidden bg-black" data-watch-mode="embed"><InfluencePlayer game={data.game} messages={data.messages} players={data.game.players} replayFrames={data.frames} startSequence={startSequence} embedded anonymous /></main>;
+  return <div className={`${contained ? "relative h-full" : "fixed inset-0"} overflow-hidden bg-black`} data-watch-mode="embed"><InfluencePlayer game={data.game} messages={data.messages} players={data.game.players} replayFrames={data.frames} startSequence={startSequence} embedded anonymous /></div>;
 }

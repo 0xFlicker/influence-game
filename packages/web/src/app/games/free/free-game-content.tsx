@@ -450,7 +450,6 @@ export function SeasonStandings({
             {dashboard.season.status === "active" ? "Season live" : dashboard.season.status}
           </p>
           <h2 className="mt-1 text-xl font-semibold text-text-primary">{dashboard.season.name}</h2>
-          <p className="influence-copy-muted mt-1 text-xs">Wins lead. Every eligible finish adds to the ledger.</p>
           {dashboard.championships?.map(event => <Link key={event.slug} href={`/events/${encodeURIComponent(event.slug)}`} className="mt-3 block text-sm text-amber-200 underline underline-offset-4">{event.name} →</Link>)}
           {seasons.length > 1 && (
             <label className="mt-3 inline-flex items-center gap-2 text-xs influence-copy-muted">

@@ -1037,6 +1037,8 @@ A championship event links to a source season without reusing rated season membe
 
 Championship artwork preparation creates an immutable competition revision linked to the original agent/account, without replacing the live profile. Existing headshot/body pixels are retained; missing artwork is generated from frozen identity and image references. Provider requests and accepted outputs are durable evidence: retries reuse the saved request even across template updates. All games use the same published content-addressed images. A missing image is preparation work, never a qualification exclusion.
 
+The public championship room embeds the existing game viewer without changing its scenes. Browser-window theater and native fullscreen remain player controls. Its lineup reads only public artwork from frozen competition builds; content-addressed transparent derivatives never replace those builds. Roster lock registers cutout demand automatically; a championship-scoped backfill repairs older locked rosters. Werewolf viewing-mode space is reserved across match changes, while Influence has its own preview and no role-view selector.
+
 Championship result corrections append a new derived scoring revision while preserving canonical games and prior rows. Only the active revision/game counts in standings. Affected champion allocations are superseded and recomputed; obsolete grants remain revoked with their evidence. Recipient corrections link a new grant to the original instead of rewriting attribution. Manual revocations remain explicit producer decisions across result recomputation.
 
 Season 0 earned badges are finalized-season achievements, not championship-activation rewards. Frozen finalization evidence determines crowns and one-completed-game participation for agents and accounts. Idempotent season reconciliation preserves original grants and audited corrections; Top 8 and championship titles remain event achievements.
@@ -1049,3 +1051,15 @@ Daily Free scheduled draws require a season accepting admissions under the
 shared enrollment/closeout lock. One accepted timestamp controls the draw's
 season binding. Scheduled start requires an assigned season but permits
 already-admitted games during closing; custom games remain independent.
+
+### Startup migration serialization
+
+Gateway and game-worker startups share one database-scoped transaction advisory lock acquired before journal bootstrap/read and held through migration commit. A dedicated backend at READ COMMITTED serializes both the decision and its DDL; rollback or process failure releases it. Existing migration hashes and journal rows remain unchanged. See [migration recovery](docs/solutions/database/serialized-startup-migrations.md).
+
+### Season creation continuation
+
+An agent created from the Seasons entry action carries the selected season ID through its editor draft, stable creation request and queue admission. Creation and entry remain independently recoverable: a saved agent survives failed admission, duplicate requests reuse it, and `expectedSeasonId` prevents a closed-season continuation from entering a newer season. Ordinary agent creation does not enroll.
+
+### Saved-agent visual update
+
+An explicit owner action that fills missing presentation fields through durable, private stage checkpoints and the normal saved-agent revision/moderation path. Status reads may resume an already-authorized job but never create one. Provider retries preserve uncertain operation identities; an owner edit fences stale preparation. See [saved-agent visual update](docs/solutions/ui/saved-agent-visual-update.md).

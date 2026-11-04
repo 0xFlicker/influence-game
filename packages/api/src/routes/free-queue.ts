@@ -69,7 +69,7 @@ import {
   DAILY_FREE_BUSY_GAME_STATUSES,
 } from "../services/queue-enrollment.js";
 import { AgentProfileManagementError } from "../services/agent-profile-management.js";
-import { getNextFreeGameTime } from "../services/free-game-schedule.js";
+import { getNextFreeGameTime, getNextDailyFreeDrawAt } from "../services/free-game-schedule.js";
 import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
 import {
   DAILY_FREE_PROVIDER_MANIFEST,
@@ -125,12 +125,14 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
     const seasonById = await getGameSeasonIdentityMap(db, [todayGame?.seasonId ?? null]);
 
     return c.json({
+      acceptingSeasonId: (await getActiveSeason(db))?.id ?? null,
       count: queueCount,
       userEntry,
       eligibility: personalized?.queue.eligibility ?? null,
       ineligibilityReason: personalized?.queue.ineligibilityReason ?? null,
       promptEligible: personalized?.promptEligible ?? false,
       relevantGame: personalized?.relevantGame ?? null,
+      nextDrawAt: getNextDailyFreeDrawAt(),
       nextGameTime: getNextFreeGameTime(),
       todayGame: todayGame
         ? {
@@ -159,6 +161,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       const result = await joinQueue(db, { userId: user.id }, {
         queueType: "daily-free",
         agentId: body.agentProfileId,
+        expectedSeasonId: body.expectedSeasonId,
       });
       return c.json({
         id: result.queue.entryId,
@@ -182,7 +185,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
   app.delete("/api/free-queue/leave", requireAuth(db), async (c) => {
     const user = c.get("user");
     try {
-      const result = await leaveQueue(db, { userId: user.id });
+      const result = await leaveQueue(db, { userId: user.id }, { expectedSeasonId: c.req.query("expectedSeasonId") });
       return c.json({ removed: result.queue.status === "left-queue" });
     } catch (error) {
       if (error instanceof QueueEnrollmentError) {
