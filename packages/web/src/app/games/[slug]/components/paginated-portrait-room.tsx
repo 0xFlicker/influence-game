@@ -10,10 +10,9 @@ import {portraitRoomDurationMs, portraitRoomPage, portraitRoomPageCount, PORTRAI
 import type {VisualPresentationBeat} from "./visual-presentation";
 
 /** Compact crowded rooms retain every attendee on pages sampled from the shared clock. */
-export function PaginatedPortraitRoom({beat, elapsedMs, readingElapsedMs, reducedMotion, backgroundUrl, hideSpeech, onImageReady, controlsInset}: {
+export function PaginatedPortraitRoom({beat, elapsedMs, readingElapsedMs, reducedMotion, backgroundUrl, hideSpeech, onImageReady}: {
   beat:Extract<VisualPresentationBeat,{kind:"portrait-room"}>; elapsedMs:number; readingElapsedMs:number; reducedMotion:boolean;
   backgroundUrl?:string; hideSpeech?:boolean; onImageReady?:()=>void;
-  controlsInset:number;
 }) {
   const thought = useSceneThinking();
   const sampled = useSampledStage();
@@ -30,12 +29,17 @@ export function PaginatedPortraitRoom({beat, elapsedMs, readingElapsedMs, reduce
   useLayoutEffect(() => {if (activeImage.current?.complete && activeImage.current.naturalWidth > 0) onImageReady?.();},[speaker.id,failed,onImageReady]);
   const speechOpacity = elapsedMs <= 650 ? 0 : reducedMotion ? 1 : Math.max(0,Math.min(1,(elapsedMs - 650) / 200,(duration - 400 - elapsedMs) / 200));
   const text = thought?.text ?? beat.speech.text;
+  const roomName = beat.roomLabel ?? "Mingle";
+  const roomProgress = thought ? thought.elapsedMs / Math.max(1,thought.durationMs)
+    : Math.max(0,(readingElapsedMs - 650) / Math.max(1,duration - 1050));
   const progress = thought ? thought.elapsedMs / Math.max(1,thought.durationMs)
     : sampled?.speech?.text === text ? undefined : Math.max(0,(readingElapsedMs - 850) / Math.max(1,duration - 1450));
   return <section data-portrait-room data-paginated-portrait-room data-cast-page={page} data-cast-pages={pages} aria-label={beat.roomLabel ?? "Mingle room"}
-    className="relative isolate flex min-h-0 w-full flex-1 flex-col overflow-hidden" style={{paddingBottom:controlsInset}}>
+    className="relative isolate flex min-h-0 w-full flex-1 flex-col overflow-hidden">
     <RoomBackdrop source={backgroundUrl ?? DEFAULT_ROOM_BACKDROP} />
-    <p data-room-context-label className="absolute left-3 top-2 z-10 max-w-[calc(100%-12rem)] break-words text-left text-xs font-medium uppercase tracking-normal text-white/70">{beat.roomLabel ?? "Mingle"}</p>
+    <div data-room-context-label aria-label={roomName} className="absolute left-3 top-0.5 z-10 flex h-11 w-[calc(100%-12rem)] min-w-0 text-left text-white/70">
+      <TimedSpeech text={roomName} elapsedMs={readingElapsedMs} progress={roomProgress} className="text-sm font-medium uppercase leading-4" />
+    </div>
     <div className="relative grid min-h-0 flex-1 grid-cols-2 gap-2 px-3 pb-2 pt-12">
       <div data-speech-bubble className="flex min-h-0 flex-col rounded-xl border border-white/25 bg-black/90 p-2 text-white" style={{opacity:thought ? thought.opacity : hideSpeech ? 0 : speechOpacity}}>
         <p className="shrink-0 break-words text-sm font-semibold leading-4">{thought ? `${speaker.name} thinks` : speaker.name}</p>

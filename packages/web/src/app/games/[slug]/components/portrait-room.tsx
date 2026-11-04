@@ -150,7 +150,7 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
   const paginated = paginateLargeCast && beat.participants.length > 4 && size.width > 0 && (size.width < 600 || available < 340 || beat.participants.length > 8);
   return <section ref={frame} aria-label={beat.roomLabel ?? (beat.roomNumber === null ? "Mingle room" : `Mingle room ${beat.roomNumber}`)} data-portrait-room={!paginated || undefined}
     className={`relative min-h-0 w-full flex-1 overflow-hidden ${paginated ? "flex flex-col" : ""}`} style={{ perspective: 1200 }}>
-    {paginated ? <PaginatedPortraitRoom beat={beat} elapsedMs={elapsedMs} readingElapsedMs={readingElapsedMs} reducedMotion={reducedMotion} backgroundUrl={backgroundUrl} hideSpeech={hideSpeech} onImageReady={onImageReady} controlsInset={Math.min(controlsInset,Math.max(0,size.height - 240))} /> : <>
+    {paginated ? <PaginatedPortraitRoom beat={beat} elapsedMs={elapsedMs} readingElapsedMs={readingElapsedMs} reducedMotion={reducedMotion} backgroundUrl={backgroundUrl} hideSpeech={hideSpeech} onImageReady={onImageReady} /> : <>
     <div data-thinking-camera className="absolute inset-0" style={{...focus.mediaStyle,perspective:1200}}>
     <RoomBackdrop source={backgroundUrl ?? DEFAULT_ROOM_BACKDROP} />
     <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_70%,transparent,rgba(0,0,0,.55))]" />

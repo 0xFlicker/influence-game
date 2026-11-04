@@ -72,7 +72,11 @@ function FormatAudit({expectedFormat, expectedPaged}: {expectedFormat?:string; e
           throw new Error(`Format rules page does not fit at readable size: ${JSON.stringify({rect,container,font:getComputedStyle(page).fontSize,text:page.textContent})}`);
       }
       const room = document.querySelector<HTMLElement>("[data-paginated-portrait-room]");
+      const namePage = room?.querySelector<HTMLElement>("[data-room-context-label] [data-speech-page]");
+      const speechBox = room?.querySelector<HTMLElement>("[data-speech-bubble]");
+      const speechPage = speechBox && Number(getComputedStyle(speechBox).opacity) > .1 ? speechBox.querySelector<HTMLElement>("[data-speech-page]") : null;
       setResult(JSON.stringify({frame,formatOverlay:!!pill,roomLabel:!!label,castPage:room?.dataset.castPage,
+        namePage:namePage?.dataset.speechPage,speechPage:speechPage?.dataset.speechPage,
         castMembers:Array.from(document.querySelectorAll<HTMLElement>("[data-room-player]")).map(member=>member.dataset.roomPlayer)}));
       continueRender(handle);
     })().catch(cancelRender);

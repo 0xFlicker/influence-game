@@ -130,9 +130,10 @@ try {
   const browser=await openBrowser("chrome",{browserExecutable:process.env.REPLAY_BROWSER_EXECUTABLE});
   try {
     const narrow = process.env.FORMAT_CONTEXT_NARROW === "1";
+    const portrait = process.env.FORMAT_CONTEXT_PORTRAIT === "1";
     const formatOnly = process.env.FORMAT_CONTEXT_ONLY === "1";
-    const geometries: readonly (readonly [number, number])[] = narrow ? [[360,240]] : [[1280,720],[640,360]];
-    const geometryCases = narrow ? cases.filter(item => ["format-mingle","format-huddle","format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-thought","format-rules"].includes(item.name))
+    const geometries: readonly (readonly [number, number])[] = narrow ? [[360,240]] : portrait ? [[320,480]] : [[1280,720],[640,360]];
+    const geometryCases = narrow || portrait ? cases.filter(item => ["format-mingle","format-huddle","format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-thought","format-rules"].includes(item.name))
       : formatOnly ? cases.filter(item => item.name.startsWith("format-")) : cases;
     const selectedCases = process.env.FORMAT_CONTEXT_CASE ? geometryCases.filter(item => item.name === process.env.FORMAT_CONTEXT_CASE) : geometryCases;
     for(const [width,height] of geometries) for(const item of selectedCases) {
@@ -168,10 +169,13 @@ try {
       const castSamples = ["format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-recorded"].includes(item.name) ? Array.from({length:castPages},(_,page) => Math.floor((650 + (item.cue.timing.baseDurationMs - 1050) * (page + .5) / castPages) * fps / 1000))
         : item.name.startsWith("format-huddle-large-thought") && thought ? Array.from({length:castPages},(_,page) => Math.floor((thought.readAtMs + (thought.hideAtMs - thought.readAtMs) * (page + .5) / castPages) * fps / 1000)) : [];
       let dialogueSamples:number[]=[];
+      let roomSamples:number[]=[];
+      let expectedDialoguePages=0, expectedRoomPages=0;
       if(item.name.startsWith("format-huddle-large")) {
         const text = item.name.includes("-thought") ? largeHuddle.thinking! : largeHuddle.text;
         const dialoguePages=Object.values(pages).find(value=>value.join("") === text);
         if(!dialoguePages?.length || dialoguePages.some(page=>!page.trim())) throw new Error("Huddle pagination did not retain every word");
+        expectedDialoguePages = dialoguePages.length;
         const weights=dialoguePages.map(page=>page.trim().split(/\s+/u).length),total=weights.reduce((sum,value)=>sum+value,0);
         let prior=0;
         dialogueSamples=weights.map(weight=>{
@@ -182,20 +186,36 @@ try {
           if(!segment) throw new Error("Missing huddle reading segment");
           return Math.floor((segment.startMs+(source-segment.sourceStartMs)/(segment.sourceEndMs-segment.sourceStartMs)*(segment.endMs-segment.startMs))*fps/1000);
         });
+        const roomPages=Object.values(pages).find(value=>value.join("") === largeHuddle.allianceSession!.allianceName);
+        if(!roomPages?.length || roomPages.some(page=>!page.trim())) throw new Error("Huddle name pagination did not retain every word");
+        expectedRoomPages = roomPages.length;
+        const roomWeights=roomPages.map(page=>page.trim().split(/\s+/u).length),roomTotal=roomWeights.reduce((sum,value)=>sum+value,0);
+        let roomPrior=0;
+        roomSamples=roomWeights.map(weight=>{
+          const progress=(roomPrior+weight/2)/roomTotal;roomPrior+=weight;
+          if(thought) return Math.floor((thought.readAtMs+(thought.hideAtMs-thought.readAtMs)*progress)*fps/1000);
+          const source=650+(item.cue.timing.baseDurationMs-1050)*progress;
+          const segment=timeline[0]!.segments.find(part=>part.sourceStartMs<=source && part.sourceEndMs>=source && part.sourceStartMs!==part.sourceEndMs);
+          if(!segment) throw new Error("Missing huddle name timing segment");
+          return Math.floor((segment.startMs+(source-segment.sourceStartMs)/(segment.sourceEndMs-segment.sourceStartMs)*(segment.endMs-segment.startMs))*fps/1000);
+        });
       }
-      const samples=[...new Set([...(rulesSamples ?? (thought ? [Math.round(thought.enterMs*.5*fps/1000),Math.round((thought.readAtMs+500)*fps/1000),Math.round((thought.returnAtMs+450)*fps/1000)] : item.name.startsWith("format-") && item.name !== "format-menu" ? [0,Math.min(60,manifest.range.untilFrame-1),manifest.range.untilFrame-1] : [Math.min(60,manifest.range.untilFrame-1)])),...castSamples,...dialogueSamples])];
+      const samples=[...new Set([...(rulesSamples ?? (thought ? [Math.round(thought.enterMs*.5*fps/1000),Math.round((thought.readAtMs+500)*fps/1000),Math.round((thought.returnAtMs+450)*fps/1000)] : item.name.startsWith("format-") && item.name !== "format-menu" ? [0,Math.min(60,manifest.range.untilFrame-1),manifest.range.untilFrame-1] : [Math.min(60,manifest.range.untilFrame-1)])),...castSamples,...dialogueSamples,...roomSamples])];
       const observedCast = new Set<string>();
+      const observedDialoguePages = new Set<string>(), observedRoomPages = new Set<string>();
       for(const frame of samples) {
         const paths={viewer:`${prefix}-${frame}-viewer.png`,export:`${prefix}-${frame}-export.png`};
         await renderStill({serveUrl,composition:viewer,inputProps,frame,output:paths.viewer,imageFormat:"png",puppeteerInstance:browser});
         await renderStill({serveUrl,composition:exported,inputProps,frame,output:paths.export,imageFormat:"png",puppeteerInstance:browser,
-          onArtifact:artifact=>{if (artifact.filename.startsWith("format-audit-")) {const data=JSON.parse(typeof artifact.content === "string" ? artifact.content : new TextDecoder().decode(artifact.content)); for (const id of data.castMembers ?? []) observedCast.add(id);}}});
+          onArtifact:artifact=>{if (artifact.filename.startsWith("format-audit-")) {const data=JSON.parse(typeof artifact.content === "string" ? artifact.content : new TextDecoder().decode(artifact.content)); for (const id of data.castMembers ?? []) observedCast.add(id); if(data.namePage !== undefined) observedRoomPages.add(data.namePage); if(data.speechPage !== undefined) observedDialoguePages.add(data.speechPage);}}});
         const meanDifference=difference(await pixels(paths.viewer),await pixels(paths.export));
         results.push({name:item.name,width,height,frame,meanDifference,exportHash:sha256(await readFile(paths.export)),...paths});
         await writeFile(join(output,"comparison.json"),JSON.stringify({source:"deterministic fixtures; actual viewer components versus Studio/export composition",frames:results},null,2));
         if(meanDifference>1) throw new Error(`Viewer/export mismatch: ${item.name} ${width} frame ${frame}: ${meanDifference}`);
       }
       if((item.name.startsWith("format-huddle-large") || item.name === "format-huddle-five") && expectedCast.some(player=>!observedCast.has(player.id))) throw new Error(`Not every huddle member appeared: ${[...observedCast].join(", ")}`);
+      if(item.name.startsWith("format-huddle-large") && (observedRoomPages.size !== expectedRoomPages || observedDialoguePages.size !== expectedDialoguePages))
+        throw new Error(`Not every huddle page appeared: room ${observedRoomPages.size}/${expectedRoomPages}, dialogue ${observedDialoguePages.size}/${expectedDialoguePages}`);
       // Verify random-access stability independently of the comparison order.
       for(const frame of samples.toReversed()) {
         const path=join(scratch,"reverse.png");
