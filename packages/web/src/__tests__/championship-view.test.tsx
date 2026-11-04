@@ -21,6 +21,9 @@ describe("championship presentation", () => {
     ], werewolfWinners: ["agent", "other"], influenceWinners: [], resolutionPending: false };
     const html = renderToStaticMarkup(<ChampionshipEventView event={view} />);
     expect(html).toContain("/frozen-cutout.png");
+    const headshot = renderToStaticMarkup(<ChampionshipEventView event={{...view, entries: [{...view.entries[0]!, transparentBodyUrl:null, bodyUrl:"/opaque-body.png", avatarUrl:"/existing-headshot.png"}]}} />);
+    expect(headshot).toContain("/existing-headshot.png");
+    expect(headshot).not.toContain("/opaque-body.png");
     expect(html).toContain("championship full-body portrait");
     expect(html).toContain("8.5");
     expect(html.match(/· Champion/g)).toHaveLength(2);
@@ -28,7 +31,7 @@ describe("championship presentation", () => {
     expect(html).toContain("Influence finale");
     expect(html).toContain("00:00 UTC");
     expect(html).toContain("2,646 Season 0 points");
-    expect(html).toContain('href="/games/free?season=season-0"');
+    expect(html).toContain('href="/seasons?season=season-0"');
     expect(html).toContain("<details");
     expect(html).not.toContain("<details open");
     expect(html).toContain("not its scheduled match");

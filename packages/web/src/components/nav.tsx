@@ -59,8 +59,8 @@ export function Nav({ menu = false }: { menu?: boolean }) {
       </Link>
 
 
-      <Link href="/games/free" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
-        Intake
+      <Link href="/seasons" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
+        Seasons
       </Link>
 
       <Link href="/rules" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>

@@ -42,6 +42,23 @@ describe("queue enrollment service", () => {
     await createSeason(db, { slug: "queue-season", name: "Queue Season" });
   });
 
+  test("season intent protects join, switch and leave without modifying the standing entry", async () => {
+    await insertAgent(db, { id: "intent-one", userId: USER_A_ID, name: "First" });
+    await insertAgent(db, { id: "intent-two", userId: USER_A_ID, name: "Second" });
+    const [season] = await db.select().from(schema.seasons);
+    const context = { userId: USER_A_ID };
+    await expect(joinQueue(db, context, { queueType: "daily-free", agentId: "intent-one", expectedSeasonId: "old-season" })).rejects.toMatchObject({ code: "season_changed", statusCode: 409 });
+    expect(await db.select().from(schema.freeGameQueue)).toHaveLength(0);
+    await joinQueue(db, context, { queueType: "daily-free", agentId: "intent-one", expectedSeasonId: season!.id });
+    await expect(joinQueue(db, context, { queueType: "daily-free", agentId: "intent-two", expectedSeasonId: "old-season" })).rejects.toMatchObject({ code: "season_changed" });
+    await expect(leaveQueue(db, context, { expectedSeasonId: "old-season" })).rejects.toMatchObject({ code: "season_changed" });
+    expect((await db.select().from(schema.freeGameQueue))[0]!.agentProfileId).toBe("intent-one");
+    await joinQueue(db, context, { queueType: "daily-free", agentId: "intent-two", expectedSeasonId: season!.id });
+    expect((await db.select().from(schema.freeGameQueue))[0]!.agentProfileId).toBe("intent-two");
+    await leaveQueue(db, context, { expectedSeasonId: season!.id });
+    expect(await db.select().from(schema.freeGameQueue)).toHaveLength(0);
+  });
+
   test("joins daily-free idempotently for the same agent", async () => {
     await insertAgent(db, { id: "agent-daily", userId: USER_A_ID, name: "Daily Diplomat" });
 

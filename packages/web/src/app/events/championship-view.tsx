@@ -5,6 +5,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { AgentProfileLink } from "@/components/agent-profile-link";
 import { EmbeddedReplay } from "@/components/watch/embedded-replay";
+import { resolveApiUrl } from "@/lib/api";
 import type { ChampionshipView } from "@/lib/championship";
 import styles from "./championship.module.css";
 
@@ -30,7 +31,7 @@ export function ChampionshipEventView({ event }: { event: ChampionshipView }) {
   const playable = Boolean(match?.gameSlug);
   return <div className={styles.event}>
     <header className={styles.masthead}>
-      <div><Link className={styles.eyebrow} href={`/games/free?season=${encodeURIComponent(event.season.slug)}`}>{event.season.name} / The championship</Link>
+      <div><Link className={styles.eyebrow} href={`/seasons?season=${encodeURIComponent(event.season.slug)}`}>{event.season.name} / The championship</Link>
         <h1>{event.name}</h1><p>Eight minds. Sixteen nights of Werewolf. One Influence finale.</p></div>
       <div className={styles.edition}><span>{eventLabels[event.status] ?? event.status}</span><strong>{number(completed)}<small> / 16</small></strong><span>Werewolf matches complete</span></div>
     </header>
@@ -59,7 +60,7 @@ export function ChampionshipEventView({ event }: { event: ChampionshipView }) {
     </section>
     <section id="championship-finalists" className={styles.finalists}><div className={styles.sectionTitle}><div><span className={styles.eyebrow}>The field is set</span><h2>The final <em>eight.</em></h2></div></div>
       <ol className={styles.lineup}>{event.entries.map(entry => <li key={entry.agentId}><AgentProfileLink agentId={entry.agentId} className={styles.finalist}>
-        <span className={styles.seed}>#{number(entry.rank)}</span><div className={styles.character}>{entry.transparentBodyUrl ? <img src={entry.transparentBodyUrl} alt={`${entry.name}, championship full-body portrait`} loading="lazy" /> : entry.bodyUrl ? <img src={entry.bodyUrl} alt={`${entry.name}, championship full-body portrait`} loading="lazy" className={styles.originalBody} /> : <span className={styles.noArt} aria-hidden="true">{entry.name.charAt(0)}</span>}</div>
+        <span className={styles.seed}>#{number(entry.rank)}</span><div className={styles.character}>{entry.transparentBodyUrl ? <img src={entry.transparentBodyUrl} alt={`${entry.name}, championship full-body portrait`} loading="lazy" /> : entry.avatarUrl ? <img src={resolveApiUrl(entry.avatarUrl)} alt={`${entry.name}, championship headshot`} loading="lazy" className={styles.headshot} /> : entry.bodyUrl ? <img src={entry.bodyUrl} alt={`${entry.name}, championship full-body portrait`} loading="lazy" className={styles.originalBody} /> : <span className={styles.noArt} aria-hidden="true">{entry.name.charAt(0)}</span>}</div>
         <div className={styles.nameplate}><h3>{entry.name}</h3><p>{entry.seasonPoints.toLocaleString("en")} Season 0 points</p></div>
       </AgentProfileLink></li>)}</ol>{!event.entries.length ? <p>The field will be confirmed after season results are final.</p> : null}
     </section>

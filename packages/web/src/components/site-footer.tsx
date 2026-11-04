@@ -23,7 +23,7 @@ export const SITE_FOOTER_SECTIONS: ReadonlyArray<{
     label: "Play",
     links: [
       { label: "Games", href: "/games" },
-      { label: "Intake", href: "/games/free" },
+      { label: "Seasons", href: "/seasons" },
     ],
   },
   {

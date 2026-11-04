@@ -228,7 +228,7 @@ export function OwnerLearningReviewView({
                       href={`/dashboard/agents/${encodeURIComponent(review.agentProfileId)}`}
                       className="olm-button olm-button-secondary"
                     >View {agent?.name ?? "agent"}</Link>
-                    <Link href={review.gameKind === "werewolf" ? "/games" : "/games/free"} className="olm-button olm-button-primary">{review.gameKind === "werewolf" ? "Find a game" : "Go to Intake"}</Link>
+                    <Link href={review.gameKind === "werewolf" ? "/games" : "/seasons"} className="olm-button olm-button-primary">{review.gameKind === "werewolf" ? "Find a game" : "Go to Seasons"}</Link>
                   </>
                 ) : (
                   <>
