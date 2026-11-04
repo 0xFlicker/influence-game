@@ -815,17 +815,17 @@ test.describe("local public player identity", () => {
     }
   });
 
-  test("offers first-agent creation after onboarding when Daily Free is unavailable", async ({ browser }) => {
+  test("does not show the acquisition modal after onboarding when Daily Free is unavailable", async ({ browser }) => {
     test.setTimeout(60_000);
     const context = await authenticatedContext(browser, fixture.noQueueJwt);
     const page = await context.newPage();
     try {
-      // A fresh ephemeral database has no active season, so this read is ineligible.
+      // Model the gap between seasons without changing the shared identity fixture.
       await page.route("**/api/free-queue", async (route) => {
         const response = await route.fetch();
         await route.fulfill({
           response,
-          json: { ...await response.json(), promptEligible: false },
+          json: { ...await response.json(), acceptingSeasonId: null, promptEligible: false },
         });
       });
       await page.goto(`${servers.webUrl}/dashboard`, { waitUntil: "networkidle" });
@@ -835,12 +835,13 @@ test.describe("local public player identity", () => {
       await profile.getByLabel("Display name").fill("No Queue Player");
       await profile.getByLabel("Handle").fill("no-queue-player");
       await profile.getByRole("button", { name: "Create public profile" }).click();
-      const agent = page.getByRole("dialog", { name: "Create your first Agent" });
-      await expect(agent).toBeVisible({ timeout: 2_500 });
-      await agent.getByRole("button", { name: "Create an Agent" }).click();
+      await expect(profile).toBeHidden();
+      await page.waitForTimeout(3_500);
+      await expect(page.getByRole("dialog", { name: "Create your first Agent" })).toHaveCount(0);
+      await expect(page.getByRole("dialog", { name: "Play for Free" })).toHaveCount(0);
+      // Explicit character creation remains available; only the automatic prompt is suppressed.
+      await page.getByRole("link", { name: /Create agent/i }).first().click();
       await expect(page).toHaveURL(`${servers.webUrl}/agents/create`, { timeout: 30_000 });
-      await page.getByRole("button", { name: "Advanced create", exact: false }).click();
-      await expect(page.locator("#agent-name")).toBeVisible();
     } finally {
       await context.close();
     }

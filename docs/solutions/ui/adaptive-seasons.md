@@ -34,3 +34,11 @@ Smallest sound follow-up: an owner-authorized, idempotent visual-preparation job
 - Intercepted browser fixture (no application writes): active-season recommendation, explicit Join/Switch/Leave payloads with selected season ID, newest-agent fallback, responsive entry view. This does not claim a real active-season game or enrollment on the finalized local database.
 - Final typechecking/lint passed. Full isolated PostgreSQL regression: 2,421 passed, 0 failed, 34,377 assertions across 226 files (1,300 seconds). No normal development or production database reset.
 - Presentation parity scope: host-page/navigation/lineup only. Shared movie scenes, Studio and export rendering are unchanged; the existing embedded viewer is reused.
+## Acquisition prompt
+
+The global “Play for Free” prompt is suppressed on `/seasons` and its legacy
+`/games/free` alias, including trailing-slash paths. Elsewhere it requires both
+the authoritative accepting-season ID and prompt eligibility. Onboarding cannot
+bypass season closure or admission dates. Navigation, queue-change events and
+window focus recheck eligibility; existing dismissal remains intact. Entry sends
+the displayed season ID so a stale prompt cannot silently join a later season.

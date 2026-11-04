@@ -9,6 +9,7 @@ import {
   DAILY_AGENT_PROMPT_DELAY_MS,
   DAILY_AGENT_RETRY_DELAYS_MS,
   dailyAgentPromptBranch,
+  hasDailyAgentPromptAdmission,
   shouldLoadDailyAgentPrompt,
   transitionDailyAgentPromptHandoff,
 } from "../components/standing-daily-agent-prompt-model";
@@ -113,10 +114,22 @@ describe("standing Daily Agent acquisition", () => {
     const ready = { pathname: "/about", signedIn: true, needsInvite: false, hasAuthToken: true, sessionDismissed: false };
     expect(shouldLoadDailyAgentPrompt(ready)).toBe(true);
     expect(shouldLoadDailyAgentPrompt({ ...ready, pathname: "/agents/create" })).toBe(false);
+    expect(shouldLoadDailyAgentPrompt({ ...ready, pathname: "/seasons" })).toBe(false);
+    expect(shouldLoadDailyAgentPrompt({ ...ready, pathname: "/games/free" })).toBe(false);
+    expect(shouldLoadDailyAgentPrompt({ ...ready, pathname: "/seasons/" })).toBe(false);
+    expect(shouldLoadDailyAgentPrompt({ ...ready, pathname: "/games/free/" })).toBe(false);
     expect(shouldLoadDailyAgentPrompt({ ...ready, needsInvite: true })).toBe(false);
     expect(shouldLoadDailyAgentPrompt({ ...ready, signedIn: false })).toBe(false);
     expect(shouldLoadDailyAgentPrompt({ ...ready, hasAuthToken: false })).toBe(false);
     expect(shouldLoadDailyAgentPrompt({ ...ready, sessionDismissed: true })).toBe(false);
+  });
+
+  it("requires authoritative admission even for an immediate onboarding handoff", () => {
+    expect(hasDailyAgentPromptAdmission({ acceptingSeasonId: "s1", promptEligible: true })).toBe(true);
+    expect(hasDailyAgentPromptAdmission({ acceptingSeasonId: null, promptEligible: false })).toBe(false);
+    expect(hasDailyAgentPromptAdmission({ acceptingSeasonId: null, promptEligible: true })).toBe(false);
+    expect(hasDailyAgentPromptAdmission({ acceptingSeasonId: "s1", promptEligible: false })).toBe(false);
+    expect(hasDailyAgentPromptAdmission({})).toBe(false);
   });
 
   it("remounts acquisition state when the active public identity changes", () => {
