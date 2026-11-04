@@ -96,6 +96,7 @@ describe("postgame highlights service", () => {
       personaKey: "strategic",
       currentAgent: {
         avatarUrl: expect.stringContaining("https://cdn.example.test/avatars/"),
+        profileHref: expect.stringMatching(/^\/agents\//),
         role: { key: "strategic", label: "Strategic" },
         competition: { gamesPlayed: 0, wins: 0, winRate: 0 },
       },
@@ -105,6 +106,7 @@ describe("postgame highlights service", () => {
       "avatarUrl",
       "competition",
       "name",
+      "profileHref",
       "role",
     ]);
     expect(firstVoteScene?.visualCard?.factLines.some((line) => /eliminated|voted|alliance/i.test(line.text))).toBe(true);

@@ -266,6 +266,35 @@ describe("provider call journal", () => {
 
 
 
+  test("provider reservation and ownership adoption share game-before-owner lock order", async () => {
+    const gameId = await insertGame(db), ownerEpoch = await insertOwner(db, gameId);
+    let releaseWorker!: () => void, reportLocked!: () => void;
+    const gate = new Promise<void>(resolve => { releaseWorker = resolve; });
+    const locked = new Promise<void>(resolve => { reportLocked = resolve; });
+    const worker = db.transaction(async tx => {
+      await tx.select().from(schema.games).where(eq(schema.games.id, gameId)).for("update");
+      reportLocked(); await gate;
+      await tx.select().from(schema.gameRunOwners).where(eq(schema.gameRunOwners.gameId, gameId)).for("update");
+    });
+    await locked;
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    const provider = hooks.onAllocateAttemptOrdinal!(makeIntent(gameId, ownerEpoch).coordinate);
+    // Wait for an actual database lock wait, not a timing guess. Before the fix,
+    // the journal held owner and waited for game's FK; adoption then deadlocked.
+    let blocked = false;
+    try {
+      for (let attempt = 0; attempt < 200; attempt++) {
+        const rows = await db.execute(sql`SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND (query LIKE '%provider_logical_calls%' OR query LIKE '%games%')`);
+        if (rows.length) { blocked = true; break; }
+        await Bun.sleep(10);
+      }
+    } finally { releaseWorker(); }
+    const results = await Promise.allSettled([worker, provider]);
+    expect(blocked).toBe(true);
+    expect(results.map(result => result.status)).toEqual(["fulfilled", "fulfilled"]);
+    expect((await db.select().from(schema.providerLogicalCalls)).filter(row => row.gameId === gameId)).toHaveLength(1);
+  });
+
   test("both tiers unavailable preserve the same turn and durably delay its next owner", async () => {
     const gameId = await insertGame(db, { status: "in_progress" }), ownerEpoch = await insertOwner(db, gameId);
     const coordinate = makeIntent(gameId, ownerEpoch).coordinate;

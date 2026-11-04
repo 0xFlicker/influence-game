@@ -159,7 +159,7 @@ export async function verifySessionToken(
       issuer: "influence-api",
       algorithms: ["HS256"],
     });
-    if (payload.token_type === DEPLOYMENT_CONTROL_TOKEN_TYPE) return null;
+    if (payload.token_type === DEPLOYMENT_CONTROL_TOKEN_TYPE || payload.token_type === "championship_service") return null;
     const userId = payload.sub as string | undefined;
     if (typeof userId !== "string" || !userId) return null;
     for (const claim of [payload.roles, payload.perms]) {
@@ -350,7 +350,7 @@ export function requireAuth(
  * Terms/Privacy acceptance policy. Service routes must chain an explicit,
  * narrowly scoped permission middleware after this middleware.
  */
-export function requireServiceAuth(db: DrizzleDB) {
+export function requireServiceAuth(db: DrizzleDB, permission = "schedule_free_game") {
   return createMiddleware<AuthEnv>(async (c, next) => {
     const header = c.req.header("Authorization");
     const session = header?.startsWith("Bearer ") ? await verifySessionToken(header.slice(7)) : null;
@@ -361,11 +361,11 @@ export function requireServiceAuth(db: DrizzleDB) {
     if (!user) return c.json({ error: "User not found" }, 401);
     const [service] = await db.select().from(schema.servicePrincipals).where(eq(schema.servicePrincipals.userId, user.id));
     if (service) {
-      if (!service.enabled || !session.permissions.includes("schedule_free_game")) return c.json({ error: "Insufficient permissions" }, 403);
+      if (!service.enabled || !session.permissions.includes(permission)) return c.json({ error: "Insufficient permissions" }, 403);
       c.set("user", projectAuthUser(user));
       c.set("authContextUser", projectAuthContextUser(user));
       c.set("userRoles", []);
-      c.set("userPermissions", ["schedule_free_game"]);
+      c.set("userPermissions", [permission]);
       await next();
       return;
     }

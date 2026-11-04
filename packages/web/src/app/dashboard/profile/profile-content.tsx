@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { AwardIcons } from "@/components/award-icons";
 import {
   getAuthToken,
   getProfile,
@@ -16,6 +17,15 @@ import { derivePublicHandle } from "@/components/public-identity-onboarding-mode
 import { playerProfileHref } from "@/lib/player-profile-links";
 import { useAuth } from "@/hooks/use-auth";
 import { useRuntimeConfig } from "@/lib/runtime-config";
+
+export function ProfileAwards({ profile }: { profile: Pick<PlayerProfile, "displayName" | "awards"> }) {
+  if (!profile.awards?.length) return null;
+  const title = profile.awards.every(award => award.theme === "season-0") ? "Season 0 honors" : "Honors";
+  return <section aria-label={title} className="influence-panel rounded-xl p-6">
+    <h2 className="influence-section-title">{title}</h2>
+    <AwardIcons awards={profile.awards} agentName={profile.displayName} />
+  </section>;
+}
 
 export function ProfileIdentitySummary({
   profile,
@@ -413,6 +423,8 @@ export function ProfileContent() {
           <ProfileIdentitySummary profile={profile} onEdit={() => setEditing(true)} />
         )}
       </section>
+
+      <ProfileAwards profile={profile} />
 
       {/* Account rating stats */}
       <section className="influence-panel rounded-xl p-6">

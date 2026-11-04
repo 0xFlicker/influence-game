@@ -6,6 +6,7 @@ describe("admin section routes", () => {
     expect(ADMIN_TABS.map((tab) => adminTabHref(tab.id))).toEqual([
       "/admin/inference",
       "/admin/seasons",
+      "/admin/championships",
       "/admin/games",
       "/admin/production",
       "/admin/providers",
@@ -48,4 +49,10 @@ test("invite controls require their own capability", () => {
 test("remote import has no admin navigation or tab", () => {
   expect(isAdminTab("import")).toBeFalse();
   expect(adminRoute("/admin/import")).toBeUndefined();
+});
+
+test("championship navigation uses its explicit permission", () => {
+  const entry = adminRoute("/admin/championships")!;
+  expect(permitsAdminEntry(entry, { roles: [], permissions: ["manage_championships"] })).toBe(true);
+  expect(permitsAdminEntry(entry, { roles: ["producer"], permissions: [] })).toBe(false);
 });

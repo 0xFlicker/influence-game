@@ -1,3 +1,7 @@
+import { restoreLocalChampionshipSchedules, stopLocalChampionshipTimers } from "./services/championship-scheduling.js";
+import { createGameRetryRoutes } from "./routes/game-retry.js";
+import { processChampionshipArtwork } from "./services/championship-artwork.js";
+import { createChampionshipRoutes } from "./routes/championships.js";
 import { createAudioRoutes } from "./routes/audio.js";
 import { startAudioWorker } from "./services/audio-tracks.js";
 import { createHouseShareRoutes } from "./routes/house-share-links.js";
@@ -517,6 +521,17 @@ async function finishBackgroundRuntimeStartup(
     }, 2_000)
     : null;
   executionScanTimer?.unref();
+  // Restore explicit development schedules once. Production authority is EventBridge.
+  if (!gameExecutionWorker) await restoreLocalChampionshipSchedules(db);
+  let championshipArtworkWork: Promise<unknown> | null = null;
+  const championshipArtworkTimer = gameExecutionWorker ? setInterval(() => {
+    if (stopping || championshipArtworkWork || !gameExecutionWorker.canClaimGames()) return;
+    championshipArtworkWork = processChampionshipArtwork(db).then(results => { if (results.some(result => result.error)) console.warn("[championship-artwork] Retry diagnostics", results); }).catch(error => console.warn("[championship-artwork] Preparation deferred", error))
+      .finally(() => { championshipArtworkWork = null; });
+  }, 30_000) : null;
+  championshipArtworkTimer?.unref();
+
+
 
   const renderWakeDispatcher = gameExecutionWorker
     ? startRenderWakeDispatcher(db, () => !stopping && runtimeActivation.canClaimWork())
@@ -534,12 +549,16 @@ async function finishBackgroundRuntimeStartup(
       await agentScreeningWorker?.stop();
       if (reconciliationTimer) clearInterval(reconciliationTimer);
       if (executionScanTimer) clearInterval(executionScanTimer);
+      stopLocalChampionshipTimers();
+      if (championshipArtworkTimer) clearInterval(championshipArtworkTimer);
+      if (championshipArtworkWork) await championshipArtworkWork;
       if (executionScan) {
         try { await executionScan; } catch (error) {
           console.warn("[game-worker] Scan ended during shutdown", error);
         }
       }
-      if (gameExecutionWorker) await abortAllGames();
+      // Local explicit retries may run in the gateway; drain every game owned by this process.
+      await abortAllGames();
       providerHealthProbeRuntime?.stop();
       await gamePublicationRuntime?.stop();
       await providerAttemptReconciliation.stop();
@@ -688,6 +707,8 @@ const freeQueueRoutes = createFreeQueueRoutes(db);
 app.route("/", freeQueueRoutes);
 
 // Dual Crown seasons and competition data
+app.route("/", createChampionshipRoutes(db));
+app.route("/", createGameRetryRoutes(db));
 const seasonRoutes = createSeasonRoutes(db);
 app.route("/", seasonRoutes);
 

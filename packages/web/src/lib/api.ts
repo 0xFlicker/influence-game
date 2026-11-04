@@ -250,6 +250,8 @@ export interface PublicPlayerIdentityRef {
 
 
 export interface PublicAgentPreview {
+  profileHref?: string;
+  awards?: import("./championship").PublicAward[];
   name: string;
   avatarUrl: string | null;
   role: null | {
@@ -263,11 +265,21 @@ export interface PublicAgentPreview {
   };
 }
 
+export interface PublicAgentProfile extends PublicAgentPreview {
+  profileHref: string;
+  owner: PublicPlayerIdentityRef | null;
+  awards: import("./championship").PublicAward[];
+  recentResults: import("@influence/engine/house-participation").HouseParticipation[];
+}
+export type PublicAgentProfileEnvelope = { schemaVersion: 1; status: "found"; profile: PublicAgentProfile }
+  | { schemaVersion: 1; status: "not_found" };
+
 export interface PublicReplayAgentPreview extends PublicAgentPreview {
   owner?: PublicPlayerIdentityRef | null;
 }
 
 export interface PublicPlayerProfile {
+  awards?: import("./championship").PublicAward[];
   identity: PublicPlayerIdentityRef;
   currentSeason: null | {
     season: {
@@ -3586,6 +3598,7 @@ export interface ArchitectSeasonStanding {
 }
 
 export interface SeasonDashboard {
+  championships?: Array<{ slug: string; name: string; status: string }>;
   schemaVersion: 1 | 2;
   season: SeasonIdentity;
   agentStandings: AgentSeasonStanding[];
@@ -3728,6 +3741,7 @@ export type FreeTrackLeaderboardEntry = LeaderboardEntry;
 // ---------------------------------------------------------------------------
 
 export interface PlayerProfile extends AuthenticatedPublicIdentity {
+  awards?: import("./championship").PublicAward[];
   id: string;
   walletAddress: string | null;
   email: string | null;
@@ -3848,6 +3862,10 @@ export async function closeAdminSeason(id: string): Promise<SeasonIdentity> {
     method: "POST",
   });
   return response.season;
+}
+
+export async function reconcileAdminSeasonAwards(id: string): Promise<void> {
+  await apiFetch(`/api/admin/seasons/${id}/awards/reconcile`, { method: "POST" });
 }
 
 export async function finalizeAdminSeason(id: string): Promise<void> {

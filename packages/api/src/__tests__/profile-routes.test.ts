@@ -1,3 +1,4 @@
+import { grantAward, revokeAward } from "../services/awards.js";
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
@@ -47,6 +48,27 @@ describe("public profile surfaces", () => {
         peakRating: 1510,
       },
     ]);
+  });
+
+  test("private profile returns only its earned active badges on read and identity update", async () => {
+    const grant = await grantAward(db, { definitionCode: "season-0-account-participant", recipient: { type: "account", id: "named-user" }, actorId: "named-user", sourceKey: "private-profile", requestId: "private-profile-grant", reason: "PRIVATE_REASON", evidence: { secret: "PRIVATE_EVIDENCE" } });
+    const token = await createSessionToken("named-user");
+    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    for (const method of ["GET", "PATCH"]) {
+      const response = await app.request("/api/profile", { method, headers, ...(method === "PATCH" ? { body: JSON.stringify({ displayName: "Named Player", handle: "named-player" }) } : {}) });
+      expect(response.status).toBe(200);
+      const body = await response.json() as { awards: Array<{ title: string }> };
+      expect(body.awards).toHaveLength(1);
+      expect(body.awards[0]!.title).toBe("Season 0 Participant");
+      expect(JSON.stringify(body.awards)).not.toContain("PRIVATE_");
+    }
+    const otherToken = await createSessionToken("email-user");
+    const other = await app.request("/api/profile", { headers: { Authorization: `Bearer ${otherToken}` } });
+    expect((await other.json() as { awards: unknown[] }).awards).toEqual([]);
+    await revokeAward(db, { grantId: grant.id, actorId: "named-user", reason: "fixture", requestId: "private-profile-revoke" });
+    const revoked = await app.request("/api/profile", { headers });
+    expect((await revoked.json() as { awards: unknown[] }).awards).toEqual([]);
+    expect((await app.request("/api/profile")).status).toBe(401);
   });
 
   test("sanitizes email-based names on the main leaderboard", async () => {

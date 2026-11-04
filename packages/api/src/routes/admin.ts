@@ -1,3 +1,4 @@
+import { notifyChampionshipGameCompletion } from "../services/championship-runtime.js";
 import { readEpisodePresentations } from "../services/episode-presentation.js";
 /**
  * Admin routes for RBAC management.
@@ -796,6 +797,7 @@ export function createAdminRoutes(
         actorUserId: user.id,
         requestedReason: reason,
       }, dependencies.completionSettlement);
+      await notifyChampionshipGameCompletion(db, gameId);
       const [watchRefresh, mediaReconciliation] = await Promise.all([
         tryRefreshGameWatchStateSummary(db, gameId, "completion_settlement_operator_retry"),
         reconcilePostgameMediaForGame(db, gameId).catch((error) => {

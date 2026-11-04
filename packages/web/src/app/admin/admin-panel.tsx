@@ -1,4 +1,5 @@
 "use client";
+import { RetryGameButton } from "./retry-game-button";
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -412,6 +413,7 @@ function RecentGameRow({
   canStop,
   canRetrySettlement,
   onRefresh,
+  onGameRetried,
   onOpenCosts,
   onOpenHighlights,
   onOpenProviderFailures,
@@ -422,12 +424,14 @@ function RecentGameRow({
   canStop: boolean;
   canRetrySettlement: boolean;
   onRefresh: () => void;
+  onGameRetried: (gameId: string) => void;
   onOpenCosts: () => void;
   onOpenHighlights: () => void;
   onOpenProviderFailures: () => void;
   onOpenRetry: () => void;
 }) {
   const router = useRouter();
+  const { hasPermission } = usePermissions();
   const [hiding, setHiding] = useState(false);
   const [confirmHide, setConfirmHide] = useState(false);
   const [voiding, setVoiding] = useState(false);
@@ -524,6 +528,7 @@ function RecentGameRow({
               Retry settlement
             </button>
           )}
+          {canHide && canStop && hasPermission("start_game") && ["suspended", "cancelled"].includes(game.status) && !settlementRetryIsAvailable(game, canRetrySettlement) ? <RetryGameButton gameId={game.id} onRetried={id => { onGameRetried(id); onRefresh(); }} /> : null}
           {canVoidSuspendedGame(game.status, canStop) && (
             <button
               onClick={(e) => { e.stopPropagation(); setConfirmVoid(true); }}
@@ -622,6 +627,7 @@ export function AdminPanel() {
   const [highlightsGame, setHighlightsGame] = useState<AdminGameSummary | null>(null);
   const [providerFailuresGame, setProviderFailuresGame] = useState<AdminGameSummary | null>(null);
   const [retryGame, setRetryGame] = useState<AdminGameSummary | null>(null);
+  const [retriedGameId, setRetriedGameId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const fetchRequestIdRef = useRef(0);
@@ -695,6 +701,7 @@ export function AdminPanel() {
         </div>
       </div>
 
+      {retriedGameId ? <p role="status" className="mb-4 text-sm">Game retry accepted. <Link className="underline" href={`/games/${retriedGameId}`}>View replacement</Link></p> : null}
       {error && (
         <div className="mb-6 border border-red-900/40 bg-red-900/20 rounded-xl p-4 text-red-400 text-sm">
           {error}
@@ -768,6 +775,7 @@ export function AdminPanel() {
                     key={g.id}
                     game={g}
                     onRefresh={fetchGames}
+                    onGameRetried={setRetriedGameId}
                     canHide={canHideGame}
                     canStop={canStopGame}
                     canRetrySettlement={canRetrySettlement}
@@ -854,6 +862,7 @@ export function AdminPanel() {
                     canStop={canStopGame}
                     canRetrySettlement={canRetrySettlement}
                     onRefresh={fetchGames}
+                    onGameRetried={setRetriedGameId}
                     onOpenCosts={() => setCostGame(g)}
                     onOpenHighlights={() => setHighlightsGame(g)}
                     onOpenProviderFailures={() => setProviderFailuresGame(g)}

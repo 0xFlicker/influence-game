@@ -144,7 +144,20 @@ export async function checkConsecutiveReplies(page: Page, count = 4) {
   for (let index = 0; index < count; index++) {
     const cursor = await page.$eval('[data-werewolf-stage]', element => Number(element.getAttribute('data-cursor')));
     await page.keyboard.press('ArrowRight');
-    await page.waitForFunction("Array.from(document.querySelectorAll('[data-speech-bubble]')).every(e => Number(getComputedStyle(e).opacity) === 0)");
+    // Opacity can reach zero just before the director commits its paused stop.
+    // A second key during that transition is deliberately ignored. Wait for the
+    // hidden picture AND a settled presentation clock, not just a CSS sample.
+    await page.waitForFunction(`(async () => {
+      const sample = () => {
+        const stage = document.querySelector('[data-werewolf-stage]');
+        const bubbles = Array.from(document.querySelectorAll('[data-speech-bubble]'));
+        return stage && bubbles.every(e => Number(getComputedStyle(e).opacity) === 0)
+          ? stage.getAttribute('data-cursor') + ':' + stage.getAttribute('data-elapsed') : null;
+      };
+      const before = sample();
+      for (let frame = 0; frame < 3; frame++) await new Promise(resolve => requestAnimationFrame(() => resolve()));
+      return before !== null && before === sample();
+    })()`);
     await page.keyboard.press('ArrowRight');
     await page.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')) > ${cursor}`);
     await page.waitForFunction(visible);
