@@ -10,6 +10,7 @@ import { configureChampionshipDraft, lockChampionshipRoster, publishChampionship
 import { grantAward, publicAgentAwards, revokeAward, createAwardDefinition, publicAwardDefinitions } from "../services/awards.js";
 import { createChampionshipRoutes } from "../routes/championships.js";
 import { createSessionToken } from "../middleware/auth.js";
+import { createChampionshipServiceToken } from "../services/championship-service-token.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
 
 beforeAll(() => { process.env.JWT_SECRET = "championship-test-secret"; });
@@ -85,8 +86,12 @@ describe("championship foundations", () => {
     await db.insert(schema.servicePrincipals).values({ userId: actorId });
     const app = new Hono().route("/", createChampionshipRoutes(db));
     const queueToken = await createSessionToken(actorId, { permissions: ["schedule_free_game"], roles: [] });
-    expect((await app.request(`/api/internal/championships/${event.id}/schedules`, { method: "GET", headers: { Authorization: `Bearer ${queueToken}` } })).status).toBe(403);
-    const eventToken = await createSessionToken(actorId, { permissions: ["dispatch_championship"], roles: [] });
+    expect((await app.request(`/api/internal/championships/${event.id}/schedules`, { method: "GET", headers: { Authorization: `Bearer ${queueToken}` } })).status).toBe(401);
+    const expiry = new Date(Date.now() + 60_000);
+    const scope = { eventId: event.id, role: "controller" as const };
+    await expect(createChampionshipServiceToken(db, actorId, expiry, scope)).rejects.toThrow("Enabled championship service principal required");
+    await db.update(schema.servicePrincipals).set({ purpose: "championship" }).where(eq(schema.servicePrincipals.userId, actorId));
+    const eventToken = await createChampionshipServiceToken(db, actorId, expiry, scope);
     expect((await app.request(`/api/internal/championships/${event.id}/schedules`, { method: "GET", headers: { Authorization: `Bearer ${eventToken}` } })).status).toBe(200);
     expect((await db.select().from(schema.games))).toHaveLength(1);
     await db.update(schema.servicePrincipals).set({ enabled: false }).where(eq(schema.servicePrincipals.userId, actorId));
