@@ -15,6 +15,7 @@ export interface TimingInput {
   key: string;
   baseDurationMs: number;
   minimumDurationMs?: number;
+  readingHold?: true;
   kind: "opening" | "thinking" | "speech" | "ballot" | "tally" | "scene" | "result";
   speech: SpeechBoundaries | null;
   thinking: string | null;
@@ -176,7 +177,7 @@ export function compileTiming(
           ? (settings.ballotHoldMs ?? input.baseDurationMs)
           : input.kind === "tally"
             ? (settings.tallyHoldMs ?? input.baseDurationMs)
-            : input.baseDurationMs * motion;
+            : input.readingHold ? Math.max(input.baseDurationMs * motion, input.minimumDurationMs ?? 0) : input.baseDurationMs * motion;
       add("hold", 0, input.baseDurationMs, duration);
     }
     if (input.minimumDurationMs !== undefined) {

@@ -10,6 +10,7 @@ import {VisualPresentationFrame} from "../app/games/[slug]/components/visual-pre
 import {WerewolfWatchStage} from "../components/games/werewolf/werewolf-watch-stage";
 import {werewolfWatchPolicy} from "../components/games/werewolf/werewolf-watch-model";
 import {PresentationDirector} from "../components/watch/watch-director";
+import {ActiveFormatOverlay} from "../app/games/[slug]/components/active-format-label";
 
 export type ParityProps = {manifest:ReplayManifest; reference:ExportCue; prepare?:boolean};
 
@@ -44,7 +45,8 @@ function ViewerFrame({manifest,reference}:ParityProps) {
       reduced={manifest.reducedMotion} director={{manualAdvance:()=>{},setReady:()=>{},getSnapshot:()=>director.getSnapshot(),getSpeechElapsedBaseMs:()=>sample.elapsedMs}}
       holding={false} contextLabel={reference.label} /> : picture.kind === "influence" && picture.beat ? <>
       <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60">{reference.label}</div>
-      <div className="relative isolate flex min-h-0 flex-1 flex-col overflow-hidden"><SceneThinkingProvider thought={thought}>
+      <div data-influence-stage className="relative isolate flex min-h-0 flex-1 flex-col overflow-hidden"><SceneThinkingProvider thought={thought}>
+        {reference.activeFormatId && <ActiveFormatOverlay formatId={reference.activeFormatId} onOpen={() => {}} />}
         <VisualPresentationFrame beat={picture.beat} rooms={picture.rooms} elapsedMs={sample.elapsedMs} reducedMotion={manifest.reducedMotion} fullscreen controlsInset={0} roster={picture.roster}/>
       </SceneThinkingProvider></div>
     </> : null}

@@ -971,3 +971,14 @@ a {
 [data-house-result-scene] [data-night-hunt] { padding: 8px !important; gap: 8px; }
 [data-house-result-scene] [data-village-elimination],
 [data-house-result-scene] [data-night-elimination] { padding: 8px; gap: 8px; }
+
+/* Keep the room or alliance name clear of the floating format pill. */
+[data-influence-stage]:has([data-active-format-overlay]) [data-room-context-label] {
+  max-width: max(0px, calc(100% - 12rem));
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+[data-influence-stage]:has([data-active-format-overlay]) [data-portrait-room] [data-room-context-label] {
+  left: 0.75rem;
+  right: auto;
+}

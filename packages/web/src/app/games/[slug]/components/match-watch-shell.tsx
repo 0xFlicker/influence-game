@@ -215,7 +215,7 @@ export function MatchWatchShell({
   })) };
   return <WatchShell mode={model.mode}
     header={<ShellHeader model={model} gamePath={gamePath} showResultsCta={replayAtFinalResults} gameKind="influence" />}
-    cast={<CastRail model={castModel} onSelectPlayer={setSelectedPlayerId} />}
+    cast={<CastRail model={castModel} onSelectPlayer={setSelectedPlayerId} showPhase={false} />}
     mobileCast={<MobileContextPanel model={castModel} onSelectPlayer={setSelectedPlayerId} />}
     theater={<TheaterPanel game={game} messages={displayMessages} replayFrames={replayFrames} live={live} connStatus={connStatus} presentationHydrationStatus={presentationHydrationStatus} startSequence={live ? undefined : startSequence} model={model} onPlaybackStateChange={handlePlaybackStateChange} />}
     inspector={<InspectorPanel model={model} intelligence={intelligenceModel} allianceModel={allianceModel} messages={inspectorMessages} />}
@@ -299,7 +299,7 @@ function TheaterPanel({
       <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-white/10 px-2.5 lg:grid lg:h-auto lg:min-h-14 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-2 lg:px-4 lg:py-3">
         <div className="min-w-0">
           <div className="hidden text-[9px] uppercase tracking-[0.18em] text-white/40 lg:block">
-            {model.roundLabel} / {model.phaseFeedLabel}
+            {model.roundLabel}
           </div>
           <h1 className="truncate text-sm font-semibold text-white/95 lg:mt-1 lg:text-base">
             {model.phaseLabel}

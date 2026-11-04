@@ -41,6 +41,15 @@ Prefer a shared layout, renderer and sampled clock. Verify every caller supplies
 the required contract. Do not copy the viewer wrapper into a separate exporter
 implementation or add an abstraction without completing its consumers.
 
+Influence's post-pick Mingle and huddle shots show the selected format in the
+player picture. The selected format comes from the canonical presentation prefix
+at that moment, including when a Studio cut selects only a speech or a thought.
+The viewer's format button opens the same concise rules and pauses playback;
+the interactive panel is player chrome, while the persistent label and the
+longer automatic rules reveal are also rendered into fresh exports. Existing
+MP4s must be rendered again, and old export bundles must be rebuilt from the
+selection and frozen source to pick up the new framing and timing.
+
 For a new beat, explicitly decide its catalog identity, source position, duration,
 speech/thought ownership, recording identity, selection/default inclusion, allowed
 framing context and ending/handoff. Use structured canonical coordinates and

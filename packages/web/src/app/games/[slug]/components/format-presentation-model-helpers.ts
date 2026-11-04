@@ -1,4 +1,5 @@
 import type { PhaseKey, ViewerDecisionEvent } from "@/lib/api";
+import { formatPresentationMetadata, type LaunchFormatId } from "@influence/engine/format-presentation-metadata";
 import type {
   FormatPresentationCompilation,
   FormatPresentationDiagnosticCode,
@@ -27,6 +28,12 @@ export const FIXED_CUE_DURATION_MS = {
   format_tiebreak: 2_400,
   format_elimination: 3_200,
 } satisfies Partial<Record<FormatPresentationCue["kind"], number>>;
+
+/** Time to digest the selected rules at the default playback speed. */
+export function formatRulesReadingMs(formatId: LaunchFormatId): number {
+  const words = formatPresentationMetadata(formatId).conciseRules.trim().split(/\s+/u).length;
+  return Math.ceil(Math.max(8_000, 2_000 + words * 60_000 / 180) / 500) * 500;
+}
 
 export function incomplete(
   cues: readonly FormatPresentationCue[],

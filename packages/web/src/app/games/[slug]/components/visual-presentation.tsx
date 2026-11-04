@@ -154,7 +154,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
     // Never anchor new-scene dialogue to an old scene, including while a room is pinned.
     const speech = selectedScene?.id === beat.sceneId && selectedRoom === beat.roomId ? beat.speech : null;
     content = <div className="flex min-h-0 flex-1 flex-col gap-3">
-      {beat.roomLabel && <p className="shrink-0 text-center text-sm font-medium tracking-wide text-[#e6ce9a]">{beat.roomLabel}</p>}
+      {beat.roomLabel && <p data-room-context-label className="shrink-0 text-center text-sm font-medium tracking-wide text-[#e6ce9a]">{beat.roomLabel}</p>}
       {isMingle && !beat.roomLabel && !fullscreen && <nav aria-label="Mingle rooms" className="flex shrink-0 flex-wrap justify-center gap-2">
         <button type="button" aria-pressed={pinnedRoom === null} onClick={() => setPinnedRoom(null)} className="rounded-full border border-white/20 px-3 py-1.5 text-sm aria-pressed:bg-white aria-pressed:text-black">Follow speaker</button>
         {mingleRooms.map((room) => <button key={room.roomId} type="button" aria-pressed={pinnedRoom === room.roomId} onClick={() => setPinnedRoom(room.roomId)} className="rounded-full border border-white/20 px-3 py-1.5 text-sm aria-pressed:bg-white aria-pressed:text-black">{VISUAL_ROOMS[room.roomId].name}</button>)}

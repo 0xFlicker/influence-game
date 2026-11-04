@@ -12,6 +12,7 @@ import {
   comparePresentationCues,
   compileReplayFrameLookup,
   classicEliminatedPlayerIds,
+  formatSnapshotForPresentationCursor,
 } from "../../app/games/[slug]/components/influence-replay-cues";
 import {
   buildStoryScenes,
@@ -79,6 +80,8 @@ export type ExportPicture =
 export interface ExportCue {
   /** Stable editorial identity; multiple authored shots may belong to one moment. */
   momentId?: string;
+  /** Audience-safe selected-format context at this social moment. */
+  activeFormatId?: import("@influence/engine/format-presentation-metadata").LaunchFormatId;
   timing: TimingInput;
   picture: ExportPicture;
   label: string;
@@ -233,11 +236,15 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
     const spoken =
       picture.beat && "speech" in picture.beat ? picture.beat.speech : null;
     const ledger = ledgers[index] ?? null;
+    const activeFormatId = cue.source === "classic" && cue.phase === "FORMAT_MINGLE" && game.gameKernel === "format"
+      ? formatSnapshotForPresentationCursor(cues, index, cue.round)?.activeFormatId : null;
     result.push({
+      ...(activeFormatId ? {activeFormatId} : {}),
       timing: {
         key: cue.key,
         baseDurationMs: cue.baseDurationMs,
         minimumDurationMs:cue.minimumDurationMs,
+        readingHold:cue.readingHold,
         kind: ledger
           ? ledger.complete
             ? "tally"
@@ -261,7 +268,7 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
           transcriptSequence: message.entrySequence,
         }),
       },
-      label: `Round ${cue.round} · ${message?.allianceIntroduction?.allianceName ?? message?.allianceSession?.allianceName ?? cue.phase}`,
+      label: `Round ${cue.round} · ${message?.allianceIntroduction?.allianceName ?? message?.allianceSession?.allianceName ?? (cue.phase === "FORMAT_MINGLE" ? "Mingle" : cue.phase)}`,
       speech:
         message?.dialogueKind === "house_summary"
           ? {

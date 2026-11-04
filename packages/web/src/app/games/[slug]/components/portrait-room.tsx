@@ -147,7 +147,7 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
     <div data-thinking-camera className="absolute inset-0" style={{...focus.mediaStyle,perspective:1200}}>
     <RoomBackdrop source={backgroundUrl ?? DEFAULT_ROOM_BACKDROP} />
     <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_70%,transparent,rgba(0,0,0,.55))]" />
-    <p className="absolute inset-x-0 top-4 text-center text-xs font-medium uppercase tracking-[.2em] text-white/60">{roomLabel}</p>
+    <p data-room-context-label className="absolute inset-x-0 top-4 text-center text-xs font-medium uppercase tracking-[.2em] text-white/60">{roomLabel}</p>
     <div aria-hidden="true" className="absolute rounded-[50%] border border-white/10 bg-black/15" style={{ left: centerX, top: centerY - (deep ? roomDepth * 2 : 0) + diameter * .1, width: Math.max(0, size.width * (beside ? .5 : 1) - 80), height: diameter * .7 + (deep ? roomDepth * 2 : 0), transform: "translateX(-50%) rotateX(35deg)" }} />
     {beat.participants.map((player, index) => {
       const seat = seats[index]!;

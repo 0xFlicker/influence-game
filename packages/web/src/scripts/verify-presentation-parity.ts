@@ -11,7 +11,8 @@ import tailwindConfig from "../../tailwind.config";
 import {createFormatKernelViewerScenario} from "@influence/engine/fixtures/format-kernel-viewer";
 import {completedCurrentWerewolfFixture, completedWerewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
 import {projectWerewolfProductionWatch} from "@influence/engine/werewolf/watch";
-import type {GameWatchReplayFrame} from "../lib/api";
+import type {GameWatchReplayFrame, TranscriptEntry} from "../lib/api";
+import {formatPresentationMetadata} from "@influence/engine/format-presentation-metadata";
 import {buildExportCues, type ExportCue} from "../lib/replay-export/cues";
 import {thinkingSegment} from "../lib/replay-export/presentation";
 import {compileTiming, parseTimingProfile} from "../lib/replay-export/timing";
@@ -33,6 +34,22 @@ const influence = buildExportCues({kind:"influence",game:{id:"g",slug:"g",status
 const menu = influence.find(cue=>cue.picture.kind === "influence" && cue.picture.cue.kind === "format_menu");
 if (!menu) throw new Error("Missing format-menu readiness fixture");
 cases.push({name:"format-menu",reference:menu,cue:menu});
+const selectedRules = influence.find(cue => cue.picture.kind === "influence" && cue.picture.cue.source === "format" && cue.picture.cue.kind === "format_selected" && cue.picture.cue.stage === "rules_reveal");
+if (!selectedRules) throw new Error("Missing selected rules fixture");
+cases.push({name:"format-rules",reference:selectedRules,cue:selectedRules});
+const socialScenario = createFormatKernelViewerScenario("majority_elimination_clear");
+const socialFrames:GameWatchReplayFrame[] = socialScenario.decisions.map(event => ({schemaVersion:3,gameId:"g",slug:"g",sequence:event.sequence,eventType:event.type,timestamp:Date.parse(event.timestamp),round:event.round,phase:event.phase ?? "INIT",players,viewerDecisionEvent:event,
+  counts:{totalPlayers:players.length,alivePlayers:players.length,eliminatedPlayers:0,unknownPlayers:0}}));
+const social:TranscriptEntry = {id:101,entrySequence:101,firstDurableEventSequence:61,gameId:"g",round:2,phase:"FORMAT_MINGLE",scope:"mingle",fromPlayerId:"atlas",speakerPlayerId:"atlas",fromPlayerName:"Atlas",toPlayerIds:["lyra"],text:"We should decide where the votes go before we split up.",thinking:"I need to hear what they really intend.",timestamp:101};
+const huddle:TranscriptEntry = {...social,id:102,entrySequence:102,scope:"huddle",dialogueKind:"huddle_speech",allianceSession:{sessionId:"s",allianceId:"a",allianceName:"The Night Shift",memberIds:["atlas","lyra"]},text:"We can hold our votes together.",timestamp:102};
+const socialCues = buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"format",players},messages:[social,huddle],frames:socialFrames,thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[],
+  fullBodies:Object.fromEntries(players.map(player=>[player.id,"/avatars/personas/full-body-v1/strategic.webp"]))}});
+for (const [name,message] of [["format-mingle",social],["format-huddle",huddle]] as const) {
+  const cue = socialCues.find(item => item.speech?.text === message.text);
+  if (!cue || cue.activeFormatId !== "majority_elimination") throw new Error(`Missing ${name} format context`);
+  cases.push({name,reference:cue,cue});
+  cases.push({name:`${name}-thought`,reference:cue,cue:thinkingSegment(cue,`${name}-thought`,message.thinking!,"atlas")});
+}
 const pointers = influence.filter(cue=>cue.picture.kind === "influence" && cue.picture.beat?.kind === "safety-chain" && cue.picture.beat.cue.kind === "safety_bounce_pointer");
 for (const index of [0,pointers.length-1]) {
   const reference=pointers[index]!;
@@ -82,7 +99,12 @@ try {
   await cp(join(webRoot,"public"),serveUrl,{recursive:true});
   const browser=await openBrowser("chrome",{browserExecutable:process.env.REPLAY_BROWSER_EXECUTABLE});
   try {
-    for(const [width,height] of [[1280,720],[640,360]] as const) for(const item of cases) {
+    const narrow = process.env.FORMAT_CONTEXT_NARROW === "1";
+    const formatOnly = process.env.FORMAT_CONTEXT_ONLY === "1";
+    const geometries: readonly (readonly [number, number])[] = narrow ? [[360,240]] : [[1280,720],[640,360]];
+    const selectedCases = narrow ? cases.filter(item => ["format-mingle","format-huddle","format-rules"].includes(item.name))
+      : formatOnly ? cases.filter(item => item.name.startsWith("format-")) : cases;
+    for(const [width,height] of geometries) for(const item of selectedCases) {
       const profile=parseTimingProfile({ending:{holdMs:0}}),fps=30;
       const timeline=compileTiming([item.cue.timing],profile,fps);
       let manifest:ReplayManifest={schema:"house.replay-export",version:2,game:{id:"fixture",slug:item.name,kind:item.cue.picture.kind === "thinking" || item.cue.picture.kind === "influence" ? "influence" : "werewolf"},
@@ -101,7 +123,16 @@ try {
       const exported=await selectComposition({serveUrl,id:"Export",inputProps,puppeteerInstance:browser});
       const viewer=await selectComposition({serveUrl,id:"Viewer",inputProps,puppeteerInstance:browser});
       const thought=timeline[0]!.thought;
-      const samples=thought ? [Math.round(thought.enterMs*.5*fps/1000),Math.round((thought.readAtMs+500)*fps/1000),Math.round((thought.returnAtMs+450)*fps/1000)] : [Math.min(60,manifest.range.untilFrame-1)];
+      let rulesSamples:number[]|null = null;
+      if (item.name === "format-rules" && item.cue.picture.kind === "influence" && item.cue.picture.cue.source === "format" && item.cue.picture.cue.kind === "format_selected") {
+        const text = formatPresentationMetadata(item.cue.picture.cue.formatId).conciseRules;
+        const rulePages = Object.values(pages).find(value => value.join("") === text);
+        if (!rulePages?.length || rulePages.some(page => !page.trim())) throw new Error("Rules pagination did not preserve every word");
+        const weights = rulePages.map(page => page.trim().split(/\s+/u).length), total = weights.reduce((sum,value) => sum + value,0);
+        let prior = 0;
+        rulesSamples = [0,...weights.map(weight => {const frame = Math.floor((prior + weight / 2) / total * manifest.range.untilFrame); prior += weight; return frame;}),manifest.range.untilFrame-1];
+      }
+      const samples=rulesSamples ?? (thought ? [Math.round(thought.enterMs*.5*fps/1000),Math.round((thought.readAtMs+500)*fps/1000),Math.round((thought.returnAtMs+450)*fps/1000)] : item.name.startsWith("format-") && item.name !== "format-menu" ? [0,Math.min(60,manifest.range.untilFrame-1),manifest.range.untilFrame-1] : [Math.min(60,manifest.range.untilFrame-1)]);
       for(const frame of samples) {
         const paths={viewer:`${prefix}-${frame}-viewer.png`,export:`${prefix}-${frame}-export.png`};
         await renderStill({serveUrl,composition:viewer,inputProps,frame,output:paths.viewer,imageFormat:"png",puppeteerInstance:browser});
@@ -117,7 +148,7 @@ try {
         await renderStill({serveUrl,composition:exported,inputProps,frame,output:path,imageFormat:"png",puppeteerInstance:browser});
         if(sha256(await readFile(path))!==results.find(row=>row.name===item.name && row.width===width && row.frame===frame)!.exportHash) throw new Error("Reverse-order render mismatch");
       }
-      if(width===640 && (item.name === "format-menu" || item.name === "chain-0" || item.name === "winner-mystery-vote")) {
+      if(width===640 && ["format-menu","format-rules","format-mingle","format-huddle-thought","chain-0","winner-mystery-vote"].includes(item.name)) {
         await renderMedia({serveUrl,composition:exported,inputProps,codec:"h264",muted:true,outputLocation:`${prefix}.mp4`,concurrency:2,puppeteerInstance:browser});
         for(const frame of samples) {
           const encoded=`${prefix}-${frame}-encoded.png`;

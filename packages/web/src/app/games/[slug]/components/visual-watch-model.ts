@@ -103,6 +103,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
   }
   if (cue?.source === "format") {
     const twoNamesRoster = () => players.map(player => ({...player, avatarUrl:data.portraits[player.id] ?? player.avatarUrl, fullBodyReferenceUrl:data.fullBodies?.[player.id]}));
+    if (cue.kind === "format_selected" && cue.stage === "rules_reveal") return {rooms, beat:{kind:"format-result",cue,roster:twoNamesRoster()}};
     if (twoNamesDecisionSpeechAction(cue.kind) && cue.decisionSpeechEntry) {
       const actor = players.find(player => player.id === cue.decisionSpeechEntry!.decisionSpeech!.actorId);
       if (actor) return {rooms, beat: {kind:"two-names-decision", cue, roster:twoNamesRoster(),
