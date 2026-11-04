@@ -25,7 +25,7 @@ export function ProductAnalytics() {
       return;
     }
     let active = true;
-    void initializeAnalytics(config.POSTHOG_PROJECT_TOKEN, "https://us.i.posthog.com").then(() => {
+    void initializeAnalytics(config.POSTHOG_PROJECT_TOKEN, "https://k.thehouse.game").then(() => {
       if (!active) return;
       setAnalyticsIdentity(account?.publicId ?? null, internal || privateRoute);
       capturePage(pathname);
