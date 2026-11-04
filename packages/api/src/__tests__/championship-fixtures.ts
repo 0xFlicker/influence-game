@@ -2,7 +2,7 @@ import sharp from "sharp";
 import { writeLocalUpload } from "../lib/storage.js";
 import { setChampionshipArtDependenciesForTests } from "../services/championship-artwork.js";
 import { readPayload } from "../services/payload-storage.js";
-const fixtureImage = sharp({ create: { width: 32, height: 48, channels: 3, background: "#987654" } }).png().toBuffer();
+export const fixtureImage = sharp({ create: { width: 32, height: 48, channels: 3, background: "#987654" } }).png().toBuffer();
 export function installChampionshipArtFixture() {
   setChampionshipArtDependenciesForTests({
     read: async () => fixtureImage,

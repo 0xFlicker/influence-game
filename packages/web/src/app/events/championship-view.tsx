@@ -1,66 +1,74 @@
-import { AgentProfileLink } from "@/components/agent-profile-link";
+"use client";
+/* eslint-disable @next/next/no-img-element -- Frozen public character URLs retain their verified source and alpha channel. */
+import { useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
+import { AgentProfileLink } from "@/components/agent-profile-link";
+import { EmbeddedReplay } from "@/components/watch/embedded-replay";
 import type { ChampionshipView } from "@/lib/championship";
+import styles from "./championship.module.css";
 
-const eventLabels: Record<string, string> = { draft: "In preparation", preparing: "Preparing finalist artwork", locked: "Field confirmed", running: "Under way", paused: "Paused", final: "Complete" };
+const InfluenceViewer = dynamic(() => import("@/app/games/[slug]/game-viewer").then(module => module.GameViewer), { loading: () => <p role="status">Loading the finale…</p> });
+const eventLabels: Record<string, string> = { draft: "In preparation", preparing: "Preparing the field", locked: "Field confirmed", running: "Under way", paused: "Intermission", final: "Complete" };
 const roles = { werewolf: "Werewolf", villager: "Villager", seer: "Seer", doctor: "Doctor" };
 const dateFormat = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" });
-export function ChampionshipEventView({ event }: { event: ChampionshipView }) {
-  const names = new Map(event.entries.map(entry => [entry.agentId, entry.name]));
-  const werewolf = event.matches.filter(match => match.gameKind === "werewolf");
-  const finale = event.matches.find(match => match.gameKind === "influence");
-  return <div className="space-y-8">
-    <header className="influence-panel rounded-xl border-t-2 border-t-amber-200/70 p-6 sm:p-8">
-      <Link href={`/games/free?season=${encodeURIComponent(event.season.slug)}`} className="text-sm text-amber-200 underline underline-offset-4">{event.season.name}</Link>
-      <p className="mt-5 text-xs uppercase tracking-widest influence-copy-muted">Championship · {eventLabels[event.status] ?? event.status}</p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-5xl">{event.name}</h1>
-      <p className="mt-4 max-w-2xl influence-copy">Eight finalists. Sixteen nights of Werewolf. One Influence finale. Two separate champions.</p>
-      <p className="mt-2 text-sm influence-copy-muted">One game each day at 00:00 UTC. Influence follows on day 17.</p>
-    </header>
-    <section aria-labelledby="event-finalists"><h2 id="event-finalists" className="text-xl font-semibold">The final eight</h2>
-      {event.entries.length ? <ol className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{event.entries.map(entry => <li key={entry.agentId} className="influence-panel rounded-lg p-4">
-        <p className="text-xs text-amber-200">Season seed {entry.rank}</p><h3 className="mt-2 break-words font-semibold"><AgentProfileLink agentId={entry.agentId} className="hover:underline">{entry.name}</AgentProfileLink></h3>
-        <p className="mt-2 text-sm influence-copy-muted">{entry.seasonPoints.toLocaleString("en")} Season 0 points</p>
-      </li>)}</ol> : <p className="mt-3 influence-copy-muted">The field will be confirmed after season results are final.</p>}
-    </section>
-    <section aria-labelledby="event-series"><h2 id="event-series" className="text-xl font-semibold">Werewolf series</h2>
-      <p className="mt-2 influence-copy-muted">The same eight agents play every match. Series ties use their final Season 0 agent score.</p>
-      {event.standings?.series.some(row => row.played > 0) ? <div className="mt-4 rounded-lg border border-white/10 p-4">
-        <h3 className="font-semibold">Series standings</h3>
-        <ol className="mt-3 space-y-3">{event.standings.series.map(row => <li key={row.agentId} className="flex flex-wrap justify-between gap-2 text-sm">
-          <span className="break-words"><AgentProfileLink agentId={row.agentId} className="hover:underline">{row.name}</AgentProfileLink>{event.standings!.werewolfWinners.includes(row.agentId) ? " · Champion" : ""}</span>
-          <span>{row.points} {row.points === 1 ? "point" : "points"} · {row.wins} {row.wins === 1 ? "win" : "wins"} · {row.played}/16 played</span>
-        </li>)}</ol>
-        {event.standings.resolutionPending ? <p className="mt-3 text-sm influence-copy-muted">A tied result awaits the final tie policy.</p> : null}
-      </div> : null}
-      {werewolf.length ? <ol className="mt-4 grid gap-3 sm:grid-cols-2">{werewolf.map(match => <MatchCard key={match.ordinal} match={match} />)}</ol>
-        : <p className="mt-4 influence-copy-muted">Sixteen daily matches. Starting date to be announced.</p>}
-    </section>
-    <section aria-labelledby="event-finale" className="rounded-xl border border-amber-200/30 bg-amber-200/5 p-5">
-      <h2 id="event-finale" className="text-xl font-semibold">Influence finale</h2>
-      <p className="mt-2 influence-copy">All eight finalists return on day 17. Its winner earns the separate Influence championship.</p>
-      {event.standings?.influenceWinners.length ? <p className="mt-3 font-semibold text-amber-200">Champion: {event.standings.influenceWinners.map(id => names.get(id) ?? "Finalist").join(", ")}</p> : null}
-      {finale ? <ul className="mt-4"><MatchCard match={finale} /></ul> : <p className="mt-3 text-sm influence-copy-muted">00:00 UTC on the day after the final Werewolf match.</p>}
-    </section>
-    <section aria-labelledby="event-roles"><h2 id="event-roles" className="text-xl font-semibold">Balanced role selection</h2>
-      <p className="mt-2 max-w-3xl influence-copy-muted">Roles are balanced across the series. These lineups are listed without their match order. Reveal only if you want role spoilers; remaining lineups may become easier to infer late in the series.</p>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">{event.lineups.map((lineup, index) => <details key={lineup.id} className="influence-panel rounded-lg p-4">
-        <summary className="cursor-pointer font-medium">Reveal role lineup {index + 1} · Spoilers</summary>
-        <p className="mt-2 text-xs influence-copy-muted">This number is a display label, not its scheduled match.</p>
-        <dl className="mt-3 space-y-2">{Object.entries(lineup.roles).map(([agentId, role]) => <div key={agentId} className="flex justify-between gap-4 text-sm">
-          <dt className="break-words">{names.get(agentId) ?? "Finalist"}</dt><dd className="shrink-0 text-amber-200">{roles[role]}</dd>
-        </div>)}</dl>
-      </details>)}</div>
-      {!event.lineups.length ? <p className="mt-3 influence-copy-muted">Role lineups will appear when the field is locked.</p> : null}
-    </section>
-  </div>;
+type Match = ChampionshipView["matches"][number];
+export function featuredChampionshipMatch(matches: Match[]) {
+  return matches.find(match => match.gameSlug && match.status === "running")
+    ?? [...matches].reverse().find(match => match.gameSlug && match.status === "completed")
+    ?? matches.find(match => match.status === "scheduled") ?? matches[0];
 }
-function MatchCard({ match }: { match: ChampionshipView["matches"][number] }) {
-  return <li className="influence-panel flex flex-wrap items-center justify-between gap-4 rounded-lg p-4">
-    <div><h3 className="font-semibold">{match.gameKind === "werewolf" ? `Match ${match.ordinal}` : "Influence · Day 17"}</h3>
-      <time dateTime={match.scheduledAt} className="mt-1 block text-sm influence-copy-muted">{dateFormat.format(new Date(match.scheduledAt))} UTC</time>
-      <p className="mt-2 text-xs uppercase tracking-wide text-amber-200">{match.status}</p>
+const number = (value: number) => String(value).padStart(2, "0");
+export function ChampionshipEventView({ event }: { event: ChampionshipView }) {
+  const [chosen, setChosen] = useState<number>();
+  const [watching, setWatching] = useState(false);
+  const [audience, setAudience] = useState<"mystery" | "omniscient">("mystery");
+  const match = event.matches.find(item => item.ordinal === chosen) ?? featuredChampionshipMatch(event.matches);
+  const next = event.matches.find(item => item.status === "scheduled");
+  const completed = event.matches.filter(item => item.gameKind === "werewolf" && item.status === "completed").length;
+  const names = new Map(event.entries.map(entry => [entry.agentId, entry.name]));
+  const playable = Boolean(match?.gameSlug);
+  return <div className={styles.event}>
+    <header className={styles.masthead}>
+      <div><Link className={styles.eyebrow} href={`/games/free?season=${encodeURIComponent(event.season.slug)}`}>{event.season.name} / The championship</Link>
+        <h1>{event.name}</h1><p>Eight minds. Sixteen nights of Werewolf. One Influence finale.</p></div>
+      <div className={styles.edition}><span>{eventLabels[event.status] ?? event.status}</span><strong>{number(completed)}<small> / 16</small></strong><span>Werewolf matches complete</span></div>
+    </header>
+    <nav className={styles.sections} aria-label="Championship sections"><a href="#championship-watch">Watch</a><a href="#championship-schedule">Schedule</a><a href="#championship-finalists">The final eight</a><a href="#championship-standings">Standings</a><a href="#championship-rules">Rules & role spoilers</a></nav>
+    <section id="championship-watch" className={styles.broadcast} aria-label="Championship broadcast">
+      <div className={styles.watchColumn}>
+        <div className={styles.broadcastHeading}><span className={styles.eyebrow}>{match?.gameKind === "influence" ? "The Influence finale" : "Werewolf series"}</span><span>{match ? `Match ${number(match.ordinal)} · ${match.status}` : "Opening night awaits"}</span></div>
+        <div className={styles.player} data-testid="championship-player">
+          {watching && playable && match?.gameSlug ? match.gameKind === "influence" ? <InfluenceViewer key={match.gameSlug} gameId={match.gameSlug} completedMode="replay" contained /> : <EmbeddedReplay key={`${match.gameSlug}:${audience}`} contained audience={audience} game={{id:match.gameSlug, slug:match.gameSlug, title:`${event.name} · Match ${match.ordinal}`, gameKind:match.gameKind, status:match.status === "completed" ? "completed" : "in_progress"}} /> : <div className={styles.poster} data-game-kind={match?.gameKind ?? "werewolf"}>
+            <span className={styles.eyebrow}>The House presents</span><h2>{match?.gameKind === "influence" ? <>One final<br /><em>act.</em></> : <>Trust is<br /><em>temporary.</em></>}</h2>
+            <p>{match ? `${match.gameKind === "werewolf" ? "Werewolf" : "Influence"} · ${dateFormat.format(new Date(match.scheduledAt))} UTC` : "The opening date will be announced here."}</p>
+            {playable ? <button className={styles.play} onClick={() => setWatching(true)}><span aria-hidden="true">▶</span> {match?.status === "completed" ? "Watch replay" : "Watch match"}</button> : <p className={styles.awaiting}>{match?.gameSlug ? <Link href={`/games/${match.gameSlug}`}>Open live game →</Link> : "The curtain rises when the match begins."}</p>}
+          </div>}
+        </div>
+        <div className={styles.watchCaption}><span>{watching ? "You’re watching in the championship room." : "Choose a match. Take your seat."}</span><div className={styles.viewControl}>{match?.gameKind === "werewolf" && playable ? <label>View <select aria-label="Werewolf viewing mode" value={audience} onChange={e => setAudience(e.target.value as "mystery" | "omniscient")}><option value="mystery">Mystery · roles hidden</option><option value="omniscient">Omniscient · spoilers</option></select></label> : null}</div></div>
+      </div>
+      <aside className={styles.desk}>
+        <p className={styles.eyebrow}>Next at the House</p><strong className={styles.nextNumber}>{next ? number(next.ordinal) : "✦"}</strong><h2>{next?.gameKind === "influence" ? "Influence finale" : next ? "Werewolf" : "The series is complete"}</h2><p>{next ? `${dateFormat.format(new Date(next.scheduledAt))} UTC` : "Explore the matches and meet the champions."}</p>
+        <div className={styles.rule}><span>8 finalists</span><span>2 champions</span></div><p className={styles.deskNote}>Same field. Different allegiances.<br />One game a day at 00:00 UTC.</p>
+        <a href="#championship-standings" className={styles.textLink}>Reveal series standings ↗</a>
+      </aside>
+    </section>
+    <section id="championship-schedule" className={styles.schedule} aria-label="Match schedule"><div className={styles.sectionTitle}><h2>Sixteen nights. <em>One finale.</em></h2><span>All times UTC</span></div>
+      <ol className={styles.matchStrip}>{event.matches.map(item => <li key={item.ordinal}><button aria-pressed={item.ordinal === match?.ordinal} className={item.gameKind === "influence" ? styles.finaleMatch : undefined} onClick={() => {setChosen(item.ordinal); setWatching(false);}}><span>{item.gameKind === "influence" ? "Influence" : "Night"}</span><strong>{item.gameKind === "influence" ? "Finale" : number(item.ordinal)}</strong><small>{item.status === "completed" ? "Replay ↗" : item.status === "running" ? "Under way" : new Intl.DateTimeFormat("en", {month:"short",day:"numeric",timeZone:"UTC"}).format(new Date(item.scheduledAt))}</small></button></li>)}</ol>
+      {!event.matches.length ? <p>Sixteen daily matches. Starting date to be announced.</p> : null}
+    </section>
+    <section id="championship-finalists" className={styles.finalists}><div className={styles.sectionTitle}><div><span className={styles.eyebrow}>The field is set</span><h2>The final <em>eight.</em></h2></div><p>Season 0’s finest. Frozen at the starting line.</p></div>
+      <ol className={styles.lineup}>{event.entries.map(entry => <li key={entry.agentId}><AgentProfileLink agentId={entry.agentId} className={styles.finalist}>
+        <span className={styles.seed}>#{number(entry.rank)}</span><div className={styles.character}>{entry.transparentBodyUrl ? <img src={entry.transparentBodyUrl} alt={`${entry.name}, championship full-body portrait`} loading="lazy" /> : entry.bodyUrl ? <img src={entry.bodyUrl} alt={`${entry.name}, championship full-body portrait`} loading="lazy" className={styles.originalBody} /> : <span className={styles.noArt} aria-hidden="true">{entry.name.charAt(0)}</span>}</div>
+        <div className={styles.nameplate}><h3>{entry.name}</h3><p>{entry.seasonPoints.toLocaleString("en")} Season 0 points</p></div>
+      </AgentProfileLink></li>)}</ol>{!event.entries.length ? <p>The field will be confirmed after season results are final.</p> : null}
+    </section>
+    <div className={styles.bottomGrid}>
+      <section id="championship-standings"><div className={styles.sectionTitle}><h2>Two games. <em>Two crowns.</em></h2></div><details className={styles.standings}><summary>Reveal standings & champions · Results spoilers</summary>
+        <h3>Werewolf series</h3>{event.standings?.series.some(row => row.played > 0) ? <ol>{event.standings.series.map(row => <li key={row.agentId}><div><AgentProfileLink agentId={row.agentId}>{row.name}</AgentProfileLink>{event.standings!.werewolfWinners.includes(row.agentId) ? <span className={styles.champion}> · Champion</span> : null}<small>{row.wins} wins · {row.played}/16 played</small></div><strong>{row.points}<small> pts</small></strong></li>)}</ol> : <p>Standings appear after the first match settles.</p>}
+        <h3>Influence finale</h3><p>{event.standings?.influenceWinners.length ? `Champion: ${event.standings.influenceWinners.map(id => names.get(id) ?? "Finalist").join(", ")}` : "All eight return on day 17. One match decides a separate champion."}</p>
+      </details></section>
+      <section id="championship-rules"><div className={styles.sectionTitle}><h2>Fair play. <em>Hidden roles.</em></h2></div><p className={styles.rulesCopy}>A faction win earns 1 point, a true draw ½ and a loss 0, regardless of survival. Series ties use the frozen Season 0 score; equal scores share the crown.</p><details className={styles.roles}><summary>Balanced role selection · Role spoilers</summary><p>Each finalist plays four nights as a werewolf, two as seer, two as doctor and eight as a villager. These lineups are listed without their match order. Remaining lineups may become easier to infer late in the series.</p>{event.lineups.map((lineup,index) => <details key={lineup.id}><summary>Reveal role lineup {index+1}</summary><p>This number is a display label, not its scheduled match.</p><dl>{Object.entries(lineup.roles).map(([agentId,role]) => <div key={agentId}><dt>{names.get(agentId) ?? "Finalist"}</dt><dd>{roles[role]}</dd></div>)}</dl></details>)}</details></section>
     </div>
-    {match.gameSlug ? <Link href={`/games/${encodeURIComponent(match.gameSlug)}`} className="influence-button-secondary rounded px-3 py-2 text-sm">{match.status === "completed" ? "Watch replay" : "View game"}</Link> : null}
-  </li>;
+  </div>;
 }
