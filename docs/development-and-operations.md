@@ -704,3 +704,7 @@ apply. Custom-game admission/start routes are unchanged.
 Closing intake through the season close endpoint clears standing queue entries,
 rejects new enrollment and moves the season to closing. It does not finalize
 standings or cancel existing games.
+
+## Concurrent startup migrations
+
+Gateway and worker both use `runMigrations`, which serializes journal inspection and application on one dedicated transaction/backend. Use this runner for concurrent startup; direct Drizzle migration commands and older binaries do not share its lock. After a migration error, inspect schema/journal evidence before attempting repair. A duplicate catalog error may mean another startup completed successfully; do not delete tables or journal rows. See [serialization and disposable failure tests](solutions/database/serialized-startup-migrations.md).

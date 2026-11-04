@@ -5,19 +5,18 @@
  * Can be run standalone or imported programmatically.
  */
 
-import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createDB } from "./index.js";
+import { createDB, resolveDatabaseUrl } from "./index.js";
+import { applyMigrationsSerialized } from "./serialized-migrations.js";
 
 export async function runMigrations(connectionString?: string) {
   const migrationsFolder = resolveMigrationsFolder();
-  const db = createDB(connectionString);
-  await migrate(db, { migrationsFolder });
+  await applyMigrationsSerialized(resolveDatabaseUrl(connectionString), migrationsFolder);
   console.log("Migrations applied successfully.");
-  return db;
+  return createDB(connectionString);
 }
 
 export type ReleaseMigrationPolicyViolation = {

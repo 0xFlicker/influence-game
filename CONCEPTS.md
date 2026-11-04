@@ -1051,3 +1051,7 @@ Daily Free scheduled draws require a season accepting admissions under the
 shared enrollment/closeout lock. One accepted timestamp controls the draw's
 season binding. Scheduled start requires an assigned season but permits
 already-admitted games during closing; custom games remain independent.
+
+### Startup migration serialization
+
+Gateway and game-worker startups share one database-scoped transaction advisory lock acquired before journal bootstrap/read and held through migration commit. A dedicated backend at READ COMMITTED serializes both the decision and its DDL; rollback or process failure releases it. Existing migration hashes and journal rows remain unchanged. See [migration recovery](docs/solutions/database/serialized-startup-migrations.md).
