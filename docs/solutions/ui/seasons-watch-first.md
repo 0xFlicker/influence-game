@@ -23,3 +23,9 @@ The entry picker is collapsed initially. Join/Create remain prominent when neede
 - Focused web discovery/preview and lazy-mount component tests: 12 passed, 40 assertions. Typecheck and lint passed. Full provider-free baseline recorded separately when complete.
 
 No extra game, asset generation, server restart, database reset or deployment was performed for this layout.
+
+## Playback layout follow-up
+
+The game label and Close player row now reserves its real layout before playback, using hidden visibility and `aria-hidden` rather than conditional mounting. It remains unfocusable and invisible until playback; no viewer is mounted by the reservation. Browser measurements before/after real live playback: desktop player 800px, caption 47.995px, standings document Y 1471.875px; narrow layout player 460px, caption 75.981px, standings Y 1450.825px. Watch-section heights were unchanged (942.760px desktop, 887.813px narrow), with no horizontal overflow. The narrow browser's zoom-adjusted CSS viewport measured 416px.
+
+Complete provider-free regression: **3,348 passed, 5 skipped, 0 failed, 40,578 assertions** across 358 files (234.12s). Initial sandbox run could not bind ephemeral test ports; rerunning with loopback test permission passed. Existing application servers were not operated. Full PostgreSQL regression is running in its own disposable database, independently of `influence_dev`.

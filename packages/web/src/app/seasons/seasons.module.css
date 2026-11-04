@@ -13,3 +13,5 @@
 @media(prefers-reduced-motion:reduce){.bigPlay:hover{transform:none}}
 
 @media(max-width:600px){.manageEntry{padding:8px 12px;background:#0d0d0de8;border:1px solid #b99c61;border-radius:3px}}
+
+.playerCaption[data-playing="false"]{visibility:hidden;pointer-events:none}

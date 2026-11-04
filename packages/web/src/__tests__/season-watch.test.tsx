@@ -15,6 +15,8 @@ test('initial render and feed refresh do not mount or request a player',()=>{
  expect(view.getByTestId('season-player').getAttribute('data-playing')).toBe('false');
  expect(view.getByRole('link',{name:'All Season 1 games'}).getAttribute('href')).toBe('/games/season/s1');
  expect(view.queryByRole('button',{name:'Close player'})).toBeNull();
+ expect(view.getByTestId('season-player-caption').getAttribute('aria-hidden')).toBe('true');
+ expect(view.getByTestId('season-player-caption').textContent).toContain('Close player');
  view.rerender(<SeasonWatch games={[{...live,status:'completed'}]} seasonName="Season 1" seasonSlug="s1" loading={false} error={null}/>);
  expect(view.getByRole('button',{name:'Watch replay'})).toBeTruthy();expect(requests).toBe(0);
 });
