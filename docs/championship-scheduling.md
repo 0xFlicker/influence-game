@@ -46,3 +46,13 @@ Source lives in the separate `falsefloor/infra` championship worktree (`champion
 Deployment and new IAM provisioning require the separate operator review under infra/AGENTS.md. No AWS resource was created by implementation. Staging's private tailnet API needs an approved reachable controller network path before deployment; the stack does not pretend a public Lambda can reach it. Configure API/service/ingress credentials and an actual reachable exact-game launcher, then test one disposable event. Do not activate production as a deployment smoke test.
 
 Recovery: inspect controller/Scheduler DLQs and alarms, repair the underlying failure, then redrive the saved message. Repeating event synchronization reads current state, so old pause/activate notifications cannot reverse a newer decision. Inspect real AWS registration and delivery logs in staging before claiming cloud scheduling verified.
+
+## Local verification (2026-11-04)
+
+A disposable, unpublished local event with eight explicitly marked fixture agents used the real activation API and one-shot timer. Its first match was accepted seven milliseconds after its scheduled timestamp. The test paused the event after acceptance; none of the other sixteen matches started. The live provider run exposed a provider-journal/owner lock inversion, fixed separately in `29b5c481` with a deterministic failing-before/passing-after PostgreSQL regression.
+
+The replacement then completed through the actual API/runtime: 94 canonical events, eight unique championship results tied only to the current attempt, unchanged frozen roles, no season rating, and a closed healthy owner. All 80 provider attempts were terminal. The anonymous game page displayed Completed and replay/results links. Failed attempts and provider evidence remain retained; test records are clearly marked and existing user competitions were not altered. Local evidence is retained under `artifacts/championship/scheduler-live/verified.json`.
+
+This verifies the development one-shot adapter and shared admission/launch/settlement path. AWS controller tests and credential-free CDK synthesis verify source wiring, not a deployed EventBridge delivery. A real cloud delivery remains pending the rollout prerequisites above.
+
+Final validation: 2,409 PostgreSQL tests passed (226 files, 34,271 assertions); 3,328 provider-free tests passed with 5 skipped; 95 focused runtime/ownership tests passed; 32 focused championship tests passed; and 7 focused UI tests passed. Infra baseline: 86 passed; dedicated controller/stack tests: 7 passed. Both repositories' checks, the Lambda bundle, credential-free synthesis, and whitespace checks passed. The first sandboxed provider-free attempt could not open loopback listeners; the permitted rerun passed.
