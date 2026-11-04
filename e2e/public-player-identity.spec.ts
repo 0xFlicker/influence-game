@@ -840,7 +840,7 @@ test.describe("local public player identity", () => {
       await expect(page.getByRole("dialog", { name: "Create your first Agent" })).toHaveCount(0);
       await expect(page.getByRole("dialog", { name: "Play for Free" })).toHaveCount(0);
       // Explicit character creation remains available; only the automatic prompt is suppressed.
-      await page.getByRole("link", { name: /Create agent/i }).first().click();
+      await page.getByRole("link", { name: "Create your first agent", exact: true }).click();
       await expect(page).toHaveURL(`${servers.webUrl}/agents/create`, { timeout: 30_000 });
     } finally {
       await context.close();
