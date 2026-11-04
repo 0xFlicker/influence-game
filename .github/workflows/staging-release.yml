@@ -95,7 +95,7 @@ jobs:
         id: admit
         env:
           GH_TOKEN: ${{ steps.infra-token.outputs.token }}
-        run: python3 scripts/staging-batch-release.py
+        run: python3 scripts/batch-release.py
       - uses: actions/upload-artifact@v6
         with:
           name: staging-batch-admission-${{ github.run_id }}-${{ github.run_attempt }}

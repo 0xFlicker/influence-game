@@ -4,7 +4,7 @@ from pathlib import Path
 import unittest
 import test_staging_batch_admission as fixtures
 
-spec = importlib.util.spec_from_file_location('release', Path(__file__).with_name('staging-batch-release.py'))
+spec = importlib.util.spec_from_file_location('release', Path(__file__).with_name('batch-release.py'))
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 

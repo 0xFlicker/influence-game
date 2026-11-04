@@ -1,0 +1,105 @@
+{
+  "status": "passed",
+  "scope": "One matched pair per game: full-input fresh layout preparation plus two-minute 1920x1080/30fps encoding, selection and scratch cleanup. PNG/one-worker control versus screenshot-free/four-worker candidate. Same image readiness/observer fixes in both. Asset copy measured separately.",
+  "results": [
+    {
+      "game": "werewolf",
+      "speedup": 3.036776294429255,
+      "secondsSaved": 202.03585629199995,
+      "trials": [
+        {
+          "mode": "png",
+          "concurrency": 1,
+          "fromFrame": 4548,
+          "frames": 3600,
+          "geometry": [
+            1920,
+            1080,
+            30
+          ],
+          "copySeconds": 0.009432999999999993,
+          "prepSeconds": 34.147066667,
+          "selectSeconds": 0.2805897079999995,
+          "renderSeconds": 266.68582483299997,
+          "totalSeconds": 301.22979174999995,
+          "manifestHash": "2799474294efc152340b4fe8fc1578834d2732f628b9fd7e0486d88dd4b504d1",
+          "browser": "/Users/user/Development/influence-game/node_modules/.remotion/chrome-headless-shell/mac-arm64/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+          "note": "Actual full-input layout preparation plus two-minute encoding and scratch cleanup. Source asset copy timed separately; no remote/API startup. Control restores PNG captures and uses one worker; candidate uses screenshot-free preparation and four workers.",
+          "decodedFramesAndTimestampsExact": true,
+          "decodedAudioExact": true
+        },
+        {
+          "mode": "none",
+          "concurrency": 4,
+          "fromFrame": 4548,
+          "frames": 3600,
+          "geometry": [
+            1920,
+            1080,
+            30
+          ],
+          "copySeconds": 0.004891750000000002,
+          "prepSeconds": 15.390174333000001,
+          "selectSeconds": 0.2920208750000002,
+          "renderSeconds": 83.474771208,
+          "totalSeconds": 99.19393545800001,
+          "manifestHash": "2799474294efc152340b4fe8fc1578834d2732f628b9fd7e0486d88dd4b504d1",
+          "browser": "/Users/user/Development/influence-game/node_modules/.remotion/chrome-headless-shell/mac-arm64/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+          "note": "Actual full-input layout preparation plus two-minute encoding and scratch cleanup. Source asset copy timed separately; no remote/API startup. Control restores PNG captures and uses one worker; candidate uses screenshot-free preparation and four workers.",
+          "decodedFramesAndTimestampsExact": true,
+          "decodedAudioExact": true
+        }
+      ]
+    },
+    {
+      "game": "influence",
+      "speedup": 3.208180708812842,
+      "secondsSaved": 539.525700332,
+      "trials": [
+        {
+          "mode": "png",
+          "concurrency": 1,
+          "fromFrame": 7891,
+          "frames": 3600,
+          "geometry": [
+            1920,
+            1080,
+            30
+          ],
+          "copySeconds": 0.048487416,
+          "prepSeconds": 240.35051975,
+          "selectSeconds": 1.5386612500000048,
+          "renderSeconds": 541.7806289580001,
+          "totalSeconds": 783.8561114160001,
+          "manifestHash": "ec36584d9b35d058d781bd35e01a3f506fe28a8be5ec2057a4839fd0e1c95c87",
+          "browser": "/Users/user/Development/influence-game/node_modules/.remotion/chrome-headless-shell/mac-arm64/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+          "note": "Actual full-input layout preparation plus two-minute encoding and scratch cleanup. Source asset copy timed separately; no remote/API startup. Control restores PNG captures and uses one worker; candidate uses screenshot-free preparation and four workers.",
+          "decodedFramesAndTimestampsExact": true,
+          "decodedAudioExact": true
+        },
+        {
+          "mode": "none",
+          "concurrency": 4,
+          "fromFrame": 7891,
+          "frames": 3600,
+          "geometry": [
+            1920,
+            1080,
+            30
+          ],
+          "copySeconds": 0.04020049999999998,
+          "prepSeconds": 73.398982042,
+          "selectSeconds": 1.5976747500000057,
+          "renderSeconds": 169.23971445799998,
+          "totalSeconds": 244.330411084,
+          "manifestHash": "ec36584d9b35d058d781bd35e01a3f506fe28a8be5ec2057a4839fd0e1c95c87",
+          "browser": "/Users/user/Development/influence-game/node_modules/.remotion/chrome-headless-shell/mac-arm64/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+          "note": "Actual full-input layout preparation plus two-minute encoding and scratch cleanup. Source asset copy timed separately; no remote/API startup. Control restores PNG captures and uses one worker; candidate uses screenshot-free preparation and four workers.",
+          "decodedFramesAndTimestampsExact": true,
+          "decodedAudioExact": true
+        }
+      ]
+    }
+  ],
+  "limits": "Local nonisolated M5 Max desktop; excludes API binding/downloads and does not measure a full-match encode. Individual preparation and concurrency trials are separately repeated."
+}

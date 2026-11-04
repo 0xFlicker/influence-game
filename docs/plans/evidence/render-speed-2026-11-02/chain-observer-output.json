@@ -1,0 +1,83 @@
+[
+  {
+    "trial": "baseline-png",
+    "fixture": "opening",
+    "frames": 1530,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 42.574200000000005
+  },
+  {
+    "trial": "baseline-png",
+    "fixture": "scene",
+    "frames": 300,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 16.404413291999997
+  },
+  {
+    "trial": "baseline-png",
+    "fixture": "chain",
+    "frames": 1555,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 43.36038858300001
+  },
+  {
+    "trial": "candidate-0",
+    "fixture": "opening",
+    "frames": 1530,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 44.158331042
+  },
+  {
+    "trial": "candidate-0",
+    "fixture": "scene",
+    "frames": 300,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 18.514542208000005
+  },
+  {
+    "trial": "candidate-0",
+    "fixture": "chain",
+    "frames": 1555,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 50.266070208
+  },
+  {
+    "trial": "candidate-1",
+    "fixture": "opening",
+    "frames": 1530,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 50.58099925
+  },
+  {
+    "trial": "candidate-1",
+    "fixture": "scene",
+    "frames": 300,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 19.377768083000003
+  },
+  {
+    "trial": "candidate-1",
+    "fixture": "chain",
+    "frames": 1555,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 46.63886808299999
+  }
+]

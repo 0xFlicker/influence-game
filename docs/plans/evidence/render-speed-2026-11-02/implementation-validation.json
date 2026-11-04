@@ -1,0 +1,238 @@
+{
+  "status": "Qualified local implementation and bounded offline Linux output proof complete; limitations retained",
+  "webTypecheck": {
+    "exitCode": 0,
+    "log": ".renders/implementation-validation-2026-11-03/web-typecheck.log"
+  },
+  "repositoryCheck": {
+    "command": "bun run check",
+    "exitCode": 0,
+    "log": ".renders/implementation-validation-2026-11-03/check-with-capture-calibration.log"
+  },
+  "providerFree": {
+    "command": "bun run test",
+    "exitCode": 0,
+    "passed": 3306,
+    "skipped": 5,
+    "failed": 0,
+    "assertions": 40087,
+    "log": ".renders/implementation-validation-2026-11-03/provider-free.log",
+    "note": "Passed before replacing the callback candidate with the narrower observer guard; final provider-free rerun pending."
+  },
+  "postgres": {
+    "command": "bun run test:postgres",
+    "exitCode": 0,
+    "passed": 2342,
+    "failed": 0,
+    "assertions": 32065,
+    "database": "Fresh task-owned disposable database, automatically dropped",
+    "initialRun": "Stopped after verified shared-test schema mismatch; failure log retained",
+    "log": ".renders/implementation-validation-2026-11-03/postgres-fresh.log"
+  },
+  "remaining": [],
+  "presentationProof": {
+    "exitCode": 0,
+    "captures": 42,
+    "maxMeanPixelDifference": 0,
+    "encodedClips": 3,
+    "reverseOrder": true,
+    "negativeControl": "Removing eager loading makes the new format-menu fixture fail its readiness deadline."
+  },
+  "studio": {
+    "status": "incomplete",
+    "passed": 5,
+    "failed": 2,
+    "failures": [
+      "Influence ballot still/sequential pixel mismatch",
+      "Teardown hook timeout"
+    ],
+    "log": ".renders/implementation-validation-2026-11-03/studio-parity.log",
+    "artifactRoot": ".renders/implementation-studio-artifacts-2026-11-03/"
+  },
+  "finalObserverFocused": {
+    "passed": 14,
+    "failed": 0,
+    "assertions": 709,
+    "mutation": "Original observer fails the duplicate-load commit assertion; fixed source restored."
+  },
+  "providerFreeFinal": {
+    "exitCode": 1,
+    "passed": 3304,
+    "skipped": 5,
+    "failed": 1,
+    "reason": "New observer fixture lacked document.fonts.ready under full-suite DOM setup; fixed afterward; full rerun pending.",
+    "log": ".renders/implementation-validation-2026-11-03/provider-free-final.log"
+  },
+  "webBatchAfterFixtureFix": {
+    "passed": 1271,
+    "failed": 4,
+    "observerRegression": "passed",
+    "failures": "Local HTTPS/proxy worker tests could not listen inside the sandbox; privileged rerun remains required.",
+    "log": ".renders/implementation-validation-2026-11-03/web-tests-final.log"
+  },
+  "finalWebTypecheckAndLint": {
+    "exitCode": 0,
+    "logs": [
+      ".renders/implementation-validation-2026-11-03/final-web-typecheck.log",
+      ".renders/implementation-validation-2026-11-03/final-web-lint.log"
+    ],
+    "note": "Before the one-line document.fonts test-fixture addition."
+  },
+  "finalBallot": {
+    "exitCode": 1,
+    "failure": "Random-frame mismatch at 63; same seven-pixel rounded-edge region, max channel difference 6.",
+    "log": ".renders/implementation-validation-2026-11-03/ballot-final.log",
+    "next": "Direct unmodified checkout reproduces the same two PNG variants. All four actual encoded movie controls match exactly; final integrated Studio rerun in progress."
+  },
+  "providerFreeFinalFixed": {
+    "exitCode": 0,
+    "passed": 3305,
+    "skipped": 5,
+    "failed": 0,
+    "assertions": 40087,
+    "log": ".renders/implementation-validation-2026-11-03/provider-free-final-fixed.log",
+    "scope": "Final product implementation and corrected observer fixture; before diagnostic comparator addition, which has separate focused tests."
+  },
+  "captureComparatorFocused": {
+    "passed": 4,
+    "failed": 0,
+    "assertions": 15,
+    "scope": "Comparator tests and observer regression",
+    "log": ".renders/implementation-validation-2026-11-03/capture-comparison-tests.log"
+  },
+  "ballotMovieComparison": {
+    "trials": 4,
+    "framesPerTrial": 126,
+    "allDecodedFramesTimestampsAudioExact": true,
+    "evidence": "ballot-movie-comparison.json"
+  },
+  "presentationProofFinal": {
+    "exitCode": 0,
+    "captures": 42,
+    "maxMeanPixelDifference": 0,
+    "reverseOrder": true,
+    "encodedClips": 3,
+    "artifactRoot": ".renders/implementation-parity-final-2026-11-03/"
+  },
+  "studioFinal": {
+    "exitCode": 0,
+    "passed": 6,
+    "filteredOut": 22,
+    "failed": 0,
+    "assertions": 69,
+    "seconds": 160.17,
+    "databaseCleanupConfirmed": true,
+    "log": ".renders/implementation-validation-2026-11-03/studio-parity-final.log",
+    "artifactRoot": ".renders/implementation-studio-final-artifacts-2026-11-03/",
+    "nonExactCaptures": [
+      {
+        "scenario": "Influence ballot",
+        "frame": 63,
+        "method": "Random",
+        "changedPixels": 7,
+        "maxChannelDifference": 6,
+        "totalDifference": 74,
+        "alphaChanged": false,
+        "note": "Exactly the measured unchanged-renderer capture variation; all other diagnostic comparisons exact. Separate actual encoded movies remain decoded-byte exact."
+      }
+    ]
+  },
+  "actualPreparationBenchmark": {
+    "exitCode": 0,
+    "trials": 8,
+    "evidence": "actual-preparation-benchmark.json",
+    "werewolfSpeedup": 2.1576351532594624,
+    "influenceSpeedup": 3.189167072583446
+  },
+  "actualRenderingBenchmark": {
+    "status": "Influence complete; Werewolf closing failure retained with successful diagnostic recovery",
+    "completedWerewolfMovies": 3,
+    "framesPerMovie": 3600,
+    "allCompletedFramesTimestampsAudioExact": true,
+    "failedClosingControl": "Local asset 404; retained without attributing cause",
+    "diagnosticRecovery": "Fresh one-worker control completed in 264.679s, all 3600 frames/timestamps/audio exact, temporary copies intact",
+    "influence": "four-trial matrix passed",
+    "evidence": "actual-render-benchmark.json",
+    "completedInfluenceMovies": 4
+  },
+  "combinedBenchmark": {
+    "status": "passed",
+    "games": 2,
+    "movies": 4,
+    "framesPerMovie": 3600,
+    "allDecodedFramesTimestampsAudioExact": true,
+    "evidence": "combined-render-benchmark.json"
+  },
+  "extendedGeometry": {
+    "status": "passed",
+    "captures": 54,
+    "maxMeanPixelDifference": 0,
+    "reverseOrder": true,
+    "encodedClips": 6,
+    "geometries": [
+      "1920x1080",
+      "1024x280",
+      "375x667"
+    ],
+    "motion": [
+      "normal",
+      "reduced"
+    ],
+    "artifactRoot": ".renders/extended-geometry-proof-2026-11-03/output/"
+  },
+  "startupAttribution": {
+    "status": "Unavailable for original saved selection",
+    "error": "Pinned Influence accepted source changed; reload the source explicitly",
+    "stage": "Selection authorization, before source load",
+    "artifactRoot": ".renders/source-preparation-attribution-2026-11-03/trial-0/",
+    "limitation": "No full startup speed claim. Original selection and frozen source remain untouched; offline full-input preparation benchmark is valid independently."
+  },
+  "historicalEntriesNote": "Earlier failed/intermediate entries are retained chronologically; providerFreeFinalFixed, studioFinal and presentationProofFinal supersede earlier runs.",
+  "linuxWorkerProof": {
+    "evidence": "linux-worker-proof.json",
+    "movies": 18,
+    "frames": 1080,
+    "allDecodedFramesTimestampsAudioExact": true,
+    "retainedFailureAndRecovery": true
+  },
+  "prReviewValidation": {
+    "providerFree": {
+      "passed": 3308,
+      "skipped": 5,
+      "failed": 0,
+      "assertions": 40096,
+      "seconds": 200.2,
+      "log": ".renders/pr-review-2026-11-03/provider-free.log"
+    },
+    "repositoryCheck": {
+      "exitCode": 0,
+      "log": ".renders/pr-review-2026-11-03/check.log"
+    },
+    "focused": {
+      "passed": 4,
+      "assertions": 15
+    },
+    "fixes": [
+      "Capture DOM globals in beforeEach, not module evaluation, and restore through cleanup finally.",
+      "Update evidence index to distinguish initial planning experiment from completed implementation."
+    ],
+    "scope": "No product code changes during review; original product render and PostgreSQL evidence remains applicable.",
+    "rebase": {
+      "base": "e5417ba1",
+      "productHashesUnchanged": true,
+      "repositoryCheckExitCode": 0,
+      "log": ".renders/pr-review-2026-11-03/check-rebased.log"
+    },
+    "independentReview": {
+      "reviewer": "Grok Build",
+      "result": "No proven findings in the reviewed product change; DOM isolation correction closed.",
+      "scope": "Read-only source and installed Remotion inspection; no independent rerun of tests or movies. Existing output proofs and test results were reviewed as evidence.",
+      "limits": [
+        "Absolute still-capture tolerance is a bounded diagnostic allowance, not exact PNG equality.",
+        "Screenshot-free prepass disables video during measurement; existing corpus verifies layouts, not every future video-dependent layout.",
+        "No full two-hour encode repeated for review."
+      ],
+      "log": ".renders/pr-review-2026-11-03/grok-final.log"
+    }
+  }
+}

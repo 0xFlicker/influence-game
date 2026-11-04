@@ -1,7 +1,7 @@
 "use client";
 
 import {characterImageError} from "@/components/character/image-error";
-import {useLayoutEffect, useRef, useState} from "react";
+import {useLayoutEffect, useRef, useState, type SyntheticEvent} from "react";
 import type {HeadRectangle} from "@influence/engine/character-portrait";
 import {thinkingFocus, ThinkingFocusOverlay} from "@/components/watch/thinking-focus";
 import {useBubbleTypography} from "@/components/watch/use-bubble-typography";
@@ -84,6 +84,17 @@ export function SafetyChain({beat, elapsedMs, reducedMotion = false, currentStat
   const frame = useRef<HTMLDivElement>(null);
   const [size,setSize] = useState({width:0,height:0});
   const [mediaRevision,setMediaRevision] = useState(0);
+  const observedMedia = useRef(new WeakMap<HTMLImageElement,string>());
+  const onMedia = (event:SyntheticEvent) => {
+    const image = event.target;
+    if (!(image instanceof HTMLImageElement)) return;
+    // Next Image can reload the same source after a parent render. Measuring
+    // that duplicate event would render the parent and start another reload.
+    const identity = JSON.stringify([event.type,image.currentSrc || image.src,image.naturalWidth,image.naturalHeight]);
+    if (observedMedia.current.get(image) === identity) return;
+    observedMedia.current.set(image,identity);
+    setMediaRevision(value=>value+1);
+  };
   const [face,setFace] = useState<SceneFrame>({left:0,top:0,width:0,height:0});
   const [portrait,setPortrait] = useState(false);
   useLayoutEffect(() => {
@@ -136,7 +147,7 @@ export function SafetyChain({beat, elapsedMs, reducedMotion = false, currentStat
       const from = safetyChainPosition(before, player.id,size.width > 0 && size.width < 640), to = safetyChainPosition(after, player.id,size.width > 0 && size.width < 640);
       const mix = (a: number, b: number) => a + (b - a) * progress;
       const blend = from.pool === to.pool ? Number(to.pool) : from.pool ? 1 - progress : progress;
-      return <div key={player.id} onLoadCapture={() => setMediaRevision(value=>value+1)} onErrorCapture={() => setMediaRevision(value=>value+1)} data-chain-player={player.id} data-chain-classification={after.safePlayerIds.includes(player.id) ? "safe" : after.vulnerablePlayerIds.includes(player.id) ? "vulnerable" : "unclassified"} data-chooser={player.id === board.currentActorId && board.benchPlayerIds.length > 0 || undefined} data-chain-pool={blend === 1 ? after.safePlayerIds.includes(player.id) ? "safe" : "vulnerable" : undefined}
+      return <div key={player.id} onLoadCapture={onMedia} onErrorCapture={onMedia} data-chain-player={player.id} data-chain-classification={after.safePlayerIds.includes(player.id) ? "safe" : after.vulnerablePlayerIds.includes(player.id) ? "vulnerable" : "unclassified"} data-chooser={player.id === board.currentActorId && board.benchPlayerIds.length > 0 || undefined} data-chain-pool={blend === 1 ? after.safePlayerIds.includes(player.id) ? "safe" : "vulnerable" : undefined}
         className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-end"
         style={{left: `${mix(from.x, to.x)}%`, top: `${mix(from.y, to.y)}%`, width: `${mix(from.width, to.width)}%`, height: `${mix(from.height, to.height)}%`, zIndex: player.id === before.currentActorId ? 12 : 10}}>
         <ChainCharacter player={player} blend={blend} />

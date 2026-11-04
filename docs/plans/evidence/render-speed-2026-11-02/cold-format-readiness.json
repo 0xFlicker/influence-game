@@ -1,0 +1,58 @@
+[
+  {
+    "trial": "frame-796-eager-False",
+    "completed": false,
+    "releases": [],
+    "pendingImages": [
+      {
+        "frame": 796,
+        "pass": 0,
+        "index": 3,
+        "src": "",
+        "complete": false,
+        "loading": "lazy",
+        "rects": 1
+      }
+    ],
+    "errors": [
+      "{\"phase\":\"experiment:failed\",\"seconds\":14.124184167000001,\"detail\":{\"message\":\"A delayRender() \\\"Preparing replay stage\\\" was called but not cleared after 8000ms. See https://remotion.dev/docs/timeout for help. \"}}"
+    ]
+  },
+  {
+    "trial": "frame-796-eager-True",
+    "completed": true,
+    "releases": [
+      796
+    ],
+    "pendingImages": [],
+    "errors": []
+  },
+  {
+    "trial": "frame-942-eager-False",
+    "completed": false,
+    "releases": [],
+    "pendingImages": [
+      {
+        "frame": 942,
+        "pass": 0,
+        "index": 3,
+        "src": "",
+        "complete": false,
+        "loading": "lazy",
+        "rects": 1
+      }
+    ],
+    "errors": [
+      "{\"phase\":\"experiment:failed\",\"seconds\":14.088348208000001,\"detail\":{\"message\":\"A delayRender() \\\"Preparing replay stage\\\" was called but not cleared after 8000ms. See https://remotion.dev/docs/timeout for help. \"}}"
+    ]
+  },
+  {
+    "trial": "frame-942-eager-True",
+    "completed": true,
+    "releases": [
+      942
+    ],
+    "pendingImages": [],
+    "errors": []
+  }
+]
