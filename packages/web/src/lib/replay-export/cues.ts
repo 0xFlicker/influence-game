@@ -60,7 +60,7 @@ export type ExportPicture =
       /** Reserve the response's ledger geometry without including its votes. */
       ballotFraming?: boolean;
       chain?: import("../../app/games/[slug]/components/safety-chain").SafetyChainThinkingBeat;
-      room?: {number: number | null; label?: string; backgroundUrl?: string; floorPerspective?: boolean; players: Extract<VisualPresentationBeat, {kind:"portrait-room"}>["participants"]};
+      room?: {number: number | null; label?: string; backgroundUrl?: string; floorPerspective?: boolean; paginateLargeCast?: true; players: Extract<VisualPresentationBeat, {kind:"portrait-room"}>["participants"]};
     }
   | {kind: "werewolf-opening"; cue: WerewolfOpeningCue}
   | ({kind: "influence-opening"; cue: InfluenceOpeningCue} & ReturnType<typeof influenceCastArt>)
@@ -245,6 +245,7 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
         baseDurationMs: cue.baseDurationMs,
         minimumDurationMs:cue.minimumDurationMs,
         readingHold:cue.readingHold,
+        minimumThinkingMs:cue.minimumThinkingMs,
         kind: ledger
           ? ledger.complete
             ? "tally"

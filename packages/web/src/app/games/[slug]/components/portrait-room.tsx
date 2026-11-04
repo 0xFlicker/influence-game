@@ -12,6 +12,8 @@ import type { VisualPresentationBeat } from "./visual-presentation";
 import { SCENE_SPEECH_START_MS, sceneSpeechOpacity } from "./scene-speech-timing";
 import { soloPresentationMotion } from "./solo-presentation-timing";
 import { DEFAULT_ROOM_BACKDROP, RoomBackdrop } from "./stage-backdrop";
+import {PaginatedPortraitRoom} from "./paginated-portrait-room";
+import {portraitRoomDurationMs} from "./portrait-room-pagination";
 
 function portraitRoomTurn(count: number, index: number, speakerIndex: number, deep: boolean) {
   // Rotate the saved circular order so the current speaker stays in front.
@@ -66,7 +68,7 @@ export function portraitRoomTransitionSeats(width: number, count: number, previo
 }
 
 /** Saved audience membership supplies the cast; asset availability never changes the game. */
-export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion, controlsInset, speechPresentation, onImageReady, backgroundUrl, floorPerspective = false, hideSpeech = false, previousSpeakerId }: {
+export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion, controlsInset, speechPresentation, onImageReady, backgroundUrl, floorPerspective = false, hideSpeech = false, previousSpeakerId, paginateLargeCast = false }: {
   beat: Extract<VisualPresentationBeat, { kind: "portrait-room" }>;
   elapsedMs: number; readingElapsedMs: number; reducedMotion: boolean; controlsInset: number;
   speechPresentation?: "solo" | "scene";
@@ -77,6 +79,7 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
   floorPerspective?: boolean;
   /** Canonical predecessor survives live waiting-room unmounts. Null means a new room. */
   previousSpeakerId?: string | null;
+  paginateLargeCast?: boolean;
 }) {
   const sampled = useSampledStage();
   const frame = useRef<HTMLElement>(null);
@@ -127,8 +130,10 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
   const speakerTop = size.height / 2 + (centerY - diameter / 2 - size.height / 2) * 1200 / (1200 - 60);
   const bubbleBottom = speakerTop - 20;
   const bubbleHeight = Math.max(0, beside ? available - 56 : bubbleBottom - 44);
+  const extendedDuration = paginateLargeCast && beat.participants.length > 4 ? portraitRoomDurationMs(beat.speech.text,beat.participants.length) : undefined;
   const opacity = speechPresentation === "solo" ? soloPresentationMotion(beat.speech.text, elapsedMs, false, reducedMotion).speechOpacity
-    : sceneSpeechOpacity(beat.speech.text, elapsedMs, reducedMotion);
+    : extendedDuration === undefined ? sceneSpeechOpacity(beat.speech.text, elapsedMs, reducedMotion)
+      : elapsedMs <= SCENE_SPEECH_START_MS ? 0 : reducedMotion ? 1 : Math.max(0,Math.min(1,(elapsedMs - SCENE_SPEECH_START_MS)/200,(extendedDuration - 400 - elapsedMs)/200));
   const speechTime = speechPresentation === "solo" ? soloPresentationMotion(beat.speech.text, readingElapsedMs).speechElapsedMs
     : readingElapsedMs - SCENE_SPEECH_START_MS;
   const bubbleWidth = Math.max(0, Math.min(960, beside ? size.width * .43 : size.width - 32));
@@ -142,8 +147,10 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
     left: beside ? speechBox.left : centerX - fittedBubbleWidth / 2,
     top: beside ? speechBox.top : Math.max(44, bubbleBottom - fittedBubbleHeight)};
   const roomLabel = beat.roomLabel ?? `Mingle${beat.roomNumber === null ? "" : ` · Room ${beat.roomNumber}`}`;
-  return <section ref={frame} aria-label={beat.roomLabel ?? (beat.roomNumber === null ? "Mingle room" : `Mingle room ${beat.roomNumber}`)} data-portrait-room
-    className="relative min-h-0 w-full flex-1 overflow-hidden" style={{ perspective: 1200 }}>
+  const paginated = paginateLargeCast && beat.participants.length > 4 && size.width > 0 && (size.width < 600 || available < 340 || beat.participants.length > 8);
+  return <section ref={frame} aria-label={beat.roomLabel ?? (beat.roomNumber === null ? "Mingle room" : `Mingle room ${beat.roomNumber}`)} data-portrait-room={!paginated || undefined}
+    className={`relative min-h-0 w-full flex-1 overflow-hidden ${paginated ? "flex flex-col" : ""}`} style={{ perspective: 1200 }}>
+    {paginated ? <PaginatedPortraitRoom beat={beat} elapsedMs={elapsedMs} readingElapsedMs={readingElapsedMs} reducedMotion={reducedMotion} backgroundUrl={backgroundUrl} hideSpeech={hideSpeech} onImageReady={onImageReady} controlsInset={Math.min(controlsInset,Math.max(0,size.height - 240))} /> : <>
     <div data-thinking-camera className="absolute inset-0" style={{...focus.mediaStyle,perspective:1200}}>
     <RoomBackdrop source={backgroundUrl ?? DEFAULT_ROOM_BACKDROP} />
     <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_70%,transparent,rgba(0,0,0,.55))]" />
@@ -168,9 +175,11 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
     {!thought && !hideSpeech && opacity > 0 && <div data-speech-bubble className="absolute z-[200] flex flex-col rounded-2xl border border-white/25 bg-black/90 px-5 py-4 shadow-xl"
       style={{...bubble, opacity, padding:speechFit.padding}}>
       <p className={`mb-2 h-5 shrink-0 truncate text-base font-semibold leading-5 text-white/80 ${speechFit.typography && speechFit.typography.pages.length > 1 && !speechFit.typography.footerHeight ? "pr-12" : ""}`}>{beat.speech.speaker}</p>
-      <TimedSpeech text={beat.speech.text} elapsedMs={speechTime} typography={speechFit.typography} className="text-base leading-relaxed" />
+      <TimedSpeech text={beat.speech.text} elapsedMs={speechTime} typography={speechFit.typography}
+        progress={extendedDuration !== undefined && sampled?.speech?.text !== beat.speech.text ? Math.max(0,(readingElapsedMs - 850)/Math.max(1,extendedDuration - 1450)) : undefined} className="text-base leading-relaxed" />
       <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/25 bg-black/90 ${beside ? "-right-2 border-r border-t" : "-bottom-2 left-1/2 -translate-x-1/2 border-r border-b"}`} style={beside ? { top: centerY - speechBox.top - 8 } : undefined} />
     </div>}
     <ThinkingFocusOverlay frame={frame} layout={focus} />
+    </>}
   </section>;
 }

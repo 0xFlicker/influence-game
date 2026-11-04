@@ -43,8 +43,8 @@ export type VisualPresentationBeat =
   | NomineeSelectionBeat
   | SafetyBounceSceneBeat
   | WinnerSceneBeat
-  | { kind: "portrait-room"; roomNumber: number | null; roomLabel?: string; participants: Array<{id: string; name: string; persona: string; personaKey?: string | null; avatarUrl?: string | null}>; speech: VisualSpeech }
-  | { kind: "scene"; sceneId: string; roomId: VisualRoomId; roomLabel?: string; speech: VisualSpeech | null }
+  | { kind: "portrait-room"; roomNumber: number | null; roomLabel?: string; paginateLargeCast?: true; participants: Array<{id: string; name: string; persona: string; personaKey?: string | null; avatarUrl?: string | null}>; speech: VisualSpeech }
+  | { kind: "scene"; sceneId: string; roomId: VisualRoomId; roomLabel?: string; speechDurationMs?: number; speech: VisualSpeech | null }
   | { kind: "portrait"; thinkingAllowed?: boolean; purpose: "Decision" | "Night decision" | "Introduction" | "Retrospective" | "Ballot" | "Diary" | "Farewell" | "Conversation" | "Plea"; ballotPurpose?: "empower" | "council"; caption?: string; roleLabel?: string; player: { headRectangle?: import("@influence/engine/character-portrait").HeadRectangle; fullBodyReferenceUrl?: string | null; id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null }; speech: VisualSpeech }
   | { kind: "house"; text: string | null; title?: string; backgroundUrl?:string }
   | { kind: "anonymous"; speech: VisualSpeech };
@@ -135,7 +135,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   } else if (beat.kind === "safety-bounce") {
     content = <SafetyBounceScene beat={beat} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} fullscreen={fullscreen} controlsInset={controlsInset} />;
   } else if (beat.kind === "portrait-room") {
-    content = <PortraitRoom floorPerspective backgroundUrl={backgroundUrl} beat={beat} controlsInset={controlsInset} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} reducedMotion={reducedMotion} speechPresentation={speechPresentation} />;
+    content = <PortraitRoom paginateLargeCast={beat.paginateLargeCast} floorPerspective backgroundUrl={backgroundUrl} beat={beat} controlsInset={controlsInset} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} reducedMotion={reducedMotion} speechPresentation={speechPresentation} />;
   } else if (beat.kind === "portrait") {
     content = voteLedger ? <VotePresentation backgroundUrl={backgroundUrl} beat={beat} ledger={voteLedger} roster={roster} controlsInset={controlsInset}
       paused={paused} reducedMotion={reducedMotion} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} />
@@ -160,7 +160,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
         {mingleRooms.map((room) => <button key={room.roomId} type="button" aria-pressed={pinnedRoom === room.roomId} onClick={() => setPinnedRoom(room.roomId)} className="rounded-full border border-white/20 px-3 py-1.5 text-sm aria-pressed:bg-white aria-pressed:text-black">{VISUAL_ROOMS[room.roomId].name}</button>)}
       </nav>}
       <div className="relative flex min-h-0 flex-1 flex-col">
-        {scene && <VisualSceneView onReadyChange={onSceneReadyChange} controlsInset={controlsInset} scene={scene} speech={speech} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} navigationRevision={navigationRevision} reducedMotion={reducedMotion} />}
+        {scene && <VisualSceneView onReadyChange={onSceneReadyChange} controlsInset={controlsInset} scene={scene} speech={speech} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} speechDurationMs={beat.speechDurationMs} navigationRevision={navigationRevision} reducedMotion={reducedMotion} />}
       </div>
     </div>;
   } else {

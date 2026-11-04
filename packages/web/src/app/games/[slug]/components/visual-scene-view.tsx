@@ -21,7 +21,7 @@ const OVERVIEW_HOLD_MS = 200;
 export interface VisualSpeech { id: string; playerId: string | null; speaker: string; text: string; portrait?: { avatarUrl?: string | null; persona: string; personaKey?: string | null } }
 
 /** Camera, bubble pages and speech share the director's presentation time. */
-export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingElapsedMs = elapsedMs, reducedMotion = false, navigationRevision = 0, paused = false, controlsInset = 0, speechPresentation = "scene", panelTreatment = "separate", onReadyChange, focusPlayerId, focusActor }: {
+export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingElapsedMs = elapsedMs, reducedMotion = false, navigationRevision = 0, paused = false, controlsInset = 0, speechPresentation = "scene", speechDurationMs, panelTreatment = "separate", onReadyChange, focusPlayerId, focusActor }: {
   scene: AcceptedVisualScene; speech: VisualSpeech | null; elapsedMs: number;
   /** Frame a silent performance or elimination without inventing speech. */
   focusPlayerId?: string;
@@ -30,6 +30,7 @@ export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingEl
   paused?: boolean;
   controlsInset?: number; reducedMotion?: boolean; navigationRevision?: number;
   speechPresentation?: "solo" | "scene";
+  speechDurationMs?: number;
   readingElapsedMs?: number;
   panelTreatment?: PanelTreatment;
 }) {
@@ -48,7 +49,8 @@ export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingEl
   const pointer = shot?.pointers.find(p => p.playerId === focusedPlayerId);
   // Late viewer publications keep the accepted cue's original staging budget.
   const solo = speech && speechPresentation === "solo" ? soloPresentationMotion(speech.text, elapsedMs, false, reducedMotion) : null;
-  const opacity = solo?.speechOpacity ?? (speech ? sceneSpeechOpacity(speech.text, elapsedMs, reducedMotion) : 0);
+  const opacity = solo?.speechOpacity ?? (speech ? speechDurationMs === undefined ? sceneSpeechOpacity(speech.text, elapsedMs, reducedMotion)
+    : elapsedMs <= SCENE_SPEECH_START_MS ? 0 : reducedMotion ? 1 : Math.max(0,Math.min(1,(elapsedMs - SCENE_SPEECH_START_MS)/200,(speechDurationMs - 400 - elapsedMs)/200)) : 0);
   const anchor = focusedPlayerId ? scene.anchors.find((item) => item.playerId === focusedPlayerId && item.confidence === "clear") : undefined;
   const frameRef = useRef<HTMLElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -151,7 +153,8 @@ export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingEl
         {(imageFailed || !anchor && !pointer) && speech.playerId && <div data-headshot-fallback><AgentAvatar {...speech.portrait} persona={speech.portrait?.persona ?? ""} name={speech.speaker} size="12" /></div>}
         <p className="truncate text-base font-semibold text-white/80">{speech.playerId === null ? "Anonymous" : speech.speaker}</p>
       </div>
-      <TimedSpeech typography={speechFit.typography} text={speech.text} elapsedMs={speechPresentation === "solo" ? soloPresentationMotion(speech.text, readingElapsedMs).speechElapsedMs : readingElapsedMs - SCENE_SPEECH_START_MS} className="text-sm leading-relaxed" />
+      <TimedSpeech typography={speechFit.typography} text={speech.text} elapsedMs={speechPresentation === "solo" ? soloPresentationMotion(speech.text, readingElapsedMs).speechElapsedMs : readingElapsedMs - SCENE_SPEECH_START_MS}
+        progress={speechDurationMs !== undefined && sampled?.speech?.text !== speech.text ? Math.max(0,(readingElapsedMs - 850)/Math.max(1,speechDurationMs - 1450)) : undefined} className="text-sm leading-relaxed" />
       {head && <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/20 bg-black/90 ${bubble.below ? "border-t border-l" : "border-b border-r"}`} style={{ left: bubble.arrowLeft, top: bubble.below ? -8 : undefined, bottom: bubble.below ? undefined : -8 }} />}
     </div>}
     {thinkingReady && <ThinkingFocusOverlay frame={frameRef} layout={focus} />}

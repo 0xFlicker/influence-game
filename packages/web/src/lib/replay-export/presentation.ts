@@ -49,14 +49,14 @@ export function thinkingPicture(cue: ExportCue, actorId = cue.speech?.speakerId)
           avatarUrl:player.avatarUrl,status:player.status,shielded:player.shielded,fullBodyReferenceUrl:player.fullBodyReferenceUrl,headRectangle:player.headRectangle}))},
     }),
     scene:beat?.kind === "scene" ? picture.rooms.find(scene => scene.id === beat.sceneId) ?? null : null,
-    ...(beat?.kind === "portrait-room" && {room:{number:beat.roomNumber,label:beat.roomLabel,players:beat.participants,backgroundUrl,floorPerspective:true}})};
+    ...(beat?.kind === "portrait-room" && {room:{number:beat.roomNumber,label:beat.roomLabel,players:beat.participants,backgroundUrl,floorPerspective:true,paginateLargeCast:beat.paginateLargeCast}})};
 }
 
 export function thinkingSegment(cue: ExportCue, id: string, text: string, actorId?: string): ExportCue {
   if (!text.trim()) throw new Error(`Empty thinking moment: ${id}`);
   const picture = thinkingPicture(cue, actorId);
   return {momentId:id,label:cue.label,source:cue.source,picture,speech:null,music:cue.music,activeFormatId:cue.activeFormatId,
-    timing:{key:id,kind:"thinking",baseDurationMs:1,speech:null,thinking:text,sourceElapsedMs:picture.sourceElapsedMs,...(picture.room && {thinkingEstablishMs:650})}};
+    timing:{key:id,kind:"thinking",baseDurationMs:1,speech:null,thinking:text,sourceElapsedMs:picture.sourceElapsedMs,minimumThinkingMs:cue.timing.minimumThinkingMs,...(picture.room && {thinkingEstablishMs:650})}};
 }
 
 /** The complete game-owned source is projected before this presentation-only selection. */

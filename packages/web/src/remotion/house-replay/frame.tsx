@@ -280,7 +280,7 @@ function ThinkingFrame({picture, elapsedMs, reduced}: {
     return () => observer.disconnect();
   }, [picture]);
   if (picture.chain) return <SafetyChain beat={picture.chain} elapsedMs={elapsedMs} reducedMotion={reduced} />;
-  if (picture.room) return <PortraitRoom beat={{kind:"portrait-room",roomNumber:picture.room.number,roomLabel:picture.room.label,
+  if (picture.room) return <PortraitRoom paginateLargeCast={picture.room.paginateLargeCast} beat={{kind:"portrait-room",roomNumber:picture.room.number,roomLabel:picture.room.label,
     participants:picture.room.players,speech:{id:actor.id,playerId:actor.id,speaker:actor.name,text:""}}}
     backgroundUrl={picture.room.backgroundUrl} floorPerspective={picture.room.floorPerspective}
     hideSpeech elapsedMs={elapsedMs} readingElapsedMs={elapsedMs} reducedMotion={reduced} controlsInset={0} />;

@@ -49,6 +49,11 @@ the interactive panel is player chrome, while the persistent label and the
 longer automatic rules reveal are also rendered into fresh exports. Existing
 MP4s must be rendered again, and old export bundles must be rebuilt from the
 selection and frozen source to pick up the new framing and timing.
+Crowded Influence Mingle and huddle rooms keep the speaker in view while the
+other attendees appear in timed, shared-clock pages. Their speech and thinking
+holds allow time for every cast page; captions still use measured pagination and
+recorded voice retains its original audio duration. Werewolf uses its own room
+presentation and is not routed through this Influence-specific treatment.
 
 For a new beat, explicitly decide its catalog identity, source position, duration,
 speech/thought ownership, recording identity, selection/default inclusion, allowed

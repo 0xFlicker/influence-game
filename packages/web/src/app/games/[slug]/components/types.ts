@@ -144,6 +144,7 @@ interface SpeechCue {
   minimumDurationMs?: number;
   /** Spread a minimum across the sampled reading interval rather than its tail. */
   readingHold?: true;
+  minimumThinkingMs?: number;
   /** Accepted delivery attached to a canonical ballot; never determines its target. */
   spokenMessage?: string;
   /** Exact accepted transcript row moved into its canonical decision shot. */
