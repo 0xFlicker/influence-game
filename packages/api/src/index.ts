@@ -1,6 +1,6 @@
+import { restoreLocalChampionshipSchedules, stopLocalChampionshipTimers } from "./services/championship-scheduling.js";
 import { createGameRetryRoutes } from "./routes/game-retry.js";
 import { processChampionshipArtwork } from "./services/championship-artwork.js";
-import { reconcileChampionships } from "./services/championship-runtime.js";
 import { createChampionshipRoutes } from "./routes/championships.js";
 import { createAudioRoutes } from "./routes/audio.js";
 import { startAudioWorker } from "./services/audio-tracks.js";
@@ -521,16 +521,8 @@ async function finishBackgroundRuntimeStartup(
     }, 2_000)
     : null;
   executionScanTimer?.unref();
-  let championshipReconciliation: Promise<void> | null = null;
-  const championshipTimer = gameExecutionWorker ? setInterval(() => {
-    if (stopping || championshipReconciliation || !gameExecutionWorker.canClaimGames()) return;
-    championshipReconciliation = reconcileChampionships(db).then(result => {
-      if (result.diagnostics.length || result.dispatched.some(item => "error" in item)) console.warn("[championship] Retry diagnostics", result);
-    }).catch(error => console.warn("[championship] Reconciliation deferred", error))
-      .finally(() => { championshipReconciliation = null; });
-  }, 30_000) : null;
-  championshipTimer?.unref();
-  // Artwork has its own lane: a slow image provider never blocks game dispatch/recovery.
+  // Restore explicit development schedules once. Production authority is EventBridge.
+  if (!gameExecutionWorker) await restoreLocalChampionshipSchedules(db);
   let championshipArtworkWork: Promise<unknown> | null = null;
   const championshipArtworkTimer = gameExecutionWorker ? setInterval(() => {
     if (stopping || championshipArtworkWork || !gameExecutionWorker.canClaimGames()) return;
@@ -557,8 +549,7 @@ async function finishBackgroundRuntimeStartup(
       await agentScreeningWorker?.stop();
       if (reconciliationTimer) clearInterval(reconciliationTimer);
       if (executionScanTimer) clearInterval(executionScanTimer);
-      if (championshipTimer) clearInterval(championshipTimer);
-      if (championshipReconciliation) await championshipReconciliation;
+      stopLocalChampionshipTimers();
       if (championshipArtworkTimer) clearInterval(championshipArtworkTimer);
       if (championshipArtworkWork) await championshipArtworkWork;
       if (executionScan) {

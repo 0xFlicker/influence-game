@@ -51,8 +51,9 @@ test("corrupt award evidence defers delivery without preventing a due match from
   testPayloadStore.objects.set(allocation!.grants.key, new Uint8Array([0]));
   try {
     const result = await reconcileChampionships(db, "2026-12-01T00:00:00.000Z");
-    expect(result.dispatched).toHaveLength(1);
-    expect(result.dispatched[0]).toMatchObject({ eventId: event.id, ordinal: 1, deferred: false });
+    expect(result.dispatched).toHaveLength(0);
+    const dispatched = await dispatchChampionshipMatch(db, event.id, 1, "2026-12-01T00:00:00.000Z");
+    expect(dispatched.gameId).toBeTruthy();
     expect(result.diagnostics.some(item => item.eventId === event.id && item.phase === "delivery")).toBe(true);
     const [match] = await db.select().from(schema.championshipMatches).where(eq(schema.championshipMatches.ordinal, 1));
     const [game] = await db.select().from(schema.games).where(eq(schema.games.id, match!.gameId!));

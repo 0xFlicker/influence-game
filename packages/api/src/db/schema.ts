@@ -4002,7 +4002,7 @@ export const servicePrincipals = pgTable("service_principals", {
   userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "restrict" }),
   purpose: text("purpose").notNull().default("free_queue"),
   enabled: boolean("enabled").notNull().default(true),
-}, table => [check("service_principals_purpose_check", sql`${table.purpose} = 'free_queue'`)]);
+}, table => [check("service_principals_purpose_check", sql`${table.purpose} IN ('free_queue', 'championship')`)]);
 
 
 // A wake is delivery bookkeeping only; game_postgame_media owns every render job.

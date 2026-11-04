@@ -1,4 +1,4 @@
-import { beforeAll, expect, test } from "bun:test";
+import { beforeAll, afterEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
@@ -10,6 +10,9 @@ import { createChampionshipRoutes } from "../routes/championships.js";
 import { testPayloadStore } from "./payload-test-store.js";
 import { readJson } from "../services/payload-storage.js";
 
+const originalFetch = globalThis.fetch;
+const schedulerUrl = process.env.CHAMPIONSHIP_SCHEDULER_URL, schedulerToken = process.env.CHAMPIONSHIP_SCHEDULER_TOKEN;
+afterEach(() => { globalThis.fetch = originalFetch; if (schedulerUrl === undefined) delete process.env.CHAMPIONSHIP_SCHEDULER_URL; else process.env.CHAMPIONSHIP_SCHEDULER_URL = schedulerUrl; if (schedulerToken === undefined) delete process.env.CHAMPIONSHIP_SCHEDULER_TOKEN; else process.env.CHAMPIONSHIP_SCHEDULER_TOKEN = schedulerToken; });
 beforeAll(() => { process.env.JWT_SECRET = "championship-producer-test"; });
 async function producerFixture() {
   const fixture = await championshipFixture();
@@ -42,18 +45,21 @@ test("producer HTTP launch path previews without writes and reconciles only the 
   expect(await db.select().from(schema.awardGrants)).toHaveLength(0);
   expect((await call(`/api/admin/championships/${event.id}/publication`, "POST", { published: true })).status).toBe(200);
   expect(await db.select().from(schema.games)).toHaveLength(1);
+  process.env.CHAMPIONSHIP_SCHEDULER_URL = "https://scheduler.example.test";
+  process.env.CHAMPIONSHIP_SCHEDULER_TOKEN = "fixture";
+  globalThis.fetch = (async (_url, init) => Response.json({ accepted: true, eventId: JSON.parse(String(init?.body)).eventId })) as typeof fetch;
   for (const id of [event.id, other.id]) expect((await call(`/api/admin/championships/${id}/activate`, "POST", {})).status).toBe(200);
   const reconciliation = await call(`/api/admin/championships/${event.id}/reconcile`, "POST", {});
   expect(reconciliation.status).toBe(200);
-  expect(((await reconciliation.json()) as { dispatched: unknown[] }).dispatched).toHaveLength(17);
+  expect(((await reconciliation.json()) as { dispatched: unknown[] }).dispatched).toHaveLength(0);
   expect((await db.select().from(schema.championshipMatches).where(eq(schema.championshipMatches.eventId, other.id))).every(match => match.gameId === null)).toBe(true);
   const games = await db.select().from(schema.games);
-  expect(games).toHaveLength(18);
+  expect(games).toHaveLength(1);
   expect(games.filter(game => game.seasonId === null).every(game => game.status === "in_progress")).toBe(true);
   expect((await call(`/api/admin/championships/${event.id}/reconcile`, "POST", {})).status).toBe(200);
-  expect(await db.select().from(schema.games)).toHaveLength(18);
+  expect(await db.select().from(schema.games)).toHaveLength(1);
   const grants = await db.select().from(schema.awardGrants);
-  expect(grants).toHaveLength(8);
+  expect(grants).toHaveLength(16);
   const publicView = await (await call(`/api/championships/${event.slug}`)).json();
   expect(JSON.stringify(publicView)).not.toContain(actorId);
   expect(JSON.stringify(publicView)).not.toContain('"audit"');

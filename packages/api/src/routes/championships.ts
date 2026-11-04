@@ -1,8 +1,11 @@
+import { prepareChampionshipAwards, deliverChampionshipAwards } from "../services/championship-awards.js";
+import { assertChampionshipSchedulerConfigured, championshipScheduleManifest, dispatchScheduledChampionshipMatch, requestChampionshipScheduleSync } from "../services/championship-scheduling.js";
+import { launchExactGame, launchExactGameLocally, assertGameLaunchConfigured } from "../services/game-launch.js";
 import { correctChampionshipResult } from "../services/championship-corrections.js";
 import { readChampionshipArtAttempts, reconcileChampionshipArtAttempt } from "../services/championship-artwork.js";
 import { listProducerChampionships, previewChampionshipAwards, listEventAwards, readAwardHistory } from "../services/championship-producer.js";
 import { activateChampionship, pauseChampionship, dispatchChampionshipMatch, replayCancelledChampionshipMatch } from "../services/championship-dispatch.js";
-import { reconcileChampionships } from "../services/championship-runtime.js";
+import { reconcileChampionships, reconcileChampionshipGameCompletion } from "../services/championship-runtime.js";
 import { isPostgresUniqueViolation } from "../lib/postgres-errors.js";
 import { resolvePublicPlayer } from "../services/public-player-identity.js";
 import { Hono } from "hono";
@@ -30,7 +33,23 @@ export function createChampionshipRoutes(db: DrizzleDB) {
     return player ? c.json({ awards: await publicAccountAwards(db, player.internalUserId) }) : c.json({ error: "Player not found" }, 404);
   });
   app.get("/api/award-definitions", async c => c.json({ definitions: await publicAwardDefinitions(db) }));
-  app.post("/api/internal/championships/reconcile", requireServiceAuth(db, "dispatch_championship"), requirePermission("dispatch_championship"), async c => c.json(await reconcileChampionships(db)));
+  app.post("/api/internal/championships/games/launch", requireServiceAuth(db, "dispatch_championship"), requirePermission("dispatch_championship"), async c => {
+    if (process.env.NODE_ENV === "production" && process.env.INFLUENCE_API_ROLE !== "game-worker") return c.json({ error: "Use the game-worker launch endpoint" }, 503);
+    const body = await parseJsonBody(c, "Exact game launch");
+    if (typeof body?.gameId !== "string") return c.json({ error: "Exact game ID required" }, 400);
+    await launchExactGameLocally(db, body.gameId);
+    return c.json({ accepted: true, gameId: body.gameId });
+  });
+  app.get("/api/internal/championships/:id/schedules", requireServiceAuth(db, "dispatch_championship"), requirePermission("dispatch_championship"), async c => c.json(await championshipScheduleManifest(db, c.req.param("id"))));
+  app.post("/api/internal/championships/:id/matches/:ordinal/dispatch", requireServiceAuth(db, "dispatch_championship"), requirePermission("dispatch_championship"), async c => {
+    const body = await parseJsonBody(c, "Scheduled championship match");
+    if (!body || body.eventId !== c.req.param("id") || body.ordinal !== Number(c.req.param("ordinal")) || !Number.isSafeInteger(body.ordinal) || body.ordinal < 1 || body.ordinal > 17 || typeof body.matchId !== "string" || typeof body.version !== "string" || !Number.isSafeInteger(body.revision) || typeof body.scheduledAt !== "string") return c.json({ error: "Exact schedule identity required" }, 400);
+    return c.json(await dispatchScheduledChampionshipMatch(db, body));
+  });
+  app.post("/api/internal/championships/games/:id/complete", requireServiceAuth(db, "dispatch_championship"), requirePermission("dispatch_championship"), async c => {
+    await reconcileChampionshipGameCompletion(db, c.req.param("id"));
+    return c.json({ accepted: true, gameId: c.req.param("id") });
+  });
   app.use("/api/admin/championships/*", requireAuth(db), requirePermission("manage_championships"));
   app.get("/api/admin/championships", requireAuth(db), requirePermission("manage_championships"), async c => c.json({ events: await listProducerChampionships(db) }));
   app.post("/api/admin/championships/:id/reconcile", async c => {
@@ -81,26 +100,44 @@ export function createChampionshipRoutes(db: DrizzleDB) {
     const event = await lockChampionshipRoster(db, c.req.param("id"), c.get("user")!.id, c.req.header("Idempotency-Key") ?? "");
     return c.json({ id: event.id, status: event.status });
   });
-  app.post("/api/admin/championships/:id/activate", async c => c.json(await activateChampionship(db, c.req.param("id"), c.get("user")!.id, c.req.header("Idempotency-Key") ?? "")));
-  app.post("/api/admin/championships/:id/pause", async c => c.json(await pauseChampionship(db, c.req.param("id"), c.get("user")!.id, c.req.header("Idempotency-Key") ?? "")));
+  app.post("/api/admin/championships/:id/activate", async c => {
+    assertChampionshipSchedulerConfigured();
+    assertGameLaunchConfigured();
+    const result = await activateChampionship(db, c.req.param("id"), c.get("user")!.id, c.req.header("Idempotency-Key") ?? "");
+    const scheduling = await requestChampionshipScheduleSync(c.req.param("id"), db);
+    try { await prepareChampionshipAwards(db, c.req.param("id")); await deliverChampionshipAwards(db, c.req.param("id")); }
+    catch (error) { console.warn("[championship] Award delivery needs retry", error instanceof Error ? error.message : "Unknown failure"); }
+    return c.json({ ...result, scheduling });
+  });
+  app.post("/api/admin/championships/:id/pause", async c => {
+
+    const result = await pauseChampionship(db, c.req.param("id"), c.get("user")!.id, c.req.header("Idempotency-Key") ?? "");
+    return c.json({ ...result, scheduling: await requestChampionshipScheduleSync(c.req.param("id"), db) });
+  });
   app.post("/api/admin/championships/:id/matches/:ordinal/dispatch", async c => {
     const ordinal = Number(c.req.param("ordinal"));
     if (!Number.isInteger(ordinal) || ordinal < 1 || ordinal > 17) return c.json({ error: "Choose an exact match from 1 to 17" }, 400);
-    return c.json(await dispatchChampionshipMatch(db, c.req.param("id"), ordinal));
+    const result = await dispatchChampionshipMatch(db, c.req.param("id"), ordinal);
+    if (result.gameId) await launchExactGame(db, result.gameId);
+    return c.json(result);
   });
   app.post("/api/admin/championships/:id/matches/:ordinal/replay", async c => {
     const ordinal = Number(c.req.param("ordinal"));
     const body = await parseJsonBody(c, "Replay cancelled championship match");
     if (!Number.isInteger(ordinal) || ordinal < 1 || ordinal > 17 || typeof body?.expectedGameId !== "string" || typeof body?.reason !== "string") return c.json({ error: "Choose an exact cancelled match and provide a reason" }, 400);
-    return c.json(await replayCancelledChampionshipMatch(db, { eventId: c.req.param("id"), ordinal, expectedGameId: body.expectedGameId, reason: body.reason, actorId: c.get("user")!.id, requestId: c.req.header("Idempotency-Key") ?? "" }));
+    const result = await replayCancelledChampionshipMatch(db, { eventId: c.req.param("id"), ordinal, expectedGameId: body.expectedGameId, reason: body.reason, actorId: c.get("user")!.id, requestId: c.req.header("Idempotency-Key") ?? "" });
+    if (result.gameId) await launchExactGame(db, result.gameId);
+    return c.json(result);
   });
   app.post("/api/admin/championships/:id/matches/:ordinal/correct", requirePermission("manage_awards"), async c => {
     const body = await parseJsonBody(c, "Correct completed championship result");
     const ordinal = Number(c.req.param("ordinal"));
     if (!Number.isInteger(ordinal) || ordinal < 1 || ordinal > 17 || typeof body?.expectedGameId !== "string" || !Number.isSafeInteger(body.expectedRevision)
       || !["resettle", "replay"].includes(String(body.mode)) || typeof body.reason !== "string") return c.json({ error: "Provide the exact completed game/revision, correction mode and reason" }, 400);
-    return c.json(await correctChampionshipResult(db, { eventId: c.req.param("id"), ordinal, expectedGameId: body.expectedGameId, expectedRevision: body.expectedRevision as number,
-      mode: body.mode as "resettle" | "replay", reason: body.reason, actorId: c.get("user")!.id, requestId: c.req.header("Idempotency-Key") ?? "" }));
+    const result = await correctChampionshipResult(db, { eventId: c.req.param("id"), ordinal, expectedGameId: body.expectedGameId, expectedRevision: body.expectedRevision as number,
+      mode: body.mode as "resettle" | "replay", reason: body.reason, actorId: c.get("user")!.id, requestId: c.req.header("Idempotency-Key") ?? "" });
+    const reconciliation = await reconcileChampionships(db, undefined, c.req.param("id"));
+    return c.json({ ...result, reconciliation });
   });
   app.post("/api/admin/awards/:id/correct-recipient", requireAuth(db), requirePermission("manage_awards"), async c => {
     const body = await parseJsonBody(c, "Correct award recipient");

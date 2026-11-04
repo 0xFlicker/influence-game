@@ -2,6 +2,8 @@
 
 This revision supersedes the earlier periodic championship reconciliation recommendation.
 
+**2026-11-04 update:** Scheduling implementation is now authorized and in progress. The current implementation and rollout contract are documented in [championship-scheduling.md](../championship-scheduling.md). The plan-only restrictions and unimplemented inventories below are retained as historical scope records from the earlier retry-only phase; they are no longer the current implementation status.
+
 ## Agreed behavior
 
 Eight frozen finalists; sixteen daily Werewolf matches and the same eight in an Influence finale on day 17. Midnight UTC remains the chosen calendar default, not a requirement to dispatch within an exact second or to reject a delayed invocation. No recurring championship scheduling poll, no monetary stop conditions, no live activation implied by implementation.

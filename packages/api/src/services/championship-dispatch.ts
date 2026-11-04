@@ -1,3 +1,4 @@
+import type { ChampionshipScheduledMatch } from "./championship-scheduling.js";
 import { randomUUID, createHash } from "node:crypto";
 import { and, asc, eq, lte } from "drizzle-orm";
 import { assignWerewolfRoles, startWerewolf, resolveWerewolfStrategy, type WerewolfPlayer } from "@influence/engine/werewolf";
@@ -53,8 +54,17 @@ export async function pauseChampionship(db: DrizzleDB, eventId: string, actorId:
 
 type ChampionshipTx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 /** Shared transaction boundary used by dispatch and audited replacement. */
-export async function prepareChampionshipMatch(tx: ChampionshipTx, eventId: string, ordinal: number, now: string) {
+export async function prepareChampionshipMatch(tx: ChampionshipTx, eventId: string, ordinal: number, now: string, expected?: ChampionshipScheduledMatch) {
     const [event] = await tx.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, eventId)).for("update");
+    if (expected) {
+      if (!event || !["running", "paused"].includes(event.status)) return { deferred: false as const, gameId: null, obsolete: true as const };
+      const matches = await tx.select().from(schema.championshipMatches).where(eq(schema.championshipMatches.eventId, eventId)).orderBy(asc(schema.championshipMatches.ordinal));
+      const version = createHash("sha256").update(JSON.stringify(["running", matches.map(m => [m.id, m.scheduledAt, m.resultRevision])])).digest("hex");
+      const target = matches.find(m => m.ordinal === ordinal);
+      if (version !== expected.version || target?.id !== expected.matchId || target.resultRevision !== expected.revision || target.scheduledAt !== expected.scheduledAt || target.status === "void") return { deferred: false as const, gameId: null, obsolete: true as const };
+      // Pause fences new admission, not launch delivery for a game already accepted.
+      if (event.status === "paused") return target.gameId ? { deferred: false as const, gameId: target.gameId } : { deferred: false as const, gameId: null, obsolete: true as const };
+    }
     if (!event || event.status !== "running") throw new ChampionshipError("Event is not active", 409);
     const [match] = await tx.select().from(schema.championshipMatches).where(and(eq(schema.championshipMatches.eventId, eventId), eq(schema.championshipMatches.ordinal, ordinal))).for("update");
     if (!match) throw new ChampionshipError("Match not found", 404);
@@ -104,8 +114,8 @@ export async function prepareChampionshipMatch(tx: ChampionshipTx, eventId: stri
 }
 
 /** Exact event/match identity, transaction-serialized creation, and normal durable worker adoption. */
-export async function dispatchChampionshipMatch(db: DrizzleDB, eventId: string, ordinal: number, now = new Date().toISOString()) {
-  const prepared = await db.transaction(tx => prepareChampionshipMatch(tx, eventId, ordinal, now));
+export async function dispatchChampionshipMatch(db: DrizzleDB, eventId: string, ordinal: number, now = new Date().toISOString(), expected?: ChampionshipScheduledMatch) {
+  const prepared = await db.transaction(tx => prepareChampionshipMatch(tx, eventId, ordinal, now, expected));
   if (!prepared.gameId) return prepared;
   const [game] = await db.select().from(schema.games).where(eq(schema.games.id, prepared.gameId));
   if (game?.status === "cancelled") throw new ChampionshipError("The exact championship game was cancelled; explicit producer recovery is required", 409);
