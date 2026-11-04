@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
 import {
+  getPublicSeasonGames,
   exportOwnedSeasonReceipts,
   getOwnedAgentSeasonAnalysis,
   getProducerSeasonDiagnostics,
@@ -22,6 +23,29 @@ import { createSeasonRoutes } from "../routes/seasons.js";
 import { setupTestDB } from "./test-utils.js";
 
 describe("season read model", () => {
+  test("season game discovery is public, season-specific and metadata-only", async () => {
+    const db = await setupTestDB();
+    const owner = await insertUser(db, "Discovery owner");
+    await db.insert(schema.seasons).values([{id:"discovery",slug:"discovery-season",name:"Discovery",status:"active",createdById:owner},{id:"elsewhere",slug:"elsewhere",name:"Other",status:"final",createdById:owner}]);
+    await db.insert(schema.games).values([
+      {id:"live",slug:"live",seasonId:"discovery",status:"in_progress",gameKind:"influence",config:"{}"},
+      {id:"replay",slug:"replay",seasonId:"discovery",status:"completed",gameKind:"werewolf",config:"{}"},
+      {id:"waiting",slug:"waiting",seasonId:"discovery",status:"waiting",config:"{}"},
+      {id:"hidden",slug:"hidden",seasonId:"discovery",status:"completed",config:"{}",hiddenAt:new Date().toISOString()},
+      {id:"invalid-visibility",slug:"invalid-visibility",seasonId:"discovery",config:JSON.stringify({visibility:null})},
+      {id:"other",slug:"other",seasonId:"elsewhere",config:"{}"},
+      {id:"event",slug:"event",seasonId:null,config:"{}"},
+    ]);
+    const result=await getPublicSeasonGames(db,"discovery-season");
+    expect(result?.games.map(game=>game.id)).toEqual(["live","replay","waiting"]);
+    expect(Object.keys(result!.games[0]!).sort()).toEqual(["id","slug","gameKind","status","createdAt","startedAt","endedAt"].sort());
+    expect(await getPublicSeasonGames(db,"missing")).toBeNull();
+    const app=createSeasonRoutes(db);
+    const response=await app.request("/api/seasons/discovery-season/games");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+
   test("selects the current season with active, closing, then final precedence", async () => {
     const db = await setupTestDB();
     const ownerId = await insertUser(db, "Season owner");

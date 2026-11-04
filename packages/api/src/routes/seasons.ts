@@ -10,6 +10,7 @@ import {
   getProducerSeasonDiagnostics,
   getPublicGameCompetitionReceipts,
   getPublicSeasonDashboard,
+  getPublicSeasonGames,
   listPublicSeasons,
 } from "../services/season-read-model.js";
 import {
@@ -39,6 +40,12 @@ export function createSeasonRoutes(db: DrizzleDB) {
       c.req.param("gameIdOrSlug"),
     );
     return result ? c.json({ schemaVersion: 2, ...result }) : c.json({ error: "Season or game not found" }, 404);
+  });
+
+  app.get("/api/seasons/:seasonIdOrSlug/games", async c => {
+    c.header("Cache-Control", "private, no-store");
+    const result = await getPublicSeasonGames(db, c.req.param("seasonIdOrSlug"));
+    return result ? c.json(result) : c.json({ error: "Season not found" }, 404);
   });
 
   app.get("/api/seasons/:seasonIdOrSlug/agents/:agentId", requireAuth(db), async (c) => {

@@ -1,21 +1,28 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
+import { SeasonWatch } from "./season-watch";
+import type { SeasonGame } from "./season-games";
 import { AgentVisualUpdateControl } from "./agent-visual-update";
 import { SeasonAgentPreview } from "./season-agent-preview";
 import { useAuth } from "@/hooks/use-auth";
 import { apiFetch, getFreeQueueStatus, getSeasonDashboard, joinFreeQueue, leaveFreeQueue, listAgents, listSeasons, type FreeQueueStatus, type SavedAgent, type SeasonDashboard, type SeasonIdentity } from "@/lib/api";
 import type { ChampionshipView } from "@/lib/championship";
-import { ChampionshipEventView } from "@/app/events/championship-view";
 import { SeasonStandings } from "@/app/games/free/free-game-content";
 import { defaultSeason, recommendedSeasonAgent } from "./season-selection";
 import styles from "./seasons.module.css";
+
+const ChampionshipEventView = dynamic(() => import("@/app/events/championship-view").then(module => module.ChampionshipEventView));
 
 export function SeasonsContent() {
   const { authenticated, openSignIn } = useAuth();
   const [seasons, setSeasons] = useState<SeasonIdentity[]>([]);
   const [slug, setSlug] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<SeasonDashboard | null>(null);
+  const [games, setGames] = useState<SeasonGame[]>([]);
+  const [gamesError, setGamesError] = useState<string | null>(null);
+  const [entryExpanded, setEntryExpanded] = useState(false);
   const [events, setEvents] = useState<ChampionshipView[]>([]);
   const [eventChoice, setEventChoice] = useState("");
   const [queue, setQueue] = useState<FreeQueueStatus | null>(null);
@@ -46,11 +53,11 @@ export function SeasonsContent() {
     if (selectedSlug.current !== selected) return;
     const request = ++generation.current;
     try {
-      const [ledger, status, owned] = await Promise.all([getSeasonDashboard(selected), getFreeQueueStatus(), authenticated ? listAgents() : Promise.resolve([])]);
+      const [ledger, status, owned, feed] = await Promise.all([getSeasonDashboard(selected), getFreeQueueStatus(), authenticated ? listAgents() : Promise.resolve([]), apiFetch<{games:SeasonGame[]}>(`/api/seasons/${encodeURIComponent(selected)}/games`).then(value => ({games:value.games,error:null as string|null})).catch(() => ({games:[] as SeasonGame[],error:"Season games are temporarily unavailable."}))]);
       // Only published event links come from the public season ledger. Never load producer data here.
       const championships = await Promise.all((ledger.championships ?? []).map(event => apiFetch<ChampionshipView>(`/api/championships/${encodeURIComponent(event.slug)}`)));
       if (request !== generation.current) return;
-      setDashboard(ledger); setQueue(status); setAgents(owned); setEvents(championships); setError(null);
+      setGames(feed.games); setGamesError(feed.error); setDashboard(ledger); setQueue(status); setAgents(owned); setEvents(championships); setError(null);
     } catch (err) { if (request === generation.current) setError(err instanceof Error ? err.message : "Could not load this season."); }
     finally { if (request === generation.current) setLoading(false); }
   }, [authenticated]);
@@ -58,7 +65,7 @@ export function SeasonsContent() {
   useEffect(() => {
     if (!slug) return;
     selectedSlug.current = slug;
-    setLoading(true); setDashboard(null); setEvents([]); setAgents([]); setQueue(null); setChoice(""); setEventChoice("");
+    setLoading(true); setGames([]); setGamesError(null); setEntryExpanded(false); setDashboard(null); setEvents([]); setAgents([]); setQueue(null); setChoice(""); setEventChoice("");
     void refresh(slug);
     const timer = window.setInterval(() => { if (!document.hidden) void refresh(slug); }, 15000);
     return () => {
@@ -99,29 +106,28 @@ export function SeasonsContent() {
     {loading ? <div role="status" className={styles.loading}>Opening the season…</div> : !season ? <section className={styles.hero}><h1>The next season awaits.</h1><p>No season has been announced yet.</p></section> : <>
       {events.length > 1 && <label className={styles.eventSelect}>Championship<select value={featuredEvent?.slug ?? ""} onChange={event => setEventChoice(event.target.value)}>{events.map(event => <option key={event.id} value={event.slug}>{event.name}</option>)}</select></label>}
       {featuredEvent && <ChampionshipEventView key={featuredEvent.id} event={featuredEvent} />}
-      {(!events.length || accepting) && <section className={styles.hero} aria-labelledby="season-title">
-        <div className={styles.invitation}>
-          {!accepting && <p className={styles.eyebrow}>{scheduledOpening ? "Opening soon" : season.status === "active" || season.status === "closing" ? "Entries closed" : "The season ledger"}</p>}
-          <h1 id="season-title">{season.name}<br /><em>{accepting ? "Make your entrance." : scheduledOpening ? "Your next chapter." : season.status !== "final" ? "The final act." : "Written in history."}</em></h1>
-          {!accepting && <p>{scheduledOpening ? `Entry opens ${new Date(season.admissionStartsAt!).toLocaleString()}.` : season.status !== "final" ? "Entry is closed. Already-drawn games can finish before the final standings are recorded." : "Entries are closed."}</p>}
-          {accepting && queue?.nextDrawAt && <p className={styles.detail}>{queue.queuedCount} in the queue · Next draw {new Date(queue.nextDrawAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })} UTC</p>}
+      {(!events.length || accepting) && <section className={styles.seasonMasthead} aria-labelledby="season-title">
+        <div className={styles.seasonIdentity}>
+          <h1 id="season-title">{season.name}</h1>
+          <p className={styles.entryStatus}>{accepting ? "Entries open" : scheduledOpening ? "Opening soon" : season.status === "final" ? "Final standings" : "Entries closed"}</p>
+          {accepting ? <p>{entry ? `${entry.agentName} is in the queue` : agent ? `${agent.name} · Not yet joined` : "Your seat is waiting."}</p> : <p>{scheduledOpening ? `Entry opens ${new Date(season.admissionStartsAt!).toLocaleString()}.` : season.status === "final" ? "The season is complete." : "Already-drawn games can finish."}</p>}
+          {accepting && !entry && (!authenticated ? <button className={styles.joinAction} onClick={openSignIn}>Sign in to join</button> : !agent ? <Link className={styles.joinAction} href={`/agents/create?flow=daily_free&seasonId=${encodeURIComponent(season.id)}&season=${encodeURIComponent(season.slug)}`}>Create agent</Link> : <button disabled={busy} className={styles.joinAction} onClick={() => void enroll()}>{busy ? "Joining…" : `Join ${season.name}`}</button>)}
         </div>
-        {accepting && <div className={styles.entry}>
-          <SeasonAgentPreview key={`${agent?.id}:${agent?.avatarUrl}:${agent?.transparentBodyUrl}`} agent={agent} />
-          <div className={styles.entryControls}>
-          <p className={styles.eyebrow}>{entry && entry.agentProfileId === agent?.id ? "In the season queue" : "Not yet joined"}</p>
-          <h2>{agent?.name ?? (authenticated ? "Your seat is waiting." : "Bring your agent.")}</h2>
-          {entry && agent?.id !== entry.agentProfileId && <p>Currently queued: {entry.agentName}</p>}
-          {authenticated && agents.length > 1 && <label className={styles.agentSelect}>Your agent<select aria-label="Your season agent" value={agent?.id ?? ""} onChange={event => setChoice(event.target.value)} disabled={busy}>{agents.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
-          {!authenticated ? <button className={styles.primary} onClick={openSignIn}>Sign in to join</button> : !agent ? <Link className={styles.primary} href={`/agents/create?flow=daily_free&seasonId=${encodeURIComponent(season.id)}&season=${encodeURIComponent(season.slug)}`}>Create agent</Link> : <>
+        {accepting && <div className={styles.mastheadArt}><SeasonAgentPreview key={`${agent?.id}:${agent?.avatarUrl}:${agent?.transparentBodyUrl}`} agent={agent}/></div>}
+        {accepting && authenticated && agent && <button className={styles.manageEntry} aria-expanded={entryExpanded} aria-controls="season-entry-controls" onClick={()=>setEntryExpanded(value=>!value)}>{entryExpanded ? "Close entry" : entry ? "Manage entry" : "Choose agent"} <span aria-hidden="true">{entryExpanded ? "−" : "+"}</span></button>}
+      </section>}
+      {accepting && entryExpanded && <section id="season-entry-controls" className={styles.entryPanel} aria-label="Manage season entry">
+        <div><p className={styles.entryStatus}>{entry && entry.agentProfileId === agent?.id ? "In the season queue" : "Not yet joined"}</p><h2>{agent?.name}</h2>{entry && agent?.id !== entry.agentProfileId && <p>Currently queued: {entry.agentName}</p>}</div>
+        <div className={styles.entryControls}>
+          {agents.length > 1 && <label className={styles.agentSelect}>Your agent<select aria-label="Your season agent" value={agent?.id ?? ""} onChange={event => setChoice(event.target.value)} disabled={busy}>{agents.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
+          {agent && <>
             {(!entry || entry.agentProfileId !== agent.id) && <button disabled={busy} className={styles.primary} onClick={() => void enroll()}>{busy ? "Updating entry…" : entry ? "Switch agent" : `Join ${season.name}`}</button>}
-            {entry && queue?.eligibility === "temporarily-ineligible" && <p role="status">{queue.ineligibilityReason === "active-game" ? "Playing a game" : "Temporarily unavailable"}</p>}
+            {entry && entry.agentProfileId === agent.id && queue?.eligibility === "temporarily-ineligible" && <p role="status">{queue.ineligibilityReason === "active-game" ? "Playing a game" : "Temporarily unavailable"}</p>}
             <div className={styles.actions}><AgentVisualUpdateControl key={agent.id} agent={agent} onComplete={() => { if (slug) void refresh(slug); }}/>{entry && <button disabled={busy} onClick={() => void enroll(true)}>{busy ? "Updating…" : "Leave queue"}</button>}</div>
           </>}
-          </div>
-        </div>}
+        </div>
       </section>}
-      {queue?.todayGame?.season?.id === season.id && !events.length && <Link className={styles.latest} href={`/games/${queue.todayGame.slug}`}>Latest season game <strong>{queue.todayGame.slug}</strong> <span>{queue.todayGame.status.replaceAll("_", " ")} →</span></Link>}
+      {!events.length && <SeasonWatch key={season.id} games={games} seasonName={season.name} seasonSlug={season.slug} loading={loading} error={gamesError} nextDrawAt={accepting ? queue?.nextDrawAt : null}/>}
       <section className={styles.ledger} aria-label="Season standings">
         {events.length > 0 && <div className={styles.ledgerHeading}><h2>The season that brought us here</h2><p>Season points are separate from championship results.</p></div>}
         <SeasonStandings dashboard={{...dashboard, championships: []}} loading={false} seasons={[]} onSelectSeason={selectSeason} />
