@@ -86,3 +86,5 @@ Final regression results after the real test:
 - Provider-free baseline rerun: **3,328 passed, 5 skipped, 0 failed**, across 353 files.
 - Focused UI rerun: **7 passed, 0 failed**. Final typecheck, lint and whitespace checks passed.
 - Real run evidence: `artifacts/championship/live-retry/verified.json`, final `status.json`, and fresh mobile/desktop screenshots. The replacement's execution owner was confirmed closed after completion.
+
+A further real Influence test exercised the exact **Failed Games** admin section, whose `failed` badge maps to stored `suspended`. The new disposable original entered that state through the actual rejected-event-write handler (`event_append_failed`), not a direct status assignment. Its real UI Retry launched a replacement that completed with one result and one successful settlement attempt; repeat delivery reused the same replacement. No implementation change was required for this path. The recovery solution note records the retained nonblocking capture-correlation diagnostics and local evidence location.
