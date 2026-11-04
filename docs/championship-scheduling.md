@@ -41,11 +41,11 @@ Production controller ingress uses `CHAMPIONSHIP_SCHEDULER_URL` and `CHAMPIONSHI
 
 ## Infrastructure and rollout
 
-Source lives in the separate `falsefloor/infra` championship worktree (`championship/`, `infra/house-championship-*`). It follows the current House CDK target, account 978355607658 / us-west-1, rather than modifying the legacy us-east-1 free-game crons. Resources: isolated schedule group, ingress/controller Lambdas, FIFO delivery queue, delivery DLQ, standard Scheduler DLQ, alarms and dedicated IAM. Mutations are scoped to the group's `champ-*` schedules; PassRole is restricted to its Scheduler role. ListSchedules alone requires wildcard resource scope. No free-game IAM or handler is repurposed.
+Source lives in the separate `falsefloor/infra` championship worktree (`championship/`, `infra/house-championship-*`). It follows the current House CDK target, account 978355607658 / us-west-1, rather than modifying the legacy us-east-1 free-game crons. Resources: isolated schedule group, ingress/controller Lambdas, FIFO delivery queue, delivery DLQ, standard Scheduler DLQ and dedicated IAM (no alarms without a useful notification destination). Mutations are scoped to the group's `champ-*` schedules; PassRole is restricted to its Scheduler role. ListSchedules alone requires wildcard resource scope. No free-game IAM or handler is repurposed.
 
 Deployment and new IAM provisioning require the separate operator review under infra/AGENTS.md. No AWS resource was created by implementation. Staging's private tailnet API needs an approved reachable controller network path before deployment; the stack does not pretend a public Lambda can reach it. Configure API/service/ingress credentials and an actual reachable exact-game launcher, then test one disposable event. Do not activate production as a deployment smoke test.
 
-Recovery: inspect controller/Scheduler DLQs and alarms, repair the underlying failure, then redrive the saved message. Repeating event synchronization reads current state, so old pause/activate notifications cannot reverse a newer decision. Inspect real AWS registration and delivery logs in staging before claiming cloud scheduling verified.
+Recovery: inspect controller/Scheduler DLQs and logs, repair the underlying failure, then redrive the saved message. Repeating event synchronization reads current state, so old pause/activate notifications cannot reverse a newer decision. Inspect real AWS registration and delivery logs in staging before claiming cloud scheduling verified.
 
 ## Local verification (2026-11-04)
 
