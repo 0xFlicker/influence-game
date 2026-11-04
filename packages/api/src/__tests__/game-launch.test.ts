@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { setupTestDB } from "./test-utils.js";
 import { assertGameLaunchConfigured, launchExactGame } from "../services/game-launch.js";
 const originalFetch = globalThis.fetch;
-const keys = ["NODE_ENV", "INFLUENCE_GAME_LAUNCH_URL", "INFLUENCE_GAME_LAUNCH_TOKEN", "DATABASE_URL"] as const;
+const keys = ["NODE_ENV", "INFLUENCE_GAME_LAUNCH_URL", "INFLUENCE_GAME_LAUNCH_TOKEN", "DATABASE_URL", "CHAMPIONSHIP_GAME_LAUNCH_URL", "CHAMPIONSHIP_GAME_LAUNCH_TOKEN"] as const;
 const original = Object.fromEntries(keys.map(key => [key, process.env[key]]));
 afterEach(() => { globalThis.fetch = originalFetch; for (const key of keys) { if (original[key] === undefined) delete process.env[key]; else process.env[key] = original[key]; } });
 test("production requires an explicit launcher and incomplete configuration is rejected", () => {
@@ -38,4 +38,21 @@ test("staging and unknown deployed environments cannot fall back to local launch
   expect(assertGameLaunchConfigured).toThrow("explicit game launcher");
   process.env.DATABASE_URL = "postgres://127.0.0.1:54320/example";
   expect(assertGameLaunchConfigured).not.toThrow();
+});
+
+test("championship launch uses its separate credential and exact acknowledgement", async () => {
+  const { assertChampionshipLaunchConfigured, launchChampionshipGame } = await import("../services/championship-launch.js");
+  const db = await setupTestDB();
+  process.env.NODE_ENV = "staging";
+  process.env.INFLUENCE_GAME_LAUNCH_URL = "https://generic.example.test/launch";
+  process.env.INFLUENCE_GAME_LAUNCH_TOKEN = "generic-fixture";
+  delete process.env.CHAMPIONSHIP_GAME_LAUNCH_URL; delete process.env.CHAMPIONSHIP_GAME_LAUNCH_TOKEN;
+  expect(assertChampionshipLaunchConfigured).toThrow("championship launcher");
+  process.env.CHAMPIONSHIP_GAME_LAUNCH_URL = "https://influence-staging.tail8a79ed.ts.net/api/internal/championships/games/launch";
+  process.env.CHAMPIONSHIP_GAME_LAUNCH_TOKEN = "event-launch-fixture";
+  const calls: Array<{ url: string; auth: string | null }> = [];
+  globalThis.fetch = (async (url, init) => { calls.push({ url: String(url), auth: new Headers(init?.headers).get("Authorization") }); return Response.json({ accepted: true, gameId: calls.length === 1 ? "wrong" : "exact" }); }) as typeof fetch;
+  await expect(launchChampionshipGame(db, "exact")).rejects.toThrow("exact game");
+  await launchChampionshipGame(db, "exact");
+  expect(calls.every(call => call.url === process.env.CHAMPIONSHIP_GAME_LAUNCH_URL && call.auth === "Bearer event-launch-fixture")).toBe(true);
 });

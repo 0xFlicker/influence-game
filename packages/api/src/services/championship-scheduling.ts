@@ -4,7 +4,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { ChampionshipError } from "./championships.js";
 import { dispatchChampionshipMatch } from "./championship-dispatch.js";
-import { launchExactGame } from "./game-launch.js";
+import { launchChampionshipGame } from "./championship-launch.js";
 import { reconcileChampionshipGameCompletion } from "./championship-runtime.js";
 
 /** The committed event/match ledger IS the durable scheduling intent. No scan consumes it. */
@@ -22,17 +22,18 @@ export async function championshipScheduleManifest(db: DrizzleDB, eventId: strin
 }
 export type ChampionshipScheduledMatch = Awaited<ReturnType<typeof championshipScheduleManifest>>["matches"][number];
 
-export function assertChampionshipSchedulerConfigured() {
+export function assertChampionshipSchedulerConfigured(eventId?: string) {
   const endpoint = process.env.CHAMPIONSHIP_SCHEDULER_URL, token = process.env.CHAMPIONSHIP_SCHEDULER_TOKEN;
   if (!endpoint && !token && isLocalGameRuntime()) return;
   if (!endpoint || !token) throw new ChampionshipError("Configure the championship scheduler URL and token before activation", 503);
+  if (!process.env.CHAMPIONSHIP_EVENT_ID || (eventId && eventId !== process.env.CHAMPIONSHIP_EVENT_ID)) throw new ChampionshipError("Configure this exact championship event for the scheduler", 503);
   const url = new URL(endpoint);
   if (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname))) throw new ChampionshipError("Scheduler must use HTTPS or localhost", 503);
 }
 
 /** Acknowledgement means durable queue acceptance, not successful AWS registration. Repeating activation repairs interrupted delivery. */
 export async function requestChampionshipScheduleSync(eventId: string, db?: DrizzleDB) {
-  assertChampionshipSchedulerConfigured();
+  assertChampionshipSchedulerConfigured(eventId);
   if (!process.env.CHAMPIONSHIP_SCHEDULER_URL) {
     if (!db) throw new ChampionshipError("Local scheduler requires its database", 503);
     return synchronizeLocalChampionshipSchedules(db, eventId);
@@ -47,13 +48,13 @@ export async function requestChampionshipScheduleSync(eventId: string, db?: Driz
 
 /** Only this identity can launch; a completed or superseded attempt is never replayed. */
 export async function dispatchScheduledChampionshipMatch(db: DrizzleDB, input: ChampionshipScheduledMatch,
-  options: { now?: string; launch?: typeof launchExactGame } = {}) {
+  options: { now?: string; launch?: typeof launchChampionshipGame } = {}) {
   const prepared = await dispatchChampionshipMatch(db, input.eventId, input.ordinal, options.now, input);
   if ("obsolete" in prepared) return { accepted: true, ignored: "obsolete" };
   if (!prepared.gameId) throw new ChampionshipError("Match is not due yet", 503);
   const [game] = await db.select().from(schema.games).where(eq(schema.games.id, prepared.gameId));
   if (game?.status === "completed") await reconcileChampionshipGameCompletion(db, game.id);
-  else if (game?.status === "in_progress") await (options.launch ?? launchExactGame)(db, game.id);
+  else if (game?.status === "in_progress") await (options.launch ?? launchChampionshipGame)(db, game.id);
   else return { accepted: true, gameId: prepared.gameId, recoveryRequired: true };
   return { accepted: true, gameId: prepared.gameId };
 }

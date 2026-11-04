@@ -11,8 +11,9 @@ import { testPayloadStore } from "./payload-test-store.js";
 import { readJson } from "../services/payload-storage.js";
 
 const originalFetch = globalThis.fetch;
+const eventScope = process.env.CHAMPIONSHIP_EVENT_ID;
 const schedulerUrl = process.env.CHAMPIONSHIP_SCHEDULER_URL, schedulerToken = process.env.CHAMPIONSHIP_SCHEDULER_TOKEN;
-afterEach(() => { globalThis.fetch = originalFetch; if (schedulerUrl === undefined) delete process.env.CHAMPIONSHIP_SCHEDULER_URL; else process.env.CHAMPIONSHIP_SCHEDULER_URL = schedulerUrl; if (schedulerToken === undefined) delete process.env.CHAMPIONSHIP_SCHEDULER_TOKEN; else process.env.CHAMPIONSHIP_SCHEDULER_TOKEN = schedulerToken; });
+afterEach(() => { if (eventScope === undefined) delete process.env.CHAMPIONSHIP_EVENT_ID; else process.env.CHAMPIONSHIP_EVENT_ID = eventScope; globalThis.fetch = originalFetch; if (schedulerUrl === undefined) delete process.env.CHAMPIONSHIP_SCHEDULER_URL; else process.env.CHAMPIONSHIP_SCHEDULER_URL = schedulerUrl; if (schedulerToken === undefined) delete process.env.CHAMPIONSHIP_SCHEDULER_TOKEN; else process.env.CHAMPIONSHIP_SCHEDULER_TOKEN = schedulerToken; });
 beforeAll(() => { process.env.JWT_SECRET = "championship-producer-test"; });
 async function producerFixture() {
   const fixture = await championshipFixture();
@@ -48,7 +49,8 @@ test("producer HTTP launch path previews without writes and reconciles only the 
   process.env.CHAMPIONSHIP_SCHEDULER_URL = "https://scheduler.example.test";
   process.env.CHAMPIONSHIP_SCHEDULER_TOKEN = "fixture";
   globalThis.fetch = (async (_url, init) => Response.json({ accepted: true, eventId: JSON.parse(String(init?.body)).eventId })) as typeof fetch;
-  for (const id of [event.id, other.id]) expect((await call(`/api/admin/championships/${id}/activate`, "POST", {})).status).toBe(200);
+  for (const id of [event.id, other.id]) { process.env.CHAMPIONSHIP_EVENT_ID = id; expect((await call(`/api/admin/championships/${id}/activate`, "POST", {})).status).toBe(200); }
+  process.env.CHAMPIONSHIP_EVENT_ID = event.id;
   const reconciliation = await call(`/api/admin/championships/${event.id}/reconcile`, "POST", {});
   expect(reconciliation.status).toBe(200);
   expect(((await reconciliation.json()) as { dispatched: unknown[] }).dispatched).toHaveLength(0);

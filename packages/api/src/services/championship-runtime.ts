@@ -37,14 +37,14 @@ export async function reconcileChampionshipGameCompletion(db: DrizzleDB, gameId:
 }
 
 export async function notifyChampionshipGameCompletion(db: DrizzleDB, gameId: string) {
-  const [match] = await db.select({ id: schema.championshipMatches.id }).from(schema.championshipMatches).where(eq(schema.championshipMatches.gameId, gameId));
+  const [match] = await db.select({ id: schema.championshipMatches.id, eventId: schema.championshipMatches.eventId }).from(schema.championshipMatches).where(eq(schema.championshipMatches.gameId, gameId));
   if (!match) return;
   try { await reconcileChampionshipGameCompletion(db, gameId); }
   catch (error) { console.warn("[championship] Local completion needs retry", gameId, error instanceof Error ? error.message : "Unknown failure"); }
   try {
     if (process.env.CHAMPIONSHIP_SCHEDULER_URL) {
       const response = await fetch(process.env.CHAMPIONSHIP_SCHEDULER_URL, { method: "POST", redirect: "error", signal: AbortSignal.timeout(20_000),
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.CHAMPIONSHIP_SCHEDULER_TOKEN}` }, body: JSON.stringify({ kind: "complete", gameId }) });
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.CHAMPIONSHIP_SCHEDULER_TOKEN}` }, body: JSON.stringify({ kind: "complete", eventId: match.eventId, gameId }) });
       if (!response.ok) throw new Error("Completion delivery was not durably accepted");
       const receipt = await response.json() as { accepted?: boolean; gameId?: string };
       if (receipt.accepted !== true || receipt.gameId !== gameId) throw new Error("Completion acknowledgement did not match game");

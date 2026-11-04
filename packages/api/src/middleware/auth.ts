@@ -159,7 +159,7 @@ export async function verifySessionToken(
       issuer: "influence-api",
       algorithms: ["HS256"],
     });
-    if (payload.token_type === DEPLOYMENT_CONTROL_TOKEN_TYPE) return null;
+    if (payload.token_type === DEPLOYMENT_CONTROL_TOKEN_TYPE || payload.token_type === "championship_service") return null;
     const userId = payload.sub as string | undefined;
     if (typeof userId !== "string" || !userId) return null;
     for (const claim of [payload.roles, payload.perms]) {

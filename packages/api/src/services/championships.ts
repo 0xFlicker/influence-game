@@ -20,7 +20,7 @@ export type FrozenCompetitionBuild = {
   artwork?: { revisionId: string; avatarHash: string; bodyHash: string };
 };
 export class ChampionshipError extends Error {
-  constructor(message: string, public readonly status: 400 | 404 | 409 | 503 = 400) { super(message); }
+  constructor(message: string, public readonly status: 400 | 401 | 403 | 404 | 409 | 503 = 400) { super(message); }
 }
 function nonempty(value: string, label: string): string {
   if (!value.trim()) throw new ChampionshipError(`${label} is required`);
