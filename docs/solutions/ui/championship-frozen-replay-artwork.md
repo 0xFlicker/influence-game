@@ -56,3 +56,12 @@ seven files (160.34 seconds), including execution, correction/replacement,
 ordinary artwork and production source compatibility. Executed in a freshly
 created disposable database, removed after the run. Repository typecheck and
 lint passed. No shared development data was used by the tests.
+
+## Empty source-page progress
+
+The full PostgreSQL regression exposed a paging loop in a sparse Werewolf source:
+an empty requested cursor window returned the same next cursor. Source paging now
+advances through the requested coordinate range even when it contains no visible
+moments. The existing complete-catalog reconstruction test also asserts monotonic
+cursor progress. No omitted thought or hidden event is added to a page. The nine
+source tests pass, including frozen media, audience boundaries and paused previews.

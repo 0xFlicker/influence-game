@@ -145,7 +145,9 @@ export async function readWerewolfProductionSource(db: DrizzleDB, id: string, op
     const source = await buildWerewolfProductionSourceSnapshot(tx, id, options);
     if (fromCursor > source.snapshot.throughCursor + 1) throw new WerewolfGameError("Production source window is unavailable");
     const moments = source.window.moments.filter(moment => moment.cursor >= fromCursor && moment.cursor < fromCursor + limit);
-    const throughCursor = moments.at(-1)?.cursor ?? Math.min(source.snapshot.throughCursor, fromCursor - 1);
+    // Skipped/pass-only coordinates can leave an entire requested window empty.
+    // Advance over the requested range, not merely its last visible moment.
+    const throughCursor = Math.min(source.snapshot.throughCursor, fromCursor + limit - 1);
     const inPage = (cursor: number) => cursor >= fromCursor && cursor <= throughCursor;
     const mediaKeys = new Set(moments.flatMap(moment => moment.mediaKey ? [moment.mediaKey] : []));
     const media = Object.fromEntries(Object.entries(source.window.media).filter(([key]) => mediaKeys.has(key)));
