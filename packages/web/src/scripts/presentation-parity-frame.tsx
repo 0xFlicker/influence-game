@@ -27,7 +27,7 @@ function FormatAudit() {
         const pending = Array.from(document.querySelectorAll<HTMLElement>("[data-format-rules] [data-speech-page-copy]"))
           .some(page => page.getBoundingClientRect().bottom > page.parentElement!.getBoundingClientRect().bottom + 1);
         if (!pending) break;
-        await new Promise<void>(resolve => requestAnimationFrame(resolve));
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
       }
       const pill = document.querySelector<HTMLElement>("[data-active-format-overlay]");
       const label = document.querySelector<HTMLElement>("[data-room-context-label]");
