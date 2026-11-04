@@ -12,6 +12,12 @@ in production Doppler (`social-strategy-agent/prd`) and the local ignored web
 web environment filter. Deployment, including the normal manual production gate,
 is required before live visitors emit these events.
 
+The browser SDK sends ingestion requests through `https://k.thehouse.game`, the
+PostHog reverse proxy. The proxy and its DNS/TLS routing are managed outside this
+repository; confirm they route SDK ingestion and static assets to the US project
+before releasing. Source-map uploads still use `https://us.posthog.com`.
+The SDK's UI host also stays at `https://us.posthog.com` for toolbar links.
+
 Collection is limited to `thehouse.game`; localhost, previews and staging do not
 pollute the production project. Browser SDK loading happens after auth hydration.
 Admin, sysop and producer accounts and admin/auth routes are excluded. Signed-out
@@ -152,8 +158,10 @@ browser request for the corresponding `.map` is not served.
 ## Release verification
 
 After the code is deployed, use a non-staff account and a tagged public landing
-link. Confirm one entry in PostHog Activity, anonymous-to-account continuity,
-creation/join requested and confirmed outcomes, and watch increments. Pause and
+link. In browser network tools, confirm SDK requests use `k.thehouse.game` and
+succeed, including static assets and event ingestion. Confirm one entry in
+PostHog Activity, anonymous-to-account continuity, creation/join requested and
+confirmed outcomes, and watch increments. Pause and
 hide the replay to confirm time stops; seek forward and verify coverage does not
 jump. Use existing saved agents where possible; do not spend on generation merely
 to test analytics. Navigate between public pages, then leave the site and confirm

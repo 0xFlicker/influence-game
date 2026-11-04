@@ -44,6 +44,7 @@ export async function initializeAnalytics(key: string, host: string): Promise<vo
     posthog = module.default;
     posthog.init(key, {
       api_host: host,
+      ui_host: "https://us.posthog.com",
       defaults: "2026-05-30",
       autocapture: false,
       capture_pageview: false,
