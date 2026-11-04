@@ -44,3 +44,13 @@ selection to adopt this treatment; do not regenerate game history or artwork.
 An older championship selection whose descriptor predates the frozen-artwork
 source fix must be refreshed using the current source, as documented in
 `championship-frozen-replay-artwork.md`.
+
+## Centered results follow-up
+
+The figure and details now form one vertically centered flex group inside each
+card, rather than a growing image row pushing details to the bottom. The figure
+shrinks first at short geometries; details remain fully visible. Actual browser
+measurements found equal top/bottom group gaps (188.403px at the checked desktop
+geometry) and no card overflow on desktop or narrow mobile. Refreshed proof is
+in `werewolf-centered-render-proof`: 24 viewer/export comparisons and eight
+encoded-frame checks across the same eight/twelve-player and geometry matrix.

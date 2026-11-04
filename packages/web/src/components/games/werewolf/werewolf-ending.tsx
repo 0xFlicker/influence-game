@@ -21,9 +21,9 @@ export function WerewolfEnding({snapshot, backgroundUrl, compact = false}: {comp
       <p className="text-xs text-white/70">{werewolfOutcomeReason(outcome)}</p>
     </header>
     <ul aria-label="Final cast" className="relative grid min-h-0 flex-1 gap-1" style={{gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,90px),1fr))",gridAutoRows:"minmax(0,1fr)"}}>
-      {[...players].sort((a,b)=>Number(outcome.winnerIds.includes(b.id))-Number(outcome.winnerIds.includes(a.id))).map(player=><li key={player.id} className="grid min-h-0 min-w-0 rounded-lg border border-white/15 bg-black/65 p-1 text-xs leading-4" style={{gridTemplateRows:"minmax(0,1fr) auto"}}>
+      {[...players].sort((a,b)=>Number(outcome.winnerIds.includes(b.id))-Number(outcome.winnerIds.includes(a.id))).map(player=><li key={player.id} className="flex min-h-0 min-w-0 flex-col justify-center rounded-lg border border-white/15 bg-black/65 p-1 text-xs leading-4">
         <EndingFigure player={player}/>
-        <div className="relative rounded-md bg-black/75 p-1.5">
+        <div className="relative shrink-0 rounded-md bg-black/75 p-1.5">
           <p className="break-words font-semibold">{player.name}</p>
           <p className="capitalize text-amber-100">{player.role}</p>
           <p>{outcome.winnerIds.includes(player.id) ? "Winner" : outcome.faction === null ? "Draw" : "Defeated"}</p>
@@ -70,7 +70,7 @@ function EndingFigure({player}: {player:WerewolfWatchMoment["snapshot"]["players
   const body=player.fullBodyReferenceUrl && !missing.has(player.fullBodyReferenceUrl) ? player.fullBodyReferenceUrl : null;
   const portrait=resolveAgentAvatarUrl(player.avatarUrl,"",player.name,player.personaKey);
   const source=body ?? (missing.has(portrait) ? resolveAgentAvatarUrl(null,"",player.name,player.personaKey) : portrait);
-  return <div className="relative min-h-0" data-ending-art={body ? "full-body" : "portrait"}>
+  return <div className="relative min-h-0 w-full shrink" style={{aspectRatio:"2 / 3",maxHeight:"70%"}} data-ending-art={body ? "full-body" : "portrait"}>
     {/* eslint-disable-next-line @next/next/no-img-element -- Frozen character artwork is also used by Studio and offline export. */}
     <img key={source} src={resolveApiUrl(source)} alt={player.name}
       className={`absolute inset-0 h-full w-full object-contain ${body ? "object-bottom" : "p-2"}`}
