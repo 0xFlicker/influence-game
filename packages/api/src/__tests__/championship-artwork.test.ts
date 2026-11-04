@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { eq } from "drizzle-orm";
 import { schema } from "../db/index.js";
-import { championshipFixture, policies } from "./championship-fixtures.js";
+import { championshipFixture, policies, fixtureImage } from "./championship-fixtures.js";
 import { createChampionshipDraft, configureChampionshipDraft, lockChampionshipRoster, readFrozenCompetitionBuild, readChampionship } from "../services/championships.js";
 import { processChampionshipArtwork, setChampionshipArtDependenciesForTests, readChampionshipArtAttempts, reconcileChampionshipArtAttempt } from "../services/championship-artwork.js";
 import { activateChampionship, dispatchChampionshipMatch } from "../services/championship-dispatch.js";
@@ -277,4 +277,55 @@ test("explicit bundled portrait references preserve the selected identity and re
   for (const url of ["/avatars/personas/../observer.png", "/avatars/personas/unknown.png", "https://evil.test/avatars/personas/observer.png", "/avatars/personas/observer.png?other=1"]) {
     await expect(readVisualProfileImage(url, { name: "", personaKey: "observer" })).rejects.toThrow("application image storage");
   }
+});
+
+test("championship replay uses prepared immutable art without ordinary content revisions", async () => {
+  const { werewolfReferenceMetadata, werewolfReferences } = await import("../services/werewolf-production.js");
+  const { readWerewolfCharacter, readWerewolfPresentation } = await import("../services/werewolf-presentation.js");
+  const { db, event, actorId, agents } = await draft();
+  await lockChampionshipRoster(db, event.id, actorId, randomUUID());
+  await activateChampionship(db, event.id, actorId, randomUUID());
+  const game = await dispatchChampionshipMatch(db, event.id, 1);
+  const before = await readWerewolfEvents(db, game.gameId!);
+  const cast = before.find(row => row.type === "werewolf.started")!.payload.players;
+  expect(cast.every(player => !player.contentRevisionId)).toBe(true);
+  await db.update(schema.agentProfiles).set({ avatarUrl: "/new-private-profile.png", fullBodyReferenceUrl: "/new-private-body.png", werewolfStrategyStyle: "private future strategy" }).where(eq(schema.agentProfiles.id, agents[0]!));
+  const refs = await werewolfReferenceMetadata(db, game.gameId!);
+  expect(refs).toHaveLength(8);
+  for (const ref of refs) {
+    expect(ref.kind).toBe("full_body");
+    expect(await readWerewolfCharacter(db, game.gameId!, ref.profile.id)).toEqual(await fixtureImage);
+    expect(await readWerewolfCharacter(db, game.gameId!, ref.profile.id, "body")).toEqual(await fixtureImage);
+    expect(await readWerewolfCharacter(db, game.gameId!, ref.profile.id, "body", [])).toBeNull();
+  }
+  const expectedImage = await fixtureImage;
+  expect((await werewolfReferences(db, game.gameId!)).every(ref => ref.bytes?.equals(expectedImage))).toBe(true);
+  const mystery = (await readWerewolfPresentation(db, game.gameId!, "mystery")).presentation;
+  expect(mystery.view.players.every(player => Boolean(player.fullBodyReferenceUrl))).toBe(true);
+  const serialized = JSON.stringify(mystery);
+  for (const secret of ["private future strategy", "Werewolf strategy", "bodyPayload", "portraitPayload", "payloads/", "modelRouting"]) expect(serialized).not.toContain(secret);
+  expect(await readWerewolfCharacter(db, game.gameId!, "foreign-seat")).toBeNull();
+  await expect(werewolfReferenceMetadata(db, game.gameId!, [{...cast[0]!, id:"foreign-seat"}])).rejects.toThrow("accepted seat");
+  expect(await readWerewolfEvents(db, game.gameId!)).toEqual(before);
+});
+
+test("replacement attempts retain championship artwork and reject mismatched evidence", async () => {
+  const { replayCancelledChampionshipMatch } = await import("../services/championship-dispatch.js");
+  const { readWerewolfCharacter } = await import("../services/werewolf-presentation.js");
+  const { storeBinary } = await import("../services/payload-storage.js");
+  const { db, event, actorId } = await draft();
+  await lockChampionshipRoster(db, event.id, actorId, randomUUID());
+  await activateChampionship(db, event.id, actorId, randomUUID());
+  const old = await dispatchChampionshipMatch(db, event.id, 1);
+  const oldCast = (await readWerewolfEvents(db, old.gameId!)).find(row => row.type === "werewolf.started")!.payload.players;
+  await db.update(schema.games).set({status:"cancelled"}).where(eq(schema.games.id,old.gameId!));
+  const next = await replayCancelledChampionshipMatch(db,{eventId:event.id,ordinal:1,expectedGameId:old.gameId!,actorId,reason:"Fixture retry",requestId:randomUUID()});
+  const cast = (await readWerewolfEvents(db,next.gameId!)).find(row=>row.type === "werewolf.started")!.payload.players;
+  expect(cast[0]!.id).not.toBe(oldCast[0]!.id);
+  expect(await readWerewolfCharacter(db,next.gameId!,cast[0]!.id)).toEqual(await fixtureImage);
+  expect(await readWerewolfCharacter(db,old.gameId!,oldCast[0]!.id)).toEqual(await fixtureImage);
+  expect(await readWerewolfCharacter(db,next.gameId!,oldCast[0]!.id)).toBeNull();
+  const [art] = await db.select().from(schema.championshipArtwork).where(eq(schema.championshipArtwork.agentId,cast[0]!.agentProfileId!));
+  await db.update(schema.championshipArtwork).set({avatar:await storeBinary(generated)}).where(eq(schema.championshipArtwork.id,art!.id));
+  await expect(readWerewolfCharacter(db,next.gameId!,cast[0]!.id)).rejects.toThrow("artwork integrity mismatch");
 });

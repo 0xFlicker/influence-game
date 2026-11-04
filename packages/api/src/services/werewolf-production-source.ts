@@ -124,7 +124,7 @@ export async function buildWerewolfProductionSourceSnapshot(tx: DrizzleDB | Visu
     ...(retakes.size ? {retakes: [...retakes]} : {}),
     events, thoughts, catalog:candidateCatalog,
     // Frozen revision facts remain verified; publishing their derivative changes no facts.
-    references:candidateReferences.map(({ transparentUrl: _transparent, ...reference }) => reference), publications: rows.map(({ scene, publication, version }) => ({ scene: { id: scene.id, roomId: scene.roomId, boundarySequence: scene.boundarySequence }, publication, version })), artifacts });
+    references:candidateReferences.map(({ transparentUrl: _transparent, bodyPayload: _bodyPayload, portraitPayload: _portraitPayload, ...reference }) => reference), publications: rows.map(({ scene, publication, version }) => ({ scene: { id: scene.id, roomId: scene.roomId, boundarySequence: scene.boundarySequence }, publication, version })), artifacts });
   const sourceHash = hashProjection(catalog,references);
   if (options.snapshot && !options.refreshVisuals && options.snapshot.sourceHash !== sourceHash) throw new WerewolfGameError("Production source snapshot changed or uses obsolete artwork-bound hashing; open this game in Studio to create a fresh descriptor", 409);
   const snapshot: WerewolfProductionSnapshot = { ...contract, gameId: game.id, gameKind: "werewolf", audience: options.audience, thinking: options.thinking, throughEventSequence, throughCursor: projection.latestCursor, publicationCutoff, availableCharacterAssets, sourceHash };
