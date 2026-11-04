@@ -29,3 +29,23 @@ No extra game, asset generation, server restart, database reset or deployment wa
 The game label and Close player row now reserves its real layout before playback, using hidden visibility and `aria-hidden` rather than conditional mounting. It remains unfocusable and invisible until playback; no viewer is mounted by the reservation. Browser measurements before/after real live playback: desktop player 800px, caption 47.995px, standings document Y 1471.875px; narrow layout player 460px, caption 75.981px, standings Y 1450.825px. Watch-section heights were unchanged (942.760px desktop, 887.813px narrow), with no horizontal overflow. The narrow browser's zoom-adjusted CSS viewport measured 416px.
 
 Complete provider-free regression: **3,348 passed, 5 skipped, 0 failed, 40,578 assertions** across 358 files (234.12s). Initial sandbox run could not bind ephemeral test ports; rerunning with loopback test permission passed. Existing application servers were not operated. Full PostgreSQL regression is running in its own disposable database, independently of `influence_dev`.
+
+## Direct entry hero
+
+Entry actions now occupy reserved rows inside the season banner. The selected
+agent, native selector and Join action are immediately available; no disclosure
+panel is inserted above the player. Entered users retain a smaller Change agent
+selector, explicit Switch action, and leave/update controls. No-agent users keep
+the season-scoped Create agent continuation, which enrolls only in its original
+season after saving. A synchronous submit fence prevents duplicate clicks from
+sending overlapping entry requests.
+
+The background and artwork have separate clipping boundaries, so the transparent
+figure can cross the banner's upper edge without overlapping the season selector.
+Portrait-only agents retain a portrait fallback; no assets are regenerated.
+Browser checks at desktop and narrow widths found zero movement of the next
+section when changing agents (desktop Y=795.122, narrow Y=839.019), no horizontal
+overflow, and keyboard focus from the selector directly to Join. Actual local
+queue data was not changed for this UI verification. Fixture tests cover the
+single POST carrying the original season ID, duplicate click suppression,
+entered/switch states, no-agent creation link, and truthful closed-season rejection.

@@ -15,3 +15,34 @@
 @media(max-width:600px){.manageEntry{padding:8px 12px;background:#0d0d0de8;border:1px solid #b99c61;border-radius:3px}}
 
 .playerCaption[data-playing="false"]{visibility:hidden;pointer-events:none}
+
+/* Entry actions stay in the hero; only artwork crosses its upper boundary. */
+.seasonMasthead{margin-top:80px;min-height:480px;overflow:visible;background:none;padding:30px clamp(20px,3vw,52px);align-items:flex-start}
+.seasonMasthead::before{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,#080807ed,#17100a55 60%,#080807aa),url('/agent-creation-hall.webp') center 48%/cover}
+.seasonIdentity{width:46%;max-width:560px;min-width:0}
+.seasonIdentity h1{font-size:clamp(32px,3.4vw,56px);margin-bottom:14px}
+.directEntry{display:grid;grid-template-rows:24px 50px 74px 62px minmax(32px,auto) 28px;align-items:start}
+.entryState{color:#dfc593;font-size:15px;margin:0}
+.entryAgentName{font:500 clamp(23px,2vw,32px)/1.2 Georgia,serif;overflow-wrap:anywhere;margin:0}
+.entrySelection{min-width:0;max-width:320px;width:100%}
+.entrySelection label{display:grid;gap:6px;font-size:13px;color:#c6b59b}
+.entrySelection select{width:100%;min-height:42px;border:1px solid #8d7650;border-radius:3px;background:#15120fee;color:#f2e5cf;padding:8px 32px 8px 12px;font-size:16px}
+.entryPrimary{display:flex;align-items:flex-start}
+.entryPrimary .joinAction{margin:0;min-width:180px;text-align:center;font-size:17px;padding:13px 24px}
+.entryConfirmed{display:inline-flex;align-items:center;min-height:51px;color:#e2c595;font-size:20px}
+.entryUtilities{display:flex;align-items:flex-start;flex-wrap:wrap;gap:8px 24px;font-size:13px;color:#c8b99d}
+.entryUtilities button,.entryUtilities a{text-decoration:underline;text-underline-offset:4px}
+.entryNotice{margin:0;color:#c8b99d;font-size:12px;line-height:1.5}
+.mastheadArt{inset:-70px 1% 0 48%;overflow:hidden;mask-image:linear-gradient(to bottom,#000 93%,transparent);z-index:1}
+.mastheadArt .agentArt{height:980px;display:block}
+.mastheadArt .fullBody{height:980px;max-height:none;width:100%;object-fit:contain;object-position:center top}
+.mastheadArt .headshot{width:min(100%,440px);height:500px;margin:0 auto;object-fit:cover;object-position:top;border-radius:180px 180px 0 0;mask-image:linear-gradient(to bottom,#000 75%,transparent)}
+.mastheadArt .emptyPortrait{margin:100px auto 0;width:min(80%,250px)}
+.entrySelection select:focus-visible,.entryUtilities button:focus-visible,.entryPrimary a:focus-visible,.entryPrimary button:focus-visible{outline:2px solid #f3d396;outline-offset:4px}
+@media(max-width:600px){.seasonMasthead{margin-top:70px;min-height:470px;padding:25px 18px}.seasonIdentity{width:65%;max-width:none}.seasonIdentity h1{font-size:34px}.directEntry{grid-template-rows:24px 64px 74px 62px minmax(32px,auto) 38px}.entryAgentName{font-size:24px}.entrySelection{max-width:220px}.entryPrimary .joinAction{min-width:0;font-size:16px;padding:13px 18px}.mastheadArt{inset:-60px -12px 0 52%;opacity:1}.mastheadArt .agentArt,.mastheadArt .fullBody{height:700px;width:350px;max-width:none}.mastheadArt .fullBody{object-position:left top}.mastheadArt .headshot{width:230px;max-width:none;height:330px;object-fit:cover;margin:0}.mastheadArt .emptyPortrait{width:130px;margin-top:80px}.seasonIdentity{z-index:2}.entryUtilities{gap:8px 16px}}
+/* Reserved row gaps keep fields readable without expanding on selection. */
+.directEntry{grid-template-rows:24px 50px 74px 62px minmax(32px,auto) 28px;row-gap:10px}
+.seasonMasthead{min-height:520px}
+.mastheadArt .fullBody{transform:translateY(-55px)}
+@media(max-width:600px){.seasonMasthead{min-height:520px}.directEntry{grid-template-rows:24px 64px 74px 62px minmax(32px,auto) 38px;row-gap:8px}.mastheadArt .fullBody{transform:translateY(-35px)}}
+@media(max-width:600px){.mastheadArt .agentArt,.mastheadArt .fullBody{width:280px}.mastheadArt .fullBody{transform:translate(-25px,-35px)}}
