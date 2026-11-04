@@ -1046,3 +1046,8 @@ Season 0 earned badges are finalized-season achievements, not championship-activ
 ## Failed-game replacement
 
 An authorized admin Retry game action fences and hides a suspended or cancelled attempt while retaining its canonical history and evidence. One immutable original-to-replacement record makes repeat requests return the same replacement. The new game uses admitted frozen inputs, with the same competitive roles; championship standings count only the current match attempt. A captured outcome must use completion recovery instead of new gameplay. Explicit launch targets that exact replacement, independently of a discovery timer.
+
+Daily Free scheduled draws require a season accepting admissions under the
+shared enrollment/closeout lock. One accepted timestamp controls the draw's
+season binding. Scheduled start requires an assigned season but permits
+already-admitted games during closing; custom games remain independent.
