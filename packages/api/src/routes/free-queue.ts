@@ -58,7 +58,7 @@ import {
 } from "../services/transcript-capture.js";
 import { getRedactedKernelHealth } from "../services/game-kernel-health.js";
 import { tryRefreshGameWatchStateSummary } from "../services/game-watch-state-summary.js";
-import { bindFreeGameToActiveSeason } from "../services/seasons.js";
+import { bindFreeGameToActiveSeason, getActiveSeason } from "../services/seasons.js";
 import {
   deferDailyFreePrompt,
   acquireDailyFreeLocks,
@@ -321,6 +321,13 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
           gameSlug: waitingGame.slug,
         };
       }
+      // Enrollment and closeout share this transaction lock. Pin one admission
+      // instant so a deadline crossing during roster preparation cannot unrate it.
+      const admittedAt = new Date().toISOString();
+      if (!await getActiveSeason(tx, admittedAt)) {
+        return { drawn: false as const, code: "season_intake_closed",
+          reason: "Daily Free intake is closed. No season is accepting entries." };
+      }
       const entries = (await tx.select({ entry: schema.freeGameQueue }).from(schema.freeGameQueue)
         .innerJoin(schema.agentProfiles, eq(schema.freeGameQueue.agentProfileId, schema.agentProfiles.id))
         .where(eligibleAgentContent())).map(row => row.entry);
@@ -458,7 +465,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       }
       return {
         drawn: true as const,
-        ...(await bindFreeGameToActiveSeason(tx, gameId)),
+        ...(await bindFreeGameToActiveSeason(tx, gameId, admittedAt)),
       };
     });
     if (!admission.drawn) return c.json(admission);
@@ -502,6 +509,12 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
     }
 
     const game = freeGames[0]!;
+    // Previously admitted rated games may finish during closing. Do not let an
+    // old unassigned free lobby bypass the between-seasons intake guard.
+    if (!game.seasonId) {
+      return c.json({ error: "This Daily Free game has no admitted season.",
+        code: "season_admission_required" }, 409);
+    }
 
     const currentPlayers = await db
       .select()
