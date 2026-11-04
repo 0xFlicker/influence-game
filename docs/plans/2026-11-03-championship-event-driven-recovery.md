@@ -59,7 +59,7 @@ Before scope was clarified, drafts existed for `championship-schedules.ts`, exac
 
 Retained retry-required changes: an atomic match-preparation helper, exact-game local adoption, the external launch acknowledgement boundary, completion-to-championship settlement callbacks, and normal cleanup of locally launched games. These neither register schedules nor dispatch other matches. Further scheduling implementation awaits explicit direction.
 
-## Verified local results (2026-11-04)
+## Initial fixture-only verification (2026-11-04)
 
 - Provider-free baseline: 3,328 passed, 5 skipped, 0 failed across 353 files.
 - Full PostgreSQL baseline: 2,394 passed and 3 failed across 224 files. All three failures were stale public-profile fixture expectations from earlier badge/profile work; those fixtures were corrected.
@@ -68,4 +68,21 @@ Retained retry-required changes: an atomic match-preparation helper, exact-game 
 - Focused UI: 7 passed, 0 failed, 41 assertions. Existing localhost browser fixture verified keyboard retry, inline delivery failure, repeated original ID, replacement navigation and mobile layout; API responses were intercepted and no live game was retried.
 - Final typecheck, lint, test classification and diff whitespace checks passed.
 
-Only disposable fixture databases were explicitly migrated for this verification. No development-server start/stop commands, manual development-data changes, paid provider calls, AWS resources or production changes were performed. The running development app's watch/restart behavior was not managed by this task. Production launch receiver/Fargate integration and one-shot scheduling remain unimplemented as described above.
+During this initial fixture-only verification, only disposable fixture databases were explicitly migrated. No development-server start/stop commands, manual development-data changes, paid provider calls, AWS resources or production changes were performed. The running development app's watch/restart behavior was not managed by this task. Production launch receiver/Fargate integration and one-shot scheduling remain unimplemented as described above.
+
+
+## Subsequent authorized real localhost verification
+
+Using the existing development services, a new disposable six-character House-only Werewolf game was deliberately suspended without fabricating an outcome. The actual admin browser Retry request exposed and led to fixes for the missing control in the separate Werewolf workspace and missing frozen House-character fields on replacement seats. No API response was mocked or intercepted for the successful run.
+
+The replacement then launched directly in the existing API process and completed gameplay plus retrospective with 39 GPT-6 Luna gameplay provider receipts. It preserved cast, rules, seed and role allocation, produced one canonical village-win outcome, and appeared publicly while the original remained hidden with its opening event retained. Repeating the actual UI action returned the same completed replacement. Fresh desktop/mobile inspection verified the completed result and retry controls.
+
+This later test explicitly used normal inference under the renewed authorization. It was an unrated custom game, so no existing user game, closed Season 0 score or real championship standing was changed. Championship score/award settlement remains proven by the fixture event rehearsal, not by this custom live game. No development service was started or stopped, and EventBridge/Fargate deployment remains outside this patch. Local evidence is retained under `artifacts/championship/live-retry/` and is not committed.
+
+Final regression results after the real test:
+
+- Full PostgreSQL rerun after fixture corrections: **2,400 passed, 0 failed**, 34,255 assertions across 225 files (1,276 seconds).
+- Final focused retry/launch run: **11 passed, 0 failed**, 87 assertions. This covers the House-only/mixed/owned cast changes made after the full run had already visited its retry tests, including changed admission metadata versus canonical frozen identity.
+- Provider-free baseline rerun: **3,328 passed, 5 skipped, 0 failed**, across 353 files.
+- Focused UI rerun: **7 passed, 0 failed**. Final typecheck, lint and whitespace checks passed.
+- Real run evidence: `artifacts/championship/live-retry/verified.json`, final `status.json`, and fresh mobile/desktop screenshots. The replacement's execution owner was confirmed closed after completion.

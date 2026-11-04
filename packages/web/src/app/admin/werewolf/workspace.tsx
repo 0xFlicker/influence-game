@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { usePermissions } from "@/hooks/use-permissions";
+import { RetryGameButton } from "../retry-game-button";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import type { WerewolfView } from "@influence/engine/werewolf/observation";
@@ -49,6 +51,8 @@ export function GameList() {
 
 export function GameWorkspace({ gameId, children }: { gameId: string; children: React.ReactNode }) {
   const path = usePathname(), params = useSearchParams();
+  const { hasPermission } = usePermissions();
+  const [replacementId, setReplacementId] = useState<string | null>(null);
   const suffix = path.slice(`/admin/werewolf/${gameId}`.length).replace(/^\//, "");
   const valid = suffix === "" || sections.includes(suffix as Section);
   const route = (suffix || "overview") as Section;
@@ -143,7 +147,8 @@ export function GameWorkspace({ gameId, children }: { gameId: string; children: 
           {actionError && <Notice>{actionError}</Notice>}
           {displayed === "overview" && <>
           <section className={styles.surface}><h2 tabIndex={-1}>Game overview</h2><p>{data.snapshot.outcome ? `${title(data.snapshot.outcome.faction ?? "Draw")} · ${title(data.snapshot.outcome.reason)}` : "The game has not reached a result."}</p><p className={styles.small}>Created {new Date(data.createdAt).toLocaleString()}</p>
-          <div className={styles.actions}>{!data.hidden && <Link href={`/games/${data.slug}`}>Open spectator view ↗</Link>}{data.capabilities.visibility && <button disabled={busy} onClick={() => void action("visibility")}>{data.hidden ? "Restore listing" : "Hide game"}</button>}{data.capabilities.stop && <button disabled={busy} onClick={() => setConfirm(true)}>Stop game</button>}</div>
+          {replacementId && <p role="status">Replacement started. <Link href={href(replacementId, "overview")}>View replacement</Link></p>}
+          <div className={styles.actions}>{["suspended", "cancelled"].includes(data.status) && !data.snapshot.outcome && hasPermission("start_game") && hasPermission("stop_game") && hasPermission("hide_game") && <RetryGameButton gameId={data.id} disabled={busy} onRetried={async id => { setReplacementId(id); await client.invalidateQueries({ queryKey: ["admin", session.scope, root] }); await refresh(); }} />}{!data.hidden && <Link href={`/games/${data.slug}`}>Open spectator view ↗</Link>}{data.capabilities.visibility && <button disabled={busy} onClick={() => void action("visibility")}>{data.hidden ? "Restore listing" : "Hide game"}</button>}{data.capabilities.stop && <button disabled={busy} onClick={() => setConfirm(true)}>Stop game</button>}</div>
           {confirm && <div className={styles.notice}><p>Stop this game? Accepted history is retained. A stopped game cannot resume.</p><button disabled={busy} onClick={() => void action("stop")}>Confirm stop</button><button onClick={() => setConfirm(false)}>Keep running</button></div>}
           <p className={styles.footnote}>Hiding removes public discovery and direct viewing. Admin records remain available.</p></section>
           <section className={styles.surface}><h2>Cast</h2><p className={styles.small}>Omniscient operations view · original roles</p><div className={styles.cast}>{data.snapshot.players.map(p => <div key={p.id}><strong>{p.name}</strong><span>{title(p.role ?? "unknown")} · {p.alive ? "Alive" : "Eliminated"}</span></div>)}</div></section>

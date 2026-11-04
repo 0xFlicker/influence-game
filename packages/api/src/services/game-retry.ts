@@ -96,7 +96,15 @@ export async function retryFailedGame(db: DrizzleDB, originalGameId: string, act
         const initial = startWerewolf(replacementGameId, opening.payload.players.map(player => ({ ...player, id: ids.get(player.id)! })), opening.payload.config, opening.payload.seed);
         if (initial.type !== "werewolf.started" || opening.payload.players.some(player => opening.payload.roles[player.id] !== initial.payload.roles[ids.get(player.id)!])) throw new ChampionshipError("Could not preserve the frozen roles", 409);
         await tx.insert(schema.werewolfEvents).values({ gameId: replacementGameId, sequence: 1, event: initial });
-        await tx.insert(schema.werewolfLobbySeats).values(initial.payload.players.map(player => ({ id: player.id, gameId: replacementGameId, agentProfileId: player.agentProfileId ?? null })));
+        const originalSeats = await tx.select().from(schema.werewolfLobbySeats).where(eq(schema.werewolfLobbySeats.gameId, old.id));
+        await tx.insert(schema.werewolfLobbySeats).values(initial.payload.players.map((player, index) => {
+          const originalPlayer = opening.payload.players[index]!;
+          const originalSeat = originalSeats.find(seat => seat.id === originalPlayer.id);
+          const { id: _id, agentProfileId: _profile, contentRevisionId: _revision, ...houseCharacter } = originalPlayer;
+          return { id: player.id, gameId: replacementGameId, agentProfileId: player.agentProfileId ?? null,
+            modelPreference: originalSeat?.modelPreference ?? "default",
+            houseCharacter: player.agentProfileId ? null : houseCharacter };
+        }));
       } else await tx.insert(schema.gameTranscriptStates).values(initialGameTranscriptStateValues(replacementGameId));
       await queueEpisodeCopy(tx, replacementGameId);
     }

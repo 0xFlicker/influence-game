@@ -103,19 +103,31 @@ test("HTTP retry recovers launch failure and runs only its replacement without p
   expect((await db.select().from(schema.games).where(eq(schema.games.id, unrelated.gameId!)))[0]!.status).toBe("in_progress");
 }, 120000);
 
-test("ordinary Werewolf retry preserves admitted identities and role assignment", async () => {
+test.each([0, 4, 8])("ordinary Werewolf retry preserves admitted identities and role assignment with %i owned agents", async owned => {
   const { db, actorId, agents } = await championshipFixture();
   const { createWerewolfGame } = await import("../services/werewolf-games.js");
-  const { id: gameId } = await createWerewolfGame(db, actorId, { preset: "two_wolves", agentProfileIds: agents });
+  const { id: gameId } = await createWerewolfGame(db, actorId, { preset: "two_wolves", agentProfileIds: agents.slice(0, owned) });
   const before = (await readWerewolfEvents(db, gameId))[0]!;
   await db.update(schema.games).set({ status: "suspended" }).where(eq(schema.games.id, gameId));
   await db.update(schema.agentProfiles).set({ personality: "Changed since admission" }).where(eq(schema.agentProfiles.userId, actorId));
+  const oldLobby = await db.select().from(schema.werewolfLobbySeats).where(eq(schema.werewolfLobbySeats.gameId, gameId));
+  for (const seat of oldLobby.filter(seat => seat.houseCharacter)) {
+    await db.update(schema.werewolfLobbySeats).set({ houseCharacter: { ...seat.houseCharacter!, name: "Changed admission metadata" } }).where(eq(schema.werewolfLobbySeats.id, seat.id));
+  }
   const next = await retryFailedGame(db, gameId, actorId);
   const after = (await readWerewolfEvents(db, next.gameId))[0]!;
   if (before.type !== "werewolf.started" || after.type !== "werewolf.started") throw new Error("Missing opening");
   expect(after.payload.players.map(({ id: _id, ...p }) => p)).toEqual(before.payload.players.map(({ id: _id, ...p }) => p));
   expect(after.payload.players.map(p => after.payload.roles[p.id])).toEqual(before.payload.players.map(p => before.payload.roles[p.id]));
   expect(after.payload.config).toEqual(before.payload.config);
+  const lobby = await db.select().from(schema.werewolfLobbySeats).where(eq(schema.werewolfLobbySeats.gameId, next.gameId));
+  expect(lobby).toHaveLength(8);
+  expect(lobby.filter(seat => seat.houseCharacter)).toHaveLength(8 - owned);
+  for (const player of after.payload.players.filter(player => !player.agentProfileId)) {
+    const seat = lobby.find(seat => seat.id === player.id)!;
+    expect(seat.houseCharacter?.name).toBe(player.name);
+    expect(seat.houseCharacter?.personality).toBe(player.personality);
+  }
 });
 
 
