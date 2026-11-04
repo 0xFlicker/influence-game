@@ -107,3 +107,20 @@ Do not activate a real event until its start date is chosen. An Influence draw p
 Remaining policy/UI scope: arbitrary canonical-outcome adjudication, actual start date, hypothetical Influence-draw resolution, and any desired final badge-art refinement. Result corrections currently use canonical resettlement or explicit replay; they do not invent a different winner. In-player branding was not changed; existing viewer/Studio/export rendering remains the authority. The event page and profile award shelves are outside the player picture.
 
 See `championship-validation.md` for exact local evidence and limits. No live provider execution or production activation is claimed.
+
+### Championship room and frozen cutouts
+
+The public event page uses frozen full-body artwork, an inline existing viewer, a
+17-match selector and closed results/role spoilers. Theater fills the browser
+window; fullscreen uses the browser fullscreen API. This is host-page chrome:
+the shared scenes, timing and Studio/export movie content are unchanged.
+
+Roster lock registers each frozen body as a content-addressed source and records
+cutout demand through the existing derivative lane. Originals and competition
+builds remain immutable. Where cutout workers are disabled, the page temporarily
+falls back to the frozen original; this does not stop gameplay.
+
+For an older locked roster, use the existing character-cutout backfill CLI with
+`--championship <event-uuid>` in place of its agent/game selection. Inventory
+first, then run using the environment's existing cutout worker. It selects frozen
+event builds, not current profile artwork, and reuses durable jobs and retries.

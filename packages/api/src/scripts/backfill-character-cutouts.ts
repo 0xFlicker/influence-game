@@ -9,11 +9,11 @@ import { cutoutNeedsWork, cutoutProgress, discoverCutoutSources, enqueueCutoutSe
 
 export function parseCutoutCommand(args: string[], env: Record<string, string | undefined>) {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, strict: true, options: {
-    env: { type: "string" }, agent: { type: "string" }, game: { type: "string" }, scope: { type: "string" },
+    env: { type: "string" }, agent: { type: "string" }, game: { type: "string" }, championship: { type: "string" }, scope: { type: "string" },
     job: { type: "string" }, demand: { type: "string" }, limit: { type: "string" }, wait: { type: "string" }, "dry-run": { type: "boolean" },
   } });
   const command = positionals[0];
-  if (positionals.length !== 1 || !command || !["inventory", "run", "status", "retry"].includes(command)) throw new Error("Usage: cutouts:backfill inventory|run|status|retry --env local|production (--agent ID | --game ID | --scope example-models | --job IDs | --demand IDs) [--limit 1..100] [--wait SECONDS] [--dry-run]");
+  if (positionals.length !== 1 || !command || !["inventory", "run", "status", "retry"].includes(command)) throw new Error("Usage: cutouts:backfill inventory|run|status|retry --env local|production (--agent ID | --game ID | --championship ID | --scope example-models | --job IDs | --demand IDs) [--limit 1..100] [--wait SECONDS] [--dry-run]");
   if (env.INFLUENCE_DEPLOYMENT_ENVIRONMENT === "staging" || env.NODE_ENV === "staging" || values.env === "staging") throw new Error("Staging cutouts are hard-disabled");
   if (values.env !== "local" && values.env !== "production") throw new Error("Explicit --env local|production required");
   const dbUrl = env.DATABASE_URL ?? (values.env === "local" ? "postgresql://influence:influence@127.0.0.1:54320/influence_dev" : "");
@@ -21,7 +21,7 @@ export function parseCutoutCommand(args: string[], env: Record<string, string | 
   if (values.env === "local") {
     if (env.INFLUENCE_DEPLOYMENT_ENVIRONMENT || env.NODE_ENV === "production" || !["localhost", "127.0.0.1"].includes(new URL(dbUrl).hostname)) throw new Error("Local target requires a localhost database and local environment");
   } else if (env.INFLUENCE_DEPLOYMENT_ENVIRONMENT !== "prod") throw new Error("Production requires INFLUENCE_DEPLOYMENT_ENVIRONMENT=prod");
-  const selectors = [values.agent, values.game, values.scope, values.job, values.demand].filter(v => v !== undefined);
+  const selectors = [values.agent, values.game, values.championship, values.scope, values.job, values.demand].filter(v => v !== undefined);
   if (selectors.length !== 1 || !selectors[0]?.trim()) throw new Error("Select exactly one agent, game, scope, job list or demand list");
   if (values.scope && values.scope !== "example-models") throw new Error("Only --scope example-models is supported");
   if (command === "retry" && !values.job && !values.demand) throw new Error("Retry requires explicitly selected --job or --demand IDs");
@@ -33,7 +33,7 @@ export function parseCutoutCommand(args: string[], env: Record<string, string | 
   if (wait && (["inventory", "status"].includes(command) || values["dry-run"])) throw new Error("Wait is only supported for run/retry without --dry-run");
   const ids = (values.job ?? values.demand)?.split(",") ?? [];
   if (ids.length > 100 || ids.some(id => !id.trim()) || new Set(ids).size !== ids.length) throw new Error("Select 1..100 distinct IDs");
-  const selection: CutoutSelection | null = values.agent ? { agent: values.agent } : values.game ? { game: values.game } : values.scope ? { scope: "example-models" } : null;
+  const selection: CutoutSelection | null = values.agent ? { agent: values.agent } : values.game ? { game: values.game } : values.championship ? { championship: values.championship } : values.scope ? { scope: "example-models" } : null;
   const mutate = ["run", "retry"].includes(command) && !values["dry-run"];
   if (values.env === "production" && mutate && cutoutMode(env) !== "aws-batch") throw new Error("Production writes require configured aws-batch mode");
   return { command, environment: values.env, dbUrl, selection, ids, kind: values.job ? "job" as const : "demand" as const, limit, wait, mutate };

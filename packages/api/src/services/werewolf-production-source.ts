@@ -124,7 +124,7 @@ export async function buildWerewolfProductionSourceSnapshot(tx: DrizzleDB | Visu
     ...(retakes.size ? {retakes: [...retakes]} : {}),
     events, thoughts, catalog:candidateCatalog,
     // Frozen revision facts remain verified; publishing their derivative changes no facts.
-    references:candidateReferences.map(({ transparentUrl: _transparent, ...reference }) => reference), publications: rows.map(({ scene, publication, version }) => ({ scene: { id: scene.id, roomId: scene.roomId, boundarySequence: scene.boundarySequence }, publication, version })), artifacts });
+    references:candidateReferences.map(({ transparentUrl: _transparent, bodyPayload: _bodyPayload, portraitPayload: _portraitPayload, ...reference }) => reference), publications: rows.map(({ scene, publication, version }) => ({ scene: { id: scene.id, roomId: scene.roomId, boundarySequence: scene.boundarySequence }, publication, version })), artifacts });
   const sourceHash = hashProjection(catalog,references);
   if (options.snapshot && !options.refreshVisuals && options.snapshot.sourceHash !== sourceHash) throw new WerewolfGameError("Production source snapshot changed or uses obsolete artwork-bound hashing; open this game in Studio to create a fresh descriptor", 409);
   const snapshot: WerewolfProductionSnapshot = { ...contract, gameId: game.id, gameKind: "werewolf", audience: options.audience, thinking: options.thinking, throughEventSequence, throughCursor: projection.latestCursor, publicationCutoff, availableCharacterAssets, sourceHash };
@@ -145,7 +145,9 @@ export async function readWerewolfProductionSource(db: DrizzleDB, id: string, op
     const source = await buildWerewolfProductionSourceSnapshot(tx, id, options);
     if (fromCursor > source.snapshot.throughCursor + 1) throw new WerewolfGameError("Production source window is unavailable");
     const moments = source.window.moments.filter(moment => moment.cursor >= fromCursor && moment.cursor < fromCursor + limit);
-    const throughCursor = moments.at(-1)?.cursor ?? Math.min(source.snapshot.throughCursor, fromCursor - 1);
+    // Skipped/pass-only coordinates can leave an entire requested window empty.
+    // Advance over the requested range, not merely its last visible moment.
+    const throughCursor = Math.min(source.snapshot.throughCursor, fromCursor + limit - 1);
     const inPage = (cursor: number) => cursor >= fromCursor && cursor <= throughCursor;
     const mediaKeys = new Set(moments.flatMap(moment => moment.mediaKey ? [moment.mediaKey] : []));
     const media = Object.fromEntries(Object.entries(source.window.media).filter(([key]) => mediaKeys.has(key)));

@@ -51,6 +51,8 @@ export type ConnStatus = "connecting" | "live" | "disconnected" | "reconnecting"
 export type WatchConnStatus = ConnStatus | "replay";
 
 export interface GameViewerProps {
+  /** Use the host page as the shell; keep the existing player and transport. */
+  contained?: boolean;
   gameId: string;
   completedMode?: "replay" | "results" | null;
   /**

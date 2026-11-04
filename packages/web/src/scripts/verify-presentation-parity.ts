@@ -98,6 +98,11 @@ for (const suite of suites) for (const audience of ["mystery","omniscient"] as c
     cases.push({name:`${suite.prefix}${audience}-${kind}`,cue,reference:cue});
   }
 }
+// Optional saved, already-authorized source cases let a repair prove the actual
+// changed adapter rather than replacing its evidence with unrelated fixtures.
+const suppliedCases = process.argv[3];
+const proofSource = suppliedCases ? `Saved authorized source cases: ${resolve(suppliedCases)}` : "Deterministic fixtures; actual viewer components versus Studio/export composition";
+if (suppliedCases) cases.splice(0, cases.length, ...JSON.parse(await readFile(resolve(suppliedCases), "utf8")));
 const scratch=await mkdtemp(join(tmpdir(),"house-parity-"));
 const results:{name:string;width:number;height:number;frame:number;meanDifference:number;exportHash:string;viewer:string;export:string}[]=[];
 const encodedResults:{name:string;frame:number;meanDifference:number;video:string}[]=[];
@@ -133,7 +138,7 @@ try {
     const narrow = process.env.FORMAT_CONTEXT_NARROW === "1";
     const portrait = process.env.FORMAT_CONTEXT_PORTRAIT === "1";
     const formatOnly = process.env.FORMAT_CONTEXT_ONLY === "1";
-    const geometries: readonly (readonly [number, number])[] = narrow ? [[360,240]] : portrait ? [[320,480]] : [[1280,720],[640,360]];
+    const geometries: readonly (readonly [number, number])[] = narrow ? [[360,240]] : portrait ? [[320,480]] : [[1280,720],[640,360],...(suppliedCases ? [[390,700] as const] : [])];
     const geometryCases = narrow || portrait ? cases.filter(item => ["format-mingle","format-huddle","format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-thought","format-rules"].includes(item.name))
       : formatOnly ? cases.filter(item => item.name.startsWith("format-")) : cases;
     const selectedCases = process.env.FORMAT_CONTEXT_CASE ? geometryCases.filter(item => item.name === process.env.FORMAT_CONTEXT_CASE) : geometryCases;
@@ -203,7 +208,7 @@ try {
           return Math.floor((segment.startMs+(source-segment.sourceStartMs)/(segment.sourceEndMs-segment.sourceStartMs)*(segment.endMs-segment.startMs))*fps/1000);
         });
       }
-      const samples=[...new Set([...(rulesSamples ?? (thought ? [Math.round(thought.enterMs*.5*fps/1000),Math.round((thought.readAtMs+500)*fps/1000),Math.round((thought.returnAtMs+450)*fps/1000)] : item.name.startsWith("format-") && item.name !== "format-menu" ? [0,Math.min(60,manifest.range.untilFrame-1),manifest.range.untilFrame-1] : [Math.min(60,manifest.range.untilFrame-1)])),...castSamples,...dialogueSamples,...roomSamples])];
+      const samples=[...new Set([...(rulesSamples ?? (thought ? [Math.round(thought.enterMs*.5*fps/1000),Math.round((thought.readAtMs+500)*fps/1000),Math.round((thought.returnAtMs+450)*fps/1000)] : item.cue.picture.kind === "werewolf-opening" || item.cue.picture.kind === "werewolf" && item.cue.picture.cue.reprise ? [0,15,60,manifest.range.untilFrame-1].map(frame=>Math.min(frame,manifest.range.untilFrame-1)) : item.name.startsWith("format-") && item.name !== "format-menu" ? [0,Math.min(60,manifest.range.untilFrame-1),manifest.range.untilFrame-1] : [Math.min(60,manifest.range.untilFrame-1)])),...castSamples,...dialogueSamples,...roomSamples])];
       const observedCast = new Set<string>();
       const observedDialoguePages = new Set<string>(), observedRoomPages = new Set<string>();
       for(const frame of samples) {
@@ -213,7 +218,7 @@ try {
           onArtifact:artifact=>{if (artifact.filename.startsWith("format-audit-")) {const data=JSON.parse(typeof artifact.content === "string" ? artifact.content : new TextDecoder().decode(artifact.content)); for (const id of data.castMembers ?? []) observedCast.add(id); if(data.namePage !== undefined) observedRoomPages.add(data.namePage); if(data.speechPage !== undefined) observedDialoguePages.add(data.speechPage);}}});
         const meanDifference=difference(await pixels(paths.viewer),await pixels(paths.export));
         results.push({name:item.name,width,height,frame,meanDifference,exportHash:sha256(await readFile(paths.export)),...paths});
-        await writeFile(join(output,"comparison.json"),JSON.stringify({source:"deterministic fixtures; actual viewer components versus Studio/export composition",frames:results},null,2));
+        await writeFile(join(output,"comparison.json"),JSON.stringify({source:proofSource,frames:results},null,2));
         if(meanDifference>1) throw new Error(`Viewer/export mismatch: ${item.name} ${width} frame ${frame}: ${meanDifference}`);
         for(const {view,composition} of studio) {
           const path=`${prefix}-${frame}-studio-${view}.png`;
@@ -232,7 +237,7 @@ try {
         await renderStill({serveUrl,composition:exported,inputProps,frame,output:path,imageFormat:"png",puppeteerInstance:browser});
         if(sha256(await readFile(path))!==results.find(row=>row.name===item.name && row.width===width && row.frame===frame)!.exportHash) throw new Error("Reverse-order render mismatch");
       }
-      if(width===640 && ["format-menu","format-rules","format-mingle","format-huddle-thought","format-huddle-large-recorded","format-huddle-large-thought-recorded","chain-0","winner-mystery-vote"].includes(item.name)) {
+      if(width===640 && (suppliedCases || ["format-menu","format-rules","format-mingle","format-huddle-thought","format-huddle-large-recorded","format-huddle-large-thought-recorded","chain-0","winner-mystery-vote"].includes(item.name))) {
         const recorded = item.name.endsWith("-recorded");
         await renderMedia({serveUrl,composition:exported,inputProps,codec:"h264",audioCodec:"aac",muted:!recorded,outputLocation:`${prefix}.mp4`,concurrency:2,puppeteerInstance:browser});
         for(const frame of samples) {
@@ -257,6 +262,6 @@ try {
       console.log(`Verified ${item.name} ${width}×${height}`);
     }
   } finally {await browser.close({silent:true});}
-  await writeFile(join(output,"comparison.json"),JSON.stringify({source:"deterministic fixtures; actual viewer components versus Studio/export composition",reverseOrder:true,frames:results,studio:studioResults,encoded:encodedResults,audio:audioResults},null,2));
+  await writeFile(join(output,"comparison.json"),JSON.stringify({source:proofSource,reverseOrder:true,frames:results,studio:studioResults,encoded:encodedResults,audio:audioResults},null,2));
   console.log(`Saved ${results.length} comparisons and ${new Set(encodedResults.map(row=>row.video)).size} fresh videos: ${output}`);
 } finally {await rm(scratch,{recursive:true,force:true});}

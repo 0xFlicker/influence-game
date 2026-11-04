@@ -40,7 +40,18 @@ export function shouldLoadDailyAgentPrompt(input: {
   sessionDismissed: boolean;
   pathname: string | null;
 }): boolean {
-  return input.pathname !== "/agents/create" && input.signedIn && !input.needsInvite && input.hasAuthToken && !input.sessionDismissed;
+  // These pages already provide the full entry/create flow inline. Do not
+  // obscure it with the global acquisition prompt (including the legacy URL).
+  const pathname = input.pathname?.replace(/\/+$/, "");
+  const inlineEntry = pathname === "/seasons" || pathname === "/games/free";
+  return !inlineEntry && input.pathname !== "/agents/create" && input.signedIn && !input.needsInvite && input.hasAuthToken && !input.sessionDismissed;
+}
+
+export function hasDailyAgentPromptAdmission(status: {
+  acceptingSeasonId?: string | null;
+  promptEligible?: boolean;
+}): boolean {
+  return Boolean(status.acceptingSeasonId && status.promptEligible);
 }
 
 export function containedFocusTargetIndex(

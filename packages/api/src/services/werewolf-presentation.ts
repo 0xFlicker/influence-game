@@ -1,6 +1,6 @@
 import { audioReadySequence } from "./audio-frontier.js";
 import { readRetrospectivePresentation } from "./retrospective-retakes.js";
-import { loadPayloads } from "./payload-storage.js";
+import { loadPayloads, readPayload } from "./payload-storage.js";
 import { werewolfVisualPause } from "./werewolf-visual-policy.js";
 import { isViewerGame } from "./game-visibility.js";
 import { inArray, and, desc, eq, isNull, lte, or } from "drizzle-orm";
@@ -45,6 +45,8 @@ export async function readWerewolfCharacter(db: Pick<DrizzleDB, "select">, gameI
   if (!ref) return null;
   const hash = image === "body" ? (ref.kind === "full_body" ? ref.bodyHash : null) : ref.portraitHash;
   if (image === "body" && ref.transparentUrl) return readVisualProfileImage(ref.transparentUrl, ref.profile);
+  const prepared = image === "body" ? ref.bodyPayload : ref.portraitPayload;
+  if (prepared) return readPayload(prepared);
   if (image === "body" && ref.bundled && ref.kind === "full_body") return readVisualProfileImage(ref.profile.fullBodyReferenceUrl, ref.profile);
   if (hash) {
     const [asset] = await loadPayloads(db.select({ bytes: schema.agentContentAssets.bytes }).from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, hash)));

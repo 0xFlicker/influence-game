@@ -16,6 +16,7 @@ import {
   DAILY_AGENT_PROMPT_DELAY_MS,
   DAILY_AGENT_RETRY_DELAYS_MS,
   dailyAgentPromptBranch,
+  hasDailyAgentPromptAdmission,
   shouldLoadDailyAgentPrompt,
   transitionDailyAgentPromptHandoff,
   type DailyAgentPromptLoadOutcome,
@@ -39,7 +40,7 @@ export function StandingDailyAgentPrompt({
   const router = useRouter();
   const pathname = usePathname();
   const [agents, setAgents] = useState<SavedAgent[] | null>(null);
-  const [creationOnly, setCreationOnly] = useState(false);
+  const [acceptingSeasonId, setAcceptingSeasonId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [selectedId, setSelectedId] = useState("");
   const [pending, setPending] = useState(false);
@@ -111,7 +112,9 @@ export function StandingDailyAgentPrompt({
     try {
       const status = await getFreeQueueStatus();
       if (generation !== requestGeneration.current) return;
-      if (!status.promptEligible && immediateHandoffRef.current === null) {
+      // Onboarding handoffs cannot bypass actual season admission. The server
+      // evaluates both status and admission dates; do not infer from a label.
+      if (!hasDailyAgentPromptAdmission(status)) {
         retryAttemptRef.current = 0;
         setOpen(false);
         transitionImmediateHandoff("ineligible");
@@ -120,16 +123,9 @@ export function StandingDailyAgentPrompt({
       const ownedAgents = await listAgents();
       if (generation !== requestGeneration.current) return;
       retryAttemptRef.current = 0;
-      // First-agent onboarding must not depend on an active Daily Free season.
-      // Existing owners still follow the queue's eligibility and suppression rules.
-      if (!status.promptEligible && ownedAgents.length > 0) {
-        setOpen(false);
-        transitionImmediateHandoff("ineligible");
-        return;
-      }
       const handoff = transitionImmediateHandoff("eligible");
       setAgents(ownedAgents);
-      setCreationOnly(!status.promptEligible);
+      setAcceptingSeasonId(status.acceptingSeasonId ?? null);
       const openDelay = handoff.openDelayMs ?? DAILY_AGENT_PROMPT_DELAY_MS;
       if (openDelay === 0) {
         setOpen(true);
@@ -163,9 +159,11 @@ export function StandingDailyAgentPrompt({
     void load();
     window.addEventListener("auth:session-ready", load);
     window.addEventListener("free-queue:changed", load);
+    window.addEventListener("focus", load);
     return () => {
       window.removeEventListener("auth:session-ready", load);
       window.removeEventListener("free-queue:changed", load);
+      window.removeEventListener("focus", load);
       requestGeneration.current += 1;
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
       if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
@@ -223,11 +221,11 @@ export function StandingDailyAgentPrompt({
   }, [open]);
 
   async function enter(agentId: string) {
-    if (!agentId || pending) return;
+    if (!agentId || !acceptingSeasonId || pending) return;
     setPending(true);
     setError(null);
     try {
-      await joinFreeQueue(agentId);
+      await joinFreeQueue(agentId, acceptingSeasonId);
       setOpen(false);
       window.dispatchEvent(new Event("free-queue:changed"));
     } catch (err) {
@@ -238,10 +236,6 @@ export function StandingDailyAgentPrompt({
   }
   async function maybeLater() {
     if (pending) return;
-    if (creationOnly) {
-      dismissForSession();
-      return;
-    }
     setPending(true);
     setError(null);
     try {
@@ -272,15 +266,13 @@ export function StandingDailyAgentPrompt({
         className="influence-panel max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl p-6 shadow-2xl sm:p-8"
       >
         <h2 id="daily-agent-title" className="text-xl font-bold text-text-primary">
-          {creationOnly ? "Create your first Agent" : "Play for Free"}
+          Play for Free
         </h2>
 
         <>
           <p className="influence-copy mt-2 text-sm">
             {promptBranch === "create"
-              ? creationOnly
-                ? "Give your Agent a name, personality, and strategy to play in The House."
-                : "Create your first Agent to enter the Daily Free queue."
+              ? "Create your first Agent to enter the Daily Free queue."
               : "Choose a saved Agent for the Daily Free queue."}
           </p>
           <div className="mt-5 space-y-3">
@@ -289,9 +281,7 @@ export function StandingDailyAgentPrompt({
                   type="button"
                   onClick={() => {
                     setOpen(false);
-                    router.push(creationOnly
-                      ? "/agents/create"
-                      : "/agents/create?flow=daily_free");
+                    router.push("/agents/create?flow=daily_free");
                   }}
                   className="influence-button-primary w-full rounded-lg px-4 py-3 text-sm font-semibold"
                 >

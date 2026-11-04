@@ -43,6 +43,7 @@ import {
 import type { WatchConnStatus } from "./types";
 
 export function MatchWatchShell({
+  contained = false,
   game,
   messages,
   replayFrames = [],
@@ -51,6 +52,7 @@ export function MatchWatchShell({
   presentationHydrationStatus,
   startSequence,
 }: {
+  contained?: boolean;
   game: GameDetail;
   messages: TranscriptEntry[];
   replayFrames?: GameWatchReplayFrame[];
@@ -213,7 +215,7 @@ export function MatchWatchShell({
     portrait: <GamePlayerAvatarPreview player={card.player} size="8" />, smallPortrait: <GamePlayerAvatarPreview player={card.player} size="6" />,
     tags: <CastStatusTags card={card} />, owner: <AgentOwnerLink card={card} />,
   })) };
-  return <WatchShell mode={model.mode}
+  return <WatchShell embedded={contained} contained={contained} mode={model.mode}
     header={<ShellHeader model={model} gamePath={gamePath} showResultsCta={replayAtFinalResults} gameKind="influence" />}
     cast={<CastRail model={castModel} onSelectPlayer={setSelectedPlayerId} showPhase={false} />}
     mobileCast={<MobileContextPanel model={castModel} onSelectPlayer={setSelectedPlayerId} />}

@@ -55,7 +55,7 @@ export function OwnerLearningEntryView({
         <p className="olm-kicker">Agent review</p>
         <h1>No eligible games yet.</h1>
         <p>Once one of your agents completes Daily Free Influence or a Werewolf game, its accepted game facts can anchor a private strategy review.</p>
-        <Link href="/games/free" className="olm-button olm-button-primary">Go to Intake</Link>
+        <Link href="/seasons" className="olm-button olm-button-primary">Go to Seasons</Link>
       </section>
     );
   }

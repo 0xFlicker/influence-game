@@ -42,6 +42,7 @@ export type QueueEnrollmentErrorCode =
   | "agent_already_queued"
   | "agent_already_in_active_game"
   | "no_active_season"
+  | "season_changed"
   | "queue_full"
   | "owner_seat_limit"
   | "game_not_joinable";
@@ -65,12 +66,14 @@ export interface GetQueueStatusInput {
 }
 
 export interface JoinQueueInput {
+  expectedSeasonId?: unknown;
   queueType?: unknown;
   agentId?: unknown;
   gameIdOrSlug?: unknown;
 }
 
 export interface LeaveQueueInput {
+  expectedSeasonId?: unknown;
   queueType?: unknown;
 }
 
@@ -255,7 +258,7 @@ export async function joinQueue(
   if (queueType === "open-game") {
     return joinOpenGame(db, context, agentId, requiredString(input.gameIdOrSlug, "gameIdOrSlug"));
   }
-  return joinDailyFreeQueue(db, context, agentId);
+  return joinDailyFreeQueue(db, context, agentId, input.expectedSeasonId);
 }
 
 export async function leaveQueue(
@@ -270,9 +273,10 @@ export async function leaveQueue(
 
   const result = await db.transaction(async (tx) => {
     await acquireDailyFreeLocks(tx);
+    const season = await getActiveSeason(tx);
+    assertSeasonIntent(input.expectedSeasonId, season?.id);
     const current = await getDailyFreeQueueEntry(tx, context.userId);
     if (!current) return { entry: null, agent: null };
-    const season = await getActiveSeason(tx);
     await tx.delete(schema.freeGameQueue).where(eq(schema.freeGameQueue.userId, context.userId));
     if (season) {
       await upsertPromptSuppression(tx, context.userId, season.id, "left_queue", null);
@@ -373,6 +377,7 @@ async function joinDailyFreeQueue(
   db: DrizzleDB,
   context: QueueEnrollmentContext,
   agentId: string,
+  expectedSeasonId?: unknown,
 ): Promise<QueueMutationRead> {
   const agent = (await getOwnedAgent(db, {
     userId: context.userId,
@@ -382,7 +387,8 @@ async function joinDailyFreeQueue(
 
   const result = await db.transaction(async (tx) => {
     await acquireDailyFreeLocks(tx);
-    await requireActiveFreeSeason(tx);
+    const season = await requireActiveFreeSeason(tx);
+    assertSeasonIntent(expectedSeasonId, season.id);
     await requireOwnedDailyFreeAgent(tx, context.userId, agentId);
     const existing = await getDailyFreeQueueEntry(tx, context.userId);
     if (existing?.agentProfileId === agentId) return { status: "already-queued" as const, entry: existing };
@@ -783,4 +789,11 @@ function unsupportedQueueType(
 function clampLimit(value: unknown, fallback: number, max: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   return Math.min(Math.max(Math.floor(value), 1), max);
+}
+
+// Checked under the same season/draw locks as enrollment and season closure.
+function assertSeasonIntent(expected: unknown, actual: string | undefined) {
+  if (expected === undefined) return; // Legacy callers retain their existing contract.
+  const id = requiredString(expected, "expectedSeasonId");
+  if (id !== actual) throw new QueueEnrollmentError("season_changed", "Season entry has changed. Refresh Seasons before trying again.", 409);
 }

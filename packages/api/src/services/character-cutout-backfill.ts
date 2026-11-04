@@ -1,3 +1,4 @@
+import { readFrozenCompetitionBuild } from "./championships.js";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { CUTOUT_RECIPE, prepareCutoutDemands, readCutoutSource } from "./character-cutouts.js";
@@ -14,7 +15,7 @@ export const EXAMPLE_MODEL_AGENTS = [
   "3013945a-84d7-4519-866c-386d1888e2b4", "7968a255-6e2e-4367-bcd6-5f2570dfa2e7",
   "50578159-9666-4157-a6c7-7d3566ceafa1",
 ];
-export type CutoutSelection = { agent: string } | { game: string } | { scope: "example-models" };
+export type CutoutSelection = { agent: string } | { game: string } | { championship: string } | { scope: "example-models" };
 export type CutoutSource = { gameId: string | null; agentProfileId: string | null; playerId: string; sourceKey: string };
 const demands = schema.characterCutoutDemands, jobs = schema.characterCutouts;
 function binding(source: CutoutSource) {
@@ -25,6 +26,18 @@ function binding(source: CutoutSource) {
 /** Inventory has no writes, generation, lease expiry or historical identity changes. */
 export async function discoverCutoutSources(db: DrizzleDB, selection: CutoutSelection) {
   const sources: CutoutSource[] = [], warnings: string[] = [];
+  if ("championship" in selection) {
+    const [event] = await db.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, selection.championship));
+    if (!event) throw new Error(`Championship not found: ${selection.championship}`);
+    const entries = await db.select().from(schema.championshipEntries).where(eq(schema.championshipEntries.eventId, event.id));
+    for (const entry of entries) {
+      const build = await readFrozenCompetitionBuild(db, event.id, entry.agentId);
+      const sourceKey = build.character.fullBodyReferenceUrl;
+      if (!sourceKey) { warnings.push(`No frozen full-body image: ${entry.id}`); continue; }
+      sources.push({ gameId: null, agentProfileId: entry.agentId, playerId: entry.id, sourceKey });
+    }
+    return { sources, warnings };
+  }
   const agentIds = "agent" in selection ? [selection.agent] : "scope" in selection ? EXAMPLE_MODEL_AGENTS : [];
   for (const id of agentIds) {
     const [agent] = await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, id));

@@ -2080,6 +2080,7 @@ export async function getPlayerGames(): Promise<PlayerGameResult[]> {
 export type AgentContentSnapshot = Pick<SavedAgent, "name" | "personality" | "personaKey" | "gender" | "backstory" | "strategyStyle" | "werewolfStrategyStyle" | "performanceInstructions" | "visualDesign" | "avatarUrl" | "fullBodyReferenceUrl" | "portraitCrop" | "headPosition">;
 
 export interface SavedAgent {
+  transparentBodyUrl?: string | null;
   modelPreference?: ModelPreference;
   ownerContent?: {
     published: AgentContentSnapshot | null;
@@ -3461,6 +3462,8 @@ export async function probeAdminProviderHealth(
 // ---------------------------------------------------------------------------
 
 export interface FreeQueueStatus {
+  acceptingSeasonId?: string | null;
+  nextDrawAt?: string;
   queuedCount: number;
   nextGameAt: string; // ISO datetime of the next weekly scheduled start
   userEntry: {
@@ -3486,6 +3489,8 @@ export interface FreeQueueStatus {
 }
 
 interface FreeQueueStatusResponse {
+  acceptingSeasonId?: string | null;
+  nextDrawAt?: string;
   count?: number;
   queuedCount?: number;
   nextGameTime?: string;
@@ -3761,6 +3766,8 @@ export async function getFreeQueueStatus(): Promise<FreeQueueStatus> {
   const status = await apiFetch<FreeQueueStatusResponse>("/api/free-queue");
 
   return {
+    acceptingSeasonId: status.acceptingSeasonId ?? null,
+    nextDrawAt: status.nextDrawAt,
     queuedCount: status.queuedCount ?? status.count ?? 0,
     nextGameAt: status.nextGameAt ?? status.nextGameTime ?? new Date().toISOString(),
     userEntry: status.userEntry ?? null,
@@ -3772,15 +3779,15 @@ export async function getFreeQueueStatus(): Promise<FreeQueueStatus> {
   };
 }
 
-export async function joinFreeQueue(agentProfileId: string): Promise<void> {
+export async function joinFreeQueue(agentProfileId: string, expectedSeasonId?: string): Promise<void> {
   await apiFetch("/api/free-queue/join", {
     method: "POST",
-    body: JSON.stringify({ agentProfileId }),
+    body: JSON.stringify({ agentProfileId, expectedSeasonId }),
   });
 }
 
-export async function leaveFreeQueue(): Promise<void> {
-  await apiFetch("/api/free-queue/leave", { method: "DELETE" });
+export async function leaveFreeQueue(expectedSeasonId?: string): Promise<void> {
+  await apiFetch(`/api/free-queue/leave${expectedSeasonId ? `?expectedSeasonId=${encodeURIComponent(expectedSeasonId)}` : ""}`, { method: "DELETE" });
 }
 
 export async function maybeLaterFreeQueue(): Promise<void> {
@@ -3900,3 +3907,10 @@ export async function suggestProfileHandle(displayName: string): Promise<string>
   );
   return result.suggestion;
 }
+
+export interface AgentVisualUpdate {
+  needsUpdate: boolean;
+  job: {id:string; status:"queued"|"processing"|"failed"|"conflict"|"completed"|"held"; stage:"details"|"body"|"head"|"portrait"|"saving"; updatedAt:string; errorCode:string|null; message:string|null} | null;
+}
+export function getAgentVisualUpdate(id:string) { return apiFetch<AgentVisualUpdate>(`/api/agent-profiles/${encodeURIComponent(id)}/visual-update`); }
+export function startAgentVisualUpdate(id:string) { return apiFetch<AgentVisualUpdate>(`/api/agent-profiles/${encodeURIComponent(id)}/visual-update`, {method:"POST"}); }
