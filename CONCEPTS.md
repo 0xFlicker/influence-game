@@ -1059,3 +1059,7 @@ Gateway and game-worker startups share one database-scoped transaction advisory 
 ### Season creation continuation
 
 An agent created from the Seasons entry action carries the selected season ID through its editor draft, stable creation request and queue admission. Creation and entry remain independently recoverable: a saved agent survives failed admission, duplicate requests reuse it, and `expectedSeasonId` prevents a closed-season continuation from entering a newer season. Ordinary agent creation does not enroll.
+
+### Saved-agent visual update
+
+An explicit owner action that fills missing presentation fields through durable, private stage checkpoints and the normal saved-agent revision/moderation path. Status reads may resume an already-authorized job but never create one. Provider retries preserve uncertain operation identities; an owner edit fences stale preparation. See [saved-agent visual update](docs/solutions/ui/saved-agent-visual-update.md).

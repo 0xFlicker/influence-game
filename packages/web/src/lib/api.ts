@@ -2080,6 +2080,7 @@ export async function getPlayerGames(): Promise<PlayerGameResult[]> {
 export type AgentContentSnapshot = Pick<SavedAgent, "name" | "personality" | "personaKey" | "gender" | "backstory" | "strategyStyle" | "werewolfStrategyStyle" | "performanceInstructions" | "visualDesign" | "avatarUrl" | "fullBodyReferenceUrl" | "portraitCrop" | "headPosition">;
 
 export interface SavedAgent {
+  transparentBodyUrl?: string | null;
   modelPreference?: ModelPreference;
   ownerContent?: {
     published: AgentContentSnapshot | null;
@@ -3906,3 +3907,10 @@ export async function suggestProfileHandle(displayName: string): Promise<string>
   );
   return result.suggestion;
 }
+
+export interface AgentVisualUpdate {
+  needsUpdate: boolean;
+  job: {id:string; status:"queued"|"processing"|"failed"|"conflict"|"completed"|"held"; stage:"details"|"body"|"head"|"portrait"|"saving"; updatedAt:string; errorCode:string|null; message:string|null} | null;
+}
+export function getAgentVisualUpdate(id:string) { return apiFetch<AgentVisualUpdate>(`/api/agent-profiles/${encodeURIComponent(id)}/visual-update`); }
+export function startAgentVisualUpdate(id:string) { return apiFetch<AgentVisualUpdate>(`/api/agent-profiles/${encodeURIComponent(id)}/visual-update`, {method:"POST"}); }

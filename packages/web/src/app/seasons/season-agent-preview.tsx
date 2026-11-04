@@ -10,7 +10,7 @@ export function SeasonAgentPreview({agent}: {agent?: SavedAgent}) {
   if (!agent) return <div className={styles.emptyPortrait}><span role="img" aria-label="Choose your first agent">?</span></div>;
   const resolve = (url: string | null | undefined) => resolveAgentAvatarUrl(url, agent.personaKey ?? "", agent.name, agent.personaKey);
   const candidates = [
-    ...(agent.fullBodyReferenceUrl ? [{src:resolve(agent.fullBodyReferenceUrl),body:true}] : []),
+    ...(agent.transparentBodyUrl ? [{src:resolve(agent.transparentBodyUrl),body:true}] : []),
     ...(agent.avatarUrl ? [{src:resolve(agent.avatarUrl),body:false}] : []),
     {src:resolve(null),body:false},
   ];

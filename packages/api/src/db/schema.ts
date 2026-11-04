@@ -4342,3 +4342,27 @@ export const gameRetries = pgTable("game_retries", {
   actorId: text("actor_id").notNull().references(() => users.id),
   createdAt: text("created_at").notNull(),
 });
+
+/** Owner-requested missing visual preparation. Bodies remain in private object storage. */
+export const agentVisualUpdates = pgTable("agent_visual_updates", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id),
+  agentId: text("agent_id").notNull().references(() => agentProfiles.id, { onDelete: "cascade" }),
+  sourceUpdatedAt: text("source_updated_at").notNull(),
+  sourceContentId: text("source_content_id"),
+  input: payloadColumn("input_object", "json-gzip").notNull().$type<StoredPayload<typeof agentProfiles.$inferSelect>>(),
+  checkpoint: payloadColumn("checkpoint_object", "json-gzip").notNull().$type<StoredPayload<Partial<typeof agentProfiles.$inferSelect>>>(),
+  status: text("status").notNull().$type<"queued" | "processing" | "failed" | "conflict" | "completed" | "held">(),
+  stage: text("stage").notNull().$type<"details" | "body" | "head" | "portrait" | "saving">(),
+  attempt: integer("attempt").notNull().default(0),
+  leaseId: text("lease_id"),
+  leaseUntil: text("lease_until"),
+  errorCode: text("error_code"),
+  resultRevisionId: text("result_revision_id"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, table => [
+  index("agent_visual_updates_agent_idx").on(table.agentId, table.createdAt),
+  uniqueIndex("agent_visual_updates_active_idx").on(table.agentId).where(sql`${table.status} IN ('queued','processing')`),
+  ...payloadChecks("agent_visual_updates", { input: [table.input,"json-gzip"], checkpoint: [table.checkpoint,"json-gzip"] }),
+]);

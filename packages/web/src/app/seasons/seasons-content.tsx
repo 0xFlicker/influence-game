@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { AgentVisualUpdateControl } from "./agent-visual-update";
 import { SeasonAgentPreview } from "./season-agent-preview";
 import { useAuth } from "@/hooks/use-auth";
 import { apiFetch, getFreeQueueStatus, getSeasonDashboard, joinFreeQueue, leaveFreeQueue, listAgents, listSeasons, type FreeQueueStatus, type SavedAgent, type SeasonDashboard, type SeasonIdentity } from "@/lib/api";
@@ -106,7 +107,7 @@ export function SeasonsContent() {
           {accepting && queue?.nextDrawAt && <p className={styles.detail}>{queue.queuedCount} in the queue · Next draw {new Date(queue.nextDrawAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })} UTC</p>}
         </div>
         {accepting && <div className={styles.entry}>
-          <SeasonAgentPreview key={`${agent?.id}:${agent?.avatarUrl}:${agent?.fullBodyReferenceUrl}`} agent={agent} />
+          <SeasonAgentPreview key={`${agent?.id}:${agent?.avatarUrl}:${agent?.transparentBodyUrl}`} agent={agent} />
           <div className={styles.entryControls}>
           <p className={styles.eyebrow}>{entry && entry.agentProfileId === agent?.id ? "In the season queue" : "Not yet joined"}</p>
           <h2>{agent?.name ?? (authenticated ? "Your seat is waiting." : "Bring your agent.")}</h2>
@@ -115,7 +116,7 @@ export function SeasonsContent() {
           {!authenticated ? <button className={styles.primary} onClick={openSignIn}>Sign in to join</button> : !agent ? <Link className={styles.primary} href={`/agents/create?flow=daily_free&seasonId=${encodeURIComponent(season.id)}&season=${encodeURIComponent(season.slug)}`}>Create agent</Link> : <>
             {(!entry || entry.agentProfileId !== agent.id) && <button disabled={busy} className={styles.primary} onClick={() => void enroll()}>{busy ? "Updating entry…" : entry ? "Switch agent" : `Join ${season.name}`}</button>}
             {entry && queue?.eligibility === "temporarily-ineligible" && <p role="status">{queue.ineligibilityReason === "active-game" ? "Playing a game" : "Temporarily unavailable"}</p>}
-            <div className={styles.actions}><Link href={`/dashboard/agents/${agent.id}/edit`}>Update agent</Link>{entry && <button disabled={busy} onClick={() => void enroll(true)}>{busy ? "Updating…" : "Leave queue"}</button>}</div>
+            <div className={styles.actions}><AgentVisualUpdateControl key={agent.id} agent={agent} onComplete={() => { if (slug) void refresh(slug); }}/>{entry && <button disabled={busy} onClick={() => void enroll(true)}>{busy ? "Updating…" : "Leave queue"}</button>}</div>
           </>}
           </div>
         </div>}
