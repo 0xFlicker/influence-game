@@ -46,3 +46,9 @@
 .mastheadArt .fullBody{transform:translateY(-55px)}
 @media(max-width:600px){.seasonMasthead{min-height:520px}.directEntry{grid-template-rows:24px 64px 74px 62px minmax(32px,auto) 38px;row-gap:8px}.mastheadArt .fullBody{transform:translateY(-35px)}}
 @media(max-width:600px){.mastheadArt .agentArt,.mastheadArt .fullBody{width:280px}.mastheadArt .fullBody{transform:translate(-25px,-35px)}}
+/* Preserve the entire image top even when a cutout has no transparent padding. */
+.seasonMasthead{margin-top:150px}
+.mastheadArt{top:-140px}
+.mastheadArt .fullBody{transform:translateY(15px)}
+.mastheadArt .headshot{margin-top:15px}
+@media(max-width:600px){.seasonMasthead{margin-top:130px}.mastheadArt{top:-120px}.mastheadArt .fullBody{transform:translate(-25px,15px)}}

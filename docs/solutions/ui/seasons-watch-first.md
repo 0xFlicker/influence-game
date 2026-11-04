@@ -49,3 +49,10 @@ overflow, and keyboard focus from the selector directly to Join. Actual local
 queue data was not changed for this UI verification. Fixture tests cover the
 single POST carrying the original season ID, duplicate click suppression,
 entered/switch states, no-agent creation link, and truthful closed-season rejection.
+
+The hero's artwork viewport also reserves top clearance for cutouts with no
+transparent top padding (for example GPT Sol). Images are no longer translated
+upward across the clipping boundary. The figure may extend above the banner, but
+its image top remains inside the artwork viewport; the season selector has
+separate reserved space. Future alpha-bound normalization could improve uniform
+apparent scale, but is not required to prevent head clipping here.
