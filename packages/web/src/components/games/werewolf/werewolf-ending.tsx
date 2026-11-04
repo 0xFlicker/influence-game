@@ -1,4 +1,8 @@
-import {AgentAvatar} from "@/components/agent-avatar";
+"use client";
+import {useState} from "react";
+import {resolveApiUrl} from "@/lib/api";
+import {characterImageError} from "@/components/character/image-error";
+import {resolveAgentAvatarUrl} from "@/components/agent-avatar";
 import type {WerewolfWatchMoment} from "@influence/engine/werewolf/watch-contract";
 import {werewolfOutcomeReason, werewolfOutcomeTitle} from "@influence/engine/werewolf/results-contract";
 import {FitPresentation} from "@/app/games/[slug]/components/fit-presentation";
@@ -16,14 +20,15 @@ export function WerewolfEnding({snapshot, backgroundUrl, compact = false}: {comp
       <h2 className="text-lg font-semibold">{werewolfOutcomeTitle(outcome)}</h2>
       <p className="text-xs text-white/70">{werewolfOutcomeReason(outcome)}</p>
     </header>
-    <ul aria-label="Final cast" className="relative grid min-h-0 flex-1 gap-1" style={{gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,90px),1fr))",gridAutoRows:"minmax(72px,1fr)"}}>
-      {[...players].sort((a,b)=>Number(outcome.winnerIds.includes(b.id))-Number(outcome.winnerIds.includes(a.id))).map(player=><li key={player.id} className="flex min-w-0 flex-col justify-center rounded-lg border border-white/15 bg-black/80 p-1 text-xs leading-4">
-        <div className="flex min-w-0 items-center gap-1"><AgentAvatar name={player.name} persona="" personaKey={player.personaKey} avatarUrl={player.avatarUrl ?? undefined} size="6" />
-          <p className="truncate font-semibold" title={player.name}>{player.name}</p>
+    <ul aria-label="Final cast" className="relative grid min-h-0 flex-1 gap-1" style={{gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,90px),1fr))",gridAutoRows:"minmax(0,1fr)"}}>
+      {[...players].sort((a,b)=>Number(outcome.winnerIds.includes(b.id))-Number(outcome.winnerIds.includes(a.id))).map(player=><li key={player.id} className="grid min-h-0 min-w-0 rounded-lg border border-white/15 bg-black/65 p-1 text-xs leading-4" style={{gridTemplateRows:"minmax(0,1fr) auto"}}>
+        <EndingFigure player={player}/>
+        <div className="relative rounded-md bg-black/75 p-1.5">
+          <p className="break-words font-semibold">{player.name}</p>
+          <p className="capitalize text-amber-100">{player.role}</p>
+          <p>{outcome.winnerIds.includes(player.id) ? "Winner" : outcome.faction === null ? "Draw" : "Defeated"}</p>
+          <p className="text-white/65">{player.alive ? "Survived" : player.elimination ? `${player.elimination.kind === "night" ? "Night" : "Day"} ${player.elimination.day}` : "Eliminated"}</p>
         </div>
-        <p className="capitalize text-amber-100">{player.role}</p>
-        <p>{outcome.winnerIds.includes(player.id) ? "Winner" : outcome.faction === null ? "Draw" : "Defeated"}</p>
-        <p className="text-white/65">{player.alive ? "Survived" : player.elimination ? `${player.elimination.kind === "night" ? "Night" : "Day"} ${player.elimination.day}` : "Eliminated"}</p>
       </li>)}
     </ul>
   </section>;
@@ -57,4 +62,18 @@ export function WerewolfEnding({snapshot, backgroundUrl, compact = false}: {comp
       </FitPresentation>
     </div>
   </section>;
+}
+
+/** Uses only the audience-safe frozen snapshot; never the current editable profile. */
+function EndingFigure({player}: {player:WerewolfWatchMoment["snapshot"]["players"][number]}) {
+  const [missing,setMissing]=useState<ReadonlySet<string>>(new Set());
+  const body=player.fullBodyReferenceUrl && !missing.has(player.fullBodyReferenceUrl) ? player.fullBodyReferenceUrl : null;
+  const portrait=resolveAgentAvatarUrl(player.avatarUrl,"",player.name,player.personaKey);
+  const source=body ?? (missing.has(portrait) ? resolveAgentAvatarUrl(null,"",player.name,player.personaKey) : portrait);
+  return <div className="relative min-h-0" data-ending-art={body ? "full-body" : "portrait"}>
+    {/* eslint-disable-next-line @next/next/no-img-element -- Frozen character artwork is also used by Studio and offline export. */}
+    <img key={source} src={resolveApiUrl(source)} alt={player.name}
+      className={`absolute inset-0 h-full w-full object-contain ${body ? "object-bottom" : "p-2"}`}
+      onError={event=>void characterImageError(event,()=>setMissing(previous=>new Set(previous).add(source)))}/>
+  </div>;
 }

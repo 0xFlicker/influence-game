@@ -82,7 +82,7 @@ try {
   await cp(join(webRoot,"public"),serveUrl,{recursive:true});
   const browser=await openBrowser("chrome",{browserExecutable:process.env.REPLAY_BROWSER_EXECUTABLE});
   try {
-    for(const [width,height] of [[1280,720],[640,360]] as const) for(const item of cases) {
+    for(const [width,height] of [[1280,720],[640,360],...(suppliedCases ? [[390,700] as const] : [])] as const) for(const item of cases) {
       const profile=parseTimingProfile({ending:{holdMs:0}}),fps=30;
       const timeline=compileTiming([item.cue.timing],profile,fps);
       let manifest:ReplayManifest={schema:"house.replay-export",version:2,game:{id:"fixture",slug:item.name,kind:item.cue.picture.kind === "thinking" ? "influence" : "werewolf"},
@@ -101,7 +101,7 @@ try {
       const exported=await selectComposition({serveUrl,id:"Export",inputProps,puppeteerInstance:browser});
       const viewer=await selectComposition({serveUrl,id:"Viewer",inputProps,puppeteerInstance:browser});
       const thought=timeline[0]!.thought;
-      const samples=thought ? [Math.round(thought.enterMs*.5*fps/1000),Math.round((thought.readAtMs+500)*fps/1000),Math.round((thought.returnAtMs+450)*fps/1000)] : item.cue.picture.kind === "werewolf-opening" ? [...new Set([0, 15, 60, manifest.range.untilFrame - 1].map(frame => Math.min(frame, manifest.range.untilFrame - 1)))] : [Math.min(60,manifest.range.untilFrame-1)];
+      const samples=thought ? [Math.round(thought.enterMs*.5*fps/1000),Math.round((thought.readAtMs+500)*fps/1000),Math.round((thought.returnAtMs+450)*fps/1000)] : (item.cue.picture.kind === "werewolf-opening" || item.cue.picture.kind === "werewolf" && item.cue.picture.cue.reprise) ? [...new Set([0, 15, 60, manifest.range.untilFrame - 1].map(frame => Math.min(frame, manifest.range.untilFrame - 1)))] : [Math.min(60,manifest.range.untilFrame-1)];
       for(const frame of samples) {
         const paths={viewer:`${prefix}-${frame}-viewer.png`,export:`${prefix}-${frame}-export.png`};
         await renderStill({serveUrl,composition:viewer,inputProps,frame,output:paths.viewer,imageFormat:"png",puppeteerInstance:browser});
