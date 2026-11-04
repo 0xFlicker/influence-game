@@ -22,7 +22,7 @@ A future Fargate launcher can keep this contract, durably submit one task for th
 
 ## Localhost
 
-Without external scheduler credentials, development activation uses one API-owned timer per exact match. It records `local_scheduler_enabled` in the existing audit ledger before arming timers. Gateway startup restores only explicitly registered local events once; it does not activate legacy events. Long delays are bounded by the platform timer limit and rearmed for the same future timestamp. Failed delivery rearms only that exact delivery. Pause clears that event's pending timers.
+Without external scheduler credentials, development activation uses one API-owned timer per exact match. Local adapters are limited to NODE_ENV=development/test or an unlabelled environment with a loopback DATABASE_URL; explicit staging, production and unknown environments cannot fall back locally. Deployed gateways cannot execute the launch endpoint even with a valid service token. It records `local_scheduler_enabled` in the existing audit ledger before arming timers. Gateway startup restores only explicitly registered local events once; it does not activate legacy events. Long delays are bounded by the platform timer limit and rearmed for the same future timestamp. Failed delivery rearms only that exact delivery. Pause clears that event's pending timers.
 
 This adapter needs the normal API to be running, but no always-on game-worker process for championship dispatch. It exercises the same frozen admission, exact launch and settlement. It is not proof that AWS Scheduler has been deployed. Production cannot silently fall back to local timers.
 

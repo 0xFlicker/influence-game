@@ -1,3 +1,4 @@
+import { isLocalGameRuntime } from "./local-game-runtime.js";
 import { createHash } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -23,7 +24,7 @@ export type ChampionshipScheduledMatch = Awaited<ReturnType<typeof championshipS
 
 export function assertChampionshipSchedulerConfigured() {
   const endpoint = process.env.CHAMPIONSHIP_SCHEDULER_URL, token = process.env.CHAMPIONSHIP_SCHEDULER_TOKEN;
-  if (!endpoint && !token && process.env.NODE_ENV !== "production") return;
+  if (!endpoint && !token && isLocalGameRuntime()) return;
   if (!endpoint || !token) throw new ChampionshipError("Configure the championship scheduler URL and token before activation", 503);
   const url = new URL(endpoint);
   if (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname))) throw new ChampionshipError("Scheduler must use HTTPS or localhost", 503);
@@ -60,7 +61,7 @@ export async function dispatchScheduledChampionshipMatch(db: DrizzleDB, input: C
 const localTimers = new Map<string, ReturnType<typeof setTimeout>>();
 /** Development-only one-shot adapter. The API hosts timers, never a game-worker discovery loop. */
 export async function synchronizeLocalChampionshipSchedules(db: DrizzleDB, eventId: string) {
-  if (process.env.NODE_ENV === "production") throw new ChampionshipError("Local scheduling is development-only", 503);
+  if (!isLocalGameRuntime()) throw new ChampionshipError("Local scheduling is development-only", 503);
   const manifest = await championshipScheduleManifest(db, eventId);
   for (const [key, timer] of localTimers) if (key.startsWith(`${eventId}:`)) { clearTimeout(timer); localTimers.delete(key); }
   const [event] = await db.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, eventId));
@@ -89,7 +90,7 @@ export async function synchronizeLocalChampionshipSchedules(db: DrizzleDB, event
 
 /** Once at gateway startup, restore only events explicitly registered with this local adapter. */
 export async function restoreLocalChampionshipSchedules(db: DrizzleDB) {
-  if (process.env.NODE_ENV === "production" || process.env.CHAMPIONSHIP_SCHEDULER_URL) return;
+  if (!isLocalGameRuntime() || process.env.CHAMPIONSHIP_SCHEDULER_URL) return;
   const events = await db.selectDistinct({ eventId: schema.competitionAudit.eventId }).from(schema.competitionAudit)
     .innerJoin(schema.championshipEvents, eq(schema.championshipEvents.id, schema.competitionAudit.eventId))
     .where(and(eq(schema.competitionAudit.action, "local_scheduler_enabled"), eq(schema.championshipEvents.status, "running")));

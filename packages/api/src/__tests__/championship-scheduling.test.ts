@@ -8,7 +8,7 @@ import { championshipScheduleManifest, dispatchScheduledChampionshipMatch, reque
 import { schema } from "../db/index.js";
 import { createChampionshipRoutes } from "../routes/championships.js";
 const originalFetch = globalThis.fetch;
-const keys = ["CHAMPIONSHIP_SCHEDULER_URL", "CHAMPIONSHIP_SCHEDULER_TOKEN", "JWT_SECRET"] as const;
+const keys = ["CHAMPIONSHIP_SCHEDULER_URL", "CHAMPIONSHIP_SCHEDULER_TOKEN", "JWT_SECRET", "NODE_ENV", "INFLUENCE_API_ROLE"] as const;
 const env = Object.fromEntries(keys.map(key => [key, process.env[key]]));
 afterEach(() => { stopLocalChampionshipTimers(); globalThis.fetch = originalFetch; for (const key of keys) { if (env[key] === undefined) delete process.env[key]; else process.env[key] = env[key]; } });
 async function fixture() {
@@ -104,4 +104,27 @@ test("dedicated service credentials outlast the event without user-session expir
   await db.update(schema.servicePrincipals).set({ enabled: false }).where(eq(schema.servicePrincipals.userId, actorId));
   expect((await app.request(`/api/internal/championships/${event.id}/schedules`, { headers: { Authorization: `Bearer ${token}` } })).status).toBe(403);
   await expect(createChampionshipServiceToken(db, actorId, expiry)).rejects.toThrow("Enabled championship");
+});
+
+test("staging refuses local timers and startup restoration without external authority", async () => {
+  const { db } = await championshipFixture();
+  process.env.NODE_ENV = "staging";
+  delete process.env.CHAMPIONSHIP_SCHEDULER_URL; delete process.env.CHAMPIONSHIP_SCHEDULER_TOKEN;
+  const { assertChampionshipSchedulerConfigured, synchronizeLocalChampionshipSchedules, restoreLocalChampionshipSchedules } = await import("../services/championship-scheduling.js");
+  expect(assertChampionshipSchedulerConfigured).toThrow("scheduler URL and token");
+  await expect(synchronizeLocalChampionshipSchedules(db, "never-read")).rejects.toThrow("development-only");
+  await restoreLocalChampionshipSchedules(db);
+  expect(await db.select().from(schema.competitionAudit)).toHaveLength(0);
+});
+
+test("staging gateway rejects exact execution even with an authorized service", async () => {
+  const { db, actorId } = await championshipFixture();
+  process.env.NODE_ENV = "staging"; process.env.INFLUENCE_API_ROLE = "gateway";
+  process.env.JWT_SECRET ??= "championship-service-fixture";
+  await db.insert(schema.servicePrincipals).values({ userId: actorId, purpose: "championship" });
+  const { createChampionshipServiceToken } = await import("../services/championship-service-token.js");
+  const token = await createChampionshipServiceToken(db, actorId, new Date(Date.now() + 60_000));
+  const response = await createChampionshipRoutes(db).request("/api/internal/championships/games/launch", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ gameId: randomUUID() }) });
+  expect(response.status).toBe(503);
+  expect(await response.json()).toEqual({ error: "Use the game-worker launch endpoint" });
 });

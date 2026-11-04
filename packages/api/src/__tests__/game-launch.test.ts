@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { setupTestDB } from "./test-utils.js";
 import { assertGameLaunchConfigured, launchExactGame } from "../services/game-launch.js";
 const originalFetch = globalThis.fetch;
-const keys = ["NODE_ENV", "INFLUENCE_GAME_LAUNCH_URL", "INFLUENCE_GAME_LAUNCH_TOKEN"] as const;
+const keys = ["NODE_ENV", "INFLUENCE_GAME_LAUNCH_URL", "INFLUENCE_GAME_LAUNCH_TOKEN", "DATABASE_URL"] as const;
 const original = Object.fromEntries(keys.map(key => [key, process.env[key]]));
 afterEach(() => { globalThis.fetch = originalFetch; for (const key of keys) { if (original[key] === undefined) delete process.env[key]; else process.env[key] = original[key]; } });
 test("production requires an explicit launcher and incomplete configuration is rejected", () => {
@@ -24,4 +24,18 @@ test("external launch requires acknowledgement of the exact game and reuses deli
   expect(calls.map(call => call.body)).toEqual(['{"gameId":"game-1"}', '{"gameId":"game-1"}']);
   expect(calls.map(call => new Headers(call.headers).get("Idempotency-Key"))).toEqual(["game:game-1", "game:game-1"]);
   expect(calls.every(call => call.redirect === "error")).toBe(true);
+});
+
+test("staging and unknown deployed environments cannot fall back to local launch", () => {
+  delete process.env.INFLUENCE_GAME_LAUNCH_URL; delete process.env.INFLUENCE_GAME_LAUNCH_TOKEN;
+  for (const environment of ["staging", "preview", "production"]) {
+    process.env.NODE_ENV = environment;
+    process.env.DATABASE_URL = "postgres://localhost/example";
+    expect(assertGameLaunchConfigured).toThrow("explicit game launcher");
+  }
+  delete process.env.NODE_ENV;
+  process.env.DATABASE_URL = "postgres://remote.example.test/example";
+  expect(assertGameLaunchConfigured).toThrow("explicit game launcher");
+  process.env.DATABASE_URL = "postgres://127.0.0.1:54320/example";
+  expect(assertGameLaunchConfigured).not.toThrow();
 });

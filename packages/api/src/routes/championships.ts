@@ -1,3 +1,4 @@
+import { isLocalGameRuntime } from "../services/local-game-runtime.js";
 import { prepareChampionshipAwards, deliverChampionshipAwards } from "../services/championship-awards.js";
 import { assertChampionshipSchedulerConfigured, championshipScheduleManifest, dispatchScheduledChampionshipMatch, requestChampionshipScheduleSync } from "../services/championship-scheduling.js";
 import { launchExactGame, launchExactGameLocally, assertGameLaunchConfigured } from "../services/game-launch.js";
@@ -34,7 +35,7 @@ export function createChampionshipRoutes(db: DrizzleDB) {
   });
   app.get("/api/award-definitions", async c => c.json({ definitions: await publicAwardDefinitions(db) }));
   app.post("/api/internal/championships/games/launch", requireServiceAuth(db, "dispatch_championship"), requirePermission("dispatch_championship"), async c => {
-    if (process.env.NODE_ENV === "production" && process.env.INFLUENCE_API_ROLE !== "game-worker") return c.json({ error: "Use the game-worker launch endpoint" }, 503);
+    if (!isLocalGameRuntime() && process.env.INFLUENCE_API_ROLE !== "game-worker") return c.json({ error: "Use the game-worker launch endpoint" }, 503);
     const body = await parseJsonBody(c, "Exact game launch");
     if (typeof body?.gameId !== "string") return c.json({ error: "Exact game ID required" }, 400);
     await launchExactGameLocally(db, body.gameId);

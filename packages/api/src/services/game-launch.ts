@@ -1,3 +1,4 @@
+import { isLocalGameRuntime } from "./local-game-runtime.js";
 import type { DrizzleDB } from "../db/index.js";
 import { and, eq } from "drizzle-orm";
 import { schema } from "../db/index.js";
@@ -41,7 +42,7 @@ export function assertGameLaunchConfigured() {
     if (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname))) throw new ChampionshipError("Game launcher must use HTTPS or localhost", 503);
     return;
   }
-  if (process.env.NODE_ENV !== "production") return;
+  if (isLocalGameRuntime()) return;
   throw new ChampionshipError("An explicit game launcher must be configured before retrying games", 503);
 }
 
