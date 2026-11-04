@@ -1,4 +1,4 @@
-import { beforeAll, expect, test } from "bun:test";
+import { afterEach, beforeAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { eq, sql } from "drizzle-orm";
@@ -18,8 +18,17 @@ import { createSessionToken } from "../middleware/auth.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { claimWerewolfGame, createWerewolfStore, readWerewolfEvents } from "../services/werewolf-games.js";
 import { readJson, storeJson } from "../services/payload-storage.js";
+import { abortAllGames } from "../services/game-lifecycle.js";
 
 beforeAll(() => { process.env.JWT_SECRET = "championship-scoring-test"; });
+const originalMockRunner = process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
+afterEach(async () => {
+  // Replay routes launch real background runtimes. Drain them before the next
+  // fixture truncates tables, including when an assertion fails.
+  await abortAllGames();
+  if (originalMockRunner === undefined) delete process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
+  else process.env.INFLUENCE_API_TEST_MOCK_RUNNER = originalMockRunner;
+});
 async function fixture() {
   const f = await championshipFixture();
   expect(f.event.policies).toEqual(SEASON_ZERO_CHAMPIONSHIP_POLICIES);
@@ -80,6 +89,7 @@ test("equal series and frozen season scores award all shared champions idempoten
 });
 
 test("producer replay preserves cancelled evidence and frozen roles; delayed retry cannot replace another attempt", async () => {
+  process.env.INFLUENCE_API_TEST_MOCK_RUNNER = "true";
   const { db, event, actorId } = await fixture();
   await grantTestAuthority(db, actorId, ["manage_championships"]);
   const app = new Hono().route("/", createChampionshipRoutes(db));
@@ -110,6 +120,7 @@ test("producer replay preserves cancelled evidence and frozen roles; delayed ret
   expect(await db.select().from(schema.championshipMatchAttempts)).toHaveLength(2);
   expect((await call({ ...body, reason: "Different reason" })).status).toBe(409);
   await db.update(schema.games).set({ status: "cancelled" }).where(eq(schema.games.id, replay.gameId));
+  await abortAllGames();
   expect((await call()).status).toBe(409);
   expect(await db.select().from(schema.championshipMatchAttempts)).toHaveLength(2);
   expect((await call({ ...body, expectedGameId: replay.gameId }, randomUUID())).status).toBe(200);
