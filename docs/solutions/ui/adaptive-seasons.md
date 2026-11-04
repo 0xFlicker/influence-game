@@ -32,5 +32,5 @@ Smallest sound follow-up: an owner-authorized, idempotent visual-preparation job
 - Final provider-free baseline: 3,331 passed, 5 skipped, 0 failed; 40,507 assertions across 354 files. Focused frontend checks: 25 passed, 149 assertions.
 - Real running localhost: Season 0 championship default, replay controls, 1440px desktop and 390px mobile without horizontal overflow, selector and browser Back, legacy Intake bookmark. A real paused replay, focus and scroll survive the 15-second background refresh; no browser errors.
 - Intercepted browser fixture (no application writes): active-season recommendation, explicit Join/Switch/Leave payloads with selected season ID, newest-agent fallback, responsive entry view. This does not claim a real active-season game or enrollment on the finalized local database.
-- Final typechecking/lint passed. Full isolated PostgreSQL regression and final provider-free counts are recorded in the task handoff.
+- Final typechecking/lint passed. Full isolated PostgreSQL regression: 2,421 passed, 0 failed, 34,377 assertions across 226 files (1,300 seconds). No normal development or production database reset.
 - Presentation parity scope: host-page/navigation/lineup only. Shared movie scenes, Studio and export rendering are unchanged; the existing embedded viewer is reused.
