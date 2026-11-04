@@ -1,4 +1,4 @@
-import { beforeAll, expect, test } from "bun:test";
+import { afterEach, beforeAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { eq, sql } from "drizzle-orm";
@@ -18,6 +18,11 @@ import { createSessionToken } from "../middleware/auth.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { claimWerewolfGame, createWerewolfStore, readWerewolfEvents } from "../services/werewolf-games.js";
 import { readJson, storeJson } from "../services/payload-storage.js";
+
+import { abortAllGames } from "../services/game-lifecycle.js";
+
+// Replay routes launch background execution; drain it before the next fixture truncates.
+afterEach(async () => { await abortAllGames(); });
 
 beforeAll(() => { process.env.JWT_SECRET = "championship-scoring-test"; });
 async function fixture() {

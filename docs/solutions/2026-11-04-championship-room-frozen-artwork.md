@@ -24,3 +24,15 @@ kept Influence's selector absent and changed to its distinct backdrop.
 The existing local championship has no played Influence finale yet, so that
 event's actual finale playback remains unverified. Scene content and Studio/export
 renderers were not changed by this page/chrome integration.
+
+Final regression evidence:
+- Typecheck/lint passed.
+- Provider-free baseline: 3,329 passed, 5 skipped, no failures.
+- Full isolated PostgreSQL baseline: 2,414 passed, one test-cleanup deadlock.
+  The scoring replay fixture left its background runtime active before the next
+  fixture's truncate. Added awaited abort/drain using the existing retry-test
+  lifecycle. Post-fix affected suite: 29 passed, 225 assertions, including the
+  previously failing migration test. The full baseline was not repeated after
+  this test-only cleanup fix.
+- Web focused suite: 3 passed, 26 assertions.
+- Preview geometry verified at 320, 390, 700, 701, 800 and 1440px with zero shift.
