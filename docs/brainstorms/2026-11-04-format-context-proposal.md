@@ -1,12 +1,12 @@
 # Format context during Influence Mingle — proposal
 
-Status: **prototype for discussion; no product behavior is changed or approved.**
+Status: **prototype for discussion; no application behavior has been changed.**
 
 ## Problem
 
 After the format pick, viewers need the selected format to understand the
-ensuing Mingle and alliance huddles. The watch shell can repeat “Format Mingle”
-without showing the format. Theater/fullscreen also removes the shell from view.
+ensuing Mingle and alliance huddles. The watch shell currently repeats
+“Format Mingle” without showing the format. Theater/fullscreen also removes the shell from view.
 The existing social-scene `ActiveFormatLabel` is supplied as the settings-menu
 header in `WatchTransport`, so it is available only after opening settings; it
 is not a persistent player label. The selection reveal has two 1,800 ms base
@@ -20,13 +20,22 @@ It is a self-contained illustration with sample copy, not a running game. Switch
 between embedded, theater and narrow views; activate the pill to see the proposed
 rules panel.
 
-1. Put a small **Format · Highest Count ⓘ** button in the player picture's
+1. Call the user-facing phase **Mingle**, including the transition and watch
+   labels for `FORMAT_MINGLE`. Keep the internal phase identifier and canonical
+   semantics unchanged. In the embedded shell, show **Round 1** above a single
+   **Mingle** heading; remove the redundant feed line and duplicate phase in the
+   cast panel. The theater concept moves the same context into the player rather
+   than repeating it. Inventory other audience-facing labels and accessibility
+   names too, without rewriting immutable historical transcript or agent speech.
+   Earlier Mingle phases remain distinct in canonical state; verify that any
+   existing distinct labels still make sense instead of conflating the phases.
+2. Put a small **Format · Highest Count ⓘ** button in the player picture's
    upper safe area, away from cast, captions and transport. Keep it visible
    throughout post-pick Mingle and post-pick huddle speech, including thinking.
    It remains visible when transport controls fade, in embedded, theater and
    fullscreen. Placement and spacing must reflow at narrow/short sizes; the
    mockup is an illustration, not proof that every scene fits.
-2. On hover or keyboard focus, offer a short discoverable hint. Click, tap or
+3. On hover or keyboard focus, offer a short discoverable hint. Click, tap or
    keyboard activation opens a dismissible panel with the selected format's
    **same concise rules shown at selection**. The mockup assumes opening the
    panel pauses playback and closing it leaves playback paused, so the viewer
@@ -34,7 +43,7 @@ rules panel.
    Support Escape, outside dismissal, focus restoration and a clear close button;
    prevent the player's click-to-advance handler from firing. Do not depend on
    hover, and keep the panel usable inside fullscreen.
-3. Give the selected-format rules their own reading hold. Proposed starting
+4. Give the selected-format rules their own reading hold. Proposed starting
    point at 1×: after the choice's 1.8 s stage, hold the actual selected rules
    for at least **8 s**, or `2 s + words / 180 × 60 s`, whichever is longer,
    rounded up to the next half second. This is a design hypothesis for review,
@@ -91,6 +100,9 @@ interaction is separate from the deterministic shared render of the label.
 - Check both Mingle windows for Two Names, pre-pick huddles, round transitions,
   seek/reverse/direct entry, live reconnect, historical/missing format context,
   and automatic single-format selection. Never infer state from dialogue.
+- Confirm that the watch shell, transition, accessible labels, Studio and export
+  use **Mingle** without redundant round/phase/feed headings, while internal
+  `FORMAT_MINGLE` identity and earlier-phase behavior remain unchanged.
 - Check long format names and rules, large casts, narrow/short/fullscreen
   geometries, captions and control collisions. Fit or clock-paginate movie text;
   no player scrolling, clipped required content or unreadable type. Prove keyboard,
@@ -104,8 +116,8 @@ interaction is separate from the deterministic shared render of the label.
 
 ## Decisions requested
 
-1. Is the persistent upper player pill and the video/Studio parity treatment the
-   desired placement? Should it continue beyond social scenes into resolution?
-2. Should opening rules pause playback and leave it paused after dismissal?
-3. Is the proposed 8-second minimum plus length-based reading hold a good
-   starting point, subject to testing actual copy?
+The user requested the **Mingle** label and removal of the repetitive heading.
+The mockup applies both. Before product implementation, confirm whether the pill
+continues beyond social scenes into resolution, whether opening rules pauses
+playback and leaves it paused, and whether the proposed reading hold is a good
+starting point after testing the actual copy.
