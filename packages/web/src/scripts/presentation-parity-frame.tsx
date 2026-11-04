@@ -40,6 +40,21 @@ function FormatAudit() {
           if (box.left < room.right && box.right > room.left && box.top < room.bottom && box.bottom > room.top) throw new Error("Format pill covers the room label");
         }
       }
+      const names = Array.from(document.querySelectorAll<HTMLElement>("[data-room-player] > p"));
+      if (names.length > 5) {
+        const stage = document.querySelector<HTMLElement>("[data-influence-stage]")!.getBoundingClientRect();
+        const overlaps = (a:DOMRect,b:DOMRect) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+        const speech = document.querySelector<HTMLElement>("[data-speech-bubble]");
+        for (const [index,name] of names.entries()) {
+          const rect = name.getBoundingClientRect();
+          if (rect.left < stage.left - 1 || rect.right > stage.right + 1 || rect.top < stage.top - 1 || rect.bottom > stage.bottom + 1)
+            throw new Error(`Cast name is outside the picture: ${name.textContent}`);
+          if (speech && Number(getComputedStyle(speech).opacity) > .1 && overlaps(rect,speech.getBoundingClientRect()))
+            throw new Error(`Cast name overlaps speech: ${name.textContent}`);
+          if (names.slice(index + 1).some(other => overlaps(rect,other.getBoundingClientRect())))
+            throw new Error(`Cast names overlap: ${name.textContent}`);
+        }
+      }
       for (const page of document.querySelectorAll<HTMLElement>("[data-format-rules] [data-speech-page-copy]")) {
         const rect=page.getBoundingClientRect(), container=page.parentElement!.getBoundingClientRect();
         if (rect.left < container.left - 1 || rect.right > container.right + 1 || rect.bottom > container.bottom + 1 || parseFloat(getComputedStyle(page).fontSize) < 14)

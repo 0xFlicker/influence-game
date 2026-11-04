@@ -50,6 +50,15 @@ for (const [name,message] of [["format-mingle",social],["format-huddle",huddle]]
   cases.push({name,reference:cue,cue});
   cases.push({name:`${name}-thought`,reference:cue,cue:thinkingSegment(cue,`${name}-thought`,message.thinking!,"atlas")});
 }
+const largePlayers = [...players,...Array.from({length:8},(_,index)=>({...players[0]!,id:`extra-${index}`,name:`Long Contestant Name ${index + 1}`}))];
+const largeFrames = socialFrames.slice(0,2).map(frame => ({...frame,players:largePlayers,counts:{...frame.counts,totalPlayers:largePlayers.length,alivePlayers:largePlayers.length}}));
+const huddleMembers = largePlayers.slice(0,-1);
+const largeHuddle:TranscriptEntry = {...huddle,id:103,entrySequence:103,toPlayerIds:huddleMembers.slice(1).map(player=>player.id),
+  allianceSession:{sessionId:"large",allianceId:"large",allianceName:"The Exceptionally Long Night Shift Alliance",memberIds:huddleMembers.map(player=>player.id)}};
+const largeCues = buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"format",players:largePlayers},messages:[largeHuddle],frames:largeFrames,thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[]}});
+const largeHuddleCue = largeCues.find(cue => cue.speech?.text === largeHuddle.text);
+if (!largeHuddleCue || largeHuddleCue.activeFormatId !== "majority_elimination") throw new Error("Missing large huddle format context");
+cases.push({name:"format-huddle-large",reference:largeHuddleCue,cue:largeHuddleCue});
 const pointers = influence.filter(cue=>cue.picture.kind === "influence" && cue.picture.beat?.kind === "safety-chain" && cue.picture.beat.cue.kind === "safety_bounce_pointer");
 for (const index of [0,pointers.length-1]) {
   const reference=pointers[index]!;
@@ -102,8 +111,9 @@ try {
     const narrow = process.env.FORMAT_CONTEXT_NARROW === "1";
     const formatOnly = process.env.FORMAT_CONTEXT_ONLY === "1";
     const geometries: readonly (readonly [number, number])[] = narrow ? [[360,240]] : [[1280,720],[640,360]];
-    const selectedCases = narrow ? cases.filter(item => ["format-mingle","format-huddle","format-rules"].includes(item.name))
+    const geometryCases = narrow ? cases.filter(item => ["format-mingle","format-huddle","format-huddle-large","format-rules"].includes(item.name))
       : formatOnly ? cases.filter(item => item.name.startsWith("format-")) : cases;
+    const selectedCases = process.env.FORMAT_CONTEXT_CASE ? geometryCases.filter(item => item.name === process.env.FORMAT_CONTEXT_CASE) : geometryCases;
     for(const [width,height] of geometries) for(const item of selectedCases) {
       const profile=parseTimingProfile({ending:{holdMs:0}}),fps=30;
       const timeline=compileTiming([item.cue.timing],profile,fps);
