@@ -1040,3 +1040,7 @@ Championship artwork preparation creates an immutable competition revision linke
 Championship result corrections append a new derived scoring revision while preserving canonical games and prior rows. Only the active revision/game counts in standings. Affected champion allocations are superseded and recomputed; obsolete grants remain revoked with their evidence. Recipient corrections link a new grant to the original instead of rewriting attribution. Manual revocations remain explicit producer decisions across result recomputation.
 
 Season 0 earned badges are finalized-season achievements, not championship-activation rewards. Frozen finalization evidence determines crowns and one-completed-game participation for agents and accounts. Idempotent season reconciliation preserves original grants and audited corrections; Top 8 and championship titles remain event achievements.
+
+## Failed-game replacement
+
+An authorized admin Retry game action fences and hides a suspended or cancelled attempt while retaining its canonical history and evidence. One immutable original-to-replacement record makes repeat requests return the same replacement. The new game uses admitted frozen inputs, with the same competitive roles; championship standings count only the current match attempt. A captured outcome must use completion recovery instead of new gameplay. Explicit launch targets that exact replacement, independently of a discovery timer.

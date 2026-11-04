@@ -4334,3 +4334,11 @@ export const championshipAwardAllocations = pgTable("championship_award_allocati
   grants: payloadColumn("grants_object", "json-gzip").notNull().$type<StoredPayload<import("../services/championship-awards.js").PlannedAward[]>>(),
   deliveredAt: text("delivered_at"),
 }, table => [unique("championship_awards_phase").on(table.eventId, table.phase, table.generation), ...payloadChecks("championship_award_allocations", { grants: [table.grants, "json-gzip"] })]);
+
+/** One immutable replacement per failed attempt; launch delivery may be retried independently. */
+export const gameRetries = pgTable("game_retries", {
+  originalGameId: text("original_game_id").primaryKey().references(() => games.id),
+  replacementGameId: text("replacement_game_id").notNull().unique().references(() => games.id),
+  actorId: text("actor_id").notNull().references(() => users.id),
+  createdAt: text("created_at").notNull(),
+});

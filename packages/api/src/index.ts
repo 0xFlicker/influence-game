@@ -1,3 +1,4 @@
+import { createGameRetryRoutes } from "./routes/game-retry.js";
 import { processChampionshipArtwork } from "./services/championship-artwork.js";
 import { reconcileChampionships } from "./services/championship-runtime.js";
 import { createChampionshipRoutes } from "./routes/championships.js";
@@ -565,7 +566,8 @@ async function finishBackgroundRuntimeStartup(
           console.warn("[game-worker] Scan ended during shutdown", error);
         }
       }
-      if (gameExecutionWorker) await abortAllGames();
+      // Local explicit retries may run in the gateway; drain every game owned by this process.
+      await abortAllGames();
       providerHealthProbeRuntime?.stop();
       await gamePublicationRuntime?.stop();
       await providerAttemptReconciliation.stop();
@@ -715,6 +717,7 @@ app.route("/", freeQueueRoutes);
 
 // Dual Crown seasons and competition data
 app.route("/", createChampionshipRoutes(db));
+app.route("/", createGameRetryRoutes(db));
 const seasonRoutes = createSeasonRoutes(db);
 app.route("/", seasonRoutes);
 

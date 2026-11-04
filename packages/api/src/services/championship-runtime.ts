@@ -16,3 +16,17 @@ export async function reconcileChampionships(db: DrizzleDB, now = new Date().toI
   }
   return { dispatched, diagnostics };
 }
+
+/** Completion callback, also safe to redeliver after a worker/transport failure. Never starts games. */
+export async function reconcileChampionshipGameCompletion(db: DrizzleDB, gameId: string) {
+  const [match] = await db.select().from(schema.championshipMatches).where(eq(schema.championshipMatches.gameId, gameId));
+  if (!match) return;
+  await reconcileChampionshipResults(db, match.eventId);
+  await prepareChampionshipAwards(db, match.eventId);
+  await deliverChampionshipAwards(db, match.eventId);
+}
+
+export async function notifyChampionshipGameCompletion(db: DrizzleDB, gameId: string) {
+  try { await reconcileChampionshipGameCompletion(db, gameId); }
+  catch (error) { console.warn("[championship] Completion delivery needs retry", gameId, error instanceof Error ? error.message : "Unknown failure"); }
+}

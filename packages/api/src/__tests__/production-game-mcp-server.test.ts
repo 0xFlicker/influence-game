@@ -3586,6 +3586,8 @@ function publicPlayerFoundFixture() {
       agents: [{
         name: "Atlas Prime",
         avatarUrl: null,
+        profileHref: "/agents/atlas-prime",
+        awards: [],
         role: { key: "strategic" as const, label: "Strategic" },
         competition: { gamesPlayed: 2, wins: 1, winRate: 0.5 },
       }],

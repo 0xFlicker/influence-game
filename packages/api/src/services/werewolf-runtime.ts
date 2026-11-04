@@ -1,3 +1,4 @@
+import { notifyChampionshipGameCompletion } from "./championship-runtime.js";
 import { providerRequestTimeoutMs } from "./provider-request-timeout.js";
 import { ProviderDeferredError } from "@influence/engine";
 import { deferProviderGame } from "./provider-game-retry.js";
@@ -99,6 +100,7 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
     return runWerewolf(store, agent, controller.signal);
   })
     .then(async () => { if (config.audioMode === true) await completeWerewolfAudioGame(db,gameId,ownerEpoch); })
+    .then(() => notifyChampionshipGameCompletion(db, gameId))
     .catch(async (error) => {
       if (error instanceof ProviderDeferredError && !controller.signal.aborted && !heartbeatFailure) { await deferProviderGame(db, gameId, ownerEpoch, error); return; }
       if (error instanceof LiveAudioBlocked) { await pauseLiveAudio(db, gameId, ownerEpoch); return; }

@@ -94,6 +94,7 @@ test("sixteen real canonical Werewolf runs settle once, survive owner replacemen
   expect(grants.every(row => !row.agentId || agents.includes(row.agentId))).toBe(true);
   process.env.INFLUENCE_API_TEST_MOCK_RUNNER = "true";
   const finale = await dispatchChampionshipMatch(db, event.id, 17, "2026-12-31T00:00:00.000Z");
+  await pauseChampionship(db, event.id, actorId, randomUUID());
   const adopted = await adoptInProgressDurableGamesOnStartup(db, { isAlreadyRunning: isGameRunning, start: async input => {
     const result = await startGame(db, input.gameId, input.ownerEpoch);
     if (result.error) throw new Error(result.error);
@@ -101,7 +102,6 @@ test("sixteen real canonical Werewolf runs settle once, survive owner replacemen
   expect(adopted.adopted).toContain(finale.gameId!);
   const deadline = Date.now() + 100000;
   while (isGameRunning(finale.gameId!) && Date.now() < deadline) await Bun.sleep(20);
-  await pauseChampionship(db, event.id, actorId, randomUUID());
   await reconcileChampionshipResults(db, event.id);
   expect((await db.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, event.id)))[0]!.status).toBe("final");
   await prepareChampionshipAwards(db, event.id); await deliverChampionshipAwards(db, event.id);

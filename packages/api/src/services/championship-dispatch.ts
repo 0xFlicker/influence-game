@@ -51,9 +51,9 @@ export async function pauseChampionship(db: DrizzleDB, eventId: string, actorId:
   });
 }
 
-/** Exact event/match identity, transaction-serialized creation, and normal durable worker adoption. */
-export async function dispatchChampionshipMatch(db: DrizzleDB, eventId: string, ordinal: number, now = new Date().toISOString()) {
-  const prepared = await db.transaction(async tx => {
+type ChampionshipTx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
+/** Shared transaction boundary used by dispatch and audited replacement. */
+export async function prepareChampionshipMatch(tx: ChampionshipTx, eventId: string, ordinal: number, now: string) {
     const [event] = await tx.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, eventId)).for("update");
     if (!event || event.status !== "running") throw new ChampionshipError("Event is not active", 409);
     const [match] = await tx.select().from(schema.championshipMatches).where(and(eq(schema.championshipMatches.eventId, eventId), eq(schema.championshipMatches.ordinal, ordinal))).for("update");
@@ -101,7 +101,11 @@ export async function dispatchChampionshipMatch(db: DrizzleDB, eventId: string, 
       await tx.update(schema.championshipMatches).set({ status: "running" }).where(eq(schema.championshipMatches.id, match.id));
     }
     return { deferred: false as const, gameId };
-  });
+}
+
+/** Exact event/match identity, transaction-serialized creation, and normal durable worker adoption. */
+export async function dispatchChampionshipMatch(db: DrizzleDB, eventId: string, ordinal: number, now = new Date().toISOString()) {
+  const prepared = await db.transaction(tx => prepareChampionshipMatch(tx, eventId, ordinal, now));
   if (!prepared.gameId) return prepared;
   const [game] = await db.select().from(schema.games).where(eq(schema.games.id, prepared.gameId));
   if (game?.status === "cancelled") throw new ChampionshipError("The exact championship game was cancelled; explicit producer recovery is required", 409);
