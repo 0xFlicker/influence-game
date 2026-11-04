@@ -8,7 +8,7 @@ import { championshipScheduleManifest, dispatchScheduledChampionshipMatch, reque
 import { schema } from "../db/index.js";
 import { createChampionshipRoutes } from "../routes/championships.js";
 const originalFetch = globalThis.fetch;
-const keys = ["CHAMPIONSHIP_SCHEDULER_URL", "CHAMPIONSHIP_SCHEDULER_TOKEN", "JWT_SECRET", "NODE_ENV", "INFLUENCE_API_ROLE", "CHAMPIONSHIP_EVENT_ID"] as const;
+const keys = ["CHAMPIONSHIP_SCHEDULER_URL", "CHAMPIONSHIP_SCHEDULER_TOKEN", "JWT_SECRET", "NODE_ENV", "INFLUENCE_API_ROLE", "CHAMPIONSHIP_EVENT_ID", "INFLUENCE_DEPLOYMENT_ENVIRONMENT", "CHAMPIONSHIP_GAME_LAUNCH_URL", "CHAMPIONSHIP_GAME_LAUNCH_TOKEN"] as const;
 const env = Object.fromEntries(keys.map(key => [key, process.env[key]]));
 afterEach(() => { stopLocalChampionshipTimers(); globalThis.fetch = originalFetch; for (const key of keys) { if (env[key] === undefined) delete process.env[key]; else process.env[key] = env[key]; } });
 async function fixture() {
@@ -180,4 +180,35 @@ test("credential pairs enforce distinct identities and independently revoke cont
   await db.update(schema.servicePrincipals).set({ enabled: false }).where(eq(schema.servicePrincipals.userId, actorId));
   await expect(authorizeChampionshipService(db, `Bearer ${pair.controller}`, "manifest")).rejects.toThrow("disabled");
   expect((await authorizeChampionshipService(db, `Bearer ${pair.launcher}`, "launch")).eventId).toBe(event.id);
+});
+
+ test("staging gateway permits only its exact authenticated private Docker proxy launch", async () => {
+  const { assertChampionshipLaunchConfigured } = await import("../services/championship-launch.js");
+  process.env.NODE_ENV = "staging";
+  process.env.INFLUENCE_DEPLOYMENT_ENVIRONMENT = "staging";
+  process.env.INFLUENCE_API_ROLE = "gateway";
+  process.env.CHAMPIONSHIP_GAME_LAUNCH_TOKEN = "fixture-scoped-launch-token";
+  const path = "/api/internal/championships/games/launch";
+  process.env.CHAMPIONSHIP_GAME_LAUNCH_URL = `http://caddy${path}`;
+  expect(() => assertChampionshipLaunchConfigured()).not.toThrow();
+  for (const origin of ["http://caddy:81", "http://caddy.example", "http://127.0.0.1", "http://game-worker:3002", "http://user@caddy"]) {
+    process.env.CHAMPIONSHIP_GAME_LAUNCH_URL = `${origin}${path}`;
+    expect(() => assertChampionshipLaunchConfigured()).toThrow();
+  }
+  for (const suffix of ["?extra=1", "#extra", "/extra"]) {
+    process.env.CHAMPIONSHIP_GAME_LAUNCH_URL = `http://caddy${path}${suffix}`;
+    expect(() => assertChampionshipLaunchConfigured()).toThrow();
+  }
+  process.env.CHAMPIONSHIP_GAME_LAUNCH_URL = `http://caddy${path}`;
+  process.env.INFLUENCE_API_ROLE = "game-worker";
+  expect(() => assertChampionshipLaunchConfigured()).toThrow();
+  process.env.INFLUENCE_API_ROLE = "gateway";
+  process.env.NODE_ENV = "production";
+  expect(() => assertChampionshipLaunchConfigured()).toThrow();
+  process.env.NODE_ENV = "staging";
+  process.env.INFLUENCE_DEPLOYMENT_ENVIRONMENT = "production";
+  expect(() => assertChampionshipLaunchConfigured()).toThrow();
+  process.env.INFLUENCE_DEPLOYMENT_ENVIRONMENT = "staging";
+  delete process.env.CHAMPIONSHIP_GAME_LAUNCH_TOKEN;
+  expect(() => assertChampionshipLaunchConfigured()).toThrow();
 });

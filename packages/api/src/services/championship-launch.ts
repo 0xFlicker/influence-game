@@ -9,7 +9,13 @@ export function assertChampionshipLaunchConfigured() {
   if (!endpoint && !token && isLocalGameRuntime()) return;
   if (!endpoint || !token) throw new ChampionshipError("Configure championship launcher URL and token", 503);
   const url = new URL(endpoint);
-  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || url.pathname !== "/api/internal/championships/games/launch") throw new ChampionshipError("Championship launcher must use the exact authenticated HTTPS route", 503);
+  const env = process.env; // Runtime read: Bun folds direct NODE_ENV expressions.
+  // Staging gateway and Caddy share the existing private Docker network. Tailscale
+  // HTTPS remains the external boundary; the exact internal proxy hop uses the
+  // same scoped launcher credential and does not expose another listener.
+  const privateStagingProxy = env.NODE_ENV === "staging" && env.INFLUENCE_DEPLOYMENT_ENVIRONMENT === "staging"
+    && env.INFLUENCE_API_ROLE === "gateway" && url.origin === "http://caddy";
+  if ((!privateStagingProxy && url.protocol !== "https:") || url.username || url.password || url.search || url.hash || url.pathname !== "/api/internal/championships/games/launch") throw new ChampionshipError("Championship launcher must use the exact authenticated HTTPS or staging private-proxy route", 503);
 }
 export async function launchChampionshipGame(db: DrizzleDB, gameId: string) {
   assertChampionshipLaunchConfigured();
