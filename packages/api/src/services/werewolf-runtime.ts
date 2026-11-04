@@ -1,3 +1,4 @@
+import { sanitizeOwnerLearningFailureExceptionForLog } from "./owner-learning-failure-evidence.js";
 import { notifyChampionshipGameCompletion } from "./championship-runtime.js";
 import { providerRequestTimeoutMs } from "./provider-request-timeout.js";
 import { ProviderDeferredError } from "@influence/engine";
@@ -116,7 +117,10 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
         if (circuitOpen) console.warn(`[werewolf] Waiting for provider health recovery for ${gameId}; frozen turn preserved`);
         else console.error(`[werewolf] Execution failed for ${gameId}`, error);
       }
-      try { await releaseWerewolfOwner(db, gameId, ownerEpoch, !circuitOpen && !controller.signal.aborted && !heartbeatFailure); }
+      let diagnostic = sanitizeOwnerLearningFailureExceptionForLog(error);
+      while (diagnostic.cause) diagnostic = diagnostic.cause;
+      try { await releaseWerewolfOwner(db, gameId, ownerEpoch, !circuitOpen && !controller.signal.aborted && !heartbeatFailure,
+        { message: diagnostic.message.slice(0, 2048), code: diagnostic.code ?? null }); }
       catch (releaseError) { console.error(`[werewolf] Owner release failed for ${gameId}; lease expiry will fence recovery`, releaseError); }
     })
     .finally(() => { clearInterval(heartbeat); active.delete(gameId); });
