@@ -35,6 +35,10 @@ function FormatAudit({expectedFormat, expectedPaged}: {expectedFormat?:string; e
       }
       const pill = document.querySelector<HTMLElement>("[data-active-format-overlay]");
       const label = document.querySelector<HTMLElement>("[data-room-context-label]");
+      for (const node of document.querySelectorAll<HTMLElement>("[data-influence-stage], [data-influence-stage] *")) {
+        const style=getComputedStyle(node);
+        if ([style.overflowX,style.overflowY].some(value=>value === "auto" || value === "scroll")) throw new Error("Scrollable player content");
+      }
       if (expectedFormat && !pill) throw new Error(`Missing active format: ${expectedFormat}`);
       if (expectedPaged && !document.querySelector("[data-paginated-portrait-room]")) throw new Error("Missing paginated cast");
       if (pill) {
