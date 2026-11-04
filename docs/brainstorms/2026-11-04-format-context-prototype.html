@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prototype: format context in Influence</title>
+  <style>
+    :root { color-scheme: dark; font: 16px/1.45 system-ui, sans-serif; background: #101115; color: #f2f3f6 }
+    * { box-sizing: border-box }
+    body { margin: 0; padding: 28px 20px 48px }
+    main { max-width: 1120px; margin: auto }
+    h1 { font-size: clamp(1.45rem, 3vw, 2rem); margin: 0 0 6px }
+    .intro { color: #b9bec9; margin: 0 0 18px; max-width: 72ch }
+    .switcher { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px }
+    button { font: inherit; cursor: pointer }
+    .switcher button { color: #d9dee8; border: 1px solid #505664; border-radius: 7px; background: #20232b; padding: 8px 13px }
+    .switcher button[aria-pressed="true"] { border-color: #8de0e4; background: #183b40; color: white }
+    .shell { display: grid; grid-template-columns: 230px 1fr; gap: 12px }
+    .cast, .viewer { border: 1px solid #343842; border-radius: 10px; overflow: hidden; background: #0b0c10 }
+    .cast { padding: 18px; color: #b8bfcb }
+    .cast h2, .heading p { color: #8e929d; font-size: .67rem; letter-spacing: .18em; text-transform: uppercase }
+    .cast h2 { font-size: .8rem; color: white; margin: 0 0 22px }
+    .cast p { padding: 12px 0; border-bottom: 1px solid #30323a; margin: 0 }
+    .heading { padding: 10px 18px; border-bottom: 1px solid #363942 }
+    .heading p { margin: 0 }
+    .heading strong { font-size: 1.1rem }
+    .picture { position: relative; isolation: isolate; height: clamp(360px, 51vw, 520px); overflow: hidden; background: radial-gradient(ellipse at 50% 70%, #4b342a 0, #221a1b 33%, #111219 72%); }
+    .picture::before { content: ""; position: absolute; inset: 0; z-index: -1; opacity: .4; background: repeating-linear-gradient(90deg, transparent 0 14%, #09090b 15% 17%, transparent 18% 25%), linear-gradient(0deg, #080a0f 0, transparent 60%) }
+    .format { position: absolute; top: 18px; left: 18px; z-index: 2; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 7px 13px; color: #ecffff; background: #102b30ee; border: 1px solid #83d6dd99; border-radius: 999px; box-shadow: 0 4px 18px #0008 }
+    .format:focus-visible, .close:focus-visible { outline: 3px solid #fff; outline-offset: 3px }
+    .format small { color: #a0d1d1; text-transform: uppercase; letter-spacing: .12em; font-size: .62rem }
+    .format b { font-size: .85rem }
+    .info { border: 1px solid #a9dbdf; border-radius: 50%; width: 17px; height: 17px; font: bold 11px/15px Georgia; text-align: center }
+    .hint { position: absolute; top: 63px; left: 18px; color: #d9f4f5; background: #131b20; padding: 5px 9px; font-size: .7rem; border-radius: 5px; opacity: 0; pointer-events: none }
+    .format:hover + .hint, .format:focus-visible + .hint { opacity: 1 }
+    .room { position: absolute; top: 29%; left: 50%; width: min(72%, 480px); transform: translateX(-50%); text-align: center }
+    .room-label { color: #c3b8af; text-transform: uppercase; font-size: .65rem; letter-spacing: .2em }
+    .avatars { display: flex; justify-content: center; gap: clamp(12px, 5vw, 36px); margin-top: 20px }
+    .avatar { display: grid; place-items: center; width: clamp(50px, 8vw, 70px); aspect-ratio: 1; border: 2px solid #b7a28e; border-radius: 50%; color: #faf5f0; background: radial-gradient(circle at 40% 30%, #69535b, #22242f); font-weight: 700 }
+    .names { display: flex; justify-content: center; gap: 38px; color: #e4e1dd; font-size: .8rem; margin-top: 8px }
+    .speech { position: absolute; bottom: 28px; left: 50%; transform: translateX(-50%); width: min(80%, 530px); padding: 14px 18px; border: 1px solid #ffffff38; border-radius: 12px; background: #0c0e12e8; color: #eaeaea; font-size: .9rem }
+    .speech strong { display: block; color: #b6e8e8; font-size: .73rem; margin-bottom: 4px }
+    .transport { display: flex; gap: 20px; align-items: center; padding: 12px 16px; font-size: .8rem; color: #aab0b8; background: #090a0d }
+    .transport span:last-child { margin-left: auto }
+    .overlay { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: 16px; background: #000a }
+    .overlay[hidden] { display: none }
+    .panel { width: min(100%, 430px); padding: 22px; border: 1px solid #85cbd0; border-radius: 14px; background: #111b20; box-shadow: 0 12px 44px #000b }
+    .panel-top { display: flex; align-items: center; justify-content: space-between; gap: 8px }
+    .panel small { color: #9cced1; text-transform: uppercase; letter-spacing: .15em; font-size: .65rem }
+    .panel h2 { margin: 8px 0; font-size: 1.4rem }
+    .panel p { color: #e1e7e8; margin: 10px 0; line-height: 1.55 }
+    .panel .paused { color: #a4b6b8; font-size: .75rem; margin-bottom: 0 }
+    .close { background: transparent; color: white; border: 1px solid #718789; border-radius: 6px; width: 36px; height: 36px; font-size: 1.2rem }
+    .note { margin-top: 18px; max-width: 90ch; color: #b9bec9; font-size: .85rem }
+    .shell[data-mode="theater"] { display: block }
+    .shell[data-mode="theater"] .cast, .shell[data-mode="theater"] .heading { display: none }
+    .shell[data-mode="theater"] .picture { height: min(62vw, 590px); min-height: 350px }
+    .shell[data-mode="narrow"] { display: block; width: min(100%, 390px); margin: auto }
+    .shell[data-mode="narrow"] .cast { display: none }
+    .shell[data-mode="narrow"] .picture { height: 430px }
+    @media (max-width: 680px) { .shell { display: block } .cast { display: none } .picture { height: 390px } .names { gap: 24px } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Keep the format in view</h1>
+  <p class="intro">A concept for post-pick Mingle and huddles. This is a static mock game, not the actual viewer; the rules and characters are examples.</p>
+  <div class="switcher" aria-label="Mock player layout">
+    <button type="button" data-mode="embedded" aria-pressed="true">Embedded</button>
+    <button type="button" data-mode="theater" aria-pressed="false">Theater / fullscreen</button>
+    <button type="button" data-mode="narrow" aria-pressed="false">Narrow</button>
+  </div>
+  <div class="shell" data-mode="embedded">
+    <aside class="cast" aria-label="Illustrative cast"><h2>Cast &amp; status</h2><small>PHASE</small><p>Format Mingle</p><p>Rex <small> · EMPOWERED</small></p><p>Nova</p><p>Juniper</p></aside>
+    <section class="viewer" aria-label="Illustrative player">
+      <header class="heading"><p>Round 1 / Format Mingle feed</p><strong>Format Mingle</strong></header>
+      <div class="picture">
+        <button class="format" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="rules"><small>Format</small><b>Highest Count</b><span class="info" aria-hidden="true">i</span></button>
+        <span class="hint" aria-hidden="true">Show format rules</span>
+        <div class="room" aria-hidden="true"><div class="room-label">The lounge · Mingle</div><div class="avatars"><div class="avatar">R</div><div class="avatar">N</div><div class="avatar">J</div></div><div class="names"><span>Rex</span><span>Nova</span><span>Juniper</span></div></div>
+        <div class="speech"><strong>NOVA</strong>We need to decide where the votes are going before everyone splits up.</div>
+        <div class="overlay" hidden>
+          <div class="panel" id="rules" role="dialog" aria-modal="true" aria-labelledby="rule-title" aria-describedby="rule-copy">
+            <div class="panel-top"><small>Current format</small><button type="button" class="close" aria-label="Close format rules">×</button></div>
+            <h2 id="rule-title">Highest Count</h2>
+            <p id="rule-copy">Cast one sealed vote for another contestant. The highest total goes out. The Empowered contestant breaks a highest-total tie, including when they are tied.</p>
+            <p class="paused">Prototype assumption: playback pauses while you read. Resume when ready.</p>
+          </div>
+        </div>
+      </div>
+      <div class="transport" aria-hidden="true"><span>▶ &nbsp; Play</span><span>◀◀ &nbsp; ▶▶</span><span>04:18 / 28:42</span><span>⚙ &nbsp; ⛶</span></div>
+    </section>
+  </div>
+  <p class="note">The pill stays visible when player controls fade. Activate it by click, tap or keyboard. The proposed longer initial rules reveal and export parity are described in the accompanying proposal; neither is implemented here.</p>
+</main>
+<script>
+  const shell = document.querySelector('.shell');
+  const pill = document.querySelector('.format');
+  const overlay = document.querySelector('.overlay');
+  const close = document.querySelector('.close');
+  function hideRules() { overlay.hidden = true; pill.setAttribute('aria-expanded', 'false'); pill.focus(); }
+  document.querySelectorAll('.switcher button').forEach(button => button.addEventListener('click', () => {
+    shell.dataset.mode = button.dataset.mode;
+    document.querySelectorAll('.switcher button').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+  }));
+  pill.addEventListener('click', () => { overlay.hidden = false; pill.setAttribute('aria-expanded', 'true'); close.focus(); });
+  close.addEventListener('click', hideRules);
+  overlay.addEventListener('click', event => { if (event.target === overlay) hideRules(); });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !overlay.hidden) hideRules();
+    if (event.key === 'Tab' && !overlay.hidden) { event.preventDefault(); close.focus(); }
+  });
+</script>
+</body>
+</html>
