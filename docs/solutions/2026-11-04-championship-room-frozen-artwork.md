@@ -36,3 +36,9 @@ Final regression evidence:
   this test-only cleanup fix.
 - Web focused suite: 3 passed, 26 assertions.
 - Preview geometry verified at 320, 390, 700, 701, 800 and 1440px with zero shift.
+
+Follow-up full PostgreSQL rerun after cleanup fix: **2,415 passed, 0 failed,
+34,325 assertions across 226 files**, 883.82 seconds. This supersedes the
+earlier full-rerun limitation. Executed against the isolated
+championship_task2_scheduler_tests database; development servers and user game
+data were not changed.
