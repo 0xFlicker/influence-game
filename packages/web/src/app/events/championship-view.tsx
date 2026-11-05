@@ -19,6 +19,19 @@ export function featuredChampionshipMatch(matches: Match[]) {
     ?? [...matches].reverse().find(match => match.gameSlug && match.status === "completed")
     ?? matches.find(match => match.status === "scheduled") ?? matches[0];
 }
+export function championshipDesk(event: ChampionshipView) {
+  if (event.status === "final") return { title: "The championship is complete", detail: "Explore the matches and final standings." };
+  if (event.status === "preparing") return { title: "Preparing the field", detail: "Finalist portraits are being prepared." };
+  if (event.status === "draft") return { title: "Opening night awaits", detail: "The field and match schedule are being prepared." };
+  if (event.status === "paused") return { title: "Intermission", detail: "The championship is paused." };
+  const live = event.matches.find(item => item.status === "running");
+  if (live) return { title: live.gameKind === "influence" ? "Influence finale live" : "Werewolf live", detail: `Match ${number(live.ordinal)} is under way.` };
+  const next = event.matches.find(item => item.status === "scheduled");
+  if (next) return { title: next.gameKind === "influence" ? "Influence finale" : "Werewolf", detail: `${dateFormat.format(new Date(next.scheduledAt))} UTC` };
+  return event.status === "locked"
+    ? { title: "The field is ready", detail: "The match schedule will appear here." }
+    : { title: "Results pending", detail: "Final results have not been confirmed." };
+}
 const number = (value: number) => String(value).padStart(2, "0");
 export function ChampionshipEventView({ event }: { event: ChampionshipView }) {
   const [chosen, setChosen] = useState<number>();
@@ -26,6 +39,7 @@ export function ChampionshipEventView({ event }: { event: ChampionshipView }) {
   const [audience, setAudience] = useState<"mystery" | "omniscient">("mystery");
   const match = event.matches.find(item => item.ordinal === chosen) ?? featuredChampionshipMatch(event.matches);
   const next = event.matches.find(item => item.status === "scheduled");
+  const desk = championshipDesk(event);
   const completed = event.matches.filter(item => item.gameKind === "werewolf" && item.status === "completed").length;
   const names = new Map(event.entries.map(entry => [entry.agentId, entry.name]));
   const playable = Boolean(match?.gameSlug);
@@ -49,20 +63,23 @@ export function ChampionshipEventView({ event }: { event: ChampionshipView }) {
         <div className={styles.watchCaption}><span>{watching ? "You’re watching in the championship room." : "Choose a match. Take your seat."}</span><div className={styles.viewControl}>{match?.gameKind === "werewolf" && playable ? <label>View <select aria-label="Werewolf viewing mode" value={audience} onChange={e => setAudience(e.target.value as "mystery" | "omniscient")}><option value="mystery">Mystery · roles hidden</option><option value="omniscient">Omniscient · spoilers</option></select></label> : null}</div></div>
       </div>
       <aside className={styles.desk}>
-        <p className={styles.eyebrow}>Next at the House</p><strong className={styles.nextNumber}>{next ? number(next.ordinal) : "✦"}</strong><h2>{next?.gameKind === "influence" ? "Influence finale" : next ? "Werewolf" : "The series is complete"}</h2><p>{next ? `${dateFormat.format(new Date(next.scheduledAt))} UTC` : "Explore the matches and meet the champions."}</p>
-        <div className={styles.rule}><span>8 finalists</span><span>2 champions</span></div><p className={styles.deskNote}>Same field. Different allegiances.<br />One game a day at 00:00 UTC.</p>
+        <p className={styles.eyebrow}>Next at the House</p><strong className={styles.nextNumber}>{next ? number(next.ordinal) : "✦"}</strong><h2>{desk.title}</h2><p>{desk.detail}</p>
+        <div className={styles.rule}><span>{event.entries.length === 8 ? "8 finalists" : "8 places"}</span><span>Werewolf + Influence</span></div><p className={styles.deskNote}>Same field. Different allegiances.<br />One game a day at 00:00 UTC.</p>
         <a href="#championship-standings" className={styles.textLink}>Reveal series standings ↗</a>
       </aside>
     </section>
     <section id="championship-schedule" className={styles.schedule} aria-label="Match schedule"><div className={styles.sectionTitle}><h2>Sixteen nights. <em>One finale.</em></h2><span>All times UTC</span></div>
       <ol className={styles.matchStrip}>{event.matches.map(item => <li key={item.ordinal}><button aria-pressed={item.ordinal === match?.ordinal} className={item.gameKind === "influence" ? styles.finaleMatch : undefined} onClick={() => {setChosen(item.ordinal); setWatching(false);}}><span>{item.gameKind === "influence" ? "Influence" : "Night"}</span><strong>{item.gameKind === "influence" ? "Finale" : number(item.ordinal)}</strong><small>{item.status === "completed" ? "Replay ↗" : item.status === "running" ? "Under way" : new Intl.DateTimeFormat("en", {month:"short",day:"numeric",timeZone:"UTC"}).format(new Date(item.scheduledAt))}</small></button></li>)}</ol>
-      {!event.matches.length ? <p>Sixteen daily matches. Starting date to be announced.</p> : null}
+      {!event.matches.length ? <p>The match schedule will appear when the field is ready.</p> : null}
     </section>
-    <section id="championship-finalists" className={styles.finalists}><div className={styles.sectionTitle}><div><span className={styles.eyebrow}>The field is set</span><h2>The final <em>eight.</em></h2></div></div>
-      <ol className={styles.lineup}>{event.entries.map(entry => <li key={entry.agentId}><AgentProfileLink agentId={entry.agentId} className={styles.finalist}>
+    <section id="championship-finalists" className={styles.finalists}><div className={styles.sectionTitle}><div><span className={styles.eyebrow}>{event.entries.length === 8 ? "The field is set" : "Preparing the field"}</span><h2>The final <em>eight.</em></h2></div></div>
+      {event.entries.length > 0 ? <ol className={styles.lineup}>{event.entries.map(entry => <li key={entry.agentId}><AgentProfileLink agentId={entry.agentId} className={styles.finalist}>
         <span className={styles.seed}>#{number(entry.rank)}</span><div className={styles.character}>{entry.transparentBodyUrl ? <img src={entry.transparentBodyUrl} alt={`${entry.name}, championship full-body portrait`} loading="lazy" /> : entry.avatarUrl ? <img src={resolveApiUrl(entry.avatarUrl)} alt={`${entry.name}, championship headshot`} loading="lazy" className={styles.headshot} /> : entry.bodyUrl ? <img src={entry.bodyUrl} alt={`${entry.name}, championship full-body portrait`} loading="lazy" className={styles.originalBody} /> : <span className={styles.noArt} aria-hidden="true">{entry.name.charAt(0)}</span>}</div>
         <div className={styles.nameplate}><h3>{entry.name}</h3><p>{entry.seasonPoints.toLocaleString("en")} Season 0 points</p></div>
-      </AgentProfileLink></li>)}</ol>{!event.entries.length ? <p>The field will be confirmed after season results are final.</p> : null}
+      </AgentProfileLink></li>)}</ol> : <div className={styles.preparingField} role="status">
+        <div className={styles.preparingSeats} aria-hidden="true">{Array.from({length:8}, (_,index) => <span key={index}><strong>{number(index+1)}</strong><i /></span>)}</div>
+        <p>{event.status === "preparing" ? "Finalist portraits are being prepared. The lineup will appear here when it is ready." : "The finalist lineup will appear here when the field is confirmed."}</p>
+      </div>}
     </section>
     <div className={styles.bottomGrid}>
       <section id="championship-standings"><div className={styles.sectionTitle}><h2>Two games. <em>Two crowns.</em></h2></div><details className={styles.standings}><summary>Reveal standings & champions · Results spoilers</summary>

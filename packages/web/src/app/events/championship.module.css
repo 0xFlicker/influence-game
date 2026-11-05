@@ -9,3 +9,11 @@
 @media(max-width:700px){.broadcastHeading{min-height:2.4rem}}
 
 .character img.headshot{height:auto;max-height:80%;width:90%;aspect-ratio:1;object-fit:cover;border-radius:50%;align-self:center;border:1px solid #e9b95f55}
+
+.preparingField{padding:clamp(24px,4vw,48px);border-block:1px solid #675032;background:linear-gradient(90deg,#15110be8,#211b13c9),url('/agent-creation-hall.webp') center/cover}
+.preparingField p{margin:24px 0 0;color:#d6c8b2;font-size:16px;line-height:1.5}
+.preparingSeats{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:clamp(8px,2vw,32px)}
+.preparingSeats span{position:relative;display:grid;justify-items:center;min-height:150px;overflow:hidden;border-bottom:1px solid #8d7347}
+.preparingSeats strong{font:12px sans-serif;color:#bfa572;justify-self:start}
+.preparingSeats i{display:block;width:min(100%,90px);height:110px;border-radius:45% 45% 0 0;background:linear-gradient(#8c785344,#8c785311);mask-image:linear-gradient(#000,transparent)}
+@media(max-width:600px){.preparingSeats{grid-template-columns:repeat(4,minmax(0,1fr))}.preparingSeats span{min-height:100px}.preparingSeats i{height:70px}}
