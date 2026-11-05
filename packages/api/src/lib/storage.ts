@@ -9,9 +9,11 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { objectStorageBucket, objectStorageClient, objectStorageClientConfig, objectStorageProvider, publicDeliveryBaseUrl, publicObjectAcl } from "./object-storage-config.js";
+import { objectStorageBucket, objectStorageClient, objectStorageClientConfig, objectStorageProvider, publicDeliveryBaseUrl, publicObjectAcl, localObjectStorageEnabled } from "./object-storage-config.js";
+
+export { localObjectStorageEnabled };
 
 type StorageBackend = "s3" | "local" | "disabled";
 
@@ -200,7 +202,7 @@ export async function generateConstrainedPublicUpload(
   });
   const uploadUrl = await getSignedUrl(getS3Client(), command, {
     expiresIn,
-    unhoistableHeaders: new Set(objectStorageProvider() === "aws_s3" ? ["x-amz-checksum-sha256"] : ["x-amz-acl"]),
+    unhoistableHeaders: new Set(objectStorageProvider() === "aws_s3" || localObjectStorageEnabled() ? ["x-amz-checksum-sha256"] : ["x-amz-acl"]),
   });
   return {
     uploadUrl,
@@ -304,6 +306,7 @@ function validatePublicAvatarImage(
 
 function publicS3UrlForKey(key: string): string {
   validateLocalKey(key);
+  if (localObjectStorageEnabled()) return absolutizeApiUrl(getLocalPublicUploadPath(key), process.env.HOUSE_LOCAL_API_ORIGIN ?? "http://127.0.0.1:3000");
   const encoded = objectStorageProvider() === "aws_s3" ? key.split("/").map(encodeURIComponent).join("/") : key;
   return `${publicDeliveryBaseUrl()}/${encoded}`;
 }
@@ -477,6 +480,21 @@ export async function readLocalUpload(key: string): Promise<{
   etag: string;
 } | null> {
   validateLocalKey(key);
+
+  if (localObjectStorageEnabled()) {
+    try {
+      const response = await getS3Client().send(new GetObjectCommand({ Bucket: getPublicObjectStorageBucket(), Key: key }));
+      if (!response.Body) throw new Error("Local object body is missing");
+      const body = Buffer.from(await response.Body.transformToByteArray());
+      const sha256 = sha256ForBuffer(body);
+      if (response.Metadata?.sha256 && response.Metadata.sha256.replace(/^sha256:/, "") !== sha256.slice(7)) throw new Error("Local object hash mismatch");
+      return { body, contentType: response.ContentType ?? "application/octet-stream", byteLength: body.length, sha256, etag: response.ETag ?? `\"${sha256}\"` };
+    } catch (error) {
+      if ((error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode !== 404) throw error;
+      // An explicitly configured shared filesystem remains readable during import.
+      if (!process.env.INFLUENCE_LOCAL_UPLOAD_DIR) return null;
+    }
+  }
 
   const filePath = getLocalUploadPath(key);
   try {
@@ -727,7 +745,7 @@ function constrainedUploadHeaders(contentType: string, byteLength: number, sha25
     "content-type": contentType,
     "content-length": byteLength.toString(),
     "x-amz-checksum-sha256": checksumBase64(sha256),
-    ...(objectStorageProvider() === "linode_object_storage" ? { "x-amz-acl": "public-read" } : {}),
+    ...(objectStorageProvider() === "linode_object_storage" && !localObjectStorageEnabled() ? { "x-amz-acl": "public-read" } : {}),
     "if-none-match": "*",
   };
 }

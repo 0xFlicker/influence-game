@@ -1,6 +1,6 @@
 # AWS object storage compatibility preparation
 
-Tracking: [#281](https://github.com/0xFlicker/influence-game/issues/281). This is an opt-in application compatibility change, prepared locally on current main `0664b151`. It does not migrate existing objects, update deployment configuration or authorize activation. Leave `HOUSE_OBJECT_STORAGE_PROVIDER` unset until all data and reference gates in the `falsefloor/infra` storage runbook are satisfied.
+Tracking: [#281](https://github.com/0xFlicker/influence-game/issues/281). This is an opt-in application compatibility change, initially prepared on main `0664b151` and reconciled with main `4cb3b1fe` on 2026-11-05. It does not migrate existing objects, update deployment configuration or authorize activation. Leave `HOUSE_OBJECT_STORAGE_PROVIDER` unset until all data and reference gates in the `falsefloor/infra` storage runbook are satisfied.
 
 ## Configuration and routing
 
@@ -73,3 +73,10 @@ The historical pointer follow-up adds an offline full-row PostgreSQL reconciliat
 
 
 The read-only historical audit follow-up passes the provider-free baseline (3,323 passed, 5 skipped), workspace checks and strict operator-script type checking. Six focused audit/pointer tests pass, including custom legacy origins and rejected out-of-root payload paths. It follows only supplied, hash-verified payloads and explicitly leaves separate-object/live/external coverage unresolved; see the reference census. No live historical records were accessed.
+
+
+## November 5 integration
+
+Reconciled current championship/presentation main without modifying championship controls or schema. [Persistent local MinIO](persistent-local-storage.md) now supplies shared private configuration and verified historical local assets independently of worktree paths. The private bucket remains private, and the public API read route preserves original local URLs. Runtime activation of already-running local services awaits a coordinated restart and final delta import.
+
+Old externally saved provider URLs may be retired after evaluating and accepting impact. Some are unsigned; do not assume all are expired. Owned in-app frozen references, replay/media bytes and hash integrity remain mandatory acceptance gates. Source bucket/backups are preserved.

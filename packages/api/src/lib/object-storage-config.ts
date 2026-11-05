@@ -2,6 +2,24 @@ import { S3Client, type S3ClientConfig } from "@aws-sdk/client-s3";
 
 export type ObjectStorageWorkload = "public" | "data" | "evidence";
 export type ObjectStorageProvider = "linode_object_storage" | "aws_s3";
+/** Existing S3-compatible adapter, restricted to the explicitly selected local service. */
+export function localObjectStorageEnabled(): boolean {
+  if (process.env.HOUSE_LOCAL_OBJECT_STORAGE !== "1") return false;
+  if (process.env.NODE_ENV === "production" || process.env.HOUSE_OBJECT_STORAGE_PROVIDER === "aws") {
+    throw new Error("Local object storage cannot be used in production or AWS mode");
+  }
+  for (const name of ["LINODE_OBJ_ENDPOINT", "LINODE_PRIVATE_CONTENT_ENDPOINT"]) {
+    const url = new URL(required(name));
+    if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)
+      || url.pathname !== "/" || url.username || url.password || url.search || url.hash) {
+      throw new Error("Local object storage requires exact loopback HTTP endpoints");
+    }
+  }
+  if (required("LINODE_OBJ_BUCKET") === required("LINODE_PRIVATE_CONTENT_BUCKET")) {
+    throw new Error("Local public and private content buckets must be distinct");
+  }
+  return true;
+}
 export function objectStorageProvider(): ObjectStorageProvider {
   const provider = process.env.HOUSE_OBJECT_STORAGE_PROVIDER;
   if (!provider || provider === "linode") return "linode_object_storage";
@@ -27,6 +45,7 @@ export function objectStorageBucket(workload: ObjectStorageWorkload): string {
 }
 
 export function objectStorageClientConfig(workload: ObjectStorageWorkload): S3ClientConfig {
+  localObjectStorageEnabled();
   if (objectStorageProvider() === "linode_object_storage") {
     const prefix = workload === "public" ? "LINODE_OBJ" : "LINODE_PRIVATE_CONTENT";
     return { region: "us-iad", endpoint: required(`${prefix}_ENDPOINT`), forcePathStyle: true,
@@ -56,7 +75,7 @@ export function objectStorageClient(workload: ObjectStorageWorkload): S3Client {
 }
 
 export function publicObjectAcl(): { ACL?: "public-read" } {
-  return objectStorageProvider() === "linode_object_storage" ? { ACL: "public-read" } : {};
+  return objectStorageProvider() === "linode_object_storage" && !localObjectStorageEnabled() ? { ACL: "public-read" } : {};
 }
 
 export function publicDeliveryBaseUrl(): string {
