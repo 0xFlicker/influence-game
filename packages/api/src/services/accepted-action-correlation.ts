@@ -1,3 +1,4 @@
+import { acceptedCaptureProvenance, captureProvenanceKey } from "./accepted-capture-provenance.js";
 import { Hydrated, loadPayloads } from "./payload-storage.js";
 import { and, eq, inArray, isNull, like, sql } from "drizzle-orm";
 import {
@@ -180,6 +181,8 @@ async function loadCorrelationRowsByRef(
       )),
   ]));
 
+  const captureOwners = await acceptedCaptureProvenance(db, refs, true);
+
   const manifestsByRef = new Map<string, typeof manifests>();
   const cognitionByRef = new Map<string, typeof cognition>();
   const promptReuseByRef = new Map<string, typeof promptReuseSources>();
@@ -202,14 +205,18 @@ async function loadCorrelationRowsByRef(
     addGroupedRow(promptReuseByRef, correlationRefKey(row), row);
   }
 
-  return new Map(refs.map((ref) => [
-    correlationRefKey(ref),
-    {
-      manifests: manifestsByRef.get(correlationRefKey(ref)) ?? [],
+  return new Map(refs.map((ref) => {
+    const sourceOwner = captureOwners.get(captureProvenanceKey(ref))?.ownerEpoch;
+    const keys = [correlationRefKey(ref)];
+    if (sourceOwner && sourceOwner !== ref.ownerEpoch) {
+      keys.push(correlationRefKey({ ...ref, ownerEpoch: sourceOwner }));
+    }
+    return [correlationRefKey(ref), {
+      manifests: keys.flatMap(key => manifestsByRef.get(key) ?? []),
       cognition: cognitionByRef.get(cognitionRefKey(ref)) ?? [],
-      promptReuseSources: promptReuseByRef.get(correlationRefKey(ref)) ?? [],
-    },
-  ]));
+      promptReuseSources: keys.flatMap(key => promptReuseByRef.get(key) ?? []),
+    }];
+  }));
 }
 
 function rowStatus(
@@ -381,7 +388,7 @@ export async function reconcileAcceptedActionCorrelations(
     `);
 
     const result = emptyResult(refs.length);
-    let promptReuseChanged = false;
+    const promptReuseOwners = new Set<string>();
     const rowsByRef = await loadCorrelationRowsByRef(tx, refs);
 
     for (const ref of refs) {
@@ -407,7 +414,7 @@ export async function reconcileAcceptedActionCorrelations(
           .set({ eventSequence: ref.eventSequence })
           .where(and(
             eq(schema.gameEvidenceManifests.gameId, ref.gameId),
-            eq(schema.gameEvidenceManifests.ownerEpoch, ref.ownerEpoch),
+            inArray(schema.gameEvidenceManifests.id, rows.manifests.map(row => row.id)),
             eq(schema.gameEvidenceManifests.decisionId, ref.decisionId),
             eq(schema.gameEvidenceManifests.evidenceType, PRIVATE_TRACE_EVIDENCE_TYPE),
             isNull(schema.gameEvidenceManifests.eventSequence),
@@ -437,12 +444,12 @@ export async function reconcileAcceptedActionCorrelations(
           .set({ eventSequence: ref.eventSequence })
           .where(and(
             eq(schema.gamePromptReuseAppliedSources.gameId, ref.gameId),
-            eq(schema.gamePromptReuseAppliedSources.ownerEpoch, ref.ownerEpoch),
+            inArray(schema.gamePromptReuseAppliedSources.id, rows.promptReuseSources.map(row => row.id)),
             eq(schema.gamePromptReuseAppliedSources.decisionId, ref.decisionId),
             eq(schema.gamePromptReuseAppliedSources.eventSequence, 0),
           ));
         result.updatedPromptReuseSourceCount += changedPromptReuseCount;
-        promptReuseChanged = true;
+        for (const row of rows.promptReuseSources) promptReuseOwners.add(row.ownerEpoch);
       }
 
       if (before.missing.length === 0) {
@@ -450,8 +457,8 @@ export async function reconcileAcceptedActionCorrelations(
       }
     }
 
-    if (promptReuseChanged) {
-      await rebuildPromptReuseRollupInTransaction(tx, params.gameId, params.ownerEpoch);
+    for (const ownerEpoch of promptReuseOwners) {
+      await rebuildPromptReuseRollupInTransaction(tx, params.gameId, ownerEpoch);
     }
 
     return result;

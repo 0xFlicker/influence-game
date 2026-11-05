@@ -1,13 +1,17 @@
 import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { beforeEach, describe, expect, test } from "bun:test";
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { and, eq } from "drizzle-orm";
-import { Phase, type CanonicalGameEvent } from "@influence/engine";
+import { Phase, providerAcceptedDecisionId, type CanonicalGameEvent, type PrivateDecisionTrace, type GameTurnIntentV1, type GameTurnCommitResultV1 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import {
   reconcileAcceptedActionCorrelations,
 } from "../services/accepted-action-correlation.js";
+import { createInitialGameExecutionStateV1 } from "../services/game-turn-commit.js";
+import { createEvidenceManifest } from "../services/game-evidence.js";
+import { recoverPrivateTraceIndex } from "../services/private-trace-index-recovery.js";
+import type { PrivateTraceStorageAdapter } from "../services/private-trace-storage.js";
 import { getDurableRunInspection } from "../services/game-durable-run.js";
 import { appendGameEvents } from "../services/game-events.js";
 import {
@@ -97,11 +101,129 @@ async function seedSidecars(
   });
 }
 
+async function recoveredDecision(db: DrizzleDB, durable = false) {
+  const gameId = await insertGame(db, { status: "in_progress" });
+  const oldOwner = await insertOwner(db, gameId, { status: "expired" });
+  const ownerEpoch = await insertOwner(db, gameId);
+  const attemptId = randomUUID();
+  const callId = randomUUID();
+  const hash = `sha256:${"a".repeat(64)}`;
+  await db.insert(schema.providerLogicalCalls).values({ id: callId, gameId, actorName: "Atlas", actorRole: "player", action: "vote", semanticCoordinate: {}, semanticCoordinateHash: hash });
+  await db.insert(schema.providerCallAttempts).values({
+    id: attemptId, logicalCallId: callId, gameId, ownerEpoch: oldOwner,
+    attemptOrdinal: 1, transportAttemptId: randomUUID(), reservationHash: hash,
+    terminalHash: hash, status: "terminal", transport: "chat_completions",
+    providerProfileId: "test", modelName: "test", startedAt: "2026-11-05T00:00:00Z",
+    completedAt: "2026-11-05T00:00:01Z", latencyMs: 1000, outcomeKind: "usable", disposition: "accepted",
+  });
+  await db.update(schema.providerLogicalCalls).set(await storeFields({
+    acceptedAttemptId: attemptId, acceptedCatalogId: "test", acceptedValue: {},
+    acceptedValueSha256: hash, acceptedAt: "2026-11-05T00:00:01Z",
+  }, { acceptedValue: "json-gzip" })).where(eq(schema.providerLogicalCalls.id, callId));
+  const decisionId = providerAcceptedDecisionId(attemptId);
+  await appendGameEvents(db, { gameId, ownerEpoch, events: [voteEvent(gameId, decisionId)] });
+  if (durable) {
+    const turnId = `${gameId}:turn:1`;
+    const state = createInitialGameExecutionStateV1({ gameId, ownerEpoch, xstateSnapshot: { value: "vote" }, cursor: { version: 1, kind: "phase_enter", actor: "vote" } });
+    const intent: GameTurnIntentV1 = { version: 1, gameId, turnId, turnSequence: 1, seed: "recovery-test", baseHeads: state.heads,
+      branch: { version: 1, kind: "single_provider", action: "vote" }, actorIds: ["atlas"], targetIds: [], handles: [], participantIds: ["atlas"],
+      providerSubcalls: [{ version: 1, slot: 1, logicalCallId: callId, semanticCoordinate: { version: 1, kind: "durable_turn", turnId, subcallSlot: 1 }, actorId: "atlas", action: "vote", contractId: "test-vote" }] };
+    const committedAt = "2026-11-05T00:00:02Z";
+    const commitResult: GameTurnCommitResultV1 = { version: 1, gameId, turnId, turnSequence: 1, intentHash: hash, effectHash: hash, committedAt,
+      state, canonicalEvents: [{ sequence: 1, eventHash: hash, event: voteEvent(gameId, decisionId) }], dialogueSequences: [], publications: [], alreadyCommitted: false };
+    await db.insert(schema.gameTurns).values(await storeFields({ id: turnId, gameId, turnSequence: 1, status: "committed" as const,
+      plannedOwnerEpoch: oldOwner, committedOwnerEpoch: ownerEpoch, baseEventSequence: 0, baseDialogueSequence: 0, basePublicationSequence: 0,
+      intent, intentHash: hash, effectHash: hash, committedAt, commitResult }, { intent: "json-gzip", commitResult: "json-gzip" }));
+    await db.update(schema.providerLogicalCalls).set({ canonicalEventSequence: null, canonicalCommittedAt: null, gameTurnId: turnId, gameTurnSubcallSlot: 1, gameTurnCommittedAt: committedAt }).where(eq(schema.providerLogicalCalls.id, callId));
+  }
+  return { gameId, oldOwner, ownerEpoch, decisionId, callId, attemptId };
+}
+
 describe("accepted action correlation", () => {
   let db: DrizzleDB;
 
   beforeEach(async () => {
     db = await setupTestDB();
+  });
+
+  test.each([false, true])("links recovered accepted captures without rewriting owner (durable=%s)", async (durable) => {
+    const f = await recoveredDecision(db, durable);
+    await seedSidecars(db, { ...f, ownerEpoch: f.oldOwner });
+    const result = await reconcileAcceptedActionCorrelations(db, f);
+    expect(result).toMatchObject({ linkedDecisionCount: 1, missingCaptureDecisionCount: 0, conflictDecisionCount: 0 });
+    expect((await db.select().from(schema.gameEvidenceManifests))[0]).toMatchObject({ ownerEpoch: f.oldOwner, eventSequence: 1 });
+    expect((await db.select().from(schema.gamePromptReuseAppliedSources))[0]).toMatchObject({ ownerEpoch: f.oldOwner, eventSequence: 1 });
+    const repeat = await reconcileAcceptedActionCorrelations(db, f);
+    expect(repeat.updatedManifestCount).toBe(0);
+    expect(repeat.updatedCognitiveArtifactCount).toBe(0);
+    expect(repeat.updatedPromptReuseSourceCount).toBe(0);
+  });
+
+  test("retains real PostgreSQL constraint diagnostics without leaking evidence parameters", async () => {
+    const gameId = await insertGame(db, { status: "in_progress" });
+    const ownerEpoch = await insertOwner(db, gameId);
+    const result = await createEvidenceManifest(db, { gameId, ownerEpoch, evidenceType: "private_decision_trace", retentionClass: "invalid", metadata: { privateText: "never log this evidence" } });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected constraint failure");
+    expect(result.error).toBe("PostgreSQL 23514 (game_evidence_manifests_retention_class_check)");
+    expect(JSON.stringify(result)).not.toContain("never log");
+    expect(await db.select().from(schema.gameEvidenceManifests)).toHaveLength(0);
+  });
+
+  test("does not borrow an unrelated historical capture or a different event binding", async () => {
+    const f = await recoveredDecision(db);
+    const unrelated = await insertOwner(db, f.gameId, { status: "closed" });
+    await seedSidecars(db, { ...f, ownerEpoch: unrelated });
+    expect((await reconcileAcceptedActionCorrelations(db, f)).missingCaptureDecisionCount).toBe(1);
+    await db.update(schema.gameEvidenceManifests).set({ ownerEpoch: f.oldOwner });
+    await db.update(schema.providerLogicalCalls).set({ canonicalEventSequence: null, canonicalCommittedAt: null }).where(eq(schema.providerLogicalCalls.id, f.callId));
+    expect((await reconcileAcceptedActionCorrelations(db, f)).missingCaptureDecisionCount).toBe(1);
+    expect((await db.select().from(schema.gameEvidenceManifests))[0]!.eventSequence).toBeNull();
+  });
+
+  test("does not borrow a capture from an uncommitted or differently owned durable turn", async () => {
+    const f = await recoveredDecision(db, true);
+    await seedSidecars(db, { ...f, ownerEpoch: f.oldOwner });
+    await db.update(schema.providerLogicalCalls).set({ gameTurnCommittedAt: null }).where(eq(schema.providerLogicalCalls.id, f.callId));
+    expect((await reconcileAcceptedActionCorrelations(db, f)).missingCaptureDecisionCount).toBe(1);
+    await db.update(schema.providerLogicalCalls).set({ gameTurnCommittedAt: "2026-11-05T00:00:02Z" }).where(eq(schema.providerLogicalCalls.id, f.callId));
+    await db.update(schema.gameTurns).set({ committedOwnerEpoch: f.oldOwner });
+    expect((await reconcileAcceptedActionCorrelations(db, f)).missingCaptureDecisionCount).toBe(1);
+    expect((await db.select().from(schema.gameEvidenceManifests))[0]!.eventSequence).toBeNull();
+  });
+
+  test("plans orphan recovery read-only and restores verified index idempotently with provenance", async () => {
+    const f = await recoveredDecision(db, true);
+    const previous = process.env.LINODE_PRIVATE_CONTENT_BUCKET;
+    process.env.LINODE_PRIVATE_CONTENT_BUCKET = "private-recovery-test";
+    try {
+      const trace: PrivateDecisionTrace = { version: 2, gameId: f.gameId, ownerEpoch: f.oldOwner, decisionId: f.decisionId,
+        action: "vote", actor: { id: "atlas", name: "Atlas", role: "player" }, phase: Phase.VOTE, round: 1,
+        createdAt: "2026-11-05T00:00:01Z", model: { name: "test" }, prompt: { messages: [] }, request: {}, response: { raw: { secret: "private reasoning" } } };
+      let body = JSON.stringify(trace);
+      const storage: PrivateTraceStorageAdapter = {
+        putObject: async () => { throw new Error("Recovery must never rewrite objects"); },
+        getObject: async () => ({ body }), headObject: async () => ({ contentLength: body.length }),
+      };
+      const input = { gameId: f.gameId, reason: "Reviewed disposable recovery fixture", key: `content/${f.gameId}/private-traces/orphan.json`, expectedSha256: `sha256:${createHash("sha256").update(body).digest("hex")}` };
+      const plan = await recoverPrivateTraceIndex(db, input, storage);
+      expect(plan).toMatchObject({ applied: false, alreadyIndexed: false, ownerEpoch: f.oldOwner, eventSequence: 1 });
+      expect(JSON.stringify(plan)).not.toContain("private reasoning");
+      expect(await db.select().from(schema.gameEvidenceManifests)).toHaveLength(0);
+      body += " ";
+      await expect(recoverPrivateTraceIndex(db, { ...input, apply: true }, storage)).rejects.toThrow("integrity");
+      body = JSON.stringify(trace);
+      await expect(recoverPrivateTraceIndex(db, { ...input, key: `content/${randomUUID()}/private-traces/orphan.json`, apply: true }, storage)).rejects.toThrow("another game");
+      const results = await Promise.all([1, 2].map(() => recoverPrivateTraceIndex(db, { ...input, apply: true }, storage)));
+      expect(results.filter(result => result.applied)).toHaveLength(1);
+      const rows = await db.select().from(schema.gameEvidenceManifests);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ ownerEpoch: f.oldOwner, eventSequence: 1, accessScope: "producer_admin", storageKey: input.key });
+      expect(rows[0]!.metadata).toHaveProperty("indexRecovery");
+      expect(JSON.stringify(rows[0])).not.toContain("private reasoning");
+    } finally {
+      if (previous === undefined) delete process.env.LINODE_PRIVATE_CONTENT_BUCKET; else process.env.LINODE_PRIVATE_CONTENT_BUCKET = previous;
+    }
   });
 
   test("is idempotent and scopes every mutable sidecar to the exact game and owner", async () => {
