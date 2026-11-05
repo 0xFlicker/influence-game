@@ -12,7 +12,6 @@ import {
   getFreeQueueStatus,
   getPlayerGames,
   listAgents,
-  listGames,
   joinFreeQueue,
   type FreeQueueStatus,
   type GameSummary,
@@ -30,6 +29,7 @@ import { JoinGameModal } from "./join-game-modal";
 import { MissionControlOverview } from "./mission-control-overview";
 import { DashboardQueueEntry } from "./dashboard-queue-entry";
 import { OwnerLearningActivation } from "./agents/[id]/review/owner-learning-activation";
+import { listDashboardGames } from "./dashboard-game-request";
 
 export function McpSetupCard({ hasHistory }: { hasHistory: boolean }) {
   return (
@@ -76,6 +76,8 @@ export function DashboardContent() {
   const [games, setGames] = useState<GameSummary[]>([]);
   const [gamesLoading, setGamesLoading] = useState(true);
   const [gamesError, setGamesError] = useState<string | null>(null);
+  const gamesRequest = useRef(0);
+  const invalidateGamesRequest = useCallback(() => { ++gamesRequest.current; }, []);
 
   const [queueStatus, setQueueStatus] = useState<FreeQueueStatus | null>(null);
   const [queueLoading, setQueueLoading] = useState(true);
@@ -117,15 +119,17 @@ export function DashboardContent() {
   }, [authenticated]);
 
   const fetchGames = useCallback(() => {
+    const request = gamesRequest.current;
     setGamesError(null);
-    listGames()
-      .then(setGames)
+    listDashboardGames(requestedJoinGameId)
+      .then(data => { if (request === gamesRequest.current) setGames(data); })
       .catch((err) => {
+        if (request !== gamesRequest.current) return;
         console.warn("[DashboardContent] Failed to load games:", err);
         setGamesError(err instanceof Error ? err.message : "Failed to load games.");
       })
-      .finally(() => setGamesLoading(false));
-  }, []);
+      .finally(() => { if (request === gamesRequest.current) setGamesLoading(false); });
+  }, [requestedJoinGameId]);
 
   const fetchQueueStatus = useCallback(() => {
     const request = ++queueRequest.current;
@@ -156,8 +160,9 @@ export function DashboardContent() {
     return () => {
       window.clearTimeout(initialFetch);
       window.clearInterval(interval);
+      invalidateGamesRequest();
     };
-  }, [fetchGames]);
+  }, [fetchGames, invalidateGamesRequest]);
 
   useEffect(() => {
     if (!authenticated) {
