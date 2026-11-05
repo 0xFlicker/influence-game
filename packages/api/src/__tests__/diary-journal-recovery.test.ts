@@ -16,14 +16,17 @@ test("diary question retries its unbound journal coordinate after durable owner 
   await db.update(schema.games).set({ transcriptCaptureVersion: 1, formalSpeechCaptureVersion: 1 }).where(eq(schema.games.id, gameId));
   await db.insert(schema.gameTranscriptStates).values(initialGameTranscriptStateValues(gameId));
   const owner = await insertOwner(db, gameId, { expiresAt: "2099-01-01T00:00:00.000Z" });
-  const agents = () => ["Atlas", "Echo", "Nova"].map((name, i) => new ApiTestMockAgent(`diary-${i}`, name));
-  const config = { ...DEFAULT_CONFIG, maxDiaryFollowUps: 0, diaryRoomAfterPhases: [Phase.INTRODUCTION], formatManifest: ["save_or_eliminate" as const], mingleSessionsPerRound: 1 };
+  const agents = () => Array.from({ length: 12 }, (_, i) => new ApiTestMockAgent(`diary-${i}`, `Player ${i}`));
+  const config = { ...DEFAULT_CONFIG, maxDiaryFollowUps: 0, diaryRoomAfterPhases: [Phase.FORMAT_RESOLVE], formatManifest: ["save_or_eliminate" as const], mingleSessionsPerRound: 1 };
   let interrupt = true;
+  let interruptedPlayer = "";
+  const peerAccepted = Promise.withResolvers<void>();
   const stub = { responses: { create: async () => ({ id: "diary-response", object: "response", status: "completed", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify({ question: "What will you do next?" }) }] }] }) } } as unknown as OpenAI;
   const makeHouse = (ownerEpoch: string) => {
     const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
-    const reserve = hooks.onReserve!;
-    hooks.onReserve = async intent => { await reserve(intent); if (interrupt && intent.coordinate.action === "house-question") { interrupt = false; throw new Error("fixture interruption after reservation"); } };
+    const reserve = hooks.onReserve!, terminal = hooks.onTerminal!;
+    hooks.onTerminal = async record => { await terminal(record); if (record.coordinate.action === "house-question" && record.outcome.kind === "usable") { peerAccepted.resolve(); if (ownerEpoch !== owner && record.coordinate.semantic.kind === "diary_exchange" && record.coordinate.semantic.playerId === interruptedPlayer) throw new Error("fixture stopped after recovered acceptance"); } };
+    hooks.onReserve = async intent => { await reserve(intent); if (interrupt && intent.coordinate.action === "house-question") { interrupt = false; if (intent.coordinate.semantic.kind === "diary_exchange") interruptedPlayer = intent.coordinate.semantic.playerId; await peerAccepted.promise; throw new Error("fixture interruption after reservation"); } };
     const llm = new LLMHouseInterviewer(stub, "gpt-4o-mini", { gameId, ownerEpoch, providerExecutionHooks: hooks });
     const house = new TemplateHouseInterviewer();
     house.generateQuestion = context => llm.generateQuestion(context);
@@ -35,6 +38,7 @@ test("diary question retries its unbound journal coordinate after durable owner 
   const allAttempts = await db.select().from(schema.providerCallAttempts);
   const attempt = allAttempts.find(row => row.status === "reserved" && calls.some(call => call.id === row.logicalCallId));
   expect(attempt).toBeDefined(); expect(attempt!.contextSourceHash).toBeTruthy();
+  expect(allAttempts.some(row => row.status === "terminal" && row.outcomeKind === "usable" && calls.some(call => call.id === row.logicalCallId))).toBeTrue();
   const call = calls.find(row => row.id === attempt!.logicalCallId)!;
   expect(call.gameTurnId).toBeNull();
   await db.update(schema.gameRunOwners).set({ status: "expired", expiresAt: "2000-01-01T00:00:00.000Z" }).where(eq(schema.gameRunOwners.ownerEpoch, owner));
@@ -42,7 +46,7 @@ test("diary question retries its unbound journal coordinate after durable owner 
   if (!replacement.ok) throw new Error(replacement.error);
   const nextOwner = replacement.claim.ownerEpoch;
   const resumed = createDurableGameRunnerStore(db, { gameId, ownerEpoch: nextOwner });
-  await new GameRunner(agents(), config, makeHouse(nextOwner), { gameId, durableTurnStore: resumed }).run();
+  await expect(new GameRunner(agents(), config, makeHouse(nextOwner), { gameId, durableTurnStore: resumed }).run()).rejects.toThrow("fixture stopped after recovered acceptance");
   const attempts = await db.select().from(schema.providerCallAttempts).where(eq(schema.providerCallAttempts.logicalCallId, call!.id));
   expect(attempts.length).toBeGreaterThan(1);
   expect(attempts.every(row => row.contextSourceHash === attempt!.contextSourceHash)).toBeTrue();

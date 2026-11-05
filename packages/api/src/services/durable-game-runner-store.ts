@@ -424,8 +424,10 @@ function deserializeTranscriptRow(row: StoredTranscriptRow): TranscriptEntry {
     round: row.round,
     phase: row.phase as Phase,
     timestamp: row.timestamp,
+    // Engine-created system announcements are authored by House; serialization
+    // stores their sender as null. Restore that identity for deterministic prompts.
     from: row.fromPlayerId
-      ?? (row.scope === "diary" || row.dialogueKind === "house_summary"
+      ?? (row.scope === "diary" || row.scope === "system" || row.dialogueKind === "house_summary"
         ? "House"
         : "SYSTEM"),
     scope: row.scope,
