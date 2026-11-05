@@ -55,7 +55,7 @@ describe("e2e infrastructure smoke test", () => {
     testDb = await createIsolatedTestDb();
     expect(testDb.db).toBeTruthy();
     expect(testDb.databaseUrl).toContain("postgresql://");
-  });
+  }, 120_000); // Cold CI may need more than five seconds to apply all migrations.
 
   test("generateTestWallet produces valid Ethereum wallet", () => {
     const wallet = generateTestWallet();
@@ -183,7 +183,7 @@ describe("e2e infrastructure smoke test", () => {
     } finally {
       await admin.end();
     }
-  });
+  }, 120_000); // This test also creates and migrates a fresh isolated DB.
 
   test("destroyIsolatedTestDb refuses the shared database", async () => {
     const sharedDatabaseUrl = process.env.TEST_DATABASE_URL
