@@ -8,7 +8,8 @@ Review findings addressed:
 
 - Initial implementation supported only the old canonical-event field. Actual
   staging verification exposed the durable-turn path. Added committed turn/time/
-  owner checks and immutable commit-result decision/action proof, plus regressions.
+  owner checks and immutable commit-result decision/action/hash proof, plus regressions.
+  The commit event hash must match the exact canonical event and its own payload.
 - Loading every turn payload on ordinary appends was unnecessary. Correlation
   resolves historical provenance only when the accepted attempt's owner differs;
   explicit index repair still validates either binding fully.
@@ -33,5 +34,6 @@ transient-failure improvement, not an assertion that the observed failure was a
 deadlock. Production draining mitigates interruptions, not all recovery failures.
 
 Validation results are recorded in the PR. Full database tests use only the newly
-created disposable influence_capture_recovery_20261105 database. No shared staging,
+created disposable influence_capture_recovery_20261105 database; final focused
+review tests use the separate empty influence_capture_review_20261105 database. No shared staging,
 production, or localhost development database is used for tests.

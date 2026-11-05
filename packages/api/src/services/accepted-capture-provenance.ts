@@ -1,3 +1,4 @@
+import { sha256StableJson } from "./stable-hash.js";
 import { and, eq, inArray } from "drizzle-orm";
 import { acceptedActionSourcePointerMatches, providerAcceptedDecisionId } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
@@ -56,7 +57,8 @@ export async function acceptedCaptureProvenance(db: Pick<DrizzleDB, "select">, r
       bound = Boolean(turn && turn.gameId === ref.gameId && turn.ownerEpoch === ref.ownerEpoch
         && turn.committedAt === attempt.committedAt && turn.commitResult?.gameId === ref.gameId
         && turn.commitResult.turnId === turn.id
-        && turn.commitResult.canonicalEvents.some(({ sequence, event }) => sequence === ref.eventSequence
+        && turn.commitResult.canonicalEvents.some(({ sequence, event, eventHash }) => sequence === ref.eventSequence
+          && eventHash === ref.canonicalEventHash && sha256StableJson(event) === eventHash
           && event.sequence === sequence && event.gameId === ref.gameId
           && acceptedActionSourcePointerMatches(event).some(({ pointer, traceAction }) => pointer.decisionId === ref.decisionId && traceAction === ref.traceAction)));
     }

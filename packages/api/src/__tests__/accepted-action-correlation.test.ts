@@ -13,7 +13,7 @@ import { createEvidenceManifest } from "../services/game-evidence.js";
 import { recoverPrivateTraceIndex } from "../services/private-trace-index-recovery.js";
 import type { PrivateTraceStorageAdapter } from "../services/private-trace-storage.js";
 import { getDurableRunInspection } from "../services/game-durable-run.js";
-import { appendGameEvents } from "../services/game-events.js";
+import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
 import {
   appendDurableEventsAndPublishWatchState,
   reconcileAcceptedActionsForLifecycle,
@@ -130,7 +130,7 @@ async function recoveredDecision(db: DrizzleDB, durable = false) {
       providerSubcalls: [{ version: 1, slot: 1, logicalCallId: callId, semanticCoordinate: { version: 1, kind: "durable_turn", turnId, subcallSlot: 1 }, actorId: "atlas", action: "vote", contractId: "test-vote" }] };
     const committedAt = "2026-11-05T00:00:02Z";
     const commitResult: GameTurnCommitResultV1 = { version: 1, gameId, turnId, turnSequence: 1, intentHash: hash, effectHash: hash, committedAt,
-      state, canonicalEvents: [{ sequence: 1, eventHash: hash, event: voteEvent(gameId, decisionId) }], dialogueSequences: [], publications: [], alreadyCommitted: false };
+      state, canonicalEvents: [{ sequence: 1, eventHash: hashCanonicalEvent(voteEvent(gameId, decisionId)), event: voteEvent(gameId, decisionId) }], dialogueSequences: [], publications: [], alreadyCommitted: false };
     await db.insert(schema.gameTurns).values(await storeFields({ id: turnId, gameId, turnSequence: 1, status: "committed" as const,
       plannedOwnerEpoch: oldOwner, committedOwnerEpoch: ownerEpoch, baseEventSequence: 0, baseDialogueSequence: 0, basePublicationSequence: 0,
       intent, intentHash: hash, effectHash: hash, committedAt, commitResult }, { intent: "json-gzip", commitResult: "json-gzip" }));
@@ -190,6 +190,12 @@ describe("accepted action correlation", () => {
     await db.update(schema.gameTurns).set({ committedOwnerEpoch: f.oldOwner });
     expect((await reconcileAcceptedActionCorrelations(db, f)).missingCaptureDecisionCount).toBe(1);
     expect((await db.select().from(schema.gameEvidenceManifests))[0]!.eventSequence).toBeNull();
+    await db.update(schema.gameTurns).set({ committedOwnerEpoch: f.ownerEpoch });
+    const [turn] = await loadPayloads(db.select().from(schema.gameTurns));
+    const corrupt = structuredClone(turn!.commitResult!);
+    corrupt.canonicalEvents[0]!.eventHash = `sha256:${"b".repeat(64)}`;
+    await db.update(schema.gameTurns).set(await storeFields({ commitResult: corrupt }, { commitResult: "json-gzip" }));
+    expect((await reconcileAcceptedActionCorrelations(db, f)).missingCaptureDecisionCount).toBe(1);
   });
 
   test("plans orphan recovery read-only and restores verified index idempotently with provenance", async () => {

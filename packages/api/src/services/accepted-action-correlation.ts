@@ -1,3 +1,4 @@
+import { sha256StableJson } from "./stable-hash.js";
 import { acceptedCaptureProvenance, captureProvenanceKey } from "./accepted-capture-provenance.js";
 import { Hydrated, loadPayloads } from "./payload-storage.js";
 import { and, eq, inArray, isNull, like, sql } from "drizzle-orm";
@@ -19,6 +20,7 @@ export interface AcceptedActionDecisionRef {
   ownerEpoch: string;
   decisionId: string;
   eventSequence: number;
+  canonicalEventHash: string;
   traceAction: string;
   canonicalConflict: boolean;
 }
@@ -120,6 +122,7 @@ export function acceptedActionDecisionRefs(
         ownerEpoch: persisted.ownerEpoch,
         decisionId,
         eventSequence: persisted.sequence,
+        canonicalEventHash: sha256StableJson(persisted.envelope),
         traceAction,
         canonicalConflict: oneToOneConflict || traceActions.size > 1,
       });
