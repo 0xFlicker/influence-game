@@ -12,6 +12,7 @@ import { buildExportCues } from "./replay-export/cues";
 import { AgentAvatar, resolveAgentAvatarUrl } from "../components/agent-avatar";
 import { RuntimeConfigProvider } from "./runtime-config";
 import { getPublicRuntimeConfig } from "./server-runtime-config";
+import EmbedLayout from "../app/embed/layout";
 import { VisualPresentationFrame } from "../app/games/[slug]/components/visual-presentation";
 import { WerewolfContentFrame } from "../components/games/werewolf/werewolf-watch-stage";
 import { werewolfMomentCues } from "../components/games/werewolf/werewolf-watch-model";
@@ -59,6 +60,15 @@ test("the promoted image uses per-request public runtime config without sharing 
   // Explicit legacy configuration remains authoritative even in an AWS SSR process.
   expect(draw(null)).toContain(`${old}/pfp/a.png`);
   expect(draw(config.PUBLIC_MEDIA_DELIVERY)).not.toContain(old);
+});
+
+test("the embed layout supplies its own delivery map and preserves explicit legacy mode", () => {
+  const draw = () => renderToStaticMarkup(<EmbedLayout>
+    <AgentAvatar avatarUrl={`${old}/pfp/a.png`} persona="" name="Synthetic" />
+  </EmbedLayout>);
+  expect(draw()).toContain(`${target}/pfp/a.png`);
+  delete process.env.HOUSE_OBJECT_STORAGE_PROVIDER;
+  expect(draw()).toContain(`${old}/pfp/a.png`);
 });
 
 test("a display view preserves canonical source identity, map keys, prose and hashes", () => {

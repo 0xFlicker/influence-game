@@ -7,6 +7,15 @@ import { configuredPublicMediaDelivery, type PublicMediaDelivery } from "./publi
 // an explicit legacy configuration and must not inherit another environment.
 export const PublicMediaDeliveryContext = createContext<PublicMediaDelivery | null | undefined>(undefined);
 
+// Embeds need only this delivery map. The site's runtime provider also imports
+// API/analytics transport, which must stay outside the sandboxed player bundle.
+export function PublicMediaDeliveryProvider({ children, delivery }: {
+  children: React.ReactNode;
+  delivery: PublicMediaDelivery | null;
+}) {
+  return <PublicMediaDeliveryContext.Provider value={delivery}>{children}</PublicMediaDeliveryContext.Provider>;
+}
+
 export function usePublicMediaDelivery(): PublicMediaDelivery | null | undefined {
   const selected = useContext(PublicMediaDeliveryContext);
   return useMemo(() => selected === undefined ? configuredPublicMediaDelivery() : selected, [selected]);

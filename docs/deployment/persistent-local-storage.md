@@ -41,6 +41,8 @@ Repeat `--source` for multiple roots. Inventory rejects conflicting keys, symlin
 
 On 2026-11-05, 603 unique objects / 274,677,756 bytes from the main, championship and registered local worktree upload directories were copied and verified. The existing private bucket was retained. Running gateway/worker processes were not restarted: they continue with their loaded configuration until a coordinated local restart. Therefore run the final delta import before switching them; this preparation does not claim those already-running processes have changed provider.
 
+The reconnection check reverified all 603 source objects against MinIO with zero copies needed. The active services run from the championship worktree, which does not contain this startup/read-route change, and the local database still has two games marked in progress. No processes were restarted or checkout files changed. Before the coordinated switch, integrate this change into the checkout owning those services, establish that its game/worker activity can safely pause, then stop the old filesystem writers, repeat the delta import and start both roles through the shared wrapper. A stale game status or an empty owner query alone is not proof that a running service is safe to replace.
+
 ## Verification and rollback
 
 The explicit `local-storage.external-smoke.test.ts` writes uniquely named synthetic probes, confirms anonymous bucket access is denied, and starts fresh read-route processes in two supplied worktree directories. It verifies exact bytes, old local media URLs, HEAD and range reads. It uses no application database, provider, cloud account or live game controls. The importer regression also proves collision rejection, no-overwrite resume and source preservation.
