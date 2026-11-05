@@ -25,6 +25,7 @@ describe("championship presentation", () => {
     expect(championshipDesk({...view,status:"final"}).title).toBe("The championship is complete");
     const finale={ordinal:17,gameKind:"influence" as const,status:"running",gameSlug:"finale",scheduledAt:"2026-12-17T00:00:00Z"};
     expect(championshipDesk({...view,status:"running",matches:[finale]}).title).toBe("Influence finale live");
+    expect(championshipDesk({...view,status:"running",matches:[{...finale,ordinal:1,gameKind:"werewolf"},{...finale,ordinal:2,status:"scheduled"}]}).ordinal).toBe(1);
     expect(championshipDesk({...view,status:"paused",matches:[finale]}).title).toBe("Intermission");
     expect(championshipDesk({...view,status:"running",matches:[{...finale,status:"completed"}]}).title).toBe("Results pending");
   });

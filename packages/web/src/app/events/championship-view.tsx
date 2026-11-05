@@ -19,15 +19,15 @@ export function featuredChampionshipMatch(matches: Match[]) {
     ?? [...matches].reverse().find(match => match.gameSlug && match.status === "completed")
     ?? matches.find(match => match.status === "scheduled") ?? matches[0];
 }
-export function championshipDesk(event: ChampionshipView) {
+export function championshipDesk(event: ChampionshipView): { title: string; detail: string; ordinal?: number } {
   if (event.status === "final") return { title: "The championship is complete", detail: "Explore the matches and final standings." };
   if (event.status === "preparing") return { title: "Preparing the field", detail: "Finalist portraits are being prepared." };
   if (event.status === "draft") return { title: "Opening night awaits", detail: "The field and match schedule are being prepared." };
   if (event.status === "paused") return { title: "Intermission", detail: "The championship is paused." };
   const live = event.matches.find(item => item.status === "running");
-  if (live) return { title: live.gameKind === "influence" ? "Influence finale live" : "Werewolf live", detail: `Match ${number(live.ordinal)} is under way.` };
+  if (live) return { ordinal: live.ordinal, title: live.gameKind === "influence" ? "Influence finale live" : "Werewolf live", detail: `Match ${number(live.ordinal)} is under way.` };
   const next = event.matches.find(item => item.status === "scheduled");
-  if (next) return { title: next.gameKind === "influence" ? "Influence finale" : "Werewolf", detail: `${dateFormat.format(new Date(next.scheduledAt))} UTC` };
+  if (next) return { ordinal: next.ordinal, title: next.gameKind === "influence" ? "Influence finale" : "Werewolf", detail: `${dateFormat.format(new Date(next.scheduledAt))} UTC` };
   return event.status === "locked"
     ? { title: "The field is ready", detail: "The match schedule will appear here." }
     : { title: "Results pending", detail: "Final results have not been confirmed." };
@@ -38,7 +38,6 @@ export function ChampionshipEventView({ event }: { event: ChampionshipView }) {
   const [watching, setWatching] = useState(false);
   const [audience, setAudience] = useState<"mystery" | "omniscient">("mystery");
   const match = event.matches.find(item => item.ordinal === chosen) ?? featuredChampionshipMatch(event.matches);
-  const next = event.matches.find(item => item.status === "scheduled");
   const desk = championshipDesk(event);
   const completed = event.matches.filter(item => item.gameKind === "werewolf" && item.status === "completed").length;
   const names = new Map(event.entries.map(entry => [entry.agentId, entry.name]));
@@ -63,7 +62,7 @@ export function ChampionshipEventView({ event }: { event: ChampionshipView }) {
         <div className={styles.watchCaption}><span>{watching ? "You’re watching in the championship room." : "Choose a match. Take your seat."}</span><div className={styles.viewControl}>{match?.gameKind === "werewolf" && playable ? <label>View <select aria-label="Werewolf viewing mode" value={audience} onChange={e => setAudience(e.target.value as "mystery" | "omniscient")}><option value="mystery">Mystery · roles hidden</option><option value="omniscient">Omniscient · spoilers</option></select></label> : null}</div></div>
       </div>
       <aside className={styles.desk}>
-        <p className={styles.eyebrow}>Next at the House</p><strong className={styles.nextNumber}>{next ? number(next.ordinal) : "✦"}</strong><h2>{desk.title}</h2><p>{desk.detail}</p>
+        <p className={styles.eyebrow}>At the House</p><strong className={styles.nextNumber}>{desk.ordinal ? number(desk.ordinal) : "✦"}</strong><h2>{desk.title}</h2><p>{desk.detail}</p>
         <div className={styles.rule}><span>{event.entries.length === 8 ? "8 finalists" : "8 places"}</span><span>Werewolf + Influence</span></div><p className={styles.deskNote}>Same field. Different allegiances.<br />One game a day at 00:00 UTC.</p>
         <a href="#championship-standings" className={styles.textLink}>Reveal series standings ↗</a>
       </aside>
