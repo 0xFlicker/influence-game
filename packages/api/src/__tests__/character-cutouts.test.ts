@@ -79,6 +79,18 @@ async function characterFixture() {
   await db.insert(schema.characterCutoutDemands).values({ id: "demand", agentProfileId: "character", playerId: "character", sourceKey: `sha256:${job.sourceHash}`, recipe: CUTOUT_RECIPE, cutoutId: job.id });
   return job;
 }
+
+test("private cutout jobs never publish public art even after their game consumers disappear", async () => {
+  const job = await enqueueCutout(db, source, true);
+  expect(job.privateSource).toBe(true);
+  expect((await enqueueCutout(db, source)).privateSource).toBe(true);
+  const reservation = (await reserveCutout(db, job.id))!;
+  await claimCutout(db, job.id, reservation.token, CUTOUT_RECIPE);
+  expect(await acceptCutout(db, job.id, reservation.token, cutout)).toBe(true);
+  expect(await db.select().from(schema.agentContentAssets)).toHaveLength(0);
+  expect(await db.select().from(schema.visualCharacterCutouts)).toHaveLength(0);
+  expect((await db.select().from(schema.characterCutouts))[0]!.artSavedAt).not.toBeNull();
+});
 async function complete(id: string) {
   const reservation = (await reserveCutout(db, id))!;
   await claimCutout(db, id, reservation.token, CUTOUT_RECIPE);
