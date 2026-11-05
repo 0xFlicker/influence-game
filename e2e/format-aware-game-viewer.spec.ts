@@ -984,6 +984,85 @@ test.describe("format-aware game viewer", () => {
     await expect(room.locator("[data-speech-bubble]")).toContainText("Accepted line 3.");
   });
 
+  test.describe("fullscreen control inactivity", () => {
+  test.use({hasTouch:true});
+  for (const mode of ["fullscreen","theater"] as const) test(`${mode} controls hide after inactivity without advancing a crowded huddle`, async ({page}, testInfo) => {
+    await page.addInitScript(() => Object.defineProperty(document, "fullscreenEnabled", {configurable:true,value:false}));
+    await page.clock.install();
+    await page.setViewportSize({width:844,height:390});
+    const slug = "crowded-format-huddle-controls";
+    const fixture = createFormatKernelViewerScenario("majority_elimination_clear");
+    const roster = [...fixture.roster,...Array.from({length:8},(_,index)=>({...fixture.roster[0]!,id:`extra-${index}`,name:`Contestant ${index+1}`}))];
+    await installDeterministicFormatGame(page,{slug,scenarioId:"majority_elimination_clear",status:"completed",roster});
+    const members = roster.slice(0,11);
+    setFormatTranscript(page,slug,[{id:101,entrySequence:101,firstDurableEventSequence:61,gameId:slug,round:2,phase:"FORMAT_MINGLE",scope:"huddle",dialogueKind:"huddle_speech",fromPlayerId:members[0]!.id,fromPlayerName:members[0]!.name,toPlayerIds:members.slice(1).map(player=>player.id),text:"We can hold our votes together, but only if everyone understands who is actually at risk. I want to hear the people who have not spoken yet before we settle on a name. If the plan changes, tell the whole group rather than leaving one person to discover it when the votes are revealed.",timestamp:101,allianceSession:{sessionId:"s",allianceId:"a",allianceName:"The Night Shift",memberIds:members.map(player=>player.id)}}]);
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page,"Pause replay");
+    await page.getByRole("button",{name:mode === "fullscreen" ? "Enter fullscreen" : "Enter theater mode",exact:true}).click();
+    const room=page.locator("[data-paginated-portrait-room]");
+    await advanceUntilVisible(page,room,"crowded format huddle",150);
+    await page.getByRole("button",{name:"Play replay",exact:true}).click({force:true});
+    await page.clock.runFor(1800);
+    await page.getByRole("button",{name:"Pause replay",exact:true}).click({force:true});
+    await expect(page.locator('[data-active-format="majority_elimination"]')).toBeVisible();
+    const controls=page.locator(`[data-player-${mode}="true"] [data-replay-controls]`).filter({has:page.locator("[data-watch-transport]")});
+    for (const size of [{width:844,height:390},{width:360,height:240},{width:320,height:480}]) {
+      await page.setViewportSize(size);
+      await page.mouse.move(2,2);
+      await page.evaluate(() => {if(document.activeElement instanceof HTMLElement) document.activeElement.blur();});
+      await page.clock.runFor(3600);
+      await expect(controls).toHaveClass(/opacity-0/);
+      await expect(controls).toHaveCSS("opacity","0");
+      await room.screenshot({path:testInfo.outputPath(`crowded-format-huddle-${mode}-${size.width}.png`)});
+      await expect(room.locator("[data-speech-bubble] [data-speech-page-copy]")).not.toBeEmpty();
+      const before=await room.getAttribute("data-cast-page");
+      const frame=await page.getByRole("slider",{name:"Replay position"}).inputValue();
+      if(size.width===360) {
+        const bounds=await room.boundingBox();
+        if(!bounds) throw new Error("Missing room");
+        await page.touchscreen.tap(bounds.x+5,bounds.y+5);
+      } else await room.click({position:{x:5,y:5},force:true});
+      await expect(controls).toHaveClass(/opacity-100/);
+      await expect(room).toHaveAttribute("data-cast-page",before!);
+      await expect(page.getByRole("slider",{name:"Replay position"})).toHaveValue(frame);
+      await expect(page.getByRole("button",{name:"Play replay",exact:true})).toBeVisible();
+    }
+    await page.getByRole("button",{name:"Play replay",exact:true}).focus();
+    await page.keyboard.press("Tab");
+    await expect(controls.locator(":focus-visible")).toHaveCount(1);
+    await page.clock.runFor(4000);
+    await expect(controls).toHaveClass(/opacity-100/);
+    await page.evaluate(() => {if(document.activeElement instanceof HTMLElement) document.activeElement.blur();});
+    await page.clock.runFor(3600);
+    await expect(controls).toHaveClass(/opacity-0/);
+    await page.getByRole("button",{name:"Play replay",exact:true}).focus();
+    await expect(controls).toHaveClass(/opacity-100/);
+  });
+
+  test("format rules remain readable on a short fullscreen screen", async ({page}) => {
+    await page.addInitScript(() => Object.defineProperty(document, "fullscreenEnabled", {configurable:true,value:false}));
+    await page.clock.install();
+    await page.setViewportSize({width:320,height:240});
+    const slug="short-format-rules";
+    const roster=createFormatKernelViewerScenario("safety_bounce_tie").roster;
+    await installDeterministicFormatGame(page,{slug,scenarioId:"safety_bounce_tie",status:"completed"});
+    setFormatTranscript(page,slug,[{id:101,entrySequence:101,firstDurableEventSequence:31,gameId:slug,round:2,phase:"FORMAT_MINGLE",scope:"huddle",dialogueKind:"huddle_speech",fromPlayerId:roster[0]!.id,fromPlayerName:roster[0]!.name,toPlayerIds:[roster[1]!.id],text:"Let's plan together.",timestamp:101,allianceSession:{sessionId:"s",allianceId:"a",allianceName:"The Night Shift",memberIds:roster.slice(0,2).map(player=>player.id)}}]);
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page,"Pause replay");
+    await page.getByRole("button",{name:"Enter fullscreen",exact:true}).click();
+    const button=page.getByRole("button",{name:"Read Safety Bounce format rules"});
+    await advanceUntilVisible(page,button,"Safety Bounce Mingle",150);
+    await button.click();
+    const dialog=page.getByRole("dialog",{name:"Safety Bounce"});
+    await expect(dialog).toBeVisible();
+    const fits=await dialog.evaluate(element=>{const rect=element.getBoundingClientRect();return rect.top>=0 && rect.bottom<=innerHeight && rect.left>=0 && rect.right<=innerWidth;});
+    expect(fits).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(button).toBeFocused();
+  });
+  });
+
   test("Mingle without full-body art rotates its exact audience in the shared fullscreen player", async ({ page }, testInfo) => {
     await page.addInitScript(() => Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: false }));
     await page.setViewportSize({ width: 1920, height: 1080 });
@@ -1138,6 +1217,11 @@ test.describe("format-aware game viewer", () => {
       await page.clock.runFor(10_000);
       await expect(bubble).toHaveCount(0);
       await room.screenshot({ path: testInfo.outputPath(`${roomId}-clear-scene.png`) });
+      const controls = page.locator('[data-player-fullscreen="true"] [data-replay-controls]').filter({has:page.locator("[data-watch-transport]")});
+      await expect(controls).toHaveClass(/opacity-0/);
+      await room.click();
+      await expect(controls).toHaveClass(/opacity-100/);
+      expect(await room.getByRole("img").evaluate(element => element.getBoundingClientRect().left)).toBe(oldLeft);
       await room.click();
       await page.clock.runFor(650); // 400 ms clear hold, then 250 ms into the camera pan.
       await expect(bubble).toHaveCount(0);
@@ -1150,6 +1234,7 @@ test.describe("format-aware game viewer", () => {
       await expect(bubble).toHaveCSS("opacity", "1");
       await page.clock.runFor(10_000);
       await expect(bubble).toContainText("The second accepted line.");
+      await room.click(); // Reveal the hidden transport without advancing the paused scene.
       await expect(page.getByRole("button", { name: /Play\b/ }).filter({ visible: true })).toBeVisible();
     });
   }
@@ -1310,7 +1395,9 @@ test.describe("format-aware game viewer", () => {
       await playbackKey(page, "ArrowRight");
       const house = page.getByRole("region", { name: "House summary" });
       await advanceUntilVisible(page, house, "House summary after hiding solo speech");
-      await expect(house.locator("[data-room-backdrop]")).toBeVisible();
+      const houseStage = page.locator("[data-influence-stage]");
+      await expect(houseStage.locator("[data-room-backdrop]")).toHaveCount(1);
+      await expect(houseStage.locator("[data-room-backdrop]")).toBeVisible();
       await expect(house).toContainText("The House has heard their promises.");
       const bounds = await house.boundingBox();
       expect(bounds!.width).toBeGreaterThan(300);
@@ -1510,8 +1597,16 @@ test.describe("format-aware game viewer", () => {
         await expect.poll(() => layout.evaluate(el => {
           const caption=el.querySelector<HTMLElement>("[data-house-message]")!, copy=caption.querySelector<HTMLElement>("[data-speech-page-copy]")!;
           const a=el.getBoundingClientRect(),b=caption.getBoundingClientRect(),scene=el.querySelector("[data-house-result-scene]")!.getBoundingClientRect();
-          return b.height>=74 && b.bottom<=a.bottom+1 && b.top>=a.top && copy.getBoundingClientRect().height<=copy.parentElement!.clientHeight-21 && (b.top>=scene.bottom || b.left>=scene.right);
-        })).toBe(true);
+          const typography=getComputedStyle(copy);
+          return {
+            // Check usable text and pagination space, independent of decorative padding.
+            readableHeight:parseFloat(typography.fontSize)>=14 && parseFloat(typography.lineHeight)>=20
+              && copy.parentElement!.clientHeight>=parseFloat(typography.lineHeight)+21,
+            insideFrame:b.bottom<=a.bottom+1 && b.top>=a.top,
+            copyFits:copy.getBoundingClientRect().height<=copy.parentElement!.clientHeight-21,
+            separateFromScene:b.top>=scene.bottom || b.left>=scene.right,
+          };
+        }), {message:`House caption layout at ${width}x${height} (${mode})`}).toEqual({readableHeight:true,insideFrame:true,copyFits:true,separateFromScene:true});
         await page.screenshot({path:testInfo.outputPath(`werewolf-house-${width}x${height}-${mode}.png`)});
         if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
       }
@@ -1823,7 +1918,7 @@ test.describe("format-aware game viewer", () => {
       const cast = phase === "INTRODUCTION" ? [] : phase === "LOBBY" ? scenario.roster : [actor, ...mingleAudience];
       await expect(speech.locator("[data-room-player]")).toHaveCount(cast.length);
       for (const player of cast) await expect(speech.locator(`[data-room-player="${player.id}"]`)).toBeVisible();
-      const label = phase === "INTRODUCTION" ? "Introductions" : phase === "LOBBY" ? "Public Lobby" : "Format Mingle";
+      const label = phase === "INTRODUCTION" ? "Introductions" : phase === "LOBBY" ? "Public Lobby" : "Mingle";
       await expect(page.getByRole("heading", { name: label, level: 1, exact: true })).toBeVisible();
       await expect(page.locator(".influence-phase-title")).toHaveCount(0, { timeout: 15_000 });
       // Let this accepted speech finish before the next live publication arrives.

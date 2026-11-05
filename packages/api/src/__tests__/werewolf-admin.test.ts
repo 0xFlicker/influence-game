@@ -247,8 +247,10 @@ test("production reads captured revision bytes, never a later character edit", a
   const select = spyOn(db, "select");
   try {
     const metadata = await werewolfReferenceMetadata(db, g.id, players);
-    expect(select).toHaveBeenCalledTimes(2);
-    expect(select.mock.calls[1]).toEqual([{hash:schema.agentContentAssets.hash, transparentUrl:schema.agentContentAssets.transparentUrl}]);
+    // Two membership lookups precede ordinary revision/asset metadata. Neither
+    // path reads image bytes or the mutable profile during viewer polling.
+    expect(select).toHaveBeenCalledTimes(4);
+    expect(select.mock.calls[3]).toEqual([{hash:schema.agentContentAssets.hash, transparentUrl:schema.agentContentAssets.transparentUrl}]);
     expect(metadata.find(ref=>ref.profile.id===saved.profile.id)).toMatchObject({kind:"full_body",bodyHash:hash,portraitHash:"portrait-hash"});
     expect(metadata.every(ref=>!("bytes" in ref) && !("portraitBytes" in ref))).toBe(true);
   } finally {select.mockRestore();}

@@ -56,7 +56,7 @@ describe("site footer", () => {
 
     expect(links).toEqual([
       { label: "Games", href: "/games" },
-      { label: "Intake", href: "/games/free" },
+      { label: "Seasons", href: "/seasons" },
       { label: "Rules", href: "/rules" },
       { label: "About", href: "/about" },
       { label: "Updates", href: "/updates" },

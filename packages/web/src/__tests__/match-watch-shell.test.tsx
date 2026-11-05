@@ -366,7 +366,9 @@ describe("MatchWatchShell", () => {
     );
     const textHtml = withoutReactTextMarkers(html);
 
-    expect(textHtml).toContain("Round 1 / Format Mingle");
+    expect(textHtml).toContain("Mingle");
+    expect(textHtml).not.toContain("Format Mingle");
+    expect(textHtml).not.toContain("Mingle Feed");
     expect(textHtml).not.toContain("Format Menu");
     expect(textHtml).not.toContain("Format Selection");
     expect(textHtml).not.toContain("Strategy Lens");

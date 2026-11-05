@@ -38,6 +38,7 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts -p 'test_staging_release_source.py'
           python3 -m unittest discover -s scripts -p 'test_staging_batch_*.py'
+          python3 -m unittest discover -s scripts -p 'test_production_batch_*.py'
 
       - name: Check isolated proof publication source guards
         run: python3 -m unittest discover -s scripts -p 'test_staging_proof_source.py'

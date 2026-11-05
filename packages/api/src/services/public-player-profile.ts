@@ -1,3 +1,4 @@
+import { publicAccountAwards } from "./awards.js";
 import type { HouseParticipation, ParticipationFilter } from "@influence/engine/house-participation";
 import { readHouseParticipation } from "./house-participation.js";
 import type { DrizzleDB } from "../db/index.js";
@@ -12,6 +13,7 @@ import {
 import { getCurrentPublicSeasonDashboard } from "./season-read-model.js";
 
 export interface PublicPlayerProfile {
+  awards: Awaited<ReturnType<typeof publicAccountAwards>>;
   identity: PublicPlayerIdentityRef;
   currentSeason: null | {
     season: {
@@ -70,10 +72,11 @@ export async function getPublicPlayerProfile(
   const player = await resolvePublicPlayer(db, identifier);
   if (!player) return PUBLIC_PLAYER_NOT_FOUND;
 
-  const [competition, currentSeasonDashboard, recentResults] = await Promise.all([
+  const [competition, currentSeasonDashboard, recentResults, awards] = await Promise.all([
     getPublicPlayerCompetitionFacts(db, player.internalUserId),
     getCurrentPublicSeasonDashboard(db),
     readHouseParticipation(db, player.internalUserId, { publicOnly: true, gameKind, limit: 5 }),
+    publicAccountAwards(db, player.internalUserId),
   ]);
   const architectStanding = currentSeasonDashboard?.architectStandings
     .find((standing) => standing.owner?.publicId === player.identity.publicId) ?? null;
@@ -83,6 +86,7 @@ export async function getPublicPlayerProfile(
     schemaVersion: 1,
     status: "found",
     profile: {
+      awards,
       identity: player.identity,
       currentSeason: currentSeasonDashboard
         ? {

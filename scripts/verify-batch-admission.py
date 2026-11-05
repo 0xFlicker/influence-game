@@ -1,4 +1,4 @@
-"""Verify an infra-owned Batch deployment receipt against one exact staging release.
+"""Verify an infra-owned Batch deployment receipt against one exact environment release.
 
 This contract is also consumed independently by linode-iac before host access.
 No credentials, arbitrary URLs or moving image tags are accepted as release inputs.
@@ -40,11 +40,23 @@ def expected(env):
                       ('mirrorRunId', 'WORKER_MIRROR_RUN_ID'), ('mirrorRunAttempt', 'WORKER_MIRROR_RUN_ATTEMPT')]:
         require(re.fullmatch('[1-9][0-9]*', env.get(name, '')), 'invalid source attempt')
         value[key] = int(env[name])
+    environment = env.get('BATCH_ENVIRONMENT', 'staging')
+    require(environment in ('prod', 'staging'), 'invalid Batch environment')
+    value['environment'] = environment
+    if environment == 'prod':
+        for field, name in [('approvalRunId', 'APPROVAL_RUN_ID'), ('approvalRunAttempt', 'APPROVAL_RUN_ATTEMPT')]:
+            require(re.fullmatch('[1-9][0-9]*', env.get(name, '')), 'missing production approval')
+            value[field] = int(env[name])
+        value['approvalArtifact'] = env.get('APPROVAL_ARTIFACT')
+        require(value['approvalArtifact'] == f"production-approval-candidate-{value['approvalRunId']}-{value['approvalRunAttempt']}", 'invalid production approval artifact')
+        value['approvalReceiptDigest'] = env.get('APPROVAL_DIGEST', '')
+        require(re.fullmatch('sha256:[a-f0-9]{64}', value['approvalReceiptDigest']), 'invalid approval digest')
     return value
 
 
 def verify(env, request=github):
     identity = expected(env)
+    environment = identity['environment']
     run_id, attempt = [env.get(key, '') for key in ('BATCH_ADMISSION_RUN_ID', 'BATCH_ADMISSION_RUN_ATTEMPT')]
     require(all(re.fullmatch('[1-9][0-9]*', value) for value in (run_id, attempt)), 'missing Batch admission attempt')
     run_id, attempt = int(run_id), int(attempt)
@@ -52,7 +64,7 @@ def verify(env, request=github):
     require(run.get('id') == run_id and run.get('run_attempt') == attempt
             and run.get('status') == 'completed' and run.get('conclusion') == 'success'
             and run.get('event') == 'workflow_dispatch' and run.get('head_branch') == 'main'
-            and run.get('path') == '.github/workflows/house-render-batch-staging-deploy.yml'
+            and run.get('path') == f'.github/workflows/house-render-batch-{environment}-deploy.yml'
             and run.get('repository', {}).get('id') == 1405952636
             and run.get('head_repository', {}).get('id') == 1405952636
             and run.get('repository', {}).get('owner', {}).get('id') == 334422757,
@@ -76,17 +88,17 @@ def verify(env, request=github):
     require(not env.get('BATCH_ADMISSION_RECEIPT_DIGEST') or env['BATCH_ADMISSION_RECEIPT_DIGEST'] == digest,
             'Batch admission receipt digest mismatch')
     receipt = json.loads(raw)
-    require(receipt.get('schemaVersion') == 1 and receipt.get('environment') == 'staging'
+    require(receipt.get('schemaVersion') == 1 and receipt.get('environment') == environment
             and receipt.get('state') == 'admitted' and all(receipt.get(key) == value for key, value in identity.items())
             and receipt.get('deploymentRunId') == run_id and receipt.get('deploymentRunAttempt') == attempt
             and receipt.get('infraSha') == run.get('head_sha') and re.fullmatch('[a-f0-9]{40}', receipt['infraSha'])
-            and receipt.get('workerImage') == ECR + identity['workerDigest'], 'Batch admission differs from release')
+            and receipt.get('workerImage') == ECR.replace('staging', environment) + identity['workerDigest'], 'Batch admission differs from release')
     require(re.fullmatch(r'https://[a-z0-9]+\.lambda-url\.us-west-1\.on\.aws/', receipt.get('submitUrl', '')),
             'invalid Batch submission URL')
     require(set(receipt.get('lanes', {})) == {'trailer', 'studio-export'}, 'missing Batch lanes')
     for lane, values in receipt['lanes'].items():
         prefix = 'arn:aws:batch:us-west-1:978355607658:'
-        name = 'house-render-batch-staging-' + lane
+        name = f'house-render-batch-{environment}-' + lane
         require(values.get('queueArn') == prefix + 'job-queue/' + name
                 and re.fullmatch(re.escape(prefix + 'job-definition/' + name) + r':[1-9][0-9]*', values.get('definitionArn', '')),
                 'invalid Batch lane identity')
@@ -111,6 +123,6 @@ if __name__ == '__main__':
                                                            'BATCH_ADMISSION_RECEIPT_DIGEST')), 'unexpected Batch admission')
             result = {'required': False}
         Path(args.output).write_text(json.dumps(result, indent=2) + '\n')
-        print('Verified staging Batch admission requirement before host access')
+        print('Verified Batch admission requirement before host access')
     except Exception:
-        raise SystemExit('Staging Batch admission rejected before host access')
+        raise SystemExit('Batch admission rejected before host access')

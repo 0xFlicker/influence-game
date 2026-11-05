@@ -14,12 +14,23 @@ import { TwoNamesRoleAnchors, TwoNamesStage, TwoNamesVoteStage, TwoNamesResultSt
 import { FORMAT_PRESENTATION_METADATA } from "@influence/engine/format-presentation-metadata";
 import {ResultStage, formatResultPlayers} from "./result-stage";
 import {resultRoom} from "./influence-rooms";
+import {TimedSpeech} from "./timed-speech";
 
 export function FormatPresentation(sourceProps: Parameters<typeof FormatPresentationContent>[0]) {
   const publicDelivery = usePublicMediaDelivery();
   const delivery = useMemo(() => publicMediaDeliveryView({cue:sourceProps.cue, roster:sourceProps.roster}, publicDelivery), [sourceProps.cue, sourceProps.roster, publicDelivery]);
   const props = {...sourceProps, ...delivery};
   const {cue, roster} = props;
+  if (cue.kind === "format_selected" && cue.stage === "rules_reveal" && !props.currentStateEntry) {
+    const metadata = FORMAT_PRESENTATION_METADATA[cue.formatId];
+    return <ResultStage packed compactCast players={formatResultPlayers(cue, roster)} background={resultRoom(cue.phase)}>
+      <section data-format-cue="format_selected" data-format-rules={cue.formatId} data-format-auto-selected={!cue.before.offeredFormatIds ? cue.formatId : undefined} className="flex min-h-0 flex-1 flex-col gap-2 px-2 py-1">
+        <div className="shrink-0"><p className="text-[10px] uppercase tracking-[0.16em] text-cyan-100/60">Format selected</p>
+          <h2 className="text-xl font-semibold text-white">{metadata.displayName}</h2></div>
+        <TimedSpeech text={metadata.conciseRules} elapsedMs={props.elapsedMs ?? 0} progress={Math.min(1, (props.elapsedMs ?? 0) / cue.baseDurationMs)} className="text-sm leading-5 text-white/90" />
+      </section>
+    </ResultStage>;
+  }
   if(cue.kind === "format_menu" && cue.resultsPresentation && cue.compactEmpower) {
     const player=roster.find(player=>player.id===cue.empoweredId);
     if(!player) throw new Error("Format menu references a missing Empowered player");

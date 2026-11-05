@@ -7,7 +7,7 @@ from pathlib import Path
 import unittest
 import zipfile
 
-spec = importlib.util.spec_from_file_location('admission', Path(__file__).with_name('verify-staging-batch-admission.py'))
+spec = importlib.util.spec_from_file_location('admission', Path(__file__).with_name('verify-batch-admission.py'))
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 

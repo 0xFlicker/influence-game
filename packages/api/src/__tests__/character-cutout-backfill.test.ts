@@ -42,6 +42,8 @@ async function complete(id: string) {
 
 test("CLI rejects ambiguous environments, staging, remote URLs and implicit/unbounded writes", () => {
   const parse = (args: string[], env = {}) => parseCutoutCommand(args, env);
+  expect(parse(["inventory", "--env", "local", "--championship", "event"]).selection).toEqual({ championship: "event" });
+  expect(() => parse(["inventory", "--env", "local", "--championship", "event", "--agent", agentId])).toThrow("exactly one");
   expect(() => parse(["run", "--agent", agentId, "--limit", "1"])).toThrow("Explicit");
   expect(() => parse(["run", "--env", "staging", "--agent", agentId])).toThrow("hard-disabled");
   expect(() => parse(["run", "--env", "local", "--agent", agentId, "--limit", "1"], { INFLUENCE_DEPLOYMENT_ENVIRONMENT: "staging" })).toThrow("hard-disabled");

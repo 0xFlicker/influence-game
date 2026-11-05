@@ -16,13 +16,13 @@ export interface ThoughtTiming {
   returnAtMs: number;
 }
 export function thoughtTiming(text: string | null, speech: SpeechBoundaries | null,
-  {readingRate = 1, motionScale = 1}: {readingRate?: number; motionScale?: number} = {}): ThoughtTiming | null {
+  {readingRate = 1, motionScale = 1, minimumReadingMs = 0}: {readingRate?: number; motionScale?: number; minimumReadingMs?: number} = {}): ThoughtTiming | null {
   const normalized = text?.trim();
   if (!normalized) return null;
   const enterMs = 900 * motionScale;
   const showAtMs = enterMs + 150 * motionScale;
   const readAtMs = showAtMs + 250 * motionScale;
-  const hideAtMs = readAtMs + Math.max(2800, normalized.split(/\s+/).length * 320) / readingRate;
+  const hideAtMs = readAtMs + Math.max(minimumReadingMs, Math.max(2800, normalized.split(/\s+/).length * 320) / readingRate);
   const returnAtMs = hideAtMs + 250 * motionScale;
   return {text: normalized, insertAt: speech?.showAtMs ?? 0, enterMs, showAtMs, readAtMs, hideAtMs, returnAtMs,
     duration: returnAtMs + 900 * motionScale};

@@ -685,3 +685,28 @@ separately approved operator recovery procedure.
 ## Retrospective contract layer
 
 [RT-01](game-retrospective-contract.md) adds an immutable private input table and validated retrospective records. Current runners/settlement remain at their existing boundary until later tasks are integrated; this intermediate branch is not a retrospective release. No new worker or queue is introduced. Provider generation, recovery controls, early result reads and completion accounting are subsequent tasks.
+
+### Daily Free intake between seasons
+
+A new scheduled draw requires a season accepting admissions. The check runs
+under the shared enrollment/closeout transaction lock, and the accepted timestamp
+is reused when binding the roster. A closed, finalized, not-yet-open, expired or
+missing season returns a successful no-op with `drawn: false` and
+`code: season_intake_closed`; it creates no game and does not modify the queue.
+Duplicate requests still return their original game.
+
+The Daily Free start endpoint requires a previously assigned season
+(`season_admission_required` for legacy unassigned free lobbies). It does not
+require that season still accept new entrants: already-admitted games can start
+and finish while the season is closing. Final-season readiness checks still
+apply. Custom-game admission/start routes are unchanged.
+
+Closing intake through the season close endpoint clears standing queue entries,
+rejects new enrollment and moves the season to closing. It does not finalize
+standings or cancel existing games.
+
+## Concurrent startup migrations
+
+Gateway and worker both use `runMigrations`, which serializes journal inspection and application on one dedicated transaction/backend. Use this runner for concurrent startup; direct Drizzle migration commands and older binaries do not share its lock. After a migration error, inspect schema/journal evidence before attempting repair. A duplicate catalog error may mean another startup completed successfully; do not delete tables or journal rows. See [serialization and disposable failure tests](solutions/database/serialized-startup-migrations.md).
+
+Local public uploads default to a directory relative to the API working directory. Switching worktrees does not move those files with the shared development database. If saved image URLs return 404, inspect the former checkout's `.local-uploads` and recover the exact referenced bytes into the current directory without overwriting existing files; do not regenerate character images or reset the database to repair a missing local file.

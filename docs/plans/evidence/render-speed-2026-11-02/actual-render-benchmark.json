@@ -1,0 +1,135 @@
+{
+  "status": "Influence four-trial matrix complete; Werewolf three completed trials plus separately verified diagnostic recovery",
+  "geometry": [
+    1920,
+    1080,
+    30
+  ],
+  "framesPerMovie": 3600,
+  "results": [
+    {
+      "game": "werewolf",
+      "singleMedianSeconds": 265.721440292,
+      "fourMedianSeconds": 84.85764254149998,
+      "speedup": 3.1313790052799053,
+      "trials": [
+        {
+          "id": "two-minute-gameplay-c1-r0",
+          "concurrency": 1,
+          "frames": 3600,
+          "fromFrame": 4548,
+          "seconds": 265.721440292,
+          "effectiveFps": 13.548022305027315,
+          "decodedFramesAndTimestampsExact": true,
+          "decodedAudioExact": true,
+          "differingFrames": 0,
+          "reportedFrameRenderingSeconds": 253.49,
+          "reportedEncodingSeconds": 12.038,
+          "resolvedConcurrency": 1,
+          "sampledPeakProcessTreeRssGiB": 1.9396514892578125
+        },
+        {
+          "id": "two-minute-gameplay-c4-r1",
+          "concurrency": 4,
+          "frames": 3600,
+          "fromFrame": 4548,
+          "seconds": 84.138062208,
+          "effectiveFps": 42.78681853998898,
+          "decodedFramesAndTimestampsExact": true,
+          "decodedAudioExact": true,
+          "differingFrames": 0,
+          "reportedFrameRenderingSeconds": 70.967,
+          "reportedEncodingSeconds": 12.99,
+          "resolvedConcurrency": 4,
+          "sampledPeakProcessTreeRssGiB": 2.4634552001953125
+        },
+        {
+          "id": "two-minute-gameplay-c4-r2",
+          "concurrency": 4,
+          "frames": 3600,
+          "fromFrame": 4548,
+          "seconds": 85.57722287499998,
+          "effectiveFps": 42.067268357824716,
+          "decodedFramesAndTimestampsExact": true,
+          "decodedAudioExact": true,
+          "differingFrames": 0,
+          "reportedFrameRenderingSeconds": 70.605,
+          "reportedEncodingSeconds": 14.774,
+          "resolvedConcurrency": 4,
+          "sampledPeakProcessTreeRssGiB": 2.4890289306640625
+        }
+      ]
+    },
+    {
+      "game": "influence",
+      "singleMedianSeconds": 542.766499292,
+      "fourMedianSeconds": 171.00134741650004,
+      "speedup": 3.174048084954611,
+      "trials": [
+        {
+          "id": "two-minute-gameplay-c1-r0",
+          "concurrency": 1,
+          "frames": 3600,
+          "fromFrame": 7891,
+          "seconds": 545.372840625,
+          "effectiveFps": 6.600988776548502,
+          "decodedFramesAndTimestampsExact": true,
+          "decodedAudioExact": true,
+          "differingFrames": 0,
+          "reportedFrameRenderingSeconds": 530.858,
+          "reportedEncodingSeconds": 14.268,
+          "resolvedConcurrency": 1,
+          "sampledPeakProcessTreeRssGiB": 2.8720703125
+        },
+        {
+          "id": "two-minute-gameplay-c4-r1",
+          "concurrency": 4,
+          "frames": 3600,
+          "fromFrame": 7891,
+          "seconds": 168.7821348750001,
+          "effectiveFps": 21.329271623837183,
+          "decodedFramesAndTimestampsExact": true,
+          "decodedAudioExact": true,
+          "differingFrames": 0,
+          "reportedFrameRenderingSeconds": 152.425,
+          "reportedEncodingSeconds": 16.086,
+          "resolvedConcurrency": 4,
+          "sampledPeakProcessTreeRssGiB": 3.9951629638671875
+        },
+        {
+          "id": "two-minute-gameplay-c4-r2",
+          "concurrency": 4,
+          "frames": 3600,
+          "fromFrame": 7891,
+          "seconds": 173.22055995799997,
+          "effectiveFps": 20.7827523526819,
+          "decodedFramesAndTimestampsExact": true,
+          "decodedAudioExact": true,
+          "differingFrames": 0,
+          "reportedFrameRenderingSeconds": 156.746,
+          "reportedEncodingSeconds": 16.199,
+          "resolvedConcurrency": 4,
+          "sampledPeakProcessTreeRssGiB": 3.88909912109375
+        },
+        {
+          "id": "two-minute-gameplay-c1-r3",
+          "concurrency": 1,
+          "frames": 3600,
+          "fromFrame": 7891,
+          "seconds": 540.1601579590001,
+          "effectiveFps": 6.6646899941725275,
+          "decodedFramesAndTimestampsExact": true,
+          "decodedAudioExact": true,
+          "differingFrames": 0,
+          "reportedFrameRenderingSeconds": 525.034,
+          "reportedEncodingSeconds": 14.807,
+          "resolvedConcurrency": 1,
+          "sampledPeakProcessTreeRssGiB": 2.1429901123046875
+        }
+      ]
+    }
+  ],
+  "scope": "Actual product renderer, full-input frozen manifests, two-minute gameplay ranges, serial one/four/four/one order. Phase durations from Remotion callbacks; RSS sampled from process tree every two seconds.",
+  "werewolfFailure": "Closing one-worker trial failed with local asset 404. Fresh instrumented one-worker recovery took 264.679s and matches all frames/timestamps/audio. Cause remains unestablished; see actual-render-partial.json.",
+  "limits": "Local nonisolated M5 Max desktop. No full-match throughput extrapolation or Linux worker capacity qualification."
+}

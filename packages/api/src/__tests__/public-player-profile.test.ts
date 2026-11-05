@@ -1,3 +1,5 @@
+import { grantAward, revokeAward } from "../services/awards.js";
+import { assertPublicPlayerProfileEnvelope } from "../game-mcp/public-player-tool-schema.js";
 import { contentImageFixture } from "./content-image-fixture.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
@@ -150,6 +152,8 @@ describe("public player profile", () => {
     expect(byHandle.profile.agents).toEqual([
       {
         name: "alpha",
+        profileHref: expect.stringMatching(/^\/agents\/[A-Za-z0-9_-]+$/),
+        awards: [],
         avatarUrl: null,
         role: null,
         competition: {
@@ -160,6 +164,8 @@ describe("public player profile", () => {
       },
       {
         name: "Zulu",
+        profileHref: `/agents/${fixture.zuluProfileId}`,
+        awards: [],
         avatarUrl: await contentImageFixture("pfp/zulu.png"),
         role: {
           key: "strategic",
@@ -251,6 +257,14 @@ describe("public player profile", () => {
 
   test("REST returns deep profile parity with the MCP read model and no-store on every terminal state", async () => {
     const fixture = await seedPublicPlayerFixture(db);
+    const [recipient] = await db.select().from(schema.users).where(eq(schema.users.publicId, fixture.publicId));
+    await grantAward(db, { definitionCode: "season-0-account-participant", recipient: { type: "account", id: recipient!.id },
+      actorId: recipient!.id, sourceKey: "profile-parity", reason: "Private allocation reason", evidence: { private: "Private award evidence" }, requestId: "profile-parity" });
+    await grantAward(db, { definitionCode: "season-0-agent-participant", recipient: { type: "agent", id: fixture.zuluProfileId },
+      actorId: recipient!.id, sourceKey: "agent-profile-parity", reason: "Private agent allocation", evidence: { private: "Private agent evidence" }, requestId: "agent-profile-parity" });
+    const revoked = await grantAward(db, { definitionCode: "season-0-agent-crown", recipient: { type: "agent", id: fixture.zuluProfileId },
+      actorId: recipient!.id, sourceKey: "revoked-profile-fixture", reason: "Revocation fixture", evidence: {}, requestId: "revoked-profile-fixture" });
+    await revokeAward(db, { grantId: revoked.id, actorId: recipient!.id, reason: "Exclude revoked awards from public cards", requestId: "revoke-profile-fixture" });
     const app = new Hono();
     app.route("/", createPublicPlayerRoutes(db));
 
@@ -270,6 +284,20 @@ describe("public player profile", () => {
     expect(foundResponse.status).toBe(200);
     expect(foundResponse.headers.get("Cache-Control")).toBe("no-store");
     expect(found).toEqual(mcp);
+    if (found.status === "found") {
+      expect(found.profile.awards).toHaveLength(1);
+      const agentAwards = found.profile.agents.find(agent => agent.name === "Zulu")!.awards!;
+      expect(agentAwards).toHaveLength(1);
+      expect(agentAwards[0]!.code).toBe("season-0-agent-participant");
+      expect(JSON.stringify(agentAwards)).not.toContain("Private");
+      const injectedAgent = structuredClone(found);
+      Object.assign(injectedAgent.profile.agents.find(agent => agent.name === "Zulu")!.awards![0]!, { evidence: "private" });
+      expect(() => assertPublicPlayerProfileEnvelope(injectedAgent)).toThrow("exactly");
+      expect(JSON.stringify(found.profile.awards)).not.toContain("Private");
+      const injected = structuredClone(found);
+      Object.assign(injected.profile.awards[0]!, { evidence: "private" });
+      expect(() => assertPublicPlayerProfileEnvelope(injected)).toThrow("exactly");
+    }
     for (const auth of [gamesAuth("subject"), gamesAuth("producer")]) {
       const response = await server.handle({
         jsonrpc: "2.0",

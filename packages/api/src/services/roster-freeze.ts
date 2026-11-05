@@ -1,3 +1,4 @@
+import { freezeChampionshipInfluenceRoster } from "./championship-game-roster.js";
 import { randomUUID } from "node:crypto";
 import { houseFullBodyUrl } from "@influence/engine/house-character-art";
 import { restoreHouseCast, HouseCastCapacityError, getHousePersonaDetails } from "@influence/engine";
@@ -73,6 +74,8 @@ async function freezeWaitingRoster(
   input: { gameId: string; frozenAt: string },
 ): Promise<FrozenRoster> {
   const lockedGame = await lockWaitingGameForRosterWrite(tx, input.gameId);
+  const competitionRoster = await freezeChampionshipInfluenceRoster(tx, input.gameId);
+  if (competitionRoster) return competitionRoster;
   await validateSeasonForFreeze(tx, lockedGame);
   const { game, seats: projectedSeats } = await projectWaitingOwnedRosterInTransaction(
     tx,

@@ -1,3 +1,5 @@
+import { storeJson, readJson } from "./payload-storage.js";
+import type { SeasonFinalizationSnapshot } from "./season-finalization-snapshot.js";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
@@ -314,6 +316,17 @@ export async function finalizeSeason(
       };
     }).sort(compareArchitectStandings);
     const architectChampion = architects[0]!;
+
+    const snapshot: SeasonFinalizationSnapshot = {
+      version: 1, seasonId, finalizedAt, ratingPolicyVersion: COMPETITION_RATING_POLICY_VERSION,
+      qualification: agents.map((agent, index) => ({ agentId: agent.agentId, ownerId: agent.ownerId, name: agent.agentName, rank: index + 1, seasonPoints: agent.totalPoints })),
+      agents, architects,
+      completedGameIds: (await tx.select({ id: schema.games.id }).from(schema.games).where(and(eq(schema.games.seasonId, seasonId), eq(schema.games.status, "completed")))).map(game => game.id),
+      receipts: await tx.select().from(schema.competitionReceipts).where(eq(schema.competitionReceipts.seasonId, seasonId)).orderBy(asc(schema.competitionReceipts.id)),
+    };
+    const storedSnapshot = await storeJson(snapshot);
+    await readJson(storedSnapshot);
+    await tx.insert(schema.seasonFinalizations).values({ seasonId, snapshot: storedSnapshot });
 
     const honor = (await tx.insert(schema.seasonHonors).values({
       id: randomUUID(),

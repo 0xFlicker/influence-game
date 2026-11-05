@@ -1,3 +1,4 @@
+import { notifyChampionshipGameCompletion } from "./championship-runtime.js";
 import { providerRequestTimeoutMs } from "./provider-request-timeout.js";
 import { ProviderDeferredError } from "@influence/engine";
 import { deferProviderGame } from "./provider-game-retry.js";
@@ -985,6 +986,7 @@ async function runGameAsync(
     }
     await reconcileAcceptedActionsForLifecycle(db, { gameId, ownerEpoch });
     await settleDurableTerminalGame(db, { gameId, ownerEpoch });
+    await notifyChampionshipGameCompletion(db, gameId);
     clearMemoryOnExit = true;
     const refresh = await tryRefreshGameWatchStateSummary(db, gameId, "completion");
     await publishCurrentWatchState(db, gameId, "completion", refresh?.watchState);
@@ -1026,6 +1028,7 @@ async function runGameAsync(
       try {
         const settlement = await getGameCompletionSettlementSummary(db, gameId);
         if (settlement.state === "completed") {
+          await notifyChampionshipGameCompletion(db, gameId);
           clearMemoryOnExit = true;
           const refresh = await tryRefreshGameWatchStateSummary(db, gameId, "completion_confirmed");
           await publishCurrentWatchState(db, gameId, "completion confirmed", refresh?.watchState);

@@ -1,0 +1,34 @@
+{
+  "status": "Bounded offline correctness comparison passed with retained harness failure and fresh-container recovery",
+  "environment": {
+    "lockHash": "9036e2122ed5b44f6a1c50ba617884c8c73932ff1f708725dee2622bf633093c",
+    "expectedLockHash": "9036e2122ed5b44f6a1c50ba617884c8c73932ff1f708725dee2622bf633093c",
+    "platform": "linux",
+    "arch": "x64",
+    "bun": "1.3.14",
+    "renderer": "4.0.486",
+    "browser": "Chromium 156.0.8078.73 built on Debian GNU/Linux 13 (trixie)",
+    "sourceHashes": {
+      "packages/web/src/lib/replay-export/render.ts": "8eb51417d6f7f94eeaa50b0fe13cb05ca99068187c2fa7a60bdb085d3c5cbb4f",
+      "packages/web/src/remotion/house-replay/frame.tsx": "524c2b5d1e99586b8cfa1ba7a70b63ff9e9e5b49a6d23354d5004b3c004e4f9f",
+      "packages/web/src/app/games/[slug]/components/safety-chain.tsx": "3ff6ff77cadc9f1db25699e3408d93fe5e75cf924d71e07e92f05985aba9f96a"
+    }
+  },
+  "movies": 18,
+  "frames": 1080,
+  "allDecodedFramesTimestampsAudioExact": true,
+  "bothPreparedManifestsExact": true,
+  "originalRun": {
+    "exitCode": 1,
+    "completedMovies": 17,
+    "reason": "Diagnostic Bun PID 1 did not reap Chromium children across repeated renders; cgroup pids.events reports max 24, 505/512 tasks and 344 zombie processes. Stopped owned container; final protocol target-closed error retained."
+  },
+  "recovery": {
+    "exitCode": 0,
+    "movies": 1,
+    "change": "Fresh otherwise matched offline container with Docker --init; same prepared input and actual renderReplay.",
+    "seconds": 27.9
+  },
+  "limits": "Emulated Linux x86_64 correctness only, not native worker throughput or capacity. Nine diagnostic selected cuts per mode compiled with existing presentation/audio compiler; no original selection or bundle modified.",
+  "artifactRoot": ".renders/linux-render-proof-2026-11-03/"
+}

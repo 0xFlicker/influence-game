@@ -917,7 +917,7 @@ A durable suspension caused by the explicit **Require visuals** policy. It prese
 
 A chronological record of completed owned seats across game kinds, independent of competition eligibility. One account can have several participations in a game, including opposing Werewolf factions. History preserves the frozen character identity and saved episode title. Public profiles discover only Public, nonhidden games; owners also see their own Unlisted participation. These are outcome-bearing surfaces, labeled Results · Spoilers.
 
-Influence history uses its completed-results projection for placement and eligible competition receipts for points. A missing historical placement remains unknown. Werewolf history uses canonical faction outcomes: an eliminated member of the winning faction still won, and survival is a separate fact. Missing or invalid terminal evidence displays Result unavailable. History reads never award scores. Influence account ELO, career counters, agent competition ratings and championship standings remain Influence-only; there is no combined House rating or Werewolf scoring policy.
+Influence history uses its completed-results projection for placement and eligible competition receipts for points. A missing historical placement remains unknown. Werewolf history uses canonical faction outcomes: an eliminated member of the winning faction still won, and survival is a separate fact. Missing or invalid terminal evidence displays Result unavailable. History reads never award scores. Influence account ELO, career counters, agent competition ratings and season standings remain Influence-only; there is no combined House rating. A separate championship event may define an explicit Werewolf series scoring policy.
 
 ## Private payload reference
 
@@ -1040,3 +1040,35 @@ Studio and local video rendering share Werewolf's compact result/cast layout and
 
 
 **Historical reference audit** is a read-only inspection of an explicitly supplied document set and hash-verified payload bodies. It classifies delivery references while preserving canonical keys/prose; completeness is scoped to those inputs and cannot authorize source retirement.
+## Championship events and award grants
+
+A championship event links to a source season without reusing rated season membership for display. Its qualification evidence, frozen competition builds, private role order and game membership are separate authorities. Live owner edits do not change the frozen build. Award definitions describe achievements; evidence-backed grants attach one achievement to one account or agent and retain revocation history. Exact-match scheduling uses the game worker and its existing durable recovery. Canonical results settle once, and frozen award allocations deliver idempotently. See [championship implementation](docs/championship-events.md) for operating contracts, policy decisions and remaining work.
+
+Championship artwork preparation creates an immutable competition revision linked to the original agent/account, without replacing the live profile. Existing headshot/body pixels are retained; missing artwork is generated from frozen identity and image references. Provider requests and accepted outputs are durable evidence: retries reuse the saved request even across template updates. All games use the same published content-addressed images. A missing image is preparation work, never a qualification exclusion.
+
+The public championship room embeds the existing game viewer without changing its scenes. Browser-window theater and native fullscreen remain player controls. Its lineup reads only public artwork from frozen competition builds; content-addressed transparent derivatives never replace those builds. Roster lock registers cutout demand automatically; a championship-scoped backfill repairs older locked rosters. Werewolf viewing-mode space is reserved across match changes, while Influence has its own preview and no role-view selector.
+
+Championship result corrections append a new derived scoring revision while preserving canonical games and prior rows. Only the active revision/game counts in standings. Affected champion allocations are superseded and recomputed; obsolete grants remain revoked with their evidence. Recipient corrections link a new grant to the original instead of rewriting attribution. Manual revocations remain explicit producer decisions across result recomputation.
+
+Season 0 earned badges are finalized-season achievements, not championship-activation rewards. Frozen finalization evidence determines crowns and one-completed-game participation for agents and accounts. Idempotent season reconciliation preserves original grants and audited corrections; Top 8 and championship titles remain event achievements.
+
+## Failed-game replacement
+
+An authorized admin Retry game action fences and hides a suspended or cancelled attempt while retaining its canonical history and evidence. One immutable original-to-replacement record makes repeat requests return the same replacement. The new game uses admitted frozen inputs, with the same competitive roles; championship standings count only the current match attempt. A captured outcome must use completion recovery instead of new gameplay. Explicit launch targets that exact replacement, independently of a discovery timer.
+
+Daily Free scheduled draws require a season accepting admissions under the
+shared enrollment/closeout lock. One accepted timestamp controls the draw's
+season binding. Scheduled start requires an assigned season but permits
+already-admitted games during closing; custom games remain independent.
+
+### Startup migration serialization
+
+Gateway and game-worker startups share one database-scoped transaction advisory lock acquired before journal bootstrap/read and held through migration commit. A dedicated backend at READ COMMITTED serializes both the decision and its DDL; rollback or process failure releases it. Existing migration hashes and journal rows remain unchanged. See [migration recovery](docs/solutions/database/serialized-startup-migrations.md).
+
+### Season creation continuation
+
+An agent created from the Seasons entry action carries the selected season ID through its editor draft, stable creation request and queue admission. Creation and entry remain independently recoverable: a saved agent survives failed admission, duplicate requests reuse it, and `expectedSeasonId` prevents a closed-season continuation from entering a newer season. Ordinary agent creation does not enroll.
+
+### Saved-agent visual update
+
+An explicit owner action that fills missing presentation fields through durable, private stage checkpoints and the normal saved-agent revision/moderation path. Status reads may resume an already-authorized job but never create one. Provider retries preserve uncertain operation identities; an owner edit fences stale preparation. See [saved-agent visual update](docs/solutions/ui/saved-agent-visual-update.md).

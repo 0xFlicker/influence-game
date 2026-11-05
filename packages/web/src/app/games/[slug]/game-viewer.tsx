@@ -71,6 +71,7 @@ import {
 } from "./components/format-presentation-model";
 
 export function GameViewer({
+  contained = false,
   gameId,
   completedMode = null,
   initialGame,
@@ -1027,13 +1028,14 @@ export function GameViewer({
       ? `live:${game.id}`
       : `replay:${game.id}:${messages.length}:${messages[0]?.id ?? "start"}:${messages[messages.length - 1]?.id ?? "end"}:${startSequence ?? "start"}`;
     return (
-      <div id={matchWatchDecision.mode === "replay" ? "replay" : undefined} className="scroll-mt-24">
+      <div id={matchWatchDecision.mode === "replay" ? "replay" : undefined} className={contained ? "relative h-full min-h-0" : "scroll-mt-24"}>
         {game.visualPaused && (
           <div role="status" className="mb-3 rounded-lg border border-amber-700/40 bg-amber-950/30 px-4 py-3 text-sm text-amber-100">
             Paused for visual repair. Play will continue after the operator resumes the game.
           </div>
         )}
         <MatchWatchShell
+          contained={contained}
           key={matchWatchKey}
           game={game}
           messages={messages}

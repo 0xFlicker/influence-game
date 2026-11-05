@@ -145,7 +145,6 @@ export interface MatchWatchModel {
   roundLabel: string;
   phase: PhaseKey;
   phaseLabel: string;
-  phaseFeedLabel: string;
   counts: MatchWatchCounts;
   players: MatchWatchPlayerCard[];
   selectedPlayer: MatchWatchPlayerCard | null;
@@ -439,7 +438,6 @@ export function buildMatchWatchModel({
     roundLabel: `Round ${round}`,
     phase,
     phaseLabel: PHASE_LABELS[phase],
-    phaseFeedLabel: `${PHASE_LABELS[phase]} Feed`,
     counts,
     players,
     selectedPlayer: players.find((card) => card.player.id === selectedPlayer?.id) ?? null,

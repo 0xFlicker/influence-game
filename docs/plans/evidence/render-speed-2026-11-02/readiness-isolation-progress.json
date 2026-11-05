@@ -1,0 +1,72 @@
+{
+  "preparation": [
+    {
+      "trial": 0,
+      "preparedSeconds": 75.08291966700001,
+      "completeManifestEqualToOriginalPng": true,
+      "differentFields": [],
+      "frames": 1376
+    },
+    {
+      "trial": 1,
+      "preparedSeconds": 76.49722429100001,
+      "completeManifestEqualToOriginalPng": true,
+      "differentFields": [],
+      "frames": 1376
+    }
+  ],
+  "pixelDiagnostics": [
+    {
+      "fixture": "handoff-c4-r0",
+      "frame": 689,
+      "meanChannelDifference": 0.04289496527777778,
+      "maxChannelDifference": 66,
+      "changedPixels": 33958,
+      "bbox": [
+        384,
+        622,
+        1841,
+        911
+      ]
+    },
+    {
+      "fixture": "thinking-c4-r1",
+      "frame": 200,
+      "meanChannelDifference": 0.020224247685185184,
+      "maxChannelDifference": 10,
+      "changedPixels": 47403,
+      "bbox": [
+        64,
+        32,
+        1823,
+        1079
+      ]
+    }
+  ],
+  "renderMatrix": [
+    {
+      "id": "thinking-c1-r0",
+      "seconds": 42.341490875000005,
+      "frames": 300,
+      "differentFrames": 0
+    },
+    {
+      "id": "thinking-c4-r1",
+      "seconds": 16.859628000000004,
+      "frames": 300,
+      "differentFrames": 0
+    },
+    {
+      "id": "thinking-c1-r2",
+      "seconds": 46.44836679099999,
+      "frames": 300,
+      "differentFrames": 159
+    },
+    {
+      "id": "thinking-c4-r3",
+      "seconds": 20.663634165999987,
+      "frames": 300,
+      "differentFrames": 0
+    }
+  ]
+}

@@ -22,7 +22,7 @@ import {
 } from "../services/agent-revisions.js";
 import { fingerprintEffectiveRuntimeSnapshot } from "../services/revision-policy.js";
 import { setupTestDB } from "./test-utils.js";
-import { createSeason } from "../services/seasons.js";
+import { createSeason, closeSeason, getActiveSeason } from "../services/seasons.js";
 import { createGameRoutes } from "../routes/games.js";
 import { createSessionToken } from "../middleware/auth.js";
 
@@ -40,6 +40,23 @@ describe("queue enrollment service", () => {
     db = await setupTestDB();
     await seedUsers(db);
     await createSeason(db, { slug: "queue-season", name: "Queue Season" });
+  });
+
+  test("season intent protects join, switch and leave without modifying the standing entry", async () => {
+    await insertAgent(db, { id: "intent-one", userId: USER_A_ID, name: "First" });
+    await insertAgent(db, { id: "intent-two", userId: USER_A_ID, name: "Second" });
+    const [season] = await db.select().from(schema.seasons);
+    const context = { userId: USER_A_ID };
+    await expect(joinQueue(db, context, { queueType: "daily-free", agentId: "intent-one", expectedSeasonId: "old-season" })).rejects.toMatchObject({ code: "season_changed", statusCode: 409 });
+    expect(await db.select().from(schema.freeGameQueue)).toHaveLength(0);
+    await joinQueue(db, context, { queueType: "daily-free", agentId: "intent-one", expectedSeasonId: season!.id });
+    await expect(joinQueue(db, context, { queueType: "daily-free", agentId: "intent-two", expectedSeasonId: "old-season" })).rejects.toMatchObject({ code: "season_changed" });
+    await expect(leaveQueue(db, context, { expectedSeasonId: "old-season" })).rejects.toMatchObject({ code: "season_changed" });
+    expect((await db.select().from(schema.freeGameQueue))[0]!.agentProfileId).toBe("intent-one");
+    await joinQueue(db, context, { queueType: "daily-free", agentId: "intent-two", expectedSeasonId: season!.id });
+    expect((await db.select().from(schema.freeGameQueue))[0]!.agentProfileId).toBe("intent-two");
+    await leaveQueue(db, context, { expectedSeasonId: season!.id });
+    expect(await db.select().from(schema.freeGameQueue)).toHaveLength(0);
   });
 
   test("joins daily-free idempotently for the same agent", async () => {
@@ -510,6 +527,26 @@ describe("queue enrollment service", () => {
     const status = await getQueueStatus(db, { userId: USER_A_ID });
 
     expect(status.promptEligible).toBe(false);
+  });
+
+  test("prompt follows admission dates, closure and the next accepting season", async () => {
+    db = await setupTestDB();
+    await seedUsers(db);
+    expect((await getQueueStatus(db, { userId: USER_A_ID })).promptEligible).toBe(false);
+    const season = await createSeason(db, { slug: "prompt-window", name: "Prompt window",
+      admissionStartsAt: "2026-01-01T00:00:00Z", admissionClosesAt: "2026-02-01T00:00:00Z" });
+    expect(await getActiveSeason(db, "2025-12-31T23:59:59Z")).toBeNull();
+    expect((await getActiveSeason(db, "2026-01-01T00:00:00Z"))?.id).toBe(season.id);
+    expect((await getActiveSeason(db, "2026-01-31T23:59:59Z"))?.id).toBe(season.id);
+    expect(await getActiveSeason(db, "2026-02-01T00:00:00Z")).toBeNull();
+    await db.update(schema.seasons).set({admissionClosesAt:"2001-01-01T00:00:00Z"}).where(eq(schema.seasons.id, season.id));
+    expect((await getQueueStatus(db, { userId: USER_A_ID })).promptEligible).toBe(false);
+    await db.update(schema.seasons).set({admissionStartsAt:null,admissionClosesAt:null}).where(eq(schema.seasons.id, season.id));
+    expect((await getQueueStatus(db, { userId: USER_A_ID })).promptEligible).toBe(true);
+    await closeSeason(db, season.id);
+    expect((await getQueueStatus(db, { userId: USER_A_ID })).promptEligible).toBe(false);
+    await createSeason(db, {slug:"prompt-next",name:"Next season"});
+    expect((await getQueueStatus(db, { userId: USER_A_ID })).promptEligible).toBe(true);
   });
 
   test("leave remains idempotent when no season is active", async () => {

@@ -68,7 +68,8 @@ import {
 import { useWatchAnalytics } from "@/components/watch/use-watch-analytics";
 import { usePresentationDirector } from "./influence-presentation-director";
 import { FormatPresentation } from "./format-presentation";
-import { ActiveFormatLabel } from "./active-format-label";
+import { ActiveFormatOverlay } from "./active-format-label";
+import { FormatRulesDialog } from "./format-rules-dialog";
 import { findPresentationCueIndexForSequence } from "./presentation-sequence";
 import {composeInfluencePresentation, influenceCastArt} from "./influence-presentation";
 import {InfluenceOpeningFrame} from "./influence-opening-frame";
@@ -249,7 +250,8 @@ function DramaticReplayTheater({
       activeCue.round,
     );
   }, [activeCue, isFormatGame, directorSnapshot.cursor, directorSnapshot.hydrationWatermark, presentationCues, chainReveal, live]);
-  const activeFormatIdForSocialScene = classicCue ? presentedFormatSnapshot?.activeFormatId ?? null : null;
+  const activeFormatIdForSocialScene = classicCue?.phase === "FORMAT_MINGLE" ? presentedFormatSnapshot?.activeFormatId ?? null : null;
+  const [rulesFormatId, setRulesFormatId] = useState<typeof activeFormatIdForSocialScene>(null);
   const messageIndex = classicCue?.messageIndex ?? 0;
   const scene = classicCue
     ? scenes[classicCue.sceneIndex]
@@ -534,6 +536,7 @@ function DramaticReplayTheater({
     suspendMusic(); setPlayRequested(false);
     director.pause();
   }, [director, suspendMusic]);
+  const closeFormatRules = useCallback(() => setRulesFormatId(null), []);
 
   const togglePlay = () => {
     if (transportPlaying) pausePresentation();
@@ -580,14 +583,14 @@ function DramaticReplayTheater({
     }
     if (controlsTimer.current) clearTimeout(controlsTimer.current);
     controlsTimer.current = setTimeout(() => {
-      if (!controlsHovered.current && !controlsRef.current?.contains(document.activeElement)) setControlsVisible(false);
+      if (!controlsHovered.current && !controlsRef.current?.querySelector(":focus-visible")) setControlsVisible(false);
     }, 3000);
   }, [embedded, expanded]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       setControlsVisible(true);
-      if (isPlaying) resetControlsTimer();
+      if (isPlaying || expanded) resetControlsTimer();
     });
     return () => { cancelAnimationFrame(frame); if (controlsTimer.current) clearTimeout(controlsTimer.current); };
   }, [expanded, isPlaying, resetControlsTimer]);
@@ -596,13 +599,13 @@ function DramaticReplayTheater({
   // If controls are already visible, advance the message.
   const handleClick = useCallback((e: React.MouseEvent) => {
     if (shouldSuppressDramaticAdvance(e.target)) return;
-    if (!controlsVisible && isPlaying) {
+    if (!controlsVisible && (isPlaying || expanded)) {
       setControlsVisible(true);
       resetControlsTimer();
       return;
     }
     advanceMessage();
-  }, [advanceMessage, controlsVisible, isPlaying, resetControlsTimer]);
+  }, [advanceMessage, controlsVisible, expanded, isPlaying, resetControlsTimer]);
 
   // Auto-hide controls (mouse for desktop)
   const handleMouseMove = useCallback(() => {
@@ -624,7 +627,7 @@ function DramaticReplayTheater({
     advance: advanceMessage, back: stepBackOneCue,
     previousChapter: goToPrevScene,
     nextChapter: goToNextScene,
-    speed: value => director.setSpeed(value),
+    speed: value => {setControlsVisible(true); resetControlsTimer(); director.setSpeed(value);},
     interact: () => { setControlsVisible(true); resetControlsTimer(); },
   });
 
@@ -743,8 +746,8 @@ function DramaticReplayTheater({
         <div
           data-replay-controls
         ref={controlsRef}
-        onFocusCapture={() => {controlsHovered.current = true;setControlsVisible(true);}}
-        onBlurCapture={event => {if (!event.currentTarget.contains(event.relatedTarget)) controlsHovered.current = false;}}
+        onFocusCapture={() => setControlsVisible(true)}
+        onBlurCapture={event => {if (!event.currentTarget.contains(event.relatedTarget)) {controlsHovered.current = false;resetControlsTimer();}}}
         onPointerEnter={(event) => { if (event.pointerType === "mouse") controlsHovered.current = true; }}
         onPointerLeave={() => { controlsHovered.current = false; resetControlsTimer(); }}
           className={`fixed top-14 right-4 z-[60] transition-opacity duration-500 hidden md:block ${
@@ -788,6 +791,7 @@ function DramaticReplayTheater({
             : "items-stretch"
         } justify-center ${openingCue ? "" : expanded ? isRoomPresentation || isSoloPresentation ? "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]" : "pb-[140px] pt-[env(safe-area-inset-top)]" : isSoloPresentation || isRoomPresentation ? "" : isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
       >
+        {activeFormatIdForSocialScene && <ActiveFormatOverlay formatId={activeFormatIdForSocialScene} onOpen={() => {pausePresentation(); setRulesFormatId(activeFormatIdForSocialScene);}} />}
         {!openingCue && !isHousePresentation && <div className="pointer-events-none absolute inset-0 -z-10"><RoomBackdrop source={resultRoom(activeCue?.phase ?? scene.phase)} resilient /></div>}
         {openingCue ? <>
           <WatchClock director={director}>{elapsed => <InfluenceOpeningFrame cue={openingCue} elapsedMs={elapsed} navigationRevision={director.getNavigationRevision()} reduced={reducedMotion} playing={isPlaying} speed={speed}
@@ -809,8 +813,9 @@ function DramaticReplayTheater({
             voteLedger={voteLedgers[directorSnapshot.cursor] ?? null} roster={formatRoster.map(player => ({ ...player, avatarUrl: visualData?.portraits[player.id] ?? player.avatarUrl }))} /> : <>
           {formatCue && (
             <div className={`min-h-0 flex-1 ${formatCue.kind === "two_names_plea" ? "h-full" : ""}`}>
-              <FitPresentation enabled={expanded || isEmpowerPresentation}><FormatPresentation
+              <FitPresentation enabled={expanded || isEmpowerPresentation}><WatchClock director={director}>{elapsed => <FormatPresentation
                 cue={formatCue}
+                elapsedMs={elapsed}
                 roster={formatRoster.map(player => ({...player, avatarUrl: visualData?.portraits[player.id] ?? player.avatarUrl, fullBodyReferenceUrl: visualData?.fullBodies?.[player.id]}))}
                 currentStateEntry={Boolean(
                   live
@@ -818,7 +823,7 @@ function DramaticReplayTheater({
                   && formatCue.canonicalSequence
                     <= directorSnapshot.hydrationWatermark,
                 )}
-              /></FitPresentation>
+              />}</WatchClock></FitPresentation>
             </div>
           )}
 
@@ -834,12 +839,12 @@ function DramaticReplayTheater({
       <div
         data-replay-controls
         ref={controlsRef}
-        onFocusCapture={() => {controlsHovered.current = true;setControlsVisible(true);}}
-        onBlurCapture={event => {if (!event.currentTarget.contains(event.relatedTarget)) controlsHovered.current = false;}}
+        onFocusCapture={() => setControlsVisible(true)}
+        onBlurCapture={event => {if (!event.currentTarget.contains(event.relatedTarget)) {controlsHovered.current = false;resetControlsTimer();}}}
         onPointerEnter={(event) => { if (event.pointerType === "mouse") controlsHovered.current = true; }}
         onPointerLeave={() => { controlsHovered.current = false; resetControlsTimer(); }}
         className={`${expanded ? "absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/85 to-transparent" : "shrink-0 border-t border-white/5 bg-black/70"} px-3 md:px-6 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 md:py-2 transition-opacity duration-500 z-[60] backdrop-blur-sm ${
-          controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
+          controlsVisible || !isPlaying && !expanded ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
         {shared?.cue && presentationCues.length > 0 && !presentationCues.some(cue => cue.key === shared.cue) && <p role="alert">This replay moment is no longer available.</p>}
@@ -850,7 +855,6 @@ function DramaticReplayTheater({
           const href = cue?.canonicalSequence != null ? gameReplaySequenceHref(game.slug, cue.canonicalSequence) : gameReplayHref(game.slug);
           return cue ? replayShareHref(href, cue.key, director.getTimelineElapsedBaseMs(), director.getSnapshot().speed, preferences) : href;
         }} fullscreen={nativeFullscreen} theater={theater} theaterButton={theaterButton} toggleTheater={toggleTheater} fullscreenButton={fullscreenButton} toggleFullscreen={toggleFullscreen} fullscreenError={fullscreenError}
-          header={activeFormatIdForSocialScene ? <div className="mb-3 flex justify-center"><ActiveFormatLabel formatId={activeFormatIdForSocialScene} /></div> : null}
           isPlaying={transportPlaying} togglePlay={togglePlay} speed={speed} onSpeed={value => director.setSpeed(value)}
           audio={{muted:masterMuted,onMute:() => {if (isPlaying) voice.resume();setMasterMuted(!masterMuted);unlockMusic(!masterMuted || preferences.musicMuted);}}}
           voice={voice.available ? {muted:voice.muted,volume:voice.volume,onMute:() => voice.setMuted(!voice.muted),onVolume:voice.setVolume} : undefined}
@@ -863,6 +867,7 @@ function DramaticReplayTheater({
           live={live} cursor={directorSnapshot.cursor} count={presentationCues.length}
           thinking={{enabled:showThinking,onChange:setShowThinking}} />
       </div>
+      {rulesFormatId && <FormatRulesDialog formatId={rulesFormatId} onClose={closeFormatRules} />}
     </div>
   );
 }

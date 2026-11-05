@@ -1,0 +1,42 @@
+{
+  "trials": [
+    {
+      "trial": 0,
+      "mode": "reference",
+      "frames": 126,
+      "decodedFramesAndTimestampsEqual": true,
+      "differingFrameCount": 0,
+      "audioPresent": true,
+      "decodedAudioEqual": true
+    },
+    {
+      "trial": 1,
+      "mode": "current",
+      "frames": 126,
+      "decodedFramesAndTimestampsEqual": true,
+      "differingFrameCount": 0,
+      "audioPresent": true,
+      "decodedAudioEqual": true
+    },
+    {
+      "trial": 2,
+      "mode": "reference",
+      "frames": 126,
+      "decodedFramesAndTimestampsEqual": true,
+      "differingFrameCount": 0,
+      "audioPresent": true,
+      "decodedAudioEqual": true
+    },
+    {
+      "trial": 3,
+      "mode": "current",
+      "frames": 126,
+      "decodedFramesAndTimestampsEqual": true,
+      "differingFrameCount": 0,
+      "audioPresent": true,
+      "decodedAudioEqual": true
+    }
+  ],
+  "source": ".renders/ballot-capture-isolation-2026-11-03/",
+  "note": "Alternating actual unmodified reference checkout and final implementation. No diagnostic webpack loaders. Every decoded video frame/timestamp and decoded audio hash equals first control."
+}

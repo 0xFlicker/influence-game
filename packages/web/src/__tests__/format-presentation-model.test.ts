@@ -1,5 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { Phase } from "@influence/engine";
+import {formatRulesReadingMs} from "../app/games/[slug]/components/format-presentation-model-helpers";
+import {LAUNCH_FORMAT_IDS} from "@influence/engine/format-presentation-metadata";
+
+it("gives each selected format a length-based readable rules hold", () => {
+  for (const formatId of LAUNCH_FORMAT_IDS) expect(formatRulesReadingMs(formatId)).toBeGreaterThanOrEqual(8000);
+  expect(formatRulesReadingMs("safety_bounce")).toBeGreaterThan(formatRulesReadingMs("majority_elimination"));
+});
 import {
   createEvenVotesClearViewerDecisions,
   createEvenVotesTieViewerDecisions,

@@ -6,6 +6,7 @@
  *   GET    /api/leaderboard         — top 100 accounts by ELO
  */
 
+import { publicAccountAwards } from "../services/awards.js";
 import { Hono } from "hono";
 import { eq, desc, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
@@ -64,7 +65,7 @@ export function createProfileRoutes(db: DrizzleDB) {
       return c.json({ error: "User not found" }, 404);
     }
 
-    return c.json(toPrivateProfileResponse(profile));
+    return c.json({ ...toPrivateProfileResponse(profile), awards: await publicAccountAwards(db, user.id) });
   });
 
   // -------------------------------------------------------------------------
@@ -129,7 +130,7 @@ export function createProfileRoutes(db: DrizzleDB) {
       if (!updated) {
         return c.json({ error: "User not found" }, 404);
       }
-      return c.json(toPrivateProfileResponse(updated));
+      return c.json({ ...toPrivateProfileResponse(updated), awards: await publicAccountAwards(db, user.id) });
     } catch (error) {
       if (!isPublicPlayerHandleConflict(error)) {
         throw error;

@@ -1016,6 +1016,69 @@
       "when": 1792952785114,
       "tag": "0144_producer_render_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "7",
+      "when": 1792952785115,
+      "tag": "0145_championship_foundations",
+      "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "7",
+      "when": 1792952785116,
+      "tag": "0146_championship_execution",
+      "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1792952785117,
+      "tag": "0147_championship_half_points",
+      "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1792952785118,
+      "tag": "0148_championship_replay_attempts",
+      "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1792952785119,
+      "tag": "0149_championship_artwork",
+      "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1792952785120,
+      "tag": "0150_championship_corrections",
+      "breakpoints": true
+    },
+    {
+      "idx": 151,
+      "version": "7",
+      "when": 1792952785121,
+      "tag": "0151_game_retries",
+      "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1792952785122,
+      "tag": "0152_championship_service",
+      "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1792952785123,
+      "tag": "0153_agent_visual_updates",
+      "breakpoints": true
     }
   ]
 }

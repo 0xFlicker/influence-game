@@ -1,5 +1,5 @@
 import { claimWerewolfGame } from "./werewolf-games.js";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import type { GameExecutionStateV1 } from "@influence/engine";
 import type { SupportedRecoveryResumeInput } from "./game-recovery-support.js";
 import type { DrizzleDB } from "../db/index.js";
@@ -51,6 +51,8 @@ export async function adoptInProgressDurableGamesOnStartup(
   db: DrizzleDB,
   options: {
     start: StartAdoptedDurableGame;
+    /** Explicit wakeup: never discover or claim unrelated games. */
+    gameId?: string;
     signal?: AbortSignal;
     processId?: string;
     isAlreadyRunning?: (gameId: string) => boolean;
@@ -69,7 +71,7 @@ export async function adoptInProgressDurableGamesOnStartup(
       schema.gameExecutionStates,
       eq(schema.gameExecutionStates.gameId, schema.games.id),
     )
-    .where(eq(schema.games.status, "in_progress"))
+    .where(and(eq(schema.games.status, "in_progress"), options.gameId ? eq(schema.games.id, options.gameId) : undefined))
     .orderBy(asc(schema.games.id));
 
   const adopted: string[] = [];
@@ -151,7 +153,7 @@ export async function adoptInProgressDurableGamesOnStartup(
         }
         skipped.push({
           gameId: row.gameId,
-          reason: "missing_execution_state",
+          reason: claim.code === "game_owned" || claim.code === "execution_state_exists" ? "adoption_conflict" : "missing_execution_state",
           detail: claim.error,
         });
         continue;

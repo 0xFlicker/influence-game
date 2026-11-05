@@ -291,10 +291,10 @@ export async function assertWerewolfProviderTurn(tx: Tx, gameId: string, coordin
     || turn.observationHash !== sha256StableJson(observeWerewolf(state, turn.request.actorId))) throw new Error("Werewolf provider action does not match its frozen plan");
 }
 
-export async function releaseWerewolfOwner(db: DrizzleDB, gameId: string, ownerEpoch: string, failed = false) {
+export async function releaseWerewolfOwner(db: DrizzleDB, gameId: string, ownerEpoch: string, failed = false, failureDetails?: Record<string, unknown>) {
   await db.transaction(async (tx) => {
     const [game] = await tx.select().from(schema.games).where(eq(schema.games.id, gameId)).for("update");
-    const owners = await tx.update(schema.gameRunOwners).set({ status: "expired", closedAt: new Date().toISOString(), failureReason: failed ? "werewolf_execution_failed" : "process_shutdown" })
+    const owners = await tx.update(schema.gameRunOwners).set({ status: "expired", closedAt: new Date().toISOString(), failureReason: failed ? "werewolf_execution_failed" : "process_shutdown", ...(failed && failureDetails ? { failureDetails } : {}) })
       .where(and(eq(schema.gameRunOwners.gameId, gameId), eq(schema.gameRunOwners.ownerEpoch, ownerEpoch), eq(schema.gameRunOwners.status, "active"))).returning();
     if (failed && owners.length && game?.status === "in_progress") await tx.update(schema.games).set({ status: "suspended" }).where(eq(schema.games.id, gameId));
   });

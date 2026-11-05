@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 import time
 
-spec = importlib.util.spec_from_file_location('admission', Path(__file__).with_name('verify-staging-batch-admission.py'))
+spec = importlib.util.spec_from_file_location('admission', Path(__file__).with_name('verify-batch-admission.py'))
 admission = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(admission)
 
@@ -20,10 +20,15 @@ def deploy(env, request=admission.github, dispatch=None, sleep=time.sleep):
     if dispatch is None:
         def dispatch(payload):
             result = subprocess.run(['gh', 'api', '-H', 'X-GitHub-Api-Version: 2026-03-10', '--method', 'POST',
-                                     admission.REPO + '/actions/workflows/house-render-batch-staging-deploy.yml/dispatches',
+                                     admission.REPO + f"/actions/workflows/house-render-batch-{identity['environment']}-deploy.yml/dispatches",
                                      '--input', '-'], input=json.dumps(payload).encode(), capture_output=True, timeout=60)
             admission.require(result.returncode == 0, 'Batch workflow dispatch failed; diagnostics withheld')
             return json.loads(result.stdout)
+    environment = identity['environment']
+    if environment == 'prod':
+        inputs.update({key: str(identity[field]) for key, field in [
+            ('approval_run_id', 'approvalRunId'), ('approval_run_attempt', 'approvalRunAttempt'),
+            ('approval_artifact', 'approvalArtifact'), ('approval_receipt_digest', 'approvalReceiptDigest')]})
     started = dispatch({'ref': 'main', 'inputs': inputs})
     run_id = started.get('workflow_run_id')
     admission.require(type(run_id) is int and run_id > 0, 'dispatch did not return an exact run identity')
@@ -41,7 +46,7 @@ def deploy(env, request=admission.github, dispatch=None, sleep=time.sleep):
 if __name__ == '__main__':
     try:
         outputs, receipt = deploy(os.environ)
-        Path('batch-admission.json').write_text(json.dumps(receipt, indent=2) + '\n')
+        Path('batch-admission.json').write_text(json.dumps({'required': True, **receipt}, indent=2) + '\n')
         with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
             output.write(''.join(f'{key}={value}\n' for key, value in outputs.items()))
     except Exception:

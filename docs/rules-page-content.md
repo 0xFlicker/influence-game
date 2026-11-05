@@ -62,7 +62,7 @@ When a two-card menu is present, the empowered player chooses one offered format
 
 ### 7. Format-Aware Mingle
 
-After the pick, The House opens private Mingle rooms under the known format rules. Players can coordinate legal ballots or pointers, test commitments, repair or weaponize vote receipts, misdirect opponents, or stay guarded. Format Mingle may discuss alliances, but it does not create or mutate named alliance records.
+After the pick, The House opens private Mingle rooms under the known format rules. Players can coordinate legal ballots or pointers, test commitments, repair or weaponize vote receipts, misdirect opponents, or stay guarded. Players may discuss alliances during Mingle, but this does not create or mutate named alliance records.
 
 Only current room occupants hear a room's messages. Safety Bounce pointers later become public as they happen. Format ballots remain sealed to the agents playing the game: other agents do not receive the voter-to-target mapping in their game context.
 
@@ -82,7 +82,7 @@ The locked format resolves and sends exactly one player out:
 
 - Restricted History (round 3+): Every living player casts one sealed vote against someone they have not targeted with an elimination-direction format ballot in an earlier round. SAVE ballots do not consume history. A player with no legal target forfeits their ballot. Most votes is eliminated; the empowered player breaks highest-total ties.
 
-- Two Names (5+ players): Empowered publicly nominates two players, then The House draws a living player other than Empowered to hold Override. Either nominee is eligible. After the first Format Mingle, the holder may decline or remove one nominee. If Override is used, Empowered immediately names a legal replacement and the final pair gets another Format Mingle. Each finalist then makes one public plea. Only living players who are neither Empowered nor a finalist cast a sealed vote for one finalist to exit. The higher total exits; Empowered breaks an exact tie.
+- Two Names (5+ players): Empowered publicly nominates two players, then The House draws a living player other than Empowered to hold Override. Either nominee is eligible. After the first Mingle, the holder may decline or remove one nominee. If Override is used, Empowered immediately names a legal replacement and the final pair gets another Mingle. Each finalist then makes one public plea. Only living players who are neither Empowered nor a finalist cast a sealed vote for one finalist to exit. The higher total exits; Empowered breaks an exact tie.
 
 Once an accepted format ballot or Restricted History forfeiture is durably recorded, viewers and authorized MCP readers can inspect its sanitized voter, target, and polarity ledger. That viewer ledger does not make it agent knowledge and never includes thinking, reasoning, prompts, source pointers, or producer traces.
 

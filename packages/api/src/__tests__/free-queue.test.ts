@@ -10,7 +10,7 @@ import { createFreeQueueRoutes } from "../routes/free-queue.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
 import { hashCanonicalEvent } from "../services/game-events.js";
 import { abortAllGames } from "../services/game-lifecycle.js";
-import { createSeason } from "../services/seasons.js";
+import { closeSeason, createSeason } from "../services/seasons.js";
 import {
   acquireDeploymentAdmissionLease,
   completeDeploymentAdmissionLease,
@@ -106,6 +106,7 @@ describe("free queue season admission", () => {
 
   test("service scheduler token draws and starts without legal claims or acceptance rows", async () => {
     const db = await setupTestDB();
+    await createSeason(db, { slug: "accepting-season", name: "Accepting Season" });
     const operatorId = await insertUser(db, "pending-scheduler");
     await createQueuedAgent(db, "pending-scheduler-a", "Aster Service");
     await createQueuedAgent(db, "pending-scheduler-b", "Maris Service");
@@ -139,6 +140,7 @@ describe("free queue season admission", () => {
 
   test("Daily start remains waiting when the primary provider circuit opens before claim", async () => {
     const db = await setupTestDB();
+    await createSeason(db, { slug: "accepting-season", name: "Accepting Season" });
     const operatorId = await insertUser(db, "provider-health-scheduler");
     await createQueuedAgent(db, "provider-health-a", "Provider Aster");
     await createQueuedAgent(db, "provider-health-b", "Provider Maris");
@@ -237,6 +239,17 @@ describe("free queue season admission", () => {
     const entry = (await db.select().from(schema.freeGameQueue)
       .where(eq(schema.freeGameQueue.userId, ownerId)))[0]!;
     expect(body).toEqual(expect.objectContaining({ id: entry.id, agentProfileId: ownProfile.id }));
+    const staleHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    const staleJoin = await app.request("/api/free-queue/join", { method: "POST", headers: staleHeaders, body: JSON.stringify({agentProfileId: ownProfile.id, expectedSeasonId: "old-season"}) });
+    expect(staleJoin.status).toBe(409);
+    const staleLeave = await app.request("/api/free-queue/leave?expectedSeasonId=old-season", { method: "DELETE", headers: staleHeaders });
+    expect(staleLeave.status).toBe(409);
+    const status = await app.request("/api/free-queue", { headers: staleHeaders });
+    const statusBody = await status.json() as { acceptingSeasonId: string; nextDrawAt: string; userEntry: { agentProfileId: string } };
+    expect(statusBody.acceptingSeasonId).toBeTruthy();
+    expect(statusBody.nextDrawAt).toBe(getNextDailyFreeDrawAt());
+    expect(statusBody.userEntry.agentProfileId).toBe(ownProfile.id);
+
   });
 
   test("draw atomically binds an active season and every owned revision", async () => {
@@ -353,8 +366,12 @@ describe("free queue season admission", () => {
       },
     });
     const drawn = await draw.json() as { gameId: string };
-    await db.update(schema.seasons).set({ status: "closing" })
-      .where(eq(schema.seasons.id, season.id));
+    await closeSeason(db, season.id);
+    expect(await db.select().from(schema.freeGameQueue)).toHaveLength(0);
+    const retry = await app.request("/api/free-queue/draw", {method: "POST", headers: {
+      Authorization: `Bearer ${token}`, "Idempotency-Key": "daily-free:test:closing-season"}});
+    expect(await retry.json()).toMatchObject({drawn: false, gameId: drawn.gameId});
+
 
     const started = await app.request("/api/free-queue/start", {
       method: "POST",
@@ -377,6 +394,7 @@ describe("free queue season admission", () => {
 
   test("starts the exact waiting Daily Free game requested by the operator", async () => {
     const db = await setupTestDB();
+    await createSeason(db, { slug: "accepting-season", name: "Accepting Season" });
     const operatorId = await insertUser(db, "exact-start-operator");
     await createQueuedAgent(db, "exact-start-a", "Aster Exact");
     await createQueuedAgent(db, "exact-start-b", "Maris Exact");
@@ -422,6 +440,7 @@ describe("free queue season admission", () => {
 
   test("denies a Daily Free start at the deployment barrier without replaying it", async () => {
     const db = await setupTestDB();
+    await createSeason(db, { slug: "accepting-season", name: "Accepting Season" });
     const operatorId = await insertUser(db, "draining-operator");
     await createQueuedAgent(db, "draining-a", "Aster Draining");
     await createQueuedAgent(db, "draining-b", "Maris Draining");
@@ -574,6 +593,7 @@ describe("free queue season admission", () => {
 
   test("rejects Daily Free provider preflight before claiming an owner", async () => {
     const db = await setupTestDB();
+    await createSeason(db, { slug: "accepting-season", name: "Accepting Season" });
     const operatorId = await insertUser(db, "preflight-operator");
     await createQueuedAgent(db, "preflight-a", "Aster Preflight");
     await createQueuedAgent(db, "preflight-b", "Maris Preflight");
@@ -622,6 +642,7 @@ describe("free queue season admission", () => {
 
   test("queues a Daily Free start without acquiring a durable owner", async () => {
     const db = await setupTestDB();
+    await createSeason(db, { slug: "accepting-season", name: "Accepting Season" });
     const operatorId = await insertUser(db, "startup-operator");
     await createQueuedAgent(db, "startup-a", "Aster Startup");
     await createQueuedAgent(db, "startup-b", "Maris Startup");
@@ -656,35 +677,40 @@ describe("free queue season admission", () => {
     await abortAllGames();
   });
 
-  test("draw remains available but explicitly unrated without an active season", async () => {
+  test.each(["missing", "closing", "final", "future", "expired"] as const)(
+    "draw refuses non-accepting season %s even with stale queued entries", async (state) => {
     const db = await setupTestDB();
-    const operatorId = await insertUser(db, "operator-unrated");
-    await createQueuedAgent(db, "carol", "Vera Daily");
-    await createQueuedAgent(db, "dan", "Echo Daily");
-    await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
-    const token = await createSessionToken(operatorId, {
-      roles: ["scheduler"],
-      permissions: ["schedule_free_game"],
-    });
+    if (state !== "missing") {
+      const season = await createSeason(db, { slug: "non-accepting", name: "Non Accepting",
+        ...(state === "future" ? { admissionStartsAt: "2099-01-01T00:00:00Z" } : {}),
+        ...(state === "expired" ? { admissionClosesAt: "2000-01-01T00:00:00Z" } : {}),
+      });
+      if (state === "closing" || state === "final") await db.update(schema.seasons).set({status: state}).where(eq(schema.seasons.id, season.id));
+    }
+    const operatorId = await insertUser(db, "closed-operator");
+    await createQueuedAgent(db, "stale-a", "Stale A");
+    await createQueuedAgent(db, "stale-b", "Stale B");
+    await db.insert(schema.servicePrincipals).values({ userId: operatorId });
+    const token = await createSessionToken(operatorId, { roles: ["scheduler"], permissions: ["schedule_free_game"] });
     const app = new Hono().route("/", createFreeQueueRoutes(db));
-
-    const response = await app.request("/api/free-queue/draw", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Idempotency-Key": "daily-free:test:unrated",
-      },
-    });
-    expect(response.status).toBe(201);
-    const body = await response.json() as { gameId: string; rated: boolean; seasonId: string | null };
-    expect(body).toMatchObject({ rated: false, seasonId: null });
-    const seats = await db.select().from(schema.gamePlayers)
-      .where(eq(schema.gamePlayers.gameId, body.gameId));
-    expect(seats.filter((seat) => seat.agentProfileId).every((seat) => seat.agentRevisionId !== null)).toBe(true);
+    const response = await app.request("/api/free-queue/draw", { method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Idempotency-Key": "closed-intake" } });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({drawn: false, code: "season_intake_closed"});
+    expect(await db.select().from(schema.games)).toHaveLength(0);
+    expect(await db.select().from(schema.gamePlayers)).toHaveLength(0);
+    expect(await db.select().from(schema.freeGameQueue)).toHaveLength(2);
+    const gameId = randomUUID();
+    await db.insert(schema.games).values({id: gameId, slug: gameId, config: "{}", trackType: "free", status: "waiting"});
+    const started = await app.request(`/api/free-queue/start?gameId=${gameId}`, {method: "POST", headers: {Authorization: `Bearer ${token}`}});
+    expect(started.status).toBe(409);
+    expect(await started.json()).toMatchObject({code: "season_admission_required"});
+    expect(await db.select().from(schema.gameRunOwners)).toHaveLength(0);
   });
 
   test("concurrent draw requests create only one Daily Free game", async () => {
     const db = await setupTestDB();
+    await createSeason(db, { slug: "accepting-season", name: "Accepting Season" });
     const operatorId = await insertUser(db, "operator-race");
     await createQueuedAgent(db, "race-alice", "Nova Daily");
     await createQueuedAgent(db, "race-bob", "Orion Daily");
@@ -716,6 +742,31 @@ describe("free queue season admission", () => {
     expect(await db.select().from(schema.games)).toHaveLength(1);
   });
 
+  test("closeout racing a draw never leaves an unassigned game or stale standing entry", async () => {
+    const db = await setupTestDB();
+    const season = await createSeason(db, {slug: "closing-race", name: "Closing Race"});
+    const operatorId = await insertUser(db, "close-race-operator");
+    await createQueuedAgent(db, "close-race-a", "Race A");
+    await createQueuedAgent(db, "close-race-b", "Race B");
+    await db.insert(schema.servicePrincipals).values({userId: operatorId});
+    const token = await createSessionToken(operatorId, {roles: ["scheduler"], permissions: ["schedule_free_game"]});
+    const app = new Hono().route("/", createFreeQueueRoutes(db));
+    const [response] = await Promise.all([
+      app.request("/api/free-queue/draw", {method: "POST", headers: {Authorization: `Bearer ${token}`, "Idempotency-Key": "close-race"}}),
+      closeSeason(db, season.id),
+    ]);
+    const result = await response.json() as {drawn: boolean; code?: string};
+    const games = await db.select().from(schema.games);
+    expect(await db.select().from(schema.freeGameQueue)).toHaveLength(0);
+    if (result.drawn) {
+      expect(games).toHaveLength(1);
+      expect(games[0]).toMatchObject({seasonId: season.id, status: "waiting"});
+    } else {
+      expect(result.code).toBe("season_intake_closed");
+      expect(games).toHaveLength(0);
+    }
+  });
+
   test("the database rejects duplicate Daily Free draw request keys", async () => {
     const db = await setupTestDB();
     const drawRequestKey = "daily-free:test:database-authority";
@@ -740,6 +791,7 @@ describe("free queue season admission", () => {
 
   test("distinct draw requests converge on a waiting game and allow another draw after it starts", async () => {
     const db = await setupTestDB();
+    await createSeason(db, { slug: "accepting-season", name: "Accepting Season" });
     const operatorId = await insertUser(db, "operator-distinct-requests");
     await createQueuedAgent(db, "distinct-alice", "Astra Daily");
     await createQueuedAgent(db, "distinct-bob", "Sol Daily");
