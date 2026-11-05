@@ -3,6 +3,7 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { storePublicCharacterImage } from "../lib/storage.js";
 import { payloadHash, readPayload, type StoredPayload } from "./payload-storage.js";
 import { readVisualProfileImage } from "./visual-game-assets.js";
+import { storeVisualArtifact } from "./visual-scene-store.js";
 
 export function isSavedCharacterArt(url: string | null | undefined): boolean {
   return savedCharacterArtHash(url) !== null;
@@ -32,6 +33,25 @@ export async function saveReadyCharacterArt(db: DrizzleDB, jobId: string) {
     .where(and(eq(schema.characterCutouts.id, jobId), eq(schema.characterCutouts.status, "ready"))).returning();
   if (!job?.image) throw new Error("Finished character image is unavailable");
   try {
+    if (job.privateSource) {
+      const privateForms = await db.selectDistinct({ gameId: schema.visualCharacterVariants.gameId, sourceArtifactId: schema.visualCharacterVariants.artifactId })
+      .from(schema.visualCharacterVariants)
+      .innerJoin(schema.visualArtifacts, eq(schema.visualArtifacts.id, schema.visualCharacterVariants.artifactId))
+      .innerJoin(schema.characterCutoutDemands, and(eq(schema.characterCutoutDemands.gameId, schema.visualCharacterVariants.gameId),
+        eq(schema.characterCutoutDemands.cutoutId, job.id), sql`${schema.characterCutoutDemands.sourceKey} = '/api/games/' || ${schema.visualCharacterVariants.gameId} || '/visual/artifacts/' || ${schema.visualCharacterVariants.artifactId}`))
+      .where(eq(schema.visualArtifacts.contentHash, job.sourceHash));
+      // A wolf form remains game-scoped even when the inference cache is shared.
+      // Never write these bytes or their URL to the public profile-art bucket.
+      const bytes = await readPayload(job.image);
+      await db.transaction(async tx => {
+        for (const form of privateForms) {
+          const artifactId = await storeVisualArtifact(tx, form.gameId, bytes);
+          await tx.insert(schema.visualCharacterCutouts).values({ sourceArtifactId: form.sourceArtifactId, artifactId }).onConflictDoNothing();
+        }
+        await tx.update(schema.characterCutouts).set({ artSavedAt: new Date(), saveError: null }).where(eq(schema.characterCutouts.id, jobId));
+      });
+      return { saved: privateForms.length };
+    }
     const transparentUrl = await publishCharacterArt(job.image);
     await db.transaction(async tx => {
       await tx.insert(schema.agentContentAssets).values({ hash: job.sourceHash, bytes: job.source, transparentUrl })

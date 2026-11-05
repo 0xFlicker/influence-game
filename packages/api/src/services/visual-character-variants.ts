@@ -6,6 +6,7 @@ import type { VisualBoundaryGuard } from "./visual-execution-boundary.js";
 import { readVisualArtifact, storeVisualArtifact } from "./visual-scene-store.js";
 import { renderDurableVisualImage, localizeDurableVisualScene } from "./visual-render-journal.js";
 import { sha256StableJson } from "./stable-hash.js";
+import { CUTOUT_RECIPE } from "./character-cutouts.js";
 
 /** Shared renderer prerequisite; durable journal reservations prevent duplicate paid dispatches. */
 export async function resolveCharacterVariants(db: DrizzleDB, gameId: string, plan: VisualScenePlan, options: {
@@ -44,6 +45,8 @@ export async function resolveCharacterVariants(db: DrizzleDB, gameId: string, pl
         await options.guard?.(tx);
         await tx.insert(schema.visualCharacterVariants).values({ id: randomUUID(), gameId, playerId: member.id,
           sourceArtifactId: variant.sourceArtifactId, artifactId, revision: variant.revision, generation: variant.generation, head }).onConflictDoNothing();
+        await tx.insert(schema.characterCutoutDemands).values({ id: randomUUID(), gameId, playerId: member.id,
+          sourceKey: `/api/games/${gameId}/visual/artifacts/${artifactId}`, recipe: CUTOUT_RECIPE }).onConflictDoNothing();
       });
       [saved] = await db.select().from(schema.visualCharacterVariants).where(identity);
     }
