@@ -1,10 +1,34 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ChampionshipEventView, featuredChampionshipMatch } from "../app/events/championship-view";
+import { ChampionshipEventView, championshipDesk, featuredChampionshipMatch } from "../app/events/championship-view";
 import { AwardShelf } from "../components/award-shelf";
 import type { ChampionshipView } from "../lib/championship";
 
 describe("championship presentation", () => {
+  test("empty schedules do not imply completion; preparing art has a stable honest fallback", () => {
+    const view: ChampionshipView = { id:"event",slug:"season-0-championship",name:"Season 0 Championship",status:"preparing",
+      season:{id:"season",slug:"season-0",name:"Season 0"},entries:[],matches:[],lineups:[],startDate:null,
+      policies:{points:null,roleComposition:null,equalScoreFallback:null,participationMinimumCompletedGames:null,ownerAttribution:null} };
+    for (const status of ["draft","preparing","locked","running","paused"]) {
+      const html=renderToStaticMarkup(<ChampionshipEventView event={{...view,status}}/>);
+      expect(html).not.toContain("series is complete");
+      expect(html).not.toContain("championship is complete");
+      expect(html).not.toContain("2 champions");
+      expect(html).not.toContain("The field is set");
+      expect(html).not.toContain("after season results are final");
+    }
+    const preparing=renderToStaticMarkup(<ChampionshipEventView event={view}/>);
+    expect(preparing).toContain('role="status"');
+    expect(preparing).toContain("Finalist portraits are being prepared.");
+    expect(preparing).toContain("08");
+    expect(championshipDesk({...view,status:"paused"}).title).toBe("Intermission");
+    expect(championshipDesk({...view,status:"final"}).title).toBe("The championship is complete");
+    const finale={ordinal:17,gameKind:"influence" as const,status:"running",gameSlug:"finale",scheduledAt:"2026-12-17T00:00:00Z"};
+    expect(championshipDesk({...view,status:"running",matches:[finale]}).title).toBe("Influence finale live");
+    expect(championshipDesk({...view,status:"running",matches:[{...finale,ordinal:1,gameKind:"werewolf"},{...finale,ordinal:2,status:"scheduled"}]}).ordinal).toBe(1);
+    expect(championshipDesk({...view,status:"paused",matches:[finale]}).title).toBe("Intermission");
+    expect(championshipDesk({...view,status:"running",matches:[{...finale,status:"completed"}]}).title).toBe("Results pending");
+  });
   test("separates series/finale, connects to Season 0 and conceals unordered role spoilers", () => {
     const view: ChampionshipView = {
       id: "event", slug: "season-0-championship", name: "Season 0 Championship", status: "locked",
