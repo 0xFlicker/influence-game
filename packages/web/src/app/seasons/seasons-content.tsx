@@ -107,7 +107,7 @@ export function SeasonsContent() {
     {loading ? <div role="status" className={styles.loading}>Opening the season…</div> : !season ? <section className={styles.hero}><h1>The next season awaits.</h1><p>No season has been announced yet.</p></section> : <>
       {events.length > 1 && <label className={styles.eventSelect}>Championship<select value={featuredEvent?.slug ?? ""} onChange={event => setEventChoice(event.target.value)}>{events.map(event => <option key={event.id} value={event.slug}>{event.name}</option>)}</select></label>}
       {featuredEvent && <ChampionshipEventView key={featuredEvent.id} event={featuredEvent} />}
-      {(!events.length || accepting) && <section className={styles.seasonMasthead} aria-labelledby="season-title" data-testid="season-entry-hero">
+      {(!events.length || accepting) && <section className={styles.seasonMasthead} aria-labelledby="season-title" data-testid="season-entry-hero" data-intake={accepting}>
         <div className={styles.seasonIdentity}>
           <h1 id="season-title">{season.name}</h1>
           {!accepting && <p>{scheduledOpening ? `Entry opens ${new Date(season.admissionStartsAt!).toLocaleString()}.` : season.status === "final" ? "Final standings" : "Entries closed"}</p>}
