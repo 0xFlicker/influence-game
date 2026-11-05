@@ -583,14 +583,14 @@ function DramaticReplayTheater({
     }
     if (controlsTimer.current) clearTimeout(controlsTimer.current);
     controlsTimer.current = setTimeout(() => {
-      if (!controlsHovered.current && !controlsRef.current?.contains(document.activeElement)) setControlsVisible(false);
+      if (!controlsHovered.current && !controlsRef.current?.querySelector(":focus-visible")) setControlsVisible(false);
     }, 3000);
   }, [embedded, expanded]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       setControlsVisible(true);
-      if (isPlaying) resetControlsTimer();
+      if (isPlaying || expanded) resetControlsTimer();
     });
     return () => { cancelAnimationFrame(frame); if (controlsTimer.current) clearTimeout(controlsTimer.current); };
   }, [expanded, isPlaying, resetControlsTimer]);
@@ -599,13 +599,13 @@ function DramaticReplayTheater({
   // If controls are already visible, advance the message.
   const handleClick = useCallback((e: React.MouseEvent) => {
     if (shouldSuppressDramaticAdvance(e.target)) return;
-    if (!controlsVisible && isPlaying) {
+    if (!controlsVisible && (isPlaying || expanded)) {
       setControlsVisible(true);
       resetControlsTimer();
       return;
     }
     advanceMessage();
-  }, [advanceMessage, controlsVisible, isPlaying, resetControlsTimer]);
+  }, [advanceMessage, controlsVisible, expanded, isPlaying, resetControlsTimer]);
 
   // Auto-hide controls (mouse for desktop)
   const handleMouseMove = useCallback(() => {
@@ -627,7 +627,7 @@ function DramaticReplayTheater({
     advance: advanceMessage, back: stepBackOneCue,
     previousChapter: goToPrevScene,
     nextChapter: goToNextScene,
-    speed: value => director.setSpeed(value),
+    speed: value => {setControlsVisible(true); resetControlsTimer(); director.setSpeed(value);},
     interact: () => { setControlsVisible(true); resetControlsTimer(); },
   });
 
@@ -746,8 +746,8 @@ function DramaticReplayTheater({
         <div
           data-replay-controls
         ref={controlsRef}
-        onFocusCapture={() => {controlsHovered.current = true;setControlsVisible(true);}}
-        onBlurCapture={event => {if (!event.currentTarget.contains(event.relatedTarget)) controlsHovered.current = false;}}
+        onFocusCapture={() => setControlsVisible(true)}
+        onBlurCapture={event => {if (!event.currentTarget.contains(event.relatedTarget)) {controlsHovered.current = false;resetControlsTimer();}}}
         onPointerEnter={(event) => { if (event.pointerType === "mouse") controlsHovered.current = true; }}
         onPointerLeave={() => { controlsHovered.current = false; resetControlsTimer(); }}
           className={`fixed top-14 right-4 z-[60] transition-opacity duration-500 hidden md:block ${
@@ -839,12 +839,12 @@ function DramaticReplayTheater({
       <div
         data-replay-controls
         ref={controlsRef}
-        onFocusCapture={() => {controlsHovered.current = true;setControlsVisible(true);}}
-        onBlurCapture={event => {if (!event.currentTarget.contains(event.relatedTarget)) controlsHovered.current = false;}}
+        onFocusCapture={() => setControlsVisible(true)}
+        onBlurCapture={event => {if (!event.currentTarget.contains(event.relatedTarget)) {controlsHovered.current = false;resetControlsTimer();}}}
         onPointerEnter={(event) => { if (event.pointerType === "mouse") controlsHovered.current = true; }}
         onPointerLeave={() => { controlsHovered.current = false; resetControlsTimer(); }}
         className={`${expanded ? "absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/85 to-transparent" : "shrink-0 border-t border-white/5 bg-black/70"} px-3 md:px-6 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 md:py-2 transition-opacity duration-500 z-[60] backdrop-blur-sm ${
-          controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
+          controlsVisible || !isPlaying && !expanded ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
         {shared?.cue && presentationCues.length > 0 && !presentationCues.some(cue => cue.key === shared.cue) && <p role="alert">This replay moment is no longer available.</p>}
