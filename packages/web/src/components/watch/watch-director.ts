@@ -2,7 +2,7 @@ import {compileTiming, sampleTiming, type CompiledTiming, type TimingInput} from
 /** One shared clock; game adapters own interpretation, ordering and speech timing. */
 import {thoughtTiming, thoughtContentTime, thoughtSpeechBoundaries, sampleThought, type ThoughtTiming, type SpeechBoundaries} from "./thinking-timing";
 export type {SpeechBoundaries} from "./thinking-timing";
-export interface WatchCue { key: string; baseDurationMs: number; minimumDurationMs?:number; thinkingOnly?: true }
+export interface WatchCue { key: string; baseDurationMs: number; minimumDurationMs?:number; readingHold?:true; minimumThinkingMs?:number; thinkingOnly?: true }
 export interface WatchPolicy<C extends WatchCue> {
   position(cue: C): number | null;
   /** Authored title sequences can retain real-time pacing before readable cast cards. */
@@ -186,6 +186,8 @@ export class PresentationDirector<C extends WatchCue> {
     const speech = this.policy.speech(cue);
     const input: TimingInput = {key:cue.key,baseDurationMs:cue.thinkingOnly ? 0 : cue.baseDurationMs,
       minimumDurationMs:cue.minimumDurationMs,
+      readingHold:cue.readingHold,
+      minimumThinkingMs:cue.minimumThinkingMs,
       kind:cue.thinkingOnly ? "thinking" : speech ? "speech" : "scene",speech,thinking:text,
       ...(speech && recording.speechMs && {recording:{assetId:"speech",durationMs:recording.speechMs}}),
       ...(text && recording.thinkingMs && (cue.thinkingOnly ? {recording:{assetId:"thinking",durationMs:recording.thinkingMs}} : {thinkingRecording:{assetId:"thinking",durationMs:recording.thinkingMs}})),

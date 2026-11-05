@@ -68,6 +68,14 @@ test("room views default to separate framing without compressed overlapping pane
   expect(view.container.querySelector('[aria-label="Current room"]')?.getAttribute("data-panel-treatment")).toBe("separate");
 });
 
+test("a visual social scene retains its speech throughout an extended cast hold", () => {
+  const view = render(<VisualSceneView scene={rooms[0]!} speech={speech} elapsedMs={8000} readingElapsedMs={8000} speechDurationMs={15050} />);
+  expect(view.container.querySelector("[data-speech-bubble]")).not.toBeNull();
+  expect(view.getAllByText(speech.text).length).toBeGreaterThan(0);
+  view.rerender(<VisualSceneView scene={rooms[0]!} speech={speech} elapsedMs={15000} readingElapsedMs={15000} speechDurationMs={15050} />);
+  expect(view.container.querySelector("[data-speech-bubble]")).toBeNull();
+});
+
 test("group shots borrow only accepted adjacent panels and crop the active image at either end", () => {
   const group = (imageUrl: string) => ({ imageUrl, annotatedImageUrl: "", participantIds: ["p1"], visibleParticipantIds: ["p1"], anchors: [], pointers: [] });
   const shots = { mode: "groups" as const, overview: null, groups: [group("/left.png"), group("/center.png"), group("/right.png")] };

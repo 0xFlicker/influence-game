@@ -142,19 +142,15 @@ describe("FormatPresentation", () => {
     );
     expect(choiceHtml).not.toContain("opacity-35");
     expect(choiceHtml).not.toContain("Zero votes is safe");
-    expect(selectedHtml).toContain(
-      `data-format-card="vote_bomb" data-card-state="selected" data-selection-stage="rules_reveal"`,
-    );
-    expect(selectedHtml).toContain(
-      `data-format-card="safety_bounce" data-card-state="unselected" data-selection-stage="rules_reveal" data-unselected-fade="applied"`,
-    );
+    expect(selectedHtml).toContain('data-format-rules="vote_bomb"');
+    expect(selectedHtml).not.toContain('data-format-rules="safety_bounce"');
     expect(selectedHtml).toContain(
       FORMAT_PRESENTATION_METADATA.vote_bomb.conciseRules,
     );
     expect(selectedHtml).not.toContain(
       FORMAT_PRESENTATION_METADATA.safety_bounce.conciseRules,
     );
-    expect(selectedHtml).toContain('tabindex="0"');
+    expect(selectedHtml).toContain('data-speech-page-copy');
   });
 
   it("offers Highest Count with catalog copy and renders highest-total scoring only", () => {

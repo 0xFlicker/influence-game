@@ -38,6 +38,7 @@ import { VisualSceneView } from "../../app/games/[slug]/components/visual-scene-
 import { SoloPresentation } from "../../app/games/[slug]/components/solo-presentation";
 import { PortraitRoom } from "../../app/games/[slug]/components/portrait-room";
 import {voteLedgerInset} from "../../app/games/[slug]/components/vote-presentation-timing";
+import {ActiveFormatOverlay} from "../../app/games/[slug]/components/active-format-label";
 
 function sceneFor(cue?: ExportCue) {
   if (!cue) return null;
@@ -175,8 +176,10 @@ export function ReplayFrame({
             </div>}
             <div
               ref={stage}
+              data-influence-stage
               className="relative isolate flex min-h-0 flex-1 flex-col overflow-hidden"
             >
+              {cue.activeFormatId && <ActiveFormatOverlay formatId={cue.activeFormatId} />}
               {picture.kind === "influence" && picture.cue.resultsPresentation && <div className="absolute inset-0 -z-10"><RoomBackdrop source={resultRoom(picture.cue.phase)} resilient /></div>}
               {picture.kind === "influence-opening" ? <InfluenceOpeningFrame {...picture} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} video={renderOpeningVideo} /> : picture.kind === "thinking" ? <ThinkingFrame picture={picture} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} /> : picture.kind === "werewolf-opening" ? <WerewolfOpeningFrame cue={picture.cue} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} video={renderOpeningVideo} /> : picture.kind === "werewolf" ? (
                 <WerewolfHouseLayout cue={picture.cue} elapsed={sample.elapsedMs} narration={houseWindow} logoUrl={staticFile("logo.png")}>
@@ -212,6 +215,7 @@ export function ReplayFrame({
                     cue={picture.cue}
                     roster={picture.roster}
                     currentStateEntry={false}
+                    elapsedMs={sample.elapsedMs}
                   />
                 </FitPresentation>
               ) : null}
@@ -276,7 +280,7 @@ function ThinkingFrame({picture, elapsedMs, reduced}: {
     return () => observer.disconnect();
   }, [picture]);
   if (picture.chain) return <SafetyChain beat={picture.chain} elapsedMs={elapsedMs} reducedMotion={reduced} />;
-  if (picture.room) return <PortraitRoom beat={{kind:"portrait-room",roomNumber:picture.room.number,roomLabel:picture.room.label,
+  if (picture.room) return <PortraitRoom paginateLargeCast={picture.room.paginateLargeCast} beat={{kind:"portrait-room",roomNumber:picture.room.number,roomLabel:picture.room.label,
     participants:picture.room.players,speech:{id:actor.id,playerId:actor.id,speaker:actor.name,text:""}}}
     backgroundUrl={picture.room.backgroundUrl} floorPerspective={picture.room.floorPerspective}
     hideSpeech elapsedMs={elapsedMs} readingElapsedMs={elapsedMs} reducedMotion={reduced} controlsInset={0} />;

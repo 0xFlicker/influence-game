@@ -15,6 +15,8 @@ export interface TimingInput {
   key: string;
   baseDurationMs: number;
   minimumDurationMs?: number;
+  readingHold?: true;
+  minimumThinkingMs?: number;
   kind: "opening" | "thinking" | "speech" | "ballot" | "tally" | "scene" | "result";
   speech: SpeechBoundaries | null;
   thinking: string | null;
@@ -111,10 +113,10 @@ export function compileTiming(
       time += duration;
     };
     const motion = settings.motionScale ?? 1;
-    let thought = thoughtTiming(input.thinking, speech, {readingRate: settings.thinkingRate, motionScale: motion});
+    let thought = thoughtTiming(input.thinking, speech, {readingRate: settings.thinkingRate, motionScale: motion, minimumReadingMs:input.minimumThinkingMs});
     const thinkingRecording = input.kind === "thinking" ? input.recording : input.thinkingRecording;
     if (thought && thinkingRecording) {
-      const delta = thinkingRecording.durationMs - (thought.hideAtMs - thought.readAtMs);
+      const delta = Math.max(thinkingRecording.durationMs, input.minimumThinkingMs ?? 0) - (thought.hideAtMs - thought.readAtMs);
       thought = {...thought, hideAtMs: thought.hideAtMs + delta, returnAtMs: thought.returnAtMs + delta, duration: thought.duration + delta};
     }
     const thoughtDuration = thought?.duration ?? 0;
@@ -142,8 +144,8 @@ export function compileTiming(
         speech.readAtMs,
         speech.hideAtMs,
         input.recording
-          ? input.recording.durationMs
-          : Math.max(
+          ? Math.max(input.recording.durationMs, input.readingHold ? input.minimumDurationMs ?? 0 : 0)
+          : Math.max(input.readingHold ? input.minimumDurationMs ?? 0 : 0,
               Math.min(3000, reading),
               reading / (settings.readingRate ?? 1),
             ),
@@ -176,7 +178,7 @@ export function compileTiming(
           ? (settings.ballotHoldMs ?? input.baseDurationMs)
           : input.kind === "tally"
             ? (settings.tallyHoldMs ?? input.baseDurationMs)
-            : input.baseDurationMs * motion;
+            : input.readingHold ? Math.max(input.baseDurationMs * motion, input.minimumDurationMs ?? 0) : input.baseDurationMs * motion;
       add("hold", 0, input.baseDurationMs, duration);
     }
     if (input.minimumDurationMs !== undefined) {
