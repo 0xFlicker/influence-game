@@ -50,6 +50,19 @@ interface FiltersState {
   search: string;
 }
 
+// The overview links to complete collections. Keep its default rails light,
+// while retaining every live or suspended game and all filtered results.
+const OVERVIEW_FINISHED_GAMES_PER_SHELF = 8;
+
+function overviewShelf<T extends { status: GameStatus }>(games: T[], limitFinished: boolean): T[] {
+  if (!limitFinished) return games;
+  let finished = 0;
+  return games.filter(game => {
+    if (game.status !== "completed" && game.status !== "cancelled") return true;
+    return finished++ < OVERVIEW_FINISHED_GAMES_PER_SHELF;
+  });
+}
+
 interface GameCardProps {
   game: GameSummary | WerewolfGameSummary;
   onJoin?: (game: GameSummary) => void;
@@ -339,6 +352,8 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
     : [];
   const libraryGames = showShelves ? filtered.filter(game => game.status !== "waiting" && (!activeSeason || game.season?.id !== activeSeason.id)) : filtered;
   const libraryWerewolf = showShelves ? filteredWerewolf.filter(game => game.status !== "waiting") : filteredWerewolf;
+  const limitOverview = showShelves && kind === "all" && filters.status === "all"
+    && filters.category === "all" && filters.search === "";
 
   const statusOptions: { value: StatusFilter; label: string }[] = [
     { value: "all", label: "All" },
@@ -399,14 +414,14 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
             {openGames.map(item => <GameCard key={item.game.id} game={item.game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
           </EpisodeShelf>}
           {seasonGames.length > 0 && activeSeason && <EpisodeShelf name="Active season" grid={false} href={`/games/season/${encodeURIComponent(activeSeason.slug)}`}>
-            {seasonGames.map(game => <GameCard key={game.id} game={game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
+            {overviewShelf(seasonGames, limitOverview).map(game => <GameCard key={game.id} game={game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
           </EpisodeShelf>}
           </div>
           {libraryWerewolf.length > 0 && <EpisodeShelf name="Werewolf" grid={compact || !!filters.search || filters.status !== "all" || kind === "werewolf"} href="/games/type/werewolf">
-            {libraryWerewolf.map(game => <GameCard key={game.id} game={game} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
+            {overviewShelf(libraryWerewolf, limitOverview).map(game => <GameCard key={game.id} game={game} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
           </EpisodeShelf>}
           {libraryGames.length > 0 && <EpisodeShelf name={showShelves ? "Influence" : collection ? collectionLabel(collection, games) : "Games"} grid={!showShelves} href={showShelves ? "/games/type/influence" : undefined}>
-            {libraryGames.map(game => <GameCard key={game.id} game={game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
+            {overviewShelf(libraryGames, limitOverview).map(game => <GameCard key={game.id} game={game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
           </EpisodeShelf>}
         </div>
       )}
