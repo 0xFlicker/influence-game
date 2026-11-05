@@ -114,6 +114,9 @@ test("recipient correction retains evidence and rejects stale or incompatible ch
 
 test("result correction requires championship and award authority", async () => {
   const { db, event, actorId, gameId } = await fixture();
+  // This route also synchronizes scheduling. Keep the overdue fixture paused:
+  // authorization coverage must not launch 17 timers into the next test's TRUNCATE.
+  await pauseChampionship(db, event.id, actorId, randomUUID());
   process.env.JWT_SECRET = "correction-fixture";
   await grantTestAuthority(db, actorId, ["manage_championships"]);
   const app = new Hono().route("/", createChampionshipRoutes(db));
@@ -125,6 +128,8 @@ test("result correction requires championship and award authority", async () => 
   expect((await request()).status).toBe(403);
   await grantTestAuthority(db, actorId, ["manage_championships", "manage_awards"]);
   expect((await request()).status).toBe(200);
+  expect((await db.select().from(schema.championshipEvents))[0]!.status).toBe("paused");
+  expect((await db.select().from(schema.championshipMatches)).filter(row => row.ordinal < 17).every(row => row.gameId === null)).toBe(true);
 });
 
 
