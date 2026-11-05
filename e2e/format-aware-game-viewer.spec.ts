@@ -1217,6 +1217,11 @@ test.describe("format-aware game viewer", () => {
       await page.clock.runFor(10_000);
       await expect(bubble).toHaveCount(0);
       await room.screenshot({ path: testInfo.outputPath(`${roomId}-clear-scene.png`) });
+      const controls = page.locator('[data-player-fullscreen="true"] [data-replay-controls]').filter({has:page.locator("[data-watch-transport]")});
+      await expect(controls).toHaveClass(/opacity-0/);
+      await room.click();
+      await expect(controls).toHaveClass(/opacity-100/);
+      expect(await room.getByRole("img").evaluate(element => element.getBoundingClientRect().left)).toBe(oldLeft);
       await room.click();
       await page.clock.runFor(650); // 400 ms clear hold, then 250 ms into the camera pan.
       await expect(bubble).toHaveCount(0);
@@ -1229,6 +1234,7 @@ test.describe("format-aware game viewer", () => {
       await expect(bubble).toHaveCSS("opacity", "1");
       await page.clock.runFor(10_000);
       await expect(bubble).toContainText("The second accepted line.");
+      await room.click(); // Reveal the hidden transport without advancing the paused scene.
       await expect(page.getByRole("button", { name: /Play\b/ }).filter({ visible: true })).toBeVisible();
     });
   }
@@ -1912,7 +1918,7 @@ test.describe("format-aware game viewer", () => {
       const cast = phase === "INTRODUCTION" ? [] : phase === "LOBBY" ? scenario.roster : [actor, ...mingleAudience];
       await expect(speech.locator("[data-room-player]")).toHaveCount(cast.length);
       for (const player of cast) await expect(speech.locator(`[data-room-player="${player.id}"]`)).toBeVisible();
-      const label = phase === "INTRODUCTION" ? "Introductions" : phase === "LOBBY" ? "Public Lobby" : "Format Mingle";
+      const label = phase === "INTRODUCTION" ? "Introductions" : phase === "LOBBY" ? "Public Lobby" : "Mingle";
       await expect(page.getByRole("heading", { name: label, level: 1, exact: true })).toBeVisible();
       await expect(page.locator(".influence-phase-title")).toHaveCount(0, { timeout: 15_000 });
       // Let this accepted speech finish before the next live publication arrives.
