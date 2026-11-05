@@ -37,3 +37,14 @@ Validation results are recorded in the PR. Full database tests use only the newl
 created disposable influence_capture_recovery_20261105 database; final focused
 review tests use the separate empty influence_capture_review_20261105 database. No shared staging,
 production, or localhost development database is used for tests.
+
+CI follow-up: PostgreSQL shard 1 on 1a883e9b exposed a correction authorization
+fixture that called the real scheduling route with a running, overdue event.
+Its 17 local delivery timers survived into later fixtures and raced TRUNCATE
+(40P01), then retried against the replaced data. The authorization fixture now
+pauses its event before requesting correction and asserts it stays paused with
+no other match admitted. This retains the real route and scheduler acknowledgement
+while avoiding unrelated timed launches; no production scheduler behavior changes.
+The correction and scheduling files pass together: 18 tests, 124 assertions.
+The earlier full local run was interrupted by the Mac disconnect (including an
+839-second hook timeout); it is not counted as a passing baseline and is rerun.
