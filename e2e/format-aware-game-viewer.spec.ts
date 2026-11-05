@@ -1038,6 +1038,29 @@ test.describe("format-aware game viewer", () => {
     await page.getByRole("button",{name:"Play replay",exact:true}).focus();
     await expect(controls).toHaveClass(/opacity-100/);
   });
+
+  test("format rules remain readable on a short fullscreen screen", async ({page}) => {
+    await page.addInitScript(() => Object.defineProperty(document, "fullscreenEnabled", {configurable:true,value:false}));
+    await page.clock.install();
+    await page.setViewportSize({width:320,height:240});
+    const slug="short-format-rules";
+    const roster=createFormatKernelViewerScenario("safety_bounce_tie").roster;
+    await installDeterministicFormatGame(page,{slug,scenarioId:"safety_bounce_tie",status:"completed"});
+    setFormatTranscript(page,slug,[{id:101,entrySequence:101,firstDurableEventSequence:31,gameId:slug,round:2,phase:"FORMAT_MINGLE",scope:"huddle",dialogueKind:"huddle_speech",fromPlayerId:roster[0]!.id,fromPlayerName:roster[0]!.name,toPlayerIds:[roster[1]!.id],text:"Let's plan together.",timestamp:101,allianceSession:{sessionId:"s",allianceId:"a",allianceName:"The Night Shift",memberIds:roster.slice(0,2).map(player=>player.id)}}]);
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page,"Pause replay");
+    await page.getByRole("button",{name:"Enter fullscreen",exact:true}).click();
+    const button=page.getByRole("button",{name:"Read Safety Bounce format rules"});
+    await advanceUntilVisible(page,button,"Safety Bounce Mingle",150);
+    await button.click();
+    const dialog=page.getByRole("dialog",{name:"Safety Bounce"});
+    await expect(dialog).toBeVisible();
+    const fits=await dialog.evaluate(element=>{const rect=element.getBoundingClientRect();return rect.top>=0 && rect.bottom<=innerHeight && rect.left>=0 && rect.right<=innerWidth;});
+    expect(fits).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(button).toBeFocused();
+  });
   });
 
   test("Mingle without full-body art rotates its exact audience in the shared fullscreen player", async ({ page }, testInfo) => {
