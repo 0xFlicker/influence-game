@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { completedWerewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { replayWerewolf } from "@influence/engine/werewolf";
@@ -11,6 +11,7 @@ import { createGameRoutes } from "../routes/games.js";
 import { createPublicPlayerRoutes } from "../routes/public-players.js";
 import { assertPublicPlayerProfileEnvelope } from "../game-mcp/public-player-tool-schema.js";
 import { createSessionToken } from "../middleware/auth.js";
+import { playerHistoryFailureCategory } from "../lib/player-history-diagnostics.js";
 let db: DrizzleDB;
 const savedSecret = process.env.JWT_SECRET;
 afterAll(() => { if (savedSecret === undefined) delete process.env.JWT_SECRET; else process.env.JWT_SECRET = savedSecret; });
@@ -47,6 +48,7 @@ test("owner/public routes share frozen participation, enforce discovery visibili
   const token = await createSessionToken("owner",{roles:["player"],permissions:[]});
   const owner = await createGameRoutes(db).request("/api/player/games",{headers:{Authorization:`Bearer ${token}`}});
   expect(owner.status).toBe(200);
+  expect(owner.headers.get("cache-control")).toBe("private, no-store");
   const history = await owner.json() as HouseParticipation[];
   expect(history.map(h=>h.gameSlug)).toEqual(["unlisted","public","influence"]);
   expect(history[1]).toMatchObject({gameKind:"werewolf",result:{outcome:"win",faction:"village",alive:false}});
@@ -98,4 +100,32 @@ test("historical Influence without canonical evidence does not invent an outcome
   await db.update(schema.gameResults).set({winnerId:"winner"}).where(eq(schema.gameResults.gameId,"historical"));
   const rows=await readHouseParticipation(db,"owner");
   expect(rows[0]).toMatchObject({gameKind:"influence",totalPlayers:2,result:null});
+});
+
+test("history failure reports a privacy-safe diagnostic instead of logging stored content", async () => {
+  await influence("private-game", "2026-10-01T00:00:00.000Z");
+  await db.update(schema.gamePlayers).set({ persona: 'private-secret-not-json' }).where(eq(schema.gamePlayers.gameId, "private-game"));
+  const token = await createSessionToken("owner", { roles: ["player"], permissions: [] });
+  const log = spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const response = await createGameRoutes(db).request("/api/player/games", { headers: { Authorization: `Bearer ${token}` } });
+    expect(response.status).toBe(500);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    const result = await response.json() as { error: string; code: string; diagnosticId: string };
+    expect(result).toMatchObject({ error: "Failed to load game history.", code: "history_unavailable" });
+    expect(result.diagnosticId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0]).toEqual(["[player-history] read_failed", {
+      diagnosticId: result.diagnosticId, category: "invalid_json", durationMs: expect.any(Number),
+    }]);
+    const emitted = JSON.stringify({ result, calls: log.mock.calls });
+    for (const secret of ["private-secret-not-json", "private-game", "owner", token]) expect(emitted).not.toContain(secret);
+  } finally { log.mockRestore(); }
+});
+
+test("history diagnostics classify wrapped database failures without returning their messages", () => {
+  expect(playerHistoryFailureCategory({ cause: { code: "57014", message: "private timeout details" } })).toBe("database_cancelled_or_timeout");
+  expect(playerHistoryFailureCategory({ cause: { code: "22P02", message: "private malformed value" } })).toBe("invalid_database_data");
+  expect(playerHistoryFailureCategory({ cause: { code: "08006" } })).toBe("database_unavailable");
+  expect(playerHistoryFailureCategory({ code: "private account information" })).toBe("unknown");
 });

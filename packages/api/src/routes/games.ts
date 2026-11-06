@@ -10,6 +10,7 @@ import { creationModelRouting, GameModelRoutingError } from "../services/game-mo
 import { DEFAULT_CONVERSATION_POLICY } from "@influence/engine";
 import { isSpectatorHuddleSpeech } from "@influence/engine";
 import { readHouseParticipation } from "../services/house-participation.js";
+import { playerHistoryFailureCategory } from "../lib/player-history-diagnostics.js";
 import { forecastRetrospectiveBudget } from "@influence/engine/retrospective-budget";
 import { createGameResultsRoutes } from "./game-results.js";
 import { getPersistedGameEvents } from "../services/game-event-read-model.js";
@@ -882,8 +883,20 @@ export function createGameRoutes(db: DrizzleDB) {
 
   app.get("/api/player/games", requireAuth(db), async (c) => {
     const user = c.get("user");
-
-    return c.json(await readHouseParticipation(db, user.id));
+    const started = performance.now();
+    c.header("Cache-Control", "private, no-store");
+    try {
+      const history = await readHouseParticipation(db, user.id);
+      const durationMs = Math.round(performance.now() - started);
+      if (durationMs >= 2_000) console.warn("[player-history] slow_read", { durationMs });
+      return c.json(history);
+    } catch (error) {
+      const diagnosticId = randomUUID();
+      console.error("[player-history] read_failed", {
+        diagnosticId, category: playerHistoryFailureCategory(error), durationMs: Math.round(performance.now() - started),
+      });
+      return c.json({ error: "Failed to load game history.", code: "history_unavailable", diagnosticId }, 500);
+    }
   });
 
   // -------------------------------------------------------------------------
