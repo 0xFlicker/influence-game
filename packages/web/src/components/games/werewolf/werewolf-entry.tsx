@@ -18,6 +18,7 @@ import { resolveAgentAvatarUrl } from "@/components/agent-avatar";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermissions } from "@/hooks/use-permissions";
 import { getPersonaLabel } from "@/lib/personas";
+import { agentProfileHref } from "@/components/agent-profile-link";
 import { getWerewolfLobby, fillWerewolfLobby, joinWerewolfLobby, leaveWerewolfLobby, startWerewolfLobby, stopWerewolf, type WerewolfLobbyData } from "@/lib/werewolf-api";
 import { WerewolfViewer } from "./werewolf-viewer";
 
@@ -85,7 +86,7 @@ export function WerewolfWaitingGame({ game, refresh }: { game: WerewolfLobbyData
     <CastingRoster eyebrow="The village" description="Select a portrait to take a closer look. Roles are assigned when the game starts."
       empty={!game.players.length ? <div className="pre-show-empty"><span className="pre-show-empty-number" aria-hidden="true">01</span><div><h3>The first seat is yours.</h3><p>Bring a character you know. Their Werewolf strategy guides this game.</p><button disabled={!auth.ready || busy} onClick={choose}>Bring your agent ↗</button></div></div> : undefined}
       invitation={canJoin && <CastInvitation disabled={busy || !auth.ready} onChoose={choose} joined={inCast} />}>
-      {game.players.map((player,index) => <CastCard key={player.id} name={player.name} index={index} src={resolveAgentAvatarUrl(player.avatarUrl,player.personaKey ?? "",player.name,player.personaKey)} eyebrow={getPersonaLabel(player.personaKey)} detail={player.available ? "In the village" : "Remove before starting"} onInspect={() => setPortrait(player)}
+      {game.players.map((player,index) => <CastCard key={player.id} name={player.name} index={index} src={resolveAgentAvatarUrl(player.avatarUrl,player.personaKey ?? "",player.name,player.personaKey)} eyebrow={getPersonaLabel(player.personaKey)} detail={player.available ? "In the village" : "Remove before starting"} profileHref={player.agentProfileId ? agentProfileHref(player.agentProfileId) ?? undefined : undefined} onInspect={() => setPortrait(player)}
         action={(operator || player.ownerPublicId === auth.account?.publicId) && <button className="werewolf-cast-remove" disabled={busy} aria-label={`Remove ${player.name} from cast`} onClick={() => void act(() => leaveWerewolfLobby(game.id,player.id))}>×</button>} />)}
     </CastingRoster>
     {portrait && <CastPortraitDialog name={portrait.name} src={resolveAgentAvatarUrl(portrait.avatarUrl,portrait.personaKey ?? "",portrait.name,portrait.personaKey)} eyebrow={getPersonaLabel(portrait.personaKey)} onClose={() => setPortrait(null)} />}
