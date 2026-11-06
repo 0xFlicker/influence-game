@@ -429,7 +429,7 @@ bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id> --play
 
 `simulate:api` shares the origin-bound app-session cache and browser sign-in with local replay export. A checked valid session is reused; missing, expired or rejected sessions open the House sign-in page. Sign in and choose **Authorize local CLI**. Current gameplay permissions are checked before creating a game. `--web-base-url` selects the House web origin; `INFLUENCE_API_SESSION_TOKEN` supplies an explicit session for unattended tooling. MCP OAuth login remains separate for MCP clients; its token is not used by these normal app routes.
 
-API simulator max rounds default to a short player-scaled smoke cap (`6 players -> 7`) unless `--max-rounds` is passed. Passing `--max-rounds auto` delegates to the normal API-created-game default.
+API simulator max rounds default to a short player-scaled smoke cap (`6 players -> 7`) unless `--max-rounds` is passed. The game creation API accepts `auto` or an explicit integer from 1 to 16; the creation form offers 5 to 16. Passing `--max-rounds auto` delegates to the normal API-created-game default. An explicit value below the player-scaled completion floor is raised by normal API gameplay, so use the engine-only simulator for exact short-run behavior.
 
 For Katana text-model evaluation, run the API with `API_KAT_IMGNAI_KEY` and `API_KAT_IMGNAI_SECRET` available, then choose any Katana text model ID:
 

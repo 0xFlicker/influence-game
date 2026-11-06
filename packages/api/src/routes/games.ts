@@ -100,7 +100,9 @@ import {
 import {
   LEGACY_FORMAT_MANIFEST,
   MAX_NEW_GAME_PLAYERS,
+  MAX_NEW_GAME_ROUNDS,
   MIN_NEW_GAME_PLAYERS,
+  MIN_NEW_GAME_ROUNDS,
   getHousePersonaDetails,
   getHousePortraitGender,
   pickHouseCast,
@@ -185,6 +187,20 @@ export function createGameRoutes(db: DrizzleDB) {
         error: `playerCount must be an integer between ${MIN_NEW_GAME_PLAYERS} and ${MAX_NEW_GAME_PLAYERS}`,
       }, 400);
     }
+    if (
+      maxRounds !== undefined
+      && maxRounds !== "auto"
+      && (
+        typeof maxRounds !== "number"
+        || !Number.isInteger(maxRounds)
+        || maxRounds < MIN_NEW_GAME_ROUNDS
+        || maxRounds > MAX_NEW_GAME_ROUNDS
+      )
+    ) {
+      return c.json({
+        error: `maxRounds must be "auto" or an integer between ${MIN_NEW_GAME_ROUNDS} and ${MAX_NEW_GAME_ROUNDS}`,
+      }, 400);
+    }
 
     try { parseGameVisibility(visibility); } catch { return c.json({ error: "Game visibility must be public or unlisted" }, 400); }
     if (!["best_effort", "require_visuals"].includes(visualFailurePolicy)) return c.json({ error: "Invalid visualFailurePolicy" }, 400);
@@ -195,7 +211,7 @@ export function createGameRoutes(db: DrizzleDB) {
 
     // Build GameConfig (engine-compatible)
     const computedMaxRounds =
-      maxRounds === "auto" || maxRounds == null
+      maxRounds === "auto" || maxRounds === undefined
         ? Math.max(10, (maxPlayers - 4) + 3 + 2)
         : maxRounds;
 
