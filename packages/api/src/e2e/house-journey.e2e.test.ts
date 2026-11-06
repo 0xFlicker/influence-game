@@ -150,3 +150,36 @@ test("mixed profile and owner history filter in place at desktop/mobile widths",
     }
   } finally {await dashboard.close();}
 },180000);
+
+test("dashboard fetches history pages only when requested and applies game filters before paging", async () => {
+  const date = "2026-09-01T00:00:00.000Z";
+  await database.db.insert(schema.games).values(Array.from({length: 45}, (_, i) => ({
+    id: `paged-history-${i}`, slug: `paged-history-${i}`, status: "completed" as const,
+    config: JSON.stringify({providerManifest:[{catalogId:DEFAULT_MODEL_CATALOG_ID}]}), endedAt: date,
+  })));
+  await database.db.insert(schema.gamePlayers).values(Array.from({length: 45}, (_, i) => ({
+    id: `paged-seat-${i}`, gameId: `paged-history-${i}`, userId: owner.userId,
+    agentProfileId: "history-agent", persona: JSON.stringify({name:`Paged ${i}`}), agentConfig:"{}",
+  })));
+  const dashboard = await createAuthenticatedPage(browser, owner.jwt, `${servers.webUrl}/dashboard`, {privateKey:owner.wallet.privateKey});
+  try {
+    const requests: string[] = [];
+    dashboard.on("request", req => { const url = new URL(req.url()); if (req.method() === "GET" && url.pathname.startsWith("/api/player/games")) requests.push(url.pathname + url.search); });
+    await dashboard.reload({waitUntil:"domcontentloaded"});
+    await dashboard.waitForFunction("Array.from(document.querySelectorAll('button')).some(b => b.textContent === 'Load older games')");
+    await Bun.sleep(400);
+    expect(requests.some(url => url === "/api/player/games")).toBe(false);
+    expect(requests.filter(url => new URL(url, "http://local").searchParams.has("cursor"))).toHaveLength(0);
+    const nextPage = dashboard.waitForResponse(response => response.request().method() === "GET" && new URL(response.url()).pathname === "/api/player/games-page" && new URL(response.url()).searchParams.has("cursor"));
+    await dashboard.evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Load older games')?.click()");
+    expect((await nextPage).ok()).toBe(true);
+    await dashboard.waitForFunction("Array.from(document.querySelectorAll('button')).some(b => b.textContent === 'Load older games')");
+    await Bun.sleep(400);
+    expect(requests.filter(url => new URL(url, "http://local").searchParams.has("cursor"))).toHaveLength(1);
+    const filteredPage = dashboard.waitForResponse(response => response.request().method() === "GET" && new URL(response.url()).pathname === "/api/player/games-page" && new URL(response.url()).searchParams.get("game") === "werewolf");
+    await dashboard.evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Werewolf')?.click()");
+    expect((await filteredPage).ok()).toBe(true);
+    await dashboard.waitForFunction("!document.body.innerText.includes('Frozen Influence')");
+    expect(requests.some(url => new URL(url, "http://local").searchParams.get("game") === "werewolf")).toBe(true);
+  } finally { await dashboard.close(); }
+},180000);

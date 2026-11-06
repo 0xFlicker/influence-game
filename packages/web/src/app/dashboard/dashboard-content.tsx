@@ -10,9 +10,8 @@ import { usePermissions } from "@/hooks/use-permissions";
 import {
   getAuthToken,
   getFreeQueueStatus,
-  getPlayerGames,
+  getPlayerGamesPage,
   listAgents,
-  listGames,
   joinFreeQueue,
   type FreeQueueStatus,
   type GameSummary,
@@ -30,6 +29,8 @@ import { JoinGameModal } from "./join-game-modal";
 import { MissionControlOverview } from "./mission-control-overview";
 import { DashboardQueueEntry } from "./dashboard-queue-entry";
 import { OwnerLearningActivation } from "./agents/[id]/review/owner-learning-activation";
+import type { ParticipationFilter } from "@influence/engine/house-participation";
+import { listDashboardGames } from "./dashboard-game-request";
 
 export function McpSetupCard({ hasHistory }: { hasHistory: boolean }) {
   return (
@@ -66,8 +67,18 @@ export function DashboardContent() {
   const [joinTarget, setJoinTarget] = useState<{ game: GameSummary } | null>(null);
 
   const [history, setHistory] = useState<PlayerGameResult[]>([]);
+  const [overviewHistory, setOverviewHistory] = useState<PlayerGameResult[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyKind, setHistoryKind] = useState<ParticipationFilter>("all");
+  const [historyCursor, setHistoryCursor] = useState<string | null>(null);
+  const [historyMoreLoading, setHistoryMoreLoading] = useState(false);
+  const [historyMoreError, setHistoryMoreError] = useState<string | null>(null);
+  const historyRequest = useRef(0);
+  const historyKindRef = useRef<ParticipationFilter>("all");
+  const historyCursorRef = useRef<string | null>(null);
+  const historyMoreInFlight = useRef(false);
+  const invalidateHistoryRequest = useCallback(() => { ++historyRequest.current; }, []);
 
   const [agents, setAgents] = useState<SavedAgent[]>([]);
   const [agentsLoading, setAgentsLoading] = useState(true);
@@ -76,6 +87,8 @@ export function DashboardContent() {
   const [games, setGames] = useState<GameSummary[]>([]);
   const [gamesLoading, setGamesLoading] = useState(true);
   const [gamesError, setGamesError] = useState<string | null>(null);
+  const gamesRequest = useRef(0);
+  const invalidateGamesRequest = useCallback(() => { ++gamesRequest.current; }, []);
 
   const [queueStatus, setQueueStatus] = useState<FreeQueueStatus | null>(null);
   const [queueLoading, setQueueLoading] = useState(true);
@@ -84,20 +97,57 @@ export function DashboardContent() {
   const invalidateQueueRequest = useCallback(() => { ++queueRequest.current; }, []);
   const requestedJoinGameId = searchParams.get("joinGameId");
 
-  const fetchHistory = useCallback(() => {
+  const fetchHistory = useCallback((kind: ParticipationFilter = historyKindRef.current) => {
+    const request = ++historyRequest.current;
+    historyKindRef.current = kind;
+    historyCursorRef.current = null;
+    historyMoreInFlight.current = false;
+    setHistoryKind(kind);
+    setHistoryCursor(null);
+    setHistoryMoreLoading(false);
     if (!authenticated || !getAuthToken()) {
       setHistoryLoading(false);
       return;
     }
-
+    setHistoryLoading(true);
+    setHistory([]);
+    setHistoryMoreError(null);
     setHistoryError(null);
-    getPlayerGames()
-      .then(setHistory)
-      .catch((err) => {
+    void (async () => {
+      try {
+        const page = await getPlayerGamesPage(undefined, 20, kind);
+        if (request !== historyRequest.current) return;
+        setHistory(page.items);
+        if (kind === "all") setOverviewHistory(page.items);
+        historyCursorRef.current = page.nextCursor;
+        setHistoryCursor(page.nextCursor);
+      } catch (err) {
+        if (request !== historyRequest.current) return;
         console.warn("[DashboardContent] Failed to load game history:", err);
         setHistoryError("Failed to load game history.");
-      })
-      .finally(() => setHistoryLoading(false));
+      } finally { if (request === historyRequest.current) setHistoryLoading(false); }
+    })();
+  }, [authenticated]);
+
+  const loadOlderHistory = useCallback(() => {
+    const cursor = historyCursorRef.current;
+    if (!authenticated || !cursor || historyMoreInFlight.current) return;
+    const request = historyRequest.current;
+    const kind = historyKindRef.current;
+    historyMoreInFlight.current = true;
+    setHistoryMoreLoading(true);
+    setHistoryMoreError(null);
+    void getPlayerGamesPage(cursor, 20, kind).then(page => {
+      if (request !== historyRequest.current) return;
+      if (page.nextCursor === cursor) throw new Error("History cursor did not advance");
+      setHistory(previous => [...previous, ...page.items]);
+      historyCursorRef.current = page.nextCursor;
+      setHistoryCursor(page.nextCursor);
+    }).catch(() => {
+      if (request === historyRequest.current) setHistoryMoreError("Could not load older games.");
+    }).finally(() => {
+      if (request === historyRequest.current) { historyMoreInFlight.current = false; setHistoryMoreLoading(false); }
+    });
   }, [authenticated]);
 
   const fetchAgents = useCallback(() => {
@@ -117,15 +167,17 @@ export function DashboardContent() {
   }, [authenticated]);
 
   const fetchGames = useCallback(() => {
+    const request = gamesRequest.current;
     setGamesError(null);
-    listGames()
-      .then(setGames)
+    listDashboardGames(requestedJoinGameId)
+      .then(data => { if (request === gamesRequest.current) setGames(data); })
       .catch((err) => {
+        if (request !== gamesRequest.current) return;
         console.warn("[DashboardContent] Failed to load games:", err);
         setGamesError(err instanceof Error ? err.message : "Failed to load games.");
       })
-      .finally(() => setGamesLoading(false));
-  }, []);
+      .finally(() => { if (request === gamesRequest.current) setGamesLoading(false); });
+  }, [requestedJoinGameId]);
 
   const fetchQueueStatus = useCallback(() => {
     const request = ++queueRequest.current;
@@ -156,13 +208,22 @@ export function DashboardContent() {
     return () => {
       window.clearTimeout(initialFetch);
       window.clearInterval(interval);
+      invalidateGamesRequest();
     };
-  }, [fetchGames]);
+  }, [fetchGames, invalidateGamesRequest]);
 
   useEffect(() => {
     if (!authenticated) {
+      historyKindRef.current = "all";
+      historyCursorRef.current = null;
+      historyMoreInFlight.current = false;
       const reset = window.setTimeout(() => {
         setHistory([]);
+        setOverviewHistory([]);
+        setHistoryKind("all");
+        setHistoryCursor(null);
+        setHistoryMoreLoading(false);
+        setHistoryMoreError(null);
         setAgents([]);
         setHistoryLoading(false);
         setAgentsLoading(false);
@@ -189,22 +250,23 @@ export function DashboardContent() {
     window.addEventListener("auth:session-ready", handleSessionReady);
     window.addEventListener("free-queue:changed", handleQueueChanged);
     return () => {
+      invalidateHistoryRequest();
       invalidateQueueRequest();
       window.clearTimeout(initialFetch);
       window.removeEventListener("auth:session-ready", handleSessionReady);
       window.removeEventListener("free-queue:changed", handleQueueChanged);
     };
-  }, [authenticated, fetchAgents, fetchHistory, fetchQueueStatus, invalidateQueueRequest]);
+  }, [authenticated, fetchAgents, fetchHistory, fetchQueueStatus, invalidateHistoryRequest, invalidateQueueRequest]);
 
   const control = useMemo(
     () =>
       buildDashboardMissionControl({
         agents,
         games,
-        history,
+        history: overviewHistory,
         queueStatus,
       }),
-    [agents, games, history, queueStatus],
+    [agents, games, overviewHistory, queueStatus],
   );
   const requestedJoinTarget = useMemo(() => {
     if (!requestedJoinGameId) return null;
@@ -288,8 +350,8 @@ export function DashboardContent() {
             />
           </div>
         </div>
-        <DashboardHistory entries={history} loading={historyLoading} error={historyError}/>
-        <McpSetupCard hasHistory={history.length > 0} />
+        <DashboardHistory entries={history} loading={historyLoading} error={historyError} kind={historyKind} onKindChange={fetchHistory} hasMore={historyCursor !== null} moreLoading={historyMoreLoading} moreError={historyMoreError} onLoadMore={loadOlderHistory}/>
+        <McpSetupCard hasHistory={overviewHistory.length > 0} />
       </div>
     </>
   );

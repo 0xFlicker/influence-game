@@ -2,6 +2,7 @@ import { gamePathSegment } from "./game-links";
 import { getPublicRuntimeConfig } from "./server-runtime-config";
 import type {
   GameDetail,
+  GameSummary,
   GameWatchReplayFrame,
   HouseHighlightsResponse,
   PublicPlayerProfileEnvelope,
@@ -13,6 +14,11 @@ import type {
 import type { GameEntryIdentity } from "./game-entry";
 export function getServerGameEntry(key: string): Promise<GameEntryIdentity> {
   return serverApiFetch(`/api/game-entries/${gamePathSegment(key)}`, { cache: "no-store" });
+}
+
+/** Anonymous, uncached preview; the full browser remains the source for filtering. */
+export function getServerRecentGames(): Promise<GameSummary[]> {
+  return serverApiFetch("/api/games?limit=6", { cache: "no-store", credentials: "omit", signal: AbortSignal.timeout(1500) });
 }
 
 const DEFAULT_SERVER_API_TIMEOUT_MS = 8_000;
@@ -64,7 +70,7 @@ export async function serverApiFetch<T>(
       const text = await res.text().catch(() => res.statusText);
       throw new ServerApiError(res.status, text);
     }
-    return res.json() as Promise<T>;
+    return await res.json() as T;
   } finally {
     timeout.cancel();
   }

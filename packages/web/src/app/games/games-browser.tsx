@@ -6,6 +6,7 @@ import { enabledGameKinds } from "@influence/engine/game-availability";
 import { collectionLabel, matchesGameCollection, type GameCollection } from "@/lib/game-collections";
 import { listWerewolfGames, fillWerewolfLobby, startWerewolfLobby, stopWerewolf, setWerewolfHidden, type WerewolfGameSummary } from "@/lib/werewolf-api";
 import { EpisodeCard } from "./episode-preview";
+import { InitialShelf } from "./initial-shelf";
 import {
   fillGame,
   hideGame,
@@ -48,6 +49,19 @@ interface FiltersState {
   status: StatusFilter;
   category: CategoryFilter;
   search: string;
+}
+
+// The overview links to complete collections. Keep its default rails light,
+// while retaining every live or suspended game and all filtered results.
+const OVERVIEW_FINISHED_GAMES_PER_SHELF = 8;
+
+function overviewShelf<T extends { status: GameStatus }>(games: T[], limitFinished: boolean): T[] {
+  if (!limitFinished) return games;
+  let finished = 0;
+  return games.filter(game => {
+    if (game.status !== "completed" && game.status !== "cancelled") return true;
+    return finished++ < OVERVIEW_FINISHED_GAMES_PER_SHELF;
+  });
 }
 
 interface GameCardProps {
@@ -233,9 +247,10 @@ interface GamesBrowserProps {
   compact?: boolean;
   collection?: GameCollection;
   includeWerewolf?: boolean;
+  initialGames?: GameSummary[];
 }
 
-export function GamesBrowser({ onJoin, compact = false, collection, includeWerewolf = false }: GamesBrowserProps) {
+export function GamesBrowser({ onJoin, compact = false, collection, includeWerewolf = false, initialGames = [] }: GamesBrowserProps) {
   const { hasPermission, roles } = usePermissions();
   const [filters, setFilters] = useState<FiltersState>({ status: "all", category: "all", search: "" });
   const [games, setGames] = useState<GameSummary[]>([]);
@@ -246,50 +261,46 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
   const kind = collection?.kind === "game" ? collection.game : selectedKind;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasLoadedGames, setHasLoadedGames] = useState(false);
+  const requestVersion = useRef(0);
+  const requestsInFlight = useRef(0);
+  const activeRequest = useRef<AbortController | null>(null);
+  const invalidateRequests = useCallback(() => { ++requestVersion.current; activeRequest.current?.abort(); }, []);
 
   const refreshGames = useCallback(async () => {
+    const request = ++requestVersion.current;
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
+    const timeout = setTimeout(() => controller.abort(), 20_000);
+    ++requestsInFlight.current;
     try {
-      const [data, wolves, seasonList] = await Promise.all([listGames(), includeWerewolf && enabledGameKinds().includes("werewolf") ? listWerewolfGames() : Promise.resolve([]), showShelves ? listSeasons() : Promise.resolve([])]);
+      const [data, wolves, seasonList] = await Promise.all([listGames(undefined, controller.signal), includeWerewolf && enabledGameKinds().includes("werewolf") ? listWerewolfGames(controller.signal) : Promise.resolve([]), showShelves ? listSeasons(controller.signal) : Promise.resolve([])]);
+      if (request !== requestVersion.current) return;
       setGames(data); setWerewolfGames(wolves); setSeasons(seasonList);
+      setHasLoadedGames(true);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load games.");
+      if (request === requestVersion.current) setError(controller.signal.aborted ? "Loading games took too long." : err instanceof Error ? err.message : "Failed to load games.");
     } finally {
-      setLoading(false);
+      clearTimeout(timeout);
+      if (activeRequest.current === controller) activeRequest.current = null;
+      --requestsInFlight.current;
+      if (request === requestVersion.current) setLoading(false);
     }
   }, [includeWerewolf, showShelves]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function fetchGames() {
-      try {
-        const [data, wolves, seasonList] = await Promise.all([listGames(), includeWerewolf && enabledGameKinds().includes("werewolf") ? listWerewolfGames() : Promise.resolve([]), showShelves ? listSeasons() : Promise.resolve([])]);
-        if (!cancelled) {
-          setGames(data); setWerewolfGames(wolves); setSeasons(seasonList);
-          setError(null);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load games.");
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    void fetchGames();
+    void refreshGames();
     const interval = setInterval(() => {
-      void fetchGames();
+      if (requestsInFlight.current === 0) void refreshGames();
     }, 10000);
 
     return () => {
-      cancelled = true;
+      invalidateRequests();
       clearInterval(interval);
     };
-  }, [includeWerewolf, showShelves]);
+  }, [refreshGames, invalidateRequests]);
 
   const canFill = hasPermission("fill_game");
   const canStart = hasPermission("start_game") && roles.some(role => ["gamer", "admin", "sysop"].includes(role));
@@ -339,6 +350,8 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
     : [];
   const libraryGames = showShelves ? filtered.filter(game => game.status !== "waiting" && (!activeSeason || game.season?.id !== activeSeason.id)) : filtered;
   const libraryWerewolf = showShelves ? filteredWerewolf.filter(game => game.status !== "waiting") : filteredWerewolf;
+  const limitOverview = showShelves && kind === "all" && filters.status === "all"
+    && filters.category === "all" && filters.search === "";
 
   const statusOptions: { value: StatusFilter; label: string }[] = [
     { value: "all", label: "All" },
@@ -366,12 +379,14 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
   ];
 
   if (loading) {
+    if (initialGames.length) return <InitialShelf games={initialGames}><p role="status" className="influence-copy-muted text-sm">Loading the full game library…</p></InitialShelf>;
     return (
       <div className="episode-grid" role="status" aria-label="Loading games"><div className="episode-skeleton" /><div className="episode-skeleton" /><span className="sr-only">Loading games…</span></div>
     );
   }
 
   if (error) {
+    if (!hasLoadedGames && initialGames.length) return <InitialShelf games={initialGames}><p role="alert" className="text-red-400">Could not load the full game library. <button className="underline" onClick={() => void refreshGames()}>Try again</button></p></InitialShelf>;
     return (
       <div className="rounded-xl p-8 text-center text-red-400/70 text-sm border border-red-400/30 bg-red-400/10">
         <p>{error}</p><button className="mt-3 underline" onClick={() => void refreshGames()}>Try again</button>
@@ -399,14 +414,14 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
             {openGames.map(item => <GameCard key={item.game.id} game={item.game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
           </EpisodeShelf>}
           {seasonGames.length > 0 && activeSeason && <EpisodeShelf name="Active season" grid={false} href={`/games/season/${encodeURIComponent(activeSeason.slug)}`}>
-            {seasonGames.map(game => <GameCard key={game.id} game={game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
+            {overviewShelf(seasonGames, limitOverview).map(game => <GameCard key={game.id} game={game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
           </EpisodeShelf>}
           </div>
           {libraryWerewolf.length > 0 && <EpisodeShelf name="Werewolf" grid={compact || !!filters.search || filters.status !== "all" || kind === "werewolf"} href="/games/type/werewolf">
-            {libraryWerewolf.map(game => <GameCard key={game.id} game={game} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
+            {overviewShelf(libraryWerewolf, limitOverview).map(game => <GameCard key={game.id} game={game} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
           </EpisodeShelf>}
           {libraryGames.length > 0 && <EpisodeShelf name={showShelves ? "Influence" : collection ? collectionLabel(collection, games) : "Games"} grid={!showShelves} href={showShelves ? "/games/type/influence" : undefined}>
-            {libraryGames.map(game => <GameCard key={game.id} game={game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
+            {overviewShelf(libraryGames, limitOverview).map(game => <GameCard key={game.id} game={game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
           </EpisodeShelf>}
         </div>
       )}

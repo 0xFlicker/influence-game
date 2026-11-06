@@ -641,8 +641,11 @@ test.describe("local public player identity", () => {
       await expect(page.getByRole("button", { name: "Backfill missing titles" })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Edit episode", exact: true })).toHaveCount(0);
       await expect(page.getByRole("region", { name: "Active season", exact: true }).getByRole("link", { name: "View all" })).toHaveAttribute("href", "/games/season/season-0");
-      await expect(page.getByTestId("episode-card")).toHaveCount(59);
+      await expect(page.getByTestId("episode-card")).toHaveCount(9);
       await expect(page.getByRole("heading", { name: "Episode 2", exact: true })).toHaveCount(0);
+      await page.getByLabel("Search games").fill("Episode 20");
+      await expect(page.getByTestId("episode-card")).toHaveCount(1);
+      await expect(page.getByRole("heading", { name: "Episode 20", exact: true })).toBeVisible();
       for (const [path, expected] of [["season/season-0", "Episode 0"]]) {
         await page.goto(`${servers.webUrl}/games/${path}`, { waitUntil: "networkidle" });
         await expect(page.getByTestId("episode-card")).toHaveCount(1);

@@ -9,7 +9,7 @@ import { CURRENT_EMPOWER_REVOTE_VERSION, resolveEmpowerRevoteVersion } from "@in
 import { creationModelRouting, GameModelRoutingError } from "../services/game-model-routing.js";
 import { DEFAULT_CONVERSATION_POLICY } from "@influence/engine";
 import { isSpectatorHuddleSpeech } from "@influence/engine";
-import { readHouseParticipation } from "../services/house-participation.js";
+import { HistoryPageUnavailable, parseHistoryCursor, readHouseParticipation, readHouseParticipationPage } from "../services/house-participation.js";
 import { forecastRetrospectiveBudget } from "@influence/engine/retrospective-budget";
 import { createGameResultsRoutes } from "./game-results.js";
 import { getPersistedGameEvents } from "../services/game-event-read-model.js";
@@ -290,19 +290,21 @@ export function createGameRoutes(db: DrizzleDB) {
   app.get("/api/games", optionalAuth(db), async (c) => {
     if (!enabledGameKinds().includes("influence")) return c.json([]);
     const statusParam = c.req.query("status");
+    const rawLimit = c.req.query("limit");
+    const limit = rawLimit === undefined ? undefined : Number(rawLimit);
+    if (rawLimit !== undefined && (!/^\d+$/.test(rawLimit) || !Number.isSafeInteger(limit) || limit! < 1 || limit! > 20)) return c.json({ error: "limit must be an integer from 1 to 20" }, 400);
 
-    let rows;
-    if (statusParam) {
-      const statuses = statusParam.split(",").map((s) => s.trim()) as GameStatus[];
-      rows = await db
-        .select()
-        .from(schema.games)
-        .where(and(eq(schema.games.gameKind, "influence"), inArray(schema.games.status, statuses), publicGameFilter()));
-    } else {
-      rows = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "influence"), publicGameFilter()));
-    }
+    const statuses = statusParam ? statusParam.split(",").map((s) => s.trim()) as GameStatus[] : undefined;
+    const condition = and(eq(schema.games.gameKind, "influence"), statuses ? inArray(schema.games.status, statuses) : undefined, publicGameFilter());
+    const rows = limit === undefined ? await db.select().from(schema.games).where(condition) : await db.transaction(async tx => {
+      await tx.execute(sql`SET LOCAL TIME ZONE 'UTC'`);
+      return tx.select().from(schema.games).where(condition).orderBy(sql`CASE
+        WHEN ${schema.games.createdAt} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}'
+          AND pg_input_is_valid(${schema.games.createdAt}, 'timestamp with time zone')
+        THEN ${schema.games.createdAt}::timestamptz END DESC NULLS LAST`, desc(schema.games.id)).limit(limit);
+    }, { isolationLevel: "repeatable read", accessMode: "read only" });
 
-    const episodes = await readEpisodePresentations(db, rows);
+    const episodes = await readEpisodePresentations(db, rows, { includeEpisodeNumbers: limit === undefined });
     c.header("Cache-Control", "private, no-store");
     const gameIds = rows.map((game) => game.id);
     const [kernelHealthByGameId, watchSummaryReadsByGameId, seasonById, settlementStateByGameId] = await Promise.all([
@@ -884,6 +886,21 @@ export function createGameRoutes(db: DrizzleDB) {
     const user = c.get("user");
 
     return c.json(await readHouseParticipation(db, user.id));
+  });
+
+  app.get("/api/player/games-page", requireAuth(db), async (c) => {
+    const rawLimit = c.req.query("limit") ?? "20";
+    const limit = Number(rawLimit);
+    const rawCursor = c.req.query("cursor");
+    const cursor = rawCursor === undefined ? null : parseHistoryCursor(rawCursor);
+    const gameKind = c.req.query("game") ?? "all";
+    if ((gameKind !== "all" && gameKind !== "influence" && gameKind !== "werewolf") || !/^\d+$/.test(rawLimit) || !Number.isSafeInteger(limit) || limit < 1 || limit > 50 || (rawCursor !== undefined && !cursor) || (cursor && cursor.gameKind !== gameKind)) return c.json({ error: "Invalid history page" }, 400);
+    c.header("Cache-Control", "private, no-store");
+    try { return c.json(await readHouseParticipationPage(db, c.get("user").id, limit, cursor, gameKind)); }
+    catch (error) {
+      if (error instanceof HistoryPageUnavailable) return c.json({ error: "Game history is temporarily unavailable." }, 503);
+      throw error;
+    }
   });
 
   // -------------------------------------------------------------------------
