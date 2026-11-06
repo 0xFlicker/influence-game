@@ -274,14 +274,22 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
     activeRequest.current = controller;
     const timeout = setTimeout(() => controller.abort(), 20_000);
     ++requestsInFlight.current;
+    let requests: readonly [Promise<GameSummary[]>, Promise<WerewolfGameSummary[]>, Promise<SeasonIdentity[]>] | undefined;
     try {
-      const [data, wolves, seasonList] = await Promise.all([listGames(undefined, controller.signal), includeWerewolf && enabledGameKinds().includes("werewolf") ? listWerewolfGames(controller.signal) : Promise.resolve([]), showShelves ? listSeasons(controller.signal) : Promise.resolve([])]);
+      const loadWerewolf = includeWerewolf && enabledGameKinds().includes("werewolf");
+      requests = [listGames(undefined, controller.signal), loadWerewolf ? listWerewolfGames(controller.signal) : Promise.resolve([]), showShelves ? listSeasons(controller.signal) : Promise.resolve([])];
+      const [data, wolves, seasonList] = await Promise.all(requests);
       if (request !== requestVersion.current) return;
       setGames(data); setWerewolfGames(wolves); setSeasons(seasonList);
       setHasLoadedGames(true);
       setError(null);
     } catch (err) {
-      if (request === requestVersion.current) setError(controller.signal.aborted ? "Loading games took too long." : err instanceof Error ? err.message : "Failed to load games.");
+      const aborted = controller.signal.aborted;
+      // Promise.all rejects as soon as one request fails. Cancel its siblings
+      // and retain poll/unmount ownership until every request has settled.
+      controller.abort();
+      if (requests) await Promise.allSettled(requests);
+      if (request === requestVersion.current) setError(aborted ? "Loading games took too long." : err instanceof Error ? err.message : "Failed to load games.");
     } finally {
       clearTimeout(timeout);
       if (activeRequest.current === controller) activeRequest.current = null;

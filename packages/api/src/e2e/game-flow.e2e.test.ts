@@ -239,6 +239,46 @@ describe("E2E: Full Game Flow", () => {
     }
   }, 90_000);
 
+  test("game library cancels a hanging sibling before polling or retrying", async () => {
+    const page = await browser.newPage();
+    try {
+      await page.evaluateOnNewDocument(() => {
+        const state: { gameCalls: number; aborted: number; seasonCalls: number; release?: () => void } = { gameCalls: 0, aborted: 0, seasonCalls: 0 };
+        const browserWindow = globalThis as unknown as { __libraryCancellation?: typeof state; fetch: typeof fetch; location: { origin: string } };
+        browserWindow.__libraryCancellation = state;
+        const originalFetch = browserWindow.fetch.bind(browserWindow);
+        browserWindow.fetch = ((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+          const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, browserWindow.location.origin);
+          if (url.pathname === "/api/games") {
+            state.gameCalls++;
+            if (state.gameCalls > 1) return Promise.resolve(Response.json([]));
+            return new Promise<Response>((_resolve, reject) => {
+              if (!init?.signal) throw new Error("Expected an abort signal");
+              init.signal.addEventListener("abort", () => { state.aborted++; state.release = () => reject(new DOMException("Aborted", "AbortError")); }, { once: true });
+            });
+          }
+          if (url.pathname === "/api/seasons") {
+            state.seasonCalls++;
+            return Promise.resolve(state.seasonCalls === 1 ? Response.json({ error: "Season service unavailable" }, { status: 503 }) : Response.json({ schemaVersion: 1, seasons: [] }));
+          }
+          if (url.pathname === "/api/werewolf") return Promise.resolve(Response.json([]));
+          return originalFetch(input, init);
+        }) as typeof fetch;
+      });
+      await page.goto(`${servers.webUrl}/games`, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.waitForFunction(() => (globalThis as { __libraryCancellation?: { aborted: number } }).__libraryCancellation?.aborted === 1, { timeout: 15000 });
+      // The 10-second poll must not start another request while the aborted
+      // sibling is still settling, even though its partner already failed.
+      await new Promise(resolve => setTimeout(resolve, 11_000));
+      expect(await page.evaluate(() => (globalThis as { __libraryCancellation?: { gameCalls: number } }).__libraryCancellation?.gameCalls)).toBe(1);
+      await page.evaluate(() => (globalThis as { __libraryCancellation?: { release?: () => void } }).__libraryCancellation?.release?.());
+      await page.waitForFunction("document.body.innerText.includes('Try again')", { timeout: 15000 });
+      await page.evaluate("[...document.querySelectorAll('button')].find(item => item.textContent?.includes('Try again'))?.click()");
+      await page.waitForFunction(() => (globalThis as { __libraryCancellation?: { gameCalls: number } }).__libraryCancellation?.gameCalls === 2, { timeout: 15000 });
+      await page.waitForFunction("!document.body.innerText.includes('Try again')", { timeout: 15000 });
+    } finally { await page.close(); }
+  }, 90_000);
+
   // -------------------------------------------------------------------------
   // Scenario 2 — 6 players join the game
   // -------------------------------------------------------------------------

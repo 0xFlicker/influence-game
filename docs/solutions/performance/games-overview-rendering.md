@@ -20,6 +20,10 @@ that existing limit. Backend cursors, server-side filtering, SSR, image
 resizing, cache invalidation, and production measurements are tracked in
 [#302](https://github.com/0xFlicker/influence-game/issues/302).
 
+If one of the overview requests fails, the browser aborts the other requests
+and waits for them to settle before allowing another poll. The same abort
+controller remains available to the unmount cleanup during that wait.
+
 One anonymous production observation before this change contained 116 game
 cards and 691 image elements. These counts are not network transfers or a
 Core Web Vitals measurement; measure cold and warm browser loads after
