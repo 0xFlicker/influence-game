@@ -30,6 +30,7 @@ import {
   completeDeploymentAdmissionLease,
 } from "../services/deployment-admission.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
 import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
 import { GameState, Phase, getHousePortraitGender, HOUSE_CAST, type CanonicalGameEvent } from "@influence/engine";
 import {
@@ -236,11 +237,16 @@ async function joinTestPlayer(
       eq(schema.agentProfiles.name, savedName),
     )))[0];
   if (!profile) {
+    const image = await contentImageFixture(`pfp/generated/${randomUUID()}.png`);
     const created = await createOwnedAgentProfile(db, { userId: REGULAR_USER_ID }, {
       name: savedName,
       personality,
       strategyStyle: `${savedName} strategy`,
       personaKey: "honest",
+      fullBodyReferenceUrl: image,
+      avatarUrl: image,
+      headPosition: await headPositionFixture(image),
+      portraitCrop: { sourceUrl: image, x: 0, y: 0, width: 1, height: 1 },
     });
     profile = { id: created.profile.id };
   }

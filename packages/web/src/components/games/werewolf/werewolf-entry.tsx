@@ -91,7 +91,7 @@ export function WerewolfWaitingGame({ game, refresh }: { game: WerewolfLobbyData
     {portrait && <CastPortraitDialog name={portrait.name} src={resolveAgentAvatarUrl(portrait.avatarUrl,portrait.personaKey ?? "",portrait.name,portrait.personaKey)} eyebrow={getPersonaLabel(portrait.personaKey)} onClose={() => setPortrait(null)} />}
 
     <footer className="pre-show-footer"><p>{game.visibility === "unlisted" ? "Unlisted game" : "Public game"} <span>/</span> {game.playerCount} agents <span>/</span> {game.modelLabel}</p><p>Share this page to invite the rest of the village.</p></footer>
-    {choosing && canJoin && <AgentSelector gameKind="werewolf" description={`Join ${game.slug} · ${game.players.length}/${game.playerCount} agents`} createHref={createHref}
+    {choosing && canJoin && <AgentSelector gameKind="werewolf" intent={{ flow: "join_game", gameId: game.id }} description={`Join ${game.slug} · ${game.players.length}/${game.playerCount} agents`} createHref={createHref}
       excludedIds={game.players.flatMap(player => player.agentProfileId ? [player.agentProfileId] : [])} onClose={() => setChoosing(false)} submitLabel="Join game" pendingLabel="Joining…"
       onSelect={async agent => { await joinWerewolfLobby(game.id, agent.id); await refresh(); setChoosing(false); }} />}
   </section>;

@@ -9,7 +9,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { userHasAnyRole } from "../db/rbac.js";
-import { hasEligibleAgentContent } from "./agent-content-eligibility.js";
+import { hasEligibleAgentContent, hasFullBodyAgentArt } from "./agent-content-eligibility.js";
 import {
   resolveFreeTrackEffectiveRuntimeSnapshot,
   resolveGameEffectiveAgentRevisionInTransaction,
@@ -31,6 +31,7 @@ export type OwnedSeatProjectionErrorReason =
   | "owner_seat_limit"
   | "profile_not_owned"
   | "profile_unavailable"
+  | "full_body_required"
   | "name_conflict"
   | "invalid_game_config"
   | "invalid_seat_config";
@@ -150,6 +151,16 @@ export async function projectOwnedSeatInTransaction(
   const gameConfig = parseGameConfig(input.game.config);
   const temperature = normalizeTemperature(input.overrides?.temperature);
   const [existingSeat] = await tx.select().from(schema.gamePlayers).where(and(eq(schema.gamePlayers.gameId, input.game.id), eq(schema.gamePlayers.agentProfileId, profile.id)));
+  if (!existingSeat && !hasFullBodyAgentArt(profile)) {
+    // A Daily Free draw must honor a standing entry accepted before this gate.
+    const [queued] = input.game.trackType === "free"
+      ? await tx.select({ id: schema.freeGameQueue.id }).from(schema.freeGameQueue).where(and(
+        eq(schema.freeGameQueue.userId, input.userId),
+        eq(schema.freeGameQueue.agentProfileId, profile.id),
+      )).limit(1)
+      : [];
+    if (!queued) throw projectionError("Add a full-body image to this agent before joining a game.", "rated_roster_invalid", "full_body_required");
+  }
   const policy = gameConfig.modelRouting ? gameModelPolicy(gameConfig) : null;
   const preference = existingSeat?.modelPreference ?? profile.modelPreference;
   const resolvedModelSelection = (() => {

@@ -8,10 +8,16 @@ import {
   getAuthToken,
   getOwnerLearningReview,
   updateAgent,
+  joinGame,
+  joinFreeQueue,
   type AgentProfileWriteParams,
   type OwnerLearningReview,
   type SavedAgent,
 } from "@/lib/api";
+import { getGameEntry } from "@/lib/game-entry";
+import { gameHref } from "@/lib/game-links";
+import { joinWerewolfLobby } from "@/lib/werewolf-api";
+import { agentEntryIntentKey, agentPreparationHref, hasFullBodyAgentArt, type AgentEntryIntent } from "@/lib/agent-entry";
 import { AgentForm, type StrategyComparison } from "./agent-form";
 import { reviewPath } from "./[id]/review/owner-learning-model";
 
@@ -19,13 +25,14 @@ interface AgentEditContentProps {
   agentId: string;
   sourceReviewId?: string;
   profileRequest?: boolean;
+  intent?: AgentEntryIntent;
 }
 
 function normalized(value: string | null | undefined): string {
   return value?.trim() ?? "";
 }
 
-export function AgentEditContent({ agentId, sourceReviewId, profileRequest = false }: AgentEditContentProps) {
+export function AgentEditContent({ agentId, sourceReviewId, profileRequest = false, intent }: AgentEditContentProps) {
   const router = useRouter();
   const [agent, setAgent] = useState<SavedAgent | null>(null);
   const [heldSaved, setHeldSaved] = useState(false);
@@ -71,7 +78,37 @@ export function AgentEditContent({ agentId, sourceReviewId, profileRequest = fal
       ...(sourceReviewId ? { sourceReviewId } : {}),
     });
     if (saved.receipt?.publication === "held") {
+      if (intent) {
+        sessionStorage.setItem(agentEntryIntentKey(agentId, intent), "yes");
+        router.replace(agentPreparationHref(agentId, intent));
+        return;
+      }
       setHeldSaved(true);
+      return;
+    }
+    if (intent) {
+      if (!hasFullBodyAgentArt(saved)) {
+        router.replace(agentPreparationHref(agentId, intent));
+        return;
+      }
+      try {
+        if (intent.flow === "join_game") {
+          const game = await getGameEntry(intent.gameId);
+          if (game.gameKind === "werewolf") await joinWerewolfLobby(intent.gameId, agentId);
+          else await joinGame(intent.gameId, { agentProfileId: agentId });
+          router.replace(gameHref(game.slug));
+        } else if (intent.flow === "daily_free") {
+          await joinFreeQueue(agentId, intent.seasonId);
+          window.dispatchEvent(new Event("free-queue:changed"));
+          router.replace(intent.season ? `/seasons?season=${encodeURIComponent(intent.season)}` : "/seasons");
+        } else {
+          router.replace("/dashboard/agents");
+        }
+      } catch (cause) {
+        sessionStorage.setItem(`${agentEntryIntentKey(agentId, intent)}:entry-error`,
+          cause instanceof Error ? cause.message : "Your Agent was saved, but entry did not succeed.");
+        router.replace(agentPreparationHref(agentId, intent));
+      }
       return;
     }
     router.replace(sourceReviewId ? reviewPath(agentId, sourceReviewId) : "/dashboard/agents");
@@ -103,7 +140,7 @@ export function AgentEditContent({ agentId, sourceReviewId, profileRequest = fal
           }
         : undefined
     : undefined;
-  const cancelPath = sourceReviewId ? reviewPath(agentId, sourceReviewId) : "/dashboard/agents";
+  const cancelPath = sourceReviewId ? reviewPath(agentId, sourceReviewId) : intent ? agentPreparationHref(agentId, intent) : "/dashboard/agents";
 
   return (
     <div>
@@ -119,7 +156,7 @@ export function AgentEditContent({ agentId, sourceReviewId, profileRequest = fal
         <p className="mt-2 max-w-2xl text-sm leading-6 text-white/50">
           {sourceReviewId
             ? "The review suggestion is loaded as your working Strategy. Edit it while the live diff stays visible."
-            : "Tune this Agent’s profile and strategy."}
+            : intent ? "Save a full-body image and enter your selected game or queue." : "Tune this Agent’s profile and strategy."}
         </p>
       </header>
 
@@ -129,7 +166,7 @@ export function AgentEditContent({ agentId, sourceReviewId, profileRequest = fal
           <p className="mt-2 text-sm text-white/60">Your correction is saved. It will become available after moderation accepts it. Your published profile has not changed.</p>
           <div className="mt-4 flex gap-4">
             <button className="influence-link min-h-11" onClick={() => { setHeldSaved(false); fetchEditor(); }}>Continue editing</button>
-            <Link className="influence-link inline-flex min-h-11 items-center" href="/dashboard/agents">Return to agents</Link>
+            <Link className="influence-link inline-flex min-h-11 items-center" href={cancelPath}>{intent ? "Return to entry" : "Return to agents"}</Link>
           </div>
         </section>
       ) : loading ? (
@@ -170,7 +207,7 @@ export function AgentEditContent({ agentId, sourceReviewId, profileRequest = fal
           draftScope={sourceReviewId ? `review:${agentId}:${sourceReviewId}` : `edit:${agentId}`}
           onSubmit={handleUpdate}
           onCancel={() => router.replace(cancelPath)}
-          submitLabel={sourceReviewId ? "Save strategy update" : "Save changes"}
+          submitLabel={sourceReviewId ? "Save strategy update" : intent ? "Save & join" : "Save changes"}
         />
         </div>
       ) : (

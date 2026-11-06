@@ -205,6 +205,7 @@ describe("whole-revision moderation decisions", () => {
   test("withholding removes the current public profile and blocks new admission and freeze while retaining standing membership", async () => {
     await createSeason(db, { slug: "moderation-season", name: "Moderation season" });
     const first = await create();
+    await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: "https://example.com/arden-full-body.png" }).where(eq(schema.agentProfiles.id, first.profile.id));
     await joinQueue(db, context(), { queueType: "daily-free", agentId: first.profile.id });
     const gameId = randomUUID();
     await db.insert(schema.games).values({ id: gameId, slug: "moderation-waiting", status: "waiting", minPlayers: 1, maxPlayers: 4,

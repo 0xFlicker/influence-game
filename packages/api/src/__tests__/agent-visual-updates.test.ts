@@ -21,7 +21,7 @@ beforeEach(async()=>{
  body=await contentImageFixture(`pfp/generated/${randomUUID()}.png`);head=await contentImageFixture(`pfp/generated/${randomUUID()}.png`);
  await db.insert(schema.agentProfiles).values({id:agentId,userId,name:"Original identity",personality:"Patient",personaKey:"strategic",strategyStyle:"Private influence strategy",werewolfStrategyStyle:"Private wolf strategy",avatarUrl:head,fullBodyReferenceUrl:body});
  deps={...visualUpdateDependencies,
- details:async()=>{calls.push("details");return {visualDesign:"Original appearance",performanceInstructions:"Calm voice"};},
+ details:async()=>{calls.push("details");return {visualDesign:"Original appearance",performanceInstructions:"Calm voice",strategyStyle:"Generated influence strategy",werewolfStrategyStyle:"Generated wolf strategy"};},
  body:async()=>{calls.push("body");return body;},head:async()=>{calls.push("head");return headPositionFixture(body);},
  portrait:async()=>{calls.push("portrait");return {avatarUrl:head,portraitCrop:{sourceUrl:body,x:0,y:0,width:1,height:1}};},
  };
@@ -45,9 +45,17 @@ test("failure retains checkpoint; explicit retry reuses body and resumes missing
  deps.portrait=good;await requestAgentVisualUpdate(db,userId,agentId);await processAgentVisualUpdate(db,userId,agentId,deps);
  expect((await readAgentVisualUpdate(db,userId,agentId)).job?.status).toBe("completed");expect(calls).toEqual(["details","body","head","portrait-failure","portrait"]);
 });
+test("one action fills missing strategies and art without replacing populated character fields",async()=>{
+ await db.update(schema.agentProfiles).set({strategyStyle:null,werewolfStrategyStyle:null,avatarUrl:null,fullBodyReferenceUrl:null}).where(eq(schema.agentProfiles.id,agentId));
+ await requestAgentVisualUpdate(db,userId,agentId);
+ await processAgentVisualUpdate(db,userId,agentId,deps);
+ const [saved]=await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id,agentId));
+ expect(saved).toMatchObject({name:"Original identity",personality:"Patient",strategyStyle:"Generated influence strategy",werewolfStrategyStyle:"Generated wolf strategy",fullBodyReferenceUrl:body,avatarUrl:head});
+ expect((await readAgentVisualUpdate(db,userId,agentId)).job?.status).toBe("completed");
+});
 test("concurrent owner edits fence the update without overwriting",async()=>{
  await requestAgentVisualUpdate(db,userId,agentId);
- deps.details=async()=>{await db.update(schema.agentProfiles).set({name:"New name",updatedAt:"2099-01-01T00:00:00.000Z"}).where(eq(schema.agentProfiles.id,agentId));return {visualDesign:"Old details",performanceInstructions:"Old voice"};};
+ deps.details=async()=>{await db.update(schema.agentProfiles).set({name:"New name",updatedAt:"2099-01-01T00:00:00.000Z"}).where(eq(schema.agentProfiles.id,agentId));return {visualDesign:"Old details",performanceInstructions:"Old voice",strategyStyle:"Old strategy",werewolfStrategyStyle:"Old wolf strategy"};};
  await processAgentVisualUpdate(db,userId,agentId,deps);
  expect((await readAgentVisualUpdate(db,userId,agentId)).job?.status).toBe("conflict");
  expect((await db.select().from(schema.agentProfiles))[0]!.name).toBe("New name");expect(await db.select().from(schema.agentContentRevisions)).toHaveLength(0);
@@ -83,7 +91,7 @@ test("transparent body lookup matches current image, never an old revision body,
  expect(await db.select().from(schema.characterCutouts)).toHaveLength(0);
 });
 test("strict details decoder accepts complete fenced JSON but rejects extra keys and empty values",()=>{
- expect(decodeVisualDetails('```json\n{"visualDesign":"Blue robot","performanceInstructions":"Calm voice"}\n```').visualDesign).toBe("Blue robot");
+ expect(decodeVisualDetails('```json\n{"visualDesign":"Blue robot","performanceInstructions":"Calm voice","strategyStyle":"Build trust","werewolfStrategyStyle":"Read ballots"}\n```').visualDesign).toBe("Blue robot");
  expect(()=>decodeVisualDetails('{"visualDesign":"x","performanceInstructions":"y","strategy":"override"}')).toThrow();
  expect(()=>decodeVisualDetails('{"visualDesign":" ","performanceInstructions":"y"}')).toThrow();
 });
@@ -96,7 +104,7 @@ test("expired processing leases resume the authorized job after interruption",as
 });
 test("a lost lease cannot checkpoint or save over its successor",async()=>{
  const requested=await requestAgentVisualUpdate(db,userId,agentId);
- deps.details=async()=>{await db.update(schema.agentVisualUpdates).set({leaseId:"successor",leaseUntil:"2099-01-01T00:00:00.000Z"}).where(eq(schema.agentVisualUpdates.id,requested.job!.id));return {visualDesign:"Old worker",performanceInstructions:"Old voice"};};
+ deps.details=async()=>{await db.update(schema.agentVisualUpdates).set({leaseId:"successor",leaseUntil:"2099-01-01T00:00:00.000Z"}).where(eq(schema.agentVisualUpdates.id,requested.job!.id));return {visualDesign:"Old worker",performanceInstructions:"Old voice",strategyStyle:"Old strategy",werewolfStrategyStyle:"Old wolf strategy"};};
  await processAgentVisualUpdate(db,userId,agentId,deps);
  const [job]=await db.select().from(schema.agentVisualUpdates);expect(job?.leaseId).toBe("successor");expect(job?.stage).toBe("details");
  expect(await db.select().from(schema.agentContentRevisions)).toHaveLength(0);

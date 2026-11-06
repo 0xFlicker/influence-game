@@ -12,3 +12,8 @@ export function hasEligibleAgentContent(profile: Pick<typeof schema.agentProfile
   "archivedAt" | "moderationRequired" | "contentRevisionId">) {
   return !profile.archivedAt && (!profile.moderationRequired || profile.contentRevisionId !== null);
 }
+
+/** New enrollments need published full-body art. Existing seats and queue entries remain valid. */
+export function hasFullBodyAgentArt(profile: Pick<typeof schema.agentProfiles.$inferSelect, "fullBodyReferenceUrl">) {
+  return Boolean(profile.fullBodyReferenceUrl?.trim());
+}
