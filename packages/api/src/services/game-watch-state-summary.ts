@@ -115,7 +115,7 @@ export async function tryRefreshGameWatchStateSummary(
 }
 
 export async function getGameWatchStateSummaryReadsByGameIds(
-  db: DrizzleDB,
+  db: Pick<DrizzleDB, "select">,
   gameIds: readonly string[],
 ): Promise<Map<string, GameWatchStateSummaryRead>> {
   const reads = new Map<string, GameWatchStateSummaryRead>();

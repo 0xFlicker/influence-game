@@ -24,16 +24,15 @@ test("faction success and survival are independent; Werewolf has no placement or
   expect(html).toContain("Lanterns and Lies");expect(html).toContain('/games/moonlit-village/results');expect(html).toContain("Results · Spoilers");
   expect(html).not.toContain("pts");expect(html).not.toContain("#");
 });
-test("latest activity may be Werewolf, but it never changes Influence statistics",()=>{
+test("latest activity may be Werewolf without inventing lifetime statistics",()=>{
   const model=buildDashboardMissionControl({agents:[],games:[],history:[influence,wolf],queueStatus:null});
   expect(model.latestResult).toEqual(wolf);
-  expect(model.stats).toMatchObject({gamesPlayed:1,wins:0,winRate:0});
+  expect(model.stats).not.toHaveProperty("gamesPlayed");
+  expect(model.stats).not.toHaveProperty("wins");
   expect(model.primaryAction.description).toContain("Village victory");
-  const wolfOnly=buildDashboardMissionControl({agents:[],games:[],history:[wolf],queueStatus:null});
-  expect(wolfOnly.stats).toMatchObject({gamesPlayed:0,wins:0,winRate:0});
 });
 test("history exposes filters, loading, failure and empty states",()=>{
-  const render=(entries:HouseParticipation[],loading=false,error:string|null=null)=>renderToString(<DashboardHistory entries={entries} loading={loading} error={error}/>);
+  const render=(entries:HouseParticipation[],loading=false,error:string|null=null)=>renderToString(<DashboardHistory entries={entries} loading={loading} error={error} kind="all" onKindChange={() => {}} hasMore={false} moreLoading={false} moreError={null} onLoadMore={() => {}}/>);
   expect(render([wolf])).toContain('aria-pressed="true"');
   expect(render([])).toContain("No completed games");
   expect(render([],true)).toContain('role="status"');

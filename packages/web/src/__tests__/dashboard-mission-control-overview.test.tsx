@@ -6,6 +6,7 @@ import { McpSetupCard } from "../app/dashboard/dashboard-content";
 import { DashboardGamePreview } from "../app/dashboard/dashboard-game-preview";
 import { buildDashboardMissionControl } from "../app/dashboard/dashboard-mission-control";
 import { MissionControlOverview } from "../app/dashboard/mission-control-overview";
+import { DashboardHistory } from "../app/dashboard/dashboard-history";
 
 function game(overrides: Partial<GameSummary> = {}): GameSummary {
   return {
@@ -101,6 +102,16 @@ function withoutReactTextMarkers(html: string): string {
 }
 
 describe("dashboard mission-control overview", () => {
+  it("does not present partial history as lifetime totals and offers on-demand loading", () => {
+    const history = [result()];
+    const control = buildDashboardMissionControl({ agents: [], games: [], history });
+    const overview = renderToString(<MissionControlOverview control={control} user={null} loading={false} errors={[]} onJoinPrimary={() => {}} publicIdentity={null} />);
+    expect(overview).not.toContain("Influence participations");
+    expect(overview).not.toContain("Influence wins");
+    const html = renderToString(<DashboardHistory entries={history} loading={false} error={null} kind="all" onKindChange={() => {}} hasMore moreLoading={false} moreError={null} onLoadMore={() => {}} />);
+    expect(html).toContain("Load older games");
+    expect(html).not.toContain("Loading older history");
+  });
   it("gates game creation and removes the redundant queued action", () => {
     const control = buildDashboardMissionControl({ agents: [agent()], games: [], history: [], queueStatus: {
       queuedCount: 1, nextGameAt: "2026-09-25T00:00:00Z", todayGame: null,

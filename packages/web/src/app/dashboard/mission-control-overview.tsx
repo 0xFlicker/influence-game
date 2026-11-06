@@ -111,18 +111,10 @@ export function MissionControlOverview({
 
       {queueEntry}
 
-      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-5 grid gap-3 md:grid-cols-2">
         <div className="influence-panel-muted rounded-lg p-4">
           <p className="text-2xl font-bold text-text-primary">{stats.agentCount}</p>
           <p className="influence-copy-muted text-xs">Saved agents</p>
-        </div>
-        <div className="influence-panel-muted rounded-lg p-4">
-          <p className="text-2xl font-bold text-text-primary">{stats.gamesPlayed}</p>
-          <p className="influence-copy-muted text-xs">Influence participations</p>
-        </div>
-        <div className="influence-panel-muted rounded-lg p-4">
-          <p className="text-2xl font-bold text-yellow-400">{stats.wins}</p>
-          <p className="influence-copy-muted text-xs">Influence wins</p>
         </div>
         <div className="influence-panel-muted rounded-lg p-4">
           <p className="text-2xl font-bold text-text-primary">{stats.liveGames + stats.openGames}</p>
