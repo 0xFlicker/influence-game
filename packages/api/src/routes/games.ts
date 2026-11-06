@@ -290,17 +290,19 @@ export function createGameRoutes(db: DrizzleDB) {
   app.get("/api/games", optionalAuth(db), async (c) => {
     if (!enabledGameKinds().includes("influence")) return c.json([]);
     const statusParam = c.req.query("status");
+    const rawLimit = c.req.query("limit");
+    const limit = rawLimit === undefined ? undefined : Number(rawLimit);
+    if (rawLimit !== undefined && (!/^\d+$/.test(rawLimit) || !Number.isSafeInteger(limit) || limit! < 1 || limit! > 20)) return c.json({ error: "limit must be an integer from 1 to 20" }, 400);
 
-    let rows;
-    if (statusParam) {
-      const statuses = statusParam.split(",").map((s) => s.trim()) as GameStatus[];
-      rows = await db
-        .select()
-        .from(schema.games)
-        .where(and(eq(schema.games.gameKind, "influence"), inArray(schema.games.status, statuses), publicGameFilter()));
-    } else {
-      rows = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "influence"), publicGameFilter()));
-    }
+    const statuses = statusParam ? statusParam.split(",").map((s) => s.trim()) as GameStatus[] : undefined;
+    const condition = and(eq(schema.games.gameKind, "influence"), statuses ? inArray(schema.games.status, statuses) : undefined, publicGameFilter());
+    const rows = limit === undefined ? await db.select().from(schema.games).where(condition) : await db.transaction(async tx => {
+      await tx.execute(sql`SET LOCAL TIME ZONE 'UTC'`);
+      return tx.select().from(schema.games).where(condition).orderBy(sql`CASE
+        WHEN ${schema.games.createdAt} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}'
+          AND pg_input_is_valid(${schema.games.createdAt}, 'timestamp with time zone')
+        THEN ${schema.games.createdAt}::timestamptz END DESC NULLS LAST`, desc(schema.games.id)).limit(limit);
+    }, { isolationLevel: "repeatable read", accessMode: "read only" });
 
     const episodes = await readEpisodePresentations(db, rows);
     c.header("Cache-Control", "private, no-store");

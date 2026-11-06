@@ -6,6 +6,7 @@ import { enabledGameKinds } from "@influence/engine/game-availability";
 import { collectionLabel, matchesGameCollection, type GameCollection } from "@/lib/game-collections";
 import { listWerewolfGames, fillWerewolfLobby, startWerewolfLobby, stopWerewolf, setWerewolfHidden, type WerewolfGameSummary } from "@/lib/werewolf-api";
 import { EpisodeCard } from "./episode-preview";
+import { InitialShelf } from "./initial-shelf";
 import {
   fillGame,
   hideGame,
@@ -233,9 +234,10 @@ interface GamesBrowserProps {
   compact?: boolean;
   collection?: GameCollection;
   includeWerewolf?: boolean;
+  initialGames?: GameSummary[];
 }
 
-export function GamesBrowser({ onJoin, compact = false, collection, includeWerewolf = false }: GamesBrowserProps) {
+export function GamesBrowser({ onJoin, compact = false, collection, includeWerewolf = false, initialGames = [] }: GamesBrowserProps) {
   const { hasPermission, roles } = usePermissions();
   const [filters, setFilters] = useState<FiltersState>({ status: "all", category: "all", search: "" });
   const [games, setGames] = useState<GameSummary[]>([]);
@@ -246,50 +248,44 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
   const kind = collection?.kind === "game" ? collection.game : selectedKind;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestVersion = useRef(0);
+  const requestsInFlight = useRef(0);
+  const activeRequest = useRef<AbortController | null>(null);
+  const invalidateRequests = useCallback(() => { ++requestVersion.current; activeRequest.current?.abort(); }, []);
 
   const refreshGames = useCallback(async () => {
+    const request = ++requestVersion.current;
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
+    const timeout = setTimeout(() => controller.abort(), 20_000);
+    ++requestsInFlight.current;
     try {
-      const [data, wolves, seasonList] = await Promise.all([listGames(), includeWerewolf && enabledGameKinds().includes("werewolf") ? listWerewolfGames() : Promise.resolve([]), showShelves ? listSeasons() : Promise.resolve([])]);
+      const [data, wolves, seasonList] = await Promise.all([listGames(undefined, controller.signal), includeWerewolf && enabledGameKinds().includes("werewolf") ? listWerewolfGames(controller.signal) : Promise.resolve([]), showShelves ? listSeasons(controller.signal) : Promise.resolve([])]);
+      if (request !== requestVersion.current) return;
       setGames(data); setWerewolfGames(wolves); setSeasons(seasonList);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load games.");
+      if (request === requestVersion.current) setError(controller.signal.aborted ? "Loading games took too long." : err instanceof Error ? err.message : "Failed to load games.");
     } finally {
-      setLoading(false);
+      clearTimeout(timeout);
+      if (activeRequest.current === controller) activeRequest.current = null;
+      --requestsInFlight.current;
+      if (request === requestVersion.current) setLoading(false);
     }
   }, [includeWerewolf, showShelves]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function fetchGames() {
-      try {
-        const [data, wolves, seasonList] = await Promise.all([listGames(), includeWerewolf && enabledGameKinds().includes("werewolf") ? listWerewolfGames() : Promise.resolve([]), showShelves ? listSeasons() : Promise.resolve([])]);
-        if (!cancelled) {
-          setGames(data); setWerewolfGames(wolves); setSeasons(seasonList);
-          setError(null);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load games.");
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    void fetchGames();
+    void refreshGames();
     const interval = setInterval(() => {
-      void fetchGames();
+      if (requestsInFlight.current === 0) void refreshGames();
     }, 10000);
 
     return () => {
-      cancelled = true;
+      invalidateRequests();
       clearInterval(interval);
     };
-  }, [includeWerewolf, showShelves]);
+  }, [refreshGames, invalidateRequests]);
 
   const canFill = hasPermission("fill_game");
   const canStart = hasPermission("start_game") && roles.some(role => ["gamer", "admin", "sysop"].includes(role));
@@ -366,12 +362,14 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
   ];
 
   if (loading) {
+    if (initialGames.length) return <InitialShelf games={initialGames}><p role="status" className="influence-copy-muted text-sm">Loading the full game library…</p></InitialShelf>;
     return (
       <div className="episode-grid" role="status" aria-label="Loading games"><div className="episode-skeleton" /><div className="episode-skeleton" /><span className="sr-only">Loading games…</span></div>
     );
   }
 
   if (error) {
+    if (initialGames.length) return <InitialShelf games={initialGames}><p role="alert" className="text-red-400">Could not load the full game library. <button className="underline" onClick={() => void refreshGames()}>Try again</button></p></InitialShelf>;
     return (
       <div className="rounded-xl p-8 text-center text-red-400/70 text-sm border border-red-400/30 bg-red-400/10">
         <p>{error}</p><button className="mt-3 underline" onClick={() => void refreshGames()}>Try again</button>

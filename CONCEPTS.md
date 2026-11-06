@@ -915,6 +915,10 @@ A chronological record of completed owned seats across game kinds, independent o
 
 Influence history uses its completed-results projection for placement and eligible competition receipts for points. A missing historical placement remains unknown. Werewolf history uses canonical faction outcomes: an eliminated member of the winning faction still won, and survival is a separate fact. Missing or invalid terminal evidence displays Result unavailable. History reads never award scores. Influence account ELO, career counters, agent competition ratings and season standings remain Influence-only; there is no combined House rating. A separate championship event may define an explicit Werewolf series scoring policy.
 
+## Public games preview
+
+The `/games` shell can show a small, uncached server-rendered preview of recent Public Influence games while the complete browser loads. That preview is not the complete library or a substitute for its filters; it contains no Unlisted or hidden games. See [public games initial shelf](docs/solutions/performance/games-initial-shelf.md) for freshness, fallback and measurement limits.
+
 ## Private payload reference
 
 A private payload reference is integrity metadata for an immutable bucket object: its key, codec, original/stored SHA-256 and original/stored byte lengths. It is not game authority or an authorization capability. The owning relational row retains those responsibilities. Images retain exact bytes; document bodies use lossless gzip. Reads verify integrity before use. See the [whole-storage cutover](docs/deployment/private-payload-storage-cutover.md) for existing-data migration and retention.

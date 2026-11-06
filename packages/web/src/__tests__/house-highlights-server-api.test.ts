@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { apiFetch } from "../lib/api";
 import {
   getServerGame,
+  getServerRecentGames,
   getServerGameReplayWatchFrames,
   getServerGameTranscript,
   getServerPostgameHighlights,
@@ -33,6 +34,36 @@ function restoreEnv(key: string, value: string | undefined): void {
 }
 
 describe("server-api", () => {
+  it("fetches the bounded initial shelf anonymously without caching", async () => {
+    process.env.API_BACKEND_URL = "http://127.0.0.1:3333";
+    let requested = "";
+    let options: RequestInit | undefined;
+    globalThis.fetch = (async (url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      requested = String(url);
+      options = init;
+      return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as typeof fetch;
+    await getServerRecentGames();
+    expect(requested).toBe("http://127.0.0.1:3333/api/games?limit=6");
+    expect(options?.cache).toBe("no-store");
+    expect(options?.credentials).toBe("omit");
+    expect(JSON.stringify(options?.headers)).not.toContain("Authorization");
+    expect(JSON.stringify(options?.headers)).not.toContain("Cookie");
+  });
+
+  it("keeps cancellation active while reading the response body", async () => {
+    const controller = new AbortController();
+    globalThis.fetch = (async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const body = new ReadableStream({ start(stream) {
+        init?.signal?.addEventListener("abort", () => stream.error(new Error("body cancelled")), { once: true });
+      } });
+      return new Response(body, { status: 200 });
+    }) as typeof fetch;
+    const promise = serverApiFetch("/api/games", { signal: controller.signal });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    controller.abort();
+    await expect(promise).rejects.toThrow("body cancelled");
+  });
   it("resolves public API URLs from the server backend env", () => {
     process.env.API_BACKEND_URL = "http://127.0.0.1:3333/";
 

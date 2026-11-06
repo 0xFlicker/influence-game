@@ -162,6 +162,12 @@ describe("E2E: Full Game Flow", () => {
 
     // Browser verification: game appears in game list page
     if (servers.webUrl) {
+      const initialHtml = await fetch(`${servers.webUrl}/games`, { headers: { Accept: "text/html" } });
+      const html = await initialHtml.text();
+      expect(initialHtml.ok).toBe(true);
+      expect(initialHtml.headers.get("cache-control")).toContain("no-store");
+      expect(html).toContain("Recently added Influence games");
+      expect(html).toContain(gameSlug);
       const page = await browser.newPage();
       try {
         await page.goto(`${servers.webUrl}/games`, {
