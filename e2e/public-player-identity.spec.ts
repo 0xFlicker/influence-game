@@ -437,7 +437,6 @@ test.describe("local public player identity", () => {
         await page.getByRole("button", { name: "Refresh games", exact: true }).click();
         for (const kind of ["werewolf", "influence"]) {
           const card = page.locator(`.episode-card[data-game-kind="${kind}"]`);
-          await card.scrollIntoViewIfNeeded();
           await expect(card.locator(".episode-management button")).toHaveText(["Start", "Fill AI", "Stop", "Hide"]);
           await expect(card.getByRole("button", { name: "Start", exact: true })).toBeDisabled();
           await card.getByRole("button", { name: "Fill AI", exact: true }).click();
