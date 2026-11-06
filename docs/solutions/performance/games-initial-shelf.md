@@ -32,10 +32,11 @@ successful refresh updates it. Do not cache this response at a CDN or pass
 personalized/authenticated data into it without defining and testing cache keys,
 revocation, freshness and invalidation across all write paths.
 
-The optional API limit is applied after public visibility and status filters,
+The preview route's limit is applied after public visibility and status filters,
 before enrichment. It orders valid creation timestamps by instant, interprets
 timezone-less values as UTC, places invalid values last and breaks ties by ID.
-The unlimited API stays compatible with older callers. PostgreSQL still scans
+The existing list endpoint continues to ignore its previously unsupported
+`limit` parameter, preserving older callers. PostgreSQL still scans
 and sorts candidates, and the full browser still downloads the unbounded lists;
 a complete public-library and collection paging contract remains future work.
 

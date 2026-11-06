@@ -44,7 +44,7 @@ describe("server-api", () => {
       return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
     }) as typeof fetch;
     await getServerRecentGames();
-    expect(requested).toBe("http://127.0.0.1:3333/api/games?limit=6");
+    expect(requested).toBe("http://127.0.0.1:3333/api/public-games/preview?limit=6");
     expect(options?.cache).toBe("no-store");
     expect(options?.credentials).toBe("omit");
     expect(JSON.stringify(options?.headers)).not.toContain("Authorization");

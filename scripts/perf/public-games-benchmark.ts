@@ -8,7 +8,7 @@ if (parsed.hostname !== "127.0.0.1" || parsed.pathname !== "/influence_test") th
 const db = createDB(url);
 const app = createGameRoutes(db);
 try {
-  for (const path of ["/api/games?limit=6", "/api/games", "/api/games?limit=6", "/api/games"]) {
+  for (const path of ["/api/public-games/preview?limit=6", "/api/games", "/api/public-games/preview?limit=6", "/api/games"]) {
     const started = performance.now();
     const response = await app.request(path);
     const body = await response.text();

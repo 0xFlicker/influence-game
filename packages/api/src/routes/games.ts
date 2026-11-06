@@ -287,10 +287,10 @@ export function createGameRoutes(db: DrizzleDB) {
     })));
   });
 
-  app.get("/api/games", optionalAuth(db), async (c) => {
+  const listPublicGames = async (c: Context<AuthEnv>, preview: boolean) => {
     if (!enabledGameKinds().includes("influence")) return c.json([]);
     const statusParam = c.req.query("status");
-    const rawLimit = c.req.query("limit");
+    const rawLimit = preview ? c.req.query("limit") ?? "6" : undefined;
     const limit = rawLimit === undefined ? undefined : Number(rawLimit);
     if (rawLimit !== undefined && (!/^\d+$/.test(rawLimit) || !Number.isSafeInteger(limit) || limit! < 1 || limit! > 20)) return c.json({ error: "limit must be an integer from 1 to 20" }, 400);
 
@@ -369,7 +369,10 @@ export function createGameRoutes(db: DrizzleDB) {
     });
 
     return c.json(summaries);
-  });
+  };
+  // A separate route preserves the old list endpoint's ignored query params.
+  app.get("/api/public-games/preview", optionalAuth(db), (c) => listPublicGames(c, true));
+  app.get("/api/games", optionalAuth(db), (c) => listPublicGames(c, false));
 
   // -------------------------------------------------------------------------
   // GET /api/games/:id — get game details

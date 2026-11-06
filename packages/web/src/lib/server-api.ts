@@ -18,7 +18,7 @@ export function getServerGameEntry(key: string): Promise<GameEntryIdentity> {
 
 /** Anonymous, uncached preview; the full browser remains the source for filtering. */
 export function getServerRecentGames(): Promise<GameSummary[]> {
-  return serverApiFetch("/api/games?limit=6", { cache: "no-store", credentials: "omit", signal: AbortSignal.timeout(1500) });
+  return serverApiFetch("/api/public-games/preview?limit=6", { cache: "no-store", credentials: "omit", signal: AbortSignal.timeout(1500) });
 }
 
 const DEFAULT_SERVER_API_TIMEOUT_MS = 8_000;

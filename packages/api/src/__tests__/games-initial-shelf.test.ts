@@ -21,15 +21,21 @@ test("bounded public shelf applies visibility and status before limit, with stab
     { id: "completed", slug: "completed", config: publicConfig, createdAt: "2026-11-01T00:00:00.000Z", status: "completed" },
   ]);
   const app = createGameRoutes(db);
-  const response = await app.request("/api/games?status=waiting&limit=2");
+  const response = await app.request("/api/public-games/preview?status=waiting&limit=2");
   expect(response.status).toBe(200);
   expect(response.headers.get("cache-control")).toBe("private, no-store");
   const rows = await response.json() as Array<{id: string}>;
   expect(rows.map(row => row.id)).toEqual(["b", "a"]);
   expect(((await (await app.request("/api/games?status=waiting")).json()) as unknown[])).toHaveLength(3);
-  for (const limit of ["0", "21", "1.5", "invalid"]) expect((await app.request(`/api/games?limit=${limit}`)).status).toBe(400);
+  for (const limit of ["0", "21", "1.5", "invalid"]) expect((await app.request(`/api/public-games/preview?limit=${limit}`)).status).toBe(400);
+  // The existing list endpoint used to ignore this parameter; preserve it.
+  for (const limit of ["1", "0", "21", "1.5", "invalid"]) {
+    const legacy = await app.request(`/api/games?status=waiting&limit=${limit}`);
+    expect(legacy.status).toBe(200);
+    expect(((await legacy.json()) as Array<{id:string}>).map(row => row.id).sort()).toEqual(["a", "b", "old"]);
+  }
   await db.update(schema.games).set({ hiddenAt: "2026-11-03T00:00:00.000Z" }).where(eq(schema.games.id, "b"));
-  const refreshed = await (await app.request("/api/games?status=waiting&limit=2")).json() as Array<{id: string}>;
+  const refreshed = await (await app.request("/api/public-games/preview?status=waiting&limit=2")).json() as Array<{id: string}>;
   expect(refreshed.map(row => row.id)).toEqual(["a", "old"]);
 });
 
@@ -41,8 +47,16 @@ test("bounded shelf sorts valid creation times by instant across different offse
     { id: "later", slug: "later", config, createdAt: "2026-10-01T12:00:01" },
     { id: "bad", slug: "bad", config, createdAt: "invalid" },
   ]);
-  const response = await createGameRoutes(db).request("/api/games?limit=4");
+  const response = await createGameRoutes(db).request("/api/public-games/preview?limit=4");
   expect(((await response.json()) as Array<{id: string}>).map(row => row.id)).toEqual(["later", "utc", "early", "bad"]);
+});
+
+test("the new preview route does not reserve an existing game slug", async () => {
+  const config = JSON.stringify({ providerManifest: [{ catalogId: DEFAULT_MODEL_CATALOG_ID }] });
+  await db.insert(schema.games).values({ id: "preview-game", slug: "preview", config, status: "waiting" });
+  const response = await createGameRoutes(db).request("/api/games/preview");
+  expect(response.status).toBe(200);
+  expect((await response.json()) as { id: string }).toMatchObject({ id: "preview-game" });
 });
 
 test("bounded public lists omit season-wide numbering while the legacy full list retains it", async () => {
@@ -55,6 +69,6 @@ test("bounded public lists omit season-wide numbering while the legacy full list
   const app = createGameRoutes(db);
   const legacy = await (await app.request("/api/games")).json() as Array<{id:string; episode:{episodeNumber:number | null}}>;
   expect(legacy.find(game => game.id === "second")?.episode.episodeNumber).toBe(2);
-  const preview = await (await app.request("/api/games?limit=1")).json() as typeof legacy;
+  const preview = await (await app.request("/api/public-games/preview?limit=1")).json() as typeof legacy;
   expect(preview[0]).toMatchObject({ id: "second", episode: { episodeNumber: null } });
 });
