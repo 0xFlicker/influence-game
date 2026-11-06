@@ -248,6 +248,7 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
   const kind = collection?.kind === "game" ? collection.game : selectedKind;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasLoadedGames, setHasLoadedGames] = useState(false);
   const requestVersion = useRef(0);
   const requestsInFlight = useRef(0);
   const activeRequest = useRef<AbortController | null>(null);
@@ -264,6 +265,7 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
       const [data, wolves, seasonList] = await Promise.all([listGames(undefined, controller.signal), includeWerewolf && enabledGameKinds().includes("werewolf") ? listWerewolfGames(controller.signal) : Promise.resolve([]), showShelves ? listSeasons(controller.signal) : Promise.resolve([])]);
       if (request !== requestVersion.current) return;
       setGames(data); setWerewolfGames(wolves); setSeasons(seasonList);
+      setHasLoadedGames(true);
       setError(null);
     } catch (err) {
       if (request === requestVersion.current) setError(controller.signal.aborted ? "Loading games took too long." : err instanceof Error ? err.message : "Failed to load games.");
@@ -369,7 +371,7 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
   }
 
   if (error) {
-    if (initialGames.length) return <InitialShelf games={initialGames}><p role="alert" className="text-red-400">Could not load the full game library. <button className="underline" onClick={() => void refreshGames()}>Try again</button></p></InitialShelf>;
+    if (!hasLoadedGames && initialGames.length) return <InitialShelf games={initialGames}><p role="alert" className="text-red-400">Could not load the full game library. <button className="underline" onClick={() => void refreshGames()}>Try again</button></p></InitialShelf>;
     return (
       <div className="rounded-xl p-8 text-center text-red-400/70 text-sm border border-red-400/30 bg-red-400/10">
         <p>{error}</p><button className="mt-3 underline" onClick={() => void refreshGames()}>Try again</button>

@@ -27,7 +27,7 @@ import {
 } from "./test-server.js";
 import { launchBrowser, closeBrowser } from "./test-browser.js";
 import { cleanupE2eResources } from "./cleanup.js";
-import type { Browser, Page } from "puppeteer";
+import type { Browser, HTTPRequest, Page } from "puppeteer";
 import { mkdirSync } from "fs";
 import path from "path";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
@@ -194,6 +194,28 @@ describe("E2E: Full Game Flow", () => {
 
         const pageText = await getPageText(page);
         expect(pageText).toContain(gameSlug);
+
+        // A later refresh failure must not resurrect a stale server preview.
+        const hidden = await fetch(`${servers.apiUrl}/api/games/${gameId}/hide`, { method: "PATCH", headers: { Authorization: `Bearer ${admin.jwt}` } });
+        expect(hidden.ok).toBe(true);
+        const failGames = (request: HTTPRequest) => {
+          if (request.method() === "GET" && new URL(request.url()).pathname === "/api/games") {
+            void request.respond({ status: 503, contentType: "application/json", headers: { "Access-Control-Allow-Origin": "*" }, body: JSON.stringify({ error: "Fixture unavailable" }) });
+          } else void request.continue();
+        };
+        try {
+          await page.waitForFunction(`!document.body.innerText.includes(${JSON.stringify(gameSlug)})`, { timeout: 25000 });
+          await page.setRequestInterception(true);
+          page.on("request", failGames);
+          await page.waitForFunction("document.body.innerText.includes('Try again')", { timeout: 25000 });
+          expect(await getPageText(page)).not.toContain(gameSlug);
+          expect(await getPageText(page)).not.toContain("Recently added Influence games");
+        } finally {
+          page.off("request", failGames);
+          await page.setRequestInterception(false);
+          const unhide = await fetch(`${servers.apiUrl}/api/games/${gameId}/unhide`, { method: "PATCH", headers: { Authorization: `Bearer ${admin.jwt}` } });
+          expect(unhide.ok).toBe(true);
+        }
 
         // Navigate to game detail page by slug
         await page.goto(`${servers.webUrl}/games/${gameSlug}`, {

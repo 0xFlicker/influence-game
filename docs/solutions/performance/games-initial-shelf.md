@@ -11,7 +11,10 @@ public Influence games. Until the complete client browser finishes loading, it
 shows those games as a labelled preview, not as the complete searchable library.
 If the preview fails or times out, the ordinary client browser still loads; if
 the full browser fails after a successful preview, the preview and a retry
-remain available. Existing complete-data search and filters are unchanged.
+remain available until the first successful full-library load. If a later
+refresh fails, show an error instead of restoring that older preview, which
+could contain games removed by an intervening successful refresh. Existing
+complete-data search and filters are unchanged.
 
 The initial request omits credentials, and both the server fetch and API response
 use `no-store`. There is no shared shelf cache to invalidate: a new request reads
