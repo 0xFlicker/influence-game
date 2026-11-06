@@ -34,12 +34,10 @@ export function Nav({ menu = false }: { menu?: boolean }) {
   const canAccessAdmin = isAdmin || hasPermission("manage_invites");
   const pathname = usePathname();
   const { suppressWebsiteAuthChrome, isMiniApp, contextUser } = useMiniApp();
-  const gameRoute = pathname?.split("/")[2];
   const focusedFlow = !pathname || pathname === "/agents/create"
     || /^\/dashboard\/agents\/[^/]+\/edit(?:\/|$)/.test(pathname)
     || pathname === "/games/new"
-    || pathname === "/admin/games/new"
-    || (pathname.startsWith("/games/") && !["free", "public", "private", "season"].includes(gameRoute));
+    || pathname === "/admin/games/new";
   const showCreateActions = ready && !permissionsLoading && !focusedFlow && pathname !== "/";
 
   const navLinks = (

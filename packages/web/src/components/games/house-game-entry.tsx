@@ -65,7 +65,7 @@ export function HouseGameEntry(props: HouseGameEntryProps) {
   }
 
   if (props.mode === "entry") {
-    return <GameSiteEntry><EpisodeLanding key={identity.id} slug={identity.slug} initialGame={props.initialGame} /></GameSiteEntry>;
+    return <EpisodeLanding key={identity.id} slug={identity.slug} initialGame={props.initialGame} />;
   }
   const viewer = <GameViewer
     key={identity.id}

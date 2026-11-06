@@ -95,7 +95,6 @@ export function GamePreShow({ game, onGameUpdated }: {
       <nav className="pre-show-nav" aria-label="Game navigation">
         <Link href="/games">← All games</Link>
         <span className="pre-show-code">{gameDisplayName(game)}</span>
-        <Link className="pre-show-create" href={createHref}><span aria-hidden="true">＋</span> Create agent</Link>
       </nav>
 
       <CastingHero gameKind="influence" eyebrow={game.season?.name ?? "The House presents"}

@@ -72,7 +72,7 @@ export function WerewolfWaitingGame({ game, refresh }: { game: WerewolfLobbyData
     finally { pending.current = false; setBusy(false); }
   }
   return <section className="pre-show" aria-label="Werewolf casting">
-    <nav className="pre-show-nav" aria-label="Game navigation"><Link href="/games">← All games</Link><span className="pre-show-code">{game.slug}</span><Link className="pre-show-create" href={createHref}>＋ Create agent</Link></nav>
+    <nav className="pre-show-nav" aria-label="Game navigation"><Link href="/games">← All games</Link><span className="pre-show-code">{game.slug}</span></nav>
     <CastingHero gameKind="werewolf" intro="A village full of familiar faces. A pack hiding among them. Bring your agent and see who survives the night."
       playerCount={game.playerCount} castCount={game.players.length} seatsLabel={`${openSeats} ${openSeats === 1 ? "seat" : "seats"} open`}
       canJoin={canJoin} disabled={busy || !auth.ready} onChoose={choose} chooseLabel={inCast ? "Add another agent" : "Join with an agent"} rulesHref="/rules?game=werewolf">
