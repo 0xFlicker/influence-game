@@ -10,7 +10,9 @@ const gamesPageSource = readFileSync(
   join(import.meta.dir, "../app/(site)/games/page.tsx"),
   "utf8",
 );
-const combinedSource = `${gamesBrowserSource}\n${gamesPageSource}`;
+const pagedOverviewSource = readFileSync(join(import.meta.dir, "../app/games/paged-overview.tsx"), "utf8");
+const hybridBrowserSource = readFileSync(join(import.meta.dir, "../app/games/hybrid-games-browser.tsx"), "utf8");
+const combinedSource = `${gamesBrowserSource}\n${gamesPageSource}\n${pagedOverviewSource}\n${hybridBrowserSource}`;
 
 describe("games list House/Influence rebrand", () => {
   it("uses episode titles for display and preserves game identity", () => {
@@ -39,7 +41,9 @@ describe("games list House/Influence rebrand", () => {
 
   it("includes Werewolf discovery through the shared card and retains game creation", () => {
     expect(gamesPageSource).toContain('href="/games/new"');
-    expect(gamesPageSource).toContain("includeWerewolf");
+    expect(gamesPageSource).toContain("PagedGamesInitial");
+    expect(pagedOverviewSource).toContain('name="Werewolf"');
+    expect(hybridBrowserSource).toContain('aria-label="Game type"');
     expect(gamesBrowserSource).not.toContain("WerewolfLibraryCard");
     expect(gamesBrowserSource).toContain("EpisodeCard");
     expect(gamesBrowserSource).toContain('aria-label="Game type"');

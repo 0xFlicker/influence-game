@@ -19,6 +19,6 @@ test("the agent bench offers profile, edit, management and creation destinations
 test("dashboard empty and error states remain actionable", () => {
   expect(renderToString(<DashboardAgentBench agents={[]} loading={false} error={null} />)).toContain("No saved agents yet");
   expect(renderToString(<DashboardAgentBench agents={[]} loading={false} error="Could not load your agents." />)).toContain('role="alert"');
-  expect(renderToString(<DashboardHistory entries={[]} loading={true} error={null} />)).toContain('role="status"');
+  expect(renderToString(<DashboardHistory entries={[]} loading={true} error={null} kind="all" page={0} hasNext={false} onKindChange={()=>{}} onPrevious={()=>{}} onNext={()=>{}} onRetry={()=>{}} />)).toContain('role="status"');
   expect(renderToString(<McpSetupCard hasHistory />)).toContain('href="/get-mcp"');
 });

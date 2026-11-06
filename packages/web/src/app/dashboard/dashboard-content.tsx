@@ -6,11 +6,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthenticatedPublicIdentity } from "@/app/providers";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermissions } from "@/hooks/use-permissions";
-import { getAuthToken, getPlayerGames, listAgents, listGames, type GameSummary, type PlayerGameResult, type SavedAgent } from "@/lib/api";
+import { getAuthToken, listAgents, listGames, type GameSummary, type SavedAgent } from "@/lib/api";
 import { playerProfileHref } from "@/lib/player-profile-links";
 import { HOUSE_VENUE } from "@/lib/product-identity";
 import { DashboardAgentBench } from "./dashboard-agent-bench";
 import { DashboardHistory } from "./dashboard-history";
+import { useDashboardHistory } from "./use-dashboard-history";
 import { ProfileContent } from "./profile/profile-content";
 import { JoinGameModal } from "./join-game-modal";
 import { OwnerLearningActivation } from "./agents/[id]/review/owner-learning-activation";
@@ -39,11 +40,9 @@ export function DashboardContent() {
   const requestedJoinGameId = searchParams.get("joinGameId");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [agents, setAgents] = useState<SavedAgent[]>([]);
-  const [history, setHistory] = useState<PlayerGameResult[]>([]);
+  const history = useDashboardHistory(accountId, authenticated);
   const [agentsLoading, setAgentsLoading] = useState(true);
-  const [historyLoading, setHistoryLoading] = useState(true);
   const [agentsError, setAgentsError] = useState<string | null>(null);
-  const [historyError, setHistoryError] = useState<string | null>(null);
   const [dataOwner, setDataOwner] = useState<string | null>(null);
   const dataRequest = useRef(0);
   const invalidateDataRequest = useCallback(() => { dataRequest.current++; }, []);
@@ -53,15 +52,11 @@ export function DashboardContent() {
   const fetchData = useCallback(() => {
     if (!authenticated || !accountId || !getAuthToken()) return;
     const request = ++dataRequest.current;
-    setAgentsError(null); setHistoryError(null);
+    setAgentsError(null);
     listAgents().then(value => { if (request === dataRequest.current) setAgents(value); }).catch(() => { if (request === dataRequest.current) setAgentsError("Could not load your agents."); }).finally(() => { if (request === dataRequest.current) setAgentsLoading(false); });
-    // Follow-up: wire this owner-history read to the paginated API when it is
-    // available, including the selected game-kind filter and page/cursor state.
-    // DashboardHistory currently limits rendering only, not the network response.
-    getPlayerGames().then(value => { if (request === dataRequest.current) setHistory(value); }).catch(() => { if (request === dataRequest.current) setHistoryError("Could not load your game history."); }).finally(() => { if (request === dataRequest.current) setHistoryLoading(false); });
   }, [accountId, authenticated]);
   useEffect(() => {
-    const initial = window.setTimeout(() => { setAgents([]); setHistory([]); setAgentsLoading(true); setHistoryLoading(true); setDataOwner(accountId ?? null); fetchData(); }, 0);
+    const initial = window.setTimeout(() => { setAgents([]); setAgentsLoading(true); setDataOwner(accountId ?? null); fetchData(); }, 0);
     window.addEventListener("auth:session-ready", fetchData);
     return () => { invalidateDataRequest(); window.clearTimeout(initial); window.removeEventListener("auth:session-ready", fetchData); };
   }, [accountId, fetchData, invalidateDataRequest]);
@@ -77,20 +72,19 @@ export function DashboardContent() {
   }, [requestedJoinGameId]);
   const displayName = identity?.displayName && identity.displayName !== "Anonymous" ? identity.displayName : account?.email ?? account?.walletAddress?.slice(0, 10) ?? "Player";
   const visibleAgents = authenticated && dataOwner === accountId ? agents : [];
-  const visibleHistory = authenticated && dataOwner === accountId ? history : [];
   const closeJoin = () => { setJoinTarget(null); setJoinError(null); router.replace("/dashboard"); };
   return <div className={styles.dashboard}>
-    {joinTarget && <JoinGameModal game={joinTarget} onClose={closeJoin} onSuccess={() => { closeJoin(); fetchData(); }} />}
+    {joinTarget && <JoinGameModal game={joinTarget} onClose={closeJoin} onSuccess={() => { closeJoin(); fetchData(); history.reload(); }} />}
     {joinError && <p role="alert" className={styles.message}>{joinError} <button type="button" onClick={closeJoin}>Dismiss</button></p>}
     <header className={styles.masthead}><div><p className={styles.eyebrow}>Your dashboard</p><h1>Welcome back,<br />{displayName}.</h1><p>Your agents and their stories in The House.</p></div><div className="flex flex-wrap gap-3">{hasPermission("create_game") && <Link href="/games/new" className={styles.settingsButton}>＋ Create game</Link>}<button type="button" className={styles.settingsButton} onClick={() => setSettingsOpen(true)}>⚙ &nbsp; Settings</button></div></header>
     <div className={styles.review}><OwnerLearningActivation enabled={authenticated} agents={visibleAgents} /></div>
     <div className={styles.columns}>
       <DashboardAgentBench agents={visibleAgents.slice(0, 3)} loading={dataOwner !== accountId || agentsLoading} error={agentsError} />
-      <div><DashboardHistory entries={visibleHistory} loading={dataOwner !== accountId || historyLoading} error={historyError} />
+      <div><DashboardHistory entries={history.entries} loading={history.loading} error={history.error} kind={history.kind} page={history.page} hasNext={history.nextCursor !== null} onKindChange={history.setKind} onPrevious={history.previous} onNext={history.next} onRetry={history.retry} />
         <div className={styles.profileLine}><div><h3>Your public profile</h3><p>{identity?.displayName ?? "Complete your public identity"}{identity?.handle ? ` · @${identity.handle}` : ""}</p></div>{identity?.publicIdentityOnboarding.state === "complete" ? <Link className={styles.link} href={playerProfileHref(identity)}>View profile →</Link> : <button type="button" className={styles.link} onClick={() => setSettingsOpen(true)}>Complete profile →</button>}</div>
       </div>
     </div>
-    <McpSetupCard hasHistory={visibleHistory.length > 0} />
+    <McpSetupCard hasHistory={history.hasAnyHistory} />
     {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
   </div>;
 }

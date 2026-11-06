@@ -1,19 +1,23 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { cleanup, fireEvent, render, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 import { Window } from "happy-dom";
 import type { HouseParticipation } from "@influence/engine/house-participation";
 import { DashboardHistory } from "../app/dashboard/dashboard-history";
+import { useDashboardHistory } from "../app/dashboard/use-dashboard-history";
 
-const globals = ["window", "document", "navigator", "HTMLElement", "Node", "Event"] as const;
+const globals = ["window", "document", "navigator", "localStorage", "HTMLElement", "Node", "Event"] as const;
 const original = new Map(globals.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+const originalFetch = globalThis.fetch;
 let tab: Window;
 
 beforeEach(() => {
   tab = new Window({ url: "http://localhost/dashboard" });
   for (const key of globals) Object.defineProperty(globalThis, key, { configurable: true, value: tab[key] });
+  tab.localStorage.setItem("influence_session", "token");
 });
 afterEach(() => {
   cleanup();
+  globalThis.fetch = originalFetch;
   tab.close();
   for (const key of globals) {
     const descriptor = original.get(key);
@@ -33,37 +37,83 @@ function entry(index: number): HouseParticipation {
     : { ...base, gameKind: "werewolf", result: { outcome: "win", faction: "village", alive: true, eliminationDay: null, days: 3 } };
 }
 
-test("history shows at most three entries and navigates all pages", () => {
-  const view = render(<DashboardHistory entries={Array.from({ length: 8 }, (_, index) => entry(index))} loading={false} error={null} />);
+function History({ owner = "owner" }: { owner?: string }) {
+  const history = useDashboardHistory(owner, true);
+  return <DashboardHistory entries={history.entries} loading={history.loading} error={history.error} kind={history.kind} page={history.page} hasNext={history.nextCursor !== null} onKindChange={history.setKind} onPrevious={history.previous} onNext={history.next} onRetry={history.retry} />;
+}
+
+test("requests three owner-history entries per page, and filters before paging", async () => {
+  const requests: URL[] = [];
+  const entries = Array.from({ length: 8 }, (_, index) => entry(index));
+  globalThis.fetch = Object.assign(async (input: RequestInfo | URL) => {
+    const url = new URL(String(input), "http://localhost"); requests.push(url);
+    const kind = url.searchParams.get("game");
+    const filtered = entries.filter(item => kind === "all" || item.gameKind === kind);
+    const start = Number(url.searchParams.get("cursor") ?? 0);
+    return Response.json({ items: filtered.slice(start, start + 3), nextCursor: start + 3 < filtered.length ? String(start + 3) : null });
+  }, { preconnect: originalFetch.preconnect }) as typeof fetch;
+  const view = render(<History />);
+  await waitFor(() => expect(view.getAllByRole("listitem")).toHaveLength(3));
+  expect(requests).toHaveLength(1);
+  expect(requests[0]!.pathname).toBe("/api/player/games-page");
+  expect(requests[0]!.searchParams.get("limit")).toBe("3");
+  expect(requests[0]!.searchParams.get("game")).toBe("all");
+  const pages = () => within(view.getByRole("navigation", { name: "Game history pages" }));
+  expect(pages().getByText("Page 1")).toBeTruthy();
+  fireEvent.click(pages().getByRole("button", { name: "Next" }));
+  await waitFor(() => expect(view.getByRole("link", { name: "Game 3" })).toBeTruthy());
+  expect(requests[1]!.searchParams.get("cursor")).toBe("3");
+  expect(pages().getByText("Page 2")).toBeTruthy();
+  fireEvent.click(pages().getByRole("button", { name: "Previous" }));
+  await waitFor(() => expect(view.getByRole("link", { name: "Game 0" })).toBeTruthy());
+  expect(requests[2]!.searchParams.has("cursor")).toBe(false);
+  fireEvent.click(view.getByRole("button", { name: "Influence" }));
+  await waitFor(() => expect(view.queryByRole("link", { name: "Game 1" })).toBeNull());
+  await waitFor(() => expect(view.getByRole("link", { name: "Game 4" })).toBeTruthy());
+  expect(requests[3]!.searchParams.get("game")).toBe("influence");
+  expect(requests[3]!.searchParams.has("cursor")).toBe(false);
   expect(view.getAllByRole("listitem")).toHaveLength(3);
-  expect(view.getByRole("link", { name: "Game 0" })).toBeTruthy();
-  expect(view.queryByRole("link", { name: "Game 3" })).toBeNull();
-  const pages = within(view.getByRole("navigation", { name: "Game history pages" }));
-  expect(pages.getByText("Page 1 of 3")).toBeTruthy();
-  expect((pages.getByRole("button", { name: "Previous" }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(pages.getByRole("button", { name: "Next" }));
-  expect(view.getByRole("link", { name: "Game 3" })).toBeTruthy();
-  expect(view.getAllByRole("listitem")).toHaveLength(3);
-  fireEvent.click(pages.getByRole("button", { name: "Next" }));
-  expect(pages.getByText("Page 3 of 3")).toBeTruthy();
-  expect(view.getAllByRole("listitem")).toHaveLength(2);
-  expect((pages.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(pages.getByRole("button", { name: "Previous" }));
-  expect(pages.getByText("Page 2 of 3")).toBeTruthy();
+  fireEvent.click(pages().getByRole("button", { name: "Next" }));
+  await waitFor(() => expect(view.getByRole("link", { name: "Game 6" })).toBeTruthy());
+  expect(view.getAllByRole("listitem")).toHaveLength(1);
+  expect((pages().getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
 });
 
-test("filter changes restart at page one and shrinking history stays in bounds", () => {
-  const entries = Array.from({ length: 12 }, (_, index) => entry(index));
-  const view = render(<DashboardHistory entries={entries} loading={false} error={null} />);
-  fireEvent.click(view.getByRole("button", { name: "Next" }));
-  fireEvent.click(view.getByRole("button", { name: "Influence" }));
-  expect(view.getByRole("link", { name: "Game 0" })).toBeTruthy();
-  expect(view.queryByRole("link", { name: "Game 1" })).toBeNull();
-  expect(view.getByText("Page 1 of 2")).toBeTruthy();
-  fireEvent.click(view.getByRole("button", { name: "Next" }));
-  expect(view.getByRole("link", { name: "Game 6" })).toBeTruthy();
-  view.rerender(<DashboardHistory entries={entries.slice(0, 3)} loading={false} error={null} />);
-  expect(view.getAllByRole("listitem")).toHaveLength(2);
-  expect(view.getByRole("link", { name: "Game 0" })).toBeTruthy();
-  expect(view.queryByRole("navigation", { name: "Game history pages" })).toBeNull();
+test("failed pages can be retried and stale responses cannot cross accounts", async () => {
+  let resolveOld: (response: Response) => void = () => {};
+  let calls = 0;
+  globalThis.fetch = Object.assign(async () => {
+    calls++;
+    if (calls === 1) return new Promise<Response>(resolve => { resolveOld = resolve; });
+    if (calls === 2) return new Response("unavailable", { status: 503 });
+    return Response.json({ items: [entry(1)], nextCursor: null });
+  }, { preconnect: originalFetch.preconnect }) as typeof fetch;
+  const view = render(<History owner="first" />);
+  await waitFor(() => expect(calls).toBe(1));
+  view.rerender(<History owner="second" />);
+  await waitFor(() => expect(view.getByRole("alert").textContent).toContain("Could not load"));
+  resolveOld(Response.json({ items: [entry(0)], nextCursor: null }));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(view.queryByRole("link", { name: "Game 0" })).toBeNull();
+  fireEvent.click(view.getByRole("button", { name: "Try again" }));
+  await waitFor(() => expect(view.getByRole("link", { name: "Game 1" })).toBeTruthy());
+  expect(view.queryByRole("link", { name: "Game 0" })).toBeNull();
+});
+
+test("a late response cannot replace a newer game filter", async () => {
+  let resolveAll: (response: Response) => void = () => {};
+  let calls = 0;
+  globalThis.fetch = Object.assign(async () => {
+    calls++;
+    if (calls === 1) return new Promise<Response>(resolve => { resolveAll = resolve; });
+    return Response.json({ items: [entry(1)], nextCursor: null });
+  }, { preconnect: originalFetch.preconnect }) as typeof fetch;
+  const view = render(<History />);
+  await waitFor(() => expect(calls).toBe(1));
+  fireEvent.click(view.getByRole("button", { name: "Werewolf" }));
+  await waitFor(() => expect(view.getByRole("link", { name: "Game 1" })).toBeTruthy());
+  resolveAll(Response.json({ items: [entry(0)], nextCursor: null }));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(view.queryByRole("link", { name: "Game 0" })).toBeNull();
+  expect(view.getByRole("button", { name: "Werewolf" }).getAttribute("aria-pressed")).toBe("true");
 });

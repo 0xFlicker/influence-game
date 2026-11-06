@@ -37,6 +37,7 @@ import { createDB, schema } from "./db/index.js";
 import { calculateMigrationSet, runMigrations } from "./db/migrate.js";
 import { seedRBAC } from "./db/rbac-seed.js";
 import { createGameRoutes } from "./routes/games.js";
+import { createPublicGamesPageRoutes } from "./routes/public-games-page.js";
 import { createProviderModelRoutes } from "./routes/provider-models.js";
 import {
   createAuthRoutes,
@@ -651,6 +652,7 @@ const mcpRoutes = createMcpRoutes(db);
 app.route("/", mcpRoutes);
 
 // Game routes
+app.route("/", createPublicGamesPageRoutes(db));
 app.route("/", createHouseShareRoutes(db));
 app.route("/", createGameEntryRoutes(db));
 app.route("/", createWerewolfRoutes(db));

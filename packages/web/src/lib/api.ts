@@ -591,11 +591,12 @@ export async function getProviderModels(): Promise<ProviderModelInventory> {
 
 export async function listGames(
   status?: GameStatus | GameStatus[],
+  signal?: AbortSignal,
 ): Promise<GameSummary[]> {
   const q = status
     ? `?status=${Array.isArray(status) ? status.join(",") : status}`
     : "";
-  return apiFetch(`/api/games${q}`);
+  return apiFetch(`/api/games${q}`, { signal });
 }
 
 export interface RecentlyFinishedGame {
@@ -2072,6 +2073,12 @@ export async function joinGame(
 
 export async function getPlayerGames(): Promise<PlayerGameResult[]> {
   return apiFetch("/api/player/games");
+}
+
+export async function getPlayerGamesPage(cursor?: string, limit = 20, game: "all" | "influence" | "werewolf" = "all"): Promise<{ items: PlayerGameResult[]; nextCursor: string | null }> {
+  const params = new URLSearchParams({ limit: String(limit), game });
+  if (cursor) params.set("cursor", cursor);
+  return apiFetch(`/api/player/games-page?${params}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -3816,8 +3823,8 @@ export async function removeAdminFreeQueueEntry(userId: string): Promise<void> {
   await apiFetch(`/api/admin/free-queue/${encodeURIComponent(userId)}`, { method: "DELETE" });
 }
 
-export async function listSeasons(): Promise<SeasonIdentity[]> {
-  const response = await apiFetch<{ schemaVersion: 1; seasons: SeasonIdentity[] }>("/api/seasons");
+export async function listSeasons(signal?: AbortSignal): Promise<SeasonIdentity[]> {
+  const response = await apiFetch<{ schemaVersion: 1; seasons: SeasonIdentity[] }>("/api/seasons", { signal });
   return response.seasons;
 }
 

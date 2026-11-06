@@ -24,14 +24,14 @@ test("faction success and survival are independent; Werewolf has no placement or
   expect(html).not.toContain("pts");expect(html).not.toContain("#");
 });
 test("history exposes filters, loading, failure and empty states",()=>{
-  const render=(entries:HouseParticipation[],loading=false,error:string|null=null)=>renderToString(<DashboardHistory entries={entries} loading={loading} error={error}/>);
+  const render=(entries:HouseParticipation[],loading=false,error:string|null=null)=>renderToString(<DashboardHistory entries={entries} loading={loading} error={error} kind="all" page={0} hasNext={false} onKindChange={()=>{}} onPrevious={()=>{}} onNext={()=>{}} onRetry={()=>{}}/>);
   expect(render([wolf])).toContain('aria-pressed="true"');
   expect(render([])).toContain("No completed games");
   expect(render([],true)).toContain('role="status"');
   expect(render([],false,"History unavailable")).toContain('role="alert"');
 });
 test("dashboard history hides results until the results page is opened",()=>{
-  const html=renderToString(<DashboardHistory entries={[wolf,influence]} loading={false} error={null}/>);
+  const html=renderToString(<DashboardHistory entries={[wolf,influence]} loading={false} error={null} kind="all" page={0} hasNext={false} onKindChange={()=>{}} onPrevious={()=>{}} onNext={()=>{}} onRetry={()=>{}}/>);
   expect(html).toContain("Frozen Name");
   expect(html).toContain("View results · Spoilers");
   expect(html).toContain('/games/moonlit-village/results');

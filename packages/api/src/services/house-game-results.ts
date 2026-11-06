@@ -1,4 +1,4 @@
-import { readEpisodePresentations } from "./episode-presentation.js";
+import { readEpisodePresentations, type EpisodePresentation } from "./episode-presentation.js";
 import { asc, eq, or } from "drizzle-orm";
 import { buildWerewolfResults } from "@influence/engine/werewolf/results";
 import { replayWerewolf, werewolfExecutionFinished } from "@influence/engine/werewolf";
@@ -14,7 +14,7 @@ export async function readHouseGameResults(db: DrizzleDB, idOrSlug: string) {
 }
 
 /** Reuse a caller-owned snapshot when composing several House reads. */
-export async function readHouseGameResultsInTransaction(tx: Pick<DrizzleDB, "select" | "selectDistinctOn">, idOrSlug: string) {
+export async function readHouseGameResultsInTransaction(tx: Pick<DrizzleDB, "select" | "selectDistinctOn">, idOrSlug: string, episode?: EpisodePresentation) {
   const [game] = await tx.select().from(schema.games).where(or(eq(schema.games.id,idOrSlug),eq(schema.games.slug,idOrSlug))).limit(1);
   if (!game || !isViewerGame(game)) return {ok:false as const,status:"not_found" as const,error:"Game not found"};
   if (game.gameKind === "influence") {
@@ -32,7 +32,7 @@ export async function readHouseGameResultsInTransaction(tx: Pick<DrizzleDB, "sel
     // Frozen character URLs use the existing audience/position-guarded image endpoint.
     const players = results.players.map(player=>({...player,avatarUrl:`/api/werewolf/${encodeURIComponent(game.id)}/characters/${encodeURIComponent(player.id)}?audience=omniscient&cursor=${results.source.cursor}`}));
     return {ok:true as const,gameKind:"werewolf" as const,schemaVersion:2 as const,
-      game:{id:game.id,slug:game.slug,status:game.status,completedAt:game.endedAt,episode:(await readEpisodePresentations(tx,[game])).get(game.id)!},results:{...results,players},
+      game:{id:game.id,slug:game.slug,status:game.status,completedAt:game.endedAt,episode:episode ?? (await readEpisodePresentations(tx,[game])).get(game.id)!},results:{...results,players},
       retrospective:retrospectiveProgress(state.retrospectiveOutcomeSource,state.retrospective,state.players.length,werewolfExecutionFinished(state))};
   } catch (error) {
     console.error(`[werewolf-results] Invalid completed history for ${game.id}:`,error);

@@ -9,7 +9,9 @@ export interface WerewolfLobbyData {
   id: string; slug: string; visibility: import("./api").GameVisibility; status: GameStatus; started: boolean; playerCount: number; modelLabel: string; preset: WerewolfPreset;
   players: Array<{ id: string; agentProfileId: string | null; ownerPublicId: string | null; name: string; avatarUrl: string | null; personaKey: SavedAgent["personaKey"]; available: boolean }>;
 }
-export const listWerewolfGames = () => apiFetch<WerewolfGameSummary[]>("/api/werewolf", { cache: "no-store" });
+export const listWerewolfGames = (signal?: AbortSignal) => apiFetch<WerewolfGameSummary[]>("/api/werewolf", { cache: "no-store", signal });
+/** Expensive, uncapped read used only while searching the game library. */
+export const listWerewolfGamesForSearch = (signal?: AbortSignal) => apiFetch<WerewolfGameSummary[]>("/api/werewolf-search", { cache: "no-store", signal });
 export interface CreateWerewolfParams {
   visibility: import("./api").GameVisibility;
   preset: WerewolfPreset; setup: import("@influence/engine/werewolf/types").WerewolfSetup;
