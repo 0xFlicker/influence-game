@@ -3262,6 +3262,7 @@ export async function getAdminOwnerLearningFailureContent(
 export interface AdminAgent {
   modelPreference?: ModelPreference;
   id: string;
+  publicProfileAvailable: boolean;
   userId: string;
   name: string;
   backstory: string | null;
@@ -3309,6 +3310,7 @@ export interface UserRoleAssignment {
 
 export interface AdminUser {
   id: string;
+  publicProfileId: string | null;
   walletAddress: string | null;
   email: string | null;
   displayName: string | null;
