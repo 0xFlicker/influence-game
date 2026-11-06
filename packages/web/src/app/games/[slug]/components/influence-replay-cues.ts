@@ -2,7 +2,7 @@ import type {TranscriptEntry, GamePlayer, GameWatchReplayFrame, PhaseKey} from "
 import type {ClassicPresentationCue, FormatPresentationCue, PresentationCue, ReplayScene} from "./types";
 import {phaseToRoomType} from "./constants";
 import {MATCH_WATCH_FORMAT_PHASES, REPLAY_FRAME_PHASE_ORDER} from "./match-watch-model";
-import {transcriptPresentationDurationMs, isSoloTranscript} from "./visual-watch-model";
+import {transcriptPresentationDurationMs, isSoloTranscript, largeSocialCastCount, socialCastMinimumThinkingMs} from "./visual-watch-model";
 import {voteSceneIdentity} from "./vote-ledger-model";
 import { isInfluenceProductionSocialTranscript } from "@influence/engine/production-moments/influence-source";
 
@@ -23,13 +23,14 @@ export function buildClassicPresentationCues(
     roundFrames.push(frame);
     framesByRound.set(frame.round, roundFrames);
   }
+  const messagesBySequence = new Map(scenes.flatMap(scene => scene.messages.map(message => [message.entrySequence, message] as const)));
   return scenes.flatMap((scene, sceneIndex) =>
     scene.messages.map((message, messageIndex) => ({
       source: "classic" as const,
       liveCatchUp: message.liveCatchUp,
       key: `classic:${message.entrySequence ?? message.id}:done`,
       houseSummary: message.dialogueKind === "house_summary",
-      canonicalSequence: message.firstDurableEventSequence ?? latestFrameSequenceAtOrBefore(
+      canonicalSequence: (message.allianceIntroduction ? messagesBySequence.get(message.allianceIntroduction.beforeEntrySequence)?.firstDurableEventSequence : undefined) ?? message.firstDurableEventSequence ?? latestFrameSequenceAtOrBefore(
         framesByRound.get(scene.round) ?? [], message.timestamp,
       ),
       round: scene.round,
@@ -37,6 +38,7 @@ export function buildClassicPresentationCues(
       kind: "classic_transcript" as const,
       stage: "done" as const,
       baseDurationMs: transcriptPresentationDurationMs(message, players),
+      ...(largeSocialCastCount(message) > 4 && {minimumDurationMs:transcriptPresentationDurationMs(message, players), readingHold:true as const, minimumThinkingMs:socialCastMinimumThinkingMs(message)}),
       speechPresentation: isSoloTranscript(message) ? "solo" as const
         : message.anonymous || message.speakerPlayerId || message.fromPlayerId ? "scene" as const : undefined,
       sceneIndex,

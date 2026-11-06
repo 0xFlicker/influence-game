@@ -14,6 +14,8 @@ import { HOUSE_CAST } from "./house-personas";
  * the localhost Cuts API harness; retain journals, native reasoning, failures,
  * accepted cards and cumulative recovery costs. No direct House-call bypass.
  *
+ * Format-menu House announcements receive the canonical Empowered player and offered formats;
+ * inspect them alongside the retained offer, without regenerating historical speech.
  * Empower runoff has its own House announcement before revoting, separate from the final result.
  * House summaries receive frozen roster gender; inspect gendered references without inferring missing values.
  * Influence House summaries use results-mc-v1: canonical result facts plus one
@@ -127,6 +129,11 @@ import { HOUSE_CAST } from "./house-personas";
  * tactical receipts remain readable. Lobby/Mingle/huddle passes keep private evidence
  * but produce no playback beat. Spoken huddles show saved thinking under the same
  * Show thinking toggle as other speaking turns; native reasoning stays private.
+ * Alliance introductions use one direct House batch after all selected conversations
+ * and before the next decision. Teasers may use upcoming dialogue as editorial
+ * foreknowledge, never predicted results as facts. Viewer-only saved copy anchors
+ * before each exact conversation; complete-phase live delivery holds the batch.
+ * --chatty retains house-alliance-introductions evidence; no `as any`, no contestant leakage.
  * House summary author calls allow 8,192 completion tokens for reasoning and JSON;
  * ordinary/milestone public prose stays bounded to 180/360 UTF-16 code units.
  * API full-game tests use simulate:api (6–8 players)

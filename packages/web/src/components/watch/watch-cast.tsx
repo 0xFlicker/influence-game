@@ -44,9 +44,11 @@ export function MobileContextPanel({
 export function CastRail({
   model,
   onSelectPlayer,
+  showPhase = true,
 }: {
   model: WatchCastModel;
   onSelectPlayer: (playerId: string) => void;
+  showPhase?: boolean;
 }) {
   return (
     <aside className="hidden min-h-0 flex-col overflow-hidden rounded-lg border border-white/10 bg-black/45 shadow-panel backdrop-blur-glass xl:flex">
@@ -60,9 +62,9 @@ export function CastRail({
         </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-px border-b border-white/10 bg-white/10">
+      {showPhase && <div className="grid grid-cols-1 gap-px border-b border-white/10 bg-white/10">
         <CastMetric label="Phase" value={model.phaseLabel} />
-      </div>
+      </div>}
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {model.players.map((card) => (

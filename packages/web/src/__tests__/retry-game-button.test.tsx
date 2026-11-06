@@ -1,0 +1,23 @@
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { Window } from "happy-dom";
+import { RetryGameButton } from "../app/admin/retry-game-button";
+import { setApiBase } from "../lib/api";
+const originalFetch = globalThis.fetch;
+const names = ["window", "document", "navigator", "localStorage", "HTMLElement", "Node", "Event", "CustomEvent"] as const;
+const saved = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
+let dom: Window;
+beforeEach(() => { dom = new Window({ url: "http://localhost" }); for (const name of names) Object.defineProperty(globalThis, name, { configurable: true, value: dom[name] }); setApiBase(""); });
+afterEach(async () => { await act(async () => cleanup()); dom.close(); globalThis.fetch = originalFetch; for (const name of names) { const value = saved.get(name); if (value) Object.defineProperty(globalThis, name, value); else Reflect.deleteProperty(globalThis, name); } });
+test("retry stays mounted after delivery failure and resubmits the same attempt", async () => {
+  const paths: string[] = []; let refreshed = 0;
+  globalThis.fetch = (async (url) => { paths.push(String(url)); return paths.length === 1 ? Response.json({ error: "Launch pending" }, { status: 503 }) : Response.json({ gameId: "replacement" }); }) as typeof fetch;
+  const view = render(<RetryGameButton gameId="old-game" onRetried={() => { refreshed++; }} />);
+  const button = view.getByRole("button", { name: "Retry game" }) as HTMLButtonElement;
+  button.focus(); fireEvent.click(button);
+  await waitFor(() => expect(view.getByRole("alert").textContent).toContain("Launch pending"));
+  expect(refreshed).toBe(0); expect(view.getByRole("button")).toBe(button);
+  fireEvent.click(button); await waitFor(() => expect(refreshed).toBe(1));
+  expect(paths).toEqual(["/api/admin/games/old-game/retry", "/api/admin/games/old-game/retry"]);
+  expect(view.queryByRole("alert")).toBeNull();
+});

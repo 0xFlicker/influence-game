@@ -250,6 +250,8 @@ export interface PublicPlayerIdentityRef {
 
 
 export interface PublicAgentPreview {
+  profileHref?: string;
+  awards?: import("./championship").PublicAward[];
   name: string;
   avatarUrl: string | null;
   role: null | {
@@ -263,11 +265,21 @@ export interface PublicAgentPreview {
   };
 }
 
+export interface PublicAgentProfile extends PublicAgentPreview {
+  profileHref: string;
+  owner: PublicPlayerIdentityRef | null;
+  awards: import("./championship").PublicAward[];
+  recentResults: import("@influence/engine/house-participation").HouseParticipation[];
+}
+export type PublicAgentProfileEnvelope = { schemaVersion: 1; status: "found"; profile: PublicAgentProfile }
+  | { schemaVersion: 1; status: "not_found" };
+
 export interface PublicReplayAgentPreview extends PublicAgentPreview {
   owner?: PublicPlayerIdentityRef | null;
 }
 
 export interface PublicPlayerProfile {
+  awards?: import("./championship").PublicAward[];
   identity: PublicPlayerIdentityRef;
   currentSeason: null | {
     season: {
@@ -579,11 +591,12 @@ export async function getProviderModels(): Promise<ProviderModelInventory> {
 
 export async function listGames(
   status?: GameStatus | GameStatus[],
+  signal?: AbortSignal,
 ): Promise<GameSummary[]> {
   const q = status
     ? `?status=${Array.isArray(status) ? status.join(",") : status}`
     : "";
-  return apiFetch(`/api/games${q}`);
+  return apiFetch(`/api/games${q}`, { signal });
 }
 
 export interface RecentlyFinishedGame {
@@ -2061,6 +2074,12 @@ export async function getPlayerGames(): Promise<PlayerGameResult[]> {
   return apiFetch("/api/player/games");
 }
 
+export async function getPlayerGamesPage(cursor?: string, limit = 20, game: "all" | "influence" | "werewolf" = "all"): Promise<{ items: PlayerGameResult[]; nextCursor: string | null }> {
+  const params = new URLSearchParams({ limit: String(limit), game });
+  if (cursor) params.set("cursor", cursor);
+  return apiFetch(`/api/player/games-page?${params}`);
+}
+
 // ---------------------------------------------------------------------------
 // Saved agent profile types
 // ---------------------------------------------------------------------------
@@ -2068,6 +2087,7 @@ export async function getPlayerGames(): Promise<PlayerGameResult[]> {
 export type AgentContentSnapshot = Pick<SavedAgent, "name" | "personality" | "personaKey" | "gender" | "backstory" | "strategyStyle" | "werewolfStrategyStyle" | "performanceInstructions" | "visualDesign" | "avatarUrl" | "fullBodyReferenceUrl" | "portraitCrop" | "headPosition">;
 
 export interface SavedAgent {
+  transparentBodyUrl?: string | null;
   modelPreference?: ModelPreference;
   ownerContent?: {
     published: AgentContentSnapshot | null;
@@ -2754,6 +2774,8 @@ export interface WsRoomMetadata {
 }
 
 export interface TranscriptEntry {
+  allianceIntroduction?: import("@influence/engine/alliance-introductions").AllianceIntroduction;
+  allianceSession?: import("@influence/engine/alliance-introductions").AllianceSessionPresentation;
   houseResult?: import("@influence/engine").TranscriptDialogueContext["houseResult"];
   retrospectiveSource?: { eventSequence: number; ordinal: number };
   dialogueKind?: import("@influence/engine").TranscriptDialogueKind | null;
@@ -2826,6 +2848,8 @@ export interface GameDetail {
 
 /** Public transcript entry received over WebSocket (matches PublicWsTranscriptEntry in packages/api) */
 export interface WsTranscriptEntry {
+  allianceIntroduction?: import("@influence/engine/alliance-introductions").AllianceIntroduction;
+  allianceSession?: import("@influence/engine/alliance-introductions").AllianceSessionPresentation;
   houseResult?: import("@influence/engine").TranscriptDialogueContext["houseResult"];
   dialogueKind?: import("@influence/engine").TranscriptDialogueKind | null;
   firstDurableEventSequence?: number | null;
@@ -3445,6 +3469,8 @@ export async function probeAdminProviderHealth(
 // ---------------------------------------------------------------------------
 
 export interface FreeQueueStatus {
+  acceptingSeasonId?: string | null;
+  nextDrawAt?: string;
   queuedCount: number;
   nextGameAt: string; // ISO datetime of the next weekly scheduled start
   userEntry: {
@@ -3470,6 +3496,8 @@ export interface FreeQueueStatus {
 }
 
 interface FreeQueueStatusResponse {
+  acceptingSeasonId?: string | null;
+  nextDrawAt?: string;
   count?: number;
   queuedCount?: number;
   nextGameTime?: string;
@@ -3582,6 +3610,7 @@ export interface ArchitectSeasonStanding {
 }
 
 export interface SeasonDashboard {
+  championships?: Array<{ slug: string; name: string; status: string }>;
   schemaVersion: 1 | 2;
   season: SeasonIdentity;
   agentStandings: AgentSeasonStanding[];
@@ -3724,6 +3753,7 @@ export type FreeTrackLeaderboardEntry = LeaderboardEntry;
 // ---------------------------------------------------------------------------
 
 export interface PlayerProfile extends AuthenticatedPublicIdentity {
+  awards?: import("./championship").PublicAward[];
   id: string;
   walletAddress: string | null;
   email: string | null;
@@ -3743,6 +3773,8 @@ export async function getFreeQueueStatus(): Promise<FreeQueueStatus> {
   const status = await apiFetch<FreeQueueStatusResponse>("/api/free-queue");
 
   return {
+    acceptingSeasonId: status.acceptingSeasonId ?? null,
+    nextDrawAt: status.nextDrawAt,
     queuedCount: status.queuedCount ?? status.count ?? 0,
     nextGameAt: status.nextGameAt ?? status.nextGameTime ?? new Date().toISOString(),
     userEntry: status.userEntry ?? null,
@@ -3754,15 +3786,15 @@ export async function getFreeQueueStatus(): Promise<FreeQueueStatus> {
   };
 }
 
-export async function joinFreeQueue(agentProfileId: string): Promise<void> {
+export async function joinFreeQueue(agentProfileId: string, expectedSeasonId?: string): Promise<void> {
   await apiFetch("/api/free-queue/join", {
     method: "POST",
-    body: JSON.stringify({ agentProfileId }),
+    body: JSON.stringify({ agentProfileId, expectedSeasonId }),
   });
 }
 
-export async function leaveFreeQueue(): Promise<void> {
-  await apiFetch("/api/free-queue/leave", { method: "DELETE" });
+export async function leaveFreeQueue(expectedSeasonId?: string): Promise<void> {
+  await apiFetch(`/api/free-queue/leave${expectedSeasonId ? `?expectedSeasonId=${encodeURIComponent(expectedSeasonId)}` : ""}`, { method: "DELETE" });
 }
 
 export async function maybeLaterFreeQueue(): Promise<void> {
@@ -3794,8 +3826,8 @@ export async function removeAdminFreeQueueEntry(userId: string): Promise<void> {
   await apiFetch(`/api/admin/free-queue/${encodeURIComponent(userId)}`, { method: "DELETE" });
 }
 
-export async function listSeasons(): Promise<SeasonIdentity[]> {
-  const response = await apiFetch<{ schemaVersion: 1; seasons: SeasonIdentity[] }>("/api/seasons");
+export async function listSeasons(signal?: AbortSignal): Promise<SeasonIdentity[]> {
+  const response = await apiFetch<{ schemaVersion: 1; seasons: SeasonIdentity[] }>("/api/seasons", { signal });
   return response.seasons;
 }
 
@@ -3846,6 +3878,10 @@ export async function closeAdminSeason(id: string): Promise<SeasonIdentity> {
   return response.season;
 }
 
+export async function reconcileAdminSeasonAwards(id: string): Promise<void> {
+  await apiFetch(`/api/admin/seasons/${id}/awards/reconcile`, { method: "POST" });
+}
+
 export async function finalizeAdminSeason(id: string): Promise<void> {
   await apiFetch(`/api/admin/seasons/${id}/finalize`, { method: "POST" });
 }
@@ -3878,3 +3914,10 @@ export async function suggestProfileHandle(displayName: string): Promise<string>
   );
   return result.suggestion;
 }
+
+export interface AgentVisualUpdate {
+  needsUpdate: boolean;
+  job: {id:string; status:"queued"|"processing"|"failed"|"conflict"|"completed"|"held"; stage:"details"|"body"|"head"|"portrait"|"saving"; updatedAt:string; errorCode:string|null; message:string|null} | null;
+}
+export function getAgentVisualUpdate(id:string) { return apiFetch<AgentVisualUpdate>(`/api/agent-profiles/${encodeURIComponent(id)}/visual-update`); }
+export function startAgentVisualUpdate(id:string) { return apiFetch<AgentVisualUpdate>(`/api/agent-profiles/${encodeURIComponent(id)}/visual-update`, {method:"POST"}); }

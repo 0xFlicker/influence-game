@@ -1,3 +1,4 @@
+import { championshipGameRoster } from "./championship-game-roster.js";
 import { providerRetryPending } from "./provider-game-retry.js";
 import {freezeLiveVoices} from "./audio-voices.js";
 import { sealRosterModelRouting, GameModelRoutingError } from "./game-model-routing.js";
@@ -684,7 +685,10 @@ async function transitionWaitingGameToInProgress(
         frozenAt: now.toISOString(),
       });
       const seats = await tx.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, gameId));
-      const sealedConfig = await sealRosterModelRouting(tx, JSON.parse(game.config), seats);
+      const competitionRoster = await championshipGameRoster(tx, gameId);
+      const sealedConfig = competitionRoster
+        ? { ...competitionRoster.execution.influence, modelRouting: competitionRoster.modelRouting }
+        : await sealRosterModelRouting(tx, JSON.parse(game.config), seats);
       for (const seat of seats) {
         const { model: _oldModel, ...settings } = JSON.parse(seat.agentConfig);
         await tx.update(schema.gamePlayers).set({ agentConfig: JSON.stringify(settings) }).where(eq(schema.gamePlayers.id, seat.id));

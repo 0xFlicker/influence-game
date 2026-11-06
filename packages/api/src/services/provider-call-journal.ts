@@ -285,6 +285,11 @@ async function assertActiveOwner(
   tx: Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0],
   options: CreateApiProviderExecutionHooksOptions,
 ): Promise<void> {
+  // Ownership/adoption locks game then owner. Provider inserts also take a
+  // game FK lock: acquiring owner first can deadlock against a healthy-owner
+  // discovery attempt. Use the same order for every journal transaction.
+  const [game] = await tx.select({ id: schema.games.id }).from(schema.games).where(eq(schema.games.id, options.gameId)).for("update");
+  if (!game) throw new Error("Provider journal game not found");
   if (options.episodeLease) {
     const [job] = await tx.select().from(schema.gameEpisodePresentations).where(eq(schema.gameEpisodePresentations.gameId, options.gameId)).for("update");
     if (!job || job.leaseToken !== options.ownerEpoch || job.revision !== options.episodeLease.revision || job.status !== "generating" || job.locked || !job.leaseUntil || Date.parse(job.leaseUntil) <= Date.now()) throw new Error("Episode naming lease expired or replaced");

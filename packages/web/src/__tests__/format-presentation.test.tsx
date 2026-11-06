@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { renderToString } from "react-dom/server";
-import { createFormatKernelViewerScenario } from "@influence/engine/fixtures/format-kernel-viewer";
+import { createFormatKernelViewerScenario, FORMAT_KERNEL_VIEWER_SCENARIO_IDS } from "@influence/engine/fixtures/format-kernel-viewer";
 import { compileFormatPresentationPrefix } from "../app/games/[slug]/components/format-presentation-model";
 import {
   FORMAT_PRESENTATION_METADATA,
@@ -21,6 +21,23 @@ const roster: FormatPresentationRosterPlayer[] = [
 ];
 
 describe("FormatPresentation", () => {
+  it("renders every legal format stage without scroll-dependent content", () => {
+    const covered = new Set<string>();
+    for (const id of FORMAT_KERNEL_VIEWER_SCENARIO_IDS.filter(id => !id.startsWith("malformed"))) {
+      const scenario = createFormatKernelViewerScenario(id);
+      const compiled = compileFormatPresentationPrefix({gameId:id,gameKernel:"format",roster:scenario.roster,
+        decisions:scenario.decisions,formatManifest:Object.keys(FORMAT_PRESENTATION_METADATA) as LaunchFormatId[]});
+      expect(compiled.diagnostic).toBeNull();
+      for (const cue of compiled.cues) {
+        const html = renderToString(<FormatPresentation cue={cue} roster={scenario.roster} currentStateEntry elapsedMs={1200} />);
+        expect(html).not.toMatch(/overflow-(?:[xy]-)?(?:auto|scroll)/);
+        covered.add(cue.kind);
+      }
+    }
+    expect(covered.has("two_names_plea")).toBeTrue();
+    expect(covered.has("safety_bounce_pointer")).toBeTrue();
+  });
+
   it("keeps Two Names visible at rest and reveals only the current ballot prefix before the result", () => {
     const scenario = createFormatKernelViewerScenario("two_names_declined");
     const compiled = compileFormatPresentationPrefix({ gameId: "two-names", gameKernel: "format", roster: scenario.roster, decisions: scenario.decisions, formatManifest: ["two_names", "vote_bomb"] });
@@ -125,19 +142,15 @@ describe("FormatPresentation", () => {
     );
     expect(choiceHtml).not.toContain("opacity-35");
     expect(choiceHtml).not.toContain("Zero votes is safe");
-    expect(selectedHtml).toContain(
-      `data-format-card="vote_bomb" data-card-state="selected" data-selection-stage="rules_reveal"`,
-    );
-    expect(selectedHtml).toContain(
-      `data-format-card="safety_bounce" data-card-state="unselected" data-selection-stage="rules_reveal" data-unselected-fade="applied"`,
-    );
+    expect(selectedHtml).toContain('data-format-rules="vote_bomb"');
+    expect(selectedHtml).not.toContain('data-format-rules="safety_bounce"');
     expect(selectedHtml).toContain(
       FORMAT_PRESENTATION_METADATA.vote_bomb.conciseRules,
     );
     expect(selectedHtml).not.toContain(
       FORMAT_PRESENTATION_METADATA.safety_bounce.conciseRules,
     );
-    expect(selectedHtml).toContain('tabindex="0"');
+    expect(selectedHtml).toContain('data-speech-page-copy');
   });
 
   it("offers Highest Count with catalog copy and renders highest-total scoring only", () => {

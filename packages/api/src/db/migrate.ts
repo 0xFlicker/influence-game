@@ -5,19 +5,18 @@
  * Can be run standalone or imported programmatically.
  */
 
-import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createDB } from "./index.js";
+import { createDB, resolveDatabaseUrl } from "./index.js";
+import { applyMigrationsSerialized } from "./serialized-migrations.js";
 
 export async function runMigrations(connectionString?: string) {
   const migrationsFolder = resolveMigrationsFolder();
-  const db = createDB(connectionString);
-  await migrate(db, { migrationsFolder });
+  await applyMigrationsSerialized(resolveDatabaseUrl(connectionString), migrationsFolder);
   console.log("Migrations applied successfully.");
-  return db;
+  return createDB(connectionString);
 }
 
 export type ReleaseMigrationPolicyViolation = {
@@ -83,6 +82,7 @@ const REVIEWED_CLAIM_CLEANUP_MIGRATIONS = new Map([
 // input size gate. 0129 replaces game-owner FKs with equivalent generated-column
 // FKs for game calls, allowing separately lease-fenced episode calls. All retain rows.
 const REVIEWED_CONSTRAINT_REMOVAL_MIGRATIONS = new Map([
+  ["0144_producer_render_scope.sql", "d6f9bb2160ea55b4b190ec63629550cde7021ea1c29839836caa3e7ee8d43e21"],
   ["0108_house_owner_learning.sql", "518ef175bb2cd547d7a5ca5c5b282025d578cd8e404439f54cbcd5f95b543ae6"],
   ["0118_retrospective_input_size.sql", "442eadf1385878d9526e7b3d7dcc059da36f4a4fdea232ec04a0cc9efd9fe13a"],
   ["0129_provider_journal_house_authority.sql", "69b99577dbdf92ab76d694a7ed859524a7091b09034fb3eded50de850ff9bcb7"],
@@ -144,6 +144,11 @@ export function inspectReleaseMigrationSql(
     ["0122_text_operation_query_metadata.sql", "08c7280108a922f68950fbdeeac1056b49fb1c689453f296ed43ea5e7fc08332"],
   ]);
   const reviewedMaterialization = materializedCutovers.get(path.basename(file)) === createHash("sha256").update(sql).digest("hex");
+  // 0150 changes only championship tables introduced in this same release.
+  // Published main has no writers/readers for them. Preserve the applied SQL;
+  // see docs/deployment/championship-migration-review.md for upgrade/rollback limits.
+  const reviewedChampionshipCorrections = path.basename(file) === "0150_championship_corrections.sql"
+    && createHash("sha256").update(sql).digest("hex") === "10a282ea8c91ca8ac2c78be5e27f9f1a8e5b72fc41ba1000a3a11de2ee99e47b";
   const policyInput = stripSqlCommentsAndStrings(sql);
   const replacementCheckConstraints = new Set(
     [
@@ -161,9 +166,13 @@ export function inspectReleaseMigrationSql(
   );
   const violations: ReleaseMigrationPolicyViolation[] = [];
   for (const rule of RELEASE_MIGRATION_RULES) {
+    if (reviewedChampionshipCorrections && ["drop-constraint", "set-not-null"].includes(rule.rule)) continue;
     if (rule.rule === "delete" && REVIEWED_CLAIM_CLEANUP_MIGRATIONS.get(path.basename(file))
       === createHash("sha256").update(sql).digest("hex")) continue;
     if (reviewedCutover && ["rename-column", "narrow-type", "drop-constraint"].includes(rule.rule)) continue;
+    // This exact int32-to-float8 widening preserves every old value and admits exact halves.
+    if (rule.rule === "narrow-type" && path.basename(file) === "0147_championship_half_points.sql"
+      && createHash("sha256").update(sql).digest("hex") === "fb18eea31801cefed24e9664c3b3995d4244dc3478f511e51be5af5c5ea0691d") continue;
     if (rule.rule === "narrow-type") {
       const unsafeTypeChange = policyInput
         .split(";")

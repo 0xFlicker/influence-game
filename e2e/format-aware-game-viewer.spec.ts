@@ -984,6 +984,85 @@ test.describe("format-aware game viewer", () => {
     await expect(room.locator("[data-speech-bubble]")).toContainText("Accepted line 3.");
   });
 
+  test.describe("fullscreen control inactivity", () => {
+  test.use({hasTouch:true});
+  for (const mode of ["fullscreen","theater"] as const) test(`${mode} controls hide after inactivity without advancing a crowded huddle`, async ({page}, testInfo) => {
+    await page.addInitScript(() => Object.defineProperty(document, "fullscreenEnabled", {configurable:true,value:false}));
+    await page.clock.install();
+    await page.setViewportSize({width:844,height:390});
+    const slug = "crowded-format-huddle-controls";
+    const fixture = createFormatKernelViewerScenario("majority_elimination_clear");
+    const roster = [...fixture.roster,...Array.from({length:8},(_,index)=>({...fixture.roster[0]!,id:`extra-${index}`,name:`Contestant ${index+1}`}))];
+    await installDeterministicFormatGame(page,{slug,scenarioId:"majority_elimination_clear",status:"completed",roster});
+    const members = roster.slice(0,11);
+    setFormatTranscript(page,slug,[{id:101,entrySequence:101,firstDurableEventSequence:61,gameId:slug,round:2,phase:"FORMAT_MINGLE",scope:"huddle",dialogueKind:"huddle_speech",fromPlayerId:members[0]!.id,fromPlayerName:members[0]!.name,toPlayerIds:members.slice(1).map(player=>player.id),text:"We can hold our votes together, but only if everyone understands who is actually at risk. I want to hear the people who have not spoken yet before we settle on a name. If the plan changes, tell the whole group rather than leaving one person to discover it when the votes are revealed.",timestamp:101,allianceSession:{sessionId:"s",allianceId:"a",allianceName:"The Night Shift",memberIds:members.map(player=>player.id)}}]);
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page,"Pause replay");
+    await page.getByRole("button",{name:mode === "fullscreen" ? "Enter fullscreen" : "Enter theater mode",exact:true}).click();
+    const room=page.locator("[data-paginated-portrait-room]");
+    await advanceUntilVisible(page,room,"crowded format huddle",150);
+    await page.getByRole("button",{name:"Play replay",exact:true}).click({force:true});
+    await page.clock.runFor(1800);
+    await page.getByRole("button",{name:"Pause replay",exact:true}).click({force:true});
+    await expect(page.locator('[data-active-format="majority_elimination"]')).toBeVisible();
+    const controls=page.locator(`[data-player-${mode}="true"] [data-replay-controls]`).filter({has:page.locator("[data-watch-transport]")});
+    for (const size of [{width:844,height:390},{width:360,height:240},{width:320,height:480}]) {
+      await page.setViewportSize(size);
+      await page.mouse.move(2,2);
+      await page.evaluate(() => {if(document.activeElement instanceof HTMLElement) document.activeElement.blur();});
+      await page.clock.runFor(3600);
+      await expect(controls).toHaveClass(/opacity-0/);
+      await expect(controls).toHaveCSS("opacity","0");
+      await room.screenshot({path:testInfo.outputPath(`crowded-format-huddle-${mode}-${size.width}.png`)});
+      await expect(room.locator("[data-speech-bubble] [data-speech-page-copy]")).not.toBeEmpty();
+      const before=await room.getAttribute("data-cast-page");
+      const frame=await page.getByRole("slider",{name:"Replay position"}).inputValue();
+      if(size.width===360) {
+        const bounds=await room.boundingBox();
+        if(!bounds) throw new Error("Missing room");
+        await page.touchscreen.tap(bounds.x+5,bounds.y+5);
+      } else await room.click({position:{x:5,y:5},force:true});
+      await expect(controls).toHaveClass(/opacity-100/);
+      await expect(room).toHaveAttribute("data-cast-page",before!);
+      await expect(page.getByRole("slider",{name:"Replay position"})).toHaveValue(frame);
+      await expect(page.getByRole("button",{name:"Play replay",exact:true})).toBeVisible();
+    }
+    await page.getByRole("button",{name:"Play replay",exact:true}).focus();
+    await page.keyboard.press("Tab");
+    await expect(controls.locator(":focus-visible")).toHaveCount(1);
+    await page.clock.runFor(4000);
+    await expect(controls).toHaveClass(/opacity-100/);
+    await page.evaluate(() => {if(document.activeElement instanceof HTMLElement) document.activeElement.blur();});
+    await page.clock.runFor(3600);
+    await expect(controls).toHaveClass(/opacity-0/);
+    await page.getByRole("button",{name:"Play replay",exact:true}).focus();
+    await expect(controls).toHaveClass(/opacity-100/);
+  });
+
+  test("format rules remain readable on a short fullscreen screen", async ({page}) => {
+    await page.addInitScript(() => Object.defineProperty(document, "fullscreenEnabled", {configurable:true,value:false}));
+    await page.clock.install();
+    await page.setViewportSize({width:320,height:240});
+    const slug="short-format-rules";
+    const roster=createFormatKernelViewerScenario("safety_bounce_tie").roster;
+    await installDeterministicFormatGame(page,{slug,scenarioId:"safety_bounce_tie",status:"completed"});
+    setFormatTranscript(page,slug,[{id:101,entrySequence:101,firstDurableEventSequence:31,gameId:slug,round:2,phase:"FORMAT_MINGLE",scope:"huddle",dialogueKind:"huddle_speech",fromPlayerId:roster[0]!.id,fromPlayerName:roster[0]!.name,toPlayerIds:[roster[1]!.id],text:"Let's plan together.",timestamp:101,allianceSession:{sessionId:"s",allianceId:"a",allianceName:"The Night Shift",memberIds:roster.slice(0,2).map(player=>player.id)}}]);
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page,"Pause replay");
+    await page.getByRole("button",{name:"Enter fullscreen",exact:true}).click();
+    const button=page.getByRole("button",{name:"Read Safety Bounce format rules"});
+    await advanceUntilVisible(page,button,"Safety Bounce Mingle",150);
+    await button.click();
+    const dialog=page.getByRole("dialog",{name:"Safety Bounce"});
+    await expect(dialog).toBeVisible();
+    const fits=await dialog.evaluate(element=>{const rect=element.getBoundingClientRect();return rect.top>=0 && rect.bottom<=innerHeight && rect.left>=0 && rect.right<=innerWidth;});
+    expect(fits).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(button).toBeFocused();
+  });
+  });
+
   test("Mingle without full-body art rotates its exact audience in the shared fullscreen player", async ({ page }, testInfo) => {
     await page.addInitScript(() => Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: false }));
     await page.setViewportSize({ width: 1920, height: 1080 });
@@ -1138,6 +1217,11 @@ test.describe("format-aware game viewer", () => {
       await page.clock.runFor(10_000);
       await expect(bubble).toHaveCount(0);
       await room.screenshot({ path: testInfo.outputPath(`${roomId}-clear-scene.png`) });
+      const controls = page.locator('[data-player-fullscreen="true"] [data-replay-controls]').filter({has:page.locator("[data-watch-transport]")});
+      await expect(controls).toHaveClass(/opacity-0/);
+      await room.click();
+      await expect(controls).toHaveClass(/opacity-100/);
+      expect(await room.getByRole("img").evaluate(element => element.getBoundingClientRect().left)).toBe(oldLeft);
       await room.click();
       await page.clock.runFor(650); // 400 ms clear hold, then 250 ms into the camera pan.
       await expect(bubble).toHaveCount(0);
@@ -1150,6 +1234,7 @@ test.describe("format-aware game viewer", () => {
       await expect(bubble).toHaveCSS("opacity", "1");
       await page.clock.runFor(10_000);
       await expect(bubble).toContainText("The second accepted line.");
+      await room.click(); // Reveal the hidden transport without advancing the paused scene.
       await expect(page.getByRole("button", { name: /Play\b/ }).filter({ visible: true })).toBeVisible();
     });
   }
@@ -1310,7 +1395,9 @@ test.describe("format-aware game viewer", () => {
       await playbackKey(page, "ArrowRight");
       const house = page.getByRole("region", { name: "House summary" });
       await advanceUntilVisible(page, house, "House summary after hiding solo speech");
-      await expect(house.locator("[data-room-backdrop]")).toBeVisible();
+      const houseStage = page.locator("[data-influence-stage]");
+      await expect(houseStage.locator("[data-room-backdrop]")).toHaveCount(1);
+      await expect(houseStage.locator("[data-room-backdrop]")).toBeVisible();
       await expect(house).toContainText("The House has heard their promises.");
       const bounds = await house.boundingBox();
       expect(bounds!.width).toBeGreaterThan(300);
@@ -1510,8 +1597,16 @@ test.describe("format-aware game viewer", () => {
         await expect.poll(() => layout.evaluate(el => {
           const caption=el.querySelector<HTMLElement>("[data-house-message]")!, copy=caption.querySelector<HTMLElement>("[data-speech-page-copy]")!;
           const a=el.getBoundingClientRect(),b=caption.getBoundingClientRect(),scene=el.querySelector("[data-house-result-scene]")!.getBoundingClientRect();
-          return b.height>=74 && b.bottom<=a.bottom+1 && b.top>=a.top && copy.getBoundingClientRect().height<=copy.parentElement!.clientHeight-21 && (b.top>=scene.bottom || b.left>=scene.right);
-        })).toBe(true);
+          const typography=getComputedStyle(copy);
+          return {
+            // Check usable text and pagination space, independent of decorative padding.
+            readableHeight:parseFloat(typography.fontSize)>=14 && parseFloat(typography.lineHeight)>=20
+              && copy.parentElement!.clientHeight>=parseFloat(typography.lineHeight)+21,
+            insideFrame:b.bottom<=a.bottom+1 && b.top>=a.top,
+            copyFits:copy.getBoundingClientRect().height<=copy.parentElement!.clientHeight-21,
+            separateFromScene:b.top>=scene.bottom || b.left>=scene.right,
+          };
+        }), {message:`House caption layout at ${width}x${height} (${mode})`}).toEqual({readableHeight:true,insideFrame:true,copyFits:true,separateFromScene:true});
         await page.screenshot({path:testInfo.outputPath(`werewolf-house-${width}x${height}-${mode}.png`)});
         if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
       }
@@ -1529,6 +1624,114 @@ test.describe("format-aware game viewer", () => {
       })).toBe(true);
       await page.screenshot({path:testInfo.outputPath(`werewolf-ending-${width}x${height}.png`)});
     }
+  });
+
+  test("standalone House scenery fills one stage without an inset duplicate",async({page},testInfo)=>{
+    await page.clock.install();
+    const slug="standalone-house-background";
+    await installDeterministicFormatGame(page,{slug,scenarioId:"save_or_eliminate_clear",status:"completed"});
+    setFormatTranscript(page,slug,[{id:900,entrySequence:900,round:1,phase:"FORMAT_MENU",scope:"system",dialogueKind:"house_summary",text:"The House is ready. The next choice will set the stakes for everyone.",timestamp:Date.now(),firstDurableEventSequence:10}]);
+    await page.goto(viewerUrl(`/games/${slug}/replay`));await pauseAutoplay(page,"⏸ Pause");
+    await page.addStyleTag({content:"nextjs-portal {display:none}"});
+    const stage=page.locator("[data-influence-stage]");
+    await advanceUntilVisible(page,stage.locator("[data-house-message]"),"standalone House scene",100);
+    await expect(stage.locator("[data-house-result]")).toHaveCount(0);
+    for(const [width,height] of [[320,568],[390,844],[600,600],[1280,720],[1280,400],[1920,1080]]) {
+      await page.setViewportSize({width:width!,height:height!});
+      for(const mode of ["inline","theater"]) {
+        if(mode==="theater") await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
+        await expect(stage.locator("[data-room-backdrop]")).toHaveCount(1);
+        await expect.poll(()=>stage.evaluate(el=>{
+          const a=el.getBoundingClientRect(),b=el.querySelector("[data-room-backdrop]")!.getBoundingClientRect();
+          return Math.max(Math.abs(a.left-b.left),Math.abs(a.top-b.top),Math.abs(a.width-b.width),Math.abs(a.height-b.height));
+        })).toBeLessThanOrEqual(1);
+        await expect.poll(()=>stage.locator("[data-speech-page-copy]").evaluate(copy=>copy.getBoundingClientRect().height<=copy.parentElement!.clientHeight-21)).toBe(true);
+        await page.screenshot({path:testInfo.outputPath(`house-background-${width}x${height}-${mode}.png`)});
+        if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
+      }
+    }
+  });
+
+  for(const artwork of [true,false]) test(`historical format offer stays with House speech (${artwork ? "full body" : "portrait"})`,async({page},testInfo)=>{
+    await page.clock.install();
+    const slug=`historical-menu-${artwork}`;
+    const decisions:ReturnType<typeof createFormatKernelViewerScenario>["decisions"]=[{sequence:10,round:1,phase:Phase.FORMAT_MENU,timestamp:"2026-11-02T00:00:00.000Z",type:"format.menu_offered",payload:{empoweredId:"atlas",offeredFormatIds:["safety_bounce","save_or_eliminate"]}}];
+    await installDeterministicFormatGame(page,{slug,scenarioId:"save_or_eliminate_clear",status:"completed",decisions});
+    await page.route(`**/api/games/${slug}/visual`,route=>route.fulfill({json:{enabled:true,status:null,portraits:{},fullBodies:artwork ? {atlas:"/avatars/personas/full-body-v1/strategic.webp"} : {},scenes:[]}}));
+    const text="Atlas’s first advantage comes with a choice: Safety Bounce or Save-or-Exit. The format they select will set the stakes for everyone.";
+    setFormatTranscript(page,slug,[{id:900,entrySequence:900,round:1,phase:"FORMAT_MENU",scope:"system",dialogueKind:"house_summary",text,timestamp:Date.now(),firstDurableEventSequence:10,houseResult:{eventSequence:10,authoringRevision:"historical"}}]);
+    await page.goto(viewerUrl(`/games/${slug}/replay`));await pauseAutoplay(page,"⏸ Pause");
+    await page.addStyleTag({content:"nextjs-portal {display:none}"});
+    const combined=page.locator("[data-house-result]");await advanceUntilVisible(page,combined,"historical combined format menu",100);
+    await expect(combined.getByRole("group",{name:"House format offer"})).toBeVisible();
+    await expect(combined.getByRole("figure",{name:"Empowered: Atlas"})).toBeVisible();
+    for(const [width,height] of [[320,568],[390,844],[600,600],[480,480],[1280,400],[844,390],[1920,1080]]) {
+      await page.setViewportSize({width:width!,height:height!});
+      for(const mode of ["inline","theater"]) {
+        if(mode==="theater") await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
+        await expect.poll(()=>combined.evaluate(el=>{
+          const scene=el.querySelector("[data-house-result-scene]")!.getBoundingClientRect();
+          return [...el.querySelectorAll("[data-format-card],figure,header")].every(item=>{const r=item.getBoundingClientRect();return r.bottom<=scene.bottom+1 && r.top>=scene.top-1 && r.right<=scene.right+1 && r.left>=scene.left-1;});
+        })).toBe(true);
+        await expect.poll(()=>combined.locator("[data-speech-page-copy]").evaluate(copy=>copy.getBoundingClientRect().height<=copy.parentElement!.clientHeight-21)).toBe(true);
+        if(width===1920 && mode==="theater") {
+          const caption=combined.locator("[data-speech-page-copy]");
+          await expect.poll(()=>caption.evaluate(copy=>parseFloat(getComputedStyle(copy).fontSize))).toBeGreaterThan(16);
+          const sizing=await caption.evaluate(copy=>({height:copy.getBoundingClientRect().height,line:parseFloat(getComputedStyle(copy).lineHeight)}));
+          expect(sizing.height).toBeLessThanOrEqual(sizing.line+1);
+        }
+        if(artwork && width===1920) {const image=combined.locator("[data-format-menu-fullbody] img");await expect(image).toBeVisible();await expect.poll(()=>image.evaluate(img=>(img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);}
+        await page.screenshot({path:testInfo.outputPath(`format-menu-${artwork ? "body" : "portrait"}-${width}x${height}-${mode}.png`)});
+        if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
+      }
+    }
+  });
+
+  for (const tiedCount of [2,3,4,6,12]) test(`Empower full bodies adapt to space for a ${tiedCount}-way tie`, async ({page},testInfo) => {
+    await page.clock.install();
+    const slug=`empower-body-${tiedCount}`;
+    const names=["Atlas","Vera","Finn","Mira","Rex","Lyra","Kael","Echo","Sage","Jace","Rune","Wren"];
+    const personas=["strategic","social","observer","diplomat","aggressive","deceptive","loyalist","wildcard","honest","broker","martyr","contrarian"];
+    const roster=names.map(name=>({id:name.toLowerCase(),name}));
+    const tied=roster.slice(0,tiedCount);
+    const counts=Object.fromEntries(roster.map((p,i)=>[p.id,i<tiedCount ? 12/tiedCount : 0]));
+    const meta={round:1,phase:Phase.VOTE,timestamp:"2026-11-02T00:00:00.000Z"};
+    const decisions:ReturnType<typeof createFormatKernelViewerScenario>["decisions"]=[...roster.map((p,i)=>({...meta,sequence:i+1,type:"vote.cast" as const,payload:{voterId:p.id,empowerTarget:tied[i%tiedCount]!.id}})),{...meta,sequence:13,type:"vote.empower_tally_resolved",payload:{counts,empowered:tied[0]!.id,tied:tied.map(p=>p.id),method:"tie_pending",cumulativeEmpowerVotes:counts}}];
+    await installDeterministicFormatGame(page,{slug,scenarioId:"majority_elimination_tie",status:"completed",roster,decisions,empowerRevoteVersion:2});
+    await page.route(`**/api/games/${slug}/visual`,route=>route.fulfill({json:{enabled:true,status:null,portraits:{},fullBodies:Object.fromEntries(roster.map((p,i)=>[p.id,`/avatars/personas/full-body-v1/${personas[i]}.webp`])),scenes:[]}}));
+    const text=`${tied.map(p=>p.name).join(", ")} are tied with ${12/tiedCount} vote${tiedCount===12 ? "" : "s"} each. ${tiedCount===12 ? "Everyone is tied, so the wheel will decide." : "The other players will revote between them."} The next decision will determine who holds the power.`;
+    setFormatTranscript(page,slug,[{id:900,entrySequence:900,round:1,phase:"VOTE",scope:"system",dialogueKind:"house_summary",text,timestamp:Date.now(),firstDurableEventSequence:13,houseResult:{eventSequence:13,authoringRevision:"results-mc-v1"}}]);
+    await page.goto(viewerUrl(`/games/${slug}/replay`));await pauseAutoplay(page,"⏸ Pause");
+    await page.addStyleTag({content:"nextjs-portal { display:none; }"});
+    const combined=page.locator("[data-house-result]");await advanceUntilVisible(page,combined,"House result",100);
+    const measurements=[];
+    for(const [width,height] of [[320,568],[390,844],[600,600],[1280,400],[844,390],[1920,634],[1920,1080]]) {
+      await page.setViewportSize({width:width!,height:height!});
+      for(const mode of ["inline","theater"]) {
+        if(mode==="theater") await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
+        await expect(combined.locator("[data-empower-total]")).toHaveCount(tiedCount);
+        await expect.poll(()=>combined.evaluate(el=>{
+          const stage=el.querySelector<HTMLElement>("[data-result-stage]")!,box=stage.getBoundingClientRect();
+          return [...el.querySelectorAll<HTMLElement>("[data-empower-total]")].every(cell=>{
+            const r=cell.getBoundingClientRect(),art=cell.querySelector<HTMLElement>("[data-empower-fullbody]")!;
+            return r.bottom<=box.bottom+1 && r.right<=box.right+1 && (getComputedStyle(art).display!=="none")===(cell.clientWidth>=112 && cell.clientHeight>=160);
+          }) && stage.scrollHeight<=stage.clientHeight+1;
+        })).toBe(true);
+        await expect.poll(()=>combined.locator("[data-speech-page-copy]").evaluate(copy=>copy.getBoundingClientRect().height<=copy.parentElement!.clientHeight-21)).toBe(true);
+        const cells=await combined.locator("[data-empower-total]").evaluateAll(cells=>cells.map(cell=>({width:cell.clientWidth,height:cell.clientHeight,body:getComputedStyle(cell.querySelector("[data-empower-fullbody]")!).display!=="none"})));
+        measurements.push({width,height,mode,tiedCount,cells});
+        if(width===1280 && height===400 && mode==="theater" && tiedCount<=4) {
+          expect(cells.every(cell=>cell.body)).toBe(true);
+          for(const art of await combined.locator("[data-empower-fullbody]").all()) expect((await art.boundingBox())!.height).toBeGreaterThanOrEqual(100);
+        }
+        for(const art of await combined.locator("[data-empower-fullbody]:visible img").all()) await expect.poll(()=>art.evaluate(img=>(img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+        await page.screenshot({path:testInfo.outputPath(`tie-${tiedCount}-${width}x${height}-${mode}.png`)});
+        if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
+      }
+    }
+    expect(measurements.some(row=>row.cells.some(cell=>cell.body))).toBe(true);
+    expect(measurements.some(row=>row.cells.every(cell=>!cell.body))).toBe(true);
+    await testInfo.attach("fullbody-layouts",{body:JSON.stringify(measurements,null,2),contentType:"application/json"});
   });
 
   test("twelve-way tie keeps cast and paginated House visible across screen shapes", async ({page},testInfo) => {
@@ -1566,7 +1769,7 @@ test.describe("format-aware game viewer", () => {
       }
     }
     await testInfo.attach("layout-measurements",{body:JSON.stringify(measurements,null,2),contentType:"application/json"});
-    for(const row of measurements) {expect(row,JSON.stringify(row)).toMatchObject({visiblePlayers:12,scrolls:false,captionFits:true});expect(row.captionHeight).toBeGreaterThanOrEqual(74);}
+    for(const row of measurements) {expect(row,JSON.stringify(row)).toMatchObject({visiblePlayers:12,scrolls:false,captionFits:true});expect(row.captionHeight).toBeGreaterThanOrEqual(70); /* 86px row includes the 16px logo clearance. */}
     await page.setViewportSize({width:320,height:568});
     const caption = combined.getByLabel("House summary");
     await expect(caption.getByLabel(/^Page 1 of/)).toBeVisible();
@@ -1715,7 +1918,7 @@ test.describe("format-aware game viewer", () => {
       const cast = phase === "INTRODUCTION" ? [] : phase === "LOBBY" ? scenario.roster : [actor, ...mingleAudience];
       await expect(speech.locator("[data-room-player]")).toHaveCount(cast.length);
       for (const player of cast) await expect(speech.locator(`[data-room-player="${player.id}"]`)).toBeVisible();
-      const label = phase === "INTRODUCTION" ? "Introductions" : phase === "LOBBY" ? "Public Lobby" : "Format Mingle";
+      const label = phase === "INTRODUCTION" ? "Introductions" : phase === "LOBBY" ? "Public Lobby" : "Mingle";
       await expect(page.getByRole("heading", { name: label, level: 1, exact: true })).toBeVisible();
       await expect(page.locator(".influence-phase-title")).toHaveCount(0, { timeout: 15_000 });
       // Let this accepted speech finish before the next live publication arrives.

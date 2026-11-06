@@ -32,6 +32,7 @@ import {
   cueKey,
   emptySnapshot,
   FIXED_CUE_DURATION_MS,
+  formatRulesReadingMs,
   incomplete,
   phaseKey,
 } from "./format-presentation-model-helpers";
@@ -575,7 +576,9 @@ function applyDecision(input: {
         ...selectedCueBase,
         key: cueKey(gameId, decision.sequence, "selected-rules"),
         stage: "rules_reveal",
-        baseDurationMs: FIXED_CUE_DURATION_MS.format_selected / 2,
+        baseDurationMs: formatRulesReadingMs(decision.payload.formatId),
+        minimumDurationMs: formatRulesReadingMs(decision.payload.formatId),
+        readingHold: true,
       });
       break;
     }

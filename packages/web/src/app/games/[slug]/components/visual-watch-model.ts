@@ -9,6 +9,8 @@ import type { VisualPresentationBeat } from "./visual-presentation";
 import { soloPresentationDurationMs } from "./solo-presentation-timing";
 import { sceneSpeechDurationMs } from "./scene-speech-timing";
 import { isSafetyBounceSceneCue, safetyBounceLobbyScene } from "./safety-bounce-scene-model";
+import { allianceIntroductionDurationMs } from "@influence/engine/alliance-introductions";
+import {portraitRoomDurationMs, portraitRoomPageCount, PORTRAIT_ROOM_PAGE_HOLD_MS} from "./portrait-room-pagination";
 
 /** Historical speaker/audience fields are seat IDs or exact frozen names, never dialogue prose. */
 export function resolveTranscriptPlayer(token: string | null | undefined, players: readonly GamePlayer[]) {
@@ -30,10 +32,21 @@ export function isSoloTranscript(message: TranscriptEntry): boolean {
 }
 
 export function transcriptPresentationDurationMs(message: TranscriptEntry, players: readonly GamePlayer[] = []) {
+  if (message.allianceIntroduction) return allianceIntroductionDurationMs(message.text, message.allianceIntroduction.memberIds.length);
   const text = message.acceptedBallot ? players.find(player => player.id === message.acceptedBallot!.targetId)?.name ?? message.text : message.text;
   return isSoloTranscript(message) ? soloPresentationDurationMs(text)
     : message.anonymous || message.speakerPlayerId || message.fromPlayerId
-      ? sceneSpeechDurationMs(text) : visualSpeechDurationMs(text);
+      ? largeSocialCastCount(message) > 4 ? portraitRoomDurationMs(text, largeSocialCastCount(message)) : sceneSpeechDurationMs(text) : visualSpeechDurationMs(text);
+}
+
+export function largeSocialCastCount(message: TranscriptEntry): number {
+  if (!isMingleDialogue(message)) return 0;
+  return new Set([message.speakerPlayerId ?? message.fromPlayerId, ...(message.allianceSession?.memberIds ?? message.toPlayerIds ?? [])].filter(Boolean)).size;
+}
+
+export function socialCastMinimumThinkingMs(message: TranscriptEntry): number | undefined {
+  const count = largeSocialCastCount(message);
+  return count > 4 ? portraitRoomPageCount(count) * PORTRAIT_ROOM_PAGE_HOLD_MS : undefined;
 }
 
 export interface VisualWatchData {
@@ -101,6 +114,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
   }
   if (cue?.source === "format") {
     const twoNamesRoster = () => players.map(player => ({...player, avatarUrl:data.portraits[player.id] ?? player.avatarUrl, fullBodyReferenceUrl:data.fullBodies?.[player.id]}));
+    if (cue.kind === "format_selected" && cue.stage === "rules_reveal") return {rooms, beat:{kind:"format-result",cue,roster:twoNamesRoster()}};
     if (twoNamesDecisionSpeechAction(cue.kind) && cue.decisionSpeechEntry) {
       const actor = players.find(player => player.id === cue.decisionSpeechEntry!.decisionSpeech!.actorId);
       if (actor) return {rooms, beat: {kind:"two-names-decision", cue, roster:twoNamesRoster(),
@@ -150,6 +164,15 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
   }
   if (cue?.source === "house") return { rooms, beat: { kind: "house", text: null, title: cue.title, ...(cue.resultsPresentation && {backgroundUrl:resultRoom(cue.phase)}) } };
   if (!message) return { rooms, beat };
+  if (message.allianceIntroduction) {
+    const introduction = message.allianceIntroduction;
+    return { rooms, beat: { kind: "alliance-introduction", allianceName: introduction.allianceName,
+      participants: introduction.memberIds.map(id => {
+        const player = players.find(player => player.id === id);
+        if (!player) throw new Error("Alliance introduction member is missing from the frozen roster");
+        return { ...player, avatarUrl: data.portraits[id] ?? player.avatarUrl };
+      }), text: message.text } };
+  }
   const speakerToken = message.anonymous ? null : message.speakerPlayerId ?? message.fromPlayerId;
   const speaker = resolveTranscriptPlayer(speakerToken, players);
   const speakerId = speaker?.id ?? speakerToken;
@@ -189,14 +212,15 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
         speech: { id: String(message.id), playerId: speaker.id, speaker: speaker.name, text: message.text } } };
     }
     if (isMingleDialogue(message) && speaker) {
-      const audience = message.toPlayerIds ?? target?.participantIds ?? [];
+      const audience = message.allianceSession?.memberIds ?? message.toPlayerIds ?? target?.participantIds ?? [];
       const ids = new Set([speaker.id, ...audience.flatMap(token => {
         const player = resolveTranscriptPlayer(token, players);
         return player ? [player.id] : [];
       })]);
       const participants = players.filter(player => ids.has(player.id));
       if (!target || participants.some(player => !data.fullBodies?.[player.id])) {
-        return { rooms, beat: { kind: "portrait-room", roomNumber: message.roomId ?? null,
+        return { rooms, beat: { kind: "portrait-room", roomNumber: message.roomId ?? null, paginateLargeCast:true,
+          roomLabel: message.allianceSession?.allianceName,
           participants: participants.map(player => ({ ...player, avatarUrl: data.portraits[player.id] ?? player.avatarUrl })),
           speech: { id: String(message.id), playerId: speaker.id, speaker: speaker.name, text: message.text } } };
       }
@@ -207,7 +231,8 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
       const index = rooms.findIndex(room => room.roomId === target.roomId);
       if (index >= 0) rooms[index] = { ...target, annotatedImageUrl: "" };
       else rooms.push({ ...target, annotatedImageUrl: "" });
-      beat = { kind: "scene", sceneId: target.id, roomId: target.roomId, speech: speakerId || message.anonymous ? {
+      beat = { kind: "scene", sceneId: target.id, roomId: target.roomId, roomLabel: message.allianceSession?.allianceName,
+        ...(largeSocialCastCount(message) > 4 && cue ? {speechDurationMs:cue.baseDurationMs} : {}), speech: speakerId || message.anonymous ? {
         id: String(message.id), playerId: message.anonymous ? null : speakerId,
         portrait: speakerId ? { avatarUrl: data.portraits[speakerId] ?? players.find(p => p.id === speakerId)?.avatarUrl, persona: players.find(p => p.id === speakerId)?.persona ?? "", personaKey: players.find(p => p.id === speakerId)?.personaKey } : undefined,
         speaker: message.anonymous ? "Anonymous" : players.find((player) => player.id === speakerId)?.name ?? message.fromPlayerName ?? "Player", text: message.text,

@@ -6,6 +6,7 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
+    "./alliance-introductions": "./src/alliance-introduction-presentation.ts",
     "./provider-images": "./src/provider-images.ts",
     "./viewer-phase-prefix": "./src/viewer-phase-prefix.ts",
     "./game-follow": "./src/game-follow.ts",
@@ -79,11 +80,13 @@
     "./postgame-media/werewolf-trailer-manifest": "./src/postgame-media/werewolf-trailer-manifest.ts",
     "./werewolf/visual-scenes": "./src/werewolf/visual-scenes.ts",
     "./render-execution-config": "./src/render-execution-config.ts",
+    "./render-job": "./src/render-job.ts",
     "./game-model-routing": "./src/game-model-routing.ts",
     "./model-route-metadata": "./src/model-route-metadata.ts",
     "./audio-track": "./src/audio-track.ts",
     "./audio-watch": "./src/audio-watch.ts",
-    "./werewolf/house-speech": "./src/werewolf/house-speech.ts"
+    "./werewolf/house-speech": "./src/werewolf/house-speech.ts",
+    "./championship": "./src/championship.ts"
   },
   "scripts": {
     "simulate:werewolf": "bun run src/werewolf/simulate.ts",

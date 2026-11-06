@@ -1,0 +1,110 @@
+[
+  {
+    "trial": "baseline-png",
+    "fixture": "opening",
+    "frames": 1530,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 42.574200000000005
+  },
+  {
+    "trial": "baseline-png",
+    "fixture": "scene",
+    "frames": 300,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 16.404413291999997
+  },
+  {
+    "trial": "baseline-png",
+    "fixture": "chain",
+    "frames": 1555,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 43.36038858300001
+  },
+  {
+    "trial": "eager-png",
+    "fixture": "opening",
+    "frames": 1530,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 41.264571042
+  },
+  {
+    "trial": "eager-png",
+    "fixture": "scene",
+    "frames": 300,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 15.950419750000002
+  },
+  {
+    "trial": "eager-png",
+    "fixture": "chain",
+    "frames": 1555,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 40.522251791
+  },
+  {
+    "trial": "eager-none",
+    "fixture": "opening",
+    "frames": 1530,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 42.300507208000006
+  },
+  {
+    "trial": "eager-none",
+    "fixture": "scene",
+    "frames": 300,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 15.721901250000002
+  },
+  {
+    "trial": "eager-none",
+    "fixture": "chain",
+    "frames": 1555,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 40.655246375000004
+  },
+  {
+    "trial": "eager-none-repeat",
+    "fixture": "opening",
+    "frames": 1530,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 44.494491249999996
+  },
+  {
+    "trial": "eager-none-repeat",
+    "fixture": "scene",
+    "frames": 300,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 18.140777957999997
+  },
+  {
+    "trial": "eager-none-repeat",
+    "fixture": "chain",
+    "frames": 1555,
+    "decodedFramesAndTimestampsEqual": true,
+    "differingFrameCount": 0,
+    "decodedAudioEqual": true,
+    "seconds": 53.646113958
+  }
+]

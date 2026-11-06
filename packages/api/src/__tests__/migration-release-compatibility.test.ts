@@ -298,3 +298,25 @@ test("accepts the exact reviewed query metadata materialization files", () => {
     expect(inspectReleaseMigrationFiles([path.resolve(import.meta.dir, "../../drizzle", name)])).toEqual([]);
   }
 });
+
+test("championship half-point widening is pinned and does not authorize other type changes", () => {
+  const file = "0147_championship_half_points.sql";
+  const migration = readFileSync(new URL(`../../drizzle/${file}`, import.meta.url), "utf8");
+  expect(inspectReleaseMigrationSql(file, migration)).toEqual([]);
+  expect(inspectReleaseMigrationSql(file, migration + "\nALTER TABLE users ALTER COLUMN id TYPE integer;").some(row => row.rule === "narrow-type")).toBe(true);
+  expect(inspectReleaseMigrationSql("unreviewed.sql", migration).some(row => row.rule === "narrow-type")).toBe(true);
+});
+
+
+test("championship correction upgrade permits only the exact reviewed SQL", () => {
+  const file = "0150_championship_corrections.sql";
+  const migration = readFileSync(new URL(`../../drizzle/${file}`, import.meta.url), "utf8");
+  expect(inspectReleaseMigrationSql(file, migration)).toEqual([]);
+  for (const changed of [migration + "\nALTER TABLE games DROP CONSTRAINT games_pkey;",
+    migration.replace("SET NOT NULL", "DROP DEFAULT"),
+    migration.replace("entry_id,revision", "entry_id")]) {
+    expect(inspectReleaseMigrationSql(file, changed).length).toBeGreaterThan(0);
+  }
+  expect(inspectReleaseMigrationSql("unreviewed.sql", migration).map(row => row.rule))
+    .toEqual(expect.arrayContaining(["drop-constraint", "set-not-null"]));
+});

@@ -126,9 +126,18 @@ describe("isolated staging render proof", () => {
     expect(receipt.pendingWakes).toBe(1); expect(receipt.status).toBe("queued");
     expect(JSON.stringify(receipt)).not.toContain("leaseToken");
   });
-  test("bounded dispatcher delivers only the single durable enqueue and does not repair new wake IDs", async () => {
+  test("Batch trailer selection leaves legacy wake intents undelivered", async () => {
+    const db = createDB(url), before = await proofDatabaseReceipt(sql, runId);
+    const execution = { ...renderExecutionConfig({ INFLUENCE_DEPLOYMENT_ENVIRONMENT: "staging" }),
+      targets: { trailer: "aws-batch" as const, "studio-export": "aws-batch" as const } };
+    await dispatchRenderWakes(db, { execution, repair: false,
+      fetch: (async () => { throw new Error("Batch trailers must not wake the legacy controller"); }) as unknown as typeof fetch });
+    expect((await proofDatabaseReceipt(sql, runId)).pendingWakes).toBe(before.pendingWakes);
+  });
+  test("bounded legacy dispatcher delivers only the single durable enqueue and does not repair new wake IDs", async () => {
     let sends = 0;
-    const execution = { ...renderExecutionConfig({ INFLUENCE_DEPLOYMENT_ENVIRONMENT: "staging" }), mode: "remote" as const };
+    const execution = { ...renderExecutionConfig({ INFLUENCE_DEPLOYMENT_ENVIRONMENT: "staging" }), mode: "remote" as const,
+      targets: { trailer: "existing" as const, "studio-export": "existing" as const } };
     const options = { execution, repair: false, env: { POSTGAME_MEDIA_WAKE_URL: approval.wakeUrl, POSTGAME_MEDIA_WAKE_SECRET: "disposable-proof-test-only-wake-secret" },
       fetch: (async () => { sends++; return new Response("{}", { status: 200 }); }) as unknown as typeof fetch };
     expect(await dispatchRenderWakes(createDB(url), options)).toBe(1);

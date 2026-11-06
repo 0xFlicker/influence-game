@@ -6,6 +6,7 @@ describe("admin section routes", () => {
     expect(ADMIN_TABS.map((tab) => adminTabHref(tab.id))).toEqual([
       "/admin/inference",
       "/admin/seasons",
+      "/admin/championships",
       "/admin/games",
       "/admin/production",
       "/admin/providers",
@@ -27,6 +28,14 @@ describe("admin section routes", () => {
     expect(permitsAdminEntry({access:"producer"},{roles:[],permissions:["view_admin"]})).toBeFalse();
     expect(permitsAdminEntry(route,{roles:[],permissions:[]})).toBeFalse();
   });
+  test("render monitor uses its specific producer route without changing the Production landing",()=> {
+    const route=adminRoute("/admin/production/renders")!;
+    expect(route.label).toBe("Render jobs");
+    expect(permitsAdminEntry(route,{roles:[],permissions:["view_admin"]})).toBeFalse();
+    expect(permitsAdminEntry(route,{roles:["producer"],permissions:[]})).toBeTrue();
+    expect(permitsAdminEntry(route,{roles:["sysop"],permissions:[]})).toBeTrue();
+    expect(adminRoute("/admin/production")?.label).toBe("Production");
+  });
 });
 
 test("invite controls require their own capability", () => {
@@ -40,4 +49,10 @@ test("invite controls require their own capability", () => {
 test("remote import has no admin navigation or tab", () => {
   expect(isAdminTab("import")).toBeFalse();
   expect(adminRoute("/admin/import")).toBeUndefined();
+});
+
+test("championship navigation uses its explicit permission", () => {
+  const entry = adminRoute("/admin/championships")!;
+  expect(permitsAdminEntry(entry, { roles: [], permissions: ["manage_championships"] })).toBe(true);
+  expect(permitsAdminEntry(entry, { roles: ["producer"], permissions: [] })).toBe(false);
 });

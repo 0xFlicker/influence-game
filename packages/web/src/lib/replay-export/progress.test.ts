@@ -1,6 +1,20 @@
 import { expect, test } from "bun:test";
 import { createRenderProgress } from "./progress";
 
+test("long movies report the renderer ETA while rounded progress is still zero", () => {
+  let time = 0;
+  const writes: string[] = [];
+  const progress = createRenderProgress({now:()=>time,stream:{write:text=>writes.push(text)}});
+  try {
+    time = 30_000;
+    progress.update({progress:0,renderedDoneIn:null,stitchStage:"encoding",renderEstimatedTime:36_000_000});
+    expect(writes.at(-1)).toContain("0% | 00:30 elapsed | ~10:00:00 left");
+    time = 60_000;
+    progress.update({progress:0,renderedDoneIn:null,stitchStage:"encoding",renderEstimatedTime:NaN});
+    expect(writes.at(-1)).toContain("estimating…");
+  } finally {progress.finish(false);}
+});
+
 test("terminal progress estimates remaining work, fits 80 columns, and closes only on completion", () => {
   let time = 0;
   const writes: string[] = [];

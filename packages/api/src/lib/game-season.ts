@@ -9,7 +9,7 @@ export interface GameSeasonIdentity {
 }
 
 export async function getGameSeasonIdentityMap(
-  db: DrizzleDB,
+  db: Pick<DrizzleDB, "select">,
   seasonIds: Array<string | null>,
 ): Promise<Map<string, GameSeasonIdentity>> {
   const ids = [...new Set(seasonIds.filter((id): id is string => id !== null))];

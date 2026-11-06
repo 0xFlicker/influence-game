@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SeasonAdminPanel, SeasonEvidence, suggestSeasonName } from "../app/admin/season-admin-panel";
+import { SeasonAdminPanel, SeasonEvidence, suggestSeasonName, recoverFinalizedSeasonAwards } from "../app/admin/season-admin-panel";
 import type { ProducerSeasonDiagnostics } from "../lib/api";
 
 describe("season admin panel", () => {
@@ -69,4 +69,16 @@ describe("season admin panel", () => {
     expect(html).not.toContain("Set rating");
     expect(html).not.toContain("Edit receipt");
   });
+});
+
+test("automatically recovers only finalized Season 0 awards without a preview or approval", async () => {
+  const original = globalThis.fetch;
+  const requests: Array<{ url: string; method?: string }> = [];
+  globalThis.fetch = (async (url, init) => { requests.push({ url: String(url), method: init?.method }); return Response.json({}); }) as typeof fetch;
+  try {
+    await recoverFinalizedSeasonAwards([{ id: "s0", name: "Season 0", status: "final" }, { id: "open", name: "Season 0", status: "closing" }, { id: "s1", name: "Season 1", status: "final" }]);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.url).toEndWith("/api/admin/seasons/s0/awards/reconcile");
+    expect(requests[0]!.method).toBe("POST");
+  } finally { globalThis.fetch = original; }
 });

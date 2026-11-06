@@ -1,5 +1,15 @@
 # Optional Visual Mode
 
+Presentation changes, including portrait-only mode, must satisfy the
+[viewer–Studio–export parity gate](presentation-parity.md). Update the production
+binding, independent thought framing, frozen media/layouts and sampled renderer
+where affected; verify the new treatment in fresh rendered and encoded output.
+
+**Scrollable containers inside the player are banned.** This includes outer-scene
+scrolling, hidden scrollbars and scripted scrolling. Cast/names must fit/reflow;
+long speech/thought/House copy must paginate on the presentation clock with enough
+reading time. Do not hide required content or shrink it to unreadable text.
+
 Default House characters use the fixed [fourteen-character cast](house-cast.md).
 New Influence and Werewolf rosters freeze their approved, already-transparent
 `full-body-v1` references. These bundled WebP assets ship beside the headshots;
@@ -55,7 +65,7 @@ Existing Mingle room-count rules remain authoritative. Position inventories do n
 
 Introductions, accepted ballots, diaries and farewells use saved full-body art or substantial framed portraits. Mingle uses a matching room image only when its participants have full-body references; otherwise the room becomes a rotating semicircle of frozen headshots. Other conversations use a matching verified scene when available, otherwise the solo portrait treatment. Format results retain canonical choreography. Ballot wording comes from accepted structured facts at existing reveal points, without a model call or invented quotation. House text appears separately. Anonymous speech remains unidentified.
 
-Bubbles use a reading duration of 200 words/minute plus one second, at least three seconds, with no upper cap. Room speech reserves 650 ms for camera settling before its 200 ms fade-in, retains the complete reading duration, then fades out over 200 ms and holds the unobstructed scene for 400 ms. Their clock follows playback pause, speed and seeking. Loading a room image holds this shared clock, including thinking, until the image loads or fails; the previous image can remain visible without being zoomed using the incoming speaker's head coordinates. Thinking framing starts only after the selected image's transition settles. Image failure releases playback to the existing portrait fallback. A visual becoming available cannot switch the active speech beat away from its chosen presentation. The scene fits the available watch frame and measures the complete rendered bubble: prefer above the verified head when it fits, otherwise below when that fits. If neither fits, reserve headroom by moving the image down and reducing it proportionally. Speech has no internal scrollbar or truncation; exceptionally tall speech remains accessible through the outer scene scroll. Narrow frames and scenes without reliable anchors use a named speech panel below the image. Replay only reads saved artifacts and canonical speech bindings; it never generates media.
+Bubbles use a reading duration of 200 words/minute plus one second, at least three seconds, with no upper cap. Room speech reserves 650 ms for camera settling before its 200 ms fade-in, retains the complete reading duration, then fades out over 200 ms and holds the unobstructed scene for 400 ms. Their clock follows playback pause, speed and seeking. Loading a room image holds this shared clock, including thinking, until the image loads or fails; the previous image can remain visible without being zoomed using the incoming speaker's head coordinates. Thinking framing starts only after the selected image's transition settles. Image failure releases playback to the existing portrait fallback. A visual becoming available cannot switch the active speech beat away from its chosen presentation. The scene fits the available watch frame and measures the complete rendered bubble: prefer above the verified head when it fits, otherwise below when that fits. If neither fits, reserve headroom by moving the image down and reducing it proportionally. Speech has no scrollbar or truncation, and outer-scene scrolling is also banned; long speech uses readable, presentation-clock-driven pagination inside the player bounds. Narrow frames and scenes without reliable anchors use a named speech panel below the image. Replay only reads saved artifacts and canonical speech bindings; it never generates media.
 
 ## House-hosted playback
 
@@ -243,8 +253,8 @@ form a descending portrait group, while places 5 onward use separate compact
 Jury and Rest of the cast groups. Jury participation comes from the accepted
 voters in `jury.winner_determined`, not elimination order. Final-four jurors carry
 a Jury caption and are not duplicated in the lower groups. Container-based
-layout supports mobile, fullscreen and rotation, with scrolling for a large
-cast. Deterministic browser checks cover the final vote, backward seeking,
+layout must support mobile, fullscreen and rotation with a fitted/reflowed large
+cast and no scrollable player container. Deterministic browser checks cover the final vote, backward seeking,
 closing narration and the stopped final frame.
 
 Final 4 Reckoning pleas share the exact surviving cast's lobby image. Boundary

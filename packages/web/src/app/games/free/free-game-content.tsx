@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import { AgentProfileLink } from "@/components/agent-profile-link";
 import Link from "next/link";
 import {
   getAuthToken,
@@ -449,7 +450,7 @@ export function SeasonStandings({
             {dashboard.season.status === "active" ? "Season live" : dashboard.season.status}
           </p>
           <h2 className="mt-1 text-xl font-semibold text-text-primary">{dashboard.season.name}</h2>
-          <p className="influence-copy-muted mt-1 text-xs">Wins lead. Every eligible finish adds to the ledger.</p>
+          {dashboard.championships?.map(event => <Link key={event.slug} href={`/events/${encodeURIComponent(event.slug)}`} className="mt-3 block text-sm text-amber-200 underline underline-offset-4">{event.name} →</Link>)}
           {seasons.length > 1 && (
             <label className="mt-3 inline-flex items-center gap-2 text-xs influence-copy-muted">
               Season
@@ -492,7 +493,7 @@ export function SeasonStandings({
         <div className="grid gap-px border-b border-border-active/60 bg-border-active sm:grid-cols-2">
           <CrownHonor
             label="Agent Champion"
-            winner={dashboard.honors.agentChampion.agentName}
+            winner={<AgentProfileLink agentId={dashboard.honors.agentChampion.agentId} className="hover:underline">{dashboard.honors.agentChampion.agentName}</AgentProfileLink>}
             detail={(
               <>
                 {dashboard.honors.agentChampion.points} points ·{" "}
@@ -534,7 +535,7 @@ export function SeasonStandings({
               <tr key={standing.agentId} className="influence-table-row group">
                 <td className="px-4 py-3 font-mono text-lg text-white/45" aria-label={`Rank ${standing.rank}`}>{String(standing.rank).padStart(2, '0')}</td>
                 <td className="px-4 py-3">
-                  <span className="text-sm font-medium text-text-primary">{standing.agentName}</span>
+                  <AgentProfileLink agentId={standing.agentId} className="text-sm font-medium text-text-primary hover:underline">{standing.agentName}</AgentProfileLink>
                   <div className="influence-copy-muted text-xs">
                     <PlayerProfileLink
                       player={standing.owner}

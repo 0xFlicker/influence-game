@@ -25,6 +25,7 @@ import {
 import { probe, runProcess, sha256 } from "./assets";
 import type { ReplayManifest } from "./manifest";
 import { createRenderProgress } from "./progress";
+import {fileIdentity,rendererProvenance} from "./provenance";
 const webRoot = resolve(import.meta.dir, "../../.."),
   repoRoot = resolve(webRoot, "../..");
 
@@ -38,6 +39,7 @@ export async function withPreparedReplay<T>(
     manifest: ReplayManifest,
     cancelSignal: ReturnType<typeof makeCancelSignal>["cancelSignal"],
   ) => Promise<T>,
+  browserExecutable = process.env.REPLAY_BROWSER_EXECUTABLE,
 ): Promise<T> {
   const scratch = await mkdtemp(join(tmpdir(), "house-replay-"));
   // Remotion's Chromium runner exits synchronously on SIGINT. Own files still need cleanup.
@@ -104,19 +106,22 @@ export async function withPreparedReplay<T>(
         pages = { ...manifest.pages };
       const preparation = { manifest, prepare: true };
       const measured = await selectComposition({
+        browserExecutable,
         serveUrl,
         id: "HouseReplay",
         inputProps: preparation,
         timeoutInMilliseconds: 60000,
       });
       await renderFrames({
+        browserExecutable,
         composition: measured,
         serveUrl,
         inputProps: preparation,
         outputDir: join(scratch, "layout"),
         onStart: () => console.log("Layout prepass started"),
         onFrameUpdate: () => undefined,
-        imageFormat: "png",
+        // Freeze every measured layout artifact without capturing unused pixels.
+        imageFormat: "none",
         concurrency: 1,
         cancelSignal,
         timeoutInMilliseconds: 60000,
@@ -151,7 +156,9 @@ export async function renderReplay(
   output: string,
   overwrite: boolean,
   signal: AbortSignal,
+  options: {onProgress?:(progress:number)=>void;browserExecutable?:string} = {},
 ) {
+  const browserExecutable = options.browserExecutable ?? process.env.REPLAY_BROWSER_EXECUTABLE;
   const concurrency = Number(process.env.REPLAY_RENDER_CONCURRENCY ?? 1);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 8) throw new Error("REPLAY_RENDER_CONCURRENCY must be an integer from 1 to 8");
   await mkdir(dirname(output), { recursive: true });
@@ -167,6 +174,7 @@ export async function renderReplay(
       async (serveUrl, manifest, cancelSignal) => {
         const inputProps = { manifest };
         const composition = await selectComposition({
+          browserExecutable,
           serveUrl,
           id: "HouseReplay",
           inputProps,
@@ -177,6 +185,7 @@ export async function renderReplay(
         let rendered = false;
         try {
           await renderMedia({
+            browserExecutable,
             composition,
             serveUrl,
             inputProps,
@@ -188,7 +197,7 @@ export async function renderReplay(
             concurrency,
             cancelSignal,
             timeoutInMilliseconds: 60000,
-            onProgress: progress.update,
+            onProgress: value=> {progress.update(value);options.onProgress?.(value.progress);},
           });
           rendered = true;
         } finally {
@@ -217,28 +226,16 @@ export async function renderReplay(
           )
         )
           throw new Error("Encoded replay is missing audio");
-        const bytes = await readFile(partial),
+        const identity = await fileIdentity(partial),
           receipt = {
             schema: "house.replay-export-receipt",
             manifestHash: sha256(JSON.stringify(manifest)),
             preparedRevision: manifest.revision,
             preparedDirty: manifest.dirty,
-            revision: (
-              await runProcess("git", ["-C", repoRoot, "rev-parse", "HEAD"])
-            ).trim(),
-            dirty: Boolean(
-              (
-                await runProcess("git", [
-                  "-C",
-                  repoRoot,
-                  "status",
-                  "--porcelain",
-                ])
-              ).trim(),
-            ),
+            ...await rendererProvenance(repoRoot),
             range: manifest.range,
-            outputHash: sha256(bytes),
-            bytes: bytes.length,
+            outputHash: identity.sha256,
+            bytes: identity.byteLength,
             durationSeconds: expected,
             width: manifest.width,
             height: manifest.height,
@@ -259,9 +256,10 @@ export async function renderReplay(
           JSON.stringify(receipt, null, 2),
         );
         console.log(
-          `Saved ${output} (${receipt.elapsedSeconds.toFixed(1)}s rendering, ${(bytes.length / 1024 / 1024).toFixed(1)} MiB)`,
+          `Saved ${output} (${receipt.elapsedSeconds.toFixed(1)}s rendering, ${(identity.byteLength / 1024 / 1024).toFixed(1)} MiB)`,
         );
       },
+      browserExecutable,
     );
   } finally {
     await rm(partial, { force: true });

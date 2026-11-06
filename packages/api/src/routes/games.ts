@@ -4,11 +4,12 @@ import { CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION } from "@influence/engine/i
 import { houseFullBodyUrl } from "@influence/engine/house-character-art";
 import { audioReadySequence } from "../services/audio-frontier.js";
 import { readGamePresentation } from "../services/game-presentation.js";
+import { allianceSessionPresentation } from "@influence/engine/alliance-introductions";
 import { CURRENT_EMPOWER_REVOTE_VERSION, resolveEmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import { creationModelRouting, GameModelRoutingError } from "../services/game-model-routing.js";
 import { DEFAULT_CONVERSATION_POLICY } from "@influence/engine";
 import { isSpectatorHuddleSpeech } from "@influence/engine";
-import { readHouseParticipation } from "../services/house-participation.js";
+import { HistoryPageUnavailable, parseHistoryCursor, readHouseParticipation, readHouseParticipationPage } from "../services/house-participation.js";
 import { forecastRetrospectiveBudget } from "@influence/engine/retrospective-budget";
 import { createGameResultsRoutes } from "./game-results.js";
 import { getPersistedGameEvents } from "../services/game-event-read-model.js";
@@ -16,6 +17,7 @@ import { getPersistedGameProjection } from "../services/game-projection-read-mod
 import { enabledGameKinds } from "@influence/engine/game-availability";
 import { createEpisodeRoutes } from "./episodes.js";
 import { readEpisodePresentations } from "../services/episode-presentation.js";
+import { publicErrorInfo, readPublicInfluenceSummaries } from "../services/public-library-summaries.js";
 /**
  * Game REST API routes.
  *
@@ -39,7 +41,7 @@ import { eq, inArray, asc, desc, isNotNull, or, and, ne, sql } from "drizzle-orm
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import type { GameCompletionSettlementState, GameStatus } from "../db/schema.js";
+import type { GameStatus } from "../db/schema.js";
 import {
   requireAuth,
   optionalAuth,
@@ -60,7 +62,6 @@ import {
 } from "../services/transcript-capture.js";
 import {
   getRedactedKernelHealth,
-  getRedactedKernelHealthByGameId,
 } from "../services/game-kernel-health.js";
 import {
   buildGameWatchState,
@@ -77,8 +78,6 @@ import {
 } from "../services/postgame-analysis.js";
 import { getPostgameHighlights } from "../services/postgame-highlights.js";
 import {
-  buildFallbackGameWatchStateSummary,
-  getGameWatchStateSummaryReadsByGameIds,
   tryRefreshGameWatchStateSummary,
 } from "../services/game-watch-state-summary.js";
 import { broadcastRaw } from "../services/ws-manager.js";
@@ -91,11 +90,9 @@ import { getPublicGameCompetitionReceipts } from "../services/season-read-model.
 import { generateUniqueSlug } from "../lib/slug.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import { modelLabelFromConfig } from "../lib/model-label.js";
-import { getGameSeasonIdentityMap } from "../lib/game-season.js";
 import { gameOwnerClaimErrorBody } from "../lib/game-owner-claim-response.js";
 import {
   getGameCompletionSettlementState,
-  getGameCompletionSettlementStateMap,
 } from "../services/game-completion-settlement.js";
 import {
   LEGACY_FORMAT_MANIFEST,
@@ -114,22 +111,6 @@ import type { Personality } from "@influence/engine";
 
 import { parseGameVisibility } from "@influence/engine/game-visibility";
 import { isViewerGame, publicGameFilter } from "../services/game-visibility.js";
-
-const PUBLIC_SUSPENDED_ERROR_INFO = "Execution is paused. Committed play remains available.";
-
-function publicErrorInfo(
-  status: GameStatus,
-  config: Record<string, unknown>,
-  settlementState?: GameCompletionSettlementState | "not_applicable",
-): string | undefined {
-  if (status === "suspended") {
-    if (config.visualPause) return "Visual preparation is paused for repair.";
-    if (settlementState === "pending") return "Finalizing results.";
-    if (settlementState === "repair_required") return "Results under review.";
-    return PUBLIC_SUSPENDED_ERROR_INFO;
-  }
-  return typeof config.errorInfo === "string" ? config.errorInfo : undefined;
-}
 
 // ---------------------------------------------------------------------------
 // Factory — creates a Hono sub-app with injected DB
@@ -302,87 +283,29 @@ export function createGameRoutes(db: DrizzleDB) {
     })));
   });
 
-  app.get("/api/games", optionalAuth(db), async (c) => {
+  const listPublicGames = async (c: Context<AuthEnv>, preview: boolean) => {
     if (!enabledGameKinds().includes("influence")) return c.json([]);
     const statusParam = c.req.query("status");
+    const rawLimit = preview ? c.req.query("limit") ?? "6" : undefined;
+    const limit = rawLimit === undefined ? undefined : Number(rawLimit);
+    if (rawLimit !== undefined && (!/^\d+$/.test(rawLimit) || !Number.isSafeInteger(limit) || limit! < 1 || limit! > 20)) return c.json({ error: "limit must be an integer from 1 to 20" }, 400);
 
-    let rows;
-    if (statusParam) {
-      const statuses = statusParam.split(",").map((s) => s.trim()) as GameStatus[];
-      rows = await db
-        .select()
-        .from(schema.games)
-        .where(and(eq(schema.games.gameKind, "influence"), inArray(schema.games.status, statuses), publicGameFilter()));
-    } else {
-      rows = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "influence"), publicGameFilter()));
-    }
+    const statuses = statusParam ? statusParam.split(",").map((s) => s.trim()) as GameStatus[] : undefined;
+    const condition = and(eq(schema.games.gameKind, "influence"), statuses ? inArray(schema.games.status, statuses) : undefined, publicGameFilter());
+    const rows = limit === undefined ? await db.select().from(schema.games).where(condition) : await db.transaction(async tx => {
+      await tx.execute(sql`SET LOCAL TIME ZONE 'UTC'`);
+      return tx.select().from(schema.games).where(condition).orderBy(sql`CASE
+        WHEN ${schema.games.createdAt} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}'
+          AND pg_input_is_valid(${schema.games.createdAt}, 'timestamp with time zone')
+        THEN ${schema.games.createdAt}::timestamptz END DESC NULLS LAST`, desc(schema.games.id)).limit(limit);
+    }, { isolationLevel: "repeatable read", accessMode: "read only" });
 
-    const episodes = await readEpisodePresentations(db, rows);
     c.header("Cache-Control", "private, no-store");
-    const gameIds = rows.map((game) => game.id);
-    const [kernelHealthByGameId, watchSummaryReadsByGameId, seasonById, settlementStateByGameId] = await Promise.all([
-      getRedactedKernelHealthByGameId(db, gameIds),
-      getGameWatchStateSummaryReadsByGameIds(db, gameIds),
-      getGameSeasonIdentityMap(db, rows.map((game) => game.seasonId)),
-      getGameCompletionSettlementStateMap(db, gameIds),
-    ]);
-
-    const summaries = rows.flatMap((game) => {
-      try {
-        const config = JSON.parse(game.config);
-        const formatManifest = resolveFormatManifest(
-          config.formatManifest ?? LEGACY_FORMAT_MANIFEST,
-        );
-        const summaryRead = watchSummaryReadsByGameId.get(game.id) ?? { status: "missing" as const };
-        const watchState = summaryRead.status === "current"
-          ? summaryRead.summary
-          : buildFallbackGameWatchStateSummary(game, config);
-
-        return [{
-          id: game.id,
-          slug: game.slug,
-          episode: episodes.get(game.id),
-          status: game.status,
-          playerCount: game.maxPlayers ?? config.maxPlayers ?? watchState.counts.totalPlayers,
-          currentRound: watchState.currentRound,
-          maxRounds: config.maxRounds ?? 10,
-          currentPhase: watchState.currentPhase,
-          phaseTimeRemaining: null,
-          alivePlayers: watchState.counts.alivePlayers,
-          eliminatedPlayers: watchState.counts.eliminatedPlayers,
-          modelLabel: modelLabelFromConfig(config),
-          visibility: config.visibility ?? "public",
-      audioMode: config.audioMode === true,
-      visualMode: config.visualMode === true,
-      visualFailurePolicy: config.visualFailurePolicy === "require_visuals" ? "require_visuals" : "best_effort",
-      visualPaused: game.status === "suspended" && Boolean(config.visualPause),
-          formatManifest,
-          empowerRevoteVersion: resolveEmpowerRevoteVersion(config.empowerRevoteVersion),
-          gameSchemaVersion: config.gameSchemaVersion ?? 1,
-          trackType: game.trackType,
-          seasonId: game.seasonId ?? undefined,
-          season: game.seasonId ? seasonById.get(game.seasonId) : undefined,
-          rated: Boolean(game.seasonId),
-          winner: watchState.winner?.name,
-          errorInfo: publicErrorInfo(game.status, config, settlementStateByGameId.get(game.id)),
-          kernelHealth: kernelHealthByGameId.get(game.id),
-          watchState,
-          watchStateSummaryStatus: summaryRead.status,
-          createdAt: game.createdAt,
-          startedAt: game.startedAt ?? undefined,
-          completedAt: game.endedAt ?? undefined,
-        }];
-      } catch (error) {
-        console.warn(
-          `[games] Skipping corrupt list row for game ${game.id}:`,
-          error instanceof Error ? error.message : error,
-        );
-        return [];
-      }
-    });
-
-    return c.json(summaries);
-  });
+    return c.json(await readPublicInfluenceSummaries(db, rows, { includeEpisodeNumbers: limit === undefined }));
+  };
+  // A separate route preserves the old list endpoint's ignored query params.
+  app.get("/api/public-games/preview", optionalAuth(db), (c) => listPublicGames(c, true));
+  app.get("/api/games", optionalAuth(db), (c) => listPublicGames(c, false));
 
   // -------------------------------------------------------------------------
   // GET /api/games/:id — get game details
@@ -901,6 +824,21 @@ export function createGameRoutes(db: DrizzleDB) {
     return c.json(await readHouseParticipation(db, user.id));
   });
 
+  app.get("/api/player/games-page", requireAuth(db), async (c) => {
+    const rawLimit = c.req.query("limit") ?? "20";
+    const limit = Number(rawLimit);
+    const rawCursor = c.req.query("cursor");
+    const cursor = rawCursor === undefined ? null : parseHistoryCursor(rawCursor);
+    const gameKind = c.req.query("game") ?? "all";
+    if ((gameKind !== "all" && gameKind !== "influence" && gameKind !== "werewolf") || !/^\d+$/.test(rawLimit) || !Number.isSafeInteger(limit) || limit < 1 || limit > 50 || (rawCursor !== undefined && !cursor) || (cursor && cursor.gameKind !== gameKind)) return c.json({ error: "Invalid history page" }, 400);
+    c.header("Cache-Control", "private, no-store");
+    try { return c.json(await readHouseParticipationPage(db, c.get("user").id, limit, cursor, gameKind)); }
+    catch (error) {
+      if (error instanceof HistoryPageUnavailable) return c.json({ error: "Game history is temporarily unavailable." }, 503);
+      throw error;
+    }
+  });
+
   // -------------------------------------------------------------------------
   // GET /api/games/:id/alliances — public named-alliance facts
   // -------------------------------------------------------------------------
@@ -1073,12 +1011,17 @@ export function createGameRoutes(db: DrizzleDB) {
     };
 
     const historicalResults = await readHistoricalHouseResults(db,gameId,rows.filter(row=>!row.safeContext?.houseResult));
+    const allianceHistory = rows.some(row => row.safeContext?.sessionId && !row.safeContext.allianceName)
+      ? await getPersistedGameEvents(db, gameId) : null;
+    const allianceEvents = allianceHistory?.status === "complete" ? allianceHistory.events.map(event => event.envelope) : [];
     const entries = rows.filter(row => row.scope !== "huddle" || isSpectatorHuddleSpeech({ ...row, dialogueContext: row.safeContext })).map((row) => {
       const roomMetadata = parseJsonOrNull(row.roomMetadata);
       return {
         id: row.id,
         entrySequence: row.entrySequence ?? undefined,
         dialogueKind: row.dialogueKind,
+        allianceIntroduction: row.safeContext?.allianceIntroduction,
+        allianceSession: allianceSessionPresentation(row.safeContext, allianceEvents, row.firstDurableEventSequence ?? undefined),
         firstDurableEventSequence: row.firstDurableEventSequence,
         speakerPlayerId: row.safeContext?.anonymous ? null : row.speakerPlayerId,
         anonymous: row.safeContext?.anonymous === true,

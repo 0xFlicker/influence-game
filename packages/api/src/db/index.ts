@@ -18,8 +18,12 @@ const poolCache = new Map<string, {
   client: ReturnType<typeof postgres>;
 }>();
 
+export function resolveDatabaseUrl(connectionString?: string): string {
+  return connectionString ?? process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL;
+}
+
 export function createDB(connectionString?: string) {
-  const url = connectionString ?? process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL;
+  const url = resolveDatabaseUrl(connectionString);
   const existing = poolCache.get(url);
   if (existing) return existing.db;
 
@@ -30,7 +34,7 @@ export function createDB(connectionString?: string) {
 }
 
 export async function closeDB(connectionString?: string): Promise<void> {
-  const url = connectionString ?? process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL;
+  const url = resolveDatabaseUrl(connectionString);
   const existing = poolCache.get(url);
   if (!existing) return;
   poolCache.delete(url);

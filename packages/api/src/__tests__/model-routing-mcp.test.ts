@@ -14,9 +14,9 @@ import { CURRENT_PRIVACY_VERSION, CURRENT_TERMS_VERSION } from "../services/lega
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { setupTestDB } from "./test-utils.js";
 
-test("routing scope migration preserves every old grant and matches all four canonical constraints", async () => {
-  const migration = await readFile(new URL("../../drizzle/0139_producer_routing_scope.sql", import.meta.url), "utf8");
-  const previous = await readFile(new URL("../../drizzle/0137_producer_moment_edit_scope.sql", import.meta.url), "utf8");
+test("render scope migration preserves every old grant and matches all four canonical constraints", async () => {
+  const migration = await readFile(new URL("../../drizzle/0144_producer_render_scope.sql", import.meta.url), "utf8");
+  const previous = await readFile(new URL("../../drizzle/0139_producer_routing_scope.sql", import.meta.url), "utf8");
   const constraints = [...migration.matchAll(/CHECK \(scope IN \((.*?)\)\)/g)];
   expect(constraints).toHaveLength(4);
   for (const constraint of constraints) {
@@ -26,6 +26,8 @@ test("routing scope migration preserves every old grant and matches all four can
   }
   expect(parseAndValidateMcpOAuthScopes("producer:routing").ok).toBe(false);
   expect(parseAndValidateMcpOAuthScopes("producer producer:routing").ok).toBe(true);
+  expect(parseAndValidateMcpOAuthScopes("producer:render").ok).toBe(false);
+  expect(parseAndValidateMcpOAuthScopes("producer producer:render").ok).toBe(true);
 });
 
 test("HTTP MCP routing edits require explicit consent, current sysop authority, and a waiting game", async () => {

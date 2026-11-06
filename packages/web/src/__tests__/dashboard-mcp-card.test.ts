@@ -12,7 +12,7 @@ describe("dashboard MCP setup card", () => {
     expect(source).toContain("McpSetupCard");
     expect(source).toContain('href="/get-mcp"');
     expect(source).toContain("Connect {HOUSE_VENUE.name} to your Chatbot or AI Agent");
-    expect(source).toContain("history.length > 0");
+    expect(source).toContain("hasHistory={overviewHistory.length > 0}");
   });
 
   it("has useful copy for players with and without history", () => {

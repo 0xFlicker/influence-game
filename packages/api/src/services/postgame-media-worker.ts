@@ -1,5 +1,5 @@
 import { loadPayloads, storeFields } from "./payload-storage.js";
-import { and, eq, gt, inArray, lte, or } from "drizzle-orm";
+import { and, eq, gt, inArray, lte, or, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import {
   parseHouseHighlightsTrailerManifest,
@@ -68,16 +68,17 @@ export async function claimPostgameMedia(
   db: DrizzleDB | Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0],
   workerToken: string,
   now = new Date(),
+  assigned?: {gameId:string;renderVersion:number},
 ): Promise<PostgameMediaClaim | null> {
   const nowIso = now.toISOString();
   const candidates = await loadPayloads(db.select().from(schema.gamePostgameMedia)
-    .where(or(
+    .where(and(assigned ? and(eq(schema.gamePostgameMedia.gameId,assigned.gameId),eq(schema.gamePostgameMedia.renderVersion,assigned.renderVersion)) : sql`NOT EXISTS (SELECT 1 FROM render_jobs r WHERE r.game_id=game_postgame_media.game_id AND r.source_render_version=game_postgame_media.render_version AND r.workload='trailer' AND r.state NOT IN ('succeeded','cancelled'))`,or(
       eq(schema.gamePostgameMedia.status, "queued"),
       and(
         inArray(schema.gamePostgameMedia.status, CLAIMABLE_STALE_STATUSES),
         lte(schema.gamePostgameMedia.leaseExpiresAt, nowIso),
       ),
-    ))
+    )))
     .limit(20));
 
   for (const candidate of candidates) {

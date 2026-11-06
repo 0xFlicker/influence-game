@@ -48,8 +48,14 @@ const competitionSchema = closedObject(
   },
 );
 
+const awardKeys = ["id", "code", "title", "theme", "awardedAt", "sourceSeasonId", "sourceEventId"] as const;
+const awardSchema = closedObject(awardKeys, {
+  id: { type: "string" }, code: { type: "string" }, title: { type: "string" }, theme: { type: "string" }, awardedAt: { type: "string" },
+  sourceSeasonId: nullableStringSchema, sourceEventId: nullableStringSchema,
+});
+
 const agentSchema = closedObject(
-  ["name", "avatarUrl", "role", "competition"],
+  ["name", "avatarUrl", "role", "competition", "awards", "profileHref"],
   {
     name: { type: "string" },
     avatarUrl: nullableStringSchema,
@@ -59,7 +65,9 @@ const agentSchema = closedObject(
         { type: "null" },
       ],
     },
+    profileHref: { type: "string", pattern: "^/agents/[A-Za-z0-9_-]{1,128}$" },
     competition: competitionSchema,
+    awards: { type: "array", items: awardSchema },
   },
 );
 
@@ -141,7 +149,7 @@ const currentSeasonSchema = closedObject(
 );
 
 const profileSchema = closedObject(
-  ["identity", "currentSeason", "career", "recentResults", "agents"],
+  ["identity", "currentSeason", "career", "recentResults", "agents", "awards"],
   {
     identity: closedObject(
       ["publicId", "handle", "displayName"],
@@ -169,6 +177,7 @@ const profileSchema = closedObject(
     ),
     recentResults: { type: "array", items: resultSchema },
     agents: { type: "array", items: agentSchema },
+    awards: { type: "array", items: awardSchema },
   },
 );
 
@@ -238,7 +247,7 @@ export function assertPublicPlayerProfileEnvelope(
 function assertProfile(value: unknown): void {
   const profile = exactObject(
     value,
-    ["identity", "currentSeason", "career", "recentResults", "agents"],
+    ["identity", "currentSeason", "career", "recentResults", "agents", "awards"],
     "profile",
   );
   const identity = exactObject(
@@ -263,6 +272,17 @@ function assertProfile(value: unknown): void {
     .forEach((result, index) => assertResult(result, index));
   arrayValue(profile.agents, "profile.agents")
     .forEach((agent, index) => assertAgent(agent, index));
+  assertAwards(profile.awards, "profile.awards");
+}
+
+function assertAwards(value: unknown, path: string): void {
+  arrayValue(value, path).forEach((award, index) => {
+    const itemPath = `${path}[${index}]`;
+    const row = exactObject(award, awardKeys, itemPath);
+    for (const key of ["id", "code", "title", "theme", "awardedAt"]) stringValue(row[key], `${itemPath}.${key}`);
+    nullableString(row.sourceSeasonId, `${itemPath}.sourceSeasonId`);
+    nullableString(row.sourceEventId, `${itemPath}.sourceEventId`);
+  });
 }
 
 function assertCurrentSeason(value: unknown): void {
@@ -345,9 +365,12 @@ function assertAgent(value: unknown, index: number): void {
   const path = `profile.agents[${index}]`;
   const agent = exactObject(
     value,
-    ["name", "avatarUrl", "role", "competition"],
+    ["name", "avatarUrl", "role", "competition", "awards", "profileHref"],
     path,
   );
+  assertAwards(agent.awards, `${path}.awards`);
+  stringValue(agent.profileHref, `${path}.profileHref`);
+  if (!/^\/agents\/[A-Za-z0-9_-]{1,128}$/.test(agent.profileHref as string)) throw new Error("Invalid public agent link");
   stringValue(agent.name, `${path}.name`);
   nullableString(agent.avatarUrl, `${path}.avatarUrl`);
   if (agent.role !== null) {

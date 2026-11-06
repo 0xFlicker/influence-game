@@ -12,6 +12,7 @@ import {
   comparePresentationCues,
   compileReplayFrameLookup,
   classicEliminatedPlayerIds,
+  formatSnapshotForPresentationCursor,
 } from "../../app/games/[slug]/components/influence-replay-cues";
 import {
   buildStoryScenes,
@@ -58,7 +59,8 @@ export type ExportPicture =
       backgroundUrl?: string;
       /** Reserve the response's ledger geometry without including its votes. */
       ballotFraming?: boolean;
-      room?: {number: number | null; label?: string; backgroundUrl?: string; floorPerspective?: boolean; players: Extract<VisualPresentationBeat, {kind:"portrait-room"}>["participants"]};
+      chain?: import("../../app/games/[slug]/components/safety-chain").SafetyChainThinkingBeat;
+      room?: {number: number | null; label?: string; backgroundUrl?: string; floorPerspective?: boolean; paginateLargeCast?: true; players: Extract<VisualPresentationBeat, {kind:"portrait-room"}>["participants"]};
     }
   | {kind: "werewolf-opening"; cue: WerewolfOpeningCue}
   | ({kind: "influence-opening"; cue: InfluenceOpeningCue} & ReturnType<typeof influenceCastArt>)
@@ -78,6 +80,8 @@ export type ExportPicture =
 export interface ExportCue {
   /** Stable editorial identity; multiple authored shots may belong to one moment. */
   momentId?: string;
+  /** Audience-safe selected-format context at this social moment. */
+  activeFormatId?: import("@influence/engine/format-presentation-metadata").LaunchFormatId;
   timing: TimingInput;
   picture: ExportPicture;
   label: string;
@@ -187,7 +191,8 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
     scenes,
     game.gameSchemaVersion,
     {attachDecisionSpeech: source.projectionVersion !== 3, attachTwoNamesSpeech: source.projectionVersion === undefined || source.projectionVersion >= 5,
-      compactEmpower: source.projectionVersion === undefined || source.projectionVersion >= 7,
+      // Frozen source versions pin facts and media, not an obsolete visual layout.
+      compactEmpower: true,
       resultsPresentation: source.projectionVersion === undefined || source.projectionVersion >= 6},
   );
   const frameForSequence = compileReplayFrameLookup(frames);
@@ -231,11 +236,16 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
     const spoken =
       picture.beat && "speech" in picture.beat ? picture.beat.speech : null;
     const ledger = ledgers[index] ?? null;
+    const activeFormatId = cue.source === "classic" && cue.phase === "FORMAT_MINGLE" && game.gameKernel === "format"
+      ? formatSnapshotForPresentationCursor(cues, index, cue.round)?.activeFormatId : null;
     result.push({
+      ...(activeFormatId ? {activeFormatId} : {}),
       timing: {
         key: cue.key,
         baseDurationMs: cue.baseDurationMs,
         minimumDurationMs:cue.minimumDurationMs,
+        readingHold:cue.readingHold,
+        minimumThinkingMs:cue.minimumThinkingMs,
         kind: ledger
           ? ledger.complete
             ? "tally"
@@ -259,7 +269,7 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
           transcriptSequence: message.entrySequence,
         }),
       },
-      label: `Round ${cue.round} · ${cue.phase}`,
+      label: `Round ${cue.round} · ${message?.allianceIntroduction?.allianceName ?? message?.allianceSession?.allianceName ?? (cue.phase === "FORMAT_MINGLE" ? "Mingle" : cue.phase)}`,
       speech:
         message?.dialogueKind === "house_summary"
           ? {

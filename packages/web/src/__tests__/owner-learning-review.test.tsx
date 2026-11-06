@@ -164,8 +164,8 @@ describe("owner learning review", () => {
     expect(html).toContain("Commit early.");
     expect(html).toContain("+ Wait for reciprocal support.");
     expect(html).toContain("Revision next-rev-2 is active. Future games use it.");
-    expect(html).toContain('href="/games/free"');
-    expect(html).toContain("Go to Intake");
+    expect(html).toContain('href="/seasons"');
+    expect(html).toContain("Go to Seasons");
     expect(html).toContain('href="/dashboard/agents/agent-1"');
     expect(html).toContain("View agent");
     expect(html).not.toContain("Apply strategy update");

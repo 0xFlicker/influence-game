@@ -58,7 +58,7 @@ import {
 } from "../services/transcript-capture.js";
 import { getRedactedKernelHealth } from "../services/game-kernel-health.js";
 import { tryRefreshGameWatchStateSummary } from "../services/game-watch-state-summary.js";
-import { bindFreeGameToActiveSeason } from "../services/seasons.js";
+import { bindFreeGameToActiveSeason, getActiveSeason } from "../services/seasons.js";
 import {
   deferDailyFreePrompt,
   acquireDailyFreeLocks,
@@ -69,7 +69,7 @@ import {
   DAILY_FREE_BUSY_GAME_STATUSES,
 } from "../services/queue-enrollment.js";
 import { AgentProfileManagementError } from "../services/agent-profile-management.js";
-import { getNextFreeGameTime } from "../services/free-game-schedule.js";
+import { getNextFreeGameTime, getNextDailyFreeDrawAt } from "../services/free-game-schedule.js";
 import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
 import {
   DAILY_FREE_PROVIDER_MANIFEST,
@@ -125,12 +125,14 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
     const seasonById = await getGameSeasonIdentityMap(db, [todayGame?.seasonId ?? null]);
 
     return c.json({
+      acceptingSeasonId: (await getActiveSeason(db))?.id ?? null,
       count: queueCount,
       userEntry,
       eligibility: personalized?.queue.eligibility ?? null,
       ineligibilityReason: personalized?.queue.ineligibilityReason ?? null,
       promptEligible: personalized?.promptEligible ?? false,
       relevantGame: personalized?.relevantGame ?? null,
+      nextDrawAt: getNextDailyFreeDrawAt(),
       nextGameTime: getNextFreeGameTime(),
       todayGame: todayGame
         ? {
@@ -159,6 +161,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       const result = await joinQueue(db, { userId: user.id }, {
         queueType: "daily-free",
         agentId: body.agentProfileId,
+        expectedSeasonId: body.expectedSeasonId,
       });
       return c.json({
         id: result.queue.entryId,
@@ -182,7 +185,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
   app.delete("/api/free-queue/leave", requireAuth(db), async (c) => {
     const user = c.get("user");
     try {
-      const result = await leaveQueue(db, { userId: user.id });
+      const result = await leaveQueue(db, { userId: user.id }, { expectedSeasonId: c.req.query("expectedSeasonId") });
       return c.json({ removed: result.queue.status === "left-queue" });
     } catch (error) {
       if (error instanceof QueueEnrollmentError) {
@@ -321,6 +324,13 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
           gameSlug: waitingGame.slug,
         };
       }
+      // Enrollment and closeout share this transaction lock. Pin one admission
+      // instant so a deadline crossing during roster preparation cannot unrate it.
+      const admittedAt = new Date().toISOString();
+      if (!await getActiveSeason(tx, admittedAt)) {
+        return { drawn: false as const, code: "season_intake_closed",
+          reason: "Daily Free intake is closed. No season is accepting entries." };
+      }
       const entries = (await tx.select({ entry: schema.freeGameQueue }).from(schema.freeGameQueue)
         .innerJoin(schema.agentProfiles, eq(schema.freeGameQueue.agentProfileId, schema.agentProfiles.id))
         .where(eligibleAgentContent())).map(row => row.entry);
@@ -458,7 +468,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       }
       return {
         drawn: true as const,
-        ...(await bindFreeGameToActiveSeason(tx, gameId)),
+        ...(await bindFreeGameToActiveSeason(tx, gameId, admittedAt)),
       };
     });
     if (!admission.drawn) return c.json(admission);
@@ -502,6 +512,12 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
     }
 
     const game = freeGames[0]!;
+    // Previously admitted rated games may finish during closing. Do not let an
+    // old unassigned free lobby bypass the between-seasons intake guard.
+    if (!game.seasonId) {
+      return c.json({ error: "This Daily Free game has no admitted season.",
+        code: "season_admission_required" }, 409);
+    }
 
     const currentPlayers = await db
       .select()

@@ -1,5 +1,18 @@
 # Development Guide
 
+## Required presentation parity gate
+
+Before changing a beat, scene, camera, caption, timing or audio treatment, follow
+[the viewer–Studio–video parity checklist](docs/presentation-parity.md). The same
+branch must cover the viewer, Studio Source/Selected cut and freshly prepared
+exports, with targeted regressions and a fresh rendered/encoded comparison.
+Shared component imports or a viewer-only screenshot do not establish parity.
+Report any missing consumer/proof as incomplete, and document bundle refresh steps.
+
+**Scrollable containers inside the player are banned** in viewer, Studio preview
+and export. Fit/reflow content or paginate it on the shared clock; do not introduce
+scrollbars, hidden/scripted scrolling, clipped required text or unreadable type.
+
 For direct Grok game routing, see [native xAI](docs/native-xai.md). Both gateway
 and game worker need `XAI_API_KEY`. Migration 0141 preserves model generations
 and frozen history; paid native gameplay qualification remains outstanding.
@@ -610,6 +623,8 @@ Provider failures use a separate private evidence type. Admin and sysop can open
 
 New games seal an ordered provider manifest. Each entry uses `catalogId` and `reasoningPolicy`; fallbacks require bounded `maxCallsPerGame`. GPT-6 Luna remains the primary baseline; the shared fallback is native `xai:grok-4.6` (24 calls). Mutable Katana Grok choices migrate at the same generation; frozen games keep their original routes. Native xAI entries remain evaluation candidates pending paid qualification. See [native xAI](docs/native-xai.md) and the dated historical Katana results in `docs/local-model-evaluation.md`.
 
+Influence's `--chatty` output also retains `house-alliance-introductions`: one direct, journaled House author batch after alliance conversations and before the next decision. Check the accepted teaser against the forthcoming conversation and its pre-decision context. Playback moves the saved copy before its exact speech anchor; complete-phase live delivery holds it with the conversations. It is viewer-only, excluded from contestant prompts and owner transcript pages. Keep direct House calls and no `as any`; see [narration evaluation](docs/local-model-evaluation.md#house-narrative-evaluation).
+
 Create an API-backed simulation with the same ordered fallback shape using data-only CLI arguments:
 
 ```bash
@@ -676,6 +691,25 @@ The private trace env has to be loaded into the API process before a game starts
 
 The web command is Doppler-wrapped because runtime config such as Privy, admin address, API URL, and websocket URL may come from the shared dev config. The API URL uses `127.0.0.1` rather than `localhost` so Chrome does not resolve the API to IPv6 `[::1]` and accidentally hit another local dev server.
 
+The local render worker also picks up Studio exports. In **Selected cut → Export**,
+choose **Render video**; use **Production → Render jobs** to check it later and
+download the verified output. No render container is needed. The worker finishes
+one attempt before polling again and gives ready trailers priority. Set
+`REMOTION_BROWSER_EXECUTABLE` to an installed Chromium/Chrome executable if it is
+not already configured, for example on macOS:
+
+```sh
+REMOTION_BROWSER_EXECUTABLE="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" bun run dev:render-worker
+```
+
+Native export discovery requires the development/local policy, a loopback API,
+the existing local worker credential and the matching source digest. The API
+derives local job capabilities from its development session secret; no extra
+render secret or AWS credentials are needed. Only the exact execution capability
+reaches the shared assigned worker. Queued work cannot silently move to changed
+renderer source: order a new export after such an edit. Staging/production cannot
+use this discovery endpoint and retain their existing target/image admission.
+
 ### Local Upload Storage
 
 Profile-picture uploads use Linode Object Storage when `LINODE_OBJ_ENDPOINT`, `LINODE_OBJ_ACCESS_KEY`, `LINODE_OBJ_SECRET_KEY`, and `LINODE_OBJ_BUCKET` are present. In local dev, if those vars are absent, the API automatically uses a filesystem-backed upload endpoint instead and writes files under `packages/api/.local-uploads/` by default. Local upload and read URLs are returned as absolute API-origin URLs so the browser does not resolve them against the separate web dev server origin.
@@ -688,6 +722,10 @@ INFLUENCE_STORAGE_BACKEND=s3         # require Linode/S3 vars
 INFLUENCE_STORAGE_BACKEND=disabled   # disable uploads
 INFLUENCE_LOCAL_UPLOAD_DIR=/tmp/influence-uploads
 ```
+
+Worktrees sharing the same development database must also share the directory
+containing its existing local uploads. Set `INFLUENCE_LOCAL_UPLOAD_DIR` to that
+directory for both API roles; changing worktrees does not copy those files.
 
 ### Local Private Content S3
 

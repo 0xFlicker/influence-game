@@ -1,0 +1,63 @@
+"use client";
+
+import {useLayoutEffect, useRef, useState} from "react";
+import {resolveAgentAvatarUrl} from "@/components/agent-avatar";
+import {useSampledStage} from "@/components/watch/sampled-stage";
+import {useSceneThinking} from "@/components/watch/watch-thinking";
+import {RoomBackdrop, DEFAULT_ROOM_BACKDROP} from "./stage-backdrop";
+import {TimedSpeech} from "./timed-speech";
+import {portraitRoomDurationMs, portraitRoomPage, portraitRoomPageCount, PORTRAIT_ROOM_PAGE_SIZE} from "./portrait-room-pagination";
+import type {VisualPresentationBeat} from "./visual-presentation";
+
+/** Compact crowded rooms retain every attendee on pages sampled from the shared clock. */
+export function PaginatedPortraitRoom({beat, elapsedMs, readingElapsedMs, reducedMotion, backgroundUrl, hideSpeech, onImageReady}: {
+  beat:Extract<VisualPresentationBeat,{kind:"portrait-room"}>; elapsedMs:number; readingElapsedMs:number; reducedMotion:boolean;
+  backgroundUrl?:string; hideSpeech?:boolean; onImageReady?:()=>void;
+}) {
+  const thought = useSceneThinking();
+  const sampled = useSampledStage();
+  const speaker = beat.participants.find(player => player.id === beat.speech.playerId);
+  if (!speaker) throw new Error("Crowded room is missing its speaking contestant");
+  const others = beat.participants.filter(player => player.id !== speaker.id);
+  const pages = portraitRoomPageCount(beat.participants.length);
+  const duration = portraitRoomDurationMs(beat.speech.text, beat.participants.length);
+  const page = thought ? Math.min(pages - 1, Math.floor(Math.max(0, thought.elapsedMs) / Math.max(1, thought.durationMs) * pages))
+    : portraitRoomPage(readingElapsedMs,duration,beat.participants.length);
+  const visible = [speaker,...others.slice(page * PORTRAIT_ROOM_PAGE_SIZE,(page + 1) * PORTRAIT_ROOM_PAGE_SIZE)];
+  const [failed,setFailed] = useState<ReadonlySet<string>>(new Set());
+  const activeImage = useRef<HTMLImageElement>(null);
+  useLayoutEffect(() => {if (activeImage.current?.complete && activeImage.current.naturalWidth > 0) onImageReady?.();},[speaker.id,failed,onImageReady]);
+  const speechOpacity = elapsedMs <= 650 ? 0 : reducedMotion ? 1 : Math.max(0,Math.min(1,(elapsedMs - 650) / 200,(duration - 400 - elapsedMs) / 200));
+  const text = thought?.text ?? beat.speech.text;
+  const roomName = beat.roomLabel ?? "Mingle";
+  const roomProgress = thought ? thought.elapsedMs / Math.max(1,thought.durationMs)
+    : Math.max(0,(readingElapsedMs - 650) / Math.max(1,duration - 1050));
+  const progress = thought ? thought.elapsedMs / Math.max(1,thought.durationMs)
+    : sampled?.speech?.text === text ? undefined : Math.max(0,(readingElapsedMs - 850) / Math.max(1,duration - 1450));
+  return <section data-portrait-room data-paginated-portrait-room data-cast-page={page} data-cast-pages={pages} aria-label={beat.roomLabel ?? "Mingle room"}
+    className="relative isolate flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+    <RoomBackdrop source={backgroundUrl ?? DEFAULT_ROOM_BACKDROP} />
+    <div data-room-context-label aria-label={roomName} className="absolute left-3 top-0.5 z-10 flex h-11 w-[calc(100%-12rem)] min-w-0 text-left text-white/70">
+      <TimedSpeech text={roomName} elapsedMs={readingElapsedMs} progress={roomProgress} className="text-sm font-medium uppercase leading-4" />
+    </div>
+    <div className="relative grid min-h-0 flex-1 grid-cols-2 gap-2 px-3 pb-2 pt-12">
+      <div data-speech-bubble className="flex min-h-0 flex-col rounded-xl border border-white/25 bg-black/90 p-2 text-white" style={{opacity:thought ? thought.opacity : hideSpeech ? 0 : speechOpacity}}>
+        <p className="shrink-0 break-words text-sm font-semibold leading-4">{thought ? `${speaker.name} thinks` : speaker.name}</p>
+        <TimedSpeech text={text} elapsedMs={readingElapsedMs} progress={progress} className="mt-1 text-sm leading-5" />
+      </div>
+      <div className="flex min-h-0 flex-col justify-center gap-1" aria-label={`Cast page ${page + 1} of ${pages}`}>
+        {visible.map(player => {
+          const saved = resolveAgentAvatarUrl(player.avatarUrl,player.persona,player.name,player.personaKey);
+          const source = failed.has(saved) ? resolveAgentAvatarUrl(null,player.persona,player.name,player.personaKey) : saved;
+          return <div key={player.id} data-room-player={player.id} data-active-speaker={player.id === speaker.id} className="flex min-h-0 items-center gap-1 rounded-lg bg-black/75 p-1">
+            {/* eslint-disable-next-line @next/next/no-img-element -- frozen cast portrait with deterministic fallback */}
+            <img ref={player.id === speaker.id ? activeImage : undefined} src={source} alt={player.name} onLoad={player.id === speaker.id ? onImageReady : undefined}
+              onError={() => setFailed(previous => new Set(previous).add(saved))} className="h-7 w-7 shrink-0 rounded-full object-cover ring-1 ring-white/40" />
+            <p className="min-w-0 break-words text-xs leading-4 text-white">{player.name}</p>
+          </div>;
+        })}
+        <p className="text-right text-xs text-white/65" aria-label={`Cast page ${page + 1} of ${pages}`}>{page + 1} / {pages}</p>
+      </div>
+    </div>
+  </section>;
+}

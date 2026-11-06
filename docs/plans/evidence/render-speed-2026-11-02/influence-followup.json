@@ -1,0 +1,1229 @@
+{
+  "sourceCommit": "99819e431701a180dedefcde73d7803c0f75e858",
+  "hardware": "Apple M5 Max, 18 logical CPUs, 36 GiB; nonisolated desktop",
+  "browser": "Chrome Headless Shell 149.0.7790.0 mac-arm64",
+  "remotion": "4.0.486",
+  "preparation": [
+    {
+      "case": "c1",
+      "concurrency": 1,
+      "status": "completed",
+      "failure": null,
+      "inputIdentity": {
+        "inputFileSha256": "ec36584d9b35d058d781bd35e01a3f506fe28a8be5ec2057a4839fd0e1c95c87",
+        "range": {
+          "fromFrame": 0,
+          "untilFrame": 234728
+        },
+        "cues": 688,
+        "assets": 705,
+        "concurrency": 1,
+        "geometry": [
+          1920,
+          1080,
+          30
+        ],
+        "note": "Existing offline assets. Layouts/pages removed from copied input only to measure full prepass. Source binding and remote downloads not measured."
+      },
+      "phaseSeconds": {
+        "input-copy": 0.015573542000000093,
+        "copy-static": 0.0010810000000000125,
+        "copy-assets": 0.004339333000000015,
+        "css": 0.740219417,
+        "webpack": 3.680105666,
+        "copy-public": 0.005135083000000762,
+        "layout-select": 1.9917281660000006,
+        "layout": 277.3947025
+      },
+      "totalUntilPreparedSeconds": 283.9652195,
+      "measurementFrames": 1376,
+      "medianFrameMs": 189.04891649999627,
+      "p95FrameMs": 360.52799999999115,
+      "artifacts": {
+        "count": 1376,
+        "duplicateLayouts": 1687,
+        "duplicatePages": 45,
+        "conflictingLayouts": 0,
+        "conflictingPages": 0
+      },
+      "resources": {
+        "samples": 56,
+        "sampledPeakTreeRssMiB": 2369.3125,
+        "sampledPeakTreeCpuPercent": 229.29999999999998,
+        "note": "Sum of process RSS can double-count shared pages; sampled, not a cgroup peak. CPU percentage can exceed 100 on multicore."
+      }
+    },
+    {
+      "case": "c2",
+      "concurrency": 2,
+      "status": "completed",
+      "failure": null,
+      "inputIdentity": {
+        "inputFileSha256": "ec36584d9b35d058d781bd35e01a3f506fe28a8be5ec2057a4839fd0e1c95c87",
+        "range": {
+          "fromFrame": 0,
+          "untilFrame": 234728
+        },
+        "cues": 688,
+        "assets": 705,
+        "concurrency": 2,
+        "geometry": [
+          1920,
+          1080,
+          30
+        ],
+        "note": "Existing offline assets. Layouts/pages removed from copied input only to measure full prepass. Source binding and remote downloads not measured."
+      },
+      "phaseSeconds": {
+        "input-copy": 0.009003958000000006,
+        "copy-static": 0.0013153340000000013,
+        "copy-assets": 0.006230583000000026,
+        "css": 0.9601188750000001,
+        "webpack": 5.06176375,
+        "copy-public": 0.0060599159999998875,
+        "layout-select": 1.9057372090000007,
+        "layout": 175.66528370799998
+      },
+      "totalUntilPreparedSeconds": 184.679838125,
+      "measurementFrames": 1376,
+      "medianFrameMs": 226.37647950000246,
+      "p95FrameMs": 463.1852909999998,
+      "artifacts": {
+        "count": 1376,
+        "duplicateLayouts": 1687,
+        "duplicatePages": 45,
+        "conflictingLayouts": 0,
+        "conflictingPages": 0
+      },
+      "resources": {
+        "samples": 37,
+        "sampledPeakTreeRssMiB": 4082.328125,
+        "sampledPeakTreeCpuPercent": 360.2,
+        "note": "Sum of process RSS can double-count shared pages; sampled, not a cgroup peak. CPU percentage can exceed 100 on multicore."
+      }
+    },
+    {
+      "case": "c4",
+      "concurrency": 4,
+      "status": "failed",
+      "failure": {
+        "phase": "experiment:failed",
+        "seconds": 128.390319791,
+        "detail": {
+          "message": "A delayRender() \"Replay layout 587\" was called but not cleared after 58000ms. See https://remotion.dev/docs/timeout for help. "
+        }
+      },
+      "inputIdentity": {
+        "inputFileSha256": "ec36584d9b35d058d781bd35e01a3f506fe28a8be5ec2057a4839fd0e1c95c87",
+        "range": {
+          "fromFrame": 0,
+          "untilFrame": 234728
+        },
+        "cues": 688,
+        "assets": 705,
+        "concurrency": 4,
+        "geometry": [
+          1920,
+          1080,
+          30
+        ],
+        "note": "Existing offline assets. Layouts/pages removed from copied input only to measure full prepass. Source binding and remote downloads not measured."
+      },
+      "phaseSeconds": {
+        "input-copy": 0.0058259579999999575,
+        "copy-static": 0.0018544580000000171,
+        "copy-assets": 0.0055462500000001,
+        "css": 0.766856292,
+        "webpack": 3.989989333,
+        "copy-public": 0.0049495420000003065,
+        "layout-select": 2.0417127500000003
+      },
+      "totalUntilPreparedSeconds": null,
+      "measurementFrames": 842,
+      "medianFrameMs": 322.3758334999984,
+      "p95FrameMs": 670.0664589999978,
+      "artifacts": {
+        "count": 842,
+        "duplicateLayouts": 1035,
+        "duplicatePages": 21,
+        "conflictingLayouts": 0,
+        "conflictingPages": 0
+      },
+      "resources": {
+        "samples": 25,
+        "sampledPeakTreeRssMiB": 3996.734375,
+        "sampledPeakTreeCpuPercent": 561.9,
+        "note": "Sum of process RSS can double-count shared pages; sampled, not a cgroup peak. CPU percentage can exceed 100 on multicore."
+      }
+    },
+    {
+      "case": "none-c1",
+      "concurrency": 1,
+      "status": "completed",
+      "failure": null,
+      "inputIdentity": {
+        "inputFileSha256": "ec36584d9b35d058d781bd35e01a3f506fe28a8be5ec2057a4839fd0e1c95c87",
+        "range": {
+          "fromFrame": 0,
+          "untilFrame": 234728
+        },
+        "cues": 688,
+        "assets": 705,
+        "concurrency": 1,
+        "imageFormat": "none",
+        "geometry": [
+          1920,
+          1080,
+          30
+        ],
+        "note": "Existing offline assets. Layouts/pages removed from copied input only to measure full prepass. Source binding and remote downloads not measured."
+      },
+      "phaseSeconds": {
+        "input-copy": 0.008480457999999996,
+        "copy-static": 0.001775624999999989,
+        "copy-assets": 0.0048994579999998705,
+        "css": 0.8557780410000003,
+        "webpack": 5.832252584,
+        "copy-public": 0.40351158300000023,
+        "layout-select": 3.0266951250000007,
+        "layout": 69.66821362499999
+      },
+      "totalUntilPreparedSeconds": 79.94847733399999,
+      "measurementFrames": 1376,
+      "medianFrameMs": 41.70585449999999,
+      "p95FrameMs": 108.43604200000118,
+      "artifacts": {
+        "count": 1376,
+        "duplicateLayouts": 1687,
+        "duplicatePages": 45,
+        "conflictingLayouts": 0,
+        "conflictingPages": 0
+      },
+      "resources": {
+        "samples": 15,
+        "sampledPeakTreeRssMiB": 3001.75,
+        "sampledPeakTreeCpuPercent": 145.4,
+        "note": "Sum of process RSS can double-count shared pages; sampled, not a cgroup peak. CPU percentage can exceed 100 on multicore."
+      }
+    },
+    {
+      "case": "jpeg-c1",
+      "concurrency": 1,
+      "status": "completed",
+      "failure": null,
+      "inputIdentity": {
+        "inputFileSha256": "ec36584d9b35d058d781bd35e01a3f506fe28a8be5ec2057a4839fd0e1c95c87",
+        "range": {
+          "fromFrame": 0,
+          "untilFrame": 234728
+        },
+        "cues": 688,
+        "assets": 705,
+        "concurrency": 1,
+        "imageFormat": "jpeg",
+        "geometry": [
+          1920,
+          1080,
+          30
+        ],
+        "note": "Existing offline assets. Layouts/pages removed from copied input only to measure full prepass. Source binding and remote downloads not measured."
+      },
+      "phaseSeconds": {
+        "input-copy": 0.008004250000000011,
+        "copy-static": 0.001177207999999999,
+        "copy-assets": 0.005815500000000043,
+        "css": 0.6975692910000001,
+        "webpack": 2.5869797080000003,
+        "copy-public": 0.005278083999999961,
+        "layout-select": 1.5209590409999993,
+        "layout": 188.995127958
+      },
+      "totalUntilPreparedSeconds": 193.924885416,
+      "measurementFrames": 1376,
+      "medianFrameMs": 132.83202099999835,
+      "p95FrameMs": 256.9773750000022,
+      "artifacts": {
+        "count": 1376,
+        "duplicateLayouts": 1687,
+        "duplicatePages": 45,
+        "conflictingLayouts": 0,
+        "conflictingPages": 0
+      },
+      "resources": {
+        "samples": 38,
+        "sampledPeakTreeRssMiB": 4097.140625,
+        "sampledPeakTreeCpuPercent": 168.9,
+        "note": "Sum of process RSS can double-count shared pages; sampled, not a cgroup peak. CPU percentage can exceed 100 on multicore."
+      }
+    },
+    {
+      "case": "none-c1-repeat",
+      "concurrency": 1,
+      "status": "completed",
+      "failure": null,
+      "inputIdentity": {
+        "inputFileSha256": "ec36584d9b35d058d781bd35e01a3f506fe28a8be5ec2057a4839fd0e1c95c87",
+        "range": {
+          "fromFrame": 0,
+          "untilFrame": 234728
+        },
+        "cues": 688,
+        "assets": 705,
+        "concurrency": 1,
+        "imageFormat": "none",
+        "geometry": [
+          1920,
+          1080,
+          30
+        ],
+        "note": "Existing offline assets. Layouts/pages removed from copied input only to measure full prepass. Source binding and remote downloads not measured."
+      },
+      "phaseSeconds": {
+        "input-copy": 0.008938874999999999,
+        "copy-static": 0.000962417000000021,
+        "copy-assets": 0.004731916000000003,
+        "css": 0.7263039589999999,
+        "webpack": 2.8081120000000004,
+        "copy-public": 0.006582958000000083,
+        "layout-select": 1.8559448339999998,
+        "layout": 69.2423285
+      },
+      "totalUntilPreparedSeconds": 74.76900779200001,
+      "measurementFrames": 1376,
+      "medianFrameMs": 41.68110400000114,
+      "p95FrameMs": 107.3695829999997,
+      "artifacts": {
+        "count": 1376,
+        "duplicateLayouts": 1687,
+        "duplicatePages": 45,
+        "conflictingLayouts": 0,
+        "conflictingPages": 0
+      },
+      "resources": {
+        "samples": 14,
+        "sampledPeakTreeRssMiB": 3008.625,
+        "sampledPeakTreeCpuPercent": 145.39999999999998,
+        "note": "Sum of process RSS can double-count shared pages; sampled, not a cgroup peak. CPU percentage can exceed 100 on multicore."
+      }
+    }
+  ],
+  "layoutComparison": {
+    "c2": {
+      "wholePreparedManifestEqual": false,
+      "layouts": {
+        "baselineEntries": 583,
+        "candidateEntries": 587,
+        "missing": 0,
+        "extra": 4,
+        "differentValues": 0,
+        "differingKeyHashes": []
+      },
+      "pages": {
+        "baselineEntries": 381,
+        "candidateEntries": 369,
+        "missing": 17,
+        "extra": 5,
+        "differentValues": 0,
+        "differingKeyHashes": []
+      }
+    },
+    "none-c1": {
+      "wholePreparedManifestEqual": true,
+      "layouts": {
+        "baselineEntries": 583,
+        "candidateEntries": 583,
+        "missing": 0,
+        "extra": 0,
+        "differentValues": 0,
+        "differingKeyHashes": []
+      },
+      "pages": {
+        "baselineEntries": 381,
+        "candidateEntries": 381,
+        "missing": 0,
+        "extra": 0,
+        "differentValues": 0,
+        "differingKeyHashes": []
+      }
+    },
+    "jpeg-c1": {
+      "wholePreparedManifestEqual": false,
+      "layouts": {
+        "baselineEntries": 583,
+        "candidateEntries": 583,
+        "missing": 1,
+        "extra": 1,
+        "differentValues": 0,
+        "differingKeyHashes": []
+      },
+      "pages": {
+        "baselineEntries": 381,
+        "candidateEntries": 381,
+        "missing": 0,
+        "extra": 0,
+        "differentValues": 0,
+        "differingKeyHashes": []
+      }
+    },
+    "none-c1-repeat": {
+      "wholePreparedManifestEqual": true,
+      "layouts": {
+        "baselineEntries": 583,
+        "candidateEntries": 583,
+        "missing": 0,
+        "extra": 0,
+        "differentValues": 0,
+        "differingKeyHashes": []
+      },
+      "pages": {
+        "baselineEntries": 381,
+        "candidateEntries": 381,
+        "missing": 0,
+        "extra": 0,
+        "differentValues": 0,
+        "differingKeyHashes": []
+      }
+    }
+  },
+  "scope": "Offline full-input layout/compile preparation. Original network downloads/source binding excluded. No product source changes.",
+  "sourceAudit": {
+    "reviewedCommit": "99819e431701a180dedefcde73d7803c0f75e858",
+    "sourceCheckoutHeadAtFinalAudit": "1e45754cf491021f4721ba83bc6b14560bbd9a97",
+    "changedPathsSinceReviewedCommit": [
+      "AGENTS.md",
+      "DEVELOPMENT.md",
+      "deployment/render-execution.json",
+      "docs/deployment/batch-render-release-preparation.md",
+      "docs/deployment/batch-render-staging.md",
+      "docs/presentation-parity.md",
+      "docs/production-studio.md",
+      "docs/visual-mode.md",
+      "packages/web/src/app/admin/production/README.md"
+    ],
+    "originalRenderSourceSha256": "d4f42ad167be57dcaa9304743eb66dc7481a339f940e1dec64bf37eca1daee0b",
+    "rendererCodeAndDependencyManifestsUnchanged": true,
+    "originalInputManifestUnchanged": true
+  },
+  "renderMatrix": {
+    "sourceCommit": "99819e431701a180dedefcde73d7803c0f75e858",
+    "manifestHash": "49efa8c9a5384e386334aaa3abbaf6f8d9f0bf210dc61184a9c4da68e4801fc9",
+    "geometry": [
+      1920,
+      1080,
+      30
+    ],
+    "preparationSeconds": 5.4480942500000005,
+    "results": [
+      {
+        "id": "conversation-c1-r0",
+        "fixture": "conversation",
+        "fromFrame": 7891,
+        "frames": 600,
+        "concurrency": 1,
+        "seconds": 101.571423292,
+        "effectiveFps": 5.90717330282067,
+        "selectSeconds": 3.2939565,
+        "lastProgress": {
+          "encodedDoneIn": 2887,
+          "encodedFrames": 600,
+          "renderedDoneIn": 98588,
+          "renderedFrames": 600,
+          "renderEstimatedTime": 0,
+          "stitchStage": "encoding",
+          "progress": 1
+        },
+        "resolvedStart": {
+          "type": "start",
+          "frameCount": 600,
+          "parallelEncoding": false,
+          "resolvedConcurrency": 1
+        },
+        "resources": {
+          "samples": 51,
+          "sampledPeakTreeRssMiB": 2420.03125,
+          "sampledPeakTreeCpuPercent": 561.8,
+          "note": "Sum of process RSS can double-count shared pages; sampled, not a cgroup peak. CPU percentage can exceed 100 on multicore."
+        }
+      },
+      {
+        "id": "conversation-c2-r1",
+        "fixture": "conversation",
+        "fromFrame": 7891,
+        "frames": 600,
+        "concurrency": 2,
+        "seconds": 55.480627708,
+        "effectiveFps": 10.81458564524286,
+        "selectSeconds": 3.2939565,
+        "lastProgress": {
+          "encodedDoneIn": 2881,
+          "encodedFrames": 600,
+          "renderedDoneIn": 52499,
+          "renderedFrames": 600,
+          "renderEstimatedTime": 0,
+          "stitchStage": "encoding",
+          "progress": 1
+        },
+        "resolvedStart": {
+          "type": "start",
+          "frameCount": 600,
+          "parallelEncoding": false,
+          "resolvedConcurrency": 2
+        },
+        "resources": {
+          "samples": 27,
+          "sampledPeakTreeRssMiB": 2643.453125,
+          "sampledPeakTreeCpuPercent": 533.2,
+          "note": "Sum of process RSS can double-count shared pages; sampled, not a cgroup peak. CPU percentage can exceed 100 on multicore."
+        }
+      },
+      {
+        "id": "conversation-c4-r2",
+        "fixture": "conversation",
+        "fromFrame": 7891,
+        "frames": 600,
+        "concurrency": 4,
+        "seconds": 33.14933279099999,
+        "effectiveFps": 18.099911807663872,
+        "selectSeconds": 3.2939565,
+        "lastProgress": {
+          "encodedDoneIn": 2992,
+          "encodedFrames": 600,
+          "renderedDoneIn": 30064,
+          "renderedFrames": 600,
+          "renderEstimatedTime": 0,
+          "stitchStage": "encoding",
+          "progress": 1
+        },
+        "resolvedStart": {
+          "type": "start",
+          "frameCount": 600,
+          "parallelEncoding": false,
+          "resolvedConcurrency": 4
+        },
+        "resources": {
+          "samples": 17,
+          "sampledPeakTreeRssMiB": 3678.234375,
+          "sampledPeakTreeCpuPercent": 573.5,
+          "note": "Sum of process RSS can double-count shared pages; sampled, not a cgroup peak. CPU percentage can exceed 100 on multicore."
+        }
+      },
+      {
+        "id": "conversation-c8-r3",
+        "fixture": "conversation",
+        "fromFrame": 7891,
+        "frames": 600,
+        "concurrency": 8,
+        "seconds": 24.648571415999992,
+        "effectiveFps": 24.34218153554024,
+        "selectSeconds": 3.2939565,
+        "lastProgress": {
+          "encodedDoneIn": 2862,
+          "encodedFrames": 600,
+          "renderedDoneIn": 21680,
+          "renderedFrames": 600,
+          "renderEstimatedTime": 0,
+          "stitchStage": "encoding",
+          "progress": 1
+        },
+        "resolvedStart": {
+          "type": "start",
+          "frameCount": 600,
+          "parallelEncoding": false,
+          "resolvedConcurrency": 8
+        },
+        "resources": {
+          "samples": 12,
+          "sampledPeakTreeRssMiB": 6189.90625,
+          "sampledPeakTreeCpuPercent": 1100.1999999999998,
+          "note": "Sum of process RSS can double-count shared pages; sampled, not a cgroup peak. CPU percentage can exceed 100 on multicore."
+        }
+      },
+      {
+        "id": "conversation-c1-r4",
+        "fixture": "conversation",
+        "fromFrame": 7891,
+        "frames": 600,
+        "concurrency": 1,
+        "seconds": 106.22605462499996,
+        "effectiveFps": 5.648331778094598,
+        "selectSeconds": 3.2939565,
+        "lastProgress": {
+          "encodedDoneIn": 3116,
+          "encodedFrames": 600,
+          "renderedDoneIn": 102999,
+          "renderedFrames": 600,
+          "renderEstimatedTime": 0,
+          "stitchStage": "encoding",
+          "progress": 1
+        },
+        "resolvedStart": {
+          "type": "start",
+          "frameCount": 600,
+          "parallelEncoding": false,
+          "resolvedConcurrency": 1
+        },
+        "resources": {
+          "samples": 53,
+          "sampledPeakTreeRssMiB": 2057.84375,
+          "sampledPeakTreeCpuPercent": 553.6999999999999,
+          "note": "Sum of process RSS can double-count shared pages; sampled, not a cgroup peak. CPU percentage can exceed 100 on multicore."
+        }
+      },
+      {
+        "id": "thinking-c1-r5",
+        "fixture": "thinking",
+        "fromFrame": 12522,
+        "frames": 300,
+        "concurrency": 1,
+        "seconds": 116.32758716699999,
+        "effectiveFps": 2.578923944922194,
+        "selectSeconds": 1.7455215420000023,
+        "lastProgress": {
+          "encodedDoneIn": 1455,
+          "encodedFrames": 300,
+          "renderedDoneIn": 114787,
+          "renderedFrames": 300,
+          "renderEstimatedTime": 0,
+          "stitchStage": "encoding",
+          "progress": 1
+        },
+        "resolvedStart": {
+          "type": "start",
+          "frameCount": 300,
+          "parallelEncoding": false,
+          "resolvedConcurrency": 1
+        },
+        "resources": {
+          "samples": 58,
+          "sampledPeakTreeRssMiB": 1855.421875,
+          "sampledPeakTreeCpuPercent": 181.29999999999998,
+          "note": "Sum of process RSS can double-count shared pages; sampled, not a cgroup peak. CPU percentage can exceed 100 on multicore."
+        }
+      },
+      {
+        "id": "thinking-c4-r6",
+        "fixture": "thinking",
+        "fromFrame": 12522,
+        "frames": 300,
+        "concurrency": 4,
+        "seconds": 33.25993183299998,
+        "effectiveFps": 9.019862142421612,
+        "selectSeconds": 1.7455215420000023,
+        "lastProgress": {
+          "encodedDoneIn": 1458,
+          "encodedFrames": 300,
+          "renderedDoneIn": 31717,
+          "renderedFrames": 300,
+          "renderEstimatedTime": 0,
+          "stitchStage": "encoding",
+          "progress": 1
+        },
+        "resolvedStart": {
+          "type": "start",
+          "frameCount": 300,
+          "parallelEncoding": false,
+          "resolvedConcurrency": 4
+        },
+        "resources": {
+          "samples": 18,
+          "sampledPeakTreeRssMiB": 3964.46875,
+          "sampledPeakTreeCpuPercent": 818.0999999999999,
+          "note": "Sum of process RSS can double-count shared pages; sampled, not a cgroup peak. CPU percentage can exceed 100 on multicore."
+        }
+      },
+      {
+        "id": "opening-c1-r7",
+        "fixture": "opening",
+        "fromFrame": 300,
+        "frames": 300,
+        "concurrency": 1,
+        "seconds": 22.726021207999963,
+        "effectiveFps": 13.200726922422948,
+        "selectSeconds": 1.5112622499999706,
+        "lastProgress": {
+          "encodedDoneIn": 968,
+          "encodedFrames": 300,
+          "renderedDoneIn": 21693,
+          "renderedFrames": 300,
+          "renderEstimatedTime": 0,
+          "stitchStage": "encoding",
+          "progress": 1
+        },
+        "resolvedStart": {
+          "type": "start",
+          "frameCount": 300,
+          "parallelEncoding": false,
+          "resolvedConcurrency": 1
+        },
+        "resources": {
+          "samples": 11,
+          "sampledPeakTreeRssMiB": 2690.84375,
+          "sampledPeakTreeCpuPercent": 122,
+          "note": "Sum of process RSS can double-count shared pages; sampled, not a cgroup peak. CPU percentage can exceed 100 on multicore."
+        }
+      },
+      {
+        "id": "opening-c4-r8",
+        "fixture": "opening",
+        "fromFrame": 300,
+        "frames": 300,
+        "concurrency": 4,
+        "seconds": 9.249340208999987,
+        "effectiveFps": 32.434745962537704,
+        "selectSeconds": 1.5112622499999706,
+        "lastProgress": {
+          "encodedDoneIn": 883,
+          "encodedFrames": 300,
+          "renderedDoneIn": 8300,
+          "renderedFrames": 300,
+          "renderEstimatedTime": 0,
+          "stitchStage": "encoding",
+          "progress": 1
+        },
+        "resolvedStart": {
+          "type": "start",
+          "frameCount": 300,
+          "parallelEncoding": false,
+          "resolvedConcurrency": 4
+        },
+        "resources": {
+          "samples": 5,
+          "sampledPeakTreeRssMiB": 4340.828125,
+          "sampledPeakTreeCpuPercent": 984.2,
+          "note": "Sum of process RSS can double-count shared pages; sampled, not a cgroup peak. CPU percentage can exceed 100 on multicore."
+        }
+      }
+    ]
+  },
+  "candidateRenderMatrix": {
+    "sourceCommit": "99819e431701a180dedefcde73d7803c0f75e858",
+    "manifestHash": "49efa8c9a5384e386334aaa3abbaf6f8d9f0bf210dc61184a9c4da68e4801fc9",
+    "geometry": [
+      1920,
+      1080,
+      30
+    ],
+    "preparationSeconds": 3.8194899170000003,
+    "results": [
+      {
+        "id": "conversation-c4-r0",
+        "fixture": "conversation",
+        "fromFrame": 7891,
+        "frames": 600,
+        "concurrency": 4,
+        "seconds": 30.832240542,
+        "effectiveFps": 19.46014916375194,
+        "selectSeconds": 1.882987416,
+        "lastProgress": {
+          "encodedDoneIn": 2636,
+          "encodedFrames": 600,
+          "renderedDoneIn": 28114,
+          "renderedFrames": 600,
+          "renderEstimatedTime": 0,
+          "stitchStage": "encoding",
+          "progress": 1
+        },
+        "resolvedStart": {
+          "type": "start",
+          "frameCount": 600,
+          "parallelEncoding": false,
+          "resolvedConcurrency": 4
+        },
+        "resources": {
+          "samples": 16,
+          "sampledPeakTreeRssMiB": 4608.15625,
+          "sampledPeakTreeCpuPercent": 574,
+          "note": "Sum of process RSS can double-count shared pages; sampled, not a cgroup peak. CPU percentage can exceed 100 on multicore."
+        }
+      },
+      {
+        "id": "thinking-c4-r1",
+        "fixture": "thinking",
+        "fromFrame": 12522,
+        "frames": 300,
+        "concurrency": 4,
+        "seconds": 32.69277237499999,
+        "effectiveFps": 9.176340157355654,
+        "selectSeconds": 1.511276208000003,
+        "lastProgress": {
+          "encodedDoneIn": 1405,
+          "encodedFrames": 300,
+          "renderedDoneIn": 31222,
+          "renderedFrames": 300,
+          "renderEstimatedTime": 0,
+          "stitchStage": "encoding",
+          "progress": 1
+        },
+        "resolvedStart": {
+          "type": "start",
+          "frameCount": 300,
+          "parallelEncoding": false,
+          "resolvedConcurrency": 4
+        },
+        "resources": {
+          "samples": 18,
+          "sampledPeakTreeRssMiB": 5835.734375,
+          "sampledPeakTreeCpuPercent": 1023.7,
+          "note": "Sum of process RSS can double-count shared pages; sampled, not a cgroup peak. CPU percentage can exceed 100 on multicore."
+        }
+      },
+      {
+        "id": "opening-c4-r2",
+        "fixture": "opening",
+        "fromFrame": 300,
+        "frames": 300,
+        "concurrency": 4,
+        "seconds": 9.173231375000004,
+        "effectiveFps": 32.703851863760484,
+        "selectSeconds": 1.6380469580000063,
+        "lastProgress": {
+          "encodedDoneIn": 892,
+          "encodedFrames": 300,
+          "renderedDoneIn": 8216,
+          "renderedFrames": 300,
+          "renderEstimatedTime": 0,
+          "stitchStage": "encoding",
+          "progress": 1
+        },
+        "resolvedStart": {
+          "type": "start",
+          "frameCount": 300,
+          "parallelEncoding": false,
+          "resolvedConcurrency": 4
+        },
+        "resources": {
+          "samples": 4,
+          "sampledPeakTreeRssMiB": 4942.0625,
+          "sampledPeakTreeCpuPercent": 337.1,
+          "note": "Sum of process RSS can double-count shared pages; sampled, not a cgroup peak. CPU percentage can exceed 100 on multicore."
+        }
+      }
+    ]
+  },
+  "renderVerification": [
+    {
+      "group": "render-matrix",
+      "id": "conversation-c1-r0",
+      "decoded_frames": 600,
+      "expected_frames": 600,
+      "different_frames_from_c1": 0,
+      "frame_timing_matches_c1": true,
+      "unique_decoded_frames": 157,
+      "audio_matches_c1": true,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30/1",
+          "time_base": "1/90000",
+          "start_time": "0.000000",
+          "duration": "20.000000",
+          "nb_read_frames": "600"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "time_base": "1/48000",
+          "start_time": "0.000000",
+          "duration": "20.053333",
+          "nb_read_frames": "940",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ]
+    },
+    {
+      "group": "render-matrix",
+      "id": "conversation-c2-r1",
+      "decoded_frames": 600,
+      "expected_frames": 600,
+      "different_frames_from_c1": 0,
+      "frame_timing_matches_c1": true,
+      "unique_decoded_frames": 157,
+      "audio_matches_c1": true,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30/1",
+          "time_base": "1/90000",
+          "start_time": "0.000000",
+          "duration": "20.000000",
+          "nb_read_frames": "600"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "time_base": "1/48000",
+          "start_time": "0.000000",
+          "duration": "20.053333",
+          "nb_read_frames": "940",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ]
+    },
+    {
+      "group": "render-matrix",
+      "id": "conversation-c4-r2",
+      "decoded_frames": 600,
+      "expected_frames": 600,
+      "different_frames_from_c1": 0,
+      "frame_timing_matches_c1": true,
+      "unique_decoded_frames": 157,
+      "audio_matches_c1": true,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30/1",
+          "time_base": "1/90000",
+          "start_time": "0.000000",
+          "duration": "20.000000",
+          "nb_read_frames": "600"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "time_base": "1/48000",
+          "start_time": "0.000000",
+          "duration": "20.053333",
+          "nb_read_frames": "940",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ]
+    },
+    {
+      "group": "render-matrix",
+      "id": "conversation-c8-r3",
+      "decoded_frames": 600,
+      "expected_frames": 600,
+      "different_frames_from_c1": 0,
+      "frame_timing_matches_c1": true,
+      "unique_decoded_frames": 157,
+      "audio_matches_c1": true,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30/1",
+          "time_base": "1/90000",
+          "start_time": "0.000000",
+          "duration": "20.000000",
+          "nb_read_frames": "600"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "time_base": "1/48000",
+          "start_time": "0.000000",
+          "duration": "20.053333",
+          "nb_read_frames": "940",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ]
+    },
+    {
+      "group": "render-matrix",
+      "id": "conversation-c1-r4",
+      "decoded_frames": 600,
+      "expected_frames": 600,
+      "different_frames_from_c1": 0,
+      "frame_timing_matches_c1": true,
+      "unique_decoded_frames": 157,
+      "audio_matches_c1": true,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30/1",
+          "time_base": "1/90000",
+          "start_time": "0.000000",
+          "duration": "20.000000",
+          "nb_read_frames": "600"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "time_base": "1/48000",
+          "start_time": "0.000000",
+          "duration": "20.053333",
+          "nb_read_frames": "940",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ]
+    },
+    {
+      "group": "render-matrix",
+      "id": "thinking-c1-r5",
+      "decoded_frames": 300,
+      "expected_frames": 300,
+      "different_frames_from_c1": 0,
+      "frame_timing_matches_c1": true,
+      "unique_decoded_frames": 293,
+      "audio_matches_c1": true,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30/1",
+          "time_base": "1/90000",
+          "start_time": "0.000000",
+          "duration": "10.000000",
+          "nb_read_frames": "300"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "time_base": "1/48000",
+          "start_time": "0.000000",
+          "duration": "10.048000",
+          "nb_read_frames": "471",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ]
+    },
+    {
+      "group": "render-matrix",
+      "id": "thinking-c4-r6",
+      "decoded_frames": 300,
+      "expected_frames": 300,
+      "different_frames_from_c1": 0,
+      "frame_timing_matches_c1": true,
+      "unique_decoded_frames": 293,
+      "audio_matches_c1": true,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30/1",
+          "time_base": "1/90000",
+          "start_time": "0.000000",
+          "duration": "10.000000",
+          "nb_read_frames": "300"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "time_base": "1/48000",
+          "start_time": "0.000000",
+          "duration": "10.048000",
+          "nb_read_frames": "471",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ]
+    },
+    {
+      "group": "render-matrix",
+      "id": "opening-c1-r7",
+      "decoded_frames": 300,
+      "expected_frames": 300,
+      "different_frames_from_c1": 0,
+      "frame_timing_matches_c1": true,
+      "unique_decoded_frames": 231,
+      "audio_matches_c1": true,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30/1",
+          "time_base": "1/90000",
+          "start_time": "0.000000",
+          "duration": "10.000000",
+          "nb_read_frames": "300"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "time_base": "1/48000",
+          "start_time": "0.000000",
+          "duration": "10.048000",
+          "nb_read_frames": "471",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ]
+    },
+    {
+      "group": "render-matrix",
+      "id": "opening-c4-r8",
+      "decoded_frames": 300,
+      "expected_frames": 300,
+      "different_frames_from_c1": 0,
+      "frame_timing_matches_c1": true,
+      "unique_decoded_frames": 231,
+      "audio_matches_c1": true,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30/1",
+          "time_base": "1/90000",
+          "start_time": "0.000000",
+          "duration": "10.000000",
+          "nb_read_frames": "300"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "time_base": "1/48000",
+          "start_time": "0.000000",
+          "duration": "10.048000",
+          "nb_read_frames": "471",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ]
+    },
+    {
+      "group": "render-candidate",
+      "id": "conversation-c4-r0",
+      "decoded_frames": 600,
+      "expected_frames": 600,
+      "different_frames_from_c1": 0,
+      "frame_timing_matches_c1": true,
+      "unique_decoded_frames": 157,
+      "audio_matches_c1": true,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30/1",
+          "time_base": "1/90000",
+          "start_time": "0.000000",
+          "duration": "20.000000",
+          "nb_read_frames": "600"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "time_base": "1/48000",
+          "start_time": "0.000000",
+          "duration": "20.053333",
+          "nb_read_frames": "940",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ]
+    },
+    {
+      "group": "render-candidate",
+      "id": "thinking-c4-r1",
+      "decoded_frames": 300,
+      "expected_frames": 300,
+      "different_frames_from_c1": 0,
+      "frame_timing_matches_c1": true,
+      "unique_decoded_frames": 293,
+      "audio_matches_c1": true,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30/1",
+          "time_base": "1/90000",
+          "start_time": "0.000000",
+          "duration": "10.000000",
+          "nb_read_frames": "300"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "time_base": "1/48000",
+          "start_time": "0.000000",
+          "duration": "10.048000",
+          "nb_read_frames": "471",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ]
+    },
+    {
+      "group": "render-candidate",
+      "id": "opening-c4-r2",
+      "decoded_frames": 300,
+      "expected_frames": 300,
+      "different_frames_from_c1": 0,
+      "frame_timing_matches_c1": true,
+      "unique_decoded_frames": 231,
+      "audio_matches_c1": true,
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30/1",
+          "time_base": "1/90000",
+          "start_time": "0.000000",
+          "duration": "10.000000",
+          "nb_read_frames": "300"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "time_base": "1/48000",
+          "start_time": "0.000000",
+          "duration": "10.048000",
+          "nb_read_frames": "471",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ]
+    }
+  ],
+  "assetProbes": {
+    "runs": [
+      {
+        "concurrency": 1,
+        "seconds": 15.595251458,
+        "count": 705
+      },
+      {
+        "concurrency": 4,
+        "seconds": 3.8866986660000022,
+        "count": 705
+      }
+    ],
+    "allMetadataEqual": true,
+    "scope": "Local cached-file ffprobe only; excludes download, hashing, write and source binding."
+  }
+}

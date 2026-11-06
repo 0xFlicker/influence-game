@@ -1,4 +1,4 @@
-import { isSpectatorHuddleSpeech } from "@influence/engine";
+import { isSpectatorHuddleSpeech, allianceSessionPresentation } from "@influence/engine";
 /**
  * WebSocket Manager
  *
@@ -39,6 +39,8 @@ type PublicWsRoomMetadata = {
 
 /** Public transcript entry sent to WebSocket clients (matches WsTranscriptEntry in web/lib/api.ts). */
 export interface PublicWsTranscriptEntry {
+  allianceIntroduction?: import("@influence/engine").AllianceIntroduction;
+  allianceSession?: import("@influence/engine").AllianceSessionPresentation;
   decisionSpeech?: { action: string; actorId: string; receiptEntrySequence?: number };
   dialogueKind?: TranscriptEntry["dialogueKind"] | null;
   firstDurableEventSequence?: number | null;
@@ -179,6 +181,8 @@ function buildPublicRoomMetadata(
 function buildPublicTranscriptEntry(entry: TranscriptEntry): PublicWsTranscriptEntry {
   return {
     dialogueKind: entry.dialogueKind,
+    allianceIntroduction: entry.dialogueContext?.allianceIntroduction,
+    allianceSession: allianceSessionPresentation(entry.dialogueContext),
     ...(!entry.anonymous && entry.speakerPlayerId && { speakerPlayerId: entry.speakerPlayerId }),
     ...(entry.entrySequence !== undefined && { entrySequence: entry.entrySequence }),
     ...(entry.dialogueContext?.acceptedBallot && { acceptedBallot: entry.dialogueContext.acceptedBallot }),

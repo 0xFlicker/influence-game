@@ -1,3 +1,5 @@
+import { readAgentTransparentBodies } from "../services/agent-transparent-bodies.js";
+import { readAgentVisualUpdate, requestAgentVisualUpdate, resumeAgentVisualUpdate } from "../services/agent-visual-updates.js";
 import {readAgentVoice} from "../services/audio-voices.js";
 import {assignPlayerVoice,isPlayerVoiceId,PLAYER_VOICES} from "@influence/engine/voice-catalog";
 import { generationContacts } from "../services/generation-admission-error.js";
@@ -71,11 +73,22 @@ export function resolveAgentProfileGenerationLlm(
 // Factory — creates a Hono sub-app with injected DB
 // ---------------------------------------------------------------------------
 
-export function createAgentProfileRoutes(db: DrizzleDB) {
+export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUpdate?: typeof resumeAgentVisualUpdate} = {}) {
   const app = new Hono<AuthEnv>();
   app.onError((error,c)=>{
     if(error instanceof GenerationAdmissionError) return c.json({error:error.message,code:error.code,contacts:generationContacts},error.status);
     console.error('[agent-profiles]',error); return c.json({error:'Agent request failed'},500);
+  });
+  for (const method of ["get", "post"] as const) app[method]("/api/agent-profiles/:id/visual-update", requireAuth(db), async c => {
+    try {
+      const userId = c.get("user").id, agentId = c.req.param("id");
+      const result = await (method === "post" ? requestAgentVisualUpdate : readAgentVisualUpdate)(db,userId,agentId);
+      if (result.job && ["queued","processing"].includes(result.job.status)) (options.resumeVisualUpdate ?? resumeAgentVisualUpdate)(db,userId,agentId,new URL(c.req.url).origin);
+      return c.json(result);
+    } catch (error) {
+      if (error instanceof AgentProfileManagementError) return agentProfileErrorResponse(c,error);
+      throw error;
+    }
   });
   app.get("/api/agent-profiles/:id/voice",requireAuth(db),async c => {
     const [agent] = await db.select({id:schema.agentProfiles.id}).from(schema.agentProfiles).where(and(eq(schema.agentProfiles.id,c.req.param("id")),eq(schema.agentProfiles.userId,c.get("user").id)));
@@ -531,7 +544,9 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       profiles.map((profile) => profile.id),
     );
 
+    const transparentBodies = await readAgentTransparentBodies(db, profiles);
     return c.json(profiles.map((profile) => ({
+      transparentBodyUrl: transparentBodies.get(profile.id) ?? null,
       ...playerSafeAgentProfile(profile),
       avatarCompletion: completions.get(profile.id),
     })));

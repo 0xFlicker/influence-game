@@ -1,3 +1,4 @@
+import { notifyChampionshipGameCompletion } from "../services/championship-runtime.js";
 import { readEpisodePresentations } from "../services/episode-presentation.js";
 /**
  * Admin routes for RBAC management.
@@ -796,6 +797,7 @@ export function createAdminRoutes(
         actorUserId: user.id,
         requestedReason: reason,
       }, dependencies.completionSettlement);
+      await notifyChampionshipGameCompletion(db, gameId);
       const [watchRefresh, mediaReconciliation] = await Promise.all([
         tryRefreshGameWatchStateSummary(db, gameId, "completion_settlement_operator_retry"),
         reconcilePostgameMediaForGame(db, gameId).catch((error) => {
@@ -1040,6 +1042,15 @@ export function createAdminRoutes(
 
     const summaries = await Promise.all(rows.map(async (game) => {
       const config = JSON.parse(game.config);
+      let modelLabel: string;
+      let modelConfigurationError: string | undefined;
+      try {
+        modelLabel = modelLabelFromConfig(config);
+      } catch {
+        modelLabel = "Invalid model configuration";
+        modelConfigurationError = "Model configuration is missing or invalid. Inspect this game before starting it.";
+        console.warn(`[admin] Invalid model configuration for game ${game.id}`);
+      }
       const completionSettlement = settlementByGameId.get(game.id)
         ?? buildGameCompletionSettlementSummary(null);
       const players = await db
@@ -1072,7 +1083,7 @@ export function createAdminRoutes(
         alivePlayers: players.length,
         eliminatedPlayers: 0,
         modelSelection: config.modelSelection,
-        modelLabel: modelLabelFromConfig(config),
+        modelLabel,
         visibility: config.visibility ?? "public",
         visualMode: config.visualMode === true,
         visualPaused: game.status === "suspended" && Boolean(config.visualPause),
@@ -1085,7 +1096,7 @@ export function createAdminRoutes(
           ? "Finalizing results."
           : completionSettlement.state === "repair_required"
             ? "Results under review."
-            : config.errorInfo ?? undefined,
+            : modelConfigurationError ?? config.errorInfo ?? undefined,
         createdAt: game.createdAt,
         startedAt: game.startedAt ?? undefined,
         completedAt: game.endedAt ?? undefined,

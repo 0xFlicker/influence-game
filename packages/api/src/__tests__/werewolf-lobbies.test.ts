@@ -18,6 +18,21 @@ afterAll(() => { if (oldSecret === undefined) delete process.env.JWT_SECRET; els
 let db: DrizzleDB;
 beforeEach(async () => { db = await setupTestDB(); await db.insert(schema.users).values([{ id: "owner" }, { id: "guest" }]); });
 const create = () => createWerewolfLobby(db, "owner", { preset: "one_wolf" });
+
+test("malformed local probe configurations cannot break the public Werewolf listing",async()=> {
+  const game=await create();
+  const corrupt=[
+    {id:"missing-provider-probe",slug:"missing-provider-probe",config:JSON.stringify({visualMode:true,visualFailurePolicy:"require_visuals"})},
+    {id:"invalid-provider-probe",slug:"invalid-provider-probe",config:JSON.stringify({modelSelection:{catalogId:"not-a-real-catalog-model"}})},
+  ];
+  await db.insert(schema.games).values(corrupt.map(row=>({...row,gameKind:"werewolf" as const,status:"waiting" as const})));
+  const response=await createWerewolfRoutes(db).request("/api/werewolf");
+  expect(response.status).toBe(200);expect(response.headers.get("Cache-Control")).toContain("no-store");
+  const listed=await response.json() as Array<{id:string;modelLabel:string}>;
+  expect(listed.map(row=>row.id)).toEqual([game.id]);expect(listed[0]!.modelLabel.toLowerCase()).toContain("luna");
+  for(const original of corrupt)expect((await db.select().from(schema.games).where(eq(schema.games.id,original.id)))[0]?.config).toBe(original.config);
+});
+
 async function profile(id: string, userId = "owner", name = id) {
   await db.insert(schema.agentProfiles).values({ id, userId, name, personality: "PRIVATE_PERSONALITY", strategyStyle: "INFLUENCE_ONLY", werewolfStrategyStyle: "PRIVATE_WEREWOLF_STRATEGY", personaKey: "observer" });
   return id;

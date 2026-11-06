@@ -1,3 +1,4 @@
+import { AwardIcons } from "../components/award-icons";
 import { describe, expect, it } from "bun:test";
 import { renderToString } from "react-dom/server";
 import type { ReactNode } from "react";
@@ -328,4 +329,19 @@ describe("public player profile sharing", () => {
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain("min-h-11");
   });
+});
+
+
+it("renders compact, labelled agent badge controls without persistent title/date text", () => {
+  const award = { id: "participant", code: "season-0-agent-participant", title: "Season 0 Participant", theme: "season-0", awardedAt: "2026-11-03T00:00:00Z", sourceSeasonId: "s0", sourceEventId: null };
+  const html = renderToString(<AwardIcons awards={[award]} agentName="Arden Vale" />);
+  expect(html).toContain('aria-label="Arden Vale: Season 0 Participant"');
+  expect(html).toContain('aria-label="Arden Vale badges"');
+  expect(html).not.toContain(">Season 0 Participant<");
+  expect(html).not.toContain("2026-11-03");
+  const profile = { ...profileFixture, agents: [{ ...profileFixture.agents[0]!, awards: [award] }] };
+  const page = renderToString(<PublicPlayerProfileView profile={profile} />);
+  const card = page.slice(page.indexOf("<article"), page.indexOf("</article>"));
+  expect(card).toContain("Season 0 Participant");
+  expect(card).not.toContain('href="/agents/');
 });

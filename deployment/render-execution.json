@@ -3,12 +3,20 @@
   "environments": {
     "prod": {
       "mode": "remote",
-      "network": "direct"
+      "network": "direct",
+      "targets": {
+        "trailer": "aws-batch",
+        "studio-export": "aws-batch"
+      }
     },
     "staging": {
       "mode": "remote",
       "network": "tailnet",
-      "apiOrigin": "https://influence-staging.tail8a79ed.ts.net"
+      "apiOrigin": "https://influence-staging.tail8a79ed.ts.net",
+      "targets": {
+        "trailer": "aws-batch",
+        "studio-export": "aws-batch"
+      }
     }
   }
 }

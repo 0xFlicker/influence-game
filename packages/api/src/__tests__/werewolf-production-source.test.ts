@@ -15,6 +15,10 @@ import { readWerewolfWatch } from "../services/werewolf-presentation.js";
 import { WEREWOLF_AUTO_PUBLISHER } from "../services/werewolf-production.js";
 import originMainSource from "./fixtures/werewolf-production-origin-main.json";
 import type {WerewolfEvent} from "@influence/engine/werewolf/types";
+import sharp from "sharp";
+import { storeVisualArtifact } from "../services/visual-scene-store.js";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 let db: DrizzleDB;
 beforeEach(async () => { db = await setupTestDB(); });
@@ -38,6 +42,53 @@ async function fixture() {
   await db.insert(schema.werewolfEvents).values(events.map(event => ({ gameId: id, sequence: event.sequence, event })));
   return { id, events };
 }
+
+test("private wolf cutouts reach viewer and fresh Studio sources while old selections and Mystery stay bounded", async () => {
+  const f = await fixture();
+  const moment = projectWerewolfProductionWatch(f.events, "omniscient").moments.find(row => row.staging.purpose === "pack")!;
+  const raw = await storeVisualArtifact(db, f.id, await sharp({ create: { width: 8, height: 12, channels: 3, background: "grey" } }).png().toBuffer());
+  const cast = moment.staging.participantIds.map(id => ({ id, name: id, referenceArtifactId: raw, performanceInstructions: "",
+    variant: { kind: "werewolf" as const, sourceArtifactId: raw, revision: "v1", generation: "initial", resolved: true } }));
+  const plan = { ...planVisualScene({ roomId: moment.staging.roomId!, backgroundArtifactId: null, cast }),
+    direction: { purpose: "werewolf-pack" as const, revision: "v1", style: "", roomName: "Pack", roomDirection: "" } };
+  await db.insert(schema.visualScenes).values({ id: "pack", gameId: f.id, roomId: plan.roomId, boundarySequence: moment.staging.boundary, plan, planHash: sha256StableJson(plan) });
+  await db.insert(schema.visualMediaVersions).values({ id: "pack-v1", gameId: f.id, sceneId: "pack", version: 1, plan,
+    imageArtifactId: raw, annotatedArtifactId: raw, localization: { count: cast.length, verifiedParticipantIds: cast.map(p => p.id), anchors: [] }, verificationVersion: "fixture", createdAt: "2026-01-01T00:00:00.000Z" });
+  await db.insert(schema.visualMediaPublications).values({ id: "pack-published", gameId: f.id, sceneId: "pack", versionId: "pack-v1", revision: 1, operatorId: "owner", createdAt: "2026-01-01T00:00:00.000Z" });
+  const pinned = await buildWerewolfProductionSourceSnapshot(db, f.id, { audience: "omniscient", thinking: false });
+  const pixels = Buffer.alloc(8 * 12 * 4);
+  for (let y = 1; y < 11; y++) for (let x = 2; x < 6; x++) {
+    const offset = (y * 8 + x) * 4;
+    pixels[offset] = 170; pixels[offset + 1] = 100; pixels[offset + 2] = 50; pixels[offset + 3] = 255;
+  }
+  const transparent = await storeVisualArtifact(db, f.id, await sharp(pixels, { raw: { width: 8, height: 12, channels: 4 } }).png().toBuffer());
+  await db.insert(schema.visualCharacterCutouts).values({ sourceArtifactId: raw, artifactId: transparent });
+  const viewer = await readWerewolfWatch(db, f.id, "omniscient", 1, 64, pinned.snapshot.publicationCutoff);
+  const viewerUrl = Object.values(viewer.moments.find(row => row.wolfForms)?.wolfForms ?? {})[0]!;
+  expect(viewerUrl).toContain(`/media/${transparent}?`);
+  const fresh = await buildWerewolfProductionSourceSnapshot(db, f.id, { audience: "omniscient", thinking: false });
+  expect(fresh.permittedMedia.has(transparent)).toBe(true);
+  expect(Object.values(fresh.window.moments.find(row => row.wolfForms)?.wolfForms ?? {})[0]).toContain(`/media/${transparent}?`);
+  const bytes = (await readWerewolfProductionMedia(db, f.id, transparent, { snapshot: fresh.snapshot })).bytes;
+  expect((await sharp(bytes).stats()).isOpaque).toBe(false);
+  const replay = await buildWerewolfProductionSourceSnapshot(db, f.id, { audience: "omniscient", thinking: false, snapshot: pinned.snapshot });
+  expect(replay.snapshot).toEqual(pinned.snapshot);
+  expect(replay.permittedMedia.has(transparent)).toBe(false);
+  await expect(readWerewolfProductionMedia(db, f.id, transparent, { snapshot: pinned.snapshot })).rejects.toThrow("not available");
+  const mystery = await buildWerewolfProductionSourceSnapshot(db, f.id, { audience: "mystery", thinking: false });
+  expect(mystery.permittedMedia.has(transparent)).toBe(false);
+  const routes = (await import("../routes/werewolf.js")).createWerewolfRoutes(db);
+  expect((await routes.request(viewerUrl)).status).toBe(200);
+  expect((await routes.request(viewerUrl.replace("audience=omniscient", "audience=mystery"))).status).toBe(404);
+  expect((await routes.request(viewerUrl.replace(/cursor=\d+/, "cursor=1"))).status).toBe(404);
+  expect((await db.select().from(schema.visualMediaVersions))[0]!.plan).toEqual(plan);
+  if (process.env.WOLF_CUTOUT_PROOF_DIR) {
+    const directory = process.env.WOLF_CUTOUT_PROOF_DIR;
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, "source.json"), JSON.stringify(fresh.window));
+    await writeFile(join(directory, "cutout.png"), bytes);
+  }
+});
 
 test("production Studio source reads fresh v9 history without applying legacy thread rules", async () => {
   const id = "production-werewolf-v9", events = await completedCurrentWerewolfFixture(id);
@@ -64,6 +115,7 @@ test("bounded Werewolf pages reproduce the complete shared catalog with each acc
     expect(JSON.stringify(page)).not.toMatch(/"staging"|"performanceInstructions"|"strategy"|acceptedValue|semanticCoordinate|"bytes"/);
     ids.push(...page.catalog.moments.map(moment => moment.id)); thoughts.push(...page.thoughts);
     if (page.nextCursor === null) break;
+    expect(page.nextCursor).toBeGreaterThan(fromCursor);
     fromCursor = page.nextCursor;
   }
   expect(ids).toEqual(complete.catalog.moments.map(moment => moment.id));

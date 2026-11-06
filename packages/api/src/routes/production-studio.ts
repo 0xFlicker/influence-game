@@ -1,33 +1,32 @@
 import {readGameFollowContext} from '../services/game-follow-context.js';
+import {renderExecutionConfig,studioRenderEnabled,renderWorkerDigest,type RenderExecution} from "@influence/engine/render-execution-config";
+import {orderProductionRender} from "../services/production-render-order.js";
+import {renderFile} from "@influence/engine/render-job";
+import {createRenderJob,renderJobView,RenderJobError} from "../services/render-jobs.js";
 import {HouseInspectionError} from '../services/house-game-access.js';
 import {productionEditorial} from "../services/production-editorial.js";
 import {completeProductionSource as completeSource, ProductionEditorialInputError} from "../services/production-editorial-source.js";
 import {resumeLiveAudio,LiveAudioBlocked} from "../services/audio-live.js";
 import {readAudioPublication, readPublishedAudioBytes} from "../services/audio-publication.js";
 import {audioBytesResponse} from "./audio.js";
-import {productionMomentContent} from "../services/production-moment-content.js";
 import { previewAudioTrack, queueAudioBackfill, retryAudioTrack, AudioTrackConflict } from "../services/audio-tracks.js";
-import {createHash} from "node:crypto";
 import {Hono} from "hono";
 import {createMiddleware} from "hono/factory";
 import {eq,or} from "drizzle-orm";
-import {decodeProductionSelection,resolveProductionMomentIds,type ProductionCatalog} from "@influence/engine/production-moments";
-import {decodeProductionSettings} from "@influence/engine/production-moments/settings";
-import {decodeProductionCopy,decodeProductionExport,stableProductionJson,type ProductionExportDescriptor} from "@influence/engine/production-moments/export";
-import {decodeProductionRecordings,type ProductionRecording} from "@influence/engine/production-moments/recordings";
+import {resolveProductionMomentIds,type ProductionCatalog} from "@influence/engine/production-moments";
+import {decodeProductionExport} from "@influence/engine/production-moments/export";
 import {schema,type DrizzleDB} from "../db/index.js";
 import {getPermissionsForUser} from "../db/rbac.js";
 import {requireAuth,type AuthEnv} from "../middleware/auth.js";
-import {AnnotationConflict,decodeAnnotationReplacement,readMomentAnnotations,replaceMomentAnnotation,resolveAnnotatedSelection} from "../services/production-annotations.js";
+import {AnnotationConflict,decodeAnnotationReplacement,readMomentAnnotations,replaceMomentAnnotation} from "../services/production-annotations.js";
 import {decodeInfluenceProductionSnapshot,readInfluenceProductionSource,InfluenceProductionSourceError} from "../services/influence-production-source.js";
 import {decodeWerewolfProductionSnapshot,readWerewolfProductionSource,readWerewolfProductionMedia,readWerewolfProductionCharacter} from "../services/werewolf-production-source.js";
 import {readProductionScenes,readProductionScene} from "../services/production-scenes.js";
 import {readProductionRecovery} from "../services/production-recovery.js";
 import {ReplayVisualError} from "../services/visual-replay-production.js";
 import {WerewolfGameError} from "../services/werewolf-games.js";
-import type {VisualTransaction} from "../services/visual-execution-boundary.js";
 
-class StudioInputError extends Error {}
+import {freezeProductionSelection,validateProductionSelection,StudioInputError} from "../services/production-export-selection.js";
 function object(value:unknown):Record<string,unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new StudioInputError("Request must be an object");
   return value as Record<string,unknown>;
@@ -58,47 +57,9 @@ async function kind(db:Pick<DrizzleDB,"select">,id:string) {
   return game;
 }
 
-function descriptorHash(value:Omit<ProductionExportDescriptor,"hash">) {
-  return `sha256:${createHash("sha256").update(stableProductionJson(value)).digest("hex")}`;
-}
-async function assertCompleteExportSource(tx:VisualTransaction,id:string,source:Awaited<ReturnType<typeof completeSource>>,access:Record<string,unknown>) {
-  if (source.status !== "completed") throw new WerewolfGameError("Export requires a completed game; paused previews remain available",409);
-  const latest = await completeSource(tx,id,access);
-  if (source.snapshot.throughEventSequence !== latest.snapshot.throughEventSequence
-    || source.snapshot.gameKind === "influence" && latest.snapshot.gameKind === "influence"
-      && (source.snapshot.throughTurnSequence !== latest.snapshot.throughTurnSequence
-        || stableProductionJson(source.snapshot.transcriptPrefix) !== stableProductionJson(latest.snapshot.transcriptPrefix)))
-    throw new WerewolfGameError("Export requires the complete accepted game history. Refresh the source.",409);
-}
-function validateRecordingMoments(catalog:ProductionCatalog,ids:readonly string[],recordings:readonly ProductionRecording[]) {
-  const selected = new Set(ids);
-  for (const recording of recordings) {
-    resolveProductionMomentIds(catalog,[recording.momentId]);
-    // Playback cues own speech identity; the catalog's actor can be the subject
-    // of House narration. Do not reconstruct audio policy from moment kinds.
-    if (!selected.has(recording.momentId))
-      throw new Error("Recording belongs to a moment outside the selected cut");
-  }
-}
-
-async function validateGeneratedRecordings(db:Pick<DrizzleDB,"select">,source:Awaited<ReturnType<typeof completeSource>>,recordings:readonly ProductionRecording[]) {
-  const catalog = source.catalog;
-  const generated = recordings.filter(recording => recording.versionId);
-  if (!generated.length) return;
-  const track = await readAudioPublication(db,catalog.gameId,catalog.audience,catalog.audience !== "mystery",true,generated.map(recording => recording.versionId!));
-  for (const recording of generated) {
-    const clip = track?.clips.find(clip => clip.momentId === recording.momentId && clip.versionId === recording.versionId);
-    if (!clip || clip.speakerId !== recording.speakerId || clip.textHash !== recording.textHash || clip.sha256 !== recording.sha256 || clip.durationMs !== recording.durationMs)
-      throw new StudioInputError("Generated recording does not match its authorized stored version");
-    const moment = catalog.moments.find(moment => moment.id === recording.momentId);
-    const content = moment && productionMomentContent(source, moment);
-    if (!content?.text || content.speakerId !== recording.speakerId || createHash("sha256").update(content.text).digest("hex") !== recording.textHash)
-      throw new StudioInputError("Generated recording does not match its frozen source text");
-  }
-}
 
 /** Editorial operations remain Producer/Sysop-only; legacy visual grants live in their existing routes. */
-export function createProductionStudioRoutes(db:DrizzleDB) {
+export function createProductionStudioRoutes(db:DrizzleDB,config:{execution?:RenderExecution}={}) {
   const app = new Hono<AuthEnv>(),root = "/api/admin/production/games/:id";
   app.use("/api/admin/production/*",requireAuth(db),createMiddleware<AuthEnv>(async (c,next) => {
     c.header("Cache-Control","private, no-store");
@@ -109,6 +70,7 @@ export function createProductionStudioRoutes(db:DrizzleDB) {
     await next();
   }));
   app.onError((error,c) => {
+    if(error instanceof RenderJobError)return c.json({error:error.message},error.status);
     if(error instanceof HouseInspectionError)return c.json({error:error.message},error.code==='not_accessible'?404:400);
     if (error instanceof AudioTrackConflict || error instanceof LiveAudioBlocked) return c.json({error:error.message},409);
     if (error instanceof AnnotationConflict) return c.json({error:error.message,current:error.current},409);
@@ -229,54 +191,47 @@ export function createProductionStudioRoutes(db:DrizzleDB) {
       throw error;
     }
   });
-  app.post(`${root}/selection`,async c => {
-    let body:Record<string,unknown>;
-    try {body = object(await c.req.json());} catch {throw new StudioInputError("Invalid selection JSON");}
-    fields(body,["snapshot","audience","thinking","selection","settings","copy","expectedMomentIds","recordings"]);
-    if (!Array.isArray(body.expectedMomentIds) || body.expectedMomentIds.length > 50000
-      || body.expectedMomentIds.some(id => typeof id !== "string" || !id || id.length > 8192)
-      || new Set(body.expectedMomentIds).size !== body.expectedMomentIds.length)
-      throw new StudioInputError("Export requires the exact moment IDs reviewed in preview");
-    const expectedMomentIds = body.expectedMomentIds as string[];
-    let selection,settings,copy,recordings;
-    try {selection = decodeProductionSelection(body.selection);settings = decodeProductionSettings(body.settings);copy = decodeProductionCopy(body.copy);recordings = decodeProductionRecordings(body.recordings ?? []);}
-    catch (error) {throw new StudioInputError(error instanceof Error ? error.message : "Invalid selection");}
-    return c.json(await db.transaction(async tx => {
-        const source = await completeSource(tx,c.req.param("id"),body);
-        await assertCompleteExportSource(tx,c.req.param("id"),source,{audience:body.audience,thinking:body.thinking});
-        let resolved;
-        try {
-          resolved = await resolveAnnotatedSelection(tx,source.catalog,selection);
-          for (const id of Object.keys(settings.profile.overrides)) resolveProductionMomentIds(source.catalog,[id]);
-          validateRecordingMoments(source.catalog,resolved.momentIds,recordings);
-          await validateGeneratedRecordings(tx,source,recordings);
-        } catch (error) {throw new StudioInputError(error instanceof Error ? error.message : "Invalid selection");}
-        if (resolved.momentIds.length !== expectedMomentIds.length || resolved.momentIds.some((id,index) => id !== expectedMomentIds[index]))
-          throw new WerewolfGameError("Saved tags changed this cut. Refresh tags and review the cut before exporting.",409);
-        const frozen:Omit<ProductionExportDescriptor,"hash"> = {schema:"house.production-selection",version:1,gameId:source.catalog.gameId,
-          gameKind:source.catalog.gameKind,audience:source.catalog.audience,sourceSnapshot:{...source.snapshot},momentIds:resolved.momentIds,
-          selection,settings,copy,recordings,annotations:resolved.annotations};
-        return {...frozen,hash:descriptorHash(frozen)};
-      },{isolationLevel:"repeatable read",accessMode:"read only"}));
+  app.post(`${root}/selection`,async c=>c.json(await freezeProductionSelection(db,c.req.param("id"),await c.req.json())));
+  app.post(`${root}/selection/validate`,async c=>{
+    const {descriptor}=await validateProductionSelection(db,c.req.param("id"),await c.req.json());
+    return c.json({valid:true,hash:descriptor.hash,momentIds:descriptor.momentIds});
   });
-  // Exact frozen IDs are reauthorized without consulting current predicate membership.
-  app.post(`${root}/selection/validate`,async c => {
-    let descriptor:ProductionExportDescriptor;
-    try {descriptor = decodeProductionExport(await c.req.json());} catch (error) {throw new StudioInputError(error instanceof Error ? error.message : "Invalid selection");}
-    const {hash,...frozen} = descriptor;
-    if (hash !== descriptorHash(frozen)) throw new StudioInputError("Frozen selection checksum mismatch");
-    return c.json(await db.transaction(async tx => {
-      const source = await completeSource(tx,c.req.param("id"),{snapshot:descriptor.sourceSnapshot,audience:descriptor.audience,
-        thinking:typeof descriptor.sourceSnapshot.thinking === "boolean" ? descriptor.sourceSnapshot.thinking : descriptor.selection.thinking});
-      if (source.status !== "completed" || source.catalog.gameId !== descriptor.gameId || source.catalog.gameKind !== descriptor.gameKind) throw new WerewolfGameError("Frozen export requires its completed source game",409);
-      await assertCompleteExportSource(tx,c.req.param("id"),source,{audience:descriptor.audience,
-        thinking:typeof descriptor.sourceSnapshot.thinking === "boolean" ? descriptor.sourceSnapshot.thinking : descriptor.selection.thinking});
-      let moments;
-      try {moments = resolveProductionMomentIds(source.catalog,descriptor.momentIds);validateRecordingMoments(source.catalog,descriptor.momentIds,descriptor.recordings);await validateGeneratedRecordings(tx,source,descriptor.recordings);}
-      catch (error) {throw new StudioInputError(error instanceof Error ? error.message : "Invalid frozen moment");}
-      if (moments.some((moment,index) => moment.id !== descriptor.momentIds[index])) throw new StudioInputError("Frozen selection must preserve source order");
-      return {valid:true,hash,momentIds:descriptor.momentIds};
-    },{isolationLevel:"repeatable read",accessMode:"read only"}));
+  app.post(`${root}/render-orders`,async c=> {
+    const body=object(await c.req.json());fields(body,["descriptor","requestKey","files"]);
+    if(typeof body.requestKey!=="string"||body.files!==undefined&&!Array.isArray(body.files))throw new StudioInputError("Invalid render order");
+    return c.json(await orderProductionRender(db,c.get("user").id,c.req.param("id"),{descriptor:body.descriptor,requestKey:body.requestKey,
+      files:((body.files??[]) as unknown[]).map(renderFile)},config),202);
+  });
+  app.post(`${root}/renders`,async c=> {
+    const execution=config.execution??renderExecutionConfig();
+    if(!studioRenderEnabled(execution))return c.json({error:"Cloud exports are not selected for this environment"},503);
+    const body=object(await c.req.json());fields(body,["descriptor","input","requestKey"]);
+    const validation=await app.request(new URL(`/api/admin/production/games/${encodeURIComponent(c.req.param("id"))}/selection/validate`,c.req.url),{
+      method:"POST",headers:{"Content-Type":"application/json",Authorization:c.req.header("Authorization") ?? ""},body:JSON.stringify(body.descriptor)});
+    if(!validation.ok) return new Response(validation.body,{status:validation.status,headers:validation.headers});
+    const descriptor=decodeProductionExport(body.descriptor);
+    const input=body.input as Record<string,unknown>;
+    if(input?.workload!=="studio-export"||input.selectionHash!==descriptor.hash||Object.hasOwn(input,"preparation")) throw new StudioInputError("Prepared bundle must match the frozen selection");
+    const digest=renderWorkerDigest(execution);
+    if(!digest) return c.json({error:"Render worker image has not been admitted"},503);
+    const row=await createRenderJob(db,{gameId:descriptor.gameId,userId:c.get("user").id,requestKey:String(body.requestKey),input,rendererDigest:digest});
+    return c.json(renderJobView(row),202);
+  });
+  app.post(`${root}/trailer-render`,async c=> {
+    if((config.execution??renderExecutionConfig()).targets?.trailer!=="aws-batch")return c.json({error:"Batch trailers are not selected for this environment"},503);
+    const body=object(await c.req.json());fields(body,["requestKey"]);
+    const digest=process.env.RENDER_JOB_WORKER_DIGEST;
+    if(!digest)return c.json({error:"Render worker image has not been admitted"},503);
+    return c.json(await db.transaction(async tx=> {
+      const [release]=await tx.select().from(schema.postgameMediaRenderRelease).where(eq(schema.postgameMediaRenderRelease.id,1)).for("update");
+      if(!release)throw new RenderJobError("Renderer release has not been accepted");
+      const [media]=await tx.select().from(schema.gamePostgameMedia).where(eq(schema.gamePostgameMedia.gameId,c.req.param("id"))).for("update");
+      if(!media||media.status!=="queued")throw new RenderJobError("A queued canonical trailer render is required");
+      const job=await createRenderJob(tx,{gameId:media.gameId,userId:c.get("user").id,requestKey:String(body.requestKey),rendererDigest:digest,
+        input:{version:1,workload:"trailer",gameId:media.gameId,renderVersion:media.renderVersion}});
+      if(job.state==="uploading_inputs")await tx.update(schema.renderJobs).set({state:"queued"}).where(eq(schema.renderJobs.id,job.id));
+      return renderJobView(job.state==="uploading_inputs"?{...job,state:"queued"}:job);
+    }),202);
   });
   app.get(`${root}/scenes`,async c => {
     fields(c.req.query(),["offset","limit","audience"]);

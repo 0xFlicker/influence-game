@@ -9,6 +9,11 @@ scoped after refresh. Season routes use a namespace separate from game slugs. Fi
 narrow the current collection. Slugs and URLs do not
 change when the House or an administrator changes a title.
 
+The public overview and collections load games in pages. Searching uses the existing
+full-summary fallback only while a search is active, including older Werewolf games;
+clearing the search returns to paged browsing. This fallback can become slow as the
+library grows, and a dedicated search index remains follow-up work.
+
 ## Interaction and playback
 
 Mouse hover animates only the card artwork. Clicking the card opens the top-level

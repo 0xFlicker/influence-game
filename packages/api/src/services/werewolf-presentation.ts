@@ -1,6 +1,6 @@
 import { audioReadySequence } from "./audio-frontier.js";
 import { readRetrospectivePresentation } from "./retrospective-retakes.js";
-import { loadPayloads } from "./payload-storage.js";
+import { loadPayloads, readPayload } from "./payload-storage.js";
 import { werewolfVisualPause } from "./werewolf-visual-policy.js";
 import { isViewerGame } from "./game-visibility.js";
 import { inArray, and, desc, eq, isNull, lte, or } from "drizzle-orm";
@@ -45,6 +45,8 @@ export async function readWerewolfCharacter(db: Pick<DrizzleDB, "select">, gameI
   if (!ref) return null;
   const hash = image === "body" ? (ref.kind === "full_body" ? ref.bodyHash : null) : ref.portraitHash;
   if (image === "body" && ref.transparentUrl) return readVisualProfileImage(ref.transparentUrl, ref.profile);
+  const prepared = image === "body" ? ref.bodyPayload : ref.portraitPayload;
+  if (prepared) return readPayload(prepared);
   if (image === "body" && ref.bundled && ref.kind === "full_body") return readVisualProfileImage(ref.profile.fullBodyReferenceUrl, ref.profile);
   if (hash) {
     const [asset] = await loadPayloads(db.select({ bytes: schema.agentContentAssets.bytes }).from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, hash)));
@@ -58,13 +60,23 @@ export async function publishedWerewolfScenes(db: Pick<DrizzleDB, "select">, gam
   const recoveryIds: string[] = game ? JSON.parse(game.config).visualRecoveryPublications ?? [] : [];
   const before = lte(schema.visualMediaPublications.createdAt, publicationCutoff);
 
-  return await db.select({ scene: schema.visualScenes, publication: schema.visualMediaPublications, version: schema.visualMediaVersions })
+  const rows = await db.select({ scene: schema.visualScenes, publication: schema.visualMediaPublications, version: schema.visualMediaVersions })
     .from(schema.visualScenes)
     .innerJoin(schema.visualMediaPublications, and(eq(schema.visualMediaPublications.sceneId, schema.visualScenes.id), eq(schema.visualMediaPublications.audience, "public"), strictCutoff ? before : or(inArray(schema.visualMediaPublications.id,recoveryIds), before, and(eq(schema.visualMediaPublications.operatorId, WEREWOLF_AUTO_PUBLISHER), eq(schema.visualMediaPublications.revision, 1)))))
     .innerJoin(schema.visualMediaVersions, eq(schema.visualMediaVersions.id, schema.visualMediaPublications.versionId))
     .where(and(eq(schema.visualScenes.gameId, gameId)))
     .orderBy(desc(schema.visualScenes.boundarySequence), desc(schema.visualMediaPublications.revision));
-
+  const formIds = [...new Set(rows.flatMap(row => row.version.plan.cast.filter(member => member.variant?.kind === "werewolf" && member.variant.resolved).map(member => member.referenceArtifactId)))];
+  const cutouts = formIds.length ? await db.select().from(schema.visualCharacterCutouts).where(and(
+    inArray(schema.visualCharacterCutouts.sourceArtifactId, formIds), strictCutoff ? lte(schema.visualCharacterCutouts.createdAt, new Date(publicationCutoff)) : undefined,
+  )) : [];
+  const bySource = new Map(cutouts.map(cutout => [cutout.sourceArtifactId, cutout.artifactId]));
+  // Derive presentation only; preserve generation inputs and published plans.
+  // Both watch and Studio/export bind these same audience-checked artifact IDs.
+  return rows.map(row => ({ ...row, version: { ...row.version, plan: { ...row.version.plan,
+    cast: row.version.plan.cast.map(member => member.variant?.kind === "werewolf" && member.variant.resolved && bySource.has(member.referenceArtifactId)
+      ? { ...member, referenceArtifactId: bySource.get(member.referenceArtifactId)! } : member),
+  } } }));
 }
 export function bindWerewolfScene(rows: Awaited<ReturnType<typeof publishedWerewolfScenes>>, gameId: string, audience: WerewolfAudience, cursor: number, publicationCutoff: string, frame: WerewolfWatchStaging, productionSnapshot?: object) {
   // Introductions use frozen individual art, including games with old lobby renders.

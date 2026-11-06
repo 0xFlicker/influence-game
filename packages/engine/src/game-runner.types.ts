@@ -1555,6 +1555,9 @@ export interface TranscriptDialogueContextV1 {
   visualScene?: { id: string; roomId: import("./visual-mode").VisualRoomId };
   roomId?: number;
   allianceId?: string;
+  allianceName?: string;
+  /** Saved viewer-only copy authored after the conversations and played before this anchor. */
+  allianceIntroduction?: import("./alliance-introduction-presentation").AllianceIntroduction;
   scheduleId?: string;
   sessionId?: string;
   window?: string;

@@ -1,5 +1,5 @@
 import {resolveInfluenceGameDecisionVersion} from "./influence-game-schema";
-import { beginAllianceHuddleWindow, advanceHuddleConversation } from "./phases/alliances";
+import { beginAllianceHuddleWindow, advanceHuddleConversation, emitAllianceIntroductions } from "./phases/alliances";
 import { conversationPolicy } from "./open-conversation";
 import { seededRandom } from "./seeded-random";
 import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
@@ -1948,8 +1948,22 @@ export class GameRunner {
         const speakerId = cursor.progress.conversation && !cursor.progress.conversation.ended ? cursor.progress.conversation.nextActorId : undefined;
         await this.executeDurableTurn({ branch: speakerId ? "single_provider" : "engine", action: "huddle-conversation", actorIds: speakerId ? [speakerId] : [],
           providerActions: speakerId ? [{ actorId: speakerId, action: "alliance-huddle-turn", contractId: "agent-huddle-conversation-v1" }] : [],
-        }, async (ctx, scratchActor) => {
+        }, async (ctx) => {
           if (cursor.progress.index < cursor.progress.scheduleIds.length) return { ...cursor, progress: await advanceHuddleConversation(ctx, cursor.progress) };
+          return { version: 1, kind: "alliance_introductions", completion: cursor.completion, scheduleIds: [...cursor.progress.scheduleIds], authored: false };
+        });
+        continue;
+      }
+
+      if (phase === "format_mingle" && cursor.kind === "alliance_introductions") {
+        await this.executeDurableTurn({ branch: "engine", action: cursor.authored ? "alliance-social-complete" : "house-alliance-introductions", actorIds: [],
+          providerActions: !cursor.authored && cursor.scheduleIds.length > 0
+            ? [{ actorId: null, action: "house-alliance-introductions", contractId: "house-alliance-introductions-v1" }] : [],
+        }, async (ctx, scratchActor) => {
+          if (!cursor.authored) {
+            await emitAllianceIntroductions(ctx, cursor.scheduleIds, Phase.FORMAT_MINGLE);
+            return { ...cursor, authored: true };
+          }
           if (cursor.completion === "format_resolve") {
             scratchActor.send({ type: "PHASE_COMPLETE" });
             await new Promise(resolve => setTimeout(resolve, 0));

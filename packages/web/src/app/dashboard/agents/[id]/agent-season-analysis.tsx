@@ -1,7 +1,8 @@
 "use client";
 
+import { AgentProfileLink } from "@/components/agent-profile-link";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   agentSeasonExportUrl,
   getAgent,
@@ -14,7 +15,7 @@ import {
 } from "@/lib/api";
 import { OwnerLearningActivation } from "./review/owner-learning-activation";
 
-export function AgentSeasonAnalysisView({ agentId }: { agentId: string }) {
+export function AgentSeasonAnalysisView({ agentId, awards }: { agentId: string; awards?: ReactNode }) {
   const [agent, setAgent] = useState<SavedAgent | null>(null);
   const [seasons, setSeasons] = useState<SeasonIdentity[]>([]);
   const [selectedSeason, setSelectedSeason] = useState("");
@@ -99,6 +100,7 @@ export function AgentSeasonAnalysisView({ agentId }: { agentId: string }) {
           </div>
           <h1 className="mt-3 text-3xl font-semibold text-text-primary">{agent?.name ?? "Agent"}</h1>
           <p className="influence-copy mt-2 text-sm">Season results, point receipts, and revision-separated performance.</p>
+          <AgentProfileLink agentId={agentId} className="influence-link mt-2 inline-block text-sm">View public profile</AgentProfileLink>
         </div>
         {seasons.length > 0 && (
           <label className="text-xs influence-copy-muted">
@@ -113,6 +115,8 @@ export function AgentSeasonAnalysisView({ agentId }: { agentId: string }) {
           </label>
         )}
       </header>
+
+      {awards && <div className="mt-6">{awards}</div>}
 
       <div className="mt-6">
         <OwnerLearningActivation enabled contextAgentId={agentId} />

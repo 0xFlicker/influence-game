@@ -1,0 +1,38 @@
+{
+  "tracedFailure": {
+    "mode": "png",
+    "frame": 796,
+    "pending": [
+      {
+        "frame": 796,
+        "pass": 0,
+        "index": 3,
+        "src": "",
+        "complete": false
+      }
+    ]
+  },
+  "actualAvatarBrowserReproduction": [
+    {
+      "result": {
+        "before": {
+          "decoded": false,
+          "error": null,
+          "complete": false,
+          "currentSrc": "",
+          "loading": "lazy",
+          "rects": 0
+        },
+        "after": {
+          "decoded": true,
+          "error": null,
+          "complete": true,
+          "currentSrc": "<local fixture portrait>",
+          "loading": "eager",
+          "rects": 0
+        }
+      },
+      "errors": []
+    }
+  ]
+}

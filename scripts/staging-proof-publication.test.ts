@@ -109,14 +109,35 @@ test('ordinary staging activates only after successful source CI and verified mi
   expect(allowedRelease({ ...source, head_repository: { id: 1 } })).toBe(false);
   expect(allowedRelease(source, 'fork')).toBe(false);
   expect(release.jobs.mirror.needs).toBe('release');
-  expect(release.jobs['trigger-deploy'].needs).toEqual(['release', 'mirror']);
-  expect(release.jobs['trigger-deploy'].if).not.toContain('always()');
+  expect(release.jobs['trigger-deploy'].needs).toEqual(['release', 'mirror', 'batch-admit']);
+  expect(release.jobs['batch-admit'].needs).toEqual(['release', 'mirror']);
+  const batchApp = release.jobs['batch-admit'].steps.find((step: Step) => step.name === 'Generate infra-only workflow token');
+  const hostApp = release.jobs['trigger-deploy'].steps.find((step: Step) => step.name === 'Generate GitHub App token');
+  expect(batchApp.with['client-id']).toBe('${{ vars.HOUSE_RENDER_APP_CLIENT_ID }}');
+  expect(batchApp.with['private-key']).toBe('${{ secrets.HOUSE_RENDER_APP_PRIVATE_KEY }}');
+  expect(batchApp.with['permission-actions']).toBe('write');
+  expect(batchApp.with['permission-contents']).toBe('read');
+  expect(hostApp.with['client-id']).toBe('${{ vars.GH_APP_CLIENT_ID }}');
+  const deploymentGuard = release.jobs['trigger-deploy'].if.replaceAll('needs.batch-admit', 'needs["batch-admit"]');
+  const canDeploy = (batch: boolean, admission: string, mirror = 'success', cancelled = false, eligible = 'true') =>
+    Boolean(new Function('needs', 'always', 'cancelled', `return (${deploymentGuard});`)(
+      { release: { outputs: { eligible, batch_required: String(batch) } }, mirror: { result: mirror }, 'batch-admit': { result: admission } },
+      () => true, () => cancelled));
+  expect(canDeploy(false, 'skipped')).toBe(true);
+  expect(canDeploy(true, 'success')).toBe(true);
+  expect(canDeploy(true, 'skipped')).toBe(false);
+  expect(canDeploy(true, 'failure')).toBe(false);
+  expect(canDeploy(false, 'failure')).toBe(false);
+  expect(canDeploy(true, 'success', 'failure')).toBe(false);
+  expect(canDeploy(true, 'success', 'success', true)).toBe(false);
+  expect(canDeploy(true, 'success', 'success', false, 'false')).toBe(false);
   expect(release.jobs.mirror.uses).toBe('./.github/workflows/staging-renderer-ecr.yml');
   expect(release.jobs.mirror.permissions['id-token']).toBe('write');
   const trigger = release.jobs['trigger-deploy'].steps.find((step: Step) => step.name === 'Trigger staging only after mirror admission succeeds').with.script;
   expect(trigger).toContain('build_run_id: process.env.BUILD_RUN_ID');
   expect(trigger).toContain('build_run_attempt: process.env.BUILD_RUN_ATTEMPT');
   expect(trigger).toContain('worker_mirror_receipt_digest: process.env.WORKER_MIRROR_RECEIPT_DIGEST');
+  expect(trigger).toContain('batch_admission_receipt_digest: process.env.BATCH_ADMISSION_RECEIPT_DIGEST');
   expect(JSON.stringify(release.jobs['trigger-deploy'].env)).not.toContain('github.run_id');
   expect(JSON.stringify(release.jobs.release.steps)).not.toContain('workflow_run.head_sha');
   expect(ci.jobs['trigger-deploy']).toBeUndefined();

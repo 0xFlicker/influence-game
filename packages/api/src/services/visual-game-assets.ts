@@ -7,7 +7,7 @@ import { readFile } from "node:fs/promises";
 import { and, eq } from "drizzle-orm";
 import { VISUAL_HOUSE_STYLE, VISUAL_ROOMS, type FrozenVisualProfile } from "@influence/engine/visual-mode";
 import { schema, type DrizzleDB } from "../db/index.js";
-import { getHousePortraitKey } from "@influence/engine";
+import { getHousePortraitKey, HOUSE_PORTRAIT_KEYS } from "@influence/engine";
 import { bundledHouseBody } from "@influence/engine/house-character-art";
 import { readLocalUpload } from "../lib/storage.js";
 import { renderVisualAssetBestEffort } from "./visual-render-journal.js";
@@ -29,8 +29,11 @@ export async function readVisualProfileImage(url: string | null, profile: Pick<F
     if (createHash("sha256").update(bytes).digest("hex") !== bundled.sha256) throw new Error("Bundled House full-body integrity mismatch");
     return bytes;
   }
-  if (!url) {
-    const key = getHousePortraitKey(profile.name, profile.personaKey);
+  // Explicit bundled portrait URLs are application assets too. Match the exact allowlist,
+  // not arbitrary paths or remote URLs with a similar pathname.
+  const portraitKey = HOUSE_PORTRAIT_KEYS.find(key => url === `/avatars/personas/${key}.png`);
+  if (!url || portraitKey) {
+    const key = portraitKey ?? getHousePortraitKey(profile.name, profile.personaKey);
     const directory = process.env.INFLUENCE_PERSONA_ASSET_DIR;
     return readFile(directory
       ? join(directory, `${key}.png`)

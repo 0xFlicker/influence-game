@@ -1397,10 +1397,15 @@ test("a canonical retrospective grows after results without moving a paused repl
   const prefix = events.slice(0,firstIndex), first = events[firstIndex]!;
   const initialView = projectWerewolfView(replayWerewolf(prefix),"mystery");
   const resultCursor = initialView.entries.findIndex(entry => entry.kind === "result")+1, firstCursor = resultCursor+1;
-  await database.db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"in_progress",startedAt:new Date().toISOString(),config:JSON.stringify({providerManifest:[{catalogId:"openai:gpt-6-luna",reasoningPolicy:"low"}]})});
-  await database.db.insert(schema.werewolfEvents).values(prefix.map(event => ({gameId:id,sequence:event.sequence,event})));
-  const claim = await claimWerewolfGame(database.db,id);
-  if (!claim.ok) throw new Error(claim.error);
+  // Publish the runnable fixture and its test-owned lease atomically so the
+  // recovery worker cannot claim the game between these setup operations.
+  await database.db.transaction(async tx => {
+    const fixtureDb = tx as unknown as DrizzleDB;
+    await fixtureDb.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"in_progress",startedAt:new Date().toISOString(),config:JSON.stringify({providerManifest:[{catalogId:"openai:gpt-6-luna",reasoningPolicy:"low"}]})});
+    await fixtureDb.insert(schema.werewolfEvents).values(prefix.map(event => ({gameId:id,sequence:event.sequence,event})));
+    const claim = await claimWerewolfGame(fixtureDb,id);
+    if (!claim.ok) throw new Error(claim.error);
+  });
   const page = await browser.newPage();
   try {
     await page.goto(`${servers.webUrl}/games/${id}/replay?audience=mystery&cursor=${resultCursor}`,{waitUntil:"domcontentloaded"});

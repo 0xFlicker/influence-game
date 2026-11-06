@@ -43,15 +43,20 @@ export function thinkingPicture(cue: ExportCue, actorId = cue.speech?.speakerId)
   if (!actor) throw new Error(`Thinking actor is absent from source roster: ${actorId}`);
   const backgroundUrl = beat ? influenceRoomBackground(beat,picture.ledger) : undefined;
   return {kind:"thinking",gameKind:"influence",actor:{...actor,persona:actor.persona ?? ""},sourceElapsedMs,backgroundUrl,ballotFraming:Boolean(picture.ledger),
+    ...(beat?.kind === "safety-chain" && beat.cue.kind === "safety_bounce_pointer" && {
+      chain:{kind:"safety-chain-thinking" as const,board:beat.cue.before.safetyBounce!,actorId,round:beat.cue.round,
+        roster:beat.roster.map(player => ({id:player.id,name:player.name,persona:player.persona,personaKey:player.personaKey,
+          avatarUrl:player.avatarUrl,status:player.status,shielded:player.shielded,fullBodyReferenceUrl:player.fullBodyReferenceUrl,headRectangle:player.headRectangle}))},
+    }),
     scene:beat?.kind === "scene" ? picture.rooms.find(scene => scene.id === beat.sceneId) ?? null : null,
-    ...(beat?.kind === "portrait-room" && {room:{number:beat.roomNumber,label:beat.roomLabel,players:beat.participants,backgroundUrl,floorPerspective:true}})};
+    ...(beat?.kind === "portrait-room" && {room:{number:beat.roomNumber,label:beat.roomLabel,players:beat.participants,backgroundUrl,floorPerspective:true,paginateLargeCast:beat.paginateLargeCast}})};
 }
 
 export function thinkingSegment(cue: ExportCue, id: string, text: string, actorId?: string): ExportCue {
   if (!text.trim()) throw new Error(`Empty thinking moment: ${id}`);
   const picture = thinkingPicture(cue, actorId);
-  return {momentId:id,label:cue.label,source:cue.source,picture,speech:null,music:cue.music,
-    timing:{key:id,kind:"thinking",baseDurationMs:1,speech:null,thinking:text,sourceElapsedMs:picture.sourceElapsedMs,...(picture.room && {thinkingEstablishMs:650})}};
+  return {momentId:id,label:cue.label,source:cue.source,picture,speech:null,music:cue.music,activeFormatId:cue.activeFormatId,
+    timing:{key:id,kind:"thinking",baseDurationMs:1,speech:null,thinking:text,sourceElapsedMs:picture.sourceElapsedMs,minimumThinkingMs:cue.timing.minimumThinkingMs,...(picture.room && {thinkingEstablishMs:650})}};
 }
 
 /** The complete game-owned source is projected before this presentation-only selection. */

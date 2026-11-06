@@ -1,0 +1,78 @@
+{
+  "werewolf": {
+    "completeManifestEqual": true,
+    "differingFields": [],
+    "checks": [
+      {
+        "fixture": "opening",
+        "frames": 999,
+        "decodedFramesAndTimestampsEqual": true,
+        "decodedAudioEqual": true,
+        "baselineSeconds": 27.707063583,
+        "candidateSeconds": 26.372208292000003
+      },
+      {
+        "fixture": "scene",
+        "frames": 300,
+        "decodedFramesAndTimestampsEqual": true,
+        "decodedAudioEqual": true,
+        "baselineSeconds": 8.061055875000001,
+        "candidateSeconds": 7.8955217499999995
+      }
+    ]
+  },
+  "influence": {
+    "completeManifestEqual": false,
+    "differingFields": [
+      "layouts"
+    ],
+    "checks": [
+      {
+        "fixture": "opening",
+        "frames": 1530,
+        "decodedFramesAndTimestampsEqual": true,
+        "decodedAudioEqual": true,
+        "baselineSeconds": 48.036758541000005,
+        "candidateSeconds": 51.120110375
+      },
+      {
+        "fixture": "scene",
+        "frames": 300,
+        "decodedFramesAndTimestampsEqual": true,
+        "decodedAudioEqual": true,
+        "baselineSeconds": 19.436257375000007,
+        "candidateSeconds": 18.534961082999995
+      }
+    ]
+  },
+  "preparationSeconds": {
+    "werewolfPng": 34.309693459,
+    "werewolfNone": 16.220254209,
+    "influenceNone": 78.903570458
+  },
+  "influenceDifference": {
+    "missingKey": [
+      "",
+      844.8,
+      970.442,
+      "speech",
+      false,
+      28,
+      38,
+      46
+    ],
+    "extraKey": [
+      "",
+      844.8,
+      484.22,
+      "speech",
+      false,
+      28,
+      38,
+      46
+    ],
+    "sameAsPriorJpegKeySets": true,
+    "pagesEqual": true,
+    "sharedLayoutValuesEqual": true
+  }
+}
