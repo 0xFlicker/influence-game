@@ -3,6 +3,7 @@ import postgres from "postgres";
 import { checkPublicBrowseIndexes, ensurePublicBrowseIndexes } from "../db/public-browse-indexes.js";
 import { setupTestDB } from "./test-utils.js";
 import { calculateMigrationSet } from "../db/migrate.js";
+import { applyMigrationsSerialized } from "../db/serialized-migrations.js";
 
 const url = process.env.TEST_DATABASE_URL ?? "postgresql://influence:influence@127.0.0.1:54320/influence_test";
 const names = ["games_public_browse_order_idx", "games_public_browse_kind_idx", "games_public_browse_status_idx", "games_public_browse_season_idx", "games_public_browse_kind_status_idx"];
@@ -115,6 +116,69 @@ test("a lost builder session aborts and leaves an invalid index for explicit ins
   } finally {
     release?.(); await holding?.catch(() => {}); await outcome?.catch(() => {});
     await Promise.all([admin.end({ timeout: 5 }), blocker.end({ timeout: 5 })]);
+  }
+}, 30_000);
+
+test("a lock timeout fails closed and an inspected interrupted build can be retried", async () => {
+  await setupTestDB();
+  const admin = postgres(url, { max: 1, onnotice: () => {} });
+  const blocker = postgres(url, { max: 1, onnotice: () => {} });
+  let release!: () => void, entered!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const ready = new Promise<void>(resolve => { entered = resolve; });
+  let holding: Promise<unknown> | undefined;
+  try {
+    await ensurePublicBrowseIndexes(url);
+    await dropOrder(admin);
+    holding = blocker.begin(async tx => {
+      await tx.unsafe("LOCK TABLE public.games IN ACCESS EXCLUSIVE MODE");
+      entered(); await gate;
+    });
+    await ready;
+    const error = await ensurePublicBrowseIndexes(url).then(() => null, failure => failure);
+    expect(error).toBeInstanceOf(Error);
+    expect(error?.code).toBe("55P03"); // lock_timeout, not a successful build
+    release(); await holding;
+    const [row] = await admin<{ exists: boolean; valid: boolean | null }[]>`
+      SELECT to_regclass('public.games_public_browse_order_idx') IS NOT NULL AS exists,
+        (SELECT i.indisvalid FROM pg_index i WHERE i.indexrelid=to_regclass('public.games_public_browse_order_idx')) AS valid`;
+    if (row?.exists) {
+      expect(row.valid).toBe(false);
+      await expect(ensurePublicBrowseIndexes(url)).rejects.toThrow("invalid or differs");
+      // Explicit removal is limited to this known disposable test database.
+      await dropOrder(admin);
+    }
+    await ensurePublicBrowseIndexes(url);
+    await checkPublicBrowseIndexes(url);
+  } finally {
+    release?.(); await holding?.catch(() => {});
+    await Promise.all([admin.end({ timeout: 5 }), blocker.end({ timeout: 5 })]);
+  }
+}, 30_000);
+
+test("older staging migration journals skip already-applied additive migrations", async () => {
+  await setupTestDB();
+  const { cp, mkdtemp, readFile, rm, writeFile } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join, resolve } = await import("node:path");
+  const directory = await mkdtemp(join(tmpdir(), "house-old-migrations-"));
+  const source = resolve(import.meta.dir, "../../drizzle");
+  const admin = postgres(url, { max: 1, onnotice: () => {} });
+  try {
+    const sourceJournal = JSON.parse(await readFile(join(source, "meta", "_journal.json"), "utf8")) as { entries: Array<{ idx: number; when: number }> };
+    const [before] = await admin<{ count: number; latest: string }[]>`SELECT count(*)::integer AS count, max(created_at)::text AS latest FROM drizzle.__drizzle_migrations`;
+    expect(before?.latest).toBe(String(sourceJournal.entries.find(entry => entry.idx === 155)?.when));
+    for (const lastIndex of [153, 154]) {
+      const oldDirectory = join(directory, String(lastIndex));
+      await cp(source, oldDirectory, { recursive: true });
+      await writeFile(join(oldDirectory, "meta", "_journal.json"), JSON.stringify({ ...sourceJournal, entries: sourceJournal.entries.filter(entry => entry.idx <= lastIndex) }));
+      await applyMigrationsSerialized(url, oldDirectory);
+      const [after] = await admin<{ count: number; latest: string }[]>`SELECT count(*)::integer AS count, max(created_at)::text AS latest FROM drizzle.__drizzle_migrations`;
+      expect(after).toEqual(before);
+    }
+  } finally {
+    await admin.end({ timeout: 5 });
+    await rm(directory, { recursive: true, force: true });
   }
 }, 30_000);
 
