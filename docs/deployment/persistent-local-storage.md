@@ -2,6 +2,8 @@
 
 Local development uses the existing MinIO Docker data volume and a shared private configuration at `~/.local/share/thehouse/storage/config.json` (0600), outside all worktrees. `HOUSE_LOCAL_STORAGE_CONFIG` selects another absolute config path. It contains existing local credentials: never commit or print it.
 
+When `HOUSE_LOCAL_STORAGE_CONFIG` explicitly selects a missing file, the private-content bootstrap exits before starting a container or writing the legacy environment file. Correct the path or remove the override before using the intended local configuration.
+
 On this Mac the adopted service is `influence-private-evidence-s3`, endpoint `http://127.0.0.1:19000`. Its existing `/data` volume is recorded in the private config. `house-public-local` holds local public media; the original `influence-private-content-local` retains private payloads, evidence, game assets and recordings. Both buckets remain private. No credentials were created or rotated, no anonymous bucket policy was installed, and no existing container was recreated or restarted during adoption.
 
 ## Startup from any worktree containing this change

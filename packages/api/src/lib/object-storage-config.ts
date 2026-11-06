@@ -23,7 +23,12 @@ export function localObjectStorageEnabled(): boolean {
 export function objectStorageProvider(): ObjectStorageProvider {
   const provider = process.env.HOUSE_OBJECT_STORAGE_PROVIDER;
   if (!provider || provider === "linode") return "linode_object_storage";
-  if (provider === "aws") return "aws_s3";
+  if (provider === "aws") {
+    if (process.env.INFLUENCE_STORAGE_BACKEND?.toLowerCase() === "local") {
+      throw new Error("INFLUENCE_STORAGE_BACKEND=local cannot be combined with AWS object storage");
+    }
+    return "aws_s3";
+  }
   throw new Error("HOUSE_OBJECT_STORAGE_PROVIDER must be linode or aws");
 }
 

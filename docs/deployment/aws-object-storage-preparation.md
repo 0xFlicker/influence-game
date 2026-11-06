@@ -6,6 +6,8 @@ Tracking: [#281](https://github.com/0xFlicker/influence-game/issues/281). This i
 
 Existing `LINODE_OBJ_*` / `LINODE_PRIVATE_CONTENT_*` configuration remains the default, including local MinIO. Explicit `HOUSE_OBJECT_STORAGE_PROVIDER=aws` selects AWS S3; partial or invalid AWS configuration disables public storage instead of falling back to local storage.
 
+`INFLUENCE_STORAGE_BACKEND=local` conflicts with the AWS provider and is rejected for both public and private object-storage adapters. Remove that local override before selecting AWS; `disabled` remains an explicit public-upload disablement. An unknown provider is rejected rather than interpreted as local storage.
+
 | Variable | Purpose |
 |---|---|
 | `HOUSE_OBJECT_STORAGE_PROVIDER` | `aws` activates the new adapter; unset/`linode` preserves the existing adapter. |

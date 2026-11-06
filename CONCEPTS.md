@@ -790,6 +790,10 @@ The one-way durable boundary between finished gameplay and published results. Te
 
 An authenticated human-operator redrive of a captured `pending` completion settlement. It is an exceptional path for a settlement that normal terminal adoption did not complete, not the ordinary reload mechanism. The admin action requires dedicated permission, an explicit reason, and append-only request plus correlated terminal audit receipts; it reuses the idempotent settlement transaction and never replays gameplay. Normal startup adopts a matching terminal execution and attempts idempotent settlement automatically. `repair_required` evidence conflicts remain blocked for investigation, and Production Game MCP stays read-only.
 
+## Object storage provider selection
+
+Public media and private evidence use separate buckets but share an explicit provider selection. AWS provider mode rejects a local-filesystem public backend override, so a conflicting configuration cannot silently split those workloads across AWS and a local disk.
+
 ## Private evidence manifest
 
 A producer/debug metadata record that points to raw LLM evidence such as prompts, model responses, `thinking`, `reasoningContext`, provider reasoning summaries, and normalized agent-turn objects. The manifest may be stored in Postgres while raw content lives in private object storage; neither the manifest nor the raw evidence is player-visible dialogue or canonical board state.

@@ -51,10 +51,11 @@ function isLocalRuntime(): boolean {
 
 export function getStorageBackend(): StorageBackend {
   const requested = process.env.INFLUENCE_STORAGE_BACKEND?.toLowerCase();
+  const provider = objectStorageProvider();
 
   if (requested === "disabled") return "disabled";
   if (requested === "local") return "local";
-  if (requested === "s3" || process.env.HOUSE_OBJECT_STORAGE_PROVIDER && process.env.HOUSE_OBJECT_STORAGE_PROVIDER !== "linode") return hasS3Config() ? "s3" : "disabled";
+  if (requested === "s3" || provider === "aws_s3") return hasS3Config() ? "s3" : "disabled";
   if (hasS3Config()) return "s3";
   if (isLocalRuntime()) return "local";
   return "disabled";

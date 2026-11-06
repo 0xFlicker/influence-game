@@ -8,6 +8,10 @@ SHARED_CONFIG="${HOUSE_LOCAL_STORAGE_CONFIG:-$HOME/.local/share/thehouse/storage
 if [[ -f "$SHARED_CONFIG" ]]; then
   exec bun "$ROOT_DIR/packages/api/src/scripts/local-storage.ts" start --config "$SHARED_CONFIG"
 fi
+if [[ -n "${HOUSE_LOCAL_STORAGE_CONFIG:-}" ]]; then
+  echo "Explicit shared storage config is missing" >&2
+  exit 1
+fi
 
 CONTAINER_NAME="${INFLUENCE_MINIO_CONTAINER:-influence-private-content-s3}"
 MINIO_IMAGE="${INFLUENCE_MINIO_IMAGE:-quay.io/minio/minio:latest}"

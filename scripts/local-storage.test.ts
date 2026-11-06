@@ -28,6 +28,40 @@ test("shared config is private, independent of cwd and restricted to loopback", 
   await expect(loadLocalStorageConfig(link)).rejects.toThrow("private regular");
 });
 
+test("an explicitly missing shared config stops the legacy bootstrap without side effects", async () => {
+  const root = await temp(), bin = path.join(root, "bin"), callLog = path.join(root, "calls"), envFile = path.join(root, "legacy.env");
+  await mkdir(bin);
+  for (const name of ["bun", "docker", "curl"]) {
+    await writeFile(path.join(bin, name), `#!/bin/sh\nprintf '%s\\n' '${name}' >> "$HOUSE_TEST_CALL_LOG"\nexit 42\n`, { mode: 0o755 });
+  }
+  await writeFile(envFile, "preserve this file\n");
+  const child = Bun.spawn(["/bin/bash", path.resolve("scripts/bootstrap-private-content-s3.sh")], {
+    env: { ...process.env, PATH: `${bin}:/usr/bin:/bin`, HOUSE_TEST_CALL_LOG: callLog,
+      HOUSE_LOCAL_STORAGE_CONFIG: path.join(root, "missing config.json"), INFLUENCE_PRIVATE_TRACE_ENV_FILE: envFile,
+      INFLUENCE_TRACE_MCP_CURSOR_SECRET: "synthetic-cursor" }, stdout: "pipe", stderr: "pipe",
+  });
+  const [status, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+  expect(status).not.toBe(0);
+  expect(stderr).toContain("Explicit shared storage config is missing");
+  expect(await Bun.file(callLog).exists()).toBe(false);
+  expect(await readFile(envFile, "utf8")).toBe("preserve this file\n");
+});
+
+test("an explicitly selected existing config delegates to shared storage", async () => {
+  const root = await temp(), bin = path.join(root, "bin"), callLog = path.join(root, "calls"), file = path.join(root, "config with spaces.json");
+  await mkdir(bin);
+  await writeFile(file, "fixture\n");
+  await writeFile(path.join(bin, "bun"), "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$HOUSE_TEST_CALL_LOG\"\n", { mode: 0o755 });
+  const child = Bun.spawn(["/bin/bash", path.resolve("scripts/bootstrap-private-content-s3.sh")], {
+    env: { ...process.env, PATH: `${bin}:/usr/bin:/bin`, HOUSE_TEST_CALL_LOG: callLog, HOUSE_LOCAL_STORAGE_CONFIG: file },
+    stdout: "pipe", stderr: "pipe",
+  });
+  expect(await child.exited).toBe(0);
+  const args = (await readFile(callLog, "utf8")).trimEnd().split("\n");
+  expect(args.slice(-3)).toEqual(["start", "--config", file]);
+  expect(args[0]).toEndWith("/packages/api/src/scripts/local-storage.ts");
+});
+
 test("local S3 writes use signed PUTs without ACL and keep old API read URLs", async () => {
   Object.assign(process.env, storageEnvironment(config));
   expect(localObjectStorageEnabled()).toBe(true);

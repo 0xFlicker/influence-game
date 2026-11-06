@@ -34,6 +34,28 @@ afterEach(() => {
 });
 
 describe("AWS object storage compatibility", () => {
+  test("rejects a local public backend when AWS is the selected provider", async () => {
+    process.env.INFLUENCE_STORAGE_BACKEND = "LoCaL";
+    expect(() => getStorageBackend()).toThrow("AWS");
+    expect(() => objectStorageProvider()).toThrow("AWS");
+    expect(() => objectStorageClientConfig("evidence")).toThrow("AWS");
+    expect(() => getPrivateTraceStorageProvider()).toThrow("AWS");
+    expect(() => getPrivateTraceBucket()).toThrow("AWS");
+    await expect(generatePresignedUpload("pfp/fixture.png", "image/png")).rejects.toThrow("AWS");
+    await expect(renderUpload("renders/fixture.mp4", 3, "a".repeat(64))).rejects.toThrow("AWS");
+  });
+
+  test("preserves intentional disabled and legacy local selections while rejecting unknown providers", () => {
+    process.env.INFLUENCE_STORAGE_BACKEND = "disabled";
+    expect(getStorageBackend()).toBe("disabled");
+    expect(objectStorageProvider()).toBe("aws_s3");
+    process.env.HOUSE_OBJECT_STORAGE_PROVIDER = "linode";
+    process.env.INFLUENCE_STORAGE_BACKEND = "local";
+    expect(getStorageBackend()).toBe("local");
+    process.env.HOUSE_OBJECT_STORAGE_PROVIDER = "unknown";
+    expect(() => getStorageBackend()).toThrow("HOUSE_OBJECT_STORAGE_PROVIDER");
+  });
+
   test("explicit AWS mode separates buckets and refuses incomplete configuration", () => {
     expect(objectStorageProvider()).toBe("aws_s3");
     expect(objectStorageBucket("public")).toBe("house-test-public");
