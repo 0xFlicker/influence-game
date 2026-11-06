@@ -149,7 +149,7 @@ describe("AgentForm draft recovery", () => {
   });
 });
 
-async function renderForm(requireChange: boolean, onSubmit: (params: AgentProfileWriteParams) => Promise<void> = async () => {}, emptyText = false, initialOverrides: Partial<SavedAgent> = {}): Promise<RenderResult> {
+async function renderForm(requireChange: boolean, onSubmit: (params: AgentProfileWriteParams) => Promise<void> = async () => {}, emptyText = false, initialOverrides: Partial<SavedAgent> = {}, scope = draftScope): Promise<RenderResult> {
   const fetcher=globalThis.fetch;
   globalThis.fetch=Object.assign(async (input:RequestInfo|URL,init?:RequestInit) => String(input).endsWith("/voice")
     ? Response.json({assignment:{voiceId:"ara"},voices:[{id:"ara",name:"Ara",gender:"female"}]}) : fetcher(input,init),{preconnect:originalFetch.preconnect}) as typeof fetch;
@@ -159,13 +159,14 @@ async function renderForm(requireChange: boolean, onSubmit: (params: AgentProfil
       <InfluenceAuthContext.Provider value={auth}>
         <AgentForm
           initial={{ ...(emptyText ? { ...agent(), name: "", backstory: "", personality: "", strategyStyle: "" } : agent()), ...initialOverrides }}
+          profileRequest={scope === "edit:agent-1"}
           strategyComparison={{
             baseline: "Stay flexible until the ballot.",
             initialWorking: emptyText ? "" : proposal,
             baselineLabel: "Review baseline",
             requireChange,
           }}
-          draftScope={draftScope}
+          draftScope={scope}
           onSubmit={onSubmit}
           onCancel={() => undefined}
           submitLabel="Save strategy update"
@@ -596,3 +597,46 @@ async function confirmHeadInEditor(view: RenderResult) {
   fireEvent.click(editor.getByRole("button", { name: "Confirm this headshot" }));
   await waitFor(() => expect(view.container.querySelector("dialog") === null).toBe(true));
 }
+
+
+test("profile handoff starts the existing assistant exactly once and leaves changes unsaved", async () => {
+  domWindow.sessionStorage.clear();
+  domWindow.sessionStorage.setItem("influence:agent-edit-request:user-1:agent-1", "Make Arden more cautious.");
+  const requests: Array<{url: string; body: Record<string, unknown>}> = [];
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    requests.push({url: String(url), body: JSON.parse(String(init?.body))});
+    if (String(url).endsWith("/edit-assistant")) return Response.json({ tool: "update_character", fields: ["strategyStyle"] });
+    return Response.json({ name: "Arden", personality: "Calm", backstory: "Backstory", strategyStyle: "More cautious.", werewolfStrategyStyle: "", personaKey: "diplomat", gender: "non-binary", performanceInstructions: "", visualDesign: "", introQuips: [] });
+  }) as unknown as typeof fetch;
+  const submitted: AgentProfileWriteParams[] = [];
+  const view = await renderForm(false, async params => { submitted.push(params); }, false, {}, "edit:agent-1");
+  await waitFor(() => expect(requests.filter(request => request.url.endsWith("/edit-assistant"))).toHaveLength(1));
+  await waitFor(() => expect((view.getByLabelText("Influence strategy") as HTMLTextAreaElement).value).toBe("More cautious."));
+  expect(requests[0]?.body.message).toBe("Make Arden more cautious.");
+  expect(domWindow.sessionStorage.getItem("influence:agent-edit-request:user-1:agent-1")).toBeNull();
+  expect(submitted).toHaveLength(0);
+});
+
+test("a draft appearing before profile handoff prevents automatic generation", async () => {
+  domWindow.sessionStorage.clear();
+  const key = "influence:agent-editor:4:user-1:edit:agent-1";
+  domWindow.sessionStorage.setItem(key, JSON.stringify({version:4, savedAt:"2026-08-28T20:00:00.000Z", creationRequestId:"11111111-1111-4111-8111-111111111111", base:snapshot(proposal), current:snapshot(draftStrategy)}));
+  domWindow.sessionStorage.setItem("influence:agent-edit-request:user-1:agent-1", "Keep this request.");
+  const requests: string[] = [];
+  globalThis.fetch = (async (url: string) => { requests.push(String(url)); return Response.json({ tool: "clarify", message: "What should change?" }); }) as unknown as typeof fetch;
+  const view = await renderForm(false, async () => {}, false, {}, "edit:agent-1");
+  await waitFor(() => expect(view.getByLabelText("Saved local draft")).toBeTruthy());
+  expect(requests.filter(url => url.endsWith("/edit-assistant"))).toHaveLength(0);
+  expect((view.getByRole("textbox", {name:"What would you like to change about this Agent?"}) as HTMLTextAreaElement).value).toBe("Keep this request.");
+  fireEvent.click(view.getByRole("button", { name: "Clear draft" }));
+  await waitFor(() => expect(requests.filter(url => url.endsWith("/edit-assistant"))).toHaveLength(1));
+});
+
+test("opening an unreadable draft does not silently remove it", async () => {
+  const key = "influence:agent-editor:4:user-1:edit:agent-1";
+  domWindow.sessionStorage.clear();
+  domWindow.sessionStorage.setItem(key, "unreadable saved content");
+  const view = await renderForm(false, async () => {}, false, {}, "edit:agent-1");
+  await waitFor(() => expect(view.getByText(/This tab has an unreadable draft/)).toBeTruthy());
+  expect(domWindow.sessionStorage.getItem(key)).toBe("unreadable saved content");
+});

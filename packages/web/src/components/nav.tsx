@@ -73,12 +73,6 @@ export function Nav({ menu = false }: { menu?: boolean }) {
         </Link>
       )}
 
-      {authenticated && (
-        <Link href="/dashboard/profile" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
-          Profile
-        </Link>
-      )}
-
       {authenticated && hasPermission("review_agent_content") && (
         <Link href="/moderation" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>Moderation</Link>
       )}

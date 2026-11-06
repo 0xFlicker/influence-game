@@ -7,6 +7,15 @@ import { OwnerLearningActivationView } from "../app/dashboard/agents/[id]/review
 import { OwnerLearningEntryView } from "../app/dashboard/agents/[id]/review/owner-learning-entry";
 
 describe("owner learning activation", () => {
+  test("the dashboard can show the eligible agent's existing portrait", () => {
+    const html = renderToStaticMarkup(<OwnerLearningActivationView eligible={eligibleFixture()} agents={[{
+      id: "agent-1", name: "Atlas", avatarUrl: "/atlas.png", personaKey: "strategic", backstory: null,
+      personality: "Patient", strategyStyle: null, gamesPlayed: 1, gamesWon: 0,
+      createdAt: "2026-01-01", updatedAt: "2026-01-01",
+    }]} />);
+    expect(html).toContain('alt="Atlas"');
+    expect(html).toContain('/atlas.png');
+  });
   test("grades the Daily Free prompt from subtle to prominent", () => {
     const subtle = renderToStaticMarkup(
       <OwnerLearningActivationView eligible={eligibleFixture()} onDismiss={() => undefined} />,

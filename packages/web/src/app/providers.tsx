@@ -36,14 +36,13 @@ import {
 import { InfluenceAuthProvider, useAuth } from "@/hooks/use-auth";
 import { isE2EMode } from "@/lib/wallet-adapter";
 import { InviteCodeModal } from "@/components/invite-code-modal";
-import { StandingDailyAgentPrompt } from "@/components/standing-daily-agent-prompt";
 import { PublicIdentityOnboarding } from "@/components/public-identity-onboarding";
 import { LegalAcceptancePrompt } from "@/components/legal-acceptance-prompt";
 import {
   classifyAuthenticatedIdentityPayload,
   identityDismissalKey,
   identityPromptDecision,
-  identitySaveHandoffPublicId,
+  currentIdentitySavePublicId,
 } from "@/components/public-identity-onboarding-model";
 import { MiniAppProvider } from "@/components/farcaster-miniapp-provider";
 import { FarcasterMiniAppAuthBootstrap } from "@/components/farcaster-miniapp-auth-bootstrap";
@@ -125,10 +124,8 @@ export function useAuthenticatedPublicIdentity(): AuthenticatedPublicIdentity | 
   return useContext(PublicIdentityContext);
 }
 
-type IdentityResolution = "pending" | "available" | "legacy" | "error";
-
 // ---------------------------------------------------------------------------
-// AuthExperience — Influence-session-owned onboarding and downstream prompts
+// AuthExperience — Influence-session-owned onboarding
 // ---------------------------------------------------------------------------
 
 function AuthExperience({ children }: { children: React.ReactNode }) {
@@ -144,10 +141,7 @@ function AuthExperience({ children }: { children: React.ReactNode }) {
     logout,
   } = useAuth();
   const [identity, setIdentity] = useState<AuthenticatedPublicIdentity | null>(null);
-  const [identityResolution, setIdentityResolution] = useState<IdentityResolution>("pending");
   const [identityDismissed, setIdentityDismissed] = useState(false);
-  const [dailyAgentHandoffPublicId, setDailyAgentHandoffPublicId] =
-    useState<string | null>(null);
   const [legalAcceptanceOverridePublicId, setLegalAcceptanceOverridePublicId] =
     useState<string | null>(null);
   const identityPublicIdRef = useRef<string | null>(null);
@@ -174,18 +168,7 @@ function AuthExperience({ children }: { children: React.ReactNode }) {
     }
 
     identityPublicIdRef.current = nextPublicId;
-    setDailyAgentHandoffPublicId((current) =>
-      current !== null && current !== nextPublicId ? null : current);
     setIdentity(next);
-    setIdentityResolution(
-      !resolved
-        ? "pending"
-        : payload.kind === "current"
-          ? "available"
-          : payload.kind === "legacy"
-            ? "legacy"
-            : "error",
-    );
     setIdentityDismissed(nextPublicId
       ? sessionStorage.getItem(identityDismissalKey(nextPublicId)) === "true"
       : false);
@@ -231,7 +214,6 @@ function AuthExperience({ children }: { children: React.ReactNode }) {
     signedIn,
     needsInvite,
     identityState: identity?.publicIdentityOnboarding.state ?? null,
-    identityResolved: identityResolution === "legacy",
     dismissed: identityDismissed,
   });
 
@@ -244,25 +226,14 @@ function AuthExperience({ children }: { children: React.ReactNode }) {
   const handleIdentitySaved = useCallback((
     updatedIdentity: AuthenticatedPublicIdentity,
   ) => {
-    const handoffPublicId = identitySaveHandoffPublicId({
+    const currentPublicId = currentIdentitySavePublicId({
       signedIn: signedInRef.current,
       currentPublicId: identityPublicIdRef.current,
       savedPublicId: updatedIdentity.publicId,
     });
-    if (handoffPublicId === null) return;
-    setDailyAgentHandoffPublicId(handoffPublicId);
+    if (currentPublicId === null) return;
     syncIdentity(updatedIdentity, true);
   }, [syncIdentity]);
-
-  const consumeDailyAgentHandoff = useCallback((publicId: string) => {
-    setDailyAgentHandoffPublicId((current) =>
-      current === publicId ? null : current);
-  }, []);
-
-  const activeDailyAgentHandoffPublicId =
-    dailyAgentHandoffPublicId === identity?.publicId
-      ? dailyAgentHandoffPublicId
-      : null;
 
   const requiresLegalAcceptance = signedIn
     && account
@@ -292,13 +263,6 @@ function AuthExperience({ children }: { children: React.ReactNode }) {
             identity={identity}
             onSaved={handleIdentitySaved}
             onDismiss={dismissIdentityForSession}
-          />
-        )}
-        {promptDecision === "downstream" && (
-          <StandingDailyAgentPrompt
-            key={identity?.publicId ?? "legacy"}
-            immediateHandoffPublicId={activeDailyAgentHandoffPublicId}
-            onImmediateHandoffConsumed={consumeDailyAgentHandoff}
           />
         )}
       </PublicIdentityContext.Provider>

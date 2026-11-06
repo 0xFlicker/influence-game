@@ -24,7 +24,7 @@ This pass standardizes the current product surfaces:
 
 - marketing shell: `/`, `/about`, `/rules`
 - public game discovery: `/games`, `/games/free`, `/games/[slug]`
-- authenticated player surfaces: `/dashboard`, `/dashboard/profile`, `/dashboard/agents`
+- authenticated player surfaces: `/dashboard` (including account settings), `/dashboard/agents`
 - operator surfaces: `/admin`, `/admin/games/new`, related admin tabs
 
 This pass should deliver:
@@ -367,7 +367,6 @@ Visual rule:
 Routes:
 
 - `/dashboard`
-- `/dashboard/profile`
 - `/dashboard/agents`
 
 Purpose:

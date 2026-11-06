@@ -1990,6 +1990,7 @@ export async function authorizeMcpOAuth(
 // ---------------------------------------------------------------------------
 
 export interface InviteCodesResponse {
+  enabled: boolean;
   available: { code: string; createdAt: string }[];
   used: { code: string; usedAt: string | null }[];
   totalAvailable: number;
@@ -2479,11 +2480,11 @@ export interface GeneratePersonalityResult {
 // ---------------------------------------------------------------------------
 
 export async function listAgents(): Promise<SavedAgent[]> {
-  return apiFetch("/api/agent-profiles");
+  return apiFetch("/api/agent-profiles", { cache: "no-store" });
 }
 
 export async function getAgent(id: string): Promise<SavedAgent> {
-  return apiFetch(`/api/agent-profiles/${id}`);
+  return apiFetch(`/api/agent-profiles/${id}`, { cache: "no-store" });
 }
 
 export async function getAgentByCreationRequestId(creationRequestId: string): Promise<SavedAgent | null> {
@@ -3788,10 +3789,6 @@ export async function joinFreeQueue(agentProfileId: string, expectedSeasonId?: s
 
 export async function leaveFreeQueue(expectedSeasonId?: string): Promise<void> {
   await apiFetch(`/api/free-queue/leave${expectedSeasonId ? `?expectedSeasonId=${encodeURIComponent(expectedSeasonId)}` : ""}`, { method: "DELETE" });
-}
-
-export async function maybeLaterFreeQueue(): Promise<void> {
-  await apiFetch("/api/free-queue/maybe-later", { method: "POST" });
 }
 
 export async function getFreeQueueLeaderboard(): Promise<LeaderboardEntry[]> {

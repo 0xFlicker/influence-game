@@ -123,7 +123,7 @@ Final provider-free baseline for the public-agent addition: **3,320 passed, 5 sk
 
 ## Private profile badges (2026-11-03)
 
-`/dashboard/profile` now places compact earned account badges below public identity and above rating stats. The authenticated GET and PATCH profile responses include the same active award projection, preserving badges after identity edits and excluding revoked grants/private award evidence. Empty awards omit the panel. Existing account settings, identity controls and stats remain intact.
+The private profile previously placed compact earned account badges below public identity and above rating stats. These are now available in Dashboard settings. The authenticated GET and PATCH profile responses include the same active award projection, preserving badges after identity edits and excluding revoked grants/private award evidence. Empty awards omit the panel. Account settings, identity controls and stats remain available.
 
 Verified the actual signed-in localhost profile, desktop/390px layout, Enter reveal, Escape dismissal and click/second-click toggle. Shared controls retain hover/focus and touch-compatible buttons. Profile API tests:9 passed/49 assertions, including account scoping, revoked awards, authentication and GET/PATCH consistency. Private/public profile UI tests:15 passed/82 assertions. Typecheck and lint passed. No server starts/stops, new grants or development-database changes.
 

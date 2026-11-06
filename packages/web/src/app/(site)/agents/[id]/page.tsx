@@ -29,5 +29,6 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
 }
 export default async function PublicAgentProfilePage(props: Props) {
   const { profile, kind } = await read(props);
-  return <div className="flex min-h-screen min-w-0 flex-col"><Nav /><main className="mx-auto w-full min-w-0 max-w-5xl flex-1 px-4 py-8 sm:px-6 sm:py-10"><PublicAgentProfileView profile={profile} gameKind={kind} /></main></div>;
+  const { id } = await props.params;
+  return <div className="flex min-h-screen min-w-0 flex-col"><Nav /><main className="mx-auto w-full min-w-0 max-w-5xl flex-1 px-4 py-8 sm:px-6 sm:py-10"><PublicAgentProfileView profile={profile} gameKind={kind} agentId={id} /></main></div>;
 }

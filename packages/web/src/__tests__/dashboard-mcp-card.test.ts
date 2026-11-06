@@ -12,7 +12,7 @@ describe("dashboard MCP setup card", () => {
     expect(source).toContain("McpSetupCard");
     expect(source).toContain('href="/get-mcp"');
     expect(source).toContain("Connect {HOUSE_VENUE.name} to your Chatbot or AI Agent");
-    expect(source).toContain("history.length > 0");
+    expect(source).toContain("visibleHistory.length > 0");
   });
 
   it("has useful copy for players with and without history", () => {
@@ -23,7 +23,7 @@ describe("dashboard MCP setup card", () => {
 
   it("places the setup card after Mission Control", () => {
     expect(source.indexOf("<McpSetupCard")).toBeGreaterThan(
-      source.indexOf("<MissionControlOverview"),
+      source.indexOf("<DashboardHistory"),
     );
   });
 
