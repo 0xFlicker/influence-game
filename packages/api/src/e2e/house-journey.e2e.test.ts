@@ -64,6 +64,19 @@ async function text(page:Page,value:string) {
     throw error;
   }
 }
+async function dashboardHistoryLink(page: Page, href: string) {
+  const history = 'section[aria-labelledby="dashboard-history-title"]';
+  await page.waitForSelector(`${history} ol li`, { timeout: 45_000 });
+  for (let attempt = 0; attempt < 10; attempt++) {
+    if (await page.$(`${history} a[href="${href}"]`)) return;
+    const next = await page.$(`${history} nav[aria-label="Game history pages"] button:last-child`);
+    if (!next || await next.evaluate(button => (button as unknown as { disabled: boolean }).disabled)) break;
+    const previousPage = await page.$eval(`${history} nav span`, element => element.textContent);
+    await next.click();
+    await page.waitForFunction(`document.querySelector(${JSON.stringify(`${history} nav span`)})?.textContent !== ${JSON.stringify(previousPage)}`);
+  }
+  throw new Error(`Dashboard history did not include ${href}`);
+}
 test("old/new House cards, title search, stable links and responsive art",async()=>{
   const page=await browser.newPage();
   await rejectOptionalAnalytics(page);
@@ -140,13 +153,24 @@ test("mixed profile and owner history filter in place at desktop/mobile widths",
   try {
     for(const width of [1440,390]) {
       await dashboard.setViewport({width,height:1000});
-      await text(dashboard,"Game history");await text(dashboard,"secret-village-link");
+      await text(dashboard,"Game history");
+      await dashboard.evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='All games')?.click()");
+      await dashboard.waitForFunction(`(() => {
+        const history = document.querySelector('section[aria-labelledby="dashboard-history-title"]');
+        const all = [...(history?.querySelectorAll('button') ?? [])].find(button => button.textContent === 'All games');
+        const page = history?.querySelector('nav[aria-label="Game history pages"] span')?.textContent;
+        return all?.getAttribute('aria-pressed') === 'true' && (!page || page.startsWith('Page 1 of'));
+      })()`);
+      await dashboardHistoryLink(dashboard,"/games/secret-village-link");
       await dashboard.evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Werewolf')?.click()");
+      await dashboard.waitForFunction("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Werewolf' && b.getAttribute('aria-pressed')==='true')");
       await dashboard.waitForFunction("!document.body.innerText.includes('Frozen Influence')");
       expect(await dashboard.evaluate("document.documentElement.scrollWidth <= innerWidth")).toBe(true);
+      expect(await dashboard.$eval('section[aria-labelledby="dashboard-history-title"]', element => element.textContent?.includes("Village victory"))).toBe(false);
       await dashboard.screenshot({path:`/tmp/history-dashboard-${width}.png`,fullPage:true});
       await dashboard.evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='All games')?.click()");
-      await text(dashboard,"Frozen Influence");
+      await dashboard.waitForFunction("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='All games' && b.getAttribute('aria-pressed')==='true')");
+      await dashboardHistoryLink(dashboard,"/games/history-influence");
     }
   } finally {await dashboard.close();}
 },180000);
