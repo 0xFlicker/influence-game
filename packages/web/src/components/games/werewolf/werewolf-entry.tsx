@@ -14,7 +14,7 @@ import { WerewolfArtwork } from "./werewolf-artwork";
 import { gameReplayHref, gameResultsHref, gameHighlightsHref } from "@/lib/game-links";
 import { CastingHero } from "@/components/casting/casting-hero";
 import { AgentSelector } from "@/components/casting/agent-selector";
-import { resolveAgentAvatarUrl } from "@/components/agent-avatar";
+import { useAgentAvatarUrl } from "@/components/agent-avatar";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermissions } from "@/hooks/use-permissions";
 import { getPersonaLabel } from "@/lib/personas";
@@ -47,6 +47,7 @@ export function WerewolfEntry({ slug, audience, replay = false, startCursor }: {
 }
 
 export function WerewolfWaitingGame({ game, refresh }: { game: WerewolfLobbyData; refresh: () => Promise<void> }) {
+  const resolveAgentAvatarUrl = useAgentAvatarUrl();
   const router = useRouter();
   const auth = useAuth();
   const { hasPermission, roles } = usePermissions();

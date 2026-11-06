@@ -195,7 +195,7 @@ for(const slug of ["dark-coral-horn","player-card-village"]){
    await frame.evaluate(()=>Object.defineProperty(navigator,"share",{configurable:true,value:undefined}));await frame.click('button[aria-label="Share this moment"]');
    await frame.waitForSelector('input[aria-label="House share link"]');expect(await frame.$eval('input[aria-label="House share link"]',e=>e.value)).toContain("/s/");
    await page.screenshot({path:`/tmp/${slug}-embed-share.png`});
-   expect(requests.some(url=>/clerk|privy|\/api\/auth|posthog|farcaster/.test(url))).toBe(false);
+   expect(requests.filter(url=>/clerk|privy|\/api\/auth|posthog|farcaster/.test(url))).toEqual([]);
    await clickText(frame,"✕");
    await frame.evaluate('Object.defineProperty(navigator,"share",{configurable:true,value:async()=>{throw new DOMException("Cancelled","AbortError");}})');
    await frame.click('button[aria-label="Share this moment"]');await frame.waitForSelector('input[aria-label="House share link"]');

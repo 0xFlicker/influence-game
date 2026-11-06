@@ -1,7 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import {useState} from "react";
+import { resolvePublicMediaUrl, type PublicMediaDelivery } from "@/lib/public-media-delivery";
+import { usePublicMediaDelivery } from "@/lib/public-media-delivery-context";
+import {useCallback, useState} from "react";
 import { resolveApiUrl } from "@/lib/api";
 import { getHousePortraitKey, HOUSE_PORTRAIT_KEYS } from "@influence/engine/house-personas";
 
@@ -75,8 +77,9 @@ export function resolveAgentAvatarUrl(
   persona: string,
   name: string,
   personaKey?: string | null,
+  delivery?: PublicMediaDelivery | null,
 ): string {
-  if (avatarUrl) return normalizeUploadedAvatarUrl(avatarUrl);
+  if (avatarUrl) return normalizeUploadedAvatarUrl(resolvePublicMediaUrl(avatarUrl, delivery));
   const key =
     normalizePersonaKey(personaKey) ??
     normalizePersonaKey(persona) ??
@@ -85,9 +88,10 @@ export function resolveAgentAvatarUrl(
 }
 
 export function AgentAvatar({ avatarUrl, personaKey, persona, name, size = "8" }: AgentAvatarProps) {
+  const delivery = usePublicMediaDelivery();
   const s = SIZE_CLASSES[size];
   const [failedSource, setFailedSource] = useState<string | null>(null);
-  const requested = resolveAgentAvatarUrl(avatarUrl, persona, name, personaKey);
+  const requested = resolveAgentAvatarUrl(avatarUrl, persona, name, personaKey, delivery);
 
   const src = failedSource === requested ? resolveAgentAvatarUrl(null, persona, name, personaKey) : requested;
 
@@ -104,4 +108,11 @@ export function AgentAvatar({ avatarUrl, personaKey, persona, name, size = "8" }
       />
     </div>
   );
+}
+
+/** For cast cards/dialogs that use the same resolver outside playback frames. */
+export function useAgentAvatarUrl() {
+  const delivery = usePublicMediaDelivery();
+  return useCallback((avatarUrl: string | null | undefined, persona: string, name: string, personaKey?: string | null) =>
+    resolveAgentAvatarUrl(avatarUrl, persona, name, personaKey, delivery), [delivery]);
 }

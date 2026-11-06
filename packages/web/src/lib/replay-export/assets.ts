@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve, relative, sep } from "node:path";
 import { spawn } from "node:child_process";
+import { resolvePublicMediaUrl } from "../public-media-delivery";
 
 export const sha256 = (bytes: string | Uint8Array) =>
   createHash("sha256").update(bytes).digest("hex");
@@ -85,6 +86,8 @@ export async function fetchReplay(
   fetcher:typeof fetch=fetch,
 ): Promise<Response> {
   for (let redirect = 0; redirect < 6; redirect++) {
+    // Resolve before deciding whether this request may receive the API token.
+    url = new URL(resolvePublicMediaUrl(url.toString()));
     if (
       !["http:", "https:"].includes(url.protocol) ||
       url.username ||

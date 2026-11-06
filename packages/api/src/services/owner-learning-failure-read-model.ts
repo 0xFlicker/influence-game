@@ -1,3 +1,4 @@
+import { isPrivateEvidenceProvider } from "../lib/object-storage-config.js";
 import { createHash } from "crypto";
 import { and, eq } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
@@ -5,7 +6,6 @@ import { schema } from "../db/index.js";
 import {
   createPrivateTraceStorageAdapter,
   PRIVATE_TRACE_CONTENT_TYPE,
-  PRIVATE_TRACE_STORAGE_PROVIDER,
   type PrivateTraceStorageAdapter,
 } from "./private-trace-storage.js";
 import { sanitizeOwnerLearningFailureMessage } from "./owner-learning-failure-evidence.js";
@@ -240,7 +240,7 @@ export async function readOwnerLearningFailureEvidence(
     };
   }
   if (
-    row.storageProvider !== PRIVATE_TRACE_STORAGE_PROVIDER
+    !isPrivateEvidenceProvider(row.storageProvider)
     || !row.storageBucket
     || !row.storageKey
     || row.contentType !== PRIVATE_TRACE_CONTENT_TYPE
