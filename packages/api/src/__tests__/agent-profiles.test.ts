@@ -1131,9 +1131,11 @@ describe("Agent Profile API", () => {
     });
 
     test("retains agentProfileId references in historical game_players", async () => {
+      const fullBodyReferenceUrl = await contentImageFixture("pfp/historical-aster.png");
       const createRes = await app.request(
         "/api/agent-profiles",
-        jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
+        jsonReq({ name: "Aster Vale", personality: "Strategic", fullBodyReferenceUrl,
+          headPosition: await headPositionFixture(fullBodyReferenceUrl) }, tokenA),
       );
       const { id: profileId } = await createRes.json() as { id: string };
 
@@ -1172,9 +1174,11 @@ describe("Agent Profile API", () => {
     });
 
     test("refuses to detach an agent from a live roster", async () => {
+      const fullBodyReferenceUrl = await contentImageFixture("pfp/live-aster.png");
       const createRes = await app.request(
         "/api/agent-profiles",
-        jsonReq({ name: "Live Aster", personality: "Strategic" }, tokenA),
+        jsonReq({ name: "Live Aster", personality: "Strategic", fullBodyReferenceUrl,
+          headPosition: await headPositionFixture(fullBodyReferenceUrl) }, tokenA),
       );
       const { id: profileId } = await createRes.json() as { id: string };
       const gameRes = await app.request(
@@ -1209,6 +1213,7 @@ describe("Agent Profile API", () => {
 
   describe("join game with agent profile", () => {
     test("joins a game using a saved agent profile", async () => {
+      const fullBodyReferenceUrl = await contentImageFixture("pfp/join-aster.png");
       const createRes = await app.request(
         "/api/agent-profiles",
         jsonReq(
@@ -1217,6 +1222,8 @@ describe("Agent Profile API", () => {
             personality: "Strategic calculator",
             strategyStyle: "Alliance builder",
             personaKey: "strategic",
+            fullBodyReferenceUrl,
+            headPosition: await headPositionFixture(fullBodyReferenceUrl),
           },
           tokenA,
         ),

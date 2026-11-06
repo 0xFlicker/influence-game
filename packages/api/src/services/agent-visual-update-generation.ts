@@ -96,6 +96,9 @@ export function visualUpdatePatch(source: VisualUpdateSource, prepared: Partial<
   if (!source.werewolfStrategyStyle?.trim()) patch.werewolfStrategyStyle = prepared.werewolfStrategyStyle;
   if (!source.fullBodyReferenceUrl) { patch.fullBodyReferenceUrl = prepared.fullBodyReferenceUrl; patch.headPosition = prepared.headPosition; }
   if (!source.avatarUrl) { patch.avatarUrl = prepared.avatarUrl; patch.portraitCrop = prepared.portraitCrop; if (prepared.headPosition) patch.headPosition = prepared.headPosition; }
-  if (!prepared.avatarUrl || !prepared.fullBodyReferenceUrl || !prepared.visualDesign?.trim() || !prepared.performanceInstructions?.trim()) throw new AgentProfileManagementError("invalid_agent_input","Agent preparation is incomplete.",409);
+  if (!prepared.avatarUrl || !prepared.fullBodyReferenceUrl || !prepared.visualDesign?.trim() || !prepared.performanceInstructions?.trim()
+    || !prepared.strategyStyle?.trim() || !prepared.werewolfStrategyStyle?.trim()) {
+    throw new AgentProfileManagementError("invalid_agent_input","Agent preparation is incomplete.",409);
+  }
   return patch;
 }
