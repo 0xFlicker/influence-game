@@ -168,6 +168,17 @@ describe("E2E: Full Game Flow", () => {
       expect(initialHtml.headers.get("cache-control")).toContain("no-store");
       expect(html).toContain("Recently added Influence games");
       expect(html).toContain(gameSlug);
+      const hide = await fetch(`${servers.apiUrl}/api/games/${gameId}/hide`, { method: "PATCH", headers: { Authorization: `Bearer ${admin.jwt}` } });
+      expect(hide.ok).toBe(true);
+      try {
+        const freshHtml = await fetch(`${servers.webUrl}/games`, { headers: { Accept: "text/html" } });
+        expect(freshHtml.ok).toBe(true);
+        expect(freshHtml.headers.get("cache-control")).toContain("no-store");
+        expect(await freshHtml.text()).not.toContain(gameSlug);
+      } finally {
+        const unhide = await fetch(`${servers.apiUrl}/api/games/${gameId}/unhide`, { method: "PATCH", headers: { Authorization: `Bearer ${admin.jwt}` } });
+        expect(unhide.ok).toBe(true);
+      }
       const page = await browser.newPage();
       try {
         await page.goto(`${servers.webUrl}/games`, {
