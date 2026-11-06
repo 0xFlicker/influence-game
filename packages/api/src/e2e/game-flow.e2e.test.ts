@@ -273,9 +273,12 @@ describe("E2E: Full Game Flow", () => {
       });
       await page.goto(`${servers.webUrl}/games`, { waitUntil: "domcontentloaded", timeout: 30000 });
       await page.waitForSelector('[aria-label="Search games"]', { timeout: 15000 });
-      await page.evaluate(() => { const state = (globalThis as { __libraryCancellation?: { enabled: boolean } }).__libraryCancellation; if (state) state.enabled = true; });
+      // Enter and settle search first: React development mode may mount effects
+      // twice. Arm the failure on the next regular poll, not during that setup.
       await page.type('[aria-label="Search games"]', "fixture");
-      await page.waitForFunction(() => (globalThis as { __libraryCancellation?: { aborted: number } }).__libraryCancellation?.aborted === 1, { timeout: 15000 });
+      await page.waitForFunction("document.body.innerText.includes('No games match the current filters.') || document.body.innerText.includes('No games yet.')", { timeout: 30000 });
+      await page.evaluate(() => { const state = (globalThis as { __libraryCancellation?: { enabled: boolean } }).__libraryCancellation; if (state) state.enabled = true; });
+      await page.waitForFunction(() => (globalThis as { __libraryCancellation?: { aborted: number } }).__libraryCancellation?.aborted === 1, { timeout: 20000 });
       // The 10-second poll must not start another request while the aborted
       // sibling is still settling, even though its partner already failed.
       await new Promise(resolve => setTimeout(resolve, 11_000));
@@ -286,7 +289,7 @@ describe("E2E: Full Game Flow", () => {
       await page.waitForFunction(() => (globalThis as { __libraryCancellation?: { gameCalls: number } }).__libraryCancellation?.gameCalls === 2, { timeout: 15000 });
       await page.waitForFunction("!document.body.innerText.includes('Try again')", { timeout: 15000 });
     } finally { await page.close(); }
-  }, 90_000);
+  }, 120_000);
 
   // -------------------------------------------------------------------------
   // Scenario 2 — 6 players join the game
