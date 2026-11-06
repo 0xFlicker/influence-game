@@ -2,7 +2,7 @@ import { houseContent } from "../game-mcp/house-contracts.js";
 import { assertMcpOutputSchema } from "../game-mcp/output-validation.js";
 import Ajv from "ajv";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
-import { contentImageFixture } from "./content-image-fixture.js";
+import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
 import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { AGENT_PROFILE_LIMITS } from "@influence/engine";
@@ -2143,6 +2143,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       displayName: "Games User",
     });
     const server = createProductionGameMcpServer(db);
+    const fullBodyReferenceUrl = await contentImageFixture("pfp/lillith.png");
+    const headPosition = await headPositionFixture(fullBodyReferenceUrl);
     const toolsResponse = await server.handle({
       jsonrpc: "2.0",
       id: "agent-command-schemas",
@@ -2167,7 +2169,9 @@ describe("ProductionGameMcpJsonRpcServer", () => {
           personalityPrompt: "Patient and observant.",
           publicBiography: null,
           strategyStyle: "Build trust before acting.",
-          avatarUrl: await contentImageFixture("pfp/lillith.png"),
+          avatarUrl: fullBodyReferenceUrl,
+          fullBodyReferenceUrl,
+          headPosition,
         },
       },
     }, AGENT_WRITE_AUTH);
@@ -2193,7 +2197,9 @@ describe("ProductionGameMcpJsonRpcServer", () => {
           personalityPrompt: "Patient and observant.",
           publicBiography: null,
           strategyStyle: "Build trust before acting.",
-          avatarUrl: await contentImageFixture("pfp/lillith.png"),
+          avatarUrl: fullBodyReferenceUrl,
+          fullBodyReferenceUrl,
+          headPosition,
         },
       },
     }, AGENT_WRITE_AUTH);

@@ -15,6 +15,7 @@ import {
 } from "./test-server.js";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { contentImageFixture, headPositionFixture } from "../__tests__/content-image-fixture.js";
 import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { createSeason } from "../services/seasons.js";
@@ -97,12 +98,15 @@ async function seedIdentityFixture(db: DrizzleDB): Promise<IdentityFixture> {
     createdAt: "2026-06-01T00:00:00.000Z",
   });
 
+  const fullBodyReferenceUrl = await contentImageFixture("pfp/identity-vesper.png");
   const played = await createOwnedAgentProfile(db, { userId: complete.userId }, {
     name: "Vesper E2E",
     personality: PRIVATE_SENTINEL,
     backstory: PRIVATE_SENTINEL,
     strategyStyle: PRIVATE_SENTINEL,
     personaKey: "strategic",
+    fullBodyReferenceUrl,
+    headPosition: await headPositionFixture(fullBodyReferenceUrl),
   });
   await createOwnedAgentProfile(db, { userId: complete.userId }, {
     name: "Quartz E2E",

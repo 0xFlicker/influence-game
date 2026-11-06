@@ -31,6 +31,7 @@ import type { Browser, HTTPRequest, Page } from "puppeteer";
 import { mkdirSync } from "fs";
 import path from "path";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { contentImageFixture, headPositionFixture } from "../__tests__/content-image-fixture.js";
 
 // Match JWT_SECRET to what test-server uses
 process.env.JWT_SECRET = "e2e-test-jwt-secret";
@@ -316,11 +317,14 @@ describe("E2E: Full Game Flow", () => {
     // Each player joins via API
     for (let i = 0; i < 6; i++) {
       const player = await createPlayerUser(testDb.db, i);
+      const fullBodyReferenceUrl = await contentImageFixture(`pfp/game-flow-${i}.png`);
       const createdAgent = await createOwnedAgentProfile(testDb.db, { userId: player.userId }, {
         name: PERSONA_NAMES[i]!,
         personality: PERSONA_KEYS[i]!,
         strategyStyle: `${PERSONA_NAMES[i]} deterministic strategy`,
         personaKey: PERSONA_KEYS[i]!,
+        fullBodyReferenceUrl,
+        headPosition: await headPositionFixture(fullBodyReferenceUrl),
       });
 
       const joinRes = await fetch(
