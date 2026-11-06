@@ -239,7 +239,10 @@ export function DashboardContent() {
     }, 0);
 
     function handleSessionReady() {
-      fetchHistory();
+      // A new session may belong to a different account; never retain the
+      // previous account's recent result while its replacement is loading.
+      setOverviewHistory([]);
+      fetchHistory("all");
       fetchAgents();
       fetchQueueStatus();
     }

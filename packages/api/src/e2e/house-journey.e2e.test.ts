@@ -1,6 +1,6 @@
 import { rejectOptionalAnalytics } from "./test-browser.js";
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import type { Browser, Page } from "puppeteer";
+import type { Browser, HTTPRequest, Page } from "puppeteer";
 import { DEFAULT_MODEL_CATALOG_ID, GameState } from "@influence/engine";
 import { werewolfResultsFixture, completedWerewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { insertCanonicalEventRows, insertOwner, withJuryWinner, withRetrospective } from "../__tests__/durable-run-test-utils.js";
@@ -147,6 +147,25 @@ test("mixed profile and owner history filter in place at desktop/mobile widths",
       await dashboard.screenshot({path:`/tmp/history-dashboard-${width}.png`,fullPage:true});
       await dashboard.evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='All games')?.click()");
       await text(dashboard,"Frozen Influence");
+    }
+    const priorLink = '[data-testid="dashboard-recent-result"] a[href^="/games/"]';
+    await dashboard.waitForSelector(priorLink);
+    const previousHref = await dashboard.$eval(priorLink, element => element.getAttribute("href"));
+    expect(previousHref).toBeTruthy();
+    const failHistory = (request: HTTPRequest) => {
+      if (request.method() === "GET" && new URL(request.url()).pathname === "/api/player/games-page") {
+        void request.respond({ status: 503, contentType: "application/json", headers: { "Access-Control-Allow-Origin": "*" }, body: JSON.stringify({ error: "Fixture unavailable" }) });
+      } else void request.continue();
+    };
+    await dashboard.setRequestInterception(true);
+    dashboard.on("request", failHistory);
+    try {
+      await dashboard.evaluate("window.dispatchEvent(new Event('auth:session-ready'))");
+      await dashboard.waitForFunction("document.querySelector('[data-testid=dashboard-recent-result]')?.textContent?.includes('Failed to load game history.')");
+      expect(await dashboard.$(priorLink)).toBeNull();
+    } finally {
+      dashboard.off("request", failHistory);
+      await dashboard.setRequestInterception(false);
     }
   } finally {await dashboard.close();}
 },180000);
