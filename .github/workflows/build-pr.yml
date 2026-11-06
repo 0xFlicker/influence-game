@@ -38,8 +38,15 @@ jobs:
         with:
           script: |
             if (context.eventName === 'workflow_dispatch') {
+              const rawPrNumber = process.env.INPUT_PR_NUMBER?.trim() ?? '';
+              const prNumber = Number(rawPrNumber);
+              if (!/^[0-9]+$/.test(rawPrNumber) || !Number.isSafeInteger(prNumber) || prNumber < 1) {
+                core.setFailed('PR number must be a positive decimal integer.');
+                return;
+              }
+
               core.setOutput('should_deploy', 'true');
-              core.setOutput('pr_number', process.env.INPUT_PR_NUMBER);
+              core.setOutput('pr_number', String(prNumber));
               core.setOutput('head_sha', process.env.INPUT_HEAD_SHA);
               core.notice('Manual dispatch requested; deploying regardless of PR lifecycle comments.');
               return;
@@ -167,23 +174,26 @@ jobs:
       - name: Build and push ${{ matrix.target }}
         env:
           PRIVY_APP_ID: ${{ secrets.PRIVY_APP_ID }}
+          PR_NUMBER: ${{ needs.ephemeral-status.outputs.pr_number }}
+          HEAD_SHA: ${{ needs.ephemeral-status.outputs.head_sha }}
         run: |
+          image_tag="${{ matrix.image }}:pr-${PR_NUMBER}"
           docker build -f ${{ matrix.dockerfile }} \
-            --build-arg GIT_SHA=${{ needs.ephemeral-status.outputs.head_sha }} \
+            --build-arg "GIT_SHA=${HEAD_SHA}" \
             ${{ matrix.build_args }} \
-            -t ${{ matrix.image }}:pr-${{ needs.ephemeral-status.outputs.pr_number }} \
+            -t "$image_tag" \
             .
           if [ "${{ matrix.target }}" = "render-worker" ]; then
-            docker run --rm --entrypoint sh ${{ matrix.image }}:pr-${{ needs.ephemeral-status.outputs.pr_number }} -ec '
+            docker run --rm --entrypoint sh "$image_tag" -ec '
               ffmpeg -version >/dev/null
               chromium --version >/dev/null
               test "$(find /app/music/house-highlights-variants -name "*.m4a" | wc -l)" -ge 24
             '
           fi
           if [ "${{ matrix.target }}" = "api" ]; then
-            bash scripts/test-api-image.sh ${{ matrix.image }}:pr-${{ needs.ephemeral-status.outputs.pr_number }}
+            bash scripts/test-api-image.sh "$image_tag"
           fi
-          docker push ${{ matrix.image }}:pr-${{ needs.ephemeral-status.outputs.pr_number }}
+          docker push "$image_tag"
 
   trigger-deploy:
     needs:
@@ -203,6 +213,9 @@ jobs:
 
       - name: Trigger ephemeral deploy
         uses: actions/github-script@v8
+        env:
+          PR_NUMBER: ${{ needs.ephemeral-status.outputs.pr_number }}
+          SOURCE_REPO: ${{ github.repository }}
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
@@ -212,8 +225,8 @@ jobs:
               workflow_id: 'deploy-ephemeral.yml',
               ref: 'main',
               inputs: {
-                pr_number: '${{ needs.ephemeral-status.outputs.pr_number }}',
-                image_tag: 'pr-${{ needs.ephemeral-status.outputs.pr_number }}',
-                source_repo: '${{ github.repository }}'
+                pr_number: process.env.PR_NUMBER,
+                image_tag: `pr-${process.env.PR_NUMBER}`,
+                source_repo: process.env.SOURCE_REPO
               }
             });
