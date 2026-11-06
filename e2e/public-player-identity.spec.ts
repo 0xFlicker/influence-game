@@ -81,6 +81,7 @@ test.describe("local public player identity", () => {
           return route.fulfill({ json: { used: false } });
         });
         await page.goto(`${servers.webUrl}/games/${id}`);
+        await expect(page.getByRole("link", { name: "Create agent", exact: true })).toHaveAttribute("href", `/agents/create?flow=join_game&gameId=${id}`);
         await page.getByRole("button", { name: "Join with an agent" }).click();
         await expect(page).toHaveURL(`${servers.webUrl}/agents/create?flow=join_game&gameId=${id}`, { timeout: 30_000 });
         const signup = page.getByRole("dialog", { name: "Influence authentication" });
@@ -109,10 +110,10 @@ test.describe("local public player identity", () => {
 
   test("game pre-show opens creation, reveals the cast, refreshes seats and enters live play", async ({ browser }) => {
     test.setTimeout(180_000);
-    const player = (name: string, personaKey: string): GamePlayer => ({
+    const player = (name: string, personaKey: string, profileHref?: string): GamePlayer => ({
       id: name.toLowerCase(), name, persona: PRIVATE_SENTINEL, personaKey,
       status: "alive", shielded: false,
-      currentAgent: { name, avatarUrl: `/avatars/personas/${personaKey}.png`, role: { key: "strategic", label: "Strategist" }, competition: { gamesPlayed: 7, wins: 3, winRate: 3 / 7 } },
+      currentAgent: { name, avatarUrl: `/avatars/personas/${personaKey}.png`, profileHref, role: { key: "strategic", label: "Strategist" }, competition: { gamesPlayed: 7, wins: 3, winRate: 3 / 7 } },
     });
     for (const width of [1440, 390]) {
       const context = await identityContext(browser, { viewport: { width, height: width === 390 ? 844 : 1100 }, hasTouch: width === 390, isMobile: width === 390 });
@@ -134,7 +135,9 @@ test.describe("local public player identity", () => {
         await page.routeWebSocket(/\/ws\/games\/preshow-fixture(?:\?.*)?$/, () => {});
         await page.goto(`${servers.webUrl}/games/preshow-fixture`, { waitUntil: "networkidle" });
         const preShow = page.getByRole("region", { name: "Game pre-show" });
-        const create = preShow.getByRole("link", { name: "Create agent", exact: true });
+        await expect(page.getByRole("link", { name: "The House", exact: true })).toHaveCount(1);
+        if (width === 390) await page.getByRole("button", { name: "Open menu" }).click();
+        const create = page.getByRole("link", { name: "Create agent", exact: true });
         await expect(create).toHaveAttribute("href", "/agents/create?flow=join_game&gameId=preshow-fixture");
         await expect(preShow.getByText("The first seat is yours.")).toBeVisible();
         await expect(preShow.getByText("4 seats open", { exact: true })).toBeVisible();
@@ -147,19 +150,19 @@ test.describe("local public player identity", () => {
 
         await page.evaluate(token => localStorage.setItem("influence_session", token), fixture.completeJwt);
         await page.goto(`${servers.webUrl}/games/preshow-fixture`, { waitUntil: "networkidle" });
-        game = { ...game, players: [player("Mira Vale", "social"), player("Atlas", "strategic"), player("Vera", "deceptive")] };
-        await expect(preShow.getByRole("button", { name: "Meet Mira Vale", exact: true })).toBeVisible({ timeout: 12_000 });
+        game = { ...game, players: [player("Mira Vale", "social", "/agents/mira-profile"), player("Atlas", "strategic"), player("Vera", "deceptive")] };
+        await expect(preShow.locator('a[href="/agents/mira-profile"]')).toBeVisible({ timeout: 12_000 });
         await expect(preShow.getByText("1 seat open", { exact: true })).toBeVisible();
         await expect(preShow).not.toContainText(PRIVATE_SENTINEL);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await page.screenshot({ path: `/tmp/game-pre-show-cast-${width}.png`, fullPage: true });
-        await preShow.getByRole("button", { name: "Meet Mira Vale", exact: true }).click();
-        const portrait = page.getByRole("dialog", { name: "Meet Mira Vale", exact: true });
+        await preShow.getByRole("button", { name: "Meet Atlas", exact: true }).click();
+        const portrait = page.getByRole("dialog", { name: "Meet Atlas", exact: true });
         await expect(portrait).toBeVisible();
         await expect(portrait).toContainText("3 wins / 7 games");
         await portrait.getByRole("button", { name: "Close portrait" }).click();
         await expect(portrait).toHaveCount(0);
-        await expect(preShow.getByRole("button", { name: "Meet Mira Vale", exact: true })).toBeFocused();
+        await expect(preShow.getByRole("button", { name: "Meet Atlas", exact: true })).toBeFocused();
 
         failRefresh = true;
         await expect(preShow.getByRole("alert")).toContainText("Cast refresh failed", { timeout: 12_000 });
@@ -178,6 +181,7 @@ test.describe("local public player identity", () => {
         expect(joinedProfile).toBeTruthy();
         await expect(page).toHaveURL(`${servers.webUrl}/games/preshow-fixture`);
         await expect(preShow.getByText("Cast complete", { exact: true })).toBeVisible({ timeout: 12_000 });
+        if (width === 390) await page.getByRole("button", { name: "Open menu" }).click();
         await expect(create).toHaveAttribute("href", "/agents/create");
         await expect(preShow.getByRole("button", { name: "Join with an agent" })).toHaveCount(0);
 
@@ -307,7 +311,8 @@ test.describe("local public player identity", () => {
         await expect(page.getByText("Your agent is in. Stay for the opening move.")).toBeVisible();
         await expect(spotlight).toHaveCount(0);
         expect(attempts).toEqual(["vesper", "vesper"]);
-        await expect(page.getByRole("region", { name: "Game pre-show" }).getByRole("link", { name: "Create agent", exact: true })).toHaveAttribute("href", "/agents/create");
+        if (width === 390) await page.getByRole("button", { name: "Open menu" }).click();
+        await expect(page.getByRole("link", { name: "Create agent", exact: true })).toHaveAttribute("href", "/agents/create");
 
         for (const role of ["player", "moderator", "admin", "sysop", "producer"]) {
           roles = [role];

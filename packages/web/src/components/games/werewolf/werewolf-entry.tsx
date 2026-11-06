@@ -26,16 +26,16 @@ export function WerewolfEntry({ slug, audience, replay = false, startCursor }: {
   const query = useQuery({ queryKey: ["werewolf-lobby", slug], queryFn: ({ signal }) => getWerewolfLobby(slug, signal),
     refetchInterval: state => state.state.data?.status === "waiting" ? 5_000 : false, retry: false });
   const game = query.data;
-  if (!game) return <main className="mx-auto max-w-6xl p-8"><Link href="/games">← All games</Link>{query.error ? <p role="alert" className="mt-6">{query.error.message} <button onClick={() => void query.refetch()}>Try again</button></p> : <p role="status" className="mt-6">Opening the village…</p>}</main>;
-  if (game.status === "waiting") { const waiting = <><WerewolfWaitingGame game={game} refresh={async () => { const result = await query.refetch(); if (result.error) throw result.error; }} />{query.error && <p role="alert">Cast refresh failed. {query.error.message}</p>}</>; return replay && audience ? <GameSiteEntry>{waiting}</GameSiteEntry> : waiting; }
-  if (game.status === "cancelled" && !game.started) return <main className="mx-auto max-w-3xl p-8"><Link href="/games">← All games</Link><h1 className="mt-8 text-3xl">This game was stopped.</h1></main>;
+  if (!game) return <GameSiteEntry><div className="mx-auto max-w-6xl p-8"><Link href="/games">← All games</Link>{query.error ? <p role="alert" className="mt-6">{query.error.message} <button onClick={() => void query.refetch()}>Try again</button></p> : <p role="status" className="mt-6">Opening the village…</p>}</div></GameSiteEntry>;
+  if (game.status === "waiting") return <WerewolfWaitingGame game={game} refresh={async () => { const result = await query.refetch(); if (result.error) throw result.error; }} refreshError={query.error?.message} />;
+  if (game.status === "cancelled" && !game.started) return <GameSiteEntry><div className="mx-auto max-w-3xl p-8"><Link href="/games">← All games</Link><h1 className="mt-8 text-3xl">This game was stopped.</h1></div></GameSiteEntry>;
   if (replay && audience) return <WerewolfViewer key={`${slug}:${audience}:${startCursor ?? 1}`} slug={slug} title={game.episode?.title} audience={audience} startCursor={startCursor} />;
-  if (!replay) return <GameEpisode gameKind="werewolf" eyebrow={`The House / Werewolf · ${game.status === "in_progress" ? "Live" : game.status}`} title={game.episode?.title ?? game.slug}
+  if (!replay) return <GameSiteEntry><GameEpisode gameKind="werewolf" eyebrow={`The House / Werewolf · ${game.status === "in_progress" ? "Live" : game.status}`} title={game.episode?.title ?? game.slug}
     description={game.episode?.description ?? "A village of agents. A pack hiding in plain sight. Choose how much of the story you want to know."}
     media={game.status === "completed" ? <PostgameTrailer key={game.slug} gameId={game.slug} fallback={<WerewolfArtwork coverUrl={game.episode?.coverUrl} cast={game.episode?.cast} />} /> : <WerewolfArtwork coverUrl={game.episode?.coverUrl} cast={game.episode?.cast} />}
     actions={<><Link className="influence-button-primary" href={gameReplayHref(game.slug, undefined, "mystery")}>Watch Mystery</Link><Link className="influence-button-secondary" href={gameReplayHref(game.slug, undefined, "omniscient")}>Watch Omniscient</Link>{game.status === "completed" && <Link className="influence-button-secondary" href={gameResultsHref(game.slug)}>View results · Spoilers</Link>}{game.status === "completed" && <Link className="influence-button-secondary" href={gameHighlightsHref(game.slug)}>House Cuts</Link>}</>}
-    information={<p>{game.playerCount} players · {game.modelLabel}</p>} />;
-  return <section className="mx-auto flex min-h-[80dvh] max-w-3xl flex-col justify-center px-6 py-12">
+    information={<p>{game.playerCount} players · {game.modelLabel}</p>} /></GameSiteEntry>;
+  return <GameSiteEntry><section className="mx-auto flex min-h-[80dvh] max-w-3xl flex-col justify-center px-6 py-12">
     <Link href="/games" className="mb-10 text-sm text-white/60">← All games</Link>
     <p className="text-xs uppercase tracking-[.2em] text-white/50">The House · Werewolf</p>
     <h1 className="mt-3 text-4xl font-semibold">How will you watch?</h1>
@@ -44,10 +44,10 @@ export function WerewolfEntry({ slug, audience, replay = false, startCursor }: {
       <Link href={gameReplayHref(game.slug, undefined, "mystery")} className="rounded-xl border border-white/20 bg-white/[.03] p-6 hover:bg-white/[.08]"><h2 className="text-xl">Watch Mystery</h2><p className="mt-3 leading-6 text-white/65">Follow the public conversation. Discover roles at the ending.</p></Link>
       <Link href={gameReplayHref(game.slug, undefined, "omniscient")} className="rounded-xl border border-white/20 bg-white/[.03] p-6 hover:bg-white/[.08]"><h2 className="text-xl">Watch Omniscient</h2><p className="mt-3 leading-6 text-white/65">Know the roles, hear the pack and optionally watch players think.</p></Link>
     </div>
-  </section>;
+  </section></GameSiteEntry>;
 }
 
-export function WerewolfWaitingGame({ game, refresh }: { game: WerewolfLobbyData; refresh: () => Promise<void> }) {
+export function WerewolfWaitingGame({ game, refresh, refreshError }: { game: WerewolfLobbyData; refresh: () => Promise<void>; refreshError?: string }) {
   const router = useRouter();
   const auth = useAuth();
   const { hasPermission, roles } = usePermissions();
@@ -72,7 +72,7 @@ export function WerewolfWaitingGame({ game, refresh }: { game: WerewolfLobbyData
     catch (cause) { setError(cause instanceof Error ? cause.message : "Could not update the game."); }
     finally { pending.current = false; setBusy(false); }
   }
-  return <section className="pre-show" aria-label="Werewolf casting">
+  return <GameSiteEntry createAgentHref={canJoin ? createHref : "/agents/create"}><section className="pre-show" aria-label="Werewolf casting">
     <nav className="pre-show-nav" aria-label="Game navigation"><Link href="/games">← All games</Link><span className="pre-show-code">{game.slug}</span></nav>
     <CastingHero gameKind="werewolf" intro="A village full of familiar faces. A pack hiding among them. Bring your agent and see who survives the night."
       playerCount={game.playerCount} castCount={game.players.length} seatsLabel={`${openSeats} ${openSeats === 1 ? "seat" : "seats"} open`}
@@ -92,8 +92,9 @@ export function WerewolfWaitingGame({ game, refresh }: { game: WerewolfLobbyData
     {portrait && <CastPortraitDialog name={portrait.name} src={resolveAgentAvatarUrl(portrait.avatarUrl,portrait.personaKey ?? "",portrait.name,portrait.personaKey)} eyebrow={getPersonaLabel(portrait.personaKey)} onClose={() => setPortrait(null)} />}
 
     <footer className="pre-show-footer"><p>{game.visibility === "unlisted" ? "Unlisted game" : "Public game"} <span>/</span> {game.playerCount} agents <span>/</span> {game.modelLabel}</p><p>Share this page to invite the rest of the village.</p></footer>
+    {refreshError && <p role="alert">Cast refresh failed. {refreshError}</p>}
     {choosing && canJoin && <AgentSelector gameKind="werewolf" description={`Join ${game.slug} · ${game.players.length}/${game.playerCount} agents`} createHref={createHref}
       excludedIds={game.players.flatMap(player => player.agentProfileId ? [player.agentProfileId] : [])} onClose={() => setChoosing(false)} submitLabel="Join game" pendingLabel="Joining…"
       onSelect={async agent => { await joinWerewolfLobby(game.id, agent.id); await refresh(); setChoosing(false); }} />}
-  </section>;
+  </section></GameSiteEntry>;
 }

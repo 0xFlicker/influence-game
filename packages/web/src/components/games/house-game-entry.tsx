@@ -59,9 +59,8 @@ export function HouseGameEntry(props: HouseGameEntryProps) {
     if (audience === "invalid" || cursor === "invalid" || (cursor !== undefined && audience === undefined)) {
       return <GameSiteEntry><p role="alert">Invalid replay link. Choose Mystery or Omniscient from the game page.</p></GameSiteEntry>;
     }
-    const content = <WerewolfEntry slug={identity.slug} audience={audience}
+    return <WerewolfEntry slug={identity.slug} audience={audience}
       replay={props.mode === "replay"} startCursor={cursor} />;
-    return props.mode === "replay" && audience ? content : <GameSiteEntry>{content}</GameSiteEntry>;
   }
 
   if (props.mode === "entry") {

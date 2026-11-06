@@ -28,13 +28,7 @@ export function GamePreShow({ game, onGameUpdated }: {
   const [selectedPlayer, setSelectedPlayer] = useState<GamePlayer | null>(null);
   const refreshRef = useRef<(() => void) | null>(null);
   const openSeats = Math.max(0, game.playerCount - game.players.length);
-  const ownPlayers = account ? game.players.filter(player => player.currentAgent?.owner?.publicId === account.publicId) : [];
-  const inCast = ownPlayers.length > 0;
-  const canAddAnother = !game.seasonId && account?.roles.some(role => ["admin", "sysop", "producer"].includes(role));
-  const canJoin = openSeats > 0 && (!inCast || canAddAnother);
-  const createHref = canJoin
-    ? `/agents/create?flow=join_game&gameId=${encodeURIComponent(game.id)}`
-    : "/agents/create";
+  const { inCast, canJoin, createHref } = gamePreShowJoinState(game, account);
 
   // Waiting games have no live observer socket. Read the canonical roster and
   // status until the game starts, then let the viewer take over.
@@ -119,6 +113,13 @@ export function GamePreShow({ game, onGameUpdated }: {
       {selectedPlayer && <CastPortrait player={selectedPlayer} onClose={closePortrait} />}
     </section>
   );
+}
+
+export function gamePreShowJoinState(game: GameDetail, account: ReturnType<typeof useAuth>["account"]) {
+  const inCast = !!account && game.players.some(player => player.currentAgent?.owner?.publicId === account.publicId);
+  const canAddAnother = !game.seasonId && account?.roles.some(role => ["admin", "sysop", "producer"].includes(role));
+  const canJoin = game.players.length < game.playerCount && (!inCast || canAddAnother);
+  return { inCast, canJoin, createHref: canJoin ? `/agents/create?flow=join_game&gameId=${encodeURIComponent(game.id)}` : "/agents/create" };
 }
 
 function PreGameControls({ game, onGameUpdated }: { game: GameDetail; onGameUpdated: (game: GameDetail) => void }) {

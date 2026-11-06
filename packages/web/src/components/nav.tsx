@@ -27,7 +27,7 @@ function CloseIcon() {
   );
 }
 
-export function Nav({ menu = false }: { menu?: boolean }) {
+export function Nav({ menu = false, createAgentHref = "/agents/create" }: { menu?: boolean; createAgentHref?: string }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { ready, authenticated, openSignIn, logout } = useAuth();
   const { isAdmin, roles, loading: permissionsLoading, hasPermission } = usePermissions();
@@ -43,7 +43,7 @@ export function Nav({ menu = false }: { menu?: boolean }) {
   const navLinks = (
     <>
       {showCreateActions && (
-        <Link href="/agents/create" className={`influence-button-primary rounded-md px-4 py-2 whitespace-nowrap ${pathname === "/dashboard" ? "xl:hidden" : ""}`} onClick={() => setMobileOpen(false)}>
+        <Link href={createAgentHref} className={`influence-button-primary rounded-md px-4 py-2 whitespace-nowrap ${pathname === "/dashboard" ? "xl:hidden" : ""}`} onClick={() => setMobileOpen(false)}>
           <span aria-hidden="true">＋ </span>Create agent
         </Link>
       )}

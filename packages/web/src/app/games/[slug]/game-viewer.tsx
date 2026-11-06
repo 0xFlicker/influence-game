@@ -18,7 +18,7 @@ import { WatchWaiting } from "@/components/watch/watch-waiting";
 import { useAuth } from "@/hooks/use-auth";
 import { audioCue } from "@/lib/audio-cues";
 import { completedGameModeHref } from "@/lib/game-links";
-import { GamePreShow } from "./components/game-pre-show";
+import { GamePreShow, gamePreShowJoinState } from "./components/game-pre-show";
 import { GameSiteEntry } from "@/components/games/game-site-entry";
 
 import type {
@@ -81,7 +81,7 @@ export function GameViewer({
   startSequence,
 }: GameViewerProps) {
   const bufferedInitial = initialGame && getGamePresentationRouteDecision(initialGame).route === "format";
-  const { authenticated } = useAuth();
+  const { authenticated, account } = useAuth();
   const router = useRouter();
   const [game, setGame] = useState<GameDetail | null>(initialGame ?? null);
   const [messages, setMessages] = useState<TranscriptEntry[]>(
@@ -1012,7 +1012,7 @@ export function GameViewer({
   }
 
   if (game.status === "waiting") {
-    return <GameSiteEntry><GamePreShow game={game} onGameUpdated={setGame} /></GameSiteEntry>;
+    return <GameSiteEntry createAgentHref={gamePreShowJoinState(game, account).createHref}><GamePreShow game={game} onGameUpdated={setGame} /></GameSiteEntry>;
   }
 
   const matchWatchDecision = getMatchWatchRouteDecision(
