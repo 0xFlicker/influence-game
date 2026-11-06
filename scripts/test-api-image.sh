@@ -34,9 +34,40 @@ for attempt in {1..60}; do
 done
 docker exec "$db" pg_isready -h 127.0.0.1 -U influence -d image_check
 
+# Exercise the actual commands packaged in this candidate image against the
+# isolated database. Migrations install the lookup functions; the index build
+# must run outside their transaction. The check must fail closed before build.
+fixture_database_url="postgresql://influence:fixture-only@${db}:5432/image_check"
+docker run --rm --network "$scope" -e DATABASE_URL="$fixture_database_url" \
+  --entrypoint bun "$image" dist/migrate.js
+if check_output="$(docker run --rm --network "$scope" -e DATABASE_URL="$fixture_database_url" \
+  --entrypoint bun "$image" dist/public-browse-indexes.js --check 2>&1)"; then
+  echo "Browse index check unexpectedly passed before the indexes were built" >&2
+  exit 1
+fi
+if [[ "$check_output" != *"Required index games_public_browse_order_idx is missing"* ]]; then
+  echo "Browse index check failed for an unexpected reason: $check_output" >&2
+  exit 1
+fi
+index_count="$(docker exec "$db" psql -U influence -d image_check -Atqc \
+  "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('games_public_browse_order_idx', 'games_public_browse_kind_idx', 'games_public_browse_status_idx', 'games_public_browse_season_idx', 'games_public_browse_kind_status_idx')")"
+if [ "$index_count" != 0 ]; then
+  echo "Browse index check unexpectedly created indexes" >&2
+  exit 1
+fi
+docker run --rm --network "$scope" -e DATABASE_URL="$fixture_database_url" \
+  --entrypoint bun "$image" dist/public-browse-indexes.js
+docker run --rm --network "$scope" -e DATABASE_URL="$fixture_database_url" \
+  --entrypoint bun "$image" dist/public-browse-indexes.js --check
+# A second build must safely recognize the verified existing definitions.
+docker run --rm --network "$scope" -e DATABASE_URL="$fixture_database_url" \
+  --entrypoint bun "$image" dist/public-browse-indexes.js
+
+echo "Packaged browse indexes built and verified against the isolated database"
+
 for role in gateway game-worker; do
   docker run -d --name "$api" --network "$scope" \
-    -e DATABASE_URL="postgresql://influence:fixture-only@${db}:5432/image_check" \
+    -e DATABASE_URL="$fixture_database_url" \
     -e GIT_SHA=1111111111111111111111111111111111111111 \
     -e PRIVY_APP_ID=image-check -e PRIVY_APP_SECRET=fixture-only \
     -e JWT_SECRET=provider-free-image-check-secret-only \

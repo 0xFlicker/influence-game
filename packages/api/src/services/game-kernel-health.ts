@@ -62,7 +62,7 @@ export async function getRedactedKernelHealth(
 }
 
 export async function getRedactedKernelHealthByGameId(
-  db: DrizzleDB,
+  db: Pick<DrizzleDB, "select">,
   gameIds: readonly string[],
 ): Promise<Map<string, RedactedKernelHealth>> {
   const ids = [...new Set(gameIds)];

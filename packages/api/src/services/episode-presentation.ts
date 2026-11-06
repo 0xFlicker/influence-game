@@ -75,7 +75,7 @@ export async function generateEpisodeCopy(cast: Array<{ name: string; personalit
 }
 
 /** Public lobby/original cast identity and portraits; missing Influence portraits use public profile artwork. */
-export async function readEpisodePresentations(db: Pick<DrizzleDB, "select" | "selectDistinctOn">, games: EpisodeGame[]): Promise<Map<string, EpisodePresentation>> {
+export async function readEpisodePresentations(db: Pick<DrizzleDB, "select" | "selectDistinctOn">, games: EpisodeGame[], options: { includeEpisodeNumbers?: boolean } = {}): Promise<Map<string, EpisodePresentation>> {
   if (!games.length) return new Map();
   const ids = games.map(g => g.id);
   const influenceIds = games.filter(game => game.gameKind === "influence").map(game => game.id);
@@ -85,7 +85,7 @@ export async function readEpisodePresentations(db: Pick<DrizzleDB, "select" | "s
       .leftJoin(schema.agentProfiles, eq(schema.gamePlayers.agentProfileId, schema.agentProfiles.id))
       .leftJoin(schema.users, eq(schema.agentProfiles.userId, schema.users.id))
       .where(inArray(schema.gamePlayers.gameId, ids)).orderBy(asc(schema.gamePlayers.joinedAt), asc(schema.gamePlayers.id)),
-    db.select({ id: schema.games.id, seasonId: schema.games.seasonId }).from(schema.games).where(inArray(schema.games.seasonId, [...new Set(games.flatMap(g => g.seasonId ? [g.seasonId] : [])), "__none__"])).orderBy(asc(schema.games.createdAt), asc(schema.games.id)),
+    options.includeEpisodeNumbers === false ? Promise.resolve([]) : db.select({ id: schema.games.id, seasonId: schema.games.seasonId }).from(schema.games).where(inArray(schema.games.seasonId, [...new Set(games.flatMap(g => g.seasonId ? [g.seasonId] : [])), "__none__"])).orderBy(asc(schema.games.createdAt), asc(schema.games.id)),
     db.selectDistinctOn([schema.visualScenes.gameId], { id: schema.visualScenes.id, gameId: schema.visualScenes.gameId, artifact: schema.visualScenes.imageArtifactId, plan: schema.visualScenes.plan }).from(schema.visualScenes).where(and(inArray(schema.visualScenes.gameId, influenceIds), eq(schema.visualScenes.roomId, "lobby"), eq(schema.visualScenes.status, "ready"))).orderBy(asc(schema.visualScenes.gameId), asc(schema.visualScenes.boundarySequence)),
     db.selectDistinctOn([schema.visualMediaPublications.sceneId], {
       sceneId: schema.visualMediaPublications.sceneId,

@@ -3,6 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { retryEvidenceTransaction, safeEvidenceError } from "./evidence-errors.js";
 import { stableJson } from "./stable-hash.js";
 
 export interface PrivateContentStoragePointer {
@@ -89,7 +90,7 @@ export async function createEvidenceManifest(
     validatePrivateContentStoragePointer(input.storage, input.gameId);
     const manifestId = input.manifestId ?? randomUUID();
 
-    await db.transaction(async (tx) => {
+    await retryEvidenceTransaction(() => db.transaction(async (tx) => {
       await tx.execute(sql`
         SELECT id
         FROM game_run_owners
@@ -194,11 +195,11 @@ export async function createEvidenceManifest(
           throw new Error("Evidence manifest id has conflicting immutable identity");
         }
       }
-    });
+    }));
 
     return { ok: true, manifestId };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = safeEvidenceError(error);
     await markEvidenceDegraded(db, input.gameId, input.ownerEpoch, message).catch(() => {});
     return { ok: false, error: message };
   }

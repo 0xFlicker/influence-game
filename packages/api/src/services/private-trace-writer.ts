@@ -181,7 +181,7 @@ function traceStorageKey(gameId: string, trace: PrivateDecisionTrace, now: Date)
   return `content/${gameId}/private-traces/${roundPart}/${timestamp}-${actor}-${action}-${randomUUID()}.json`;
 }
 
-function buildTraceMetadata(trace: PrivateDecisionTrace, body: string, createdAt: string): PrivateTraceManifestMetadata {
+export function buildTraceMetadata(trace: PrivateDecisionTrace, body: string, createdAt: string): PrivateTraceManifestMetadata {
   const rawResponse = trace.response.raw && typeof trace.response.raw === "object" && !Array.isArray(trace.response.raw)
     ? trace.response.raw as Record<string, unknown>
     : undefined;

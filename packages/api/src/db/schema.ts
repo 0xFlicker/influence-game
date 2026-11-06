@@ -3663,6 +3663,13 @@ export const visualCharacterVariants = pgTable("visual_character_variants", {
   createdAt: text("created_at").notNull().default(sql`now()::text`),
 }, table => [unique("visual_character_variants_identity_unique").on(table.gameId, table.playerId, table.sourceArtifactId, table.revision, table.generation)]);
 
+/** Private, source-bound derivatives; never publish secret wolf forms as profile art. */
+export const visualCharacterCutouts = pgTable("visual_character_cutouts", {
+  sourceArtifactId: text("source_artifact_id").primaryKey().references(() => visualArtifacts.id, { onDelete: "cascade" }),
+  artifactId: text("artifact_id").notNull().references(() => visualArtifacts.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const visualScenes = pgTable("visual_scenes", {
   id: text("id").primaryKey(),
   gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
@@ -4045,6 +4052,7 @@ export const houseCutJobs = pgTable("house_cut_jobs", {
 /** Optional immutable derivatives; never game execution authority. */
 export const characterCutouts = pgTable("character_cutouts", {
   id: text("id").primaryKey(),
+  privateSource: boolean("private_source").notNull().default(false),
   sourceHash: text("source_hash").notNull(),
   recipe: text("recipe").notNull(),
   source: payloadColumn("source_object", "binary").notNull().$type<StoredPayload<Buffer>>(),

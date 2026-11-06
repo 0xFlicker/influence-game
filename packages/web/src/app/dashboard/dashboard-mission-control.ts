@@ -19,9 +19,6 @@ export interface DashboardPrimaryAction {
 }
 
 export interface DashboardStats {
-  gamesPlayed: number;
-  wins: number;
-  winRate: number;
   agentCount: number;
   openGames: number;
   liveGames: number;
@@ -197,14 +194,9 @@ export function buildDashboardMissionControl({
   const joinableGame = relevantGames.find((game) => game.status === "waiting") ?? null;
   const latestResult = latestCompletedResult(history);
   const queueSummary = buildQueueSummary(queueStatus);
-  const influence = history.filter(result => result.gameKind === "influence" && result.result && result.result.outcome !== "unknown");
-  const wins = influence.filter(result => result.result?.outcome === "win").length;
 
   return {
     stats: {
-      gamesPlayed: influence.length,
-      wins,
-      winRate: influence.length > 0 ? Math.round((wins / influence.length) * 100) : 0,
       agentCount: agents.length,
       openGames: games.filter((game) => game.status === "waiting").length,
       liveGames: games.filter((game) => game.status === "in_progress").length,

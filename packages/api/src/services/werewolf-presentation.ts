@@ -60,13 +60,23 @@ export async function publishedWerewolfScenes(db: Pick<DrizzleDB, "select">, gam
   const recoveryIds: string[] = game ? JSON.parse(game.config).visualRecoveryPublications ?? [] : [];
   const before = lte(schema.visualMediaPublications.createdAt, publicationCutoff);
 
-  return await db.select({ scene: schema.visualScenes, publication: schema.visualMediaPublications, version: schema.visualMediaVersions })
+  const rows = await db.select({ scene: schema.visualScenes, publication: schema.visualMediaPublications, version: schema.visualMediaVersions })
     .from(schema.visualScenes)
     .innerJoin(schema.visualMediaPublications, and(eq(schema.visualMediaPublications.sceneId, schema.visualScenes.id), eq(schema.visualMediaPublications.audience, "public"), strictCutoff ? before : or(inArray(schema.visualMediaPublications.id,recoveryIds), before, and(eq(schema.visualMediaPublications.operatorId, WEREWOLF_AUTO_PUBLISHER), eq(schema.visualMediaPublications.revision, 1)))))
     .innerJoin(schema.visualMediaVersions, eq(schema.visualMediaVersions.id, schema.visualMediaPublications.versionId))
     .where(and(eq(schema.visualScenes.gameId, gameId)))
     .orderBy(desc(schema.visualScenes.boundarySequence), desc(schema.visualMediaPublications.revision));
-
+  const formIds = [...new Set(rows.flatMap(row => row.version.plan.cast.filter(member => member.variant?.kind === "werewolf" && member.variant.resolved).map(member => member.referenceArtifactId)))];
+  const cutouts = formIds.length ? await db.select().from(schema.visualCharacterCutouts).where(and(
+    inArray(schema.visualCharacterCutouts.sourceArtifactId, formIds), strictCutoff ? lte(schema.visualCharacterCutouts.createdAt, new Date(publicationCutoff)) : undefined,
+  )) : [];
+  const bySource = new Map(cutouts.map(cutout => [cutout.sourceArtifactId, cutout.artifactId]));
+  // Derive presentation only; preserve generation inputs and published plans.
+  // Both watch and Studio/export bind these same audience-checked artifact IDs.
+  return rows.map(row => ({ ...row, version: { ...row.version, plan: { ...row.version.plan,
+    cast: row.version.plan.cast.map(member => member.variant?.kind === "werewolf" && member.variant.resolved && bySource.has(member.referenceArtifactId)
+      ? { ...member, referenceArtifactId: bySource.get(member.referenceArtifactId)! } : member),
+  } } }));
 }
 export function bindWerewolfScene(rows: Awaited<ReturnType<typeof publishedWerewolfScenes>>, gameId: string, audience: WerewolfAudience, cursor: number, publicationCutoff: string, frame: WerewolfWatchStaging, productionSnapshot?: object) {
   // Introductions use frozen individual art, including games with old lobby renders.

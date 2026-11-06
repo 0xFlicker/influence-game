@@ -31,6 +31,19 @@ describe("episode presentation", () => {
     const presentation = (await readEpisodePresentations(db, [game!])).get(id)!;
     expect(presentation.title).toBe("Quiet Company"); expect(presentation.status).toBe("ready"); expect(presentation.cast[0]?.avatarUrl).toBe("/original.png"); expect(game?.slug).toBe(`test-${id}`);
   });
+  test("paged presentation can omit season-wide episode numbering without changing the episode content", async () => {
+    await db.insert(schema.seasons).values({ id: "number-season", slug: "number-season", name: "Number season", status: "final" });
+    await db.insert(schema.games).values([
+      { id: "number-first", slug: "number-first", config: "{}", seasonId: "number-season", createdAt: "2026-01-01T00:00:00Z" },
+      { id: "number-second", slug: "number-second", config: "{}", seasonId: "number-season", createdAt: "2026-01-02T00:00:00Z" },
+    ]);
+    await db.insert(schema.gameEpisodePresentations).values({ gameId: "number-second", title: "Selected title", description: "Selected description" });
+    const [game] = await db.select().from(schema.games).where(eq(schema.games.id, "number-second"));
+    const normal = (await readEpisodePresentations(db, [game!])).get(game!.id)!;
+    const bounded = (await readEpisodePresentations(db, [game!], { includeEpisodeNumbers: false })).get(game!.id)!;
+    expect(normal.episodeNumber).toBe(2);
+    expect(bounded).toEqual({ ...normal, episodeNumber: null });
+  });
   test("a late generation cannot overwrite a concurrent manual edit", async () => {
     const id = await fixture();
     await runEpisodeJob(db, async () => { await db.update(schema.gameEpisodePresentations).set({ title: "My title", description: "My description", locked: true, revision: 1, status: "ready" }).where(eq(schema.gameEpisodePresentations.gameId, id)); return { title: "Old title", description: "Old description" }; });

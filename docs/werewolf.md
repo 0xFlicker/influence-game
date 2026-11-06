@@ -404,3 +404,19 @@ close on a silent results tableau showing the final cast, winners, survivors and
 recorded eliminations by night/day from the final audience snapshot. The initial
 spoken result still precedes retrospectives; incomplete retrospectives do not
 acquire this closing tableau.
+
+### Wolf-form background removal
+
+Newly generated, verified wolf forms enqueue the existing background-removal
+worker. The opaque original remains the generation reference; finished RGBA
+cutouts are separate, private, game-scoped artifacts. Wolf cutouts never enter the
+public profile-art bucket or change a player's normal character artwork.
+
+Viewer, Studio Source, Selected cut and export source binding share the same
+source-bound cutout selection. Live viewing picks up completed cutouts; a frozen
+Studio source uses its publication cutoff, so later completion does not silently
+change selected media. A fresh selection includes newly completed cutouts.
+Background removal remains asynchronous and best effort, like normal character
+cutouts; the original form is available while it is pending or if it fails.
+Reusing an existing wolf form does not enqueue historical work. This change does
+not backfill old games, regenerate their forms, or rebuild existing movies.

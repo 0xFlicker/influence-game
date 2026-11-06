@@ -923,6 +923,12 @@ A chronological record of completed owned seats across game kinds, independent o
 
 Influence history uses its completed-results projection for placement and eligible competition receipts for points. A missing historical placement remains unknown. Werewolf history uses canonical faction outcomes: an eliminated member of the winning faction still won, and survival is a separate fact. Missing or invalid terminal evidence displays Result unavailable. History reads never award scores. Influence account ELO, career counters, agent competition ratings and season standings remain Influence-only; there is no combined House rating. A separate championship event may define an explicit Werewolf series scoring policy.
 
+The dashboard loads owned history in cursor pages and renders recent results first. Older pages are loaded only on request, and the game-type filter applies before the page boundary. Lifetime participation and win totals are deferred until a scalable, validated aggregate exists. Pages currently have separate database snapshots, so changes to historical ownership, visibility or outcomes between requests can alter the traversal; see [bounded owner history](docs/solutions/performance/bounded-owner-history.md) for the remaining consistency and indexing work.
+
+## Public game library
+
+The `/games` overview and collections server-render an initial public page and load further pages on request. Status, game type and collection filters apply before pagination. Search uses the existing uncapped public-summary fallback only while a query is active; clearing it returns to paged browsing. Unlisted and hidden games stay out of both paths. See [public games initial shelf](docs/solutions/performance/games-initial-shelf.md) for freshness, rollout and measurement limits.
+
 ## Private payload reference
 
 A private payload reference is integrity metadata for an immutable bucket object: its key, codec, original/stored SHA-256 and original/stored byte lengths. It is not game authority or an authorization capability. The owning relational row retains those responsibilities. Images retain exact bytes; document bodies use lossless gzip. Reads verify integrity before use. See the [whole-storage cutover](docs/deployment/private-payload-storage-cutover.md) for existing-data migration and retention.

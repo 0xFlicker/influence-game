@@ -6,7 +6,7 @@ import type { HouseParticipation } from "@influence/engine/house-participation";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import type { PublicPlayerProfileEnvelope } from "../services/public-player-profile.js";
-import { readHouseParticipation } from "../services/house-participation.js";
+import { readHouseParticipation, readHouseParticipationPage } from "../services/house-participation.js";
 import { createGameRoutes } from "../routes/games.js";
 import { createPublicPlayerRoutes } from "../routes/public-players.js";
 import { assertPublicPlayerProfileEnvelope } from "../game-mcp/public-player-tool-schema.js";
@@ -98,4 +98,128 @@ test("historical Influence without canonical evidence does not invent an outcome
   await db.update(schema.gameResults).set({winnerId:"winner"}).where(eq(schema.gameResults.gameId,"historical"));
   const rows=await readHouseParticipation(db,"owner");
   expect(rows[0]).toMatchObject({gameKind:"influence",totalPlayers:2,result:null});
+});
+
+test("paged Werewolf history follows current profile ownership for every owned seat", async () => {
+  await wolf("transferred-wolf", "wolves", "public", "2026-10-05T00:00:00.000Z", true);
+  const before = await readHouseParticipationPage(db, "owner", 20, null, "werewolf");
+  expect(before.items.length).toBeGreaterThan(1);
+  await db.update(schema.agentProfiles).set({ userId: "other" }).where(eq(schema.agentProfiles.id, "mine"));
+  const former = await readHouseParticipationPage(db, "owner", 20, null, "werewolf");
+  const current = await readHouseParticipationPage(db, "other", 20, null, "werewolf");
+  expect(former.items).toEqual([]);
+  expect(current.items.map(item => item.playerId)).toEqual(before.items.map(item => item.playerId));
+});
+
+test("legacy pages fail closed when duplicate Werewolf seat IDs cross a cursor boundary", async () => {
+  const savedMode = process.env.HOUSE_OWNER_HISTORY_READ_MODE;
+  process.env.HOUSE_OWNER_HISTORY_READ_MODE = "legacy";
+  try {
+    await influence("newer", "2026-10-06T00:00:00.000Z");
+    const events = await wolf("duplicate-seats", "wolves", "public", "2026-10-05T00:00:00.000Z", true);
+    const opening = events[0];
+    if (!opening || opening.type !== "werewolf.started") throw new Error("fixture opening missing");
+    for (const player of opening.payload.players) player.id = "duplicate";
+    await db.update(schema.werewolfEvents).set({ event: opening }).where(eq(schema.werewolfEvents.sequence, 1));
+    const headers = { Authorization: `Bearer ${await createSessionToken("owner", { roles: ["player"], permissions: [] })}` };
+    const app = createGameRoutes(db);
+    const first = await app.request("/api/player/games-page?limit=1", { headers });
+    expect(first.status).toBe(200);
+    const page = await first.json() as { items: HouseParticipation[]; nextCursor: string };
+    expect(page.items.map(item => item.gameId)).toEqual(["newer"]);
+    expect(page.nextCursor).toBeTruthy();
+    const response = await app.request(`/api/player/games-page?limit=1&cursor=${encodeURIComponent(page.nextCursor)}`, { headers });
+    const body = await response.json() as { items?: HouseParticipation[]; error?: string; nextCursor?: string };
+    expect({ status: response.status, itemCount: body.items?.length ?? null }).toEqual({ status: 503, itemCount: null });
+    expect(body.error).toBe("Game history is temporarily unavailable.");
+    expect(body.nextCursor).toBeUndefined();
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    const template = opening.payload.players[0]!;
+    opening.payload.players = Array.from({ length: 1001 }, (_, index) => ({ ...template, id: `seat-${index}` }));
+    await db.update(schema.werewolfEvents).set({ event: opening }).where(eq(schema.werewolfEvents.sequence, 1));
+    const oversized = await app.request(`/api/player/games-page?limit=1&cursor=${encodeURIComponent(page.nextCursor)}`, { headers });
+    expect(oversized.status).toBe(503);
+    expect((await oversized.json()) as { items?: unknown[] }).not.toHaveProperty("items");
+    const influenceOnly = await app.request("/api/player/games-page?game=influence&limit=1", { headers });
+    expect(influenceOnly.status).toBe(200);
+    expect(((await influenceOnly.json()) as { items: HouseParticipation[] }).items).toHaveLength(1);
+  } finally {
+    if (savedMode === undefined) delete process.env.HOUSE_OWNER_HISTORY_READ_MODE; else process.env.HOUSE_OWNER_HISTORY_READ_MODE = savedMode;
+  }
+});
+
+test("owner history cursor applies visibility and ownership before paging, including tied multi-seat games", async () => {
+  await influence("old", "2026-10-01T00:00:00.000Z");
+  await influence("tied-influence", "2026-10-05T00:00:00.000Z");
+  await wolf("tied-wolf", "wolves", "unlisted", "2026-10-05T00:00:00.000Z", true);
+  await wolf("hidden", "village", "public", "2026-10-06T00:00:00.000Z", true);
+  await db.update(schema.games).set({ hiddenAt: "2026-10-07T00:00:00.000Z" }).where(eq(schema.games.id, "hidden"));
+  await influence("bad-config", "2026-10-07T00:00:00.000Z");
+  await db.update(schema.games).set({ config: "{broken" }).where(eq(schema.games.id, "bad-config"));
+  const token = await createSessionToken("owner", { roles: ["player"], permissions: [] });
+  const headers = { Authorization: `Bearer ${token}` };
+  const app = createGameRoutes(db);
+  const collected: HouseParticipation[] = [];
+  let cursor: string | null = null;
+  do {
+    const response = await app.request(`/api/player/games-page?limit=3${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`, { headers });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    const page = await response.json() as {items: HouseParticipation[]; nextCursor: string | null};
+    expect(page.items.length).toBeLessThanOrEqual(3);
+    collected.push(...page.items);
+    cursor = page.nextCursor;
+  } while (cursor);
+  const expected = await readHouseParticipation(db, "owner");
+  expect(collected).toEqual(expected);
+  expect(collected.filter(row => row.gameId === "tied-wolf")).toHaveLength(8);
+  expect(new Set(collected.map(row => `${row.gameId}:${row.playerId}`)).size).toBe(collected.length);
+  expect((await app.request("/api/player/games-page?limit=51", { headers })).status).toBe(400);
+  expect((await app.request("/api/player/games-page?cursor=broken", { headers })).status).toBe(400);
+  expect((await app.request("/api/player/games-page")).status).toBe(401);
+  const otherToken = await createSessionToken("other", { roles: ["player"], permissions: [] });
+  const other = await app.request("/api/player/games-page", { headers: { Authorization: `Bearer ${otherToken}` } });
+  expect(((await other.json()) as {items: HouseParticipation[]}).items).toEqual([]);
+  const influencePage = await (await app.request("/api/player/games-page?game=influence&limit=1", { headers })).json() as {items: HouseParticipation[]; nextCursor: string};
+  expect(influencePage.items.map(row => row.gameId)).toEqual(["tied-influence"]);
+  expect(influencePage.nextCursor).toBeTruthy();
+  expect((await app.request(`/api/player/games-page?game=werewolf&cursor=${encodeURIComponent(influencePage.nextCursor)}`, { headers })).status).toBe(400);
+  const wolfPage = await (await app.request("/api/player/games-page?game=werewolf&limit=2", { headers })).json() as {items: HouseParticipation[]};
+  expect(wolfPage.items.map(row => row.gameKind)).toEqual(["werewolf", "werewolf"]);
+  expect((await app.request("/api/player/games-page?game=other", { headers })).status).toBe(400);
+});
+
+test("a newly completed game ahead of a cursor appears on the next refresh, not twice in the current traversal", async () => {
+  await influence("older", "2026-10-01T00:00:00.000Z");
+  await influence("newer", "2026-10-02T00:00:00.000Z");
+  const headers = { Authorization: `Bearer ${await createSessionToken("owner", { roles: ["player"], permissions: [] })}` };
+  const app = createGameRoutes(db);
+  const first = await (await app.request("/api/player/games-page?limit=1", { headers })).json() as {items: HouseParticipation[]; nextCursor: string};
+  expect(first.items.map(row => row.gameId)).toEqual(["newer"]);
+  await influence("latest", "2026-10-03T00:00:00.000Z");
+  const second = await (await app.request(`/api/player/games-page?limit=1&cursor=${encodeURIComponent(first.nextCursor)}`, { headers })).json() as {items: HouseParticipation[]; nextCursor: string | null};
+  expect(second.items.map(row => row.gameId)).toEqual(["older"]);
+  expect(second.nextCursor).toBeNull();
+  const refreshed = await (await app.request("/api/player/games-page?limit=1", { headers })).json() as {items: HouseParticipation[]};
+  expect(refreshed.items.map(row => row.gameId)).toEqual(["latest"]);
+});
+
+test("cursor orders mixed timestamp offsets by actual instant and keeps invalid timestamps after valid ones", async () => {
+  await influence("a-utc", "2026-10-01T12:00:00Z");
+  await influence("z-earlier-offset", "2026-10-01T13:00:00+02:00");
+  await influence("b-equal-offset", "2026-10-01T08:00:00-04:00");
+  await influence("future-naive", "2026-10-01T12:00:01");
+  await influence("invalid", "not-a-timestamp");
+  const headers = { Authorization: `Bearer ${await createSessionToken("owner", { roles: ["player"], permissions: [] })}` };
+  const app = createGameRoutes(db);
+  let cursor: string | null = null;
+  const games: string[] = [];
+  do {
+    const response = await app.request(`/api/player/games-page?limit=1${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`, { headers });
+    expect(response.status).toBe(200);
+    const body = await response.json() as {items: HouseParticipation[]; nextCursor: string | null};
+    games.push(...body.items.map(row => row.gameId));
+    cursor = body.nextCursor;
+  } while (cursor);
+  expect(games).toEqual(["future-naive", "b-equal-offset", "a-utc", "z-earlier-offset", "invalid"]);
 });

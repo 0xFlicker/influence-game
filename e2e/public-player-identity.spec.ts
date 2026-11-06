@@ -345,7 +345,7 @@ test.describe("local public player identity", () => {
     }
   });
 
-  test("library shelves follow Open, active season, Werewolf, Influence order", async ({ browser }) => {
+  test("search results follow Open, active season, Werewolf, Influence order", async ({ browser }) => {
     test.setTimeout(120_000);
     const activeSeason = { id: "active-season", slug: "current-season", name: "Current Season", status: "active", ratedPool: "free", admissionStartsAt: null, admissionClosesAt: null, finalizedAt: null };
     const oldSeason = { ...activeSeason, id: "old-season", slug: "old-season", name: "Old Season", status: "final" };
@@ -368,9 +368,10 @@ test.describe("local public player identity", () => {
       let active = true;
       try {
         await page.route("**/api/games", route => route.fulfill({ json: games }));
-        await page.route("**/api/werewolf", route => route.fulfill({ json: wolves }));
+        await page.route("**/api/werewolf-search", route => route.fulfill({ json: wolves }));
         await page.route("**/api/seasons", route => route.fulfill({ json: { schemaVersion: 1, seasons: [oldSeason, closingSeason, { ...activeSeason, status: active ? "active" : "final" }] } }));
         await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });
+        await page.getByLabel("Search games", { exact: true }).fill(" ");
         await expect(page.locator(".episode-shelf-heading h2")).toHaveText(["Open", "Active season", "Werewolf", "Influence"]);
         await expect(page.locator(".episode-card")).toHaveCount(7);
         const season = page.getByRole("region", { name: "Active season", exact: true });
@@ -383,16 +384,18 @@ test.describe("local public player identity", () => {
         await expect(page.locator(".episode-shelf-heading h2")).toHaveText(["Open", "Active season", "Influence"]);
         active = false;
         await page.reload({ waitUntil: "networkidle" });
+        await page.getByLabel("Search games", { exact: true }).fill(" ");
         await expect(page.locator(".episode-shelf-heading h2")).toHaveText(["Open", "Werewolf", "Influence"]);
         await expect(page.getByRole("region", { name: "Influence", exact: true }).locator("article")).toHaveCount(4);
         await page.goto(`${servers.webUrl}/games/type/influence`, { waitUntil: "networkidle" });
+        await page.getByLabel("Search games", { exact: true }).fill(" ");
         await expect(page.locator(".episode-shelf-heading h2")).toHaveText(["Influence"]);
         await expect(page.locator(".episode-card")).toHaveCount(5);
       } finally { await context.close(); }
     }
   });
 
-  test("library cards share visible authorized controls and separate Fill AI from Start", async ({ browser }) => {
+  test("paged library cards share visible authorized controls and separate Fill AI from Start", async ({ browser }) => {
     test.setTimeout(120_000);
     for (const width of [1440, 390]) {
       const context = await identityContext(browser, { viewport: { width, height: 1000 } });
@@ -405,8 +408,14 @@ test.describe("local public player identity", () => {
       try {
         await page.route("**/api/auth/me", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), roles: ["gamer"], permissions } }); });
         await page.route("**/api/free-queue", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), promptEligible: false } }); });
-        await page.route("**/api/games", route => route.fulfill({ json: [{ ...base, id: "card-influence", slug: "card-influence", alivePlayers: full.has("influence") ? 6 : 1 }] }));
-        await page.route("**/api/werewolf", route => route.fulfill({ json: [{ ...base, id: "card-werewolf", slug: "card-werewolf", gameKind: "werewolf", joinedPlayers: full.has("werewolf") ? 6 : 1 }] }));
+        await page.route(/\/api\/public-games\/page(?:\?.*)?$/, route => {
+          const query = new URL(route.request().url()).searchParams;
+          const items = query.get("status") === "waiting" ? [
+            { kind: "influence", game: { ...base, id: "card-influence", slug: "card-influence", alivePlayers: full.has("influence") ? 6 : 1 } },
+            { kind: "werewolf", game: { ...base, id: "card-werewolf", slug: "card-werewolf", gameKind: "werewolf", joinedPlayers: full.has("werewolf") ? 6 : 1 } },
+          ] : [];
+          return route.fulfill({ json: { items, nextCursor: null } });
+        });
         for (const kind of ["influence", "werewolf"]) for (const action of ["fill", "start", "stop", "hide"]) {
           const path = kind === "werewolf" && action === "hide"
             ? "/api/admin/werewolf/card-werewolf/visibility"
@@ -420,12 +429,14 @@ test.describe("local public player identity", () => {
           });
         }
         await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });
+        await page.getByRole("button", { name: "Refresh games", exact: true }).click();
+        await expect(page.locator(".episode-card")).toHaveCount(2);
         await expect(page.locator(".episode-management")).toHaveCount(0);
         permissions = ["start_game", "fill_game", "stop_game", "hide_game"];
         await page.reload({ waitUntil: "networkidle" });
+        await page.getByRole("button", { name: "Refresh games", exact: true }).click();
         for (const kind of ["werewolf", "influence"]) {
           const card = page.locator(`.episode-card[data-game-kind="${kind}"]`);
-          await card.scrollIntoViewIfNeeded();
           await expect(card.locator(".episode-management button")).toHaveText(["Start", "Fill AI", "Stop", "Hide"]);
           await expect(card.getByRole("button", { name: "Start", exact: true })).toBeDisabled();
           await card.getByRole("button", { name: "Fill AI", exact: true }).click();
@@ -459,7 +470,7 @@ test.describe("local public player identity", () => {
       await page.clock.install();
       try {
         await page.route("**/api/games", route => route.fulfill({ json: [{ ...influence, status: open ? "waiting" : "completed" }] }));
-        await page.route("**/api/werewolf", route => route.fulfill({ json: [{ ...werewolf, status: open ? "waiting" : "completed" }] }));
+        await page.route("**/api/werewolf-search", route => route.fulfill({ json: [{ ...werewolf, status: open ? "waiting" : "completed" }] }));
         await page.route("**/api/games/open-influence/episode", route => route.fulfill({ json: {
           episode, media: { status: "not_requested" }, frames: [
             { id: "scene", kind: "scene", label: "Inside the House" },
@@ -467,6 +478,7 @@ test.describe("local public player identity", () => {
           ],
         } }));
         await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });
+        await page.getByLabel("Search games", { exact: true }).fill(" ");
         const shelf = page.getByRole("region", { name: "Open", exact: true });
         await expect(shelf).toBeVisible();
         await expect(page.locator(".episode-shelf").first()).toHaveAttribute("aria-label", "Open");
@@ -518,6 +530,7 @@ test.describe("local public player identity", () => {
         await expect(shelf).toHaveCount(0);
         open = false;
         await page.reload({ waitUntil: "networkidle" });
+        await page.getByLabel("Search games", { exact: true }).fill(" ");
         await expect(page.getByRole("region", { name: "Open", exact: true })).toHaveCount(0);
         await expect(page.locator(".episode-card")).toHaveCount(2);
       } finally { await context.close(); }
@@ -544,6 +557,7 @@ test.describe("local public player identity", () => {
         await page.route("**/api/game-entries/quiet-sage-room", route => route.fulfill({ json: { id: "episode-fixture", slug: "quiet-sage-room", gameKind: "influence" } }));
         await page.route("**/api/games/quiet-sage-room", route => route.fulfill({ json: game }));
         await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });
+        await page.getByLabel("Search games", { exact: true }).fill(" ");
         const card = page.getByTestId("episode-card");
         await expect(card.getByRole("heading", { name: "Good Company" })).toBeVisible();
         const destination = card.getByRole("link").filter({ has: page.getByRole("heading", { name: "Good Company", exact: true }) });
@@ -638,19 +652,26 @@ test.describe("local public player identity", () => {
         return route.fulfill({ json: { gameIds: body.gameIds, calls: body.gameIds.length, skipped: 0, queued: !body.preview } });
       });
       await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });
+      await page.getByLabel("Search games", { exact: true }).fill(" ");
       await expect(page.getByRole("button", { name: "Backfill missing titles" })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Edit episode", exact: true })).toHaveCount(0);
       await expect(page.getByRole("region", { name: "Active season", exact: true }).getByRole("link", { name: "View all" })).toHaveAttribute("href", "/games/season/season-0");
       await expect(page.getByTestId("episode-card")).toHaveCount(59);
       await expect(page.getByRole("heading", { name: "Episode 2", exact: true })).toHaveCount(0);
+      await page.getByLabel("Search games").fill("Episode 20");
+      await expect(page.getByTestId("episode-card")).toHaveCount(1);
+      await expect(page.getByRole("heading", { name: "Episode 20", exact: true })).toBeVisible();
       for (const [path, expected] of [["season/season-0", "Episode 0"]]) {
         await page.goto(`${servers.webUrl}/games/${path}`, { waitUntil: "networkidle" });
+        await page.getByLabel("Search games", { exact: true }).fill(" ");
         await expect(page.getByTestId("episode-card")).toHaveCount(1);
         await expect(page.getByTestId("episode-card").getByRole("heading", { name: expected, exact: true })).toBeVisible();
         await page.reload({ waitUntil: "networkidle" });
+        await page.getByLabel("Search games", { exact: true }).fill(" ");
         await expect(page.getByTestId("episode-card")).toHaveCount(1);
       }
       await page.goto(`${servers.webUrl}/games/public`, { waitUntil: "networkidle" });
+      await page.getByLabel("Search games", { exact: true }).fill(" ");
       await expect(page.getByTestId("episode-card")).toHaveCount(58);
       await page.goto(`${servers.webUrl}/admin/production`, { waitUntil: "networkidle" });
       await expect(page.getByRole("heading", { name: "Production Studio" })).toBeVisible();

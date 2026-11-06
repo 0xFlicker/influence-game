@@ -28,15 +28,15 @@ export function cutoutMode(env: Record<string, string | undefined> = process.env
 
 
 /** Store source bytes before publishing a durable job reference. */
-export async function enqueueCutout(db: DrizzleDB, bytes: Buffer) {
+export async function enqueueCutout(db: DrizzleDB, bytes: Buffer, privateSource = false) {
   if (bytes.length > CUTOUT_MAX_BYTES) throw new Error("Cutout source exceeds image upload limit");
   const metadata = await sharp(bytes, { limitInputPixels: 16_000_000 }).metadata();
   if (!metadata.width || !metadata.height || (metadata.pages ?? 1) !== 1) throw new Error("Invalid cutout source image");
   const rotated = metadata.orientation && metadata.orientation >= 5;
   const source = await storeBinary(bytes);
-  await db.insert(jobs).values({ id: crypto.randomUUID(), sourceHash: payloadHash(bytes), recipe: CUTOUT_RECIPE, source,
+  await db.insert(jobs).values({ id: crypto.randomUUID(), sourceHash: payloadHash(bytes), recipe: CUTOUT_RECIPE, source, privateSource,
     width: rotated ? metadata.height : metadata.width, height: rotated ? metadata.width : metadata.height,
-  }).onConflictDoNothing();
+  }).onConflictDoUpdate({ target: [jobs.sourceHash, jobs.recipe], set: { privateSource: sql`${jobs.privateSource} OR ${privateSource}` } });
   const [job] = await db.select().from(jobs).where(and(eq(jobs.sourceHash, source.sha256), eq(jobs.recipe, CUTOUT_RECIPE)));
   if (!job) throw new Error("Cutout enqueue lost its durable reference");
   return job;
@@ -69,17 +69,26 @@ export async function prepareCutoutDemands(db: DrizzleDB, ids?: string[]) {
     try {
       await db.update(demands).set({ preparationAttemptedAt: sql`clock_timestamp()` }).where(eq(demands.id, demand.id));
       let hash = demand.sourceKey.startsWith("sha256:") ? demand.sourceKey.slice(7) : null;
+      let privateSource = false;
       if (!hash && demand.gameId && demand.sourceKey.startsWith(`/api/games/${demand.gameId}/visual/artifacts/`)) {
         const [artifact] = await db.select({ image: schema.visualArtifacts.image }).from(schema.visualArtifacts)
           .where(and(eq(schema.visualArtifacts.gameId, demand.gameId), eq(schema.visualArtifacts.id, demand.sourceKey.split("/").at(-1)!)));
         hash = artifact?.image.sha256 ?? null;
+        const [variant] = await db.select({ id: schema.visualCharacterVariants.id }).from(schema.visualCharacterVariants).where(and(
+          eq(schema.visualCharacterVariants.gameId, demand.gameId), eq(schema.visualCharacterVariants.artifactId, demand.sourceKey.split("/").at(-1)!),
+        )).limit(1);
+        privateSource = Boolean(variant);
       }
       const [existing] = hash ? await db.select().from(jobs).where(and(eq(jobs.sourceHash, hash), eq(jobs.recipe, CUTOUT_RECIPE))) : [];
       // A finished job already owns verified bytes. Reuse it without downloading
       // its original or rerunning removal, even if source storage is unavailable.
       if (!existing && cutoutMode() === "disabled") continue;
-      const job = existing ?? await enqueueCutout(db, await readCutoutSource(db, demand));
+      const job = existing ?? await enqueueCutout(db, await readCutoutSource(db, demand), privateSource);
+      if (privateSource && !job.privateSource) await db.update(jobs).set({ privateSource: true }).where(eq(jobs.id, job.id));
       await db.update(demands).set({ cutoutId: job.id }).where(and(eq(demands.id, demand.id), isNull(demands.cutoutId), isNull(demands.error)));
+      // A newly associated game may need its own private artifact even when
+      // another demand already completed this source's cached inference.
+      if (existing?.status === "ready") await db.update(jobs).set({ artSavedAt: null }).where(eq(jobs.id, job.id));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Source preparation failed";
       await db.update(demands).set({ error: message.slice(0, 1000) }).where(and(eq(demands.id, demand.id), isNull(demands.cutoutId), isNull(demands.error)));

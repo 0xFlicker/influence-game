@@ -1079,6 +1079,20 @@
       "when": 1792952785123,
       "tag": "0153_agent_visual_updates",
       "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1792952785124,
+      "tag": "0154_private_wolf_cutouts",
+      "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1792952785125,
+      "tag": "0155_public_game_browse_indexes",
+      "breakpoints": true
     }
   ]
 }
