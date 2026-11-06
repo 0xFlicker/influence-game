@@ -166,7 +166,7 @@ describe("E2E: Full Game Flow", () => {
       const html = await initialHtml.text();
       expect(initialHtml.ok).toBe(true);
       expect(initialHtml.headers.get("cache-control")).toContain("no-store");
-      expect(html).toContain("Recently added Influence games");
+      expect(html).toContain("Open");
       expect(html).toContain(gameSlug);
       const hide = await fetch(`${servers.apiUrl}/api/games/${gameId}/hide`, { method: "PATCH", headers: { Authorization: `Bearer ${admin.jwt}` } });
       expect(hide.ok).toBe(true);
@@ -195,21 +195,27 @@ describe("E2E: Full Game Flow", () => {
         const pageText = await getPageText(page);
         expect(pageText).toContain(gameSlug);
 
-        // A later refresh failure must not resurrect a stale server preview.
+        // Refresh clears a now-hidden card and a later failure must not bring it back.
         const hidden = await fetch(`${servers.apiUrl}/api/games/${gameId}/hide`, { method: "PATCH", headers: { Authorization: `Bearer ${admin.jwt}` } });
         expect(hidden.ok).toBe(true);
         const failGames = (request: HTTPRequest) => {
-          if (request.method() === "GET" && new URL(request.url()).pathname === "/api/games") {
+          if (request.method() === "GET" && new URL(request.url()).pathname === "/api/public-games/page") {
             void request.respond({ status: 503, contentType: "application/json", headers: { "Access-Control-Allow-Origin": "*" }, body: JSON.stringify({ error: "Fixture unavailable" }) });
           } else void request.continue();
         };
         try {
+          const openRefresh = page.waitForResponse(response => {
+            const url = new URL(response.url());
+            return url.pathname === "/api/public-games/page" && url.searchParams.get("status") === "waiting";
+          }, { timeout: 25000 });
+          await page.evaluate("[...document.querySelectorAll('button')].find(item => item.textContent?.includes('Refresh games'))?.click()");
+          expect((await openRefresh).ok()).toBe(true);
           await page.waitForFunction(`!document.body.innerText.includes(${JSON.stringify(gameSlug)})`, { timeout: 25000 });
           await page.setRequestInterception(true);
           page.on("request", failGames);
+          await page.evaluate("[...document.querySelectorAll('button')].find(item => item.textContent?.includes('Refresh games'))?.click()");
           await page.waitForFunction("document.body.innerText.includes('Try again')", { timeout: 25000 });
           expect(await getPageText(page)).not.toContain(gameSlug);
-          expect(await getPageText(page)).not.toContain("Recently added Influence games");
         } finally {
           page.off("request", failGames);
           await page.setRequestInterception(false);
@@ -243,13 +249,13 @@ describe("E2E: Full Game Flow", () => {
     const page = await browser.newPage();
     try {
       await page.evaluateOnNewDocument(() => {
-        const state: { gameCalls: number; aborted: number; seasonCalls: number; release?: () => void } = { gameCalls: 0, aborted: 0, seasonCalls: 0 };
+        const state: { gameCalls: number; aborted: number; seasonCalls: number; enabled: boolean; release?: () => void } = { gameCalls: 0, aborted: 0, seasonCalls: 0, enabled: false };
         const browserWindow = globalThis as unknown as { __libraryCancellation?: typeof state; fetch: typeof fetch; location: { origin: string } };
         browserWindow.__libraryCancellation = state;
         const originalFetch = browserWindow.fetch.bind(browserWindow);
         browserWindow.fetch = ((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
           const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, browserWindow.location.origin);
-          if (url.pathname === "/api/games") {
+          if (state.enabled && url.pathname === "/api/games") {
             state.gameCalls++;
             if (state.gameCalls > 1) return Promise.resolve(Response.json([]));
             return new Promise<Response>((_resolve, reject) => {
@@ -257,15 +263,18 @@ describe("E2E: Full Game Flow", () => {
               init.signal.addEventListener("abort", () => { state.aborted++; state.release = () => reject(new DOMException("Aborted", "AbortError")); }, { once: true });
             });
           }
-          if (url.pathname === "/api/seasons") {
+          if (state.enabled && state.gameCalls > 0 && url.pathname === "/api/seasons") {
             state.seasonCalls++;
             return Promise.resolve(state.seasonCalls === 1 ? Response.json({ error: "Season service unavailable" }, { status: 503 }) : Response.json({ schemaVersion: 1, seasons: [] }));
           }
-          if (url.pathname === "/api/werewolf") return Promise.resolve(Response.json([]));
+          if (state.enabled && url.pathname === "/api/werewolf-search") return Promise.resolve(Response.json([]));
           return originalFetch(input, init);
         }) as typeof fetch;
       });
       await page.goto(`${servers.webUrl}/games`, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.waitForSelector('[aria-label="Search games"]', { timeout: 15000 });
+      await page.evaluate(() => { const state = (globalThis as { __libraryCancellation?: { enabled: boolean } }).__libraryCancellation; if (state) state.enabled = true; });
+      await page.type('[aria-label="Search games"]', "fixture");
       await page.waitForFunction(() => (globalThis as { __libraryCancellation?: { aborted: number } }).__libraryCancellation?.aborted === 1, { timeout: 15000 });
       // The 10-second poll must not start another request while the aborted
       // sibling is still settling, even though its partner already failed.
