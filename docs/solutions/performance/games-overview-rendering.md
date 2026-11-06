@@ -4,27 +4,22 @@ tags: [performance, rendering, games]
 problem_type: performance
 ---
 
-# Bound the default games overview shelves
+# Bound the games overview shelves
 
-The default, unfiltered Games overview shows at most eight completed or
-cancelled cards per season or game-type shelf. Open, live, and suspended
-games remain visible, and the existing View all links lead to their collection
-pages. Selecting a filter or searching shows all matching rows already
-returned by the APIs; collection and compact views are unchanged.
+Each overview shelf initially renders at most eight games; further games load
+on request. Collection pages initially load up to 20. The API applies public
+visibility, status, game-type and collection filters before the cursor, so the
+browser does not download complete lists for ordinary browsing. Cards keep the
+existing live, join and replay actions. The initial Open shelf is server-rendered.
 
-This bounds card and image element creation for the default overview. It does
-not paginate the APIs, reduce the current ten-second polling response, or
-make filtered and collection pages bounded. The existing Werewolf API returns
-at most 100 games without a continuation, so View all is still subject to
-that existing limit. Backend cursors, server-side filtering, SSR, image
-resizing, cache invalidation, and production measurements are tracked in
-[#302](https://github.com/0xFlicker/influence-game/issues/302).
+Search remains the existing full-summary fallback for public games and runs
+only while a query is active. It includes older Werewolf games through a separate
+search-only read; the legacy capped list endpoint is unchanged. The search
+fallback is intentionally not indexed and can be expensive. Pending requests
+are aborted when search is cleared or the component unmounts.
 
-If one of the overview requests fails, the browser aborts the other requests
-and waits for them to settle before allowing another poll. The same abort
-controller remains available to the unmount cleanup during that wait.
-
-One anonymous production observation before this change contained 116 game
-cards and 691 image elements. These counts are not network transfers or a
-Core Web Vitals measurement; measure cold and warm browser loads after
-deployment before claiming a latency improvement.
+These limits reduce initial response and card counts but do not bound physical
+database work for every sparse filter or bytes for every selected game. They
+are not a production Core Web Vitals result. See
+[public games initial shelf](games-initial-shelf.md) and the
+[index rollout plan](../../deployment/public-game-browse-indexes.md).

@@ -202,3 +202,87 @@ test("dashboard fetches history pages only when requested and applies game filte
     expect(requests.some(url => new URL(url, "http://local").searchParams.get("game") === "werewolf")).toBe(true);
   } finally { await dashboard.close(); }
 },180000);
+
+test("game browsing pages first and uses the existing full search only while searching", async () => {
+  const config = JSON.stringify({ visibility: "public", preset: "one_wolf", providerManifest: [{ catalogId: DEFAULT_MODEL_CATALOG_ID }] });
+  await database.db.insert(schema.games).values(Array.from({ length: 126 }, (_, i) => ({
+    id: `browse-wolf-${String(i).padStart(2, "0")}`, slug: `browse-wolf-${String(i).padStart(2, "0")}`,
+    gameKind: "werewolf" as const, status: "waiting" as const, config,
+    createdAt: new Date(Date.UTC(2090, 0, 1, 0, 0, i)).toISOString(),
+  })));
+  const page = await browser.newPage();
+  await rejectOptionalAnalytics(page);
+  const paths: string[] = [];
+  page.on("request", request => { if (request.method() === "GET") paths.push(new URL(request.url()).pathname); });
+  try {
+    const response = await page.goto(`${servers.webUrl}/games`, { waitUntil: "domcontentloaded" });
+    expect((await response?.text())?.includes("browse-wolf-125")).toBe(true);
+    await text(page, "new-village-live"); // This client-fetched shelf confirms hydration.
+    await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(b => b.textContent === 'Load more Open games')");
+    expect(paths.includes("/api/games")).toBe(false);
+    expect(paths.includes("/api/werewolf")).toBe(false);
+    expect(paths.includes("/api/werewolf-search")).toBe(false);
+    expect(await page.$('input[aria-label="Search games"]')).not.toBeNull();
+    const completedBrowse = page.waitForResponse(result => new URL(result.url()).pathname === "/api/public-games/page" && new URL(result.url()).searchParams.get("status") === "completed");
+    await page.select('select[aria-label="Game status"]', "completed");
+    expect((await completedBrowse).ok()).toBe(true);
+    const reopened = page.waitForResponse(result => new URL(result.url()).pathname === "/api/public-games/page" && new URL(result.url()).searchParams.get("status") === "waiting");
+    await page.select('select[aria-label="Game status"]', "all");
+    expect((await reopened).ok()).toBe(true);
+    await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(b => b.textContent === 'Load more Open games')");
+    await page.evaluate("Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Load more Open games')?.click()");
+    await text(page, "browse-wolf-117");
+    expect(paths.includes("/api/public-games/page")).toBe(true);
+    await page.type('input[aria-label="Search games"]', "Lanterns and Lies");
+    await text(page, "Lanterns and Lies");
+    expect(paths.includes("/api/games")).toBe(true);
+    expect(paths.includes("/api/werewolf-search")).toBe(true);
+    expect(paths.includes("/api/werewolf")).toBe(false);
+    const searchReads = paths.filter(path => path === "/api/werewolf-search").length;
+    await page.click('input[aria-label="Search games"]', { clickCount: 3 });
+    await page.type('input[aria-label="Search games"]', "Player 0 With a Very Long Match Frozen Name");
+    await page.waitForFunction(`document.querySelector('input[aria-label="Search games"]').value === 'Player 0 With a Very Long Match Frozen Name' && !!document.querySelector('a[href="/games/old-lantern-village"]')`);
+    expect(paths.filter(path => path === "/api/werewolf-search").length).toBe(searchReads);
+    await page.click('input[aria-label="Search games"]', { clickCount: 3 });
+    await page.type('input[aria-label="Search games"]', "Lanterns and Lies");
+    await text(page, "Lanterns and Lies");
+    expect(await page.evaluate("Array.from(document.querySelectorAll('button')).some(b => b.textContent?.includes('Continue search'))")).toBe(false);
+    await page.select('select[aria-label="Game status"]', "completed");
+    await text(page, "Lanterns and Lies");
+    const pageReads = paths.filter(path => path === "/api/public-games/page").length;
+    const completedPage = page.waitForResponse(result => new URL(result.url()).pathname === "/api/public-games/page" && new URL(result.url()).searchParams.get("status") === "completed");
+    await page.click('input[aria-label="Search games"]', { clickCount: 3 });
+    await page.keyboard.press("Backspace");
+    expect((await completedPage).ok()).toBe(true);
+    expect(await page.evaluate(`document.querySelector('select[aria-label="Game status"]').value`)).toBe("completed");
+    expect(paths.filter(path => path === "/api/public-games/page").length).toBeGreaterThan(pageReads);
+    await page.select('select[aria-label="Game status"]', "all");
+    await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(b => b.textContent === 'Load more Open games')");
+
+    let blockedSearch: HTTPRequest | undefined;
+    let searchAborted = false;
+    const failed = (request: HTTPRequest) => { if (request === blockedSearch) searchAborted = true; };
+    page.on("requestfailed", failed);
+    await page.setRequestInterception(true);
+    const block = (request: HTTPRequest) => {
+      if (request.method() === "GET" && new URL(request.url()).pathname === "/api/games") blockedSearch = request;
+      else void request.continue();
+    };
+    page.on("request", block);
+    try {
+      await page.type('input[aria-label="Search games"]', "pending");
+      for (let i = 0; i < 100 && !blockedSearch; i++) await Bun.sleep(20);
+      expect(blockedSearch).toBeDefined();
+      await page.click('input[aria-label="Search games"]', { clickCount: 3 });
+      await page.keyboard.press("Backspace");
+      await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(b => b.textContent === 'Load more Open games')");
+      for (let i = 0; i < 100 && !searchAborted; i++) await Bun.sleep(20);
+      expect(searchAborted).toBe(true);
+    } finally {
+      page.off("requestfailed", failed);
+      if (blockedSearch && !blockedSearch.isInterceptResolutionHandled()) await blockedSearch.abort().catch(() => {});
+      page.off("request", block);
+      await page.setRequestInterception(false);
+    }
+  } finally { await page.close(); }
+}, 180000);

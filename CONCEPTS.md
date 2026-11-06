@@ -917,9 +917,9 @@ Influence history uses its completed-results projection for placement and eligib
 
 The dashboard loads owned history in cursor pages and renders recent results first. Older pages are loaded only on request, and the game-type filter applies before the page boundary. Lifetime participation and win totals are deferred until a scalable, validated aggregate exists. Pages currently have separate database snapshots, so changes to historical ownership, visibility or outcomes between requests can alter the traversal; see [bounded owner history](docs/solutions/performance/bounded-owner-history.md) for the remaining consistency and indexing work.
 
-## Public games preview
+## Public game library
 
-The `/games` shell can show a small, uncached server-rendered preview of recent Public Influence games while the complete browser loads. That preview is not the complete library or a substitute for its filters; it contains no Unlisted or hidden games. See [public games initial shelf](docs/solutions/performance/games-initial-shelf.md) for freshness, fallback and measurement limits.
+The `/games` overview and collections server-render an initial public page and load further pages on request. Status, game type and collection filters apply before pagination. Search uses the existing uncapped public-summary fallback only while a query is active; clearing it returns to paged browsing. Unlisted and hidden games stay out of both paths. See [public games initial shelf](docs/solutions/performance/games-initial-shelf.md) for freshness, rollout and measurement limits.
 
 ## Private payload reference
 

@@ -1,56 +1,34 @@
 ---
 module: games-library
-tags: [performance, server-rendering, caching]
+tags: [performance, server-rendering, pagination]
 problem_type: performance
 ---
 
 # Public games initial shelf
 
-`/games` streams its shell while a server component requests at most six recent
-public Influence games. Until the complete client browser finishes loading, it
-shows those games as a labelled preview, not as the complete searchable library.
-If the preview fails or times out, the ordinary client browser still loads; if
-the full browser fails after a successful preview, the preview and a retry
-remain available until the first successful full-library load. If a later
-refresh fails, show an error instead of restoring that older preview, which
-could contain games removed by an intervening successful refresh. Existing
-complete-data search and filters are unchanged.
+`/games` server-renders the first Open shelf, up to eight public Influence and
+Werewolf games. The other overview shelves fetch up to eight games each, and
+collection pages render an initial page of up to 20. Further pages load only
+on request. The API applies visibility and selected status, type, season and
+category filters before a status/time/ID cursor; invalid timestamps sort last
+within their status. Browse requests omit credentials and use `no-store`.
 
-The bounded preview omits the optional season episode number:
-deriving it currently enumerates the entire season. Full-detail and legacy
-full-list reads retain numbering. Episode title, cast, artwork and season
-identity remain available; the compact number can return after an indexed,
-validated numbering model exists.
+Search keeps the existing public-summary matching fields and runs the expensive
+full-list fallback only while a query is active. Both Influence and Werewolf
+search include older public games. Clearing a query aborts pending search work
+and returns to paged browsing; there is no separate search-continuation control.
+The existing `/api/games` and capped `/api/werewolf` response contracts remain
+unchanged. Search can become slow as the library grows; a search index is
+follow-up work.
 
-The initial request omits credentials, and both the server fetch and API response
-use `no-store`. There is no shared shelf cache to invalidate: a new request reads
-current public visibility and metadata. Existing open pages refresh the complete
-browser every ten seconds; the polling request is skipped while another request
-is in flight, and a newer manual refresh fences older responses. A visibility
-change cannot retract content already delivered to an open browser; the next
-successful refresh updates it. Do not cache this response at a CDN or pass
-personalized/authenticated data into it without defining and testing cache keys,
-revocation, freshness and invalidation across all write paths.
+Pages are current reads rather than a sealed snapshot. Game changes between
+requests can change traversal; Refresh reloads the current list. A page limits
+returned candidates and enrichment, but sparse filters may still examine more
+rows in PostgreSQL, and a selected game's cast or other media can be large.
 
-The preview route's limit is applied after public visibility and status filters,
-before enrichment. It orders valid creation timestamps by instant, interprets
-timezone-less values as UTC, places invalid values last and breaks ties by ID.
-The existing list endpoint continues to ignore its previously unsupported
-`limit` parameter, preserving older callers. PostgreSQL still scans
-and sorts candidates, and the full browser still downloads the unbounded lists;
-a complete public-library and collection paging contract remains future work.
-
-`bash scripts/benchmark-public-shelf.sh` creates and removes a disposable
-PostgreSQL 16 container, inserts 1,000 synthetic Influence games with eight
-synthetic seats each, prints plans, then compares the bounded and full APIs.
-One local run returned six rows in 50/12 ms and 13,430 bytes versus 1,004 rows in
-71/78 ms and 2,240,573 bytes. Candidate plans took 1.6 ms and 0.6 ms respectively
-and both scanned games; fixture games do not have realistic events, images or
-network costs. These single-host observations are not production latency, LCP,
-or proof of a user-visible improvement. Measure streamed HTML, hydration,
-transferred image bytes and mobile/desktop Core Web Vitals after deployment is
-separately approved.
-
-In a separate synthetic 10,000-game season, reading one episode with full
-season numbering took 11–20 ms versus 2 ms when numbering was omitted. These
-are local single-run timings; they do not include production network or UI cost.
+The ordinary migration creates the lookup functions; the browse indexes need a
+separate concurrent build and release gate. See
+[public game browse indexes](../../deployment/public-game-browse-indexes.md).
+Staging qualification and production approval are required before release.
+Synthetic timings are not production latency or Core Web Vitals measurements;
+measure browser rendering, transferred media and API plans after deployment.

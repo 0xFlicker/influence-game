@@ -17,6 +17,7 @@ import { getPersistedGameProjection } from "../services/game-projection-read-mod
 import { enabledGameKinds } from "@influence/engine/game-availability";
 import { createEpisodeRoutes } from "./episodes.js";
 import { readEpisodePresentations } from "../services/episode-presentation.js";
+import { publicErrorInfo, readPublicInfluenceSummaries } from "../services/public-library-summaries.js";
 /**
  * Game REST API routes.
  *
@@ -40,7 +41,7 @@ import { eq, inArray, asc, desc, isNotNull, or, and, ne, sql } from "drizzle-orm
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import type { GameCompletionSettlementState, GameStatus } from "../db/schema.js";
+import type { GameStatus } from "../db/schema.js";
 import {
   requireAuth,
   optionalAuth,
@@ -61,7 +62,6 @@ import {
 } from "../services/transcript-capture.js";
 import {
   getRedactedKernelHealth,
-  getRedactedKernelHealthByGameId,
 } from "../services/game-kernel-health.js";
 import {
   buildGameWatchState,
@@ -78,8 +78,6 @@ import {
 } from "../services/postgame-analysis.js";
 import { getPostgameHighlights } from "../services/postgame-highlights.js";
 import {
-  buildFallbackGameWatchStateSummary,
-  getGameWatchStateSummaryReadsByGameIds,
   tryRefreshGameWatchStateSummary,
 } from "../services/game-watch-state-summary.js";
 import { broadcastRaw } from "../services/ws-manager.js";
@@ -92,11 +90,9 @@ import { getPublicGameCompetitionReceipts } from "../services/season-read-model.
 import { generateUniqueSlug } from "../lib/slug.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import { modelLabelFromConfig } from "../lib/model-label.js";
-import { getGameSeasonIdentityMap } from "../lib/game-season.js";
 import { gameOwnerClaimErrorBody } from "../lib/game-owner-claim-response.js";
 import {
   getGameCompletionSettlementState,
-  getGameCompletionSettlementStateMap,
 } from "../services/game-completion-settlement.js";
 import {
   LEGACY_FORMAT_MANIFEST,
@@ -113,22 +109,6 @@ import type { Personality } from "@influence/engine";
 
 import { parseGameVisibility } from "@influence/engine/game-visibility";
 import { isViewerGame, publicGameFilter } from "../services/game-visibility.js";
-
-const PUBLIC_SUSPENDED_ERROR_INFO = "Execution is paused. Committed play remains available.";
-
-function publicErrorInfo(
-  status: GameStatus,
-  config: Record<string, unknown>,
-  settlementState?: GameCompletionSettlementState | "not_applicable",
-): string | undefined {
-  if (status === "suspended") {
-    if (config.visualPause) return "Visual preparation is paused for repair.";
-    if (settlementState === "pending") return "Finalizing results.";
-    if (settlementState === "repair_required") return "Results under review.";
-    return PUBLIC_SUSPENDED_ERROR_INFO;
-  }
-  return typeof config.errorInfo === "string" ? config.errorInfo : undefined;
-}
 
 // ---------------------------------------------------------------------------
 // Factory — creates a Hono sub-app with injected DB
@@ -304,71 +284,8 @@ export function createGameRoutes(db: DrizzleDB) {
         THEN ${schema.games.createdAt}::timestamptz END DESC NULLS LAST`, desc(schema.games.id)).limit(limit);
     }, { isolationLevel: "repeatable read", accessMode: "read only" });
 
-    const episodes = await readEpisodePresentations(db, rows, { includeEpisodeNumbers: limit === undefined });
     c.header("Cache-Control", "private, no-store");
-    const gameIds = rows.map((game) => game.id);
-    const [kernelHealthByGameId, watchSummaryReadsByGameId, seasonById, settlementStateByGameId] = await Promise.all([
-      getRedactedKernelHealthByGameId(db, gameIds),
-      getGameWatchStateSummaryReadsByGameIds(db, gameIds),
-      getGameSeasonIdentityMap(db, rows.map((game) => game.seasonId)),
-      getGameCompletionSettlementStateMap(db, gameIds),
-    ]);
-
-    const summaries = rows.flatMap((game) => {
-      try {
-        const config = JSON.parse(game.config);
-        const formatManifest = resolveFormatManifest(
-          config.formatManifest ?? LEGACY_FORMAT_MANIFEST,
-        );
-        const summaryRead = watchSummaryReadsByGameId.get(game.id) ?? { status: "missing" as const };
-        const watchState = summaryRead.status === "current"
-          ? summaryRead.summary
-          : buildFallbackGameWatchStateSummary(game, config);
-
-        return [{
-          id: game.id,
-          slug: game.slug,
-          episode: episodes.get(game.id),
-          status: game.status,
-          playerCount: game.maxPlayers ?? config.maxPlayers ?? watchState.counts.totalPlayers,
-          currentRound: watchState.currentRound,
-          maxRounds: config.maxRounds ?? 10,
-          currentPhase: watchState.currentPhase,
-          phaseTimeRemaining: null,
-          alivePlayers: watchState.counts.alivePlayers,
-          eliminatedPlayers: watchState.counts.eliminatedPlayers,
-          modelLabel: modelLabelFromConfig(config),
-          visibility: config.visibility ?? "public",
-      audioMode: config.audioMode === true,
-      visualMode: config.visualMode === true,
-      visualFailurePolicy: config.visualFailurePolicy === "require_visuals" ? "require_visuals" : "best_effort",
-      visualPaused: game.status === "suspended" && Boolean(config.visualPause),
-          formatManifest,
-          empowerRevoteVersion: resolveEmpowerRevoteVersion(config.empowerRevoteVersion),
-          gameSchemaVersion: config.gameSchemaVersion ?? 1,
-          trackType: game.trackType,
-          seasonId: game.seasonId ?? undefined,
-          season: game.seasonId ? seasonById.get(game.seasonId) : undefined,
-          rated: Boolean(game.seasonId),
-          winner: watchState.winner?.name,
-          errorInfo: publicErrorInfo(game.status, config, settlementStateByGameId.get(game.id)),
-          kernelHealth: kernelHealthByGameId.get(game.id),
-          watchState,
-          watchStateSummaryStatus: summaryRead.status,
-          createdAt: game.createdAt,
-          startedAt: game.startedAt ?? undefined,
-          completedAt: game.endedAt ?? undefined,
-        }];
-      } catch (error) {
-        console.warn(
-          `[games] Skipping corrupt list row for game ${game.id}:`,
-          error instanceof Error ? error.message : error,
-        );
-        return [];
-      }
-    });
-
-    return c.json(summaries);
+    return c.json(await readPublicInfluenceSummaries(db, rows, { includeEpisodeNumbers: limit === undefined }));
   };
   // A separate route preserves the old list endpoint's ignored query params.
   app.get("/api/public-games/preview", optionalAuth(db), (c) => listPublicGames(c, true));

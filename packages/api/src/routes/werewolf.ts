@@ -1,10 +1,10 @@
 import { GameModelRoutingError } from "../services/game-model-routing.js";
 import { loadPayloads } from "../services/payload-storage.js";
-import { readEpisodePresentations } from "../services/episode-presentation.js";
+import { readPublicWerewolfSummaries } from "../services/public-library-summaries.js";
 import { isViewerGame, publicGameFilter } from "../services/game-visibility.js";
 import { enabledGameKinds } from "@influence/engine/game-availability";
 import { Hono } from "hono";
-import { and, count, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { WerewolfRulesVersionError, replayWerewolf } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { requireAuth, requirePermission, requireRole, type AuthEnv } from "../middleware/auth.js";
@@ -13,8 +13,14 @@ import { readWerewolfPresentation, readWerewolfCharacter, readWerewolfWatch } fr
 import { readWerewolfDecisions } from "../services/werewolf-decisions.js";
 import { readWerewolfThinking } from "../services/werewolf-thinking.js";
 import { createWerewolfLobby, fillWerewolfLobby, joinWerewolfLobby, leaveWerewolfLobby, readWerewolfLobby, startWerewolfLobby } from "../services/werewolf-lobbies.js";
-import { modelLabelFromConfig } from "../lib/model-label.js";
 import { abortWerewolf } from "../services/werewolf-runtime.js";
+
+/** Shared public selection keeps the legacy list and search fallback consistent. */
+function publicWerewolfRows(db: DrizzleDB) {
+  return db.select({ id: schema.games.id, slug: schema.games.slug, status: schema.games.status,
+    gameKind: schema.games.gameKind, seasonId: schema.games.seasonId, playerCount: schema.games.maxPlayers, config: schema.games.config, createdAt: schema.games.createdAt }).from(schema.games)
+    .where(and(eq(schema.games.gameKind, "werewolf"), publicGameFilter())).orderBy(desc(schema.games.createdAt));
+}
 
 export function createWerewolfRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
@@ -71,22 +77,14 @@ export function createWerewolfRoutes(db: DrizzleDB) {
   app.get("/api/werewolf", async (c) => {
     if (!enabledGameKinds().includes("werewolf")) return c.json([]);
     c.header("Cache-Control", "private, no-store");
-    const rows = await db.select({ id: schema.games.id, slug: schema.games.slug, status: schema.games.status,
-      gameKind: schema.games.gameKind, seasonId: schema.games.seasonId, playerCount: schema.games.maxPlayers, config: schema.games.config, createdAt: schema.games.createdAt }).from(schema.games)
-      .where(and(eq(schema.games.gameKind, "werewolf"), publicGameFilter())).orderBy(desc(schema.games.createdAt)).limit(100);
-    const seats = rows.length ? await db.select({ gameId: schema.werewolfLobbySeats.gameId, total: count() }).from(schema.werewolfLobbySeats)
-      .where(inArray(schema.werewolfLobbySeats.gameId, rows.map(game => game.id))).groupBy(schema.werewolfLobbySeats.gameId) : [];
-    const joined = new Map(seats.map(row => [row.gameId, row.total]));
-    const episodes = await readEpisodePresentations(db, rows);
-    const summaries = rows.flatMap(({ config, ...game }) => {
-      try {
-        return [{ ...game, episode: episodes.get(game.id), gameKind: "werewolf", joinedPlayers: game.status === "waiting" ? joined.get(game.id) ?? 0 : game.playerCount, modelLabel: modelLabelFromConfig(JSON.parse(config)) }];
-      } catch {
-        console.warn(`[werewolf] Skipping corrupt list row for game ${game.id}: invalid model configuration`);
-        return [];
-      }
-    });
-    return c.json(summaries);
+    const rows = await publicWerewolfRows(db).limit(100);
+    return c.json(await readPublicWerewolfSummaries(db, rows, { includeEpisodeNumbers: true }));
+  });
+  // Search invokes this only on demand. Unlike the legacy list, it includes older games.
+  app.get("/api/werewolf-search", async c => {
+    c.header("Cache-Control", "private, no-store");
+    if (!enabledGameKinds().includes("werewolf")) return c.json([]);
+    return c.json(await readPublicWerewolfSummaries(db, await publicWerewolfRows(db), { includeEpisodeNumbers: true }));
   });
   for (const route of ["/api/werewolf/:id/presentation", "/api/werewolf/:id/media/:asset", "/api/werewolf/:id/characters/:player"]) {
     app.get(route, async c => {

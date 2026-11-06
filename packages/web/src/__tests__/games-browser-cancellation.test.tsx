@@ -98,3 +98,23 @@ test("a real timeout still reports the timeout rather than a sibling failure", a
   await act(async () => { timeout!(); });
   expect(await view.findByText("Loading games took too long.")).toBeTruthy();
 });
+
+test("a failed sibling cancels the uncapped Werewolf search request", async () => {
+  setup(); let aborted = 0; const paths: string[] = [];
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input); paths.push(url);
+    if (url.endsWith("/api/games")) return Promise.resolve(Response.json({error:"Search unavailable"},{status:503}));
+    if (url.endsWith("/api/seasons")) return Promise.resolve(Response.json({schemaVersion:1,seasons:[]}));
+    if (url.endsWith("/api/werewolf-search")) return new Promise<Response>((_resolve, reject) => {
+      if (!init?.signal) throw new Error("Expected an abort signal");
+      init.signal.addEventListener("abort", () => { aborted++; reject(new DOMException("Aborted", "AbortError")); }, {once:true});
+    });
+    throw new Error(`Unexpected request: ${url}`);
+  }) as typeof fetch;
+  const auth = { ready: true, authenticated: false, account: null, hydrationError: false } as InfluenceAuthState;
+  const view = render(<InfluenceAuthContext.Provider value={auth}><GamesBrowser includeWerewolf uncappedWerewolfSearch hideToolbar externalFilters={{status:"all",category:"all",search:"moon"}} /></InfluenceAuthContext.Provider>);
+  await view.findByText("Search unavailable");
+  expect(aborted).toBe(1);
+  expect(paths.some(path=>path.endsWith("/api/werewolf-search"))).toBe(true);
+  expect(paths.some(path=>path.endsWith("/api/werewolf"))).toBe(false);
+});

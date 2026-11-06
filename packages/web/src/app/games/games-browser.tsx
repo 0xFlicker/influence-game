@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { enabledGameKinds } from "@influence/engine/game-availability";
 import { collectionLabel, matchesGameCollection, type GameCollection } from "@/lib/game-collections";
-import { listWerewolfGames, fillWerewolfLobby, startWerewolfLobby, stopWerewolf, setWerewolfHidden, type WerewolfGameSummary } from "@/lib/werewolf-api";
+import { listWerewolfGames, listWerewolfGamesForSearch, fillWerewolfLobby, startWerewolfLobby, stopWerewolf, setWerewolfHidden, type WerewolfGameSummary } from "@/lib/werewolf-api";
 import { EpisodeCard } from "./episode-preview";
 import { InitialShelf } from "./initial-shelf";
 import {
@@ -42,10 +42,10 @@ function phaseLabel(phase: string): string {
   return labels[phase] ?? phase.toUpperCase();
 }
 
-type StatusFilter = "all" | GameStatus;
-type CategoryFilter = "all" | GameCategoryValue;
+export type StatusFilter = "all" | GameStatus;
+export type CategoryFilter = "all" | GameCategoryValue;
 
-interface FiltersState {
+export interface FiltersState {
   status: StatusFilter;
   category: CategoryFilter;
   search: string;
@@ -74,7 +74,7 @@ interface GameCardProps {
   onRefresh: () => Promise<void>;
 }
 
-function GameCard({
+export function GameCard({
   game,
   onJoin,
   canFill,
@@ -248,17 +248,22 @@ interface GamesBrowserProps {
   collection?: GameCollection;
   includeWerewolf?: boolean;
   initialGames?: GameSummary[];
+  externalFilters?: FiltersState;
+  externalKind?: string;
+  hideToolbar?: boolean;
+  uncappedWerewolfSearch?: boolean;
 }
 
-export function GamesBrowser({ onJoin, compact = false, collection, includeWerewolf = false, initialGames = [] }: GamesBrowserProps) {
+export function GamesBrowser({ onJoin, compact = false, collection, includeWerewolf = false, initialGames = [], externalFilters, externalKind, hideToolbar = false, uncappedWerewolfSearch = false }: GamesBrowserProps) {
   const { hasPermission, roles } = usePermissions();
-  const [filters, setFilters] = useState<FiltersState>({ status: "all", category: "all", search: "" });
+  const [localFilters, setFilters] = useState<FiltersState>({ status: "all", category: "all", search: "" });
+  const filters = externalFilters ?? localFilters;
   const [games, setGames] = useState<GameSummary[]>([]);
   const showShelves = !compact && !collection;
   const [seasons, setSeasons] = useState<SeasonIdentity[]>([]);
   const [werewolfGames, setWerewolfGames] = useState<WerewolfGameSummary[]>([]);
   const [selectedKind, setKind] = useState<string>("all");
-  const kind = collection?.kind === "game" ? collection.game : selectedKind;
+  const kind = collection?.kind === "game" ? collection.game : (externalKind ?? selectedKind);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasLoadedGames, setHasLoadedGames] = useState(false);
@@ -277,7 +282,7 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
     let requests: readonly [Promise<GameSummary[]>, Promise<WerewolfGameSummary[]>, Promise<SeasonIdentity[]>] | undefined;
     try {
       const loadWerewolf = includeWerewolf && enabledGameKinds().includes("werewolf");
-      requests = [listGames(undefined, controller.signal), loadWerewolf ? listWerewolfGames(controller.signal) : Promise.resolve([]), showShelves ? listSeasons(controller.signal) : Promise.resolve([])];
+      requests = [listGames(undefined, controller.signal), loadWerewolf ? (uncappedWerewolfSearch ? listWerewolfGamesForSearch(controller.signal) : listWerewolfGames(controller.signal)) : Promise.resolve([]), showShelves ? listSeasons(controller.signal) : Promise.resolve([])];
       const [data, wolves, seasonList] = await Promise.all(requests);
       if (request !== requestVersion.current) return;
       setGames(data); setWerewolfGames(wolves); setSeasons(seasonList);
@@ -296,7 +301,7 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
       --requestsInFlight.current;
       if (request === requestVersion.current) setLoading(false);
     }
-  }, [includeWerewolf, showShelves]);
+  }, [includeWerewolf, showShelves, uncappedWerewolfSearch]);
 
   useEffect(() => {
     void refreshGames();
@@ -404,7 +409,7 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
 
   return (
     <div>
-      {!compact && <div className="episode-library-toolbar">
+      {!compact && !hideToolbar && <div className="episode-library-toolbar">
         <input aria-label="Search games" value={filters.search} onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} placeholder="Search titles, Agents, or code words…" />
         {includeWerewolf && collection?.kind !== "game" && <select aria-label="Game type" value={kind} onChange={event => setKind(event.target.value)}><option value="all">All types</option>{enabledGameKinds().map(game => <option key={game} value={game}>{game === "werewolf" ? "Werewolf" : "Influence"}</option>)}</select>}
         <select aria-label="Game status" value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value as StatusFilter }))}>{statusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
@@ -437,7 +442,7 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
   );
 }
 
-function EpisodeShelf({ name, grid, href, children }: { name: string; grid: boolean; href?: string; children: React.ReactNode }) {
+export function EpisodeShelf({ name, grid, href, children }: { name: string; grid: boolean; href?: string; children: React.ReactNode }) {
   const rail = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ left: false, right: false });
   const scroll = (direction: number) => rail.current?.scrollBy({
