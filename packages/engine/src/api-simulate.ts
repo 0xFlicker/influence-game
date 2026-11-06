@@ -19,7 +19,7 @@ import {
 } from "./model-catalog";
 import type { OpenAIRequestServiceTier } from "./llm-client";
 import { resolveFormatManifest, type LaunchFormatId } from "./formats";
-import { MAX_NEW_GAME_PLAYERS, MIN_NEW_GAME_PLAYERS } from "./types";
+import { MAX_NEW_GAME_PLAYERS, MAX_NEW_GAME_ROUNDS, MIN_NEW_GAME_PLAYERS } from "./types";
 
 interface ApiSimArgs {
   apiBaseUrl: string;
@@ -200,6 +200,9 @@ export function parseArgs(
   }
   if (!hasExplicitMaxRounds) {
     args.maxRounds = defaultApiSimulationMaxRounds(args.players);
+  }
+  if (typeof args.maxRounds === "number" && args.maxRounds > MAX_NEW_GAME_ROUNDS) {
+    throw new Error(`--max-rounds cannot exceed the new-game API limit of ${MAX_NEW_GAME_ROUNDS}`);
   }
   if (args.providerManifest) {
     args.providerManifest = normalizeProviderManifest(args.providerManifest);

@@ -61,7 +61,11 @@ describe("API-backed simulation config", () => {
   it("preserves explicit max rounds from env or CLI args", () => {
     expect(parseArgs(["--players", "6"], { INFLUENCE_API_SIM_MAX_ROUNDS: "7" }).maxRounds).toBe(7);
     expect(parseArgs(["--players", "6", "--max-rounds", "auto"], {}).maxRounds).toBe("auto");
+    expect(buildGameCreateBody(parseArgs(["--players", "6", "--max-rounds", "1"], {}), "openai:gpt-5.6-luna").maxRounds).toBe(1);
     expect(parseArgs(["--players", "6", "--max-rounds", "6"], {}).maxRounds).toBe(6);
+    expect(parseArgs(["--players", "6", "--max-rounds", "16"], {}).maxRounds).toBe(16);
+    expect(() => parseArgs(["--max-rounds", "17"], {})).toThrow("--max-rounds cannot exceed the new-game API limit of 16");
+    expect(() => parseArgs([], { INFLUENCE_API_SIM_MAX_ROUNDS: "17" })).toThrow("--max-rounds cannot exceed the new-game API limit of 16");
   });
 
   it("defaults API-backed games to Flex and forwards the standard opt-out", () => {

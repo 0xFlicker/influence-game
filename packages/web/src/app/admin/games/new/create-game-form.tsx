@@ -956,7 +956,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
             <input
               type="number"
               min={5}
-              max={30}
+              max={16}
               value={form.maxRounds === "auto" ? "" : form.maxRounds}
               placeholder="e.g. 9"
               onChange={(e) => {

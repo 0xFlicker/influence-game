@@ -95,10 +95,12 @@ All surfaces share a common auth layer: **SIWE (Sign-In with Ethereum)** via Rai
 | `modelSelection` | `{ catalogId: string; reasoningPolicy: "action-policy" \| "low" \| "medium" \| "high" }` | required | `{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "medium" }` |
 | `personaPool` | `string[]` | ≥ 2 selected | all 10 |
 | `fillStrategy` | `random \| balanced` | required | `balanced` |
-| `maxRounds` | `number \| "auto"` | ≥ 5 | `auto` (computed) |
+| `maxRounds` | `number \| "auto"` | form: integer from 5 to 16, or `auto` | `auto` (computed) |
 | `visibility` | `public \| unlisted` | required | `public` |
 
 **`mixed` mode (future):** Reserves N player slots for wallet-authenticated humans; AI fills remaining slots when game starts or a deadline is hit. V1 ships `all_ai` only — keep toggle visible but disabled with a "Coming soon" tooltip.
+
+The game creation API accepts explicit integer round limits from 1 to 16 so short API simulation inputs remain valid. Normal API runs still raise a low requested value to the player-scaled completion floor; exact short-run behavior belongs to the engine simulation lane.
 
 **Cost estimate** is computed client-side from `playerCount × phaseCount × avgTokensPerPhase × modelRate`. Display is informational only.
 
