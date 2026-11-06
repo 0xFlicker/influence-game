@@ -4,7 +4,6 @@ import type { HouseParticipation } from "@influence/engine/house-participation";
 import { participationOutcome } from "../lib/participation";
 import { ParticipationRows } from "../components/participation-history";
 import { DashboardHistory } from "../app/dashboard/dashboard-history";
-import { buildDashboardMissionControl } from "../app/dashboard/dashboard-mission-control";
 const wolf: Extract<HouseParticipation,{gameKind:"werewolf"}> = {
   gameKind:"werewolf",gameId:"wolf",gameSlug:"moonlit-village",gameTitle:"Lanterns and Lies",playerId:"dead-villager",agentProfileId:"agent",agentName:"Frozen Name",totalPlayers:6,completedAt:"2026-10-05T12:00:00.000Z",
   result:{outcome:"win",faction:"village",alive:false,eliminationDay:1,days:3},
@@ -24,17 +23,20 @@ test("faction success and survival are independent; Werewolf has no placement or
   expect(html).toContain("Lanterns and Lies");expect(html).toContain('/games/moonlit-village/results');expect(html).toContain("Results · Spoilers");
   expect(html).not.toContain("pts");expect(html).not.toContain("#");
 });
-test("latest activity may be Werewolf without inventing lifetime statistics",()=>{
-  const model=buildDashboardMissionControl({agents:[],games:[],history:[influence,wolf],queueStatus:null});
-  expect(model.latestResult).toEqual(wolf);
-  expect(model.stats).not.toHaveProperty("gamesPlayed");
-  expect(model.stats).not.toHaveProperty("wins");
-  expect(model.primaryAction.description).toContain("Village victory");
-});
 test("history exposes filters, loading, failure and empty states",()=>{
-  const render=(entries:HouseParticipation[],loading=false,error:string|null=null)=>renderToString(<DashboardHistory entries={entries} loading={loading} error={error} kind="all" onKindChange={() => {}} hasMore={false} moreLoading={false} moreError={null} onLoadMore={() => {}}/>);
+  const render=(entries:HouseParticipation[],loading=false,error:string|null=null)=>renderToString(<DashboardHistory entries={entries} loading={loading} error={error} kind="all" page={0} hasNext={false} onKindChange={()=>{}} onPrevious={()=>{}} onNext={()=>{}} onRetry={()=>{}}/>);
   expect(render([wolf])).toContain('aria-pressed="true"');
   expect(render([])).toContain("No completed games");
   expect(render([],true)).toContain('role="status"');
   expect(render([],false,"History unavailable")).toContain('role="alert"');
+});
+test("dashboard history hides results until the results page is opened",()=>{
+  const html=renderToString(<DashboardHistory entries={[wolf,influence]} loading={false} error={null} kind="all" page={0} hasNext={false} onKindChange={()=>{}} onPrevious={()=>{}} onNext={()=>{}} onRetry={()=>{}}/>);
+  expect(html).toContain("Frozen Name");
+  expect(html).toContain("View results · Spoilers");
+  expect(html).toContain('/games/moonlit-village/results');
+  expect(html).not.toContain("Village victory");
+  expect(html).not.toContain("Eliminated day 1");
+  expect(html).not.toContain("#2 of 6");
+  expect(html).not.toContain("10 pts");
 });

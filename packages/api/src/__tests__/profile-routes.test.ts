@@ -50,6 +50,17 @@ describe("public profile surfaces", () => {
     ]);
   });
 
+  test("invite codes report whether invitation signup is enabled", async () => {
+    await db.insert(schema.inviteCodes).values({ id: "invite-1", code: "INVITE01", ownerId: "named-user" });
+    const token = await createSessionToken("named-user");
+    const headers = { Authorization: `Bearer ${token}` };
+    const disabled = await app.request("/api/profile/invite-codes", { headers });
+    expect(await disabled.json()).toMatchObject({ enabled: false, totalAvailable: 1 });
+    await db.insert(schema.appSettings).values({ key: "invite_required", value: "true" }).onConflictDoUpdate({ target: schema.appSettings.key, set: { value: "true" } });
+    const enabled = await app.request("/api/profile/invite-codes", { headers });
+    expect(await enabled.json()).toMatchObject({ enabled: true, available: [{ code: "INVITE01" }] });
+  });
+
   test("private profile returns only its earned active badges on read and identity update", async () => {
     const grant = await grantAward(db, { definitionCode: "season-0-account-participant", recipient: { type: "account", id: "named-user" }, actorId: "named-user", sourceKey: "private-profile", requestId: "private-profile-grant", reason: "PRIVATE_REASON", evidence: { secret: "PRIVATE_EVIDENCE" } });
     const token = await createSessionToken("named-user");

@@ -16,6 +16,7 @@ import {
   type AuthEnv,
 } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
+import { isInviteRequired } from "../lib/invite-codes.js";
 import {
   hasSafePublicDisplayName,
   isEmailLike,
@@ -204,6 +205,7 @@ export function createProfileRoutes(db: DrizzleDB) {
     const used = codes.filter((c) => c.usedById);
 
     return c.json({
+      enabled: await isInviteRequired(db),
       available: available.map((c) => ({ code: c.code, createdAt: c.createdAt })),
       used: used.map((c) => ({ code: c.code, usedAt: c.usedAt })),
       totalAvailable: available.length,

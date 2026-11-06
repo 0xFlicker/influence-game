@@ -18,13 +18,14 @@ import { reviewPath } from "./[id]/review/owner-learning-model";
 interface AgentEditContentProps {
   agentId: string;
   sourceReviewId?: string;
+  profileRequest?: boolean;
 }
 
 function normalized(value: string | null | undefined): string {
   return value?.trim() ?? "";
 }
 
-export function AgentEditContent({ agentId, sourceReviewId }: AgentEditContentProps) {
+export function AgentEditContent({ agentId, sourceReviewId, profileRequest = false }: AgentEditContentProps) {
   const router = useRouter();
   const [agent, setAgent] = useState<SavedAgent | null>(null);
   const [heldSaved, setHeldSaved] = useState(false);
@@ -163,6 +164,7 @@ export function AgentEditContent({ agentId, sourceReviewId }: AgentEditContentPr
         <AgentForm
           key={agent.latestContentRevisionId}
           initial={agent}
+          profileRequest={profileRequest}
           strategyComparison={strategyComparison}
           showLiveChanges={Boolean(sourceReviewId)}
           draftScope={sourceReviewId ? `review:${agentId}:${sourceReviewId}` : `edit:${agentId}`}

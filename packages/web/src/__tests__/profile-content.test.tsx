@@ -52,7 +52,7 @@ describe("private profile public identity controls", () => {
 
   it("renders no invite section at zero and reveals it with an available code", () => {
     const empty = renderToString(createElement(InviteCodesSection, {
-      inviteCodes: { available: [], used: [], totalAvailable: 0, totalUsed: 0 },
+      inviteCodes: { enabled: true, available: [], used: [], totalAvailable: 0, totalUsed: 0 },
       copiedCode: null,
       onCopy: () => undefined,
     }));
@@ -60,6 +60,7 @@ describe("private profile public identity controls", () => {
 
     const available = renderToString(createElement(InviteCodesSection, {
       inviteCodes: {
+        enabled: true,
         available: [{ code: "JOIN-US", createdAt: "2026-07-16T00:00:00Z" }],
         used: [],
         totalAvailable: 1,
@@ -70,6 +71,12 @@ describe("private profile public identity controls", () => {
     }));
     expect(available).toContain("Invite Codes");
     expect(available).toContain("JOIN-US");
+    const disabled = renderToString(createElement(InviteCodesSection, {
+      inviteCodes: { enabled: false, available: [{ code: "JOIN-US", createdAt: "2026-07-16T00:00:00Z" }], used: [], totalAvailable: 1, totalUsed: 0 },
+      copiedCode: null,
+      onCopy: () => undefined,
+    }));
+    expect(disabled).toBe("");
   });
 
   it("offers only additive email/password controls and exposes no provider subjects", () => {

@@ -2,6 +2,8 @@
 
 The character editor keeps text and selected images in a current-tab session draft. Applying an image or AI suggestion changes that draft, not the saved Agent. Save draft does not publish anything. Draft storage is local to the tab; uploaded/generated image URLs retain the existing public-storage behavior.
 
+An owner visiting an agent's public profile can submit an assistant request directly. The request stays in this tab's session storage during navigation and starts the existing editor assistant once; generated changes still require an explicit save. If this tab has a draft for the agent (including a review draft or an unfinished visual-reference request), the profile instead offers continuation or confirmed discard. A draft whose recorded base content revision is older than the latest owner-visible revision is removed from this tab, along with its local image-request pointers; unknown or unreadable drafts are retained. The editor and server still enforce revision checks at save. No draft state is synchronized across tabs or devices.
+
 Profile submission is unavailable while generation or upload is pending. Generation has a five-minute UI deadline and uploads have a two-minute transport deadline. Cancel generation requires confirmation and does not promise a provider refund or termination of an already dispatched request. Cancellation, timeouts and failures preserve the selected assets and text. Saving afterward requires confirmation that the currently selected assets should be used. A canceled or expired operation cannot apply late results, including after draft restoration. Unknown paid requests must be reconciled with the same request ID rather than automatically redispatched. If the portrait-start response is lost before a request ID is known, the editor shows the uncertainty and offers no blind portrait retry.
 
 The active reference request stays attached to its draft after cancellation, timeout or failure, so an explicit retry uses the same durable request rather than creating another paid operation. **Save draft** preserves that recovery information and does not unblock a different refinement. Successful final submission, **Clear draft**, or confirmed **Discard** retires the tab's reference pointer and interruption marker together with the draft; subsequent refinement starts a new request. Failed submissions and declined confirmations retain the pointers. Retiring local recovery never deletes server receipts or permits an old completion to apply.
@@ -91,7 +93,7 @@ The navigation, footer, page title, and links to `/games/free` use **Intake**. T
 
 ## Dashboard toolbox
 
-On `/dashboard`, desktop header creation shortcuts are hidden because Mission Control already provides them. The mobile menu retains its creation shortcuts.
+The dashboard focuses on the owner's agents, completed game history and eligible agent reviews. Settings opens from the dashboard and retains identity, sign-in, account, honors, rating and available invite controls. The owner invite-code read reports whether invite-only signup is enabled; Settings shows available codes only when it is. Game discovery and queue entry remain on their respective Games and Seasons surfaces. On `/dashboard`, desktop header creation shortcuts are hidden; agent creation remains available in the agent bench and authorized game creation remains in the dashboard header. The mobile menu retains its creation shortcuts.
 
 Game browsing views use the shared header/menu creation action; their filter toolbars do not repeat a New Game button.
 

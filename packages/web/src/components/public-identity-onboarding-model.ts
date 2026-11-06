@@ -136,14 +136,12 @@ export type IdentityPromptDecision =
   | "none"
   | "invite"
   | "identity-required"
-  | "identity-deferrable"
-  | "downstream";
+  | "identity-deferrable";
 
 export function identityPromptDecision(input: {
   signedIn: boolean;
   needsInvite: boolean;
   identityState: PublicIdentityOnboardingState | null;
-  identityResolved?: boolean;
   dismissed: boolean;
 }): IdentityPromptDecision {
   if (!input.signedIn) return "none";
@@ -152,13 +150,10 @@ export function identityPromptDecision(input: {
   if (input.identityState === "deferrable" && !input.dismissed) {
     return "identity-deferrable";
   }
-  if (input.identityState === null) {
-    return input.identityResolved ? "downstream" : "none";
-  }
-  return "downstream";
+  return "none";
 }
 
-export function identitySaveHandoffPublicId(input: {
+export function currentIdentitySavePublicId(input: {
   signedIn: boolean;
   currentPublicId: string | null;
   savedPublicId: string;
@@ -166,6 +161,14 @@ export function identitySaveHandoffPublicId(input: {
   return input.signedIn && input.currentPublicId === input.savedPublicId
     ? input.savedPublicId
     : null;
+}
+
+export function containedFocusTargetIndex(itemCount: number, activeIndex: number, shiftKey: boolean): number | null {
+  if (itemCount === 0) return null;
+  if (activeIndex < 0) return shiftKey ? itemCount - 1 : 0;
+  if (shiftKey && activeIndex === 0) return itemCount - 1;
+  if (!shiftKey && activeIndex === itemCount - 1) return 0;
+  return null;
 }
 
 export function normalizeAuthenticatedPublicIdentity(

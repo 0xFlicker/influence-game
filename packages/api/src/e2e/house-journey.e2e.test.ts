@@ -64,6 +64,19 @@ async function text(page:Page,value:string) {
     throw error;
   }
 }
+async function dashboardHistoryLink(page: Page, href: string) {
+  const history = 'section[aria-labelledby="dashboard-history-title"]';
+  await page.waitForSelector(`${history} ol li`, { timeout: 45_000 });
+  for (let attempt = 0; attempt < 10; attempt++) {
+    if (await page.$(`${history} a[href="${href}"]`)) return;
+    const next = await page.$(`${history} nav[aria-label="Game history pages"] button:last-child`);
+    if (!next || await next.evaluate(button => (button as unknown as { disabled: boolean }).disabled)) break;
+    const previousPage = await page.$eval(`${history} nav span`, element => element.textContent);
+    await next.click();
+    await page.waitForFunction(`(() => { const label = document.querySelector(${JSON.stringify(`${history} nav span`)})?.textContent; return label && label !== ${JSON.stringify(previousPage)} && document.querySelector(${JSON.stringify(`${history} ol li`)}); })()`);
+  }
+  throw new Error(`Dashboard history did not include ${href}`);
+}
 test("old/new House cards, title search, stable links and responsive art",async()=>{
   const page=await browser.newPage();
   await rejectOptionalAnalytics(page);
@@ -140,18 +153,25 @@ test("mixed profile and owner history filter in place at desktop/mobile widths",
   try {
     for(const width of [1440,390]) {
       await dashboard.setViewport({width,height:1000});
-      await text(dashboard,"Game history");await text(dashboard,"secret-village-link");
+      await text(dashboard,"Game history");
+      await dashboard.evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='All games')?.click()");
+      await dashboard.waitForFunction(`(() => {
+        const history = document.querySelector('section[aria-labelledby="dashboard-history-title"]');
+        const all = [...(history?.querySelectorAll('button') ?? [])].find(button => button.textContent === 'All games');
+        const page = history?.querySelector('nav[aria-label="Game history pages"] span')?.textContent;
+        return all?.getAttribute('aria-pressed') === 'true' && (!page || page === 'Page 1');
+      })()`);
+      await dashboardHistoryLink(dashboard,"/games/secret-village-link");
       await dashboard.evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Werewolf')?.click()");
+      await dashboard.waitForFunction("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Werewolf' && b.getAttribute('aria-pressed')==='true')");
       await dashboard.waitForFunction("!document.body.innerText.includes('Frozen Influence')");
       expect(await dashboard.evaluate("document.documentElement.scrollWidth <= innerWidth")).toBe(true);
+      expect(await dashboard.$eval('section[aria-labelledby="dashboard-history-title"]', element => element.textContent?.includes("Village victory"))).toBe(false);
       await dashboard.screenshot({path:`/tmp/history-dashboard-${width}.png`,fullPage:true});
       await dashboard.evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='All games')?.click()");
-      await text(dashboard,"Frozen Influence");
+      await dashboard.waitForFunction("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='All games' && b.getAttribute('aria-pressed')==='true')");
+      await dashboardHistoryLink(dashboard,"/games/history-influence");
     }
-    const priorLink = '[data-testid="dashboard-recent-result"] a[href^="/games/"]';
-    await dashboard.waitForSelector(priorLink);
-    const previousHref = await dashboard.$eval(priorLink, element => element.getAttribute("href"));
-    expect(previousHref).toBeTruthy();
     const failHistory = (request: HTTPRequest) => {
       if (request.method() === "GET" && new URL(request.url()).pathname === "/api/player/games-page") {
         void request.respond({ status: 503, contentType: "application/json", headers: { "Access-Control-Allow-Origin": "*" }, body: JSON.stringify({ error: "Fixture unavailable" }) });
@@ -161,12 +181,14 @@ test("mixed profile and owner history filter in place at desktop/mobile widths",
     dashboard.on("request", failHistory);
     try {
       await dashboard.evaluate("window.dispatchEvent(new Event('auth:session-ready'))");
-      await dashboard.waitForFunction("document.querySelector('[data-testid=dashboard-recent-result]')?.textContent?.includes('Failed to load game history.')");
-      expect(await dashboard.$(priorLink)).toBeNull();
+      await dashboard.waitForFunction("document.querySelector('section[aria-labelledby=dashboard-history-title] [role=alert]')?.textContent?.includes('Could not load your game history.')");
+      expect(await dashboard.$('section[aria-labelledby="dashboard-history-title"] ol li')).toBeNull();
     } finally {
       dashboard.off("request", failHistory);
       await dashboard.setRequestInterception(false);
     }
+    await dashboard.evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Try again')?.click()");
+    await dashboardHistoryLink(dashboard,"/games/history-influence");
   } finally {await dashboard.close();}
 },180000);
 
@@ -185,16 +207,23 @@ test("dashboard fetches history pages only when requested and applies game filte
     const requests: string[] = [];
     dashboard.on("request", req => { const url = new URL(req.url()); if (req.method() === "GET" && url.pathname.startsWith("/api/player/games")) requests.push(url.pathname + url.search); });
     await dashboard.reload({waitUntil:"domcontentloaded"});
-    await dashboard.waitForFunction("Array.from(document.querySelectorAll('button')).some(b => b.textContent === 'Load older games')");
+    await dashboard.waitForFunction("Array.from(document.querySelectorAll('nav[aria-label=\"Game history pages\"] button')).some(b => b.textContent === 'Next' && !b.disabled)");
     await Bun.sleep(400);
     expect(requests.some(url => url === "/api/player/games")).toBe(false);
+    expect(requests.some(url => new URL(url, "http://local").searchParams.get("limit") === "3")).toBe(true);
+    expect(await dashboard.$$eval('section[aria-labelledby="dashboard-history-title"] ol li', items => items.length)).toBe(3);
     expect(requests.filter(url => new URL(url, "http://local").searchParams.has("cursor"))).toHaveLength(0);
     const nextPage = dashboard.waitForResponse(response => response.request().method() === "GET" && new URL(response.url()).pathname === "/api/player/games-page" && new URL(response.url()).searchParams.has("cursor"));
-    await dashboard.evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Load older games')?.click()");
+    await dashboard.evaluate("Array.from(document.querySelectorAll('nav[aria-label=\"Game history pages\"] button')).find(b=>b.textContent==='Next')?.click()");
     expect((await nextPage).ok()).toBe(true);
-    await dashboard.waitForFunction("Array.from(document.querySelectorAll('button')).some(b => b.textContent === 'Load older games')");
+    await dashboard.waitForFunction("document.querySelector('nav[aria-label=\"Game history pages\"] span')?.textContent === 'Page 2'");
+    expect(await dashboard.$$eval('section[aria-labelledby="dashboard-history-title"] ol li', items => items.length)).toBe(3);
     await Bun.sleep(400);
     expect(requests.filter(url => new URL(url, "http://local").searchParams.has("cursor"))).toHaveLength(1);
+    const previousPage = dashboard.waitForResponse(response => response.request().method() === "GET" && new URL(response.url()).pathname === "/api/player/games-page" && !new URL(response.url()).searchParams.has("cursor"));
+    await dashboard.evaluate("Array.from(document.querySelectorAll('nav[aria-label=\"Game history pages\"] button')).find(b=>b.textContent==='Previous')?.click()");
+    expect((await previousPage).ok()).toBe(true);
+    await dashboard.waitForFunction("document.querySelector('nav[aria-label=\"Game history pages\"] span')?.textContent === 'Page 1'");
     const filteredPage = dashboard.waitForResponse(response => response.request().method() === "GET" && new URL(response.url()).pathname === "/api/player/games-page" && new URL(response.url()).searchParams.get("game") === "werewolf");
     await dashboard.evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Werewolf')?.click()");
     expect((await filteredPage).ok()).toBe(true);

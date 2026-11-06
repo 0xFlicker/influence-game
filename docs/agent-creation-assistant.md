@@ -42,9 +42,9 @@ there is no account-specific draft. Saving or discarding retires the active draf
 
 All creation entry points (ordinary, join-game and Daily Free) offer an AI
 assistant or Advanced create. Advanced uses the existing full editor and save
-contract. Switching from the assistant preserves the current draft. The global
-Daily Free acquisition prompt is suppressed on the creation route so its delayed
-reminder cannot interrupt either creation mode.
+contract. Switching from the assistant preserves the current draft. The former
+site-wide Daily Free acquisition prompt is no longer displayed; queue entry lives
+on the relevant game and season pages.
 
 The assistant fills the viewport over a dark stone hall with gold and purple
 accents. The House mark and starting cue remain in the upper scene through

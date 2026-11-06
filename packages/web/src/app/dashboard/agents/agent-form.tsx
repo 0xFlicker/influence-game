@@ -34,9 +34,9 @@ import { GrowingTextarea } from "./growing-textarea";
 import { StrategyDiff } from "./strategy-diff";
 import { AgentAIEditor } from "./agent-ai-editor";
 import { AgentCreationChat, type CharacterSection } from "./agent-creation-chat";
-import { readEditorStorage, removeEditorStorage, writeEditorStorage } from "./agent-editor-storage";
+import { AGENT_EDITOR_DRAFT_VERSION, agentEditRequestKey, findAgentDrafts, isAgentEditorDraft, readEditorStorage, removeEditorStorage, writeEditorStorage } from "./agent-editor-storage";
 
-const DRAFT_VERSION = 4;
+const DRAFT_VERSION = AGENT_EDITOR_DRAFT_VERSION;
 const GENERATION_TIMEOUT_MS = 5 * 60 * 1000;
 
 export interface StrategyComparison {
@@ -53,6 +53,7 @@ interface AgentFormProps {
   onAdvanced?: () => void;
   onAssistant?: () => void;
   initial?: SavedAgent;
+  profileRequest?: boolean;
   strategyComparison?: StrategyComparison;
   showLiveChanges?: boolean;
   draftScope: string;
@@ -111,10 +112,6 @@ function createRequestId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
-
 function sameSnapshot(left: EditorSnapshot, right: EditorSnapshot): boolean {
   return JSON.stringify(left.modelPreference ?? "default") === JSON.stringify(right.modelPreference ?? "default")
     && left.name === right.name
@@ -140,15 +137,8 @@ function normalizedStrategy(value: string): string {
 function parseStoredDraft(value: string | null): StoredEditorDraft | null {
   if (!value) return null;
   try {
-    const parsed = JSON.parse(value) as Partial<StoredEditorDraft>;
-    return parsed.version === DRAFT_VERSION
-      && typeof parsed.savedAt === "string"
-      && typeof parsed.creationRequestId === "string"
-      && isUuid(parsed.creationRequestId)
-      && parsed.base != null
-      && parsed.current != null
-      ? parsed as StoredEditorDraft
-      : null;
+    const parsed: unknown = JSON.parse(value);
+    return isAgentEditorDraft(parsed) ? parsed as StoredEditorDraft : null;
   } catch {
     return null;
   }
@@ -160,6 +150,7 @@ export function AgentForm({
   onAdvanced,
   onAssistant,
   initial,
+  profileRequest = false,
   strategyComparison,
   showLiveChanges = false,
   draftScope,
@@ -243,6 +234,8 @@ export function AgentForm({
   const [assistantNote, setAssistantNote] = useState<string | null>(null);
   const [generationQuips, setGenerationQuips] = useState<string[]>([]);
   const [changeRequest, setChangeRequest] = useState("");
+  const profileRequestChecked = useRef(false);
+  const [profileRequestBlocked, setProfileRequestBlocked] = useState(false);
   const [creationTraitIds, setCreationTraitIds] = useState<AgentCreationTraitId[]>([]);
   const [editHistory, setEditHistory] = useState<string[]>([]);
   const [allowAIChoose, setAllowAIChoose] = useState(!initial?.personaKey);
@@ -353,6 +346,10 @@ export function AgentForm({
     const stored = parseStoredDraft(storedRead.value ?? (anonymousRead?.ok ? anonymousRead.value : null));
     recoveredAnonymousDraft.current = Boolean(stored && anonymousRead?.ok && anonymousRead.value);
     if (!stored) {
+      if (storedRead.value) {
+        setDraftStorageError("This tab has an unreadable draft. Return to the agent profile to discard it, or save changes here to replace it.");
+        return;
+      }
       setDraftReady(true);
       return;
     }
@@ -514,6 +511,10 @@ export function AgentForm({
     }
     setPendingRestore(null);
     setDraftReady(true);
+    if (profileRequestBlocked) {
+      profileRequestChecked.current = false;
+      setProfileRequestBlocked(false);
+    }
   }
 
   const visualOffer = !visualDesign?.trim() || !performanceInstructions.trim() || !fullBodyReferenceUrl
@@ -529,9 +530,9 @@ export function AgentForm({
     });
   }
 
-  async function handleAdvancedSend() {
-    if (generationBusy || uploading || submitting) return;
-    const message = changeRequest.trim() || "Create a character using the selected ingredients.";
+  async function handleAdvancedSend(incomingMessage?: string) {
+    if (generationBusy || uploading || submitting || profileRequestBlocked) return;
+    const message = incomingMessage?.trim() || changeRequest.trim() || "Create a character using the selected ingredients.";
     const context = { name, personaKey: personaKey ?? "", gender, personality, backstory, strategyStyle, werewolfStrategyStyle, performanceInstructions, visualDesign: visualDesign ?? "", hasFullBody: Boolean(fullBodyReferenceUrl) };
     const prompt = assistantNote ?? visualOffer;
     const history = [...editHistory, ...(prompt ? [`assistant: ${prompt}`] : [])].slice(-24).map(line => line.slice(0, 2000));
@@ -562,6 +563,29 @@ export function AgentForm({
       if (epoch === generationEpoch.current) { setProfileGenerating(false); setGenerationDeadline(null); }
     }
   }
+
+  // A profile request is a one-shot handoff in this tab, not a URL or account record.
+  useEffect(() => {
+    if (!profileRequest || profileRequestChecked.current || !account?.id || !initial || draftScope !== `edit:${initial.id}`) return;
+    const key = agentEditRequestKey(account.id, initial.id);
+    const incoming = readEditorStorage(key);
+    if (!incoming.ok) { profileRequestChecked.current = true; setAiError("Could not read your request from this tab. Please enter it again."); return; }
+    if (!incoming.value) { profileRequestChecked.current = true; return; }
+    const drafts = findAgentDrafts(account.id, initial.id, initial.latestContentRevisionId ?? initial.contentRevisionId);
+    if (!drafts.ok) { profileRequestChecked.current = true; setAiError("Could not check the existing draft. Your request remains in this tab."); return; }
+    if (!draftReady && !drafts.scopes.length) return;
+    profileRequestChecked.current = true;
+    setChangeRequest(incoming.value);
+    if (drafts.scopes.length || pendingRestore) {
+      setProfileRequestBlocked(true);
+      setAiError("An unfinished draft was found. Finish or discard it before sending this request. Your request remains in this tab.");
+      return;
+    }
+    if (!removeEditorStorage(key)) { setProfileRequestBlocked(true); setAiError("Could not safely start the request. Check browser storage and try again; your text is shown here."); return; }
+    void handleAdvancedSend(incoming.value);
+  // The ref makes this a one-shot handoff after draft recovery has settled.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account?.id, initial, draftScope, draftReady, pendingRestore, profileRequest]);
 
   function requestAccount() {
     saveLocalDraft();
@@ -976,7 +1000,7 @@ export function AgentForm({
         value={changeRequest}
         onChange={(value) => { setChangeRequest(value); setAiError(null); }}
         onSend={() => void handleAdvancedSend()}
-        canSend={Boolean(changeRequest.trim() || (!isEditing && creationTraitIds.length > 0)) && !generationBusy && !uploading && !submitting}
+        canSend={Boolean(changeRequest.trim() || (!isEditing && creationTraitIds.length > 0)) && !generationBusy && !uploading && !submitting && !profileRequestBlocked}
         busy={generationBusy || uploading}
         submitting={submitting}
         personaKey={personaKey}
