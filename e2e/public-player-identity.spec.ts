@@ -135,6 +135,7 @@ test.describe("local public player identity", () => {
         await page.routeWebSocket(/\/ws\/games\/preshow-fixture(?:\?.*)?$/, () => {});
         await page.goto(`${servers.webUrl}/games/preshow-fixture`, { waitUntil: "networkidle" });
         const preShow = page.getByRole("region", { name: "Game pre-show" });
+        await expect(preShow.getByText("The first seat is yours.")).toBeVisible();
         await expect(page.getByRole("link", { name: "The House", exact: true })).toHaveCount(1);
         if (width === 390) await page.getByRole("button", { name: "Open menu" }).click();
         const create = page.getByRole("link", { name: "Create agent", exact: true });
