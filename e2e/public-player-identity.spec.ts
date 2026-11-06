@@ -436,10 +436,16 @@ test.describe("local public player identity", () => {
           await expect(card).toContainText("6/6 joined");
           await expect(card.getByRole("button", { name: "Fill AI", exact: true })).toHaveCount(0);
           expect(actions).not.toContain(`${kind}:start`);
+          const beforeStart = await card.elementHandle();
+          expect(beforeStart).not.toBeNull();
           await card.getByRole("button", { name: "Start", exact: true }).click();
           await expect.poll(() => actions.includes(`${kind}:start`)).toBe(true);
+          await beforeStart!.waitForElementState("hidden");
+          const beforeStop = await card.elementHandle();
+          expect(beforeStop).not.toBeNull();
           await card.getByRole("button", { name: "Stop", exact: true }).click();
           await expect.poll(() => actions.includes(`${kind}:stop`)).toBe(true);
+          await beforeStop!.waitForElementState("hidden");
           await card.getByRole("button", { name: "Hide", exact: true }).click();
           const dialog = page.getByRole("dialog", { name: "Hide game", exact: true });
           await dialog.getByRole("button", { name: "Hide", exact: true }).click();
