@@ -324,3 +324,33 @@ without another request or scan. Empty attention URLs return to All while keepin
 search and the agent return position. Both affected management browser journeys
 passed (358 assertions), including empty and nonempty filter states and stale URL
 recovery.
+
+## Follow-up: Guided field readers and identity editors
+
+Long-text fixture arrows open full-text readers without selecting an AI edit.
+Clicking the tile body still scopes the composer directly. Mouse hover previews
+the full value after 600ms without moving the form; touch uses the arrow. Readers
+and editors anchor beside the referring field, flip above it when needed and
+stay within the visible viewport instead of using the bottom activity position.
+
+Name and Archetype use compact X / input or picker / OK / sparkle controls.
+Cancel and Escape discard their local buffer. OK applies only that field to the
+shared draft; Enter on Name does the same without submitting the agent form.
+Sparkle queues the existing draft field, leaves the unsent composer message
+intact and restores its focus without a provider request. The styled Archetype
+picker stays fully usable inside the native dialog, including at 320px.
+
+All 15 workspace browser journeys passed (1,099 assertions). The final field
+journey separately verifies delayed hover, short-viewport fit, full-text content,
+field anchoring, visible dropdown clicks, cancel/apply, shared Advanced values,
+focus return and zero provider calls. The focused unit group passed 47 tests.
+The provider-free baseline passed 3,372 tests with 5 skips and no failures.
+An initial broad run hit a React scheduler cleanup error after the existing
+history-pagination tests; those tests passed in isolation with the Guided tests,
+and the full baseline then passed on rerun.
+Final typecheck, lint and `git diff --check` passed.
+
+Visual evidence is under `.renders/agent-workspace/`: `guided-field-hover-1440.png`,
+`guided-field-reader-1440.png`, `guided-name-editor-{1440,390,320}.png` and
+`guided-archetype-editor-320.png`. No paid generation or account changes were
+needed.

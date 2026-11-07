@@ -6,7 +6,7 @@ import {
 } from "./agent-generations";
 import { captureProductEvent } from "@/lib/product-analytics";
 import { agentModelLabel } from "@/components/agent-model-label";
-import { getPersonaLabel } from "@/lib/personas";
+import { getPersonaLabel, PERSONAS } from "@/lib/personas";
 import { PLAYER_VOICES } from "@influence/engine/voice-catalog";
 import { OwnedCharacterImage } from "@/components/owned-character-image";
 import { AgentVoicePicker } from "./voice-audition-picker";
@@ -2263,6 +2263,15 @@ export function AgentForm({
                 conversation={conversation}
                 onConversationChange={setConversation}
                 scope={guidedScope}
+                onIdentityChange={(section, value) => {
+                  if (section === "name") {
+                    setName(value);
+                    setValidationErrors((current) => ({ ...current, name: "" }));
+                  } else {
+                    const persona = PERSONAS.find(option => option.key === value);
+                    if (persona) setPersonaKey(persona.key);
+                  }
+                }}
                 onGenderChange={(value) => {
                   setGender(value);
                   setValidationErrors((current) => ({

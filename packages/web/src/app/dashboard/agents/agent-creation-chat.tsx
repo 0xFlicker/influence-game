@@ -16,6 +16,7 @@ import {
 import { AgentGenderControl } from "./agent-gender-control";
 import styles from "./agent-workspace.module.css";
 import { AgentCreationIngredients } from "./agent-creation-ingredients";
+import { GuidedCharacterField } from "./guided-character-field";
 
 const labels = {
   name: "Name",
@@ -57,6 +58,7 @@ export function AgentCreationChat({
   onConversationChange,
   scope,
   onGenderChange,
+  onIdentityChange,
   profile,
   onGenerate,
   onAppearance,
@@ -80,6 +82,7 @@ export function AgentCreationChat({
   onConversationChange?: (value: CharacterConversation) => void;
   scope?: { section: CharacterSection };
   onGenderChange?: (value: AgentGender) => void;
+  onIdentityChange?: (section: "name" | "personaKey", value: string) => void;
   anonymous?: boolean;
   anonymousUsed?: boolean;
   onAnonymousMessage?: (
@@ -399,36 +402,20 @@ export function AgentCreationChat({
                       updating={updatingFields.includes(section)}
                     />
                   ) : (
-                    <button
+                    <GuidedCharacterField
                       key={section}
-                      type="button"
-                      disabled={locked || ended}
-                      onClick={() => selectSection(section)}
-                      aria-label={`Revise ${labels[section]}`}
-                      aria-pressed={sections.includes(section)}
-                      data-updating={updatingFields.includes(section) || undefined}
-                      aria-busy={updatingFields.includes(section)}
-                      className={`agent-creation-fixture min-w-0 rounded-lg border p-2 text-left ${sections.includes(section) ? "border-amber-200/70 bg-amber-200/15" : "border-amber-200/20"}`}
-                    >
-                      <span className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] uppercase tracking-wide text-white/45">
-                          {labels[section]}
-                        </span>
-                        <span
-                          aria-hidden="true"
-                          className="text-sm text-violet-200"
-                        >
-                          ↗
-                        </span>
-                      </span>
-                      <span className="agent-creation-fixture-copy mt-2 line-clamp-2 text-sm leading-5">
-                        {section === "personaKey"
-                          ? PERSONAS.find(
-                              (persona) => persona.key === profile[section],
-                            )?.name
-                          : profile[section]}
-                      </span>
-                    </button>
+                      section={section}
+                      label={labels[section]}
+                      value={profile[section]}
+                      disabled={locked}
+                      aiDisabled={locked || ended}
+                      selected={sections.includes(section)}
+                      updating={updatingFields.includes(section)}
+                      onRefine={() => selectSection(section)}
+                      onApply={onIdentityChange && (section === "name" || section === "personaKey")
+                        ? value => onIdentityChange(section, value)
+                        : undefined}
+                    />
                   ),
                 )}
               </div>

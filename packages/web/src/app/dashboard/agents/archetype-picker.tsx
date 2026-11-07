@@ -134,13 +134,13 @@ export function ArchetypePicker({
             >
               {PERSONAS.map((persona, index) => (
                 <button
+                  key={persona.key}
                   {...getItemProps({
                     onClick() {
                       onChange(persona.key);
                       setOpen(false);
                     },
                   })}
-                  key={persona.key}
                   type="button"
                   role="option"
                   aria-selected={index === selectedIndex}

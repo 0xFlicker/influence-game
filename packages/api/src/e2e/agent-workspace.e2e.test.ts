@@ -331,6 +331,116 @@ test("management badges fit the artwork in every activity state without moving a
   }
 }, 60_000);
 
+test("Guided field readers and identity editors preserve draft intent and focus", async () => {
+  const page = await createAuthenticatedPage(browser, owner.jwt,
+    servers.webUrl + `/dashboard/agents/${agentId}/edit?profileRequest=1`,
+    { privateKey: owner.wallet.privateKey });
+  const longBackstory = "Nori repairs antique radios on a floating night market.\n\n" + "Rain rattles the lanterns while Nori listens for lost signals. ".repeat(18) + "The last sentence is visible in full.";
+  let providerCalls = 0;
+  const uiErrors: string[] = [];
+  page.on("console", message => {
+    // This harness authenticates with a local JWT and deliberately has no real Privy app.
+    if (message.type() === "error" && message.location().url !== "https://auth.privy.io/api/v1/apps/e2e-test-privy-app-id-001") {
+      uiErrors.push(message.text() + " " + message.location().url);
+    }
+  });
+  page.on("pageerror", error => uiErrors.push(String(error)));
+  page.on("request", request => {
+    if (request.method() === "POST" && /\/(generate|creation-assistant|edit-assistant|character-reference-jobs)$/.test(new URL(request.url()).pathname)) providerCalls++;
+  });
+  try {
+    await page.setViewport({ width: 1440, height: 900 });
+    await page.waitForSelector("#agent-creation-message", { visible: true });
+    await button(page, "Advanced");
+    await fill(page, "#agent-backstory", longBackstory);
+    await button(page, "Guided");
+    await page.evaluate("document.fonts.ready");
+    const before = await editorPositions(page);
+    await page.hover('[aria-label="Revise Backstory"]');
+    expect(await page.$('[role="tooltip"]')).toBeNull();
+    await page.waitForSelector('[role="tooltip"]', { visible: true });
+    expect(await page.$eval('[role="tooltip"]', element => element.textContent)).toContain(longBackstory);
+    expectSamePositions(before, await editorPositions(page));
+    await page.screenshot({ path: proof + "guided-field-hover-1440.png", fullPage: false });
+    await page.setViewport({ width: 1280, height: 650 });
+    await page.hover('[aria-label="Revise Backstory"]');
+    await page.waitForFunction('(()=>{const e=document.querySelector(\'[role="tooltip"]\');if(!e)return false;const r=e.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&r.left>=0&&r.right<=innerWidth;})()');
+    await page.setViewport({ width: 1440, height: 900 });
+    await page.click('[aria-label="View full Backstory"]');
+    await page.waitForSelector('dialog[open][aria-label="Backstory"]');
+    expect(await page.$eval('dialog[open]', element => element.textContent)).toContain(longBackstory);
+    expect(await page.$('[aria-label="Selected sections"]')).toBeNull();
+    expect(await page.$('[role="tooltip"]')).toBeNull();
+    await page.screenshot({ path: proof + "guided-field-reader-1440.png", fullPage: false });
+    await button(page, "Close");
+    expect(await page.evaluate('document.activeElement?.getAttribute("aria-label")')).toBe("View full Backstory");
+    await page.click('[aria-label="Revise Backstory"]');
+    expect(await page.$eval('[aria-label="Selected sections"]', element => element.textContent)).toContain(longBackstory);
+    expect(await page.evaluate('document.activeElement?.id')).toBe("agent-creation-message");
+    await button(page, "Remove change Backstory");
+    await page.click('[aria-label="Edit Name"]');
+    await page.waitForSelector('dialog[open] input[aria-label="Name"]');
+    expect(await page.evaluate('document.activeElement?.getAttribute("aria-label")')).toBe("Name");
+    await page.waitForFunction('document.querySelector("dialog[open]")?.style.opacity === "1"');
+    expect(await page.evaluate('(()=>{const field=document.querySelector(\'[aria-label="Edit Name"]\').parentElement.getBoundingClientRect();const modal=document.querySelector("dialog[open]").getBoundingClientRect();return Math.min(Math.abs(modal.top-field.bottom),Math.abs(modal.bottom-field.top));})()')).toBeLessThanOrEqual(12);
+    await fill(page, 'dialog[open] input', "Unsaved name");
+    await button(page, "Cancel");
+    expect(await page.$eval('[aria-label="Revise Name"]', element => element.textContent)).toContain("Mira Voss");
+    await page.click('[aria-label="Edit Name"]');
+    await fill(page, 'dialog[open] input', "Mira Guided Draft");
+    for (const width of [1440, 390, 320]) {
+      await page.setViewport({ width, height: 900 });
+      await page.waitForFunction('(()=>{const r=document.querySelector("dialog[open]").getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;})()');
+      expect(await page.$eval('dialog[open]', element => element.scrollWidth <= element.clientWidth)).toBe(true);
+      await page.screenshot({ path: proof + `guided-name-editor-${width}.png`, fullPage: false });
+    }
+    await page.keyboard.press("Enter");
+    expect(await page.$eval('[aria-label="Revise Name"]', element => element.textContent)).toContain("Mira Guided Draft");
+    expect(await page.$('[aria-label="Review changes"]')).toBeNull();
+    await page.click('[aria-label="Edit Archetype"]');
+    await page.click('dialog[open] button[aria-haspopup="listbox"]');
+    await page.waitForSelector('dialog[open] [role="option"]');
+    expect(await page.$eval('dialog[open] [role="listbox"]', element => element.getBoundingClientRect().height)).toBeGreaterThan(250);
+    await page.screenshot({ path: proof + "guided-archetype-editor-320.png", fullPage: false });
+    const pickDeceiver = async () => {
+      for (const option of await page.$$('dialog[open] [role="option"]')) {
+        if (await option.evaluate(element => element.textContent?.includes("Deceiver"))) {
+          await option.click();
+          return;
+        }
+      }
+      throw new Error("Deceiver option unavailable");
+    };
+    await pickDeceiver();
+    await button(page, "Cancel");
+    expect(await page.$eval('[aria-label="Revise Archetype"]', element => element.textContent)).not.toContain("Deceiver");
+    await page.click('[aria-label="Edit Archetype"]');
+    await page.click('dialog[open] button[aria-haspopup="listbox"]');
+    await pickDeceiver();
+    await button(page, "OK");
+    expect(await page.$eval('[aria-label="Revise Archetype"]', element => element.textContent)).toContain("Deceiver");
+    await page.setViewport({ width: 390, height: 844 });
+    await fill(page, "#agent-creation-message", "Keep the lighthouse backstory.");
+    await page.click('[aria-label="Edit Name"]');
+    await fill(page, 'dialog[open] input', "Another unsaved name");
+    await button(page, "Change Name with AI");
+    await page.waitForSelector('[aria-label="Selected sections"]');
+    await page.waitForFunction('document.activeElement?.id === "agent-creation-message"');
+    expect(await page.$eval('[aria-label="Selected sections"]', element => element.textContent)).toContain("Mira Guided Draft");
+    expect(await page.$eval('#agent-creation-message', element => element.value)).toBe("Keep the lighthouse backstory.");
+    expect(await page.$eval('[aria-label="Revise Name"]', element => element.textContent)).not.toContain("Another unsaved name");
+    await button(page, "Advanced");
+    expect(await page.$eval('#agent-name', element => element.value)).toBe("Mira Guided Draft");
+    expect(await page.$eval('#agent-archetype', element => element.textContent)).toContain("Deceiver");
+    expect(providerCalls).toBe(0);
+    expect(uiErrors).toEqual([]);
+    await button(page, "Cancel");
+    await button(page, "Discard");
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
 test("management → Edit → Guided/Advanced → review → Reviewing preserves the public version", async () => {
   const page = await createAuthenticatedPage(
     browser,

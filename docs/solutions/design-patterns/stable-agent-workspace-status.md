@@ -29,3 +29,10 @@ Browser regressions compare heading, tabs, composer, preferences and footer boun
 through delayed activity and account draft reads, including Guided/Advanced create
 and edit at desktop, short desktop and mobile sizes. A real reviewed publication
 must leave gallery order and card positions unchanged.
+
+Field readers and compact identity editors use anchored dialogs instead of the
+footer activity position. Floating UI flips and shifts them within the visible
+viewport. Position a native dialog with fixed top/left coordinates, without a
+transform: a transformed dialog changes the containing block of its nested fixed
+Archetype menu and clips the options. Keep field editors out of nested forms;
+OK applies only the local field and Enter must not submit the parent agent form.

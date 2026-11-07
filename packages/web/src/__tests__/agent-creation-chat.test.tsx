@@ -272,3 +272,60 @@ test("Guided gender changes immediately without inference or artwork generation"
   expect(fetchCalls).toBe(0);
   expect(appearances).toHaveLength(0);
 });
+
+test("fixture arrows show full text without queuing a change", async () => {
+  const view = mount();
+  fireEvent.click(view.getByRole("button", { name: "View full Backstory" }));
+  const dialog = await view.findByRole("dialog", { name: "Backstory" });
+  expect(dialog.textContent).toContain(profile.backstory);
+  expect(view.queryByLabelText("Selected sections")).toBeNull();
+  expect(fetchCalls).toBe(0);
+  fireEvent.click(view.getByRole("button", { name: "Close" }));
+  expect(view.queryByRole("dialog")).toBeNull();
+  fireEvent.click(view.getByRole("button", { name: "Revise Backstory" }));
+  expect(view.getByLabelText("Selected sections").textContent).toContain(profile.backstory);
+  expect(view.queryByRole("dialog")).toBeNull();
+});
+
+function mountIdentityEditor() {
+  function Harness() {
+    const [draft, setDraft] = useState(profile);
+    return <AgentCreationChat profile={draft}
+      onIdentityChange={(section, value) => setDraft(current => ({ ...current, [section]: value }))}
+      onGenerate={async () => true} onAppearance={async () => true}
+      busy={false} blocked={false} headRequired={false} hasImage onHeadshot={() => {}} />;
+  }
+  return render(<Harness />);
+}
+
+test("Guided name changes apply only on OK and Cancel discards the local edit", async () => {
+  const view = mountIdentityEditor();
+  fireEvent.click(view.getByRole("button", { name: "Edit Name" }));
+  const field = await view.findByRole("textbox", { name: "Name" }) as HTMLInputElement;
+  expect(field.maxLength).toBe(32);
+  fireEvent.input(field, { target: { value: "Unsaved name" } });
+  fireEvent.click(view.getByRole("button", { name: "Cancel" }));
+  expect(view.getByRole("button", { name: "Revise Name" }).textContent).toContain(profile.name);
+  fireEvent.click(view.getByRole("button", { name: "Revise Name" }));
+  fireEvent.input(view.getByRole("textbox", { name: "Name" }), { target: { value: "   " } });
+  expect(view.getByRole("button", { name: "OK" }).hasAttribute("disabled")).toBe(true);
+  fireEvent.input(view.getByRole("textbox", { name: "Name" }), { target: { value: "  Nori Lantern  " } });
+  fireEvent.click(view.getByRole("button", { name: "OK" }));
+  expect(view.queryByRole("dialog")).toBeNull();
+  expect(view.getByRole("button", { name: "Revise Name" }).textContent).toContain("Nori Lantern");
+  expect(fetchCalls).toBe(0);
+});
+
+test("identity sparkle queues the existing field without applying or sending the local edit", async () => {
+  const view = mountIdentityEditor();
+  fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "Keep the lighthouse backstory." } });
+  fireEvent.click(view.getByRole("button", { name: "Edit Name" }));
+  fireEvent.input(view.getByRole("textbox", { name: "Name" }), { target: { value: "Unsaved idea" } });
+  fireEvent.click(view.getByRole("button", { name: "Change Name with AI" }));
+  await waitFor(() => expect(view.getByLabelText("Selected sections").textContent).toContain(profile.name));
+  expect(view.queryByRole("dialog")).toBeNull();
+  expect(view.getByRole("button", { name: "Revise Name" }).textContent).toContain(profile.name);
+  expect((view.getByLabelText("Message the character assistant") as HTMLTextAreaElement).value).toBe("Keep the lighthouse backstory.");
+  expect(document.activeElement).toBe(view.getByLabelText("Message the character assistant"));
+  expect(fetchCalls).toBe(0);
+});

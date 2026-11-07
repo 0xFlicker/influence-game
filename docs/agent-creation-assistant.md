@@ -72,9 +72,17 @@ the full width without a separate icon. The House message, ingredient picker,
 and labeled composer share one centered column. Ingredient rows stay directly
 above the composer when available; the composer has a distinct surface and
 border so the entry point stays visible.
-Clicking a character section or an Advanced **Refine** link selects that field
-and focuses the Guided composer immediately. Image **Revise** uses the same
-transition, scoped to Appearance. There is no intermediate reader or confirmation.
+Clicking a long-text character tile or an Advanced **Refine** link selects that
+field and focuses the Guided composer immediately. Image **Revise** uses the same
+transition, scoped to Appearance. Its arrow separately opens a full-text reader;
+reading never selects a change. A mouse hover previews full text after 600ms,
+without reflow, and can be dismissed with Escape. Touch uses the arrow.
+Name and Archetype open compact editors directly in Guided. Cancel or Escape
+discards the local buffer; OK (or Enter for Name) applies it to the shared draft.
+The sparkle queues that field's existing draft value for the next assistant turn,
+preserves the composer message and returns focus there without making a request.
+All these dialogs anchor near the clicked tile, flip to fit, and stay inside the
+visible viewport rather than using the editor's bottom activity panel position.
 The selected section appears above the composer with its current text; longer
 text can be expanded inline. Removing the section restores an unrestricted
 message. Selecting another section replaces the scope. Repeating Refine on the
