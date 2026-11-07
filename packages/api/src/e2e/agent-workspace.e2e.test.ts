@@ -189,6 +189,9 @@ test("management image and name open the owner profile and return to its agent",
         expect(await page.$$(selector)).toHaveLength(1);
         expect(await page.$$eval(`#agent-${agentId} a, #agent-${agentId} button`, elements => elements.some(element => element.textContent?.trim() === "View"))).toBe(false);
         expect(await page.$(`#agent-${agentId} button[aria-label="Edit Mira Voss"]`)).not.toBeNull();
+        expect(await page.$(`#agent-${agentId} details`)).toBeNull();
+        expect(await page.$eval(`#agent-${agentId} a[aria-label="Analyze Mira Voss"]`, element => element.getAttribute("href"))).toBe(`/dashboard/agents/${agentId}`);
+        expect(await page.evaluate(`(()=>{const card=document.getElementById("agent-${agentId}");const buttons=["Edit Mira Voss","Analyze Mira Voss","Archive Mira Voss"].map(label=>card.querySelector('[aria-label="'+label+'"]').getBoundingClientRect());return buttons.every(rect=>Math.abs(rect.top-buttons[0].top)<1);})()`)).toBe(true);
         await page.click(`${selector} ${target}`);
         await page.waitForFunction('document.querySelector("h1")?.textContent === "Mira Voss"');
         expect(await page.$eval("main", element => element.textContent)).toContain("Patient, observant, and quietly theatrical.");
@@ -200,6 +203,13 @@ test("management image and name open the owner profile and return to its agent",
       }
       await page.screenshot({ path: proof + `management-profile-link-${viewport.width}.png`, fullPage: true });
     }
+    const beforeArchive = await page.$eval(`#agent-${agentId}`, element => ({ top: element.getBoundingClientRect().top, height: element.getBoundingClientRect().height }));
+    await page.click(`#agent-${agentId} button[aria-label="Archive Mira Voss"]`);
+    await page.waitForSelector('dialog[open][aria-label="Archive Mira Voss?"]');
+    expect(await page.$eval(`#agent-${agentId}`, element => ({ top: element.getBoundingClientRect().top, height: element.getBoundingClientRect().height }))).toEqual(beforeArchive);
+    await button(page, "Cancel");
+    await page.waitForFunction('!document.querySelector("dialog[open]")');
+    expect(await page.evaluate('document.activeElement?.getAttribute("aria-label")')).toBe("Archive Mira Voss");
     await page.focus(selector);
     expect(await page.$eval(selector, element => element === element.ownerDocument.activeElement)).toBe(true);
     await page.keyboard.press("Enter");

@@ -183,3 +183,22 @@ browser journey passed desktop/mobile geometry and return-navigation checks
 (31 assertions). Typecheck, lint and `git diff --check` passed. Screenshots:
 `.renders/agent-workspace/owner-profile-1440.png` and
 `.renders/agent-workspace/owner-profile-390.png`.
+
+## Follow-up: stable management actions
+
+Removed More. Edit, Analyze and Archive remain in one action row. Archive now
+uses the existing dialog and returns focus to its trigger on cancellation; it
+does not append confirmation below the collection. Archive triggers are disabled
+while a request is pending.
+
+Analyze remains enabled: the collection has no cheap authoritative availability
+flag spanning season receipts and current-strategy Influence/Werewolf owner
+learning. The existing lifetime games-played count does not cover Werewolf. No
+per-agent analysis reads were added to the management load.
+
+Both management browser journeys passed (69 assertions), including row alignment,
+absence of disclosures, archive confirmation geometry/focus, profile navigation
+and editor/review behavior. Desktop/mobile screenshots remain under
+`.renders/agent-workspace/management-profile-link-1440.png` and
+`.renders/agent-workspace/management-profile-link-390.png`. Typecheck, lint and
+`git diff --check` passed.

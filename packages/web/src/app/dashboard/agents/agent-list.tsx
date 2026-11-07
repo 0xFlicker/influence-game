@@ -38,7 +38,9 @@ export function AgentList({
   onEdit,
   onDelete,
   returnPath,
+  archivePending = false,
 }: {
+  archivePending?: boolean;
   returnPath?: (id: string) => string;
   agents: SavedAgent[];
   onEdit: (agent: SavedAgent) => void;
@@ -107,14 +109,22 @@ export function AgentList({
             >
               Edit
             </button>
-          </div>
-          <details className={styles.hint}>
-            <summary>More</summary>
-            <Link href={"/dashboard/agents/" + agent.id}>Analyze</Link>
-            <button type="button" onClick={() => onDelete(agent)}>
+            <Link
+              className="action"
+              href={"/dashboard/agents/" + agent.id}
+              aria-label={"Analyze " + agent.name}
+            >
+              Analyze
+            </Link>
+            <button
+              type="button"
+              onClick={() => onDelete(agent)}
+              aria-label={"Archive " + agent.name}
+              disabled={archivePending}
+            >
               Archive
             </button>
-          </details>
+          </div>
         </article>
       ))}
     </div>

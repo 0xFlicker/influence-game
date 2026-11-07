@@ -96,6 +96,11 @@ and reveal motion never translates the editor vertically.
 Agent management opens an owner's profile from the agent image or name. Both
 share one keyboard-focusable link and preserve the list's return position. Edit
 remains the card's primary button; there is no separate View button.
+Edit, Analyze and Archive share one always-visible row without a disclosure.
+Archive asks for confirmation in a dialog without changing the gallery layout.
+Analyze remains available because the collection does not provide a reliable
+availability flag across season receipts and owner learning; management does not
+load each agent's analysis just to decide whether to show a link.
 The Needs attention panel is hidden when no agents need attention.
 The owner profile's Agents link sits above the background panel, aligned with the
 profile heading and separated by a 16px gap on desktop and mobile.

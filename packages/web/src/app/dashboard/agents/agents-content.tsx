@@ -236,6 +236,7 @@ export function AgentsContent() {
               returnPath={returnPath}
               onEdit={edit}
               onDelete={setArchive}
+              archivePending={archiving}
             />
           )}
           {!!drafts.length && (
@@ -273,10 +274,13 @@ export function AgentsContent() {
       >
         {notifications}
       </AgentWorkspacePanel>
-      {archive && (
-        <section className={styles.archive} aria-label="Archive confirmation">
-          <h2>Archive {archive.name}?</h2>
-          <p>Game history is retained.</p>
+      <AgentWorkspacePanel
+        open={Boolean(archive)}
+        title={archive ? `Archive ${archive.name}?` : "Archive agent"}
+        onClose={() => setArchive(null)}
+      >
+        <p>Game history is retained.</p>
+        <div className={styles.confirmationActions}>
           <button
             type="button"
             disabled={archiving}
@@ -291,8 +295,8 @@ export function AgentsContent() {
           >
             {archiving ? "Archiving…" : "Archive"}
           </button>
-        </section>
-      )}
+        </div>
+      </AgentWorkspacePanel>
     </section>
   );
 }
