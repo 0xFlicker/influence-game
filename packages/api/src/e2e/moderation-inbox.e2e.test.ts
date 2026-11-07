@@ -32,7 +32,7 @@ beforeAll(async () => {
   for (const userId of [moderator.userId, owner.userId, admin.userId]) await recordCurrentLegalAcceptance(database.db, userId, "existing_account", "0123456789abcdef0123456789abcdef01234567");
   const agent = await createOwnedAgentProfile(database.db, { userId: owner.userId }, { name: "Review Character", personality: "First submitted personality", gender: "non-binary" });
   profileId = agent.profile.id; reviewId = agent.receipt.moderationRecordId!;
-  await database.db.update(schema.agentScreenings).set({ status: "completed", recommendation: "review", result: await storeJson({ recommendation: "review", summary: "Review the submitted content.", findings: [{ category: "outside_game_collusion", source: "text", field: "personality", quote: "First submitted personality", assetHash: "", explanation: "Deterministic UI fixture; no real provider assessment." }] }) }).where(eq(schema.agentScreenings.contentRevisionId, agent.profile.contentRevisionId!));
+  await database.db.update(schema.agentScreenings).set({ status: "completed", recommendation: "review", result: await storeJson({ recommendation: "review", summary: "Review the submitted content.", findings: [{ category: "outside_game_collusion", source: "text", field: "personality", quote: "First submitted personality", assetHash: "", explanation: "Deterministic UI fixture; no real provider assessment." }] }) }).where(eq(schema.agentScreenings.contentRevisionId, agent.receipt.contentRevisionId!));
   const [screening] = await database.db.select().from(schema.agentScreenings);
   for (const [stage, status, body, outcome] of [
     ["moderation", 200, { model: "omni-moderation-latest", results: [{ flagged: false, categories: { hate: false }, category_scores: { hate: 0.00000195 } }] }, "accepted"],
@@ -82,24 +82,24 @@ test("moderator claims, previews and rejects; owner recovers a held correction a
     await text(page, "Text-only collusion result:");
     await text(page, "content_policy_violation");
     await text(page, "luna_collusion");
-    expect(await page.$eval('[aria-label="AI shadow screening"]', el => el.textContent)).toContain("0.0000019500");
+    expect(await page.$eval('[aria-label="AI screening"]', el => el.textContent)).toContain("0.0000019500");
     const [screening] = await database.db.select().from(schema.agentScreenings);
     await database.db.update(schema.agentScreenings).set({ status: "incomplete", recommendation: null, result: null, failureCode: "provider_timeout" });
     await click(page, "Refresh");
     await text(page, "provider_timeout: 1");
     await text(page, "Screening incomplete — no clearance");
     expect(await page.$eval('[aria-label="Review queue"]', el => el.textContent)).toContain("Screening incomplete");
-    expect(await page.$eval('[aria-label="AI shadow screening"]', el => el.textContent)).toContain("Screening incomplete — no clearance");
+    expect(await page.$eval('[aria-label="AI screening"]', el => el.textContent)).toContain("Screening incomplete — no clearance");
     await database.db.update(schema.agentScreenings).set({ status: "completed", recommendation: "review", result: screening!.result, failureCode: null });
     await click(page, "Refresh");
     await text(page, "No screening failures recorded.");
     await text(page, "Review the submitted content.");
     expect(await page.$eval('[aria-label="Review queue"]', el => el.textContent)).toContain("AI recommends review");
-    expect(await page.$eval('[aria-label="AI shadow screening"]', el => el.textContent)).toContain("Human review recommended");
-    await text(page, "AI recommendation · Shadow mode");
+    expect(await page.$eval('[aria-label="AI screening"]', el => el.textContent)).toContain("Human review recommended");
+    await text(page, "AI screening");
     await text(page, "Human review recommended");
     await text(page, "Outside-game collusion");
-    await text(page, "does not change publication");
+    await text(page, "Clear assessments can accept untouched ordinary submissions.");
     expect(await page.$('a[href^="/admin/inference"]')).toBeNull();
     await page.waitForSelector("textarea:not([disabled])");
     await page.type("textarea", "Remove this submitted revision");
@@ -120,9 +120,10 @@ test("moderator claims, previews and rejects; owner recovers a held correction a
     await editor.focus("#agent-personality");
     await editor.keyboard.down("Control"); await editor.keyboard.press("KeyA"); await editor.keyboard.up("Control");
     await editor.evaluate(`(() => { const el = document.querySelector("#agent-personality"); if (el) { const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set; setter.call(el, "Recovered correction"); el.dispatchEvent(new Event("input", { bubbles: true })); } })()`);
-    await click(editor, "Save changes");
-    await text(editor, "Submitted for review");
-    await editor.reload({ waitUntil: "networkidle0" });
+    await click(editor, "Review");
+    await click(editor, "Save");
+    await editor.waitForFunction('location.pathname === "/dashboard/agents"');
+    await editor.goto(`${servers.webUrl}/dashboard/agents/${profileId}/edit`, { waitUntil: "networkidle0" });
     await editor.waitForFunction(`document.querySelector("#agent-personality")?.value === "Recovered correction"`);
     await editor.setViewport({ width: 390, height: 844 });
     await editor.screenshot({ path: "/tmp/moderation-owner-mobile.png", fullPage: true });
@@ -170,6 +171,7 @@ test("pass is admin-only, and a revoked moderator loses access without changing 
 test("superseded unscreened reviews leave the inbox and missing screenings are labelled honestly", async () => {
   const legacy = await createOwnedAgentProfile(database.db, { userId: owner.userId }, { name: "Legacy unqueued review", personality: "Original" });
   await database.db.delete(schema.agentScreenings).where(eq(schema.agentScreenings.contentRevisionId, legacy.receipt.contentRevisionId!));
+  await database.db.update(schema.agentModerationReviews).set({ held: false }).where(eq(schema.agentModerationReviews.id, legacy.receipt.moderationRecordId!));
   await updateOwnedAgentProfile(database.db, { userId: owner.userId }, legacy.profile.id, { name: "Current queued review", submissionId: randomUUID() });
   const unqueued = await createOwnedAgentProfile(database.db, { userId: owner.userId }, { name: "Current unqueued review", personality: "Current" });
   await database.db.delete(schema.agentScreenings).where(eq(schema.agentScreenings.contentRevisionId, unqueued.receipt.contentRevisionId!));

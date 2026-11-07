@@ -3542,7 +3542,7 @@ export const agentLearningReviewApplications = pgTable("agent_learning_review_ap
   priorStrategyStyle: text("prior_strategy_style").notNull(),
   resultingStrategyStyle: text("resulting_strategy_style").notNull(),
   mutationReceipt: jsonb("mutation_receipt").notNull().$type<Record<string, unknown>>(),
-  appliedAt: text("applied_at"),
+  appliedAt: text("applied_at").default(sql`now()::text`),
 }, (table) => [
   foreignKey({
     columns: [table.reviewId, table.proposalFingerprint],

@@ -1077,6 +1077,14 @@ export function AgentForm({
       if (epoch !== generationEpoch.current) return;
       if (command.tool === "clarify") {
         setAssistantNote(command.message);
+        setConversation({
+          stage: "review",
+          messages: [{ role: "user", text: message }, { role: "assistant", text: command.message }],
+          input: "",
+          sections: [],
+          ended: false,
+        });
+        setConversationKey(value => value + 1);
         setChangeRequest("");
         setEditHistory([...history, `user: ${message}`].slice(-22));
         return;
@@ -1090,13 +1098,21 @@ export function AgentForm({
       });
       if (success) {
         setEditHistory([...history, `user: ${message}`].slice(-22));
-        setAssistantNote(
+        const reply =
           images
             ? "I updated the visual presentation. Review the character images before saving."
             : !fullBodyReferenceUrl
               ? "I updated the requested fields. This character still needs a full-body reference. Would you like me to update their visuals?"
-              : "I updated the requested fields. Your existing visuals are unchanged.",
-        );
+              : "I updated the requested fields. Your existing visuals are unchanged.";
+        setAssistantNote(reply);
+        setConversation({
+          stage: "review",
+          messages: [{ role: "user", text: message }, { role: "assistant", text: reply }],
+          input: "",
+          sections: [],
+          ended: false,
+        });
+        setConversationKey(value => value + 1);
       }
     } catch (error) {
       if (epoch === generationEpoch.current) setAiError(error);
@@ -1115,6 +1131,7 @@ export function AgentForm({
       profileRequestChecked.current ||
       !account?.id ||
       !initial ||
+      draftRecovering ||
       draftScope !== `edit:${initial.id}`
     )
       return;
@@ -1154,6 +1171,7 @@ export function AgentForm({
   }, [
     account?.id,
     initial,
+    draftRecovering,
     draftScope,
     draftReady,
     pendingRestore,

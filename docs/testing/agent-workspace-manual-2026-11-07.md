@@ -394,3 +394,13 @@ The final browser run after the database load settled passed all 15 journeys
 (1,107 assertions) and cleanup in 66.2 seconds. The timed-out run's exact
 temporary databases and role were also verified absent. `git diff --check`
 passed; generated Next.js test route paths were restored before commit.
+
+CI follow-up: enrollment and public-profile fixtures explicitly accept their
+submitted revisions. Moderation and Werewolf learning journeys check the held or
+reviewing state before acceptance. The removed Workshop controls no longer have
+their own browser cases: scoped visual revisions are covered by the workspace
+browser journey and agent-profile API tests; missing identity and failed-save
+recovery are covered by the workspace draft and account browser tests. The
+profile-to-editor handoff now waits for draft recovery and displays the request
+and assistant response in the guided conversation; the public-identity browser
+test checks that the request runs once and is not replayed after reload.
