@@ -45,6 +45,22 @@ async function reserve(id = randomUUID()) {
     }),
   );
 }
+test("rejected native transparency retains paid receipts and never refunds a completed generation", async () => {
+  const id = randomUUID();
+  const opaque = await sharp({ create: { width: 16, height: 16, channels: 3, background: "white" } }).png().toBuffer();
+  await requestCharacterReference(db, owner, characterGenerationInput(id, "Opaque failure"), "");
+  for (const balance of [24, 23]) {
+    expect(await processMockCharacterReference(db, opaque)).toBe(1);
+    expect((await db.select().from(schema.characterReferenceJobs))[0]).toMatchObject({ status: "failed", result: null });
+    expect((await db.select().from(schema.inferenceAccounts))[0]!.imageBalance).toBe(balance);
+    const reservations = await db.select().from(schema.inferenceReservations);
+    expect(reservations.every(row => row.state === "succeeded" && !!row.executionReleasedAt)).toBe(true);
+    const attempts = await db.select().from(schema.visualRenderAttempts);
+    expect(attempts.every(row => row.imageHash && row.receipt?.failure && row.receipt.status === 200 && !row.receipt.chargeUncertain)).toBe(true);
+    if (balance === 24) await retryCharacterReference(db, owner, id);
+  }
+  expect(await db.select().from(schema.inferenceReservations)).toHaveLength(2);
+});
 test("activity exposes queued work before an agent exists, prevents duplicates, and isolates owners", async () => {
   const input = characterGenerationInput(randomUUID(), "Pending Agent");
   const queued = await requestCharacterReference(db, owner, input, "");

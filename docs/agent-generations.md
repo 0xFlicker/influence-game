@@ -21,10 +21,10 @@ a bottom sheet. Generation, draft recovery, validation summaries and moderation
 never insert banners above the fields. Draft conflicts open in the same overlay.
 The preview keeps its dimensions while artwork becomes ready.
 
-Management keeps activity in an independent Needs attention rail on desktop, or
-an Activity sheet on smaller screens. Its gallery uses creation date descending
-and ID ascending, never review state or update time. Card feedback space stays
-reserved when review completes.
+Management uses an Activity dialog without reserving a sidebar. Its gallery uses
+creation date descending and ID ascending, never review state or update time.
+Status badges overlay the fixed-height artwork so card positions stay unchanged
+when review completes.
 
 The editor checks activity before offering a new image. The API checks capacity,
 pauses and allowances under the account/queue locks as well. Simultaneous starts
@@ -58,6 +58,17 @@ A dispatched or uncertain request that loses ownership releases its execution sl
 but keeps an uncertain charge and its debit. It does not become a free generation.
 A real late receipt can settle that accounting afterward. No recovery process
 creates a new paid dispatch or claims an unknown outcome was free.
+
+A completed provider image response retains its bytes, usage and allowance debit
+even if local decoding or transparency validation rejects the artwork. The
+candidate stays failed; an explicit retry is a new generation. These local checks
+make no additional provider request.
+
+Pre-migration image journals keep their original request hashes, paid images and
+allowance identifiers. Reads verify the frozen request and reference hashes;
+cached images are reused without another generation or debit. Historical opaque
+sources use explicit background preparation when an alpha consumer needs them.
+Current requests retain the stricter operation/background/model fingerprint.
 
 Cancellation fences the job before releasing execution. A lease-lost worker
 cannot renew or dispatch again. HTTP cancellation is best effort; the provider may

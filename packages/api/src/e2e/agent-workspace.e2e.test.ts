@@ -231,6 +231,33 @@ test("management image and name open the owner profile and return to its agent",
     await button(page, "Cancel");
     await page.waitForFunction('!document.querySelector("dialog[open]")');
     expect(await page.evaluate('document.activeElement?.getAttribute("aria-label")')).toBe("Archive Mira Voss");
+    let archiveRequests = 0;
+    await page.setRequestInterception(true);
+    page.on("request", request => {
+      if (new URL(request.url()).pathname === `/api/agent-profiles/${agentId}` && request.method() === "DELETE") {
+        archiveRequests++;
+        void request.respond({
+          status: archiveRequests < 3 ? 409 : 200,
+          contentType: "application/json",
+          headers: { "Access-Control-Allow-Origin": servers.webUrl!, "Access-Control-Allow-Credentials": "true" },
+          body: JSON.stringify(archiveRequests < 3 ? { error: "This agent is in a game." } : { ok: true }),
+        });
+      } else void request.continue();
+    });
+    await page.click(`#agent-${agentId} button[aria-label="Archive Mira Voss"]`);
+    await button(page, "Archive");
+    await page.waitForSelector('dialog[open] [role="alert"]');
+    expect(await page.$eval('dialog[open] [role="alert"]', element => element.textContent)).toBe("This agent is in a game.");
+    expect(await page.$('main header button[aria-label="Activity"]')).toBeNull();
+    await button(page, "Cancel");
+    await page.click(`#agent-${agentId} button[aria-label="Archive Mira Voss"]`);
+    expect(await page.$('dialog[open] [role="alert"]')).toBeNull();
+    await button(page, "Archive");
+    await page.waitForSelector('dialog[open] [role="alert"]');
+    await button(page, "Archive");
+    await page.waitForFunction('!document.querySelector("dialog[open]")');
+    expect(archiveRequests).toBe(3);
+    expect(await page.$('main header button[aria-label="Activity"]')).toBeNull();
     await page.focus(selector);
     expect(await page.$eval(selector, element => element === element.ownerDocument.activeElement)).toBe(true);
     await page.keyboard.press("Enter");

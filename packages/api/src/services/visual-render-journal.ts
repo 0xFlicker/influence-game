@@ -54,8 +54,35 @@ export class VisualRenderRecoveryRequired extends Error {
 
 /** Immutable operation inputs make scratch-turn replay safe before scene publication. */
 export async function reserveVisualRender(db: DrizzleDB, gameId: string, operationKey: string, request: VisualImageRequest, sceneId?: string, repairJobId?: string): Promise<Operation> {
+  const [existing] = await loadPayloads(db.select().from(operations).where(and(eq(operations.gameId, gameId), eq(operations.operationKey, operationKey))));
+  if (existing && historicalImageRequest(existing, request)) return existing;
   const saved = { ...request, ...visualImageSettings(request), references: request.references.map(hash) };
   return reserveVisualOperation(db, gameId, operationKey, hash(stableJson(saved)), undefined, saved, sceneId, repairJobId);
+}
+
+/** Pre-migration journals froze these four fields. Read their exact retained
+ * contract without rewriting its hash or regenerating an already-paid image.
+ * New journals still require their full operation/background/model fingerprint.
+ */
+function historicalImageRequest(operation: Operation, requested: VisualImageRequest): VisualImageRequest | null {
+  const saved = operation.request;
+  if (!saved || Object.keys(saved).sort().join(",") !== "height,prompt,references,width") return null;
+  if (typeof saved.prompt !== "string" || !saved.prompt.trim() || saved.width !== requested.width || saved.height !== requested.height
+    || !Array.isArray(saved.references) || stableJson(saved.references) !== stableJson(requested.references.map(hash))
+    || hash(stableJson(saved)) !== operation.inputHash) throw new Error("Visual operation inputs changed at an existing boundary");
+  return { ...requested, prompt: saved.prompt, background: "opaque" };
+}
+
+async function ownedImageReservationId(db: Pick<DrizzleDB,"select">, operation: Operation) {
+  const current = `visual:${operation.id}:${operation.generation}`;
+  if (operation.generation !== 1) return current;
+  const rows = await db.select({ id: schema.inferenceReservations.id }).from(schema.inferenceReservations).where(and(
+    eq(schema.inferenceReservations.userId, operation.userId!),
+    eq(schema.inferenceReservations.visualOperationId, operation.id),
+    sql`${schema.inferenceReservations.id} IN (${current}, ${`visual:${operation.id}`})`,
+  ));
+  if (rows.length > 1) throw new VisualRenderRecoveryRequired(operation.id, "Image request has conflicting allowance records; retain them for support.");
+  return rows[0]?.id ?? current;
 }
 
 async function reserveVisualOperation(db: Pick<DrizzleDB, "select" | "insert">, gameId: string | null, operationKey: string, inputHash: string, userId?: string, request?: Record<string, unknown>, sceneId?: string, repairJobId?: string): Promise<Operation> {
@@ -72,6 +99,7 @@ export async function renderDurableVisualImage(db: DrizzleDB, input: {
   beforeDispatch?: VisualBoundaryGuard; repairJobId?: string; reuseOperationKey?: string;
 }) {
   const operation = await reserveVisualRender(db, input.gameId, input.operationKey, input.request, input.sceneId, input.repairJobId);
+  const request = historicalImageRequest(operation, input.request) ?? input.request;
   const reused = await reusableVisualAttempt(db, input.gameId, input.reuseOperationKey, operation.inputHash);
   const prepared = async (image: Uint8Array, receipt: VisualImageReceipt) => ({ image: input.request.background === "transparent" ? await prepareTransparentCharacterImage(db, image, input.signal) : Buffer.from(image), receipt });
   if (reused?.image && reused.receipt) return prepared(reused.image, reused.receipt);
@@ -79,7 +107,7 @@ export async function renderDurableVisualImage(db: DrizzleDB, input: {
   const completed = prior.find((entry) => entry.image !== null && entry.receipt !== null && !entry.receipt.failure && !entry.receipt.chargeUncertain);
   if (completed?.image && completed.receipt) return prepared(completed.image, completed.receipt);
   if (prior.length) throw new VisualRenderRecoveryRequired(operation.id, "Visual rendering needs recovery before another paid request");
-  const result = await generateVisualImage(input.request, visualImageJournal(db, operation, input.beforeDispatch), input.signal, input.allowFallback);
+  const result = await generateVisualImage(request, visualImageJournal(db, operation, input.beforeDispatch), input.signal, input.allowFallback);
   return prepared(result.image, result.receipt);
 }
 
@@ -91,7 +119,7 @@ export function visualImageJournal(db: DrizzleDB, operation: Operation, beforeDi
       await db.transaction(async (tx) => {
         if(operation.userId && operation.operationKey.startsWith('full-body:')) {
           await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${operation.userId}))`);
-          await dispatchInference(tx,`visual:${operation.id}:${operation.generation}`,operation.userId);
+          await dispatchInference(tx,await ownedImageReservationId(tx, operation),operation.userId);
         }
         await beforeDispatch?.(tx);
         if (operation.operationKey.startsWith("championship-art:")) {
@@ -300,30 +328,35 @@ export async function renderOwnedVisualReference(db: DrizzleDB, input: {
 }) {
   const savedRequest = { ...input.request, ...visualImageSettings(input.request), references: input.request.references.map(hash) };
   const inputHash = hash(stableJson(savedRequest));
-  const operation = await loadPayloads(db.transaction(async (tx) => {
+  const { operation, reservationId } = await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${input.userId}))`);
     const [existing] = await loadPayloads(tx.select().from(operations).where(and(eq(operations.userId, input.userId), eq(operations.operationKey, `full-body:${input.requestId}`))));
     const operation = existing ?? await reserveVisualOperation(tx, null, `full-body:${input.requestId}`, inputHash, input.userId, savedRequest);
-    if(operation.inputHash !== inputHash) throw new Error('Visual operation input changed');
-    await reserveInference(tx,{id:`visual:${operation.id}:${operation.generation}`,userId:input.userId,category:'image',inputHash,visualOperationId:operation.id});
-    return operation;
-  }));
+    const originalHash = hash(stableJson({ prompt: input.request.prompt, width: input.request.width, height: input.request.height, references: input.request.references.map(hash) }));
+    if(operation.inputHash !== inputHash && !(operation.request === null && operation.inputHash === originalHash)) throw new Error('Visual operation input changed');
+    const reservationId = await ownedImageReservationId(tx, operation);
+    await reserveInference(tx,{id:reservationId,userId:input.userId,category:'image',inputHash:operation.inputHash,visualOperationId:operation.id});
+    return { operation, reservationId };
+  });
   const prior = await loadPayloads(db.select().from(attempts).where(and(eq(attempts.operationId, operation.id), eq(attempts.generation, operation.generation))));
   const completed = prior.find((entry) => entry.image !== null && entry.receipt !== null && !entry.receipt.failure && !entry.receipt.chargeUncertain);
   if (completed?.image) {
-    await db.transaction(tx=>settleInference(tx,`visual:${operation.id}:${operation.generation}`,input.userId,'succeeded'));
+    await db.transaction(tx=>settleInference(tx,reservationId,input.userId,'succeeded'));
     return { operationId: operation.id, image: await prepareTransparentCharacterImage(db, completed.image, input.signal, input.onRemoval, input.waitForBackground) };
   }
   if (prior.length) throw new VisualRenderRecoveryRequired(operation.id, "Reference generation needs operator reconciliation before another paid request");
   try {
-    const result = await withImageExecution(db,input.userId,`visual:${operation.id}:${operation.generation}`,input.signal,signal=>generateVisualImage(input.request, visualImageJournal(db, operation, input.beforeDispatch), signal));
-    await db.transaction(tx=>settleInference(tx,`visual:${operation.id}:${operation.generation}`,input.userId,'succeeded'));
+    const result = await withImageExecution(db,input.userId,reservationId,input.signal,signal=>generateVisualImage(input.request, visualImageJournal(db, operation, input.beforeDispatch), signal));
+    await db.transaction(tx=>settleInference(tx,reservationId,input.userId,'succeeded'));
     return { operationId: operation.id, image: await prepareTransparentCharacterImage(db, result.image, input.signal, input.onRemoval, input.waitForBackground) };
   } catch(error) {
     const entries=await loadPayloads(db.select().from(attempts).where(and(eq(attempts.operationId,operation.id),eq(attempts.generation,operation.generation))));
-    const succeeded=entries.some(a=>a.imageHash && a.receipt && !a.receipt.failure && !a.receipt.chargeUncertain);
+    // A returned, paid image consumes its allowance even when it fails the
+    // output contract. Candidate acceptance still requires a failure-free receipt.
+    const succeeded=entries.some(a=>a.imageHash && a.receipt && !a.receipt.chargeUncertain &&
+      (!a.receipt.failure || (a.receipt.status !== null && a.receipt.status >= 200 && a.receipt.status < 300)));
     const uncertain=entries.some(a=>!a.receipt || a.receipt.chargeUncertain);
-    await db.transaction(tx=>settleInference(tx,`visual:${operation.id}:${operation.generation}`,input.userId,succeeded?'succeeded':uncertain?'uncertain':'failed'));
+    await db.transaction(tx=>settleInference(tx,reservationId,input.userId,succeeded?'succeeded':uncertain?'uncertain':'failed'));
     throw error;
   }
 }
@@ -385,26 +418,28 @@ export async function renderChampionshipVisualReference(db: DrizzleDB, input: {
   const operationKey = `championship-art:${art.id}:${input.kind}`;
   const [existing] = await loadPayloads(db.select().from(operations).where(and(eq(operations.userId, art.ownerId), eq(operations.operationKey, operationKey))));
   let request = input.request;
+  const needsTransparency = input.request.background === "transparent";
   if (existing) {
     const saved = existing.request;
+    const historical = historicalImageRequest(existing, input.request);
     // Retry the accepted request, even after a prompt/template deployment. References must still match the frozen assets.
     if (!saved || typeof saved.prompt !== "string" || typeof saved.width !== "number" || typeof saved.height !== "number"
-      || !["create", "edit"].includes(String(saved.operation)) || !["opaque", "transparent"].includes(String(saved.background))
+      || (!historical && (!["create", "edit"].includes(String(saved.operation)) || !["opaque", "transparent"].includes(String(saved.background))))
       || hash(stableJson(saved)) !== existing.inputHash || stableJson(saved.references) !== stableJson(request.references.map(hash))) {
       throw new Error("Championship image request evidence does not match its frozen references");
     }
-    request = { prompt: saved.prompt, width: saved.width, height: saved.height, operation: saved.operation as VisualImageRequest["operation"], background: saved.background as VisualImageRequest["background"], references: request.references };
+    request = historical ?? { prompt: saved.prompt, width: saved.width, height: saved.height, operation: saved.operation as VisualImageRequest["operation"], background: saved.background as VisualImageRequest["background"], references: request.references };
   }
   const savedRequest = { ...request, ...visualImageSettings(request), references: request.references.map(hash) };
   const inputHash = hash(stableJson(savedRequest));
   let operation = existing ?? await reserveVisualOperation(db, null, operationKey, inputHash, art.ownerId, savedRequest);
   const prior = await loadPayloads(db.select().from(attempts).where(eq(attempts.operationId, operation.id)));
   const completed = prior.find(entry => entry.image !== null && entry.receipt !== null && !entry.receipt.failure && !entry.receipt.chargeUncertain);
-  if (completed?.image) return request.background === "transparent" ? prepareTransparentCharacterImage(db, completed.image) : completed.image;
+  if (completed?.image) return needsTransparency ? prepareTransparentCharacterImage(db, completed.image) : completed.image;
   if (prior.some(unresolved)) throw new VisualRenderRecoveryRequired(operation.id, "Artwork provider outcome is uncertain; retain the attempt for operator reconciliation");
   if (prior.some(entry => entry.generation === operation.generation)) operation = await retryVisualRender(db, operation.id, operation.generation);
   const result = await generateVisualImage(request, visualImageJournal(db, operation, input.beforeDispatch));
-  return request.background === "transparent" ? prepareTransparentCharacterImage(db, result.image) : Buffer.from(result.image);
+  return needsTransparency ? prepareTransparentCharacterImage(db, result.image) : Buffer.from(result.image);
 }
 
 /** Owner-authorized retry of a confirmed failure. Uncertain provider outcomes remain fenced. */
@@ -415,7 +450,8 @@ export async function retryOwnedVisualReference(db:VisualRetryDB,userId:string,r
   if(prior.some(entry=>entry.image && entry.receipt && !entry.receipt.failure && !entry.receipt.chargeUncertain))return;
   if(prior.length)await retryVisualRender(db,operation.id,operation.generation);
   else {
-    const [reservation]=await db.select().from(schema.inferenceReservations).where(and(eq(schema.inferenceReservations.userId,userId),eq(schema.inferenceReservations.id,`visual:${operation.id}:${operation.generation}`)));
+    const reservationId = await ownedImageReservationId(db, operation);
+    const [reservation]=await db.select().from(schema.inferenceReservations).where(and(eq(schema.inferenceReservations.userId,userId),eq(schema.inferenceReservations.id,reservationId)));
     if(reservation?.state==='failed') await db.update(operations).set({generation:operation.generation+1}).where(and(eq(operations.id,operation.id),eq(operations.generation,operation.generation)));
     else if(reservation && (reservation.executionReleasedAt || reservation.state==='uncertain')) throw new VisualRenderRecoveryRequired(operation.id,'The previous request has an unknown outcome.');
   }

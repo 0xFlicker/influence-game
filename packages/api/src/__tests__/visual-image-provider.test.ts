@@ -89,6 +89,20 @@ test("durable reservation failure prevents any network request", async () => {
   expect(calls).toBe(0);
 });
 
+test.each(["opaque", "transparent"] as const)("retains a completed %s response and corrupt source when image decoding fails", async background => {
+  const source = Buffer.from("not an image");
+  const retained: Uint8Array[] = [];
+  png = source.toString("base64");
+  journal.finish = async (receipt, image) => { receipts.push(receipt); if (image) retained.push(image); };
+  globalThis.fetch = Object.assign(async () => success(), { preconnect: originalFetch.preconnect });
+  await expect(generateVisualImage({ ...request, background }, journal)).rejects.toThrow();
+  expect(begins).toEqual(["openai"]);
+  expect(receipts).toHaveLength(1);
+  expect(receipts[0]).toMatchObject({ status: 200, chargeUncertain: false, usage: { output_tokens: 10 } });
+  expect(receipts[0]!.failure).toBeDefined();
+  expect(Buffer.from(retained[0]!)).toEqual(source);
+});
+
 
 test("rejects invalid image dimensions before reserving a paid attempt", async () => {
   for (const [width, height] of [[512, 864], [1025, 1024], [4096, 1024], [3840, 3840], [3840, 768]]) {

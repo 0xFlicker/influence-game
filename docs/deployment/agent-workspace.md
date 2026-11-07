@@ -22,6 +22,8 @@ Required local gates: `bun run test`, sequential `bun run test:postgres`, `bun r
 
 Use the exact creation/submission/job identity after response loss. A successful image plus a later failure retries removal/localization/storage, never generation. Unknown provider charges remain fenced for inspection. A failed publication keeps its immutable draft and accepted public version; resolve the roster/human restriction before retrying publication. Draft writes/deletes require their last observed version.
 
+Pre-migration image journals retain their original input hash, source and allowance identity. Matching retained images are reused without another provider request or allowance debit; historical opaque sources go through the existing explicit preparation lane when needed. A completed provider image that fails local file checks still retains its receipt, bytes and debit. Retrying that failed candidate is an explicit new generation.
+
 Do not roll back only the web or only the worker to old immediate-publication behavior while new submissions are pending. Drain writers, retain object references/evidence, and use a coordinated forward repair or fully reviewed release rollback. Existing game snapshots, accepted images and MP4s remain unchanged. New movies must prepare a fresh bundle to use newly accepted assets; never mutate an old frozen bundle.
 
 ## Recorded qualification

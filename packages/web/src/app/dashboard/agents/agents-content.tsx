@@ -37,8 +37,7 @@ export function AgentsContent() {
   const agents = collection.data?.agents ?? [],
     drafts = collection.data?.drafts ?? [],
     loading = collection.isPending,
-    error =
-      actionError ?? collection.error?.message ?? generations.error?.message;
+    error = collection.error?.message ?? generations.error?.message;
   const attention = agents.filter(agentNeedsAttention);
   const query = params.get("q") ?? "",
     attentionOnly = params.get("attention") === "1" && attention.length > 0;
@@ -88,6 +87,7 @@ export function AgentsContent() {
   async function confirmArchive() {
     if (!archive || archiving) return;
     setArchiving(true);
+    setActionError(null);
     try {
       await deleteAgent(archive.id);
       setArchive(null);
@@ -275,7 +275,10 @@ export function AgentsContent() {
             agents={filtered}
             returnPath={returnPath}
             onEdit={edit}
-            onDelete={setArchive}
+            onDelete={(agent) => {
+              setActionError(null);
+              setArchive(agent);
+            }}
             archivePending={archiving}
           />
         )}
@@ -320,6 +323,7 @@ export function AgentsContent() {
         showCloseButton={false}
       >
         <p>Game history is retained.</p>
+        {actionError && <p role="alert">{actionError}</p>}
         <div className={styles.confirmationActions}>
           <button
             type="button"

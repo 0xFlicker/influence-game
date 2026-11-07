@@ -354,3 +354,43 @@ Visual evidence is under `.renders/agent-workspace/`: `guided-field-hover-1440.p
 `guided-field-reader-1440.png`, `guided-name-editor-{1440,390,320}.png` and
 `guided-archetype-editor-320.png`. No paid generation or account changes were
 needed.
+
+## PR review: paid image recovery
+
+Reviewed owner and draft-version boundaries, immutable submissions, publication
+claims and roster continuity, private artwork access, cancellation/lease fences,
+provider retries and allowance settlement. Fixed two related failures: image
+decoding could throw before retaining a completed response, and a returned image
+rejected locally could incorrectly refund a paid generation. Receipts, returned
+bytes and debits now survive local file failures; the candidate remains failed
+and an explicit retry starts another generation. The transparency check reads
+the alpha channel locally and makes no provider call.
+
+The model migration also changed request fingerprints and allowance identities.
+Historical journals now verify and reuse their frozen requests and retained
+images without rewriting evidence or debiting another allowance. A failed,
+never-dispatched historical reservation advances only on explicit retry, keeping
+its original refund. Regression tests cover these cases with mocked transport.
+
+The React review also found an archive failure hidden behind its own modal and
+retained after retry. Archive errors now appear inside that dialog and clear
+when reopening or retrying. The browser journey covers failure, cancellation,
+reopening and successful retry without leaving a phantom Activity item.
+
+Review validation: the provider-free baseline passed 3,372 tests (five skipped),
+and the final API code passed 2,533 cases across four isolated database shards
+(728 / 603 / 545 / 657). Frozen install, typecheck, lint and MCP schema checks
+passed. The early sequential run began before the review fixes were complete;
+the final shard runs provide the final-code API evidence.
+
+Parallel runs on the local PostgreSQL server hit a database-drop checkpoint wait
+in one API cleanup hook and browser cleanup. All temporary browser/server
+processes exited. The affected API shard then passed alone (545 cases, including
+cleanup), without increasing its timeout, and all four temporary shard databases
+were removed. This is local evidence; staging and production remain untested by
+this review. No paid provider calls were made.
+
+The final browser run after the database load settled passed all 15 journeys
+(1,107 assertions) and cleanup in 66.2 seconds. The timed-out run's exact
+temporary databases and role were also verified absent. `git diff --check`
+passed; generated Next.js test route paths were restored before commit.

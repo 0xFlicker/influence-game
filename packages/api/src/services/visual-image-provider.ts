@@ -129,23 +129,22 @@ async function attempt(provider: VisualImageProvider, request: VisualImageReques
     throw new VisualImageFailure(`${provider} did not return exactly one image`, false);
   }
   const source=Buffer.from(data[0].b64_json,"base64");
-  if(provider==="openai" && request.background==="transparent" && !await hasCharacterTransparency(source)) {
-    receipt.chargeUncertain=false;
-    receipt.failure=visualFailureEvidence(new Error("Native transparency is missing"),"response");
-    receipt.elapsedMs=Date.now()-start;
-    await journal.finish(receipt,source);
-    throw new VisualImageFailure("OpenAI returned an opaque image for a transparent request. The source is retained for inspection.",false);
-  }
   let image: Buffer;
   try {
+    if (provider === "openai" && request.background === "transparent" && !await hasCharacterTransparency(source)) {
+      throw new Error("OpenAI returned an opaque image for a transparent request. The source is retained for inspection.");
+    }
     // Contain preserves all people even when fallback aspect ratios differ. Localization sees these final pixels.
     image = await sharp(source)
       .resize(request.width, request.height, { fit: "contain", background: request.background === "transparent" && provider === "openai" ? { r: 0, g: 0, b: 0, alpha: 0 } : "#161616" }).png().toBuffer();
   } catch (error) {
+    // The provider completed its image response. Output validation cannot undo
+    // that paid generation or discard the bytes and usage needed to audit it.
+    receipt.chargeUncertain = false;
     receipt.failure = visualFailureEvidence(error, "response");
     receipt.elapsedMs = Date.now() - start;
-    await journal.finish(receipt);
-    throw new VisualImageFailure(`${provider} returned an unreadable image`, false);
+    await journal.finish(receipt, source);
+    throw new VisualImageFailure(error instanceof Error ? error.message : `${provider} returned an unreadable image`, false);
   }
   receipt.chargeUncertain = false;
   receipt.elapsedMs = Date.now() - start;
