@@ -175,19 +175,32 @@ async function button(page: Page, label: string) {
   await page.evaluate(selector + ".click()");
 }
 
-test("management View opens an authenticated owner profile and returns to its agent", async () => {
+test("management image and name open the owner profile and return to its agent", async () => {
   const page = await createAuthenticatedPage(browser, owner.jwt, servers.webUrl + "/dashboard/agents", { privateKey: owner.wallet.privateKey });
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(String(error)));
   try {
     const selector = `a[href^="/dashboard/agents/${agentId}/profile"]`;
-    await page.waitForSelector(selector);
-    await page.click(selector);
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+      await page.setViewport(viewport);
+      for (const target of ["img", "h3"]) {
+        await page.waitForSelector(`${selector} ${target}`);
+        expect(await page.$$(selector)).toHaveLength(1);
+        expect(await page.$$eval(`#agent-${agentId} a, #agent-${agentId} button`, elements => elements.some(element => element.textContent?.trim() === "View"))).toBe(false);
+        expect(await page.$(`#agent-${agentId} button[aria-label="Edit Mira Voss"]`)).not.toBeNull();
+        await page.click(`${selector} ${target}`);
+        await page.waitForFunction('document.querySelector("h1")?.textContent === "Mira Voss"');
+        expect(await page.$eval("main", element => element.textContent)).toContain("Patient, observant, and quietly theatrical.");
+        expect(await page.$eval('main a', element => element.getAttribute("href"))).toBe(`/dashboard/agents?at=${agentId}`);
+        await page.click('main a');
+        await page.waitForSelector(`#agent-${agentId}`);
+      }
+      await page.screenshot({ path: proof + `management-profile-link-${viewport.width}.png`, fullPage: true });
+    }
+    await page.focus(selector);
+    expect(await page.$eval(selector, element => element === element.ownerDocument.activeElement)).toBe(true);
+    await page.keyboard.press("Enter");
     await page.waitForFunction('document.querySelector("h1")?.textContent === "Mira Voss"');
-    expect(await page.$eval("main", element => element.textContent)).toContain("Patient, observant, and quietly theatrical.");
-    expect(await page.$eval('main a', element => element.getAttribute("href"))).toBe(`/dashboard/agents?at=${agentId}`);
-    await page.click('main a');
-    await page.waitForSelector(`#agent-${agentId}`);
     expect(errors).toEqual([]);
   } finally {
     await page.close();

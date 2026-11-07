@@ -284,6 +284,16 @@
   border-bottom: 1px solid var(--rule);
   padding-bottom: 20px;
 }
+.cardProfile {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+.cardProfile:hover h3,
+.cardProfile:focus-visible h3 {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
 .card img {
   height: 320px;
   width: 100%;

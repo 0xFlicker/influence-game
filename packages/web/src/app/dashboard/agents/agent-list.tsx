@@ -54,16 +54,25 @@ export function AgentList({
           key={agent.id}
           className={styles.card}
         >
-          <OwnedCharacterImage
-            src={
-              agent.transparentBodyUrl ??
-              agent.fullBodyReferenceUrl ??
-              agent.avatarUrl ??
-              "/logo.png"
-            }
-            alt={agent.name}
-          />
-          <h3>{agent.name}</h3>
+          <Link
+            className={styles.cardProfile}
+            href={withManagementReturn(
+              "/dashboard/agents/" + agent.id + "/profile",
+              returnPath?.(agent.id) ?? "/dashboard/agents",
+            )}
+            aria-label={"View " + agent.name}
+          >
+            <OwnedCharacterImage
+              src={
+                agent.transparentBodyUrl ??
+                agent.fullBodyReferenceUrl ??
+                agent.avatarUrl ??
+                "/logo.png"
+              }
+              alt={agent.name}
+            />
+            <h3>{agent.name}</h3>
+          </Link>
           <p className={styles.status}>{agentActivity(agent)}</p>
           <p
             className={styles.acceptedVersion}
@@ -98,16 +107,6 @@ export function AgentList({
             >
               Edit
             </button>
-            <Link
-              className="action"
-              href={withManagementReturn(
-                "/dashboard/agents/" + agent.id + "/profile",
-                returnPath?.(agent.id) ?? "/dashboard/agents",
-              )}
-              aria-label={"View " + agent.name}
-            >
-              View
-            </Link>
           </div>
           <details className={styles.hint}>
             <summary>More</summary>

@@ -93,6 +93,10 @@ mobile), containing requests, draft choices/conflicts and moderation details.
 Resume remains a direct footer action. No late status adds a row above the form,
 and reveal motion never translates the editor vertically.
 
+Agent management opens an owner's profile from the agent image or name. Both
+share one keyboard-focusable link and preserve the list's return position. Edit
+remains the card's primary button; there is no separate View button.
+
 Pending images appear in both the editor and agent management. View reconnects to
 the correct workspace; Cancel keeps character edits while retiring image work.
 See [pending generation and charge recovery](agent-generations.md).

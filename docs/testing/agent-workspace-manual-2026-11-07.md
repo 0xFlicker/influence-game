@@ -155,3 +155,15 @@ lint and `git diff --check` passed. React review found no new effects, state
 synchronization or accessibility changes.
 The full sequential PostgreSQL baseline also passed: 2,527 tests across 241
 files, zero failures (1,021 seconds).
+
+## Follow-up: profile links on management cards
+
+Removed the separate View action. The character image and name share one profile
+link with keyboard focus and a name underline on hover/focus; Edit remains in the
+card action row. The existing management browser journey now clicks both surfaces
+at desktop and mobile widths, verifies return position, and opens the profile
+with Enter. Both management journeys passed (47 assertions), as did typecheck,
+lint and `git diff --check`. The first browser startup selected an occupied local
+port; rerunning with fresh random ports passed. Evidence:
+`.renders/agent-workspace/management-profile-link-1440.png` and
+`.renders/agent-workspace/management-profile-link-390.png`.
