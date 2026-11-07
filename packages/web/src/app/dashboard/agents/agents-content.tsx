@@ -317,6 +317,7 @@ export function AgentsContent() {
         open={Boolean(archive)}
         title={archive ? `Archive ${archive.name}?` : "Archive agent"}
         onClose={() => setArchive(null)}
+        showCloseButton={false}
       >
         <p>Game history is retained.</p>
         <div className={styles.confirmationActions}>

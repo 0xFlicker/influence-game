@@ -226,6 +226,7 @@ test("management image and name open the owner profile and return to its agent",
     const beforeArchive = await page.$eval(`#agent-${agentId}`, element => ({ top: element.getBoundingClientRect().top, height: element.getBoundingClientRect().height }));
     await page.click(`#agent-${agentId} button[aria-label="Archive Mira Voss"]`);
     await page.waitForSelector('dialog[open][aria-label="Archive Mira Voss?"]');
+    expect(await page.$$eval('dialog[open] button', elements => elements.map(element => element.textContent?.trim()))).toEqual(["Cancel", "Archive"]);
     expect(await page.$eval(`#agent-${agentId}`, element => ({ top: element.getBoundingClientRect().top, height: element.getBoundingClientRect().height }))).toEqual(beforeArchive);
     await button(page, "Cancel");
     await page.waitForFunction('!document.querySelector("dialog[open]")');
