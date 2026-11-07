@@ -185,6 +185,7 @@ test("management image and name open the owner profile and return to its agent",
       await page.setViewport(viewport);
       for (const target of ["img", "h3"]) {
         await page.waitForSelector(`${selector} ${target}`);
+        expect(await page.$$eval("main aside h2", headings => headings.some(heading => heading.textContent?.includes("Needs attention")))).toBe(false);
         expect(await page.$$(selector)).toHaveLength(1);
         expect(await page.$$eval(`#agent-${agentId} a, #agent-${agentId} button`, elements => elements.some(element => element.textContent?.trim() === "View"))).toBe(false);
         expect(await page.$(`#agent-${agentId} button[aria-label="Edit Mira Voss"]`)).not.toBeNull();

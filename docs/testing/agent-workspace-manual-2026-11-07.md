@@ -167,3 +167,7 @@ lint and `git diff --check`. The first browser startup selected an occupied loca
 port; rerunning with fresh random ports passed. Evidence:
 `.renders/agent-workspace/management-profile-link-1440.png` and
 `.renders/agent-workspace/management-profile-link-390.png`.
+
+The Needs attention panel now renders only when agents need attention. Both
+management browser journeys passed with the empty-panel check at desktop/mobile
+widths (51 assertions); typecheck, lint and `git diff --check` passed.

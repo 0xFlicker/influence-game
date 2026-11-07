@@ -114,14 +114,11 @@ export function AgentsContent() {
           </button>
         </div>
       )}
-      {
+      {attention.length > 0 && (
         <section className={styles.attention}>
           <h2>
             Needs attention <small>{attention.length}</small>
           </h2>
-          {!attention.length && (
-            <p className={styles.meta}>No agents need attention.</p>
-          )}
           {attention.map((agent) => (
             <div className={styles.attentionRow} key={agent.id}>
               <div>
@@ -157,7 +154,7 @@ export function AgentsContent() {
             </div>
           ))}
         </section>
-      }
+      )}
       {agents
         .filter(
           (agent) => agent.entryIntent && agent.reviewState === "accepted",
