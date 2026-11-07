@@ -7,6 +7,11 @@ type: ux-and-implementation-plan
 
 # Agent creation, editing, and management redesign
 
+## November 7 implementation refinement
+
+The final user review supersedes the upload and initial shell placements below: agent images must be generated, with no user upload control or endpoint. Preserve the existing Guided hall and compact above-the-fold staging. Guided and Advanced share one character stage, draft and conversation; an empty Guided creator spans the width. Model/voice sit beside the input activity, below the composer or fields. Close is in the header, Cancel/Review are grouped. Review requires actual changes and valid required fields, shows real differences in a dialog, and closes when all changes are undone. Test all four create/edit mode combinations with mocked/provider-free browser journeys after resolving the layout.
+
+
 Replace the disconnected creator, advanced form, and floating Workshop with one character workspace. **Guided and Advanced are two views of the same draft.** The character has a prominent full-body stage; preferred game model and voice have a permanent, shared home; every proposed change can be inspected before saving. Long operations keep their own state and never make unrelated work look busy.
 
 The user approved implementation on November 6. The shared workspace, owner management/profile, versioned drafts, cached voice auditions, durable artwork jobs, private draft media, enforced publication and image-provider migration are implemented in this checkout. The decisions and original investigation below retain the design rationale. Current behavior and rollout are documented in [the submission contract](../agent-content-submissions.md) and [deployment checklist](../deployment/agent-workspace.md). Local evidence is recorded separately from staging/production verification.
@@ -15,7 +20,7 @@ The user approved implementation on November 6. The shared workspace, owner mana
 
 - Preserve the successful Guided conversation, character ingredients, section readers, and approval beats. Improve its shared workspace and transitions into Advanced.
 - Bring management, creation, and editing into the dashboard/Seasons visual language: warm hall photography, Georgia headings, brass rules, readable neutral surfaces, and full-body character staging.
-- Reuse existing verified cutouts. The user believes the historical full-body backfill is complete; check for remaining missing/failed assets instead of planning another bulk backfill. Use the existing background-removal pipeline when Grok fallback or an opaque upload requires it. Native-alpha artwork normally skips that stage.
+- Reuse existing verified cutouts. The user believes the historical full-body backfill is complete; check for remaining missing/failed assets instead of planning another bulk backfill. Use the existing background-removal pipeline when Grok fallback requires it. Native-alpha artwork normally skips that stage.
 - Plan the GPT Image 2.6 migration across **all new image operations in Visual Mode**, not just the profile editor. Existing accepted images and historical games remain immutable.
 - **Keep medium quality.** The user's latest correction explicitly chooses the existing quality tier as sufficient. There is no planned upgrade to high. Flare/Sunburst routing is independent of quality.
 - Explore routing new compositions to Flare and targeted edits to Sunburst through a validated assistant command. “Flash” in the discussion refers to the documented Flare model.
@@ -182,7 +187,7 @@ Model/voice are part of one draft and one save receipt. A metadata-only save tha
 
 Use deployment as the gate. Do not add a shadow/enforced feature flag or claim this design turns production enforcement on.
 
-Change all create/edit sources together: web, API/MCP, profile prompt handoff, visual completion, learning proposals, upload/artwork replacement, and operator submission paths. Public reads, cached cards, agent pickers, Daily Free, game enrollment and season qualification must all read accepted authority. New null-accepted profiles cannot slip through the old eligibility predicate. Audit early public image upload/publication so an unaccepted image cannot bypass the intended owner/public boundary through an asset URL.
+Change all create/edit sources together: web, API/MCP, profile prompt handoff, visual completion, learning proposals, generated artwork replacement, and operator submission paths. Public reads, cached cards, agent pickers, Daily Free, game enrollment and season qualification must all read accepted authority. New null-accepted profiles cannot slip through the old eligibility predicate. Audit early public image upload/publication so an unaccepted image cannot bypass the intended owner/public boundary through an asset URL.
 
 Creating for a game now saves a submission first. Preserve the destination and explicitly authorized entry intent durably; after acceptance, recheck admission rather than promising or reserving a seat during review. If a game fills or ends, keep the accepted agent and show the entry failure separately. A hold pauses entry, not the saved draft. Waiting-seat reconciliation, ratings and learning-review applied status occur only after publication and under their existing revision fences.
 
@@ -193,7 +198,7 @@ Creating for a game now saves a submission first. Preserve the destination and e
 | Shared preferences | Preferred contestant model; stock voice; cached audition; reset to automatic/default; actual default resolved from durable identity when available |
 | Character          | Name, gender, archetype, personality, backstory; scoped AI assistance; fill missing fields without changing populated fields                       |
 | Strategy           | Separate Influence and Werewolf instructions; visible defaults when blank; explicit customize/reset actions; review-linked comparisons             |
-| Appearance         | Visual design, performance instructions, full-body upload/generation, selected candidate, source-bound portrait crop and head confirmation         |
+| Appearance         | Visual design, performance instructions, full-body generation, selected candidate, source-bound portrait crop and head confirmation         |
 | Review             | Every changed value, image/crop comparison, per-change undo, validation, destination, publication state                                            |
 
 Do not expose raw provider models for character writing/image generation as if they were contestant preferences. Do not add sliders for invented personality scores or controls with no runtime effect. Preserve each field's current validation and semantics.
@@ -210,7 +215,7 @@ Creation needs a stable draft identity if “Automatic” previews a specific vo
 
 ## Asynchronous state contract
 
-Keep independent state for draft persistence, AI proposal, artwork, upload, head/crop confirmation, publication, and entry handoff. A single global busy flag cannot represent them truthfully.
+Keep independent state for draft persistence, AI proposal, artwork, head/crop confirmation, publication, and entry handoff. A single global busy flag cannot represent them truthfully.
 
 ### Reuse confirmed in the current Guided implementation
 
@@ -275,7 +280,7 @@ Carry an exact provider-native structured command through the owner into a valid
 | Deterministic image processing                         | No image-model request | Crop portrait, resize, encode, split an accepted scene into views                                                                                               |
 | Text-only profile patch                                | No image-model request | Strategy, personality, model or voice change without an appearance operation                                                                                    |
 
-An existing agent can request an entirely new concept; it is still a create operation. A new profile can upload an identity reference and ask for a faithful transformation; that is an edit. A scene composed from room/cast references is new composition; repairing a specific accepted scene is edit. Endpoint mechanics follow API requirements independently of semantic model choice.
+An existing agent can request an entirely new concept; it is still a create operation. Revising an existing generated character is an edit. A scene composed from room/cast references is new composition; repairing a specific accepted scene is edit. Endpoint mechanics follow API requirements independently of semantic model choice.
 
 Use the current assistant's clarification command when scope is ambiguous. Preserve an explicit “New look” versus “Edit selected look” action for direct Advanced requests, so routine button actions require no extra classifier call. A second instruction cannot silently retarget a dispatched request.
 
@@ -306,7 +311,7 @@ The user's expected starting state is that old full-body images have already bee
 - **Existing verified cutout:** reuse it directly. Preserve the opaque original and source-bound derivative; no repeat generation or removal.
 - **New OpenAI native-alpha output:** validate the actual pixels and publish through the existing artwork lookup, subject to the submitted revision's access/moderation state. Skip background removal.
 - **Grok fallback:** under the existing authorized provider-fallback rules, retain the generated source and receipt, then enqueue/reuse its cutout through the existing dispatcher. Validate and durably store the resulting alpha image before the candidate becomes ready.
-- **Opaque upload or an otherwise valid opaque output:** use the same preparation stage. Transparency is a property of the completed asset; do not claim the provider emitted native alpha when removal supplied it.
+- **Grok opaque output:** use the same preparation stage. Transparency is a property of the completed asset; do not claim the provider emitted native alpha when removal supplied it.
 - **Missing/failed old derivative:** resolve that specific gap with the retained source and existing retry/publication mechanisms. No blanket reprocessing of completed assets or historical regeneration.
 - **Removal/storage failure:** keep the generated original, selected profile art, and successful stage receipts. Retry removal or final storage as appropriate; do not generate another image because a later stage failed. Unknown provider outcomes still require reconciliation before a fallback dispatch.
 
@@ -350,7 +355,7 @@ Official comparison examples, not generated for The House and not a benchmark of
 2. Pass `background` and `output_format` in OpenAI JSON generation and multipart edit requests. Grok uses its supported request contract and the existing removal stage when its output is opaque. Preserve alpha through resize, encoding, upload, and crop. Do not change shared scene padding globally.
 3. Validate decoded alpha: an alpha channel alone is insufficient. Require real transparent/background pixels, credible near-opaque subject coverage, unclipped head/feet, and review of hair/glass/fine edges against light and dark backgrounds. Do not require an exact alpha-255 pixel: the approved preview has transparent background and subject values near 252–254. A checkerboard painted into RGB fails.
 4. Store source and provider evidence with existing bucket clients; verify hash and length before committing references. Publish verified native-alpha bytes through the existing source-hash art lookup so new native cutouts do not require a second background-removal job. Keep head/crop coordinates tied to the exact source.
-5. Reuse the expected historical backfill and preserve its opaque originals and verified derivatives. Check and repair only remaining gaps. For Grok fallback or opaque uploads, run the existing background-removal stage and validate its result; an opaque intermediate is valid input but is not yet a completed transparent asset. No historical regeneration or redundant cutout work.
+5. Reuse the expected historical backfill and preserve its opaque originals and verified derivatives. Check and repair only remaining gaps. For Grok fallback, run the existing background-removal stage and validate its result; an opaque intermediate is valid input but is not yet a completed transparent asset. No historical regeneration or redundant cutout work.
 6. Freeze the chosen assets through existing revision and game-source boundaries. Changing an image model or preferred game model must not rewrite accepted game history or existing recordings.
 7. Update model pricing and receipts before changing the default model: `visual-pricing.ts` currently recognizes only `gpt-image-2` for image usage. Unknown usage must remain unpriced, not be reported as zero.
 
@@ -359,7 +364,7 @@ Official comparison examples, not generated for The House and not a benchmark of
 Each slice must work end to end before the next. Deployment remains the gate; do not ship disabled decorative controls or introduce feature flags for this work.
 
 1. **State correctness and common draft.** Separate text/image busy indicators. Define shared create/edit draft including voice, baseline and proposed patches. Preserve stable create keys, retry receipts, stale-revision checks, restore behavior, and review ownership. Add durable draft storage with object-backed bodies and indexed operational metadata. Update web/API/MCP contracts together; remove obsolete separate mutation paths once consumers move.
-2. **Complete the Advanced vertical slice.** Implement the body-first shell, preferences, all fields, upload/framing, generic review with per-field undo, one coherent save, and recoverable errors. Reuse existing combobox, text diff, image controls, and crop editor where they fit. No floating Workshop remains on this path.
+2. **Complete the Advanced vertical slice.** Implement the body-first shell, preferences, all fields, generation/framing, generic review with per-field undo, one coherent save, and recoverable errors. Reuse existing combobox, text diff, image controls, and crop editor where they fit. No floating Workshop remains on this path.
 3. **Connect Guided to the same draft.** New creation, existing-agent prompt handoff, field refinement, two-way mode switch, and contextual summaries use that shared state. Preserve anonymous/signup, game join, Daily Free, moderation, and learning-review flows. Remove the superseded guided/Workshop state ownership rather than adding a third editor.
 4. **Complete auditions and long jobs.** Ship versioned shared voice samples, accessible playback, durable generation status/recovery, candidate selection, staged retries, and continuation after navigation. Separate draft persistence from final publication, and ensure source conflicts are visible.
 5. **Qualify and migrate all image paths.** Evaluate 2.6 Flare/Sunburst at medium, add structured create/edit routing, cover the complete Visual Mode inventory and costing, and prove native-alpha and Grok-plus-removal publication and consumer parity. Reuse completed cutouts and check remaining backfill gaps. Image generation does not expand contestant model eligibility.
@@ -375,7 +380,7 @@ Relevant modules to split by responsibility: workspace shell; shared draft state
 - Guided ↔ Advanced preserves text, selected model/voice, proposal decisions, selected art, crop, operation identity, dirty state, errors, and destination. Opening/restoring/toggling never dispatches a paid operation.
 - Every field is reachable and editable. The same underlying draft is submitted from either mode. Review shows the actual changed values, including clearing a field, reverting it, changing defaults, voice-only, model-only, image-only, and crop-only changes.
 - Voice audition never changes selection, selection never saves, and final save includes the chosen voice. Race two previews, close while loading, navigate away, simulate playback failure, and verify one player and no autoplay. Check Helios exclusion and automatic voice consistency.
-- Persist/reload at each long-operation stage; test completed body plus failed localization, network loss, response loss, timeout, cancellation, late completion, quota exhaustion, upload failure, stale revision, two tabs, and uncertain provider dispatch. Prove no duplicate profiles, charges, or entries.
+- Persist/reload at each long-operation stage; test completed body plus failed localization, network loss, response loss, timeout, cancellation, late completion, quota exhaustion, storage failure, stale revision, two tabs, and uncertain provider dispatch. Prove no duplicate profiles, charges, or entries.
 - New account, signed-out preview → signup, existing account, restored draft, review-linked strategy, profile-request handoff, missing art, moderation hold/rejection, full game, and failed enrollment each have an explicit recoverable outcome.
 - Dashboard → Manage → Edit/Continue → Review → return retains the correct draft, operation, source revision, search and destination. Collection reads issue zero paid requests. Archive uses truthful wording and retains history. Test empty/error/attention states and current-ready plus replacement-running simultaneously.
 - Edit/View labels, positions and destinations remain stable across generation, candidate-ready, Reviewing and Held states. Review opens an owner decision, not a duplicate editor/profile action. Verify disabled conflicting operations have an accessible explanation.

@@ -36,7 +36,6 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 import { CharacterPortraitEditor } from "./character-portrait-editor";
-import { AgentImageControl } from "@/components/agent-image-control";
 import { GrowingTextarea } from "./growing-textarea";
 import { StrategyDiff } from "./strategy-diff";
 import styles from "./agent-workspace.module.css";
@@ -384,7 +383,6 @@ export function AgentForm({
     draftScope: string;
     operation: "create" | "edit";
     requestId: string;
-    uploadSource?: string;
     name: string;
     personaKey: string;
     avatarUrl: string | null;
@@ -467,10 +465,15 @@ export function AgentForm({
     [],
   );
   useEffect(() => {
-    if (reviewOpen) {
-      reviewRef.current?.focus();
-      reviewRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
-    }
+    if (!reviewOpen) return;
+    const previous = document.activeElement as HTMLElement | null;
+    reviewRef.current?.focus();
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = overflow;
+      previous?.focus();
+    };
   }, [reviewOpen]);
 
   function beginGeneration() {
@@ -480,7 +483,6 @@ export function AgentForm({
     return epoch;
   }
 
-  const previewPersona = personaKey ?? "strategic";
   const avatarUrl = explicitAvatarUrl;
   const currentSnapshot: EditorSnapshot = useMemo(
     () => ({
@@ -521,6 +523,9 @@ export function AgentForm({
     ],
   );
   const dirty = !sameSnapshot(currentSnapshot, initialSnapshot);
+  useEffect(() => {
+    if (reviewOpen && !dirty) setReviewOpen(false);
+  }, [reviewOpen, dirty]);
   const anonymousDraftKey = `influence:agent-editor:${DRAFT_VERSION}:anonymous:${draftScope}`;
   const draftStorageKey = draftOwner
     ? `influence:agent-editor:${DRAFT_VERSION}:${draftOwner}:${draftScope}`
@@ -777,7 +782,7 @@ export function AgentForm({
   ]);
 
   function applyDraft() {
-    if (!pendingRestore) return;
+    if (!pendingRestore || !remoteReady || restoreAlternatives) return;
     setGuided(pendingRestore.guided ?? initialGuided);
     setConversation(pendingRestore.conversation);
     setConversationKey((value) => value + 1);
@@ -1327,6 +1332,7 @@ export function AgentForm({
     )
       return;
 
+    if (submitDisabled) return;
     captureProductEvent("agent_editor_review_opened", { editing: isEditing });
     setReviewOpen(true);
   }
@@ -1478,12 +1484,20 @@ export function AgentForm({
           comparingWerewolf ? werewolfStrategyStyle : strategyStyle,
         ) === normalizedStrategy(strategyComparison.baseline)),
   );
+  const missingRequired = [
+    !name.trim() && "name",
+    !personality.trim() && "personality",
+    !gender && "gender",
+  ].filter((field): field is string => Boolean(field));
   const submitDisabled =
+    !dirty ||
+    missingRequired.length > 0 ||
     unreadableDraft ||
     Boolean(pendingRestore) ||
     draftConflicts.length > 0 ||
     submitting ||
     profileGenerating ||
+    ((referenceBusy || Boolean(candidateImage)) && !fullBodyReferenceUrl) ||
     uploading ||
     headConfirmationRequired ||
     requiredStrategyChangeMissing;
@@ -1550,38 +1564,6 @@ export function AgentForm({
           ? cause.message
           : "Artwork could not be selected",
       );
-    }
-  }
-  async function uploadCharacter(file: File) {
-    setUploading(true);
-    setReferenceError(null);
-    try {
-      const form = new FormData();
-      form.set("image", file);
-      const { sourceUrl } = await apiFetch<{ sourceUrl: string }>(
-        "/api/agent-profiles/images",
-        { method: "POST", body: form },
-      );
-      referenceRequest.current = {
-        agentId: initial?.id,
-        draftScope,
-        operation: "edit",
-        requestId: createRequestId(),
-        name: name || "Untitled agent",
-        personaKey: personaKey ?? "",
-        avatarUrl: avatarUrl ?? null,
-        fullBodyReferenceUrl,
-        performanceInstructions,
-        visualDesign: visualDesign ?? "",
-        uploadSource: sourceUrl,
-      };
-      await generateReference();
-    } catch (cause) {
-      setReferenceError(
-        cause instanceof Error ? cause.message : "Upload failed",
-      );
-    } finally {
-      setUploading(false);
     }
   }
   const initialImageRead = useRef(false);
@@ -1833,49 +1815,89 @@ export function AgentForm({
     }
   }
 
+  const preferences = !anonymous ? (
+    <section className={styles.preferences} aria-label="Model and voice">
+      <ModelPreferencePicker
+        compact
+        value={modelPreference}
+        onChange={setModelPreference}
+        disabled={submitting}
+      />
+      <AgentVoicePicker
+        value={voiceId}
+        onChange={setVoiceId}
+        disabled={submitting}
+      />
+    </section>
+  ) : null;
+
   return (
-    <form onSubmit={handleSubmit} className={styles.workspace}>
+    <form
+      onSubmit={handleSubmit}
+      className={styles.workspace}
+      data-editing={isEditing}
+      data-mode={guided ? "guided" : "advanced"}
+      data-has-art={Boolean(
+        fullBodyReferenceUrl || avatarUrl || candidateImage || referenceBusy,
+      )}
+    >
       <fieldset disabled={submitting} className="contents">
         <legend className="sr-only">Agent draft</legend>
         <header className={styles.heading}>
-          <h1>{name || "Create agent"}</h1>
-          <div className={styles.modes} aria-label="Editing mode">
+          <h1>{name || (isEditing ? "Edit agent" : "Create your agent")}</h1>
+          <div className={styles.headerActions}>
+            <div className={styles.modes} aria-label="Editing mode">
+              <button
+                type="button"
+                aria-pressed={guided}
+                onClick={() => {
+                  captureProductEvent("agent_editor_mode_changed", {
+                    mode: "guided",
+                  });
+                  setGuided(true);
+                  onAssistant?.();
+                }}
+              >
+                Guided
+              </button>
+              <button
+                type="button"
+                aria-pressed={!guided}
+                disabled={publicPreview && !authReady}
+                onClick={() => {
+                  if (anonymous) {
+                    requestAccount();
+                    return;
+                  }
+                  captureProductEvent("agent_editor_mode_changed", {
+                    mode: "advanced",
+                  });
+                  setGuided(false);
+                  onAdvanced?.();
+                }}
+              >
+                Advanced
+              </button>
+            </div>
             <button
               type="button"
-              aria-pressed={guided}
               onClick={() => {
-                captureProductEvent("agent_editor_mode_changed", {
-                  mode: "guided",
-                });
-                setGuided(true);
-                onAssistant?.();
-              }}
-            >
-              Guided
-            </button>
-            <button
-              type="button"
-              aria-pressed={!guided}
-              disabled={publicPreview && !authReady}
-              onClick={() => {
-                if (anonymous) {
-                  requestAccount();
+                if (pendingRestore || restoreAlternatives || unreadableDraft) {
+                  onCancel();
                   return;
                 }
-                captureProductEvent("agent_editor_mode_changed", {
-                  mode: "advanced",
+                void saveLocalDraft().then((saved) => {
+                  if (saved) onCancel();
                 });
-                setGuided(false);
-                onAdvanced?.();
               }}
             >
-              Advanced
+              Close
             </button>
           </div>
         </header>
         <div className={styles.layout}>
           <aside className={styles.art}>
-            {fullBodyReferenceUrl || avatarUrl ? (
+            {candidateImage ? null : fullBodyReferenceUrl || avatarUrl ? (
               <OwnedCharacterImage
                 src={
                   fullBodyReferenceUrl
@@ -1888,9 +1910,7 @@ export function AgentForm({
               />
             ) : referenceBusy ? (
               <CharacterFormation name={name} />
-            ) : (
-              <p>Generate or upload a full-body image.</p>
-            )}
+            ) : null}
             <div className={styles.artActions}>
               <button
                 type="button"
@@ -1918,25 +1938,6 @@ export function AgentForm({
                   Revise
                 </button>
               )}
-              <label className={styles.upload}>
-                Upload
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  disabled={
-                    unreadableDraft ||
-                    Boolean(pendingRestore) ||
-                    referenceBusy ||
-                    submitting ||
-                    uploading
-                  }
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) void uploadCharacter(file);
-                    event.target.value = "";
-                  }}
-                />
-              </label>
               <button
                 type="button"
                 disabled={(!fullBodyReferenceUrl && !avatarUrl) || submitting}
@@ -1956,12 +1957,35 @@ export function AgentForm({
               />
             )}
             {candidateImage && (
-              <div className={styles.activity}>
+              <div className={styles.candidateReady}>
                 <h2>Artwork ready</h2>
-                <OwnedCharacterImage
-                  src={candidateImage.fullBodyReferenceUrl}
-                  alt="New artwork candidate"
-                />
+                <div
+                  className={styles.artComparison}
+                  data-compare={Boolean(fullBodyReferenceUrl || avatarUrl)}
+                >
+                  {(fullBodyReferenceUrl || avatarUrl) && (
+                    <figure>
+                      <OwnedCharacterImage
+                        src={
+                          fullBodyReferenceUrl === initial?.fullBodyReferenceUrl
+                            ? (initial?.transparentBodyUrl ??
+                              fullBodyReferenceUrl ??
+                              avatarUrl!)
+                            : (fullBodyReferenceUrl ?? avatarUrl!)
+                        }
+                        alt="Current selected artwork"
+                      />
+                      <figcaption>Current</figcaption>
+                    </figure>
+                  )}
+                  <figure>
+                    <OwnedCharacterImage
+                      src={candidateImage.fullBodyReferenceUrl}
+                      alt="New artwork candidate"
+                    />
+                    <figcaption>New</figcaption>
+                  </figure>
+                </div>
                 {candidateImage.basedOn &&
                   (candidateImage.basedOn.name !== name ||
                     candidateImage.basedOn.visualDesign !== visualDesign ||
@@ -1973,18 +1997,20 @@ export function AgentForm({
                       it.
                     </p>
                   )}
-                <button
-                  type="button"
-                  onClick={() => void decideCandidate("selected")}
-                >
-                  Select
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void decideCandidate("discarded")}
-                >
-                  Discard
-                </button>
+                <div className={styles.footerActions}>
+                  <button
+                    type="button"
+                    onClick={() => void decideCandidate("selected")}
+                  >
+                    Select
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void decideCandidate("discarded")}
+                  >
+                    Discard
+                  </button>
+                </div>
               </div>
             )}
           </aside>
@@ -2091,6 +2117,7 @@ export function AgentForm({
                   <button
                     type="button"
                     onClick={applyDraft}
+                    disabled={!remoteReady}
                     className="influence-button-primary min-h-11 rounded-lg px-4 text-sm font-semibold"
                   >
                     Resume
@@ -2220,23 +2247,10 @@ export function AgentForm({
                 ))}
               </section>
             )}
-            {!anonymous && (
-              <section className={styles.preferences}>
-                <ModelPreferencePicker
-                  compact
-                  value={modelPreference}
-                  onChange={setModelPreference}
-                  disabled={submitting}
-                />
-                <AgentVoicePicker
-                  key={String(guided)}
-                  value={voiceId}
-                  onChange={setVoiceId}
-                  disabled={submitting}
-                />
-              </section>
-            )}
-            <div hidden={!guided} className={guided ? "contents" : "hidden"}>
+            <div
+              hidden={!guided}
+              className={guided ? styles.guidedContent : "hidden"}
+            >
               <AgentCreationChat
                 key={conversationKey}
                 conversation={conversation}
@@ -2288,13 +2302,13 @@ export function AgentForm({
                       null,
                   )
                 }
-                submitDisabled={submitDisabled}
-                submitLabel="Review"
+                editing={isEditing}
+                preferences={guided ? preferences : null}
               />
             </div>
             <div
               hidden={guided}
-              className={guided ? "hidden" : "flex flex-col gap-6"}
+              className={guided ? "hidden" : styles.advancedContent}
             >
               <nav className={styles.sectionNav} aria-label="Agent sections">
                 {(["character", "strategy", "appearance"] as const).map(
@@ -2309,42 +2323,24 @@ export function AgentForm({
                     </button>
                   ),
                 )}
+                {missingDetails &&
+                  (!name.trim() || !personality.trim() || !gender) && (
+                    <button
+                      type="button"
+                      className={styles.complete}
+                      disabled={generationBusy}
+                      onClick={() => void completeMissingDetails()}
+                    >
+                      Complete
+                    </button>
+                  )}
               </nav>
-              {missingDetails && (
-                <p className={styles.hint}>
-                  Missing: {missingDetails}.{" "}
-                  <button
-                    type="button"
-                    disabled={generationBusy}
-                    onClick={() => void completeMissingDetails()}
-                  >
-                    Complete
-                  </button>
-                </p>
-              )}
               <aside
                 hidden={advancedSection !== "character"}
                 className={styles.identity}
               >
                 <div className="grid gap-5 lg:grid-cols-2">
                   <div>
-                    <label htmlFor="agent-archetype">Archetype</label>
-                    <select
-                      id="agent-archetype"
-                      value={personaKey ?? ""}
-                      onChange={(event) =>
-                        setPersonaKey(event.target.value as PersonaKey)
-                      }
-                    >
-                      <option value="" disabled>
-                        Choose an archetype
-                      </option>
-                      {PERSONAS.map((persona) => (
-                        <option key={persona.key} value={persona.key}>
-                          {persona.name}
-                        </option>
-                      ))}
-                    </select>
                     <label
                       htmlFor="agent-name"
                       className="influence-section-title block mb-2"
@@ -2447,10 +2443,30 @@ export function AgentForm({
                       </p>
                     )}
                   </fieldset>
+                  <div>
+                    {" "}
+                    <label htmlFor="agent-archetype">Archetype</label>
+                    <select
+                      id="agent-archetype"
+                      value={personaKey ?? ""}
+                      onChange={(event) =>
+                        setPersonaKey(event.target.value as PersonaKey)
+                      }
+                    >
+                      <option value="" disabled>
+                        Choose an archetype
+                      </option>
+                      {PERSONAS.map((persona) => (
+                        <option key={persona.key} value={persona.key}>
+                          {persona.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </aside>
 
-              <div className="min-w-0 space-y-6">
+              <div className={styles.fields}>
                 <section
                   hidden={advancedSection !== "strategy"}
                   className="influence-panel rounded-2xl p-5 sm:p-6"
@@ -2834,22 +2850,13 @@ export function AgentForm({
                         {referenceError}
                       </p>
                     )}
-                    <AgentImageControl
-                      disabled={generationBusy || submitting}
-                      onEdit={() =>
-                        setPortraitEditorSource(fullBodyReferenceUrl)
-                      }
-                      currentUrl={fullBodyReferenceUrl}
-                      persona={previewPersona}
-                      name={name}
-                      presentation="full-body"
-                    />
                   </div>
                 </section>
               </div>
             </div>
           </div>
         </div>
+        {!guided && preferences}
         {!guided && headConfirmationRequired && (
           <p role="status" className="text-sm text-amber-200">
             Confirm the head and portrait before saving this new full-body
@@ -2943,6 +2950,29 @@ export function AgentForm({
           </p>
         )}
         {saveError && <p role="alert">{saveError}</p>}
+        {dirty && missingRequired.length > 0 && (
+          <p className={styles.requiredHint}>
+            Before review, add{" "}
+            {missingRequired.map((field, index) => (
+              <span key={field}>
+                {index > 0 ? ", " : ""}
+                <button
+                  type="button"
+                  onClick={() =>
+                    focusField(
+                      field === "gender"
+                        ? "agent-gender-male"
+                        : `agent-${field}`,
+                    )
+                  }
+                >
+                  {field}
+                </button>
+              </span>
+            ))}
+            .
+          </p>
+        )}
         <footer className={styles.footer}>
           <span>
             {dirty
@@ -2951,200 +2981,233 @@ export function AgentForm({
                 : "Saving draft…"
               : "No changes"}
           </span>
-          <button
-            type="button"
-            onClick={() => {
-              void saveLocalDraft().then((saved) => {
-                if (saved) onCancel();
-              });
-            }}
-          >
-            Close
-          </button>
-          <button type="button" onClick={requestCancel}>
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className={styles.primary}
-            disabled={submitDisabled}
-          >
-            Review
-          </button>
+          <div className={styles.footerActions}>
+            <button type="button" onClick={requestCancel}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className={styles.primary}
+              disabled={submitDisabled}
+            >
+              Review
+            </button>
+          </div>
         </footer>
         {reviewOpen && (
-          <section
-            ref={reviewRef}
-            tabIndex={-1}
-            className={styles.review}
-            aria-label="Review changes"
-          >
-            <h2>{isEditing ? "Review changes" : "Review character"}</h2>
-            {(
-              [
-                "name",
-                "gender",
-                "personaKey",
-                "personality",
-                "backstory",
-                "strategyStyle",
-                "werewolfStrategyStyle",
-                "visualDesign",
-                "performanceInstructions",
-              ] as const
-            )
-              .filter(
-                (field) => currentSnapshot[field] !== initialSnapshot[field],
+          <div className={styles.reviewBackdrop}>
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="agent-review-title"
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setReviewOpen(false);
+                }
+                if (event.key === "Tab") {
+                  const buttons = Array.from(
+                    reviewRef.current?.querySelectorAll<HTMLButtonElement>(
+                      "button:not(:disabled)",
+                    ) ?? [],
+                  );
+                  const first = buttons[0],
+                    last = buttons.at(-1);
+                  if (
+                    event.shiftKey &&
+                    (document.activeElement === first ||
+                      document.activeElement === reviewRef.current)
+                  ) {
+                    event.preventDefault();
+                    last?.focus();
+                  } else if (
+                    !event.shiftKey &&
+                    document.activeElement === last
+                  ) {
+                    event.preventDefault();
+                    first?.focus();
+                  }
+                }
+              }}
+              ref={reviewRef}
+              tabIndex={-1}
+              className={styles.review}
+              aria-label="Review changes"
+            >
+              <h2 id="agent-review-title">
+                {isEditing ? "Review changes" : "Review character"}
+              </h2>
+              {(
+                [
+                  "name",
+                  "gender",
+                  "personaKey",
+                  "personality",
+                  "backstory",
+                  "strategyStyle",
+                  "werewolfStrategyStyle",
+                  "visualDesign",
+                  "performanceInstructions",
+                ] as const
               )
-              .map((field) => (
-                <div className={styles.change} key={field}>
-                  <header>
-                    <strong>
-                      {
+                .filter(
+                  (field) => currentSnapshot[field] !== initialSnapshot[field],
+                )
+                .map((field) => (
+                  <div className={styles.change} key={field}>
+                    <header>
+                      <strong>
                         {
-                          name: "Name",
-                          gender: "Gender",
-                          personaKey: "Archetype",
-                          personality: "Personality",
-                          backstory: "Backstory",
-                          strategyStyle: "Influence strategy",
-                          werewolfStrategyStyle: "Werewolf strategy",
-                          visualDesign: "Appearance",
-                          performanceInstructions: "Performance",
-                        }[field]
-                      }
-                    </strong>
+                          {
+                            name: "Name",
+                            gender: "Gender",
+                            personaKey: "Archetype",
+                            personality: "Personality",
+                            backstory: "Backstory",
+                            strategyStyle: "Influence strategy",
+                            werewolfStrategyStyle: "Werewolf strategy",
+                            visualDesign: "Appearance",
+                            performanceInstructions: "Performance",
+                          }[field]
+                        }
+                      </strong>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const setters = {
+                            name: setName,
+                            gender: setGender,
+                            personaKey: setPersonaKey,
+                            personality: setPersonality,
+                            backstory: setBackstory,
+                            strategyStyle: setStrategyStyle,
+                            werewolfStrategyStyle: setWerewolfStrategyStyle,
+                            visualDesign: setVisualDesign,
+                            performanceInstructions: setPerformanceInstructions,
+                          };
+                          const reset = setters[field] as (
+                            value: (typeof initialSnapshot)[typeof field],
+                          ) => void;
+                          reset(initialSnapshot[field]);
+                        }}
+                      >
+                        Undo
+                      </button>
+                    </header>
+                    <del>{initialSnapshot[field] || "Not set"}</del>
+                    <ins>{currentSnapshot[field] || "Cleared"}</ins>
+                  </div>
+                ))}
+              {JSON.stringify(modelPreference) !==
+                JSON.stringify(initialSnapshot.modelPreference) && (
+                <div className={styles.change}>
+                  <header>
+                    <strong>Preferred model</strong>
                     <button
                       type="button"
-                      onClick={() => {
-                        const setters = {
-                          name: setName,
-                          gender: setGender,
-                          personaKey: setPersonaKey,
-                          personality: setPersonality,
-                          backstory: setBackstory,
-                          strategyStyle: setStrategyStyle,
-                          werewolfStrategyStyle: setWerewolfStrategyStyle,
-                          visualDesign: setVisualDesign,
-                          performanceInstructions: setPerformanceInstructions,
-                        };
-                        const reset = setters[field] as (
-                          value: (typeof initialSnapshot)[typeof field],
-                        ) => void;
-                        reset(initialSnapshot[field]);
-                      }}
+                      onClick={() =>
+                        setModelPreference(
+                          initialSnapshot.modelPreference ?? "default",
+                        )
+                      }
                     >
                       Undo
                     </button>
                   </header>
-                  <del>{initialSnapshot[field] || "Not set"}</del>
-                  <ins>{currentSnapshot[field] || "Cleared"}</ins>
+                  <del>
+                    {agentModelLabel(initialSnapshot.modelPreference) ??
+                      "House choice"}
+                  </del>
+                  <ins>
+                    {agentModelLabel(modelPreference) ?? "House choice"}
+                  </ins>
                 </div>
-              ))}
-            {JSON.stringify(modelPreference) !==
-              JSON.stringify(initialSnapshot.modelPreference) && (
-              <div className={styles.change}>
-                <header>
-                  <strong>Preferred model</strong>
+              )}
+              {voiceId !== (initialSnapshot.voiceId ?? null) && (
+                <div className={styles.change}>
+                  <header>
+                    <strong>Voice</strong>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setVoiceId(initialSnapshot.voiceId ?? null)
+                      }
+                    >
+                      Undo
+                    </button>
+                  </header>
+                  <del>
+                    {PLAYER_VOICES.find(
+                      (voice) => voice.id === initialSnapshot.voiceId,
+                    )?.name ?? "Automatic"}
+                  </del>
+                  <ins>
+                    {PLAYER_VOICES.find((voice) => voice.id === voiceId)
+                      ?.name ?? "Automatic"}
+                  </ins>
+                </div>
+              )}
+              {imageFields.some(
+                (field) =>
+                  JSON.stringify(currentSnapshot[field]) !==
+                  JSON.stringify(initialSnapshot[field]),
+              ) && (
+                <div className={styles.change}>
+                  <h3>Artwork and portrait</h3>
+                  <div className={styles.candidate}>
+                    {initialSnapshot.explicitAvatarUrl && (
+                      <OwnedCharacterImage
+                        src={initialSnapshot.explicitAvatarUrl}
+                        alt="Previous portrait"
+                      />
+                    )}
+                    {avatarUrl && (
+                      <OwnedCharacterImage
+                        src={avatarUrl}
+                        alt="Selected portrait"
+                      />
+                    )}
+                  </div>
                   <button
                     type="button"
-                    onClick={() =>
-                      setModelPreference(
-                        initialSnapshot.modelPreference ?? "default",
-                      )
-                    }
+                    onClick={() => {
+                      setFullBodyReferenceUrl(
+                        initialSnapshot.fullBodyReferenceUrl,
+                      );
+                      setExplicitAvatarUrl(initialSnapshot.explicitAvatarUrl);
+                      setPortraitCrop(initialSnapshot.portraitCrop);
+                      setHeadPosition(initialSnapshot.headPosition);
+                    }}
                   >
                     Undo
                   </button>
-                </header>
-                <del>
-                  {agentModelLabel(initialSnapshot.modelPreference) ??
-                    "House choice"}
-                </del>
-                <ins>{agentModelLabel(modelPreference) ?? "House choice"}</ins>
-              </div>
-            )}
-            {voiceId !== (initialSnapshot.voiceId ?? null) && (
-              <div className={styles.change}>
-                <header>
-                  <strong>Voice</strong>
-                  <button
-                    type="button"
-                    onClick={() => setVoiceId(initialSnapshot.voiceId ?? null)}
-                  >
-                    Undo
-                  </button>
-                </header>
-                <del>
-                  {PLAYER_VOICES.find(
-                    (voice) => voice.id === initialSnapshot.voiceId,
-                  )?.name ?? "Automatic"}
-                </del>
-                <ins>
-                  {PLAYER_VOICES.find((voice) => voice.id === voiceId)?.name ??
-                    "Automatic"}
-                </ins>
-              </div>
-            )}
-            {(fullBodyReferenceUrl !== initialSnapshot.fullBodyReferenceUrl ||
-              avatarUrl !== initialSnapshot.explicitAvatarUrl ||
-              JSON.stringify(portraitCrop) !==
-                JSON.stringify(initialSnapshot.portraitCrop)) && (
-              <div className={styles.change}>
-                <h3>Artwork and portrait</h3>
-                <div className={styles.candidate}>
-                  {initialSnapshot.explicitAvatarUrl && (
-                    <OwnedCharacterImage
-                      src={initialSnapshot.explicitAvatarUrl}
-                      alt="Previous portrait"
-                    />
-                  )}
-                  {avatarUrl && (
-                    <OwnedCharacterImage
-                      src={avatarUrl}
-                      alt="Selected portrait"
-                    />
-                  )}
                 </div>
+              )}
+              {referenceBusy && (
+                <p role="status">
+                  Image preparation continues. This submission uses the selected
+                  artwork.
+                </p>
+              )}
+              <p className={styles.hint}>
+                After saving, the submission is reviewed. The last accepted
+                version stays available.
+              </p>
+              <div className={styles.footer}>
+                <button type="button" onClick={() => setReviewOpen(false)}>
+                  Back
+                </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setFullBodyReferenceUrl(
-                      initialSnapshot.fullBodyReferenceUrl,
-                    );
-                    setExplicitAvatarUrl(initialSnapshot.explicitAvatarUrl);
-                    setPortraitCrop(initialSnapshot.portraitCrop);
-                    setHeadPosition(initialSnapshot.headPosition);
-                  }}
+                  className={styles.primary}
+                  disabled={submitDisabled}
+                  onClick={() => void submitDraft()}
                 >
-                  Undo
+                  {submitting ? "Saving…" : isEditing ? "Save" : "Create"}
                 </button>
               </div>
-            )}
-            {referenceBusy && (
-              <p role="status">
-                Image preparation continues. This submission uses the selected
-                artwork.
-              </p>
-            )}
-            <p className={styles.hint}>
-              After saving, the submission is reviewed. The last accepted
-              version stays available.
-            </p>
-            <div className={styles.footer}>
-              <button type="button" onClick={() => setReviewOpen(false)}>
-                Back
-              </button>
-              <button
-                type="button"
-                className={styles.primary}
-                disabled={submitDisabled}
-                onClick={() => void submitDraft()}
-              >
-                {submitting ? "Saving…" : isEditing ? "Save" : "Create"}
-              </button>
-            </div>
-          </section>
+            </section>
+          </div>
         )}
 
         {confirmDiscard && (

@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { mkdir } from "node:fs/promises";
 import type { Browser, Page } from "puppeteer";
 import { schema } from "../db/index.js";
-import { processCharacterReference } from "../services/character-reference-jobs.js";
+import { processMockCharacterReference } from "../__tests__/character-generation-fixture.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
 import { publishScreenedAgent } from "../services/agent-screening-publication.js";
 import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
@@ -124,8 +124,23 @@ afterAll(async () => {
   ]);
 }, 60_000);
 async function button(page: Page, label: string) {
-  const selector = `[...document.querySelectorAll("button")].find(button=>button.textContent?.trim()===${JSON.stringify(label)}&&!button.matches(":disabled")&&button.checkVisibility())`;
-  await page.waitForFunction(selector);
+  const selector = `[...(document.querySelector("dialog[open]")??document.querySelector('[role="dialog"][aria-modal="true"]')??document).querySelectorAll("button")].find(button=>(button.textContent?.trim()===${JSON.stringify(label)}||button.getAttribute("aria-label")===${JSON.stringify(label)})&&!button.matches(":disabled")&&button.checkVisibility())`;
+  try {
+    await page.waitForFunction(selector);
+  } catch (error) {
+    await page.screenshot({
+      path:
+        proof +
+        "failure-" +
+        label.toLowerCase().replace(/[^a-z]/g, "") +
+        ".png",
+      fullPage: true,
+    });
+    throw new Error(
+      `Button ${label} unavailable: ${await page.$eval("body", (element) => element.innerText)}`,
+      { cause: error },
+    );
+  }
   await page.evaluate(selector + ".click()");
 }
 
@@ -136,11 +151,42 @@ test("management → Edit → Guided/Advanced → review → Reviewing preserves
     servers.webUrl + "/dashboard/agents",
     { privateKey: owner.wallet.privateKey },
   );
+  await page.emulateMediaFeatures([
+    { name: "prefers-reduced-motion", value: "reduce" },
+  ]);
   try {
     await page.waitForFunction('document.body.innerText.includes("Mira Voss")');
     await page.screenshot({ path: proof + "management.png", fullPage: true });
     await button(page, "Edit");
     await page.waitForSelector("#agent-personality");
+    for (const mode of ["Advanced", "Guided"]) {
+      await button(page, mode);
+      for (const viewport of [
+        { width: 1440, height: 900 },
+        { width: 1280, height: 800 },
+        { width: 768, height: 1024 },
+        { width: 390, height: 844 },
+      ]) {
+        await page.setViewport(viewport);
+        await page.screenshot({
+          path: proof + `edit-${mode.toLowerCase()}-${viewport.width}.png`,
+          fullPage: true,
+        });
+        expect(
+          await page.evaluate(
+            "document.documentElement.scrollWidth<=innerWidth",
+          ),
+        ).toBe(true);
+        if (viewport.width >= 1280)
+          expect(
+            await page.evaluate(
+              '[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="Review").getBoundingClientRect().bottom <= innerHeight',
+            ),
+          ).toBe(true);
+      }
+    }
+    await page.setViewport({ width: 1440, height: 900 });
+    await button(page, "Advanced");
     await page.evaluate(
       'const input=document.querySelector("#agent-personality");Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value").set.call(input,"A skeptical magician who asks precise questions.");input.dispatchEvent(new Event("input",{bubbles:true}));',
     );
@@ -195,16 +241,19 @@ async function fill(page: Page, selector: string, value: string) {
     `{const field=document.querySelector(${JSON.stringify(selector)});const prototype=field.tagName==="TEXTAREA"?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(prototype,"value").set.call(field,${JSON.stringify(value)});field.dispatchEvent(new Event("input",{bubbles:true}));}`,
   );
 }
-test("creation persists model, voice and an upload job across navigation before explicit selection", async () => {
+test("Advanced creation persists voice and generated artwork across navigation before explicit selection", async () => {
   const page = await createAuthenticatedPage(
     browser,
     owner.jwt,
     servers.webUrl + "/agents/create",
     { privateKey: owner.wallet.privateKey },
   );
+  await page.emulateMediaFeatures([
+    { name: "prefers-reduced-motion", value: "reduce" },
+  ]);
   try {
     await button(page, "Advanced");
-    await page.waitForSelector("#agent-name",{visible:true});
+    await page.waitForSelector("#agent-name", { visible: true });
     await fill(page, "#agent-name", "Arden Workshop");
     await fill(page, "#agent-personality", "A precise, patient investigator.");
     await button(page, "Non-binary");
@@ -221,13 +270,8 @@ test("creation persists model, voice and an upload job across navigation before 
         (element) => (element as unknown as { value: string }).value,
       ),
     ).toBe("Arden Workshop");
-    const upload = await page.$('input[type="file"]');
-    await upload!.uploadFile(
-      new URL(
-        "../../../web/public/avatars/personas/full-body-v1/strategic.webp",
-        import.meta.url,
-      ).pathname,
-    );
+    await button(page, "Appearance");
+    await button(page, "Generate");
     let job: typeof schema.characterReferenceJobs.$inferSelect | undefined;
     for (let attempt = 0; attempt < 100; attempt++) {
       const rows = await database.db
@@ -241,11 +285,28 @@ test("creation persists model, voice and an upload job across navigation before 
     expect(job).toBeDefined();
     await button(page, "Close");
     await page.waitForFunction('location.pathname==="/dashboard/agents"');
-    await processCharacterReference(database.db);
+    const art = await Bun.file(
+      new URL(
+        "../../../web/public/avatars/personas/full-body-v1/strategic.webp",
+        import.meta.url,
+      ),
+    ).bytes();
+    await processMockCharacterReference(database.db, art);
     await page.goto(servers.webUrl + "/agents/create");
     await button(page, "Resume");
     await button(page, "Select");
-    await page.waitForSelector("dialog[open]");
+    try {
+      await page.waitForSelector("dialog[open]");
+    } catch (error) {
+      await page.screenshot({
+        path: proof + "failure-portrait.png",
+        fullPage: true,
+      });
+      throw new Error(
+        await page.$eval("body", (element) => element.innerText),
+        { cause: error },
+      );
+    }
     await button(page, "Confirm");
     await page.waitForFunction('!document.querySelector("dialog[open]")');
     await button(page, "Review");
@@ -273,7 +334,7 @@ test("creation persists model, voice and an upload job across navigation before 
     ).toBe("selected");
     expect(
       await database.db.select().from(schema.visualRenderAttempts),
-    ).toHaveLength(0);
+    ).toHaveLength(2);
     await database.db
       .update(schema.agentScreenings)
       .set({ status: "completed", recommendation: "no_concern" })
@@ -296,3 +357,313 @@ test("creation persists model, voice and an upload job across navigation before 
     await page.close();
   }
 }, 120_000);
+
+test("creation layout at desktop and mobile sizes", async () => {
+  const page = await createAuthenticatedPage(
+    browser,
+    owner.jwt,
+    servers.webUrl + "/agents/create",
+    { privateKey: owner.wallet.privateKey },
+  );
+  await page.emulateMediaFeatures([
+    { name: "prefers-reduced-motion", value: "reduce" },
+  ]);
+  try {
+    await page.waitForSelector(
+      'textarea[aria-label="Message the character assistant"]',
+      { visible: true },
+    );
+    await page.waitForSelector('section[aria-label="Model and voice"]', {
+      visible: true,
+    });
+    expect(await page.$('input[type="file"]')).toBeNull();
+    expect(
+      await page.$eval("body", (element) => element.textContent),
+    ).not.toContain("Use an exact model ID");
+    expect(
+      await page.$eval("body", (element) => element.textContent),
+    ).not.toContain("Best effort.");
+    for (const viewport of [
+      { width: 1440, height: 900 },
+      { width: 1280, height: 800 },
+      { width: 768, height: 1024 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewport(viewport);
+      await page.screenshot({
+        path: proof + `create-guided-${viewport.width}.png`,
+        fullPage: true,
+      });
+      expect(
+        await page.evaluate("document.documentElement.scrollWidth<=innerWidth"),
+      ).toBe(true);
+      if (viewport.width >= 1280)
+        expect(
+          await page.evaluate(
+            '[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="Review").getBoundingClientRect().bottom <= innerHeight',
+          ),
+        ).toBe(true);
+    }
+    expect(
+      await page.evaluate(
+        '[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="Review").disabled',
+      ),
+    ).toBe(true);
+    await button(page, "Advanced");
+    for (const viewport of [
+      { width: 1440, height: 900 },
+      { width: 1280, height: 800 },
+      { width: 768, height: 1024 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewport(viewport);
+      await page.screenshot({
+        path: proof + `create-advanced-${viewport.width}.png`,
+        fullPage: true,
+      });
+      expect(
+        await page.evaluate("document.documentElement.scrollWidth<=innerWidth"),
+      ).toBe(true);
+      if (viewport.width >= 1280)
+        expect(
+          await page.evaluate(
+            '[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="Review").getBoundingClientRect().bottom <= innerHeight',
+          ),
+        ).toBe(true);
+    }
+    await button(page, "Cancel");
+  } finally {
+    await page.close();
+  }
+}, 120000);
+
+async function mockCharacterAssistant(
+  page: Page,
+  name: string,
+  personality: string,
+) {
+  await page.setRequestInterception(true);
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (
+      url.pathname === "/api/agent-profiles/creation-assistant" &&
+      request.method() === "POST"
+    ) {
+      const body = JSON.parse(request.postData()!);
+      void request.respond({
+        status: 200,
+        contentType: "application/json",
+        headers: {
+          "Access-Control-Allow-Origin": new URL(servers.webUrl!).origin,
+          "Access-Control-Allow-Credentials": "true",
+        },
+        body: JSON.stringify({
+          command:
+            body.stage === "appearance"
+              ? "generate_appearance"
+              : "revise_character",
+          reply: "",
+        }),
+      });
+    } else if (
+      url.pathname === "/api/agent-profiles/generate" &&
+      request.method() === "POST"
+    ) {
+      const body = JSON.parse(request.postData()!);
+      void request.respond({
+        status: 200,
+        contentType: "application/json",
+        headers: {
+          "Access-Control-Allow-Origin": new URL(servers.webUrl!).origin,
+          "Access-Control-Allow-Credentials": "true",
+        },
+        body: JSON.stringify({
+          introQuips: [],
+          performanceInstructions: "Calm delivery",
+          visualDesign: "An adult investigator in a bronze coat",
+          name,
+          backstory: "A former stage magician.",
+          strategyStyle: "Build trust through commitments.",
+          werewolfStrategyStyle: "Test claims before voting.",
+          personaKey: "strategic",
+          gender: "non-binary",
+          ...body.existingProfile,
+          personality,
+        }),
+      });
+    } else void request.continue();
+  });
+}
+async function latestPendingJob(name: string) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const jobs = await database.db
+      .select()
+      .from(schema.characterReferenceJobs)
+      .where(eq(schema.characterReferenceJobs.userId, owner.userId));
+    for (const job of jobs.filter((row) => row.status === "queued")) {
+      const { readJson } = await import("../services/payload-storage.js");
+      if ((await readJson(job.input)).name === name) return job;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("Expected a durable generated artwork job");
+}
+test("Guided creation generates a character and artwork, confirms portrait, reviews and creates", async () => {
+  const page = await createAuthenticatedPage(
+    browser,
+    owner.jwt,
+    servers.webUrl + "/agents/create",
+    { privateKey: owner.wallet.privateKey },
+  );
+  await page.emulateMediaFeatures([
+    { name: "prefers-reduced-motion", value: "reduce" },
+  ]);
+  try {
+    await page.waitForSelector('section[aria-label="Model and voice"]', {
+      visible: true,
+    });
+    await mockCharacterAssistant(
+      page,
+      "Rowan Guided",
+      "A curious investigator who listens carefully.",
+    );
+    await fill(
+      page,
+      "#agent-creation-message",
+      "Create Rowan, a patient investigator.",
+    );
+    await button(page, "Send");
+    await page.waitForFunction(
+      'document.querySelector("h1")?.textContent==="Rowan Guided"',
+    );
+    await button(page, "Continue");
+    await fill(
+      page,
+      "#agent-creation-message",
+      "A bronze coat, full body, transparent background.",
+    );
+    await button(page, "Send");
+    const job = await latestPendingJob("Rowan Guided");
+    const before = await database.db
+      .select()
+      .from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.name, "Rowan Guided"));
+    expect(before).toHaveLength(0);
+    expect(
+      await page.evaluate(
+        '[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="Review").disabled',
+      ),
+    ).toBe(true);
+    await page.setViewport({ width: 1280, height: 800 });
+    await page.screenshot({
+      path: proof + "create-guided-generating.png",
+      fullPage: true,
+    });
+    const art = await Bun.file(
+      new URL(
+        "../../../web/public/avatars/personas/full-body-v1/strategic.webp",
+        import.meta.url,
+      ),
+    ).bytes();
+    await processMockCharacterReference(database.db, art);
+    await page.waitForFunction(
+      'document.body.innerText.includes("Artwork ready")',
+    );
+    expect(
+      await page.evaluate(
+        '[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="Review").disabled',
+      ),
+    ).toBe(true);
+    await button(page, "Select");
+    try {
+      await page.waitForSelector("dialog[open]");
+    } catch (error) {
+      await page.screenshot({
+        path: proof + "failure-portrait.png",
+        fullPage: true,
+      });
+      throw new Error(
+        await page.$eval("body", (element) => element.innerText),
+        { cause: error },
+      );
+    }
+    await button(page, "Confirm");
+    await page.waitForFunction('!document.querySelector("dialog[open]")');
+    await button(page, "Review");
+    await page.waitForSelector('[role="dialog"][aria-label="Review changes"]');
+    await button(page, "Create");
+    await page.waitForFunction(
+      'location.pathname==="/dashboard/agents"&&document.body.innerText.includes("Rowan Guided")',
+    );
+    const [created] = await database.db
+      .select()
+      .from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.name, "Rowan Guided"));
+    expect(created!.contentRevisionId).toBeNull();
+    expect(created!.latestContentRevisionId).toBeTruthy();
+    expect(
+      (
+        await database.db
+          .select()
+          .from(schema.characterReferenceJobs)
+          .where(eq(schema.characterReferenceJobs.id, job.id))
+      )[0]!.status,
+    ).toBe("selected");
+  } finally {
+    await page.close();
+  }
+}, 120000);
+
+test("Guided update changes text without generating artwork and keeps accepted content usable", async () => {
+  const page = await createAuthenticatedPage(
+    browser,
+    owner.jwt,
+    servers.webUrl + `/dashboard/agents/${agentId}/edit?profileRequest=1`,
+    { privateKey: owner.wallet.privateKey },
+  );
+  await page.emulateMediaFeatures([
+    { name: "prefers-reduced-motion", value: "reduce" },
+  ]);
+  try {
+    await page.waitForSelector("#agent-creation-message", { visible: true });
+    await mockCharacterAssistant(
+      page,
+      "Mira Voss",
+      "A warm investigator who invites precise answers.",
+    );
+    const jobsBefore = await database.db
+      .select()
+      .from(schema.characterReferenceJobs);
+    await fill(
+      page,
+      "#agent-creation-message",
+      "Make her warmer, keeping her current appearance.",
+    );
+    await button(page, "Send");
+    await page.waitForFunction(
+      'document.body.innerText.includes("Does that feel right")',
+    );
+    await button(page, "Review");
+    await page.waitForSelector('[role="dialog"][aria-label="Review changes"]');
+    expect(
+      await page.$eval(
+        '[role="dialog"][aria-label="Review changes"]',
+        (element) => element.textContent,
+      ),
+    ).toContain("A warm investigator who invites precise answers.");
+    await button(page, "Save");
+    await page.waitForFunction('location.pathname==="/dashboard/agents"');
+    const [profile] = await database.db
+      .select()
+      .from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, agentId));
+    expect(profile!.personality).toBe(
+      "Patient, observant, and quietly theatrical.",
+    );
+    expect(
+      await database.db.select().from(schema.characterReferenceJobs),
+    ).toHaveLength(jobsBefore.length);
+  } finally {
+    await page.close();
+  }
+}, 120000);

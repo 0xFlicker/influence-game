@@ -4,11 +4,13 @@ import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { schema } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
-import { storeAgentDraftImage } from "../services/agent-draft-images.js";
+import {
+  processMockCharacterReference,
+  characterGenerationInput,
+} from "./character-generation-fixture.js";
 import { storeBinary } from "../services/payload-storage.js";
 import {
   requestCharacterReference,
-  processCharacterReference,
   readCharacterReference,
 } from "../services/character-reference-jobs.js";
 
@@ -59,15 +61,10 @@ test("background removal yields the worker and resumes the retained source when 
     await requestCharacterReference(
       db,
       owner,
-      {
-        requestId: waitingId,
-        operation: "edit",
-        name: "Waiting background",
-        uploadSource: await storeAgentDraftImage(db, owner, opaque),
-      },
+      characterGenerationInput(waitingId, "Waiting background"),
       "",
     );
-    await processCharacterReference(db);
+    await processMockCharacterReference(db, opaque, true);
     expect(await readCharacterReference(db, owner, waitingId)).toMatchObject({
       status: "queued",
       stage: "background",
@@ -76,15 +73,10 @@ test("background removal yields the worker and resumes the retained source when 
     await requestCharacterReference(
       db,
       owner,
-      {
-        requestId: readyId,
-        operation: "edit",
-        name: "Already transparent",
-        uploadSource: await storeAgentDraftImage(db, owner, alpha),
-      },
+      characterGenerationInput(readyId, "Already transparent"),
       "",
     );
-    await processCharacterReference(db);
+    await processMockCharacterReference(db, alpha);
     expect((await readCharacterReference(db, owner, readyId))!.status).toBe(
       "ready",
     );
@@ -98,12 +90,12 @@ test("background removal yields the worker and resumes the retained source when 
       .update(schema.characterReferenceJobs)
       .set({ updatedAt: new Date(0).toISOString() })
       .where(eq(schema.characterReferenceJobs.id, waitingId));
-    await processCharacterReference(db);
+    await processMockCharacterReference(db, alpha);
     expect((await readCharacterReference(db, owner, waitingId))!.status).toBe(
       "ready",
     );
     expect(await db.select().from(schema.characterCutouts)).toHaveLength(1);
-    expect(await db.select().from(schema.visualRenderAttempts)).toHaveLength(0);
+    expect(await db.select().from(schema.visualRenderAttempts)).toHaveLength(5);
   } finally {
     keys.forEach((key, index) => {
       if (previous[index] === undefined) delete process.env[key];

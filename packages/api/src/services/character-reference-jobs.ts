@@ -6,13 +6,7 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { readJson, storeJson } from "./payload-storage.js";
 import { sha256StableJson } from "./stable-hash.js";
 import { generateVisualProfileReference } from "./visual-profile-generation.js";
-import sharp from "sharp";
-import { readVisualProfileImage } from "./visual-game-assets.js";
-import {
-  CharacterBackgroundPending,
-  prepareTransparentCharacterImage,
-} from "./transparent-character-image.js";
-import { draftImageHash, storeAgentDraftImage } from "./agent-draft-images.js";
+import { CharacterBackgroundPending } from "./transparent-character-image.js";
 const jobs = schema.characterReferenceJobs;
 export async function requestCharacterReference(
   db: DrizzleDB,
@@ -29,12 +23,8 @@ export async function requestCharacterReference(
     !input.name.trim()
   )
     throw new Error("A request UUID, operation and name are required");
-  if (
-    input.uploadSource !== undefined &&
-    (typeof input.uploadSource !== "string" ||
-      !draftImageHash(input.uploadSource))
-  )
-    throw new Error("Upload the source image before preparing it");
+  if ("uploadSource" in input)
+    throw new Error("Agent images must be generated");
   const agentId = typeof input.agentId === "string" ? input.agentId : null;
   if (agentId) {
     const [owned] = await db
@@ -161,44 +151,12 @@ export async function processCharacterReference(
         if (!rows.length) throw new Error("Image job lease changed");
       },
     };
-    let result: Record<string, unknown>;
-    if (typeof input.uploadSource === "string") {
-      await activity.onStep("background");
-      const original = await readVisualProfileImage(
-        input.uploadSource,
-        { name: "", personaKey: "" },
-        { db, userId: job.userId },
-      );
-      const bytes = await prepareTransparentCharacterImage(
-        db,
-        original,
-        activity.signal,
-        undefined,
-        false,
-      );
-      const normalized = await sharp(bytes).webp({ quality: 92 }).toBuffer(),
-        size = await sharp(normalized).metadata();
-      result = {
-        requestId: job.id,
-        fullBodyReferenceUrl: await storeAgentDraftImage(
-          db,
-          job.userId,
-          normalized,
-        ),
-        width: size.width,
-        height: size.height,
-        avatarUrl: null,
-        portraitCrop: null,
-        headSuggestion: null,
-        cropWarning: "Choose the head and portrait.",
-      };
-    } else
-      result = await generateVisualProfileReference(
-        db,
-        job.userId,
-        input,
-        activity,
-      );
+    const result = await generateVisualProfileReference(
+      db,
+      job.userId,
+      input,
+      activity,
+    );
     await db
       .update(jobs)
       .set({
@@ -283,53 +241,37 @@ export async function retryCharacterReference(
     .where(and(eq(jobs.id, id), eq(jobs.userId, userId)));
   if (!job || job.status !== "failed")
     throw new Error("Only a failed image request can be retried");
-  const input = await readJson(job.input);
-  if (
-    !input.uploadSource &&
-    job.stage !== "background" &&
-    job.stage !== "portrait"
-  )
+  if (job.stage !== "background" && job.stage !== "portrait")
     await retryOwnedVisualReference(db, userId, id);
   if (job.stage === "background") {
     const { retryCharacterCutout } = await import(
       "./transparent-character-image.js"
     );
-    if (typeof input.uploadSource === "string")
-      await retryCharacterCutout(
-        db,
-        await readVisualProfileImage(
-          input.uploadSource,
-          { name: "", personaKey: "" },
-          { db, userId },
+    const { loadPayloads } = await import("./payload-storage.js");
+    const [operation] = await db
+      .select()
+      .from(schema.visualRenderOperations)
+      .where(
+        and(
+          eq(schema.visualRenderOperations.userId, userId),
+          eq(schema.visualRenderOperations.operationKey, `full-body:${id}`),
         ),
       );
-    else {
-      const { loadPayloads } = await import("./payload-storage.js");
-      const [operation] = await db
-        .select()
-        .from(schema.visualRenderOperations)
-        .where(
-          and(
-            eq(schema.visualRenderOperations.userId, userId),
-            eq(schema.visualRenderOperations.operationKey, `full-body:${id}`),
-          ),
-        );
-      if (operation) {
-        const attempts = await loadPayloads(
-          db
-            .select()
-            .from(schema.visualRenderAttempts)
-            .where(eq(schema.visualRenderAttempts.operationId, operation.id)),
-        );
-        const completed = attempts.find(
-          (attempt) =>
-            attempt.image &&
-            attempt.receipt &&
-            !attempt.receipt.failure &&
-            !attempt.receipt.chargeUncertain,
-        );
-        if (completed?.image) await retryCharacterCutout(db, completed.image);
-      }
+    if (operation) {
+      const attempts = await loadPayloads(
+        db
+          .select()
+          .from(schema.visualRenderAttempts)
+          .where(eq(schema.visualRenderAttempts.operationId, operation.id)),
+      );
+      const completed = attempts.find(
+        (attempt) =>
+          attempt.image &&
+          attempt.receipt &&
+          !attempt.receipt.failure &&
+          !attempt.receipt.chargeUncertain,
+      );
+      if (completed?.image) await retryCharacterCutout(db, completed.image);
     }
   }
   await db

@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import { setupTestDB, acceptTestAgent } from "./test-utils.js";
 import {

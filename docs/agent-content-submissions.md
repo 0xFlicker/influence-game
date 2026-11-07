@@ -1,6 +1,6 @@
 # Agent workspace and publication
 
-Creation, ordinary editing, profile requests and linked strategy edits use one workspace. Guided and Advanced show the same draft, model choice, voice, selected images, crop and conversation. Advanced has Character, Strategy and Appearance sections. Review computes the actual field differences and supports Undo before Create or Save. Text updates never imply image generation.
+Creation, ordinary editing, profile requests and linked strategy edits use one workspace. Guided and Advanced show the same draft, model choice, voice, selected images, crop and conversation. Advanced has Character, Strategy and Appearance sections. Both modes share the hall background and full-body stage; an empty Guided creator uses the full width. Model and voice sit below the composer or editable fields, and Close stays in the header while Cancel and Review are grouped at the bottom. Review is enabled only for a changed draft with name, personality and gender present and any new head/portrait confirmed. It opens an accessible dialog containing actual field differences and Undo before Create or Save; undoing every change closes it. Required-field shortcuts sit by the actions and open the relevant field. Text updates never imply image generation.
 
 ## Drafts and artwork
 
@@ -8,9 +8,9 @@ Authenticated drafts are private account records with a versioned compare-and-sw
 
 An artwork request is a durable owner-scoped job with immutable inputs, a stable UUID, worker lease, real stage and retained result. Navigation, reload, polling and mode changes do not dispatch another request. The existing formation illustration is used for an agent's first image; an existing selected image stays visible during replacement. Stages report queueing, image generation, optional background removal and portrait preparation, with elapsed time rather than an invented percentage.
 
-Generated and uploaded artwork becomes a candidate. Select adopts it into the draft and opens head/portrait confirmation; Discard retires it. Completion never updates a saved agent by itself. A changed brief is shown before selection. Saving an existing agent during replacement submits only the currently selected artwork and preserves the remaining draft/job. Retry reuses a successful image when removal or portrait preparation failed. Unknown paid outcomes retain their fence and require reconciliation.
+Agent images must be generated; user image upload is not supported. Generated artwork becomes a candidate. Select adopts it into the draft and opens head/portrait confirmation; Discard retires it. Completion never updates a saved agent by itself. A changed brief is shown before selection. Saving an existing agent during replacement submits only the currently selected artwork and preserves the remaining draft/job. Retry reuses a successful image when removal or portrait preparation failed. Unknown paid outcomes retain their fence and require reconciliation.
 
-New uploads and generated drafts use private, content-addressed image objects and owner associations. `/api/agent-profiles/images/:hash` authorizes the owner until publication. Acceptance grants public access to the exact submitted bytes. Historical public images and originals retain their existing access; no historical image is regenerated or made private by this change.
+Generated drafts use private, content-addressed image objects and owner associations. `/api/agent-profiles/images/:hash` authorizes the owner until publication. Acceptance grants public access to the exact submitted bytes. Historical public images and originals retain their existing access; no historical image is regenerated or made private by this change.
 
 ## Submission and moderation
 

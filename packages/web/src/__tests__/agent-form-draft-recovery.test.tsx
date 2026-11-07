@@ -136,7 +136,7 @@ function agent(): SavedAgent {
 
 describe("agent workspace drafts",()=>{
  async function ready(onSubmit?: (params:AgentProfileWriteParams)=>Promise<void>,overrides:Partial<SavedAgent>={}){domWindow.sessionStorage.removeItem(draftKey);return renderForm(false,onSubmit,false,overrides);}
- async function save(view:RenderResult){fireEvent.click(view.getByRole("button",{name:"Review"}));await waitFor(()=>expect(view.getByRole("region",{name:"Review changes"})).toBeTruthy());fireEvent.click(within(view.getByRole("region",{name:"Review changes"})).getByRole("button",{name:"Save"}));}
+ async function save(view:RenderResult){fireEvent.click(view.getByRole("button",{name:"Review"}));await waitFor(()=>expect(view.getByRole("dialog",{name:"Review changes"})).toBeTruthy());fireEvent.click(within(view.getByRole("dialog",{name:"Review changes"})).getByRole("button",{name:"Save"}));}
  test("model selection stays in the draft and survives a failed submission with the same identity",async()=>{
   const submissions:AgentProfileWriteParams[]=[];
   const view=await ready(async params=>{submissions.push(params);if(submissions.length===1)throw new Error("Save failed");});
@@ -144,7 +144,7 @@ describe("agent workspace drafts",()=>{
   fireEvent.click(await view.findByRole("option",{name:/DeepSeek Flash/}));expect(submissions).toHaveLength(0);
   await save(view);await waitFor(()=>expect(view.getAllByText("Save failed").length).toBeGreaterThan(0));
   expect(submissions[0]?.modelPreference).toEqual({catalogId:"katana:deepseek-v4-flash"});
-  fireEvent.click(within(view.getByRole("region",{name:"Review changes"})).getByRole("button",{name:"Save"}));await waitFor(()=>expect(submissions).toHaveLength(2));
+  fireEvent.click(within(view.getByRole("dialog",{name:"Review changes"})).getByRole("button",{name:"Save"}));await waitFor(()=>expect(submissions).toHaveLength(2));
   expect(submissions[1]?.submissionId).toBe(submissions[0]?.submissionId);
  });
  test("Guided and Advanced share fields and retain the selected image for text edits",async()=>{
@@ -155,7 +155,7 @@ describe("agent workspace drafts",()=>{
  });
  test("review contains the real old and new text and can undo a field",async()=>{
   const view=await ready();{const input=view.getByLabelText("Personality");input.focus();fireEvent.input(input,{target:{value:"Decisive."}});fireEvent.keyUp(input,{key:"."});}fireEvent.click(view.getByRole("button",{name:"Review"}));
-  const review=view.getByRole("region",{name:"Review changes"});expect(review.textContent).toContain("Calm and precise.");expect(review.textContent).toContain("Decisive.");
+  const review=view.getByRole("dialog",{name:"Review changes"});expect(review.textContent).toContain("Calm and precise.");expect(review.textContent).toContain("Decisive.");
   fireEvent.click(within(review).getAllByRole("button",{name:"Undo"})[0]!);expect((view.container.querySelector("#agent-personality") as HTMLTextAreaElement).value).toBe("Calm and precise.");
  });
  test("restores a draft and offers both strategies without mixing their content",async()=>{
@@ -175,8 +175,9 @@ describe("agent workspace drafts",()=>{
   await save(view);await waitFor(()=>expect(submissions).toHaveLength(1));expect(submissions[0]?.voiceId).toBe("ara");
  });
  test("missing gender is validated before committing a submission",async()=>{
-  const submissions:AgentProfileWriteParams[]=[];const view=await ready(async params=>{submissions.push(params);},{gender:null});await save(view);
-  await waitFor(()=>expect(view.getByText("Select a gender for this Agent.")).toBeTruthy());expect(submissions).toHaveLength(0);
+  const submissions:AgentProfileWriteParams[]=[];const view=await ready(async params=>{submissions.push(params);},{gender:null});
+  expect((view.getByRole("button",{name:"Review"}) as HTMLButtonElement).disabled).toBe(true);
+  expect(view.queryByRole("dialog",{name:"Review changes"})).toBeNull();expect(submissions).toHaveLength(0);
  });
  test("a new selected body requires exact head confirmation before review",async()=>{
   domWindow.sessionStorage.setItem(draftKey,JSON.stringify({version:4,savedAt:new Date().toISOString(),creationRequestId:"11111111-1111-4111-8111-111111111111",base:snapshot(proposal),current:{...snapshot(proposal),fullBodyReferenceUrl:"/new-body.webp",headSuggestion:{sourceUrl:"/new-body.webp",sourceHash:"a".repeat(64),sourceWidth:1024,sourceHeight:1536,rect:{x:.3,y:.05,width:.3,height:.2}}}}));
@@ -221,4 +222,27 @@ test("a late audio completion cannot stop the next audition",async()=>{
   expect(samples[1]!.pauses).toBe(0);expect(view.getByRole("button",{name:"Stop "+second.name})).toBeTruthy();
   fireEvent.click(view.getByRole("button",{name:second.name}));expect(samples[1]!.pauses).toBe(1);expect(selected).toEqual([second.id]);
  }finally{await act(async()=>cleanup());if(descriptor)Object.defineProperty(globalThis,"Audio",descriptor);else Reflect.deleteProperty(globalThis,"Audio");}
+});
+
+test("Resume waits for account recovery and does not reopen the recovered draft",async()=>{
+  domWindow.localStorage.setItem("influence_session","test-token");
+  const stored=JSON.parse(domWindow.sessionStorage.getItem(draftKey)!);
+  let resolveRead!:(response:Response)=>void;
+  const accountRead=new Promise<Response>(resolve=>{resolveRead=resolve;});
+  let writes=0;
+  globalThis.fetch=Object.assign(async (_input:RequestInfo|URL,init?:RequestInit)=>{
+    if(init?.method==="PUT"){writes++;return Response.json({version:"11111111-1111-4111-8111-111111111111:2"});}
+    return accountRead;
+  },{preconnect:originalFetch.preconnect}) as typeof fetch;
+  const view=await renderForm(false,async()=>{},false,{},draftScope,true);
+  expect((view.getByRole("button",{name:"Resume"}) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(view.getByRole("button",{name:"Close"}));
+  expect(writes).toBe(0);
+  await act(async()=>{resolveRead(Response.json({version:"11111111-1111-4111-8111-111111111111:1",document:stored}));});
+  await waitFor(()=>expect((view.getByRole("button",{name:"Resume"}) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(view.getByRole("button",{name:"Resume"}));
+  await waitFor(()=>expect(view.queryByLabelText("Saved local draft")).toBeNull());
+  fireEvent.click(view.getByRole("button",{name:"Guided"}));
+  fireEvent.click(view.getByRole("button",{name:"Advanced"}));
+  expect(view.queryByLabelText("Saved local draft")).toBeNull();
 });

@@ -20,7 +20,6 @@ import {
 import {
   requestCharacterReference,
   readCharacterReference,
-  processCharacterReference,
   retryCharacterReference,
   decideCharacterReference,
 } from "../services/character-reference-jobs.js";
@@ -30,6 +29,10 @@ import {
 } from "../services/agent-screening-publication.js";
 import { hasEligibleAgentContent } from "../services/agent-content-eligibility.js";
 import { hasCharacterTransparency } from "../services/character-transparency.js";
+import {
+  processMockCharacterReference,
+  characterGenerationInput,
+} from "./character-generation-fixture.js";
 import { storeBinary } from "../services/payload-storage.js";
 let db: DrizzleDB;
 const owner = "workspace-owner",
@@ -188,15 +191,11 @@ test("model and voice-only changes reuse the accepted content decision", async (
     (await db.select().from(schema.agentVoices))[0]!.assignment.voiceId,
   ).toBe("ara");
 });
-test("an upload job is owner-bound, durable, read-only on polling, and explicitly selected", async () => {
-  const source = await storeAgentDraftImage(db, owner, await transparent()),
-    input = {
-      requestId: randomUUID(),
-      operation: "edit",
-      name: "Upload Workspace",
-      uploadSource: source,
-      draftScope: "create:manage:none",
-    };
+test("a generated image job is owner-bound, durable, read-only on polling, and explicitly selected", async () => {
+  const input = {
+    ...characterGenerationInput(randomUUID(), "Generated Workspace"),
+    draftScope: "create:manage:none",
+  };
   const first = await requestCharacterReference(db, owner, input, "");
   await requestCharacterReference(db, owner, input, "");
   expect(first?.status).toBe("queued");
@@ -207,7 +206,7 @@ test("an upload job is owner-bound, durable, read-only on polling, and explicitl
   expect(
     (await readCharacterReference(db, owner, input.requestId))?.status,
   ).toBe("queued");
-  await processCharacterReference(db);
+  await processMockCharacterReference(db, await transparent());
   const ready = await readCharacterReference(db, owner, input.requestId);
   expect(ready?.status).toBe("ready");
   await expect(
@@ -217,7 +216,7 @@ test("an upload job is owner-bound, durable, read-only on polling, and explicitl
   expect(
     (await readCharacterReference(db, owner, input.requestId))?.status,
   ).toBe("selected");
-  expect(await db.select().from(schema.visualRenderAttempts)).toHaveLength(0);
+  expect(await db.select().from(schema.visualRenderAttempts)).toHaveLength(2);
 });
 test("Grok-style opaque source retries only failed background removal and retains its source", async () => {
   const sourceBytes = await sharp({
@@ -225,22 +224,15 @@ test("Grok-style opaque source retries only failed background removal and retain
     })
       .webp()
       .toBuffer(),
-    source = await storeAgentDraftImage(db, owner, sourceBytes);
-  const input = {
-    requestId: randomUUID(),
-    operation: "edit",
-    name: "Opaque Workspace",
-    uploadSource: source,
-  };
+    source = sourceBytes;
+  const input = characterGenerationInput(randomUUID(), "Opaque Workspace");
   await requestCharacterReference(db, owner, input, "");
-  await processCharacterReference(db);
+  await processMockCharacterReference(db, source, true);
   expect(
     (await readCharacterReference(db, owner, input.requestId))?.status,
   ).toBe("failed");
   const [cutout] = await db.select().from(schema.characterCutouts);
-  expect(cutout!.sourceHash).toBe(
-    createHash("sha256").update(sourceBytes).digest("hex"),
-  );
+  expect(cutout!.sourceHash).toHaveLength(64);
   await db
     .update(schema.characterCutouts)
     .set({ status: "failed", attempts: 3, error: "Synthetic removal failure" })
@@ -254,15 +246,18 @@ test("Grok-style opaque source retries only failed background removal and retain
     .update(schema.characterCutouts)
     .set({ status: "ready", image })
     .where(eq(schema.characterCutouts.id, cutout!.id));
-  await db.update(schema.characterReferenceJobs).set({updatedAt:new Date(0).toISOString()}).where(eq(schema.characterReferenceJobs.id,input.requestId));
-  await processCharacterReference(db);
+  await db
+    .update(schema.characterReferenceJobs)
+    .set({ updatedAt: new Date(0).toISOString() })
+    .where(eq(schema.characterReferenceJobs.id, input.requestId));
+  await processMockCharacterReference(db, source, true);
   const result = await readCharacterReference(db, owner, input.requestId);
   expect(result?.status).toBe("ready");
   const hash = String(result?.result?.fullBodyReferenceUrl).split("/").at(-1)!;
   expect(
     await hasCharacterTransparency(await readAgentDraftImage(db, hash, owner)),
   ).toBe(true);
-  expect(await db.select().from(schema.visualRenderAttempts)).toHaveLength(0);
+  expect(await db.select().from(schema.visualRenderAttempts)).toHaveLength(3);
   expect(
     await db
       .select()
@@ -326,4 +321,19 @@ test("stale screening and a human-flagged ancestor cannot publish a newer submis
   expect((await db.select().from(schema.agentProfiles))[0]!.personality).toBe(
     "Corrected",
   );
+});
+
+test("user image uploads cannot be submitted as generation jobs", async () => {
+  await expect(
+    requestCharacterReference(
+      db,
+      owner,
+      {
+        ...characterGenerationInput(randomUUID(), "Upload rejected"),
+        uploadSource: "/api/agent-profiles/images/" + "a".repeat(64),
+      },
+      "",
+    ),
+  ).rejects.toThrow("must be generated");
+  expect(await db.select().from(schema.characterReferenceJobs)).toHaveLength(0);
 });

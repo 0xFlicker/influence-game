@@ -6,7 +6,7 @@ const labels: Record<string, string> = {
   background: "Removing background",
   portrait: "Preparing portrait",
   waiting: "Queued",
-  upload: "Uploading image",
+  upload: "Saving portrait",
 };
 export function AgentOperationActivity({
   stage,

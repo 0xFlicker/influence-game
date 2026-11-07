@@ -189,7 +189,7 @@ export function AgentEditContent({
 
   return (
     <div>
-      <header className="mb-7 sm:mb-9">
+      <header className="mx-auto w-full max-w-[1440px] px-5 py-3">
         <nav
           aria-label="Breadcrumb"
           className="flex flex-wrap items-center gap-2 text-sm text-white/40"

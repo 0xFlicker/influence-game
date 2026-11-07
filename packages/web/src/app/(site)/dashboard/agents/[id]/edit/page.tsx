@@ -23,7 +23,7 @@ export default async function AgentEditPage({
   return (
     <div className="min-h-screen flex flex-col">
       <Nav />
-      <main className="w-full flex-1 px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
+      <main className="w-full flex-1">
         <AuthGate>
           <AgentEditContent returnTo={query.returnTo} agentId={id} imageRequest={query.imageRequest} sourceReviewId={query.sourceReviewId} profileRequest={query.profileRequest === "1" && !query.sourceReviewId} intent={intent} />
         </AuthGate>

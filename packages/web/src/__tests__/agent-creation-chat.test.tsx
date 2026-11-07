@@ -29,7 +29,7 @@ function mount(withIngredients = false, hasImage = false, headRequired = false) 
   function Harness() {
     const [ids, setIds] = useState<AgentCreationTraitId[]>([]);
     const [draft, setDraft] = useState(withIngredients ? { ...profile, personality: "" } : profile);
-    return <AgentCreationChat creationTraitIds={ids} onCreationTraitIdsChange={withIngredients ? setIds : undefined} profile={draft} onGenerate={async message => { generated.push(message); setDraft(current => ({ ...current, personality: profile.personality })); return true; }} onAppearance={async message => { appearances.push(message); return true; }} busy={false} blocked={false} headRequired={headRequired} hasImage={hasImage} onHeadshot={() => {}} submitDisabled={false} submitLabel="Create Agent" />;
+    return <AgentCreationChat creationTraitIds={ids} onCreationTraitIdsChange={withIngredients ? setIds : undefined} profile={draft} onGenerate={async message => { generated.push(message); setDraft(current => ({ ...current, personality: profile.personality })); return true; }} onAppearance={async message => { appearances.push(message); return true; }} busy={false} blocked={false} headRequired={headRequired} hasImage={hasImage} onHeadshot={() => {}} />;
   }
   return render(<Harness />);
 }
@@ -42,7 +42,7 @@ test("the empty creator gives a visual starting point and a labeled composer", (
   expect(view.getByLabelText("Message the character assistant").classList.contains("agent-creation-composer")).toBe(true);
   expect(view.getByRole("region", { name: "Character fixtures" }).textContent).not.toContain("Character ingredients");
   expect(view.container.querySelector("footer")?.textContent).toContain("Character ingredients");
-  const conversation = view.getByRole("log", { name: "Character creation conversation" });
+  const conversation = view.getByRole("log", { hidden: true });
   const ingredients = view.getByText("Character ingredients");
   const composer = view.getByLabelText("Message the character assistant");
   expect(Boolean(conversation.compareDocumentPosition(ingredients) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
@@ -212,7 +212,8 @@ for (const typed of [false, true]) test(`approval after text refinement preserve
   } else {
     await act(async () => fireEvent.click(view.getByRole("button", { name: "Continue" })));
   }
-  await waitFor(() => expect(view.getByRole("button", { name: "Create Agent" }).hasAttribute("disabled")).toBe(false));
+  await waitFor(() => expect(view.getByText(/Your character and images are ready/)).toBeTruthy());
+  expect(view.queryByRole("button", { name: "Create Agent" })).toBeNull();
   expect(view.queryByText(/What do they look like/)).toBeNull();
   expect(appearances).toHaveLength(0);
   expect(fetchCalls).toBe(typed ? 2 : 1);

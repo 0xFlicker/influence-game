@@ -1,5 +1,4 @@
-import { bodyLimit } from "hono/body-limit";
-import { AgentDraftImageUnavailable, storeAgentDraftImage, readAgentDraftImage } from "../services/agent-draft-images.js";
+import { AgentDraftImageUnavailable, readAgentDraftImage } from "../services/agent-draft-images.js";
 import { requestCharacterReference, readCharacterReference, retryCharacterReference, decideCharacterReference } from "../services/character-reference-jobs.js";
 import { readAgentTransparentBodies } from "../services/agent-transparent-bodies.js";
 import { readAgentVisualUpdate, requestAgentVisualUpdate, resumeAgentVisualUpdate } from "../services/agent-visual-updates.js";
@@ -96,20 +95,6 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
       if (error instanceof AgentProfileManagementError) return agentProfileErrorResponse(c,error);
       throw error;
     }
-  });
-  app.post("/api/agent-profiles/images",requireAuth(db),bodyLimit({maxSize:33*1024*1024}),async c=>{
-    const length=Number(c.req.header("Content-Length"));
-    if(length>33*1024*1024)return c.json({error:"Image exceeds 32 MB"},413);
-    const form=await c.req.formData(); const file=form.get("image");
-    if(!(file instanceof File)||file.size>32*1024*1024)return c.json({error:"Choose an image up to 32 MB"},400);
-    let bytes: Buffer;
-    try {
-      const image = sharp(Buffer.from(await file.arrayBuffer()), { limitInputPixels: 16_000_000 });
-      const metadata = await image.metadata();
-      if (!metadata.format || !["png", "jpeg", "webp"].includes(metadata.format) || (metadata.pages ?? 1) !== 1) return c.json({ error: "Choose a single PNG, JPEG or WebP image" }, 400);
-      bytes = await image.rotate().webp({quality:92}).toBuffer();
-    } catch { return c.json({error:"Choose a valid PNG, JPEG or WebP image"},400); }
-    return c.json({sourceUrl:await storeAgentDraftImage(db,c.get("user").id,bytes)},201);
   });
   app.get("/api/agent-profiles/images/:hash",async(c,next)=>{
     const [asset]=await db.select({isPublic:schema.agentContentAssets.isPublic}).from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash,c.req.param("hash")));

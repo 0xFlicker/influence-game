@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   decodeCreationTurn,
   type CreationStage,
@@ -47,6 +47,8 @@ export interface CharacterConversation {
 }
 
 export function AgentCreationChat({
+  preferences,
+  editing = false,
   conversation,
   onConversationChange,
   scope,
@@ -58,8 +60,6 @@ export function AgentCreationChat({
   headRequired,
   hasImage,
   onHeadshot,
-  submitDisabled,
-  submitLabel,
   creationTraitIds = [],
   onCreationTraitIdsChange,
   anonymous = false,
@@ -67,6 +67,8 @@ export function AgentCreationChat({
   onAnonymousMessage,
   onRequireAccount,
 }: {
+  preferences?: ReactNode;
+  editing?: boolean;
   conversation?: CharacterConversation;
   onConversationChange?: (value: CharacterConversation) => void;
   scope?: CharacterSection;
@@ -92,8 +94,6 @@ export function AgentCreationChat({
   headRequired: boolean;
   hasImage: boolean;
   onHeadshot: () => void;
-  submitDisabled: boolean;
-  submitLabel: string;
 }) {
   const [stageOverride, setStage] = useState<CreationStage | null>(
     conversation?.stage ?? null,
@@ -132,7 +132,12 @@ export function AgentCreationChat({
   const hasIngredients = showIngredients && creationTraitIds.length > 0;
   const working = pending || busy;
   const hasCharacter = Boolean(profile.personality || hasImage);
-  const openingMessage = { role: "assistant" as const, text: replies[stage] };
+  const openingMessage = {
+    role: "assistant" as const,
+    text: editing
+      ? "What would you like to change? Choose a section above, or tell me what you have in mind."
+      : replies[stage],
+  };
   const visibleMessages = messages.length ? messages : [openingMessage];
 
   useEffect(() => {
@@ -393,6 +398,7 @@ export function AgentCreationChat({
           aria-live="polite"
           aria-relevant="additions text"
           className="agent-creation-chat-log mx-auto w-full max-w-3xl"
+          hidden={!messages.length && !working && !editing}
         >
           <div className="agent-creation-message-stack space-y-2 px-1 pb-3 pt-4">
             {visibleMessages.map((message, index) => (
@@ -429,7 +435,7 @@ export function AgentCreationChat({
       </div>
       <footer className="agent-creation-dock relative z-10 shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2 sm:px-8">
         <div className="mx-auto w-full max-w-3xl space-y-3">
-          {stage === "review" && !ended && !working && (
+          {stage === "review" && !editing && !ended && !working && (
             <button
               type="button"
               disabled={locked}
@@ -583,8 +589,8 @@ export function AgentCreationChat({
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-2">
-            {hasImage && headRequired && (
+          {hasImage && headRequired && (
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 disabled={locked}
@@ -593,17 +599,9 @@ export function AgentCreationChat({
               >
                 Confirm
               </button>
-            )}
-            {stage !== "review" && hasImage && !headRequired && (
-              <button
-                type="submit"
-                disabled={locked || submitDisabled}
-                className="influence-button-primary min-h-11 rounded-lg px-3 text-sm"
-              >
-                {submitLabel}
-              </button>
-            )}
-          </div>
+            </div>
+          )}
+          {preferences}
         </div>
       </footer>
       {reading && (
