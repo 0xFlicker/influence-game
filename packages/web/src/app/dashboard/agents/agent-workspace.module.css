@@ -185,6 +185,14 @@
 .voiceOption button:first-child {
   flex: 1;
   text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.voiceGender {
+  color: var(--muted);
+  font-size: 12px;
 }
 .voiceOption button {
   border: 0;

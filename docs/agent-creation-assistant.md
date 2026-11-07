@@ -110,6 +110,9 @@ strict structured field: the existing value is context, not a fixed constraint
 when gender is selected or the request is unrestricted. An explicit top-level
 gender constraint or an edit to other selected fields keeps gender fixed.
 
+Voice options display the catalog's Male/Female label beside each name, and the
+selected voice retains that label in the closed picker.
+
 Advanced groups Character, Strategy and Appearance inside one dark, blurred
 panel with connected tabs. Arrow keys, Home and End navigate the tabs. Model and
 voice preferences stay outside this panel. Archetypes use a styled listbox with

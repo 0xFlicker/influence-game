@@ -17,6 +17,7 @@ export function AgentVoicePicker({
   onChange: (value: string | null) => void;
   disabled?: boolean;
 }) {
+  const selectedVoice = PLAYER_VOICES.find((voice) => voice.id === value);
   const [open, setOpen] = useState(false),
     [query, setQuery] = useState(""),
     [playing, setPlaying] = useState<string | null>(null);
@@ -111,8 +112,9 @@ export function AgentVoicePicker({
         }}
       >
         <span>
-          {PLAYER_VOICES.find((voice) => voice.id === value)?.name ??
-            "Automatic"}
+          {selectedVoice
+            ? `${selectedVoice.name} · ${selectedVoice.gender === "male" ? "Male" : "Female"}`
+            : "Automatic"}
         </span>
         <svg
           width="14"
@@ -170,7 +172,10 @@ export function AgentVoicePicker({
                   setOpen(false);
                 }}
               >
-                {voice.name}
+                {voice.name}{" "}
+                <span className={styles.voiceGender}>
+                  {voice.gender === "male" ? "Male" : "Female"}
+                </span>
               </button>
               <button
                 type="button"

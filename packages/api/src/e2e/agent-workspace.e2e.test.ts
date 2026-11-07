@@ -393,7 +393,7 @@ test("Advanced creation persists voice and generated artwork across navigation b
     await page.evaluate(
       'const label=[...document.querySelectorAll("label")].find(label=>label.textContent==="Voice");document.getElementById(label.htmlFor).click();',
     );
-    await button(page, "Ara");
+    await button(page, "Ara Female");
     await button(page, "Guided");
     await button(page, "Advanced");
     expect(

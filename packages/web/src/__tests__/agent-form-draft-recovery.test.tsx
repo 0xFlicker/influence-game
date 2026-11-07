@@ -209,7 +209,7 @@ describe("agent workspace drafts",()=>{
  });
  test("voice auditions and selection are separate and do not submit the profile",async()=>{
   const submissions:AgentProfileWriteParams[]=[];const view=await ready(async params=>{submissions.push(params);});fireEvent.click(view.getByRole("button",{name:"Voice"}));
-  expect(view.getAllByRole("button",{name:/Play /}).length).toBeGreaterThan(0);const option=view.getByRole("button",{name:"Ara"});fireEvent.click(option);expect(submissions).toHaveLength(0);
+  expect(view.getAllByRole("button",{name:/Play /}).length).toBeGreaterThan(0);expect(view.getByRole("button",{name:"Altair Male"})).toBeTruthy();const option=view.getByRole("button",{name:"Ara Female"});fireEvent.click(option);expect(submissions).toHaveLength(0);expect(view.getByRole("button",{name:"Voice"}).textContent).toContain("Ara · Female");
   await save(view);await waitFor(()=>expect(submissions).toHaveLength(1));expect(submissions[0]?.voiceId).toBe("ara");
  });
  test("missing gender is validated before committing a submission",async()=>{
@@ -286,7 +286,7 @@ test("a late audio completion cannot stop the next audition",async()=>{
   fireEvent.click(view.getByRole("button",{name:"Play "+second.name}));await waitFor(()=>expect(samples).toHaveLength(2));
   await act(async()=>{samples[0]!.onended?.();});
   expect(samples[1]!.pauses).toBe(0);expect(view.getByRole("button",{name:"Stop "+second.name})).toBeTruthy();
-  fireEvent.click(view.getByRole("button",{name:second.name}));expect(samples[1]!.pauses).toBe(1);expect(selected).toEqual([second.id]);
+  fireEvent.click(view.getByRole("button",{name:new RegExp(`^${second.name} (Male|Female)$`)}));expect(samples[1]!.pauses).toBe(1);expect(selected).toEqual([second.id]);
  }finally{await act(async()=>cleanup());if(descriptor)Object.defineProperty(globalThis,"Audio",descriptor);else Reflect.deleteProperty(globalThis,"Audio");}
 });
 

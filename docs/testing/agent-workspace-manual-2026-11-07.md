@@ -171,3 +171,8 @@ port; rerunning with fresh random ports passed. Evidence:
 The Needs attention panel now renders only when agents need attention. Both
 management browser journeys passed with the empty-panel check at desktop/mobile
 widths (51 assertions); typecheck, lint and `git diff --check` passed.
+
+Voice options now show catalog Male/Female labels beside each name and on the
+selected voice. The 21-test editor/recovery suite and existing Advanced creation
+browser journey passed, including voice selection and audition separation.
+Typecheck, lint and `git diff --check` passed.
