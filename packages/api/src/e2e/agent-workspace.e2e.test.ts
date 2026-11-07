@@ -181,11 +181,16 @@ test("management image and name open the owner profile and return to its agent",
   page.on("pageerror", error => errors.push(String(error)));
   try {
     const selector = `a[href^="/dashboard/agents/${agentId}/profile"]`;
-    for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, { width: 390, height: 844 }]) {
       await page.setViewport(viewport);
       for (const target of ["img", "h3"]) {
         await page.waitForSelector(`${selector} ${target}`);
-        expect(await page.$$eval("main aside h2", headings => headings.some(heading => heading.textContent?.includes("Needs attention")))).toBe(false);
+        expect(await page.$("main aside")).toBeNull();
+        expect(await page.$eval(`#agent-${agentId}`, element => {
+          const grid = element.parentElement!.getBoundingClientRect();
+          const header = element.ownerDocument.querySelector("main h1")!.closest("header")!.getBoundingClientRect();
+          return Math.abs(grid.left - header.left) < 1 && Math.abs(grid.width - header.width) < 1;
+        })).toBe(true);
         expect(await page.$$(selector)).toHaveLength(1);
         expect(await page.$$eval(`#agent-${agentId} a, #agent-${agentId} button`, elements => elements.some(element => element.textContent?.trim() === "View"))).toBe(false);
         expect(await page.$(`#agent-${agentId} button[aria-label="Edit Mira Voss"]`)).not.toBeNull();
@@ -996,6 +1001,7 @@ test("an interrupted image request shows one short notice and can be discarded w
       ),
     ).toBe(true);
     await page.goto(servers.webUrl + "/dashboard/agents");
+    await button(page, "Activity");
     const stoppedSupport =
       '[aria-label="Image requests"] [data-status="stopped"] button[aria-haspopup="dialog"]';
     await page.waitForSelector(stoppedSupport);

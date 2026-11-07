@@ -229,3 +229,18 @@ Visual evidence: `.renders/agent-workspace/text-scan-{guided,advanced}-{1440,390
 `image-scan-{guided,advanced}-{1440,390}.png` and
 `existing-image-scan-{1440,390}.png`. Animation samples are paused at their middle
 frame for screenshots; browser assertions verify moving and reduced-motion modes.
+
+## Follow-up: use the whole management width
+
+Removed the reserved 300px Activity/Needs attention sidebar and its grid gap.
+The gallery always spans the content width; queued work, attention items, errors
+and accepted game/season continuations remain in the Activity dialog. Pending
+continuations now contribute to its count. Removed the obsolete sidebar layout
+and its narrower gallery breakpoint, keeping responsive three/two/one-column
+gallery behavior without status-driven width changes.
+
+All 13 workspace browser journeys passed (758 assertions), including full-width
+alignment at 1440px, 1024px and 390px, support/recovery access through Activity
+and unchanged card positions through review acceptance. Typecheck, lint and
+`git diff --check` passed. Evidence: the existing management-profile-link width
+screenshots and `.renders/agent-workspace/stable-gallery-accepted.png`.

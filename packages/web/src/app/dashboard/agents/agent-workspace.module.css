@@ -1626,32 +1626,9 @@
 .acceptedVersion[data-visible="false"] {
   visibility: hidden;
 }
-.managementLayout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 32px;
-  align-items: start;
-  margin-top: 24px;
-}
 .managementMain {
-  grid-column: 1;
-  grid-row: 1;
   min-width: 0;
-}
-.managementAside {
-  grid-column: 2;
-  grid-row: 1;
-  position: sticky;
-  top: 80px;
-  max-height: calc(100dvh - 100px);
-  overflow-y: auto;
-}
-.managementAside .attention {
-  margin: 0;
-}
-.managementAside .generations h2,
-.managementAside .attention h2 {
-  font-size: 22px;
+  margin-top: 24px;
 }
 .managementHeaderActions {
   display: flex;
@@ -1665,19 +1642,6 @@
 .managementHeaderActions button span {
   display: inline-block;
   min-width: 1.5em;
-}
-@media (min-width: 901px) and (max-width: 1200px) {
-  .managementMain .gallery {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-@media (max-width: 900px) {
-  .managementLayout {
-    display: block;
-  }
-  .managementAside {
-    display: none;
-  }
 }
 @media (max-width: 640px) {
   .workspace {

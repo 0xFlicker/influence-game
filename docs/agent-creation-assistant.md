@@ -111,6 +111,10 @@ Analyze remains available because the collection does not provide a reliable
 availability flag across season receipts and owner learning; management does not
 load each agent's analysis just to decide whether to show a link.
 The Needs attention panel is hidden when no agents need attention.
+The management grid always uses the full content width. Generation requests,
+attention items, errors and accepted game/season continuations appear in Activity,
+whose count includes each pending continuation. Activity never reserves a sidebar
+or changes card positions when its contents change.
 The owner profile's Agents link sits above the background panel, aligned with the
 profile heading and separated by a 16px gap on desktop and mobile.
 

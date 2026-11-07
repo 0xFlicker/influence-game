@@ -91,6 +91,9 @@ export function AgentsContent() {
     }
   }
   const attention = agents.filter(agentNeedsAttention),
+    entryAgents = agents.filter(
+      (agent) => agent.entryIntent && agent.reviewState === "accepted",
+    ),
     filtered = agents.filter(
       (agent) =>
         (!attentionOnly || agentNeedsAttention(agent)) &&
@@ -155,24 +158,20 @@ export function AgentsContent() {
           ))}
         </section>
       )}
-      {agents
-        .filter(
-          (agent) => agent.entryIntent && agent.reviewState === "accepted",
-        )
-        .map((agent) => (
-          <section key={agent.id} className={styles.attentionRow}>
-            <p>
-              {agent.name} is accepted. Continue to your selected{" "}
-              {agent.entryIntent?.flow === "join_game" ? "game" : "season"}.
-            </p>
-            <Link
-              className="action"
-              href={agentPreparationHref(agent.id, agent.entryIntent!)}
-            >
-              Continue
-            </Link>
-          </section>
-        ))}
+      {entryAgents.map((agent) => (
+        <section key={agent.id} className={styles.attentionRow}>
+          <p>
+            {agent.name} is accepted. Continue to your selected{" "}
+            {agent.entryIntent?.flow === "join_game" ? "game" : "season"}.
+          </p>
+          <Link
+            className="action"
+            href={agentPreparationHref(agent.id, agent.entryIntent!)}
+          >
+            Continue
+          </Link>
+        </section>
+      ))}
     </>
   );
   return (
@@ -192,6 +191,7 @@ export function AgentsContent() {
             <span>
               {attention.length +
                 generations.rows.length +
+                entryAgents.length +
                 Number(Boolean(error))}
             </span>
           </button>
@@ -200,76 +200,73 @@ export function AgentsContent() {
           </Link>
         </div>
       </header>
-      <div className={styles.managementLayout}>
-        <aside className={styles.managementAside}>{notifications}</aside>
-        <div className={styles.managementMain}>
-          <div className={styles.toolbar}>
-            <div>
-              <button
-                type="button"
-                aria-pressed={!attentionOnly}
-                onClick={() => filter("attention", "")}
-              >
-                All {agents.length}
-              </button>
-              <button
-                type="button"
-                aria-pressed={attentionOnly}
-                onClick={() => filter("attention", "1")}
-              >
-                Needs attention
-              </button>
-            </div>
-            <input
-              type="search"
-              aria-label="Find an agent"
-              placeholder="Find an agent…"
-              value={query}
-              onChange={(event) => filter("q", event.target.value)}
-            />
+      <div className={styles.managementMain}>
+        <div className={styles.toolbar}>
+          <div>
+            <button
+              type="button"
+              aria-pressed={!attentionOnly}
+              onClick={() => filter("attention", "")}
+            >
+              All {agents.length}
+            </button>
+            <button
+              type="button"
+              aria-pressed={attentionOnly}
+              onClick={() => filter("attention", "1")}
+            >
+              Needs attention
+            </button>
           </div>
-          {loading ? (
-            <p role="status">Loading agents…</p>
-          ) : (
-            <AgentList
-              agents={filtered}
-              returnPath={returnPath}
-              onEdit={edit}
-              onDelete={setArchive}
-              archivePending={archiving}
-            />
-          )}
-          {!!drafts.length && (
-            <section className={styles.drafts}>
-              <h2>Drafts</h2>
-              {drafts.map((draft) => (
-                <div className={styles.draftRow} key={draft.scope}>
-                  <div>
-                    <h3>{draft.name || "Untitled agent"}</h3>
-                    <p className={styles.meta}>
-                      Saved {new Date(draft.updatedAt).toLocaleString()}
-                    </p>
-                  </div>
-                  <Link
-                    className="action"
-                    href={
-                      draft.scope.startsWith("edit:")
-                        ? "/dashboard/agents/" + draft.scope.slice(5) + "/edit"
-                        : "/agents/create?draft=" +
-                          encodeURIComponent(draft.scope)
-                    }
-                  >
-                    Continue
-                  </Link>
-                </div>
-              ))}
-            </section>
-          )}
+          <input
+            type="search"
+            aria-label="Find an agent"
+            placeholder="Find an agent…"
+            value={query}
+            onChange={(event) => filter("q", event.target.value)}
+          />
         </div>
+        {loading ? (
+          <p role="status">Loading agents…</p>
+        ) : (
+          <AgentList
+            agents={filtered}
+            returnPath={returnPath}
+            onEdit={edit}
+            onDelete={setArchive}
+            archivePending={archiving}
+          />
+        )}
+        {!!drafts.length && (
+          <section className={styles.drafts}>
+            <h2>Drafts</h2>
+            {drafts.map((draft) => (
+              <div className={styles.draftRow} key={draft.scope}>
+                <div>
+                  <h3>{draft.name || "Untitled agent"}</h3>
+                  <p className={styles.meta}>
+                    Saved {new Date(draft.updatedAt).toLocaleString()}
+                  </p>
+                </div>
+                <Link
+                  className="action"
+                  href={
+                    draft.scope.startsWith("edit:")
+                      ? "/dashboard/agents/" + draft.scope.slice(5) + "/edit"
+                      : "/agents/create?draft=" +
+                        encodeURIComponent(draft.scope)
+                  }
+                >
+                  Continue
+                </Link>
+              </div>
+            ))}
+          </section>
+        )}
       </div>
       <AgentWorkspacePanel
         open={attentionOpen}
-        title="Needs attention"
+        title="Activity"
         onClose={() => setAttentionOpen(false)}
       >
         {notifications}
