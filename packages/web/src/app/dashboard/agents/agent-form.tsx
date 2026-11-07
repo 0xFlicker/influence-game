@@ -6,6 +6,7 @@ import {
 } from "./agent-generations";
 import { captureProductEvent } from "@/lib/product-analytics";
 import { agentModelLabel } from "@/components/agent-model-label";
+import { getPersonaLabel } from "@/lib/personas";
 import { PLAYER_VOICES } from "@influence/engine/voice-catalog";
 import { OwnedCharacterImage } from "@/components/owned-character-image";
 import { AgentVoicePicker } from "./voice-audition-picker";
@@ -69,6 +70,18 @@ import {
 
 const DRAFT_VERSION = AGENT_EDITOR_DRAFT_VERSION;
 const GENERATION_TIMEOUT_MS = 5 * 60 * 1000;
+
+function reviewFieldValue(
+  field: string,
+  value: string | null | undefined,
+  empty: string,
+) {
+  if (!value) return empty;
+  if (field === "personaKey") return getPersonaLabel(value as PersonaKey);
+  if (field === "gender")
+    return AGENT_GENDER_OPTIONS.find(option => option.value === value)?.label ?? value;
+  return value;
+}
 
 export interface StrategyComparison {
   field?: "strategyStyle" | "werewolfStrategyStyle";
@@ -855,13 +868,27 @@ export function AgentForm({
         pendingRestore.unfinishedReplacement || pendingRestore.uploadPending,
       ),
     );
-    if (pendingRestore.generationDeadline)
+    if (
+      pendingRestore.generationDeadline &&
+      !pendingRestore.referenceRequest &&
+      !pendingRestore.candidateImage
+    )
       setGenerationNotice("assistant_timeout");
     submission.current = pendingRestore.submission;
     setPendingRestore(null);
     setActivityOpen(conflicts.length > 0);
     setDraftReady(true);
   }
+
+  useEffect(() => {
+    if (
+      imageRequest && pendingRestore && remoteReady &&
+      !restoreAlternatives && !restoreConflict
+    ) applyDraft();
+    // An explicit artwork link resumes its matching draft after both reads settle.
+    // Divergent copies and changed baselines still require the owner's choice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageRequest, pendingRestore, remoteReady, restoreAlternatives, restoreConflict]);
 
   // Retire only this tab's active draft pointers. Server receipts remain durable,
   // and the epoch prevents any outstanding request from applying a late result.
@@ -1448,7 +1475,15 @@ export function AgentForm({
         setDraftStorageError("discard_failed");
       }
     } catch (error) {
-      setSaveError(error);
+      console.warn("[agent-editor] Save failed:", error);
+      if (error instanceof ApiError && error.code === "agent_name_taken") {
+        setSaveError(null);
+        setValidationErrors(current => ({
+          ...current,
+          name: "This name is already in use.",
+        }));
+        focusField("agent-name");
+      } else setSaveError(error);
       setSubmitting(false);
     }
   }
@@ -1589,7 +1624,10 @@ export function AgentForm({
   }
   const initialImageRead = useRef(false);
   useEffect(() => {
-    if (!imageRequest || initialImageRead.current || !remoteReady) return;
+    if (
+      !imageRequest || initialImageRead.current || !remoteReady ||
+      !draftReady || pendingRestore || restoreAlternatives
+    ) return;
     initialImageRead.current = true;
     void apiFetch<{
       status: string;
@@ -1615,7 +1653,7 @@ export function AgentForm({
           );
       })
       .catch((cause) => setReferenceError(cause));
-  }, [imageRequest, remoteReady, setReferenceError]);
+  }, [imageRequest, remoteReady, draftReady, pendingRestore, restoreAlternatives, setReferenceError]);
   async function retrySelectedJob() {
     if (!imageRequest) return;
     setReferenceBusy(true);
@@ -1797,6 +1835,7 @@ export function AgentForm({
           : "/api/agent-profiles/visual-reference",
         { method: "POST", body: JSON.stringify(referenceRequest.current) },
       );
+      generations.refresh();
       const result = await observeReference(
         referenceRequest.current!.requestId,
         epoch,
@@ -1805,6 +1844,7 @@ export function AgentForm({
       if (epoch !== referenceEpoch.current) return;
       setGenerationDeadline(null);
       setCandidateImage(result);
+      generations.refresh();
       setUnfinishedReplacement(false);
       removeEditorStorage(referenceStorageKey);
       referenceRequest.current = null;
@@ -2100,7 +2140,10 @@ export function AgentForm({
                   </div>
                   {candidateImage.basedOn &&
                     (candidateImage.basedOn.name !== name ||
-                      candidateImage.basedOn.visualDesign !== visualDesign ||
+                      (candidateImage.basedOn.personaKey ?? "") !==
+                        (personaKey ?? "") ||
+                      (candidateImage.basedOn.visualDesign ?? "") !==
+                        (visualDesign ?? "") ||
                       candidateImage.basedOn.performanceInstructions !==
                         performanceInstructions) && (
                       <p>
@@ -2991,9 +3034,7 @@ export function AgentForm({
           <AgentGenerations
             currentAgentId={initial?.id}
             currentDraftScope={draftScope}
-            rows={generations.rows.filter(
-              (row) => row.id !== candidateImage?.requestId,
-            )}
+            rows={generations.rows}
             onCancelled={(row) =>
               void cancelGeneration(row).then(() => setActivityOpen(false))
             }
@@ -3261,7 +3302,15 @@ export function AgentForm({
               .
             </p>
           )}
-          {!activityCount && !missingRequired.length && <p>No activity.</p>}
+          {!activityCount && !missingRequired.length && (
+            <p role={referenceBusy || profileGenerating ? "status" : undefined}>
+              {referenceBusy
+                ? "Starting image…"
+                : profileGenerating
+                  ? "Updating draft text…"
+                  : "No activity."}
+            </p>
+          )}
         </AgentWorkspacePanel>
         {reviewOpen && (
           <div className={styles.reviewBackdrop}>
@@ -3363,8 +3412,8 @@ export function AgentForm({
                         Undo
                       </button>
                     </header>
-                    <del>{initialSnapshot[field] || "Not set"}</del>
-                    <ins>{currentSnapshot[field] || "Cleared"}</ins>
+                    <del>{reviewFieldValue(field, initialSnapshot[field], "Not set")}</del>
+                    <ins>{reviewFieldValue(field, currentSnapshot[field], "Cleared")}</ins>
                   </div>
                 ))}
               {JSON.stringify(modelPreference) !==

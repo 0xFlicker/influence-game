@@ -23,6 +23,8 @@ The two dimensions are **step** and **recovery**:
 
 ## Display and recovery rules
 
+- A duplicate name returns to the name field with `This name is already in use.`
+  It is field validation, not a stale-agent conflict or a reason to reload.
 - Draft persistence errors take precedence, then save, artwork and assistant failures. A child assistant failure feeds the same notice. Workspace notices use the footer’s reserved status space, with full details in Activity; they do not insert rows above the editor. Save errors appear inside the active review dialog. Portrait and voice notices live in their respective active controls, not in a second page banner.
 - Known retryable image failures expose Retry. An incomplete/uncertain dispatch exposes Discard and support, disables retry/revise for that request, and never encourages Send to repeat it. A successful retained image permits removal/storage recovery without another provider dispatch, even when an earlier fallback attempt remains uncertain.
 - Discard is explicit and confirmed. It removes the draft and retires its artwork job while retaining the saved agent, accepted images and provider journal. A missing artwork job cannot trap a draft: a cancellation record prevents a delayed create request from reviving it. Already selected decisions remain immutable. Draft autosave is fenced during discard. A stale account-draft version still requires reload; never silently delete another tab’s newer work.

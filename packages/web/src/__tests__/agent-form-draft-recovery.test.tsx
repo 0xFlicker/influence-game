@@ -5,7 +5,7 @@ import { PLAYER_VOICES } from "@influence/engine/voice-catalog";
 import { AgentVoicePicker } from "../app/dashboard/agents/voice-audition-picker";
 import { AgentForm, mergeAgentDraft, type EditorSnapshot } from "../app/dashboard/agents/agent-form";
 import { InfluenceAuthContext, type InfluenceAuthState } from "../hooks/use-auth";
-import type { SavedAgent, AgentProfileWriteParams } from "../lib/api";
+import { ApiError, type SavedAgent, type AgentProfileWriteParams } from "../lib/api";
 
 const originalLocalStorage = globalThis.localStorage;
 const originalFetch = globalThis.fetch;
@@ -72,7 +72,7 @@ afterEach(async () => {
   }
 });
 
-async function renderForm(requireChange: boolean, onSubmit: (params: AgentProfileWriteParams) => Promise<void> = async () => {}, emptyText = false, initialOverrides: Partial<SavedAgent> = {}, scope = draftScope, signedIn = false): Promise<RenderResult> {
+async function renderForm(requireChange: boolean, onSubmit: (params: AgentProfileWriteParams) => Promise<void> = async () => {}, emptyText = false, initialOverrides: Partial<SavedAgent> = {}, scope = draftScope, signedIn = false, imageRequest?: string): Promise<RenderResult> {
   const fetcher=globalThis.fetch;
   globalThis.fetch=Object.assign(async (input:RequestInfo|URL,init?:RequestInit) => String(input).endsWith("/voice")
     ? Response.json({assignment:{voiceId:"ara"},voices:[{id:"ara",name:"Ara",gender:"female"}]}) : fetcher(input,init),{preconnect:originalFetch.preconnect}) as typeof fetch;
@@ -90,6 +90,7 @@ async function renderForm(requireChange: boolean, onSubmit: (params: AgentProfil
             requireChange,
           }}
           draftScope={scope}
+          imageRequest={imageRequest}
           onSubmit={onSubmit}
           onCancel={() => undefined}
           submitLabel="Save strategy update"
@@ -157,6 +158,40 @@ describe("agent workspace drafts",()=>{
   const view=await ready();{const input=view.getByLabelText("Personality");input.focus();fireEvent.input(input,{target:{value:"Decisive."}});fireEvent.keyUp(input,{key:"."});}fireEvent.click(view.getByRole("button",{name:"Review"}));
   const review=view.getByRole("dialog",{name:"Review changes"});expect(review.textContent).toContain("Calm and precise.");expect(review.textContent).toContain("Decisive.");
   fireEvent.click(within(review).getAllByRole("button",{name:"Undo"})[0]!);expect((view.container.querySelector("#agent-personality") as HTMLTextAreaElement).value).toBe("Calm and precise.");
+ });
+ test("a duplicate name returns to its field instead of suggesting stale-agent recovery",async()=>{
+  const view=await ready(async()=>{throw new ApiError(409,"Taken","agent_name_taken");});
+  const input=view.getByLabelText("Agent name");input.focus();fireEvent.input(input,{target:{value:"Existing agent"}});fireEvent.keyUp(input,{key:"t"});
+  await save(view);
+  await waitFor(()=>expect(view.getByText("This name is already in use.")).toBeTruthy());
+  expect(view.queryByRole("dialog",{name:"Review changes"})).toBeNull();
+  expect(view.queryByText("Agent changed. Reopen to compare.")).toBeNull();
+  expect(view.getByLabelText("Agent name").getAttribute("aria-invalid")).toBe("true");
+  input.focus();fireEvent.input(input,{target:{value:"A fresh name"}});fireEvent.keyUp(input,{key:"e"});
+  expect(view.queryByText("This name is already in use.")).toBeNull();
+ });
+ test("an unscoped Guided gender edit preserves populated identity, optional game notes and artwork",async()=>{
+  const paths:string[]=[];
+  globalThis.fetch=Object.assign(async(input:RequestInfo|URL)=>{
+    const path=String(input);paths.push(path);
+    if(path.includes("/generations")) return Response.json([]);
+    if(path.endsWith("/creation-assistant")) return Response.json({command:"revise_character",reply:""});
+    if(path.endsWith("/edit-assistant")) return Response.json({tool:"update_character",fields:["gender"]});
+    if(path.endsWith("/generate")) return Response.json({name:"Unrequested rename",gender:"male",personaKey:"strategic",personality:"Unrequested personality",backstory:"Unrequested backstory",strategyStyle:"Unrequested Influence notes",werewolfStrategyStyle:"Unrequested Werewolf notes",visualDesign:"Unrequested appearance",performanceInstructions:"Unrequested performance"});
+    throw Error(`Unexpected request ${path}`);
+  },{preconnect:originalFetch.preconnect}) as typeof fetch;
+  const view=await ready(undefined,{visualDesign:"Original appearance",performanceInstructions:"Original performance"});
+  fireEvent.click(view.getByRole("button",{name:"Guided"}));
+  fireEvent.input(view.getByLabelText("Message the character assistant"),{target:{value:"Make male. Change only gender."}});
+  fireEvent.click(view.getByRole("button",{name:"Send"}));
+  await waitFor(()=>expect((view.getByRole("button",{name:"Send"}) as HTMLButtonElement).disabled).toBe(true));
+  await waitFor(()=>expect((view.getByRole("radio",{name:"Male"}) as HTMLInputElement).checked).toBe(true));
+  await waitFor(()=>expect(view.queryByRole("button",{name:"Assistant working"})).toBeNull());
+  fireEvent.click(view.getByRole("button",{name:"Review"}));
+  const review=view.getByRole("dialog",{name:"Review changes"});
+  expect(Array.from(review.querySelectorAll("strong"),element=>element.textContent)).toEqual(["Gender"]);
+  expect(view.container.querySelector('img[src="/avatars/arden.png"]')).toBeTruthy();
+  expect(paths.some(path=>path.endsWith("/visual-reference"))).toBe(false);
  });
  test("restores a draft and offers both strategies without mixing their content",async()=>{
   const view=await renderForm(true);fireEvent.click(view.getByRole("button",{name:"Resume"}));fireEvent.click(view.getByRole("tab",{name:"Strategy"}));
@@ -274,6 +309,37 @@ test("Resume waits for account recovery and does not reopen the recovered draft"
   fireEvent.click(view.getByRole("button",{name:"Guided"}));
   fireEvent.click(view.getByRole("button",{name:"Advanced"}));
   expect(view.queryByLabelText("Saved local draft")).toBeNull();
+});
+
+test.each([false, true])("artwork handoff waits for recovery and only auto-resumes an unchanged baseline (conflict=%s)",async conflict=>{
+  domWindow.localStorage.setItem("influence_session","test-token");
+  const stored=JSON.parse(domWindow.sessionStorage.getItem(draftKey)!);
+  stored.current.personality="A recovered character, not an empty brief.";
+  if(conflict) stored.base.name="An earlier name";
+  domWindow.sessionStorage.removeItem(draftKey);
+  const read=Promise.withResolvers<Response>();
+  let artworkReads=0;
+  globalThis.fetch=Object.assign(async(input:RequestInfo|URL,init?:RequestInit)=>{
+    const path=String(input);
+    if(path.includes("/agent-profiles/generations")) return Response.json([]);
+    if(path.includes("/visual-references/")) {artworkReads++;return Response.json({status:"ready",result:{requestId:"image-1",fullBodyReferenceUrl:"/candidate.webp",width:1024,height:1536,avatarUrl:null,portraitCrop:null,cropWarning:null,basedOn:{name:"Arden",personaKey:"diplomat",visualDesign:"",performanceInstructions:""}}});}
+    if(init?.method==="PUT")return Response.json({version:"saved:2"});
+    return read.promise;
+  },{preconnect:originalFetch.preconnect}) as typeof fetch;
+  const view=await renderForm(false,async()=>{},false,{},draftScope,true,"image-1");
+  expect(artworkReads).toBe(0);
+  expect(view.queryByRole("button",{name:"Select"})).toBeNull();
+  await act(async()=>read.resolve(Response.json({version:"saved:1",document:stored})));
+  if(conflict){
+    await waitFor(()=>expect((view.getByRole("button",{name:"Resume"}) as HTMLButtonElement).disabled).toBe(false));
+    expect(artworkReads).toBe(0);
+    fireEvent.click(view.getByRole("button",{name:"Resume"}));
+  }
+  await waitFor(()=>expect((view.getByLabelText("Personality") as HTMLTextAreaElement).value).toBe(stored.current.personality));
+  await waitFor(()=>expect(view.getByRole("button",{name:"Select"})).toBeTruthy());
+  expect(artworkReads).toBe(1);
+  expect(view.queryByText(/The character brief changed during preparation/)).toBeNull();
+  expect(view.queryByRole("button",{name:"Resume"})).toBeNull();
 });
 
 test("a failed artwork selection never offers image generation as its retry",async()=>{

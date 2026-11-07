@@ -218,6 +218,25 @@ describe("Agent Profile API", () => {
     }
   });
 
+  test("text-only updates preserve head coordinates across storage URL normalization", async () => {
+    await contentImageFixture("pfp/absolute-head.png");
+    const sourceUrl="http://localhost/api/uploads/local?key=pfp%2Fabsolute-head.png";
+    const headPosition=await headPositionFixture(sourceUrl);
+    const response=await app.request("/api/agent-profiles",jsonReq({name:"Absolute Head",personality:"Careful.",fullBodyReferenceUrl:sourceUrl,headPosition},tokenA));
+    expect(response.status).toBe(201);
+    const original=await acceptResponse(response) as {id:string};
+    // Represent an already saved absolute coordinate identity from before the
+    // request normalized its body URL to the current API origin.
+    const update=await app.request(`http://127.0.0.1:3000/api/agent-profiles/${original.id}`,jsonReq({backstory:"A new story with the same picture.",fullBodyReferenceUrl:sourceUrl,headPosition},tokenA,"PATCH"));
+    expect(update.status).toBe(200);
+    const saved=await acceptResponse(update) as {backstory:string;headPosition:{sourceHash:string;rect:unknown}};
+    expect(saved.backstory).toBe("A new story with the same picture.");
+    expect(saved.headPosition.sourceHash).toBe(headPosition.sourceHash);
+    expect(saved.headPosition.rect).toEqual(headPosition.rect);
+    const foreign=await app.request(`/api/agent-profiles/${original.id}`,jsonReq({backstory:"Invalid source",fullBodyReferenceUrl:sourceUrl,headPosition:{...headPosition,sourceUrl:"https://foreign.example/unrelated.png"}},tokenA,"PATCH"));
+    expect(foreign.status).toBe(400);
+  });
+
   test("rejects pending generation attachment rather than saving a late portrait", async () => {
     const response = await app.request("/api/agent-profiles", jsonReq({ name: "Draft Arden", personality: "Careful", avatarGenerationRequestId: "pending-request" }, tokenA));
     expect(response.status).toBe(400);

@@ -1,6 +1,6 @@
 import { Nav } from "@/components/nav";
 import { AuthGate } from "@/components/auth-gate";
-import { AgentOwnerProfile } from "../../agent-owner-profile";
+import { AgentOwnerProfile } from "@/app/dashboard/agents/agent-owner-profile";
 export default async function Page({
   params,
   searchParams,

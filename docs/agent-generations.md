@@ -1,5 +1,11 @@
 # Pending agent images and cancellation
 
+Explicit artwork links resume a matching, unconflicted account draft before
+displaying its candidate. Divergent draft copies or changed baselines still need
+the owner's decision. Admission and ready responses refresh Activity immediately;
+a request starting before its list row arrives has a startup status. Ready
+candidates remain in Activity even when also visible beside the form.
+
 Agent creation, editing, management and MCP share the owner-scoped generation
 list. It includes unfinished agents and requests whose original drafts no longer
 exist. Reads return operational metadata only and never start or resume providers.

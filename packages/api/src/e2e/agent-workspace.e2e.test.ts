@@ -175,6 +175,25 @@ async function button(page: Page, label: string) {
   await page.evaluate(selector + ".click()");
 }
 
+test("management View opens an authenticated owner profile and returns to its agent", async () => {
+  const page = await createAuthenticatedPage(browser, owner.jwt, servers.webUrl + "/dashboard/agents", { privateKey: owner.wallet.privateKey });
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(String(error)));
+  try {
+    const selector = `a[href^="/dashboard/agents/${agentId}/profile"]`;
+    await page.waitForSelector(selector);
+    await page.click(selector);
+    await page.waitForFunction('document.querySelector("h1")?.textContent === "Mira Voss"');
+    expect(await page.$eval("main", element => element.textContent)).toContain("Patient, observant, and quietly theatrical.");
+    expect(await page.$eval('main a', element => element.getAttribute("href"))).toBe(`/dashboard/agents?at=${agentId}`);
+    await page.click('main a');
+    await page.waitForSelector(`#agent-${agentId}`);
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
 test("management → Edit → Guided/Advanced → review → Reviewing preserves the public version", async () => {
   const page = await createAuthenticatedPage(
     browser,
@@ -545,7 +564,7 @@ async function mockCharacterAssistant(
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (
-      url.pathname === "/api/agent-profiles/creation-assistant" &&
+      ["/api/agent-profiles/creation-assistant", "/api/agent-profiles/edit-assistant"].includes(url.pathname) &&
       request.method() === "POST"
     ) {
       const body = JSON.parse(request.postData()!);
@@ -556,7 +575,7 @@ async function mockCharacterAssistant(
           "Access-Control-Allow-Origin": new URL(servers.webUrl!).origin,
           "Access-Control-Allow-Credentials": "true",
         },
-        body: JSON.stringify({
+        body: JSON.stringify(url.pathname.endsWith("/edit-assistant") ? {tool:"update_character",fields:["personality"]} : {
           command:
             body.stage === "appearance"
               ? "generate_appearance"
@@ -673,6 +692,10 @@ test("Guided creation generates a character and artwork, confirms portrait, revi
     await page.waitForFunction(
       'document.body.innerText.includes("Artwork ready")',
     );
+    await button(page, "Activity");
+    await page.waitForFunction('document.querySelector(\'dialog[open] [aria-label="Image requests"]\')?.textContent.includes("Image ready")');
+    expect(await page.$eval('dialog[open] [aria-label="Image requests"]', element => element.textContent)).toContain("Image ready");
+    await button(page, "Close");
     expect(
       await page.evaluate(
         '[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="Review").disabled',

@@ -2,6 +2,14 @@
 
 # Guided Agent creation
 
+Once a draft has character text, an unscoped `revise_character` turn uses the
+existing strict edit tool to select fields before generation. A gender-only
+request must not regenerate a name, rewrite populated prose, fill optional game
+notes or dispatch images. Explicit section choices already supply that scope.
+The edit tool can instead clarify or route an explicit visual update. Missing
+shared details still follow `characterEditFields`; optional unselected game notes
+remain unchanged.
+
 ## Public preview and signup
 
 `/agents/create` is the canonical public creator for ordinary, join-game, and

@@ -599,7 +599,7 @@ export async function createOwnedAgentProfile(
   }
   await assertAvailableProfileName(db, values.name);
   const contentAssets = await prepareContentAssets({ avatarUrl: values.avatarUrl ?? null, fullBodyReferenceUrl: values.fullBodyReferenceUrl ?? null, portraitCrop: values.portraitCrop ?? null }, {}, {db,userId:context.userId});
-  values.headPosition = await confirmProfileHead(values, null, context.userId, contentAssets);
+  values.headPosition = await confirmProfileHead(values, null, context.userId, contentAssets, context.publicBaseUrl);
   try {
     return await db.transaction(async (tx) => {
       const created = await createAgentProfileInTransaction(tx, values);
@@ -851,7 +851,7 @@ export async function updateOwnedAgentProfileInLockedTransaction(
   existing=await captureExistingAgentBaseline(tx,existing,input.context.contentAssets);
   const draft = await latestSubmittedProfile(tx, existing);
   const updates = prepareAgentProfileUpdates(input.context, input.input, draft.avatarUrl);
-  updates.headPosition = await confirmProfileHead({ ...draft, ...updates }, draft, input.context.userId, input.context.contentAssets);
+  updates.headPosition = await confirmProfileHead({ ...draft, ...updates }, draft, input.context.userId, input.context.contentAssets, input.context.publicBaseUrl);
   let modelPreference = draft.modelPreference;
   if (input.input.modelPreference !== undefined) {
     try { modelPreference = await authorizedModelPreference(tx, input.context.userId, input.input.modelPreference); }

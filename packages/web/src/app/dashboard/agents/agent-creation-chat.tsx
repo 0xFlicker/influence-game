@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   decodeCreationTurn,
+  type CharacterEditCommand,
   type CreationStage,
 } from "@influence/engine/agent-creation-assistant";
 import { apiFetch, ApiError, type AgentGender } from "@/lib/api";
@@ -273,9 +274,33 @@ export function AgentCreationChat({
       } else if (command === "accept_character") {
         reply = advanceAfterApproval();
       } else if (command === "revise_character") {
-        if (!(await onGenerate(request, sections))) return;
-        setStage("review");
-        reply = replies.review;
+        const edit: CharacterEditCommand =
+          hasCharacter && !sections.length
+            ? await apiFetch<CharacterEditCommand>(
+                "/api/agent-profiles/edit-assistant",
+                {
+                  method: "POST",
+                  body: JSON.stringify({
+                    context: { ...profile, hasFullBody: hasImage },
+                    message: request,
+                    history: visibleMessages
+                      .slice(-24)
+                      .map(message => `${message.role}: ${message.text}`.slice(0, 2000)),
+                  }),
+                  signal: AbortSignal.timeout(60_000),
+                },
+              )
+            : { tool: "update_character", fields: sections };
+        if (edit.tool === "clarify") reply = edit.message;
+        else if (edit.tool === "update_visuals") {
+          if (!(await onAppearance(request, hasImage ? "edit" : "create"))) return;
+          setStage("portrait");
+          reply = replies.portrait;
+        } else {
+          if (!(await onGenerate(request, edit.fields))) return;
+          setStage("review");
+          reply = replies.review;
+        }
       } else if (
         command === "generate_appearance" ||
         command === "revise_appearance"
