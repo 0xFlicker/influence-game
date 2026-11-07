@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { renderToString } from "react-dom/server";
 import { PublicAgentProfileView } from "../app/agents/[id]/public-agent-profile";
 import { AgentProfileLink, agentProfileHref } from "../components/agent-profile-link";
+import { CastCard } from "../components/casting/casting-roster";
 import { getServerPublicAgentProfile } from "../lib/server-api";
 import type { PublicAgentProfile } from "../lib/api";
 
@@ -29,6 +30,15 @@ test("agent name navigation validates canonical targets without wrapping sibling
   expect(html).toContain('</a><button>Portrait</button>');
   expect(agentProfileHref("../private")).toBeNull();
   expect(renderToString(<AgentProfileLink href="https://evil.test">Agent</AgentProfileLink>)).toBe("<span>Agent</span>");
+});
+test("joining-game cast cards open public agent profiles while keeping seat controls separate", () => {
+  const html = renderToString(<CastCard name="Agent" src="/agent.png" index={0} eyebrow="Competitor" detail="In the cast"
+    profileHref="/agents/agent-1" onInspect={() => {}} action={<button type="button">Remove</button>} />);
+  expect(html).toContain('href="/agents/agent-1"');
+  expect(html).toContain("</a><button");
+  expect(html).not.toContain('aria-label="Meet Agent"');
+  const unlinked = renderToString(<CastCard name="Guest" src="/guest.png" index={1} eyebrow="Competitor" detail="In the cast" onInspect={() => {}} />);
+  expect(unlinked).toContain('aria-label="Meet Guest"');
 });
 test("server public agent fetch sends no authentication and disables caching", async () => {
   const original = globalThis.fetch;

@@ -25,6 +25,7 @@ function adminAgent(overrides: Partial<AdminAgent> = {}): AdminAgent {
   return {
     ...savedAgent(),
     userId: "user-1",
+    publicProfileAvailable: true,
     ownerWallet: "0x0000000000000000000000000000000000000001",
     ownerDisplayName: "Architect",
     ownerEmail: null,
@@ -58,7 +59,7 @@ describe("current-agent portrait action separation", () => {
     expectSiblingButtons(html, 3);
   });
 
-  it("keeps the admin row passive except for portrait preview and explicit details", () => {
+  it("links the admin agent name to its public profile while keeping details separate", () => {
     const html = renderToString(
       <table>
         <tbody>
@@ -69,7 +70,17 @@ describe("current-agent portrait action separation", () => {
 
     expect(html).toContain('aria-label="View Atlas portrait and stats"');
     expect(html).toContain('aria-label="View Atlas admin details"');
+    expect(html).toContain('href="/agents/agent-1"');
     expect(html).not.toContain("cursor-pointer");
     expectSiblingButtons(html, 2);
+  });
+
+  it("opens admin details for agents without a public profile", () => {
+    const html = renderToString(
+      <table><tbody><AgentRow agent={adminAgent({ publicProfileAvailable: false })} onDetails={() => undefined} /></tbody></table>,
+    );
+
+    expect(html).not.toContain('href="/agents/agent-1"');
+    expect(html).toContain("Atlas</button>");
   });
 });

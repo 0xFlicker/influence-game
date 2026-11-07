@@ -1,11 +1,27 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { listAdminAgents, type AdminAgent } from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
 import { TruncatedAddress } from "@/components/truncated-address";
 import { AgentAvatarPreview } from "@/components/agent-avatar-preview";
 import { AgentModelLabel } from "@/components/agent-model-label";
+import { compareSortValues, SortableColumnHeader, type SortDirection } from "./sortable-column-header";
+
+type AgentSortKey = "name" | "archetype" | "owner" | "games" | "wins" | "winRate" | "created";
+
+function agentSortValue(agent: AdminAgent, key: AgentSortKey): string | number | null {
+  switch (key) {
+    case "name": return agent.name;
+    case "archetype": return getPersonaInfo(agent.personaKey)?.name ?? null;
+    case "owner": return agent.ownerDisplayName ?? agent.ownerEmail ?? agent.ownerWallet;
+    case "games": return agent.gamesPlayed;
+    case "wins": return agent.gamesWon;
+    case "winRate": return agent.gamesPlayed > 0 ? agent.gamesWon / agent.gamesPlayed : null;
+    case "created": return agent.createdAt;
+  }
+}
 
 function getPersonaInfo(key: string | null) {
   if (!key) return undefined;
@@ -200,7 +216,15 @@ export function AgentRow({
             modelPreference={agent.modelPreference}
             size="8"
           />
-          <span className="text-white text-sm font-medium">{agent.name}</span>
+          {agent.publicProfileAvailable ? (
+            <Link href={`/agents/${encodeURIComponent(agent.id)}`} prefetch={false} className="text-white text-sm font-medium hover:underline focus-visible:underline">
+              {agent.name}
+            </Link>
+          ) : (
+            <button type="button" onClick={onDetails} className="text-white text-sm font-medium hover:underline focus-visible:underline">
+              {agent.name}
+            </button>
+          )}
         </div>
       </td>
       <td className="py-3 px-4 text-white/50 text-sm">
@@ -234,9 +258,6 @@ export function AgentRow({
       <td className="py-3 px-4 text-white/50 text-sm text-center">
         {winRate !== null ? `${winRate}%` : "—"}
       </td>
-      <td className="py-3 px-4 text-center">
-        <span className="text-white/20 text-xs">—</span>
-      </td>
       <td className="py-3 px-4 text-white/40 text-xs">
         {new Date(agent.createdAt).toLocaleDateString("en-US", {
           month: "short",
@@ -267,6 +288,13 @@ export function AgentsAdminPanel() {
   const [error, setError] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<AdminAgent | null>(null);
   const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState<AgentSortKey>("created");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+
+  function handleSort(column: AgentSortKey) {
+    setSortDirection(column === sortKey && sortDirection === "asc" ? "desc" : "asc");
+    setSortKey(column);
+  }
 
   const fetchAgents = useCallback(async () => {
     setError(null);
@@ -293,6 +321,13 @@ export function AgentsAdminPanel() {
           (a.ownerDisplayName?.toLowerCase().includes(search.toLowerCase()) ?? false),
       )
     : agents;
+  const sorted = [...filtered].sort((a, b) => {
+    const aValue = agentSortValue(a, sortKey);
+    const bValue = agentSortValue(b, sortKey);
+    if (aValue === null || bValue === null) return aValue === null ? (bValue === null ? 0 : 1) : -1;
+    return compareSortValues(aValue, bValue) * (sortDirection === "asc" ? 1 : -1)
+      || a.id.localeCompare(b.id);
+  });
 
   return (
     <div>
@@ -331,22 +366,25 @@ export function AgentsAdminPanel() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-white/10">
-                {["Agent", "Archetype", "Owner", "Games", "Wins", "Win %", "ELO", "Created", "Actions"].map(
-                  (h) => (
-                    <th
-                      key={h}
-                      className={`text-left py-3 px-4 text-xs text-white/30 font-medium ${
-                        ["Games", "Wins", "Win %", "ELO"].includes(h) ? "text-center" : ""
-                      } ${h === "Actions" ? "text-right" : ""}`}
-                    >
-                      {h}
-                    </th>
-                  ),
-                )}
+                {([
+                  ["name", "Agent"], ["archetype", "Archetype"], ["owner", "Owner"],
+                  ["games", "Games"], ["wins", "Wins"], ["winRate", "Win %"], ["created", "Created"],
+                ] as const).map(([key, label]) => (
+                  <SortableColumnHeader
+                    key={key}
+                    column={key}
+                    label={label}
+                    sortKey={sortKey}
+                    direction={sortDirection}
+                    onSort={handleSort}
+                    align={["games", "wins", "winRate"].includes(key) ? "center" : "left"}
+                  />
+                ))}
+                <th scope="col" className="py-3 px-4 text-right text-xs font-medium text-white/30">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((agent) => (
+              {sorted.map((agent) => (
                 <AgentRow
                   key={agent.id}
                   agent={agent}

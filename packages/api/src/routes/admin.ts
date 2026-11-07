@@ -63,6 +63,8 @@ import { getGameSeasonIdentityMap } from "../lib/game-season.js";
 import { generateUniqueSlug } from "../lib/slug.js";
 import { randomUUID } from "crypto";
 import { getPublicDisplayName } from "../lib/display-name.js";
+import { isImportedSyntheticPlayer } from "../services/public-player-identity.js";
+import { hasEligibleAgentContent } from "../services/agent-content-eligibility.js";
 import {
   isDailyFreeBusyGameStatus,
   removeStandingDailyAgentByAdmin,
@@ -445,6 +447,7 @@ export function createAdminRoutes(
     };
     const allUsers = await db.select({
       id: schema.users.id,
+      publicId: schema.users.publicId,
       walletAddress: schema.users.walletAddress,
       email: userEmailProjection(emailAccessInput),
       canReadEmail: userEmailAccessProjection(emailAccessInput),
@@ -457,12 +460,14 @@ export function createAdminRoutes(
       const {
         canReadEmail,
         displayNameContainsEmail,
+        publicId,
         ...serializedUser
       } = user;
       const resolved = await getPermissionsForUser(db, user.id);
 
       return {
         ...serializedUser,
+        publicProfileId: isImportedSyntheticPlayer(user.walletAddress) ? null : publicId,
         displayName: userDisplayNameForEmailPolicy({
           canReadEmail,
           displayNameContainsEmail,
@@ -507,6 +512,9 @@ export function createAdminRoutes(
         ownerEmail: userEmailProjection(emailAccessInput),
         canReadOwnerEmail: userEmailAccessProjection(emailAccessInput),
         ownerDisplayNameContainsEmail: userDisplayNameContainsEmailProjection(),
+        archivedAt: schema.agentProfiles.archivedAt,
+        moderationRequired: schema.agentProfiles.moderationRequired,
+        contentRevisionId: schema.agentProfiles.contentRevisionId,
       })
       .from(schema.agentProfiles)
       .innerJoin(schema.users, sql`${schema.agentProfiles.userId} = ${schema.users.id}`);
@@ -515,10 +523,15 @@ export function createAdminRoutes(
       const {
         canReadOwnerEmail,
         ownerDisplayNameContainsEmail,
+        archivedAt,
+        moderationRequired,
+        contentRevisionId,
         ...serializedProfile
       } = profile;
       return {
         ...serializedProfile,
+        publicProfileAvailable: hasEligibleAgentContent({ archivedAt, moderationRequired, contentRevisionId })
+          && !isImportedSyntheticPlayer(profile.ownerWallet),
         ownerDisplayName: userDisplayNameForEmailPolicy({
           canReadEmail: canReadOwnerEmail,
           displayNameContainsEmail: ownerDisplayNameContainsEmail,

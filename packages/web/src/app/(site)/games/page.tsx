@@ -1,7 +1,6 @@
 import { Nav } from "@/components/nav";
 import { HOUSE_VENUE } from "@/lib/product-identity";
 import { PagedGamesInitial } from "@/app/games/paged-server";
-import Link from "next/link";
 import { Suspense } from "react";
 
 export const metadata = {
@@ -21,7 +20,6 @@ export default function GamesPage() {
           Find a House game to enter. Find an episode to get lost in.
         </p>
 
-        <Link href="/games/new" className="mb-6 inline-block rounded-lg border border-white/20 px-4 py-2 text-sm">Create game →</Link>
         <Suspense fallback={<div className="episode-grid" role="status" aria-label="Loading games"><div className="episode-skeleton" /><div className="episode-skeleton" /></div>}>
           <PagedGamesInitial />
         </Suspense>

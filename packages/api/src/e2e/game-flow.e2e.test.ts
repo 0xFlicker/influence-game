@@ -272,7 +272,7 @@ describe("E2E: Full Game Flow", () => {
           return originalFetch(input, init);
         }) as typeof fetch;
       });
-      await page.goto(`${servers.webUrl}/games`, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle2", timeout: 30000 });
       await page.waitForSelector('[aria-label="Search games"]', { timeout: 15000 });
       // Enter and settle search first: React development mode may mount effects
       // twice. Arm the failure on the next regular poll, not during that setup.

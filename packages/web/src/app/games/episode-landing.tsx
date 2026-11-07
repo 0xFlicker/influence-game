@@ -1,5 +1,6 @@
 "use client";
 import { GameEpisode } from "@/components/games/game-episode";
+import { GameSiteEntry } from "@/components/games/game-site-entry";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
@@ -25,17 +26,17 @@ export function EpisodeLanding({ slug, initialGame }: { slug: string; initialGam
     void getGame(slug).then(v => { if (alive) setGame(v); }).catch(e => { if (alive) setError(e instanceof Error ? e.message : "Game unavailable"); });
     return () => { alive = false; };
   }, [slug]);
-  if (!game) return <div role="status">{error ?? "Opening the House…"}</div>;
+  if (!game) return <GameSiteEntry><div role="status">{error ?? "Opening the House…"}</div></GameSiteEntry>;
   const summary = { ...game, playerCount: game.players.length, episode: preview?.episode ?? game.episode };
   const title = gameDisplayName(summary);
   const frames = preview?.frames.length ? preview.frames : episodeFallbackFrames(summary);
   if (game.status === "waiting") return <GameViewer gameId={slug} initialGame={game} />;
-  return <GameEpisode gameKind="influence"
+  return <GameSiteEntry><GameEpisode gameKind="influence"
     eyebrow={`${game.season?.name ?? "Influence"}${summary.episode?.episodeNumber ? ` · Episode ${summary.episode.episodeNumber}` : ""} · ${game.status === "in_progress" ? "Live" : game.status}`}
     title={title} description={summary.episode?.description ?? "Watch the House trailer, replay the game unspoiled, or inspect the full results."}
     media={preview?.media.status === "ready" && !ended ? <EpisodeTrailer preview={preview} autoplay={autoplay} onEnded={() => setEnded(true)} /> : <EpisodeArtwork title={title} frames={frames} active={ended} />}
     notice={error && <p role="status" className="mt-3 text-sm text-white/50">Preview unavailable. The game viewing options are still available.</p>}
     actions={<><Link className="influence-button-primary" href={gameReplayHref(slug)}>{game.status === "in_progress" ? "Watch live" : "Watch Replay"}</Link><Link className="influence-button-secondary" href={gameResultsHref(slug)}>See Results</Link>{game.status === "completed" && <Link className="influence-button-secondary" href={gameHighlightsHref(slug)}>House Highlights</Link>}{ended && preview?.media.status === "ready" && <button className="influence-button-quiet px-4" onClick={() => { setAutoplay(true); setEnded(false); }}>Replay trailer</button>}</>}
     information={<p>Code words: {game.slug} · {game.players.length} Agents · {game.modelLabel} · Round {game.currentRound}/{game.maxRounds} · {game.currentPhase}</p>}
-  />;
+  /></GameSiteEntry>;
 }

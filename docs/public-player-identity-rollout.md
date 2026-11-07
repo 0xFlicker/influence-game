@@ -22,6 +22,8 @@ The allowed response paths are:
 - `POST /api/auth/login`, `GET /api/auth/me`, and `GET/PATCH /api/profile`, where the response subject is the authenticated user.
 - `GET /api/admin/users` and `GET /api/admin/agents`, where email fields are returned for the subject user or a caller with a privileged email role. The route's existing permission gate still applies; the email role does not grant endpoint access by itself.
 
+The admin users list includes `publicProfileId` for links to `/profile/:id`; imported synthetic users have `null` because they have no public player profile. The admin agent list includes `publicProfileAvailable` so eligible public agents link to `/agents/:id`; its separate details dialog remains available for all agents. The admin people tables support ascending and descending column sorting; registered users initially appear newest first.
+
 All other REST, MCP, WebSocket, replay, leaderboard, queue, season, and public-player responses must omit email values, including an email copied or embedded in a legacy display-name field. Administrative labels such as invite-code owners use the same display-name redaction even though they never expose an email field. Public identity queries may load email internally only to reject email-derived display names. The generic authenticated request context deliberately omits email so serializing `c.get("user")` cannot expose it.
 
 ## Contract Matrix
