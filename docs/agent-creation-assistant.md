@@ -97,6 +97,8 @@ Agent management opens an owner's profile from the agent image or name. Both
 share one keyboard-focusable link and preserve the list's return position. Edit
 remains the card's primary button; there is no separate View button.
 The Needs attention panel is hidden when no agents need attention.
+The owner profile's Agents link sits above the background panel, aligned with the
+profile heading and separated by a 16px gap on desktop and mobile.
 
 Pending images appear in both the editor and agent management. View reconnects to
 the correct workspace; Cancel keeps character edits while retiring image work.

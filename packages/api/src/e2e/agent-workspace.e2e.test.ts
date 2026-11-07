@@ -193,6 +193,8 @@ test("management image and name open the owner profile and return to its agent",
         await page.waitForFunction('document.querySelector("h1")?.textContent === "Mira Voss"');
         expect(await page.$eval("main", element => element.textContent)).toContain("Patient, observant, and quietly theatrical.");
         expect(await page.$eval('main a', element => element.getAttribute("href"))).toBe(`/dashboard/agents?at=${agentId}`);
+        expect(await page.evaluate('(()=>{const back=document.querySelector("main nav a").getBoundingClientRect();const heading=document.querySelector("main h1");const card=heading.closest("section").getBoundingClientRect();return back.bottom+16<=card.top && Math.abs(back.left-heading.getBoundingClientRect().left)<1;})()')).toBe(true);
+        if (target === "img") await page.screenshot({ path: proof + `owner-profile-${viewport.width}.png`, fullPage: true });
         await page.click('main a');
         await page.waitForSelector(`#agent-${agentId}`);
       }

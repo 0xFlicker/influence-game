@@ -443,6 +443,17 @@
   justify-content: center;
 }
 
+.profileNavigation {
+  max-width: 1600px;
+  margin: 0 auto 16px;
+  padding-inline: clamp(20px, 3.5vw, 56px);
+  color: #f3e9d9;
+}
+.profileNavigation a:focus-visible {
+  outline: 2px solid #e0c193;
+  outline-offset: 3px;
+}
+
 /* The creator is one stage in both modes. The hall and selected character stay
    in place while the conversation gives way to editable fields. */
 .workspace {
@@ -797,6 +808,9 @@
   }
 }
 @media (max-width: 640px) {
+  .profileNavigation {
+    padding-inline: 16px;
+  }
   .workspace {
     padding: 0 16px;
     background-position: 45% top;

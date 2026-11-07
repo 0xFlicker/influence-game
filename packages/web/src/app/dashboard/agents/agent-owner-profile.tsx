@@ -52,65 +52,71 @@ export function AgentOwnerProfile({
     agent;
   const state = agent.ownerContent?.reviewState;
   return (
-    <section className={styles.workspace}>
-      <Link href={collectionPath}>← Agents</Link>
-      <header className={styles.heading}>
-        <h1>{content.name}</h1>
-        <Link
-          href={withManagementReturn(
-            "/dashboard/agents/" + id + "/edit",
-            collectionPath,
-          )}
-        >
-          Edit
+    <>
+      <nav className={styles.profileNavigation} aria-label="Agent navigation">
+        <Link className="inline-flex min-h-11 items-center" href={collectionPath}>
+          ← Agents
         </Link>
-      </header>
-      {state && state !== "accepted" && (
-        <section className={styles.activity} role="status">
-          <strong>
-            {state === "reviewing" ? "Reviewing" : "Held for moderation"}
-          </strong>
-          {agent.ownerContent?.reviewMessage && (
-            <p>{agent.ownerContent.reviewMessage}</p>
-          )}
-          <p>
-            {agent.contentRevisionId
-              ? "Your last accepted version remains public and usable."
-              : "Only you can view this submission until it is accepted."}
-          </p>
-        </section>
-      )}
-      {state === "accepted" && agent.ownerContent?.entryIntent && (
-        <Link
-          className="action"
-          href={agentPreparationHref(id, agent.ownerContent.entryIntent)}
-        >
-          Continue
-        </Link>
-      )}
-      <div className={styles.layout}>
-        <aside className={styles.art}>
-          {(content.fullBodyReferenceUrl || content.avatarUrl) && (
-            <OwnedCharacterImage
-              src={
-                agent.ownerContent?.published
-                  ? (agent.transparentBodyUrl ??
-                    content.fullBodyReferenceUrl ??
-                    content.avatarUrl ??
-                    "")
-                  : (content.fullBodyReferenceUrl ?? content.avatarUrl ?? "")
-              }
-              alt={content.name}
-            />
-          )}
-        </aside>
-        <section>
-          <h2>Personality</h2>
-          <p className="whitespace-pre-wrap">{content.personality}</p>
-          <h2 className="mt-6">Backstory</h2>
-          <p className="whitespace-pre-wrap">{content.backstory}</p>
-        </section>
-      </div>
-    </section>
+      </nav>
+      <section className={styles.workspace}>
+        <header className={styles.heading}>
+          <h1>{content.name}</h1>
+          <Link
+            href={withManagementReturn(
+              "/dashboard/agents/" + id + "/edit",
+              collectionPath,
+            )}
+          >
+            Edit
+          </Link>
+        </header>
+        {state && state !== "accepted" && (
+          <section className={styles.activity} role="status">
+            <strong>
+              {state === "reviewing" ? "Reviewing" : "Held for moderation"}
+            </strong>
+            {agent.ownerContent?.reviewMessage && (
+              <p>{agent.ownerContent.reviewMessage}</p>
+            )}
+            <p>
+              {agent.contentRevisionId
+                ? "Your last accepted version remains public and usable."
+                : "Only you can view this submission until it is accepted."}
+            </p>
+          </section>
+        )}
+        {state === "accepted" && agent.ownerContent?.entryIntent && (
+          <Link
+            className="action"
+            href={agentPreparationHref(id, agent.ownerContent.entryIntent)}
+          >
+            Continue
+          </Link>
+        )}
+        <div className={styles.layout}>
+          <aside className={styles.art}>
+            {(content.fullBodyReferenceUrl || content.avatarUrl) && (
+              <OwnedCharacterImage
+                src={
+                  agent.ownerContent?.published
+                    ? (agent.transparentBodyUrl ??
+                      content.fullBodyReferenceUrl ??
+                      content.avatarUrl ??
+                      "")
+                    : (content.fullBodyReferenceUrl ?? content.avatarUrl ?? "")
+                }
+                alt={content.name}
+              />
+            )}
+          </aside>
+          <section>
+            <h2>Personality</h2>
+            <p className="whitespace-pre-wrap">{content.personality}</p>
+            <h2 className="mt-6">Backstory</h2>
+            <p className="whitespace-pre-wrap">{content.backstory}</p>
+          </section>
+        </div>
+      </section>
+    </>
   );
 }

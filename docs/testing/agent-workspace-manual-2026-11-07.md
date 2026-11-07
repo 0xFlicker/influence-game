@@ -176,3 +176,10 @@ Voice options now show catalog Male/Female labels beside each name and on the
 selected voice. The 21-test editor/recovery suite and existing Advanced creation
 browser journey passed, including voice selection and audition separation.
 Typecheck, lint and `git diff --check` passed.
+
+The owner profile back link now sits outside the background panel, aligned with
+the heading and separated from the panel by 16px. The existing management
+browser journey passed desktop/mobile geometry and return-navigation checks
+(31 assertions). Typecheck, lint and `git diff --check` passed. Screenshots:
+`.renders/agent-workspace/owner-profile-1440.png` and
+`.renders/agent-workspace/owner-profile-390.png`.
