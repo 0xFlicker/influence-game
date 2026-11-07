@@ -244,3 +244,16 @@ alignment at 1440px, 1024px and 390px, support/recovery access through Activity
 and unchanged card positions through review acceptance. Typecheck, lint and
 `git diff --check` passed. Evidence: the existing management-profile-link width
 screenshots and `.renders/agent-workspace/stable-gallery-accepted.png`.
+
+## Follow-up: quiet ready cards
+
+Ready agents no longer display Accepted. Their status row keeps a 20px minimum
+height so completion of review does not move cards or actions. Reviewing, held,
+image preparation and failures remain visible; missing full-body artwork and
+artwork conflicts receive actionable status copy. During edits the secondary
+line says Current version stays usable. Game/season continuation copy uses ready.
+
+Both management/profile and review-completion browser journeys passed (87
+assertions), including an empty ready status and unchanged card geometry.
+Typecheck, lint and `git diff --check` passed. Updated visual evidence remains
+`.renders/agent-workspace/stable-gallery-accepted.png`.

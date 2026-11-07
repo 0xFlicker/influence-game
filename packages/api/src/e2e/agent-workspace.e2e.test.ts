@@ -1658,6 +1658,7 @@ test("review acceptance keeps gallery order and card positions unchanged", async
         }),
       );
     const before = await positions();
+    expect(await page.$eval(`#agent-${target.id} > p:first-of-type`, element => element.textContent)).toBe("Reviewing");
     await database.db
       .update(schema.agentScreenings)
       .set({ status: "completed", recommendation: "no_concern" })
@@ -1679,6 +1680,7 @@ test("review acceptance keeps gallery order and card positions unchanged", async
       "#agent-" + target.id + '[data-review-state="accepted"]',
     );
     const after = await positions();
+    expect(await page.$eval(`#agent-${target.id} > p:first-of-type`, element => element.textContent)).toBe("");
     expect(after.map((row) => row.id)).toEqual(before.map((row) => row.id));
     before.forEach((row, index) => {
       expect(Math.abs(row.top - after[index]!.top)).toBeLessThanOrEqual(1);

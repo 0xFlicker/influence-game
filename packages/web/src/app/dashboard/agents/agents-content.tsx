@@ -161,7 +161,7 @@ export function AgentsContent() {
       {entryAgents.map((agent) => (
         <section key={agent.id} className={styles.attentionRow}>
           <p>
-            {agent.name} is accepted. Continue to your selected{" "}
+            {agent.name} is ready. Continue to your selected{" "}
             {agent.entryIntent?.flow === "join_game" ? "game" : "season"}.
           </p>
           <Link

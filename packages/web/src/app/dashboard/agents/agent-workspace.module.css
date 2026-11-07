@@ -332,6 +332,8 @@
 .status {
   color: var(--gold);
   font-size: 13px;
+  min-height: 20px;
+  line-height: 20px;
   margin-top: 6px;
 }
 .drafts {

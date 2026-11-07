@@ -11,6 +11,7 @@ export function agentActivity(agent: SavedAgent) {
   if (agent.reviewState === "held") return "Held for moderation";
   if (agent.visualActivity?.status === "ready") return "Artwork ready";
   if (agent.visualActivity?.status === "failed") return "Preparation failed";
+  if (agent.visualActivity?.status === "conflict") return "Artwork needs review";
   if (["queued", "processing"].includes(agent.visualActivity?.status ?? ""))
     return (
       (
@@ -22,7 +23,8 @@ export function agentActivity(agent: SavedAgent) {
         } as Record<string, string>
       )[agent.visualActivity?.stage ?? ""] ?? "Preparing images"
     );
-  return "Accepted";
+  if (!agent.fullBodyReferenceUrl) return "Full-body image missing";
+  return null;
 }
 export function agentNeedsAttention(agent: SavedAgent) {
   return (
@@ -85,7 +87,7 @@ export function AgentList({
               agent.contentRevisionId && agent.reviewState !== "accepted",
             )}
           >
-            Accepted version available
+            Current version stays usable
           </p>
           <div className={styles.meta}>
             <p>
