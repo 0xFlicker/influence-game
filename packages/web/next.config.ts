@@ -13,7 +13,10 @@ const nextConfig: NextConfig = {
   ...(process.env.NEXT_PUBLIC_E2E_AUTH === "true" ? { devIndicators: false as const } : {}),
   // Transpile Privy + wagmi packages as needed
   transpilePackages: [],
-  outputFileTracingIncludes: { "/rules": ["../../docs/rules-page-content.md", "../../docs/werewolf-rules-page-content.md"] },
+  outputFileTracingIncludes: {
+    "/rules": ["../../docs/rules-page-content.md", "../../docs/werewolf-rules-page-content.md"],
+    "/sitemap.xml": ["./content/updates/*.md"],
+  },
   images: {
     remotePatterns: [
       {
