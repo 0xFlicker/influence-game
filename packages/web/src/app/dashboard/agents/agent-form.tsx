@@ -18,7 +18,6 @@ import { defaultWerewolfStrategy } from "@influence/engine/werewolf/strategy";
 
 import {
   characterEditFields,
-  VISUAL_FIELDS,
   type CharacterEditCommand,
   type CharacterField,
 } from "@influence/engine/agent-creation-assistant";
@@ -1075,9 +1074,7 @@ export function AgentForm({
         return;
       }
       const fields = characterEditFields(context, command.fields);
-      const images =
-        command.tool === "update_visuals" ||
-        command.fields.some((field) => VISUAL_FIELDS.includes(field));
+      const images = command.generateImages;
       const success = await handleGenerate({
         message,
         sections: fields,
@@ -1237,7 +1234,7 @@ export function AgentForm({
           ? ["visualDesign"]
           : (options?.sections as CharacterField[] | undefined),
         changeRequest: options
-          ? `${options.appearance ? "Update visualDesign using this appearance request. Preserve the character's identity. " : "Develop a rich character prompt with concrete motivations, voice, flaws, relationships and game behavior. "}${options.sections?.length ? `Change only these sections: ${options.sections.join(", ")}. ` : ""}${request}`
+          ? `${options.appearance ? "Update visualDesign using this appearance request. Preserve the character's identity. " : ""}${request}`
           : request.trim() || undefined,
         allowPersonaChange: options
           ? !options.appearance &&
@@ -1267,8 +1264,10 @@ export function AgentForm({
           gender: gender || undefined,
           performanceInstructions,
           visualDesign: visualDesign ?? "",
-          avatarUrl: avatarUrl ?? null,
-          fullBodyReferenceUrl,
+          ...((options?.appearance || options?.images) ? {
+            avatarUrl: avatarUrl ?? null,
+            fullBodyReferenceUrl,
+          } : {}),
         };
       } else {
         if (!allowAIChoose) params.archetype = personaKey ?? "strategic";
@@ -2246,8 +2245,8 @@ export function AgentForm({
                   personaKey: personaKey ?? "",
                   gender,
                 }}
-                onGenerate={async (message, sections) =>
-                  Boolean(await handleGenerate({ message, sections }))
+                onGenerate={async (message, sections, images) =>
+                  Boolean(await handleGenerate({ message, sections, images }))
                 }
                 onAppearance={async (message, operation) =>
                   Boolean(

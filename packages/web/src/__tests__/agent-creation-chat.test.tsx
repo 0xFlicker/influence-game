@@ -19,7 +19,7 @@ beforeEach(() => {
   dom = new Window({ url: "http://localhost" });
   for (const key of globalKeys) Object.defineProperty(globalThis, key, { configurable: true, value: key === "window" ? dom : dom[key] });
   command = "accept_character"; clarification = "Which direction would you like to try?"; generated = []; appearances = []; fetchCalls = 0;
-  globalThis.fetch = Object.assign(async (input:RequestInfo|URL) => { fetchCalls++; return Response.json(String(input).includes("/edit-assistant") ? {tool:"update_character",fields:["personality"]} : { command, reply: command === "clarify" ? clarification : "" }); }, { preconnect: originalFetch.preconnect });
+  globalThis.fetch = Object.assign(async (input:RequestInfo|URL) => { fetchCalls++; return Response.json(String(input).includes("/edit-assistant") ? {tool:"update_character",fields:["personality"],generateImages:false} : { command, reply: command === "clarify" ? clarification : "" }); }, { preconnect: originalFetch.preconnect });
 });
 afterEach(() => {
   cleanup(); dom.close(); globalThis.fetch = originalFetch;
@@ -37,7 +37,7 @@ test.each(["update_character","clarify"] as const)("unscoped revisions use exact
   const calls:{path:string;body:Record<string,unknown>}[]=[];
   globalThis.fetch=Object.assign(async(input:RequestInfo|URL,init?:RequestInit)=>{
     const path=String(input);calls.push({path,body:JSON.parse(String(init?.body))});
-    return Response.json(path.includes("/edit-assistant") ? tool === "clarify" ? {tool,message:"Which field do you want to change?"} : {tool,fields:["gender"]} : {command:"revise_character",reply:""});
+    return Response.json(path.includes("/edit-assistant") ? tool === "clarify" ? {tool,message:"Which field do you want to change?"} : {tool,fields:["gender"],generateImages:false} : {command:"revise_character",reply:""});
   },{preconnect:originalFetch.preconnect}) as typeof fetch;
   const changes: string[][]=[];
   const view=render(<AgentCreationChat profile={profile} editing onGenerate={async(_message,fields)=>{changes.push(fields);return true;}} onAppearance={async()=>{throw Error("Unexpected image generation");}} busy={false} blocked={false} headRequired={false} hasImage onHeadshot={()=>{}} />);

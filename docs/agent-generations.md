@@ -6,6 +6,11 @@ the owner's decision. Admission and ready responses refresh Activity immediately
 a request starting before its list row arrives has a startup status. Ready
 candidates remain in Activity even when also visible beside the form.
 
+Character editing carries explicit artwork intent separately from selected text
+fields. Updating gendered wording in an appearance/performance description or
+filling missing details does not request an image. Mixed text-and-art requests
+can request both without inferring a paid dispatch merely from a field name.
+
 Agent creation, editing, management and MCP share the owner-scoped generation
 list. It includes unfinished agents and requests whose original drafts no longer
 exist. Reads return operational metadata only and never start or resume providers.

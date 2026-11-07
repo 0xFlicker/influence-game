@@ -3,12 +3,14 @@
 # Guided Agent creation
 
 Once a draft has character text, an unscoped `revise_character` turn uses the
-existing strict edit tool to select fields before generation. A gender-only
-request must not regenerate a name, rewrite populated prose, fill optional game
-notes or dispatch images. Explicit section choices already supply that scope.
-The edit tool can instead clarify or route an explicit visual update. Missing
-shared details still follow `characterEditFields`; optional unselected game notes
-remain unchanged.
+existing strict edit tool to select fields before generation. Gender edits may
+update pronouns and gendered references in related text, and character edits can
+complete missing fields, including game notes. Populated unrelated content and
+the existing name stay fixed unless the user requests a change. Explicit section
+choices supply the requested scope; focused strategy edits stay isolated to that
+game. The tool carries an explicit `generateImages` decision, so text consistency
+in appearance/performance notes does not itself dispatch artwork. Image requests
+still require explicit intent, and all text changes appear in the review.
 
 ## Public preview and signup
 
@@ -179,7 +181,7 @@ interactive character creation uses Standard instead.
 ## Advanced edit and incomplete profiles
 
 The Workshop sends incomplete drafts to inference; missing gender or archetype
-does not block an assistant turn. Strategy-only edits select only the requested game block, even if shared fields or the other strategy are blank. Other character edits include missing shared details in the structured profile writer's selection; unselected game strategy blocks stay unchanged. Guided appearance revisions explicitly select visual design, apply any missing shared details returned by that same selection, and keep populated character fields. An older agent with blank optional game notes can revise its appearance without generating those notes. Text-only strategy edits do not read existing image files. Gender and archetype come
+does not block an assistant turn. Strategy-only edits select only the requested game block, even if shared fields or the other strategy are blank. Other character edits include missing fields in the structured profile writer's selection, including empty game notes; populated unrelated blocks stay unchanged. Guided appearance revisions select visual design, complete missing details and keep populated unrelated character fields. Text-only edits omit image references, including gendered wording corrections to appearance notes. Gender and archetype come
 from validated enum fields in its response, never from application parsing of
 character prose. A missing archetype is sent as missing rather than silently
 replaced with Strategist.

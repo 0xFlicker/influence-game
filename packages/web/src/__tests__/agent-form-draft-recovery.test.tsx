@@ -170,26 +170,29 @@ describe("agent workspace drafts",()=>{
   input.focus();fireEvent.input(input,{target:{value:"A fresh name"}});fireEvent.keyUp(input,{key:"e"});
   expect(view.queryByText("This name is already in use.")).toBeNull();
  });
- test("an unscoped Guided gender edit preserves populated identity, optional game notes and artwork",async()=>{
+ test("a Guided gender edit updates related wording and missing notes while preserving identity and artwork",async()=>{
   const paths:string[]=[];
   globalThis.fetch=Object.assign(async(input:RequestInfo|URL)=>{
     const path=String(input);paths.push(path);
     if(path.includes("/generations")) return Response.json([]);
     if(path.endsWith("/creation-assistant")) return Response.json({command:"revise_character",reply:""});
-    if(path.endsWith("/edit-assistant")) return Response.json({tool:"update_character",fields:["gender"]});
-    if(path.endsWith("/generate")) return Response.json({name:"Unrequested rename",gender:"male",personaKey:"strategic",personality:"Unrequested personality",backstory:"Unrequested backstory",strategyStyle:"Unrequested Influence notes",werewolfStrategyStyle:"Unrequested Werewolf notes",visualDesign:"Unrequested appearance",performanceInstructions:"Unrequested performance"});
+    if(path.endsWith("/edit-assistant")) return Response.json({tool:"update_character",fields:["gender","backstory","visualDesign"],generateImages:false});
+    if(path.endsWith("/generate")) return Response.json({name:"Unrequested rename",gender:"male",personaKey:"strategic",personality:"Unrequested personality",backstory:"He was a chef.",strategyStyle:"Unrequested Influence notes",werewolfStrategyStyle:"Compare claims before voting.",visualDesign:"He wears a bronze coat.",performanceInstructions:"Unrequested performance"});
     throw Error(`Unexpected request ${path}`);
   },{preconnect:originalFetch.preconnect}) as typeof fetch;
-  const view=await ready(undefined,{visualDesign:"Original appearance",performanceInstructions:"Original performance"});
+  const view=await ready(undefined,{backstory:"She was a chef.",visualDesign:"She wears a bronze coat.",performanceInstructions:"Original performance"});
   fireEvent.click(view.getByRole("button",{name:"Guided"}));
-  fireEvent.input(view.getByLabelText("Message the character assistant"),{target:{value:"Make male. Change only gender."}});
+  fireEvent.input(view.getByLabelText("Message the character assistant"),{target:{value:"Make him male and keep the text consistent."}});
   fireEvent.click(view.getByRole("button",{name:"Send"}));
   await waitFor(()=>expect((view.getByRole("button",{name:"Send"}) as HTMLButtonElement).disabled).toBe(true));
   await waitFor(()=>expect((view.getByRole("radio",{name:"Male"}) as HTMLInputElement).checked).toBe(true));
   await waitFor(()=>expect(view.queryByRole("button",{name:"Assistant working"})).toBeNull());
   fireEvent.click(view.getByRole("button",{name:"Review"}));
   const review=view.getByRole("dialog",{name:"Review changes"});
-  expect(Array.from(review.querySelectorAll("strong"),element=>element.textContent)).toEqual(["Gender"]);
+  expect(Array.from(review.querySelectorAll("strong"),element=>element.textContent)).toEqual(["Gender","Backstory","Werewolf strategy","Appearance"]);
+  expect(review.textContent).toContain("She was a chef.");
+  expect(review.textContent).toContain("He was a chef.");
+  expect(review.textContent).not.toContain("Unrequested");
   expect(view.container.querySelector('img[src="/avatars/arden.png"]')).toBeTruthy();
   expect(paths.some(path=>path.endsWith("/visual-reference"))).toBe(false);
  });
@@ -232,9 +235,9 @@ test("draft rebase preserves independent remote edits and treats artwork as one 
   expect(result.conflicts).toEqual(["images"]);
 });
 
-test("Revise sends an appearance-only edit and preserves an empty Werewolf strategy", async () => {
+test("Revise sends an appearance edit and completes missing Werewolf notes", async () => {
   domWindow.sessionStorage.removeItem(draftKey);
-  const generated = { ...agent(), gender:"non-binary", performanceInstructions:"Measured gestures.", visualDesign:"A green coat.", werewolfStrategyStyle:"", introQuips:["One", "Two", "Three"] };
+  const generated = { ...agent(), gender:"non-binary", performanceInstructions:"Measured gestures.", visualDesign:"A green coat.", werewolfStrategyStyle:"Compare claims before voting.", introQuips:["One", "Two", "Three"] };
   const requests:Record<string,unknown>[]=[];
   globalThis.fetch=Object.assign(async(input:RequestInfo|URL,init?:RequestInit)=>{
     const path=String(input);
@@ -252,7 +255,7 @@ test("Revise sends an appearance-only edit and preserves an empty Werewolf strat
   await waitFor(()=>expect(requests).toHaveLength(1));
   expect(requests[0]).toMatchObject({selectedFields:["visualDesign"],existingProfile:{werewolfStrategyStyle:"",performanceInstructions:""}});
   await waitFor(()=>expect((view.container.querySelector("#agent-visual-design") as HTMLTextAreaElement)?.value).toBe("A green coat."));
-  expect((view.container.querySelector("#agent-werewolfStrategyStyle") as HTMLTextAreaElement)?.value).toBe("");
+  expect((view.container.querySelector("#agent-werewolfStrategyStyle") as HTMLTextAreaElement)?.value).toBe("Compare claims before voting.");
   expect((view.container.querySelector("#agent-performance") as HTMLTextAreaElement)?.value).toBe("Measured gestures.");
   await view.findByRole("button",{name:"Send"});
   expect((view.getByRole("textbox",{name:"Message the character assistant"}) as HTMLTextAreaElement).value).toBe("");

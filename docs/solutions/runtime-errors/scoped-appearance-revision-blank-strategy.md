@@ -13,12 +13,15 @@ request. Its validator required nonempty game notes and rejected the preserved
 blank block. Clearing image work was unrelated to that text validation failure.
 
 Guided appearance revision now explicitly selects `visualDesign`. Both the API
-and editor use `characterEditFields` to include missing shared character details
-and preserve populated fields. Optional unselected game notes stay unchanged;
-the strict output validator remains enforced. Newly filled performance
+and editor use `characterEditFields` to include missing character details
+and preserve populated fields. The owner clarified that completing empty game
+notes is welcome during character edits, so these are now explicitly selected
+for completion rather than rejected or silently treated as populated notes.
+Focused strategy-only edits remain isolated. The strict output validator remains
+enforced. Newly filled performance
 instructions are also used in the following image request.
 
 Regression coverage includes the real API validator with mocked provider output,
 the editor field selection and missing-detail application, and the browser path
-Clear → Revise → queued image with blank Werewolf notes. Assistant failures also
+Clear → Revise → queued image while completing blank Werewolf notes. Assistant failures also
 return their request ID for Support references and matching API logs.

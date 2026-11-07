@@ -91,6 +91,7 @@ export function AgentCreationChat({
   onGenerate: (
     message: string,
     sections: CharacterSection[],
+    generateImages: boolean,
   ) => Promise<boolean>;
   onAppearance: (
     description: string,
@@ -290,14 +291,14 @@ export function AgentCreationChat({
                   signal: AbortSignal.timeout(60_000),
                 },
               )
-            : { tool: "update_character", fields: sections };
+            : { tool: "update_character", fields: sections, generateImages: false };
         if (edit.tool === "clarify") reply = edit.message;
         else if (edit.tool === "update_visuals") {
           if (!(await onAppearance(request, hasImage ? "edit" : "create"))) return;
           setStage("portrait");
           reply = replies.portrait;
         } else {
-          if (!(await onGenerate(request, edit.fields))) return;
+          if (!(await onGenerate(request, edit.fields, edit.generateImages))) return;
           setStage("review");
           reply = replies.review;
         }

@@ -130,3 +130,28 @@ quota contact, moderation and stale-slot cases.
   `render_jobs` table lacked `source_render_version`. It was stopped; no product
   schema or gameplay data was altered. The unused disposable shared test database
   was rebuilt and its 64 profile tests passed.
+
+## Follow-up: related gender wording and missing fields
+
+The owner clarified that gender edits may update related text (for example,
+`she was a chef` → `he was a chef`) and may complete missing fields. Updated the
+selector and completion contract accordingly. Populated unrelated fields and the
+agent's name remain protected. Focused strategy-only edits stay isolated.
+Artwork intent is explicit: changing pronouns in an appearance description does
+not trigger image generation. Pure text edits omit image references.
+
+A live Mara draft changed Female → Male, updated personality/backstory/appearance
+wording to he/his and filled missing Werewolf notes. It kept Mara Tideglass,
+Carina and the existing artwork. The revision was reviewed and discarded;
+Mara's accepted version remains unchanged. Evidence:
+`.renders/agent-tuneup/gender-related-review.jpg`.
+The three new text calls cost an estimated $0.001284; cumulative testing is
+$0.295750. Image attempts remained at six, with eleven total visual/framing
+receipts. No new artwork was requested.
+
+Follow-up verification: 101 focused tests, 3,368 full provider-free tests (five
+skipped), 64 profile API tests and all 15 browser journeys passed. Typecheck,
+lint and `git diff --check` passed. React review found no new effects, state
+synchronization or accessibility changes.
+The full sequential PostgreSQL baseline also passed: 2,527 tests across 241
+files, zero failures (1,021 seconds).

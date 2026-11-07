@@ -575,7 +575,7 @@ async function mockCharacterAssistant(
           "Access-Control-Allow-Origin": new URL(servers.webUrl!).origin,
           "Access-Control-Allow-Credentials": "true",
         },
-        body: JSON.stringify(url.pathname.endsWith("/edit-assistant") ? {tool:"update_character",fields:["personality"]} : {
+        body: JSON.stringify(url.pathname.endsWith("/edit-assistant") ? {tool:"update_character",fields:["personality"],generateImages:false} : {
           command:
             body.stage === "appearance"
               ? "generate_appearance"
@@ -599,15 +599,15 @@ async function mockCharacterAssistant(
         },
         body: JSON.stringify({
           introQuips: [],
-          performanceInstructions: "Calm delivery",
           visualDesign: "An adult investigator in a bronze coat",
           name,
           backstory: "A former stage magician.",
           strategyStyle: "Build trust through commitments.",
-          werewolfStrategyStyle: "Test claims before voting.",
           personaKey: "strategic",
           gender: "non-binary",
           ...body.existingProfile,
+          performanceInstructions: body.existingProfile?.performanceInstructions || "Calm delivery",
+          werewolfStrategyStyle: body.existingProfile?.werewolfStrategyStyle || "Test claims before voting.",
           ...(body.selectedFields?.includes("visualDesign")
             ? { visualDesign: "An adult investigator in a green coat" }
             : {}),
@@ -1198,7 +1198,7 @@ test("pending requests are visible before generation and cancellation keeps edit
   }
 }, 120000);
 
-test("clearing old artwork then revising only appearance preserves blank game notes", async () => {
+test("clearing old artwork then revising appearance also completes missing game notes", async () => {
   const [baseline] = await database.db
     .select()
     .from(schema.agentProfiles)
@@ -1293,6 +1293,7 @@ test("clearing old artwork then revising only appearance preserves blank game no
       )[0]!.werewolfStrategyStyle,
     ).toBeNull();
     expect(await page.$('[data-agent-issue="assistant"]')).toBeNull();
+    expect(await page.evaluate('document.querySelector("#agent-werewolfStrategyStyle").value')).toBe("Test claims before voting.");
   } finally {
     await page.close();
   }

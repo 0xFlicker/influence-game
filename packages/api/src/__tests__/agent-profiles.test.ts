@@ -1422,13 +1422,25 @@ describe("Agent Profile API", () => {
       try {
         const result = await app.request("/api/agent-profiles/edit-assistant", jsonReq(turn, tokenA));
         expect(result.status).toBe(200);
-        expect(await result.json()).toEqual({ tool: "update_visuals", fields: ["performanceInstructions", "visualDesign"] });
+        expect(await result.json()).toEqual({ tool: "update_visuals", fields: ["performanceInstructions", "visualDesign"], generateImages: true });
         expect(requests[0]).toMatchObject({ model: "gpt-6-luna", service_tier: "default", reasoning_effort: "none", tool_choice: "required", parallel_tool_calls: false });
         expect(JSON.stringify(requests[0]?.messages)).toContain("hasFullBody");
+        expect(JSON.stringify(requests[0]?.messages)).toContain("pronouns and gendered references");
+        expect(requests[0]?.tools).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            function: expect.objectContaining({
+              name: "update_character",
+              parameters: expect.objectContaining({
+                required: ["fields", "generateImages"],
+                properties: expect.objectContaining({ generateImages: expect.objectContaining({type:"boolean"}) }),
+              }),
+            }),
+          }),
+        ]));
         expect(JSON.stringify(requests[0]?.messages)).toContain("The Short List votes off the player with the fewest positive votes");
         const missingIdentity = await app.request("/api/agent-profiles/edit-assistant", jsonReq({ ...turn, context: { ...context, gender: "", personaKey: "" } }, tokenA));
         expect(missingIdentity.status).toBe(200);
-        expect(await missingIdentity.json()).toEqual({ tool: "update_visuals", fields: ["performanceInstructions", "visualDesign"] });
+        expect(await missingIdentity.json()).toEqual({ tool: "update_visuals", fields: ["performanceInstructions", "visualDesign"], generateImages: true });
         for (const invalid of ["not json", "[]", '{"fields":["name"]}', '```json\n{}\n```']) {
           args = invalid;
           expect((await app.request("/api/agent-profiles/edit-assistant", jsonReq(turn, tokenA))).status).toBe(502);
@@ -1491,7 +1503,7 @@ describe("Agent Profile API", () => {
       } finally { globalThis.fetch = originalFetch; restoreEnv("OPENAI_API_KEY", savedKey); }
     });
 
-    test("appearance refinement accepts an untouched empty Werewolf strategy and preserves other fields", async () => {
+    test("appearance refinement completes missing Werewolf notes and preserves populated fields", async () => {
       const originalFetch=globalThis.fetch,savedKey=process.env.OPENAI_API_KEY;
       process.env.OPENAI_API_KEY="provider-free";
       const existingProfile={name:"Arden Vale",personality:"Patient",backstory:"A librarian",strategyStyle:"Build trust",werewolfStrategyStyle:"",personaKey:"observer",gender:"non-binary",performanceInstructions:"",visualDesign:"A bronze coat"};
@@ -1501,14 +1513,14 @@ describe("Agent Profile API", () => {
         const request=input instanceof Request?input:new Request(input.toString(),init);
         expect(request.url).toContain("/chat/completions");
         requests.push(await request.json() as Record<string,unknown>);
-        return Response.json({id:"appearance-only",model:"gpt-6-luna",choices:[{index:0,finish_reason:"stop",message:{role:"assistant",content:JSON.stringify({...existingProfile,personality:"Unwanted rewrite",performanceInstructions:"Measured gestures",visualDesign:invalid?" ":"A green coat",introQuips:["One","Two","Three"]})}}],usage:{prompt_tokens:10,completion_tokens:10,total_tokens:20}});
+        return Response.json({id:"appearance-only",model:"gpt-6-luna",choices:[{index:0,finish_reason:"stop",message:{role:"assistant",content:JSON.stringify({...existingProfile,personality:"Unwanted rewrite",werewolfStrategyStyle:"Compare claims before voting.",performanceInstructions:"Measured gestures",visualDesign:invalid?" ":"A green coat",introQuips:["One","Two","Three"]})}}],usage:{prompt_tokens:10,completion_tokens:10,total_tokens:20}});
       },{preconnect:originalFetch.preconnect});
       try {
         const response=await app.request("/api/agent-profiles/generate",jsonReq({changeRequest:"Make their coat green",selectedFields:["visualDesign"],existingProfile},tokenA));
         expect(response.status).toBe(200);
-        expect(await response.json()).toMatchObject({...existingProfile,performanceInstructions:"Measured gestures",visualDesign:"A green coat"});
+        expect(await response.json()).toMatchObject({...existingProfile,werewolfStrategyStyle:"Compare claims before voting.",performanceInstructions:"Measured gestures",visualDesign:"A green coat"});
         expect(requests).toHaveLength(1);
-        expect(requests[0]!.response_format).toMatchObject({json_schema:{strict:true,schema:{properties:{werewolfStrategyStyle:{minLength:0},visualDesign:{minLength:1},performanceInstructions:{minLength:1}}}}});
+        expect(requests[0]!.response_format).toMatchObject({json_schema:{strict:true,schema:{properties:{werewolfStrategyStyle:{minLength:1},visualDesign:{minLength:1},performanceInstructions:{minLength:1}}}}});
         expect((await db.select().from(schema.accountTextOperations))[0]!.state).toBe("succeeded");
         expect(await db.select().from(schema.visualRenderAttempts)).toHaveLength(0);
         invalid=true;
@@ -1533,13 +1545,13 @@ describe("Agent Profile API", () => {
         const body = await request.json() as Record<string, unknown>;
         requests.push(body);
         return Response.json({ id: "werewolf-editor", object: "chat.completion", choices: [{ index: 0,
-          message: body.tools ? { role: "assistant", content: null, tool_calls: [{ id: "edit-werewolf", type: "function", function: { name: "update_character", arguments: '{"fields":["werewolfStrategyStyle"]}' } }] } : { role: "assistant", content },
+          message: body.tools ? { role: "assistant", content: null, tool_calls: [{ id: "edit-werewolf", type: "function", function: { name: "update_character", arguments: '{"fields":["werewolfStrategyStyle"],"generateImages":false}' } }] } : { role: "assistant", content },
           finish_reason: body.tools ? "tool_calls" : "stop" }] });
       }, { preconnect: originalFetch.preconnect });
       try {
         const routed = await app.request("/api/agent-profiles/edit-assistant", jsonReq({ context, message: "Update my Werewolf strategy", history: [] }, tokenA));
         expect(routed.status).toBe(200);
-        expect(await routed.json()).toEqual({ tool: "update_character", fields: ["werewolfStrategyStyle"] });
+        expect(await routed.json()).toEqual({ tool: "update_character", fields: ["werewolfStrategyStyle"], generateImages: false });
         expect(JSON.stringify(requests[0]?.tools)).toContain("werewolfStrategyStyle");
         expect(JSON.stringify(requests[0]?.messages)).toContain("Seer");
         const { hasFullBody: _ignored, ...existingProfile } = context;
