@@ -27,25 +27,23 @@ function CloseIcon() {
   );
 }
 
-export function Nav({ menu = false }: { menu?: boolean }) {
+export function Nav({ menu = false, createAgentHref = "/agents/create" }: { menu?: boolean; createAgentHref?: string }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { ready, authenticated, openSignIn, logout } = useAuth();
   const { isAdmin, roles, loading: permissionsLoading, hasPermission } = usePermissions();
   const canAccessAdmin = isAdmin || hasPermission("manage_invites");
   const pathname = usePathname();
   const { suppressWebsiteAuthChrome, isMiniApp, contextUser } = useMiniApp();
-  const gameRoute = pathname?.split("/")[2];
   const focusedFlow = !pathname || pathname === "/agents/create"
     || /^\/dashboard\/agents\/[^/]+\/edit(?:\/|$)/.test(pathname)
     || pathname === "/games/new"
-    || pathname === "/admin/games/new"
-    || (pathname.startsWith("/games/") && !["free", "public", "private", "season"].includes(gameRoute));
+    || pathname === "/admin/games/new";
   const showCreateActions = ready && !permissionsLoading && !focusedFlow && pathname !== "/";
 
   const navLinks = (
     <>
       {showCreateActions && (
-        <Link href="/agents/create" className={`influence-button-primary rounded-md px-4 py-2 whitespace-nowrap ${pathname === "/dashboard" ? "xl:hidden" : ""}`} onClick={() => setMobileOpen(false)}>
+        <Link href={createAgentHref} className={`influence-button-primary rounded-md px-4 py-2 whitespace-nowrap ${pathname === "/dashboard" ? "xl:hidden" : ""}`} onClick={() => setMobileOpen(false)}>
           <span aria-hidden="true">＋ </span>Create agent
         </Link>
       )}
