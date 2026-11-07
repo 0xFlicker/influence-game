@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import styles from "./agent-workspace.module.css";
 const labels: Record<string, string> = {
+  starting: "Starting image",
   image: "Generating image",
   background: "Removing background",
   portrait: "Preparing portrait",
@@ -17,9 +18,10 @@ export function AgentOperationActivity({
 }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
+    if (!startedAt) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [startedAt]);
   const seconds = startedAt
     ? Math.max(0, Math.floor((now - Date.parse(startedAt)) / 1000))
     : null;

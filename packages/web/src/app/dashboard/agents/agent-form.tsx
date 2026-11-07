@@ -17,6 +17,7 @@ import type { ModelPreference } from "@influence/engine/game-model-routing";
 import { defaultWerewolfStrategy } from "@influence/engine/werewolf/strategy";
 
 import {
+  CHARACTER_FIELDS,
   characterEditFields,
   type CharacterEditCommand,
   type CharacterField,
@@ -431,6 +432,12 @@ export function AgentForm({
   );
   const [creationRequestId, setCreationRequestId] = useState(createRequestId);
   const [profileGenerating, setProfileGenerating] = useState(false);
+  const [generatingFields, setGeneratingFields] = useState<CharacterField[]>([]);
+  const updatingFields = profileGenerating ? generatingFields : [];
+  function textActivity(field: CharacterField) {
+    const active = updatingFields.includes(field);
+    return { "data-updating": active || undefined, "aria-busy": active };
+  }
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [validationErrors, setValidationErrors] = useState<
@@ -1055,6 +1062,7 @@ export function AgentForm({
       .slice(-24)
       .map((line) => line.slice(0, 2000));
     const epoch = beginGeneration();
+    setGeneratingFields([]);
     setProfileGenerating(true);
     setAiError(null);
     try {
@@ -1171,6 +1179,8 @@ export function AgentForm({
   }
 
   async function handleAnonymousMessage(message: string) {
+    setGeneratingFields([...CHARACTER_FIELDS]);
+    setProfileGenerating(true);
     try {
       const turn = await generateAnonymousCharacter(message, creationTraitIds);
       setAnonymousUsed(true);
@@ -1185,6 +1195,8 @@ export function AgentForm({
         requestAccount();
       }
       throw error;
+    } finally {
+      setProfileGenerating(false);
     }
   }
 
@@ -1224,6 +1236,10 @@ export function AgentForm({
       return;
     }
     const epoch = beginGeneration();
+    const selectedFields = options?.appearance ? ["visualDesign" as const] : options?.sections;
+    setGeneratingFields(selectedFields?.length
+      ? characterEditFields(currentSnapshot, selectedFields)
+      : [...CHARACTER_FIELDS]);
     setProfileGenerating(true);
     setAiError(null);
     setSaveError(null);
@@ -1656,6 +1672,8 @@ export function AgentForm({
   async function retrySelectedJob() {
     if (!imageRequest) return;
     setReferenceBusy(true);
+    setReferenceStage("starting");
+    setReferenceStartedAt(null);
     setReferenceError(null);
     const epoch = ++referenceEpoch.current;
     try {
@@ -1772,6 +1790,8 @@ export function AgentForm({
     }
     const epoch = ++referenceEpoch.current;
     setReferenceBusy(true);
+    setReferenceStage("starting");
+    setReferenceStartedAt(null);
     setReferenceError(null);
     const referenceStorageKey = `${draftStorageKey}:visual-reference`;
     const saved = readEditorStorage(referenceStorageKey);
@@ -1989,6 +2009,15 @@ export function AgentForm({
   const currentGeneration = generations.rows.find((row) =>
     initial?.id ? row.agentId === initial.id : row.draftScope === draftScope,
   );
+  const activeImageGeneration = generations.rows.find((row) =>
+    (row.status === "queued" || row.status === "running") &&
+    (initial?.id ? row.agentId === initial.id : row.draftScope === draftScope),
+  );
+  const imageUpdating = referenceBusy || uploading || Boolean(
+    activeImageGeneration && !referenceError && (fullBodyReferenceUrl || avatarUrl),
+  );
+  const imageStage = uploading ? "upload"
+    : referenceBusy ? referenceStage : activeImageGeneration?.stage ?? "starting";
   const currentGenerationLabel = currentGeneration
     ? currentGeneration.status === "ready"
       ? "Image ready"
@@ -2091,7 +2120,11 @@ export function AgentForm({
         <div className={styles.layout}>
           <aside className={styles.art}>
             {" "}
-            <div className={styles.artStage}>
+            <div
+              className={styles.artStage}
+              data-image-updating={imageUpdating || undefined}
+              aria-busy={imageUpdating}
+            >
               {candidateImage ? null : fullBodyReferenceUrl || avatarUrl ? (
                 <OwnedCharacterImage
                   src={
@@ -2166,6 +2199,15 @@ export function AgentForm({
                     </button>
                   </div>
                 </div>
+              )}
+              {imageUpdating && Boolean(fullBodyReferenceUrl || avatarUrl || candidateImage) && (
+                <span className={styles.artActivity} aria-hidden="true">
+                  <span className={styles.activityDot} />
+                  <AgentOperationActivity
+                    stage={imageStage}
+                    startedAt={null}
+                  />
+                </span>
               )}
             </div>
             <div className={styles.artActions}>
@@ -2258,6 +2300,7 @@ export function AgentForm({
                   )
                 }
                 busy={profileGenerating || uploading}
+                updatingFields={updatingFields}
                 blocked={
                   draftRecovering ||
                   unreadableDraft ||
@@ -2364,6 +2407,7 @@ export function AgentForm({
                       </label>
                       <input
                         id="agent-name"
+                        {...textActivity("name")}
                         type="text"
                         value={name}
                         onChange={(event) => {
@@ -2398,6 +2442,7 @@ export function AgentForm({
                     </div>
 
                     <fieldset
+                      {...textActivity("gender")}
                       aria-required="true"
                       aria-describedby={
                         validationErrors.gender
@@ -2452,12 +2497,14 @@ export function AgentForm({
                           "Guides portrait generation. Choose one or let AI fill it."}
                       </p>
                     </fieldset>
-                    <ArchetypePicker
-                      id="agent-archetype"
-                      value={personaKey}
-                      onChange={setPersonaKey}
-                      disabled={generationBusy || submitting}
-                    />
+                    <div {...textActivity("personaKey")}>
+                      <ArchetypePicker
+                        id="agent-archetype"
+                        value={personaKey}
+                        onChange={setPersonaKey}
+                        disabled={generationBusy || submitting}
+                      />
+                    </div>
                   </div>
                 </aside>
 
@@ -2503,6 +2550,7 @@ export function AgentForm({
                     )}
                     <GrowingTextarea
                       id="agent-werewolfStrategyStyle"
+                      {...textActivity("werewolfStrategyStyle")}
                       value={werewolfStrategyStyle}
                       onChange={(event) =>
                         setWerewolfStrategyStyle(event.target.value)
@@ -2613,6 +2661,7 @@ export function AgentForm({
                       <div className="order-1 xl:order-2">
                         <GrowingTextarea
                           id="agent-strategyStyle"
+                          {...textActivity("strategyStyle")}
                           value={strategyStyle}
                           onChange={(event) => {
                             setStrategyStyle(event.target.value);
@@ -2691,6 +2740,7 @@ export function AgentForm({
                     </div>
                     <GrowingTextarea
                       id="agent-personality"
+                      {...textActivity("personality")}
                       value={personality}
                       onChange={(event) => {
                         setPersonality(event.target.value);
@@ -2758,6 +2808,7 @@ export function AgentForm({
                     </div>
                     <GrowingTextarea
                       id="agent-backstory"
+                      {...textActivity("backstory")}
                       value={backstory}
                       onChange={(event) => setBackstory(event.target.value)}
                       placeholder="Where did this Agent come from, and what drives them?"
@@ -2797,6 +2848,7 @@ export function AgentForm({
                     </p>
                     <GrowingTextarea
                       id="agent-performance"
+                      {...textActivity("performanceInstructions")}
                       value={performanceInstructions}
                       onChange={(event) =>
                         setPerformanceInstructions(event.target.value)
@@ -2830,6 +2882,7 @@ export function AgentForm({
                     </p>
                     <GrowingTextarea
                       id="agent-visual-design"
+                      {...textActivity("visualDesign")}
                       value={visualDesign ?? ""}
                       onChange={(event) => setVisualDesign(event.target.value)}
                       maxLength={8000}
@@ -2934,7 +2987,7 @@ export function AgentForm({
                       </button>
                     </>
                   ) : profileGenerating ? (
-                    "Updating draft text…"
+                    generatingFields.length ? "Updating draft text…" : "Thinking…"
                   ) : uploading || referenceBusy ? (
                     <AgentOperationActivity
                       stage={uploading ? "upload" : referenceStage}

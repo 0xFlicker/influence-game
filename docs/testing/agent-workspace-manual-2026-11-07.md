@@ -202,3 +202,30 @@ and editor/review behavior. Desktop/mobile screenshots remain under
 `.renders/agent-workspace/management-profile-link-1440.png` and
 `.renders/agent-workspace/management-profile-link-390.png`. Typecheck, lint and
 `git diff --check` passed.
+
+## Follow-up: visible generation activity
+
+Added warm text sweeps to the fields actually being generated, including missing
+fields selected for completion. Guided fixtures and Advanced inputs share the
+same scope. The composer and empty House mark indicate routing immediately.
+Text-only work leaves existing artwork still. Image generation and portrait
+preparation scan the retained artwork and show the actual operation stage.
+Reopened queued/running image requests reuse collection metadata; late metadata
+does not reveal a new empty image pane or move the editor. A local failure
+overrides stale queued metadata immediately. Success and cancellation clear the
+indicators. Reduced motion uses static highlights; scans never claim a percentage.
+The obsolete forming class that changed fixture height has been removed.
+
+Verification: 45 focused tests passed, including scoped text activity and failure
+cleanup; the full provider-free baseline passed 3,369 tests (five skipped). All
+13 workspace browser journeys passed (732 assertions), exercising all four
+creation/editing modes, desktop/mobile scans, reduced motion, reopened jobs,
+success/failure/cancellation and stable geometry. Typecheck, lint and
+`git diff --check` passed. The first restricted baseline could not bind local
+test servers and emitted a test teardown error; the permitted rerun passed.
+No paid provider calls were needed.
+
+Visual evidence: `.renders/agent-workspace/text-scan-{guided,advanced}-{1440,390}.png`,
+`image-scan-{guided,advanced}-{1440,390}.png` and
+`existing-image-scan-{1440,390}.png`. Animation samples are paused at their middle
+frame for screenshots; browser assertions verify moving and reduced-motion modes.

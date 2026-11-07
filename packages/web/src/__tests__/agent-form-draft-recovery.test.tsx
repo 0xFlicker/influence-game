@@ -172,21 +172,27 @@ describe("agent workspace drafts",()=>{
  });
  test("a Guided gender edit updates related wording and missing notes while preserving identity and artwork",async()=>{
   const paths:string[]=[];
+  const generated = Promise.withResolvers<Response>();
   globalThis.fetch=Object.assign(async(input:RequestInfo|URL)=>{
     const path=String(input);paths.push(path);
     if(path.includes("/generations")) return Response.json([]);
     if(path.endsWith("/creation-assistant")) return Response.json({command:"revise_character",reply:""});
     if(path.endsWith("/edit-assistant")) return Response.json({tool:"update_character",fields:["gender","backstory","visualDesign"],generateImages:false});
-    if(path.endsWith("/generate")) return Response.json({name:"Unrequested rename",gender:"male",personaKey:"strategic",personality:"Unrequested personality",backstory:"He was a chef.",strategyStyle:"Unrequested Influence notes",werewolfStrategyStyle:"Compare claims before voting.",visualDesign:"He wears a bronze coat.",performanceInstructions:"Unrequested performance"});
+    if(path.endsWith("/generate")) return generated.promise;
     throw Error(`Unexpected request ${path}`);
   },{preconnect:originalFetch.preconnect}) as typeof fetch;
   const view=await ready(undefined,{backstory:"She was a chef.",visualDesign:"She wears a bronze coat.",performanceInstructions:"Original performance"});
   fireEvent.click(view.getByRole("button",{name:"Guided"}));
   fireEvent.input(view.getByLabelText("Message the character assistant"),{target:{value:"Make him male and keep the text consistent."}});
   fireEvent.click(view.getByRole("button",{name:"Send"}));
-  await waitFor(()=>expect((view.getByRole("button",{name:"Send"}) as HTMLButtonElement).disabled).toBe(true));
+  await waitFor(()=>expect(view.getByRole("button",{name:"Revise Backstory"}).getAttribute("data-updating")).toBe("true"));
+  expect(view.getByRole("button",{name:"Revise Name"}).hasAttribute("data-updating")).toBe(false);
+  expect(view.container.querySelector('[data-image-updating="true"]')).toBeNull();
+  expect(view.container.querySelector('img[src="/avatars/arden.png"]')).toBeTruthy();
+  await act(async()=>generated.resolve(Response.json({name:"Unrequested rename",gender:"male",personaKey:"strategic",personality:"Unrequested personality",backstory:"He was a chef.",strategyStyle:"Unrequested Influence notes",werewolfStrategyStyle:"Compare claims before voting.",visualDesign:"He wears a bronze coat.",performanceInstructions:"Unrequested performance"})));
   await waitFor(()=>expect((view.getByRole("radio",{name:"Male"}) as HTMLInputElement).checked).toBe(true));
   await waitFor(()=>expect(view.queryByRole("button",{name:"Assistant working"})).toBeNull());
+  expect(view.container.querySelector('[data-updating="true"]')).toBeNull();
   fireEvent.click(view.getByRole("button",{name:"Review"}));
   const review=view.getByRole("dialog",{name:"Review changes"});
   expect(Array.from(review.querySelectorAll("strong"),element=>element.textContent)).toEqual(["Gender","Backstory","Werewolf strategy","Appearance"]);
@@ -195,6 +201,30 @@ describe("agent workspace drafts",()=>{
   expect(review.textContent).not.toContain("Unrequested");
   expect(view.container.querySelector('img[src="/avatars/arden.png"]')).toBeTruthy();
   expect(paths.some(path=>path.endsWith("/visual-reference"))).toBe(false);
+ });
+ test("failed text generation stops the scan and preserves the current text and artwork",async()=>{
+  const generated=Promise.withResolvers<Response>();
+  globalThis.fetch=Object.assign(async(input:RequestInfo|URL)=>{
+   const path=String(input);
+   if(path.includes("/generations")) return Response.json([]);
+   if(path.endsWith("/creation-assistant")) return Response.json({command:"revise_character",reply:""});
+   if(path.endsWith("/generate")) return generated.promise;
+   throw Error(`Unexpected request ${path}`);
+  },{preconnect:originalFetch.preconnect}) as typeof fetch;
+  const view=await ready();
+  const previousStrategy=(view.container.querySelector("#agent-strategyStyle") as HTMLTextAreaElement).value;
+  fireEvent.click(view.getByRole("tab",{name:"Strategy"}));
+  fireEvent.click(view.getByRole("button",{name:"Refine Werewolf strategy"}));
+  fireEvent.input(view.getByLabelText("Message the character assistant"),{target:{value:"Investigate claims more carefully."}});
+  fireEvent.click(view.getByRole("button",{name:"Send"}));
+  await waitFor(()=>expect(view.getByRole("button",{name:"Revise Werewolf strategy"}).getAttribute("data-updating")).toBe("true"));
+  expect(view.getByRole("button",{name:"Revise Influence strategy"}).hasAttribute("data-updating")).toBe(false);
+  expect(view.container.querySelector('[data-image-updating="true"]')).toBeNull();
+  await act(async()=>generated.resolve(Response.json({error:"Unavailable",code:"assistant_failed"},{status:502})));
+  await waitFor(()=>expect(view.queryByRole("button",{name:"Assistant working"})).toBeNull());
+  expect(view.container.querySelector('[data-updating="true"]')).toBeNull();
+  expect((view.container.querySelector("#agent-strategyStyle") as HTMLTextAreaElement).value).toBe(previousStrategy);
+  expect(view.container.querySelector('img[src="/avatars/arden.png"]')).toBeTruthy();
  });
  test("restores a draft and offers both strategies without mixing their content",async()=>{
   const view=await renderForm(true);fireEvent.click(view.getByRole("button",{name:"Resume"}));fireEvent.click(view.getByRole("tab",{name:"Strategy"}));

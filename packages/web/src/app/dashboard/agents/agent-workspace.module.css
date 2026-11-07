@@ -422,9 +422,6 @@
 .workspace h2 {
   font-size: 28px;
 }
-.workspace :global(.agent-creation-visual-forming) {
-  min-height: 0;
-}
 .workspace input[type="radio"] {
   width: auto;
 }
@@ -1711,11 +1708,86 @@
   }
 }
 .artStage {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   justify-content: center;
+}
+.workspace [data-updating="true"] {
+  background-image: linear-gradient(110deg, transparent 35%, #e0c1931f 46%, #f5dfb54d 50%, #e0c1931f 54%, transparent 65%);
+  background-size: 260% 100%;
+  animation: agent-text-scan 3.8s linear infinite;
+  box-shadow: inset 0 0 0 1px #e0c19340;
+}
+.workspace [data-updating="true"]:disabled {
+  opacity: 1;
+}
+.artStage[data-image-updating="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent 36%, #e0c19312 44%, #f5dfb578 50%, #e0c19312 56%, transparent 64%);
+  animation: agent-image-scan 4.8s ease-in-out infinite;
+}
+.artActivity {
+  position: absolute;
+  z-index: 2;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #e0c19355;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #17130fe8;
+  color: #f3e9d9;
+  font-size: 13px;
+  pointer-events: none;
+}
+.activityDot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: #e0c193;
+  box-shadow: 0 0 12px #e0c19399;
+  animation: agent-activity-pulse 1.8s ease-in-out infinite;
+}
+@keyframes agent-text-scan {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+@keyframes agent-image-scan {
+  0%, 8% { transform: translateY(-100%); }
+  92%, 100% { transform: translateY(100%); }
+}
+@keyframes agent-activity-pulse {
+  50% { opacity: .35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace [data-updating="true"] {
+    animation: none;
+    background-size: 100% 100%;
+    background-position: center;
+  }
+  .artStage[data-image-updating="true"]::after {
+    animation: none;
+    transform: none;
+    background: none;
+    box-shadow: inset 0 0 0 1px #e0c19388;
+  }
+  .activityDot {
+    animation: none;
+  }
 }
 .artStage > img {
   height: 100%;

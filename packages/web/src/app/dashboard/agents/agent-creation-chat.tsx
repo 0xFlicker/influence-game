@@ -61,6 +61,7 @@ export function AgentCreationChat({
   onGenerate,
   onAppearance,
   busy,
+  updatingFields = [],
   blocked,
   headRequired,
   hasImage,
@@ -98,6 +99,7 @@ export function AgentCreationChat({
     operation: "create" | "edit",
   ) => Promise<boolean>;
   busy: boolean;
+  updatingFields?: CharacterSection[];
   blocked: boolean;
   headRequired: boolean;
   hasImage: boolean;
@@ -364,11 +366,11 @@ export function AgentCreationChat({
       <div className="agent-creation-stage relative mx-auto flex min-h-[20rem] w-full max-w-6xl flex-1 flex-col px-4 sm:px-8">
         <section
           aria-label="Character fixtures"
-          className={`agent-creation-visual relative z-10 mx-auto w-full ${hasCharacter ? "agent-creation-visual-filled" : "agent-creation-visual-empty"} ${working && (stage === "appearance" || stage === "portrait") ? "agent-creation-visual-forming" : ""}`}
+          className={`agent-creation-visual relative z-10 mx-auto w-full ${hasCharacter ? "agent-creation-visual-filled" : "agent-creation-visual-empty"}`}
         >
           {!hasCharacter ? (
             <div className="agent-creation-empty mx-auto flex h-full w-full max-w-3xl flex-col items-center justify-center py-4 text-center">
-              <div className="agent-creation-empty-mark flex size-36 items-center justify-center rounded-full border border-amber-200/30 bg-[#100d18]/60 shadow-[0_0_90px_rgba(211,164,80,0.16)] sm:size-48">
+              <div data-updating={working || undefined} className="agent-creation-empty-mark flex size-36 items-center justify-center rounded-full border border-amber-200/30 bg-[#100d18]/60 shadow-[0_0_90px_rgba(211,164,80,0.16)] sm:size-48">
                 {/* eslint-disable-next-line @next/next/no-img-element -- the existing House brand asset */}
                 <img
                   src="/logo.png"
@@ -394,6 +396,7 @@ export function AgentCreationChat({
                       value={profile.gender}
                       onChange={onGenderChange}
                       disabled={locked}
+                      updating={updatingFields.includes(section)}
                     />
                   ) : (
                     <button
@@ -403,6 +406,8 @@ export function AgentCreationChat({
                       onClick={() => selectSection(section)}
                       aria-label={`Revise ${labels[section]}`}
                       aria-pressed={sections.includes(section)}
+                      data-updating={updatingFields.includes(section) || undefined}
+                      aria-busy={updatingFields.includes(section)}
                       className={`agent-creation-fixture min-w-0 rounded-lg border p-2 text-left ${sections.includes(section) ? "border-amber-200/70 bg-amber-200/15" : "border-amber-200/20"}`}
                     >
                       <span className="flex items-center justify-between gap-2">
@@ -588,6 +593,7 @@ export function AgentCreationChat({
             <div className="relative">
               <textarea
                 id="agent-creation-message"
+                data-updating={working || undefined}
                 ref={composer}
                 aria-label="Message the character assistant"
                 placeholder={

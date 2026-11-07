@@ -93,6 +93,15 @@ mobile), containing requests, draft choices/conflicts and moderation details.
 Resume remains a direct footer action. No late status adds a row above the form,
 and reveal motion never translates the editor vertically.
 
+Active text generation sweeps only its selected fields (including missing fields
+being completed), in Guided fixtures and Advanced inputs. The composer shows
+activity immediately while routing or awaiting a reply. Existing artwork stays
+still during text-only edits. Image generation and portrait preparation scan the
+artwork independently, retaining its pixels and the real operation stage. These
+indeterminate effects do not imply a percentage or completion estimate. They use
+existing geometry and stop on success, failure or cancellation. Reduced motion
+uses a static highlight instead of a moving scan.
+
 Agent management opens an owner's profile from the agent image or name. Both
 share one keyboard-focusable link and preserve the list's return position. Edit
 remains the card's primary button; there is no separate View button.

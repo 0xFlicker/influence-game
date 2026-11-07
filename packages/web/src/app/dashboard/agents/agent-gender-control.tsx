@@ -8,14 +8,16 @@ export function AgentGenderControl({
   value,
   onChange,
   disabled = false,
+  updating = false,
 }: {
   value: string;
   onChange: (value: AgentGender) => void;
   disabled?: boolean;
+  updating?: boolean;
 }) {
   const id = useId();
   return (
-    <fieldset className={styles.genderControl} disabled={disabled}>
+    <fieldset className={styles.genderControl} disabled={disabled} data-updating={updating || undefined} aria-busy={updating}>
       <legend>Gender</legend>
       <div>
         {AGENT_GENDER_OPTIONS.map((option) => (

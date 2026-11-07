@@ -79,9 +79,11 @@ test("the House mark and composer stay in place through a clarification", async 
   expect(view.queryByText("Your name, archetype, and character prompt will take shape here.")).toBeNull();
   expect(view.getByText("Character ingredients")).toBeTruthy();
   expect(view.getByLabelText("Message the character assistant").hasAttribute("hidden")).toBe(false);
+  expect(view.getByLabelText("Message the character assistant").getAttribute("data-updating")).toBe("true");
   await waitFor(() => expect(sentDraft?.strategyStyle).toBe("Build trust."));
   await act(async () => response.resolve(Response.json({ command: "clarify", reply: "Empowerment can choose the format and break a tie, but gives no immunity. Would your character seek it?" })));
   await waitFor(() => expect(view.getByText(/Empowerment can choose the format/)).toBeTruthy());
+  expect(view.getByLabelText("Message the character assistant").hasAttribute("data-updating")).toBe(false);
   expect(view.getByText("Your character starts here.")).toBeTruthy();
   const log = view.getByRole("log", { name: "Character creation conversation" });
   expect(log.textContent).toContain("Your character can play Influence and Werewolf");

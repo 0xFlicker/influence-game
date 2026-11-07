@@ -427,6 +427,8 @@ test("Advanced creation persists voice and generated artwork across navigation b
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     expect(job).toBeDefined();
+    await page.waitForSelector('[data-image-updating="true"]');
+    expect(await page.$eval('[data-image-updating="true"]', element => element.getAttribute("aria-busy"))).toBe("true");
     await button(page, "Close");
     await page.waitForFunction('location.pathname==="/dashboard/agents"');
     const art = await Bun.file(
@@ -585,6 +587,7 @@ async function mockCharacterAssistant(
   page: Page,
   name: string,
   personality: string,
+  generationReady: Promise<void> = Promise.resolve(),
 ) {
   await page.setRequestInterception(true);
   page.on("request", (request) => {
@@ -616,7 +619,7 @@ async function mockCharacterAssistant(
       request.method() === "POST"
     ) {
       const body = JSON.parse(request.postData()!);
-      void request.respond({
+      void generationReady.then(() => request.respond({
         status: 200,
         contentType: "application/json",
         headers: {
@@ -639,7 +642,7 @@ async function mockCharacterAssistant(
             : {}),
           personality,
         }),
-      });
+      }));
     } else void request.continue();
   });
 }
@@ -693,6 +696,20 @@ test("Guided creation generates a character and artwork, confirms portrait, revi
     );
     await button(page, "Send");
     const job = await latestPendingJob("Rowan Guided");
+    await page.waitForSelector('[data-image-updating="true"]');
+    for (const mode of ["Guided", "Advanced"]) {
+      await button(page, mode);
+      for (const width of [1440, 390]) {
+        await page.setViewport({ width, height: width === 390 ? 844 : 900 });
+        await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
+        expect(await page.evaluate('getComputedStyle(document.querySelector(\'[data-image-updating="true"]\'), "::after").animationName')).toContain("agent-image-scan");
+        await page.evaluate('for (const animation of document.querySelector(\'[data-image-updating="true"]\').getAnimations({subtree:true})) { animation.pause(); animation.currentTime = 2400; }');
+        await page.screenshot({ path: proof + `image-scan-${mode.toLowerCase()}-${width}.png`, fullPage: false });
+        await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+        expect(await page.evaluate('getComputedStyle(document.querySelector(\'[data-image-updating="true"]\'), "::after").animationName')).toBe("none");
+      }
+    }
+    await button(page, "Guided");
     const before = await database.db
       .select()
       .from(schema.agentProfiles)
@@ -718,6 +735,7 @@ test("Guided creation generates a character and artwork, confirms portrait, revi
     await page.waitForFunction(
       'document.body.innerText.includes("Artwork ready")',
     );
+    expect(await page.$('[data-image-updating="true"]')).toBeNull();
     await button(page, "Activity");
     await page.waitForFunction('document.querySelector(\'dialog[open] [aria-label="Image requests"]\')?.textContent.includes("Image ready")');
     expect(await page.$eval('dialog[open] [aria-label="Image requests"]', element => element.textContent)).toContain("Image ready");
@@ -768,6 +786,7 @@ test("Guided creation generates a character and artwork, confirms portrait, revi
 }, 120000);
 
 test("Guided update changes text without generating artwork and keeps accepted content usable", async () => {
+  const generation = Promise.withResolvers<void>();
   const page = await createAuthenticatedPage(
     browser,
     owner.jwt,
@@ -783,6 +802,7 @@ test("Guided update changes text without generating artwork and keeps accepted c
       page,
       "Mira Voss",
       "A warm investigator who invites precise answers.",
+      generation.promise,
     );
     const jobsBefore = await database.db
       .select()
@@ -793,9 +813,29 @@ test("Guided update changes text without generating artwork and keeps accepted c
       "Make her warmer, keeping her current appearance.",
     );
     await button(page, "Send");
+    await page.waitForSelector('[aria-label="Revise Character prompt"][data-updating="true"]');
+    expect(await page.$('[data-image-updating="true"]')).toBeNull();
+    expect(await page.$('[aria-label="Revise Name"][data-updating="true"]')).toBeNull();
+    for (const mode of ["Guided", "Advanced"]) {
+      await button(page, mode);
+      for (const width of [1440, 390]) {
+        await page.setViewport({ width, height: width === 390 ? 844 : 900 });
+        const target = mode === "Guided" ? '[aria-label="Revise Character prompt"]' : "#agent-personality";
+        await page.evaluate(`document.querySelector(${JSON.stringify(target)}).scrollIntoView({block:"center"})`);
+        await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
+        expect(await page.evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(target)})).animationName`)).toContain("agent-text-scan");
+        await page.evaluate(`for (const animation of document.querySelector(${JSON.stringify(target)}).getAnimations({subtree:true})) { animation.pause(); animation.currentTime = 1900; }`);
+        await page.screenshot({ path: proof + `text-scan-${mode.toLowerCase()}-${width}.png`, fullPage: false });
+        await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+        expect(await page.evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(target)})).animationName`)).toBe("none");
+      }
+    }
+    await button(page, "Guided");
+    generation.resolve();
     await page.waitForFunction(
       'document.body.innerText.includes("Does that feel right")',
     );
+    expect(await page.$('[data-updating="true"]')).toBeNull();
     await button(page, "Review");
     await page.waitForSelector('[role="dialog"][aria-label="Review changes"]');
     expect(
@@ -817,6 +857,7 @@ test("Guided update changes text without generating artwork and keeps accepted c
       await database.db.select().from(schema.characterReferenceJobs),
     ).toHaveLength(jobsBefore.length);
   } finally {
+    generation.resolve();
     await page.close();
   }
 }, 120000);
@@ -868,6 +909,7 @@ test("an interrupted image request shows one short notice and can be discarded w
       })
       .where(eq(schema.characterReferenceJobs.id, job.id));
     await page.waitForSelector('[data-agent-issue="artwork"]');
+    expect(await page.$('[data-image-updating="true"]')).toBeNull();
     expect(
       await page.$eval(
         '[data-agent-issue="artwork"]',
@@ -1173,6 +1215,7 @@ test("pending requests are visible before generation and cancellation keeps edit
     await page.waitForFunction(
       `!document.querySelector('[aria-label="Image requests"]')`,
     );
+    expect(await page.$('[data-image-updating="true"]')).toBeNull();
     expect(
       await page.$eval(
         "#agent-personality",
@@ -1320,6 +1363,16 @@ test("clearing old artwork then revising appearance also completes missing game 
     ).toBeNull();
     expect(await page.$('[data-agent-issue="assistant"]')).toBeNull();
     expect(await page.evaluate('document.querySelector("#agent-werewolfStrategyStyle").value')).toBe("Test claims before voting.");
+    await page.waitForSelector('[data-image-updating="true"]');
+    for (const width of [1440, 390]) {
+      await page.setViewport({ width, height: width === 390 ? 844 : 900 });
+      await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
+      await page.evaluate('document.querySelector(\'[data-image-updating="true"]\').scrollIntoView({block:"center"})');
+      expect(await page.evaluate('getComputedStyle(document.querySelector(\'[data-image-updating="true"]\'), "::after").animationName')).toContain("agent-image-scan");
+      expect(await page.evaluate('document.querySelector(\'[data-image-updating="true"]\').getAnimations({subtree:true}).length')).toBeGreaterThan(0);
+      await page.evaluate('for (const animation of document.querySelector(\'[data-image-updating="true"]\').getAnimations({subtree:true})) { animation.pause(); animation.currentTime = 2400; }');
+      await page.screenshot({ path: proof + `existing-image-scan-${width}.png`, fullPage: false });
+    }
   } finally {
     await page.close();
   }
@@ -1431,11 +1484,13 @@ test("delayed image status never moves the editor in any mode or viewport", asyn
             'document.querySelector("[aria-label=\\"Editor actions\\"]")?.textContent.includes("Queued")',
           );
           expectSamePositions(before, await editorPositions(page));
+          if (editing) expect(await page.$('[data-image-updating="true"]')).not.toBeNull();
           rows = [{ ...row, status: "stopped", blocksGeneration: false }];
           await page.waitForFunction(
             'document.querySelector("[aria-label=\\"Editor actions\\"]")?.textContent.includes("Generation stopped")',
           );
           expectSamePositions(before, await editorPositions(page));
+          expect(await page.$('[data-image-updating="true"]')).toBeNull();
           expect(
             await page.$eval(
               '[aria-label="Editor actions"]',
