@@ -73,7 +73,9 @@ export async function recordContentSubmission(tx: Tx, mutation: AgentProfileMuta
   const profile = options.candidate ?? mutation.profile;
   if (options.voiceId !== undefined && options.voiceId !== null && !isPlayerVoiceId(options.voiceId)) throw new ContentSubmissionConflict("Choose an eligible player voice");
   const [voice] = await tx.select().from(schema.agentVoices).where(eq(schema.agentVoices.agentProfileId, profile.id));
-  const assignment = options.voiceId === undefined ? voice?.assignment ?? assignPlayerVoice(profile.id, profile.gender) : assignPlayerVoice(profile.id, profile.gender, options.voiceId ?? undefined);
+  const assignment = options.voiceId === undefined && voice?.assignment.origin === "selected"
+    ? voice.assignment
+    : assignPlayerVoice(profile.id, profile.gender, options.voiceId ?? undefined);
   const snapshot = { ...contentSnapshot(profile), modelPreference: profile.modelPreference, voiceAssignment: assignment, ...(typeof options.sourceReviewId === "string" ? { sourceReviewId: options.sourceReviewId } : {}) };
 
   const [prior] = profile.latestContentRevisionId ? await loadPayloads(tx.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, profile.latestContentRevisionId))) : [];

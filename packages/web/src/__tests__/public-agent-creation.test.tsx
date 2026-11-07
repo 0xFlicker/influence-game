@@ -21,9 +21,11 @@ beforeEach(() => {
   for (const key of globalKeys) Object.defineProperty(globalThis, key, { configurable: true, value: key === "window" ? dom : dom[key] });
   signupCalls = 0; paths = [];
   globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
+    if (String(input).includes("/agent-profiles/generations")) return Response.json([]);
     const path = String(input); paths.push(`${init?.method ?? "GET"} ${path}`);
     if (path.endsWith("/anonymous")) return Response.json(init?.method === "POST" ? { reply: "Mira builds trust at the risk of waiting too long. Does she feel right?", profile: character } : { used: false });
     if (path.endsWith("/creation-assistant")) return Response.json({ command: "clarify", reply: "Your character is ready for another choice." });
+    if (path.includes("/drafts/")) return Response.json(init?.method === "PUT" ? { version: "11111111-1111-4111-8111-111111111111:1" } : null);
     throw new Error(`Unexpected request ${path}`);
   }, { preconnect: originalFetch.preconnect });
 });
@@ -49,7 +51,7 @@ test("arrival stays public; one preview builds cards, image request gates, and s
   expect(view.getByRole("button", { name: "Advanced" })).toBeTruthy();
   fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "An exiled diplomat who keeps receipts" } });
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
-  await waitFor(() => expect(view.getByRole("button", { name: "Read Name" }).textContent).toContain("Mira Vale"));
+  await waitFor(() => expect(view.getByRole("button", { name: "Revise Name" }).textContent).toContain("Mira Vale"));
   expect(paths.filter(path => path.startsWith("POST"))).toEqual(["POST /api/agent-profiles/anonymous"]);
   expect(signupCalls).toBe(0);
   fireEvent.click(view.getByRole("button", { name: "Continue" }));
@@ -59,7 +61,7 @@ test("arrival stays public; one preview builds cards, image request gates, and s
   expect(JSON.parse(dom.sessionStorage.getItem(draftKey)!).current.name).toBe("Mira Vale");
   expect((view.getByLabelText("Message the character assistant") as HTMLTextAreaElement).value).toBe("A blue coat and gold rings");
   await act(async () => signIn());
-  expect(view.getByRole("button", { name: "Read Name" }).textContent).toContain("Mira Vale");
+  expect(view.getByRole("button", { name: "Revise Name" }).textContent).toContain("Mira Vale");
   expect(view.queryByText("A local draft is available.")).toBeNull();
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
   await waitFor(() => expect(paths).toContain("POST /api/agent-profiles/creation-assistant"));

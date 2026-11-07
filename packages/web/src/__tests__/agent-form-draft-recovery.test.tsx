@@ -142,7 +142,7 @@ describe("agent workspace drafts",()=>{
   const view=await ready(async params=>{submissions.push(params);if(submissions.length===1)throw new Error("Save failed");});
   const picker=view.getByRole("combobox",{name:"Preferred model"});fireEvent.focus(picker);fireEvent.input(picker,{target:{value:"DeepSeek"}});
   fireEvent.click(await view.findByRole("option",{name:/DeepSeek Flash/}));expect(submissions).toHaveLength(0);
-  await save(view);await waitFor(()=>expect(view.getAllByText("Save failed").length).toBeGreaterThan(0));
+  await save(view);await waitFor(()=>expect(view.getAllByText("Couldn’t save agent.").length).toBeGreaterThan(0));
   expect(submissions[0]?.modelPreference).toEqual({catalogId:"katana:deepseek-v4-flash"});
   fireEvent.click(within(view.getByRole("dialog",{name:"Review changes"})).getByRole("button",{name:"Save"}));await waitFor(()=>expect(submissions).toHaveLength(2));
   expect(submissions[1]?.submissionId).toBe(submissions[0]?.submissionId);
@@ -159,14 +159,14 @@ describe("agent workspace drafts",()=>{
   fireEvent.click(within(review).getAllByRole("button",{name:"Undo"})[0]!);expect((view.container.querySelector("#agent-personality") as HTMLTextAreaElement).value).toBe("Calm and precise.");
  });
  test("restores a draft and offers both strategies without mixing their content",async()=>{
-  const view=await renderForm(true);fireEvent.click(view.getByRole("button",{name:"Resume"}));fireEvent.click(view.getByRole("button",{name:"Strategy"}));
+  const view=await renderForm(true);fireEvent.click(view.getByRole("button",{name:"Resume"}));fireEvent.click(view.getByRole("tab",{name:"Strategy"}));
   expect((view.getByLabelText("Influence strategy") as HTMLTextAreaElement).value).toBe(draftStrategy);
   expect((view.getByLabelText("Werewolf strategy") as HTMLTextAreaElement).value).toBe("");
   expect(view.queryByLabelText("Saved local draft")).toBeNull();
  });
  test("discard removes local recovery while a failed save preserves it",async()=>{
   const view=await ready(async()=>{throw new Error("Unavailable");});{const input=view.getByLabelText("Agent name");input.focus();fireEvent.input(input,{target:{value:"New Arden"}});fireEvent.keyUp(input,{key:"n"});}await save(view);
-  await waitFor(()=>expect(view.getAllByText("Unavailable").length).toBeGreaterThan(0));expect(domWindow.sessionStorage.getItem(draftKey)).not.toBeNull();
+  await waitFor(()=>expect(view.getAllByText("Couldn’t save agent.").length).toBeGreaterThan(0));expect(domWindow.sessionStorage.getItem(draftKey)).not.toBeNull();
   fireEvent.click(view.getByRole("button",{name:"Cancel"}));fireEvent.click(view.getByRole("button",{name:"Discard"}));await waitFor(()=>expect(domWindow.sessionStorage.getItem(draftKey)).toBeNull());
  });
  test("voice auditions and selection are separate and do not submit the profile",async()=>{
@@ -197,14 +197,42 @@ test("draft rebase preserves independent remote edits and treats artwork as one 
   expect(result.conflicts).toEqual(["images"]);
 });
 
+test("Revise sends an appearance-only edit and preserves an empty Werewolf strategy", async () => {
+  domWindow.sessionStorage.removeItem(draftKey);
+  const generated = { ...agent(), gender:"non-binary", performanceInstructions:"Measured gestures.", visualDesign:"A green coat.", werewolfStrategyStyle:"", introQuips:["One", "Two", "Three"] };
+  const requests:Record<string,unknown>[]=[];
+  globalThis.fetch=Object.assign(async(input:RequestInfo|URL,init?:RequestInit)=>{
+    const path=String(input);
+    if(path.endsWith("/generations")) return Response.json([]);
+    if(path.endsWith("/creation-assistant")) return Response.json({command:"revise_appearance",reply:""});
+    if(path.endsWith("/generate")){requests.push(JSON.parse(String(init?.body)));return Response.json(generated);}
+    if(path.includes("/visual-references/")) return Response.json({status:"ready",stage:"review",error:null,result:{requestId:path.split("/").at(-1),operation:"edit",fullBodyReferenceUrl:"/candidate.webp",width:1024,height:1536,avatarUrl:null,portraitCrop:null,cropWarning:null}});
+    if(path.endsWith("/visual-reference"))return Response.json({id:"22222222-2222-4222-8222-222222222222",status:"queued",stage:"waiting",error:null,result:null});
+    return Response.json({status:"queued",stage:"waiting",error:null,result:null});
+  },{preconnect:originalFetch.preconnect}) as typeof fetch;
+  const view=await renderForm(false,async()=>{},false,{fullBodyReferenceUrl:"/body.webp",performanceInstructions:"",visualDesign:"A bronze coat.",werewolfStrategyStyle:null});
+  fireEvent.click(view.getByRole("button",{name:"Revise"}));
+  fireEvent.input(await view.findByRole("textbox",{name:"Message the character assistant"}),{target:{value:"Make their coat green."}});
+  fireEvent.click(view.getByRole("button",{name:"Send"}));
+  await waitFor(()=>expect(requests).toHaveLength(1));
+  expect(requests[0]).toMatchObject({selectedFields:["visualDesign"],existingProfile:{werewolfStrategyStyle:"",performanceInstructions:""}});
+  await waitFor(()=>expect((view.container.querySelector("#agent-visual-design") as HTMLTextAreaElement)?.value).toBe("A green coat."));
+  expect((view.container.querySelector("#agent-werewolfStrategyStyle") as HTMLTextAreaElement)?.value).toBe("");
+  expect((view.container.querySelector("#agent-performance") as HTMLTextAreaElement)?.value).toBe("Measured gestures.");
+  await view.findByRole("button",{name:"Send"});
+  expect((view.getByRole("textbox",{name:"Message the character assistant"}) as HTMLTextAreaElement).value).toBe("");
+});
+
 test("a local draft cannot be silently replaced by a differing account draft",async()=>{
  const accountDraft={version:4,savedAt:"2026-08-28T21:00:00.000Z",creationRequestId:"11111111-1111-4111-8111-111111111111",base:snapshot(proposal),current:snapshot("Account coalition plan")};
  let writes=0;domWindow.localStorage.setItem("influence_session","test-token");
- globalThis.fetch=Object.assign(async (_input:RequestInfo|URL,init?:RequestInit)=>{if(init?.method==="PUT"){writes++;return Response.json({version:"11111111-1111-4111-8111-111111111111:2"});}return Response.json({version:"11111111-1111-4111-8111-111111111111:1",document:accountDraft});},{preconnect:originalFetch.preconnect}) as typeof fetch;
+ globalThis.fetch=Object.assign(async (_input:RequestInfo|URL,init?:RequestInit)=>{
+    if (String(_input).includes("/agent-profiles/generations")) return Response.json([]);if(init?.method==="PUT"){writes++;return Response.json({version:"11111111-1111-4111-8111-111111111111:2"});}return Response.json({version:"11111111-1111-4111-8111-111111111111:1",document:accountDraft});},{preconnect:originalFetch.preconnect}) as typeof fetch;
  const view=await renderForm(false,async()=>{},false,{},draftScope,true);
+ fireEvent.click(await view.findByRole("button",{name:"Choose draft"}));
  const choices=await view.findByRole("region",{name:"Choose draft"});
  expect(choices.textContent).toContain("Account coalition plan");expect(choices.textContent).toContain(draftStrategy);expect(writes).toBe(0);
- fireEvent.click(within(choices).getByRole("button",{name:"Tab"}));fireEvent.click(view.getByRole("button",{name:"Resume"}));fireEvent.click(view.getByRole("button",{name:"Strategy"}));
+ fireEvent.click(within(choices).getByRole("button",{name:"Tab"}));fireEvent.click(view.getByRole("button",{name:"Resume"}));fireEvent.click(view.getByRole("tab",{name:"Strategy"}));
  expect((view.getByLabelText("Influence strategy") as HTMLTextAreaElement).value).toBe(draftStrategy);
 });
 
@@ -231,6 +259,7 @@ test("Resume waits for account recovery and does not reopen the recovered draft"
   const accountRead=new Promise<Response>(resolve=>{resolveRead=resolve;});
   let writes=0;
   globalThis.fetch=Object.assign(async (_input:RequestInfo|URL,init?:RequestInit)=>{
+    if (String(_input).includes("/agent-profiles/generations")) return Response.json([]);
     if(init?.method==="PUT"){writes++;return Response.json({version:"11111111-1111-4111-8111-111111111111:2"});}
     return accountRead;
   },{preconnect:originalFetch.preconnect}) as typeof fetch;
@@ -245,4 +274,55 @@ test("Resume waits for account recovery and does not reopen the recovered draft"
   fireEvent.click(view.getByRole("button",{name:"Guided"}));
   fireEvent.click(view.getByRole("button",{name:"Advanced"}));
   expect(view.queryByLabelText("Saved local draft")).toBeNull();
+});
+
+test("a failed artwork selection never offers image generation as its retry",async()=>{
+  const requestId="22222222-2222-4222-8222-222222222222";
+  domWindow.sessionStorage.setItem(draftKey,JSON.stringify({version:4,savedAt:new Date().toISOString(),creationRequestId:"11111111-1111-4111-8111-111111111111",base:snapshot(proposal),current:snapshot(proposal),candidateImage:{requestId,fullBodyReferenceUrl:"/candidate.webp",width:1024,height:1536,avatarUrl:null,portraitCrop:null,cropWarning:null}}));
+  const requests:string[]=[];
+  globalThis.fetch=Object.assign(async(input:RequestInfo|URL)=>{
+    if (String(input).includes("/agent-profiles/generations")) return Response.json([]);requests.push(String(input));return Response.json({error:"Synthetic decision failure"},{status:503});},{preconnect:originalFetch.preconnect}) as typeof fetch;
+  const view=await renderForm(false);
+  fireEvent.click(view.getByRole("button",{name:"Resume"}));
+  fireEvent.click(view.getByRole("button",{name:"Select"}));
+  const alert=await view.findByRole("alert");
+  expect(alert.textContent).toContain("Couldn’t select artwork.");
+  expect(within(alert).queryByRole("button",{name:"Retry"})).toBeNull();
+  expect(requests.filter(path=>path.endsWith("/visual-reference"))).toHaveLength(0);
+  expect(view.getByRole("button",{name:"Select"})).toBeTruthy();
+});
+
+
+test("generation and review wait for account draft recovery without showing an error", async () => {
+  domWindow.sessionStorage.removeItem(draftKey);
+  domWindow.localStorage.setItem("influence_session", "test-token");
+  const read = Promise.withResolvers<Response>();
+  let posts = 0;
+  globalThis.fetch = Object.assign(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(_input).includes("/agent-profiles/generations")) return Response.json([]);
+    if (init?.method === "POST") posts++;
+    return read.promise;
+  }, { preconnect: originalFetch.preconnect }) as typeof fetch;
+  const view = await renderForm(false, async () => {}, false, {}, draftScope, true);
+  expect(view.getByText("Loading draft…")).toBeTruthy();
+  expect((view.getByRole("button", { name: "Generate" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((view.getByRole("button", { name: "Review" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(view.getByRole("button", { name: "Generate" }));
+  fireEvent.click(view.getByRole("button", { name: "Guided" }));
+  expect((view.getByLabelText("Message the character assistant") as HTMLTextAreaElement).disabled).toBe(true);
+  expect(view.queryByRole("alert")).toBeNull();
+  expect(posts).toBe(0);
+  await act(async () => read.resolve(Response.json(null)));
+  await waitFor(() => expect((view.getByLabelText("Message the character assistant") as HTMLTextAreaElement).disabled).toBe(false));
+  expect(view.queryByText("Loading draft…")).toBeNull();
+  expect(view.queryByRole("alert")).toBeNull();
+});
+
+
+test.each(["reviewing","held"] as const)("footer uses the canonical %s state instead of the internal held flag",async reviewState=>{
+ domWindow.sessionStorage.removeItem(draftKey);
+ const original=agent();
+ const view=await renderForm(false,async()=>{},false,{contentRevisionId:"accepted",ownerContent:{published:original,submitted:{revisionId:"pending",content:original,disposition:null,held:true,status:"pending"},reviewState,availability:"available",moderationVersion:0}});
+ expect(view.container.querySelector('[aria-label="Editor actions"]')!.textContent).toContain(reviewState === "reviewing" ? "Reviewing" : "Held for moderation");
+ if(reviewState === "reviewing") expect(view.container.querySelector('[aria-label="Editor actions"]')!.textContent).not.toContain("Held for moderation");
 });

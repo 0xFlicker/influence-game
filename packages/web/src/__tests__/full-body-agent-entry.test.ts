@@ -63,7 +63,7 @@ test("missing art opens the workspace and entry waits for acceptance", () => {
     const agent = () => ({ id: "agent", latestContentRevisionId:"new",contentRevisionId:accepted?"new":null,ownerContent:{reviewState:accepted?"accepted":"reviewing"}, name: "Avery", personality: "Patient", backstory: null, strategyStyle: null, personaKey: "strategic", avatarUrl: null, fullBodyReferenceUrl: body, gamesPlayed: 0, gamesWon: 0, createdAt: "2026", updatedAt: "2026" });
     mock.module("next/navigation", () => ({ useRouter: () => router }));
     mock.module("next/link", () => ({ default: ({ href, children, ...props }) => { const React = require("react"); return React.createElement("a", { href, ...props }, children); } }));
-    mock.module("@/lib/api", () => ({ apiFetchMedia: async () => new Blob(), resolveApiUrl: url => url, clearAgentEntryIntent: async () => {}, getAgent: async () => agent(), startAgentVisualUpdate: async () => { starts++; }, joinGame: async () => { joins++; }, joinFreeQueue: async () => {}, listAgents: async () => [] }));
+    mock.module("@/lib/api", () => ({ ApiError: class ApiError extends Error {}, apiFetchMedia: async () => new Blob(), resolveApiUrl: url => url, clearAgentEntryIntent: async () => {}, getAgent: async () => agent(), startAgentVisualUpdate: async () => { starts++; }, joinGame: async () => { joins++; }, joinFreeQueue: async () => {}, listAgents: async () => [] }));
     mock.module("@/lib/game-entry", () => ({ getGameEntry: async () => ({ gameKind: "influence", slug: "game-1" }) }));
     mock.module("@/lib/game-links", () => ({ gameHref: slug => "/games/" + slug }));
     mock.module("@/lib/werewolf-api", () => ({ joinWerewolfLobby: async () => {} }));

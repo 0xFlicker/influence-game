@@ -1,3 +1,4 @@
+import type { VisualBoundaryGuard } from "./visual-execution-boundary.js";
 import { storeAgentDraftImage } from "./agent-draft-images.js";
 import { createExactStructuredOutputArtifact, ExactStructuredOutputRegistry } from "@influence/engine";
 import sharp from "sharp";
@@ -13,10 +14,16 @@ import { exportCharacterPortrait } from "./visual-profile-generation.js";
 import { AgentProfileManagementError, updateOwnedAgentProfile, type UpdateAgentProfileMutationInput } from "./agent-profile-management.js";
 import { AGENT_CREATION_GAME_PRIMER } from "./agent-creation-game-primer.js";
 
+export function visualUpdateRequestId(jobId: string, stage: typeof schema.agentVisualUpdates.$inferSelect["stage"], attempt: number) {
+  const bytes = createHash("sha256").update(`${jobId}:${stage}:${attempt}`).digest().subarray(0,16);
+  bytes[6] = (bytes[6]! & 15) | 64; bytes[8] = (bytes[8]! & 63) | 128;
+  const h = bytes.toString("hex"); return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
+}
+
 export type VisualUpdateSource = typeof schema.agentProfiles.$inferSelect;
 export interface VisualUpdateDependencies {
   details(db: DrizzleDB, source: VisualUpdateSource, requestId: string): Promise<VisualDetails>;
-  body(db: DrizzleDB, source: VisualUpdateSource, requestId: string, publicBaseUrl?: string): Promise<string>;
+  body(db: DrizzleDB, source: VisualUpdateSource, requestId: string, publicBaseUrl?: string, beforeDispatch?:VisualBoundaryGuard): Promise<string>;
   head(db: DrizzleDB, source: VisualUpdateSource, requestId: string): Promise<CharacterHeadPosition>;
   portrait(source: VisualUpdateSource, publicBaseUrl: string | undefined, db: DrizzleDB): Promise<{ avatarUrl: string; portraitCrop: NonNullable<VisualUpdateSource["portraitCrop"]> }>;
   apply: typeof updateOwnedAgentProfile;
@@ -61,9 +68,9 @@ export const visualUpdateDependencies: VisualUpdateDependencies = {
       return details;
     });
   },
-  async body(db, source, requestId, _publicBaseUrl) {
+  async body(db, source, requestId, _publicBaseUrl,beforeDispatch) {
     const reference = source.avatarUrl ? await readVisualProfileImage(source.avatarUrl, { name: source.name, personaKey: source.personaKey ?? "" }, {db,userId:source.userId}) : null;
-    const result = await renderOwnedVisualReference(db, {userId:source.userId,requestId,request:{operation:reference ? "edit" : "create",background:"transparent",width:1024,height:1536,references:reference ? [reference] : [],
+    const result = await renderOwnedVisualReference(db, {userId:source.userId,requestId,beforeDispatch,request:{operation:reference ? "edit" : "create",background:"transparent",width:1024,height:1536,references:reference ? [reference] : [],
       prompt:`Create one photorealistic full-body reference of the adult House character ${source.name}. Entire character and feet visible, transparent background with real alpha, no scenery or floor, neutral camera-facing pose. No text or inset. ${reference ? "Preserve this exact reference character's face, species, clothes, colors and distinguishing features; do not redesign them." : "Honor the described identity, including non-human forms."} Visual design: ${source.visualDesign}. Performance: ${source.performanceInstructions}. Identity: ${source.personality}. Backstory: ${source.backstory ?? ""}.`}});
     const bytes = await sharp(result.image).rotate().webp({quality:92}).toBuffer();
     const stored = {publicUrl: await storeAgentDraftImage(db,source.userId,bytes)};

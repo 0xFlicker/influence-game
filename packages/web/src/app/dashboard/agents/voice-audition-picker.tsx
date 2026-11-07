@@ -6,6 +6,7 @@ import {
 } from "@influence/engine/voice-catalog";
 import { apiFetchMedia } from "@/lib/api";
 import { captureProductEvent } from "@/lib/product-analytics";
+import { AgentIssueNotice, useAgentIssue } from "./agent-issue";
 import styles from "./agent-workspace.module.css";
 export function AgentVoicePicker({
   value,
@@ -18,8 +19,8 @@ export function AgentVoicePicker({
 }) {
   const [open, setOpen] = useState(false),
     [query, setQuery] = useState(""),
-    [playing, setPlaying] = useState<string | null>(null),
-    [error, setError] = useState<string | null>(null);
+    [playing, setPlaying] = useState<string | null>(null);
+  const [error, setError] = useAgentIssue("voice");
   const id = useId(),
     root = useRef<HTMLDivElement>(null),
     trigger = useRef<HTMLButtonElement>(null);
@@ -90,9 +91,7 @@ export function AgentVoicePicker({
     } catch (cause) {
       if (request === epoch.current) {
         stop();
-        setError(
-          cause instanceof Error ? cause.message : "Sample could not play",
-        );
+        setError(cause);
       }
     }
   }
@@ -111,8 +110,25 @@ export function AgentVoicePicker({
           setOpen(!open);
         }}
       >
-        {PLAYER_VOICES.find((voice) => voice.id === value)?.name ?? "Automatic"}{" "}
-        ⌄
+        <span>
+          {PLAYER_VOICES.find((voice) => voice.id === value)?.name ??
+            "Automatic"}
+        </span>
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 20 20"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="m5 8 5 5 5-5"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
       </button>
       {open && (
         <div
@@ -168,7 +184,7 @@ export function AgentVoicePicker({
           <p className={styles.hint}>
             “Every promise matters. Let&apos;s see who keeps theirs.”
           </p>
-          {error && <p role="alert">{error}</p>}
+          {error && <AgentIssueNotice issue={error} />}
         </div>
       )}
     </div>

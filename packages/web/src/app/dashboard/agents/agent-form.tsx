@@ -1,11 +1,16 @@
 "use client";
+import {
+  AgentGenerations,
+  useAgentGenerations,
+  type AgentGeneration,
+} from "./agent-generations";
 import { captureProductEvent } from "@/lib/product-analytics";
 import { agentModelLabel } from "@/components/agent-model-label";
 import { PLAYER_VOICES } from "@influence/engine/voice-catalog";
 import { OwnedCharacterImage } from "@/components/owned-character-image";
 import { AgentVoicePicker } from "./voice-audition-picker";
 
-import { PERSONAS } from "@/lib/personas";
+import { ArchetypePicker } from "./archetype-picker";
 import { ModelPreferencePicker } from "@/components/model-preference-picker";
 import type { ModelPreference } from "@influence/engine/game-model-routing";
 import { defaultWerewolfStrategy } from "@influence/engine/werewolf/strategy";
@@ -39,6 +44,12 @@ import { CharacterPortraitEditor } from "./character-portrait-editor";
 import { GrowingTextarea } from "./growing-textarea";
 import { StrategyDiff } from "./strategy-diff";
 import styles from "./agent-workspace.module.css";
+import {
+  AgentIssueNotice,
+  useAgentIssue,
+  type AgentIssue,
+} from "./agent-issue";
+import { AgentWorkspacePanel } from "./agent-workspace-panel";
 import { AgentOperationActivity } from "./agent-operation-activity";
 import { CharacterFormation } from "./character-formation";
 import {
@@ -248,6 +259,7 @@ export function AgentForm({
   imageRequest,
 }: AgentFormProps) {
   const [guided, setGuided] = useState(initialGuided);
+  const [activityOpen, setActivityOpen] = useState(false);
   const [conversation, setConversation] = useState<CharacterConversation>();
   const [conversationKey, setConversationKey] = useState(0);
   const [advancedSection, setAdvancedSection] = useState<
@@ -256,7 +268,7 @@ export function AgentForm({
   const referenceEpoch = useRef(0);
   const reviewRef = useRef<HTMLElement>(null);
   const [guidedScope, setGuidedScope] = useState<
-    CharacterSection | undefined
+    { section: CharacterSection } | undefined
   >();
   const {
     account,
@@ -377,7 +389,7 @@ export function AgentForm({
     initialSnapshot.fullBodyReferenceUrl,
   );
   const [referenceBusy, setReferenceBusy] = useState(false);
-  const [referenceError, setReferenceError] = useState<string | null>(null);
+  const [referenceError, setReferenceError] = useAgentIssue("artwork");
   const referenceRequest = useRef<{
     agentId?: string;
     draftScope: string;
@@ -412,8 +424,8 @@ export function AgentForm({
   const [validationErrors, setValidationErrors] = useState<
     Record<string, string>
   >({});
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [aiError, setAiError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useAgentIssue("save");
+  const [aiError, setAiError] = useAgentIssue("assistant");
   const [assistantNote, setAssistantNote] = useState<string | null>(null);
   const [changeRequest, setChangeRequest] = useState("");
   const profileRequestChecked = useRef(false);
@@ -434,9 +446,9 @@ export function AgentForm({
   const [draftConflicts, setDraftConflicts] = useState<DraftConflict[]>([]);
   const [draftReady, setDraftReady] = useState(false);
   const [draftPersisted, setDraftPersisted] = useState(false);
-  const [draftStorageError, setDraftStorageError] = useState<string | null>(
-    null,
-  );
+  const [draftStorageError, setDraftStorageError] = useAgentIssue("draft");
+  const discardInFlight = useRef(false);
+  const [discarding, setDiscarding] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const discardDialog = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -455,7 +467,7 @@ export function AgentForm({
     null,
   );
   const [unfinishedReplacement, setUnfinishedReplacement] = useState(false);
-  const [generationNotice, setGenerationNotice] = useState<string | null>(null);
+  const [generationNotice, setGenerationNotice] = useAgentIssue("assistant");
   const generationBusy = profileGenerating || referenceBusy;
   useEffect(
     () => () => {
@@ -532,6 +544,13 @@ export function AgentForm({
     : null;
 
   const [remoteReady, setRemoteReady] = useState(false);
+  const draftRecovering = authenticated && !remoteReady;
+  const generations = useAgentGenerations();
+  const imageGenerationBlocked =
+    generations.loading ||
+    !!generations.error ||
+    generations.rows.some((row) => row.blocksGeneration);
+
   const remoteVersion = useRef<string | null>(null);
   const remoteBlocked = useRef(false);
   const remoteWrites = useRef<Promise<void>>(Promise.resolve());
@@ -574,9 +593,7 @@ export function AgentForm({
           } else {
             setUnreadableDraft(true);
             setDraftReady(false);
-            setDraftStorageError(
-              "The saved draft could not be read. Discard it explicitly before continuing.",
-            );
+            setDraftStorageError("draft_unreadable");
           }
         }
         setRemoteReady(true);
@@ -584,11 +601,7 @@ export function AgentForm({
       .catch((cause) => {
         if (active) {
           remoteBlocked.current = true;
-          setDraftStorageError(
-            cause instanceof Error
-              ? cause.message
-              : "Draft recovery unavailable",
-          );
+          setDraftStorageError(cause, "draft_load_failed");
         }
       });
     return () => {
@@ -601,34 +614,33 @@ export function AgentForm({
     anonymousDraftKey,
     remotePath,
     initialSnapshot,
+    setDraftStorageError,
   ]);
   const persistRemote = useCallback(
     (document: StoredEditorDraft): Promise<void> => {
       if (!authenticated) return Promise.resolve();
-      if (!remoteReady || remoteBlocked.current)
+      if (!remoteReady)
         return Promise.reject(
-          new Error("Reload to recover the saved draft before continuing."),
+          new ApiError(503, "Draft recovery unavailable", "draft_load_failed"),
         );
       const next = remoteWrites.current.then(async () => {
+        if (discardInFlight.current) return;
         if (boundAccount.current !== activeAccount.current)
-          throw new Error(
-            "Your account changed. Reopen the editor to continue.",
-          );
+          throw new Error("account_changed");
         const result = await apiFetch<{ version: string }>(remotePath, {
           method: "PUT",
           body: JSON.stringify({ version: remoteVersion.current, document }),
         });
         remoteVersion.current = result.version;
+        remoteBlocked.current = false;
       });
       remoteWrites.current = next.catch((cause) => {
         remoteBlocked.current = true;
-        setDraftStorageError(
-          cause instanceof Error ? cause.message : "Draft was not saved",
-        );
+        setDraftStorageError(cause);
       });
       return next;
     },
-    [authenticated, remoteReady, remotePath],
+    [authenticated, remoteReady, remotePath, setDraftStorageError],
   );
 
   const interruptGeneration = useCallback(
@@ -645,15 +657,12 @@ export function AgentForm({
       setUnfinishedReplacement(true);
       setGenerationNotice(message);
     },
-    [draftStorageKey],
+    [draftStorageKey, setGenerationNotice],
   );
   useEffect(() => {
     if (!generationDeadline) return;
     const timer = window.setTimeout(
-      () =>
-        interruptGeneration(
-          "Generation timed out. Your selected assets and text are unchanged; late results will not be applied.",
-        ),
+      () => interruptGeneration("assistant_timeout"),
       Math.max(0, generationDeadline - Date.now()),
     );
     return () => window.clearTimeout(timer);
@@ -663,9 +672,7 @@ export function AgentForm({
     if (!draftStorageKey) return;
     const storedRead = readEditorStorage(draftStorageKey);
     if (!storedRead.ok) {
-      setDraftStorageError(
-        "Local draft recovery is unavailable in this browser. You can still save the Agent normally.",
-      );
+      setDraftStorageError("draft_local_unavailable");
       setDraftReady(true);
       return;
     }
@@ -682,9 +689,7 @@ export function AgentForm({
     if (!stored) {
       if (storedRead.value) {
         setUnreadableDraft(true);
-        setDraftStorageError(
-          "This tab has an unreadable draft. Discard it explicitly before continuing.",
-        );
+        setDraftStorageError("draft_unreadable");
         return;
       }
       setDraftReady(true);
@@ -698,11 +703,13 @@ export function AgentForm({
     anonymousDraftKey,
     draftOwner,
     publicPreview,
+    setDraftStorageError,
   ]);
 
   useEffect(() => {
     if (
       !draftStorageKey ||
+      discarding ||
       unreadableDraft ||
       !draftReady ||
       pendingRestore ||
@@ -723,13 +730,12 @@ export function AgentForm({
       guided === initialGuided
     ) {
       if (!removeEditorStorage(draftStorageKey)) {
-        setDraftStorageError(
-          "The old local draft could not be cleared. Saving the Agent still works.",
-        );
+        setDraftStorageError("draft_local_unavailable");
       }
       return;
     }
     const timeout = window.setTimeout(() => {
+      if (discardInFlight.current) return;
       const stored: StoredEditorDraft = {
         version: DRAFT_VERSION,
         savedAt: new Date().toISOString(),
@@ -747,18 +753,20 @@ export function AgentForm({
         conversation,
       };
       if (writeEditorStorage(draftStorageKey, JSON.stringify(stored))) {
-        setDraftStorageError(null);
         void persistRemote(stored)
-          .then(() => setDraftPersisted(true))
+          .then(() => {
+            setDraftPersisted(true);
+            setDraftStorageError(null);
+          })
           .catch(() => setDraftPersisted(false));
       } else {
-        setDraftStorageError(
-          "This draft could not be stored locally. Save before leaving this page.",
-        );
+        setDraftStorageError("draft_failed");
       }
     }, 500);
     return () => window.clearTimeout(timeout);
   }, [
+    setDraftStorageError,
+    discarding,
     unreadableDraft,
     initialGuided,
     referenceBusy,
@@ -805,11 +813,7 @@ export function AgentForm({
               referenceRequest.current = null;
             }
           })
-          .catch((cause) =>
-            setReferenceError(
-              cause instanceof Error ? cause.message : "Progress unavailable",
-            ),
-          )
+          .catch((cause) => setReferenceError(cause))
           .finally(() => {
             if (epoch === referenceEpoch.current) setReferenceBusy(false);
           });
@@ -852,11 +856,10 @@ export function AgentForm({
       ),
     );
     if (pendingRestore.generationDeadline)
-      setGenerationNotice(
-        "The previous text update was interrupted. Your draft fields are retained.",
-      );
+      setGenerationNotice("assistant_timeout");
     submission.current = pendingRestore.submission;
     setPendingRestore(null);
+    setActivityOpen(conflicts.length > 0);
     setDraftReady(true);
   }
 
@@ -881,15 +884,17 @@ export function AgentForm({
     setProfileGenerating(false);
     setReferenceBusy(false);
     setUnfinishedReplacement(false);
+    setAiError(null);
+    setReferenceError(null);
+    setSaveError(null);
+    setDraftStorageError(null);
+    setGenerationNotice(null);
+    setReviewOpen(false);
     return true;
   }
 
   async function deleteRemoteDraft() {
     await remoteWrites.current;
-    if (remoteBlocked.current)
-      throw new Error(
-        "The draft changed or could not be saved. Reload before discarding it.",
-      );
     if (authenticated)
       await apiFetch(remotePath, {
         method: "DELETE",
@@ -900,35 +905,48 @@ export function AgentForm({
 
   async function discardArtwork() {
     const ids = new Set([
+      imageRequest,
       referenceRequest.current?.requestId,
       candidateImage?.requestId,
       pendingRestore?.referenceRequest?.requestId,
       pendingRestore?.candidateImage?.requestId,
     ]);
     for (const id of ids)
-      if (typeof id === "string")
-        await apiFetch(
-          "/api/agent-profiles/visual-references/" + id + "/decision",
-          { method: "POST", body: JSON.stringify({ decision: "discarded" }) },
-        );
+      if (typeof id === "string") {
+        try {
+          await apiFetch(
+            "/api/agent-profiles/visual-references/" + id + "/decision",
+            { method: "POST", body: JSON.stringify({ decision: "discarded" }) },
+          );
+        } catch (cause) {
+          if (!(cause instanceof ApiError && cause.status === 404)) throw cause;
+        }
+      }
   }
 
   async function clearStoredDraft() {
+    if (discardInFlight.current) return;
+    discardInFlight.current = true;
+    setDiscarding(true);
+    generationEpoch.current++;
+    referenceEpoch.current++;
     try {
       await deleteRemoteDraft();
       await discardArtwork();
     } catch (cause) {
-      setDraftStorageError(
-        cause instanceof Error ? cause.message : "Draft could not be discarded",
-      );
+      setDraftStorageError(cause, "discard_failed");
+      discardInFlight.current = false;
+      setDiscarding(false);
       return;
     }
     if (!retireDraft()) {
-      setDraftStorageError(
-        "The local draft could not be cleared. Browser storage may be unavailable.",
-      );
+      setDraftStorageError("discard_failed");
+      discardInFlight.current = false;
+      setDiscarding(false);
       return;
     }
+    discardInFlight.current = false;
+    setDiscarding(false);
     setPendingRestore(null);
     setRestoreAlternatives(null);
     setUnreadableDraft(false);
@@ -956,7 +974,7 @@ export function AgentForm({
     .join(", ");
 
   async function completeMissingDetails() {
-    if (generationBusy || uploading || submitting) return;
+    if (draftRecovering || generationBusy || uploading || submitting) return;
     const fields = characterEditFields(
       {
         name,
@@ -979,7 +997,13 @@ export function AgentForm({
   }
 
   async function handleAdvancedSend(incomingMessage?: string) {
-    if (generationBusy || uploading || submitting || profileRequestBlocked)
+    if (
+      draftRecovering ||
+      generationBusy ||
+      uploading ||
+      submitting ||
+      profileRequestBlocked
+    )
       return;
     const message =
       incomingMessage?.trim() ||
@@ -1043,12 +1067,7 @@ export function AgentForm({
         );
       }
     } catch (error) {
-      if (epoch === generationEpoch.current)
-        setAiError(
-          error instanceof Error
-            ? error.message
-            : "The assistant could not complete this turn.",
-        );
+      if (epoch === generationEpoch.current) setAiError(error);
     } finally {
       if (epoch === generationEpoch.current) {
         setProfileGenerating(false);
@@ -1071,9 +1090,7 @@ export function AgentForm({
     const incoming = readEditorStorage(key);
     if (!incoming.ok) {
       profileRequestChecked.current = true;
-      setAiError(
-        "Could not read your request from this tab. Please enter it again.",
-      );
+      setAiError("request_unavailable");
       return;
     }
     if (!incoming.value) {
@@ -1083,9 +1100,7 @@ export function AgentForm({
     const drafts = findAgentDrafts(account.id, initial.id);
     if (!drafts.ok) {
       profileRequestChecked.current = true;
-      setAiError(
-        "Could not check the existing draft. Your request remains in this tab.",
-      );
+      setAiError("draft_load_failed");
       return;
     }
     if (!draftReady && !drafts.scopes.length) return;
@@ -1093,16 +1108,12 @@ export function AgentForm({
     setChangeRequest(incoming.value);
     if (drafts.scopes.length || pendingRestore) {
       setProfileRequestBlocked(true);
-      setAiError(
-        "An unfinished draft was found. Finish or discard it before sending this request. Your request remains in this tab.",
-      );
+      setAiError("draft_pending");
       return;
     }
     if (!removeEditorStorage(key)) {
       setProfileRequestBlocked(true);
-      setAiError(
-        "Could not safely start the request. Check browser storage and try again; your text is shown here.",
-      );
+      setAiError("request_unavailable");
       return;
     }
     void handleAdvancedSend(incoming.value);
@@ -1160,21 +1171,22 @@ export function AgentForm({
     images?: boolean;
     imageOperation?: "create" | "edit";
   }) {
+    if (draftRecovering) return false;
+    if ((options?.appearance || options?.images) && imageGenerationBlocked) {
+      generations.refresh();
+      return false;
+    }
     if (anonymous) {
       requestAccount();
       return false;
     }
     if (boundAccount.current !== activeAccount.current) {
-      setAiError("Your account changed. Reopen the editor to continue.");
+      setAiError("account_changed");
       return false;
     }
     const request = options?.message ?? changeRequest;
     if (!request.trim() && (isEditing || creationTraitIds.length === 0)) {
-      setAiError(
-        isEditing
-          ? "Describe what you want changed before asking AI to update this Agent."
-          : "Choose a few character ingredients or describe the Agent you want to create.",
-      );
+      setAiError("assistant_input");
       return;
     }
     const savedReference = draftStorageKey
@@ -1184,9 +1196,7 @@ export function AgentForm({
       (options?.appearance || options?.images) &&
       (referenceRequest.current || (savedReference?.ok && savedReference.value))
     ) {
-      setAiError(
-        "The previous image request is unfinished. Retry that reference request, submit the selected assets, or discard the draft before starting a different character generation.",
-      );
+      setAiError("image_pending");
       return;
     }
     const epoch = beginGeneration();
@@ -1196,7 +1206,9 @@ export function AgentForm({
     setAssistantNote(null);
     try {
       const params: GeneratePersonalityParams = {
-        selectedFields: options?.sections as CharacterField[] | undefined,
+        selectedFields: options?.appearance
+          ? ["visualDesign"]
+          : (options?.sections as CharacterField[] | undefined),
         changeRequest: options
           ? `${options.appearance ? "Update visualDesign using this appearance request. Preserve the character's identity. " : "Develop a rich character prompt with concrete motivations, voice, flaws, relationships and game behavior. "}${options.sections?.length ? `Change only these sections: ${options.sections.join(", ")}. ` : ""}${request}`
           : request.trim() || undefined,
@@ -1238,9 +1250,14 @@ export function AgentForm({
       const result = await generatePersonality(params);
       if (epoch !== generationEpoch.current) return;
       setGenerationDeadline(null);
+      const editedFields = params.selectedFields?.length
+        ? characterEditFields(
+            params.existingProfile ?? {},
+            params.selectedFields,
+          )
+        : null;
       const change = (section: CharacterSection) =>
-        !options?.appearance &&
-        (!options?.sections?.length || options.sections.includes(section));
+        editedFields ? editedFields.includes(section) : !options?.appearance;
       if (change("name")) setName(result.name);
       if (change("backstory")) setBackstory(result.backstory ?? "");
       if (change("personality")) setPersonality(result.personality);
@@ -1252,8 +1269,7 @@ export function AgentForm({
       if (change("gender")) setGender(result.gender);
       if (change("performanceInstructions"))
         setPerformanceInstructions(result.performanceInstructions);
-      if (options?.appearance || change("visualDesign"))
-        setVisualDesign(result.visualDesign);
+      if (change("visualDesign")) setVisualDesign(result.visualDesign);
       setValidationErrors((current) =>
         Object.fromEntries(
           Object.entries(current).filter(
@@ -1266,13 +1282,13 @@ export function AgentForm({
       if (options?.appearance || options?.images) {
         const success = await generateReference(
           {
-            name: options?.appearance ? name : result.name,
-            personaKey: options?.appearance
-              ? (personaKey ?? "strategic")
-              : result.personaKey,
-            performanceInstructions: options?.appearance
-              ? performanceInstructions
-              : result.performanceInstructions,
+            name: change("name") ? result.name : name,
+            personaKey: change("personaKey")
+              ? result.personaKey
+              : (personaKey ?? "strategic"),
+            performanceInstructions: change("performanceInstructions")
+              ? result.performanceInstructions
+              : performanceInstructions,
             visualDesign: result.visualDesign,
           },
           options?.imageOperation,
@@ -1288,11 +1304,7 @@ export function AgentForm({
       if (epoch !== generationEpoch.current) return;
       setGenerationDeadline(null);
       setUnfinishedReplacement(true);
-      setAiError(
-        error instanceof Error
-          ? error.message
-          : "AI generation failed. Your existing text is unchanged.",
-      );
+      setAiError(error);
       return false;
     } finally {
       if (epoch === generationEpoch.current) setProfileGenerating(false);
@@ -1343,7 +1355,7 @@ export function AgentForm({
       return;
     }
     if (boundAccount.current !== activeAccount.current) {
-      setSaveError("Your account changed. Reopen the editor to continue.");
+      setSaveError("account_changed");
       return;
     }
     if (
@@ -1433,12 +1445,10 @@ export function AgentForm({
         });
       } else await deleteRemoteDraft();
       if (!retireDraft()) {
-        setDraftStorageError(
-          "The saved Agent is safe, but its local recovery draft could not be cleared.",
-        );
+        setDraftStorageError("discard_failed");
       }
     } catch (error) {
-      setSaveError(agentSaveErrorMessage(error));
+      setSaveError(error);
       setSubmitting(false);
     }
   }
@@ -1456,20 +1466,25 @@ export function AgentForm({
   }
 
   async function confirmCancel() {
+    if (discardInFlight.current) return;
+    discardInFlight.current = true;
+    setDiscarding(true);
+    generationEpoch.current++;
+    referenceEpoch.current++;
     try {
       await deleteRemoteDraft();
       await discardArtwork();
     } catch (cause) {
-      setDraftStorageError(
-        cause instanceof Error ? cause.message : "Draft could not be discarded",
-      );
+      setDraftStorageError(cause, "discard_failed");
+      discardInFlight.current = false;
+      setDiscarding(false);
       return;
     }
     if (!retireDraft()) {
-      setDraftStorageError(
-        "The local draft could not be cleared. Browser storage may be unavailable.",
-      );
+      setDraftStorageError("discard_failed");
       setConfirmDiscard(false);
+      discardInFlight.current = false;
+      setDiscarding(false);
       return;
     }
     onCancel();
@@ -1489,7 +1504,11 @@ export function AgentForm({
     !personality.trim() && "personality",
     !gender && "gender",
   ].filter((field): field is string => Boolean(field));
+  const artworkBlocked = Boolean(
+    referenceError && ["discard", "reload"].includes(referenceError.recovery),
+  );
   const submitDisabled =
+    draftRecovering ||
     !dirty ||
     missingRequired.length > 0 ||
     unreadableDraft ||
@@ -1549,6 +1568,7 @@ export function AgentForm({
           "/decision",
         { method: "POST", body: JSON.stringify({ decision }) },
       );
+      generations.retire(result.requestId, "reference");
       if (decision === "selected") {
         setFullBodyReferenceUrl(result.fullBodyReferenceUrl);
         setHeadPosition(null);
@@ -1560,9 +1580,10 @@ export function AgentForm({
       setCandidateImage(null);
     } catch (cause) {
       setReferenceError(
-        cause instanceof Error
-          ? cause.message
-          : "Artwork could not be selected",
+        cause,
+        decision === "selected"
+          ? "artwork_select_failed"
+          : "artwork_discard_failed",
       );
     }
   }
@@ -1575,6 +1596,8 @@ export function AgentForm({
       stage: string;
       result: CharacterImageDraft | null;
       error: string | null;
+      errorCode: string | null;
+      retryable: boolean;
     }>(
       "/api/agent-profiles/visual-references/" +
         encodeURIComponent(imageRequest),
@@ -1583,15 +1606,16 @@ export function AgentForm({
         if (job.status === "ready") setCandidateImage(job.result);
         else if (job.status === "failed")
           setReferenceError(
-            job.error ?? "Preparation failed. Retry the saved image request.",
+            new ApiError(
+              409,
+              job.error ?? "Image preparation failed",
+              job.errorCode ?? undefined,
+              job.retryable,
+            ),
           );
       })
-      .catch((cause) =>
-        setReferenceError(
-          cause instanceof Error ? cause.message : "Artwork unavailable",
-        ),
-      );
-  }, [imageRequest, remoteReady]);
+      .catch((cause) => setReferenceError(cause));
+  }, [imageRequest, remoteReady, setReferenceError]);
   async function retrySelectedJob() {
     if (!imageRequest) return;
     setReferenceBusy(true);
@@ -1605,9 +1629,7 @@ export function AgentForm({
       const result = await observeReference(imageRequest, epoch);
       if (result) setCandidateImage(result);
     } catch (cause) {
-      setReferenceError(
-        cause instanceof Error ? cause.message : "Retry failed",
-      );
+      setReferenceError(cause);
     } finally {
       if (epoch === referenceEpoch.current) setReferenceBusy(false);
     }
@@ -1623,6 +1645,8 @@ export function AgentForm({
         status: string;
         stage: string;
         error: string | null;
+        errorCode: string | null;
+        retryable: boolean;
         result: CharacterImageDraft | null;
         createdAt: string;
       }>(
@@ -1634,15 +1658,49 @@ export function AgentForm({
       setReferenceStartedAt(job.createdAt);
       if (job.status === "ready" && job.result) return job.result;
       if (job.status === "selected" || job.status === "discarded")
-        throw new Error(
-          "This artwork was already reviewed in another session.",
-        );
+        throw new ApiError(409, "Artwork changed", "artwork_changed");
       if (job.status === "failed")
-        throw new Error(job.error ?? "Image preparation failed");
+        throw new ApiError(
+          409,
+          job.error ?? "Image preparation failed",
+          job.errorCode ?? undefined,
+          job.retryable,
+        );
       await new Promise((resolve) => window.setTimeout(resolve, 1500));
     }
   }
 
+  async function cancelGeneration(row: AgentGeneration) {
+    generations.retire(row.id, row.source);
+    if (
+      row.id !== referenceRequest.current?.requestId &&
+      row.id !== candidateImage?.requestId &&
+      row.id !== imageRequest
+    )
+      return;
+    ++referenceEpoch.current;
+    referenceRequest.current = null;
+    setReferenceBusy(false);
+    setCandidateImage(null);
+    setUnfinishedReplacement(false);
+    setGenerationDeadline(null);
+    setReferenceError(null);
+    if (draftStorageKey)
+      removeEditorStorage(draftStorageKey + ":visual-reference");
+  }
+  async function reviewGeneration(row: AgentGeneration) {
+    try {
+      const job = await apiFetch<{
+        status: string;
+        result: CharacterImageDraft | null;
+      }>("/api/agent-profiles/visual-references/" + row.id);
+      if (job.status !== "ready" || !job.result)
+        throw new ApiError(409, "Artwork changed", "artwork_changed");
+      setCandidateImage(job.result);
+    } catch (cause) {
+      setReferenceError(cause);
+    }
+  }
   async function generateReference(
     refined?: {
       name: string;
@@ -1664,13 +1722,15 @@ export function AgentForm({
       draftConflicts.length ||
       boundAccount.current !== activeAccount.current
     ) {
-      setReferenceError(
-        "Resolve the draft or account conflict before generating.",
-      );
+      setReferenceError("draft_conflict");
+      return false;
+    }
+    if (imageGenerationBlocked) {
+      generations.refresh();
       return false;
     }
     if (!remoteReady || remoteBlocked.current) {
-      setReferenceError("Recover the saved draft before generating.");
+      setReferenceError("draft_load_failed");
       return false;
     }
     const epoch = ++referenceEpoch.current;
@@ -1682,9 +1742,7 @@ export function AgentForm({
       try {
         referenceRequest.current = JSON.parse(saved.value);
       } catch {
-        setReferenceError(
-          "Saved reference request is unreadable. Restore the draft before generating again.",
-        );
+        setReferenceError("draft_unreadable");
         setReferenceBusy(false);
         setGenerationDeadline(null);
         setUnfinishedReplacement(true);
@@ -1710,9 +1768,7 @@ export function AgentForm({
         JSON.stringify(referenceRequest.current),
       )
     )
-      setDraftStorageError(
-        "Local recovery is unavailable. Your server draft is retained.",
-      );
+      setDraftStorageError("draft_local_unavailable");
     try {
       await persistRemote({
         version: DRAFT_VERSION,
@@ -1724,6 +1780,7 @@ export function AgentForm({
         referenceRequest: referenceRequest.current,
         generationDeadline,
       });
+      if (epoch !== referenceEpoch.current) return false;
       const existing = await apiFetch<{ status: string }>(
         "/api/agent-profiles/visual-references/" +
           referenceRequest.current!.requestId,
@@ -1731,6 +1788,7 @@ export function AgentForm({
         if (cause instanceof ApiError && cause.status === 404) return null;
         throw cause;
       });
+      if (epoch !== referenceEpoch.current) return false;
       await apiFetch(
         existing?.status === "failed"
           ? "/api/agent-profiles/visual-references/" +
@@ -1759,9 +1817,9 @@ export function AgentForm({
         removeEditorStorage(referenceStorageKey);
         referenceRequest.current = null;
       }
-      setReferenceError(
-        error instanceof Error ? error.message : "Reference generation failed",
-      );
+      if (error instanceof ApiError && error.code === "generation_pending")
+        generations.refresh();
+      else setReferenceError(error);
       return false;
     } finally {
       if (epoch === referenceEpoch.current) setReferenceBusy(false);
@@ -1770,11 +1828,24 @@ export function AgentForm({
 
   async function saveLocalDraft() {
     if (unreadableDraft) {
-      setDraftStorageError("Discard the unreadable draft before continuing.");
+      setDraftStorageError("draft_unreadable");
       return false;
     }
+    if (
+      !dirty &&
+      !generationDeadline &&
+      !unfinishedReplacement &&
+      !uploading &&
+      !referenceBusy &&
+      !referenceRequest.current &&
+      !candidateImage &&
+      !conversation?.input &&
+      !conversation?.messages.length &&
+      guided === initialGuided
+    )
+      return true;
     if (!draftStorageKey) {
-      setDraftStorageError("Sign in to save a draft.");
+      setDraftStorageError("sign_in");
       return false;
     }
     const stored: StoredEditorDraft = {
@@ -1801,19 +1872,101 @@ export function AgentForm({
     try {
       await persistRemote(stored);
       setDraftPersisted(true);
-      setDraftStorageError(
-        localSaved
-          ? null
-          : "Local recovery is unavailable. Your server draft is retained.",
-      );
+      setDraftStorageError(localSaved ? null : "draft_local_unavailable");
       return true;
     } catch (cause) {
-      setDraftStorageError(
-        cause instanceof Error ? cause.message : "Draft was not saved",
-      );
+      setDraftStorageError(cause);
       return false;
     }
   }
+
+  const activeIssue =
+    (draftStorageError?.code !== "draft_local_unavailable"
+      ? draftStorageError
+      : null) ??
+    saveError ??
+    generations.error ??
+    referenceError ??
+    aiError ??
+    generationNotice ??
+    draftStorageError;
+  function recoverIssue(issue: AgentIssue) {
+    if (issue.code === "generations_load_failed") {
+      generations.refresh();
+      return;
+    }
+    if (issue.recovery === "discard") {
+      setReviewOpen(false);
+      setConfirmDiscard(true);
+      return;
+    }
+    if (issue.recovery === "reload") {
+      window.location.reload();
+      return;
+    }
+    if (issue.recovery === "sign_in") {
+      requestAccount();
+      return;
+    }
+    if (issue.scope === "draft") {
+      void saveLocalDraft();
+      return;
+    }
+    if (issue.scope === "save") {
+      void submitDraft();
+      return;
+    }
+    if (issue.scope === "artwork") {
+      void (imageRequest ? retrySelectedJob() : generateReference());
+    }
+  }
+  const issueNotice = activeIssue && (
+    <AgentIssueNotice
+      issue={activeIssue}
+      onAction={
+        reviewOpen &&
+        activeIssue.scope === "save" &&
+        activeIssue.recovery === "retry"
+          ? undefined
+          : () => recoverIssue(activeIssue)
+      }
+      agentId={initial?.id}
+      requestId={referenceRequest.current?.requestId ?? imageRequest}
+    />
+  );
+
+  const moderationState =
+    initial?.ownerContent?.reviewState ?? initial?.reviewState;
+  const moderationLabel =
+    moderationState === "accepted" || !initial?.ownerContent?.submitted
+      ? null
+      : initial.ownerContent.submitted.disposition === "rejected"
+        ? "Changes need revision"
+        : moderationState === "reviewing"
+          ? "Reviewing"
+          : moderationState === "held"
+            ? "Held for moderation"
+            : null;
+  const currentGeneration = generations.rows.find((row) =>
+    initial?.id ? row.agentId === initial.id : row.draftScope === draftScope,
+  );
+  const currentGenerationLabel = currentGeneration
+    ? currentGeneration.status === "ready"
+      ? "Image ready"
+      : currentGeneration.status === "stopped"
+        ? "Generation stopped"
+        : currentGeneration.status === "queued"
+          ? "Queued"
+          : "Preparing image"
+    : null;
+  const activityCount =
+    generations.rows.length +
+    Number(Boolean(activeIssue)) +
+    Number(
+      Boolean(pendingRestore || restoreAlternatives || draftConflicts.length),
+    ) +
+    Number(Boolean(moderationLabel)) +
+    Number(headConfirmationRequired);
 
   const preferences = !anonymous ? (
     <section className={styles.preferences} aria-label="Model and voice">
@@ -1821,18 +1974,19 @@ export function AgentForm({
         compact
         value={modelPreference}
         onChange={setModelPreference}
-        disabled={submitting}
+        disabled={submitting || draftRecovering}
       />
       <AgentVoicePicker
         value={voiceId}
         onChange={setVoiceId}
-        disabled={submitting}
+        disabled={submitting || draftRecovering}
       />
     </section>
   ) : null;
 
   return (
     <form
+      data-agent-workspace
       onSubmit={handleSubmit}
       className={styles.workspace}
       data-editing={isEditing}
@@ -1841,7 +1995,7 @@ export function AgentForm({
         fullBodyReferenceUrl || avatarUrl || candidateImage || referenceBusy,
       )}
     >
-      <fieldset disabled={submitting} className="contents">
+      <fieldset disabled={submitting || discarding} className="contents">
         <legend className="sr-only">Agent draft</legend>
         <header className={styles.heading}>
           <h1>{name || (isEditing ? "Edit agent" : "Create your agent")}</h1>
@@ -1897,27 +2051,91 @@ export function AgentForm({
         </header>
         <div className={styles.layout}>
           <aside className={styles.art}>
-            {candidateImage ? null : fullBodyReferenceUrl || avatarUrl ? (
-              <OwnedCharacterImage
-                src={
-                  fullBodyReferenceUrl
-                    ? fullBodyReferenceUrl === initial?.fullBodyReferenceUrl
-                      ? (initial?.transparentBodyUrl ?? fullBodyReferenceUrl)
-                      : fullBodyReferenceUrl
-                    : avatarUrl!
-                }
-                alt={name || "Character"}
-              />
-            ) : referenceBusy ? (
-              <CharacterFormation name={name} />
-            ) : null}
+            {" "}
+            <div className={styles.artStage}>
+              {candidateImage ? null : fullBodyReferenceUrl || avatarUrl ? (
+                <OwnedCharacterImage
+                  src={
+                    fullBodyReferenceUrl
+                      ? fullBodyReferenceUrl === initial?.fullBodyReferenceUrl
+                        ? (initial?.transparentBodyUrl ?? fullBodyReferenceUrl)
+                        : fullBodyReferenceUrl
+                      : avatarUrl!
+                  }
+                  alt={name || "Character"}
+                />
+              ) : referenceBusy ? (
+                <CharacterFormation name={name} />
+              ) : null}
+              {candidateImage && (
+                <div className={styles.candidateReady}>
+                  <h2>Artwork ready</h2>
+                  <div
+                    className={styles.artComparison}
+                    data-compare={Boolean(fullBodyReferenceUrl || avatarUrl)}
+                  >
+                    {(fullBodyReferenceUrl || avatarUrl) && (
+                      <figure>
+                        <OwnedCharacterImage
+                          src={
+                            fullBodyReferenceUrl ===
+                            initial?.fullBodyReferenceUrl
+                              ? (initial?.transparentBodyUrl ??
+                                fullBodyReferenceUrl ??
+                                avatarUrl!)
+                              : (fullBodyReferenceUrl ?? avatarUrl!)
+                          }
+                          alt="Current selected artwork"
+                        />
+                        <figcaption>Current</figcaption>
+                      </figure>
+                    )}
+                    <figure>
+                      <OwnedCharacterImage
+                        src={candidateImage.fullBodyReferenceUrl}
+                        alt="New artwork candidate"
+                      />
+                      <figcaption>New</figcaption>
+                    </figure>
+                  </div>
+                  {candidateImage.basedOn &&
+                    (candidateImage.basedOn.name !== name ||
+                      candidateImage.basedOn.visualDesign !== visualDesign ||
+                      candidateImage.basedOn.performanceInstructions !==
+                        performanceInstructions) && (
+                      <p>
+                        The character brief changed during preparation. Compare
+                        this image with your current appearance before selecting
+                        it.
+                      </p>
+                    )}
+                  <div className={styles.footerActions}>
+                    <button
+                      type="button"
+                      onClick={() => void decideCandidate("selected")}
+                    >
+                      Select
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void decideCandidate("discarded")}
+                    >
+                      Discard
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
             <div className={styles.artActions}>
               <button
                 type="button"
                 disabled={
+                  draftRecovering ||
+                  imageGenerationBlocked ||
                   unreadableDraft ||
                   Boolean(pendingRestore) ||
                   referenceBusy ||
+                  artworkBlocked ||
                   submitting ||
                   !name.trim()
                 }
@@ -1928,9 +2146,9 @@ export function AgentForm({
               {fullBodyReferenceUrl && (
                 <button
                   type="button"
-                  disabled={referenceBusy || submitting}
+                  disabled={referenceBusy || artworkBlocked || submitting}
                   onClick={() => {
-                    setGuidedScope("visualDesign");
+                    setGuidedScope({ section: "visualDesign" });
                     setGuided(true);
                     onAssistant?.();
                   }}
@@ -1950,303 +2168,8 @@ export function AgentForm({
                 Portrait
               </button>
             </div>
-            {(referenceBusy || uploading) && (
-              <AgentOperationActivity
-                stage={uploading ? "upload" : referenceStage}
-                startedAt={referenceStartedAt}
-              />
-            )}
-            {candidateImage && (
-              <div className={styles.candidateReady}>
-                <h2>Artwork ready</h2>
-                <div
-                  className={styles.artComparison}
-                  data-compare={Boolean(fullBodyReferenceUrl || avatarUrl)}
-                >
-                  {(fullBodyReferenceUrl || avatarUrl) && (
-                    <figure>
-                      <OwnedCharacterImage
-                        src={
-                          fullBodyReferenceUrl === initial?.fullBodyReferenceUrl
-                            ? (initial?.transparentBodyUrl ??
-                              fullBodyReferenceUrl ??
-                              avatarUrl!)
-                            : (fullBodyReferenceUrl ?? avatarUrl!)
-                        }
-                        alt="Current selected artwork"
-                      />
-                      <figcaption>Current</figcaption>
-                    </figure>
-                  )}
-                  <figure>
-                    <OwnedCharacterImage
-                      src={candidateImage.fullBodyReferenceUrl}
-                      alt="New artwork candidate"
-                    />
-                    <figcaption>New</figcaption>
-                  </figure>
-                </div>
-                {candidateImage.basedOn &&
-                  (candidateImage.basedOn.name !== name ||
-                    candidateImage.basedOn.visualDesign !== visualDesign ||
-                    candidateImage.basedOn.performanceInstructions !==
-                      performanceInstructions) && (
-                    <p>
-                      The character brief changed during preparation. Compare
-                      this image with your current appearance before selecting
-                      it.
-                    </p>
-                  )}
-                <div className={styles.footerActions}>
-                  <button
-                    type="button"
-                    onClick={() => void decideCandidate("selected")}
-                  >
-                    Select
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void decideCandidate("discarded")}
-                  >
-                    Discard
-                  </button>
-                </div>
-              </div>
-            )}
           </aside>
           <div className={styles.content}>
-            {restoreAlternatives && (
-              <section className={styles.review} aria-label="Choose draft">
-                <h2>Two drafts differ</h2>
-                <p>
-                  Choose which version to resume. Saving it will replace the
-                  other account draft.
-                </p>
-                {(["tab", "account"] as const).map((source) => {
-                  const draft = restoreAlternatives[source];
-                  return (
-                    <section key={source}>
-                      <h3>
-                        {source === "tab" ? "This tab" : "Account"}:{" "}
-                        {draft.current.name || "Untitled agent"}
-                      </h3>
-                      <p className={styles.hint}>
-                        Saved {new Date(draft.savedAt).toLocaleString()}
-                      </p>
-                      <details>
-                        <summary>Contents</summary>
-                        {(
-                          [
-                            "personality",
-                            "backstory",
-                            "strategyStyle",
-                            "werewolfStrategyStyle",
-                            "visualDesign",
-                            "performanceInstructions",
-                          ] as const
-                        ).map(
-                          (field) =>
-                            draft.current[field] && (
-                              <p key={field} className="whitespace-pre-wrap">
-                                <strong>
-                                  {
-                                    {
-                                      personality: "Personality",
-                                      backstory: "Backstory",
-                                      strategyStyle: "Influence strategy",
-                                      werewolfStrategyStyle:
-                                        "Werewolf strategy",
-                                      visualDesign: "Appearance",
-                                      performanceInstructions: "Performance",
-                                    }[field]
-                                  }
-                                </strong>{" "}
-                                {draft.current[field]}
-                              </p>
-                            ),
-                        )}
-                        <p>
-                          {agentModelLabel(draft.current.modelPreference) ??
-                            "House choice"}{" "}
-                          ·{" "}
-                          {PLAYER_VOICES.find(
-                            (voice) => voice.id === draft.current.voiceId,
-                          )?.name ?? "Automatic voice"}
-                        </p>
-                        {draft.current.fullBodyReferenceUrl && (
-                          <OwnedCharacterImage
-                            src={draft.current.fullBodyReferenceUrl}
-                            alt={draft.current.name || "Draft artwork"}
-                            className="max-h-64 w-full object-contain"
-                          />
-                        )}
-                      </details>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPendingRestore(draft);
-                          setRestoreConflict(
-                            !sameSnapshot(draft.base, initialSnapshot),
-                          );
-                          setRestoreAlternatives(null);
-                        }}
-                      >
-                        {source === "tab" ? "Tab" : "Account"}
-                      </button>
-                    </section>
-                  );
-                })}
-              </section>
-            )}
-            {pendingRestore && !restoreAlternatives && (
-              <section
-                className="mb-6 rounded-xl border border-phase/30 bg-phase/10 p-4"
-                aria-label="Saved local draft"
-              >
-                <p className="text-sm font-semibold text-text-primary">
-                  {restoreConflict
-                    ? "A local draft was saved from an earlier Agent version."
-                    : "A local draft is available."}
-                </p>
-                <p className="mt-1 text-xs leading-5 text-white/55">
-                  Saved {new Date(pendingRestore.savedAt).toLocaleString()}.
-                  Apply it to the editor, or clear it to keep working from this
-                  version.
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={applyDraft}
-                    disabled={!remoteReady}
-                    className="influence-button-primary min-h-11 rounded-lg px-4 text-sm font-semibold"
-                  >
-                    Resume
-                  </button>
-                  <button
-                    type="button"
-                    onClick={clearStoredDraft}
-                    className="influence-button-secondary min-h-11 rounded-lg px-4 text-sm"
-                  >
-                    Discard
-                  </button>
-                </div>
-              </section>
-            )}
-
-            {unreadableDraft && (
-              <section role="alert">
-                <p>The stored draft is unreadable. It has been retained.</p>
-                <button type="button" onClick={() => void clearStoredDraft()}>
-                  Discard
-                </button>
-              </section>
-            )}
-            {profileGenerating && <p role="status">Updating draft text…</p>}
-            {!!draftConflicts.length && (
-              <section className={styles.review} aria-label="Draft conflicts">
-                <h2>Resolve draft conflicts</h2>
-                <p>
-                  These fields changed both in your draft and in the saved
-                  agent. Choose which value to keep.
-                </p>
-                {draftConflicts.map((field) => (
-                  <div className={styles.change} key={field}>
-                    <h3>
-                      {
-                        {
-                          images: "Artwork and portrait",
-                          name: "Name",
-                          gender: "Gender",
-                          personaKey: "Archetype",
-                          personality: "Personality",
-                          backstory: "Backstory",
-                          strategyStyle: "Influence strategy",
-                          werewolfStrategyStyle: "Werewolf strategy",
-                          performanceInstructions: "Performance",
-                          visualDesign: "Appearance",
-                          modelPreference: "Preferred model",
-                          voiceId: "Voice",
-                          fullBodyReferenceUrl: "Artwork",
-                          explicitAvatarUrl: "Portrait",
-                          portraitCrop: "Portrait crop",
-                          headPosition: "Head position",
-                          headSuggestion: "Head position",
-                        }[field]
-                      }
-                    </h3>
-                    {field === "images" ? (
-                      <div className={styles.candidate}>
-                        {initialSnapshot.fullBodyReferenceUrl && (
-                          <OwnedCharacterImage
-                            src={initialSnapshot.fullBodyReferenceUrl}
-                            alt="Current saved artwork"
-                          />
-                        )}
-                        {fullBodyReferenceUrl && (
-                          <OwnedCharacterImage
-                            src={fullBodyReferenceUrl}
-                            alt="Restored draft artwork"
-                          />
-                        )}
-                      </div>
-                    ) : (
-                      <>
-                        <del>{JSON.stringify(initialSnapshot[field])}</del>
-                        <ins>{JSON.stringify(currentSnapshot[field])}</ins>
-                      </>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setDraftConflicts((fields) =>
-                          fields.filter((value) => value !== field),
-                        )
-                      }
-                    >
-                      Keep
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const next = { ...currentSnapshot };
-                        if (field === "images") {
-                          for (const key of imageFields)
-                            Object.assign(next, {
-                              [key]: initialSnapshot[key],
-                            });
-                        } else
-                          Object.assign(next, {
-                            [field]: initialSnapshot[field],
-                          });
-                        setName(next.name);
-                        setPersonality(next.personality);
-                        setBackstory(next.backstory);
-                        setStrategyStyle(next.strategyStyle);
-                        setWerewolfStrategyStyle(next.werewolfStrategyStyle);
-                        setVisualDesign(next.visualDesign);
-                        setPerformanceInstructions(
-                          next.performanceInstructions,
-                        );
-                        setModelPreference(next.modelPreference ?? "default");
-                        setVoiceId(next.voiceId ?? null);
-                        setPersonaKey(next.personaKey);
-                        setGender(next.gender);
-                        setFullBodyReferenceUrl(next.fullBodyReferenceUrl);
-                        setExplicitAvatarUrl(next.explicitAvatarUrl);
-                        setHeadPosition(next.headPosition);
-                        setHeadSuggestion(next.headSuggestion);
-                        setPortraitCrop(next.portraitCrop);
-                        setDraftConflicts((fields) =>
-                          fields.filter((value) => value !== field),
-                        );
-                      }}
-                    >
-                      Current
-                    </button>
-                  </div>
-                ))}
-              </section>
-            )}
             <div
               hidden={!guided}
               className={guided ? styles.guidedContent : "hidden"}
@@ -2256,6 +2179,13 @@ export function AgentForm({
                 conversation={conversation}
                 onConversationChange={setConversation}
                 scope={guidedScope}
+                onGenderChange={(value) => {
+                  setGender(value);
+                  setValidationErrors((current) => ({
+                    ...current,
+                    gender: "",
+                  }));
+                }}
                 anonymous={anonymous}
                 anonymousUsed={anonymousUsed}
                 onAnonymousMessage={handleAnonymousMessage}
@@ -2287,6 +2217,7 @@ export function AgentForm({
                 }
                 busy={profileGenerating || uploading}
                 blocked={
+                  draftRecovering ||
                   unreadableDraft ||
                   Boolean(pendingRestore) ||
                   submitting ||
@@ -2302,6 +2233,7 @@ export function AgentForm({
                       null,
                   )
                 }
+                onIssue={setAiError}
                 editing={isEditing}
                 preferences={guided ? preferences : null}
               />
@@ -2310,19 +2242,53 @@ export function AgentForm({
               hidden={guided}
               className={guided ? "hidden" : styles.advancedContent}
             >
-              <nav className={styles.sectionNav} aria-label="Agent sections">
-                {(["character", "strategy", "appearance"] as const).map(
-                  (section) => (
-                    <button
-                      type="button"
-                      key={section}
-                      aria-pressed={advancedSection === section}
-                      onClick={() => setAdvancedSection(section)}
-                    >
-                      {section[0].toUpperCase() + section.slice(1)}
-                    </button>
-                  ),
-                )}
+              <div className={styles.tabHeader}>
+                <div
+                  className={styles.sectionNav}
+                  role="tablist"
+                  aria-label="Agent sections"
+                  onKeyDown={(event) => {
+                    const sections = [
+                      "character",
+                      "strategy",
+                      "appearance",
+                    ] as const;
+                    const index = sections.indexOf(advancedSection);
+                    const next =
+                      event.key === "ArrowRight"
+                        ? (index + 1) % 3
+                        : event.key === "ArrowLeft"
+                          ? (index + 2) % 3
+                          : event.key === "Home"
+                            ? 0
+                            : event.key === "End"
+                              ? 2
+                              : null;
+                    if (next === null) return;
+                    event.preventDefault();
+                    setAdvancedSection(sections[next]!);
+                    document
+                      .getElementById(`agent-tab-${sections[next]}`)
+                      ?.focus();
+                  }}
+                >
+                  {(["character", "strategy", "appearance"] as const).map(
+                    (section) => (
+                      <button
+                        type="button"
+                        key={section}
+                        role="tab"
+                        id={`agent-tab-${section}`}
+                        aria-controls="agent-editor-panel"
+                        aria-selected={advancedSection === section}
+                        tabIndex={advancedSection === section ? 0 : -1}
+                        onClick={() => setAdvancedSection(section)}
+                      >
+                        {section[0].toUpperCase() + section.slice(1)}
+                      </button>
+                    ),
+                  )}
+                </div>
                 {missingDetails &&
                   (!name.trim() || !personality.trim() || !gender) && (
                     <button
@@ -2334,547 +2300,531 @@ export function AgentForm({
                       Complete
                     </button>
                   )}
-              </nav>
-              <aside
-                hidden={advancedSection !== "character"}
-                className={styles.identity}
+              </div>
+              <div
+                id="agent-editor-panel"
+                role="tabpanel"
+                aria-labelledby={`agent-tab-${advancedSection}`}
+                tabIndex={0}
+                className={styles.tabPanel}
               >
-                <div className="grid gap-5 lg:grid-cols-2">
-                  <div>
-                    <label
-                      htmlFor="agent-name"
-                      className="influence-section-title block mb-2"
-                    >
-                      Agent name
-                    </label>
-                    <input
-                      id="agent-name"
-                      type="text"
-                      value={name}
-                      onChange={(event) => {
-                        setName(event.target.value);
-                        setValidationErrors((current) => ({
-                          ...current,
-                          name: "",
-                        }));
-                      }}
-                      placeholder="e.g. ShadowPlay-7"
-                      maxLength={AGENT_PROFILE_LIMITS.name}
-                      aria-invalid={Boolean(validationErrors.name)}
-                      aria-describedby={
-                        validationErrors.name
-                          ? "agent-name-error"
-                          : "agent-name-help"
-                      }
-                      className="influence-field min-h-11 w-full rounded-lg px-4 py-2.5 text-base sm:text-sm"
-                    />
-                    <p
-                      id="agent-name-help"
-                      className="influence-copy-muted mt-1 text-xs"
-                    >
-                      The public name used in games.
-                    </p>
-                    {validationErrors.name && (
-                      <p
-                        id="agent-name-error"
-                        className="mt-1 text-xs text-red-300"
-                      >
-                        {validationErrors.name}
-                      </p>
-                    )}
-                  </div>
-
-                  <fieldset
-                    aria-required="true"
-                    aria-describedby={
-                      validationErrors.gender
-                        ? "agent-gender-error"
-                        : "agent-gender-help"
-                    }
-                  >
-                    <legend className="influence-section-title mb-2">
-                      Gender{" "}
-                      <span className="text-red-300" aria-hidden="true">
-                        *
-                      </span>
-                    </legend>
-                    <div
-                      role="radiogroup"
-                      aria-label="Gender"
-                      aria-required="true"
-                      aria-invalid={Boolean(validationErrors.gender)}
-                      className="flex gap-2"
-                    >
-                      {AGENT_GENDER_OPTIONS.map(({ value, label }) => (
-                        <button
-                          id={`agent-gender-${value}`}
-                          key={value}
-                          type="button"
-                          role="radio"
-                          aria-checked={gender === value}
-                          data-selected={gender === value}
-                          onClick={() => {
-                            setGender(value);
-                            setValidationErrors((current) => ({
-                              ...current,
-                              gender: "",
-                            }));
-                          }}
-                          className="influence-selection-card min-h-11 min-w-0 flex-[1_1_auto] whitespace-nowrap rounded-lg px-2 text-sm influence-copy data-[selected=true]:text-text-primary"
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                    <p
-                      id="agent-gender-help"
-                      className="influence-copy-muted mt-1 text-xs"
-                    >
-                      Guides portrait generation.
-                      {!gender &&
-                        " Choose one or let AI fill it from this character."}
-                    </p>
-                    {validationErrors.gender && (
-                      <p
-                        id="agent-gender-error"
-                        className="mt-1 text-xs text-red-300"
-                      >
-                        {validationErrors.gender}
-                      </p>
-                    )}
-                  </fieldset>
-                  <div>
-                    {" "}
-                    <label htmlFor="agent-archetype">Archetype</label>
-                    <select
-                      id="agent-archetype"
-                      value={personaKey ?? ""}
-                      onChange={(event) =>
-                        setPersonaKey(event.target.value as PersonaKey)
-                      }
-                    >
-                      <option value="" disabled>
-                        Choose an archetype
-                      </option>
-                      {PERSONAS.map((persona) => (
-                        <option key={persona.key} value={persona.key}>
-                          {persona.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </aside>
-
-              <div className={styles.fields}>
-                <section
-                  hidden={advancedSection !== "strategy"}
-                  className="influence-panel rounded-2xl p-5 sm:p-6"
+                <aside
+                  hidden={advancedSection !== "character"}
+                  className={styles.identity}
                 >
-                  <label
-                    htmlFor="agent-werewolfStrategyStyle"
-                    className="text-lg font-semibold text-text-primary"
-                  >
-                    Werewolf strategy
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setGuidedScope("werewolfStrategyStyle");
-                      setGuided(true);
-                      onAssistant?.();
-                    }}
-                  >
-                    Refine
-                  </button>
-                  <p
-                    id="werewolf-strategy-help"
-                    className="mt-1 mb-4 text-sm leading-6 text-white/50"
-                  >
-                    Use the same character in a different game. Describe how
-                    they investigate, bluff, build trust, and adapt to their
-                    secret role. Leave blank to use the Werewolf approach for
-                    their archetype. Your notes replace that default.
-                  </p>
-                  {showWerewolfComparison && strategyComparison && (
-                    <StrategyDiff
-                      baseline={strategyComparison.baseline}
-                      working={werewolfStrategyStyle}
-                      baselineLabel={strategyComparison.baselineLabel}
-                      className="mb-4"
-                    />
-                  )}
-                  <GrowingTextarea
-                    id="agent-werewolfStrategyStyle"
-                    value={werewolfStrategyStyle}
-                    onChange={(event) =>
-                      setWerewolfStrategyStyle(event.target.value)
-                    }
-                    maxLength={AGENT_PROFILE_LIMITS.strategyStyle}
-                    aria-describedby="werewolf-strategy-help"
-                    placeholder="Optional notes. Leave blank to use this archetype’s Werewolf default."
-                    className="influence-field min-h-40 w-full rounded-xl px-4 py-4 text-base leading-7"
-                  />
-                  {validationErrors.werewolfStrategyStyle && (
-                    <p className="text-xs text-red-400" role="alert">
-                      {validationErrors.werewolfStrategyStyle}
-                    </p>
-                  )}
-                  {showWerewolfComparison &&
-                    strategyComparison?.requireChange && (
-                      <p
-                        className="mt-2 text-sm text-white/60"
-                        aria-live="polite"
-                      >
-                        {requiredStrategyChangeMissing
-                          ? "Edit the suggestion to save your own Werewolf strategy."
-                          : "Your Werewolf strategy update is ready to save."}
-                      </p>
-                    )}
-                  {!werewolfStrategyStyle.trim() && (
-                    <details className="mt-3 text-sm text-white/60">
-                      <summary className="cursor-pointer">
-                        Preview archetype default
-                      </summary>
-                      <p className="mt-2 leading-6">
-                        {defaultWerewolfStrategy(personaKey)}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setWerewolfStrategyStyle(
-                            defaultWerewolfStrategy(personaKey),
-                          )
-                        }
-                        className="influence-button-secondary mt-3 min-h-11 rounded-lg px-4"
-                      >
-                        Customize this strategy
-                      </button>
-                    </details>
-                  )}
-                </section>
-                <section
-                  hidden={advancedSection !== "strategy"}
-                  className="influence-panel rounded-2xl p-5 sm:p-6"
-                >
-                  <div className="mb-4 flex items-end justify-between gap-4">
+                  <div className="grid gap-5 lg:grid-cols-2">
                     <div>
                       <label
-                        htmlFor="agent-strategyStyle"
-                        className="text-lg font-semibold tracking-tight text-text-primary"
+                        htmlFor="agent-name"
+                        className="influence-section-title block mb-2"
                       >
-                        Influence strategy
+                        Agent name
                       </label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setGuidedScope("strategyStyle");
-                          setGuided(true);
-                          onAssistant?.();
-                        }}
-                      >
-                        Refine
-                      </button>
-                      <p
-                        id="agent-strategy-help"
-                        className="mt-1 max-w-2xl text-sm leading-6 text-white/50"
-                      >
-                        How this Agent builds alliances, handles votes, protects
-                        itself, and changes course.
-                      </p>
-                    </div>
-                    <span className="shrink-0 font-mono text-xs tabular-nums text-white/40">
-                      {strategyStyle.length}/
-                      {AGENT_PROFILE_LIMITS.strategyStyle}
-                    </span>
-                  </div>
-                  <div
-                    className={
-                      showStrategyComparison
-                        ? "grid items-start gap-4 xl:grid-cols-2 xl:items-stretch"
-                        : ""
-                    }
-                  >
-                    {showStrategyComparison && strategyComparison && (
-                      <div className="order-2 min-w-0 xl:order-1">
-                        <StrategyDiff
-                          baseline={strategyComparison.baseline}
-                          working={strategyStyle}
-                          baselineLabel={strategyComparison.baselineLabel}
-                          className="xl:h-[40rem] xl:overflow-hidden"
-                        />
-                      </div>
-                    )}
-                    <div className="order-1 xl:order-2">
-                      <GrowingTextarea
-                        id="agent-strategyStyle"
-                        value={strategyStyle}
+                      <input
+                        id="agent-name"
+                        type="text"
+                        value={name}
                         onChange={(event) => {
-                          setStrategyStyle(event.target.value);
+                          setName(event.target.value);
                           setValidationErrors((current) => ({
                             ...current,
-                            strategyStyle: "",
+                            name: "",
                           }));
                         }}
-                        placeholder="Describe concrete priorities, alliance tactics, voting plans, fallback moves, and when to pivot."
-                        maxLength={AGENT_PROFILE_LIMITS.strategyStyle}
-                        aria-invalid={Boolean(validationErrors.strategyStyle)}
+                        placeholder="e.g. ShadowPlay-7"
+                        maxLength={AGENT_PROFILE_LIMITS.name}
+                        aria-invalid={Boolean(validationErrors.name)}
                         aria-describedby={
-                          validationErrors.strategyStyle
-                            ? "agent-strategy-error"
-                            : "agent-strategy-help"
+                          validationErrors.name
+                            ? "agent-name-error"
+                            : "agent-name-help"
                         }
-                        className={`influence-field min-h-56 w-full rounded-xl px-4 py-4 text-base leading-7 lg:min-h-80 ${showStrategyComparison ? "xl:!h-[40rem] xl:!overflow-y-auto xl:resize-none" : ""}`}
+                        className="influence-field min-h-11 w-full rounded-lg px-4 py-2.5 text-base sm:text-sm"
                       />
-                      {!comparingWerewolf &&
-                        strategyComparison?.requireChange && (
-                          <p
-                            className="mt-2 min-h-5 text-xs leading-5 text-white/45"
-                            aria-live="polite"
+                      <p
+                        id={
+                          validationErrors.name
+                            ? "agent-name-error"
+                            : "agent-name-help"
+                        }
+                        className={styles.fieldHint}
+                        data-error={Boolean(validationErrors.name)}
+                      >
+                        {validationErrors.name ||
+                          "The public name used in games."}
+                      </p>
+                    </div>
+
+                    <fieldset
+                      aria-required="true"
+                      aria-describedby={
+                        validationErrors.gender
+                          ? "agent-gender-error"
+                          : "agent-gender-help"
+                      }
+                    >
+                      <legend className="influence-section-title mb-2">
+                        Gender{" "}
+                        <span className="text-red-300" aria-hidden="true">
+                          *
+                        </span>
+                      </legend>
+                      <div
+                        role="radiogroup"
+                        aria-label="Gender"
+                        aria-required="true"
+                        aria-invalid={Boolean(validationErrors.gender)}
+                        className="flex gap-2"
+                      >
+                        {AGENT_GENDER_OPTIONS.map(({ value, label }) => (
+                          <button
+                            id={`agent-gender-${value}`}
+                            key={value}
+                            type="button"
+                            role="radio"
+                            aria-checked={gender === value}
+                            data-selected={gender === value}
+                            onClick={() => {
+                              setGender(value);
+                              setValidationErrors((current) => ({
+                                ...current,
+                                gender: "",
+                              }));
+                            }}
+                            className="influence-selection-card min-h-11 min-w-0 flex-[1_1_auto] whitespace-nowrap rounded-lg px-2 text-sm influence-copy data-[selected=true]:text-text-primary"
                           >
-                            {requiredStrategyChangeMissing
-                              ? "Edit the suggestion to save a custom Strategy update."
-                              : "Custom Strategy change ready to save."}
-                          </p>
-                        )}
-                      {validationErrors.strategyStyle && (
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      <p
+                        id={
+                          validationErrors.gender
+                            ? "agent-gender-error"
+                            : "agent-gender-help"
+                        }
+                        className={styles.fieldHint}
+                        data-error={Boolean(validationErrors.gender)}
+                      >
+                        {validationErrors.gender ||
+                          "Guides portrait generation. Choose one or let AI fill it."}
+                      </p>
+                    </fieldset>
+                    <ArchetypePicker
+                      id="agent-archetype"
+                      value={personaKey}
+                      onChange={setPersonaKey}
+                      disabled={generationBusy || submitting}
+                    />
+                  </div>
+                </aside>
+
+                <div className={styles.fields}>
+                  <section
+                    hidden={advancedSection !== "strategy"}
+                    className="influence-panel rounded-2xl p-5 sm:p-6"
+                  >
+                    <label
+                      htmlFor="agent-werewolfStrategyStyle"
+                      className="text-lg font-semibold text-text-primary"
+                    >
+                      Werewolf strategy
+                    </label>
+                    <button
+                      type="button"
+                      className={styles.refineLink}
+                      aria-label="Refine Werewolf strategy"
+                      onClick={() => {
+                        setGuidedScope({ section: "werewolfStrategyStyle" });
+                        setGuided(true);
+                        onAssistant?.();
+                      }}
+                    >
+                      Refine
+                    </button>
+                    <p
+                      id="werewolf-strategy-help"
+                      className="mt-1 mb-4 text-sm leading-6 text-white/50"
+                    >
+                      Use the same character in a different game. Describe how
+                      they investigate, bluff, build trust, and adapt to their
+                      secret role. Leave blank to use the Werewolf approach for
+                      their archetype. Your notes replace that default.
+                    </p>
+                    {showWerewolfComparison && strategyComparison && (
+                      <StrategyDiff
+                        baseline={strategyComparison.baseline}
+                        working={werewolfStrategyStyle}
+                        baselineLabel={strategyComparison.baselineLabel}
+                        className="mb-4"
+                      />
+                    )}
+                    <GrowingTextarea
+                      id="agent-werewolfStrategyStyle"
+                      value={werewolfStrategyStyle}
+                      onChange={(event) =>
+                        setWerewolfStrategyStyle(event.target.value)
+                      }
+                      maxLength={AGENT_PROFILE_LIMITS.strategyStyle}
+                      aria-describedby="werewolf-strategy-help"
+                      placeholder="Optional notes. Leave blank to use this archetype’s Werewolf default."
+                      className="influence-field min-h-40 w-full rounded-xl px-4 py-4 text-base leading-7"
+                    />
+                    <p
+                      aria-hidden={!validationErrors.werewolfStrategyStyle}
+                      className={styles.fieldError}
+                      role={
+                        validationErrors.werewolfStrategyStyle
+                          ? "alert"
+                          : undefined
+                      }
+                    >
+                      {validationErrors.werewolfStrategyStyle}
+                    </p>
+                    {showWerewolfComparison &&
+                      strategyComparison?.requireChange && (
                         <p
+                          className="mt-2 text-sm text-white/60"
+                          aria-live="polite"
+                        >
+                          {requiredStrategyChangeMissing
+                            ? "Edit the suggestion to save your own Werewolf strategy."
+                            : "Your Werewolf strategy update is ready to save."}
+                        </p>
+                      )}
+                    {!werewolfStrategyStyle.trim() && (
+                      <details className="mt-3 text-sm text-white/60">
+                        <summary className="cursor-pointer">
+                          Preview archetype default
+                        </summary>
+                        <p className="mt-2 leading-6">
+                          {defaultWerewolfStrategy(personaKey)}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setWerewolfStrategyStyle(
+                              defaultWerewolfStrategy(personaKey),
+                            )
+                          }
+                          className="influence-button-secondary mt-3 min-h-11 rounded-lg px-4"
+                        >
+                          Customize this strategy
+                        </button>
+                      </details>
+                    )}
+                  </section>
+                  <section
+                    hidden={advancedSection !== "strategy"}
+                    className="influence-panel rounded-2xl p-5 sm:p-6"
+                  >
+                    <div className="mb-4 flex items-end justify-between gap-4">
+                      <div>
+                        <label
+                          htmlFor="agent-strategyStyle"
+                          className="text-lg font-semibold tracking-tight text-text-primary"
+                        >
+                          Influence strategy
+                        </label>
+                        <button
+                          type="button"
+                          className={styles.refineLink}
+                          aria-label="Refine Influence strategy"
+                          onClick={() => {
+                            setGuidedScope({ section: "strategyStyle" });
+                            setGuided(true);
+                            onAssistant?.();
+                          }}
+                        >
+                          Refine
+                        </button>
+                        <p
+                          id="agent-strategy-help"
+                          className="mt-1 max-w-2xl text-sm leading-6 text-white/50"
+                        >
+                          How this Agent builds alliances, handles votes,
+                          protects itself, and changes course.
+                        </p>
+                      </div>
+                      <span className="shrink-0 font-mono text-xs tabular-nums text-white/40">
+                        {strategyStyle.length}/
+                        {AGENT_PROFILE_LIMITS.strategyStyle}
+                      </span>
+                    </div>
+                    <div
+                      className={
+                        showStrategyComparison
+                          ? "grid items-start gap-4 xl:grid-cols-2 xl:items-stretch"
+                          : ""
+                      }
+                    >
+                      {showStrategyComparison && strategyComparison && (
+                        <div className="order-2 min-w-0 xl:order-1">
+                          <StrategyDiff
+                            baseline={strategyComparison.baseline}
+                            working={strategyStyle}
+                            baselineLabel={strategyComparison.baselineLabel}
+                            className="xl:h-[40rem] xl:overflow-hidden"
+                          />
+                        </div>
+                      )}
+                      <div className="order-1 xl:order-2">
+                        <GrowingTextarea
+                          id="agent-strategyStyle"
+                          value={strategyStyle}
+                          onChange={(event) => {
+                            setStrategyStyle(event.target.value);
+                            setValidationErrors((current) => ({
+                              ...current,
+                              strategyStyle: "",
+                            }));
+                          }}
+                          placeholder="Describe concrete priorities, alliance tactics, voting plans, fallback moves, and when to pivot."
+                          maxLength={AGENT_PROFILE_LIMITS.strategyStyle}
+                          aria-invalid={Boolean(validationErrors.strategyStyle)}
+                          aria-describedby={
+                            validationErrors.strategyStyle
+                              ? "agent-strategy-error"
+                              : "agent-strategy-help"
+                          }
+                          className={`influence-field min-h-56 w-full rounded-xl px-4 py-4 text-base leading-7 lg:min-h-80 ${showStrategyComparison ? "xl:!h-[40rem] xl:!overflow-y-auto xl:resize-none" : ""}`}
+                        />
+                        {!comparingWerewolf &&
+                          strategyComparison?.requireChange && (
+                            <p
+                              className="mt-2 min-h-5 text-xs leading-5 text-white/45"
+                              aria-live="polite"
+                            >
+                              {requiredStrategyChangeMissing
+                                ? "Edit the suggestion to save a custom Strategy update."
+                                : "Custom Strategy change ready to save."}
+                            </p>
+                          )}
+                        <p
+                          aria-hidden={!validationErrors.strategyStyle}
                           id="agent-strategy-error"
-                          className="mt-2 text-sm text-red-300"
+                          className={styles.fieldError}
                         >
                           {validationErrors.strategyStyle}
                         </p>
-                      )}
+                      </div>
                     </div>
-                  </div>
-                </section>
+                  </section>
 
-                <section
-                  hidden={advancedSection !== "character"}
-                  className="influence-panel rounded-2xl p-5 sm:p-6"
-                >
-                  <div className="flex items-end justify-between gap-4">
-                    <div>
-                      <label
-                        htmlFor="agent-personality"
-                        className="text-base font-semibold text-text-primary"
-                      >
-                        Personality
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setGuidedScope("personality");
-                          setGuided(true);
-                          onAssistant?.();
-                        }}
-                      >
-                        Refine
-                      </button>
-                      <p
-                        id="agent-personality-help"
-                        className="mt-1 text-sm leading-6 text-white/45"
-                      >
-                        How the Agent speaks, reacts, and behaves around other
-                        players.
-                      </p>
+                  <section
+                    hidden={advancedSection !== "character"}
+                    className="influence-panel rounded-2xl p-5 sm:p-6"
+                  >
+                    <div className="flex items-end justify-between gap-4">
+                      <div>
+                        <label
+                          htmlFor="agent-personality"
+                          className="text-base font-semibold text-text-primary"
+                        >
+                          Personality
+                        </label>
+                        <button
+                          type="button"
+                          className={styles.refineLink}
+                          aria-label="Refine Personality"
+                          onClick={() => {
+                            setGuidedScope({ section: "personality" });
+                            setGuided(true);
+                            onAssistant?.();
+                          }}
+                        >
+                          Refine
+                        </button>
+                        <p
+                          id="agent-personality-help"
+                          className="mt-1 text-sm leading-6 text-white/45"
+                        >
+                          How the Agent speaks, reacts, and behaves around other
+                          players.
+                        </p>
+                      </div>
+                      <span className="font-mono text-xs tabular-nums text-white/40">
+                        {personality.length}/{AGENT_PROFILE_LIMITS.personality}
+                      </span>
                     </div>
-                    <span className="font-mono text-xs tabular-nums text-white/40">
-                      {personality.length}/{AGENT_PROFILE_LIMITS.personality}
-                    </span>
-                  </div>
-                  <GrowingTextarea
-                    id="agent-personality"
-                    value={personality}
-                    onChange={(event) => {
-                      setPersonality(event.target.value);
-                      setValidationErrors((current) => ({
-                        ...current,
-                        personality: "",
-                      }));
-                    }}
-                    placeholder="Describe how your Agent behaves, speaks, and makes decisions."
-                    maxLength={AGENT_PROFILE_LIMITS.personality}
-                    aria-invalid={Boolean(validationErrors.personality)}
-                    aria-describedby={
-                      validationErrors.personality
-                        ? "agent-personality-error"
-                        : "agent-personality-help"
-                    }
-                    className="influence-field mt-4 min-h-36 w-full rounded-xl px-4 py-4 text-base leading-7"
-                  />
-                  {validationErrors.personality && (
+                    <GrowingTextarea
+                      id="agent-personality"
+                      value={personality}
+                      onChange={(event) => {
+                        setPersonality(event.target.value);
+                        setValidationErrors((current) => ({
+                          ...current,
+                          personality: "",
+                        }));
+                      }}
+                      placeholder="Describe how your Agent behaves, speaks, and makes decisions."
+                      maxLength={AGENT_PROFILE_LIMITS.personality}
+                      aria-invalid={Boolean(validationErrors.personality)}
+                      aria-describedby={
+                        validationErrors.personality
+                          ? "agent-personality-error"
+                          : "agent-personality-help"
+                      }
+                      className="influence-field mt-4 min-h-36 w-full rounded-xl px-4 py-4 text-base leading-7"
+                    />
                     <p
+                      aria-hidden={!validationErrors.personality}
                       id="agent-personality-error"
-                      className="mt-2 text-sm text-red-300"
+                      className={styles.fieldError}
                     >
                       {validationErrors.personality}
                     </p>
-                  )}
-                </section>
+                  </section>
 
-                <section
-                  hidden={advancedSection !== "character"}
-                  className="influence-panel rounded-2xl p-5 sm:p-6"
-                >
-                  <div className="flex items-end justify-between gap-4">
-                    <div>
-                      <label
-                        htmlFor="agent-backstory"
-                        className="text-base font-semibold text-text-primary"
-                      >
-                        Backstory{" "}
-                        <span className="text-sm font-normal text-white/35">
-                          optional
-                        </span>
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setGuidedScope("backstory");
-                          setGuided(true);
-                          onAssistant?.();
-                        }}
-                      >
-                        Refine
-                      </button>
-                      <p
-                        id="agent-backstory-help"
-                        className="mt-1 text-sm leading-6 text-white/45"
-                      >
-                        The history and motivation behind the Agent.
-                      </p>
+                  <section
+                    hidden={advancedSection !== "character"}
+                    className="influence-panel rounded-2xl p-5 sm:p-6"
+                  >
+                    <div className="flex items-end justify-between gap-4">
+                      <div>
+                        <label
+                          htmlFor="agent-backstory"
+                          className="text-base font-semibold text-text-primary"
+                        >
+                          Backstory{" "}
+                          <span className="text-sm font-normal text-white/35">
+                            optional
+                          </span>
+                        </label>
+                        <button
+                          type="button"
+                          className={styles.refineLink}
+                          aria-label="Refine Backstory"
+                          onClick={() => {
+                            setGuidedScope({ section: "backstory" });
+                            setGuided(true);
+                            onAssistant?.();
+                          }}
+                        >
+                          Refine
+                        </button>
+                        <p
+                          id="agent-backstory-help"
+                          className="mt-1 text-sm leading-6 text-white/45"
+                        >
+                          The history and motivation behind the Agent.
+                        </p>
+                      </div>
+                      <span className="font-mono text-xs tabular-nums text-white/40">
+                        {backstory.length}/{AGENT_PROFILE_LIMITS.backstory}
+                      </span>
                     </div>
-                    <span className="font-mono text-xs tabular-nums text-white/40">
-                      {backstory.length}/{AGENT_PROFILE_LIMITS.backstory}
-                    </span>
-                  </div>
-                  <GrowingTextarea
-                    id="agent-backstory"
-                    value={backstory}
-                    onChange={(event) => setBackstory(event.target.value)}
-                    placeholder="Where did this Agent come from, and what drives them?"
-                    maxLength={AGENT_PROFILE_LIMITS.backstory}
-                    aria-describedby="agent-backstory-help"
-                    className="influence-field mt-4 min-h-36 w-full rounded-xl px-4 py-4 text-base leading-7"
-                  />
-                </section>
-                <section
-                  hidden={advancedSection !== "appearance"}
-                  className="influence-panel rounded-2xl p-5 sm:p-6"
-                >
-                  <label
-                    htmlFor="agent-performance"
-                    className="text-base font-semibold text-text-primary"
+                    <GrowingTextarea
+                      id="agent-backstory"
+                      value={backstory}
+                      onChange={(event) => setBackstory(event.target.value)}
+                      placeholder="Where did this Agent come from, and what drives them?"
+                      maxLength={AGENT_PROFILE_LIMITS.backstory}
+                      aria-describedby="agent-backstory-help"
+                      className="influence-field mt-4 min-h-36 w-full rounded-xl px-4 py-4 text-base leading-7"
+                    />
+                  </section>
+                  <section
+                    hidden={advancedSection !== "appearance"}
+                    className="influence-panel rounded-2xl p-5 sm:p-6"
                   >
-                    Character performance
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setGuidedScope("performanceInstructions");
-                      setGuided(true);
-                      onAssistant?.();
-                    }}
-                  >
-                    Refine
-                  </button>
-                  <p
-                    id="agent-performance-help"
-                    className="mt-1 text-sm leading-6 text-white/45"
-                  >
-                    How your character carries themselves: posture, gestures,
-                    mannerisms, movement and vocal delivery.
-                  </p>
-                  <GrowingTextarea
-                    id="agent-performance"
-                    value={performanceInstructions}
-                    onChange={(event) =>
-                      setPerformanceInstructions(event.target.value)
-                    }
-                    maxLength={AGENT_PROFILE_LIMITS.performanceInstructions}
-                    aria-describedby="agent-performance-help"
-                    className="influence-field mt-4 min-h-36 w-full rounded-xl px-4 py-4 text-base leading-7"
-                  />
-                  <label
-                    htmlFor="agent-visual-design"
-                    className="mt-5 block text-base font-semibold text-text-primary"
-                  >
-                    Visual design
-                  </label>
-                  <button
-                    type="button"
-                    disabled={referenceBusy}
-                    onClick={() => {
-                      setGuidedScope("visualDesign");
-                      setGuided(true);
-                      onAssistant?.();
-                    }}
-                  >
-                    Refine
-                  </button>
-                  <p className="mt-1 text-sm leading-6 text-white/45">
-                    Appearance, clothing and distinctive details shared by the
-                    portrait and full-body reference.
-                  </p>
-                  <GrowingTextarea
-                    id="agent-visual-design"
-                    value={visualDesign ?? ""}
-                    onChange={(event) => setVisualDesign(event.target.value)}
-                    maxLength={8000}
-                    className="influence-field mt-4 min-h-28 w-full rounded-xl px-4 py-4 text-base leading-7"
-                  />
-                  <div className="mt-5">
-                    <h3 className="mb-3 text-sm font-semibold text-text-primary">
-                      Full-body reference
-                    </h3>
+                    <label
+                      htmlFor="agent-performance"
+                      className="text-base font-semibold text-text-primary"
+                    >
+                      Character performance
+                    </label>
                     <button
                       type="button"
-                      disabled={
-                        generationBusy ||
-                        uploading ||
-                        submitting ||
-                        !name.trim()
-                      }
-                      onClick={() => void generateReference()}
-                      className="mb-3 rounded-lg border border-white/20 px-4 py-2 text-sm disabled:opacity-50"
+                      className={styles.refineLink}
+                      aria-label="Refine Performance"
+                      onClick={() => {
+                        setGuidedScope({ section: "performanceInstructions" });
+                        setGuided(true);
+                        onAssistant?.();
+                      }}
                     >
-                      {referenceBusy
-                        ? "Generating…"
-                        : referenceRequest.current
-                          ? "Retry"
-                          : "Generate"}
+                      Refine
                     </button>
-                    {referenceError && (
-                      <p role="alert" className="mb-3 text-sm text-red-300">
-                        {referenceError}
-                      </p>
-                    )}
-                  </div>
-                </section>
+                    <p
+                      id="agent-performance-help"
+                      className="mt-1 text-sm leading-6 text-white/45"
+                    >
+                      How your character carries themselves: posture, gestures,
+                      mannerisms, movement and vocal delivery.
+                    </p>
+                    <GrowingTextarea
+                      id="agent-performance"
+                      value={performanceInstructions}
+                      onChange={(event) =>
+                        setPerformanceInstructions(event.target.value)
+                      }
+                      maxLength={AGENT_PROFILE_LIMITS.performanceInstructions}
+                      aria-describedby="agent-performance-help"
+                      className="influence-field mt-4 min-h-36 w-full rounded-xl px-4 py-4 text-base leading-7"
+                    />
+                    <label
+                      htmlFor="agent-visual-design"
+                      className="mt-5 block text-base font-semibold text-text-primary"
+                    >
+                      Visual design
+                    </label>
+                    <button
+                      type="button"
+                      className={styles.refineLink}
+                      aria-label="Refine Appearance"
+                      disabled={referenceBusy}
+                      onClick={() => {
+                        setGuidedScope({ section: "visualDesign" });
+                        setGuided(true);
+                        onAssistant?.();
+                      }}
+                    >
+                      Refine
+                    </button>
+                    <p className="mt-1 text-sm leading-6 text-white/45">
+                      Appearance, clothing and distinctive details shared by the
+                      portrait and full-body reference.
+                    </p>
+                    <GrowingTextarea
+                      id="agent-visual-design"
+                      value={visualDesign ?? ""}
+                      onChange={(event) => setVisualDesign(event.target.value)}
+                      maxLength={8000}
+                      className="influence-field mt-4 min-h-28 w-full rounded-xl px-4 py-4 text-base leading-7"
+                    />
+                    <div className="mt-5">
+                      <h3 className="mb-3 text-sm font-semibold text-text-primary">
+                        Full-body reference
+                      </h3>
+                      <button
+                        type="button"
+                        disabled={
+                          draftRecovering ||
+                          imageGenerationBlocked ||
+                          generationBusy ||
+                          artworkBlocked ||
+                          uploading ||
+                          submitting ||
+                          !name.trim()
+                        }
+                        onClick={() => void generateReference()}
+                        className="mb-3 rounded-lg border border-white/20 px-4 py-2 text-sm disabled:opacity-50"
+                      >
+                        {referenceBusy
+                          ? "Generating…"
+                          : referenceRequest.current
+                            ? "Retry"
+                            : "Generate"}
+                      </button>
+                    </div>
+                  </section>
+                </div>
               </div>
             </div>
           </div>
         </div>
         {!guided && preferences}
-        {!guided && headConfirmationRequired && (
-          <p role="status" className="text-sm text-amber-200">
-            Confirm the head and portrait before saving this new full-body
-            image.{" "}
-            <button
-              type="button"
-              className="underline"
-              onClick={() =>
-                setPortraitEditorSource(
-                  fullBodyReferenceUrl ?? avatarUrl ?? null,
-                )
-              }
-            >
-              Review character images
-            </button>
-            . Save draft keeps your work in this tab.
-          </p>
-        )}
 
         {portraitEditorSource && (
           <CharacterPortraitEditor
@@ -2900,87 +2850,112 @@ export function AgentForm({
             }}
           />
         )}
-        {!guided && (generationBusy || uploading) && (
-          <p role="status" className="mt-4 text-sm text-white/60">
-            Preparation is in progress. Save draft keeps changes in this tab; it
-            does not update your Agent.
-          </p>
-        )}
-        {generationNotice && (
-          <p role="status" className="mt-4 text-sm text-amber-200">
-            {generationNotice}
-          </p>
-        )}
-        {draftStorageError && (
-          <p
-            role="status"
-            className="mt-4 rounded-xl border border-amber-300/25 bg-amber-300/10 px-4 py-3 text-sm text-amber-100/80"
-          >
-            {draftStorageError}
-          </p>
-        )}
-
-        {guided && (aiError || referenceError) && (
-          <p
-            role="alert"
-            className="shrink-0 bg-red-400/10 px-4 py-2 text-sm text-red-300"
-          >
-            {aiError || referenceError}
-            {referenceRequest.current &&
-              " Send again to retry the unfinished image request."}
-          </p>
-        )}
-        {guided && Object.values(validationErrors).some(Boolean) && (
-          <p role="alert" className="shrink-0 px-4 py-2 text-sm text-red-300">
-            {Object.values(validationErrors).filter(Boolean).join(" ")}
-          </p>
-        )}
-        {referenceError && (
-          <p role="alert">
-            {referenceError}
-            {imageRequest && (
-              <button
-                type="button"
-                onClick={() => void retrySelectedJob()}
-                disabled={referenceBusy}
-              >
-                Retry
-              </button>
-            )}
-          </p>
-        )}
-        {saveError && <p role="alert">{saveError}</p>}
-        {dirty && missingRequired.length > 0 && (
-          <p className={styles.requiredHint}>
-            Before review, add{" "}
-            {missingRequired.map((field, index) => (
-              <span key={field}>
-                {index > 0 ? ", " : ""}
-                <button
-                  type="button"
-                  onClick={() =>
-                    focusField(
-                      field === "gender"
-                        ? "agent-gender-male"
-                        : `agent-${field}`,
+        <footer className={styles.editorFooter} aria-label="Editor actions">
+          <div className={styles.footerStatus}>
+            {activeIssue && !reviewOpen && !activityOpen ? (
+              issueNotice
+            ) : (
+              <>
+                <div role="status" className={styles.footerMessage}>
+                  {restoreAlternatives ? (
+                    <>
+                      <span>Two drafts differ </span>
+                      <button
+                        type="button"
+                        aria-label="Choose draft"
+                        onClick={() => setActivityOpen(true)}
+                      >
+                        Choose
+                      </button>
+                    </>
+                  ) : pendingRestore ? (
+                    activityOpen ? (
+                      "Draft available"
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={!remoteReady}
+                        onClick={applyDraft}
+                      >
+                        Resume
+                      </button>
                     )
-                  }
-                >
-                  {field}
-                </button>
-              </span>
-            ))}
-            .
-          </p>
-        )}
-        <footer className={styles.footer}>
-          <span>
-            {dirty
-              ? draftPersisted
-                ? "Draft saved"
-                : "Saving draft…"
-              : "No changes"}
-          </span>
+                  ) : draftConflicts.length ? (
+                    <>
+                      <span>Draft conflicts </span>
+                      <button
+                        type="button"
+                        aria-label="Resolve draft conflicts"
+                        onClick={() => setActivityOpen(true)}
+                      >
+                        Resolve
+                      </button>
+                    </>
+                  ) : profileGenerating ? (
+                    "Updating draft text…"
+                  ) : uploading || referenceBusy ? (
+                    <AgentOperationActivity
+                      stage={uploading ? "upload" : referenceStage}
+                      startedAt={referenceStartedAt}
+                    />
+                  ) : headConfirmationRequired ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPortraitEditorSource(
+                          fullBodyReferenceUrl ?? avatarUrl ?? null,
+                        )
+                      }
+                    >
+                      Confirm
+                    </button>
+                  ) : currentGenerationLabel ? (
+                    <span>{currentGenerationLabel}</span>
+                  ) : generations.loading ? (
+                    "Checking image requests…"
+                  ) : moderationLabel ? (
+                    <span>{moderationLabel}</span>
+                  ) : dirty && missingRequired.length ? (
+                    <>
+                      <span>Required fields </span>
+                      <button
+                        type="button"
+                        aria-label="Complete required fields"
+                        onClick={() => setActivityOpen(true)}
+                      >
+                        Complete
+                      </button>
+                    </>
+                  ) : (
+                    ""
+                  )}
+                </div>
+                <span>
+                  {draftRecovering && !draftStorageError
+                    ? "Loading draft…"
+                    : pendingRestore || restoreAlternatives
+                      ? "Draft available"
+                      : dirty
+                        ? draftPersisted
+                          ? "Draft saved"
+                          : draftStorageError
+                            ? "Draft not saved"
+                            : "Saving draft…"
+                        : "No changes"}
+                </span>
+              </>
+            )}
+          </div>
+          <button
+            type="button"
+            className={styles.activityTrigger}
+            aria-label="Activity"
+            aria-haspopup="dialog"
+            aria-expanded={activityOpen}
+            onClick={() => setActivityOpen(true)}
+          >
+            Activity <span>{activityCount}</span>
+          </button>
           <div className={styles.footerActions}>
             <button type="button" onClick={requestCancel}>
               Cancel
@@ -2994,6 +2969,300 @@ export function AgentForm({
             </button>
           </div>
         </footer>
+        <AgentWorkspacePanel
+          open={activityOpen}
+          title="Activity"
+          onClose={() => setActivityOpen(false)}
+        >
+          {moderationLabel && (
+            <section className={styles.panelSection}>
+              <h3>{moderationLabel}</h3>
+              <p>
+                {initial?.ownerContent?.reviewMessage ??
+                  (initial?.ownerContent?.submitted?.disposition === "rejected"
+                    ? "Edit this submission before saving it again."
+                    : moderationState === "held"
+                      ? "This submission needs moderator review."
+                      : "Your latest submission is being reviewed.")}
+              </p>
+            </section>
+          )}
+          {activeIssue && issueNotice}
+          <AgentGenerations
+            currentAgentId={initial?.id}
+            currentDraftScope={draftScope}
+            rows={generations.rows.filter(
+              (row) => row.id !== candidateImage?.requestId,
+            )}
+            onCancelled={(row) =>
+              void cancelGeneration(row).then(() => setActivityOpen(false))
+            }
+            onReview={(row) =>
+              void reviewGeneration(row).then(() => setActivityOpen(false))
+            }
+            disabled={submitting}
+          />
+          {restoreAlternatives && (
+            <section className={styles.review} aria-label="Choose draft">
+              <h2>Two drafts differ</h2>
+              <p>
+                Choose which version to resume. Saving it will replace the other
+                account draft.
+              </p>
+              {(["tab", "account"] as const).map((source) => {
+                const draft = restoreAlternatives[source];
+                return (
+                  <section key={source}>
+                    <h3>
+                      {source === "tab" ? "This tab" : "Account"}:{" "}
+                      {draft.current.name || "Untitled agent"}
+                    </h3>
+                    <p className={styles.hint}>
+                      Saved {new Date(draft.savedAt).toLocaleString()}
+                    </p>
+                    <details>
+                      <summary>Contents</summary>
+                      {(
+                        [
+                          "personality",
+                          "backstory",
+                          "strategyStyle",
+                          "werewolfStrategyStyle",
+                          "visualDesign",
+                          "performanceInstructions",
+                        ] as const
+                      ).map(
+                        (field) =>
+                          draft.current[field] && (
+                            <p key={field} className="whitespace-pre-wrap">
+                              <strong>
+                                {
+                                  {
+                                    personality: "Personality",
+                                    backstory: "Backstory",
+                                    strategyStyle: "Influence strategy",
+                                    werewolfStrategyStyle: "Werewolf strategy",
+                                    visualDesign: "Appearance",
+                                    performanceInstructions: "Performance",
+                                  }[field]
+                                }
+                              </strong>{" "}
+                              {draft.current[field]}
+                            </p>
+                          ),
+                      )}
+                      <p>
+                        {agentModelLabel(draft.current.modelPreference) ??
+                          "House choice"}{" "}
+                        ·{" "}
+                        {PLAYER_VOICES.find(
+                          (voice) => voice.id === draft.current.voiceId,
+                        )?.name ?? "Automatic voice"}
+                      </p>
+                      {draft.current.fullBodyReferenceUrl && (
+                        <OwnedCharacterImage
+                          src={draft.current.fullBodyReferenceUrl}
+                          alt={draft.current.name || "Draft artwork"}
+                          className="max-h-64 w-full object-contain"
+                        />
+                      )}
+                    </details>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPendingRestore(draft);
+                        setRestoreConflict(
+                          !sameSnapshot(draft.base, initialSnapshot),
+                        );
+                        setRestoreAlternatives(null);
+                      }}
+                    >
+                      {source === "tab" ? "Tab" : "Account"}
+                    </button>
+                  </section>
+                );
+              })}
+            </section>
+          )}
+          {pendingRestore && !restoreAlternatives && (
+            <section
+              className="mb-6 rounded-xl border border-phase/30 bg-phase/10 p-4"
+              aria-label="Saved local draft"
+            >
+              <p className="text-sm font-semibold text-text-primary">
+                {restoreConflict
+                  ? "A local draft was saved from an earlier Agent version."
+                  : "A local draft is available."}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-white/55">
+                Saved {new Date(pendingRestore.savedAt).toLocaleString()}. Apply
+                it to the editor, or clear it to keep working from this version.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={applyDraft}
+                  disabled={!remoteReady}
+                  className="influence-button-primary min-h-11 rounded-lg px-4 text-sm font-semibold"
+                >
+                  Resume
+                </button>
+                <button
+                  type="button"
+                  onClick={clearStoredDraft}
+                  className="influence-button-secondary min-h-11 rounded-lg px-4 text-sm"
+                >
+                  Discard
+                </button>
+              </div>
+            </section>
+          )}
+          {!!draftConflicts.length && (
+            <section className={styles.review} aria-label="Draft conflicts">
+              <h2>Resolve draft conflicts</h2>
+              <p>
+                These fields changed both in your draft and in the saved agent.
+                Choose which value to keep.
+              </p>
+              {draftConflicts.map((field) => (
+                <div className={styles.change} key={field}>
+                  <h3>
+                    {
+                      {
+                        images: "Artwork and portrait",
+                        name: "Name",
+                        gender: "Gender",
+                        personaKey: "Archetype",
+                        personality: "Personality",
+                        backstory: "Backstory",
+                        strategyStyle: "Influence strategy",
+                        werewolfStrategyStyle: "Werewolf strategy",
+                        performanceInstructions: "Performance",
+                        visualDesign: "Appearance",
+                        modelPreference: "Preferred model",
+                        voiceId: "Voice",
+                        fullBodyReferenceUrl: "Artwork",
+                        explicitAvatarUrl: "Portrait",
+                        portraitCrop: "Portrait crop",
+                        headPosition: "Head position",
+                        headSuggestion: "Head position",
+                      }[field]
+                    }
+                  </h3>
+                  {field === "images" ? (
+                    <div className={styles.candidate}>
+                      {initialSnapshot.fullBodyReferenceUrl && (
+                        <OwnedCharacterImage
+                          src={initialSnapshot.fullBodyReferenceUrl}
+                          alt="Current saved artwork"
+                        />
+                      )}
+                      {fullBodyReferenceUrl && (
+                        <OwnedCharacterImage
+                          src={fullBodyReferenceUrl}
+                          alt="Restored draft artwork"
+                        />
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <del>{JSON.stringify(initialSnapshot[field])}</del>
+                      <ins>{JSON.stringify(currentSnapshot[field])}</ins>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDraftConflicts((fields) =>
+                        fields.filter((value) => value !== field),
+                      )
+                    }
+                  >
+                    Keep
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = { ...currentSnapshot };
+                      if (field === "images") {
+                        for (const key of imageFields)
+                          Object.assign(next, {
+                            [key]: initialSnapshot[key],
+                          });
+                      } else
+                        Object.assign(next, {
+                          [field]: initialSnapshot[field],
+                        });
+                      setName(next.name);
+                      setPersonality(next.personality);
+                      setBackstory(next.backstory);
+                      setStrategyStyle(next.strategyStyle);
+                      setWerewolfStrategyStyle(next.werewolfStrategyStyle);
+                      setVisualDesign(next.visualDesign);
+                      setPerformanceInstructions(next.performanceInstructions);
+                      setModelPreference(next.modelPreference ?? "default");
+                      setVoiceId(next.voiceId ?? null);
+                      setPersonaKey(next.personaKey);
+                      setGender(next.gender);
+                      setFullBodyReferenceUrl(next.fullBodyReferenceUrl);
+                      setExplicitAvatarUrl(next.explicitAvatarUrl);
+                      setHeadPosition(next.headPosition);
+                      setHeadSuggestion(next.headSuggestion);
+                      setPortraitCrop(next.portraitCrop);
+                      setDraftConflicts((fields) =>
+                        fields.filter((value) => value !== field),
+                      );
+                    }}
+                  >
+                    Current
+                  </button>
+                </div>
+              ))}
+            </section>
+          )}
+          {headConfirmationRequired && (
+            <p role="status" className="text-sm text-amber-200">
+              Confirm the head and portrait before saving this new full-body
+              image.{" "}
+              <button
+                type="button"
+                className="underline"
+                onClick={() =>
+                  setPortraitEditorSource(
+                    fullBodyReferenceUrl ?? avatarUrl ?? null,
+                  )
+                }
+              >
+                Review character images
+              </button>
+              . Save draft keeps your work in this tab.
+            </p>
+          )}{" "}
+          {dirty && missingRequired.length > 0 && (
+            <p className={styles.requiredHint}>
+              Before review, add{" "}
+              {missingRequired.map((field, index) => (
+                <span key={field}>
+                  {index > 0 ? ", " : ""}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      focusField(
+                        field === "gender"
+                          ? "agent-gender-male"
+                          : `agent-${field}`,
+                      )
+                    }
+                  >
+                    {field}
+                  </button>
+                </span>
+              ))}
+              .
+            </p>
+          )}
+          {!activityCount && !missingRequired.length && <p>No activity.</p>}
+        </AgentWorkspacePanel>
         {reviewOpen && (
           <div className={styles.reviewBackdrop}>
             <section
@@ -3189,9 +3458,9 @@ export function AgentForm({
                   artwork.
                 </p>
               )}
+              {issueNotice}
               <p className={styles.hint}>
-                After saving, the submission is reviewed. The last accepted
-                version stays available.
+                Your changes will be automatically reviewed.
               </p>
               <div className={styles.footer}>
                 <button type="button" onClick={() => setReviewOpen(false)}>
@@ -3251,11 +3520,11 @@ export function AgentForm({
                 id="discard-agent-title"
                 className="text-lg font-semibold text-text-primary"
               >
-                Discard this draft?
+                Discard draft?
               </h2>
               <p className="mt-2 text-sm leading-6 text-white/55">
-                The draft will be deleted from your account and this tab.
-                Unselected artwork will be discarded.
+                Unsaved changes and new artwork will be removed.
+                {isEditing && " Your saved agent stays."}
               </p>
               <div className="mt-5 flex gap-3">
                 <button
@@ -3279,8 +3548,4 @@ export function AgentForm({
       </fieldset>
     </form>
   );
-}
-
-function agentSaveErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Failed to save Agent.";
 }

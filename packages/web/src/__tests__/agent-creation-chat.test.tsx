@@ -88,8 +88,7 @@ test("approval advances immediately without a model call or image generation", a
 test("negative feedback revises the profile and asks for approval again", async () => {
   command = "revise_character";
   const view = mount();
-  fireEvent.click(view.getByRole("button", { name: "Read Character prompt" }));
-  fireEvent.click(view.getByRole("button", { name: "Edit Character prompt" }));
+  fireEvent.click(view.getByRole("button", { name: "Revise Character prompt" }));
   expect(view.getByRole("button", { name: "Remove change Character prompt" })).toBeTruthy();
   fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "No, make her more suspicious" } });
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
@@ -102,16 +101,16 @@ test("an illegal command cannot generate images or advance review", async () => 
   const view = mount();
   fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "Please change this character" } });
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
-  await waitFor(() => expect(view.getByRole("alert").textContent).toContain("Invalid creation assistant turn"));
+  await waitFor(() => expect(view.getByRole("alert").textContent).toContain("Couldn’t update character."));
   expect(generated).toHaveLength(0); expect(appearances).toHaveLength(0);
 });
-for (const end of ["end_abuse", "end_fatigue"]) test(`${end} ends chat while preserving the readable character`, async () => {
+for (const end of ["end_abuse", "end_fatigue"]) test(`${end} ends chat while preserving the character`, async () => {
   command = end;
   const view = mount();
   fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "Please change this character" } });
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
   await waitFor(() => expect(view.queryByLabelText("Message the character assistant")).toBeNull());
-  expect(view.getByRole("button", { name: "Read Character prompt" })).toBeTruthy();
+  expect(view.getByRole("button", { name: "Revise Character prompt" })).toBeTruthy();
   expect(generated).toHaveLength(0);
 });
 
@@ -130,7 +129,7 @@ test("starter pills can be removed and sent without typing a prompt", async () =
   expect(view.queryByRole("button", { name: "Add Inventor ingredient" })).toBeNull();
   expect(view.getByRole("button", { name: "Continue" })).toBeTruthy();
   expect(view.queryByText("Your character starts here.")).toBeNull();
-  expect(view.getByRole("button", { name: "Read Character prompt" })).toBeTruthy();
+  expect(view.getByRole("button", { name: "Revise Character prompt" })).toBeTruthy();
 });
 test("a browser timeout gives a useful error and preserves the text and ingredient tags", async () => {
   globalThis.fetch = Object.assign(async () => { throw new DOMException("signal timed out", "TimeoutError"); }, { preconnect: originalFetch.preconnect });
@@ -140,7 +139,7 @@ test("a browser timeout gives a useful error and preserves the text and ingredie
   fireEvent.click(view.getByRole("button", { name: "Remove Streamer ingredient" }));
   fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "A suspicious dragon" } });
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
-  await waitFor(() => expect(view.getByRole("alert").textContent).toContain("Your text and ingredients are still here"));
+  await waitFor(() => expect(view.getByRole("alert").textContent).toContain("Character update timed out."));
   expect((view.getByLabelText("Message the character assistant") as HTMLTextAreaElement).value).toBe("A suspicious dragon");
   expect(view.getByRole("button", { name: "Remove Gamer ingredient" })).toBeTruthy();
   expect(view.queryByRole("button", { name: "Add Streamer ingredient" })).toBeNull();
@@ -197,8 +196,7 @@ test("gender tags allow multiple selections and suggestions return only on shuff
 for (const typed of [false, true]) test(`approval after text refinement preserves completed images (${typed ? "typed" : "button"})`, async () => {
   const view = mount(false, true);
   command = "revise_character";
-  fireEvent.click(view.getByRole("button", { name: "Read Influence strategy" }));
-  fireEvent.click(view.getByRole("button", { name: "Edit Influence strategy" }));
+  fireEvent.click(view.getByRole("button", { name: "Revise Influence strategy" }));
   fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "Make them more patient" } });
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
   await waitFor(() => {
@@ -225,4 +223,33 @@ test("approval with an unconfirmed existing image asks for headshot confirmation
   expect(view.queryByRole("button", { name: "Create Agent" })).toBeNull();
   expect(appearances).toHaveLength(0);
   expect(fetchCalls).toBe(0);
+});
+
+
+test("Refine focuses a scoped composer directly, including a repeated request for the same field", () => {
+  const props = { profile, onGenerate: async () => true, onAppearance: async () => true, busy: false, blocked: false, headRequired: false, hasImage: true, onHeadshot() {} };
+  const view = render(<AgentCreationChat {...props} scope={{ section: "personality" }} />);
+  expect(view.container.querySelector("dialog")).toBeNull();
+  expect(document.activeElement).toBe(view.getByLabelText("Message the character assistant"));
+  expect(view.getByLabelText("Selected sections").textContent).toContain(profile.personality);
+  expect(view.getByText("Describe the change")).toBeTruthy();
+  fireEvent.click(view.getByRole("button", { name: "Remove change Character prompt" }));
+  expect(view.queryByLabelText("Selected sections")).toBeNull();
+  view.rerender(<AgentCreationChat {...props} scope={{ section: "personality" }} />);
+  expect(view.getByRole("button", { name: "Remove change Character prompt" })).toBeTruthy();
+  expect(document.activeElement).toBe(view.getByLabelText("Message the character assistant"));
+});
+
+test("Guided gender changes immediately without inference or artwork generation", () => {
+  function Harness() {
+    const [gender, setGender] = useState(profile.gender);
+    return <AgentCreationChat profile={{ ...profile, gender }} onGenderChange={setGender} onGenerate={async () => true} onAppearance={async () => true} busy={false} blocked={false} headRequired={false} hasImage onHeadshot={() => {}} />;
+  }
+  const view = render(<Harness />);
+  expect((view.getByRole("radio", { name: "Female" }) as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(view.getByRole("radio", { name: "Male" }));
+  expect((view.getByRole("radio", { name: "Male" }) as HTMLInputElement).checked).toBe(true);
+  expect((view.getByRole("radio", { name: "Female" }) as HTMLInputElement).checked).toBe(false);
+  expect(fetchCalls).toBe(0);
+  expect(appearances).toHaveLength(0);
 });

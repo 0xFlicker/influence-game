@@ -12,6 +12,9 @@ import { createSessionToken } from "../middleware/auth.js";
 import { GenerationAdmissionError } from "../services/generation-admission-error.js";
 import { readAgentTransparentBodies } from "../services/agent-transparent-bodies.js";
 import { storeJson, storeBinary } from "../services/payload-storage.js";
+import { cancelAgentGeneration, listAgentGenerations } from "../services/agent-generations.js";
+import { characterGenerationInput } from "./character-generation-fixture.js";
+import { requestCharacterReference } from "../services/character-reference-jobs.js";
 let db:DrizzleDB,userId:string,agentId:string,body:string,head:string;
 let calls:string[];
 let deps:VisualUpdateDependencies;
@@ -59,6 +62,37 @@ test("concurrent owner edits fence the update without overwriting",async()=>{
  await processAgentVisualUpdate(db,userId,agentId,deps);
  expect((await readAgentVisualUpdate(db,userId,agentId)).job?.status).toBe("conflict");
  expect((await db.select().from(schema.agentProfiles))[0]!.name).toBe("New name");expect(await db.select().from(schema.agentContentRevisions)).toHaveLength(0);
+});
+test("preparation activity can be cancelled during image work without applying late output",async()=>{
+ await db.update(schema.agentProfiles).set({fullBodyReferenceUrl:null}).where(eq(schema.agentProfiles.id,agentId));
+ const first=await requestAgentVisualUpdate(db,userId,agentId);
+ expect(await listAgentGenerations(db,userId)).toMatchObject([{id:first.job!.id,source:"preparation",status:"queued",blocksGeneration:true}]);
+ await expect(requestCharacterReference(db,userId,characterGenerationInput(randomUUID(),"Other image"),"")).rejects.toMatchObject({code:"generation_pending"});
+ const started=Promise.withResolvers<void>(),finish=Promise.withResolvers<void>();
+ deps.body=async()=>{started.resolve();await finish.promise;return body;};
+ const work=processAgentVisualUpdate(db,userId,agentId,deps);
+ try {
+  await started.promise;
+  await db.insert(schema.users).values({id:"other-owner"});
+  await expect(cancelAgentGeneration(db,"other-owner",first.job!.id,"preparation")).rejects.toMatchObject({status:404});
+  await cancelAgentGeneration(db,userId,first.job!.id,"preparation");
+  expect(await listAgentGenerations(db,userId)).toEqual([]);
+ } finally {finish.resolve();await work;}
+ expect(await db.select().from(schema.agentContentRevisions)).toHaveLength(0);
+ expect((await db.select().from(schema.agentProfiles))[0]!.fullBodyReferenceUrl).toBeNull();
+ expect((await requestAgentVisualUpdate(db,userId,agentId)).job!.id).not.toBe(first.job!.id);
+});
+test("preparation cancellation stops at the saving boundary",async()=>{
+ const job=await requestAgentVisualUpdate(db,userId,agentId);
+ const started=Promise.withResolvers<void>(),finish=Promise.withResolvers<void>(),apply=deps.apply;
+ deps.apply=async(...args)=>{started.resolve();await finish.promise;return apply(...args);};
+ const work=processAgentVisualUpdate(db,userId,agentId,deps);
+ try {
+  await started.promise;
+  await expect(cancelAgentGeneration(db,userId,job.job!.id,"preparation")).rejects.toMatchObject({code:"artwork_changed"});
+ } finally {finish.resolve();await work;}
+ expect(await db.select().from(schema.agentContentSubmissions)).toHaveLength(1);
+ expect((await db.select().from(schema.agentVisualUpdates))[0]!.leaseId).toBeNull();
 });
 test("lost save response replays the committed submission exactly once",async()=>{
  const apply=deps.apply;let first=true;deps.apply=async(...args)=>{const result=await apply(...args);if(first){first=false;throw new Error("response lost");}return result;};

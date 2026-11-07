@@ -32,7 +32,7 @@ test("failed source delivery retries without generation and recovers the same so
   expect(view.queryByLabelText("Head box; drag to move")).toBeNull();
   expect(view.getByRole("button", { name: "Confirm" }).hasAttribute("disabled")).toBe(true);
   fireEvent.error(image);
-  expect(view.getByRole("alert").textContent).toContain("without generating another character");
+  expect(view.getByRole("alert").textContent).toContain("Couldn’t load artwork.");
   expect(view.getByText(/The striped part/).closest("div")?.hidden).toBe(true);
   fireEvent.click(view.getByRole("button", { name: "Retry" }));
   const retry = view.getByAltText("Vesper Vale full image") as HTMLImageElement;

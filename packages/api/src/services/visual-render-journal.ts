@@ -1,5 +1,5 @@
 import { Hydrated, loadPayloads, storeFields } from "./payload-storage.js";
-import { reserveInference, dispatchInference, settleInference, checkInferenceDispatch } from "./inference-allowances.js";
+import { reserveInference, dispatchInference, settleInference, checkInferenceDispatch, withImageExecution } from "./inference-allowances.js";
 import { recordVisualOperationEvent, visualFailureEvidence } from "./visual-diagnostics.js";
 import { VisualIdentityFailure } from "@influence/engine/visual-localization";
 import { VISUAL_LOCALIZATION_MODEL, VISUAL_LOCALIZATION_VERSION } from "./visual-scene-localization.js";
@@ -89,6 +89,10 @@ export function visualImageJournal(db: DrizzleDB, operation: Operation, beforeDi
     async begin(input) {
       await beforeDispatch?.();
       await db.transaction(async (tx) => {
+        if(operation.userId && operation.operationKey.startsWith('full-body:')) {
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${operation.userId}))`);
+          await dispatchInference(tx,`visual:${operation.id}:${operation.generation}`,operation.userId);
+        }
         await beforeDispatch?.(tx);
         if (operation.operationKey.startsWith("championship-art:")) {
           const preparationId = operation.operationKey.split(":")[1]!;
@@ -96,8 +100,7 @@ export function visualImageJournal(db: DrizzleDB, operation: Operation, beforeDi
           const [event] = art ? await tx.select().from(schema.championshipEvents).where(eq(schema.championshipEvents.id, art.eventId)) : [];
           if (!art || art.ownerId !== operation.userId || !art.selected || art.status !== "processing" || event?.status !== "preparing") throw new Error("Championship artwork authority is no longer active");
         } else if (operation.userId) {
-          if(operation.operationKey.startsWith('full-body:')) await dispatchInference(tx,`visual:${operation.id}:${operation.generation}`,operation.userId);
-          else await checkInferenceDispatch(tx,operation.userId);
+          if(!operation.operationKey.startsWith('full-body:')) await checkInferenceDispatch(tx,operation.userId);
         }
         if (operation.repairJobId && input.provider === "xai") {
           const [job] = await loadPayloads(tx.select().from(schema.visualRepairJobs).where(eq(schema.visualRepairJobs.id, operation.repairJobId)).for("update"));
@@ -155,8 +158,10 @@ function unresolved(entry: Pick<Attempt, "receipt" | "reconciliation">): boolean
   return !entry.reconciliation && (!entry.receipt || entry.receipt.chargeUncertain);
 }
 
+type VisualRetryDB = DrizzleDB | Parameters<Parameters<DrizzleDB['transaction']>[0]>[0];
+
 /** Explicit operator recovery, never an automatic timeout retry. Historical attempts remain intact. */
-export async function retryVisualRender(db: DrizzleDB, operationId: string, expectedGeneration: number): Promise<Operation> {
+export async function retryVisualRender(db: VisualRetryDB, operationId: string, expectedGeneration: number): Promise<Operation> {
   return db.transaction(async (tx) => {
     const [operation] = await loadPayloads(tx.select().from(operations).where(eq(operations.id, operationId)).for("update"));
     if (!operation || operation.generation !== expectedGeneration) throw new Error("Visual retry generation changed");
@@ -291,7 +296,7 @@ async function runDurableLocalization(db: DrizzleDB, input: {
 
 /** Draft references are owned by the authenticated account, before a game exists. */
 export async function renderOwnedVisualReference(db: DrizzleDB, input: {
-  userId: string; requestId: string; request: VisualImageRequest; signal?: AbortSignal; onRemoval?: () => Promise<void>; waitForBackground?: boolean;
+  userId: string; requestId: string; request: VisualImageRequest; signal?: AbortSignal; beforeDispatch?: VisualBoundaryGuard; onRemoval?: () => Promise<void>; waitForBackground?: boolean;
 }) {
   const savedRequest = { ...input.request, ...visualImageSettings(input.request), references: input.request.references.map(hash) };
   const inputHash = hash(stableJson(savedRequest));
@@ -300,7 +305,7 @@ export async function renderOwnedVisualReference(db: DrizzleDB, input: {
     const [existing] = await loadPayloads(tx.select().from(operations).where(and(eq(operations.userId, input.userId), eq(operations.operationKey, `full-body:${input.requestId}`))));
     const operation = existing ?? await reserveVisualOperation(tx, null, `full-body:${input.requestId}`, inputHash, input.userId, savedRequest);
     if(operation.inputHash !== inputHash) throw new Error('Visual operation input changed');
-    await reserveInference(tx,{id:`visual:${operation.id}:${operation.generation}`,userId:input.userId,category:'image',inputHash});
+    await reserveInference(tx,{id:`visual:${operation.id}:${operation.generation}`,userId:input.userId,category:'image',inputHash,visualOperationId:operation.id});
     return operation;
   }));
   const prior = await loadPayloads(db.select().from(attempts).where(and(eq(attempts.operationId, operation.id), eq(attempts.generation, operation.generation))));
@@ -311,13 +316,14 @@ export async function renderOwnedVisualReference(db: DrizzleDB, input: {
   }
   if (prior.length) throw new VisualRenderRecoveryRequired(operation.id, "Reference generation needs operator reconciliation before another paid request");
   try {
-    const result = await generateVisualImage(input.request, visualImageJournal(db, operation), input.signal);
+    const result = await withImageExecution(db,input.userId,`visual:${operation.id}:${operation.generation}`,input.signal,signal=>generateVisualImage(input.request, visualImageJournal(db, operation, input.beforeDispatch), signal));
     await db.transaction(tx=>settleInference(tx,`visual:${operation.id}:${operation.generation}`,input.userId,'succeeded'));
     return { operationId: operation.id, image: await prepareTransparentCharacterImage(db, result.image, input.signal, input.onRemoval, input.waitForBackground) };
   } catch(error) {
-    const entries=await loadPayloads(db.select().from(attempts).where(eq(attempts.operationId,operation.id)));
+    const entries=await loadPayloads(db.select().from(attempts).where(and(eq(attempts.operationId,operation.id),eq(attempts.generation,operation.generation))));
+    const succeeded=entries.some(a=>a.imageHash && a.receipt && !a.receipt.failure && !a.receipt.chargeUncertain);
     const uncertain=entries.some(a=>!a.receipt || a.receipt.chargeUncertain);
-    await db.transaction(tx=>settleInference(tx,`visual:${operation.id}:${operation.generation}`,input.userId,uncertain?'uncertain':'failed'));
+    await db.transaction(tx=>settleInference(tx,`visual:${operation.id}:${operation.generation}`,input.userId,succeeded?'succeeded':uncertain?'uncertain':'failed'));
     throw error;
   }
 }
@@ -402,10 +408,16 @@ export async function renderChampionshipVisualReference(db: DrizzleDB, input: {
 }
 
 /** Owner-authorized retry of a confirmed failure. Uncertain provider outcomes remain fenced. */
-export async function retryOwnedVisualReference(db:DrizzleDB,userId:string,requestId:string) {
+export async function retryOwnedVisualReference(db:VisualRetryDB,userId:string,requestId:string) {
   const [operation]=await loadPayloads(db.select().from(operations).where(and(eq(operations.userId,userId),eq(operations.operationKey,`full-body:${requestId}`))));
   if(!operation)return;
   const prior=await loadPayloads(db.select().from(attempts).where(and(eq(attempts.operationId,operation.id),eq(attempts.generation,operation.generation))));
   if(prior.some(entry=>entry.image && entry.receipt && !entry.receipt.failure && !entry.receipt.chargeUncertain))return;
   if(prior.length)await retryVisualRender(db,operation.id,operation.generation);
+  else {
+    const [reservation]=await db.select().from(schema.inferenceReservations).where(and(eq(schema.inferenceReservations.userId,userId),eq(schema.inferenceReservations.id,`visual:${operation.id}:${operation.generation}`)));
+    if(reservation?.state==='failed') await db.update(operations).set({generation:operation.generation+1}).where(and(eq(operations.id,operation.id),eq(operations.generation,operation.generation)));
+    else if(reservation && (reservation.executionReleasedAt || reservation.state==='uncertain')) throw new VisualRenderRecoveryRequired(operation.id,'The previous request has an unknown outcome.');
+  }
+
 }

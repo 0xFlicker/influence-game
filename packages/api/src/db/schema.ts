@@ -3928,7 +3928,12 @@ export const inferenceReservations = pgTable("inference_reservations", {
  inputHash:text("input_hash").notNull(),state:text("state").notNull().$type<"reserved"|"dispatched"|"succeeded"|"failed"|"uncertain">(),
  bucket:text("bucket").notNull().$type<"balance"|"grant"|"exempt">(), periodStart:timestamp("period_start",{withTimezone:true,mode:"string"}).notNull(),
  createdAt:timestamp("created_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),finishedAt:timestamp("finished_at",{withTimezone:true,mode:"string"}),
-});
+ executionLeaseUntil:timestamp("execution_lease_until",{withTimezone:true,mode:"string"}),
+ executionReleasedAt:timestamp("execution_released_at",{withTimezone:true,mode:"string"}),
+ executionReleaseReason:text("execution_release_reason").$type<"completed"|"failed"|"cancelled"|"interrupted">(),
+ visualOperationId:text("visual_operation_id").references(() => visualRenderOperations.id),
+ avatarRequestId:text("avatar_request_id").references(() => avatarGenerationRequests.id),
+},table=>[index("inference_reservations_owner_category_state").on(table.userId,table.category,table.state)]);
 export const inferenceActions = pgTable("inference_actions", {
  id:text("id").primaryKey(),actorId:text("actor_id").references(() => users.id),userId:text("user_id").references(() => users.id),
  requestHash:text("request_hash").notNull(),reason:text("reason").notNull(),command:jsonb("command").notNull().$type<Record<string,unknown>>(),
@@ -4386,9 +4391,9 @@ export const characterReferenceJobs = pgTable("character_reference_jobs", {
   input: payloadColumn("input_object", "json-gzip").notNull().$type<StoredPayload<Record<string, unknown>>>(),
   result: payloadColumn("result_object", "json-gzip").$type<StoredPayload<Record<string, unknown>>>(),
   status: text("status").notNull().default("queued"), stage: text("stage").notNull().default("image"),
-  leaseId: text("lease_id"), leaseUntil: text("lease_until"), error: text("error"),
+  leaseId: text("lease_id"), leaseUntil: text("lease_until"), error: text("error"), errorCode: text("error_code"),
   createdAt: text("created_at").notNull().default(sql`now()::text`), updatedAt: text("updated_at").notNull().default(sql`now()::text`),
-}, table => [...payloadChecks("character_reference_jobs", { input: [table.input, "json-gzip"], result: [table.result, "json-gzip"] })]);
+}, table => [index("character_reference_jobs_owner_status").on(table.userId,table.status,table.createdAt),...payloadChecks("character_reference_jobs", { input: [table.input, "json-gzip"], result: [table.result, "json-gzip"] })]);
 
 export const agentVisualUpdates = pgTable("agent_visual_updates", {
   id: text("id").primaryKey(),

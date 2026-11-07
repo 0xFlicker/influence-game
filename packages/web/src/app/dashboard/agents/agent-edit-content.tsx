@@ -24,7 +24,9 @@ import {
   hasFullBodyAgentArt,
   type AgentEntryIntent,
 } from "@/lib/agent-entry";
+import styles from "./agent-workspace.module.css";
 import { AgentForm, type StrategyComparison } from "./agent-form";
+import { AgentIssueNotice, useAgentIssue } from "./agent-issue";
 import { managementReturnPath } from "./agent-management-navigation";
 import { reviewPath } from "./[id]/review/owner-learning-model";
 
@@ -55,7 +57,7 @@ export function AgentEditContent({
   const [agent, setAgent] = useState<SavedAgent | null>(null);
   const [review, setReview] = useState<OwnerLearningReview | null>(null);
   const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useAgentIssue("load");
 
   const fetchEditor = useCallback(
     (showLoading = true) => {
@@ -78,15 +80,11 @@ export function AgentEditContent({
         })
         .catch((error) => {
           console.warn("[AgentEditContent] Failed to load editor:", error);
-          setFetchError(
-            sourceReviewId
-              ? "The Agent or linked strategy review could not be loaded."
-              : "The Agent could not be loaded.",
-          );
+          setFetchError(error);
         })
         .finally(() => setLoading(false));
     },
-    [agentId, sourceReviewId],
+    [agentId, sourceReviewId, setFetchError],
   );
 
   useEffect(() => {
@@ -216,19 +214,15 @@ export function AgentEditContent({
       </header>
 
       {loading ? (
-        <div className="influence-panel animate-pulse rounded-2xl p-8 text-sm text-white/40">
-          Loading Agent editor…
-        </div>
+        <div className={styles.editorSkeleton}>Loading Agent editor…</div>
       ) : fetchError ? (
         <section className="rounded-2xl border border-red-400/30 bg-red-400/10 p-6">
-          <p className="text-sm text-red-300">{fetchError}</p>
+          <AgentIssueNotice
+            issue={fetchError}
+            onAction={() => fetchEditor()}
+            agentId={agentId}
+          />
           <div className="mt-4 flex gap-3">
-            <button
-              onClick={() => fetchEditor()}
-              className="influence-button-secondary min-h-11 rounded-lg px-4 text-sm"
-            >
-              Retry
-            </button>
             <Link
               href={cancelPath}
               className="influence-button-secondary inline-flex min-h-11 items-center rounded-lg px-4 text-sm"
@@ -278,17 +272,6 @@ export function AgentEditContent({
         </section>
       ) : agent && strategyComparison ? (
         <div>
-          {agent.ownerContent?.submitted &&
-            (agent.ownerContent.submitted.held ||
-              agent.ownerContent.submitted.disposition === "rejected") && (
-              <p
-                className="mb-4 rounded-lg border border-border-active p-4 text-sm text-white/60"
-                role="status"
-              >
-                You are editing your latest submitted revision. Changes remain
-                held until a moderator accepts them.
-              </p>
-            )}
           <AgentForm
             key={agent.latestContentRevisionId}
             initial={agent}

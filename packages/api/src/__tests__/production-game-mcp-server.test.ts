@@ -226,6 +226,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "list_open_learning_reviews",
       "read_learning_review",
       "preflight_learning_review",
+      "list_agent_generations",
+      "cancel_agent_generation",
       "read_agent_artwork",
       "list_agent_voices",
       "retry_agent_artwork",
@@ -1331,6 +1333,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "retry_learning_review",
       "apply_learning_review",
       "resolve_learning_review",
+      "list_agent_generations",
+      "cancel_agent_generation",
       "read_agent_artwork",
       "list_agent_voices",
       "retry_agent_artwork",
@@ -1424,10 +1428,11 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         : ["list_learning_review_inputs", "list_open_learning_reviews", "read_learning_review", "preflight_learning_review"]
             .includes(tool.name)
           ? ["agents:read", "games:read"]
-          : ["retry_agent_artwork", "decide_agent_artwork", "set_agent_model", "generate_agent_visual_reference", "crop_agent_portrait", "create_agent", "update_agent", "join_queue", "leave_queue"]
+          : ["cancel_agent_generation", "retry_agent_artwork", "decide_agent_artwork", "set_agent_model", "generate_agent_visual_reference", "crop_agent_portrait", "create_agent", "update_agent", "join_queue", "leave_queue"]
           .includes(tool.name)
         ? ["agents:read", "agents:write"]
         : [
+              "list_agent_generations",
               "read_agent_artwork",
               "list_agent_voices",
               "read_model_catalog",
@@ -1454,6 +1459,12 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       readOnlyHint: true,
       openWorldHint: false,
       destructiveHint: false,
+    });
+    expect(byName.get("cancel_agent_generation")?.annotations).toEqual({
+      readOnlyHint: false,
+      openWorldHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
     });
     expect(byName.get("create_agent")?.annotations).toEqual({
       readOnlyHint: false,

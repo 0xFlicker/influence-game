@@ -9,8 +9,12 @@ import { agentPreparationHref } from "@/lib/agent-entry";
 import { withManagementReturn } from "./agent-management-navigation";
 import { AgentList, agentNeedsAttention, agentActivity } from "./agent-list";
 import styles from "./agent-workspace.module.css";
+import { AgentWorkspacePanel } from "./agent-workspace-panel";
+import { AgentGenerations, useAgentGenerations } from "./agent-generations";
 type Draft = { scope: string; name: string; updatedAt: string };
 export function AgentsContent() {
+  const generations = useAgentGenerations();
+  const [attentionOpen, setAttentionOpen] = useState(false);
   const router = useRouter(),
     params = useSearchParams(),
     { authenticated, account } = useAuth();
@@ -33,7 +37,8 @@ export function AgentsContent() {
   const agents = collection.data?.agents ?? [],
     drafts = collection.data?.drafts ?? [],
     loading = collection.isPending,
-    error = actionError ?? collection.error?.message;
+    error =
+      actionError ?? collection.error?.message ?? generations.error?.message;
   const query = params.get("q") ?? "",
     attentionOnly = params.get("attention") === "1";
   function filter(key: string, value: string) {
@@ -45,6 +50,7 @@ export function AgentsContent() {
     });
   }
   async function fetchAgents() {
+    generations.refresh();
     await collection.refetch();
   }
   const restored = useRef(false);
@@ -90,15 +96,16 @@ export function AgentsContent() {
         (!attentionOnly || agentNeedsAttention(agent)) &&
         agent.name.toLowerCase().includes(query.toLowerCase()),
     );
-  return (
-    <section className={styles.collection}>
-      <Link href="/dashboard">← Dashboard</Link>
-      <header className={styles.masthead}>
-        <h1>Your agents</h1>
-        <Link className="action" href="/agents/create">
-          Create
-        </Link>
-      </header>
+  const notifications = (
+    <>
+      <AgentGenerations
+        rows={generations.rows}
+        onCancelled={(row) => {
+          generations.retire(row.id, row.source);
+          setAttentionOpen(false);
+          void collection.refetch();
+        }}
+      />
       {error && (
         <div role="alert">
           <p>{error}</p>
@@ -107,11 +114,14 @@ export function AgentsContent() {
           </button>
         </div>
       )}
-      {!!attention.length && (
+      {
         <section className={styles.attention}>
           <h2>
             Needs attention <small>{attention.length}</small>
           </h2>
+          {!attention.length && (
+            <p className={styles.meta}>No agents need attention.</p>
+          )}
           {attention.map((agent) => (
             <div className={styles.attentionRow} key={agent.id}>
               <div>
@@ -147,7 +157,7 @@ export function AgentsContent() {
             </div>
           ))}
         </section>
-      )}
+      }
       {agents
         .filter(
           (agent) => agent.entryIntent && agent.reviewState === "accepted",
@@ -166,66 +176,106 @@ export function AgentsContent() {
             </Link>
           </section>
         ))}
-      <div className={styles.toolbar}>
-        <div>
+    </>
+  );
+  return (
+    <section className={styles.collection}>
+      <Link href="/dashboard">← Dashboard</Link>
+      <header className={styles.masthead}>
+        <h1>Your agents</h1>
+        <div className={styles.managementHeaderActions}>
           <button
             type="button"
-            aria-pressed={!attentionOnly}
-            onClick={() => filter("attention", "")}
+            aria-label="Activity"
+            aria-haspopup="dialog"
+            aria-expanded={attentionOpen}
+            onClick={() => setAttentionOpen(true)}
           >
-            All {agents.length}
+            Activity{" "}
+            <span>
+              {attention.length +
+                generations.rows.length +
+                Number(Boolean(error))}
+            </span>
           </button>
-          <button
-            type="button"
-            aria-pressed={attentionOnly}
-            onClick={() => filter("attention", "1")}
-          >
-            Needs attention
-          </button>
+          <Link className="action" href="/agents/create">
+            Create
+          </Link>
         </div>
-        <input
-          type="search"
-          aria-label="Find an agent"
-          placeholder="Find an agent…"
-          value={query}
-          onChange={(event) => filter("q", event.target.value)}
-        />
-      </div>
-      {loading ? (
-        <p role="status">Loading agents…</p>
-      ) : (
-        <AgentList
-          agents={filtered}
-          returnPath={returnPath}
-          onEdit={edit}
-          onDelete={setArchive}
-        />
-      )}
-      {!!drafts.length && (
-        <section className={styles.drafts}>
-          <h2>Drafts</h2>
-          {drafts.map((draft) => (
-            <div className={styles.draftRow} key={draft.scope}>
-              <div>
-                <h3>{draft.name || "Untitled agent"}</h3>
-                <p className={styles.meta}>
-                  Saved {new Date(draft.updatedAt).toLocaleString()}
-                </p>
-              </div>
-              <Link
-                className="action"
-                href={
-                  draft.scope.startsWith("edit:")
-                    ? "/dashboard/agents/" + draft.scope.slice(5) + "/edit"
-                    : "/agents/create?draft=" + encodeURIComponent(draft.scope)
-                }
+      </header>
+      <div className={styles.managementLayout}>
+        <aside className={styles.managementAside}>{notifications}</aside>
+        <div className={styles.managementMain}>
+          <div className={styles.toolbar}>
+            <div>
+              <button
+                type="button"
+                aria-pressed={!attentionOnly}
+                onClick={() => filter("attention", "")}
               >
-                Continue
-              </Link>
+                All {agents.length}
+              </button>
+              <button
+                type="button"
+                aria-pressed={attentionOnly}
+                onClick={() => filter("attention", "1")}
+              >
+                Needs attention
+              </button>
             </div>
-          ))}
-        </section>
-      )}
+            <input
+              type="search"
+              aria-label="Find an agent"
+              placeholder="Find an agent…"
+              value={query}
+              onChange={(event) => filter("q", event.target.value)}
+            />
+          </div>
+          {loading ? (
+            <p role="status">Loading agents…</p>
+          ) : (
+            <AgentList
+              agents={filtered}
+              returnPath={returnPath}
+              onEdit={edit}
+              onDelete={setArchive}
+            />
+          )}
+          {!!drafts.length && (
+            <section className={styles.drafts}>
+              <h2>Drafts</h2>
+              {drafts.map((draft) => (
+                <div className={styles.draftRow} key={draft.scope}>
+                  <div>
+                    <h3>{draft.name || "Untitled agent"}</h3>
+                    <p className={styles.meta}>
+                      Saved {new Date(draft.updatedAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <Link
+                    className="action"
+                    href={
+                      draft.scope.startsWith("edit:")
+                        ? "/dashboard/agents/" + draft.scope.slice(5) + "/edit"
+                        : "/agents/create?draft=" +
+                          encodeURIComponent(draft.scope)
+                    }
+                  >
+                    Continue
+                  </Link>
+                </div>
+              ))}
+            </section>
+          )}
+        </div>
+      </div>
+      <AgentWorkspacePanel
+        open={attentionOpen}
+        title="Needs attention"
+        onClose={() => setAttentionOpen(false)}
+      >
+        {notifications}
+      </AgentWorkspacePanel>
       {archive && (
         <section className={styles.archive} aria-label="Archive confirmation">
           <h2>Archive {archive.name}?</h2>

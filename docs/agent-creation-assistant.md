@@ -62,11 +62,47 @@ the full width without a separate icon. The House message, ingredient picker,
 and labeled composer share one centered column. Ingredient rows stay directly
 above the composer when available; the composer has a distinct surface and
 border so the entry point stays visible.
-Clicking anywhere on a fixture opens its full text in a full-screen reader.
-Close returns without changes. Edit closes the reader, focuses the composer,
-and adds a removable “Change” section pill with a brief highlight animation
-(respecting reduced motion). Selected sections constrain
-which generated fields the client applies.
+Clicking a character section or an Advanced **Refine** link selects that field
+and focuses the Guided composer immediately. Image **Revise** uses the same
+transition, scoped to Appearance. There is no intermediate reader or confirmation.
+The selected section appears above the composer with its current text; longer
+text can be expanded inline. Removing the section restores an unrestricted
+message. Selecting another section replaces the scope. Repeating Refine on the
+same field restores focus and scope. Failed requests preserve both scope and
+message, while successful requests clear them. Selected sections constrain which
+generated fields the client applies.
+
+Authenticated generation and Review wait for account-draft recovery. The footer
+shows “Loading draft…” while the account read is pending; loading alone does not
+show a failure or start an image request. A failed read retains Reload and support.
+Closing an untouched creator does not create an empty recovery draft.
+The footer reserves its geometry from initial loading through draft restoration,
+text updates, image work and validation. It stays fixed on mobile with content
+space reserved underneath. Activity opens a dialog above the footer (a sheet on
+mobile), containing requests, draft choices/conflicts and moderation details.
+Resume remains a direct footer action. No late status adds a row above the form,
+and reveal motion never translates the editor vertically.
+
+Pending images appear in both the editor and agent management. View reconnects to
+the correct workspace; Cancel keeps character edits while retiring image work.
+See [pending generation and charge recovery](agent-generations.md).
+
+After character text exists, Guided has a direct Gender control. It changes the
+draft immediately without inference, pronoun rewriting, or image generation.
+On acceptance, an automatic voice follows the saved gender; an explicitly
+selected voice stays selected. AI requests can also change gender through the
+strict structured field: the existing value is context, not a fixed constraint
+when gender is selected or the request is unrestricted. An explicit top-level
+gender constraint or an edit to other selected fields keeps gender fixed.
+
+Advanced groups Character, Strategy and Appearance inside one dark, blurred
+panel with connected tabs. Arrow keys, Home and End navigate the tabs. Model and
+voice preferences stay outside this panel. Archetypes use a styled listbox with
+icons, descriptions, typeahead and keyboard navigation.
+
+Exhausted or paused generation allowance still opens the contact dialog with
+Discord, email and X links, including inside the workspace. Dismissing it leaves
+the draft and unsent message intact; a short inline notice retains support links.
 
 Submitted messages appear on the right and clear the composer immediately, with
 an assistant typing bubble while awaiting a response. The ingredient picker,
@@ -135,7 +171,7 @@ interactive character creation uses Standard instead.
 ## Advanced edit and incomplete profiles
 
 The Workshop sends incomplete drafts to inference; missing gender or archetype
-does not block an assistant turn. Strategy-only edits select only the requested game block, even if shared fields or the other strategy are blank. Other character edits include missing shared details in the structured profile writer's selection; unselected game strategy blocks stay unchanged. Text-only strategy edits do not read existing image files. Gender and archetype come
+does not block an assistant turn. Strategy-only edits select only the requested game block, even if shared fields or the other strategy are blank. Other character edits include missing shared details in the structured profile writer's selection; unselected game strategy blocks stay unchanged. Guided appearance revisions explicitly select visual design, apply any missing shared details returned by that same selection, and keep populated character fields. An older agent with blank optional game notes can revise its appearance without generating those notes. Text-only strategy edits do not read existing image files. Gender and archetype come
 from validated enum fields in its response, never from application parsing of
 character prose. A missing archetype is sent as missing rather than silently
 replaced with Strategist.

@@ -380,7 +380,7 @@ export async function listOwnedAgents(
     .select()
     .from(schema.agentProfiles)
     .where(and(eq(schema.agentProfiles.userId, input.userId), isNull(schema.agentProfiles.archivedAt)))
-    .orderBy(desc(schema.agentProfiles.updatedAt))
+    .orderBy(desc(schema.agentProfiles.createdAt), asc(schema.agentProfiles.id))
     .limit(clampLimit(input.limit, DEFAULT_AGENT_LIMIT, MAX_AGENT_LIMIT));
 
   const serialization = await loadAgentSerializationContext(db, input.userId, profiles, accountRating);
@@ -425,7 +425,7 @@ export async function searchOwnedAgents(
     .select()
     .from(schema.agentProfiles)
     .where(and(eq(schema.agentProfiles.userId, input.userId), isNull(schema.agentProfiles.archivedAt)))
-    .orderBy(desc(schema.agentProfiles.updatedAt));
+    .orderBy(desc(schema.agentProfiles.createdAt), asc(schema.agentProfiles.id));
 
   const matchingProfiles = profiles
     .filter((profile) => agentProfileMatches(profile, normalizedQuery))

@@ -8,6 +8,7 @@ import {
   managementReturnPath,
   withManagementReturn,
 } from "./agent-management-navigation";
+import { AgentIssueNotice, useAgentIssue } from "./agent-issue";
 import styles from "./agent-workspace.module.css";
 export function AgentOwnerProfile({
   id,
@@ -17,8 +18,8 @@ export function AgentOwnerProfile({
   returnTo?: string;
 }) {
   const collectionPath = managementReturnPath(returnTo);
-  const [agent, setAgent] = useState<SavedAgent | null>(null),
-    [error, setError] = useState<string | null>(null);
+  const [agent, setAgent] = useState<SavedAgent | null>(null);
+  const [error, setError] = useAgentIssue("load");
   useEffect(() => {
     let active = true;
     const read = () =>
@@ -27,10 +28,7 @@ export function AgentOwnerProfile({
           if (active) setAgent(value);
         })
         .catch((cause) => {
-          if (active)
-            setError(
-              cause instanceof Error ? cause.message : "Profile unavailable",
-            );
+          if (active) setError(cause);
         });
     read();
     const timer = setInterval(read, 5000);
@@ -38,8 +36,15 @@ export function AgentOwnerProfile({
       active = false;
       clearInterval(timer);
     };
-  }, [id]);
-  if (error && !agent) return <p role="alert">{error}</p>;
+  }, [id, setError]);
+  if (error && !agent)
+    return (
+      <AgentIssueNotice
+        issue={error}
+        agentId={id}
+        onAction={() => window.location.reload()}
+      />
+    );
   if (!agent) return <p role="status">Loading profile…</p>;
   const content =
     agent.ownerContent?.published ??

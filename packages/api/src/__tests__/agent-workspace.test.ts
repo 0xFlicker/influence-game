@@ -1,3 +1,4 @@
+import { PLAYER_VOICES } from "@influence/engine/voice-catalog";
 import { beforeEach, expect, test } from "bun:test";
 import { randomUUID, createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
@@ -336,4 +337,102 @@ test("user image uploads cannot be submitted as generation jobs", async () => {
     ),
   ).rejects.toThrow("must be generated");
   expect(await db.select().from(schema.characterReferenceJobs)).toHaveLength(0);
+});
+
+test("an interrupted image dispatch offers support and discard, never another retry", async () => {
+  const created = await createOwnedAgentProfile(
+    db,
+    { userId: owner },
+    { name: "Interrupted artwork", personality: "Patient" },
+  );
+  await acceptTestAgent(db, created.profile.id);
+  const input = {
+    ...characterGenerationInput(randomUUID(), "Interrupted artwork"),
+    agentId: created.profile.id,
+  };
+  await requestCharacterReference(db, owner, input, "");
+  const operationId = randomUUID(),
+    attemptId = randomUUID();
+  await db.insert(schema.visualRenderOperations).values({
+    id: operationId,
+    userId: owner,
+    operationKey: `full-body:${input.requestId}`,
+    inputHash: "interrupted-fixture",
+  });
+  await db.insert(schema.visualRenderAttempts).values({
+    id: attemptId,
+    operationId,
+    generation: 1,
+    provider: "openai",
+    model: "gpt-image-2.6-sunburst",
+    requestHash: "interrupted-fixture",
+  });
+  await db
+    .update(schema.characterReferenceJobs)
+    .set({
+      status: "failed",
+      error:
+        "Reference generation needs operator reconciliation before another paid request",
+    })
+    .where(eq(schema.characterReferenceJobs.id, input.requestId));
+  const read = await readCharacterReference(db, owner, input.requestId);
+  expect(read).toMatchObject({
+    error: "Image generation stopped.",
+    errorCode: "artwork_recovery_required",
+    retryable: false,
+  });
+  await expect(
+    retryCharacterReference(db, owner, input.requestId),
+  ).rejects.toMatchObject({ code: "artwork_recovery_required" });
+  await decideCharacterReference(db, owner, input.requestId, "discarded");
+  expect(
+    (await readCharacterReference(db, owner, input.requestId))?.status,
+  ).toBe("discarded");
+  expect(
+    (
+      await db
+        .select()
+        .from(schema.visualRenderAttempts)
+        .where(eq(schema.visualRenderAttempts.id, attemptId))
+    )[0],
+  ).toMatchObject({ receipt: null, imageHash: null, reconciliation: null });
+  expect(
+    (
+      await db
+        .select()
+        .from(schema.agentProfiles)
+        .where(eq(schema.agentProfiles.id, created.profile.id))
+    )[0]!.contentRevisionId,
+  ).toBe(created.receipt.contentRevisionId!);
+});
+
+test("discard before a late generation POST prevents that request from becoming paid work", async () => {
+  const input = characterGenerationInput(randomUUID(), "Late generation");
+  await decideCharacterReference(db, owner, input.requestId, "discarded");
+  await expect(requestCharacterReference(db, owner, input, "")).rejects.toThrow(
+    "different input",
+  );
+  expect(
+    (await readCharacterReference(db, owner, input.requestId))?.status,
+  ).toBe("discarded");
+  expect(await db.select().from(schema.visualRenderAttempts)).toHaveLength(0);
+  await expect(
+    decideCharacterReference(db, foreign, input.requestId, "discarded"),
+  ).rejects.toMatchObject({ code: "artwork_not_found" });
+});
+
+
+for (const selected of [false, true]) test(`gender changes update automatic voices and retain explicit choices (${selected ? "selected" : "automatic"})`, async () => {
+  const created = await createOwnedAgentProfile(db, { userId: owner }, { name: "Gender Workspace", personality: "Patient", gender: "female", voiceId: selected ? "ara" : null });
+  await acceptTestAgent(db, created.profile.id);
+  const [prior] = await db.select().from(schema.agentVoices);
+  const edited = await updateOwnedAgentProfile(db, { userId: owner }, created.profile.id, { gender: "male" });
+  expect(edited.receipt.publication).toBe("reviewing");
+  // The accepted agent and its voice remain usable during review.
+  expect((await db.select().from(schema.agentVoices))[0]!.assignment).toEqual(prior!.assignment);
+  await acceptTestAgent(db, created.profile.id);
+  const [voice] = await db.select().from(schema.agentVoices);
+  expect(voice!.assignment.origin).toBe(selected ? "selected" : "automatic");
+  if (selected) expect(voice!.assignment.voiceId).toBe("ara");
+  else expect(PLAYER_VOICES.find(option => option.id === voice!.assignment.voiceId)?.gender).toBe("male");
 });

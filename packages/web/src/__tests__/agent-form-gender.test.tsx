@@ -73,7 +73,8 @@ describe("AgentForm", () => {
     const html = renderForm();
 
     expect(html.indexOf('id="agent-name"')).toBeLessThan(html.indexOf('id="agent-strategyStyle"'));
-    expect(html).toContain('id="agent-archetype"');
+    expect(html).toContain('aria-haspopup="listbox"');
+    expect(html).not.toContain('<select');
     expect(html).not.toContain('aria-label="Agent Workshop"');
     expect(html).toContain('aria-label="Character ingredient suggestions"');
     expect(html).toContain("Refine");

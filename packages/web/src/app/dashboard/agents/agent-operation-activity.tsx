@@ -24,14 +24,14 @@ export function AgentOperationActivity({
     ? Math.max(0, Math.floor((now - Date.parse(startedAt)) / 1000))
     : null;
   return (
-    <div className={styles.activity}>
-      <p role="status">{labels[stage] ?? "Preparing image"}</p>
+    <span className={styles.operationSummary}>
+      {labels[stage] ?? "Preparing image"}
       {seconds !== null && (
-        <small aria-hidden="true">
-          {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}{" "}
-          elapsed
-        </small>
+        <span aria-hidden="true">
+          {" "}
+          · {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
+        </span>
       )}
-    </div>
+    </span>
   );
 }

@@ -34,6 +34,10 @@ The owner profile distinguishes accepted content from a reviewing/held submissio
 
 A game/season target is committed with the submission. After acceptance, Continue rechecks ordinary admission and eligibility; it does not reserve a seat or bypass a closed/full game. A lost save response cannot lose this target or create another agent.
 
+## Errors and support
+
+The [error matrix](agent-workspace-errors.md) maps each step to Retry, Reload, Discard or support. The workspace shows one short notice with Discord/Email links. Missing or uncertain image receipts disable request retry; Discard retires the draft and artwork job without deleting the accepted profile or provider evidence.
+
 ## Storage and rollout
 
 Large draft, job, screening and provider documents use private object storage references; PostgreSQL owns authority, hashes, versions and leases. See the [deployment checklist](deployment/agent-workspace.md). Deploy API, workers and web together. No feature flag or shadow-mode switch is used.

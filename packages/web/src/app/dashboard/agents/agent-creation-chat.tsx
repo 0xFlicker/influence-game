@@ -5,13 +5,15 @@ import {
   decodeCreationTurn,
   type CreationStage,
 } from "@influence/engine/agent-creation-assistant";
-import { apiFetch, ApiError } from "@/lib/api";
+import { apiFetch, ApiError, type AgentGender } from "@/lib/api";
+import { AgentIssueNotice, useAgentIssue } from "./agent-issue";
 import { PERSONAS } from "@/lib/personas";
 import {
   ALL_AGENT_CREATION_TRAITS,
   type AgentCreationTraitId,
 } from "@influence/engine/agent-creation-traits";
-import { CharacterSectionReader } from "./character-section-reader";
+import { AgentGenderControl } from "./agent-gender-control";
+import styles from "./agent-workspace.module.css";
 import { AgentCreationIngredients } from "./agent-creation-ingredients";
 
 const labels = {
@@ -47,11 +49,13 @@ export interface CharacterConversation {
 }
 
 export function AgentCreationChat({
+  onIssue,
   preferences,
   editing = false,
   conversation,
   onConversationChange,
   scope,
+  onGenderChange,
   profile,
   onGenerate,
   onAppearance,
@@ -67,11 +71,13 @@ export function AgentCreationChat({
   onAnonymousMessage,
   onRequireAccount,
 }: {
+  onIssue?: (cause: unknown) => void;
   preferences?: ReactNode;
   editing?: boolean;
   conversation?: CharacterConversation;
   onConversationChange?: (value: CharacterConversation) => void;
-  scope?: CharacterSection;
+  scope?: { section: CharacterSection };
+  onGenderChange?: (value: AgentGender) => void;
   anonymous?: boolean;
   anonymousUsed?: boolean;
   onAnonymousMessage?: (
@@ -106,7 +112,6 @@ export function AgentCreationChat({
   const [sections, setSections] = useState<CharacterSection[]>(
     conversation?.sections ?? [],
   );
-  const [reading, setReading] = useState<CharacterSection | null>(null);
   const [selectionVersion, setSelectionVersion] = useState(0);
   const [pending, setPending] = useState(false);
   const [submitted, setSubmitted] = useState<string | null>(null);
@@ -120,10 +125,15 @@ export function AgentCreationChat({
       ended,
     });
   }, [stageOverride, messages, input, sections, ended, onConversationChange]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, updateError] = useAgentIssue("assistant");
+  function setError(cause: unknown) {
+    updateError(cause);
+    onIssue?.(cause);
+  }
   const [poolBusy, setPoolBusy] = useState(false);
   const inFlight = useRef(false);
   const composer = useRef<HTMLTextAreaElement>(null);
+  const handledScope = useRef<typeof scope>(undefined);
   const chatLog = useRef<HTMLDivElement>(null);
   const locked = busy || pending || blocked;
   const ingredientMode =
@@ -145,16 +155,15 @@ export function AgentCreationChat({
       chatLog.current.scrollTop = chatLog.current.scrollHeight;
   }, [messages, submitted, working]);
   function selectSection(section: CharacterSection) {
-    setReading(null);
     setSelectionVersion((current) => current + 1);
-    setSections((current) =>
-      current.includes(section) ? current : [...current, section],
+    setSections([section]);
+    setStage(
+      section === "visualDesign"
+        ? hasImage
+          ? "portrait"
+          : "appearance"
+        : "review",
     );
-    if (
-      section !== "visualDesign" &&
-      (stage === "appearance" || stage === "portrait")
-    )
-      setStage("review");
     composer.current?.focus();
   }
 
@@ -301,14 +310,7 @@ export function AgentCreationChat({
       setPoolBusy(
         cause instanceof ApiError && cause.code === "anonymous_pool_busy",
       );
-      setError(
-        cause instanceof Error &&
-          (cause.name === "TimeoutError" || cause.name === "AbortError")
-          ? "The character assistant took too long to respond. Your text and ingredients are still here—please try again."
-          : cause instanceof Error
-            ? cause.message
-            : "The assistant could not complete this turn. Try again.",
-      );
+      setError(cause);
     } finally {
       if (!succeeded) setInput(originalInput);
       setSubmitted(null);
@@ -318,16 +320,17 @@ export function AgentCreationChat({
   }
 
   useEffect(() => {
-    if (scope) {
-      setSections([scope]);
-      setReading(scope);
+    if (scope && handledScope.current !== scope) {
+      handledScope.current = scope;
+      setSections([scope.section]);
       setStage(
-        scope === "visualDesign"
+        scope.section === "visualDesign"
           ? hasImage
             ? "portrait"
             : "appearance"
           : "review",
       );
+      composer.current?.focus();
     }
   }, [scope, hasImage]);
   return (
@@ -358,35 +361,45 @@ export function AgentCreationChat({
           ) : (
             <div className="agent-creation-summary mx-auto flex w-full max-w-5xl items-start gap-4 p-3">
               <div className="agent-creation-fixture-grid grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-3">
-                {(Object.keys(labels) as CharacterSection[]).map((section) => (
-                  <button
-                    key={section}
-                    type="button"
-                    disabled={locked}
-                    onClick={() => setReading(section)}
-                    aria-label={`Read ${labels[section]}`}
-                    className={`agent-creation-fixture min-w-0 rounded-lg border p-2 text-left ${sections.includes(section) ? "border-amber-200/70 bg-amber-200/15" : "border-amber-200/20"}`}
-                  >
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] uppercase tracking-wide text-white/45">
-                        {labels[section]}
+                {(Object.keys(labels) as CharacterSection[]).map((section) =>
+                  section === "gender" && onGenderChange ? (
+                    <AgentGenderControl
+                      key={section}
+                      value={profile.gender}
+                      onChange={onGenderChange}
+                      disabled={locked}
+                    />
+                  ) : (
+                    <button
+                      key={section}
+                      type="button"
+                      disabled={locked || ended}
+                      onClick={() => selectSection(section)}
+                      aria-label={`Revise ${labels[section]}`}
+                      aria-pressed={sections.includes(section)}
+                      className={`agent-creation-fixture min-w-0 rounded-lg border p-2 text-left ${sections.includes(section) ? "border-amber-200/70 bg-amber-200/15" : "border-amber-200/20"}`}
+                    >
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] uppercase tracking-wide text-white/45">
+                          {labels[section]}
+                        </span>
+                        <span
+                          aria-hidden="true"
+                          className="text-sm text-violet-200"
+                        >
+                          ↗
+                        </span>
                       </span>
-                      <span
-                        aria-hidden="true"
-                        className="text-sm text-violet-200"
-                      >
-                        ↗
+                      <span className="agent-creation-fixture-copy mt-2 line-clamp-2 text-sm leading-5">
+                        {section === "personaKey"
+                          ? PERSONAS.find(
+                              (persona) => persona.key === profile[section],
+                            )?.name
+                          : profile[section]}
                       </span>
-                    </span>
-                    <span className="agent-creation-fixture-copy mt-2 line-clamp-2 text-sm leading-5">
-                      {section === "personaKey"
-                        ? PERSONAS.find(
-                            (persona) => persona.key === profile[section],
-                          )?.name
-                        : profile[section]}
-                    </span>
-                  </button>
-                ))}
+                    </button>
+                  ),
+                )}
               </div>
             </div>
           )}
@@ -445,10 +458,13 @@ export function AgentCreationChat({
               Continue
             </button>
           )}
-          {error && (
-            <p role="alert" className="text-sm text-red-300">
-              {error}
-            </p>
+          {!onIssue && error && (
+            <AgentIssueNotice
+              issue={error}
+              onAction={
+                error.recovery === "sign_in" ? onRequireAccount : undefined
+              }
+            />
           )}
           {anonymous && poolBusy && (
             <div className="flex items-center gap-4 text-sm">
@@ -473,22 +489,37 @@ export function AgentCreationChat({
             </div>
           )}
           {!working && !!sections.length && (
-            <div className="flex flex-wrap gap-2">
+            <div
+              className={styles.refineContext}
+              aria-label="Selected sections"
+            >
               {sections.map((section) => (
-                <button
-                  key={`${section}-${selectionVersion}`}
-                  type="button"
-                  disabled={locked}
-                  onClick={() =>
-                    setSections((current) =>
-                      current.filter((value) => value !== section),
-                    )
-                  }
-                  aria-label={`Remove change ${labels[section]}`}
-                  className="creation-section-pill rounded-full border border-violet-300/30 bg-violet-400/10 px-3 py-1 text-xs"
-                >
-                  Change {labels[section]} <span aria-hidden="true">×</span>
-                </button>
+                <div key={`${section}-${selectionVersion}`}>
+                  <details open={profile[section].length < 260}>
+                    <summary>{labels[section]}</summary>
+                    <p>
+                      {section === "personaKey"
+                        ? PERSONAS.find(
+                            (persona) => persona.key === profile[section],
+                          )?.name
+                        : profile[section] || "No details yet."}
+                    </p>
+                  </details>
+                  <button
+                    key={`${section}-${selectionVersion}`}
+                    type="button"
+                    disabled={locked}
+                    onClick={() =>
+                      setSections((current) =>
+                        current.filter((value) => value !== section),
+                      )
+                    }
+                    aria-label={`Remove change ${labels[section]}`}
+                    className="creation-section-pill"
+                  >
+                    <span aria-hidden="true">×</span>
+                  </button>
+                </div>
               ))}
             </div>
           )}
@@ -508,7 +539,7 @@ export function AgentCreationChat({
               htmlFor="agent-creation-message"
               className="block text-xs font-medium uppercase tracking-[.14em] text-amber-100/80"
             >
-              Your response
+              {sections.length ? "Describe the change" : "Your response"}
             </label>
           )}
           {anonymous && (
@@ -534,9 +565,11 @@ export function AgentCreationChat({
                 ref={composer}
                 aria-label="Message the character assistant"
                 placeholder={
-                  stage === "appearance" || stage === "portrait"
-                    ? "Describe their look…"
-                    : "Tell me about your character…"
+                  sections.length
+                    ? `What would you like to change about ${sections.map((section) => labels[section].toLowerCase()).join(" and ")}…`
+                    : stage === "appearance" || stage === "portrait"
+                      ? "Describe their look…"
+                      : "Tell me about your character…"
                 }
                 value={input}
                 maxLength={1400}
@@ -604,20 +637,6 @@ export function AgentCreationChat({
           {preferences}
         </div>
       </footer>
-      {reading && (
-        <CharacterSectionReader
-          title={labels[reading]}
-          text={
-            reading === "personaKey"
-              ? (PERSONAS.find((persona) => persona.key === profile[reading])
-                  ?.name ?? profile[reading])
-              : profile[reading]
-          }
-          editDisabled={locked || ended}
-          onClose={() => setReading(null)}
-          onEdit={() => selectSection(reading)}
-        />
-      )}
     </>
   );
 }

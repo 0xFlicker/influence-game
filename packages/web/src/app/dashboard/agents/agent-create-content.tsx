@@ -25,6 +25,7 @@ import { getGameEntry } from "@/lib/game-entry";
 import { gameHref } from "@/lib/game-links";
 import { agentPreparationHref, hasFullBodyAgentArt } from "@/lib/agent-entry";
 import { getWerewolfLobby, joinWerewolfLobby } from "@/lib/werewolf-api";
+import { AgentIssueNotice, agentIssue } from "./agent-issue";
 import { AgentForm } from "./agent-form";
 import {
   enrollCreatedSeasonAgent,
@@ -61,7 +62,9 @@ export function AgentCreateContent({
   seasonId,
   seasonSlug,
   draftScope,
+  imageRequest,
 }: {
+  imageRequest?: string;
   draftScope?: string;
   flow?: AgentCreateFlow;
   gameId?: string;
@@ -268,12 +271,16 @@ export function AgentCreateContent({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {target.error && (
-        <p role="alert">
-          Could not load the game to join. {target.error.message}
-        </p>
+        <AgentIssueNotice
+          issue={agentIssue("entry_load_failed", "entry")}
+          onAction={() => {
+            void target.refetch();
+          }}
+        />
       )}
       <AgentForm
         publicPreview
+        imageRequest={imageRequest}
         guided={mode === "assistant"}
         onAdvanced={() => setMode("advanced")}
         onAssistant={() => setMode("assistant")}

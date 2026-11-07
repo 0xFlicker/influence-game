@@ -1,3 +1,4 @@
+import type { VisualBoundaryGuard } from "./visual-execution-boundary.js";
 import { storeAgentDraftImage } from "./agent-draft-images.js";
 import sharp from "sharp";
 import { createHash } from "node:crypto";
@@ -25,7 +26,7 @@ export async function exportCharacterPortrait(crop: PortraitCrop, access: {db:Dr
 }
 
 /** One full-body generation, followed by observed head localization and a pixel crop. All output remains draft-only. */
-export async function generateVisualProfileReference(db: DrizzleDB, userId: string, args: Record<string, unknown>, activity?: { signal: AbortSignal; onStep: (stage: string) => Promise<void> }) {
+export async function generateVisualProfileReference(db: DrizzleDB, userId: string, args: Record<string, unknown>, activity?: { signal: AbortSignal; beforeDispatch?:VisualBoundaryGuard; onStep: (stage: string) => Promise<void> }) {
   const { requestId, name, personaKey, avatarUrl, performanceInstructions, operation } = args;
   const visualDesign = args.visualDesign ?? "";
   const fullBodyReferenceUrl = args.fullBodyReferenceUrl ?? null;
@@ -39,7 +40,7 @@ export async function generateVisualProfileReference(db: DrizzleDB, userId: stri
   const sourceUrl = fullBodyReferenceUrl || avatarUrl;
   const reference = sourceUrl ? await sharp(await readVisualProfileImage(sourceUrl, { name, personaKey }, {db,userId})).rotate().png().toBuffer() : null;
   await activity?.onStep("image");
-  const result = await renderOwnedVisualReference(db, { userId, requestId, waitForBackground: false, signal: activity?.signal, onRemoval: () => activity?.onStep("background") ?? Promise.resolve(), request: { operation: operation as "create" | "edit", background: "transparent", width: 1024, height: 1536, references: reference ? [reference] : [],
+  const result = await renderOwnedVisualReference(db, { userId, requestId, waitForBackground: false, signal: activity?.signal, beforeDispatch:activity?.beforeDispatch, onRemoval: () => activity?.onStep("background") ?? Promise.resolve(), request: { operation: operation as "create" | "edit", background: "transparent", width: 1024, height: 1536, references: reference ? [reference] : [],
     prompt: `Create a photorealistic full-body character reference for the adult Influence contestant ${name}. ${operation === "edit" ? "Preserve the reference character's species or object form, face and distinguishing features." : "Design a unique character from the supplied visual design, honoring any non-human or anthropomorphic form instead of defaulting to a human."} Exactly one character. Show the entire character and feet when applicable, with defining features unobscured and facing toward camera in a natural neutral pose. Use a distinct reproducible silhouette and colors, transparent background with real alpha, no scenery or floor. No text, panels, additional characters or headshot inset. Visual design: ${visualDesign || personaKey}. Performance direction: ${performanceInstructions}`,
   } });
   await activity?.onStep("portrait");

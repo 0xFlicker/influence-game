@@ -21,12 +21,13 @@ import {
   hasFullBodyAgentArt,
   type AgentEntryIntent,
 } from "@/lib/agent-entry";
+import { AgentIssueNotice, useAgentIssue } from "./agent-issue";
 import styles from "./agent-workspace.module.css";
 
 /** Missing artwork opens the same workspace used by creation and ordinary edits. */
 export function AgentPreparationHome() {
-  const [agents, setAgents] = useState<SavedAgent[] | null>(null),
-    [error, setError] = useState<string | null>(null);
+  const [agents, setAgents] = useState<SavedAgent[] | null>(null);
+  const [error, setError] = useAgentIssue("load");
   useEffect(() => {
     let active = true;
     void listAgents()
@@ -34,22 +35,24 @@ export function AgentPreparationHome() {
         if (active) setAgents(value);
       })
       .catch((cause) => {
-        if (active)
-          setError(
-            cause instanceof Error ? cause.message : "Could not load agents.",
-          );
+        if (active) setError(cause);
       });
     return () => {
       active = false;
     };
-  }, []);
+  }, [setError]);
   return (
     <section className={styles.collection}>
       <Link href="/dashboard/agents">← Agents</Link>
       <header className={styles.heading}>
         <h1>Choose an agent</h1>
       </header>
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <AgentIssueNotice
+          issue={error}
+          onAction={() => window.location.reload()}
+        />
+      )}
       {!agents && !error && <p role="status">Loading agents…</p>}
       {agents?.length === 0 && <Link href="/agents/create">Create</Link>}
       <div className={styles.gallery}>
@@ -95,9 +98,9 @@ export function AgentEntryPreparation({
 }) {
   const router = useRouter();
   const [agent, setAgent] = useState<SavedAgent | null>(null),
-    [busy, setBusy] = useState(false),
-    [loadError, setLoadError] = useState<string | null>(null),
-    [error, setError] = useState<string | null>(null);
+    [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useAgentIssue("load");
+  const [error, setError] = useAgentIssue("entry");
   const joining = useRef(false),
     intentKey = agentEntryIntentKey(agentId, intent);
   const validTarget = intent.flow !== "daily_free" || Boolean(intent.seasonId);
@@ -137,16 +140,12 @@ export function AgentEntryPreparation({
         router.replace(destination);
       }
     } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Entry did not succeed. Your agent is saved; try again.",
-      );
+      setError(cause);
     } finally {
       joining.current = false;
       setBusy(false);
     }
-  }, [agentId, canEnter, destination, intent, intentKey, router]);
+  }, [agentId, canEnter, destination, intent, intentKey, router, setError]);
   useEffect(() => {
     const key = intentKey + ":entry-error",
       message = sessionStorage.getItem(key);
@@ -154,7 +153,7 @@ export function AgentEntryPreparation({
       setError(message);
       sessionStorage.removeItem(key);
     }
-  }, [intentKey]);
+  }, [intentKey, setError]);
   useEffect(() => {
     let active = true,
       reading = false;
@@ -168,12 +167,7 @@ export function AgentEntryPreparation({
           setLoadError(null);
         }
       } catch (cause) {
-        if (active)
-          setLoadError(
-            cause instanceof Error
-              ? cause.message
-              : "Could not load this agent.",
-          );
+        if (active) setLoadError(cause);
       } finally {
         reading = false;
       }
@@ -190,7 +184,7 @@ export function AgentEntryPreparation({
       window.removeEventListener("focus", read);
       window.removeEventListener("online", read);
     };
-  }, [agentId]);
+  }, [agentId, setLoadError]);
   const state = agent?.ownerContent?.reviewState;
   const artwork =
     agent?.transparentBodyUrl ??
@@ -241,16 +235,21 @@ export function AgentEntryPreparation({
               review and save it before entering.
             </p>
           )}
-          {!validTarget && (
+          {!validTarget && !error && !loadError && (
             <p role="alert" className="mt-5">
               Choose a season before entering.{" "}
               <Link href="/seasons">Choose</Link>
             </p>
           )}
           {(error || loadError) && (
-            <p role="alert" className="mt-5">
-              {error ?? loadError}
-            </p>
+            <AgentIssueNotice
+              issue={(error ?? loadError)!}
+              agentId={agentId}
+              onAction={() => {
+                if (error) void enter();
+                else window.location.reload();
+              }}
+            />
           )}
           <div className={styles.artActions}>
             <Link className="action" href={editHref}>

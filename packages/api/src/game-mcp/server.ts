@@ -1,3 +1,4 @@
+import { listAgentGenerations, cancelAgentGeneration } from "../services/agent-generations.js";
 import { requestCharacterReference, readCharacterReference, retryCharacterReference, decideCharacterReference } from "../services/character-reference-jobs.js";
 import { PLAYER_VOICES, VOICE_AUDITION_VERSION } from "@influence/engine/voice-catalog";
 import {productionEditorial} from "../services/production-editorial.js";
@@ -630,6 +631,8 @@ export class ProductionGameMcpJsonRpcServer {
         requireScopes(auth, ["agents:read", "agents:write"]);
         return content(await requestCharacterReference(this.requireManagementDb(), auth.userId, args, ""));
       }
+      if(name === "list_agent_generations") {requireScopes(auth,["agents:read"]);return content({generations:await listAgentGenerations(this.requireManagementDb(),auth.userId)});}
+      if(name === "cancel_agent_generation") {requireScopes(auth,["agents:read","agents:write"]);if(!["reference","avatar","preparation","reservation"].includes(String(args.source)))throw new Error("Choose a generation source");await cancelAgentGeneration(this.requireManagementDb(),auth.userId,requiredString(args,"requestId"),args.source as "reference"|"avatar"|"preparation"|"reservation");return content({ok:true});}
       if(name === "read_agent_artwork") {requireScopes(auth,["agents:read"]);return content(await readCharacterReference(this.requireManagementDb(),auth.userId,requiredString(args,"requestId")));}
       if(name === "retry_agent_artwork") {requireScopes(auth,["agents:read","agents:write"]);return content(await retryCharacterReference(this.requireManagementDb(),auth.userId,requiredString(args,"requestId")));}
       if(name === "decide_agent_artwork") {requireScopes(auth,["agents:read","agents:write"]);if(args.decision!=="selected"&&args.decision!=="discarded")throw new Error("Choose selected or discarded");await decideCharacterReference(this.requireManagementDb(),auth.userId,requiredString(args,"requestId"),args.decision);return content({ok:true});}
@@ -1502,6 +1505,8 @@ function ownerLearningTools(): GameMcpToolDescriptor[] {
 function userAgentWriteTools(): GameMcpToolDescriptor[] {
   const writeScopes: readonly McpOAuthScope[] = ["agents:read", "agents:write"];
   return [
+    tool({name:"list_agent_generations",description:"List owned pending image requests, ready artwork and interrupted work, including unfinished agents and discarded drafts. Reading never dispatches generation.",properties:{},required:[],scopes:["agents:read"],readOnlyHint:true}),
+    tool({name:"cancel_agent_generation",description:"Cancel one owned pending image request or clear stopped work using the exact source and requestId from list_agent_generations. Keeps character drafts, saved artwork and charge history. A dispatched generation may still consume a credit. Never automatically regenerate after cancellation.",properties:{requestId:{type:"string"},source:{type:"string",enum:["reference","avatar","preparation","reservation"]}},required:["requestId","source"],scopes:writeScopes,readOnlyHint:false,destructiveHint:true,idempotentHint:true}),
     tool({name:"read_agent_artwork",description:"Read an owned artwork operation without dispatching generation.",properties:{requestId:{type:"string"}},required:["requestId"],scopes:["agents:read"],readOnlyHint:true}),
     tool({name:"list_agent_voices",description:"List player voices and cached audition paths. Reading never creates audio.",properties:{},scopes:["agents:read"],readOnlyHint:true}),
     tool({name:"retry_agent_artwork",description:"Explicitly retry a failed owned preparation. Retain the request ID; successful image work is reused.",properties:{requestId:{type:"string"}},required:["requestId"],scopes:writeScopes,readOnlyHint:false}),

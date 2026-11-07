@@ -1142,6 +1142,27 @@
       "when": 1792952785132,
       "tag": "0162_agent_submission_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1792952785133,
+      "tag": "0163_character_reference_errors",
+      "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1792952785134,
+      "tag": "0164_image_execution_leases",
+      "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1792952785135,
+      "tag": "0165_image_activity_indexes",
+      "breakpoints": true
     }
   ]
 }

@@ -50,6 +50,7 @@ export function AgentList({
       {agents.map((agent) => (
         <article
           id={"agent-" + agent.id}
+          data-review-state={agent.reviewState}
           key={agent.id}
           className={styles.card}
         >
@@ -64,9 +65,17 @@ export function AgentList({
           />
           <h3>{agent.name}</h3>
           <p className={styles.status}>{agentActivity(agent)}</p>
-          {agent.contentRevisionId && agent.reviewState !== "accepted" && (
-            <p className={styles.hint}>Accepted version available</p>
-          )}
+          <p
+            className={styles.acceptedVersion}
+            aria-hidden={
+              !agent.contentRevisionId || agent.reviewState === "accepted"
+            }
+            data-visible={Boolean(
+              agent.contentRevisionId && agent.reviewState !== "accepted",
+            )}
+          >
+            Accepted version available
+          </p>
           <div className={styles.meta}>
             <p>
               {

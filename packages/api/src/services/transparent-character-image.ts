@@ -50,7 +50,7 @@ export async function prepareTransparentCharacterImage(
 }
 
 /** An explicit owner retry resets removal for the retained source, never image generation. */
-export async function retryCharacterCutout(db: DrizzleDB, bytes: Uint8Array) {
+export async function retryCharacterCutout(db: Pick<DrizzleDB,"update">, bytes: Uint8Array) {
   const { createHash } = await import("node:crypto");
   const { and } = await import("drizzle-orm");
   const { CUTOUT_RECIPE } = await import("./character-cutouts.js");

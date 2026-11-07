@@ -576,6 +576,17 @@ describe("Agent Profile API", () => {
   // =========================================================================
 
   describe("GET /api/agent-profiles", () => {
+    test("keeps creation order across review updates and deterministically breaks timestamp ties", async () => {
+      const ids=["stable-a","stable-b","stable-c"];
+      await db.insert(schema.agentProfiles).values(ids.map((id,index)=>({id,userId:USER_A_ID,name:id,personality:"Patient",createdAt:index===0?"2026-01-01T00:00:00Z":"2026-02-01T00:00:00Z",updatedAt:"2026-01-01T00:00:00Z"})));
+      const order=async()=>{const response=await app.request("/api/agent-profiles",authGet(tokenA));expect(response.status).toBe(200);return (await response.json() as Array<{id:string}>).map(agent=>agent.id);};
+      expect(await order()).toEqual(["stable-b","stable-c","stable-a"]);
+      await db.update(schema.agentProfiles).set({updatedAt:"2026-12-01T00:00:00Z",moderationRequired:true}).where(eq(schema.agentProfiles.id,"stable-a"));
+      expect(await order()).toEqual(["stable-b","stable-c","stable-a"]);
+      await db.update(schema.agentProfiles).set({updatedAt:"2026-12-02T00:00:00Z",moderationRequired:false}).where(eq(schema.agentProfiles.id,"stable-b"));
+      expect(await order()).toEqual(["stable-b","stable-c","stable-a"]);
+    });
+
     test("returns empty array for user with no profiles", async () => {
       const res = await app.request("/api/agent-profiles", authGet(tokenA));
       expect(res.status).toBe(200);
@@ -1461,6 +1472,33 @@ describe("Agent Profile API", () => {
       } finally { globalThis.fetch = originalFetch; restoreEnv("OPENAI_API_KEY", savedKey); }
     });
 
+    test("appearance refinement accepts an untouched empty Werewolf strategy and preserves other fields", async () => {
+      const originalFetch=globalThis.fetch,savedKey=process.env.OPENAI_API_KEY;
+      process.env.OPENAI_API_KEY="provider-free";
+      const existingProfile={name:"Arden Vale",personality:"Patient",backstory:"A librarian",strategyStyle:"Build trust",werewolfStrategyStyle:"",personaKey:"observer",gender:"non-binary",performanceInstructions:"",visualDesign:"A bronze coat"};
+      const requests:Record<string,unknown>[]=[];
+      let invalid=false;
+      globalThis.fetch=Object.assign(async(input:string|URL|Request,init?:RequestInit)=>{
+        const request=input instanceof Request?input:new Request(input.toString(),init);
+        expect(request.url).toContain("/chat/completions");
+        requests.push(await request.json() as Record<string,unknown>);
+        return Response.json({id:"appearance-only",model:"gpt-6-luna",choices:[{index:0,finish_reason:"stop",message:{role:"assistant",content:JSON.stringify({...existingProfile,personality:"Unwanted rewrite",performanceInstructions:"Measured gestures",visualDesign:invalid?" ":"A green coat",introQuips:["One","Two","Three"]})}}],usage:{prompt_tokens:10,completion_tokens:10,total_tokens:20}});
+      },{preconnect:originalFetch.preconnect});
+      try {
+        const response=await app.request("/api/agent-profiles/generate",jsonReq({changeRequest:"Make their coat green",selectedFields:["visualDesign"],existingProfile},tokenA));
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({...existingProfile,performanceInstructions:"Measured gestures",visualDesign:"A green coat"});
+        expect(requests).toHaveLength(1);
+        expect(requests[0]!.response_format).toMatchObject({json_schema:{strict:true,schema:{properties:{werewolfStrategyStyle:{minLength:0},visualDesign:{minLength:1},performanceInstructions:{minLength:1}}}}});
+        expect((await db.select().from(schema.accountTextOperations))[0]!.state).toBe("succeeded");
+        expect(await db.select().from(schema.visualRenderAttempts)).toHaveLength(0);
+        invalid=true;
+        const failure=await app.request("/api/agent-profiles/generate",{...jsonReq({changeRequest:"Make their coat green",selectedFields:["visualDesign"],existingProfile},tokenA),headers:{"Content-Type":"application/json",Authorization:`Bearer ${tokenA}`,"Idempotency-Key":"appearance-invalid-response"}});
+        expect(failure.status).toBe(502);
+        expect(await failure.json()).toMatchObject({requestId:"appearance-invalid-response"});
+      } finally {globalThis.fetch=originalFetch;restoreEnv("OPENAI_API_KEY",savedKey);}
+    });
+
     test("Werewolf strategy edits route exactly, skip missing images, and preserve every other field", async () => {
       await db.insert(schema.inferenceAccounts).values({ userId: USER_A_ID, overrides: { textBurst: 100 } }).onConflictDoNothing();
       const originalFetch = globalThis.fetch, savedKey = process.env.OPENAI_API_KEY;
@@ -1503,6 +1541,7 @@ describe("Agent Profile API", () => {
     });
 
     test("sends GPT-6 Luna for new and refined profiles", async () => {
+      await db.insert(schema.inferenceAccounts).values({ userId: USER_A_ID, overrides: { textBurst: 100 } }).onConflictDoNothing();
       const envKeys = [
         "OPENAI_API_KEY",
         "OPENAI_BASE_URL",
@@ -1585,10 +1624,31 @@ describe("Agent Profile API", () => {
         expect(await completedIdentity.json()).toMatchObject({ name: "Original", personality: "Original personality", backstory: "Original history", strategyStyle: "Original strategy", performanceInstructions: "Original voice", visualDesign: "Original look", gender: "female", personaKey: "strategic" });
         expect(generated.status).toBe(200);
         expect(refined.status).toBe(200);
-        expect(requestBodies).toHaveLength(4);
+        const genderContext = { name: "Original", personality: "Original personality", backstory: "Original history", strategyStyle: "Original strategy", werewolfStrategyStyle: "Original Werewolf strategy", performanceInstructions: "Original voice", visualDesign: "Original look", personaKey: "strategic", gender: "male", fullBodyReferenceUrl: "/missing-old-body.png" };
+        const genderEdit = await app.request("/api/agent-profiles/generate", jsonReq({
+          changeRequest: "Make female", selectedFields: ["gender"], existingProfile: genderContext,
+        }, tokenA));
+        expect(genderEdit.status).toBe(200);
+        expect(await genderEdit.json()).toMatchObject({ ...Object.fromEntries(Object.entries(genderContext).filter(([key]) => key !== "fullBodyReferenceUrl")), gender: "female" });
+        expect(JSON.stringify(requestBodies.at(-1)?.messages)).not.toContain("Required gender: male");
+        const pinnedGender = await app.request("/api/agent-profiles/generate", jsonReq({
+          changeRequest: "Sharpen their character", selectedFields: ["personality"], existingProfile: genderContext,
+        }, tokenA));
+        expect(pinnedGender.status).toBe(200);
+        expect(await pinnedGender.json()).toMatchObject({ gender: "male" });
+        expect(JSON.stringify(requestBodies.at(-1)?.messages)).toContain("Required gender: male");
+        const { fullBodyReferenceUrl: _missingImage, ...textGenderContext } = genderContext;
+        const unrestrictedGender = await app.request("/api/agent-profiles/generate", jsonReq({ changeRequest: "Make female", existingProfile: textGenderContext }, tokenA));
+        expect(unrestrictedGender.status).toBe(200);
+        expect(await unrestrictedGender.json()).toMatchObject({ gender: "female" });
+        expect(JSON.stringify(requestBodies.at(-1)?.messages)).not.toContain("Required gender: male");
+        expect(requestBodies).toHaveLength(7);
         for (const body of requestBodies) expect(body).toMatchObject({ service_tier: "default", reasoning_effort: "low" });
         for (const body of requestBodies) expect(JSON.stringify(body.messages)).toContain("The Short List votes off the player with the fewest positive votes");
         expect(requestBodies.map((body) => body.model)).toEqual([
+          "gpt-6-luna",
+          "gpt-6-luna",
+          "gpt-6-luna",
           "gpt-6-luna",
           "gpt-6-luna",
           "gpt-6-luna",
