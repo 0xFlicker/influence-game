@@ -110,7 +110,10 @@ Archive asks for confirmation in a dialog without changing the gallery layout.
 Analyze remains available because the collection does not provide a reliable
 availability flag across season receipts and owner learning; management does not
 load each agent's analysis just to decide whether to show a link.
-The Needs attention panel is hidden when no agents need attention.
+The Needs attention panel and filter are hidden when no agents need attention,
+using the collection's existing attention list without an extra request or scan.
+An empty attention filter returns to All and removes that URL parameter while
+preserving search and the agent return position.
 Management cards put the name, archetype, model, voice and activity in badges over
 the full-body artwork. The name sits above the figure; other badges occupy its
 left edge. Voice badges include the catalog gender, never an inferred character

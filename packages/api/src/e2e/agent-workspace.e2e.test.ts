@@ -181,6 +181,12 @@ test("management image and name open the owner profile and return to its agent",
   page.on("pageerror", error => errors.push(String(error)));
   try {
     const selector = `a[href^="/dashboard/agents/${agentId}/profile"]`;
+    await page.goto(servers.webUrl + `/dashboard/agents?attention=1&q=Mira&at=${agentId}`);
+    await page.waitForFunction('!new URL(location.href).searchParams.has("attention")');
+    expect(new URL(page.url()).searchParams.get("q")).toBe("Mira");
+    expect(new URL(page.url()).searchParams.get("at")).toBe(agentId);
+    expect(await page.$$eval('main button', elements => elements.some(element => element.textContent?.trim() === "Needs attention"))).toBe(false);
+    await page.goto(servers.webUrl + "/dashboard/agents");
     for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, { width: 390, height: 844 }]) {
       await page.setViewport(viewport);
       for (const target of ["img", "h3"]) {
@@ -270,6 +276,7 @@ test("management badges fit the artwork in every activity state without moving a
     });
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForSelector(`#agent-${fixtures.at(-1)!.id}`);
+    expect(await page.$$eval('main button', elements => elements.some(element => element.textContent?.trim() === "Needs attention"))).toBe(true);
     await page.waitForFunction('Array.from(document.querySelectorAll("article img")).every(image => image.complete && image.naturalWidth > 0)');
     for (const viewport of [{ width: 1440, height: 900 }, { width: 768, height: 1024 }, { width: 320, height: 844 }]) {
       await page.setViewport(viewport);

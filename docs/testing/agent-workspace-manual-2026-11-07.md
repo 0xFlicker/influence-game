@@ -316,3 +316,11 @@ failures; typecheck, lint and `git diff --check` passed. Screenshots are under
 `.renders/agent-workspace/management-badges-{1440,768,320}.png` and
 `management-profile-link-390.png`. No paid generation or account mutations were
 needed for this pass.
+
+## Follow-up: hide the empty attention filter
+
+Needs attention uses the existing computed attention list and disappears at zero,
+without another request or scan. Empty attention URLs return to All while keeping
+search and the agent return position. Both affected management browser journeys
+passed (358 assertions), including empty and nonempty filter states and stale URL
+recovery.

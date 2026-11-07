@@ -39,8 +39,16 @@ export function AgentsContent() {
     loading = collection.isPending,
     error =
       actionError ?? collection.error?.message ?? generations.error?.message;
+  const attention = agents.filter(agentNeedsAttention);
   const query = params.get("q") ?? "",
-    attentionOnly = params.get("attention") === "1";
+    attentionOnly = params.get("attention") === "1" && attention.length > 0;
+  useEffect(() => {
+    if (collection.isSuccess && !attention.length && params.get("attention") === "1") {
+      const next = new URLSearchParams(params);
+      next.delete("attention");
+      router.replace("/dashboard/agents" + (next.size ? "?" + next : ""), { scroll: false });
+    }
+  }, [collection.isSuccess, attention.length, params, router]);
   function filter(key: string, value: string) {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
@@ -90,8 +98,7 @@ export function AgentsContent() {
       setArchiving(false);
     }
   }
-  const attention = agents.filter(agentNeedsAttention),
-    reviewingAgents = agents.filter((agent) => agent.reviewState === "reviewing"),
+  const reviewingAgents = agents.filter((agent) => agent.reviewState === "reviewing"),
     entryAgents = agents.filter(
       (agent) => agent.entryIntent && agent.reviewState === "accepted",
     ),
@@ -243,13 +250,15 @@ export function AgentsContent() {
             >
               All {agents.length}
             </button>
-            <button
-              type="button"
-              aria-pressed={attentionOnly}
-              onClick={() => filter("attention", "1")}
-            >
-              Needs attention
-            </button>
+            {attention.length > 0 && (
+              <button
+                type="button"
+                aria-pressed={attentionOnly}
+                onClick={() => filter("attention", "1")}
+              >
+                Needs attention
+              </button>
+            )}
           </div>
           <input
             type="search"
