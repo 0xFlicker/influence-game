@@ -111,10 +111,16 @@ Analyze remains available because the collection does not provide a reliable
 availability flag across season receipts and owner learning; management does not
 load each agent's analysis just to decide whether to show a link.
 The Needs attention panel is hidden when no agents need attention.
-Ready agents have no status label. The name and metadata stay together, with one
-compact status row above the actions for review, image activity, missing artwork
-or errors. Its reserved height keeps cards stable when a status clears. Pending
-edits put current-version availability on that same line.
+Management cards put the name, archetype, model, voice and activity in badges over
+the full-body artwork. The name sits above the figure; other badges occupy its
+left edge. Voice badges include the catalog gender, never an inferred character
+gender. Only Edit, Analyze and Archive sit below the picture. Cards have a fixed
+picture height, and long names reflow above the image rather than covering faces.
+Ready agents have no status badge. Pending edits show Still usable alongside
+review status only when a published version exists. Queued/running image work
+scans the artwork; automatic review spins its badge without scanning the image.
+Effects stop on terminal states and respect reduced motion. Status changes never
+move the action row or neighboring cards.
 The management grid always uses the full content width. Generation requests,
 attention items, errors and accepted game/season continuations appear in Activity,
 whose count includes each pending continuation. Activity never reserves a sidebar

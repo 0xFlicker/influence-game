@@ -49,8 +49,7 @@
   background: radial-gradient(ellipse at bottom, #3c4032, transparent 65%);
   border-bottom: 1px solid var(--rule);
 }
-.artActions,
-.cardActions {
+.artActions {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
@@ -291,15 +290,169 @@
   border-bottom: 1px solid var(--rule);
   padding-bottom: 20px;
 }
+.agentCard {
+  min-width: 0;
+}
 .cardProfile {
-  display: block;
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  isolation: isolate;
+  height: 380px;
+  overflow: hidden;
+  border: 1px solid #282a25;
+  border-radius: 12px;
+  background: radial-gradient(ellipse at 66% 96%, #292b22, #111411 40%, #0c0d0d 76%);
   color: inherit;
   text-decoration: none;
 }
-.cardProfile:hover h3,
-.cardProfile:focus-visible h3 {
-  text-decoration: underline;
-  text-underline-offset: 4px;
+.cardProfile:hover .cardName,
+.cardProfile:focus-visible .cardName {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+.cardProfile:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+.cardName {
+  z-index: 2;
+  width: fit-content;
+  max-width: calc(100% - 24px);
+  margin: 12px 12px 0;
+  padding: 6px 11px 7px;
+  border: 1px solid #5a5141;
+  border-radius: 10px;
+  background: #121312eb;
+  font-size: 22px;
+  line-height: 1.14;
+  overflow-wrap: anywhere;
+}
+.cardArtwork {
+  position: relative;
+  min-height: 0;
+}
+.cardImage {
+  width: 82%;
+  height: 100%;
+  margin-left: 18%;
+  padding: 8px 0;
+  object-fit: contain;
+  object-position: 70% bottom;
+  filter: drop-shadow(0 8px 18px #0007);
+}
+.cardArtwork > :global([role="status"]),
+.cardArtwork > :global([role="alert"]) {
+  position: absolute;
+  top: 40%;
+  right: 12px;
+  max-width: 60%;
+  color: var(--muted);
+}
+.cardStatus,
+.cardBadges {
+  position: absolute;
+  z-index: 1;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  pointer-events: none;
+}
+.cardArtwork > .cardStatus {
+  top: 12px;
+  max-width: none;
+}
+.cardBadges {
+  bottom: 14px;
+}
+.cardBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(68%, 240px);
+  padding: 5px 8px;
+  border: 1px solid #454239;
+  border-radius: 20px;
+  background: #121312eb;
+  backdrop-filter: blur(12px);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.cardBadge > span {
+  min-width: 0;
+}
+.cardBadge svg,
+.cardPersonaIcon {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  color: var(--gold);
+}
+.cardPersonaIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.cardModelName {
+  color: inherit;
+}
+.cardStatus .cardBadge {
+  max-width: 100%;
+}
+.cardBadge[data-tone="activity"] {
+  border-color: #746341;
+  color: var(--gold);
+}
+.cardBadge[data-tone="error"] {
+  border-color: #7a4b43;
+  color: #ffb7ae;
+}
+.cardVoiceGender,
+.cardBadge[data-tone="muted"] {
+  color: var(--muted);
+}
+.cardStateMark,
+.cardSpinner {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  display: inline-grid;
+  place-items: center;
+}
+.cardSpinner {
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: management-activity-spin 1.6s linear infinite;
+}
+.cardScan {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, transparent 0 7px, #dfc28e05 8px 9px);
+}
+.cardScan::after {
+  content: "";
+  position: absolute;
+  inset: -35% 0 85%;
+  background: linear-gradient(transparent, #dfc28e1c 80%, #efd4a559 98%, transparent);
+  animation: agent-card-scan 4.8s ease-in-out infinite;
+}
+@keyframes agent-card-scan {
+  0%, 10% { transform: translateY(0); opacity: 0; }
+  20%, 85% { opacity: 1; }
+  100% { transform: translateY(500%); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cardSpinner,
+  .cardScan::after { animation: none; }
+  .cardScan::after { inset: 40% 0 40%; }
 }
 .card img {
   height: 320px;
@@ -307,10 +460,6 @@
   object-fit: contain;
   background: radial-gradient(ellipse at bottom, #3c4032, transparent 65%);
   margin-bottom: 18px;
-}
-.card h3 {
-  font-size: 24px;
-  overflow-wrap: anywhere;
 }
 .meta {
   margin-bottom: 18px;
@@ -320,7 +469,8 @@
   margin-bottom: 4px;
 }
 .cardActions {
-  margin-top: auto;
+  display: flex;
+  margin-top: 9px;
   gap: 8px;
   flex-wrap: nowrap;
 }
@@ -333,20 +483,8 @@
   gap: 12px;
   margin-top: 20px;
 }
-.status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--gold);
-  font-size: 13px;
-  min-height: 20px;
-  line-height: 20px;
-  margin-bottom: 4px;
-}
-.status small {
+.cardActions button:last-child {
   color: var(--muted);
-  font-size: 12px;
-  white-space: nowrap;
 }
 .drafts {
   margin-top: 32px;

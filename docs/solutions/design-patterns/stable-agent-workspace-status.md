@@ -17,10 +17,13 @@ Resume stays a direct action. On mobile reserve content space for the fixed foot
 and safe area. Keep artwork/candidate preview geometry and field feedback slots
 stable. Status changes may fade but never translate the editor.
 
-Management uses an independent attention rail and a mobile Activity sheet. Order
-owned profiles by creation time descending, then ID ascending. Reserve the review
-hint's space when it becomes invisible; never move an agent because its status or
-update timestamp changed. Keep navigation restoration tied to the agent ID.
+Management uses an Activity dialog without reserving a sidebar. Order owned
+profiles by creation time descending, then ID ascending. Overlay status and
+metadata badges on a fixed-height picture, with only the action row below it.
+Let the name take its own grid row above the image so wrapping cannot cover the
+face. Removing a status badge never changes card geometry. Never move an agent
+because its status or update timestamp changed. Keep navigation restoration tied
+to the agent ID.
 
 Browser regressions compare heading, tabs, composer, preferences and footer bounds
 through delayed activity and account draft reads, including Guided/Advanced create

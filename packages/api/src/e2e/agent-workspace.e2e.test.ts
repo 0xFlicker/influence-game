@@ -198,9 +198,11 @@ test("management image and name open the owner profile and return to its agent",
         expect(await page.$(`#agent-${agentId} button[aria-label="Edit Mira Voss"]`)).not.toBeNull();
         expect(await page.$eval(`#agent-${agentId}`, element => {
           const heading = element.querySelector("h3")!.getBoundingClientRect();
-          const metadata = element.querySelector(":scope > div")!.getBoundingClientRect();
-          return metadata.top - heading.bottom;
-        })).toBeLessThanOrEqual(8);
+          const picture = element.querySelector("a")!.getBoundingClientRect();
+          const metadata = element.querySelector('[aria-label="Agent details"]')!.getBoundingClientRect();
+          const actions = element.querySelector("button")!.getBoundingClientRect();
+          return heading.top >= picture.top && metadata.bottom <= picture.bottom && actions.top > picture.bottom;
+        })).toBe(true);
         expect(await page.$(`#agent-${agentId} details`)).toBeNull();
         expect(await page.$eval(`#agent-${agentId} a[aria-label="Analyze Mira Voss"]`, element => element.getAttribute("href"))).toBe(`/dashboard/agents/${agentId}`);
         expect(await page.evaluate(`(()=>{const card=document.getElementById("agent-${agentId}");const buttons=["Edit Mira Voss","Analyze Mira Voss","Archive Mira Voss"].map(label=>card.querySelector('[aria-label="'+label+'"]').getBoundingClientRect());return buttons.every(rect=>Math.abs(rect.top-buttons[0].top)<1);})()`)).toBe(true);
@@ -227,6 +229,96 @@ test("management image and name open the owner profile and return to its agent",
     await page.keyboard.press("Enter");
     await page.waitForFunction('document.querySelector("h1")?.textContent === "Mira Voss"');
     expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("management badges fit the artwork in every activity state without moving actions", async () => {
+  const response = await fetch(servers.apiUrl + "/api/agent-profiles", {
+    headers: { Authorization: `Bearer ${owner.jwt}` },
+  });
+  expect(response.ok).toBe(true);
+  const baseline = (await response.json() as Array<Record<string, unknown>>).find(agent => agent.id === agentId)!;
+  const variants = [
+    { name: "Professor Mara Tideglass of the Western Lighthouse", personaKey: "diplomat", voiceId: "carina", modelPreference: { catalogId: "meta-muse:muse-spark-1.3-contributor" }, expectedStatus: null },
+    { name: "Generating", visualActivity: { status: "processing", stage: "image" }, expectedStatus: "Generating image" },
+    { name: "Reviewing changes", reviewState: "reviewing", expectedStatus: "Reviewing" },
+    { name: "Held changes", reviewState: "held", expectedStatus: "Held for moderation" },
+    { name: "Artwork", visualActivity: { status: "ready", stage: "ready" }, expectedStatus: "Artwork ready" },
+    { name: "Failed", visualActivity: { status: "failed", stage: "image" }, expectedStatus: "Image failed" },
+    { name: "First image", fullBodyReferenceUrl: null, transparentBodyUrl: null, avatarUrl: null, contentRevisionId: null, visualActivity: { status: "queued", stage: "waiting" }, expectedStatus: "Queued" },
+    { name: "Missing image", fullBodyReferenceUrl: null, transparentBodyUrl: null, expectedStatus: "Full-body image missing" },
+    { name: "Reviewing new agent", reviewState: "reviewing", contentRevisionId: null, expectedStatus: "Reviewing" },
+    { name: "Image conflict", visualActivity: { status: "conflict", stage: "ready" }, expectedStatus: "Artwork needs review" },
+  ];
+  const fixtures = variants.map(({ expectedStatus: _expectedStatus, ...variant }) => ({
+    ...baseline, reviewState: "accepted" as const, visualActivity: null,
+    id: crypto.randomUUID(), ...variant,
+  }));
+  const page = await createAuthenticatedPage(browser, owner.jwt, servers.webUrl + "/dashboard/agents", { privateKey: owner.wallet.privateKey });
+  try {
+    await page.setRequestInterception(true);
+    page.on("request", request => {
+      if (new URL(request.url()).pathname === "/api/agent-profiles" && request.method() === "GET") {
+        void request.respond({
+          status: 200, contentType: "application/json",
+          headers: { "Access-Control-Allow-Origin": servers.webUrl!, "Access-Control-Allow-Credentials": "true" },
+          body: JSON.stringify(fixtures),
+        });
+      } else void request.continue();
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForSelector(`#agent-${fixtures.at(-1)!.id}`);
+    await page.waitForFunction('Array.from(document.querySelectorAll("article img")).every(image => image.complete && image.naturalWidth > 0)');
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 768, height: 1024 }, { width: 320, height: 844 }]) {
+      await page.setViewport(viewport);
+      await page.evaluate("document.fonts.ready");
+      expect(await page.evaluate("document.documentElement.scrollWidth <= innerWidth")).toBe(true);
+      const geometry = await page.$$eval('article[id^="agent-"]', elements => elements.map(element => {
+        const picture = element.querySelector("a")!.getBoundingClientRect();
+        const heading = element.querySelector("h3")!.getBoundingClientRect();
+        const image = element.querySelector("img")!.getBoundingClientRect();
+        const badges = Array.from(element.querySelector('[aria-label="Agent details"]')!.children as ArrayLike<typeof element>).map(badge => badge.getBoundingClientRect());
+        const actions = Array.from(element.querySelectorAll("button, a.action") as ArrayLike<typeof element>).map(action => action.getBoundingClientRect());
+        const inside = (rect: { left: number; right: number; top: number; bottom: number }) => rect.left >= picture.left && rect.right <= picture.right && rect.top >= picture.top && rect.bottom <= picture.bottom;
+        return {
+          height: element.getBoundingClientRect().height, pictureHeight: picture.height,
+          allTextInside: [heading, ...badges].every(inside), imageInside: inside(image),
+          imageBelowName: image.top >= heading.bottom,
+          onlyActionsBelow: element.children.length === 2 && actions.every(rect => rect.top > picture.bottom),
+          actionsAligned: actions.every(rect => rect.top === actions[0]!.top),
+          labelsFit: Array.from(element.querySelectorAll('h3, [aria-label="Agent details"] > span') as ArrayLike<typeof element>).every(badge => badge.scrollWidth <= badge.clientWidth + 1),
+        };
+      }));
+      expect(geometry).toHaveLength(fixtures.length);
+      for (const card of geometry) {
+        expect(card.pictureHeight).toBe(380);
+        expect(card.height).toBe(geometry[0]!.height);
+        expect(card.allTextInside).toBe(true);
+        expect(card.imageInside).toBe(true);
+        expect(card.imageBelowName).toBe(true);
+        expect(card.onlyActionsBelow).toBe(true);
+        expect(card.actionsAligned).toBe(true);
+        expect(card.labelsFit).toBe(true);
+      }
+      await page.screenshot({ path: proof + `management-badges-${viewport.width}.png`, fullPage: true });
+    }
+    for (const [index, fixture] of fixtures.entries()) {
+      const status = await page.$(`#agent-${fixture.id} [role="status"]`);
+      if (variants[index]!.expectedStatus === null) expect(status).toBeNull();
+      else expect(await status!.evaluate(element => element.textContent)).toContain(variants[index]!.expectedStatus!);
+    }
+    expect(await page.$eval(`#agent-${fixtures[0]!.id} [aria-label="Agent details"]`, element => element.textContent)).toContain("CarinaF");
+    expect(await page.$eval(`#agent-${fixtures[2]!.id} [role="status"]`, element => element.textContent)).toContain("Still usable");
+    expect(await page.$eval(`#agent-${fixtures[8]!.id} [role="status"]`, element => element.textContent)).not.toContain("Still usable");
+    expect(await page.$(`#agent-${fixtures[2]!.id} [data-image-updating="true"]`)).toBeNull();
+    const active = `#agent-${fixtures[1]!.id} [data-image-updating="true"]`;
+    expect(await page.$(active)).not.toBeNull();
+    const animation = () => page.$eval(`${active} > div > span[aria-hidden="true"]`, element => element.ownerDocument.defaultView!.getComputedStyle(element, "::after").animationName);
+    expect(await animation()).not.toBe("none");
+    await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+    expect(await animation()).toBe("none");
   } finally {
     await page.close();
   }
@@ -1678,7 +1770,8 @@ test("review acceptance keeps gallery order and card positions unchanged", async
     expect(await page.$eval('dialog[open] [aria-label="Reviewing agents"]', element => element.textContent)).toContain(target.name);
     await button(page, "Close");
     const before = await positions();
-    expect(await page.$eval(`#agent-${target.id} > p:first-of-type > span`, element => element.textContent)).toBe("Reviewing");
+    expect(await page.$eval(`#agent-${target.id} [role="status"]`, element => element.textContent)).toContain("Reviewing");
+    expect(await page.$eval(`#agent-${target.id} [role="status"]`, element => element.textContent)).toContain("Still usable");
     await database.db
       .update(schema.agentScreenings)
       .set({ status: "completed", recommendation: "no_concern" })
@@ -1702,7 +1795,7 @@ test("review acceptance keeps gallery order and card positions unchanged", async
     const after = await positions();
     const remainingActivity = await page.$('main header button[aria-label="Activity"]');
     expect(remainingActivity ? Number(await remainingActivity.evaluate(element => element.getAttribute("data-activity-count"))) : 0).toBe(activityBefore - 1);
-    expect(await page.$eval(`#agent-${target.id} > p:first-of-type`, element => element.textContent)).toBe("");
+    expect(await page.$(`#agent-${target.id} [role="status"]`)).toBeNull();
     expect(after.map((row) => row.id)).toEqual(before.map((row) => row.id));
     before.forEach((row, index) => {
       expect(Math.abs(row.top - after[index]!.top)).toBeLessThanOrEqual(1);

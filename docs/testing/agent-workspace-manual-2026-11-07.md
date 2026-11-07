@@ -289,3 +289,30 @@ spinner/reduced motion, pending requests and stable card positions. Typecheck,
 lint and `git diff --check` passed. Visual evidence includes
 `.renders/agent-workspace/management-active.png` and the management width
 screenshots. No paid provider calls were needed.
+
+## Follow-up: artwork badge cards
+
+Implemented the approved Side badges layout in agent management. Names,
+archetypes, models, voices and meaningful status sit over the artwork; only
+Edit, Analyze and Archive remain underneath. Names wrap in a separate grid row
+above the figure, and the entire image fits inside its remaining area. Voice
+gender comes from the stock catalog. Ready agents have no status badge; pending
+revisions retain Still usable only when an accepted revision exists.
+
+Image work uses an indeterminate scan; automatic review spins only its status
+badge. Reduced motion keeps static indications. Card and action geometry remain
+fixed through status changes. The first-image House logo now loads from the web
+app instead of incorrectly resolving against the API.
+
+Provider-free browser coverage includes ten status/artwork cases at 1440, 768 and
+320px, long names/model labels, loaded images, aligned actions, first-generation
+fallback, new versus revised moderation and reduced motion. The existing profile
+navigation and review-publication regressions still pass.
+
+Validation: 14 workspace browser journeys passed (1,050 assertions); after the
+logo correction, all three affected management journeys passed again (373
+assertions). The provider-free baseline passed with 3,369 passes, 5 skips and no
+failures; typecheck, lint and `git diff --check` passed. Screenshots are under
+`.renders/agent-workspace/management-badges-{1440,768,320}.png` and
+`management-profile-link-390.png`. No paid generation or account mutations were
+needed for this pass.
