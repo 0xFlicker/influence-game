@@ -11,6 +11,7 @@ import { claimWerewolfGame, readWerewolfEvents } from "../services/werewolf-game
 import { createWerewolfLobby, fillWerewolfLobby, joinWerewolfLobby, leaveWerewolfLobby, readWerewolfLobby, startWerewolfLobby } from "../services/werewolf-lobbies.js";
 import { createOwnedAgentProfile, updateOwnedAgentProfile } from "../services/agent-profile-management.js";
 import { createWerewolfRoutes } from "../routes/werewolf.js";
+import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
 
 const oldSecret = process.env.JWT_SECRET;
 process.env.JWT_SECRET = "werewolf-lobby-test-secret";
@@ -34,7 +35,7 @@ test("malformed local probe configurations cannot break the public Werewolf list
 });
 
 async function profile(id: string, userId = "owner", name = id) {
-  await db.insert(schema.agentProfiles).values({ id, userId, name, personality: "PRIVATE_PERSONALITY", strategyStyle: "INFLUENCE_ONLY", werewolfStrategyStyle: "PRIVATE_WEREWOLF_STRATEGY", personaKey: "observer" });
+  await db.insert(schema.agentProfiles).values({ id, userId, name, personality: "PRIVATE_PERSONALITY", strategyStyle: "INFLUENCE_ONLY", werewolfStrategyStyle: "PRIVATE_WEREWOLF_STRATEGY", personaKey: "observer", fullBodyReferenceUrl: await contentImageFixture(`pfp/generated/${randomUUID()}.png`) });
   return id;
 }
 
@@ -59,6 +60,20 @@ test("a saved lobby has durable public seats but no roles, game events, or worke
   const response = await createWerewolfRoutes(db).request("/api/werewolf");
   expect(await response.json()).toMatchObject([{ id: game.id, status: "waiting", joinedPlayers: 1, gameKind: "werewolf" }]);
   expect((await createWerewolfRoutes(db).request(`/api/werewolf/${game.id}/watch`)).status).toBe(409);
+});
+
+test("new Werewolf joins need full-body art while an existing seat remains usable", async () => {
+  const game = await create();
+  await profile("body-gate");
+  await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: null }).where(eq(schema.agentProfiles.id, "body-gate"));
+  await expect(joinWerewolfLobby(db, game.id, "owner", "body-gate")).rejects.toMatchObject({ status: 409 });
+  expect((await readWerewolfLobby(db, game.id)).players).toHaveLength(0);
+  await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: await contentImageFixture(`pfp/generated/${randomUUID()}.png`) }).where(eq(schema.agentProfiles.id, "body-gate"));
+  const joined = await joinWerewolfLobby(db, game.id, "owner", "body-gate");
+  await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: null }).where(eq(schema.agentProfiles.id, "body-gate"));
+  expect(await joinWerewolfLobby(db, game.id, "owner", "body-gate")).toEqual(joined);
+  await fillWerewolfLobby(db, game.id);
+  expect((await readWerewolfLobby(db, game.id)).players).toHaveLength(6);
 });
 
 test("admission checks current ownership, capacity, and current multi-seat roles", async () => {
@@ -87,9 +102,10 @@ test("concurrent joins serialize the last seat without overfilling", async () =>
 
 test("waiting discovery uses approved joined identities, follows removal, and never exposes draft content", async () => {
   const game = await create();
+  const image = await contentImageFixture(`pfp/generated/${randomUUID()}.png`);
   const { profile: agent } = await createOwnedAgentProfile(db, { userId: "guest" }, {
     name: "Arden", personality: "PRIVATE_PERSONALITY", gender: "non-binary", personaKey: "observer",
-    strategyStyle: "INFLUENCE_ONLY", werewolfStrategyStyle: "PRIVATE_WEREWOLF_STRATEGY",
+    strategyStyle: "INFLUENCE_ONLY", werewolfStrategyStyle: "PRIVATE_WEREWOLF_STRATEGY", fullBodyReferenceUrl: image, headPosition: await headPositionFixture(image), avatarUrl: image, portraitCrop: { sourceUrl: image, x: 0, y: 0, width: 1, height: 1 },
   });
   const seat = await joinWerewolfLobby(db, game.id, "guest", agent.id);
   await db.update(schema.agentProfiles).set({ name: "Unapproved draft name", avatarUrl: "/unapproved-draft.png" }).where(eq(schema.agentProfiles.id, agent.id));
@@ -104,7 +120,8 @@ test("waiting discovery uses approved joined identities, follows removal, and ne
 
 test("start freezes the latest approved strategy for every owner, assigns roles once, and preserves the filled House seats", async () => {
   const game = await create();
-  const { profile: agent } = await createOwnedAgentProfile(db, { userId: "guest" }, { name: "Arden", personality: "Calm", gender: "non-binary", personaKey: "observer", strategyStyle: "INFLUENCE_ONLY", werewolfStrategyStyle: "BEFORE_EDIT" });
+  const image = await contentImageFixture(`pfp/generated/${randomUUID()}.png`);
+  const { profile: agent } = await createOwnedAgentProfile(db, { userId: "guest" }, { name: "Arden", personality: "Calm", gender: "non-binary", personaKey: "observer", strategyStyle: "INFLUENCE_ONLY", werewolfStrategyStyle: "BEFORE_EDIT", fullBodyReferenceUrl: image, headPosition: await headPositionFixture(image), avatarUrl: image, portraitCrop: { sourceUrl: image, x: 0, y: 0, width: 1, height: 1 } });
   const seat = await joinWerewolfLobby(db, game.id, "guest", agent.id);
   await updateOwnedAgentProfile(db, { userId: "guest" }, agent.id, { werewolfStrategyStyle: "LATEST_STRATEGY", submissionId: randomUUID(), expectedContentRevisionId: agent.contentRevisionId });
   await fillWerewolfLobby(db, game.id);

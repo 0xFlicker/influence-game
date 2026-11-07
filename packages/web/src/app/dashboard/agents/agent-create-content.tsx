@@ -21,6 +21,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { getGameEntry } from "@/lib/game-entry";
 import { gameHref } from "@/lib/game-links";
+import { agentPreparationHref, hasFullBodyAgentArt } from "@/lib/agent-entry";
 import { getWerewolfLobby, joinWerewolfLobby } from "@/lib/werewolf-api";
 import { AgentForm } from "./agent-form";
 import { enrollCreatedSeasonAgent, pinSeasonCreationTarget } from "./season-creation-target";
@@ -110,6 +111,18 @@ export function AgentCreateContent({
     writeEditorStorage(baselineKey, JSON.stringify(params));
     createdAgentId.current = agent.id;
     writeEditorStorage(continuationKey, agent.id);
+    if (!hasFullBodyAgentArt(agent) && flow === "join_game" && gameId) {
+      removeEditorStorage(continuationKey);
+      removeEditorStorage(baselineKey);
+      router.replace(agentPreparationHref(agent.id, { flow: "join_game", gameId }));
+      return;
+    }
+    if (!hasFullBodyAgentArt(agent) && flow === "daily_free") {
+      removeEditorStorage(continuationKey);
+      removeEditorStorage(baselineKey);
+      router.replace(agentPreparationHref(agent.id, { flow: "daily_free", seasonId, season: seasonSlug }));
+      return;
+    }
     if ((flow === "join_game") && gameId) {
       if (identity?.gameKind === "werewolf") await joinWerewolfLobby(gameId, agent.id);
       else await joinGame(gameId, { agentProfileId: agent.id });

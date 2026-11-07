@@ -24,6 +24,7 @@ import { tmpdir } from "node:os";
 import type { Browser, Page } from "puppeteer";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { contentImageFixture, headPositionFixture } from "../__tests__/content-image-fixture.js";
 import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 import { claimWerewolfGame, createWerewolfGame, createWerewolfStore } from "../services/werewolf-games.js";
 import { createAdminUser } from "./test-auth.js";
@@ -53,7 +54,8 @@ beforeAll(async () => {
   database = await createIsolatedTestDb();
   admin = await createAdminUser(database.db);
   await recordCurrentLegalAcceptance(database.db, admin.userId, "existing_account", "0123456789abcdef0123456789abcdef01234567");
-  const profile = await createOwnedAgentProfile(database.db, { userId: admin.userId }, { name: "Arden Vale", personality: "Calm and observant", gender: "non-binary", personaKey: "observer", strategyStyle: "Preserve my Influence strategy." });
+  const fullBodyReferenceUrl = await contentImageFixture("pfp/werewolf-arden.png");
+  const profile = await createOwnedAgentProfile(database.db, { userId: admin.userId }, { name: "Arden Vale", personality: "Calm and observant", gender: "non-binary", personaKey: "observer", strategyStyle: "Preserve my Influence strategy.", fullBodyReferenceUrl, headPosition: await headPositionFixture(fullBodyReferenceUrl) });
   profileId = profile.profile.id;
   servers = await startTestServers({ databaseUrl: database.databaseUrl, adminAddress: admin.wallet.address, jwtSecret: process.env.JWT_SECRET, logDirectory: "/tmp/werewolf-browser-logs" });
   console.log(`WEREWOLF_BROWSER_URL=${servers.webUrl}`);

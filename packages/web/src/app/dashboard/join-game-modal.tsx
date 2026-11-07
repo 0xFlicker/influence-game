@@ -10,6 +10,7 @@ export function JoinGameModal({ game, onClose, onSuccess }: {
   onSuccess: (gameId: string) => void;
 }) {
   return <AgentSelector
+    intent={{ flow: "join_game", gameId: game.id }}
     description={`Join ${gameDisplayName(game)} · ${game.playerCount}-player · ${game.modelLabel}`}
     createHref={`/agents/create?flow=join_game&gameId=${encodeURIComponent(game.id)}`}
     onClose={onClose} submitLabel="Join game" pendingLabel="Joining…"

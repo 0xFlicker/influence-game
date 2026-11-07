@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { Browser, Dialog, Page } from "puppeteer";
 import { schema } from "../db/index.js";
-import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { createOwnedAgentProfile, updateOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { contentImageFixture, headPositionFixture } from "../__tests__/content-image-fixture.js";
 import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 import { closeSeason, createSeason } from "../services/seasons.js";
 import {
@@ -73,27 +74,39 @@ beforeAll(async () => {
     permissions: ["view_admin", "schedule_free_game"],
   });
 
+  const firstBody = await contentImageFixture("pfp/standing-daily-alpha.png");
   const firstAgent = (await createOwnedAgentProfile(testDb.db, { userId: player.userId }, {
     name: "Daily Alpha",
     personality: "Patient and observant.",
     strategyStyle: "Build trust before acting.",
+    fullBodyReferenceUrl: firstBody,
+    headPosition: await headPositionFixture(firstBody),
   })).profile;
+  const secondBody = await contentImageFixture("pfp/standing-daily-beta.png");
   const secondAgent = (await createOwnedAgentProfile(testDb.db, { userId: player.userId }, {
     name: "Daily Beta",
     personality: "Direct and adaptable.",
     strategyStyle: "Create options, then commit.",
+    fullBodyReferenceUrl: secondBody,
+    headPosition: await headPositionFixture(secondBody),
   })).profile;
   firstAgentId = firstAgent.id;
   secondAgentId = secondAgent.id;
+  const soloBody = await contentImageFixture("pfp/standing-solo-gamma.png");
   await createOwnedAgentProfile(testDb.db, { userId: singleAgentPlayer.userId }, {
     name: "Solo Gamma",
     personality: "Quietly decisive.",
     strategyStyle: "Listen first and move once.",
+    fullBodyReferenceUrl: soloBody,
+    headPosition: await headPositionFixture(soloBody),
   });
+  const surfaceBody = await contentImageFixture("pfp/standing-surface-delta.png");
   await createOwnedAgentProfile(testDb.db, { userId: surfacePlayer.userId }, {
     name: "Surface Delta",
     personality: "Ready to enter from any screen.",
     strategyStyle: "Observe the field before committing.",
+    fullBodyReferenceUrl: surfaceBody,
+    headPosition: await headPositionFixture(surfaceBody),
   });
 
   const season = await createSeason(testDb.db, {
@@ -121,7 +134,7 @@ afterAll(async () => {
 }, 60_000);
 
 describe("E2E: Standing Daily Agent", () => {
-  test("creates and automatically enters an agent from the season page", async () => {
+  test("creates an artless Agent, prepares it, and enters Daily Free from the season page", async () => {
     const webUrl = servers.webUrl!;
     const page = await createAuthenticatedPage(browser, agentlessPlayer.jwt, `${webUrl}/games/free`, {
       privateKey: agentlessPlayer.wallet.privateKey,
@@ -170,6 +183,18 @@ describe("E2E: Standing Daily Agent", () => {
     }
 
     const createdAgent = await waitForOwnedAgentByName(agentlessPlayer.userId, "Prompt Newcomer");
+    await page.waitForFunction("location.pathname === '/agents/prepare'", { timeout: 15_000 });
+    await waitForText(page, "Prepare Prompt Newcomer");
+    const newcomerBody = await contentImageFixture("pfp/standing-prompt-newcomer.png");
+    await updateOwnedAgentProfile(testDb.db, { userId: agentlessPlayer.userId }, createdAgent.id, {
+      fullBodyReferenceUrl: newcomerBody,
+      headPosition: await headPositionFixture(newcomerBody),
+    });
+    await page.waitForFunction(
+      `Array.from(document.querySelectorAll("button")).some(button => button.textContent?.trim() === "Enter Daily Free")`,
+      { timeout: 15_000 },
+    );
+    await clickButton(page, "Enter Daily Free");
     await waitForQueueAgent(agentlessPlayer.userId, createdAgent.id);
     await waitForMissingText(page, "Play for Free");
 

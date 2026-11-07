@@ -12,6 +12,7 @@ import type { ChampionshipView } from "@/lib/championship";
 import { SeasonStandings } from "@/app/games/free/free-game-content";
 import { defaultSeason, recommendedSeasonAgent } from "./season-selection";
 import styles from "./seasons.module.css";
+import { agentPreparationHref, hasFullBodyAgentArt } from "@/lib/agent-entry";
 
 const ChampionshipEventView = dynamic(() => import("@/app/events/championship-view").then(module => module.ChampionshipEventView));
 
@@ -120,7 +121,9 @@ export function SeasonsContent() {
             <div className={styles.entryPrimary}>
               {!authenticated ? <button className={styles.joinAction} onClick={openSignIn}>Sign in to join</button>
                 : !agent ? <Link className={styles.joinAction} href={`/agents/create?flow=daily_free&seasonId=${encodeURIComponent(season.id)}&season=${encodeURIComponent(season.slug)}`}>Create agent</Link>
-                : !entry || entry.agentProfileId !== agent.id ? <button disabled={busy} className={styles.joinAction} onClick={() => void enroll()}>{busy ? "Joining…" : entry ? "Switch agent" : `Join ${season.name}`}</button>
+                : !entry || entry.agentProfileId !== agent.id ? !hasFullBodyAgentArt(agent)
+                  ? <Link className={styles.joinAction} href={agentPreparationHref(agent.id, { flow: "daily_free", seasonId: season.id, season: season.slug })}>Complete Agent & join</Link>
+                  : <button disabled={busy} className={styles.joinAction} onClick={() => void enroll()}>{busy ? "Joining…" : entry ? "Switch agent" : `Join ${season.name}`}</button>
                 : <span className={styles.entryConfirmed}>✓ Entered</span>}
             </div>
             <div className={styles.entryUtilities}>

@@ -21,6 +21,7 @@ import {
   insertCanonicalEventRows,
 } from "./durable-run-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
+import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
 
 const savedMockRunner = process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
 
@@ -210,9 +211,12 @@ describe("free queue season admission", () => {
     const db = await setupTestDB();
     const ownerId = await insertUser(db, "rest-owner");
     await createSeason(db, { slug: "rest-season", name: "REST Season" });
+    const fullBodyReferenceUrl = await contentImageFixture("pfp/rest-atlas.png");
     const ownProfile = (await createOwnedAgentProfile(db, { userId: ownerId }, {
       name: "REST Atlas",
       personality: "Patient",
+      fullBodyReferenceUrl,
+      headPosition: await headPositionFixture(fullBodyReferenceUrl),
     })).profile;
     const other = await createQueuedAgent(db, "rest-other", "Other Agent");
     await db.delete(schema.freeGameQueue).where(eq(schema.freeGameQueue.userId, other.userId));

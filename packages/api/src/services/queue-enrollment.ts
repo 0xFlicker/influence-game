@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import { eligibleAgentContent } from "./agent-content-eligibility.js";
+import { eligibleAgentContent, hasFullBodyAgentArt } from "./agent-content-eligibility.js";
 import type { GameStatus, TrackType } from "../db/schema.js";
 import { modelLabelFromConfig } from "../lib/model-label.js";
 import {
@@ -45,7 +45,8 @@ export type QueueEnrollmentErrorCode =
   | "season_changed"
   | "queue_full"
   | "owner_seat_limit"
-  | "game_not_joinable";
+  | "game_not_joinable"
+  | "full_body_required";
 
 export class QueueEnrollmentError extends Error {
   constructor(
@@ -389,9 +390,12 @@ async function joinDailyFreeQueue(
     await acquireDailyFreeLocks(tx);
     const season = await requireActiveFreeSeason(tx);
     assertSeasonIntent(expectedSeasonId, season.id);
-    await requireOwnedDailyFreeAgent(tx, context.userId, agentId);
+    const profile = await requireOwnedDailyFreeAgent(tx, context.userId, agentId);
     const existing = await getDailyFreeQueueEntry(tx, context.userId);
     if (existing?.agentProfileId === agentId) return { status: "already-queued" as const, entry: existing };
+    if (!hasFullBodyAgentArt(profile)) {
+      throw new QueueEnrollmentError("full_body_required", "Add a full-body image to this agent before entering Daily Free.", 409);
+    }
     if (existing) {
       const updated = (await tx.update(schema.freeGameQueue).set({ agentProfileId: agentId })
         .where(eq(schema.freeGameQueue.id, existing.id)).returning())[0]!;
@@ -585,9 +589,9 @@ async function requireOwnedDailyFreeAgent(
   tx: DrizzleTransaction,
   userId: string,
   agentId: string,
-): Promise<void> {
+): Promise<{ id: string; fullBodyReferenceUrl: string | null }> {
   await tx.execute(sql`SELECT id FROM agent_profiles WHERE id = ${agentId} AND user_id = ${userId} FOR UPDATE`);
-  const profile = await tx.select({ id: schema.agentProfiles.id })
+  const profile = await tx.select({ id: schema.agentProfiles.id, fullBodyReferenceUrl: schema.agentProfiles.fullBodyReferenceUrl })
     .from(schema.agentProfiles)
     .where(and(
       eq(schema.agentProfiles.id, agentId),
@@ -603,6 +607,7 @@ async function requireOwnedDailyFreeAgent(
       { agentId },
     );
   }
+  return profile[0]!;
 }
 
 async function requireActiveFreeSeason(tx: DrizzleTransaction) {
@@ -689,6 +694,9 @@ function mapOpenGameProjectionError(
   }
   if (error.reason === "capacity") {
     return new QueueEnrollmentError("queue_full", "Open game is full.", 409, error.details);
+  }
+  if (error.reason === "full_body_required") {
+    return new QueueEnrollmentError("full_body_required", error.message, 409);
   }
   if (error.reason === "owner_seat_limit") {
     return new QueueEnrollmentError("owner_seat_limit", error.message, 403);

@@ -30,6 +30,7 @@ import {
   completeDeploymentAdmissionLease,
 } from "../services/deployment-admission.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
 import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
 import { GameState, Phase, getHousePortraitGender, HOUSE_CAST, type CanonicalGameEvent } from "@influence/engine";
 import {
@@ -146,10 +147,13 @@ async function grantTestOwnerRole(db: DrizzleDB, roleName: string): Promise<stri
 }
 
 async function createAdditionalTestAgent(db: DrizzleDB, name: string): Promise<string> {
+  const fullBodyReferenceUrl = await contentImageFixture(`pfp/additional-${name.replaceAll(" ", "-")}.png`);
   const created = await createOwnedAgentProfile(db, { userId: REGULAR_USER_ID }, {
     name,
     personality: "A distinct saved competitor.",
     personaKey: "strategic",
+    fullBodyReferenceUrl,
+    headPosition: await headPositionFixture(fullBodyReferenceUrl),
   });
   return created.profile.id;
 }
@@ -236,11 +240,16 @@ async function joinTestPlayer(
       eq(schema.agentProfiles.name, savedName),
     )))[0];
   if (!profile) {
+    const image = await contentImageFixture(`pfp/generated/${randomUUID()}.png`);
     const created = await createOwnedAgentProfile(db, { userId: REGULAR_USER_ID }, {
       name: savedName,
       personality,
       strategyStyle: `${savedName} strategy`,
       personaKey: "honest",
+      fullBodyReferenceUrl: image,
+      avatarUrl: image,
+      headPosition: await headPositionFixture(image),
+      portraitCrop: { sourceUrl: image, x: 0, y: 0, width: 1, height: 1 },
     });
     profile = { id: created.profile.id };
   }
@@ -461,9 +470,11 @@ describe("Game REST API", () => {
       expect(created.status).toBe(201);
       const { id } = await created.json() as { id: string };
       for (let i = 0; i < 6; i++) {
+        const fullBodyReferenceUrl = await contentImageFixture(`pfp/text-competitor-${i}.png`);
         const profile = await createOwnedAgentProfile(db, { userId: ADMIN_USER_ID }, {
           name: `Text Competitor ${i}`, personality: "A distinct saved competitor.", personaKey: "strategic",
           modelPreference: { catalogId: "katana:deepseek-v4-flash" },
+          fullBodyReferenceUrl, headPosition: await headPositionFixture(fullBodyReferenceUrl),
         });
         const joined = await app.request(`/api/games/${id}/join`, json({ agentProfileId: profile.profile.id }, adminToken));
         expect([200, 201]).toContain(joined.status);
@@ -3141,12 +3152,14 @@ describe("Game REST API", () => {
 
     test("POST /api/games/:id/join linearizes concurrent identical joins to one seat", async () => {
       const { id } = await createTestGame(app, adminToken);
+      const fullBodyReferenceUrl = await contentImageFixture("pfp/concurrent-rowan.png");
       const created = await createOwnedAgentProfile(db, { userId: REGULAR_USER_ID }, {
         name: "Concurrent Rowan",
         personality: "Retries one request without multiplying it.",
         strategyStyle: "Choose one seat.",
         personaKey: "strategic",
         gender: "non-binary",
+        fullBodyReferenceUrl, headPosition: await headPositionFixture(fullBodyReferenceUrl),
       });
 
       const responses = await Promise.all([

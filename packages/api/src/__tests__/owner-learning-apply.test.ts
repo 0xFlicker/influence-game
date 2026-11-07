@@ -24,6 +24,8 @@ describe("owner learning apply and resolution", () => {
   test("applies only the persisted strategy proposal and replays one stored receipt", async () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);
+    await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: await contentImageFixture("pfp/learning-waiting.png") })
+      .where(eq(schema.agentProfiles.id, fixture.agentProfileId));
     const reviewId = await startFixtureOwnerLearningReview(db, fixture);
     const ready = await markReviewReady(db, reviewId);
     await db.insert(schema.games).values({

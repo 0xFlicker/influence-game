@@ -1,5 +1,5 @@
 import { loadPayloads } from "../services/payload-storage.js";
-import { contentImageFixture } from "./content-image-fixture.js";
+import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -109,10 +109,13 @@ describe("agent revision update loop", () => {
       email: "revision-loop-foreign@test.example",
       displayName: "Foreign Owner",
     });
+    const foreignBody = await contentImageFixture("pfp/revision-loop/foreign-waiting.png");
     const foreign = await createOwnedAgentProfile(db, { userId: foreignOwnerId }, {
       name: "Foreign Waiting Agent",
       personality: "Must remain private and unchanged.",
       personaKey: "strategic",
+      fullBodyReferenceUrl: foreignBody,
+      headPosition: await headPositionFixture(foreignBody),
     });
     await insertGame("foreign-waiting", "foreign-waiting");
     await admit(foreign.profile.id, "foreign-waiting", foreignOwnerId);
@@ -466,12 +469,15 @@ describe("agent revision update loop", () => {
   });
 
   async function createAgent(name: string) {
+    const fullBodyReferenceUrl = await contentImageFixture(`pfp/revision-loop/${name.replaceAll(" ", "-")}.png`);
     const result = await createOwnedAgentProfile(db, { userId: OWNER_ID }, {
       name,
       personality: `${name} original personality`,
       backstory: `${name} history`,
       strategyStyle: "Original strategy",
       personaKey: "strategic",
+      fullBodyReferenceUrl,
+      headPosition: await headPositionFixture(fullBodyReferenceUrl),
     });
     return result.profile;
   }

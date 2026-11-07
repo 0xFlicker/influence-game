@@ -12,6 +12,7 @@ import { setServer, broadcastGamePublication, handleOpen, handleClose } from "..
 import { viewerGameAvailable } from "../services/game-visibility.js";
 import type { ServerWebSocket } from "bun";
 import type { WsConnectionData } from "../services/ws-manager.js";
+import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
 let db: DrizzleDB;
 beforeEach(async () => { db = await setupTestDB(); await db.insert(schema.users).values({id:"owner"}); });
 
@@ -41,7 +42,9 @@ test("missing visibility defaults public; null and removed or malformed values f
 
 test("Werewolf unlisted lobby accepts owned agents and retains visibility on start", async () => {
   const game=await createWerewolfLobby(db,"owner",{preset:"one_wolf",visibility:"unlisted"});
-  await db.insert(schema.agentProfiles).values({id:"agent",userId:"owner",name:"Player",personality:"Calm",strategyStyle:"Observe"});
+  const fullBodyReferenceUrl=await contentImageFixture("pfp/unlisted-wolf.png");
+  await db.insert(schema.agentProfiles).values({id:"agent",userId:"owner",name:"Player",personality:"Calm",strategyStyle:"Observe",
+    fullBodyReferenceUrl,headPosition:await headPositionFixture(fullBodyReferenceUrl)});
   await joinWerewolfLobby(db,game.slug,"owner","agent");
   await fillWerewolfLobby(db,game.id);
   await startWerewolfLobby(db,game.id);

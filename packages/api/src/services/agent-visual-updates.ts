@@ -133,9 +133,13 @@ export async function processAgentVisualUpdate(db: DrizzleDB, userId: string, ag
     };
     await guard(stage === "saving");
     if (stage === "details") {
-      if (!prepared.visualDesign?.trim() || !prepared.performanceInstructions?.trim()) {
+      if (!prepared.visualDesign?.trim() || !prepared.performanceInstructions?.trim() || !prepared.strategyStyle?.trim() || !prepared.werewolfStrategyStyle?.trim()) {
         const details = await deps.details(db,prepared,visualUpdateRequestId(job.id,stage,job.attempt));
-        prepared = {...prepared,visualDesign:prepared.visualDesign?.trim() ? prepared.visualDesign : details.visualDesign,performanceInstructions:prepared.performanceInstructions?.trim() ? prepared.performanceInstructions : details.performanceInstructions};
+        prepared = {...prepared,
+          visualDesign:prepared.visualDesign?.trim() ? prepared.visualDesign : details.visualDesign,
+          performanceInstructions:prepared.performanceInstructions?.trim() ? prepared.performanceInstructions : details.performanceInstructions,
+          strategyStyle:prepared.strategyStyle?.trim() ? prepared.strategyStyle : details.strategyStyle,
+          werewolfStrategyStyle:prepared.werewolfStrategyStyle?.trim() ? prepared.werewolfStrategyStyle : details.werewolfStrategyStyle};
       }
       await checkpoint("body");
     }

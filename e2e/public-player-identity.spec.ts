@@ -250,7 +250,7 @@ test.describe("local public player identity", () => {
 
   test("agent selector supports reuse, retries, empty-agent creation and owned-seat roles", async ({ browser }) => {
     test.setTimeout(180_000);
-    const savedAgent = (id: string, name: string, personaKey: SavedAgent["personaKey"]): SavedAgent => ({ id, name, personaKey, avatarUrl: null, backstory: null, personality: "Fixture", strategyStyle: null, gamesPlayed: 3, gamesWon: 1, createdAt: "2026-09-01", updatedAt: "2026-09-01" });
+    const savedAgent = (id: string, name: string, personaKey: SavedAgent["personaKey"]): SavedAgent => ({ id, name, personaKey, avatarUrl: null, fullBodyReferenceUrl: "https://example.com/fixture-full-body.png", backstory: null, personality: "Fixture", strategyStyle: null, gamesPlayed: 3, gamesWon: 1, createdAt: "2026-09-01", updatedAt: "2026-09-01" });
     for (const width of [1440, 390]) {
       const context = await identityContext(browser, { viewport: { width, height: width === 390 ? 844 : 1100 }, hasTouch: width === 390, isMobile: width === 390 });
       await context.addInitScript(token => localStorage.setItem("influence_session", token), fixture.completeJwt);
