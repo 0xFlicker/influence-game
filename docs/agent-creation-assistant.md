@@ -111,9 +111,10 @@ Analyze remains available because the collection does not provide a reliable
 availability flag across season receipts and owner learning; management does not
 load each agent's analysis just to decide whether to show a link.
 The Needs attention panel is hidden when no agents need attention.
-Ready agents have no status label. The card reserves the status row's height for
-review, image activity, missing artwork or errors, so clearing a status does not
-move other cards. Pending edits say that the current version stays usable.
+Ready agents have no status label. The name and metadata stay together, with one
+compact status row above the actions for review, image activity, missing artwork
+or errors. Its reserved height keeps cards stable when a status clears. Pending
+edits put current-version availability on that same line.
 The management grid always uses the full content width. Generation requests,
 attention items, errors and accepted game/season continuations appear in Activity,
 whose count includes each pending continuation. Activity never reserves a sidebar

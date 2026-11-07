@@ -315,6 +315,10 @@
 .meta {
   margin-bottom: 18px;
 }
+.card .meta {
+  margin-top: 6px;
+  margin-bottom: 4px;
+}
 .cardActions {
   margin-top: auto;
   gap: 8px;
@@ -330,11 +334,19 @@
   margin-top: 20px;
 }
 .status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: var(--gold);
   font-size: 13px;
   min-height: 20px;
   line-height: 20px;
-  margin-top: 6px;
+  margin-bottom: 4px;
+}
+.status small {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
 }
 .drafts {
   margin-top: 32px;
@@ -1618,15 +1630,6 @@
   padding: 32px;
   color: #b4b1a5;
   background: #17130f;
-}
-.acceptedVersion {
-  min-height: 24px;
-  font-size: 12px;
-  line-height: 24px;
-  color: var(--muted);
-}
-.acceptedVersion[data-visible="false"] {
-  visibility: hidden;
 }
 .managementMain {
   min-width: 0;

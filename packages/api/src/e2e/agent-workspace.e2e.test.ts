@@ -194,6 +194,11 @@ test("management image and name open the owner profile and return to its agent",
         expect(await page.$$(selector)).toHaveLength(1);
         expect(await page.$$eval(`#agent-${agentId} a, #agent-${agentId} button`, elements => elements.some(element => element.textContent?.trim() === "View"))).toBe(false);
         expect(await page.$(`#agent-${agentId} button[aria-label="Edit Mira Voss"]`)).not.toBeNull();
+        expect(await page.$eval(`#agent-${agentId}`, element => {
+          const heading = element.querySelector("h3")!.getBoundingClientRect();
+          const metadata = element.querySelector(":scope > div")!.getBoundingClientRect();
+          return metadata.top - heading.bottom;
+        })).toBeLessThanOrEqual(8);
         expect(await page.$(`#agent-${agentId} details`)).toBeNull();
         expect(await page.$eval(`#agent-${agentId} a[aria-label="Analyze Mira Voss"]`, element => element.getAttribute("href"))).toBe(`/dashboard/agents/${agentId}`);
         expect(await page.evaluate(`(()=>{const card=document.getElementById("agent-${agentId}");const buttons=["Edit Mira Voss","Analyze Mira Voss","Archive Mira Voss"].map(label=>card.querySelector('[aria-label="'+label+'"]').getBoundingClientRect());return buttons.every(rect=>Math.abs(rect.top-buttons[0].top)<1);})()`)).toBe(true);
@@ -1658,7 +1663,7 @@ test("review acceptance keeps gallery order and card positions unchanged", async
         }),
       );
     const before = await positions();
-    expect(await page.$eval(`#agent-${target.id} > p:first-of-type`, element => element.textContent)).toBe("Reviewing");
+    expect(await page.$eval(`#agent-${target.id} > p:first-of-type > span`, element => element.textContent)).toBe("Reviewing");
     await database.db
       .update(schema.agentScreenings)
       .set({ status: "completed", recommendation: "no_concern" })

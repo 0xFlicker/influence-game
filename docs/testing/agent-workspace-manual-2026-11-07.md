@@ -257,3 +257,16 @@ Both management/profile and review-completion browser journeys passed (87
 assertions), including an empty ready status and unchanged card geometry.
 Typecheck, lint and `git diff --check` passed. Updated visual evidence remains
 `.renders/agent-workspace/stable-gallery-accepted.png`.
+
+## Follow-up: compact card details
+
+The large name-to-metadata gap came from reserving two status rows and adding
+metadata margins. Removed the second row, grouped metadata 6px below the name,
+and moved one compact 20px status line above the actions. During review, Still
+usable shares that line. Status completion keeps card geometry stable.
+
+The two management/profile and review-completion browser journeys passed (93
+assertions), including compact metadata spacing at desktop, tablet and mobile
+widths plus unchanged card positions on acceptance. Typecheck, lint and
+`git diff --check` passed. Existing management and stable-gallery screenshots
+show the compact treatment.

@@ -77,18 +77,6 @@ export function AgentList({
             />
             <h3>{agent.name}</h3>
           </Link>
-          <p className={styles.status}>{agentActivity(agent)}</p>
-          <p
-            className={styles.acceptedVersion}
-            aria-hidden={
-              !agent.contentRevisionId || agent.reviewState === "accepted"
-            }
-            data-visible={Boolean(
-              agent.contentRevisionId && agent.reviewState !== "accepted",
-            )}
-          >
-            Current version stays usable
-          </p>
           <div className={styles.meta}>
             <p>
               {
@@ -103,6 +91,13 @@ export function AgentList({
             )}
             <p>{agent.voiceId ?? "Automatic voice"}</p>
           </div>
+          <p className={styles.status}>
+            <span>{agentActivity(agent)}</span>
+            {agent.contentRevisionId &&
+              (agent.reviewState === "reviewing" || agent.reviewState === "held") && (
+                <small>· Still usable</small>
+              )}
+          </p>
           <div className={styles.cardActions}>
             <button
               type="button"
