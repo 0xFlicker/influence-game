@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, waitFor, within, type RenderResult } from "@testing-library/react";
 import { Window as HappyDOMWindow } from "happy-dom";
-import { AgentForm } from "../app/dashboard/agents/agent-form";
+import { PLAYER_VOICES } from "@influence/engine/voice-catalog";
+import { AgentVoicePicker } from "../app/dashboard/agents/voice-audition-picker";
+import { AgentForm, mergeAgentDraft, type EditorSnapshot } from "../app/dashboard/agents/agent-form";
 import { InfluenceAuthContext, type InfluenceAuthState } from "../hooks/use-auth";
 import type { SavedAgent, AgentProfileWriteParams } from "../lib/api";
 
@@ -50,10 +52,10 @@ beforeEach(() => {
   }));
 });
 
-afterEach(() => {
+afterEach(async () => {
   globalThis.fetch = originalFetch;
   Object.defineProperty(globalThis, "localStorage", { configurable: true, value: originalLocalStorage });
-  cleanup();
+  await act(async()=>{cleanup();await new Promise(resolve=>setTimeout(resolve,0));});
   domWindow.close();
   Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
   Object.defineProperty(globalThis, "document", { configurable: true, value: originalDocument });
@@ -70,93 +72,14 @@ afterEach(() => {
   }
 });
 
-describe("AgentForm draft recovery", () => {
-  test("discards an unsaved model selection with the form", async () => {
-    domWindow.sessionStorage.removeItem(draftKey);
-    const submissions: AgentProfileWriteParams[] = [];
-    const mounted = await renderForm(false, async params => { submissions.push(params); });
-    const picker = mounted.getByRole("combobox", { name: "Preferred model" });
-    fireEvent.focus(picker);
-    fireEvent.input(picker, { target: { value: "DeepSeek" } });
-    await waitFor(() => expect(mounted.getByRole("option", { name: /DeepSeek Flash/ })).toBeTruthy());
-    fireEvent.click(mounted.getByRole("option", { name: /DeepSeek Flash/ }));
-    fireEvent.click(mounted.getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(mounted.getByRole("button", { name: "Discard" })).toBeTruthy());
-    fireEvent.click(mounted.getByRole("button", { name: "Discard" }));
-    expect(submissions).toHaveLength(0);
-    expect(domWindow.sessionStorage.getItem(draftKey)).toBeNull();
-    mounted.unmount();
-    const reopened = await renderForm(false);
-    expect((reopened.getByRole("combobox", { name: "Preferred model" }) as HTMLInputElement).value).toBe("Default — Let the House decide");
-  });
-
-  test("keeps model selection in the draft until Save and retains it after a failed save", async () => {
-    domWindow.sessionStorage.removeItem(draftKey);
-    const requests: string[] = [];
-    globalThis.fetch = (async (url: string | URL | Request) => {
-      requests.push(String(url));
-      return Response.json({});
-    }) as typeof fetch;
-    const submissions: AgentProfileWriteParams[] = [];
-    const mounted = await renderForm(false, async params => {
-      submissions.push(params);
-      if (submissions.length === 1) throw new Error("Save failed");
-    });
-    const picker = mounted.getByRole("combobox", { name: "Preferred model" }) as HTMLInputElement;
-    fireEvent.focus(picker);
-    fireEvent.input(picker, { target: { value: "DeepSeek" } });
-    await waitFor(() => expect(mounted.getByRole("option", { name: /DeepSeek Flash/ })).toBeTruthy());
-    fireEvent.click(mounted.getByRole("option", { name: /DeepSeek Flash/ }));
-    expect(picker.value).toBe("DeepSeek Flash");
-    expect(submissions).toHaveLength(0);
-    expect(requests).toHaveLength(0);
-    fireEvent.click(mounted.getByRole("button", { name: "Save strategy update" }));
-    await waitFor(() => expect(mounted.getByText("Save failed")).toBeTruthy());
-    expect(submissions[0]?.modelPreference).toEqual({ catalogId: "katana:deepseek-v4-flash" });
-    expect(submissions[0]?.strategyStyle).toBe(proposal);
-    expect(picker.value).toBe("DeepSeek Flash");
-    fireEvent.click(mounted.getByRole("button", { name: "Save strategy update" }));
-    await waitFor(() => expect(submissions).toHaveLength(2));
-    expect(submissions[1]?.modelPreference).toEqual(submissions[0]?.modelPreference);
-  });
-
-  test("applies a review draft without destabilizing Strategy status", async () => {
-    const mounted = await renderForm(true);
-    expect(mounted.getByLabelText("Saved local draft")).not.toBeNull();
-    expect(mounted.getByRole("button", { name: "Apply draft" })).not.toBeNull();
-    expect(mounted.getByRole("button", { name: "Clear draft" })).not.toBeNull();
-
-    const strategy = mounted.getByRole("textbox", { name: "Influence strategy" }) as HTMLTextAreaElement;
-    fireEvent.click(mounted.getByRole("button", { name: "Apply draft" }));
-    await waitFor(() => expect(strategy.value).toBe(draftStrategy));
-
-    expect(mounted.queryByLabelText("Saved local draft")).toBeNull();
-    expect((mounted.getByRole("button", { name: "Save strategy update" }) as HTMLButtonElement).disabled).toBe(false);
-    expect(mounted.getByText("Custom Strategy change ready to save.").className).toContain("min-h-5");
-  });
-
-  test("keeps a valid form savable while offering a draft and clears it explicitly", async () => {
-    const mounted = await renderForm(false);
-
-    expect(mounted.getByLabelText("Saved local draft")).not.toBeNull();
-    expect((mounted.getByRole("button", { name: "Save strategy update" }) as HTMLButtonElement).disabled).toBe(false);
-
-    fireEvent.click(mounted.getByRole("button", { name: "Clear draft" }));
-    await waitFor(() => expect(mounted.queryByLabelText("Saved local draft")).toBeNull());
-
-    expect(domWindow.sessionStorage.getItem(draftKey)).toBeNull();
-    expect((mounted.getByRole("textbox", { name: "Influence strategy" }) as HTMLTextAreaElement).value).toBe(proposal);
-  });
-});
-
-async function renderForm(requireChange: boolean, onSubmit: (params: AgentProfileWriteParams) => Promise<void> = async () => {}, emptyText = false, initialOverrides: Partial<SavedAgent> = {}, scope = draftScope): Promise<RenderResult> {
+async function renderForm(requireChange: boolean, onSubmit: (params: AgentProfileWriteParams) => Promise<void> = async () => {}, emptyText = false, initialOverrides: Partial<SavedAgent> = {}, scope = draftScope, signedIn = false): Promise<RenderResult> {
   const fetcher=globalThis.fetch;
   globalThis.fetch=Object.assign(async (input:RequestInfo|URL,init?:RequestInit) => String(input).endsWith("/voice")
     ? Response.json({assignment:{voiceId:"ara"},voices:[{id:"ara",name:"Ara",gender:"female"}]}) : fetcher(input,init),{preconnect:originalFetch.preconnect}) as typeof fetch;
   let mounted!: RenderResult;
   await act(async () => {
     mounted = render(
-      <InfluenceAuthContext.Provider value={auth}>
+      <InfluenceAuthContext.Provider value={signedIn?{...auth,authenticated:true,ready:true}:auth}>
         <AgentForm
           initial={{ ...(emptyText ? { ...agent(), name: "", backstory: "", personality: "", strategyStyle: "" } : agent()), ...initialOverrides }}
           profileRequest={scope === "edit:agent-1"}
@@ -178,7 +101,7 @@ async function renderForm(requireChange: boolean, onSubmit: (params: AgentProfil
   return mounted;
 }
 
-function snapshot(strategyStyle: string) {
+function snapshot(strategyStyle: string): EditorSnapshot {
   return {
     name: "Arden",
     backstory: "A careful negotiator.",
@@ -211,432 +134,91 @@ function agent(): SavedAgent {
 }
 
 
-describe("atomic character draft generation", () => {
-  async function ready(onSubmit?: (params: AgentProfileWriteParams) => Promise<void>) {
-    domWindow.sessionStorage.removeItem(draftKey);
-    return renderForm(false, onSubmit);
-  }
-  async function sendChangeRequest(view: RenderResult, prompt = "Make Arden more decisive in Mingle.") {
-    const input = view.getByRole("textbox", { name: "What would you like to change about this Agent?" });
-    expect((input as HTMLTextAreaElement).disabled).toBe(false);
-    await act(async () => {
-      fireEvent.click(input);
-      fireEvent.focus(input);
-      await Promise.resolve();
-    });
-    await waitFor(() => expect(view.getByRole("button", { name: "Send Agent request" })).toBeTruthy());
-    await act(async () => {
-      fireEvent.input(input, { target: { value: prompt } });
-      await Promise.resolve();
-    });
-    await waitFor(() => {
-      expect((view.getByRole("textbox", { name: "What would you like to change about this Agent?" }) as HTMLTextAreaElement).value).toBe(prompt);
-      expect((view.getByRole("button", { name: "Send Agent request" }) as HTMLButtonElement).disabled).toBe(false);
-    });
-    fireEvent.click(view.getByRole("button", { name: "Send Agent request" }));
-  }
-  test("missing gender is visible beside save and AI completes missing identity without replacing populated fields or images", async () => {
-    domWindow.sessionStorage.removeItem(draftKey);
-    const submissions: AgentProfileWriteParams[] = [];
-    const calls: { url: string; body: Record<string, unknown> }[] = [];
-    globalThis.fetch = (async (url: string, init?: RequestInit) => {
-      calls.push({ url: String(url), body: JSON.parse(String(init?.body)) });
-      return Response.json({ name: "Unwanted rename", personality: "Unwanted personality", backstory: "Unwanted backstory", strategyStyle: "Unwanted strategy", personaKey: "loyalist", gender: "female", performanceInstructions: "Soft voice", visualDesign: "A blue coat", werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips: [] });
-    }) as unknown as typeof fetch;
-    const view = await renderForm(false, async params => { submissions.push(params); }, false, { gender: null, personaKey: null, fullBodyReferenceUrl: "/existing-reference.png" });
-    const workshop = view.getByRole("region", { name: "Agent Workshop" });
-    fireEvent.click(view.getByRole("button", { name: "Save strategy update" }));
-    await waitFor(() => expect(workshop.querySelector('[role="alert"]')?.textContent).toContain("Select a gender"));
-    expect(submissions).toHaveLength(0);
-    expect(calls).toHaveLength(0);
-    // Even when focus leaves the composer and collapses it, the save feedback remains.
-    fireEvent.blur(workshop, { relatedTarget: view.getByRole("radio", { name: "Male" }) });
-    expect(workshop.querySelector('[role="alert"]')?.textContent).toContain("Select a gender");
-    fireEvent.click(view.getByRole("button", { name: "Fill missing details" }));
-    await waitFor(() => expect(view.getByRole("radio", { name: "Female" }).getAttribute("aria-checked")).toBe("true"));
-    expect(calls).toHaveLength(1);
-    expect(calls[0]!.url).toContain("/generate");
-    expect(calls[0]!.body).toMatchObject({ selectedFields: ["personaKey", "gender", "performanceInstructions", "visualDesign"], allowPersonaChange: true });
-    expect(calls[0]!.body.existingProfile).not.toHaveProperty("personaKey");
-    expect(calls[0]!.body.existingProfile).not.toHaveProperty("gender");
-    expect(workshop.querySelector('[role="alert"]')).toBeNull();
-    expect((view.getByRole("textbox", { name: /Agent name/i }) as HTMLInputElement).value).toBe("Arden");
-    expect((view.getByRole("textbox", { name: "Personality" }) as HTMLTextAreaElement).value).toBe("Calm and precise.");
-    expect(view.queryByRole("button", { name: "Fill missing details" })).toBeNull();
-    fireEvent.click(view.getByRole("button", { name: "Save strategy update" }));
-    await waitFor(() => expect(submissions).toHaveLength(1));
-    expect(submissions[0]).toMatchObject({ gender: "female", personaKey: "loyalist", name: "Arden", personality: "Calm and precise.", backstory: "A careful negotiator.", strategyStyle: proposal, avatarUrl: "/avatars/arden.png", fullBodyReferenceUrl: "/existing-reference.png" });
-  });
-
-  test("failed saves stay visible in a collapsed Workshop and allow retry", async () => {
-    const view = await ready(async () => { throw new Error("Save unavailable. Try again."); });
-    const workshop = view.getByRole("region", { name: "Agent Workshop" });
-    fireEvent.blur(workshop, { relatedTarget: view.getByRole("textbox", { name: /Agent name/i }) });
-    fireEvent.click(view.getByRole("button", { name: "Save strategy update" }));
-    await waitFor(() => expect(workshop.querySelector('[role="alert"]')?.textContent).toBe("Save unavailable. Try again."));
-    expect(view.getByRole("button", { name: "Save strategy update" }).hasAttribute("disabled")).toBe(false);
-  });
-  test("in-flight generation permits draft saving but blocks profile submission; cancellation is confirmed and late results are fenced", async () => {
-    let resolve!: (response: Response) => void;
-    globalThis.fetch = (() => new Promise<Response>((done) => { resolve = done; })) as unknown as typeof fetch;
-    const submissions: AgentProfileWriteParams[] = [];
-    const view = await ready(async (params) => { submissions.push(params); });
-    fireEvent.click(view.getByRole("button", { name: "Generate full-body reference" }));
-    await waitFor(() => expect(view.getByRole("button", { name: "Save strategy update" }).hasAttribute("disabled")).toBe(true));
-    fireEvent.click(view.getByRole("button", { name: "Save draft" }));
-    expect(JSON.parse(domWindow.sessionStorage.getItem(draftKey)!).generationDeadline).toBeGreaterThan(Date.now());
-    expect(submissions).toHaveLength(0);
-    fireEvent.click(view.getByRole("button", { name: "Cancel generation" }));
-    expect(view.getByRole("dialog").textContent).toContain("may still consume your allowance");
-    fireEvent.click(view.getByRole("button", { name: "Keep editing" }));
-    expect(view.getByRole("button", { name: "Save strategy update" }).hasAttribute("disabled")).toBe(true);
-    fireEvent.click(view.getByRole("button", { name: "Cancel generation" }));
-    fireEvent.click(view.getAllByRole("button", { name: "Cancel generation" }).at(-1)!);
-    await act(async () => { resolve(Response.json({ fullBodyReferenceUrl: "/late.png" })); });
-    fireEvent.click(view.getByRole("button", { name: "Save draft" }));
-    const stored = JSON.parse(domWindow.sessionStorage.getItem(draftKey)!);
-    expect(stored.current.fullBodyReferenceUrl).toBeNull();
-    expect(stored.unfinishedReplacement).toBe(true);
-    fireEvent.click(view.getByRole("button", { name: "Save strategy update" }));
-    expect(view.getByRole("dialog").textContent).toContain("Save without");
-    fireEvent.click(view.getByRole("button", { name: "Keep editing" }));
-    expect(submissions).toHaveLength(0);
-    fireEvent.click(view.getByRole("button", { name: "Save strategy update" }));
-    fireEvent.click(view.getByRole("button", { name: "Save selected assets" }));
-    await waitFor(() => expect(submissions).toHaveLength(1));
-    expect(submissions[0]!.fullBodyReferenceUrl).toBeNull();
-    expect(submissions[0]!.avatarGenerationRequestId).toBeUndefined();
-    await waitFor(() => expect(domWindow.sessionStorage.getItem(`${draftKey}:visual-reference`)).toBeNull());
-    expect(domWindow.sessionStorage.getItem(`${draftKey}:interrupted`)).toBeNull();
-    expect(domWindow.sessionStorage.getItem(draftKey)).toBeNull();
-    view.unmount();
-    const reopened = await renderForm(false);
-    let refinements = 0;
-    globalThis.fetch = (async () => { refinements++; return Response.json({ error: "Test stops before image generation" }, { status: 503 }); }) as unknown as typeof fetch;
-    await sendChangeRequest(reopened);
-    await waitFor(() => expect(refinements).toBe(1));
-  });
-  test.each(["clear", "discard"])("%s retires an abandoned reference and permits AI refinement", async (action) => {
-    domWindow.sessionStorage.setItem(`${draftKey}:visual-reference`, JSON.stringify({ requestId: "abandoned-request" }));
-    domWindow.sessionStorage.setItem(`${draftKey}:interrupted`, String(Date.now()));
-    const view = await renderForm(false);
-    if (action === "clear") {
-      fireEvent.click(view.getByRole("button", { name: "Clear draft" }));
-    } else {
-      fireEvent.click(view.getByRole("button", { name: "Apply draft" }));
-      fireEvent.click(view.getByRole("button", { name: "Cancel" }));
-      fireEvent.click(view.getByRole("button", { name: "Keep editing" }));
-      expect(domWindow.sessionStorage.getItem(`${draftKey}:visual-reference`)).not.toBeNull();
-      fireEvent.click(view.getByRole("button", { name: "Cancel" }));
-      fireEvent.click(view.getByRole("button", { name: "Discard" }));
-    }
-    expect(domWindow.sessionStorage.getItem(`${draftKey}:visual-reference`)).toBeNull();
-    expect(domWindow.sessionStorage.getItem(`${draftKey}:interrupted`)).toBeNull();
-    let refinements = 0;
-    globalThis.fetch = (async () => { refinements++; return Response.json({ error: "Test stops before image generation" }, { status: 503 }); }) as unknown as typeof fetch;
-    if (action === "discard") {
-      view.unmount();
-      const reopened = await renderForm(false);
-      await sendChangeRequest(reopened);
-    } else {
-      await sendChangeRequest(view);
-    }
-    await waitFor(() => expect(refinements).toBe(1));
-  });
-  test.each([false, true])("AI completes every field and both images while preserving the selected reference (text initially empty: %s)", async (emptyText) => {
-    const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
-    const profile = { name: "Arden Vale", backstory: "New history", personality: "Calm", strategyStyle: "Alliance first", personaKey: "diplomat", gender: "non-binary", performanceInstructions: "Measured delivery", visualDesign: "A green coat", werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips: ["I have a plan.", "Let's make this interesting.", "I keep my promises and my options open."] };
-    globalThis.fetch = (async (url: string, init?: RequestInit) => {
-      if (String(url).endsWith("/edit-assistant")) return Response.json({ tool: "update_character", fields: ["name", "backstory", "personality", "strategyStyle", "personaKey", "gender", "performanceInstructions", "visualDesign"] });
-      if (String(url).endsWith("/portrait-crop")) {
-        const { headRectangle, ...portraitCrop } = JSON.parse(String(init?.body));
-        return Response.json({ avatarUrl: "/face.png", portraitCrop, headPosition: { sourceUrl: portraitCrop.sourceUrl, sourceHash: "a".repeat(64), sourceWidth: 1000, sourceHeight: 1500, rect: headRectangle } });
-      }
-      calls.push({ url: String(url), body: JSON.parse(String(init?.body)) });
-      return Response.json(String(url).endsWith("/generate") ? profile : { fullBodyReferenceUrl: "/body.png", avatarUrl: "/face.png", portraitCrop: { sourceUrl: "/body.png", x: 0.3, y: 0.05, width: 0.4, height: 0.3 }, cropWarning: null });
-    }) as unknown as typeof fetch;
-    const submissions: AgentProfileWriteParams[] = [];
-    domWindow.sessionStorage.removeItem(draftKey);
-    const view = await renderForm(false, async (params) => { submissions.push(params); }, emptyText);
-    expect(view.queryByLabelText(/Also generate/)).toBeNull();
-    await sendChangeRequest(view, emptyText ? "Create a charming negotiator." : "Update the character and their visual presentation.");
-    await waitFor(() => expect(calls).toHaveLength(2));
-    await confirmHeadInEditor(view);
-    await waitFor(() => expect(view.getByRole("button", { name: "Save strategy update" }).hasAttribute("disabled")).toBe(false));
-    expect((view.getByLabelText("Character performance") as HTMLTextAreaElement).value).toBe(profile.performanceInstructions);
-    expect((view.getByLabelText("Visual design") as HTMLTextAreaElement).value).toBe(profile.visualDesign);
-    expect(calls[0]!.body.existingProfile).toMatchObject({ avatarUrl: "/avatars/arden.png" });
-    expect(calls[1]!.body).toMatchObject({ visualDesign: profile.visualDesign, performanceInstructions: profile.performanceInstructions, avatarUrl: "/avatars/arden.png" });
-    expect(submissions).toHaveLength(0);
-    fireEvent.click(view.getByRole("button", { name: "Save strategy update" }));
-    await waitFor(() => expect(submissions).toHaveLength(1));
-    const savedProfile = { name: profile.name, backstory: profile.backstory, personality: profile.personality, strategyStyle: profile.strategyStyle, personaKey: profile.personaKey, gender: profile.gender, performanceInstructions: profile.performanceInstructions, visualDesign: profile.visualDesign };
-    expect(submissions[0]).toMatchObject({ ...savedProfile, avatarUrl: "/face.png", fullBodyReferenceUrl: "/body.png", portraitCrop: { sourceUrl: "/body.png" } });
-  });
-  test("a strategy request preserves shared fields without dispatching an image update", async () => {
-    domWindow.sessionStorage.removeItem(draftKey);
-    const calls: string[] = [];
-    globalThis.fetch = (async (url: string) => {
-      calls.push(String(url));
-      if (String(url).endsWith("/edit-assistant")) return Response.json({ tool: "update_character", fields: ["strategyStyle"] });
-      return Response.json({ name: "Unwanted rename", personality: "Unwanted rewrite", backstory: "Unwanted story", strategyStyle: "Form a careful alliance.", personaKey: "diplomat", gender: "non-binary", performanceInstructions: "Soft voice", visualDesign: "A blue coat", werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips: [] });
-    }) as unknown as typeof fetch;
-    const view = await renderForm(false);
-    await sendChangeRequest(view, "Make the strategy more cautious.");
-    await waitFor(() => expect(view.getByText(/This character still needs a full-body reference/)).toBeTruthy());
-    expect(calls).toHaveLength(2);
-    expect(calls.some(url => url.endsWith("/visual-reference"))).toBe(false);
-    expect((view.getByLabelText("Visual design") as HTMLTextAreaElement).value).toBe("");
-    expect((view.getByRole("textbox", { name: /Agent name/i }) as HTMLInputElement).value).not.toBe("Unwanted rename");
-  });
-
-  test("Werewolf strategy edits preserve Influence notes and shared details through save", async () => {
-    domWindow.sessionStorage.removeItem(draftKey);
-    const calls: { url: string; body: Record<string, unknown> }[] = [];
-    const submissions: AgentProfileWriteParams[] = [];
-    const notes = "As village, compare claims. As wolf, keep a consistent story.";
-    globalThis.fetch = (async (url: string, init?: RequestInit) => {
-      calls.push({ url: String(url), body: JSON.parse(String(init?.body)) });
-      if (String(url).endsWith("/edit-assistant")) return Response.json({ tool: "update_character", fields: ["werewolfStrategyStyle"] });
-      return Response.json({ name: "Unwanted rename", personality: "Unwanted rewrite", backstory: "Unwanted history", strategyStyle: "Unwanted Influence rewrite", werewolfStrategyStyle: notes, personaKey: "aggressive", gender: "female", performanceInstructions: "Unwanted performance", visualDesign: "Unwanted appearance", introQuips: ["One", "Two", "Three"] });
-    }) as unknown as typeof fetch;
-    const view = await renderForm(false, async params => { submissions.push(params); });
-    expect(view.getByText("Preview archetype default")).toBeTruthy();
-    await sendChangeRequest(view, "Give this character a cautious Werewolf strategy.");
-    await waitFor(() => expect((view.getByLabelText("Werewolf strategy") as HTMLTextAreaElement).value).toBe(notes));
-    expect(calls).toHaveLength(2);
-    expect(calls[0]?.body.context).toMatchObject({ werewolfStrategyStyle: "", strategyStyle: proposal });
-    expect(calls[1]?.body).toMatchObject({ selectedFields: ["werewolfStrategyStyle"], existingProfile: { werewolfStrategyStyle: "", strategyStyle: proposal } });
-    expect((view.getByLabelText("Influence strategy") as HTMLTextAreaElement).value).toBe(proposal);
-    expect((view.getByLabelText("Visual design") as HTMLTextAreaElement).value).toBe("");
-    expect((view.getByLabelText("Character performance") as HTMLTextAreaElement).value).toBe("");
-    expect(view.queryByText("Preview archetype default")).toBeNull();
-    fireEvent.click(view.getByRole("button", { name: "Save strategy update" }));
-    await waitFor(() => expect(submissions).toHaveLength(1));
-    expect(submissions[0]).toMatchObject({ name: "Arden", personality: "Calm and precise.", strategyStyle: proposal, werewolfStrategyStyle: notes, personaKey: "diplomat", gender: "non-binary", avatarUrl: "/avatars/arden.png" });
-  });
-
-  test("affirming the visual offer routes with context and preserves populated character fields", async () => {
-    domWindow.sessionStorage.removeItem(draftKey);
-    let routed: Record<string, unknown> | undefined;
-    let generated: Record<string, unknown> | undefined;
-    globalThis.fetch = (async (url: string, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body));
-      if (String(url).endsWith("/edit-assistant")) { routed = body; return Response.json({ tool: "update_visuals", fields: ["performanceInstructions", "visualDesign"] }); }
-      if (String(url).endsWith("/generate")) {
-        generated = body;
-        return Response.json({ name: "Unwanted rename", personality: "Unwanted rewrite", backstory: "Unwanted story", strategyStyle: "Unwanted strategy", personaKey: "diplomat", gender: "non-binary", performanceInstructions: "Soft voice", visualDesign: "A blue coat", werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips: [] });
-      }
-      return Response.json({ error: "Provider unavailable" }, { status: 503 });
-    }) as unknown as typeof fetch;
-    const view = await renderForm(false);
-    expect(view.getByText(/Would you like me to update their visuals/)).toBeTruthy();
-    await sendChangeRequest(view, "Yes please");
-    await waitFor(() => expect(generated).toBeDefined());
-    expect(routed).toMatchObject({ message: "Yes please", context: { hasFullBody: false } });
-    expect(JSON.stringify(routed?.history)).toContain("Would you like me to update their visuals");
-    expect(generated?.selectedFields).toEqual(["performanceInstructions", "visualDesign"]);
-    await waitFor(() => expect(view.getByRole("textbox", { name: /Agent name/i }).getAttribute("value") ?? (view.getByRole("textbox", { name: /Agent name/i }) as HTMLInputElement).value).not.toBe("Unwanted rename"));
-    expect((view.getByLabelText("Visual design") as HTMLTextAreaElement).value).toBe("A blue coat");
-  });
-
-  test("the larger portrait editor exports the selected source crop into the draft only", async () => {
-    const submissions: AgentProfileWriteParams[] = [];
-    let cropBody: Record<string, unknown> | undefined;
-    globalThis.fetch = (async (_url, options) => {
-      cropBody = JSON.parse(String(options?.body));
-      return Response.json({ avatarUrl: "/manual-face.png", portraitCrop: cropBody });
-    }) as typeof fetch;
-    const view = await ready(async (params) => { submissions.push(params); });
-    fireEvent.click(view.getByRole("button", { name: "Edit Arden portrait" }));
-    const source = view.getByAltText("Arden full image");
-    Object.defineProperty(source, "naturalWidth", { value: 1000 });
-    Object.defineProperty(source, "naturalHeight", { value: 1500 });
-    fireEvent.load(source);
-    fireEvent.input(view.getByRole("slider", { name: "Vertical position" }), { target: { value: "100" } });
-    fireEvent.click(view.getByRole("button", { name: "Use portrait in draft" }));
-    await waitFor(() => expect(view.container.querySelector("dialog") === null).toBe(true));
-    expect(cropBody).toMatchObject({ sourceUrl: "/avatars/arden.png", y: 100 / 1500 });
-    expect(Number(cropBody?.width) * 1000).toBeCloseTo(Number(cropBody?.height) * 1500);
-    expect(submissions).toHaveLength(0);
-    fireEvent.click(view.getByRole("button", { name: "Save strategy update" }));
-    await waitFor(() => expect(submissions).toHaveLength(1));
-    expect(submissions[0]).toMatchObject({ avatarUrl: "/manual-face.png", portraitCrop: cropBody });
-  });
-  test.each([false, true])("restoring a new full-body draft preserves head proposal and confirmation: %s", async confirmed => {
-    const head = { sourceUrl: "/draft-body.png", sourceHash: "a".repeat(64), sourceWidth: 1000, sourceHeight: 1500, rect: { x: .35, y: .04, width: .3, height: .16 } };
-    const stored = JSON.parse(domWindow.sessionStorage.getItem(draftKey)!);
-    stored.current = { ...stored.current, fullBodyReferenceUrl: head.sourceUrl, headPosition: confirmed ? head : null, headSuggestion: confirmed ? null : head };
-    domWindow.sessionStorage.setItem(draftKey, JSON.stringify(stored));
-    const view = await renderForm(false);
-    fireEvent.click(view.getByRole("button", { name: "Apply draft" }));
-    await waitFor(() => expect(view.getByRole("button", { name: "Save strategy update" }).hasAttribute("disabled")).toBe(!confirmed));
-    fireEvent.click(view.getByRole("button", { name: "Save draft" }));
-    const recovered = JSON.parse(domWindow.sessionStorage.getItem(draftKey)!).current;
-    expect(recovered.headPosition).toEqual(confirmed ? head : null);
-    expect(recovered.headSuggestion).toEqual(confirmed ? null : head);
-  });
-  test("successful generation stays in the draft until final submission", async () => {
-    globalThis.fetch = (async (url: string | URL | Request, options?: RequestInit) => {
-      if (String(url).endsWith("/portrait-crop")) {
-        const { headRectangle, ...portraitCrop } = JSON.parse(String(options?.body));
-        return Response.json({ avatarUrl: "/portrait.png", portraitCrop, headPosition: { sourceUrl: portraitCrop.sourceUrl, sourceHash: "a".repeat(64), sourceWidth: 1000, sourceHeight: 1500, rect: headRectangle } });
-      }
-      return Response.json({ fullBodyReferenceUrl: "/completed.png", avatarUrl: "/portrait.png", portraitCrop: { sourceUrl: "/completed.png", x: 0.3, y: 0.1, width: 0.4, height: 0.3 }, cropWarning: null }); }) as unknown as typeof fetch;
-    const submissions: AgentProfileWriteParams[] = [];
-    const view = await ready(async (params) => { submissions.push(params); });
-    fireEvent.click(view.getByRole("button", { name: "Generate full-body reference" }));
-    await confirmHeadInEditor(view);
-    await waitFor(() => expect(view.getByRole("button", { name: "Save strategy update" }).hasAttribute("disabled")).toBe(false));
-    expect(submissions).toHaveLength(0);
-    fireEvent.click(view.getByRole("button", { name: "Save strategy update" }));
-    await waitFor(() => expect(submissions).toHaveLength(1));
-    expect(submissions[0]!.fullBodyReferenceUrl).toBe("/completed.png");
-    expect(submissions[0]!.submissionId).toBeTruthy();
-  });
-  test("a generation failure requires confirmation and a failed save retains the same submission ID", async () => {
-    globalThis.fetch = (async () => Response.json({ error: "Provider unavailable" }, { status: 503 })) as unknown as typeof fetch;
-    const submissions: AgentProfileWriteParams[] = [];
-    const view = await ready(async (params) => { submissions.push(params); throw new Error("Save unavailable"); });
-    fireEvent.click(view.getByRole("button", { name: "Generate full-body reference" }));
-    await waitFor(() => expect(view.getByRole("alert").textContent).toContain("Provider unavailable"));
-    for (let i = 0; i < 2; i++) {
-      fireEvent.click(view.getByRole("button", { name: "Save strategy update" }));
-      fireEvent.click(view.getByRole("button", { name: "Save selected assets" }));
-      await waitFor(() => expect(submissions).toHaveLength(i + 1));
-      await waitFor(() => expect(view.getByRole("button", { name: "Save strategy update" }).hasAttribute("disabled")).toBe(false));
-    }
-    expect(submissions[0]!.submissionId).toBe(submissions[1]!.submissionId);
-    expect(domWindow.sessionStorage.getItem(draftKey)).not.toBeNull();
-    expect(domWindow.sessionStorage.getItem(`${draftKey}:visual-reference`)).not.toBeNull();
-  });
-  test("restoring an interrupted upload preserves the old assets and requires confirmation", async () => {
-    const stored = JSON.parse(domWindow.sessionStorage.getItem(draftKey)!);
-    stored.uploadPending = true;
-    domWindow.sessionStorage.setItem(draftKey, JSON.stringify(stored));
-    const submissions: AgentProfileWriteParams[] = [];
-    const view = await renderForm(false, async (params) => { submissions.push(params); });
-    fireEvent.click(view.getByRole("button", { name: "Apply draft" }));
-    expect(view.getByText(/previous preparation was interrupted/)).toBeTruthy();
-    fireEvent.click(view.getByRole("button", { name: "Save strategy update" }));
-    expect(submissions).toHaveLength(0);
-    fireEvent.click(view.getByRole("button", { name: "Save selected assets" }));
-    await waitFor(() => expect(submissions).toHaveLength(1));
-    expect(submissions[0]!.avatarUrl).toBe("/avatars/arden.png");
-    expect(submissions[0]!.fullBodyReferenceUrl).toBeNull();
-  });
-  test("the cancellation marker fences a pending portrait when reopening a draft", async () => {
-    const stored = JSON.parse(domWindow.sessionStorage.getItem(draftKey)!);
-    stored.generationDeadline = Date.now() + 60_000;
-    stored.draftAvatarCompletion = { status: "accepted", generationRequestId: "pending-id" };
-    domWindow.sessionStorage.setItem(draftKey, JSON.stringify(stored));
-    domWindow.sessionStorage.setItem(`${draftKey}:interrupted`, String(Date.now()));
-    let calls = 0;
-    globalThis.fetch = (async () => { calls++; return Response.json({}); }) as unknown as typeof fetch;
-    const view = await renderForm(false);
-    fireEvent.click(view.getByRole("button", { name: "Apply draft" }));
-    fireEvent.click(view.getByRole("button", { name: "Save draft" }));
-    const restored = JSON.parse(domWindow.sessionStorage.getItem(draftKey)!);
-    expect(restored.draftAvatarCompletion).toBeNull();
-    expect(restored.current.explicitAvatarUrl).toBe("/avatars/arden.png");
-    expect(calls).toBe(0);
-  });
-  test("a pending portrait times out and cannot apply a late poll response", async () => {
-    const stored = JSON.parse(domWindow.sessionStorage.getItem(draftKey)!);
-    stored.generationDeadline = Date.now() + 3_000;
-    stored.draftAvatarCompletion = { status: "accepted", generationRequestId: "pending-id" };
-    domWindow.sessionStorage.setItem(draftKey, JSON.stringify(stored));
-    let resolve!: (response: Response) => void;
-    globalThis.fetch = (() => new Promise<Response>((done) => { resolve = done; })) as unknown as typeof fetch;
-    const view = await renderForm(false);
-    fireEvent.click(view.getByRole("button", { name: "Apply draft" }));
-    await waitFor(() => expect(view.getByRole("button", { name: "Save strategy update" }).hasAttribute("disabled")).toBe(true));
-    await waitFor(() => expect(view.getByText(/Generation timed out/)).toBeTruthy(), { timeout: 4_000 });
-    await act(async () => { resolve(Response.json({ avatarCompletion: { status: "completed", avatarUrl: "/too-late.png" } })); });
-    fireEvent.click(view.getByRole("button", { name: "Save draft" }));
-    const result = JSON.parse(domWindow.sessionStorage.getItem(draftKey)!);
-    expect(result.current.explicitAvatarUrl).toBe("/avatars/arden.png");
-    expect(result.draftAvatarUrl).toBeUndefined();
-    expect(result.unfinishedReplacement).toBe(true);
-  });
-  test("agent editing has no portrait or full-body file input", async () => {
-    const view = await ready();
-    expect(view.container.querySelector('input[type="file"]')).toBeNull();
-    expect(view.queryByRole("button", { name: "Change portrait" })).toBeNull();
-    expect(view.getByRole("button", { name: "Adjust framing" })).toBeTruthy();
-  });
-  test("expired restored generations cannot poll or apply late assets", async () => {
-    const stored = JSON.parse(domWindow.sessionStorage.getItem(draftKey)!);
-    stored.generationDeadline = Date.now() - 1;
-    stored.draftAvatarCompletion = { status: "accepted", generationRequestId: "pending-id" };
-    domWindow.sessionStorage.setItem(draftKey, JSON.stringify(stored));
-    let calls = 0;
-    globalThis.fetch = (async () => { calls++; return Response.json({}); }) as unknown as typeof fetch;
-    const view = await renderForm(false);
-    fireEvent.click(view.getByRole("button", { name: "Apply draft" }));
-    expect(view.getByText(/previous preparation was interrupted/)).toBeTruthy();
-    fireEvent.click(view.getByRole("button", { name: "Save strategy update" }));
-    expect(view.getByRole("dialog").textContent).toContain("Save without");
-    expect(calls).toBe(0);
-  });
+describe("agent workspace drafts",()=>{
+ async function ready(onSubmit?: (params:AgentProfileWriteParams)=>Promise<void>,overrides:Partial<SavedAgent>={}){domWindow.sessionStorage.removeItem(draftKey);return renderForm(false,onSubmit,false,overrides);}
+ async function save(view:RenderResult){fireEvent.click(view.getByRole("button",{name:"Review"}));await waitFor(()=>expect(view.getByRole("region",{name:"Review changes"})).toBeTruthy());fireEvent.click(within(view.getByRole("region",{name:"Review changes"})).getByRole("button",{name:"Save"}));}
+ test("model selection stays in the draft and survives a failed submission with the same identity",async()=>{
+  const submissions:AgentProfileWriteParams[]=[];
+  const view=await ready(async params=>{submissions.push(params);if(submissions.length===1)throw new Error("Save failed");});
+  const picker=view.getByRole("combobox",{name:"Preferred model"});fireEvent.focus(picker);fireEvent.input(picker,{target:{value:"DeepSeek"}});
+  fireEvent.click(await view.findByRole("option",{name:/DeepSeek Flash/}));expect(submissions).toHaveLength(0);
+  await save(view);await waitFor(()=>expect(view.getAllByText("Save failed").length).toBeGreaterThan(0));
+  expect(submissions[0]?.modelPreference).toEqual({catalogId:"katana:deepseek-v4-flash"});
+  fireEvent.click(within(view.getByRole("region",{name:"Review changes"})).getByRole("button",{name:"Save"}));await waitFor(()=>expect(submissions).toHaveLength(2));
+  expect(submissions[1]?.submissionId).toBe(submissions[0]?.submissionId);
+ });
+ test("Guided and Advanced share fields and retain the selected image for text edits",async()=>{
+  const view=await ready();{const input=view.getByLabelText("Personality");input.focus();fireEvent.input(input,{target:{value:"A careful skeptic."}});fireEvent.keyUp(input,{key:"."});}
+  fireEvent.click(view.getByRole("button",{name:"Guided"}));fireEvent.click(view.getByRole("button",{name:"Advanced"}));
+  expect((view.getByLabelText("Personality") as HTMLTextAreaElement).value).toBe("A careful skeptic.");
+  expect(view.queryByText("Generating image")).toBeNull();expect(view.container.querySelector('img[src="/avatars/arden.png"]')).toBeTruthy();
+ });
+ test("review contains the real old and new text and can undo a field",async()=>{
+  const view=await ready();{const input=view.getByLabelText("Personality");input.focus();fireEvent.input(input,{target:{value:"Decisive."}});fireEvent.keyUp(input,{key:"."});}fireEvent.click(view.getByRole("button",{name:"Review"}));
+  const review=view.getByRole("region",{name:"Review changes"});expect(review.textContent).toContain("Calm and precise.");expect(review.textContent).toContain("Decisive.");
+  fireEvent.click(within(review).getAllByRole("button",{name:"Undo"})[0]!);expect((view.container.querySelector("#agent-personality") as HTMLTextAreaElement).value).toBe("Calm and precise.");
+ });
+ test("restores a draft and offers both strategies without mixing their content",async()=>{
+  const view=await renderForm(true);fireEvent.click(view.getByRole("button",{name:"Resume"}));fireEvent.click(view.getByRole("button",{name:"Strategy"}));
+  expect((view.getByLabelText("Influence strategy") as HTMLTextAreaElement).value).toBe(draftStrategy);
+  expect((view.getByLabelText("Werewolf strategy") as HTMLTextAreaElement).value).toBe("");
+  expect(view.queryByLabelText("Saved local draft")).toBeNull();
+ });
+ test("discard removes local recovery while a failed save preserves it",async()=>{
+  const view=await ready(async()=>{throw new Error("Unavailable");});{const input=view.getByLabelText("Agent name");input.focus();fireEvent.input(input,{target:{value:"New Arden"}});fireEvent.keyUp(input,{key:"n"});}await save(view);
+  await waitFor(()=>expect(view.getAllByText("Unavailable").length).toBeGreaterThan(0));expect(domWindow.sessionStorage.getItem(draftKey)).not.toBeNull();
+  fireEvent.click(view.getByRole("button",{name:"Cancel"}));fireEvent.click(view.getByRole("button",{name:"Discard"}));await waitFor(()=>expect(domWindow.sessionStorage.getItem(draftKey)).toBeNull());
+ });
+ test("voice auditions and selection are separate and do not submit the profile",async()=>{
+  const submissions:AgentProfileWriteParams[]=[];const view=await ready(async params=>{submissions.push(params);});fireEvent.click(view.getByRole("button",{name:"Voice"}));
+  expect(view.getAllByRole("button",{name:/Play /}).length).toBeGreaterThan(0);const option=view.getByRole("button",{name:"Ara"});fireEvent.click(option);expect(submissions).toHaveLength(0);
+  await save(view);await waitFor(()=>expect(submissions).toHaveLength(1));expect(submissions[0]?.voiceId).toBe("ara");
+ });
+ test("missing gender is validated before committing a submission",async()=>{
+  const submissions:AgentProfileWriteParams[]=[];const view=await ready(async params=>{submissions.push(params);},{gender:null});await save(view);
+  await waitFor(()=>expect(view.getByText("Select a gender for this Agent.")).toBeTruthy());expect(submissions).toHaveLength(0);
+ });
+ test("a new selected body requires exact head confirmation before review",async()=>{
+  domWindow.sessionStorage.setItem(draftKey,JSON.stringify({version:4,savedAt:new Date().toISOString(),creationRequestId:"11111111-1111-4111-8111-111111111111",base:snapshot(proposal),current:{...snapshot(proposal),fullBodyReferenceUrl:"/new-body.webp",headSuggestion:{sourceUrl:"/new-body.webp",sourceHash:"a".repeat(64),sourceWidth:1024,sourceHeight:1536,rect:{x:.3,y:.05,width:.3,height:.2}}}}));
+  const view=await renderForm(false);fireEvent.click(view.getByRole("button",{name:"Resume"}));expect((view.getByRole("button",{name:"Review"}) as HTMLButtonElement).disabled).toBe(true);
+ });
 });
 
-async function confirmHeadInEditor(view: RenderResult) {
-  await waitFor(() => expect(view.getByRole("dialog")).toBeTruthy());
-  const editor = within(view.getByRole("dialog"));
-  expect(view.getByRole("button", { name: "Save strategy update" }).hasAttribute("disabled")).toBe(true);
-  const source = view.getByAltText(/full image$/);
-  Object.defineProperty(source, "naturalWidth", { value: 1000 });
-  Object.defineProperty(source, "naturalHeight", { value: 1500 });
-  fireEvent.load(source);
-  expect(editor.getByRole("heading", { name: "Adjust character images" })).toBeTruthy();
-  expect(editor.queryByRole("button", { name: "Adjust framing" })).toBeNull();
-  fireEvent.click(view.getByRole("button", { name: "Head position" }));
-  fireEvent.click(view.getByText("Precise adjustments"));
-  fireEvent.input(view.getByRole("slider", { name: "Head vertical position" }), { target: { value: "0.12" } });
-  fireEvent.click(editor.getByRole("button", { name: "Confirm this headshot" }));
-  await waitFor(() => expect(view.container.querySelector("dialog") === null).toBe(true));
-}
-
-
-test("profile handoff starts the existing assistant exactly once and leaves changes unsaved", async () => {
-  domWindow.sessionStorage.clear();
-  domWindow.sessionStorage.setItem("influence:agent-edit-request:user-1:agent-1", "Make Arden more cautious.");
-  const requests: Array<{url: string; body: Record<string, unknown>}> = [];
-  globalThis.fetch = (async (url: string, init?: RequestInit) => {
-    requests.push({url: String(url), body: JSON.parse(String(init?.body))});
-    if (String(url).endsWith("/edit-assistant")) return Response.json({ tool: "update_character", fields: ["strategyStyle"] });
-    return Response.json({ name: "Arden", personality: "Calm", backstory: "Backstory", strategyStyle: "More cautious.", werewolfStrategyStyle: "", personaKey: "diplomat", gender: "non-binary", performanceInstructions: "", visualDesign: "", introQuips: [] });
-  }) as unknown as typeof fetch;
-  const submitted: AgentProfileWriteParams[] = [];
-  const view = await renderForm(false, async params => { submitted.push(params); }, false, {}, "edit:agent-1");
-  await waitFor(() => expect(requests.filter(request => request.url.endsWith("/edit-assistant"))).toHaveLength(1));
-  await waitFor(() => expect((view.getByLabelText("Influence strategy") as HTMLTextAreaElement).value).toBe("More cautious."));
-  expect(requests[0]?.body.message).toBe("Make Arden more cautious.");
-  expect(domWindow.sessionStorage.getItem("influence:agent-edit-request:user-1:agent-1")).toBeNull();
-  expect(submitted).toHaveLength(0);
+test("draft rebase preserves independent remote edits and treats artwork as one decision", () => {
+  const base = { ...snapshot("Base strategy"), fullBodyReferenceUrl: "/old.webp", explicitAvatarUrl: "/old-head.webp" };
+  const local = { ...base, name: "Local name", fullBodyReferenceUrl: "/local.webp", explicitAvatarUrl: "/local-head.webp" };
+  const remote = { ...base, strategyStyle: "Accepted remote strategy", fullBodyReferenceUrl: "/remote.webp", explicitAvatarUrl: "/remote-head.webp" };
+  const result = mergeAgentDraft(base, local, remote);
+  expect(result.merged.name).toBe("Local name");
+  expect(result.merged.strategyStyle).toBe("Accepted remote strategy");
+  expect(result.merged.fullBodyReferenceUrl).toBe("/local.webp");
+  expect(result.merged.explicitAvatarUrl).toBe("/local-head.webp");
+  expect(result.conflicts).toEqual(["images"]);
 });
 
-test("a draft appearing before profile handoff prevents automatic generation", async () => {
-  domWindow.sessionStorage.clear();
-  const key = "influence:agent-editor:4:user-1:edit:agent-1";
-  domWindow.sessionStorage.setItem(key, JSON.stringify({version:4, savedAt:"2026-08-28T20:00:00.000Z", creationRequestId:"11111111-1111-4111-8111-111111111111", base:snapshot(proposal), current:snapshot(draftStrategy)}));
-  domWindow.sessionStorage.setItem("influence:agent-edit-request:user-1:agent-1", "Keep this request.");
-  const requests: string[] = [];
-  globalThis.fetch = (async (url: string) => { requests.push(String(url)); return Response.json({ tool: "clarify", message: "What should change?" }); }) as unknown as typeof fetch;
-  const view = await renderForm(false, async () => {}, false, {}, "edit:agent-1");
-  await waitFor(() => expect(view.getByLabelText("Saved local draft")).toBeTruthy());
-  expect(requests.filter(url => url.endsWith("/edit-assistant"))).toHaveLength(0);
-  expect((view.getByRole("textbox", {name:"What would you like to change about this Agent?"}) as HTMLTextAreaElement).value).toBe("Keep this request.");
-  fireEvent.click(view.getByRole("button", { name: "Clear draft" }));
-  await waitFor(() => expect(requests.filter(url => url.endsWith("/edit-assistant"))).toHaveLength(1));
+test("a local draft cannot be silently replaced by a differing account draft",async()=>{
+ const accountDraft={version:4,savedAt:"2026-08-28T21:00:00.000Z",creationRequestId:"11111111-1111-4111-8111-111111111111",base:snapshot(proposal),current:snapshot("Account coalition plan")};
+ let writes=0;domWindow.localStorage.setItem("influence_session","test-token");
+ globalThis.fetch=Object.assign(async (_input:RequestInfo|URL,init?:RequestInit)=>{if(init?.method==="PUT"){writes++;return Response.json({version:"11111111-1111-4111-8111-111111111111:2"});}return Response.json({version:"11111111-1111-4111-8111-111111111111:1",document:accountDraft});},{preconnect:originalFetch.preconnect}) as typeof fetch;
+ const view=await renderForm(false,async()=>{},false,{},draftScope,true);
+ const choices=await view.findByRole("region",{name:"Choose draft"});
+ expect(choices.textContent).toContain("Account coalition plan");expect(choices.textContent).toContain(draftStrategy);expect(writes).toBe(0);
+ fireEvent.click(within(choices).getByRole("button",{name:"Tab"}));fireEvent.click(view.getByRole("button",{name:"Resume"}));fireEvent.click(view.getByRole("button",{name:"Strategy"}));
+ expect((view.getByLabelText("Influence strategy") as HTMLTextAreaElement).value).toBe(draftStrategy);
 });
 
-test("opening an unreadable draft does not silently remove it", async () => {
-  const key = "influence:agent-editor:4:user-1:edit:agent-1";
-  domWindow.sessionStorage.clear();
-  domWindow.sessionStorage.setItem(key, "unreadable saved content");
-  const view = await renderForm(false, async () => {}, false, {}, "edit:agent-1");
-  await waitFor(() => expect(view.getByText(/This tab has an unreadable draft/)).toBeTruthy());
-  expect(domWindow.sessionStorage.getItem(key)).toBe("unreadable saved content");
+test("a late audio completion cannot stop the next audition",async()=>{
+ const descriptor=Object.getOwnPropertyDescriptor(globalThis,"Audio");
+ class Sample { onended:(()=>void)|null=null; pauses=0; constructor(public src:string){samples.push(this);} async play(){} pause(){this.pauses++;} }
+ const samples:Sample[]=[];Object.defineProperty(globalThis,"Audio",{configurable:true,value:Sample});
+ globalThis.fetch=Object.assign(async()=>new Response(new Uint8Array([1,2,3]),{headers:{"Content-Type":"audio/mpeg"}}),{preconnect:originalFetch.preconnect}) as typeof fetch;
+ try{
+  const selected:string[]=[];const view=render(<AgentVoicePicker value={null} onChange={value=>{if(value)selected.push(value);}}/>);
+  fireEvent.click(view.getByRole("button",{name:"Voice"}));const first=PLAYER_VOICES[0]!,second=PLAYER_VOICES[1]!;
+  fireEvent.click(view.getByRole("button",{name:"Play "+first.name}));await waitFor(()=>expect(samples).toHaveLength(1));
+  fireEvent.click(view.getByRole("button",{name:"Play "+second.name}));await waitFor(()=>expect(samples).toHaveLength(2));
+  await act(async()=>{samples[0]!.onended?.();});
+  expect(samples[1]!.pauses).toBe(0);expect(view.getByRole("button",{name:"Stop "+second.name})).toBeTruthy();
+  fireEvent.click(view.getByRole("button",{name:second.name}));expect(samples[1]!.pauses).toBe(1);expect(selected).toEqual([second.id]);
+ }finally{await act(async()=>cleanup());if(descriptor)Object.defineProperty(globalThis,"Audio",descriptor);else Reflect.deleteProperty(globalThis,"Audio");}
 });

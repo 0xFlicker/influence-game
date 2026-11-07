@@ -106,7 +106,7 @@ test("new wolf forms enqueue one private cutout and cached completion creates ga
 });
 
 test("new generation cannot bypass a wolf-form request with unknown charge", async () => {
-  const operation = await reserveVisualRender(db, "variants", "wolf-form:uncertain", { prompt: "fixture", width: 1024, height: 1536, references: [] });
+  const operation = await reserveVisualRender(db, "variants", "wolf-form:uncertain", { operation: "create" as const, background: "opaque" as const, prompt: "fixture", width: 1024, height: 1536, references: [] });
   await visualImageJournal(db, operation).begin({ provider: "openai", model: "gpt-image-2", requestHash: "fixture" });
   await expect(resolveCharacterVariants(db, "variants", plan("another-click"), {}, providers)).rejects.toThrow("Reconcile");
   expect(renders).toBe(0);

@@ -33,11 +33,41 @@ export const AGENT_EDITOR_DRAFT_VERSION = 4;
 export function isAgentEditorDraft(value: unknown): boolean {
   if (typeof value !== "object" || value === null) return false;
   const draft = value as Record<string, unknown>;
-  return draft.version === AGENT_EDITOR_DRAFT_VERSION
-    && typeof draft.savedAt === "string"
-    && typeof draft.creationRequestId === "string"
-    && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(draft.creationRequestId)
-    && draft.base != null && draft.current != null;
+  return (
+    draft.version === AGENT_EDITOR_DRAFT_VERSION &&
+    typeof draft.savedAt === "string" &&
+    typeof draft.creationRequestId === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      draft.creationRequestId,
+    ) &&
+    validSnapshot(draft.base) &&
+    validSnapshot(draft.current)
+  );
+}
+function validSnapshot(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const snapshot = value as Record<string, unknown>;
+  return (
+    [
+      "name",
+      "backstory",
+      "personality",
+      "strategyStyle",
+      "werewolfStrategyStyle",
+      "performanceInstructions",
+      "gender",
+    ].every((key) => typeof snapshot[key] === "string") &&
+    (snapshot.fullBodyReferenceUrl === null ||
+      typeof snapshot.fullBodyReferenceUrl === "string") &&
+    (snapshot.personaKey === null || typeof snapshot.personaKey === "string") &&
+    (snapshot.voiceId == null || typeof snapshot.voiceId === "string") &&
+    (snapshot.modelPreference == null ||
+      snapshot.modelPreference === "default" ||
+      (typeof snapshot.modelPreference === "object" &&
+        !Array.isArray(snapshot.modelPreference) &&
+        typeof (snapshot.modelPreference as Record<string, unknown>)
+          .catalogId === "string"))
+  );
 }
 
 export function agentEditorDraftKey(ownerId: string, scope: string): string {
@@ -51,7 +81,8 @@ export function agentEditRequestKey(ownerId: string, agentId: string): string {
 export function discardAgentDraft(ownerId: string, scope: string): boolean {
   const key = agentEditorDraftKey(ownerId, scope);
   try {
-    for (const suffix of ["", ":visual-reference", ":interrupted"]) window.sessionStorage.removeItem(`${key}${suffix}`);
+    for (const suffix of ["", ":visual-reference", ":interrupted"])
+      window.sessionStorage.removeItem(`${key}${suffix}`);
     return true;
   } catch {
     return false;
@@ -59,7 +90,10 @@ export function discardAgentDraft(ownerId: string, scope: string): boolean {
 }
 
 /** Inspect this tab only. Unknown or unreadable drafts must remain recoverable. */
-export function findAgentDrafts(ownerId: string, agentId: string, currentRevision: string | null | undefined): { ok: true; scopes: string[] } | { ok: false } {
+export function findAgentDrafts(
+  ownerId: string,
+  agentId: string,
+): { ok: true; scopes: string[] } | { ok: false } {
   try {
     const prefix = `influence:agent-editor:${AGENT_EDITOR_DRAFT_VERSION}:${ownerId}:`;
     const edit = `edit:${agentId}`;
@@ -69,31 +103,17 @@ export function findAgentDrafts(ownerId: string, agentId: string, currentRevisio
       const key = window.sessionStorage.key(i);
       if (!key?.startsWith(prefix)) continue;
       const rest = key.slice(prefix.length);
-      const scope = rest.endsWith(":visual-reference") ? rest.slice(0, -":visual-reference".length) : rest;
+      const scope = rest.endsWith(":visual-reference")
+        ? rest.slice(0, -":visual-reference".length)
+        : rest;
       if (scope.endsWith(":interrupted")) continue;
-      if (scope === edit || (scope.startsWith(review) && !scope.slice(review.length).includes(":"))) scopes.add(scope);
+      if (
+        scope === edit ||
+        (scope.startsWith(review) && !scope.slice(review.length).includes(":"))
+      )
+        scopes.add(scope);
     }
-    const remaining: string[] = [];
-    for (const scope of scopes) {
-      const key = agentEditorDraftKey(ownerId, scope);
-      const raw = window.sessionStorage.getItem(key);
-      let stale = false;
-      if (raw !== null && currentRevision !== undefined) {
-        try {
-          const draft: unknown = JSON.parse(raw);
-          if (isAgentEditorDraft(draft) && typeof draft === "object" && draft !== null && "baseContentRevisionId" in draft) {
-            const base = draft.baseContentRevisionId;
-            stale = (typeof base === "string" || base === null) && base !== currentRevision;
-          }
-        } catch { /* Keep an unreadable draft for recovery. */ }
-      }
-      if (stale) {
-        if (!discardAgentDraft(ownerId, scope)) return { ok: false };
-      } else {
-        remaining.push(scope);
-      }
-    }
-    return { ok: true, scopes: remaining };
+    return { ok: true, scopes: [...scopes] };
   } catch {
     return { ok: false };
   }

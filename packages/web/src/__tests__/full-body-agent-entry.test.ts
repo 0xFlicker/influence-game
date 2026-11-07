@@ -48,7 +48,7 @@ test("the game picker routes Agents without body art to completion and joins rea
   expect(result.exitCode).toBe(0);
 });
 
-test("explicit completion resumes, saves, and enters the intended game once", () => {
+test("missing art opens the workspace and entry waits for acceptance", () => {
   const result = Bun.spawnSync([process.execPath, "-e", `
     import { mock } from "bun:test";
     import { strict as assert } from "node:assert";
@@ -57,14 +57,13 @@ test("explicit completion resumes, saves, and enters the intended game once", ()
     for (const name of ["window", "document", "navigator", "localStorage", "sessionStorage", "HTMLElement", "Node", "Event"]) {
       Object.defineProperty(globalThis, name, { configurable: true, value: name === "window" ? dom : dom[name] });
     }
-    let body = null, status = null, starts = 0, joins = 0;
+    let body = null, accepted = false, starts = 0, joins = 0;
     const paths = [];
     const router = { replace: path => paths.push(path) };
-    const agent = () => ({ id: "agent", name: "Avery", personality: "Patient", backstory: null, strategyStyle: null, personaKey: "strategic", avatarUrl: null, fullBodyReferenceUrl: body, gamesPlayed: 0, gamesWon: 0, createdAt: "2026", updatedAt: "2026" });
-    const read = () => ({ needsUpdate: !body, job: status && { id: "job", status, stage: "body", updatedAt: "2026", errorCode: null, message: null } });
+    const agent = () => ({ id: "agent", latestContentRevisionId:"new",contentRevisionId:accepted?"new":null,ownerContent:{reviewState:accepted?"accepted":"reviewing"}, name: "Avery", personality: "Patient", backstory: null, strategyStyle: null, personaKey: "strategic", avatarUrl: null, fullBodyReferenceUrl: body, gamesPlayed: 0, gamesWon: 0, createdAt: "2026", updatedAt: "2026" });
     mock.module("next/navigation", () => ({ useRouter: () => router }));
     mock.module("next/link", () => ({ default: ({ href, children, ...props }) => { const React = require("react"); return React.createElement("a", { href, ...props }, children); } }));
-    mock.module("@/lib/api", () => ({ getAgent: async () => agent(), getAgentVisualUpdate: async () => read(), startAgentVisualUpdate: async () => { starts++; status = "processing"; return read(); }, joinGame: async () => { joins++; }, joinFreeQueue: async () => {}, listAgents: async () => [] }));
+    mock.module("@/lib/api", () => ({ apiFetchMedia: async () => new Blob(), resolveApiUrl: url => url, clearAgentEntryIntent: async () => {}, getAgent: async () => agent(), startAgentVisualUpdate: async () => { starts++; }, joinGame: async () => { joins++; }, joinFreeQueue: async () => {}, listAgents: async () => [] }));
     mock.module("@/lib/game-entry", () => ({ getGameEntry: async () => ({ gameKind: "influence", slug: "game-1" }) }));
     mock.module("@/lib/game-links", () => ({ gameHref: slug => "/games/" + slug }));
     mock.module("@/lib/werewolf-api", () => ({ joinWerewolfLobby: async () => {} }));
@@ -72,13 +71,15 @@ test("explicit completion resumes, saves, and enters the intended game once", ()
     const { render, fireEvent, waitFor, cleanup, act } = await import("@testing-library/react");
     const { AgentEntryPreparation } = await import("./src/app/dashboard/agents/agent-entry-preparation");
     const view = render(createElement(AgentEntryPreparation, { agentId: "agent", intent: { flow: "join_game", gameId: "game-1" } }));
-    await waitFor(() => assert.equal(view.getByRole("button", { name: "Complete & join" }).disabled, false));
-    assert.equal(starts, 0); assert.equal(joins, 0);
-    fireEvent.click(view.getByRole("button", { name: "Complete & join" }));
-    await waitFor(() => assert.equal(starts, 1));
-    body = "/api/uploads/local?key=body.png"; status = "completed";
-    await act(async () => { dom.dispatchEvent(new dom.Event("focus")); });
-    await waitFor(() => assert.equal(joins, 1));
+    await waitFor(() => assert.ok(view.getByRole("link",{name:"Edit"})));
+    assert.equal(view.getByRole("link",{name:"Edit"}).getAttribute("href"),"/dashboard/agents/agent/edit?flow=join_game&gameId=game-1");
+    assert.equal(view.getByRole("button",{name:"Join"}).disabled,true);assert.equal(starts,0);assert.equal(joins,0);
+    body="/api/uploads/local?key=body.png";
+    await act(async()=>{dom.dispatchEvent(new dom.Event("focus"));});
+    assert.equal(view.getByRole("button",{name:"Join"}).disabled,true);
+    accepted=true;await act(async()=>{dom.dispatchEvent(new dom.Event("focus"));});
+    await waitFor(()=>assert.equal(view.getByRole("button",{name:"Join"}).disabled,false));
+    assert.equal(joins,0);fireEvent.click(view.getByRole("button",{name:"Join"}));await waitFor(()=>assert.equal(joins,1));
     assert.deepEqual(paths, ["/games/game-1"]);
     cleanup(); dom.close();
   `], { cwd: resolve(import.meta.dir, "../.."), stdout: "pipe", stderr: "pipe" });

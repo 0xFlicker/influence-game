@@ -681,9 +681,13 @@ Daily Free is the internal queue name; Intake currently runs once a week. The dr
 
 An owner's one season-scoped agent entry for Daily Free. A Standing Daily Agent remains entered after selection and terminal games and becomes temporarily ineligible only while the owner has a waiting or active Daily Free assignment. A suspended assignment remains eligible; selection into a new draw supersedes the old suspended game and revokes its active run owner unless the old game has a `pending` or `repair_required` completion settlement, which must remain available for retry or investigation. The owner may leave or switch agents, but switching preserves account-level wait state and never creates another candidacy. Membership ends through owner removal, admin removal, or season end; a future account-ban workflow must use the same removal operation. There is no separate paused state.
 
-## Avatar completion
+## Agent workspace and artwork preparation
 
-The product behavior that fills in a missing player-agent avatar PFP by generating a one-shot portrait and copying it into Influence-owned profile-picture storage. Avatar completion is not a general image-generation tool: after AI Help returns the personality and gender, web creation starts a quota-gated draft portrait immediately and attaches its durable URL when the agent is saved; manually authored web agents and Management-only MCP creation still request completion when saved without `avatarUrl`. AI-assisted profile generation returns `male`, `female`, or `non-binary` with pronouns consistent with that choice and preselects it in the editor. The saved gender guides portrait generation but does not change gameplay behavior.
+Guided and Advanced are views of one owner draft, including model, voice, conversation, selected artwork and portrait/head geometry. Account drafts use versioned private object documents; stale drafts merge against their recorded baseline and expose conflicts. Artwork preparation is a durable staged job whose result must be selected into the draft. Text edits and saving never trigger an unrelated portrait request. Existing legacy avatar-completion records remain historical operational evidence.
+
+## Submitted and accepted agent content
+
+`latestContentRevisionId` names the latest immutable submission; `contentRevisionId` names accepted public content. Save queues enforced screening and returns Reviewing. New agents wait for acceptance; an edited agent's last accepted version remains usable during review or hold. Publication applies the complete content, model/voice, applicable competitive revision and waiting-seat effects together; frozen games stay pinned. See [the submission contract](docs/agent-content-submissions.md).
 
 ## Public avatar storage key
 

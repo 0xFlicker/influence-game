@@ -1,0 +1,453 @@
+.workspace,
+.collection {
+  --ink: #efe8dc;
+  --muted: #b4b1a5;
+  --rule: #514a3b;
+  --gold: #dec294;
+  max-width: 1440px;
+  width: 100%;
+  margin: auto;
+  color: var(--ink);
+  padding: 24px;
+}
+.workspace h1,
+.workspace h2,
+.workspace h3,
+.collection h1,
+.collection h2,
+.collection h3 {
+  font-family: Georgia, serif;
+  font-weight: 400;
+}
+.heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 20px;
+  margin-bottom: 26px;
+}
+.heading h1,
+.collection h1 {
+  font-size: clamp(30px, 4vw, 44px);
+  overflow-wrap: anywhere;
+}
+.modes {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+.modes button[aria-pressed="true"] {
+  color: var(--gold);
+  background: #2a2c25;
+}
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr);
+  gap: 36px;
+}
+.art {
+  min-width: 0;
+  align-self: start;
+}
+.art img {
+  width: 100%;
+  height: 480px;
+  object-fit: contain;
+  background: radial-gradient(ellipse at bottom, #3c4032, transparent 65%);
+  border-bottom: 1px solid var(--rule);
+}
+.artActions,
+.cardActions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.artActions {
+  justify-content: center;
+}
+.activity,
+.attention {
+  border-block: 1px solid var(--rule);
+  padding: 16px 0;
+  margin-top: 20px;
+}
+.activity p {
+  margin-top: 8px;
+  color: var(--muted);
+}
+.preferences {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 24px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--rule);
+}
+.workspace button,
+.collection button,
+.collection a:global(.action),
+.workspace a:global(.action) {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  font-size: 14px;
+}
+.workspace button:disabled,
+.collection button:disabled {
+  opacity: 0.5;
+}
+.workspace button.primary {
+  background: #e1c698;
+  color: #24251d;
+  border-color: #e1c698;
+}
+.workspace input,
+.workspace textarea,
+.workspace select,
+.collection input {
+  background: #20221e;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  color: var(--ink);
+  padding: 10px 12px;
+}
+.workspace label {
+  display: block;
+  margin-bottom: 8px;
+}
+.workspace :global(.influence-panel) {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+}
+.identity {
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 24px;
+}
+.content {
+  min-width: 0;
+}
+.content :global(.agent-creation-header) {
+  display: none;
+}
+.content :global(.agent-creation-stage) {
+  padding: 0;
+  min-height: 0;
+}
+.content :global(.agent-creation-summary) {
+  padding: 0;
+}
+.content :global(.agent-creation-summary) > button {
+  display: none;
+}
+.content :global(.agent-creation-fixture-grid) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.content :global(.agent-creation-fixture) {
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  background: transparent;
+  border-radius: 0;
+  padding: 12px 0;
+}
+.content :global(.agent-creation-dock) {
+  padding: 12px 0;
+  background: transparent;
+  border: 0;
+}
+.content :global(.agent-creation-chat-log) {
+  max-height: none;
+  overflow: visible;
+}
+.content :global(.agent-creation-bubble) {
+  background: #20221e;
+  border-color: var(--rule);
+}
+.content :global(.agent-creation-visual) {
+  min-height: 0;
+  background: none;
+}
+.voice {
+  position: relative;
+  min-width: 0;
+}
+.voice > button {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  background: #20221e;
+}
+.voiceMenu {
+  position: absolute;
+  z-index: 40;
+  top: 80px;
+  right: 0;
+  width: 300px;
+  max-width: min(300px, calc(100vw - 48px));
+  background: #20221e;
+  border: 1px solid var(--rule);
+  padding: 12px;
+  box-shadow: 0 8px 30px #0008;
+  max-height: 450px;
+  overflow-y: auto;
+}
+.voiceMenu input {
+  width: 100%;
+}
+.voiceMenu > button {
+  width: 100%;
+  text-align: left;
+}
+.voiceOption {
+  display: flex;
+  border-bottom: 1px solid var(--rule);
+}
+.voiceOption button:first-child {
+  flex: 1;
+  text-align: left;
+}
+.voiceOption button {
+  border: 0;
+}
+.hint,
+.meta {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 12px;
+}
+.footer {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.review,
+.archive {
+  border: 1px solid var(--rule);
+  background: #20221e;
+  padding: 24px;
+  margin-top: 24px;
+}
+.review h2,
+.collection h2 {
+  font-size: 28px;
+}
+.change {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.change > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.change del,
+.change ins {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-top: 8px;
+}
+.change del {
+  color: var(--muted);
+}
+.change ins {
+  color: #a3c3a6;
+  text-decoration: none;
+}
+.candidate {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.candidate img {
+  height: 360px;
+  width: 100%;
+  object-fit: contain;
+}
+.masthead {
+  margin-top: 22px;
+  min-height: 150px;
+  background:
+    linear-gradient(90deg, #161914ef, #16191488),
+    url("/agent-creation-hall.webp") center/cover;
+  border: 1px solid #65513a;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28px;
+}
+.attentionRow,
+.toolbar,
+.draftRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+}
+.toolbar {
+  margin: 24px 0;
+  flex-wrap: wrap;
+}
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+}
+.card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 20px;
+}
+.card img {
+  height: 320px;
+  width: 100%;
+  object-fit: contain;
+  background: radial-gradient(ellipse at bottom, #3c4032, transparent 65%);
+  margin-bottom: 18px;
+}
+.card h3 {
+  font-size: 24px;
+  overflow-wrap: anywhere;
+}
+.meta {
+  margin-bottom: 18px;
+}
+.cardActions {
+  margin-top: auto;
+}
+.cardActions button:first-child {
+  flex: 1;
+}
+.status {
+  color: var(--gold);
+  font-size: 13px;
+  margin-top: 6px;
+}
+.drafts {
+  margin-top: 32px;
+}
+.draftRow {
+  border-top: 1px solid var(--rule);
+  padding: 18px 0;
+}
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: minmax(0, 0.65fr) minmax(0, 1.35fr);
+    gap: 24px;
+  }
+  .art img {
+    height: 400px;
+  }
+  .gallery {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .workspace,
+  .collection {
+    padding: 16px;
+  }
+  .layout {
+    display: flex;
+    flex-direction: column;
+  }
+  .art img {
+    height: 310px;
+  }
+  .heading {
+    align-items: start;
+    flex-direction: column;
+  }
+  .preferences {
+    grid-template-columns: 1fr;
+  }
+  .gallery {
+    grid-template-columns: 1fr;
+  }
+  .masthead {
+    padding: 20px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .candidate {
+    grid-template-columns: 1fr;
+  }
+  .draftRow {
+    flex-wrap: wrap;
+  }
+}
+
+.sectionNav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 14px;
+}
+.sectionNav button[aria-pressed="true"] {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+.upload {
+  position: relative;
+  min-height: 44px;
+  border: 1px solid var(--rule);
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.upload input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  cursor: pointer;
+}
+.workspace [hidden] {
+  display: none !important;
+}
+.workspace h2 {
+  font-size: 28px;
+}
+.workspace :global(.agent-creation-visual-forming) {
+  min-height: 0;
+}
+.workspace input[type="radio"] {
+  width: auto;
+}
+
+.preferences > div {
+  min-width: 0;
+}
+.workspace button[data-selected="true"] {
+  border-color: var(--gold);
+  background: #33372b;
+}
+.workspace button:focus-visible,
+.collection a:focus-visible,
+.collection button:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+
+.workspace a:global(.action),
+.collection a:global(.action) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

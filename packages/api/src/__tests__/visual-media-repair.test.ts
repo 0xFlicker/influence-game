@@ -163,7 +163,7 @@ test("one lease, expired claim recovery, and late old-owner completion cannot ac
 
 test("restart reuses saved steps and blocks a dispatched attempt with no receipt", async () => {
   await send(); const job = (await claimVisualMediaJob(db, "owner"))!;
-  const request = { prompt: "saved section", width: 512, height: 864, references: [] };
+  const request = { operation: "create" as const, background: "opaque" as const, prompt: "saved section", width: 512, height: 864, references: [] };
   const op = await reserveVisualRender(db, "media", `media:${job.id}:uncertain`, request, scene.id, job.id);
   const journal = visualImageJournal(db, op);
   await journal.begin({ provider: "openai", model: "gpt-image-2", requestHash: "test" });
@@ -180,7 +180,7 @@ test("restart reuses saved steps and blocks a dispatched attempt with no receipt
 
 test("an in-flight provider call is pending; an expired lease needs reconciliation until its receipt arrives", async () => {
   await send(); const job = (await claimVisualMediaJob(db, "owner"))!;
-  const op = await reserveVisualRender(db, "media", `media:${job.id}:section`, { prompt: "scene", width: 512, height: 864, references: [] }, scene.id, job.id);
+  const op = await reserveVisualRender(db, "media", `media:${job.id}:section`, { operation: "create" as const, background: "opaque" as const, prompt: "scene", width: 512, height: 864, references: [] }, scene.id, job.id);
   const journal = visualImageJournal(db, op);
   await journal.begin({ provider: "openai", model: "gpt-image-2", requestHash: "test" });
   const pending = await readVisualRenderAccounting(db, "media"), attempt = pending.attempts[0]!;
@@ -197,7 +197,7 @@ test("an in-flight provider call is pending; an expired lease needs reconciliati
 
 test.each([429, 503])("finished HTTP %s receipts remain distinct from active requests", async status => {
   await send(); const job = (await claimVisualMediaJob(db, "owner"))!;
-  const op = await reserveVisualRender(db, "media", `media:${job.id}:section`, { prompt: "scene", width: 512, height: 864, references: [] }, scene.id, job.id);
+  const op = await reserveVisualRender(db, "media", `media:${job.id}:section`, { operation: "create" as const, background: "opaque" as const, prompt: "scene", width: 512, height: 864, references: [] }, scene.id, job.id);
   const journal = visualImageJournal(db, op);
   await journal.begin({ provider: "openai", model: "gpt-image-2", requestHash: "test" });
   await journal.finish({ provider: "openai", model: "gpt-image-2", requestHash: "test", requestId: "failure", status, elapsedMs: 10, usage: null, chargeUncertain: status >= 500 });
@@ -453,7 +453,7 @@ test("explicit saved-panel harmonization reports an image-provider failure", asy
 
 test("explicit fresh regeneration bypasses uncertain billing without settling it or publishing bad art", async () => {
   await db.update(schema.visualScenes).set({ status: "failed" }).where(eq(schema.visualScenes.id, scene.id));
-  const op = await reserveVisualRender(db, "media", `${scene.id}:render:0:composition`, { prompt: "old render", width: 512, height: 864, references: [] }, scene.id);
+  const op = await reserveVisualRender(db, "media", `${scene.id}:render:0:composition`, { operation: "create" as const, background: "opaque" as const, prompt: "old render", width: 512, height: 864, references: [] }, scene.id);
   await visualImageJournal(db, op).begin({ provider: "openai", model: "gpt-image-2", requestHash: "old" });
   const [attempt] = await loadPayloads(db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.operationId, op.id)));
   expect(await send()).toMatchObject({ accepted: false, code: "needs_reconciliation" });
@@ -481,7 +481,7 @@ test("explicit fresh regeneration bypasses uncertain billing without settling it
 
 test("uncertain request acknowledgement cannot bypass an original render still in progress", async () => {
   await db.update(schema.games).set({ status: "in_progress" }).where(eq(schema.games.id, "media"));
-  const op = await reserveVisualRender(db, "media", `${scene.id}:render:0:composition`, { prompt: "in flight", width: 512, height: 864, references: [] }, scene.id);
+  const op = await reserveVisualRender(db, "media", `${scene.id}:render:0:composition`, { operation: "create" as const, background: "opaque" as const, prompt: "in flight", width: 512, height: 864, references: [] }, scene.id);
   await visualImageJournal(db, op).begin({ provider: "openai", model: "gpt-image-2", requestHash: "in-flight" });
   const [attempt] = await loadPayloads(db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.operationId, op.id)));
   expect(await send({ acknowledgeUncertainAttempts: [attempt!.id] })).toMatchObject({ code: "already_pending" });

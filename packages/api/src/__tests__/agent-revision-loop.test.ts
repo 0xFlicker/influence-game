@@ -1,3 +1,4 @@
+import {acceptTestAgent,createAcceptedTestProfile as createOwnedAgentProfile,submitAcceptedTestProfile as updateOwnedAgentProfile} from "./test-utils.js";
 import { loadPayloads } from "../services/payload-storage.js";
 import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
 import { beforeEach, describe, expect, test } from "bun:test";
@@ -5,9 +6,8 @@ import { eq, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import {
   AgentProfileManagementError,
-  createOwnedAgentProfile,
   updateOwnedAgent,
-  updateOwnedAgentProfile,
+  updateOwnedAgentProfile as submitProfile,
 } from "../services/agent-profile-management.js";
 import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
 import { setupTestDB } from "./test-utils.js";
@@ -300,6 +300,7 @@ describe("agent revision update loop", () => {
     await admit(profile.id, "freeze-race");
     const seatBefore = (await db.select().from(schema.gamePlayers))[0]!;
     const gameLocked = deferred<void>();
+    await submitProfile(db, { userId: OWNER_ID }, profile.id, { personality: "This becomes current for future games only." });
     const releaseFreeze = deferred<void>();
     const freezer = db.transaction(async (tx) => {
       await tx.execute(sql`SELECT id FROM games WHERE id = 'freeze-race' FOR UPDATE`);
@@ -312,9 +313,7 @@ describe("agent revision update loop", () => {
     });
     await gameLocked.promise;
 
-    const update = updateOwnedAgentProfile(db, { userId: OWNER_ID }, profile.id, {
-      personality: "This becomes current for future games only.",
-    });
+    const update = acceptTestAgent(db, profile.id);
     let lockWaitError: unknown;
     try {
       await waitForBlockedDatabaseLock(db);
@@ -324,7 +323,7 @@ describe("agent revision update loop", () => {
       releaseFreeze.resolve(undefined);
       await freezer;
     }
-    const result = await update;
+    const result = (await update)!;
     if (lockWaitError) throw lockWaitError;
 
     const seatAfter = (await db.select().from(schema.gamePlayers))[0]!;
@@ -345,7 +344,7 @@ describe("agent revision update loop", () => {
     expect(result.receipt.frozenSeats).toEqual({ unchanged: 1 });
   });
 
-  test("rolls back profile, revision, seat, and avatar audit on a waiting-roster name conflict", async () => {
+  test("retains a held draft and preserves accepted content on a waiting-roster name conflict", async () => {
     const profile = await createAgent("Original Name");
     await insertGame("rename-conflict", "rename-conflict");
     await admit(profile.id, "rename-conflict");
@@ -369,19 +368,18 @@ describe("agent revision update loop", () => {
       personality: "This must roll back too.",
       avatarUrl: await contentImageFixture("pfp/should-not-commit.png"),
     })).rejects.toMatchObject({
-      code: "waiting_roster_name_conflict",
-      statusCode: 409,
-    } satisfies Partial<AgentProfileManagementError>);
+      name: "OwnedSeatProjectionError",
+    });
 
     expect((await db.select().from(schema.agentProfiles)
-      .where(eq(schema.agentProfiles.id, profile.id)))[0]).toEqual(profileBefore);
+      .where(eq(schema.agentProfiles.id, profile.id)))[0]).toMatchObject({ name: profileBefore.name, personality: profileBefore.personality, avatarUrl: profileBefore.avatarUrl, contentRevisionId: profileBefore.contentRevisionId, currentRevisionId: profileBefore.currentRevisionId });
     expect((await db.select().from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.agentProfileId, profile.id)))[0]).toEqual(seatBefore);
     expect(await loadPayloads(db.select().from(schema.agentRevisions))).toEqual(revisionsBefore);
     expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
   });
 
-  test("rolls the active update back when a waiting seat cannot be reconciled", async () => {
+  test("preserves the accepted revision when a waiting seat cannot be reconciled", async () => {
     const profile = await createAgent("Broken Follower");
     await insertGame("broken-follower", "broken-follower");
     await admit(profile.id, "broken-follower");
@@ -394,12 +392,11 @@ describe("agent revision update loop", () => {
     await expect(updateOwnedAgentProfile(db, { userId: OWNER_ID }, profile.id, {
       personality: "Must not become active without the follower.",
     })).rejects.toMatchObject({
-      code: "agent_update_reconciliation_failed",
-      statusCode: 409,
-    } satisfies Partial<AgentProfileManagementError>);
+      name: "OwnedSeatProjectionError",
+    });
 
     expect((await db.select().from(schema.agentProfiles)
-      .where(eq(schema.agentProfiles.id, profile.id)))[0]).toEqual(profileBefore);
+      .where(eq(schema.agentProfiles.id, profile.id)))[0]).toMatchObject({ name: profileBefore.name, personality: profileBefore.personality, avatarUrl: profileBefore.avatarUrl, contentRevisionId: profileBefore.contentRevisionId, currentRevisionId: profileBefore.currentRevisionId });
     expect(await loadPayloads(db.select().from(schema.agentRevisions))).toEqual(revisionsBefore);
   });
 
@@ -422,7 +419,7 @@ describe("agent revision update loop", () => {
     })).rejects.toBeTruthy();
 
     expect((await db.select().from(schema.agentProfiles)
-      .where(eq(schema.agentProfiles.id, profile.id)))[0]).toEqual(profileBefore);
+      .where(eq(schema.agentProfiles.id, profile.id)))[0]).toMatchObject({ name: profileBefore.name, personality: profileBefore.personality, avatarUrl: profileBefore.avatarUrl, contentRevisionId: profileBefore.contentRevisionId, currentRevisionId: profileBefore.currentRevisionId });
     expect((await db.select().from(schema.gamePlayers))[0]).toEqual(seatBefore);
     expect(await loadPayloads(db.select().from(schema.agentRevisions))).toEqual(revisionsBefore);
     expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
@@ -437,7 +434,10 @@ describe("agent revision update loop", () => {
       personalityPrompt: "The behavior update still commits.",
     });
 
-    expect(result.agent.personalityPrompt).toBe("The behavior update still commits.");
+    expect(result.agent.personalityPrompt).toBe(profile.personality);
+    expect(result.receipt.publication).toBe("reviewing");
+    await acceptTestAgent(db, profile.id);
+    expect((await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, profile.id)))[0]!.personality).toBe("The behavior update still commits.");
     expect(result.receipt.warnings).toEqual([]);
     expect(result.avatarCompletion).toBeUndefined();
     expect(await db.select().from(schema.avatarGenerationRequests)).toHaveLength(0);

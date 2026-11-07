@@ -513,6 +513,7 @@ export function createAdminRoutes(
         canReadOwnerEmail: userEmailAccessProjection(emailAccessInput),
         ownerDisplayNameContainsEmail: userDisplayNameContainsEmailProjection(),
         archivedAt: schema.agentProfiles.archivedAt,
+        latestContentRevisionId: schema.agentProfiles.latestContentRevisionId,
         moderationRequired: schema.agentProfiles.moderationRequired,
         contentRevisionId: schema.agentProfiles.contentRevisionId,
       })
@@ -525,12 +526,13 @@ export function createAdminRoutes(
         ownerDisplayNameContainsEmail,
         archivedAt,
         moderationRequired,
+        latestContentRevisionId,
         contentRevisionId,
         ...serializedProfile
       } = profile;
       return {
         ...serializedProfile,
-        publicProfileAvailable: hasEligibleAgentContent({ archivedAt, moderationRequired, contentRevisionId })
+        publicProfileAvailable: hasEligibleAgentContent({ archivedAt, moderationRequired, contentRevisionId,latestContentRevisionId })
           && !isImportedSyntheticPlayer(profile.ownerWallet),
         ownerDisplayName: userDisplayNameForEmailPolicy({
           canReadEmail: canReadOwnerEmail,

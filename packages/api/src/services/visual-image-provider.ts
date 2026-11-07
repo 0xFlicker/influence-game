@@ -1,14 +1,21 @@
 import { visualFailureEvidence, type VisualFailureEvidence } from "./visual-diagnostics.js";
 import { createHash } from "node:crypto";
 import sharp from "sharp";
+import { hasCharacterTransparency } from "./character-transparency.js";
 import type { VisualLocalization } from "@influence/engine/visual-localization";
 
 export type VisualImageProvider = "openai" | "xai";
 export interface VisualImageRequest {
+  operation: "create" | "edit";
+  background: "opaque" | "transparent";
   prompt: string;
   width: number;
   height: number;
   references: readonly Uint8Array[];
+}
+export const VISUAL_IMAGE_QUALITY = "medium" as const;
+export function visualImageSettings(request: Pick<VisualImageRequest, "operation" | "background">) {
+  return { model: request.operation === "edit" ? "gpt-image-2.6-sunburst" : "gpt-image-2.6-flare", quality: VISUAL_IMAGE_QUALITY, background: request.background };
 }
 export interface VisualImageReceipt {
   provider: VisualImageProvider;
@@ -38,7 +45,8 @@ export class VisualImageFailure extends Error {
 
 /** One attempt per provider. The caller owns durable retries and uncertain-attempt recovery. */
 export async function generateVisualImage(request: VisualImageRequest, journal: VisualImageJournal, signal?: AbortSignal, allowFallback = true) {
-  if (!request.prompt.trim() || request.references.length > 5
+  if (!["create", "edit"].includes(request.operation) || !["opaque", "transparent"].includes(request.background)
+    || (request.operation === "edit" && !request.references.length) || !request.prompt.trim() || request.references.length > 5
     || ![request.width, request.height].every((v) => Number.isInteger(v) && v >= 16 && v <= 3840 && v % 16 === 0)
     || request.width * request.height < 655360 || request.width * request.height > 8294400
     || Math.max(request.width, request.height) > 3 * Math.min(request.width, request.height)) {
@@ -57,8 +65,9 @@ export async function generateVisualImage(request: VisualImageRequest, journal: 
 async function attempt(provider: VisualImageProvider, request: VisualImageRequest, journal: VisualImageJournal, signal?: AbortSignal) {
   const key = process.env[provider === "openai" ? "OPENAI_API_KEY" : "XAI_API_KEY"];
   if (!key) throw new VisualImageFailure(`Missing ${provider} image credential`, false);
-  const model = provider === "openai" ? "gpt-image-2" : "grok-imagine-image-2.0";
-  const requestHash = createHash("sha256").update(JSON.stringify({ ...request, model,
+  const settings = visualImageSettings(request);
+  const model = provider === "openai" ? settings.model : "grok-imagine-image-2.0";
+  const requestHash = createHash("sha256").update(JSON.stringify({ ...request, ...settings, model,
     references: request.references.map((image) => createHash("sha256").update(image).digest("hex")),
   })).digest("hex");
   const headers: Record<string, string> = { Authorization: `Bearer ${key}` };
@@ -66,12 +75,12 @@ async function attempt(provider: VisualImageProvider, request: VisualImageReques
   let body: string | FormData;
   if (provider === "openai" && request.references.length) {
     body = new FormData();
-    for (const [name, value] of Object.entries({ model, prompt: request.prompt, n: "1", quality: "medium", size: `${request.width}x${request.height}` })) body.append(name, value);
+    for (const [name, value] of Object.entries({ model, prompt: request.prompt, n: "1", quality: settings.quality, background: request.background, output_format: "png", size: `${request.width}x${request.height}` })) body.append(name, value);
     for (const [index, bytes] of request.references.entries()) body.append("image[]", new Blob([new Uint8Array(bytes)], { type: "image/png" }), `reference-${index}.png`);
   } else {
     headers["Content-Type"] = "application/json";
     body = JSON.stringify(provider === "openai" ? {
-      model, prompt: request.prompt, n: 1, quality: "medium", size: `${request.width}x${request.height}`,
+      model, prompt: request.prompt, n: 1, quality: settings.quality, background: request.background, output_format: "png", size: `${request.width}x${request.height}`,
     } : {
       model, prompt: request.prompt, n: 1, quality: "medium", resolution: "2k", response_format: "b64_json",
       aspect_ratio: request.width === request.height ? "1:1" : request.width > request.height ? "16:9" : "2:3",
@@ -119,11 +128,19 @@ async function attempt(provider: VisualImageProvider, request: VisualImageReques
     await journal.finish(receipt);
     throw new VisualImageFailure(`${provider} did not return exactly one image`, false);
   }
+  const source=Buffer.from(data[0].b64_json,"base64");
+  if(provider==="openai" && request.background==="transparent" && !await hasCharacterTransparency(source)) {
+    receipt.chargeUncertain=false;
+    receipt.failure=visualFailureEvidence(new Error("Native transparency is missing"),"response");
+    receipt.elapsedMs=Date.now()-start;
+    await journal.finish(receipt,source);
+    throw new VisualImageFailure("OpenAI returned an opaque image for a transparent request. The source is retained for inspection.",false);
+  }
   let image: Buffer;
   try {
     // Contain preserves all people even when fallback aspect ratios differ. Localization sees these final pixels.
-    image = await sharp(Buffer.from(data[0].b64_json, "base64"))
-      .resize(request.width, request.height, { fit: "contain", background: "#161616" }).png().toBuffer();
+    image = await sharp(source)
+      .resize(request.width, request.height, { fit: "contain", background: request.background === "transparent" && provider === "openai" ? { r: 0, g: 0, b: 0, alpha: 0 } : "#161616" }).png().toBuffer();
   } catch (error) {
     receipt.failure = visualFailureEvidence(error, "response");
     receipt.elapsedMs = Date.now() - start;

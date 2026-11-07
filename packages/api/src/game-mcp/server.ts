@@ -1,3 +1,5 @@
+import { requestCharacterReference, readCharacterReference, retryCharacterReference, decideCharacterReference } from "../services/character-reference-jobs.js";
+import { PLAYER_VOICES, VOICE_AUDITION_VERSION } from "@influence/engine/voice-catalog";
 import {productionEditorial} from "../services/production-editorial.js";
 import {renderReadTools,renderReadInput,renderReadOutputs,readProductionRender} from "./render-contracts.js";
 import {renderOrderTools,renderOrderInputs,writeProductionRender} from "./render-order-contracts.js";
@@ -20,7 +22,7 @@ import { readHouseGame, readHouseGameThinking, readHouseInspectionResults, type 
 import { GenerationAdmissionError, generationContacts } from "../services/generation-admission-error.js";
 import { ModerationError } from "../services/moderation-intake.js";
 import { executeModerationRead, executeModerationWrite } from "../services/moderation-commands.js";
-import { exportCharacterPortrait, generateVisualProfileReference } from "../services/visual-profile-generation.js";
+import { exportCharacterPortrait } from "../services/visual-profile-generation.js";
 import { readVisualProductionExport } from "../services/visual-production-export.js";
 import { createDB, type DrizzleDB } from "../db/index.js";
 import {
@@ -622,12 +624,16 @@ export class ProductionGameMcpJsonRpcServer {
       if (name === "crop_agent_portrait") {
         requireScopes(auth, ["agents:read", "agents:write"]);
         const { headRectangle, ...crop } = args;
-        return content(await exportCharacterPortrait(crop as unknown as import("@influence/engine/character-portrait").PortraitCrop, undefined, headRectangle));
+        return content(await exportCharacterPortrait(crop as unknown as import("@influence/engine/character-portrait").PortraitCrop, {db:this.requireManagementDb(),userId:auth.userId}, headRectangle));
       }
       if (name === "generate_agent_visual_reference") {
         requireScopes(auth, ["agents:read", "agents:write"]);
-        return content(await generateVisualProfileReference(this.requireManagementDb(), auth.userId, args));
+        return content(await requestCharacterReference(this.requireManagementDb(), auth.userId, args, ""));
       }
+      if(name === "read_agent_artwork") {requireScopes(auth,["agents:read"]);return content(await readCharacterReference(this.requireManagementDb(),auth.userId,requiredString(args,"requestId")));}
+      if(name === "retry_agent_artwork") {requireScopes(auth,["agents:read","agents:write"]);return content(await retryCharacterReference(this.requireManagementDb(),auth.userId,requiredString(args,"requestId")));}
+      if(name === "decide_agent_artwork") {requireScopes(auth,["agents:read","agents:write"]);if(args.decision!=="selected"&&args.decision!=="discarded")throw new Error("Choose selected or discarded");await decideCharacterReference(this.requireManagementDb(),auth.userId,requiredString(args,"requestId"),args.decision);return content({ok:true});}
+      if(name === "list_agent_voices") {requireScopes(auth,["agents:read"]);return content({voices:PLAYER_VOICES.map(voice=>({...voice,samplePath:"/api/agent-profiles/voice-samples/"+VOICE_AUDITION_VERSION+"/"+voice.id}))});}
       if (name === "create_agent") {
         requireScopes(auth, ["agents:read", "agents:write"]);
         const db = this.requireManagementDb();
@@ -1088,7 +1094,7 @@ function productionGameMcpTools(
   // Subject match-completeness tools are games:read only (no producer widening).
   tools.push(...matchCompletenessTools());
   tools.push(...gameRulesTools(sharedGameReadVariant ?? "games:read"));
-  tools.push(tool({ name: "read_moderation", description: "Read moderator capabilities, screening_overview operational counts (all queues for admins, ordinary queue for moderators), queue, immutable review with advisory AI shadow findings, retained evidence, decision preview, own receipt, or admin recovery. AI findings never change publication or human decisions. Fresh server roles restrict every operation. Evidence is returned as base64 PNG. Preview before deciding; historical media is unchanged.", scopes: ["moderation:read"], readOnlyHint: true,
+  tools.push(tool({ name: "read_moderation", description: "Read moderator capabilities, screening_overview operational counts (all queues for admins, ordinary queue for moderators), queue, immutable review with AI assessment findings, retained evidence, decision preview, own receipt, or admin recovery. Clear current-policy assessments may publish untouched ordinary submissions. Human actions, held revisions and rejected ancestry remain protected. Fresh server roles restrict every operation. Evidence is returned as base64 PNG. Preview before deciding; historical media is unchanged.", scopes: ["moderation:read"], readOnlyHint: true,
     inputSchema: { type: "object", additionalProperties: false, required: ["operation"], properties: {
       operation: { type: "string", enum: ["capabilities", "screening_overview", "queue", "review", "evidence", "preview", "receipt", "recovery"] },
       reviewId: { type: "string" }, actionId: { type: "string" }, hash: { type: "string" }, offset: { type: "integer", minimum: 0 }, route: { type: "string", enum: ["ordinary", "escalated"] }, filter: { type: "string", enum: ["all", "available", "mine", "flagged", "ai_review", "screening_incomplete"] }, action: { type: "string", enum: ["accept", "reject"] },
@@ -1496,11 +1502,15 @@ function ownerLearningTools(): GameMcpToolDescriptor[] {
 function userAgentWriteTools(): GameMcpToolDescriptor[] {
   const writeScopes: readonly McpOAuthScope[] = ["agents:read", "agents:write"];
   return [
+    tool({name:"read_agent_artwork",description:"Read an owned artwork operation without dispatching generation.",properties:{requestId:{type:"string"}},required:["requestId"],scopes:["agents:read"],readOnlyHint:true}),
+    tool({name:"list_agent_voices",description:"List player voices and cached audition paths. Reading never creates audio.",properties:{},scopes:["agents:read"],readOnlyHint:true}),
+    tool({name:"retry_agent_artwork",description:"Explicitly retry a failed owned preparation. Retain the request ID; successful image work is reused.",properties:{requestId:{type:"string"}},required:["requestId"],scopes:writeScopes,readOnlyHint:false}),
+    tool({name:"decide_agent_artwork",description:"Select or discard an owned ready candidate. Selecting records the decision; submit its exact URLs and confirmed crop with update_agent or create_agent.",properties:{requestId:{type:"string"},decision:{type:"string",enum:["selected","discarded"]}},required:["requestId","decision"],scopes:writeScopes,readOnlyHint:false}),
     tool({
       name: "generate_agent_visual_reference",
-      description: "Generate a full-body character image and matching cropped portrait. Return both for review, then use create_agent or update_agent to submit fullBodyReferenceUrl, avatarUrl and portraitCrop together. A cropWarning requires manual cropping with crop_agent_portrait. Reuse the same requestId UUID and identical inputs when retrying an uncertain response; do not create another paid request to bypass recovery.",
-      properties: { requestId: { type: "string" }, name: { type: "string" }, personaKey: { type: "string" }, avatarUrl: { type: ["string", "null"] }, performanceInstructions: { type: "string" }, visualDesign: { type: "string" }, fullBodyReferenceUrl: { type: ["string", "null"] } },
-      required: ["requestId", "name", "personaKey", "avatarUrl", "performanceInstructions"], scopes: writeScopes, readOnlyHint: false, idempotentHint: true,
+      description: "Generate a full-body character image and matching cropped portrait. Poll read_agent_artwork with the returned requestId. Review and select the candidate with decide_agent_artwork, then use create_agent or update_agent to submit fullBodyReferenceUrl, avatarUrl and portraitCrop together. A cropWarning requires manual cropping with crop_agent_portrait. Reuse the same requestId UUID and identical inputs when retrying an uncertain response; do not create another paid request to bypass recovery.",
+      properties: { operation:{type:"string",enum:["create","edit"]}, agentId:{type:"string"},draftScope:{type:"string"}, requestId: { type: "string" }, name: { type: "string" }, personaKey: { type: "string" }, avatarUrl: { type: ["string", "null"] }, performanceInstructions: { type: "string" }, visualDesign: { type: "string" }, fullBodyReferenceUrl: { type: ["string", "null"] } },
+      required: ["operation", "requestId", "name", "personaKey", "avatarUrl", "performanceInstructions"], scopes: writeScopes, readOnlyHint: false, idempotentHint: true,
     }),
     tool({
       name: "crop_agent_portrait",
@@ -1510,7 +1520,7 @@ function userAgentWriteTools(): GameMcpToolDescriptor[] {
     }),
     tool({
       name: "create_agent",
-      description: "Create an Agent Profile as a separate competitive identity with independent career and season history. Supply a fresh UUID creationRequestId and reuse it only when retrying the same payload; an exact retry returns the original Agent. Display names are globally unique after trim/case normalization, and House-agent names plus null/undefined are reserved; resolve owned identities first and use update_agent when one exists. A collision returns agent_name_taken without revealing another profile or owner. Requires agents:read and agents:write. Side effects: inserts an agent profile and atomically records its complete content for future moderation. Generate and select image assets before submitting.",
+      description: "Create an Agent Profile as a separate competitive identity with independent career and season history. Supply a fresh UUID creationRequestId and reuse it only when retrying the same payload; an exact retry returns the original Agent. Display names are globally unique after trim/case normalization, and House-agent names plus null/undefined are reserved; resolve owned identities first and use update_agent when one exists. A collision returns agent_name_taken without revealing another profile or owner. Requires agents:read and agents:write. Side effects: inserts an agent profile and atomically records its complete content for moderation before publication. Generate and select image assets before submitting.",
       properties: {
         creationRequestId: { type: "string", format: "uuid" },
         displayName: { type: "string", maxLength: AGENT_PROFILE_LIMITS.name },
@@ -1520,6 +1530,9 @@ function userAgentWriteTools(): GameMcpToolDescriptor[] {
         strategyStyle: nullableStringSchema(AGENT_PROFILE_LIMITS.strategyStyle),
         werewolfStrategyStyle: nullableStringSchema(AGENT_PROFILE_LIMITS.strategyStyle),
         performanceInstructions: nullableStringSchema(AGENT_PROFILE_LIMITS.performanceInstructions),
+        modelPreference:{anyOf:[{type:"string",enum:["default"]},{type:"object",additionalProperties:false,properties:{catalogId:{type:"string"}},required:["catalogId"]}]},
+        entryIntent:{oneOf:[{type:"object",additionalProperties:false,properties:{flow:{const:"join_game"},gameId:{type:"string"}},required:["flow","gameId"]},{type:"object",additionalProperties:false,properties:{flow:{const:"daily_free"},seasonId:{type:"string"},season:{type:"string"}},required:["flow","seasonId"]}]},
+        voiceId:{type:["string","null"],description:"Player voice ID from list_agent_voices, or null for automatic"},
         visualDesign: nullableStringSchema(8000),
         headPosition: { type: ["object", "null"], description: "Explicit confirmation of the head box for this exact full-body image. Obtain its source hash and dimensions with crop_agent_portrait. Required when selecting a new full-body image.", additionalProperties: false, properties: { sourceUrl: { type: "string" }, sourceHash: { type: "string" }, sourceWidth: { type: "integer" }, sourceHeight: { type: "integer" }, rect: { type: "object", additionalProperties: false, properties: { x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["x", "y", "width", "height"] } }, required: ["sourceUrl", "sourceHash", "sourceWidth", "sourceHeight", "rect"] },
           portraitCrop: { type: ["object", "null"], additionalProperties: false, properties: { sourceUrl: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["sourceUrl", "x", "y", "width", "height"] },
@@ -1536,7 +1549,7 @@ function userAgentWriteTools(): GameMcpToolDescriptor[] {
     }),
     tool({
       name: "update_agent",
-      description: "Tune an existing owned Agent Profile while preserving its stable identity, career, season history, and Standing Daily membership. Use update_agent regardless of whether the competitor is unenrolled, standing in Daily Free, seated in a waiting game, in progress, or suspended. Renaming to a globally occupied name, reserved House-agent name, or null/undefined returns agent_name_taken. Unrestricted changes become active by default: waiting seats follow current behavior, while started or suspended seats remain pinned. After a moderation rejection, corrections are held for review and do not change the effective character; inspect receipt.publication. For a custom review-driven update, show the exact custom change, obtain a fresh affirmative user message immediately before calling, and pass the owned same-Profile sourceReviewId; this creates an ordinary mutation receipt, resolves the review as manual_update, and does not accept the generated proposal. The server enforces ownership and linkage but does not claim to verify conversational consent. Supply submissionId as a fresh UUID and expectedContentRevisionId using latestContentRevisionId from get_agent (null before its first content revision); reuse the ID only for exact retries. Read the structured receipt for the revision and enrollment outcome. Requires agents:read and agents:write. Side effect: updates the existing agent profile and eligible waiting followers; it never performs active-match actions.",
+      description: "Tune an existing owned Agent Profile while preserving its stable identity, career, season history, and Standing Daily membership. Use update_agent regardless of whether the competitor is unenrolled, standing in Daily Free, seated in a waiting game, in progress, or suspended. Renaming to a globally occupied name, reserved House-agent name, or null/undefined returns agent_name_taken. Content changes return Reviewing and become active only after acceptance. The last accepted version remains usable; started or suspended seats remain pinned. Model and voice-only changes reuse an accepted content decision. After a moderation rejection, corrections are held for review and do not change the effective character; inspect receipt.publication. For a custom review-driven update, show the exact custom change, obtain a fresh affirmative user message immediately before calling, and pass the owned same-Profile sourceReviewId; this creates an ordinary mutation receipt, resolves the review as manual_update, and does not accept the generated proposal. The server enforces ownership and linkage but does not claim to verify conversational consent. Supply submissionId as a fresh UUID and expectedContentRevisionId using latestContentRevisionId from get_agent (null before its first content revision); reuse the ID only for exact retries. Read the structured receipt for the revision and enrollment outcome. Requires agents:read and agents:write. Side effect: updates the existing agent profile and eligible waiting followers; it never performs active-match actions.",
       properties: {
         agentId: { type: "string" },
         displayName: { type: "string", maxLength: AGENT_PROFILE_LIMITS.name },
@@ -1546,6 +1559,9 @@ function userAgentWriteTools(): GameMcpToolDescriptor[] {
         strategyStyle: nullableStringSchema(AGENT_PROFILE_LIMITS.strategyStyle),
         werewolfStrategyStyle: nullableStringSchema(AGENT_PROFILE_LIMITS.strategyStyle),
         performanceInstructions: nullableStringSchema(AGENT_PROFILE_LIMITS.performanceInstructions),
+        modelPreference:{anyOf:[{type:"string",enum:["default"]},{type:"object",additionalProperties:false,properties:{catalogId:{type:"string"}},required:["catalogId"]}]},
+        entryIntent:{oneOf:[{type:"object",additionalProperties:false,properties:{flow:{const:"join_game"},gameId:{type:"string"}},required:["flow","gameId"]},{type:"object",additionalProperties:false,properties:{flow:{const:"daily_free"},seasonId:{type:"string"},season:{type:"string"}},required:["flow","seasonId"]}]},
+        voiceId:{type:["string","null"],description:"Player voice ID from list_agent_voices, or null for automatic"},
         visualDesign: nullableStringSchema(8000),
         headPosition: { type: ["object", "null"], description: "Explicit confirmation of the head box for this exact full-body image. Obtain its source hash and dimensions with crop_agent_portrait. Required when selecting a new full-body image.", additionalProperties: false, properties: { sourceUrl: { type: "string" }, sourceHash: { type: "string" }, sourceWidth: { type: "integer" }, sourceHeight: { type: "integer" }, rect: { type: "object", additionalProperties: false, properties: { x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["x", "y", "width", "height"] } }, required: ["sourceUrl", "sourceHash", "sourceWidth", "sourceHeight", "rect"] },
           portraitCrop: { type: ["object", "null"], additionalProperties: false, properties: { sourceUrl: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["sourceUrl", "x", "y", "width", "height"] },

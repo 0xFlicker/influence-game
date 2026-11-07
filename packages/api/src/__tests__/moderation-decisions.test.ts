@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { seedRBAC } from "../db/rbac-seed.js";
-import { setupTestDB } from "./test-utils.js";
+import { setupTestDB, createAcceptedTestProfile, acceptTestAgent } from "./test-utils.js";
 import { createOwnedAgentProfile, updateOwnedAgentProfile } from "../services/agent-profile-management.js";
 import { claimModerationReview, decideModerationReview, previewModerationDecision, reopenModerationReview } from "../services/moderation-intake.js";
 import { archiveOwnedAgentProfile, restoreArchivedAgentProfile } from "../services/agent-profile-lifecycle.js";
@@ -39,10 +39,12 @@ describe("whole-revision moderation decisions", () => {
     await seedRBAC(db);
     owner = await user(); moderator = await user("moderator"); admin = await user("admin");
   });
-  const create = () => createOwnedAgentProfile(db, context(), { name: "Arden Vale", personality: "Initial", gender: "non-binary" });
+  const create = () => createAcceptedTestProfile(db, context(), { name: "Arden Vale", personality: "Initial", gender: "non-binary" });
   const edit = (id: string, personality: string) => updateOwnedAgentProfile(db, context(), id, { personality, submissionId: randomUUID() });
   const profile = async (id: string) => (await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, id)))[0]!;
   async function command(reviewId: string, action: "accept" | "reject", who = moderator) {
+    const [current]=await db.select().from(schema.agentModerationReviews).where(eq(schema.agentModerationReviews.id,reviewId));
+    if(current?.status==="resolved")await reopenModerationReview(db,admin,{actionId:randomUUID(),reviewId,version:current.version,reason:"Review accepted fixture"});
     const claim = await claimModerationReview(db, who, { reviewId, actionId: randomUUID() });
     const preview = await previewModerationDecision(db, who, { reviewId, action });
     return { actionId: randomUUID(), reviewId, action, token: claim.claim!.token, version: preview.reviewVersion,
@@ -75,8 +77,8 @@ describe("whole-revision moderation decisions", () => {
     const reject = await command(r2.receipt.moderationRecordId!, "reject");
     const removed = await decideModerationReview(db, moderator, reject);
     expect(await decideModerationReview(db, moderator, reject)).toEqual(removed);
-    expect(await profile(r1.profile.id)).toMatchObject({ contentRevisionId: r1.profile.contentRevisionId,
-      latestContentRevisionId: r3.profile.contentRevisionId, personality: "Initial", moderationRequired: true });
+    expect(await profile(r1.profile.id)).toMatchObject({ contentRevisionId: r1.profile.latestContentRevisionId,
+      latestContentRevisionId: r3.profile.latestContentRevisionId, personality: "Initial", moderationRequired: true });
     const [held] = await db.select().from(schema.agentModerationReviews).where(eq(schema.agentModerationReviews.id, r3.receipt.moderationRecordId!));
     expect(held).toMatchObject({ held: true, status: "pending" });
     const before = await profile(r1.profile.id);
@@ -164,7 +166,7 @@ describe("whole-revision moderation decisions", () => {
     const cmd = await command(first.receipt.moderationRecordId!, "reject");
     await edit(first.profile.id, "Newer snapshot");
     await expect(decideModerationReview(db, moderator, cmd)).rejects.toMatchObject({ code: "review_conflict" });
-    expect(await profile(first.profile.id)).toMatchObject({ personality: "Newer snapshot", moderationRequired: false });
+    expect(await profile(first.profile.id)).toMatchObject({ personality: "Initial", moderationRequired: false });
     expect(await db.select().from(schema.moderationClaims)).toHaveLength(1);
   });
   test("expired leases and changed expected dispositions cannot toggle a decision", async () => {
@@ -178,6 +180,7 @@ describe("whole-revision moderation decisions", () => {
   test("a name conflict withholds instead of altering the saved snapshot", async () => {
     const first = await create();
     const changed = await updateOwnedAgentProfile(db, context(), first.profile.id, { name: "Arden Renamed" });
+    await acceptTestAgent(db,first.profile.id);
     await createOwnedAgentProfile(db, context(), { name: "Arden Vale", personality: "Another character" });
     await decideModerationReview(db, moderator, await command(changed.receipt.moderationRecordId!, "reject"));
     expect(await profile(first.profile.id)).toMatchObject({ contentRevisionId: null, name: "Arden Renamed" });
@@ -199,7 +202,7 @@ describe("whole-revision moderation decisions", () => {
     const [review] = await db.select().from(schema.agentModerationReviews);
     const legacy = { ...revision!, id: "legacy", ancestryKnown: false, parentRevisionId: null };
     const result = planModerationSelection({ states: [{ revision: legacy, review: { ...review!, contentRevisionId: legacy.id } },
-      { revision: revision!, review: review! }], targetId: first.profile.contentRevisionId!, disposition: "rejected", latestId: revision!.id, effectiveId: revision!.id });
+      { revision: revision!, review: review! }], targetId: first.profile.latestContentRevisionId!, disposition: "rejected", latestId: revision!.id, effectiveId: revision!.id });
     expect(result).toMatchObject({ effectiveId: null, unknownAncestry: true, heldIds: ["legacy"] });
   });
   test("withholding removes the current public profile and blocks new admission and freeze while retaining standing membership", async () => {
@@ -242,13 +245,13 @@ describe("whole-revision moderation decisions", () => {
       const reopen = { reviewId: rejected.reviewId, version: rejected.version, actionId: randomUUID(), reason: "Review the disposition again" };
       await expect(reopenModerationReview(db, moderator, reopen)).rejects.toMatchObject({ code: "moderation_forbidden" });
       const reopened = await reopenModerationReview(db, admin, reopen);
-      expect(reopened.cycle).toBe(2);
+      expect(reopened.cycle).toBe(rejected.cycle+1);
       expect(await reopenModerationReview(db, admin, reopen)).toEqual(reopened);
       const cmd = await command(reopened.reviewId, action);
       expect(cmd.expectedDisposition).toBe("rejected");
       expect(cmd.disposition).toBe(action === "accept" ? "rejected" : "allowed");
       await decideModerationReview(db, moderator, cmd);
-      expect((await profile(first.profile.id)).contentRevisionId).toBe(action === "accept" ? null : first.profile.contentRevisionId);
+      expect((await profile(first.profile.id)).contentRevisionId).toBe(action === "accept" ? null : first.profile.latestContentRevisionId);
       const [review] = await db.select().from(schema.agentModerationReviews).where(eq(schema.agentModerationReviews.id, reopened.reviewId));
       expect(review).toMatchObject({ status: "resolved", disposition: cmd.disposition });
     });
@@ -261,8 +264,8 @@ describe("whole-revision moderation decisions", () => {
     await db.execute(sql`CREATE TRIGGER reject_test_decision BEFORE INSERT ON moderation_actions FOR EACH ROW EXECUTE FUNCTION reject_test_decision()`);
     try {
       await expect(decideModerationReview(db, moderator, cmd)).rejects.toThrow();
-      expect(await profile(first.profile.id)).toMatchObject({ contentRevisionId: second.profile.contentRevisionId, currentRevisionId: second.profile.currentRevisionId, moderationRequired: false });
-      expect(await loadPayloads(db.select().from(schema.agentRevisions))).toHaveLength(2);
+      expect(await profile(first.profile.id)).toMatchObject({ contentRevisionId: first.profile.latestContentRevisionId, currentRevisionId: first.profile.currentRevisionId, moderationRequired: false });
+      expect(await loadPayloads(db.select().from(schema.agentRevisions))).toHaveLength(1);
       expect(await db.select().from(schema.moderationClaims)).toHaveLength(1);
     } finally {
       await db.execute(sql`DROP TRIGGER reject_test_decision ON moderation_actions`);

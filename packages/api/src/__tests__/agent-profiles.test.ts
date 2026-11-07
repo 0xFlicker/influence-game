@@ -15,7 +15,7 @@ import { createAgentProfileRoutes } from "../routes/agent-profiles.js";
 import { createGameRoutes } from "../routes/games.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { randomUUID } from "crypto";
-import { setupTestDB } from "./test-utils.js";
+import { acceptTestAgent, setupTestDB } from "./test-utils.js";
 import { eq } from "drizzle-orm";
 import { joinQueue } from "../services/queue-enrollment.js";
 import { createSeason } from "../services/seasons.js";
@@ -164,6 +164,26 @@ describe("Agent Profile API", () => {
     for (const key of ["pfp/maris-full.png", "pfp/11111111-1111-4111-8111-111111111111.png", "pfp/22222222-2222-4222-8222-222222222222.png"]) await contentImageFixture(key);
   });
 
+  async function acceptResponse(response: Response): Promise<Record<string, unknown>> {
+    const submitted = await response.json() as Record<string, unknown> & { id: string };
+    const published = await acceptTestAgent(db, submitted.id);
+    if (!published) return submitted;
+    return { ...submitted, ...published.profile, profileRevisionId: published.profile.currentRevisionId, receipt: published.receipt };
+  }
+
+  test("creation commits its entry destination atomically and replays without losing it", async () => {
+    const input = { name: "Entry Arden", personality: "Patient", creationRequestId: randomUUID(), entryIntent: { flow: "join_game", gameId: "chosen-game" } };
+    const response = await app.request("/api/agent-profiles", jsonReq(input, tokenA));
+    expect(response.status).toBe(201);
+    const created = await response.json() as { id: string };
+    const replay = await app.request("/api/agent-profiles", jsonReq(input, tokenA));
+    expect((await replay.json() as { id: string }).id).toBe(created.id);
+    expect(await db.select().from(schema.agentEntryIntents)).toMatchObject([{ agentId: created.id, userId: USER_A_ID, intent: input.entryIntent }]);
+    const invalid = await app.request("/api/agent-profiles", jsonReq({ ...input, name: "Invalid entry", creationRequestId: randomUUID(), entryIntent: { flow: "daily_free" } }, tokenA));
+    expect(invalid.status).toBe(400);
+    expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
+  });
+
   test("persists visual profile fields and protects performance edits from stale saves", async () => {
     const create = await app.request("/api/agent-profiles", jsonReq({
       name: "Visual Maris", personality: "A patient mediator.",
@@ -172,13 +192,13 @@ describe("Agent Profile API", () => {
       performanceInstructions: "Upright posture, quiet delivery, deliberate open-handed gestures.",
     }, tokenA));
     expect(create.status).toBe(201);
-    const original = await create.json() as { id: string; profileRevisionId: string };
+    const original = await acceptResponse(create) as { id: string; profileRevisionId: string };
     const updated = await app.request(`/api/agent-profiles/${original.id}`, jsonReq({
       performanceInstructions: "Relaxed posture. Speaks softly, pauses before answering, avoids eye contact when nervous.",
       expectedRevisionId: original.profileRevisionId,
     }, tokenA, "PATCH"));
     expect(updated.status).toBe(200);
-    const value = await updated.json() as { profileRevisionId: string; fullBodyReferenceUrl: string };
+    const value = await acceptResponse(updated) as { profileRevisionId: string; fullBodyReferenceUrl: string };
     expect(value.fullBodyReferenceUrl).toContain("key=pfp%2Fmaris-full.png");
     expect(value.profileRevisionId).not.toBe(original.profileRevisionId);
     const stale = await app.request(`/api/agent-profiles/${original.id}`, jsonReq({
@@ -208,9 +228,9 @@ describe("Agent Profile API", () => {
   test("submits selected assets and returns durable review IDs with response-loss replay", async () => {
     const response = await app.request("/api/agent-profiles", jsonReq({ name: "Draft Arden", personality: "Careful", avatarUrl: await contentImageFixture("pfp/selected.png") }, tokenA));
     expect(response.status).toBe(201);
-    const created = await response.json() as { id: string; contentRevisionId: string; receipt: { moderationRecordId: string } };
+    const created = await response.json() as { id: string; latestContentRevisionId: string; contentRevisionId: string; receipt: { moderationRecordId: string } };
     expect(created.receipt.moderationRecordId).toBeTruthy();
-    const input = { submissionId: randomUUID(), expectedContentRevisionId: created.contentRevisionId, visualDesign: "A green coat" };
+    const input = { submissionId: randomUUID(), expectedContentRevisionId: created.latestContentRevisionId, visualDesign: "A green coat" };
     const update = await app.request(`/api/agent-profiles/${created.id}`, jsonReq(input, tokenA, "PATCH"));
     expect(update.status).toBe(200);
     const saved = await update.json();
@@ -222,16 +242,17 @@ describe("Agent Profile API", () => {
 
   test("image-only and crop-only API submissions retain the competitive revision", async () => {
     const response = await app.request("/api/agent-profiles", jsonReq({ name: "Crop Arden", personality: "Careful" }, tokenA));
-    const created = await response.json() as { id: string; contentRevisionId: string; currentRevisionId: string };
+    const created = await response.json() as { id: string; latestContentRevisionId: string; contentRevisionId: string; currentRevisionId: string };
     const sourceUrl = await contentImageFixture("pfp/crop-api.png");
-    let revision = created.contentRevisionId;
+    await acceptTestAgent(db, created.id);
+    let revision = created.latestContentRevisionId;
     for (const change of [{ avatarUrl: sourceUrl }, { portraitCrop: { sourceUrl, x: 0, y: 0, width: 0.5, height: 0.5 } }]) {
       const update = await app.request(`/api/agent-profiles/${created.id}`, jsonReq({ ...change, submissionId: randomUUID(), expectedContentRevisionId: revision }, tokenA, "PATCH"));
       expect(update.status).toBe(200);
-      const saved = await update.json() as { contentRevisionId: string; currentRevisionId: string; receipt: { moderationRecordId: string } };
+      const saved = await update.json() as { contentRevisionId: string; currentRevisionId: string; receipt: { moderationRecordId: string; contentRevisionId: string } };
       expect(saved.currentRevisionId).toBe(created.currentRevisionId);
       expect(saved.receipt.moderationRecordId).toBeTruthy();
-      revision = saved.contentRevisionId;
+      revision = saved.receipt.contentRevisionId;
     }
     expect(await db.select().from(schema.agentModerationReviews)).toHaveLength(3);
   });
@@ -680,22 +701,22 @@ describe("Agent Profile API", () => {
   describe("PATCH /api/agent-profiles/:id", () => {
     test("saves model preference with profile edits and leaves it unchanged when omitted", async () => {
       const created = await app.request("/api/agent-profiles", jsonReq({ name: "Model Casey", personality: "Careful." }, tokenB));
-      const { id } = await created.json() as { id: string };
+      const { id } = await acceptResponse(created) as { id: string };
       const modelPreference = { catalogId: "katana:deepseek-v4-flash" };
       const saved = await app.request(`/api/agent-profiles/${id}`, jsonReq({ name: "Model Casey Updated", modelPreference }, tokenB, "PATCH"));
       expect(saved.status).toBe(200);
-      expect(await saved.json()).toMatchObject({ name: "Model Casey Updated", modelPreference });
+      expect(await acceptResponse(saved)).toMatchObject({ name: "Model Casey Updated", modelPreference });
       const edited = await app.request(`/api/agent-profiles/${id}`, jsonReq({ backstory: "Patient." }, tokenB, "PATCH"));
       expect(edited.status).toBe(200);
-      expect(await edited.json()).toMatchObject({ modelPreference });
+      expect(await acceptResponse(edited)).toMatchObject({ modelPreference });
       const reset = await app.request(`/api/agent-profiles/${id}`, jsonReq({ modelPreference: "default" }, tokenB, "PATCH"));
       expect(reset.status).toBe(200);
-      expect(await reset.json()).toMatchObject({ modelPreference: "default" });
+      expect(await acceptResponse(reset)).toMatchObject({ modelPreference: "default" });
     });
 
     test("rejects an unauthorized model without saving other edits, but allows admins", async () => {
       const created = await app.request("/api/agent-profiles", jsonReq({ name: "Model Access Casey", personality: "Careful." }, tokenB));
-      const { id } = await created.json() as { id: string };
+      const { id } = await acceptResponse(created) as { id: string };
       const modelPreference = { catalogId: "openai:gpt-5.4" };
       const rejected = await app.request(`/api/agent-profiles/${id}`, jsonReq({ name: "Should Not Save", modelPreference }, tokenB, "PATCH"));
       expect(rejected.status).toBe(403);
@@ -704,14 +725,15 @@ describe("Agent Profile API", () => {
       await grantTestAuthority(db, USER_B_ID, [], "admin");
       const saved = await app.request(`/api/agent-profiles/${id}`, jsonReq({ modelPreference }, tokenB, "PATCH"));
       expect(saved.status).toBe(200);
-      expect(await saved.json()).toMatchObject({ modelPreference });
+      expect(await acceptResponse(saved)).toMatchObject({ modelPreference });
     });
 
     test("rolls back a model change when the content save fails", async () => {
       const created = await app.request("/api/agent-profiles", jsonReq({ name: "Atomic Casey", personality: "Careful." }, tokenB));
-      const original = await created.json() as { id: string; profileRevisionId: string };
+      const original = await acceptResponse(created) as { id: string; profileRevisionId: string };
       const updated = await app.request(`/api/agent-profiles/${original.id}`, jsonReq({ strategyStyle: "New strategy." }, tokenB, "PATCH"));
       expect(updated.status).toBe(200);
+      await acceptTestAgent(db, original.id);
       const failed = await app.request(`/api/agent-profiles/${original.id}`, jsonReq({
         strategyStyle: "Stale strategy.", expectedRevisionId: original.profileRevisionId,
         modelPreference: { catalogId: "katana:deepseek-v4-flash" },
@@ -721,16 +743,18 @@ describe("Agent Profile API", () => {
       expect(stored).toMatchObject({ strategyStyle: "New strategy.", modelPreference: "default" });
     });
 
-    test("saves operational model preference while character corrections remain held", async () => {
+    test("keeps the model and character correction together while held", async () => {
       const created = await app.request("/api/agent-profiles", jsonReq({ name: "Held Model Casey", personality: "Original." }, tokenB));
-      const { id } = await created.json() as { id: string };
+      const { id } = await acceptResponse(created) as { id: string };
       await db.update(schema.agentProfiles).set({ moderationRequired: true }).where(eq(schema.agentProfiles.id, id));
       const modelPreference = { catalogId: "katana:deepseek-v4-flash" };
       const saved = await app.request(`/api/agent-profiles/${id}`, jsonReq({ personality: "Correction.", modelPreference }, tokenB, "PATCH"));
       expect(saved.status).toBe(200);
-      expect(await saved.json()).toMatchObject({ modelPreference, personality: "Original.", receipt: { publication: "held" } });
+      expect(await saved.json()).toMatchObject({ modelPreference: "default", personality: "Original.", receipt: { publication: "held" } });
       const [stored] = await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, id));
-      expect(stored).toMatchObject({ modelPreference, personality: "Original.", moderationRequired: true });
+      expect(stored).toMatchObject({ modelPreference: "default", personality: "Original.", moderationRequired: true });
+      const revisions = await loadPayloads(db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, stored!.latestContentRevisionId!)));
+      expect(revisions[0]!.snapshot).toMatchObject({ modelPreference, personality: "Correction." });
     });
 
     test("rejects stale edits without overwriting newer strategy and accepts an exact response-loss replay", async () => {
@@ -739,8 +763,9 @@ describe("Agent Profile API", () => {
         personality: "Keeps edits orderly.",
         strategyStyle: "Start with one plan.",
       }, tokenA));
-      const original = await createRes.json() as { id: string; profileRevisionId: string };
+      const original = await acceptResponse(createRes) as { id: string; profileRevisionId: string };
       const strategyUpdate = {
+        submissionId: randomUUID(),
         strategyStyle: "Commit to the verified coalition.",
         expectedRevisionId: original.profileRevisionId,
       };
@@ -750,15 +775,15 @@ describe("Agent Profile API", () => {
         jsonReq(strategyUpdate, tokenA, "PATCH"),
       );
       expect(first.status).toBe(200);
+      const submitted = await first.json();
 
       const exactReplay = await app.request(
         `/api/agent-profiles/${original.id}`,
         jsonReq(strategyUpdate, tokenA, "PATCH"),
       );
       expect(exactReplay.status).toBe(200);
-      expect(await exactReplay.json()).toMatchObject({
-        strategyStyle: strategyUpdate.strategyStyle,
-      });
+      expect(await exactReplay.json()).toEqual(submitted);
+      await acceptTestAgent(db, original.id);
 
       const staleIdentityEdit = await app.request(
         `/api/agent-profiles/${original.id}`,
@@ -783,14 +808,14 @@ describe("Agent Profile API", () => {
         "/api/agent-profiles",
         jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
-      const { id } = await createRes.json() as { id: string };
+      const { id } = await acceptResponse(createRes) as { id: string };
 
       const res = await app.request(
         `/api/agent-profiles/${id}`,
         jsonReq({ name: "Atlas v2", backstory: "New backstory", gender: "non-binary" }, tokenA, "PATCH"),
       );
       expect(res.status).toBe(200);
-      const body = await res.json() as {
+      const body = await acceptResponse(res) as {
         id: string;
         name: string;
         backstory: string;
@@ -853,7 +878,7 @@ describe("Agent Profile API", () => {
           avatarUrl: await contentImageFixture("pfp/old.png"),
         }, tokenA),
       );
-      const { id } = await createRes.json() as { id: string };
+      const { id } = await acceptResponse(createRes) as { id: string };
 
       const res = await app.request(
         `/api/agent-profiles/${id}`,
@@ -861,6 +886,7 @@ describe("Agent Profile API", () => {
       );
 
       expect(res.status).toBe(200);
+      await acceptTestAgent(db, id);
       const changes = await db
         .select()
         .from(schema.avatarChangeEvents);
@@ -876,7 +902,7 @@ describe("Agent Profile API", () => {
         "/api/agent-profiles",
         jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
-      const { id } = await createRes.json() as { id: string };
+      const { id } = await acceptResponse(createRes) as { id: string };
 
       // Simulate games played
       const { eq } = await import("drizzle-orm");
@@ -900,7 +926,7 @@ describe("Agent Profile API", () => {
         "/api/agent-profiles",
         jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
-      const { id } = await createRes.json() as { id: string };
+      const { id } = await acceptResponse(createRes) as { id: string };
 
       const res = await app.request(
         `/api/agent-profiles/${id}`,
@@ -914,7 +940,7 @@ describe("Agent Profile API", () => {
         "/api/agent-profiles",
         jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
-      const { id } = await createRes.json() as { id: string };
+      const { id } = await acceptResponse(createRes) as { id: string };
 
       const res = await app.request(
         `/api/agent-profiles/${id}`,
@@ -934,7 +960,7 @@ describe("Agent Profile API", () => {
         "/api/agent-profiles",
         jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
-      const { id } = await createRes.json() as { id: string };
+      const { id } = await acceptResponse(createRes) as { id: string };
 
       const res = await app.request(`/api/agent-profiles/${id}`, authDelete(tokenA));
       expect(res.status).toBe(200);
@@ -954,7 +980,7 @@ describe("Agent Profile API", () => {
           avatarUrl: await contentImageFixture("pfp/avatar.png"),
         }, tokenA),
       );
-      const { id } = await createRes.json() as { id: string };
+      const { id } = await acceptResponse(createRes) as { id: string };
       expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(1);
 
       const res = await app.request(`/api/agent-profiles/${id}`, authDelete(tokenA));
@@ -975,7 +1001,7 @@ describe("Agent Profile API", () => {
         "/api/agent-profiles",
         jsonReq({ name: "Pending Portrait", personality: "Strategic" }, tokenA),
       );
-      const { id } = await createRes.json() as { id: string };
+      const { id } = await acceptResponse(createRes) as { id: string };
       await db.delete(schema.avatarChangeEvents);
       await db.delete(schema.avatarGenerationRequests);
       await db.insert(schema.avatarGenerationRequests).values({
@@ -1012,7 +1038,7 @@ describe("Agent Profile API", () => {
         "/api/agent-profiles",
         jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
-      const { id } = await createRes.json() as { id: string };
+      const { id } = await acceptResponse(createRes) as { id: string };
       await db.insert(schema.freeGameQueue).values({
         id: randomUUID(),
         userId: USER_A_ID,
@@ -1031,7 +1057,7 @@ describe("Agent Profile API", () => {
         "/api/agent-profiles",
         jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
-      const { id } = await createRes.json() as { id: string };
+      const { id } = await acceptResponse(createRes) as { id: string };
 
       const [joinResult, deleteResult] = await Promise.allSettled([
         joinQueue(db, { userId: USER_A_ID }, { queueType: "daily-free", agentId: id }),
@@ -1057,7 +1083,7 @@ describe("Agent Profile API", () => {
         "/api/agent-profiles",
         jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
-      const { id } = await createRes.json() as { id: string };
+      const { id } = await acceptResponse(createRes) as { id: string };
 
       const res = await app.request(`/api/agent-profiles/${id}`, authDelete(tokenB));
       expect(res.status).toBe(404);
@@ -1072,7 +1098,7 @@ describe("Agent Profile API", () => {
         "/api/agent-profiles",
         jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
-      const { id } = await createRes.json() as { id: string };
+      const { id } = await acceptResponse(createRes) as { id: string };
       const revision = (await loadPayloads(db.select().from(schema.agentRevisions)
         .where(eq(schema.agentRevisions.agentProfileId, id))))[0]!;
       await db.insert(schema.agentCompetitionRatings).values({
@@ -1096,7 +1122,7 @@ describe("Agent Profile API", () => {
         "/api/agent-profiles",
         jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
-      const { id } = await createRes.json() as { id: string };
+      const { id } = await acceptResponse(createRes) as { id: string };
       const revision = (await loadPayloads(db.select().from(schema.agentRevisions)
         .where(eq(schema.agentRevisions.agentProfileId, id))))[0]!;
       const seasonId = randomUUID();
@@ -1137,7 +1163,7 @@ describe("Agent Profile API", () => {
         jsonReq({ name: "Aster Vale", personality: "Strategic", fullBodyReferenceUrl,
           headPosition: await headPositionFixture(fullBodyReferenceUrl) }, tokenA),
       );
-      const { id: profileId } = await createRes.json() as { id: string };
+      const { id: profileId } = await acceptResponse(createRes) as { id: string };
 
       const gameRes = await app.request(
         "/api/games",
@@ -1180,7 +1206,7 @@ describe("Agent Profile API", () => {
         jsonReq({ name: "Live Aster", personality: "Strategic", fullBodyReferenceUrl,
           headPosition: await headPositionFixture(fullBodyReferenceUrl) }, tokenA),
       );
-      const { id: profileId } = await createRes.json() as { id: string };
+      const { id: profileId } = await acceptResponse(createRes) as { id: string };
       const gameRes = await app.request(
         "/api/games",
         jsonReq({
@@ -1228,7 +1254,7 @@ describe("Agent Profile API", () => {
           tokenA,
         ),
       );
-      const { id: profileId } = await createRes.json() as { id: string };
+      const { id: profileId } = await acceptResponse(createRes) as { id: string };
 
       const gameRes = await app.request(
         "/api/games",
@@ -1278,7 +1304,7 @@ describe("Agent Profile API", () => {
         "/api/agent-profiles",
         jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
-      const { id: profileId } = await createRes.json() as { id: string };
+      const { id: profileId } = await acceptResponse(createRes) as { id: string };
 
       const gameRes = await app.request(
         "/api/games",

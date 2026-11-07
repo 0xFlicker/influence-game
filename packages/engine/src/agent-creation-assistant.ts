@@ -3,7 +3,7 @@ export const CREATION_COMMANDS = {
   character: ["revise_character", "clarify", "end_abuse", "end_fatigue"],
   review: ["accept_character", "revise_character", "clarify", "end_abuse", "end_fatigue"],
   appearance: ["generate_appearance", "clarify", "end_abuse", "end_fatigue"],
-  portrait: ["revise_appearance", "clarify", "end_abuse", "end_fatigue"],
+  portrait: ["generate_appearance", "revise_appearance", "clarify", "end_abuse", "end_fatigue"],
 } as const;
 export type CreationStage = keyof typeof CREATION_COMMANDS;
 export type CreationCommand = (typeof CREATION_COMMANDS)[CreationStage][number];

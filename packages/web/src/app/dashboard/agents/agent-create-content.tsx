@@ -6,11 +6,13 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import {
+  clearAgentEntryIntent,
   createAgent,
   ApiError,
   getAgent,
   getAgentByCreationRequestId,
   getGame,
+  getFreeQueueStatus,
   joinGame,
   updateAgent,
   type AgentProfileWriteParams,
@@ -38,7 +40,9 @@ export function AgentCreateContent({
   gameId,
   seasonId,
   seasonSlug,
+  draftScope,
 }: {
+  draftScope?: string;
   flow?: AgentCreateFlow;
   gameId?: string;
   seasonId?: string;
@@ -55,10 +59,12 @@ export function AgentCreateContent({
     params: AgentProfileWriteParams,
     { creationRequestId }: { creationRequestId: string },
   ) {
-    const expectedSeasonId = flow === "daily_free" && seasonId
-      ? pinSeasonCreationTarget(creationRequestId, seasonId) : undefined;
+    const targetSeasonId=flow==="daily_free"?seasonId??(await getFreeQueueStatus()).acceptingSeasonId:undefined;
+    if(flow==="daily_free"&&!targetSeasonId)throw new Error("There is no accepting season. Your agent draft is retained.");
+    const expectedSeasonId=targetSeasonId?pinSeasonCreationTarget(creationRequestId,targetSeasonId):undefined;
+    const entryIntent=flow==="join_game"&&gameId?{flow:"join_game" as const,gameId}:flow==="daily_free"&&expectedSeasonId?{flow:"daily_free" as const,seasonId:expectedSeasonId,...(seasonSlug?{season:seasonSlug}:{})}:undefined;
     const identity = flow === "join_game" && gameId ? await getGameEntry(gameId) : null;
-    const createParams: CreateAgentParams = { ...params, creationRequestId };
+    const createParams: CreateAgentParams = { ...params, creationRequestId,entryIntent };
     const continuationKey = `influence:agent-create-continuation:${creationRequestId}`;
     const baselineKey = `influence:agent-create-baseline:${creationRequestId}`;
     const storedContinuation = readEditorStorage(continuationKey);
@@ -111,6 +117,8 @@ export function AgentCreateContent({
     writeEditorStorage(baselineKey, JSON.stringify(params));
     createdAgentId.current = agent.id;
     writeEditorStorage(continuationKey, agent.id);
+
+    if (agent.receipt?.publication !== "published") { router.replace("/dashboard/agents"); return agent; }
     if (!hasFullBodyAgentArt(agent) && flow === "join_game" && gameId) {
       removeEditorStorage(continuationKey);
       removeEditorStorage(baselineKey);
@@ -126,6 +134,7 @@ export function AgentCreateContent({
     if ((flow === "join_game") && gameId) {
       if (identity?.gameKind === "werewolf") await joinWerewolfLobby(gameId, agent.id);
       else await joinGame(gameId, { agentProfileId: agent.id });
+      await clearAgentEntryIntent(agent.id,entryIntent!);
       const joinedGame = joinTarget ?? (identity?.gameKind === "werewolf" ? await getWerewolfLobby(gameId) : await getGame(gameId));
       removeEditorStorage(continuationKey);
       removeEditorStorage(baselineKey);
@@ -135,6 +144,7 @@ export function AgentCreateContent({
     if (flow === "daily_free") {
       // Keep both receipts on failure; retry recovers the same agent and season.
       await enrollCreatedSeasonAgent(agent, expectedSeasonId);
+      await clearAgentEntryIntent(agent.id,entryIntent!);
       removeEditorStorage(continuationKey);
       removeEditorStorage(baselineKey);
       window.dispatchEvent(new Event("free-queue:changed"));
@@ -175,10 +185,7 @@ export function AgentCreateContent({
           <span aria-hidden="true">/</span>
           <Link href="/dashboard/agents" className="transition-colors hover:text-text-primary">Agents</Link>
         </nav>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-text-primary sm:text-4xl">{context.title}</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-white/50">
-          {context.description}<AgentCreateRulesLink werewolf={target.data?.gameKind === "werewolf"} />
-        </p>
+        {flow!=="manage"&&<p className="mt-2 text-sm text-white/60">{context.description} Entry follows acceptance.<AgentCreateRulesLink werewolf={target.data?.gameKind==="werewolf"}/></p>}
       </header>}
       {target.error && <p role="alert">Could not load the game to join. {target.error.message}</p>}
       <AgentForm
@@ -186,7 +193,7 @@ export function AgentCreateContent({
         guided={mode === "assistant"}
         onAdvanced={() => setMode("advanced")}
         onAssistant={() => setMode("assistant")}
-        draftScope={`create:${flow}:${gameId ?? seasonId ?? "none"}`}
+        draftScope={draftScope ?? `create:${flow}:${gameId ?? seasonId ?? "none"}`}
         onSubmit={handleCreate}
         onCancel={() => router.replace(authenticated ? context.cancelPath : "/games")}
         submitLabel={context.submitLabel}
@@ -220,7 +227,7 @@ export function buildRecoveredUpdate(
   remote: SavedAgent,
 ): UpdateAgentParams {
   const update: UpdateAgentParams = {};
-  const fields = ["name", "personality", "backstory", "strategyStyle", "werewolfStrategyStyle", "personaKey", "gender", "avatarUrl", "performanceInstructions", "fullBodyReferenceUrl", "visualDesign", "portraitCrop", "headPosition"] as const;
+  const fields = ["modelPreference","voiceId","name", "personality", "backstory", "strategyStyle", "werewolfStrategyStyle", "personaKey", "gender", "avatarUrl", "performanceInstructions", "fullBodyReferenceUrl", "visualDesign", "portraitCrop", "headPosition"] as const;
   for (const field of fields) {
     const baseValue = comparableValue(baseline[field], field);
     const localValue = comparableValue(local[field], field);

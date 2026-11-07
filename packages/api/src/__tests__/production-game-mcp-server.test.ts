@@ -32,7 +32,7 @@ import {
 import { seedRBAC } from "../db/rbac-seed.js";
 import { MCP_OAUTH_CLIENT_ID } from "../services/mcp-oauth.js";
 import { createSeason } from "../services/seasons.js";
-import { setupTestDB } from "./test-utils.js";
+import { acceptTestAgent, setupTestDB } from "./test-utils.js";
 
 const GAMES_AUTH: GameMcpAuthContext = {
   userId: "user-1",
@@ -226,6 +226,10 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "list_open_learning_reviews",
       "read_learning_review",
       "preflight_learning_review",
+      "read_agent_artwork",
+      "list_agent_voices",
+      "retry_agent_artwork",
+      "decide_agent_artwork",
       "generate_agent_visual_reference", "crop_agent_portrait",
       "create_agent",
       "update_agent",
@@ -627,7 +631,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
   test("returns non-mutating scoped challenges for every eligible agent mutation", async () => {
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
 
-    for (const name of ["set_agent_model", "generate_agent_visual_reference", "crop_agent_portrait", "create_agent", "update_agent", "join_queue", "leave_queue"]) {
+    for (const name of ["retry_agent_artwork", "decide_agent_artwork", "set_agent_model", "generate_agent_visual_reference", "crop_agent_portrait", "create_agent", "update_agent", "join_queue", "leave_queue"]) {
       const response = await server.handle({
         jsonrpc: "2.0",
         id: name,
@@ -1327,6 +1331,10 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "retry_learning_review",
       "apply_learning_review",
       "resolve_learning_review",
+      "read_agent_artwork",
+      "list_agent_voices",
+      "retry_agent_artwork",
+      "decide_agent_artwork",
       "generate_agent_visual_reference", "crop_agent_portrait",
       "create_agent",
       "update_agent",
@@ -1416,10 +1424,12 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         : ["list_learning_review_inputs", "list_open_learning_reviews", "read_learning_review", "preflight_learning_review"]
             .includes(tool.name)
           ? ["agents:read", "games:read"]
-          : ["set_agent_model", "generate_agent_visual_reference", "crop_agent_portrait", "create_agent", "update_agent", "join_queue", "leave_queue"]
+          : ["retry_agent_artwork", "decide_agent_artwork", "set_agent_model", "generate_agent_visual_reference", "crop_agent_portrait", "create_agent", "update_agent", "join_queue", "leave_queue"]
           .includes(tool.name)
         ? ["agents:read", "agents:write"]
         : [
+              "read_agent_artwork",
+              "list_agent_voices",
               "read_model_catalog",
               "list_archetypes",
               "list_agents",
@@ -2208,6 +2218,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       structuredContent: { agent: { id: string } };
     }).structuredContent.agent.id).toBe(created.agent.id);
 
+    await acceptTestAgent(db, created.agent.id);
     await db.insert(schema.games).values({
       id: "mcp-revision-waiting",
       slug: "mcp-revision-waiting",
@@ -2277,6 +2288,9 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       };
     }).structuredContent;
     expectMatchesJsonSchema(updated, commandSchemas.get("update_agent"));
+    expect((updated.receipt as unknown as {publication:string}).publication).toBe("reviewing");
+    const published = await acceptTestAgent(db, created.agent.id);
+    expect(published!.receipt.waitingSeats.reconciled).toBe(1);
 
     expect(updated.agent.id).toBe(created.agent.id);
     expect(updated.receipt).toMatchObject({
@@ -2284,9 +2298,9 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         agentProfileId: created.agent.id,
         identityDisposition: "preserved",
       },
-      profileRevision: { outcome: "created", active: true },
+      profileRevision: { outcome: "preserved", active: true },
       dailyFree: "preserved_follows_profile",
-      waitingSeats: { total: 1, reconciled: 1 },
+      waitingSeats: { total: 1, reconciled: 0 },
       frozenSeats: { unchanged: 0 },
     });
     expect(updated.agent.currentRevision.revisionId).toBe(

@@ -1,3 +1,5 @@
+> Current workspace: Guided and Advanced share one persistent draft, model and voice controls, explicit artwork selection and a before/after submission review. Save enters enforced screening; see [the current contract](agent-content-submissions.md). The assistant stage/command details below operate inside that workspace.
+
 # Guided Agent creation
 
 ## Public preview and signup

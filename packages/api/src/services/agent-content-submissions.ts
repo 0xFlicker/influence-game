@@ -1,3 +1,7 @@
+import { hasCharacterTransparency } from "./transparent-character-image.js";
+import { normalizeModelPreference } from "@influence/engine/game-model-routing";
+import { SCREENING_POLICY_VERSION } from "./agent-screening-policy.js";
+import { assignPlayerVoice, isPlayerVoiceId } from "@influence/engine/voice-catalog";
 import { cutoutMode, CUTOUT_RECIPE } from "./character-cutouts.js";
 import { loadPayloads, storeFields } from "./payload-storage.js";
 import { enqueueAgentScreening } from "./agent-screening-queue.js";
@@ -16,19 +20,19 @@ export class ContentSubmissionConflict extends Error {}
 export type ContentAssetEvidence = Record<string, { hash: string; bytes: Buffer }>;
 
 /** Capture exact bytes before the profile transaction. No provider calls. */
-export async function prepareContentAssets(profile: Pick<Profile, "avatarUrl" | "fullBodyReferenceUrl" | "portraitCrop">, saved: ContentAssetEvidence = {}): Promise<ContentAssetEvidence> {
+export async function prepareContentAssets(profile: Pick<Profile, "avatarUrl" | "fullBodyReferenceUrl" | "portraitCrop">, saved: ContentAssetEvidence = {}, access?: {db: Pick<DrizzleDB,"select">;userId:string}): Promise<ContentAssetEvidence> {
   const evidence: ContentAssetEvidence = {};
   for (const url of new Set([profile.avatarUrl, profile.fullBodyReferenceUrl, profile.portraitCrop?.sourceUrl])) {
     if (!url) continue;
     if (saved[url]) { evidence[url] = saved[url]; continue; }
-    const bytes = await readVisualProfileImage(url, { name: "", personaKey: "" });
+    const bytes = await readVisualProfileImage(url, { name: "", personaKey: "" }, access);
     evidence[url] = { hash: createHash("sha256").update(bytes).digest("hex"), bytes };
   }
   return evidence;
 }
 /** Reuse the immutable image evidence belonging to the draft being edited. */
 export async function readSavedContentAssets(db: Pick<DrizzleDB, "select">, profile: Profile): Promise<ContentAssetEvidence> {
-  const revisionId = profile.moderationRequired ? profile.latestContentRevisionId : profile.contentRevisionId;
+  const revisionId = profile.latestContentRevisionId ?? profile.contentRevisionId;
   if (!revisionId) return {};
   const [revision] = await loadPayloads(db.select().from(schema.agentContentRevisions).where(and(
     eq(schema.agentContentRevisions.id, revisionId), eq(schema.agentContentRevisions.agentProfileId, profile.id),
@@ -64,16 +68,19 @@ export async function replayContentSubmission(tx: Tx | DrizzleDB, userId: string
 
 /** Called under the profile lock, in the same transaction as the accepted update. */
 export async function recordContentSubmission(tx: Tx, mutation: AgentProfileMutationRead, options: {
-  id: string; requestHash: string; assets?: ContentAssetEvidence; candidate?: Profile;
+  id: string; requestHash: string; assets?: ContentAssetEvidence; candidate?: Profile; voiceId?: unknown; sourceReviewId?: unknown; avatarChangeSource?: import("../db/schema.js").AvatarChangeSource;
 }): Promise<AgentProfileMutationRead> {
   const profile = options.candidate ?? mutation.profile;
-  const snapshot = contentSnapshot(profile);
+  if (options.voiceId !== undefined && options.voiceId !== null && !isPlayerVoiceId(options.voiceId)) throw new ContentSubmissionConflict("Choose an eligible player voice");
+  const [voice] = await tx.select().from(schema.agentVoices).where(eq(schema.agentVoices.agentProfileId, profile.id));
+  const assignment = options.voiceId === undefined ? voice?.assignment ?? assignPlayerVoice(profile.id, profile.gender) : assignPlayerVoice(profile.id, profile.gender, options.voiceId ?? undefined);
+  const snapshot = { ...contentSnapshot(profile), modelPreference: profile.modelPreference, voiceAssignment: assignment, ...(typeof options.sourceReviewId === "string" ? { sourceReviewId: options.sourceReviewId } : {}) };
 
   const [prior] = profile.latestContentRevisionId ? await loadPayloads(tx.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, profile.latestContentRevisionId))) : [];
   const previousAssets = (prior?.snapshot.assets ?? {}) as Record<string, string>;
   const assets: Record<string, string> = {};
   const missingUrls = [profile.avatarUrl, profile.fullBodyReferenceUrl, profile.portraitCrop?.sourceUrl].filter((url): url is string => Boolean(url && !options.assets?.[url] && !previousAssets[url]));
-  const evidence = missingUrls.length ? { ...await prepareContentAssets(profile), ...options.assets } : options.assets;
+  const evidence = missingUrls.length ? { ...await prepareContentAssets(profile, {}, {db:tx,userId:profile.userId}), ...options.assets } : options.assets;
   for (const url of new Set([profile.avatarUrl, profile.fullBodyReferenceUrl, profile.portraitCrop?.sourceUrl])) {
     if (!url) continue;
     const captured = evidence?.[url];
@@ -81,6 +88,9 @@ export async function recordContentSubmission(tx: Tx, mutation: AgentProfileMuta
     else assets[url] = previousAssets[url]!;
   }
   const fingerprint = sha256StableJson({ ...snapshot, assets });
+  const withoutPreferences = (value: Record<string, unknown>) => Object.fromEntries(Object.entries(value).filter(([key]) => key !== "modelPreference" && key !== "voiceAssignment" && key !== "sourceReviewId"));
+  const metadataOnly = prior?.id === mutation.profile.contentRevisionId
+    && sha256StableJson(withoutPreferences(prior.snapshot)) === sha256StableJson(withoutPreferences({ ...snapshot, assets }));
   let revisionId = prior?.id;
   let reviewId: string | undefined;
   if (prior?.fingerprint === fingerprint) {
@@ -89,28 +99,34 @@ export async function recordContentSubmission(tx: Tx, mutation: AgentProfileMuta
     revisionId = randomUUID();
     reviewId = randomUUID();
     await tx.insert(schema.agentContentRevisions).values(await storeFields({ id: revisionId, agentProfileId: profile.id, userId: profile.userId,
-      competitiveRevisionId: profile.currentRevisionId, parentRevisionId: prior?.id ?? null,
+      avatarChangeSource:options.avatarChangeSource??"mcp_update", competitiveRevisionId: profile.currentRevisionId, parentRevisionId: prior?.id ?? null,
       ancestryKnown: prior ? prior.ancestryKnown : true, fingerprint, snapshot: { ...snapshot, assets } }, {"snapshot":"json-gzip"}));
-    await tx.insert(schema.agentModerationReviews).values({ id: reviewId, contentRevisionId: revisionId, held: profile.moderationRequired });
+    await tx.insert(schema.agentModerationReviews).values({ id: reviewId, contentRevisionId: revisionId, held: !metadataOnly, status: metadataOnly ? "resolved" : "pending" });
   }
   // Optional derivative demand shares the captured content bytes. A savepoint
   // prevents an unavailable cutout lane from rejecting ordinary character edits.
   try {
     const bodyHash = profile.fullBodyReferenceUrl ? assets[profile.fullBodyReferenceUrl] : null;
-    if (bodyHash && cutoutMode() !== "disabled") await tx.transaction(async savepoint => {
+    const bodyBytes = profile.fullBodyReferenceUrl ? evidence?.[profile.fullBodyReferenceUrl]?.bytes : null;
+    const nativeAlpha = bodyBytes ? await hasCharacterTransparency(bodyBytes) : false;
+    if (bodyHash && nativeAlpha) await tx.update(schema.agentContentAssets).set({ transparentUrl: profile.fullBodyReferenceUrl }).where(eq(schema.agentContentAssets.hash, bodyHash));
+    else if (bodyHash && cutoutMode() !== "disabled") await tx.transaction(async savepoint => {
       await savepoint.insert(schema.characterCutoutDemands).values({ id: randomUUID(), agentProfileId: profile.id,
         playerId: profile.id, sourceKey: `sha256:${bodyHash}`, recipe: CUTOUT_RECIPE }).onConflictDoNothing();
     });
   } catch (error) { console.error("[character-cutouts] Agent demand unavailable", { agentId: profile.id, error }); }
-  await enqueueAgentScreening(tx, revisionId!);
+  if(!metadataOnly)await enqueueAgentScreening(tx, revisionId!);
+  if (metadataOnly) {
+    await tx.insert(schema.agentVoices).values({ agentProfileId: profile.id, assignment }).onConflictDoUpdate({ target: schema.agentVoices.agentProfileId, set: { assignment, updatedAt: new Date() } });
+  }
   const [saved] = await tx.update(schema.agentProfiles).set({
     latestContentRevisionId: revisionId!,
-    contentRevisionId: profile.moderationRequired ? mutation.profile.contentRevisionId : revisionId!,
+    ...(metadataOnly ? { modelPreference: profile.modelPreference } : {}),
+    contentRevisionId: metadataOnly ? revisionId! : mutation.profile.contentRevisionId,
     moderationVersion: profile.moderationVersion + 1,
     updatedAt: new Date().toISOString(),
   }).where(and(eq(schema.agentProfiles.id, profile.id), eq(schema.agentProfiles.userId, profile.userId))).returning();
-  // Retire legacy, never-screened intake work when a newer snapshot replaces it.
-  // Match migration 0127; explicit human triage and retained AI findings stay reviewable.
+  // Retire legacy, never-screened intake work; screened revisions and human work remain reviewable.
   const closed = await tx.execute<{ id: string }>(sql`UPDATE agent_moderation_reviews AS review
     SET status = 'superseded', version = review.version + 1
     FROM agent_content_revisions AS revision
@@ -126,9 +142,10 @@ export async function recordContentSubmission(tx: Tx, mutation: AgentProfileMuta
   // A separate statement sees claims committed while the UPDATE waited for its
   // review lock. A single CTE would retain the earlier statement snapshot.
   if (closed.length) await tx.delete(schema.moderationClaims).where(inArray(schema.moderationClaims.reviewId, closed.map(row => row.id)));
+  const [decision]=await tx.select().from(schema.agentModerationReviews).where(eq(schema.agentModerationReviews.id,reviewId!));
   const result = { ...mutation, profile: saved!,
     receipt: { ...mutation.receipt, contentRevisionId: revisionId!, moderationRecordId: reviewId!,
-      ...(profile.moderationRequired ? { publication: "held" as const } : { publication: "published" as const }) } };
+      publication: saved!.contentRevisionId === revisionId ? "published" as const : saved!.moderationRequired || decision?.disposition === "rejected" || decision?.flagged || decision?.status!=="pending" ? "held" as const : "reviewing" as const } };
   await tx.insert(schema.agentContentSubmissions).values({ id: options.id, userId: profile.userId, agentProfileId: profile.id, requestHash: options.requestHash,
     result: result as unknown as Record<string, unknown> });
   return result;
@@ -151,7 +168,16 @@ export function decodeContentSnapshot(snapshot: Record<string, unknown>, profile
   if (snapshot.gender !== null && !["male", "female", "non-binary"].includes(String(snapshot.gender))) throw new ContentSubmissionConflict("The saved gender is invalid.");
   result.gender = snapshot.gender as Profile["gender"];
   // Head geometry is optional: absence means unconfirmed, just like explicit null.
-  try { result.headPosition = snapshot.headPosition == null ? null : parseCharacterHeadPosition(snapshot.headPosition); }
+  try {
+    result.headPosition = snapshot.headPosition == null ? null : parseCharacterHeadPosition(snapshot.headPosition);
+    if(result.headPosition && snapshot.headPosition && typeof snapshot.headPosition === "object") {
+      const confirmation=(snapshot.headPosition as {confirmation?:unknown}).confirmation;
+      if(confirmation!==undefined){
+        if(!confirmation||typeof confirmation!=="object"||!("userId" in confirmation)||typeof confirmation.userId!=="string"||!("at" in confirmation)||typeof confirmation.at!=="string"||!Number.isFinite(Date.parse(confirmation.at)))throw new Error("Invalid stored head confirmation");
+        result.headPosition={...result.headPosition,confirmation:{userId:confirmation.userId,at:confirmation.at}};
+      }
+    }
+  }
   catch { throw new ContentSubmissionConflict("The saved head geometry needs admin recovery."); }
   const crop = snapshot.portraitCrop;
   if (crop === null) result.portraitCrop = null;
@@ -169,21 +195,42 @@ export function decodeContentSnapshot(snapshot: Record<string, unknown>, profile
 
 /** Owner-only projection: never includes evidence hashes, routing, or reviewer notes. */
 export async function readOwnerContent(db: Pick<DrizzleDB, "select">, profile: Profile) {
+  const [entry]=await db.select().from(schema.agentEntryIntents).where(eq(schema.agentEntryIntents.agentId,profile.id));
+  const [voice] = await db.select().from(schema.agentVoices).where(eq(schema.agentVoices.agentProfileId,profile.id));
   const [latest] = profile.latestContentRevisionId
     ? await loadPayloads(db.select().from(schema.agentContentRevisions).where(and(eq(schema.agentContentRevisions.id, profile.latestContentRevisionId), eq(schema.agentContentRevisions.agentProfileId, profile.id)))) : [];
   const [review] = latest ? await db.select().from(schema.agentModerationReviews).where(eq(schema.agentModerationReviews.contentRevisionId, latest.id)) : [];
+  const [screening] = latest ? await db.select({ status: schema.agentScreenings.status, recommendation: schema.agentScreenings.recommendation, failureCode:schema.agentScreenings.failureCode }).from(schema.agentScreenings).where(and(eq(schema.agentScreenings.contentRevisionId, latest.id), eq(schema.agentScreenings.policyVersion, SCREENING_POLICY_VERSION))) : [];
+  const reviewState = (!latest && !profile.moderationRequired && !screening?.failureCode) || latest?.id === profile.contentRevisionId ? "accepted" : review?.status === "pending" && review.version === 0 && review.route === "ordinary" && !review.flagged && !profile.moderationRequired && (screening?.status === "pending" || screening?.status === "running" || screening?.status === "completed" && screening.recommendation === "no_concern" && !profile.moderationRequired && !screening?.failureCode) ? "reviewing" : "held";
   return {
+    reviewState,
+    reviewMessage:screening?.failureCode==="publication_roster_conflict"?"A waiting game needs attention before these changes can be published.":screening?.failureCode==="publication_ancestor_review"?"An earlier submission needs human review before these changes can be published.":null,
+    entryIntent:entry?.intent??null,
+    voiceId: latest?.id === profile.contentRevisionId ? voice?.assignment.origin === "selected" ? voice.assignment.voiceId : null : latest?.snapshot.voiceAssignment && typeof latest.snapshot.voiceAssignment === "object" ? (latest.snapshot.voiceAssignment as { voiceId?: string; origin?: string }).origin === "selected" ? (latest.snapshot.voiceAssignment as { voiceId?: string }).voiceId : null : null,
     published: profile.contentRevisionId ? contentSnapshot(profile) : null,
-    submitted: latest ? { revisionId: latest.id, content: decodeContentSnapshot(latest.snapshot, profile),
+    submitted: latest ? { revisionId: latest.id, content: { ...decodeContentSnapshot(latest.snapshot, profile), modelPreference: normalizeModelPreference(latest.id === profile.contentRevisionId ? profile.modelPreference : latest.snapshot.modelPreference ?? profile.modelPreference) },
       disposition: review?.disposition ?? null, held: review?.held ?? false, status: review?.status ?? null } : null,
-    availability: profile.archivedAt ? "archived" as const : profile.moderationRequired && !profile.contentRevisionId ? "withheld" as const : "available" as const,
+    availability: profile.archivedAt ? "archived" as const : !profile.contentRevisionId && (profile.moderationRequired || profile.latestContentRevisionId) ? "withheld" as const : "available" as const,
     moderationVersion: profile.moderationVersion,
   };
 }
 
 export async function latestSubmittedProfile(db: Pick<DrizzleDB, "select">, profile: Profile): Promise<Profile> {
-  if (!profile.moderationRequired || !profile.latestContentRevisionId) return profile;
+  if (!profile.latestContentRevisionId || profile.latestContentRevisionId === profile.contentRevisionId) return profile;
   const content = await readOwnerContent(db, profile);
   if (!content.submitted) throw new ContentSubmissionConflict("The submitted draft is unavailable. Reload before submitting.");
   return { ...profile, ...content.submitted.content };
+}
+
+/** Capture the already usable legacy version before its first enforced edit. Never invent past revisions. */
+export async function captureExistingAgentBaseline(tx:Tx,profile:Profile,evidence?:ContentAssetEvidence):Promise<Profile> {
+  if(profile.latestContentRevisionId || profile.contentRevisionId || profile.moderationRequired)return profile;
+  const captured=await prepareContentAssets(profile,evidence,{db:tx,userId:profile.userId});
+  const assets:Record<string,string>={};
+  for(const [url,asset] of Object.entries(captured)){await tx.insert(schema.agentContentAssets).values(await storeFields({...asset,isPublic:true},{bytes:"binary"})).onConflictDoNothing();assets[url]=asset.hash;}
+  const snapshot={...contentSnapshot(profile),assets}; const id=randomUUID();
+  await tx.insert(schema.agentContentRevisions).values(await storeFields({id,agentProfileId:profile.id,userId:profile.userId,competitiveRevisionId:profile.currentRevisionId,ancestryKnown:false,snapshot,fingerprint:sha256StableJson(snapshot)},{snapshot:"json-gzip"}));
+  await tx.insert(schema.agentModerationReviews).values({id:randomUUID(),contentRevisionId:id,status:"resolved",held:false});
+  const [saved]=await tx.update(schema.agentProfiles).set({contentRevisionId:id,latestContentRevisionId:id}).where(eq(schema.agentProfiles.id,profile.id)).returning();
+  return saved!;
 }

@@ -30,18 +30,18 @@ test("failed source delivery retries without generation and recovers the same so
   const image = view.getByAltText("Vesper Vale full image") as HTMLImageElement;
   expect(image.src).toBe("https://api.example.test/api/uploads/local?key=pfp/generated/test.webp");
   expect(view.queryByLabelText("Head box; drag to move")).toBeNull();
-  expect(view.getByRole("button", { name: "Confirm this headshot" }).hasAttribute("disabled")).toBe(true);
+  expect(view.getByRole("button", { name: "Confirm" }).hasAttribute("disabled")).toBe(true);
   fireEvent.error(image);
   expect(view.getByRole("alert").textContent).toContain("without generating another character");
   expect(view.getByText(/The striped part/).closest("div")?.hidden).toBe(true);
-  fireEvent.click(view.getByRole("button", { name: "Retry image" }));
+  fireEvent.click(view.getByRole("button", { name: "Retry" }));
   const retry = view.getByAltText("Vesper Vale full image") as HTMLImageElement;
   expect(retry).not.toBe(image);
   expect(retry.src).toBe(image.src);
   load(retry);
   expect(view.queryByRole("alert")).toBeNull();
   expect(view.getByLabelText("Head box; drag to move")).toBeTruthy();
-  expect(view.getByRole("button", { name: "Confirm this headshot" }).hasAttribute("disabled")).toBe(false);
+  expect(view.getByRole("button", { name: "Confirm" }).hasAttribute("disabled")).toBe(false);
 });
 test("a load failure after successful loading invalidates crop and confirmation", () => {
   const view = mount();
@@ -50,5 +50,5 @@ test("a load failure after successful loading invalidates crop and confirmation"
   fireEvent.error(image);
   expect(view.queryByAltText("Vesper Vale portrait preview")).toBeNull();
   expect(view.queryByLabelText("Head box; drag to move")).toBeNull();
-  expect(view.getByRole("button", { name: "Confirm this headshot" }).hasAttribute("disabled")).toBe(true);
+  expect(view.getByRole("button", { name: "Confirm" }).hasAttribute("disabled")).toBe(true);
 });

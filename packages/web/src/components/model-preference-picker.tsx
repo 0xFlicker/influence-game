@@ -9,7 +9,8 @@ import { ModelCombobox } from "./model-combobox";
 import { ModelPricing } from "./model-pricing";
 import styles from "./model-preference-picker.module.css";
 
-export function ModelPreferencePicker({ value, onChange, allowDefault = true, disabled = false, inventory }: {
+export function ModelPreferencePicker({ value, onChange, allowDefault = true, disabled = false, inventory, compact = false }: {
+  compact?: boolean;
   value: ModelPreference; onChange: (value: ModelPreference) => void; allowDefault?: boolean; disabled?: boolean; inventory?: ProviderModelInventoryEntry[];
 }) {
   const { account } = useAuth();
@@ -28,11 +29,11 @@ export function ModelPreferencePicker({ value, onChange, allowDefault = true, di
   const details = (inventory ?? models).find(model => model.catalogId === selected);
   const metadata = details?.metadata ?? modelCatalogEntryById(selected)?.metadata;
   const options = [
-    ...(allowDefault ? [{ value: "default", label: "Default — Let the House decide" }] : []),
+    ...(allowDefault ? [{ value: "default", label: compact ? "House choice" : "Default — Let the House decide" }] : []),
     ...[...choices].map(([key, label]) => ({ value: key, label })),
   ];
   return <div className="space-y-2">
-    <div className={styles.layout}>
+    <div className={`${styles.layout} ${compact ? styles.compact : ""}`}>
       <ModelCombobox label="Preferred model" disabled={disabled} value={selected} options={options}
         onChange={next => onChange(next === "default" ? "default" : { catalogId: next })} />
       <p className={styles.hint}>Best effort. The House may use another model to keep the game running.</p>

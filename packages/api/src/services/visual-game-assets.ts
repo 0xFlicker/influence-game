@@ -1,3 +1,5 @@
+import { draftImageHash, readAgentDraftImage } from "./agent-draft-images.js";
+import { createDB } from "../db/index.js";
 import { loadPayloads, storeFields } from "./payload-storage.js";
 import { createHash } from "node:crypto";
 import { validHeadRectangle } from "@influence/engine/character-portrait";
@@ -20,7 +22,9 @@ export class VisualRecoveryRequired extends Error {
 }
 
 /** Only application-owned uploads or bundled persona art enter provider requests. */
-export async function readVisualProfileImage(url: string | null, profile: Pick<FrozenVisualProfile, "name" | "personaKey">): Promise<Buffer> {
+export async function readVisualProfileImage(url: string | null, profile: Pick<FrozenVisualProfile, "name" | "personaKey">, access?: {db: Pick<DrizzleDB,"select">;userId?:string}): Promise<Buffer> {
+  const privateHash = draftImageHash(url);
+  if(privateHash)return readAgentDraftImage(access?.db ?? createDB(),privateHash,access?.userId);
   const bundled = bundledHouseBody(url);
   if (bundled) {
     const relative = bundled.url.slice("/avatars/personas/".length);
@@ -90,8 +94,8 @@ export async function prepareVisualGameAssets(db: DrizzleDB, gameId: string, ass
       const preparedReference = profile.fullBodyReferenceUrl
         ? await readVisualProfileImage(profile.fullBodyReferenceUrl, profile)
         : (await renderVisualAssetBestEffort(db, { gameId, operationKey: `profile:${profile.id}:full-body:v1`, beforeDispatch: assertBoundary,
-            request: { width: 1024, height: 1536, references: [await readVisualArtifact(db, gameId, portraitId)],
-              prompt: `Create a photorealistic full-body character reference of this exact contestant, ${profile.name}. Preserve their face, hair and distinguishing features. Neutral standing pose, entire body and shoes visible, simple contemporary clothing with a distinct reproducible silhouette and color palette, plain warm grey background. No labels or text. Performance direction: ${profile.performanceInstructions}` } }))?.image;
+            request: { operation: "edit", background: "transparent", width: 1024, height: 1536, references: [await readVisualArtifact(db, gameId, portraitId)],
+              prompt: `Create a photorealistic full-body character reference of this exact contestant, ${profile.name}. Preserve their face, hair and distinguishing features. Neutral standing pose, entire body and shoes visible, simple contemporary clothing with a distinct reproducible silhouette and color palette, transparent background with real alpha, no scenery or floor. No labels or text. Performance direction: ${profile.performanceInstructions}` } }))?.image;
       const reference = preparedReference ?? await readVisualArtifact(db, gameId, portraitId);
       const head = profile.headPosition;
       const headRectangle = preparedReference && head?.confirmation && head.sourceUrl === profile.fullBodyReferenceUrl
@@ -108,7 +112,7 @@ export async function prepareVisualGameAssets(db: DrizzleDB, gameId: string, ass
       if (assets.backgrounds[room.id]) continue;
       const [saved] = await loadPayloads(db.select().from(schema.visualRoomLibrary).where(and(eq(schema.visualRoomLibrary.roomId, room.id), eq(schema.visualRoomLibrary.version, room.version))));
       const image = saved?.image ?? (await renderVisualAssetBestEffort(db, { gameId, operationKey: `background:${room.id}:v${room.version}`, beforeDispatch: assertBoundary,
-        request: { width: 1536, height: 864, references: [], prompt: `${VISUAL_HOUSE_STYLE}. Empty setting: ${room.name}. ${room.direction}. Wide room view, no people, no text. Preserve uncluttered conversational furniture sections with generous headroom: ${JSON.stringify(room.sections)}. This is a lived-in social strategy game house, not a clinical studio.` } }))?.image;
+        request: { operation: "create", background: "opaque", width: 1536, height: 864, references: [], prompt: `${VISUAL_HOUSE_STYLE}. Empty setting: ${room.name}. ${room.direction}. Wide room view, no people, no text. Preserve uncluttered conversational furniture sections with generous headroom: ${JSON.stringify(room.sections)}. This is a lived-in social strategy game house, not a clinical studio.` } }))?.image;
       if (!image) continue;
       await assertBoundary();
       await write(async (tx) => tx.insert(schema.visualRoomLibrary).values(await storeFields({ roomId: room.id, version: room.version, image: Buffer.from(image) }, {"image":"binary"})).onConflictDoNothing());

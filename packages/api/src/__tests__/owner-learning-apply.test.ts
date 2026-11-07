@@ -3,9 +3,9 @@ import { contentImageFixture } from "./content-image-fixture.js";
 import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { schema } from "../db/index.js";
-import { updateOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { submitAcceptedTestProfile as updateOwnedAgentProfile } from "./test-utils.js";
 import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
-import { applyOwnedOwnerLearningReview } from "../services/owner-learning-apply.js";
+import { acceptTestAgent, applyAcceptedTestReview as applyOwnedOwnerLearningReview } from "./test-utils.js";
 import {
   fingerprintOwnerLearningValue,
   parseOwnerLearningReviewResult,
@@ -225,6 +225,7 @@ describe("owner learning apply and resolution", () => {
     const before = (await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, fixture.agentProfileId)))[0]!;
     const request = {
+      submissionId: crypto.randomUUID(),
       strategyStyle: "Verify the coalition twice before coordinating the vote.",
       sourceReviewId: reviewId,
       expectedRevisionId: before.currentRevisionId,
@@ -244,7 +245,8 @@ describe("owner learning apply and resolution", () => {
     );
 
     expect(replay.profile.id).toBe(first.profile.id);
-    expect(replay.profile.strategyStyle).toBe(request.strategyStyle);
+    expect(replay.receipt.contentRevisionId).toBe(first.receipt.contentRevisionId);
+    expect((await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, fixture.agentProfileId)))[0]!.strategyStyle).toBe(request.strategyStyle);
     expect((await db.select().from(schema.agentLearningEvents)
       .where(eq(schema.agentLearningEvents.reviewId, reviewId)))
       .filter((event) => event.kind === "review_resolved")).toHaveLength(1);
@@ -416,3 +418,17 @@ async function markReviewReady(
   }, {"checkpoint":"json-gzip","result":"json-gzip"})).where(eq(schema.agentLearningReviews.id, reviewId));
   return { proposalFingerprint, recommendationIds, after };
 }
+
+test("an exact learning proposal remains submitted until its content is accepted",async()=>{
+  const {applyOwnedOwnerLearningReview:submit}=await import("../services/owner-learning-apply.js");
+  const db=await setupTestDB(),fixture=await insertPlayedOwnerLearningAgent(db);
+  const reviewId=await startFixtureOwnerLearningReview(db,fixture),ready=await markReviewReady(db,reviewId);
+  const result=await submit(db,{ownerUserId:fixture.ownerUserId,reviewId,proposalFingerprint:ready.proposalFingerprint});
+  expect(result.receipt.publication).toBe("reviewing");
+  expect((await db.select().from(schema.agentLearningReviewApplications))[0]!.appliedAt).toBeNull();
+  expect((await db.select().from(schema.agentLearningReviews).where(eq(schema.agentLearningReviews.id,reviewId)))[0]!.resolvedAt).toBeNull();
+  await acceptTestAgent(db,fixture.agentProfileId);
+  const replay=await submit(db,{ownerUserId:fixture.ownerUserId,reviewId,proposalFingerprint:ready.proposalFingerprint});
+  expect(replay.receipt.publication).toBe("published");
+  expect((await db.select().from(schema.agentLearningReviewApplications))[0]!.appliedAt).not.toBeNull();
+});

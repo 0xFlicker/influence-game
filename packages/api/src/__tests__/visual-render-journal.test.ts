@@ -14,7 +14,7 @@ import type { VisualLocalization } from "@influence/engine/visual-localization";
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
 let db: DrizzleDB;
-const request = { prompt: "Empty warm house", width: 1024, height: 1024, references: [] };
+const request = { operation: "create" as const, background: "opaque" as const, prompt: "Empty warm house", width: 1024, height: 1024, references: [] };
 const reservation = { provider: "openai" as const, model: "gpt-image-2", requestHash: "request-1" };
 const receipt: VisualImageReceipt = { ...reservation, requestId: "provider-1", status: 200, elapsedMs: 100, usage: { images: 1 }, chargeUncertain: false };
 beforeEach(async () => {

@@ -1,4 +1,5 @@
 "use client";
+import { OwnedCharacterImage } from "@/components/owned-character-image";
 
 import { useEffect, useId, useRef, useState } from "react";
 import { squarePortraitCrop, portraitHeadRectangle, type PortraitCrop, type CharacterHeadPosition, type HeadRectangle } from "@influence/engine/character-portrait";
@@ -55,7 +56,7 @@ export function CharacterPortraitEditor({ sourceUrl, initialCrop, initialHead, c
   const side = size && crop ? crop.width * size.width : 0;
   return <dialog ref={dialog} aria-labelledby="portrait-editor-title" onCancel={(event) => { if (busy) event.preventDefault(); else onClose(); }} className={`influence-modal overflow-auto border border-white/15 bg-[#11111b] p-4 text-white backdrop:bg-black/80 sm:p-7 ${fullScreen ? "m-0 h-[100dvh] max-h-[100dvh] w-screen max-w-none rounded-none" : "m-auto w-[min(960px,100vw)] max-h-[100dvh] rounded-2xl sm:max-h-[90vh]"}`}>
     <div className="flex items-start justify-between gap-4"><div><h2 id="portrait-editor-title" className="text-xl font-semibold">Adjust character images</h2><p className="mt-2 text-sm text-white/55">Choose a box. Drag it to move; drag its corner to resize.</p></div><button type="button" disabled={busy} onClick={onClose} className="influence-button-secondary min-h-11 rounded-lg px-3 py-2">Close</button></div>
-    <div role="group" aria-label="Box to adjust" className="mt-3 flex gap-2"><button type="button" aria-pressed={activeBox === "portrait"} disabled={busy} onClick={() => setActiveBox("portrait")} className={`min-h-11 rounded-lg border px-4 text-sm ${activeBox === "portrait" ? "border-violet-300 bg-violet-400/20" : "border-white/15"}`}>Portrait crop</button>{confirmHead && <button type="button" aria-pressed={activeBox === "head"} disabled={busy} onClick={() => setActiveBox("head")} className={`min-h-11 rounded-lg border px-4 text-sm ${activeBox === "head" ? "border-amber-300 bg-amber-400/20" : "border-white/15"}`}>Head position</button>}</div>
+    <div role="group" aria-label="Box to adjust" className="mt-3 flex gap-2"><button type="button" aria-pressed={activeBox === "portrait"} disabled={busy} onClick={() => setActiveBox("portrait")} className={`min-h-11 rounded-lg border px-4 text-sm ${activeBox === "portrait" ? "border-violet-300 bg-violet-400/20" : "border-white/15"}`}>Portrait</button>{confirmHead && <button type="button" aria-pressed={activeBox === "head"} disabled={busy} onClick={() => setActiveBox("head")} className={`min-h-11 rounded-lg border px-4 text-sm ${activeBox === "head" ? "border-amber-300 bg-amber-400/20" : "border-white/15"}`}>Head</button>}</div>
     <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_260px]">
       <div className="sticky top-0 z-10 flex items-center justify-center self-start rounded-xl bg-[#11111b] p-2">
         <div className="relative overflow-hidden" onPointerDown={event => {
@@ -76,8 +77,7 @@ export function CharacterPortraitEditor({ sourceUrl, initialCrop, initialHead, c
           setHead(start.resize ? { ...start.rect, width: Math.max(.01, Math.min(1 - start.rect.x, start.rect.width + dx)), height: Math.max(.01, Math.min(1 - start.rect.y, start.rect.height + dy)) }
             : { ...start.rect, x: Math.max(0, Math.min(1 - start.rect.width, start.rect.x + dx)), y: Math.max(0, Math.min(1 - start.rect.height, start.rect.y + dy)) });
         }} onPointerUp={event => { if (drag.current?.pointerId === event.pointerId) drag.current = null; }} onPointerCancel={() => { drag.current = null; }} onLostPointerCapture={() => { drag.current = null; }}>
-          {/* eslint-disable-next-line @next/next/no-img-element -- original image coordinates are required for crop editing */}
-          <img key={imageAttempt} draggable={false} src={imageUrl} alt={`${name} full image`} className="max-h-[42dvh] w-auto max-w-full select-none object-contain sm:max-h-[55vh]" onError={() => { setSourceError(true); setSize(null); setCrop(null); drag.current = null; }} onLoad={(event) => {
+          <OwnedCharacterImage key={imageAttempt} draggable={false} src={imageUrl} alt={`${name} full image`} className="max-h-[42dvh] w-auto max-w-full select-none object-contain sm:max-h-[55vh]" onError={() => { setSourceError(true); setSize(null); setCrop(null); drag.current = null; }} onLoad={(event) => {
             const next = { width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight };
             setSourceError(false);
             setSize(next);
@@ -102,8 +102,7 @@ export function CharacterPortraitEditor({ sourceUrl, initialCrop, initialHead, c
       </div>
       <div className="space-y-3">
         <div className="relative mx-auto aspect-square w-20 overflow-hidden rounded-full border border-white/15 bg-black/30" aria-label="Portrait crop preview">
-          {/* eslint-disable-next-line @next/next/no-img-element -- display the selected rectangle without another render */}
-          {crop && <img alt={`${name} portrait preview`} src={imageUrl} className="absolute max-w-none" style={{ width: `${100 / crop.width}%`, height: `${100 / crop.height}%`, left: `${-100 * crop.x / crop.width}%`, top: `${-100 * crop.y / crop.height}%` }} />}
+          {crop && <OwnedCharacterImage alt={`${name} portrait preview`} src={imageUrl} className="absolute max-w-none" style={{ width: `${100 / crop.width}%`, height: `${100 / crop.height}%`, left: `${-100 * crop.x / crop.width}%`, top: `${-100 * crop.y / crop.height}%` }} />}
         </div>
         <details hidden={!size}><summary className="min-h-11 cursor-pointer py-3 text-sm text-white/65">Precise adjustments</summary>
         {confirmHead && activeBox === "head" && <fieldset disabled={busy} className="space-y-3"><legend className="mb-2 text-sm font-medium text-amber-200">Head position</legend>
@@ -122,12 +121,12 @@ export function CharacterPortraitEditor({ sourceUrl, initialCrop, initialHead, c
         </div>
         {sourceError && <div className="space-y-2">
           <p role="alert" className="text-sm text-red-300">The source image could not be loaded. Your character draft is unchanged. Retry loading the image without generating another character.</p>
-          <button type="button" className="influence-button-secondary min-h-11 w-full rounded-lg px-3" onClick={() => { setSourceError(false); setImageAttempt(attempt => attempt + 1); }}>Retry image</button>
+          <button type="button" className="influence-button-secondary min-h-11 w-full rounded-lg px-3" onClick={() => { setSourceError(false); setImageAttempt(attempt => attempt + 1); }}>Retry</button>
           <a href={imageUrl} target="_blank" rel="noreferrer" className="block text-sm underline">Open source image</a>
         </div>}
         {!size && !sourceError && <p role="status" className="text-sm text-white/65">Loading source image…</p>}
         {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
-        <button type="button" disabled={!crop || busy || !size || sourceError || !headFitsCrop} onClick={() => void apply()} className="influence-button-primary w-full rounded-lg px-4 py-3 disabled:opacity-50">{busy ? "Confirming…" : confirmHead ? "Confirm this headshot" : "Use portrait in draft"}</button>
+        <button type="button" disabled={!crop || busy || !size || sourceError || !headFitsCrop} onClick={() => void apply()} className="influence-button-primary w-full rounded-lg px-4 py-3 disabled:opacity-50">{busy ? "Confirming…" : confirmHead ? "Confirm" : "Select"}</button>
       </div>
     </div>
   </dialog>;

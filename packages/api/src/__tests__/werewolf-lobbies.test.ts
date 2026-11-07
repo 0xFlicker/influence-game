@@ -9,7 +9,7 @@ import { createSessionToken } from "../middleware/auth.js";
 import { setupTestDB } from "./test-utils.js";
 import { claimWerewolfGame, readWerewolfEvents } from "../services/werewolf-games.js";
 import { createWerewolfLobby, fillWerewolfLobby, joinWerewolfLobby, leaveWerewolfLobby, readWerewolfLobby, startWerewolfLobby } from "../services/werewolf-lobbies.js";
-import { createOwnedAgentProfile, updateOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { createAcceptedTestProfile as createOwnedAgentProfile, submitAcceptedTestProfile as updateOwnedAgentProfile } from "./test-utils.js";
 import { createWerewolfRoutes } from "../routes/werewolf.js";
 import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
 

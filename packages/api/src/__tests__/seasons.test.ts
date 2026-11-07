@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
-import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { createAcceptedTestProfile as createOwnedAgentProfile } from "./test-utils.js";
 import {
   SeasonStateError,
   bindFreeGameToActiveSeason,

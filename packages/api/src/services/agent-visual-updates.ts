@@ -47,7 +47,7 @@ export async function readAgentVisualUpdate(db: DrizzleDB, userId: string, agent
     const [submission] = await db.select().from(schema.agentContentSubmissions).where(and(eq(schema.agentContentSubmissions.id,job.id),eq(schema.agentContentSubmissions.userId,userId),eq(schema.agentContentSubmissions.agentProfileId,agentId)));
     if (submission) {
       const receipt = (submission.result as unknown as AgentProfileMutationRead).receipt;
-      const status = receipt.publication === "held" ? "held" as const : "completed" as const;
+      const status = profile.contentRevisionId===receipt.contentRevisionId || receipt.publication === "published" ? "completed" as const : "held" as const;
       const resultRevisionId = receipt.contentRevisionId ?? null;
       if (job.status !== status || job.resultRevisionId !== resultRevisionId) {
         // Finish the already-authorized save from its committed receipt; never resubmit it.
@@ -155,12 +155,12 @@ export async function processAgentVisualUpdate(db: DrizzleDB, userId: string, ag
       await checkpoint("portrait");
     }
     if (stage === "portrait") {
-      if (!prepared.avatarUrl) prepared = {...prepared,...await deps.portrait(prepared,publicBaseUrl)};
+      if (!prepared.avatarUrl) prepared = {...prepared,...await deps.portrait(prepared,publicBaseUrl,db)};
       await checkpoint("saving");
     }
     await guard(true);
     const result = await deps.apply(db,{userId,publicBaseUrl},agentId,{...visualUpdatePatch(source,prepared),submissionId:job.id,expectedContentRevisionId:job.sourceContentId,...(source.currentRevisionId ? {expectedRevisionId:source.currentRevisionId} : {})});
-    await db.update(jobs).set({status:result.receipt.publication === "held" ? "held" : "completed",resultRevisionId:result.receipt.contentRevisionId ?? null,errorCode:null,leaseId:null,leaseUntil:null,updatedAt:new Date().toISOString()}).where(fence);
+    await db.update(jobs).set({status:result.receipt.publication !== "published" ? "held" : "completed",resultRevisionId:result.receipt.contentRevisionId ?? null,errorCode:null,leaseId:null,leaseUntil:null,updatedAt:new Date().toISOString()}).where(fence);
   } catch (error) {
     const conflict = error instanceof AgentProfileManagementError && error.code === "agent_profile_stale";
     const code = conflict ? "profile_changed" : error instanceof VisualRenderRecoveryRequired || error instanceof GenerationAdmissionError && error.code === "generation_recovery_required" ? "recovery_required" : error instanceof VisualUpdateGenerationError || error instanceof GenerationAdmissionError ? error.code : "interrupted";

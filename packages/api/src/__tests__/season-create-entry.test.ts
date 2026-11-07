@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { schema } from "../db/index.js";
-import { setupTestDB } from "./test-utils.js";
+import { setupTestDB, acceptTestAgent } from "./test-utils.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { createAgentProfileRoutes } from "../routes/agent-profiles.js";
@@ -31,6 +31,8 @@ test("create then season entry recovers duplicate responses and cannot spill int
   const duplicate=await post("/api/agent-profiles",body);
   expect(duplicate.status).toBe(201);expect((await duplicate.json() as {id:string}).id).toBe(agent.id);
   const entry={agentProfileId:agent.id,expectedSeasonId:season.id};
+  expect((await post("/api/free-queue/join",entry)).status).toBe(404);
+  await acceptTestAgent(db,agent.id);
   expect((await post("/api/free-queue/join",entry)).status).toBe(201);
   expect((await post("/api/free-queue/join",entry)).status).toBe(200);
   expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);

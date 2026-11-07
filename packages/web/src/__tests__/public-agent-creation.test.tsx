@@ -46,13 +46,13 @@ test("arrival stays public; one preview builds cards, image request gates, and s
   const view = mount();
   await waitFor(() => expect(view.getByLabelText("Message the character assistant").hasAttribute("disabled")).toBe(false));
   expect(signupCalls).toBe(0); expect(view.getByText("Your character starts here.")).toBeTruthy();
-  expect(view.getByRole("button", { name: "Advanced create" })).toBeTruthy();
+  expect(view.getByRole("button", { name: "Advanced" })).toBeTruthy();
   fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "An exiled diplomat who keeps receipts" } });
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
   await waitFor(() => expect(view.getByRole("button", { name: "Read Name" }).textContent).toContain("Mira Vale"));
   expect(paths.filter(path => path.startsWith("POST"))).toEqual(["POST /api/agent-profiles/anonymous"]);
   expect(signupCalls).toBe(0);
-  fireEvent.click(view.getByRole("button", { name: "Yes, that feels right" }));
+  fireEvent.click(view.getByRole("button", { name: "Continue" }));
   fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "A blue coat and gold rings" } });
   fireEvent.click(view.getByRole("button", { name: "Send" }));
   expect(signupCalls).toBe(1);
@@ -66,10 +66,10 @@ test("arrival stays public; one preview builds cards, image request gates, and s
   expect(view.getByText("Your character is ready for another choice.")).toBeTruthy();
 });
 
-test("Advanced create is visible before a preview and requests an account without spending it", async () => {
+test("Advanced is visible before a preview and requests an account without spending it", async () => {
   const view = mount();
   await waitFor(() => expect(view.getByLabelText("Message the character assistant").hasAttribute("disabled")).toBe(false));
-  fireEvent.click(view.getByRole("button", { name: "Advanced create" }));
+  fireEvent.click(view.getByRole("button", { name: "Advanced" }));
   expect(signupCalls).toBe(1);
   expect(paths.filter(path => path.startsWith("POST"))).toEqual([]);
   expect(view.getByText("Your character starts here.")).toBeTruthy();

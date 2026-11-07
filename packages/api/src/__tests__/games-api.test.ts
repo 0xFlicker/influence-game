@@ -1,3 +1,4 @@
+import {createAcceptedTestProfile as createOwnedAgentProfile} from "./test-utils.js";
 import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { testUserIdForWallet, grantTestAuthority } from "./rbac-fixtures.js";
 /**
@@ -15,7 +16,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { createGameRoutes } from "../routes/games.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { randomUUID } from "crypto";
-import { setupTestDB } from "./test-utils.js";
+import { setupTestDB, acceptTestAgent } from "./test-utils.js";
 import { abortAllGames } from "../services/game-lifecycle.js";
 import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
 import {
@@ -29,7 +30,7 @@ import {
   acquireDeploymentAdmissionLease,
   completeDeploymentAdmissionLease,
 } from "../services/deployment-admission.js";
-import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+
 import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
 import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
 import { GameState, Phase, getHousePortraitGender, HOUSE_CAST, type CanonicalGameEvent } from "@influence/engine";
@@ -155,6 +156,7 @@ async function createAdditionalTestAgent(db: DrizzleDB, name: string): Promise<s
     fullBodyReferenceUrl,
     headPosition: await headPositionFixture(fullBodyReferenceUrl),
   });
+  await acceptTestAgent(db,created.profile.id);
   return created.profile.id;
 }
 
@@ -251,6 +253,7 @@ async function joinTestPlayer(
       headPosition: await headPositionFixture(image),
       portraitCrop: { sourceUrl: image, x: 0, y: 0, width: 1, height: 1 },
     });
+  await acceptTestAgent(db,created.profile.id);
     profile = { id: created.profile.id };
   }
   const res = await app.request(
@@ -476,6 +479,7 @@ describe("Game REST API", () => {
           modelPreference: { catalogId: "katana:deepseek-v4-flash" },
           fullBodyReferenceUrl, headPosition: await headPositionFixture(fullBodyReferenceUrl),
         });
+  await acceptTestAgent(db,profile.profile.id);
         const joined = await app.request(`/api/games/${id}/join`, json({ agentProfileId: profile.profile.id }, adminToken));
         expect([200, 201]).toContain(joined.status);
       }
@@ -1952,6 +1956,7 @@ describe("Game REST API", () => {
         strategyStyle: "Join only when capacity is available.",
         personaKey: "honest",
       });
+  await acceptTestAgent(db,waitingAgent.profile.id);
 
       const res = await app.request(
         `/api/games/${id}/join`,
@@ -1986,6 +1991,7 @@ describe("Game REST API", () => {
         name: "Admin Agent",
         personality: "Owned by the admin",
       });
+  await acceptTestAgent(db,foreignProfile.profile.id);
 
       const res = await app.request(
         `/api/games/${id}/join`,
@@ -3161,6 +3167,7 @@ describe("Game REST API", () => {
         gender: "non-binary",
         fullBodyReferenceUrl, headPosition: await headPositionFixture(fullBodyReferenceUrl),
       });
+  await acceptTestAgent(db,created.profile.id);
 
       const responses = await Promise.all([
         app.request(`/api/games/${id}/join`, json({ agentProfileId: created.profile.id }, userToken)),

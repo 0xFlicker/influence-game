@@ -1,7 +1,14 @@
+import { bodyLimit } from "hono/body-limit";
+import { AgentDraftImageUnavailable, storeAgentDraftImage, readAgentDraftImage } from "../services/agent-draft-images.js";
+import { requestCharacterReference, readCharacterReference, retryCharacterReference, decideCharacterReference } from "../services/character-reference-jobs.js";
 import { readAgentTransparentBodies } from "../services/agent-transparent-bodies.js";
 import { readAgentVisualUpdate, requestAgentVisualUpdate, resumeAgentVisualUpdate } from "../services/agent-visual-updates.js";
 import {readAgentVoice} from "../services/audio-voices.js";
-import {assignPlayerVoice,isPlayerVoiceId,PLAYER_VOICES} from "@influence/engine/voice-catalog";
+import { readAgentDraft, saveAgentDraft, deleteAgentDraft, AgentDraftConflict } from "../services/agent-editor-drafts.js";
+import { voiceSampleId } from "../services/voice-samples.js";
+import { readPayload } from "../services/payload-storage.js";
+import { agentCollectionActivity } from "../services/agent-collection-activity.js";
+import {isPlayerVoiceId,PLAYER_VOICES,VOICE_AUDITION_VERSION} from "@influence/engine/voice-catalog";
 import { generationContacts } from "../services/generation-admission-error.js";
 import { randomUUID } from "node:crypto";
 import { allocateGeneratedAgentName, updateGeneratedProfileNameReferences } from "../services/generated-agent-names.js";
@@ -14,7 +21,7 @@ import { selectCharacterEdit, selectCreationTurn } from "../services/agent-creat
 import { buildAgentProfileGenerationSystemPrompt } from "../services/character-profile-prompt.js";
 import { characterProfileSchemaFor, decodeCharacterProfile } from "../services/character-profile-contract.js";
 import { readVisualProfileImage } from "../services/visual-game-assets.js";
-import { exportCharacterPortrait, generateVisualProfileReference } from "../services/visual-profile-generation.js";
+import { exportCharacterPortrait } from "../services/visual-profile-generation.js";
 /**
  * Agent Profile REST API routes.
  *
@@ -28,7 +35,7 @@ import { exportCharacterPortrait, generateVisualProfileReference } from "../serv
  */
 
 import { Hono, type Context } from "hono";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 import { AGENT_PROFILE_LIMITS } from "@influence/engine/agent-profile-contract";
 import { describeAgentCreationTraits, isAgentCreationTraitId, type AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
 import type { DrizzleDB } from "../db/index.js";
@@ -83,26 +90,71 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
     try {
       const userId = c.get("user").id, agentId = c.req.param("id");
       const result = await (method === "post" ? requestAgentVisualUpdate : readAgentVisualUpdate)(db,userId,agentId);
-      if (result.job && ["queued","processing"].includes(result.job.status)) (options.resumeVisualUpdate ?? resumeAgentVisualUpdate)(db,userId,agentId,new URL(c.req.url).origin);
+      if (method === "post" && result.job && ["queued","processing"].includes(result.job.status)) (options.resumeVisualUpdate ?? resumeAgentVisualUpdate)(db,userId,agentId,new URL(c.req.url).origin);
       return c.json(result);
     } catch (error) {
       if (error instanceof AgentProfileManagementError) return agentProfileErrorResponse(c,error);
       throw error;
     }
   });
+  app.post("/api/agent-profiles/images",requireAuth(db),bodyLimit({maxSize:33*1024*1024}),async c=>{
+    const length=Number(c.req.header("Content-Length"));
+    if(length>33*1024*1024)return c.json({error:"Image exceeds 32 MB"},413);
+    const form=await c.req.formData(); const file=form.get("image");
+    if(!(file instanceof File)||file.size>32*1024*1024)return c.json({error:"Choose an image up to 32 MB"},400);
+    let bytes: Buffer;
+    try {
+      const image = sharp(Buffer.from(await file.arrayBuffer()), { limitInputPixels: 16_000_000 });
+      const metadata = await image.metadata();
+      if (!metadata.format || !["png", "jpeg", "webp"].includes(metadata.format) || (metadata.pages ?? 1) !== 1) return c.json({ error: "Choose a single PNG, JPEG or WebP image" }, 400);
+      bytes = await image.rotate().webp({quality:92}).toBuffer();
+    } catch { return c.json({error:"Choose a valid PNG, JPEG or WebP image"},400); }
+    return c.json({sourceUrl:await storeAgentDraftImage(db,c.get("user").id,bytes)},201);
+  });
+  app.get("/api/agent-profiles/images/:hash",async(c,next)=>{
+    const [asset]=await db.select({isPublic:schema.agentContentAssets.isPublic}).from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash,c.req.param("hash")));
+    if(!asset)return c.json({error:"Image not found"},404);
+    if(asset.isPublic)return next();
+    return requireAuth(db)(c,next);
+  },async c=>{
+    try{const bytes=await readAgentDraftImage(db,c.req.param("hash"),c.get("user")?.id);c.header("Content-Type","image/webp");c.header("Cache-Control","private, no-store");return c.body(new Uint8Array(bytes));}
+    catch(error){if(error instanceof AgentDraftImageUnavailable)return c.json({error:"Image not found"},404);throw error;}
+  });
+  app.get("/api/agent-profiles/voice-samples/:version/:voice", async c => {
+    const voice = c.req.param("voice");
+    if (c.req.param("version")!==VOICE_AUDITION_VERSION || !isPlayerVoiceId(voice)) return c.json({error:"Voice not found"},404);
+    const [sample] = await db.select().from(schema.voiceSamples).where(eq(schema.voiceSamples.id,voiceSampleId(voice)));
+    if (!sample?.audio || sample.status !== "ready") return c.json({error:"Sample unavailable"},404);
+    c.header("Content-Type","audio/mpeg");c.header("Cache-Control","public, max-age=31536000, immutable");
+    return c.body(new Uint8Array(await readPayload(sample.audio)));
+  });
+  app.get("/api/agent-profiles/drafts",requireAuth(db),async c => {
+    return c.json(await db.select({scope:schema.agentEditorDrafts.scope,name:schema.agentEditorDrafts.name,updatedAt:schema.agentEditorDrafts.updatedAt}).from(schema.agentEditorDrafts).where(eq(schema.agentEditorDrafts.userId,c.get("user").id)));
+  });
+  app.get("/api/agent-profiles/drafts/:scope",requireAuth(db),async c => c.json(await readAgentDraft(db,c.get("user").id,c.req.param("scope"))));
+  app.put("/api/agent-profiles/drafts/:scope",requireAuth(db),async c => {
+    const body = await parseJsonBody(c,"PUT draft");
+    if (!body || !body.document || typeof body.document !== "object" || Array.isArray(body.document) || !(body.version === null || typeof body.version === "string" && body.version.length < 100)) return c.json({error:"Invalid draft"},400);
+    try { return c.json({version:await saveAgentDraft(db,c.get("user").id,c.req.param("scope"),body.version as string|null,body.document as Record<string,unknown>)}); }
+    catch(error) {if(error instanceof AgentDraftConflict)return c.json({error:error.message},409);throw error;}
+  });
+  app.delete("/api/agent-profiles/drafts/:scope",requireAuth(db),async c => {
+    const body=await parseJsonBody(c,"DELETE draft");
+    if(!body || !(body.version === null || typeof body.version === "string" && body.version.length < 100))return c.json({error:"A draft version is required"},400);
+    try { await deleteAgentDraft(db,c.get("user").id,c.req.param("scope"),body.version as string|null);return c.json({ok:true}); }
+    catch(error){if(error instanceof AgentDraftConflict)return c.json({error:error.message},409);throw error;}
+  });
+  app.delete("/api/agent-profiles/:id/entry-intent",requireAuth(db),async c=>{
+    const body=await parseJsonBody(c,"Completed entry destination");
+    if(!body || !(body.flow==="join_game"&&typeof body.gameId==="string" || body.flow==="daily_free"&&typeof body.seasonId==="string"))return c.json({error:"A specific completed destination is required"},400);
+    const target=body.flow==="join_game"?sql`${schema.agentEntryIntents.intent}->>'gameId' = ${body.gameId}`:sql`${schema.agentEntryIntents.intent}->>'seasonId' = ${body.seasonId}`;
+    await db.delete(schema.agentEntryIntents).where(and(eq(schema.agentEntryIntents.agentId,c.req.param("id")),eq(schema.agentEntryIntents.userId,c.get("user").id),sql`${schema.agentEntryIntents.intent}->>'flow' = ${body.flow}`,target));
+    return c.json({ok:true});
+  });
   app.get("/api/agent-profiles/:id/voice",requireAuth(db),async c => {
     const [agent] = await db.select({id:schema.agentProfiles.id}).from(schema.agentProfiles).where(and(eq(schema.agentProfiles.id,c.req.param("id")),eq(schema.agentProfiles.userId,c.get("user").id)));
     if (!agent) return c.json({error:"Agent not found"},404);
     return c.json({assignment:await readAgentVoice(db,agent.id),voices:PLAYER_VOICES});
-  });
-  app.put("/api/agent-profiles/:id/voice",requireAuth(db),async c => {
-    const body = await parseJsonBody(c,"PUT /api/agent-profiles/:id/voice");
-    if (!body || Object.keys(body).length !== 1 || !isPlayerVoiceId(body.voiceId)) return c.json({error:"Choose a player stock voice"},400);
-    const [agent] = await db.select().from(schema.agentProfiles).where(and(eq(schema.agentProfiles.id,c.req.param("id")),eq(schema.agentProfiles.userId,c.get("user").id)));
-    if (!agent) return c.json({error:"Agent not found"},404);
-    const assignment = assignPlayerVoice(agent.id,agent.gender ?? null,body.voiceId);
-    await db.insert(schema.agentVoices).values({agentProfileId:agent.id,assignment}).onConflictDoUpdate({target:schema.agentVoices.agentProfileId,set:{assignment,updatedAt:new Date()}});
-    return c.json({assignment});
   });
   app.post("/api/agent-profiles/edit-assistant", requireAuth(db), async (c) => {
     const body = await parseJsonBody(c, "POST /api/agent-profiles/edit-assistant");
@@ -150,14 +202,24 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
     const body = await parseJsonBody(c, "POST /api/agent-profiles/portrait-crop");
     if (!body) return c.json({ error: "A portrait crop is required" }, 400);
     const { headRectangle, ...crop } = body;
-    try { return c.json(await exportCharacterPortrait(crop as unknown as import("@influence/engine/character-portrait").PortraitCrop, new URL(c.req.url).origin, headRectangle)); }
+    try { return c.json(await exportCharacterPortrait(crop as unknown as import("@influence/engine/character-portrait").PortraitCrop, {db,userId:c.get("user").id}, headRectangle)); }
     catch (error) { return c.json({ error: error instanceof Error ? error.message : "Portrait export failed" }, 400); }
+  });
+  app.get("/api/agent-profiles/visual-references/:requestId",requireAuth(db),async c => {
+    const result=await readCharacterReference(db,c.get("user").id,c.req.param("requestId"));return result?c.json(result):c.json({error:"Image request not found"},404);
+  });
+  app.post("/api/agent-profiles/visual-references/:requestId/retry",requireAuth(db),async c=>{
+    try{return c.json(await retryCharacterReference(db,c.get("user").id,c.req.param("requestId")),202);}catch(error){return c.json({error:error instanceof Error?error.message:"Retry unavailable"},409);}
+  });
+  app.post("/api/agent-profiles/visual-references/:requestId/decision",requireAuth(db),async c=>{
+    const body=await parseJsonBody(c,"Artwork decision");if(body?.decision!=="selected"&&body?.decision!=="discarded")return c.json({error:"Choose Select or Discard"},400);
+    try{await decideCharacterReference(db,c.get("user").id,c.req.param("requestId"),body.decision);return c.json({ok:true});}catch(error){return c.json({error:error instanceof Error?error.message:"Artwork unavailable"},409);}
   });
   app.post("/api/agent-profiles/visual-reference", requireAuth(db), async (c) => {
     const body = await parseJsonBody(c, "POST /api/agent-profiles/visual-reference");
     if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "Invalid JSON body" }, 400);
     try {
-      return c.json(await generateVisualProfileReference(db, c.get("user").id, body as Record<string, unknown>, new URL(c.req.url).origin));
+      return c.json(await requestCharacterReference(db, c.get("user").id, body as Record<string, unknown>, new URL(c.req.url).origin), 202);
     } catch (error) { if(error instanceof GenerationAdmissionError) throw error; return c.json({ error: error instanceof Error ? error.message : "Reference generation failed" }, 409); }
   });
 
@@ -414,6 +476,8 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
         ...(avatarGenerationRequestId && { avatarGenerationRequestId }),
       }, {
         modelPreference: body.modelPreference,
+        voiceId: body.voiceId,
+        entryIntent: body.entryIntent,
         name: body.name,
         backstory: body.backstory,
         personality: body.personality,
@@ -545,9 +609,11 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
     );
 
     const transparentBodies = await readAgentTransparentBodies(db, profiles);
+    const activity = await agentCollectionActivity(db, profiles);
     return c.json(profiles.map((profile) => ({
       transparentBodyUrl: transparentBodies.get(profile.id) ?? null,
       ...playerSafeAgentProfile(profile),
+      ...activity.get(profile.id),
       avatarCompletion: completions.get(profile.id),
     })));
   });
@@ -596,6 +662,7 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
     const avatarCompletion = await latestAvatarCompletion(db, user.id, profile.id) ?? undefined;
     return c.json({
       ...playerSafeAgentProfile(profile),
+      transparentBodyUrl: (await readAgentTransparentBodies(db, [profile])).get(profile.id) ?? null,
       ownerContent: await readOwnerContent(db, profile),
       ...(avatarCompletion && { avatarCompletion }),
     });
@@ -624,6 +691,8 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
         }),
       }, profileId, {
         modelPreference: body.modelPreference,
+        voiceId: body.voiceId,
+        entryIntent: body.entryIntent,
         name: body.name,
         backstory: body.backstory,
         personality: body.personality,

@@ -3537,11 +3537,12 @@ export const agentLearningReviewApplications = pgTable("agent_learning_review_ap
   proposalFingerprint: text("proposal_fingerprint").notNull(),
   sourceRecommendationIds: jsonb("source_recommendation_ids").notNull().$type<string[]>(),
   priorRevisionId: text("prior_revision_id").notNull(), // Game-specific review identity; not a rating revision.
-  resultingRevisionId: text("resulting_revision_id").notNull(), // Game-specific review identity; not a rating revision.
+  resultingRevisionId: text("resulting_revision_id"), // Set only when the submitted strategy is accepted.
+  submissionContentRevisionId: text("submission_content_revision_id"),
   priorStrategyStyle: text("prior_strategy_style").notNull(),
   resultingStrategyStyle: text("resulting_strategy_style").notNull(),
   mutationReceipt: jsonb("mutation_receipt").notNull().$type<Record<string, unknown>>(),
-  appliedAt: text("applied_at").notNull().default(sql`now()::text`),
+  appliedAt: text("applied_at"),
 }, (table) => [
   foreignKey({
     columns: [table.reviewId, table.proposalFingerprint],
@@ -3717,6 +3718,7 @@ export const agentContentRevisions = pgTable("agent_content_revisions", {
   id: text("id").primaryKey(),
   agentProfileId: text("agent_profile_id").notNull(),
   userId: text("user_id").notNull().references(() => users.id),
+  avatarChangeSource: text("avatar_change_source").$type<AvatarChangeSource>(),
   competitiveRevisionId: text("competitive_revision_id"),
   parentRevisionId: text("parent_revision_id").references((): AnyPgColumn => agentContentRevisions.id, { onDelete: "restrict" }),
   ancestryKnown: boolean("ancestry_known").notNull().default(true),
@@ -3727,6 +3729,7 @@ export const agentContentRevisions = pgTable("agent_content_revisions", {
   ...payloadChecks("agent_content_revisions", { snapshot: [table.snapshot, "json-gzip"] }),index("agent_content_revisions_profile_idx").on(table.agentProfileId, table.createdAt)]);
 export const agentContentAssets = pgTable("agent_content_assets", {
   hash: text("hash").primaryKey(),
+  isPublic: boolean("is_public").notNull().default(false),
   transparentUrl: text("transparent_url"),
   bytes: payloadColumn("bytes_object", "binary").notNull().$type<StoredPayload<Buffer>>(),
 }, table => [
@@ -3797,6 +3800,12 @@ export const agentContentSubmissions = pgTable("agent_content_submissions", {
   requestHash: text("request_hash").notNull(),
   result: jsonb("result").notNull().$type<Record<string, unknown>>(),
 });
+
+/** Private draft media can be read only by its owner until an accepted revision publishes it. */
+export const agentImageOwners = pgTable("agent_image_owners", {
+  userId: text("user_id").notNull().references(() => users.id),
+  hash: text("hash").notNull().references(() => agentContentAssets.hash),
+}, table => [primaryKey({columns:[table.userId,table.hash]})]);
 /** One assignment per reviewer and review; expired rows are replaced under a reviewer lock. */
 export const moderationClaims = pgTable("moderation_claims", {
   reviewerId: text("reviewer_id").primaryKey().references(() => users.id),
@@ -4352,6 +4361,35 @@ export const gameRetries = pgTable("game_retries", {
 });
 
 /** Owner-requested missing visual preparation. Bodies remain in private object storage. */
+/** Account drafts keep large editable documents in private object storage. */
+export const agentEditorDrafts = pgTable("agent_editor_drafts", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id),
+  scope: text("scope").notNull(),
+  name: text("name").notNull(),
+  document: payloadColumn("document_object", "json-gzip").notNull().$type<StoredPayload<Record<string, unknown>>>(),
+  version: integer("version").notNull().default(1),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, table => [uniqueIndex("agent_editor_drafts_owner_scope").on(table.userId, table.scope), ...payloadChecks("agent_editor_drafts", { document: [table.document, "json-gzip"] })]);
+
+export const voiceSamples = pgTable("voice_samples", {
+  id: text("id").primaryKey(),
+  audio: payloadColumn("audio_object", "binary").$type<StoredPayload<Buffer>>(),
+  evidence: payloadColumn("evidence_object", "json-gzip").$type<StoredPayload<Record<string, unknown>>>(),
+  status: text("status").notNull().default("pending"),
+}, table => [...payloadChecks("voice_samples", { audio: [table.audio, "binary"], evidence: [table.evidence, "json-gzip"] })]);
+
+export const characterReferenceJobs = pgTable("character_reference_jobs", {
+  id: text("id").primaryKey(), userId: text("user_id").notNull().references(() => users.id),
+  agentId: text("agent_id").references(() => agentProfiles.id), draftScope: text("draft_scope"),
+  requestHash: text("request_hash").notNull(),
+  input: payloadColumn("input_object", "json-gzip").notNull().$type<StoredPayload<Record<string, unknown>>>(),
+  result: payloadColumn("result_object", "json-gzip").$type<StoredPayload<Record<string, unknown>>>(),
+  status: text("status").notNull().default("queued"), stage: text("stage").notNull().default("image"),
+  leaseId: text("lease_id"), leaseUntil: text("lease_until"), error: text("error"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`), updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, table => [...payloadChecks("character_reference_jobs", { input: [table.input, "json-gzip"], result: [table.result, "json-gzip"] })]);
+
 export const agentVisualUpdates = pgTable("agent_visual_updates", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => users.id),
@@ -4374,3 +4412,10 @@ export const agentVisualUpdates = pgTable("agent_visual_updates", {
   uniqueIndex("agent_visual_updates_active_idx").on(table.agentId).where(sql`${table.status} IN ('queued','processing')`),
   ...payloadChecks("agent_visual_updates", { input: [table.input,"json-gzip"], checkpoint: [table.checkpoint,"json-gzip"] }),
 ]);
+
+/** A requested destination survives moderation; this record never reserves a seat. */
+export const agentEntryIntents = pgTable("agent_entry_intents", {
+  agentId: text("agent_id").primaryKey().references(() => agentProfiles.id),
+  userId: text("user_id").notNull().references(() => users.id),
+  intent: jsonb("intent").notNull().$type<{flow:"join_game";gameId:string}|{flow:"daily_free";seasonId:string;season?:string}>(),
+});
