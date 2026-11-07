@@ -119,6 +119,11 @@ The management grid always uses the full content width. Generation requests,
 attention items, errors and accepted game/season continuations appear in Activity,
 whose count includes each pending continuation. Activity never reserves a sidebar
 or changes card positions when its contents change.
+The management header has no duplicate Create action. Its Activity control is an
+icon with a numeric badge, hidden when empty. It spins for queued/running image
+work and automatic review, stays still for results or errors needing a decision,
+and respects reduced motion. The dialog includes reviewing agents as well as
+attention items and image requests.
 The owner profile's Agents link sits above the background panel, aligned with the
 profile heading and separated by a 16px gap on desktop and mobile.
 

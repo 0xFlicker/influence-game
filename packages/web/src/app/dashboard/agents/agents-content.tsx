@@ -91,6 +91,7 @@ export function AgentsContent() {
     }
   }
   const attention = agents.filter(agentNeedsAttention),
+    reviewingAgents = agents.filter((agent) => agent.reviewState === "reviewing"),
     entryAgents = agents.filter(
       (agent) => agent.entryIntent && agent.reviewState === "accepted",
     ),
@@ -99,6 +100,14 @@ export function AgentsContent() {
         (!attentionOnly || agentNeedsAttention(agent)) &&
         agent.name.toLowerCase().includes(query.toLowerCase()),
     );
+  const activityCount = attention.length + reviewingAgents.length +
+    generations.rows.length + entryAgents.length + Number(Boolean(error));
+  const activityWorking = reviewingAgents.length > 0 || generations.rows.some(
+    (row) => row.status === "queued" || row.status === "running",
+  );
+  useEffect(() => {
+    if (!activityCount) setAttentionOpen(false);
+  }, [activityCount]);
   const notifications = (
     <>
       <AgentGenerations
@@ -116,6 +125,25 @@ export function AgentsContent() {
             Retry
           </button>
         </div>
+      )}
+      {reviewingAgents.length > 0 && (
+        <section className={styles.activity} aria-label="Reviewing agents">
+          <h2>Reviewing <small>{reviewingAgents.length}</small></h2>
+          {reviewingAgents.map((agent) => (
+            <div className={styles.attentionRow} key={agent.id}>
+              <strong>{agent.name}</strong>
+              <Link
+                className="action"
+                href={withManagementReturn(
+                  "/dashboard/agents/" + agent.id + "/profile",
+                  returnPath(agent.id),
+                )}
+              >
+                View
+              </Link>
+            </div>
+          ))}
+        </section>
       )}
       {attention.length > 0 && (
         <section className={styles.attention}>
@@ -179,26 +207,31 @@ export function AgentsContent() {
       <Link href="/dashboard">← Dashboard</Link>
       <header className={styles.masthead}>
         <h1>Your agents</h1>
-        <div className={styles.managementHeaderActions}>
+        {activityCount > 0 && (
           <button
             type="button"
+            className={styles.managementActivity}
+            data-working={activityWorking}
+            data-activity-count={activityCount}
             aria-label="Activity"
+            aria-describedby="agent-management-activity-count"
             aria-haspopup="dialog"
             aria-expanded={attentionOpen}
+            title={`${activityCount} activity ${activityCount === 1 ? "item" : "items"}`}
             onClick={() => setAttentionOpen(true)}
           >
-            Activity{" "}
-            <span>
-              {attention.length +
-                generations.rows.length +
-                entryAgents.length +
-                Number(Boolean(error))}
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" opacity=".25" />
+              <path d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+            <span className={styles.managementActivityBadge} aria-hidden="true">
+              {activityCount}
+            </span>
+            <span id="agent-management-activity-count" className="sr-only">
+              {activityCount} activity {activityCount === 1 ? "item" : "items"}
             </span>
           </button>
-          <Link className="action" href="/agents/create">
-            Create
-          </Link>
-        </div>
+        )}
       </header>
       <div className={styles.managementMain}>
         <div className={styles.toolbar}>

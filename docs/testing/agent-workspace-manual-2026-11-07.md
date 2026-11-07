@@ -270,3 +270,22 @@ assertions), including compact metadata spacing at desktop, tablet and mobile
 widths plus unchanged card positions on acceptance. Typecheck, lint and
 `git diff --check` passed. Existing management and stable-gallery screenshots
 show the compact treatment.
+
+## Follow-up: quiet management header
+
+Removed the duplicate Create action from the management masthead. Activity is
+absent when its count is zero. Otherwise a clickable activity icon carries a
+stationary numeric badge; only the icon spins during queued/running generation
+or automatic review. Results, errors and other attention items keep a still
+indicator. The full count is available to assistive technology, reduced motion
+stops rotation, and the Activity dialog closes if its last item clears.
+
+Reviewing agents now contribute to the count and have a Reviewing section with
+View links inside Activity. The primary navigation retains agent creation.
+
+All 13 workspace browser journeys passed (784 assertions), covering the empty
+header, removed local Create link, live count, review details and count changes,
+spinner/reduced motion, pending requests and stable card positions. Typecheck,
+lint and `git diff --check` passed. Visual evidence includes
+`.renders/agent-workspace/management-active.png` and the management width
+screenshots. No paid provider calls were needed.

@@ -1635,18 +1635,46 @@
   min-width: 0;
   margin-top: 24px;
 }
-.managementHeaderActions {
+.collection .managementActivity {
+  position: relative;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
+  justify-content: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-color: transparent;
+  border-radius: 50%;
+  color: var(--gold);
+  background: none;
 }
-.managementHeaderActions button {
+.managementActivity:hover {
+  background: #dec29414;
+}
+.managementActivity[data-working="true"] svg {
+  animation: management-activity-spin 1.6s linear infinite;
+}
+.managementActivityBadge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--gold);
+  color: #17130f;
+  font-size: 11px;
+  line-height: 18px;
   font-variant-numeric: tabular-nums;
 }
-.managementHeaderActions button span {
-  display: inline-block;
-  min-width: 1.5em;
+@keyframes management-activity-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .managementActivity[data-working="true"] svg {
+    animation: none;
+  }
 }
 @media (max-width: 640px) {
   .workspace {

@@ -185,6 +185,8 @@ test("management image and name open the owner profile and return to its agent",
       await page.setViewport(viewport);
       for (const target of ["img", "h3"]) {
         await page.waitForSelector(`${selector} ${target}`);
+        expect(await page.$('main header button[aria-label="Activity"]')).toBeNull();
+        expect(await page.$('main header a[href="/agents/create"]')).toBeNull();
         expect(await page.$("main aside")).toBeNull();
         expect(await page.$eval(`#agent-${agentId}`, element => {
           const grid = element.parentElement!.getBoundingClientRect();
@@ -1175,6 +1177,15 @@ test("pending requests are visible before generation and cancellation keeps edit
     { name: "prefers-reduced-motion", value: "reduce" },
   ]);
   try {
+    const indicator = 'main header button[aria-label="Activity"]';
+    await page.waitForSelector(indicator);
+    expect(await page.$eval(indicator, element => element.getAttribute("data-working"))).toBe("true");
+    expect(Number(await page.$eval(indicator, element => element.getAttribute("data-activity-count")))).toBeGreaterThan(0);
+    expect(await page.evaluate(`getComputedStyle(document.querySelector('${indicator} svg')).animationName`)).toBe("none");
+    await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
+    expect(await page.evaluate(`getComputedStyle(document.querySelector('${indicator} svg')).animationName`)).toContain("management-activity-spin");
+    await page.screenshot({ path: proof + "management-active.png", fullPage: false });
+    await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
     await button(page, "Activity");
     await page.waitForSelector('[aria-label="Image requests"]');
     expect(
@@ -1662,6 +1673,10 @@ test("review acceptance keeps gallery order and card positions unchanged", async
           };
         }),
       );
+    const activityBefore = Number(await page.$eval('main header button[aria-label="Activity"]', element => element.getAttribute("data-activity-count")));
+    await button(page, "Activity");
+    expect(await page.$eval('dialog[open] [aria-label="Reviewing agents"]', element => element.textContent)).toContain(target.name);
+    await button(page, "Close");
     const before = await positions();
     expect(await page.$eval(`#agent-${target.id} > p:first-of-type > span`, element => element.textContent)).toBe("Reviewing");
     await database.db
@@ -1685,6 +1700,8 @@ test("review acceptance keeps gallery order and card positions unchanged", async
       "#agent-" + target.id + '[data-review-state="accepted"]',
     );
     const after = await positions();
+    const remainingActivity = await page.$('main header button[aria-label="Activity"]');
+    expect(remainingActivity ? Number(await remainingActivity.evaluate(element => element.getAttribute("data-activity-count"))) : 0).toBe(activityBefore - 1);
     expect(await page.$eval(`#agent-${target.id} > p:first-of-type`, element => element.textContent)).toBe("");
     expect(after.map((row) => row.id)).toEqual(before.map((row) => row.id));
     before.forEach((row, index) => {
