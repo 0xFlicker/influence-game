@@ -294,6 +294,54 @@ export const legalAcceptances = pgTable("legal_acceptances", {
 
 export type AuthenticationProvider = "privy" | "clerk" | "farcaster";
 
+/** Community identity only: Discord is not an account login/recovery credential. */
+export const discordConnections = pgTable("discord_connections", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "restrict" }).unique(),
+  discordId: text("discord_id").notNull().unique(),
+  username: text("username").notNull(),
+  guildId: text("guild_id").notNull(),
+  disconnecting: boolean("disconnecting").notNull().default(false),
+  revision: integer("revision").notNull().default(1),
+  deliveredRevision: integer("delivered_revision").notNull().default(0),
+  attempts: integer("attempts").notNull().default(0),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+  lease: uuid("lease"),
+  leaseUntil: timestamp("lease_until", { withTimezone: true }),
+  lastError: text("last_error"),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull().defaultNow(),
+  syncedAt: timestamp("synced_at", { withTimezone: true }),
+}, table => [
+  index("discord_connections_pending_idx").on(table.nextAttemptAt),
+  check("discord_connections_snowflakes", sql`${table.discordId} ~ '^[0-9]{17,20}$' AND ${table.guildId} ~ '^[0-9]{17,20}$'`),
+  check("discord_connections_revisions", sql`${table.revision} > 0 AND ${table.deliveredRevision} >= 0 AND ${table.deliveredRevision} <= ${table.revision}`),
+]);
+
+export const discordVerificationAttempts = pgTable("discord_verification_attempts", {
+  stateHash: text("state_hash").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  nonceHash: text("nonce_hash").notNull(),
+  applicationId: text("application_id").notNull(),
+  redirectUri: text("redirect_uri").notNull(),
+  guildId: text("guild_id").notNull(),
+  status: text("status").notNull().$type<"pending" | "exchanging" | "verified" | "confirmed">(),
+  discordId: text("discord_id"),
+  username: text("username"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+}, table => [
+  index("discord_verification_attempts_user_idx").on(table.userId),
+  check("discord_verification_attempts_status", sql`${table.status} IN ('pending','exchanging','verified','confirmed')`),
+]);
+
+export const discordConnectionAudit = pgTable("discord_connection_audit", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  discordId: text("discord_id").notNull(),
+  action: text("action").notNull().$type<"connected" | "refresh" | "disconnect" | "removed">(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [check("discord_connection_audit_action", sql`${table.action} IN ('connected','refresh','disconnect','removed')`)]);
+
 export const authenticationCredentials = pgTable("authentication_credentials", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: text("user_id")

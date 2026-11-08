@@ -37,7 +37,7 @@ export default function PrivacyPage() {
       <main className="flex-1 px-6 py-16 max-w-3xl mx-auto w-full">
         <section className="mb-14">
           <p className="influence-table-header mb-3 text-xs font-semibold uppercase tracking-wider">
-            Last Updated: October 18, 2026
+            Last Updated: November 8, 2026
           </p>
           <h1 className="influence-phase-title mb-5 text-4xl font-bold tracking-tight">
             Privacy Policy
@@ -83,6 +83,25 @@ export default function PrivacyPage() {
             <P>
               We do not collect passwords when authentication is handled through
               third-party providers.
+            </P>
+          </SubSection>
+
+          <SubSection title="Optional Discord Connection">
+            <P>
+              If you connect Discord, we store your Discord user ID and username,
+              the association with your House account, verification time, and server
+              role delivery status. We use this to recognize your account and apply
+              community and staff roles. The connection is private; server roles
+              are visible according to Discord server settings. We request identity
+              access without access to your private messages, and do not retain
+              Discord OAuth access or refresh tokens.
+            </P>
+            <P>
+              You can disconnect from your account settings. House bot authorization
+              ends immediately; we retain the connection until managed server roles
+              have been removed or your membership is confirmed absent. Verification
+              attempts expire after ten minutes. Expired attempts and connection
+              audit records older than ninety days are removed by scheduled cleanup.
             </P>
           </SubSection>
 

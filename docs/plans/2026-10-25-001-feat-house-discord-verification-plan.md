@@ -1,7 +1,7 @@
 ---
 title: The House Discord identity, verification, and first runtime
 type: feat
-status: proposed
+status: in-progress
 date: 2026-10-25
 ---
 
@@ -21,7 +21,7 @@ new Discord control service; the existing Linode app remains the account and
 permission authority. Live role-change subscriptions are deferred, but durable
 delivery of requested role changes is required in v0.
 
-This document is an implementation proposal, not a deployed feature.
+The first implementation is in progress as of November 8, 2026: website OAuth and confirmation, PostgreSQL associations and delivery leases, role worker, signed `/verify` interactions, account settings and disconnect. The OAuth client secret is now in Doppler. Nothing has been deployed or changed in the live Discord server. See the [current setup and deployment runbook](../discord-house-setup.md) for configuration and remaining rollout work.
 
 ## Verified inventory — October 25, 2026
 
@@ -60,7 +60,7 @@ The operator's production House sysop grant was not queried during this audit.
 ## User journey
 
 1. The welcome/verification channel provides `https://thehouse.game/discord/verify`.
-   `/house verify` returns the same link privately. A generic link carries no
+   `/verify` returns the same link privately. A generic link carries no
    Discord ID, role claim, credential, or account authority.
 2. The page uses the existing House authentication UI and preserves the verification
    destination through login/signup. Existing invite and legal-acceptance rules
@@ -200,7 +200,7 @@ than embedding mutable business logic in infrastructure templates.
 
 The interaction endpoint verifies Discord's Ed25519 signature over the raw body,
 timestamp, application and guild; rejects replays; and acknowledges within Discord's
-three-second deadline. `/house verify` can return its static link without waiting
+three-second deadline. `/verify` can return its static link without waiting
 on Linode. Defer network-dependent commands promptly. Do not introduce a second
 interaction endpoint/listener when adding the agent later.
 
@@ -278,8 +278,8 @@ public community bot.
    website page, settings, conflicts, disconnect and audit. Local proof uses the
    real API and PostgreSQL with a deterministic Discord adapter.
 3. **Deploy the minimal AWS control service:** signed interactions, role worker,
-   scoped app API access, logs/alerts and retries. Add `/house verify`, `/house
-   status`, `/house sync`; prepare the welcome link for a separately executed
+   scoped app API access, logs/alerts and retries. Add `/verify`; keep status and manual role refresh on the website for v0.
+   Prepare the welcome link for a separately executed
    server setup. Validate in staging before the normal production rollout.
 4. **Prove the actual user journey:** verify one ordinary user and each staff tier;
    then the operator logs into their existing House sysop account and confirms
@@ -306,8 +306,9 @@ login continuation and accurate pending/failure/success states.
 
 Before merging implementation, run `bun run test`, `bun run test:postgres` and
 `bun run check`; DB tests use `setupTestDB()` and remain sequential. External-write
-tests must be classified and opt-in. This documentation-only investigation did
-not run application tests or perform a live verification/write rehearsal.
+tests must be classified and opt-in. The October 25 documentation investigation did not run application tests. The
+November 8 implementation adds local API, worker, signature and browser coverage;
+the live verification/write rehearsal remains a deployment acceptance step.
 
 ## Sources
 

@@ -1163,6 +1163,13 @@
       "when": 1792952785135,
       "tag": "0165_image_activity_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1794096000000,
+      "tag": "0166_discord_verification",
+      "breakpoints": true
     }
   ]
 }

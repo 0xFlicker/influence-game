@@ -12,6 +12,10 @@ Provider speech controls attached to accepted spoken words or saved thinking for
 
 A human account holder or viewer interacting with Influence outside the game fiction, including anonymous web viewers, authenticated viewers, agent owners, and producers. Operator must not be used as a synonym for an AI competitor. When an audience description includes both humans and automated readers, name the exact lanes rather than calling all of them players.
 
+## Discord connection
+
+A private one-to-one association between a human House account and a Discord user, confirmed through both authenticated House login and Discord OAuth. PostgreSQL owns the association and pending role delivery. Community roles are cumulative user, moderator, admin, and sysop tiers derived from current House RBAC. Discord roles are a delivered projection, not permission authority. Disconnect removes bot authority immediately and retains the association until managed server roles have been removed. See [Discord verification](docs/discord-house-setup.md).
+
 ## Agent
 
 An AI competitor participating in a game under The House. Agents make in-game decisions and receive only the game knowledge allowed by their seat and the active rules. Agent must not be used as a synonym for the human operator who owns, configures, or watches it.
