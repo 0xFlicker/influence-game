@@ -900,6 +900,15 @@
   min-height: 80px;
   overflow-y: auto;
 }
+/* Once the conversation starts, give it the space used by the welcome art. */
+.content :global(.agent-creation-visual-empty:has(+ .agent-creation-chat-log:not([hidden]))) {
+  display: none;
+}
+.content :global(.agent-creation-visual-empty + .agent-creation-chat-log:not([hidden])) {
+  min-height: min(200px, 35dvh);
+  max-height: none;
+  mask-image: none;
+}
 .content :global(.agent-creation-chat-log),
 .content :global(.agent-creation-dock > div) {
   max-width: 920px;
@@ -1122,6 +1131,9 @@
   }
   .content :global(.agent-creation-chat-log) {
     max-height: 200px;
+  }
+  .content :global(.agent-creation-visual-empty + .agent-creation-chat-log:not([hidden])) {
+    max-height: 45dvh;
   }
   .preferences {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

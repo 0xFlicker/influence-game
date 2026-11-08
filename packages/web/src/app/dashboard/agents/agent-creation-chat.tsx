@@ -39,7 +39,7 @@ const replies = {
   appearance:
     "What do they look like? Describe their face, body, clothing, colors, or any distinctive details.",
   portrait:
-    "Your character is ready to look over. Confirm this headshot when it feels right, or tell me what to change about their appearance.",
+    "Your character is ready to review. You can also tell me what to change about their appearance.",
 };
 
 export interface CharacterConversation {
@@ -432,7 +432,8 @@ export function AgentCreationChat({
           hidden={!messages.length && !working && !editing}
         >
           <div className="agent-creation-message-stack space-y-2 px-1 pb-3 pt-4">
-            {visibleMessages.map((message, index) => (
+            {visibleMessages.map((message, index) =>
+              !editing && index === 0 && message.text === replies.character && (submitted !== null || messages.length > 0) ? null : (
               <p
                 key={`${index}-${message.text}`}
                 className={`agent-creation-bubble w-fit max-w-[90%] rounded-2xl border px-3 py-2 text-sm leading-6 sm:max-w-xl ${message.role === "user" ? "ml-auto rounded-br-sm border-violet-300/25 bg-violet-400/20 text-violet-50" : "rounded-bl-sm border-amber-100/15 bg-[#15111f]/75 text-white/90"}`}

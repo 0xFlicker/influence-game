@@ -404,3 +404,26 @@ recovery are covered by the workspace draft and account browser tests. The
 profile-to-editor handoff now waits for draft recovery and displays the request
 and assistant response in the guided conversation; the public-identity browser
 test checks that the request runs once and is not replayed after reload.
+
+## Creation follow-up
+
+The first guided conversation now uses the welcome area's space after sending,
+and the opening prompt no longer crowds the user's first message. Browser
+coverage checks 320×568, 390×844, 768×1024, 1024×768, 1440×900 and 1920×1080,
+including the typing indicator above the fixed footer.
+
+Ready artwork now goes directly to review in both creation modes. The generated
+portrait and head suggestion are used when available; if localization fails,
+the full-body image remains usable without invented head coordinates. Portrait
+adjustment remains available. Browser coverage checks model and voice selection,
+review, creation and publication, including failed localization.
+
+A real local Guided test created Maren Tidewell
+(`12c2d1dc-0868-42c3-ada3-8c301fdf18af`) with generated artwork, GPT Luna and
+Carina using Review → Create without selecting or confirming a portrait. It was
+accepted; the model and voice were verified in the local database. The recorded
+incremental estimate was $0.050290 (four text calls, one Flare image and one
+head-localization call), bringing the prior $0.295750 estimate to $0.346040.
+These estimates exclude moderation: this agent's Luna screening receipt recorded
+3,647 input and 109 output tokens but does not report a billed amount. They are
+not provider invoices.

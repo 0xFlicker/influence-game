@@ -194,10 +194,14 @@ describe("atomic character content submissions", () => {
     expect(await db.select().from(schema.agentModerationReviews)).toHaveLength(2);
     expect(await db.select().from(schema.avatarGenerationRequests)).toHaveLength(0);
   });
+  test("new characters can retain artwork when head localization is unavailable", async () => {
+    const sourceUrl = `http://localhost${await contentImageFixture("pfp/unlocalized-head.png")}`;
+    const unlocalized = await createOwnedAgentProfile(db, context, { ...initial, fullBodyReferenceUrl: sourceUrl });
+    expect(unlocalized.profile.headPosition).toBeNull();
+  });
   test("head confirmation validates image evidence, records the actor, and is retry safe", async () => {
     const sourceUrl = `http://localhost${await contentImageFixture("pfp/head-confirm.png")}`;
     const headPosition = await headPositionFixture(sourceUrl);
-    await expect(createOwnedAgentProfile(db, context, { ...initial, fullBodyReferenceUrl: sourceUrl })).rejects.toThrow("Confirm the head");
     const first = await createOwnedAgentProfile(db, context, { ...initial, creationRequestId: randomUUID(), fullBodyReferenceUrl: sourceUrl,
       headPosition: { ...headPosition, confirmation: { userId: "forged", at: "1900-01-01" } } });
     expect(first.profile.headPosition?.confirmation?.userId).toBe(context.userId);
