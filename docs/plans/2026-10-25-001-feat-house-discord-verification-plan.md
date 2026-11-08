@@ -21,7 +21,7 @@ new Discord control service; the existing Linode app remains the account and
 permission authority. Live role-change subscriptions are deferred, but durable
 delivery of requested role changes is required in v0.
 
-The first implementation is in progress as of November 8, 2026: website OAuth and confirmation, PostgreSQL associations and delivery leases, role worker, signed `/verify` interactions, account settings and disconnect. The OAuth client secret is now in Doppler. Nothing has been deployed or changed in the live Discord server. See the [current setup and deployment runbook](../discord-house-setup.md) for configuration and remaining rollout work.
+The first implementation merged on November 8, 2026 in influence-game PR #317. AWS interactions and delivery functions are deployed from falsefloor/infra PR #39, the OAuth callback and `/verify` command are registered, and production secrets/SSM role IDs are wired. The Linode release passed staging qualification and is deployed in production at `11b049b35d96c927a853a716741d1c36110c584a`; the AWS worker passed its live queue check and its minute schedule is enabled. The implemented schema uses `discord_verification_attempts`, `discord_connections`, and `discord_connection_audit`, with the durable delivery revision/lease/retry cursor on the connection row rather than a separate jobs table. Live human OAuth and role-grant acceptance remain for the operator's sysop test. See the [current setup and deployment runbook](../discord-house-setup.md) for authoritative rollout status and configuration.
 
 ## Verified inventory — October 25, 2026
 

@@ -2,7 +2,9 @@
 
 ## Implementation status — November 8, 2026
 
-The first verification implementation is local, not deployed. The website uses
+Verification is deployed in production at application commit
+`11b049b35d96c927a853a716741d1c36110c584a` (PR #317). AWS infrastructure is
+deployed from `falsefloor/infra` PR #39. The website uses
 House login, Discord OAuth (`identify` with PKCE), and explicit account confirmation.
 PostgreSQL stores the private one-to-one association and durable role delivery.
 The AWS-compatible worker applies cumulative House User, Moderator, Admin and
@@ -19,9 +21,11 @@ The current source of truth for the broader runtime is the
 
 Canonical House credentials are in False Floor Doppler project `overclaw-house`,
 config `prd`, operator scope `/Users/user/Development/overclaw/workspace-house`.
-`DISCORD_BOT_TOKEN` authenticated successfully on October 25; the older
+`DISCORD_BOT_TOKEN` authenticated successfully on November 8; the older
 `social-strategy-agent/dev/DISCORD_HOUSE_BOT_TOKEN` returned 401. The operator added
-`DISCORD_CLIENT_SECRET`, and its presence was checked without reading its value.
+`DISCORD_CLIENT_SECRET`. Discord accepted an application-only client-credentials
+exchange on November 8; that temporary app token was immediately revoked. No
+user OAuth authorization or role delivery was performed by this credential check.
 Never print values, put them in command arguments, or copy them into browser env.
 
 | Variable | Consumers | Value / purpose |
@@ -70,17 +74,60 @@ and Administrator disabled. Its role remains above all four verification roles.
 Live role delivery still needs to be verified after deployment. Preserve independent
 owner and recovery access.
 
-No House Discord worker infrastructure was found in the inspected deployment
-configuration or Lambda functions in this account and region. The table above is
-therefore a **deployment requirement, not existing wiring**: when the worker IaC
-is provisioned, resolve each SSM parameter at deployment into its matching worker
-environment variable. The worker does not read SSM directly. Verify the resulting
-function configuration and role delivery before enabling the verification flow.
+The `HouseDiscord-prod` stack now owns `house-discord-prod-interactions` and
+`house-discord-prod-worker`. Its definitions and deployment runbook live in
+[`falsefloor/infra`](https://github.com/falsefloor/infra/blob/main/docs/house-discord.md).
+CloudFormation resolves the four role parameters into the worker environment;
+readback confirmed all four IDs above. The worker's AWS adapter reads only its bot
+and worker credentials from encrypted SSM parameters on each invocation. Identity,
+role policy and durable work remain in the House application and PostgreSQL.
+
+The two Doppler projects belong to different workplaces, so cross-project secret
+references cannot be used. The infrastructure operator script
+`scripts/sync-house-discord.py` materializes the selected canonical House secrets
+into `social-strategy-agent/prd` for the Linode API and into the two SSM
+SecureString parameters `/house/discord/prod/credentials/bot-token` and
+`/house/discord/prod/credentials/worker-token`. Run it after credential rotation
+and reload the API through the existing release controller. It generates missing
+worker/controller tokens only once and verifies copies without logging values.
+
+The production OAuth callback `https://thehouse.game/discord/callback` is
+registered. Discord accepted its signed validation of the interactions endpoint
+`https://fawne5hhd7kvx5s4smkycpfwh40adhwt.lambda-url.us-west-1.on.aws/`.
+Unsigned requests returned HTTP 401. The guild-only `/verify` command is registered
+as `1569117100516311183`. Effective `@everyone` permissions permit viewing and
+using application commands in `#general`, `#influence-lobby`, `#watch-parties`,
+and `#agent-lab`, so an unverified member can start there. No setup messages or
+human memberships were changed.
+
+EventBridge invokes one durable delivery every minute. The schedule
+`house-discord-prod-role-delivery` is enabled. A direct production worker invocation
+returned `idle`, proving encrypted SSM credential access and the database-backed
+API queue. Production page/callback responses and the separate human, worker, and
+controller authorization boundaries passed live checks. Actual human OAuth and
+role delivery remain the operator's sysop acceptance test.
+The stack uses the account's shared Lambda concurrency quota of 10. Error,
+throttle and delivery-retry alarms are present, with no notification destination
+configured. Logs retain 30 days. Source pins and artifact hashes are recorded by
+the infrastructure build; the deployed application worker source matches PR #317.
 
 Keep separate environment credentials and Discord guilds for development/staging;
 do not run automatic QA against the production guild. No Discord credentials are
 needed in CI. The House API needs neither the bot token nor AWS credentials for
 verification. The worker needs neither PostgreSQL credentials nor the OAuth secret.
+
+### Release evidence
+
+- [Application CI](https://github.com/0xFlicker/influence-game/actions/runs/42531010046) and [browser coverage](https://github.com/0xFlicker/influence-game/actions/runs/42531010038) passed on the merged revision.
+- [Staging deployment](https://github.com/0xFlicker/linode-iac/actions/runs/42532513338) and [live E2E qualification](https://github.com/0xFlicker/influence-game/actions/runs/42532897614) passed.
+- [Protected production approval](https://github.com/0xFlicker/influence-game/actions/runs/42533234256) and [production deployment](https://github.com/0xFlicker/linode-iac/actions/runs/42533343869) completed. Host evidence reached terminal accepted state, with the exact qualified image family and migration set. Public health reports the same application commit.
+- `HouseDiscord-prod` reached `CREATE_COMPLETE`; both Lambda functions are active. The worker source pin `c6cc4c5b3499768345ae0b642c29df40c0946a0a` is byte-equivalent in its runtime files to the merged application commit.
+
+To test: run `/verify` in `#general`, or open
+[the verification page](https://thehouse.game/discord/verify), sign into the House,
+authorize Discord, and confirm both accounts. Allow about one minute for delivery.
+A House sysop receives all four House roles. Use **Refresh roles** for subsequent
+House role changes; real-time role-change subscriptions are outside v0.
 
 ## Role and identity semantics
 
