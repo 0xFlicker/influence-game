@@ -1,6 +1,8 @@
+import { getAnalyticsConsent } from "./analytics-consent";
 import type { EmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import type { ModelPreference, GameModelRouting } from "@influence/engine/game-model-routing";
 import { analyticsOperation, measureProductRequest } from "@/lib/product-analytics";
+import { getStoredCampaignAttribution } from "@/lib/campaign-attribution";
 import type { HouseParticipation } from "@influence/engine/house-participation";
 import type { AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
 /**
@@ -1795,10 +1797,16 @@ export async function loginWithPrivyToken(
     body: JSON.stringify({
       token: privyToken,
       intent: request.intent,
+      analytics: getAnalyticsConsent().ready ? getAnalyticsConsent().analytics : undefined,
       ...(request.intent === "create_account"
         ? {
           ...(request.inviteCode ? { inviteCode: request.inviteCode } : {}),
           ...request.legalAcceptance,
+          // First-touch campaign attribution (identities only, never prompt
+          // text). The server re-validates every field; absent stays unknown.
+          ...(permittedCampaignAttribution().firstTouch
+            ? { attribution: permittedCampaignAttribution().firstTouch }
+            : {}),
         }
         : {}),
     }),
@@ -1849,7 +1857,28 @@ export async function createManagedAuthentication(
       token,
       ...(inviteCode ? { inviteCode } : {}),
       ...PRESENTED_LEGAL_ACCEPTANCE,
+      analytics: getAnalyticsConsent().ready ? getAnalyticsConsent().analytics : undefined,
+      ...(permittedCampaignAttribution().firstTouch
+        ? { attribution: permittedCampaignAttribution().firstTouch }
+        : {}),
     }),
+  });
+}
+
+function permittedCampaignAttribution() {
+  const consent = getAnalyticsConsent();
+  return consent.ready && consent.analytics ? getStoredCampaignAttribution() : { firstTouch: null, lastNonDirectTouch: null };
+}
+
+/** Sync even denials and empty attribution. Capture the session before starting the request. */
+export async function retainCampaignAttribution(explicitChoice = false, expectedVersion?: string): Promise<{ analytics: boolean; version: string }> {
+  const consent = getAnalyticsConsent();
+  const stored = permittedCampaignAttribution();
+  return apiFetch("/api/attribution/retain", {
+    method: "POST",
+    signal: AbortSignal.timeout(5000),
+    body: JSON.stringify({ analytics: consent.ready && consent.analytics, explicitChoice, expectedVersion,
+      firstTouch: stored.firstTouch, lastTouch: stored.lastNonDirectTouch }),
   });
 }
 

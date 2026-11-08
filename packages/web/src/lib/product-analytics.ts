@@ -1,13 +1,19 @@
 "use client";
 
 import { sanitizeAnalyticsProperties } from "./analytics-privacy";
+import {
+  campaignAttributionProperties,
+  campaignTouchProperties,
+  getStoredCampaignAttribution,
+  retainCampaignTouch,
+} from "./campaign-attribution";
 import { scrubExceptionProperties } from "./analytics-errors";
 import { getAnalyticsConsent, subscribeAnalyticsConsent } from "./analytics-consent";
 import type { PostHog } from "posthog-js";
 let posthog: PostHog;
 let initializing: Promise<void> | null = null;
 
-type Properties = Record<string, string | number | boolean | null>;
+type Properties = Record<string, string | number | boolean | null | Record<string, string>>;
 let initialized = false;
 let excluded = true;
 let identity: string | null = null;
@@ -107,15 +113,26 @@ export function setAnalyticsIdentity(publicId: string | null, internal: boolean)
   }
   const previousId = identity ?? posthog.get_property("$user_id");
   if (previousId && previousId !== publicId) posthog.reset();
-  if (publicId && identity !== publicId) posthog.identify(publicId);
+  if (publicId && identity !== publicId) {
+    // First-touch person properties are set once; later campaigns never
+    // rewrite acquisition history. Last-non-direct stays on each event.
+    const firstTouch = campaignTouchProperties(getStoredCampaignAttribution().firstTouch, "initial_");
+    posthog.identify(publicId, undefined, firstTouch);
+  }
   identity = publicId;
   notifyActivity();
 }
 
 export function captureProductEvent(event: string, properties: Properties = {}): void {
   if (!analyticsActive()) return;
-  try { posthog.capture(event, { ...properties, channel: "web", environment: "production" }); }
-  catch { console.warn("[Analytics] Event capture unavailable"); }
+  try {
+    posthog.capture(event, {
+      ...campaignAttributionProperties(),
+      ...properties,
+      channel: "web",
+      environment: "production",
+    });
+  } catch { console.warn("[Analytics] Event capture unavailable"); }
 }
 
 export function captureProductException(error: Error): void {
@@ -125,13 +142,16 @@ export function captureProductException(error: Error): void {
 }
 
 export function capturePage(pathname: string): void {
-  const campaigns: Properties = {};
   const params = new URLSearchParams(location.search);
-  for (const name of ["utm_source", "utm_medium", "utm_campaign"]) {
-    const value = params.get(name);
-    if (value && /^[a-zA-Z0-9_. -]{1,100}$/.test(value)) campaigns[name] = value;
-  }
-  captureProductEvent("$pageview", { $current_url: `${location.origin}${pathname}`, ...campaigns });
+  // Consent-gated first-party retention: no pre-consent queue or backfill.
+  // Server conversions remain authoritative; this only attributes interaction.
+  if (analyticsActive()) retainCampaignTouch(location.search);
+  const stored = getStoredCampaignAttribution();
+  const firstTouchOnce = campaignTouchProperties(stored.firstTouch, "initial_");
+  captureProductEvent("$pageview", {
+    $current_url: `${location.origin}${pathname}`,
+    ...(Object.keys(firstTouchOnce).length ? { $set_once: firstTouchOnce } : {}),
+  });
   if (pathname === "/agents/create") captureProductEvent("agent_creation_opened", {
     flow: ["manage", "join_game", "daily_free"].includes(params.get("flow") ?? "") ? params.get("flow")! : "manage",
   });

@@ -8,7 +8,7 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
       import { mock } from "bun:test";
       import { strict as assert } from "node:assert";
       const values = new Map();
-      globalThis.localStorage = { getItem: k => values.get(k) ?? null, setItem: (k,v) => values.set(k,v) };
+      globalThis.localStorage = { getItem: k => values.get(k) ?? null, setItem: (k,v) => values.set(k,v), removeItem: k => values.delete(k) };
       globalThis.window = new EventTarget();
       Object.defineProperty(globalThis, "navigator", { value: { doNotTrack: "0", globalPrivacyControl: false }, configurable: true });
       globalThis.fetch = async () => Response.json({ country: ${JSON.stringify(country)} });
@@ -101,9 +101,11 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
       assert.equal(analytics.analyticsActive(), true);
       assert.deepEqual(events, ["allowed"]);
       assert.equal(consent.getAnalyticsConsent().recordings, true);
+      values.set("house:campaign-attribution", JSON.stringify({ firstTouch: { campaign: "season1" } }));
       values.set("house:analytics-consent", JSON.stringify({ version: 1, analytics: false }));
       const event = new Event("storage"); Object.defineProperty(event, "key", { value: "house:analytics-consent" });
       window.dispatchEvent(event);
+      assert.equal(values.has("house:campaign-attribution"), false);
       assert.equal(sdkConfig.before_send(automaticEvent("$pageleave")), null);
       assert.equal(sdkConfig.before_send(automaticEvent("$web_vitals")), null);
       analytics.captureProductEvent("after-rejection");

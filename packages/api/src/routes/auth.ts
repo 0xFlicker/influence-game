@@ -20,6 +20,9 @@ import { extractBearerToken } from "../game-mcp/auth.js";
 import { isInviteRequired, redeemInviteCode } from "../lib/invite-codes.js";
 import { projectAuthenticatedPublicIdentity } from "../services/authenticated-public-identity.js";
 import {
+  recordAuthenticationTracking,
+} from "../services/campaign-conversions.js";
+import {
   createClerkAuthenticationVerifier,
   createClerkSdkDependencies,
   createDefaultFarcasterAuthenticationVerifier,
@@ -75,6 +78,12 @@ interface AuthRouteDependencies {
   now?: () => number;
 }
 
+/** Unknown regional permission must not become a persisted rejection. */
+function requestedAnalytics(c: Context, value: unknown): boolean | undefined {
+  if (c.req.header("Sec-GPC") === "1" || c.req.header("DNT") === "1") return false;
+  return typeof value === "boolean" ? value : undefined;
+}
+
 export function createAuthRoutes(
   db: DrizzleDB,
   dependencies: AuthRouteDependencies = {},
@@ -118,6 +127,8 @@ export function createAuthRoutes(
       "termsVersion",
       "privacyVersion",
       "deploymentSha",
+      "attribution",
+      "analytics",
     ]);
     if (!request.ok) return request.response;
     const { body } = request;
@@ -220,6 +231,10 @@ export function createAuthRoutes(
     if (body.intent === "create_account" && !authentication.created) {
       return accountAlreadyExistsResponse(c);
     }
+    await recordAuthenticationTracking(db, {
+      userId: authentication.user.id, publicId: authentication.user.publicId,
+      created: authentication.created, analytics: requestedAnalytics(c, body.analytics), attribution: body.attribution,
+    });
     return c.json(await issueInfluenceSession(db, authentication.user));
   });
 
@@ -340,6 +355,8 @@ export function createAuthRoutes(
         "termsVersion",
         "privacyVersion",
         "deploymentSha",
+        "attribution",
+        "analytics",
       ],
       "acceptTerms",
     );
@@ -377,6 +394,12 @@ export function createAuthRoutes(
     );
     if (outcome.status === "authenticated" && !outcome.created) {
       return accountAlreadyExistsResponse(c);
+    }
+    if (outcome.status === "authenticated" && outcome.created) {
+      await recordAuthenticationTracking(db, {
+        userId: outcome.user.id, publicId: outcome.user.publicId, created: true,
+        analytics: requestedAnalytics(c, request.body.analytics), attribution: request.body.attribution,
+      });
     }
     if (outcome.status === "invite_required") {
       return c.json({
@@ -632,6 +655,8 @@ type StrictAuthBody = {
   termsVersion?: string;
   privacyVersion?: string;
   deploymentSha?: string;
+  attribution?: unknown;
+  analytics?: unknown;
 };
 
 async function readStrictTokenRequest(

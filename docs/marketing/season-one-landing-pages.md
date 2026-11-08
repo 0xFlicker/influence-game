@@ -22,13 +22,13 @@ MCP client names and IDs come from the existing setup catalogue. Links open the 
 
 ## Scope
 
-No tracking events, pixels, consent rules, attribution storage or analytics configuration were added. Tracking/privacy remains Muse's separate work. Existing site-wide providers and footer are reused.
+The landing-page implementation adds no page-specific pixels or analytics configuration. Muse's `feat/ad-tracking` is integrated separately in this branch with the reviewed consent, signup recovery, delivery retry and spend-reporting corrections. Existing site-wide providers and footer are reused. See [product analytics](../product-analytics.md#account-preference-and-operational-reporting) for the shared tracking contract.
 
 No game renderer, Studio preview, frozen bundle or encoded video content changed. These are ordinary scrollable marketing pages outside the player picture.
 
 Headings have no eyebrows, split colors or italicized words. Supporting copy adds information. The pages use existing public assets, uniform serif headings and responsive layouts.
 
-## Validation
+## Initial landing-page validation
 
 Focused tests cover exact-season selection and unavailable seasons, deferred idea handoff, existing-draft preservation, blocked storage, AI client selection and clipboard fallback. Existing anonymous-creation tests cover the unchanged signup boundary.
 
@@ -45,3 +45,28 @@ Verified locally:
 No production signup, provider generation or enrollment was performed during verification.
 
 `bun run test:postgres` ran against a newly created isolated local database because another task held the shared test lock: 2,534 passed and one existing `staging-render-proof.test.ts` cleanup hook timed out at 30 seconds. A separate run of that fixture in its own uniquely named proof database passed all 9 tests, including cleanup. The full baseline therefore remains recorded as failed, not silently upgraded to green. No API/rendering code was changed. The campaign test database and preview servers were removed/stopped after verification.
+
+## Tracking integration
+
+The current creator/signup boundary is preserved. Internal outcome counts remain
+available when optional tracking is off; account-level preference and version
+checks control attribution and PostHog/Meta delivery, including MCP activity.
+Withdrawal suppresses queued events, and re-enabling cannot backfill them.
+Campaign costs use campaign totals; creative cost fields remain null without
+creative-level spend. No tracking credentials or deployment configuration changed.
+
+Final focused regressions: 63 PostgreSQL tracking/auth tests and 49 browser/auth
+tests passed. The full provider-free baseline passed 3,388 tests with 5 skipped;
+workspace type-checking/lint and the combined production web build passed.
+These checks use mocked delivery transports, not live PostHog/Meta conversion
+submission. The changes are combined on `codex/season-one-landing-pages` only.
+
+The combined PostgreSQL baseline was rerun using the four CI shards with four
+independent disposable databases: **2,546 passed; one existing staging-render
+cleanup hook timed out at 30 seconds**. Shards 1–3 passed; shard 4 remains failed
+because of that hook. A separate render-fixture run passed its 9 assertions but
+also timed out in cleanup, so the aggregate baseline is not reported as green.
+The initial combined run exposed a tracking lock-upgrade deadlock during parallel
+agent creation; changing the tracking lock to `FOR NO KEY UPDATE` fixed it.
+All 21 tracking/season-read regressions and the final sharded season tests passed.
+No render-fixture or player-presentation code was changed to bypass the timeout.
