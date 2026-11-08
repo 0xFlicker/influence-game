@@ -190,7 +190,9 @@ without typing a prompt. Successful turns clear them; failed
 requests preserve the tags and typed message for retry.
 
 The conversation proceeds through character direction, character approval,
-appearance and portrait review. Character feedback regenerates the draft and
+appearance and review. Once artwork is ready, a new agent can proceed directly
+to Review and Create; artwork selection and portrait adjustment remain available
+but are not mandatory. Character feedback regenerates the draft and
 asks for approval again. The explicit “Yes, that feels right” button advances
 locally without a model call; typed replies still use the command router.
 Approval requests appearance only when no image exists. With an existing image,

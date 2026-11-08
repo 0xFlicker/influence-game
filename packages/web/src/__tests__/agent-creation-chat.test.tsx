@@ -86,8 +86,7 @@ test("the House mark and composer stay in place through a clarification", async 
   expect(view.getByLabelText("Message the character assistant").hasAttribute("data-updating")).toBe(false);
   expect(view.getByText("Your character starts here.")).toBeTruthy();
   const log = view.getByRole("log", { name: "Character creation conversation" });
-  expect(log.textContent).toContain("Your character can play Influence and Werewolf");
-  expect(log.textContent?.indexOf("Your character can play Influence and Werewolf")).toBeLessThan(log.textContent?.indexOf("What is empowerment?") ?? 0);
+  expect(log.textContent).not.toContain("Your character can play Influence and Werewolf");
   expect(log.textContent?.indexOf("What is empowerment?")).toBeLessThan(log.textContent?.indexOf("Empowerment can choose") ?? 0);
   expect(generated).toHaveLength(0);
   expect(appearances).toHaveLength(0);

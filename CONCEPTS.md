@@ -992,8 +992,10 @@ and completion. Historical first-track generation is an explicit Studio action.
 ## Character artwork publication
 
 Character artwork belongs to the reusable Agent Profile's immutable content
-revision: the uploaded full-body source, its cropped portrait and confirmed head
-coordinates share the same source identity. New games freeze those references;
+revision: the generated full-body source, its optional cropped portrait and any
+confirmed head coordinates share the same source identity. New characters may
+keep their artwork without head coordinates when localization is unavailable.
+New games freeze those references;
 profile edits do not replace historical game artwork. Werewolf playback and export
 read confirmed geometry from the frozen content revision, never today's profile.
 See [character art replacement](docs/deployment/character-art-replacement.md).

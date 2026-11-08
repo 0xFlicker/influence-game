@@ -617,7 +617,7 @@ async function fill(page: Page, selector: string, value: string) {
     `{const field=document.querySelector(${JSON.stringify(selector)});const prototype=field.tagName==="TEXTAREA"?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(prototype,"value").set.call(field,${JSON.stringify(value)});field.dispatchEvent(new Event("input",{bubbles:true}));}`,
   );
 }
-test("Advanced creation persists voice and generated artwork across navigation before explicit selection", async () => {
+test("Advanced creation saves voice and ready artwork directly from review", async () => {
   const page = await createAuthenticatedPage(
     browser,
     owner.jwt,
@@ -689,21 +689,7 @@ test("Advanced creation persists voice and generated artwork across navigation b
     await processMockCharacterReference(database.db, art);
     await page.goto(servers.webUrl + "/agents/create");
     await button(page, "Resume");
-    await button(page, "Select");
-    try {
-      await page.waitForSelector("dialog[open]");
-    } catch (error) {
-      await page.screenshot({
-        path: proof + "failure-portrait.png",
-        fullPage: true,
-      });
-      throw new Error(
-        await page.$eval("body", (element) => element.innerText),
-        { cause: error },
-      );
-    }
-    await button(page, "Confirm");
-    await page.waitForFunction('!document.querySelector("dialog[open]")');
+    await page.waitForFunction('document.body.innerText.includes("Artwork ready")');
     await button(page, "Review");
     await page.screenshot({
       path: proof + "creation-review.png",
@@ -909,7 +895,41 @@ async function latestPendingJob(name: string) {
   }
   throw new Error("Expected a durable generated artwork job");
 }
-test("Guided creation generates a character and artwork, confirms portrait, reviews and creates", async () => {
+test("first guided conversation stays readable while generation is pending", async () => {
+  const generation = Promise.withResolvers<void>();
+  const page = await createAuthenticatedPage(browser, owner.jwt, servers.webUrl + "/agents/create", { privateKey: owner.wallet.privateKey });
+  try {
+    await mockCharacterAssistant(page, "Pending Character", "An observant player.", generation.promise);
+    await page.waitForFunction('!document.querySelector("#agent-creation-message")?.disabled');
+    await fill(page, "#agent-creation-message", "A patient lighthouse keeper who charts storms and quietly brokers alliances, but distrusts easy promises.");
+    await button(page, "Send");
+    await page.waitForSelector('[role="status"][aria-label="Assistant typing"]');
+    for (const viewport of [
+      { width: 320, height: 568 }, { width: 390, height: 844 },
+      { width: 768, height: 1024 }, { width: 1024, height: 768 },
+      { width: 1440, height: 900 }, { width: 1920, height: 1080 },
+    ]) {
+      await page.setViewport(viewport);
+      const layout = await page.evaluate(`(() => {
+        const log = document.querySelector('[role="log"][aria-label="Character creation conversation"]');
+        const intro = document.querySelector('.agent-creation-visual-empty');
+        const typing = document.querySelector('[role="status"][aria-label="Assistant typing"]');
+        const footer = document.querySelector('footer[aria-label="Editor actions"]');
+        return { height: log.clientHeight, introVisible: intro.checkVisibility(), overflow: document.documentElement.scrollWidth > innerWidth,
+          typingBottom: typing.getBoundingClientRect().bottom, footerTop: footer.getBoundingClientRect().top };
+      })()`) as { height: number; introVisible: boolean; overflow: boolean; typingBottom: number; footerTop: number };
+      expect(layout.introVisible).toBe(false);
+      expect(layout.height).toBeGreaterThanOrEqual(160);
+      expect(layout.overflow).toBe(false);
+      expect(layout.typingBottom).toBeLessThanOrEqual(layout.footerTop);
+      await page.screenshot({ path: proof + `guided-first-turn-${viewport.width}.png`, fullPage: true });
+    }
+  } finally {
+    generation.resolve();
+    await page.close();
+  }
+}, 120_000);
+test("Guided creation saves model, voice and ready artwork directly from review", async () => {
   const page = await createAuthenticatedPage(
     browser,
     owner.jwt,
@@ -989,26 +1009,11 @@ test("Guided creation generates a character and artwork, confirms portrait, revi
     await page.waitForFunction('document.querySelector(\'dialog[open] [aria-label="Image requests"]\')?.textContent.includes("Image ready")');
     expect(await page.$eval('dialog[open] [aria-label="Image requests"]', element => element.textContent)).toContain("Image ready");
     await button(page, "Close");
-    expect(
-      await page.evaluate(
-        '[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="Review").disabled',
-      ),
-    ).toBe(true);
-    await button(page, "Select");
-    try {
-      await page.waitForSelector("dialog[open]");
-    } catch (error) {
-      await page.screenshot({
-        path: proof + "failure-portrait.png",
-        fullPage: true,
-      });
-      throw new Error(
-        await page.$eval("body", (element) => element.innerText),
-        { cause: error },
-      );
-    }
-    await button(page, "Confirm");
-    await page.waitForFunction('!document.querySelector("dialog[open]")');
+    await page.focus('input[role="combobox"][aria-label="Preferred model"], input[role="combobox"]');
+    await page.waitForSelector('[role="option"]');
+    await page.evaluate('[...document.querySelectorAll("[role=option]")].find(option=>option.textContent.includes("openai:gpt-6-luna")).click()');
+    await page.evaluate('const label=[...document.querySelectorAll("label")].find(label=>label.textContent==="Voice");document.getElementById(label.htmlFor).click()');
+    await button(page, "Ara Female");
     await button(page, "Review");
     await page.waitForSelector('[role="dialog"][aria-label="Review changes"]');
     await button(page, "Create");
@@ -1021,6 +1026,14 @@ test("Guided creation generates a character and artwork, confirms portrait, revi
       .where(eq(schema.agentProfiles.name, "Rowan Guided"));
     expect(created!.contentRevisionId).toBeNull();
     expect(created!.latestContentRevisionId).toBeTruthy();
+    expect(created!.modelPreference).toMatchObject({ catalogId: "openai:gpt-6-luna" });
+    await database.db.update(schema.agentScreenings).set({ status: "completed", recommendation: "no_concern" }).where(eq(schema.agentScreenings.contentRevisionId, created!.latestContentRevisionId!));
+    await publishScreenedAgent(database.db, created!.latestContentRevisionId!);
+    const [published] = await database.db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, created!.id));
+    expect(published!.fullBodyReferenceUrl).toBeTruthy();
+    expect(published!.avatarUrl).toBe(published!.fullBodyReferenceUrl);
+    expect(published!.headPosition).toBeNull();
+    expect((await database.db.select().from(schema.agentVoices).where(eq(schema.agentVoices.agentProfileId, created!.id)))[0]!.assignment.voiceId).toBe("ara");
     expect(
       (
         await database.db

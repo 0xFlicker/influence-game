@@ -12,6 +12,8 @@ export async function confirmProfileHead(next: HeadProfile, previous: HeadProfil
   const fail = (message: string): never => { throw new AgentProfileManagementError("invalid_agent_input", message, 400); };
   if (!next.fullBodyReferenceUrl) return null;
   if (!next.headPosition) {
+    // A new character may use the full-body image while head localization is unavailable.
+    if (!previous) return null;
     if (next.fullBodyReferenceUrl !== previous?.fullBodyReferenceUrl || previous?.headPosition) fail("Confirm the head position for the selected full-body image before saving.");
     return null; // Unrelated edits to existing, unlocalized characters remain valid.
   }

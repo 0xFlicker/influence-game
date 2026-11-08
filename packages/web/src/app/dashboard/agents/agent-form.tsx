@@ -1387,7 +1387,7 @@ export function AgentForm({
   }
 
   const headConfirmationRequired = Boolean(
-    fullBodyReferenceUrl &&
+    isEditing && fullBodyReferenceUrl &&
       (!headPosition || headPosition.sourceUrl !== fullBodyReferenceUrl) &&
       (fullBodyReferenceUrl !== initialSnapshot.fullBodyReferenceUrl ||
         initialSnapshot.headPosition ||
@@ -1405,6 +1405,14 @@ export function AgentForm({
       return;
 
     if (submitDisabled) return;
+    if (!isEditing && candidateImage) {
+      setSubmitting(true);
+      try {
+        if (!(await decideCandidate("selected", true))) return;
+      } finally {
+        setSubmitting(false);
+      }
+    }
     captureProductEvent("agent_editor_review_opened", { editing: isEditing });
     setReviewOpen(true);
   }
@@ -1584,14 +1592,14 @@ export function AgentForm({
     draftConflicts.length > 0 ||
     submitting ||
     profileGenerating ||
-    ((referenceBusy || Boolean(candidateImage)) && !fullBodyReferenceUrl) ||
+    ((referenceBusy || (isEditing && Boolean(candidateImage))) && !fullBodyReferenceUrl) ||
     uploading ||
     headConfirmationRequired ||
     requiredStrategyChangeMissing;
 
-  async function decideCandidate(decision: "selected" | "discarded") {
+  async function decideCandidate(decision: "selected" | "discarded", useSuggested = false) {
     const result = candidateImage;
-    if (!result) return;
+    if (!result) return false;
     try {
       // Persist selection first so another tab cannot silently replace this decision.
       if (pendingRestore || draftConflicts.length)
@@ -1600,10 +1608,10 @@ export function AgentForm({
         const current = {
           ...currentSnapshot,
           fullBodyReferenceUrl: result.fullBodyReferenceUrl,
-          headPosition: null,
+          headPosition: useSuggested ? result.headSuggestion ?? null : null,
           headSuggestion: result.headSuggestion ?? null,
           explicitAvatarUrl:
-            result.avatarUrl ?? currentSnapshot.explicitAvatarUrl,
+            result.avatarUrl ?? (useSuggested ? result.fullBodyReferenceUrl : currentSnapshot.explicitAvatarUrl),
           portraitCrop: result.portraitCrop ?? null,
         };
         await persistRemote({
@@ -1639,13 +1647,14 @@ export function AgentForm({
       generations.retire(result.requestId, "reference");
       if (decision === "selected") {
         setFullBodyReferenceUrl(result.fullBodyReferenceUrl);
-        setHeadPosition(null);
+        setHeadPosition(useSuggested ? result.headSuggestion ?? null : null);
         setHeadSuggestion(result.headSuggestion ?? null);
-        if (result.avatarUrl) setExplicitAvatarUrl(result.avatarUrl);
+        if (result.avatarUrl || useSuggested) setExplicitAvatarUrl(result.avatarUrl ?? result.fullBodyReferenceUrl);
         setPortraitCrop(result.portraitCrop ?? null);
-        setPortraitEditorSource(result.fullBodyReferenceUrl);
+        if (!useSuggested) setPortraitEditorSource(result.fullBodyReferenceUrl);
       }
       setCandidateImage(null);
+      return true;
     } catch (cause) {
       setReferenceError(
         cause,
@@ -1653,6 +1662,7 @@ export function AgentForm({
           ? "artwork_select_failed"
           : "artwork_discard_failed",
       );
+      return false;
     }
   }
   const initialImageRead = useRef(false);
