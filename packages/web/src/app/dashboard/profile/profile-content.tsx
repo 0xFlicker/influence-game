@@ -488,6 +488,11 @@ export function ProfileContent({ onAuthAction }: { onAuthAction?: () => void } =
       {inviteError && <p role="alert" className="text-sm text-red-300">{inviteError}</p>}
 
       <ProfileAwards profile={profile} />
+      <section className="influence-panel space-y-3 rounded-xl p-6">
+        <h2 className="influence-section-title">Discord</h2>
+        <p className="influence-copy">Connect your Discord account and manage your House server roles.</p>
+        <Link className="influence-link inline-block py-2" href="/discord/verify">Manage Discord connection</Link>
+      </section>
 
       {/* Account rating stats */}
       <section className="influence-panel rounded-xl p-6">
