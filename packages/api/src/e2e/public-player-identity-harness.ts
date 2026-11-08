@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import {
   createPlayerUser,
   createTestUser,
@@ -15,6 +16,7 @@ import {
 } from "./test-server.js";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { publishScreenedAgent } from "../services/agent-screening-publication.js";
 import { contentImageFixture, headPositionFixture } from "../__tests__/content-image-fixture.js";
 import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 import { createSessionToken } from "../middleware/auth.js";
@@ -108,13 +110,17 @@ async function seedIdentityFixture(db: DrizzleDB): Promise<IdentityFixture> {
     fullBodyReferenceUrl,
     headPosition: await headPositionFixture(fullBodyReferenceUrl),
   });
-  await createOwnedAgentProfile(db, { userId: complete.userId }, {
+  const unplayed = await createOwnedAgentProfile(db, { userId: complete.userId }, {
     name: "Quartz E2E",
     personality: PRIVATE_SENTINEL,
     backstory: PRIVATE_SENTINEL,
     strategyStyle: PRIVATE_SENTINEL,
     personaKey: "observer",
   });
+  for (const agent of [played, unplayed]) {
+    await db.update(schema.agentScreenings).set({ status: "completed", recommendation: "no_concern" }).where(eq(schema.agentScreenings.contentRevisionId, agent.receipt.contentRevisionId!));
+    await publishScreenedAgent(db, agent.receipt.contentRevisionId!);
+  }
 
   const season = await createSeason(db, {
     slug: "e2e-season-zero",

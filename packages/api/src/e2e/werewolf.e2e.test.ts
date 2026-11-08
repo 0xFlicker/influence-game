@@ -24,6 +24,7 @@ import { tmpdir } from "node:os";
 import type { Browser, Page } from "puppeteer";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { publishScreenedAgent } from "../services/agent-screening-publication.js";
 import { contentImageFixture, headPositionFixture } from "../__tests__/content-image-fixture.js";
 import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 import { claimWerewolfGame, createWerewolfGame, createWerewolfStore } from "../services/werewolf-games.js";
@@ -56,6 +57,8 @@ beforeAll(async () => {
   await recordCurrentLegalAcceptance(database.db, admin.userId, "existing_account", "0123456789abcdef0123456789abcdef01234567");
   const fullBodyReferenceUrl = await contentImageFixture("pfp/werewolf-arden.png");
   const profile = await createOwnedAgentProfile(database.db, { userId: admin.userId }, { name: "Arden Vale", personality: "Calm and observant", gender: "non-binary", personaKey: "observer", strategyStyle: "Preserve my Influence strategy.", fullBodyReferenceUrl, headPosition: await headPositionFixture(fullBodyReferenceUrl) });
+  await database.db.update(schema.agentScreenings).set({ status: "completed", recommendation: "no_concern" }).where(eq(schema.agentScreenings.contentRevisionId, profile.receipt.contentRevisionId!));
+  await publishScreenedAgent(database.db, profile.receipt.contentRevisionId!);
   profileId = profile.profile.id;
   servers = await startTestServers({ databaseUrl: database.databaseUrl, adminAddress: admin.wallet.address, jwtSecret: process.env.JWT_SECRET, logDirectory: "/tmp/werewolf-browser-logs" });
   console.log(`WEREWOLF_BROWSER_URL=${servers.webUrl}`);
@@ -226,7 +229,9 @@ test("owner edits a game-specific strategy, creates Werewolf, and watches both v
     page.on("request", (request) => {
       const headers = { "access-control-allow-origin": new URL(servers.webUrl!).origin, "access-control-allow-headers": "authorization,content-type", "access-control-allow-methods": "GET,POST,OPTIONS" };
       const respond = (body: unknown) => request.respond({ status: 200, contentType: "application/json", headers, body: JSON.stringify(body) });
-      if (request.method() === "POST" && request.url().endsWith("/api/agent-profiles/edit-assistant")) {
+      if (request.method() === "POST" && request.url().endsWith("/api/agent-profiles/creation-assistant")) {
+        void respond({ command: "revise_character", reply: "" });
+      } else if (request.method() === "POST" && request.url().endsWith("/api/agent-profiles/edit-assistant")) {
         editorRequests.push(JSON.parse(request.postData()!));
         void respond({ tool: "update_character", fields: ["werewolfStrategyStyle"] });
       } else if (request.method() === "POST" && request.url().endsWith("/api/agent-profiles/generate")) {
@@ -235,27 +240,35 @@ test("owner edits a game-specific strategy, creates Werewolf, and watches both v
       } else if (request.url().includes("/api/provider-models")) void respond({ status: "complete", models: [{ catalogId: "openai:gpt-6-luna", displayName: "Scripted test model", configured: true, available: true, capabilities: { supportsImageInput: true }, allowedReasoningPolicies: ["none", "low", "medium", "high"], defaultReasoningPolicy: "medium" }] });
       else void request.continue();
     });
-    await page.evaluate("document.querySelector('#agent-werewolfStrategyStyle').nextElementSibling.open = true");
+    await click(page, "Strategy");
+    await page.evaluate("[...document.querySelectorAll('summary')].find(item => item.textContent.trim() === 'Preview archetype default').click()");
     await text(page, defaultWerewolfStrategy("observer"));
     await page.setViewport({ width: 390, height: 844 });
     await page.$eval("#agent-werewolfStrategyStyle", field => field.scrollIntoView({ block: "center" }));
     await page.screenshot({ path: "/tmp/werewolf-strategy-default-mobile.png", fullPage: false });
     expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
     await page.setViewport({ width: 1440, height: 1000 });
-    await page.click('#agent-ai-change-request');
+    await page.click('button[aria-label="Refine Werewolf strategy"]');
+    await page.waitForSelector('#agent-creation-message', { visible: true });
     await page.evaluate(`(() => {
-      const field = document.querySelector('#agent-ai-change-request');
+      const field = document.querySelector('#agent-creation-message');
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(field, "Make their Werewolf strategy focus on contradictions.");
       field.dispatchEvent(new Event("input", { bubbles: true }));
     })()`);
-    await page.click('button[aria-label="Send Agent request"]');
+    await page.$eval('button[aria-label="Send"]', button => button.scrollIntoView({ block: "center" }));
+    await page.click('button[aria-label="Send"]');
     await page.waitForFunction('document.querySelector("#agent-werewolfStrategyStyle").value === "Track who changes their story."');
-    expect(editorRequests).toHaveLength(2);
-    expect(editorRequests[1]).toMatchObject({ selectedFields: ["werewolfStrategyStyle"], existingProfile: { werewolfStrategyStyle: "", strategyStyle: "Preserve my Influence strategy." } });
+    expect(editorRequests).toHaveLength(1);
+    expect(editorRequests[0]).toMatchObject({ selectedFields: ["werewolfStrategyStyle"], existingProfile: { werewolfStrategyStyle: "", strategyStyle: "Preserve my Influence strategy." } });
     const saved = page.waitForResponse((response) => response.url().includes(`/api/agent-profiles/${profileId}`) && response.request().method() === "PATCH");
-    await click(page, "Save changes");
+    await click(page, "Review");
+    await click(page, "Save");
     expect((await saved).status()).toBe(200);
     await page.waitForFunction("location.pathname === '/dashboard/agents'");
+    const [pending] = await database.db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, profileId));
+    expect(pending!.werewolfStrategyStyle ?? "").toBe("");
+    await database.db.update(schema.agentScreenings).set({ status: "completed", recommendation: "no_concern" }).where(eq(schema.agentScreenings.contentRevisionId, pending!.latestContentRevisionId!));
+    await publishScreenedAgent(database.db, pending!.latestContentRevisionId!);
     const [profile] = await database.db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, profileId));
     expect(profile!.werewolfStrategyStyle).toBe("Track who changes their story.");
     expect(profile!.strategyStyle).toBe("Preserve my Influence strategy.");

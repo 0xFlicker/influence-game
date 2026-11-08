@@ -31,6 +31,9 @@ import type { Browser, HTTPRequest, Page } from "puppeteer";
 import { mkdirSync } from "fs";
 import path from "path";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { publishScreenedAgent } from "../services/agent-screening-publication.js";
+import { schema } from "../db/index.js";
+import { eq } from "drizzle-orm";
 import { contentImageFixture, headPositionFixture } from "../__tests__/content-image-fixture.js";
 
 // Match JWT_SECRET to what test-server uses
@@ -326,6 +329,8 @@ describe("E2E: Full Game Flow", () => {
         fullBodyReferenceUrl,
         headPosition: await headPositionFixture(fullBodyReferenceUrl),
       });
+      await testDb.db.update(schema.agentScreenings).set({ status: "completed", recommendation: "no_concern" }).where(eq(schema.agentScreenings.contentRevisionId, createdAgent.receipt.contentRevisionId!));
+      await publishScreenedAgent(testDb.db, createdAgent.receipt.contentRevisionId!);
 
       const joinRes = await fetch(
         `${servers.apiUrl}/api/games/${gameId}/join`,

@@ -3,7 +3,7 @@ export const CREATION_COMMANDS = {
   character: ["revise_character", "clarify", "end_abuse", "end_fatigue"],
   review: ["accept_character", "revise_character", "clarify", "end_abuse", "end_fatigue"],
   appearance: ["generate_appearance", "clarify", "end_abuse", "end_fatigue"],
-  portrait: ["revise_appearance", "clarify", "end_abuse", "end_fatigue"],
+  portrait: ["generate_appearance", "revise_appearance", "clarify", "end_abuse", "end_fatigue"],
 } as const;
 export type CreationStage = keyof typeof CREATION_COMMANDS;
 export type CreationCommand = (typeof CREATION_COMMANDS)[CreationStage][number];
@@ -34,19 +34,20 @@ export const CHARACTER_FIELDS = ["name", "personaKey", "gender", "personality", 
 export type CharacterField = typeof CHARACTER_FIELDS[number];
 export const VISUAL_FIELDS: CharacterField[] = ["performanceInstructions", "visualDesign"];
 export type CharacterDraftContext = Record<CharacterField, string> & { hasFullBody: boolean };
-export type CharacterEditCommand = { tool: "update_character" | "update_visuals"; fields: CharacterField[] } | { tool: "clarify"; message: string };
+export type CharacterEditCommand = { tool: "update_character" | "update_visuals"; fields: CharacterField[]; generateImages: boolean } | { tool: "clarify"; message: string };
 export function characterEditFields(profile: Partial<Record<CharacterField, string | null>>, selected: CharacterField[]): CharacterField[] {
-  // Game tactics are independent, optional owner notes. Editing one must not
-  // silently fill another game's notes or change shared character details.
+  // A focused game-strategy edit stays isolated. Other edits can complete empty
+  // fields from the character, including either game's missing strategy notes.
   const strategyFields: CharacterField[] = ["strategyStyle", "werewolfStrategyStyle"];
   if (selected.length && selected.every(field => strategyFields.includes(field))) return [...selected];
-  return CHARACTER_FIELDS.filter(field => selected.includes(field) || (!strategyFields.includes(field) && !profile[field]?.trim()));
+  return CHARACTER_FIELDS.filter(field => selected.includes(field) || !profile[field]?.trim());
 }
 export function decodeCharacterEditTool(name: string, args: string): CharacterEditCommand {
   const value: unknown = JSON.parse(args);
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid character edit tool");
-  if (name === "update_visuals" && Object.keys(value).length === 0) return { tool: name, fields: [...VISUAL_FIELDS] };
+  if (name === "update_visuals" && Object.keys(value).length === 0) return { tool: name, fields: [...VISUAL_FIELDS], generateImages: true };
   if (name === "clarify" && Object.keys(value).length === 1 && "message" in value && typeof value.message === "string" && value.message.trim() && value.message.length <= 1000) return { tool: name, message: value.message };
-  if (name === "update_character" && Object.keys(value).length === 1 && "fields" in value && Array.isArray(value.fields) && value.fields.length > 0 && value.fields.length <= CHARACTER_FIELDS.length && new Set(value.fields).size === value.fields.length && value.fields.every(field => CHARACTER_FIELDS.includes(field))) return { tool: name, fields: value.fields };
+  if (name === "update_character" && Object.keys(value).length === 2 && "generateImages" in value && typeof value.generateImages === "boolean" && "fields" in value && Array.isArray(value.fields) && value.fields.length > 0 && value.fields.length <= CHARACTER_FIELDS.length && new Set(value.fields).size === value.fields.length && value.fields.every(field => CHARACTER_FIELDS.includes(field))
+    && (!value.generateImages || value.fields.some(field => VISUAL_FIELDS.includes(field)))) return { tool: name, fields: value.fields, generateImages: value.generateImages };
   throw new Error("Invalid character edit tool");
 }

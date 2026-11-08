@@ -167,7 +167,7 @@ test("older staging migration journals skip already-applied additive migrations"
   try {
     const sourceJournal = JSON.parse(await readFile(join(source, "meta", "_journal.json"), "utf8")) as { entries: Array<{ idx: number; when: number }> };
     const [before] = await admin<{ count: number; latest: string }[]>`SELECT count(*)::integer AS count, max(created_at)::text AS latest FROM drizzle.__drizzle_migrations`;
-    expect(before?.latest).toBe(String(sourceJournal.entries.find(entry => entry.idx === 155)?.when));
+    expect(before?.latest).toBe(String(sourceJournal.entries.at(-1)?.when));
     for (const lastIndex of [153, 154]) {
       const oldDirectory = join(directory, String(lastIndex));
       await cp(source, oldDirectory, { recursive: true });

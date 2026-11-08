@@ -198,6 +198,8 @@ export async function resolveOwnedOwnerLearningReview(
     if (review.agentProfileId !== identity.agentProfileId) {
       throw new OwnerLearningResolutionError("review_state_conflict", 409);
     }
+    const [application] = await tx.select().from(schema.agentLearningReviewApplications).where(eq(schema.agentLearningReviewApplications.reviewId, input.reviewId));
+    if (application && !application.appliedAt) throw new OwnerLearningResolutionError("review_state_conflict", 409);
     const expectedStatus = input.resolution === "declined" ? "ready" : "failed";
     if (review.resolvedAt != null && review.resolution === input.resolution) return;
     if (review.resolvedAt != null || review.analysisStatus !== expectedStatus) {

@@ -4,10 +4,11 @@ import { parseCharacterHeadPosition, portraitHeadRectangle, type PortraitCrop, t
 import type { ContentAssetEvidence } from "./agent-content-submissions.js";
 import { readVisualProfileImage } from "./visual-game-assets.js";
 import { AgentProfileManagementError } from "./agent-profile-management.js";
+import { normalizeUploadedAvatarUrl } from "../lib/storage.js";
 
 type HeadProfile = { fullBodyReferenceUrl?: string | null; headPosition?: CharacterHeadPosition | null; portraitCrop?: PortraitCrop | null };
 /** Explicitly supplied geometry is confirmation; actor/time are owned by this service. */
-export async function confirmProfileHead(next: HeadProfile, previous: HeadProfile | null, userId: string, evidence?: ContentAssetEvidence): Promise<CharacterHeadPosition | null> {
+export async function confirmProfileHead(next: HeadProfile, previous: HeadProfile | null, userId: string, evidence?: ContentAssetEvidence, publicBaseUrl = "http://character.invalid"): Promise<CharacterHeadPosition | null> {
   const fail = (message: string): never => { throw new AgentProfileManagementError("invalid_agent_input", message, 400); };
   if (!next.fullBodyReferenceUrl) return null;
   if (!next.headPosition) {
@@ -16,7 +17,7 @@ export async function confirmProfileHead(next: HeadProfile, previous: HeadProfil
   }
   const head = parseCharacterHeadPosition(next.headPosition);
   const sourceIdentity = (url: string) => {
-    try { return new URL(url, new URL(next.fullBodyReferenceUrl!, "http://character.invalid")).href; }
+    try { return new URL(normalizeUploadedAvatarUrl(url, publicBaseUrl), new URL(next.fullBodyReferenceUrl!, publicBaseUrl)).href; }
     catch { return fail("The head position must reference a valid source image URL."); }
   };
   if (sourceIdentity(head.sourceUrl) !== sourceIdentity(next.fullBodyReferenceUrl)) fail("The head position belongs to a different image. Confirm the new image's head position.");

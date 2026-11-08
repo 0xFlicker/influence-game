@@ -12,7 +12,7 @@ export default async function AgentEditPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ sourceReviewId?: string; profileRequest?: string; flow?: string; gameId?: string; seasonId?: string; season?: string }>;
+  searchParams: Promise<{ returnTo?: string; imageRequest?: string; sourceReviewId?: string; profileRequest?: string; flow?: string; gameId?: string; seasonId?: string; season?: string }>;
 }) {
   const { id } = await params;
   const query = await searchParams;
@@ -23,9 +23,9 @@ export default async function AgentEditPage({
   return (
     <div className="min-h-screen flex flex-col">
       <Nav />
-      <main className="w-full flex-1 px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
+      <main className="w-full flex-1">
         <AuthGate>
-          <AgentEditContent agentId={id} sourceReviewId={query.sourceReviewId} profileRequest={query.profileRequest === "1" && !query.sourceReviewId} intent={intent} />
+          <AgentEditContent returnTo={query.returnTo} agentId={id} imageRequest={query.imageRequest} sourceReviewId={query.sourceReviewId} profileRequest={query.profileRequest === "1" && !query.sourceReviewId} intent={intent} />
         </AuthGate>
       </main>
     </div>

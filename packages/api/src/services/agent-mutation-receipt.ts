@@ -19,7 +19,7 @@ export interface AgentMutationWaitingSeatReference {
 }
 
 export interface AgentMutationReceipt {
-  publication?: "published" | "held";
+  publication?: "published" | "reviewing" | "held";
   contentRevisionId?: string;
   moderationRecordId?: string;
   schemaVersion: typeof AGENT_MUTATION_RECEIPT_SCHEMA_VERSION;

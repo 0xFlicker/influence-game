@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import type { Browser, Dialog, Page } from "puppeteer";
 import { schema } from "../db/index.js";
 import { createOwnedAgentProfile, updateOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { publishScreenedAgent } from "../services/agent-screening-publication.js";
 import { contentImageFixture, headPositionFixture } from "../__tests__/content-image-fixture.js";
 import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 import { closeSeason, createSeason } from "../services/seasons.js";
@@ -108,6 +109,10 @@ beforeAll(async () => {
     fullBodyReferenceUrl: surfaceBody,
     headPosition: await headPositionFixture(surfaceBody),
   });
+  for (const profile of await testDb.db.select().from(schema.agentProfiles)) {
+    await testDb.db.update(schema.agentScreenings).set({ status: "completed", recommendation: "no_concern" }).where(eq(schema.agentScreenings.contentRevisionId, profile.latestContentRevisionId!));
+    await publishScreenedAgent(testDb.db, profile.latestContentRevisionId!);
+  }
 
   const season = await createSeason(testDb.db, {
     slug: `standing-browser-${randomUUID()}`,
@@ -143,8 +148,8 @@ describe("E2E: Standing Daily Agent", () => {
     await waitForText(page, "Standing Browser Season", 15_000);
     await page.waitForSelector('a[href*="flow=daily_free"]');
     await page.click('a[href*="flow=daily_free"]');
-    await waitForText(page, "Advanced create");
-    await clickButton(page, "Advanced create");
+    await waitForText(page, "Advanced");
+    await clickButton(page, "Advanced");
     await page.waitForSelector("#agent-name");
     await page.type("#agent-name", "Prompt Newcomer");
     await page.type("#agent-personality", "Curious, composed, and willing to make a clear decision.");
@@ -154,18 +159,19 @@ describe("E2E: Standing Daily Agent", () => {
     );
     const submitState = await page.evaluate(`(() => {
       const button = [...document.querySelectorAll("button")]
-        .find((candidate) => candidate.textContent?.trim() === "Create & enter");
+        .find((candidate) => candidate.textContent?.trim() === "Review");
       return button ? { disabled: button.disabled, text: button.textContent?.trim() ?? "" } : null;
     })()`) as { disabled: boolean; text: string } | null;
     if (!submitState || submitState.disabled) {
-      throw new Error(`Create & enter was not enabled before submit: ${JSON.stringify(submitState)}`);
+      throw new Error(`Review was not enabled before submit: ${JSON.stringify(submitState)}`);
     }
     const creationResponsePromise = page.waitForResponse((response) => {
       const request = response.request();
       return request.method() === "POST"
         && new URL(response.url()).pathname === "/api/agent-profiles";
     }, { timeout: 15_000 });
-    await clickButton(page, "Create & enter");
+    await clickButton(page, "Review");
+    await clickButton(page, "Create");
     let creationResponse: Awaited<typeof creationResponsePromise>;
     try {
       creationResponse = await creationResponsePromise;
@@ -183,18 +189,28 @@ describe("E2E: Standing Daily Agent", () => {
     }
 
     const createdAgent = await waitForOwnedAgentByName(agentlessPlayer.userId, "Prompt Newcomer");
+    await page.waitForFunction("location.pathname === '/dashboard/agents'", { timeout: 15_000 });
+    await testDb.db.update(schema.agentScreenings).set({ status: "completed", recommendation: "no_concern" }).where(eq(schema.agentScreenings.contentRevisionId, createdAgent.latestContentRevisionId!));
+    await publishScreenedAgent(testDb.db, createdAgent.latestContentRevisionId!);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForSelector('button[aria-label="Activity"]');
+    await page.click('button[aria-label="Activity"]');
+    await page.waitForSelector('a[href^="/agents/prepare?"]');
+    await page.click('a[href^="/agents/prepare?"]');
     await page.waitForFunction("location.pathname === '/agents/prepare'", { timeout: 15_000 });
-    await waitForText(page, "Prepare Prompt Newcomer");
+    await waitForText(page, "Add a full-body image in the editor");
     const newcomerBody = await contentImageFixture("pfp/standing-prompt-newcomer.png");
-    await updateOwnedAgentProfile(testDb.db, { userId: agentlessPlayer.userId }, createdAgent.id, {
+    const imageUpdate = await updateOwnedAgentProfile(testDb.db, { userId: agentlessPlayer.userId }, createdAgent.id, {
       fullBodyReferenceUrl: newcomerBody,
       headPosition: await headPositionFixture(newcomerBody),
     });
+    await testDb.db.update(schema.agentScreenings).set({ status: "completed", recommendation: "no_concern" }).where(eq(schema.agentScreenings.contentRevisionId, imageUpdate.receipt.contentRevisionId!));
+    await publishScreenedAgent(testDb.db, imageUpdate.receipt.contentRevisionId!);
     await page.waitForFunction(
-      `Array.from(document.querySelectorAll("button")).some(button => button.textContent?.trim() === "Enter Daily Free")`,
+      `Array.from(document.querySelectorAll("button")).some(button => button.textContent?.trim() === "Enter" && !button.disabled)`,
       { timeout: 15_000 },
     );
-    await clickButton(page, "Enter Daily Free");
+    await clickButton(page, "Enter");
     await waitForQueueAgent(agentlessPlayer.userId, createdAgent.id);
     await waitForMissingText(page, "Play for Free");
 

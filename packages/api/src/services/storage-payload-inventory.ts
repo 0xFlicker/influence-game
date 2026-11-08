@@ -60,5 +60,10 @@ export const STORAGE_PAYLOAD_COLUMNS = [
   {"table":"season_finalizations","column":"snapshot","kind":"json","primaryKey":["season_id"]},
   {"table":"championship_events","column":"execution","kind":"json","primaryKey":["id"]},
   {"table":"championship_award_allocations","column":"grants","kind":"json","primaryKey":["id"]},
+  {"table":"agent_editor_drafts","column":"document","kind":"json","primaryKey":["id"]},
+  {"table":"voice_samples","column":"audio","kind":"binary","primaryKey":["id"]},
+  {"table":"voice_samples","column":"evidence","kind":"json","primaryKey":["id"]},
+  {"table":"character_reference_jobs","column":"input","kind":"json","primaryKey":["id"]},
+  {"table":"character_reference_jobs","column":"result","kind":"json","primaryKey":["id"]},
 ] as const;
 export type StoragePayloadColumn = typeof STORAGE_PAYLOAD_COLUMNS[number];

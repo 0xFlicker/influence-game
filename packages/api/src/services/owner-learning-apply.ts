@@ -45,11 +45,11 @@ export interface OwnerLearningApplyRead {
   proposalFingerprint: string;
   sourceRecommendationIds: string[];
   priorRevisionId: string;
-  resultingRevisionId: string;
+  resultingRevisionId: string | null;
   priorStrategyStyle: string;
   resultingStrategyStyle: string;
   receipt: AgentMutationReceipt;
-  appliedAt: string;
+  appliedAt: string | null;
   replayed: boolean;
 }
 
@@ -120,7 +120,7 @@ export async function applyOwnedOwnerLearningReview(
         if (
           currentReviewIdentity(review.gameKind, lockedProfile.existing) !== review.reviewedRevisionId
           || review.result.proposal.field !== field
-          || (review.gameKind === "werewolf" && (lockedProfile.existing.moderationRequired || lockedProfile.existing.latestContentRevisionId !== lockedProfile.existing.contentRevisionId))
+          || (lockedProfile.existing.moderationRequired || lockedProfile.existing.latestContentRevisionId !== lockedProfile.existing.contentRevisionId)
           || review.result.proposal.before !== currentStrategyStyle
         ) {
           throw new OwnerLearningApplyError("review_revision_conflict", 409);
@@ -132,20 +132,21 @@ export async function applyOwnedOwnerLearningReview(
           input: { [field]: review.result.proposal.after },
           locked: lockedProfile,
         });
-        if (mutation.receipt.publication === "held") throw new OwnerLearningApplyError("profile_update_conflict", 409);
         const nowIso = (input.now ?? new Date()).toISOString();
         const application = {
           reviewId: review.id,
           proposalFingerprint,
           sourceRecommendationIds: expectedRecommendationIds,
           priorRevisionId: review.reviewedRevisionId,
-          resultingRevisionId: currentReviewIdentity(review.gameKind, mutation.profile)!,
+          resultingRevisionId: mutation.receipt.publication === "published" ? currentReviewIdentity(review.gameKind, mutation.profile) : null,
+          submissionContentRevisionId: mutation.receipt.contentRevisionId ?? null,
           priorStrategyStyle: currentStrategyStyle,
           resultingStrategyStyle: review.result.proposal.after,
           mutationReceipt: mutation.receipt as unknown as Record<string, unknown>,
-          appliedAt: nowIso,
+          appliedAt: mutation.receipt.publication === "published" ? nowIso : null,
         };
         await tx.insert(schema.agentLearningReviewApplications).values(application);
+        if (mutation.receipt.publication === "published") {
         await persistOwnerLearningResolution(tx, {
           review,
           resolution: "applied",
@@ -159,6 +160,7 @@ export async function applyOwnedOwnerLearningReview(
           resultingRevisionId: currentReviewIdentity(review.gameKind, mutation.profile)!,
           nowIso,
         });
+        }
         return applicationRead(application, false);
       });
       abortActiveOwnerLearningReview(reviewId);

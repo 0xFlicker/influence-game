@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { schema, type DrizzleDB } from "../db/index.js";
-import { setupTestDB } from "./test-utils.js";
+import { setupTestDB, acceptTestAgent } from "./test-utils.js";
 import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
 import { readAgentVisualUpdate, requestAgentVisualUpdate, processAgentVisualUpdate } from "../services/agent-visual-updates.js";
 import { decodeVisualDetails, visualUpdateDependencies, type VisualUpdateDependencies } from "../services/agent-visual-update-generation.js";
@@ -12,6 +12,9 @@ import { createSessionToken } from "../middleware/auth.js";
 import { GenerationAdmissionError } from "../services/generation-admission-error.js";
 import { readAgentTransparentBodies } from "../services/agent-transparent-bodies.js";
 import { storeJson, storeBinary } from "../services/payload-storage.js";
+import { cancelAgentGeneration, listAgentGenerations } from "../services/agent-generations.js";
+import { characterGenerationInput } from "./character-generation-fixture.js";
+import { requestCharacterReference } from "../services/character-reference-jobs.js";
 let db:DrizzleDB,userId:string,agentId:string,body:string,head:string;
 let calls:string[];
 let deps:VisualUpdateDependencies;
@@ -30,10 +33,10 @@ test("reads and processor do nothing before explicit action; duplicate requests 
  expect((await readAgentVisualUpdate(db,userId,agentId)).job).toBeNull();await processAgentVisualUpdate(db,userId,agentId,deps);expect(calls).toEqual([]);
  const [a,b]=await Promise.all([requestAgentVisualUpdate(db,userId,agentId),requestAgentVisualUpdate(db,userId,agentId)]);expect(a.job?.id).toBe(b.job?.id);
  await Promise.all([processAgentVisualUpdate(db,userId,agentId,deps),processAgentVisualUpdate(db,userId,agentId,deps)]);
- expect(calls).toEqual(["details"]);expect((await readAgentVisualUpdate(db,userId,agentId)).job?.status).toBe("completed");
- const [saved]=await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id,agentId));
+ expect(calls).toEqual(["details"]);await acceptTestAgent(db,agentId);expect((await readAgentVisualUpdate(db,userId,agentId)).job?.status).toBe("completed");
+ await acceptTestAgent(db,agentId);const [saved]=await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id,agentId));
  expect(saved).toMatchObject({name:"Original identity",strategyStyle:"Private influence strategy",werewolfStrategyStyle:"Private wolf strategy",avatarUrl:head,fullBodyReferenceUrl:body,visualDesign:"Original appearance"});
- expect(await db.select().from(schema.agentContentRevisions)).toHaveLength(1);
+ expect(await db.select().from(schema.agentContentRevisions)).toHaveLength(2);
  await requestAgentVisualUpdate(db,userId,agentId);await processAgentVisualUpdate(db,userId,agentId,deps);expect(calls).toEqual(["details"]);
 });
 test("failure retains checkpoint; explicit retry reuses body and resumes missing portrait",async()=>{
@@ -43,15 +46,15 @@ test("failure retains checkpoint; explicit retry reuses body and resumes missing
  expect((await readAgentVisualUpdate(db,userId,agentId)).job?.status).toBe("failed");
  await processAgentVisualUpdate(db,userId,agentId,deps);expect(calls.filter(x=>x==="body")).toHaveLength(1);
  deps.portrait=good;await requestAgentVisualUpdate(db,userId,agentId);await processAgentVisualUpdate(db,userId,agentId,deps);
- expect((await readAgentVisualUpdate(db,userId,agentId)).job?.status).toBe("completed");expect(calls).toEqual(["details","body","head","portrait-failure","portrait"]);
+ await acceptTestAgent(db,agentId);expect((await readAgentVisualUpdate(db,userId,agentId)).job?.status).toBe("completed");expect(calls).toEqual(["details","body","head","portrait-failure","portrait"]);
 });
 test("one action fills missing strategies and art without replacing populated character fields",async()=>{
  await db.update(schema.agentProfiles).set({strategyStyle:null,werewolfStrategyStyle:null,avatarUrl:null,fullBodyReferenceUrl:null}).where(eq(schema.agentProfiles.id,agentId));
  await requestAgentVisualUpdate(db,userId,agentId);
  await processAgentVisualUpdate(db,userId,agentId,deps);
- const [saved]=await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id,agentId));
+ await acceptTestAgent(db,agentId);const [saved]=await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id,agentId));
  expect(saved).toMatchObject({name:"Original identity",personality:"Patient",strategyStyle:"Generated influence strategy",werewolfStrategyStyle:"Generated wolf strategy",fullBodyReferenceUrl:body,avatarUrl:head});
- expect((await readAgentVisualUpdate(db,userId,agentId)).job?.status).toBe("completed");
+ await acceptTestAgent(db,agentId);expect((await readAgentVisualUpdate(db,userId,agentId)).job?.status).toBe("completed");
 });
 test("concurrent owner edits fence the update without overwriting",async()=>{
  await requestAgentVisualUpdate(db,userId,agentId);
@@ -60,14 +63,45 @@ test("concurrent owner edits fence the update without overwriting",async()=>{
  expect((await readAgentVisualUpdate(db,userId,agentId)).job?.status).toBe("conflict");
  expect((await db.select().from(schema.agentProfiles))[0]!.name).toBe("New name");expect(await db.select().from(schema.agentContentRevisions)).toHaveLength(0);
 });
+test("preparation activity can be cancelled during image work without applying late output",async()=>{
+ await db.update(schema.agentProfiles).set({fullBodyReferenceUrl:null}).where(eq(schema.agentProfiles.id,agentId));
+ const first=await requestAgentVisualUpdate(db,userId,agentId);
+ expect(await listAgentGenerations(db,userId)).toMatchObject([{id:first.job!.id,source:"preparation",status:"queued",blocksGeneration:true}]);
+ await expect(requestCharacterReference(db,userId,characterGenerationInput(randomUUID(),"Other image"),"")).rejects.toMatchObject({code:"generation_pending"});
+ const started=Promise.withResolvers<void>(),finish=Promise.withResolvers<void>();
+ deps.body=async()=>{started.resolve();await finish.promise;return body;};
+ const work=processAgentVisualUpdate(db,userId,agentId,deps);
+ try {
+  await started.promise;
+  await db.insert(schema.users).values({id:"other-owner"});
+  await expect(cancelAgentGeneration(db,"other-owner",first.job!.id,"preparation")).rejects.toMatchObject({status:404});
+  await cancelAgentGeneration(db,userId,first.job!.id,"preparation");
+  expect(await listAgentGenerations(db,userId)).toEqual([]);
+ } finally {finish.resolve();await work;}
+ expect(await db.select().from(schema.agentContentRevisions)).toHaveLength(0);
+ expect((await db.select().from(schema.agentProfiles))[0]!.fullBodyReferenceUrl).toBeNull();
+ expect((await requestAgentVisualUpdate(db,userId,agentId)).job!.id).not.toBe(first.job!.id);
+});
+test("preparation cancellation stops at the saving boundary",async()=>{
+ const job=await requestAgentVisualUpdate(db,userId,agentId);
+ const started=Promise.withResolvers<void>(),finish=Promise.withResolvers<void>(),apply=deps.apply;
+ deps.apply=async(...args)=>{started.resolve();await finish.promise;return apply(...args);};
+ const work=processAgentVisualUpdate(db,userId,agentId,deps);
+ try {
+  await started.promise;
+  await expect(cancelAgentGeneration(db,userId,job.job!.id,"preparation")).rejects.toMatchObject({code:"artwork_changed"});
+ } finally {finish.resolve();await work;}
+ expect(await db.select().from(schema.agentContentSubmissions)).toHaveLength(1);
+ expect((await db.select().from(schema.agentVisualUpdates))[0]!.leaseId).toBeNull();
+});
 test("lost save response replays the committed submission exactly once",async()=>{
  const apply=deps.apply;let first=true;deps.apply=async(...args)=>{const result=await apply(...args);if(first){first=false;throw new Error("response lost");}return result;};
  await requestAgentVisualUpdate(db,userId,agentId);await processAgentVisualUpdate(db,userId,agentId,deps);
- expect((await readAgentVisualUpdate(db,userId,agentId)).job?.status).toBe("completed");
+ await acceptTestAgent(db,agentId);expect((await readAgentVisualUpdate(db,userId,agentId)).job?.status).toBe("completed");
  expect((await db.select().from(schema.agentVisualUpdates))[0]!.status).toBe("completed");
  // The saved profile is complete: status reads must recognize the committed receipt.
  expect((await readAgentVisualUpdate(db,userId,agentId)).needsUpdate).toBe(false);
- expect(await db.select().from(schema.agentContentRevisions)).toHaveLength(1);
+ expect(await db.select().from(schema.agentContentRevisions)).toHaveLength(2);
 });
 test("owner API is private, GET never creates work and POST resumes only its authorized job",async()=>{
  process.env.JWT_SECRET="visual-update-test";let resumes=0;
@@ -100,7 +134,7 @@ test("expired processing leases resume the authorized job after interruption",as
  const requested=await requestAgentVisualUpdate(db,userId,agentId);
  await db.update(schema.agentVisualUpdates).set({status:"processing",leaseId:"abandoned",leaseUntil:"2000-01-01T00:00:00.000Z"}).where(eq(schema.agentVisualUpdates.id,requested.job!.id));
  await processAgentVisualUpdate(db,userId,agentId,deps);
- expect((await readAgentVisualUpdate(db,userId,agentId)).job?.status).toBe("completed");expect(calls).toEqual(["details"]);
+ await acceptTestAgent(db,agentId);expect((await readAgentVisualUpdate(db,userId,agentId)).job?.status).toBe("completed");expect(calls).toEqual(["details"]);
 });
 test("a lost lease cannot checkpoint or save over its successor",async()=>{
  const requested=await requestAgentVisualUpdate(db,userId,agentId);

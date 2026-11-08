@@ -1,3 +1,4 @@
+import { reserveInference, dispatchInference } from "../services/inference-allowances.js";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { updateOwnedAgentProfile } from "../services/agent-profile-management.js";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -563,6 +564,10 @@ describe("avatar generation service", () => {
       updatedAt: old,
     });
 
+    await db.transaction(async tx=>{
+      await reserveInference(tx,{id:'avatar:stale-generation',userId:USER_ID,category:'image',inputHash:'existing-provider-request',avatarRequestId:'stale-generation'});
+      await dispatchInference(tx,'avatar:stale-generation',USER_ID);
+    });
     const accepted = await requestAvatarCompletion(db, {
       userId: USER_ID,
       agentProfileId: AGENT_ID,

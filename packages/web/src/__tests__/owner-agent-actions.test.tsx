@@ -40,9 +40,10 @@ test("agent profile owner actions check ownership and same-tab drafts before han
     await waitFor(() => expect(view.getByText("Finish your draft")).toBeTruthy());
     expect(cacheModes.every(mode => mode === "no-store")).toBe(true);
     expect(view.queryByRole("textbox")).toBeNull();
-    expect(view.getByRole("link", {name: /Continue editing/}).getAttribute("href")).toBe("/dashboard/agents/agent-1/edit");
-    fireEvent.click(view.getByRole("button", {name:"Discard…"}));
-    fireEvent.click(view.getByRole("button", {name:"Discard draft"}));
+    expect(view.getByRole("link", {name: "Continue"}).getAttribute("href")).toBe("/dashboard/agents/agent-1/edit");
+    dom.sessionStorage.removeItem(key);
+    dom.dispatchEvent(new dom.Event("pageshow"));
+    await waitFor(() => expect(view.getByRole("textbox", {name:/Describe an update/})).toBeTruthy());
     expect(dom.sessionStorage.getItem(key)).toBeNull();
     const input = view.getByRole("textbox", {name: /Describe an update/});
     fireEvent.input(input, {target:{value:"Be more cautious"}});
@@ -52,8 +53,8 @@ test("agent profile owner actions check ownership and same-tab drafts before han
     cleanup();
     dom.sessionStorage.setItem(key, draft("old"));
     view = show();
-    await waitFor(() => expect(view.getByRole("textbox", {name:/Describe an update/})).toBeTruthy());
-    expect(dom.sessionStorage.getItem(key)).toBeNull();
+    await waitFor(() => expect(view.getByText("Finish your draft")).toBeTruthy());
+    expect(dom.sessionStorage.getItem(key)).not.toBeNull();
     dom.sessionStorage.setItem(key, draft("new"));
     dom.dispatchEvent(new dom.Event("pageshow"));
     await waitFor(() => expect(view.getByText("Finish your draft")).toBeTruthy());

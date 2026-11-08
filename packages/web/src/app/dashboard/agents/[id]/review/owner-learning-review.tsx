@@ -360,6 +360,7 @@ function proposalDockPresentation(review: OwnerLearningReview): {
   badge: string;
   footer: string;
 } {
+  if(review.applyDisposition === "submitted")return {title:"Strategy submitted",description:"The exact proposal is saved for moderation. Your accepted strategy remains active.",badge:"Reviewing",footer:"Acceptance will activate the strategy and resolve this review."};
   if (review.resolution === "applied") {
     const revision = review.application?.resultingRevisionId;
     return {

@@ -126,3 +126,41 @@ export async function pinWerewolfRulesVersion(db: DrizzleDB, gameId: string, ver
   const [game] = await db.select().from(schema.games).where(eq(schema.games.id, gameId));
   if (game) await db.update(schema.games).set({ config: JSON.stringify({ ...(JSON.parse(game.config ?? "{}") as Record<string, unknown>), rulesVersion: version }) }).where(eq(schema.games.id, gameId));
 }
+
+/** Explicit fixture acceptance. Tests exercise the same fenced publisher without a paid provider. */
+export async function acceptTestAgent(db: DrizzleDB, agentId: string) {
+  const { publishScreenedAgent } = await import("../services/agent-screening-publication.js");
+  const { SCREENING_POLICY_VERSION } = await import("../services/agent-screening-policy.js");
+  const [before]=await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id,agentId));
+  if(!before)throw new Error("Fixture agent is missing");
+  if(before.latestContentRevisionId){
+    await db.update(schema.agentScreenings).set({status:"completed",recommendation:"no_concern"}).where(sql`${schema.agentScreenings.contentRevisionId}=${before.latestContentRevisionId} AND ${schema.agentScreenings.policyVersion}=${SCREENING_POLICY_VERSION}`);
+    return publishScreenedAgent(db,before.latestContentRevisionId);
+  }
+  return undefined;
+}
+
+/** Exercise submit, assessment persistence and publication together for tests about accepted behavior. */
+export async function submitAcceptedTestProfile(...args:Parameters<typeof import("../services/agent-profile-management.js").updateOwnedAgentProfile>) {
+  const {updateOwnedAgentProfile}=await import("../services/agent-profile-management.js");
+  const submission=await updateOwnedAgentProfile(...args);
+  const published=await acceptTestAgent(args[0],args[2]);
+  return published && "profileRevision" in published ? {...submission,...published}:submission;
+}
+
+/** A saved, accepted character fixture for tests whose subject is enrollment or playback. */
+export async function createAcceptedTestProfile(...args:Parameters<typeof import("../services/agent-profile-management.js").createOwnedAgentProfile>) {
+  const {createOwnedAgentProfile}=await import("../services/agent-profile-management.js");
+  const submission=await createOwnedAgentProfile(...args);
+  const published=await acceptTestAgent(args[0],submission.profile.id);
+  if(!published)throw new Error("Fixture character was not accepted");
+  return {...submission,...published};
+}
+
+export async function applyAcceptedTestReview(...args:Parameters<typeof import("../services/owner-learning-apply.js").applyOwnedOwnerLearningReview>) {
+  const {applyOwnedOwnerLearningReview}=await import("../services/owner-learning-apply.js");
+  const first=await applyOwnedOwnerLearningReview(...args);
+  const [review]=await args[0].select().from(schema.agentLearningReviews).where(eq(schema.agentLearningReviews.id,String(args[1].reviewId)));
+  if(review && first.receipt.publication!=="published")await acceptTestAgent(args[0],review.agentProfileId);
+  return {...await applyOwnedOwnerLearningReview(...args),replayed:first.replayed};
+}

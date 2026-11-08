@@ -9,6 +9,7 @@ type Filter = "all" | "available" | "mine" | "flagged" | "ai_review" | "screenin
 type Disposition = "allowed" | "rejected";
 type Queue = { activeClaim: { reviewId: string; route: Route } | null; items: { id: string; name: string; disposition: Disposition; flagged: boolean; ownSubmission: boolean; claimedBy: string | null; screeningStatus: string | null; aiRecommendation: string | null; reviewStatus: string }[]; nextOffset: number | null; serverTime: string; canEscalateReview: boolean; canUndo: boolean };
 type Screening = {
+  mode: "enforced" | "historical";
   status: "pending" | "running" | "completed" | "incomplete"; policyVersion: string; models: string[]; failureCode: string | null; finishedAt: string | null;
   recommendation: "no_concern" | "review" | "inconclusive" | null; assessmentScope: "full" | "collusion_only"; safetyRefused: boolean;
   attempts: { stage: string; ordinal: number; outcome: string | null; httpStatus: number | null; providerCode: string | null; refusal: string | null }[];
@@ -64,7 +65,7 @@ type ScreeningOverviewData = {
 function ScreeningOverview({ data }: { data: ScreeningOverviewData }) {
   return <section aria-label="Screening overview" className="mb-6 rounded-xl border border-border-active p-4">
     <h2 className="text-lg font-semibold">Screening overview · Shadow mode</h2>
-    <p className="mt-2 text-sm text-white/60">Screening is advisory. Saves publish immediately unless restricted by an existing human decision.</p>
+    <p className="mt-2 text-sm text-white/60">Submissions wait for screening. Clear results can publish automatically; held submissions need human review. The last accepted version remains available.</p>
     {data && <>
       <p className="mt-3 text-sm">{data.total} screened or queued revisions · {data.scope === "all_queues" ? "All review queues" : "Moderator queue only"}</p>
       <p className="mt-1 text-xs text-white/50">Includes older revisions and resolved reviews for the current policy. Queue filters below do not change these counts. Profiles awaiting backfill are not included.</p>
@@ -77,15 +78,16 @@ function ScreeningOverview({ data }: { data: ScreeningOverviewData }) {
   </section>;
 }
 
-function ShadowScreening({ screening, latest }: { screening: Screening | null; latest: boolean }) {
+function AgentScreening({ screening, latest }: { screening: Screening | null; latest: boolean }) {
   const labels = { no_concern: "No concern detected", review: "Human review recommended", inconclusive: "Inconclusive" };
-  return <section aria-label="AI shadow screening" className="rounded-xl border border-border-active p-4">
-    <h3 className="font-semibold">AI recommendation · Shadow mode</h3>
-    <p className="mt-1 text-sm text-white/60">Advisory only. AI screening does not change publication or make a moderation decision.</p>
+  return <section aria-label="AI screening" className="rounded-xl border border-border-active p-4">
+    <h3 className="font-semibold">AI screening</h3>
+    <p className="mt-1 text-sm text-white/60">Clear assessments can accept untouched ordinary submissions. Flagged content, incomplete assessments and rejected ancestry require human review.</p>
+    {screening?.mode==="historical"&&<p className="mt-2 text-sm text-amber-200">Historical assessment. It cannot approve a submission under the current policy.</p>}
     {!latest && <p className="mt-2 text-sm text-amber-200">This is an older submission. Findings apply only to the revision shown.</p>}
     {!screening ? <p className="mt-3">Not yet queued for screening.</p> : <>
       <p className="mt-3 font-medium">{screening.recommendation ? labels[screening.recommendation] : screening.status === "incomplete" ? "Screening incomplete — no clearance" : screening.status === "running" ? "Screening in progress" : "Awaiting screening"}</p>
-      {screening.safetyRefused && <p className="mt-2 text-sm text-amber-200">A provider refused the safety assessment. Human review is recommended; offensive content and the image have not been cleared. This shadow signal does not pause publication.</p>}
+      {screening.safetyRefused && <p className="mt-2 text-sm text-amber-200">A provider refused the safety assessment. Human review is recommended; offensive content and the image have not been cleared. This submission remains held for moderation.</p>}
       {screening.failureCode && <p className="mt-1 text-sm">Screening could not finish ({screening.failureCode}). Review the submission manually.</p>}
       {screening.result && <>
         {screening.assessmentScope === "collusion_only" && <p className="mt-2 text-sm font-medium">Text-only collusion result: {labels[screening.result.recommendation]}</p>}
@@ -246,7 +248,7 @@ export function ModerationInbox() {
           {detail.claim?.token ? <p role="status" className="mt-2 text-sm">{seconds ? `Your claim: ${Math.floor(seconds / 60)}m ${seconds % 60}s remaining` : "Claim expired. Refresh and claim again before acting."}</p> : detail.claim ? <p className="mt-2 text-sm">Claimed by another reviewer.</p> : <button className={`${button} mt-3`} disabled={busy || detail.review.status !== "pending"} onClick={() => void run(() => claim(detail.review.id))}>Claim revision</button>}
         </div>
         {detail.canUndo && detail.revision.userId && <Link className="text-sm text-indigo-300 underline" href={`/admin/inference?userId=${encodeURIComponent(detail.revision.userId)}`}>Owner spending and generation controls</Link>}
-        <ShadowScreening screening={detail.screening} latest={detail.isLatestSubmission} />
+        <AgentScreening screening={detail.screening} latest={detail.isLatestSubmission} />
         {detail.review.status !== "pending" && <p className="text-sm text-white/60">{detail.review.status === "superseded" ? "This older, unscreened review was closed because a newer submission replaced it. No moderation decision was made." : "This human review is resolved. AI findings do not reopen it."} An admin can reopen it through Admin recovery if further review is needed.</p>}
         <div className="grid gap-4 xl:grid-cols-2"><Snapshot title="Previous revision" revision={detail.parent} reviewId={detail.review.id} /><Snapshot title="Submitted revision" revision={detail.revision} reviewId={detail.review.id} /></div>
         <label className="block text-sm">Decision or handoff reason<textarea maxLength={2000} value={reason} disabled={busy} onChange={event => setReason(event.target.value)} className="mt-2 block min-h-24 w-full rounded-lg border border-border-active bg-surface-raised p-3" /></label>

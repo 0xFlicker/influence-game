@@ -1,11 +1,14 @@
-import { loadPayloads } from "../services/payload-storage.js";
+import { loadPayloads, storeFields } from "../services/payload-storage.js";
+import { stableJson } from "../services/stable-hash.js";
+import { createHash } from "node:crypto";
+import { reserveInference, settleInference } from "../services/inference-allowances.js";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import {
   readVisualRenderAccounting, reconcileVisualAttempt, renderDurableVisualImage,
-  reserveVisualRender, retryVisualRender, visualImageJournal, localizeOwnedVisualReference,
+  reserveVisualRender, retryVisualRender, visualImageJournal, localizeOwnedVisualReference, renderOwnedVisualReference, retryOwnedVisualReference,
 } from "../services/visual-render-journal.js";
 import type { VisualImageReceipt } from "../services/visual-image-provider.js";
 
@@ -14,7 +17,7 @@ import type { VisualLocalization } from "@influence/engine/visual-localization";
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
 let db: DrizzleDB;
-const request = { prompt: "Empty warm house", width: 1024, height: 1024, references: [] };
+const request = { operation: "create" as const, background: "opaque" as const, prompt: "Empty warm house", width: 1024, height: 1024, references: [] };
 const reservation = { provider: "openai" as const, model: "gpt-image-2", requestHash: "request-1" };
 const receipt: VisualImageReceipt = { ...reservation, requestId: "provider-1", status: 200, elapsedMs: 100, usage: { images: 1 }, chargeUncertain: false };
 beforeEach(async () => {
@@ -23,6 +26,73 @@ beforeEach(async () => {
 });
 
 const reserve = () => reserveVisualRender(db, "visual-game", "boundary-1:lobby:section-1", request);
+test("image migration replays a paid historical request without rewriting evidence or generating again", async () => {
+  const frozen = { prompt: request.prompt, width: request.width, height: request.height, references: [] };
+  const inputHash = createHash("sha256").update(stableJson(frozen)).digest("hex");
+  await db.insert(schema.visualRenderOperations).values(await storeFields({
+    id: "historical-paid-image", gameId: "visual-game", operationKey: "historical-room", inputHash, request: frozen,
+  }, { request: "json-gzip" }));
+  const [operation] = await loadPayloads(db.select().from(schema.visualRenderOperations));
+  const journal = visualImageJournal(db, operation!);
+  await journal.begin(reservation);
+  const image = Buffer.from("original paid image bytes");
+  await journal.finish(receipt, image);
+  let calls = 0;
+  globalThis.fetch = Object.assign(async () => { calls++; throw Error("Historical images must be reused"); }, { preconnect: originalFetch.preconnect });
+  const replay = await renderDurableVisualImage(db, { gameId: "visual-game", operationKey: operation!.operationKey, request: { ...request, prompt: "Updated deployment template" } });
+  expect(replay.image).toEqual(image);
+  expect(replay.receipt).toEqual(receipt);
+  const [retained] = await loadPayloads(db.select().from(schema.visualRenderOperations));
+  expect(retained!.inputHash).toBe(inputHash);
+  expect(retained!.request).toEqual(frozen);
+  await expect(reserveVisualRender(db, "visual-game", operation!.operationKey, { ...request, references: [Buffer.from("changed identity")] })).rejects.toThrow("inputs changed");
+  const current = await reserve();
+  await expect(reserveVisualRender(db, "visual-game", current.operationKey, { ...request, background: "transparent" })).rejects.toThrow("inputs changed");
+  expect(calls).toBe(0);
+});
+
+test("a retained owner image keeps its original allowance identity across the model migration", async () => {
+  const userId = "historical-image-owner";
+  await db.insert(schema.users).values({ id: userId });
+  const frozen = { prompt: request.prompt, width: request.width, height: request.height, references: [] };
+  const inputHash = createHash("sha256").update(stableJson(frozen)).digest("hex");
+  await db.insert(schema.visualRenderOperations).values({ id: "historical-owned-image", userId, operationKey: "full-body:historical-owner-request", inputHash });
+  const [operation] = await loadPayloads(db.select().from(schema.visualRenderOperations));
+  const reservationId = `visual:${operation!.id}`;
+  await db.transaction(tx => reserveInference(tx, { id: reservationId, userId, category: "image", inputHash, visualOperationId: operation!.id }));
+  const journal = visualImageJournal(db, operation!);
+  await journal.begin(reservation);
+  const source = await sharp({ create: { width: 16, height: 16, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).composite([
+    { input: await sharp({ create: { width: 8, height: 8, channels: 4, background: "white" } }).png().toBuffer(), top: 4, left: 4 },
+  ]).png().toBuffer();
+  await journal.finish(receipt, source);
+  const before = (await db.select().from(schema.inferenceAccounts))[0]!.imageBalance;
+  globalThis.fetch = Object.assign(async () => { throw Error("Paid image must not dispatch again"); }, { preconnect: originalFetch.preconnect });
+  const replay = await renderOwnedVisualReference(db, { userId, requestId: "historical-owner-request", request: { ...request, background: "transparent" } });
+  expect(replay.image).toEqual(source);
+  expect((await db.select().from(schema.inferenceAccounts))[0]!.imageBalance).toBe(before);
+  const reservations = await db.select().from(schema.inferenceReservations);
+  expect(reservations).toHaveLength(1);
+  expect(reservations[0]).toMatchObject({ id: reservationId, state: "succeeded", inputHash });
+});
+
+test("a never-dispatched historical allowance advances on explicit retry without erasing its refund", async () => {
+  const userId = "historical-retry-owner";
+  await db.insert(schema.users).values({ id: userId });
+  await db.insert(schema.visualRenderOperations).values({ id: "historical-never-dispatched", userId, operationKey: "full-body:historical-retry", inputHash: "original-input" });
+  const id = "visual:historical-never-dispatched";
+  await db.transaction(async tx => {
+    await reserveInference(tx, { id, userId, category: "image", inputHash: "original-input", visualOperationId: "historical-never-dispatched" });
+    await settleInference(tx, id, userId, "failed");
+  });
+  await retryOwnedVisualReference(db, userId, "historical-retry");
+  expect((await db.select().from(schema.visualRenderOperations))[0]!.generation).toBe(2);
+  const reservations = await db.select().from(schema.inferenceReservations);
+  expect(reservations).toHaveLength(1);
+  expect(reservations[0]).toMatchObject({ id, state: "failed", inputHash: "original-input" });
+  expect((await db.select().from(schema.inferenceAccounts))[0]!.imageBalance).toBe(25);
+});
+
 describe("durable visual render journal", () => {
   test("reserves each paid dispatch once under concurrency and refuses changed boundary inputs", async () => {
     const [one, two] = await Promise.all([reserve(), reserve()]);

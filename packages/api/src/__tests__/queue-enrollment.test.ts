@@ -1,3 +1,4 @@
+import {submitAcceptedTestProfile as updateOwnedAgentProfile} from "./test-utils.js";
 import { loadPayloads } from "../services/payload-storage.js";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
@@ -14,7 +15,6 @@ import {
 } from "../services/queue-enrollment.js";
 import {
   AgentProfileManagementError,
-  updateOwnedAgentProfile,
 } from "../services/agent-profile-management.js";
 import {
   ensureActiveAgentRevision,

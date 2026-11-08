@@ -1,6 +1,6 @@
 import Ajv from "ajv";
 
-export const SCREENING_POLICY_VERSION = "house-agent-shadow-v1";
+export const SCREENING_POLICY_VERSION = "house-agent-enforced-v2";
 export const SCREENING_MODERATION_MODEL = "omni-moderation-latest";
 export const SCREENING_LUNA_MODEL = "gpt-6-luna";
 export const SCREENING_FIELDS = ["name", "personaKey", "gender", "personality", "backstory", "strategyStyle", "werewolfStrategyStyle", "performanceInstructions", "visualDesign"] as const;

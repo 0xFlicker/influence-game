@@ -1,3 +1,4 @@
+import { parseAgentEntryIntent, saveAgentEntryIntent } from "./agent-entry-intents.js";
 import { authorizedModelPreference, GameModelRoutingError } from "./game-model-routing.js";
 import { normalizeModelPreference, type ModelPreference } from "@influence/engine";
 import { loadPayloads } from "./payload-storage.js";
@@ -5,7 +6,7 @@ import { currentReviewIdentity, reviewStrategyField } from "./owner-learning-gam
 import { parseCharacterHeadPosition } from "@influence/engine/character-portrait";
 import { confirmProfileHead } from "./character-head-position.js";
 import { randomUUID } from "crypto";
-import { readOwnerContent, latestSubmittedProfile, ContentSubmissionConflict, prepareContentAssets, readSavedContentAssets, recordContentSubmission, replayContentSubmission, type ContentAssetEvidence } from "./agent-content-submissions.js";
+import { captureExistingAgentBaseline, readOwnerContent, latestSubmittedProfile, ContentSubmissionConflict, prepareContentAssets, readSavedContentAssets, recordContentSubmission, replayContentSubmission, type ContentAssetEvidence } from "./agent-content-submissions.js";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { AGENT_PROFILE_LIMITS } from "@influence/engine/agent-profile-contract";
 import type { DrizzleDB } from "../db/index.js";
@@ -33,14 +34,12 @@ import {
 import {
   AGENT_MUTATION_RECEIPT_SCHEMA_VERSION,
   boundAgentMutationWaitingSeatReferences,
+  type AgentMutationWaitingSeatReference,
   type AgentMutationProfileRevisionReceipt,
   type AgentMutationReceipt,
-  type AgentMutationWaitingSeatReference,
 } from "./agent-mutation-receipt.js";
 import {
   lockRosterGamesInTransaction,
-  OwnedSeatProjectionError,
-  reconcileOwnedProfileSeatsInLockedGame,
 } from "./owned-seat-projection.js";
 import {
   lockOwnerLearningReviewForProfileMutation,
@@ -66,6 +65,9 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
 
 const CREATE_AGENT_FIELDS = new Set([
   "creationRequestId",
+  "modelPreference",
+  "voiceId",
+  "entryIntent",
   "displayName",
   "archetype",
   "personalityPrompt",
@@ -85,6 +87,9 @@ const CREATE_AGENT_FIELDS = new Set([
 
 const UPDATE_AGENT_FIELDS = new Set([
   "agentId",
+  "modelPreference",
+  "voiceId",
+  "entryIntent",
   "displayName",
   "archetype",
   "personalityPrompt",
@@ -176,6 +181,8 @@ export type UpdateOwnedAgentInput = Record<string, unknown>;
 
 export interface CreateAgentProfileMutationInput {
   modelPreference?: unknown;
+  voiceId?: unknown;
+  entryIntent?: unknown;
   name: unknown;
   personality: unknown;
   backstory?: unknown;
@@ -196,6 +203,8 @@ export interface CreateAgentProfileMutationInput {
 
 export interface UpdateAgentProfileMutationInput {
   modelPreference?: unknown;
+  voiceId?: unknown;
+  entryIntent?: unknown;
   name?: unknown;
   personality?: unknown;
   backstory?: unknown;
@@ -371,7 +380,7 @@ export async function listOwnedAgents(
     .select()
     .from(schema.agentProfiles)
     .where(and(eq(schema.agentProfiles.userId, input.userId), isNull(schema.agentProfiles.archivedAt)))
-    .orderBy(desc(schema.agentProfiles.updatedAt))
+    .orderBy(desc(schema.agentProfiles.createdAt), asc(schema.agentProfiles.id))
     .limit(clampLimit(input.limit, DEFAULT_AGENT_LIMIT, MAX_AGENT_LIMIT));
 
   const serialization = await loadAgentSerializationContext(db, input.userId, profiles, accountRating);
@@ -416,7 +425,7 @@ export async function searchOwnedAgents(
     .select()
     .from(schema.agentProfiles)
     .where(and(eq(schema.agentProfiles.userId, input.userId), isNull(schema.agentProfiles.archivedAt)))
-    .orderBy(desc(schema.agentProfiles.updatedAt));
+    .orderBy(desc(schema.agentProfiles.createdAt), asc(schema.agentProfiles.id));
 
   const matchingProfiles = profiles
     .filter((profile) => agentProfileMatches(profile, normalizedQuery))
@@ -514,6 +523,8 @@ function prepareAgentProfileCreate(
   const creationPayloadFingerprint = creationRequestId
     ? sha256StableJson({
         modelPreference: normalizeModelPreference(input.modelPreference),
+        voiceId:input.voiceId??null,
+        entryIntent:input.entryIntent??null,
         name,
         backstory,
         personality,
@@ -574,6 +585,7 @@ export async function createOwnedAgentProfile(
   await getAccountRating(db, context.userId);
   try { await authorizedModelPreference(db, context.userId, input.modelPreference); }
   catch (error) { if (error instanceof GameModelRoutingError) throw new AgentProfileManagementError("invalid_agent_input", error.message, error.status); throw error; }
+  validateEntryIntent(input.entryIntent);
   const values = prepareAgentProfileCreate(context, input);
   if (context.avatarGenerationRequestId) throw new AgentProfileManagementError("invalid_agent_input", "Select the completed portrait before submitting.", 400);
   if (values.creationRequestId) {
@@ -586,8 +598,8 @@ export async function createOwnedAgentProfile(
     if (replay) return replay;
   }
   await assertAvailableProfileName(db, values.name);
-  const contentAssets = await prepareContentAssets({ avatarUrl: values.avatarUrl ?? null, fullBodyReferenceUrl: values.fullBodyReferenceUrl ?? null, portraitCrop: values.portraitCrop ?? null });
-  values.headPosition = await confirmProfileHead(values, null, context.userId, contentAssets);
+  const contentAssets = await prepareContentAssets({ avatarUrl: values.avatarUrl ?? null, fullBodyReferenceUrl: values.fullBodyReferenceUrl ?? null, portraitCrop: values.portraitCrop ?? null }, {}, {db,userId:context.userId});
+  values.headPosition = await confirmProfileHead(values, null, context.userId, contentAssets, context.publicBaseUrl);
   try {
     return await db.transaction(async (tx) => {
       const created = await createAgentProfileInTransaction(tx, values);
@@ -603,7 +615,8 @@ export async function createOwnedAgentProfile(
           newAvatarUrl: created.profile.avatarUrl,
         });
       }
-      return recordContentSubmission(tx, created, { id: submissionId(input.creationRequestId ?? input.submissionId), requestHash: sha256StableJson(input), assets: contentAssets });
+      if(input.entryIntent!==undefined)await saveAgentEntryIntent(tx,context.userId,created.profile.id,input.entryIntent);
+      return recordContentSubmission(tx, created, { id: submissionId(input.creationRequestId ?? input.submissionId), requestHash: sha256StableJson(input), assets: contentAssets, voiceId: input.voiceId });
     });
   } catch (error) {
     if (values.creationRequestId) {
@@ -657,6 +670,7 @@ export async function updateOwnedAgentProfile(
   agentId: string,
   input: UpdateAgentProfileMutationInput,
 ): Promise<AgentProfileMutationRead> {
+  validateEntryIntent(input.entryIntent);
   const contentSubmissionId = submissionId(input.submissionId);
   input = { ...input, submissionId: contentSubmissionId };
   const requestHash = sha256StableJson(input);
@@ -672,7 +686,7 @@ export async function updateOwnedAgentProfile(
   for (const url of [prepared.avatarUrl, prepared.fullBodyReferenceUrl, prepared.portraitCrop?.sourceUrl]) {
     if (url) delete savedAssets[url];
   }
-  const contentAssets = await prepareContentAssets({ ...startingDraft, ...prepared }, savedAssets);
+  const contentAssets = await prepareContentAssets({ ...startingDraft, ...prepared }, savedAssets, {db,userId:context.userId});
   const sourceReviewId = input.sourceReviewId === undefined
     ? undefined
     : requiredStringField(input.sourceReviewId, "sourceReviewId", 200);
@@ -706,14 +720,23 @@ export async function updateOwnedAgentProfile(
           || (learningReview.gameKind === "werewolf" && (locked.existing.werewolfStrategyStyle ?? "") !== (learningReview.reviewedStrategyStyle ?? ""))
           || (learningReview.gameKind === "werewolf" && (locked.existing.moderationRequired || locked.existing.latestContentRevisionId !== locked.existing.contentRevisionId))
         )) throw new OwnerLearningResolutionError("review_state_conflict", 409);
+        if (sourceReviewId && learningReview) {
+          const proposal = learningReview.result?.proposal;
+          const field = reviewStrategyField(learningReview.gameKind);
+          const resulting = ({ ...startingDraft, ...prepared }[field] ?? "").trim();
+          if (!proposal || resulting === proposal.before.trim() || resulting === proposal.after.trim()) {
+            throw new OwnerLearningResolutionError("review_state_conflict", 409);
+          }
+        }
         const mutation = await updateOwnedAgentProfileInLockedTransaction(tx, {
           context: { ...context, contentAssets },
           agentId,
           input: { ...input, submissionId: contentSubmissionId },
           locked,
         });
+        if(input.entryIntent!==undefined)await saveAgentEntryIntent(tx,context.userId,agentId,input.entryIntent);
         const profileChanged = mutableAgentProfileChanged(locked.existing, mutation.profile);
-        if (expectedRevisionId && locked.existing.currentRevisionId !== expectedRevisionId && profileChanged) {
+        if (expectedRevisionId && locked.existing.currentRevisionId !== expectedRevisionId) {
           throw new AgentProfileManagementError(
             "agent_profile_stale",
             "This Agent changed in another session. Reload before saving so newer changes are not overwritten.",
@@ -724,7 +747,7 @@ export async function updateOwnedAgentProfile(
             },
           );
         }
-        if (mutation.receipt.publication === "held") return { mutation, resolvedReviewId: null };
+        if (mutation.receipt.publication !== "published") return { mutation, resolvedReviewId: null };
         if (sourceReviewId && learningReview?.resolvedAt != null) {
           if (learningReview.resolution !== "manual_update" || profileChanged) {
             throw new OwnerLearningResolutionError("review_state_conflict", 409);
@@ -823,147 +846,27 @@ export async function updateOwnedAgentProfileInLockedTransaction(
     locked: LockedOwnedAgentProfileMutation;
   },
 ): Promise<AgentProfileMutationRead> {
-  const { lockedGames, candidateGames } = input.locked;
-  let { existing } = input.locked;
-  if (input.input.modelPreference !== undefined) {
-    let modelPreference: ModelPreference;
-    try { modelPreference = await authorizedModelPreference(tx, input.context.userId, input.input.modelPreference); }
-    catch (error) { if (error instanceof GameModelRoutingError) throw new AgentProfileManagementError("invalid_agent_input", error.message, error.status); throw error; }
-    // Operational metadata saves atomically with the form, outside content moderation.
-    if (JSON.stringify(existing.modelPreference) !== JSON.stringify(modelPreference)) {
-      existing = (await tx.update(schema.agentProfiles)
-        .set({ modelPreference, updatedAt: new Date().toISOString() })
-        .where(eq(schema.agentProfiles.id, input.agentId)).returning())[0]!;
-    }
-  }
+  let existing = input.locked.existing;
+  if(!existing.currentRevisionId){const baseline=await ensureActiveAgentRevisionInTransaction(tx,{profile:existing,effectiveRuntimeSnapshot:resolveFreeTrackEffectiveRuntimeSnapshot(existing),trigger:"initial_backfill"});existing={...existing,currentRevisionId:baseline.revision.id};}
+  existing=await captureExistingAgentBaseline(tx,existing,input.context.contentAssets);
   const draft = await latestSubmittedProfile(tx, existing);
   const updates = prepareAgentProfileUpdates(input.context, input.input, draft.avatarUrl);
-  updates.headPosition = await confirmProfileHead({ ...draft, ...updates }, draft, input.context.userId, input.context.contentAssets);
-  if (existing.moderationRequired) {
-    // A correction is intake evidence, not a profile/rating/roster mutation.
-    const [current] = await loadPayloads(tx.select().from(schema.agentRevisions).where(eq(schema.agentRevisions.id, existing.currentRevisionId!)));
-    if (!current) throw new AgentProfileManagementError("agent_update_conflict", "The character's current revision is unavailable.", 409);
-    const revision = { revision: current, created: false, ratingRecalibrated: false };
-    const receipt = emptyMutationReceipt(existing.id, revision, "updated");
-    const [standing] = await tx.select({ id: schema.freeGameQueue.id }).from(schema.freeGameQueue).where(eq(schema.freeGameQueue.agentProfileId, existing.id)).limit(1);
-    receipt.dailyFree = standing ? "preserved_follows_profile" : "not_enrolled";
-    const [frozen] = await tx.select({ count: sql<number>`count(*)::int` }).from(schema.gamePlayers)
-      .innerJoin(schema.games, eq(schema.games.id, schema.gamePlayers.gameId))
-      .where(and(eq(schema.gamePlayers.agentProfileId, existing.id), inArray(schema.games.status, ["in_progress", "suspended"])));
-    receipt.frozenSeats.unchanged = frozen?.count ?? 0;
-    return recordContentSubmission(tx, profileMutationRead(existing, revision, receipt), {
-      id: submissionId(input.input.submissionId), requestHash: sha256StableJson(input.input), assets: input.context.contentAssets,
-      candidate: { ...draft, ...updates },
-    });
+  updates.headPosition = await confirmProfileHead({ ...draft, ...updates }, draft, input.context.userId, input.context.contentAssets, input.context.publicBaseUrl);
+  let modelPreference = draft.modelPreference;
+  if (input.input.modelPreference !== undefined) {
+    try { modelPreference = await authorizedModelPreference(tx, input.context.userId, input.input.modelPreference); }
+    catch (error) { if (error instanceof GameModelRoutingError) throw new AgentProfileManagementError("invalid_agent_input", error.message, error.status); throw error; }
   }
-  const contentUpdates = Object.fromEntries(
-    Object.entries(updates).filter(([key, value]) => existing[key as keyof AgentProfileRow] !== value),
-  ) as Partial<typeof schema.agentProfiles.$inferInsert>;
-  let profile = existing;
-  if (Object.keys(contentUpdates).length > 0) {
-    profile = (await tx.update(schema.agentProfiles)
-      .set({ ...contentUpdates, updatedAt: new Date().toISOString() })
-      .where(and(
-        eq(schema.agentProfiles.id, input.agentId),
-        eq(schema.agentProfiles.userId, input.context.userId),
-      ))
-      .returning())[0]!;
-  }
-  const revision = await ensureActiveAgentRevisionInTransaction(tx, {
-    profile,
-    effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile),
-    trigger: "profile_edit",
+  const [current] = await loadPayloads(tx.select().from(schema.agentRevisions).where(eq(schema.agentRevisions.id, existing.currentRevisionId!)));
+  if (!current) throw new AgentProfileManagementError("agent_update_conflict", "The active revision is unavailable.", 409);
+  const revision = { revision: current, created: false, ratingRecalibrated: false };
+  return recordContentSubmission(tx, profileMutationRead(existing, revision, await describeAgentMutationReceipt(tx,existing,revision)), {
+    id: submissionId(input.input.submissionId), requestHash: sha256StableJson(input.input), assets: input.context.contentAssets,
+    candidate: { ...draft, ...updates, modelPreference },
+    voiceId: input.input.voiceId,
+    avatarChangeSource:input.context.avatarChangeSource,
+    sourceReviewId: input.input.sourceReviewId,
   });
-
-  const references: AgentMutationWaitingSeatReference[] = [];
-  for (const game of lockedGames) {
-    const [competition] = await tx.select({ id: schema.championshipMatchAttempts.gameId }).from(schema.championshipMatchAttempts).where(eq(schema.championshipMatchAttempts.gameId, game.id));
-    if (game.status === "waiting" && !game.startedAt && !competition) {
-      try {
-        const reconciliations = await reconcileOwnedProfileSeatsInLockedGame(tx, {
-          game,
-          userId: input.context.userId,
-          agentProfileId: input.agentId,
-        });
-        references.push(...reconciliations.map((reconciliation) => ({
-          gameId: game.id,
-          slug: game.slug,
-          disposition: reconciliation.disposition,
-          effectiveRevisionId: reconciliation.seat.agentRevisionId,
-        })));
-      } catch (error) {
-        throw mapWaitingReconciliationError(error, game);
-      }
-      continue;
-    }
-
-    const crossedSeats = await tx.select().from(schema.gamePlayers).where(and(
-      eq(schema.gamePlayers.gameId, game.id),
-      eq(schema.gamePlayers.agentProfileId, input.agentId),
-    ));
-    references.push(...crossedSeats.map((seat) => ({
-      gameId: game.id,
-      slug: game.slug,
-      disposition: "crossed_freeze" as const,
-      effectiveRevisionId: seat.agentRevisionId,
-    })));
-  }
-
-  const currentWaitingGames = await findWaitingFollowerGames(tx, input.agentId);
-  const lockedGameIds = new Set(candidateGames.map((game) => game.id));
-  if (currentWaitingGames.some((game) => !lockedGameIds.has(game.id))) {
-    throw new ExpandedWaitingGameSetError();
-  }
-
-  if (input.input.avatarUrl !== undefined && profile.avatarUrl !== existing.avatarUrl) {
-    const source = input.context.avatarChangeSource ?? "mcp_update";
-    await recordAvatarChange(tx, {
-      userId: input.context.userId,
-      agentProfileId: input.agentId,
-      source,
-      status: "completed",
-      generationRequestId: source === "web_manual_update" ? null : input.context.avatarGenerationRequestId,
-      previousAvatarUrl: existing.avatarUrl,
-      newAvatarUrl: profile.avatarUrl,
-    });
-  }
-
-  const [standingMembership, frozenSeatCount] = await Promise.all([
-    tx.select({ id: schema.freeGameQueue.id }).from(schema.freeGameQueue)
-      .where(eq(schema.freeGameQueue.agentProfileId, input.agentId)).limit(1),
-    tx.select({ count: sql<number>`count(*)::int` }).from(schema.gamePlayers)
-      .innerJoin(schema.games, eq(schema.gamePlayers.gameId, schema.games.id))
-      .where(and(
-        eq(schema.gamePlayers.agentProfileId, input.agentId),
-        inArray(schema.games.status, ["in_progress", "suspended"]),
-      )),
-  ]);
-  references.sort((left, right) => left.gameId.localeCompare(right.gameId));
-  const boundedReferences = boundAgentMutationWaitingSeatReferences(references);
-  const receipt: AgentMutationReceipt = {
-    schemaVersion: AGENT_MUTATION_RECEIPT_SCHEMA_VERSION,
-    operation: "updated",
-    agent: {
-      agentProfileId: input.agentId,
-      identityDisposition: "preserved",
-    },
-    profileRevision: profileRevisionReceipt(revision),
-    dailyFree: standingMembership.length > 0
-      ? "preserved_follows_profile"
-      : "not_enrolled",
-    waitingSeats: {
-      total: references.length,
-      reconciled: references.filter((reference) => reference.disposition === "reconciled").length,
-      alreadyCurrent: references.filter((reference) => reference.disposition === "already_current").length,
-      crossedFreeze: references.filter((reference) => reference.disposition === "crossed_freeze").length,
-      ...boundedReferences,
-    },
-    frozenSeats: { unchanged: frozenSeatCount[0]?.count ?? 0 },
-    warnings: [],
-  };
-  return recordContentSubmission(tx, {
-    ...profileMutationRead(profile, revision, receipt),
-  }, { id: submissionId(input.input.submissionId), requestHash: sha256StableJson(input.input), assets: input.context.contentAssets });
 }
 
 function prepareAgentProfileUpdates(
@@ -1116,30 +1019,6 @@ function emptyMutationReceipt(
   };
 }
 
-function mapWaitingReconciliationError(
-  error: unknown,
-  game: Pick<typeof schema.games.$inferSelect, "id" | "slug">,
-): unknown {
-  if (!(error instanceof OwnedSeatProjectionError)) return error;
-  const details = {
-    games: [{ gameId: game.id, slug: game.slug }],
-    truncatedCount: 0,
-  };
-  if (error.reason === "name_conflict") {
-    return new AgentProfileManagementError(
-      "waiting_roster_name_conflict",
-      "That agent name is already in use in a waiting game. Choose another name.",
-      409,
-      details,
-    );
-  }
-  return new AgentProfileManagementError(
-    "agent_update_reconciliation_failed",
-    "The agent could not be updated across its waiting games.",
-    409,
-    details,
-  );
-}
 
 export async function createOwnedAgent(
   db: DrizzleDB,
@@ -1165,6 +1044,9 @@ export async function createOwnedAgent(
   const mutation = await createOwnedAgentProfile(db, context, {
     creationRequestId: input.creationRequestId,
     name: displayName,
+    modelPreference: input.modelPreference,
+    voiceId: input.voiceId,
+    entryIntent: input.entryIntent,
     backstory: publicBiography,
     personality: personalityPrompt,
     strategyStyle,
@@ -1197,7 +1079,7 @@ export async function updateOwnedAgent(
 
   const agentId = requiredStringField(input.agentId, "agentId", 200);
   const existing = await requireOwnedAgentProfile(db, context.userId, agentId);
-  const updates: UpdateAgentProfileMutationInput = { ...contentMetadata(input), modelPreference: input.modelPreference, submissionId: input.submissionId, expectedContentRevisionId: input.expectedContentRevisionId };
+  const updates: UpdateAgentProfileMutationInput = { ...contentMetadata(input), modelPreference: input.modelPreference, voiceId: input.voiceId, entryIntent: input.entryIntent, submissionId: input.submissionId, expectedContentRevisionId: input.expectedContentRevisionId };
   if (input.fullBodyReferenceUrl !== undefined) updates.fullBodyReferenceUrl = input.fullBodyReferenceUrl;
   if (input.performanceInstructions !== undefined) updates.performanceInstructions = input.performanceInstructions;
 
@@ -1638,4 +1520,21 @@ function agentNameTakenError(): AgentProfileManagementError {
 function clampLimit(value: number | undefined, fallback: number, max: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   return Math.min(Math.max(Math.floor(value), 1), max);
+}
+
+/** Report actual retained enrollment state, including while a submission is under review. */
+export async function describeAgentMutationReceipt(tx:DatabaseExecutor,profile:AgentProfileRow,revision:EnsuredAgentRevision,references?:AgentMutationWaitingSeatReference[]):Promise<AgentMutationReceipt>{
+ const [standing,frozen]=await Promise.all([
+  tx.select({id:schema.freeGameQueue.id}).from(schema.freeGameQueue).where(eq(schema.freeGameQueue.agentProfileId,profile.id)).limit(1),
+  tx.select({count:sql<number>`count(*)::int`}).from(schema.gamePlayers).innerJoin(schema.games,eq(schema.games.id,schema.gamePlayers.gameId)).where(and(eq(schema.gamePlayers.agentProfileId,profile.id),inArray(schema.games.status,["in_progress","suspended"]))),
+ ]);
+ const rows=references??(await tx.select({gameId:schema.games.id,slug:schema.games.slug,effectiveRevisionId:schema.gamePlayers.agentRevisionId}).from(schema.gamePlayers).innerJoin(schema.games,eq(schema.games.id,schema.gamePlayers.gameId)).where(and(eq(schema.gamePlayers.agentProfileId,profile.id),eq(schema.games.status,"waiting")))).map(row=>({...row,disposition:"already_current" as const}));
+ rows.sort((a,b)=>a.gameId.localeCompare(b.gameId));
+ return {...emptyMutationReceipt(profile.id,revision,"updated"),dailyFree:standing.length?"preserved_follows_profile":"not_enrolled",frozenSeats:{unchanged:frozen[0]?.count??0},waitingSeats:{total:rows.length,reconciled:rows.filter(row=>row.disposition==="reconciled").length,alreadyCurrent:rows.filter(row=>row.disposition==="already_current").length,crossedFreeze:rows.filter(row=>row.disposition==="crossed_freeze").length,...boundAgentMutationWaitingSeatReferences(rows)}};
+}
+
+function validateEntryIntent(value: unknown) {
+  if (value === undefined) return;
+  try { parseAgentEntryIntent(value); }
+  catch (error) { throw new AgentProfileManagementError("invalid_agent_input", error instanceof Error ? error.message : "Invalid entry destination", 400); }
 }

@@ -1,4 +1,4 @@
-import { reserveInference, dispatchInference, settleInference } from "./inference-allowances.js";
+import { reserveInference, dispatchInference, settleInference, heartbeatImageExecution } from "./inference-allowances.js";
 import { GenerationAdmissionError } from "./generation-admission-error.js";
 import { createHash, randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
@@ -190,6 +190,7 @@ export async function requestAvatarCompletion(
     })
     .onConflictDoNothing()
     .returning();
+    if(row) await tx.update(schema.inferenceReservations).set({avatarRequestId:id}).where(eq(schema.inferenceReservations.id,`avatar:${id}`));
     return row;
   });
   const request = row
@@ -272,6 +273,7 @@ export async function requestDraftAvatarCompletion(
       createdAt: now,
       updatedAt: now,
     }).returning();
+    await tx.update(schema.inferenceReservations).set({avatarRequestId:id}).where(eq(schema.inferenceReservations.id,`avatar:${id}`));
     return requireReturnedRow(request, "Failed to create draft avatar generation request");
   });
 
@@ -469,7 +471,7 @@ export async function completeAvatarGenerationRequest(
       stage = "provider_submit";
       const prompt = buildAvatarPrompt(profile);
       await db.transaction(async tx => {
-        await reserveInference(tx,{id:`avatar:${request.id}`,userId:request.userId,category:'image',inputHash:request.promptHash ?? hashPrompt(prompt)});
+        await reserveInference(tx,{id:`avatar:${request.id}`,userId:request.userId,category:'image',inputHash:request.promptHash ?? hashPrompt(prompt),avatarRequestId:request.id});
         const [reservation]=await tx.select().from(schema.inferenceReservations).where(eq(schema.inferenceReservations.id,`avatar:${request.id}`));
         if(reservation?.state==='dispatched') throw new GenerationAdmissionError('generation_recovery_required','The provider submission needs reconciliation before retrying.');
         await dispatchInference(tx,`avatar:${request.id}`,request.userId);
@@ -808,6 +810,8 @@ async function heartbeatGenerationProviderWork(
   providerRequestId: string,
   options: Pick<AvatarGenerationOptions, "now">,
 ): Promise<void> {
+  const request = await requireGenerationRequest(db,generationRequestId);
+  if(!await heartbeatImageExecution(db,request.userId,`avatar:${generationRequestId}`)) throw new AvatarGenerationFailure('generation_claim_lost','Image execution ended.',false);
   const [owned] = await db
     .update(schema.avatarGenerationRequests)
     .set({ updatedAt: isoNow(options) })

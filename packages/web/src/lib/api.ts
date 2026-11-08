@@ -2085,12 +2085,20 @@ export async function getPlayerGamesPage(cursor?: string, limit = 20, game: "all
 // Saved agent profile types
 // ---------------------------------------------------------------------------
 
-export type AgentContentSnapshot = Pick<SavedAgent, "name" | "personality" | "personaKey" | "gender" | "backstory" | "strategyStyle" | "werewolfStrategyStyle" | "performanceInstructions" | "visualDesign" | "avatarUrl" | "fullBodyReferenceUrl" | "portraitCrop" | "headPosition">;
+export type AgentContentSnapshot = Pick<SavedAgent, "name" | "personality" | "personaKey" | "gender" | "backstory" | "strategyStyle" | "werewolfStrategyStyle" | "performanceInstructions" | "visualDesign" | "avatarUrl" | "fullBodyReferenceUrl" | "portraitCrop" | "headPosition" | "modelPreference">;
 
 export interface SavedAgent {
   transparentBodyUrl?: string | null;
+  reviewState?: "accepted" | "reviewing" | "held";
+  voiceId?: string | null;
+  entryIntent?: import("./agent-entry").AgentEntryIntent | null;
+  visualActivity?: {id?:string;status:string;stage:string;message?:string|null}|null;
   modelPreference?: ModelPreference;
   ownerContent?: {
+    entryIntent?: import("./agent-entry").AgentEntryIntent | null;
+    reviewMessage?:string|null;
+    reviewState?: "accepted" | "reviewing" | "held";
+    voiceId?: string | null;
     published: AgentContentSnapshot | null;
     submitted: { revisionId: string; content: AgentContentSnapshot; disposition: "allowed" | "rejected" | null; held: boolean; status: string | null } | null;
     availability: "archived" | "withheld" | "available";
@@ -2125,7 +2133,7 @@ export interface SavedAgent {
 export interface AgentMutationReceipt {
   contentRevisionId?: string;
   moderationRecordId?: string;
-  publication?: "published" | "held";
+  publication?: "published" | "reviewing" | "held";
   schemaVersion: 1;
   operation: "created" | "updated";
   agent: {
@@ -2158,6 +2166,8 @@ export interface AgentMutationReceipt {
 }
 
 export interface AgentProfileWriteParams {
+  entryIntent?: Exclude<import("./agent-entry").AgentEntryIntent,{flow:"update"}>;
+  voiceId?: string | null;
   modelPreference?: ModelPreference;
   submissionId?: string;
   expectedContentRevisionId?: string | null;
@@ -2216,6 +2226,7 @@ export type OwnerLearningResolution =
 export type OwnerLearningApplyDisposition =
   | "not_ready"
   | "awaiting_owner"
+  | "submitted"
   | "available"
   | "applied"
   | "manual_update"
@@ -2343,11 +2354,11 @@ export interface OwnerLearningReview {
   application: null | {
     sourceRecommendationIds: string[];
     priorRevisionId: string;
-    resultingRevisionId: string;
+    resultingRevisionId: string | null;
     priorStrategyStyle: string;
     resultingStrategyStyle: string;
     mutationReceipt: Record<string, unknown>;
-    appliedAt: string;
+    appliedAt: string | null;
   };
   createdAt: string;
   updatedAt: string;
@@ -2420,11 +2431,11 @@ export interface OwnerLearningApplyResult {
   proposalFingerprint: string;
   sourceRecommendationIds: string[];
   priorRevisionId: string;
-  resultingRevisionId: string;
+  resultingRevisionId: string | null;
   priorStrategyStyle: string;
   resultingStrategyStyle: string;
   receipt: AgentMutationReceipt;
-  appliedAt: string;
+  appliedAt: string | null;
   replayed: boolean;
 }
 
@@ -2439,6 +2450,7 @@ export interface AvatarCompletion {
 }
 
 export interface CharacterImageDraft {
+  basedOn?: { name:string;personaKey:string;visualDesign:string;performanceInstructions:string };
   requestId: string; fullBodyReferenceUrl: string; width: number; height: number;
   headSuggestion?: import("@influence/engine/character-portrait").CharacterHeadPosition | null;
   avatarUrl: string | null; portraitCrop: import("@influence/engine/character-portrait").PortraitCrop | null; cropWarning: string | null;
@@ -2486,8 +2498,8 @@ export interface GeneratePersonalityResult {
 // Saved agent profile API calls
 // ---------------------------------------------------------------------------
 
-export async function listAgents(): Promise<SavedAgent[]> {
-  return apiFetch("/api/agent-profiles", { cache: "no-store" });
+export async function listAgents(signal?: AbortSignal): Promise<SavedAgent[]> {
+  return apiFetch("/api/agent-profiles", { cache: "no-store",signal });
 }
 
 export async function getAgent(id: string): Promise<SavedAgent> {
@@ -3004,6 +3016,7 @@ export type AdminOwnerLearningAcceptance = "accepted" | "not_accepted" | "not_ap
 export type AdminOwnerLearningDisposition =
   | "not_ready"
   | "awaiting_owner"
+  | "submitted"
   | "applied"
   | "manual_update"
   | "declined"
@@ -3172,7 +3185,7 @@ export interface AdminOwnerLearningReviewDetail {
   tokens: AdminOwnerLearningTokenTotals;
   cost: AdminOwnerLearningCostTotals;
   application: null | {
-    appliedAt: string;
+    appliedAt: string | null;
   };
 }
 
@@ -3920,3 +3933,9 @@ export interface AgentVisualUpdate {
 }
 export function getAgentVisualUpdate(id:string) { return apiFetch<AgentVisualUpdate>(`/api/agent-profiles/${encodeURIComponent(id)}/visual-update`); }
 export function startAgentVisualUpdate(id:string) { return apiFetch<AgentVisualUpdate>(`/api/agent-profiles/${encodeURIComponent(id)}/visual-update`, {method:"POST"}); }
+
+/** Clear only the completed target; another tab may have selected a new destination. */
+export async function clearAgentEntryIntent(id:string,intent:import("./agent-entry").AgentEntryIntent) {
+  if(intent.flow==="update" || intent.flow==="daily_free"&&!intent.seasonId)return;
+  await apiFetch(`/api/agent-profiles/${encodeURIComponent(id)}/entry-intent`,{method:"DELETE",body:JSON.stringify(intent)});
+}

@@ -24,13 +24,19 @@ Stored gender is shared contestant identity in both games. The game freezes it w
 
 Default House players use fixed name, archetype, gender and portrait identities from `HOUSE_CAST`; casting shuffles whole characters. Existing waiting House seats reconcile to this catalog at start, keeping distinct archetypes where possible. Automatic voices use the stored gender. Historical rosters are never rewritten during reads. See [the cast map](docs/house-cast.md).
 
-The owner-managed, reusable identity and behavior configuration from which an Agent is seated. Name, portrait, gender, base persona, backstory, personality, and Strategy belong to one saved profile, while game seats bind to a specific profile revision under the existing roster rules. Web creation offers a bounded, full-screen AI assistant or Advanced create, both backed by the canonical editor's draft and save contract. Updates use the full editor; game join and Daily Free acquisition select an existing profile or route through the same creation choice instead of maintaining inline copies of the form. The creation assistant designs a competitor; it is not an in-game Agent or a general chatbot. See [guided creation](docs/agent-creation-assistant.md).
+The owner-managed, reusable identity and behavior configuration from which an Agent is seated. Name, portrait, gender, base persona, backstory, personality, and Strategy belong to one saved profile, while game seats bind to a specific profile revision under the existing roster rules. Web creation and updates offer Guided and Advanced modes within one editor, backed by the same draft, artwork and save contract; game join and Daily Free acquisition select an existing profile or route through the same creation choice instead of maintaining inline copies of the form. The creation assistant designs a competitor; it is not an in-game Agent or a general chatbot. See [guided creation](docs/agent-creation-assistant.md).
 
 ### Anonymous creation pool
 
 The public `/agents/create` preview gives an anonymous browser one successful House text message before account creation is required for further generation or saving. Signed-out game join actions enter this preview directly with the game target preserved; signup happens within creation. A signed browser cookie identifies the visitor; it is not a verified account or person. PostgreSQL limits the shared pool to one provider dispatch per rolling minute and journals request identity, outcomes, tokens, and estimated cost separately from account and game spending. The first message can answer a game question or create a character draft. Images always require an account.
 
-In every edit session, Strategy changes are compared with the session baseline. A review-linked edit uses the review proposal as the working text and the proposal's `before` value as the visible baseline; saving a custom review update requires changing the proposed text. Portrait generation is an independent completion attached to the saved profile: it may remain pending when profile save succeeds, and an explicit uploaded portrait remains authoritative.
+In every edit session, Strategy changes are compared with the session baseline. A review-linked edit uses the review proposal as the working text and the proposal's `before` value as the visible baseline; saving a custom review update requires changing the proposed text. Generated artwork is a draft candidate until explicitly selected and submitted with the profile. Agent image uploads are not supported.
+
+## Image request and execution slot
+
+An owner-scoped image request can be queued, running, stopped or ready for review, including before an Agent Profile exists. The editor footer and agent management expose the same activity and cancellation actions. Status details open over the editor without changing its layout. Agent management keeps creation order stable across moderation updates. Cancelling image work preserves character edits and the saved profile.
+
+An image execution slot is a renewable lease, separate from the retained inference reservation and provider charge evidence. Cancellation or lease expiry releases capacity; it does not establish an unknown provider outcome or refund a dispatched generation. Late receipts remain auditable, and a cancelled worker cannot publish its output. See [agent generations](docs/agent-generations.md).
 
 ## Owner Learning Loop
 
@@ -681,9 +687,13 @@ Daily Free is the internal queue name; Intake currently runs once a week. The dr
 
 An owner's one season-scoped agent entry for Daily Free. A Standing Daily Agent remains entered after selection and terminal games and becomes temporarily ineligible only while the owner has a waiting or active Daily Free assignment. A suspended assignment remains eligible; selection into a new draw supersedes the old suspended game and revokes its active run owner unless the old game has a `pending` or `repair_required` completion settlement, which must remain available for retry or investigation. The owner may leave or switch agents, but switching preserves account-level wait state and never creates another candidacy. Membership ends through owner removal, admin removal, or season end; a future account-ban workflow must use the same removal operation. There is no separate paused state.
 
-## Avatar completion
+## Agent workspace and artwork preparation
 
-The product behavior that fills in a missing player-agent avatar PFP by generating a one-shot portrait and copying it into Influence-owned profile-picture storage. Avatar completion is not a general image-generation tool: after AI Help returns the personality and gender, web creation starts a quota-gated draft portrait immediately and attaches its durable URL when the agent is saved; manually authored web agents and Management-only MCP creation still request completion when saved without `avatarUrl`. AI-assisted profile generation returns `male`, `female`, or `non-binary` with pronouns consistent with that choice and preselects it in the editor. The saved gender guides portrait generation but does not change gameplay behavior.
+Guided and Advanced are views of one owner draft, including model, voice, conversation, selected artwork and portrait/head geometry. Account drafts use versioned private object documents; stale drafts merge against their recorded baseline and expose conflicts. Artwork preparation is a durable staged job whose result must be selected into the draft. Text edits and saving never trigger an unrelated portrait request. Existing legacy avatar-completion records remain historical operational evidence.
+
+## Submitted and accepted agent content
+
+`latestContentRevisionId` names the latest immutable submission; `contentRevisionId` names accepted public content. Save queues enforced screening and returns Reviewing. New agents wait for acceptance; an edited agent's last accepted version remains usable during review or hold. Publication applies the complete content, model/voice, applicable competitive revision and waiting-seat effects together; frozen games stay pinned. See [the submission contract](docs/agent-content-submissions.md).
 
 ## Public avatar storage key
 

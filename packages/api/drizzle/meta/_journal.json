@@ -1093,6 +1093,76 @@
       "when": 1792952785125,
       "tag": "0155_public_game_browse_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1792952785126,
+      "tag": "0156_agent_workspace",
+      "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1792952785127,
+      "tag": "0157_character_reference_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 158,
+      "version": "7",
+      "when": 1792952785128,
+      "tag": "0158_private_agent_draft_images",
+      "breakpoints": true
+    },
+    {
+      "idx": 159,
+      "version": "7",
+      "when": 1792952785129,
+      "tag": "0159_character_reference_owner",
+      "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
+      "when": 1792952785130,
+      "tag": "0160_pending_learning_publication",
+      "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "7",
+      "when": 1792952785131,
+      "tag": "0161_agent_entry_intents",
+      "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1792952785132,
+      "tag": "0162_agent_submission_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1792952785133,
+      "tag": "0163_character_reference_errors",
+      "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1792952785134,
+      "tag": "0164_image_execution_leases",
+      "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1792952785135,
+      "tag": "0165_image_activity_indexes",
+      "breakpoints": true
     }
   ]
 }

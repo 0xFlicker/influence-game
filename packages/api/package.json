@@ -26,6 +26,7 @@
     "storage:copy": "bun run src/scripts/migrate-storage-payloads.ts copy",
     "storage:verify": "bun run src/scripts/migrate-storage-payloads.ts verify",
     "storage:cutover": "bun run src/scripts/migrate-storage-payloads.ts cutover",
+    "voices:prepare-samples": "bun run src/scripts/prepare-voice-samples.ts",
     "cutouts:backfill": "bun run src/scripts/backfill-character-cutouts.ts"
   },
   "dependencies": {

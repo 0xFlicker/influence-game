@@ -1,3 +1,4 @@
+import { startCharacterReferenceWorker } from "./services/character-reference-jobs.js";
 import { restoreLocalChampionshipSchedules, stopLocalChampionshipTimers } from "./services/championship-scheduling.js";
 import { createGameRetryRoutes } from "./routes/game-retry.js";
 import { processChampionshipArtwork } from "./services/championship-artwork.js";
@@ -460,6 +461,7 @@ async function finishBackgroundRuntimeStartup(
     ? null
     : await startProviderHealthProbeRuntime(db);
   const houseCutWorker = gameExecutionWorker && !localEvaluation ? startHouseCutWorker(db, () => runtimeActivation.canClaimWork()) : null;
+  const characterReferenceWorker = gameExecutionWorker && process.env.INFLUENCE_API_TEST_MOCK_RUNNER !== "true" ? startCharacterReferenceWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const characterCutoutDispatcher = gameExecutionWorker ? startCharacterCutoutDispatcher(db, () => runtimeActivation.canClaimWork()) : null;
   const audioWorker = gameExecutionWorker ? startAudioWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const episodeWorker = gameExecutionWorker ? startEpisodeWorker(db, () => runtimeActivation.canClaimWork()) : null;
@@ -544,6 +546,7 @@ async function finishBackgroundRuntimeStartup(
       await renderWakeDispatcher?.stop();
       await audioWorker?.stop();
       await houseCutWorker?.stop();
+      await characterReferenceWorker?.stop();
       await characterCutoutDispatcher?.stop();
       await episodeWorker?.stop();
       await visualMediaWorker?.stop();

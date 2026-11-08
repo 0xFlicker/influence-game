@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { createFreeQueueRoutes } from "../routes/free-queue.js";
-import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { createAcceptedTestProfile as createOwnedAgentProfile } from "./test-utils.js";
 import { hashCanonicalEvent } from "../services/game-events.js";
 import { abortAllGames } from "../services/game-lifecycle.js";
 import { closeSeason, createSeason } from "../services/seasons.js";

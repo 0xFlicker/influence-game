@@ -89,16 +89,16 @@ test.describe("local public player identity", () => {
         const composer = page.getByLabel("Message the character assistant", { exact: true });
         await composer.fill("An exiled diplomat who keeps receipts");
         await page.getByRole("button", { name: "Send", exact: true }).click();
-        await expect(page.getByRole("button", { name: "Read Name", exact: true })).toContainText("Mira Vale");
+        await expect(page.getByRole("button", { name: "Revise Name", exact: true })).toContainText("Mira Vale");
         await expect(signup).toHaveCount(0);
-        await page.getByRole("button", { name: "Yes, that feels right", exact: true }).click();
+        await page.getByRole("button", { name: "Continue", exact: true }).click();
         await composer.fill("A blue coat and gold rings");
         await page.getByRole("button", { name: "Send", exact: true }).click();
         await expect(signup).toBeVisible();
         await expect(signup).toContainText("Create a free account for more House messages");
         await signup.getByRole("button", { name: "Close authentication" }).click();
         await expect(composer).toHaveValue("A blue coat and gold rings");
-        await expect(page.getByRole("button", { name: "Read Name", exact: true })).toContainText("Mira Vale");
+        await expect(page.getByRole("button", { name: "Revise Name", exact: true })).toContainText("Mira Vale");
         await expect(page).toHaveURL(`${servers.webUrl}/agents/create?flow=join_game&gameId=${id}`);
         expect(previews).toBe(1);
         expect(privateRequests).toEqual([]);
@@ -879,6 +879,8 @@ test.describe("local public player identity", () => {
       const imageReady = Promise.withResolvers<void>();
       let generated = 0;
       let imageRequests = 0;
+      let imageRequestId = "";
+      let imageAvailable = false;
       let exported: Record<string, unknown> | null = null;
       try {
         await page.route("**/creation-fixture.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900"><rect width="600" height="900" fill="#333950"/><circle cx="300" cy="165" r="85" fill="#8faee0"/><rect x="175" y="270" width="250" height="480" rx="60" fill="#d0a646"/></svg>' }));
@@ -894,8 +896,15 @@ test.describe("local public player identity", () => {
         });
         await page.route("**/api/agent-profiles/visual-reference", async route => {
           imageRequests++;
+          imageRequestId = route.request().postDataJSON().requestId;
           await imageReady.promise;
-          await route.fulfill({ json: { fullBodyReferenceUrl: sourceUrl, avatarUrl: sourceUrl, portraitCrop: { sourceUrl, x: 0.2, y: 0.02, width: 0.6, height: 0.4 }, headSuggestion: { sourceUrl, sourceHash: "a".repeat(64), sourceWidth: 600, sourceHeight: 900, rect: { x: 0.36, y: 0.09, width: 0.28, height: 0.2 } } } });
+          imageAvailable = true;
+          await route.fulfill({ json: { id: imageRequestId, status: "queued", stage: "waiting" } });
+        });
+        await page.route("**/api/agent-profiles/visual-references/**", route => {
+          if (route.request().method() === "POST") return route.fulfill({ json: { ok: true } });
+          if (!imageAvailable) return route.fulfill({ status: 404, json: { error: "Not found" } });
+          return route.fulfill({ json: { status: "ready", stage: "ready", createdAt: new Date().toISOString(), result: { requestId: imageRequestId, fullBodyReferenceUrl: sourceUrl, width: 600, height: 900, avatarUrl: sourceUrl, portraitCrop: { sourceUrl, x: 0.2, y: 0.02, width: 0.6, height: 0.4 }, cropWarning: null, headSuggestion: { sourceUrl, sourceHash: "a".repeat(64), sourceWidth: 600, sourceHeight: 900, rect: { x: 0.36, y: 0.09, width: 0.28, height: 0.2 } } } } });
         });
         await page.route("**/api/agent-profiles/portrait-crop", route => {
           const { headRectangle, ...portraitCrop } = route.request().postDataJSON();
@@ -917,25 +926,25 @@ test.describe("local public player identity", () => {
         await expect(page.getByRole("button", { name: "Remove Streamer ingredient", exact: true })).toBeVisible();
         await page.screenshot({ path: `/tmp/agent-starter-pills-${viewport.width}.png` });
         await page.getByRole("button", { name: "Send", exact: true }).click();
-        await expect(page.getByRole("button", { name: "Yes, that feels right" })).toBeVisible();
-        await page.getByRole("button", { name: "Read Name", exact: true }).click();
+        await expect(page.getByRole("button", { name: "Continue" })).toBeVisible();
+        await page.getByRole("button", { name: "Edit Name", exact: true }).click();
         const nameReader = page.getByRole("dialog", { name: "Name", exact: true });
-        await expect(nameReader.getByText("Mira Vale", { exact: true })).toBeVisible();
-        await nameReader.getByRole("button", { name: "Close", exact: true }).click();
+        await expect(nameReader.getByRole("textbox", { name: "Name" })).toHaveValue("Mira Vale");
+        await nameReader.getByRole("button", { name: "Cancel", exact: true }).click();
         await expect(page.getByRole("button", { name: "Remove change Name" })).toHaveCount(0);
-        await page.getByRole("button", { name: "Read Character prompt", exact: true }).click();
+        await page.getByRole("button", { name: "View full Character prompt", exact: true }).click();
         const reader = page.getByRole("dialog", { name: "Character prompt", exact: true });
         await expect(reader.getByText(character.personality, { exact: true })).toBeVisible();
-        expect((await reader.boundingBox())?.height).toBe(viewport.height);
+        expect((await reader.boundingBox())!.height).toBeLessThan(viewport.height);
         await page.screenshot({ path: `/tmp/character-section-reader-${viewport.width}.png` });
-        await reader.getByRole("button", { name: "Edit Character prompt", exact: true }).click();
+        await reader.getByRole("button", { name: "Refine", exact: true }).click();
         await expect(reader).toBeHidden();
         await expect(composer).toBeFocused();
         await expect(page.getByRole("button", { name: "Remove change Character prompt" })).toBeVisible();
         await composer.fill("No, make her suspicious");
         await page.getByRole("button", { name: "Send", exact: true }).click();
-        await expect(page.getByRole("button", { name: "Read Character prompt", exact: true })).toContainText("A suspicious diplomat who verifies every promise.");
-        await page.getByRole("button", { name: "Yes, that feels right" }).click();
+        await expect(page.getByRole("button", { name: "Revise Character prompt", exact: true })).toContainText("A suspicious diplomat who verifies every promise.");
+        await page.getByRole("button", { name: "Continue" }).click();
         await expect(page.getByText(/What do they look like/)).toBeVisible();
         await expect(page.getByRole("button", { name: "Add Dragon ingredient", exact: true })).toBeVisible();
         await page.getByRole("button", { name: "Add Dragon ingredient", exact: true }).click();
@@ -954,21 +963,23 @@ test.describe("local public player identity", () => {
         await expect(page.getByRole("status", { name: "Assistant typing" })).toBeVisible();
         const formation = page.getByRole("status", { name: "Creating character image" });
         await expect(formation).toBeVisible();
-        await expect(page.getByRole("button", { name: "Read Name", exact: true })).toHaveCount(0);
+        await expect(page.getByRole("button", { name: "Revise Name", exact: true })).toBeDisabled();
         await page.screenshot({ path: `/tmp/character-formation-${viewport.width}.png` });
         await page.emulateMedia({ reducedMotion: "reduce" });
         await expect(formation.locator("svg")).toBeVisible();
         await page.screenshot({ path: `/tmp/character-formation-reduced-${viewport.width}.png` });
         await page.emulateMedia({ reducedMotion: "no-preference" });
         imageReady.resolve();
+        await expect(page.getByText("Artwork ready", { exact: true })).toBeVisible();
+        await page.getByRole("button", { name: "Select", exact: true }).click();
         const dialog = page.getByRole("dialog", { name: "Adjust character images" });
         await expect(dialog).toBeVisible();
-        await expect(dialog.getByRole("button", { name: "Head position", exact: true })).toBeVisible();
-        await expect(dialog.getByRole("button", { name: "Confirm this headshot", exact: true })).toBeEnabled();
+        await expect(dialog.getByRole("button", { name: "Head", exact: true })).toBeVisible();
+        await expect(dialog.getByRole("button", { name: "Confirm", exact: true })).toBeEnabled();
         await dialog.getByText("Precise adjustments", { exact: true }).click();
         const frame = dialog.getByRole("slider", { name: "Frame size", exact: true });
         const originalFrameSize = await frame.inputValue();
-        const confirm = dialog.getByRole("button", { name: "Confirm this headshot", exact: true });
+        const confirm = dialog.getByRole("button", { name: "Confirm", exact: true });
         const beforeWarning = await confirm.evaluate(element => element.getBoundingClientRect().top + (element.closest("dialog")?.scrollTop ?? 0));
         await frame.evaluate(element => { (element as HTMLInputElement).value = "32"; element.dispatchEvent(new Event("input", { bubbles: true })); });
         await expect(dialog.getByRole("img", { name: "Head outside portrait crop" })).toBeVisible();
@@ -999,7 +1010,7 @@ test.describe("local public player identity", () => {
           await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: corner.x + 13, y: corner.y + 13 }] });
           await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
           await cdp.detach();
-          await dialog.getByRole("button", { name: "Head position", exact: true }).click();
+          await dialog.getByRole("button", { name: "Head", exact: true }).click();
           const head = await dialog.getByLabel("Head box; drag to move").boundingBox();
           if (!head) throw new Error("Head box has no bounds");
           await page.mouse.move(head.x + head.width / 2, head.y + head.height / 2);
@@ -1010,29 +1021,32 @@ test.describe("local public player identity", () => {
           await page.mouse.down(); await page.mouse.move(headCorner.x + 6, headCorner.y + 6); await page.mouse.up();
           await page.screenshot({ path: "/tmp/agent-crop-mobile.png", fullPage: false });
         }
-        await dialog.getByRole("button", { name: "Confirm this headshot", exact: true }).click();
+        await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
         await expect(page.getByRole("dialog")).toBeHidden();
         expect(exported).not.toBeNull();
         if (viewport.width < 500) {
           expect(Number(exported?.["x"])).toBeGreaterThan(0.2);
           expect(Number(exported?.["width"])).toBeGreaterThan(0.6);
         }
-        await expect(page.getByRole("button", { name: "Create Agent", exact: true })).toBeEnabled();
-        await page.getByRole("button", { name: "Read Influence strategy", exact: true }).click();
-        await page.getByRole("dialog", { name: "Influence strategy", exact: true }).getByRole("button", { name: "Edit Influence strategy", exact: true }).click();
+        await expect(page.getByRole("button", { name: "Review", exact: true })).toBeEnabled();
+        await page.getByRole("button", { name: "View full Influence strategy", exact: true }).click();
+        await page.getByRole("dialog", { name: "Influence strategy", exact: true }).getByRole("button", { name: "Refine", exact: true }).click();
         await composer.fill("Be more patient with allies");
         await page.getByRole("button", { name: "Send", exact: true }).click();
-        await expect(page.getByRole("button", { name: "Yes, that feels right" })).toBeVisible();
-        await page.getByRole("button", { name: "Yes, that feels right" }).click();
-        await expect(page.getByRole("button", { name: "Create Agent", exact: true })).toBeEnabled();
+        await expect(page.getByRole("button", { name: "Continue" })).toBeVisible();
+        await page.getByRole("button", { name: "Continue" }).click();
+        await expect(page.getByRole("button", { name: "Review", exact: true })).toBeEnabled();
         await expect(page.getByText("Visual ingredients", { exact: true })).toHaveCount(0);
         expect(imageRequests).toBe(1);
         // Appearance generation must not replace the approved character prompt.
-        await expect(page.getByRole("button", { name: "Read Character prompt", exact: true })).toContainText("A suspicious diplomat who verifies every promise.");
-        await page.getByRole("button", { name: "Advanced create", exact: true }).click();
+        await expect(page.getByRole("button", { name: "Revise Character prompt", exact: true })).toContainText("A suspicious diplomat who verifies every promise.");
+        await page.getByRole("button", { name: "Advanced", exact: true }).click();
         await expect(page.locator("#agent-personality")).toHaveValue("A suspicious diplomat who verifies every promise.");
         await expect(page.locator("#agent-name")).toHaveValue("Mira Vale");
-      } finally { imageReady.resolve(); await page.unrouteAll({ behavior: "wait" }); await context.close(); }
+        await page.getByRole("button", { name: "Cancel", exact: true }).click();
+        await page.getByRole("dialog", { name: "Discard draft?" }).getByRole("button", { name: "Discard", exact: true }).click();
+        await page.waitForURL(/\/dashboard/);
+      } finally { imageReady.resolve(); await context.close(); }
     }
   });
 
@@ -1080,6 +1094,7 @@ test.describe("local public player identity", () => {
     const page = await context.newPage();
     const assistantRequests: string[] = [];
     try {
+      await page.route("**/api/agent-profiles/creation-assistant", route => route.fulfill({ json: { command: "revise_character", reply: "" } }));
       await page.route("**/api/agent-profiles/edit-assistant", route => {
         assistantRequests.push(route.request().postDataJSON().message);
         return route.fulfill({ json: { tool: "clarify", message: "What should Arden prioritize?" } });
@@ -1125,7 +1140,7 @@ test.describe("local public player identity", () => {
       expect(assistantRequests).toEqual(["Make Vesper more patient."]);
       await expect(page.getByText("What should Arden prioritize?")).toBeVisible();
       await page.reload();
-      await expect(page.getByRole("heading", { name: "Edit Agent" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Vesper E2E" })).toBeVisible();
       expect(assistantRequests).toHaveLength(1);
     } finally {
       await page.unrouteAll({ behavior: "wait" });
