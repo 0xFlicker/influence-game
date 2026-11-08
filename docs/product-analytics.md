@@ -31,7 +31,7 @@ Regional consent gates SDK initialization as described below.
 All events have `channel=web` and `environment=production`.
 
 - `$pageview`: sanitized current URL, SDK referrer/device/session attribution,
-  allowlisted `utm_source`, `utm_medium`, `utm_campaign`.
+  and validated campaign attribution (next section).
 - `$pageleave`: SDK-managed browser exit event with previous-page duration and
   scroll metadata. In-app navigation carries that metadata on the next pageview;
   no duplicate manual leave event is sent for each route change.
@@ -56,8 +56,122 @@ All events have `channel=web` and `environment=production`.
 Success means the browser received and decoded a successful API response, not a
 button click. These events are best-effort browser telemetry, **not server audit
 records**: blocked analytics or a lost response can omit committed successes.
-MCP activity and actual participation are not inferred from browser joining.
+Authoritative conversions are the server events below; browser events explain
+interaction and abandonment and are never the only conversion evidence.
 Daily Free acceptance is queue entry, not proof of seating in a match.
+
+## Campaign attribution
+
+Supported fields, retained after format validation in the browser sanitizer
+(`packages/web/src/lib/analytics-privacy.ts`), first-party retention
+(`packages/web/src/lib/campaign-attribution.ts`) and the server validator
+(`packages/api/src/services/campaign-conversions.ts`):
+
+| Field | Query parameter | Meaning |
+| --- | --- | --- |
+| source / medium / campaign | `utm_source` / `utm_medium` / `utm_campaign` | Campaign source |
+| creative | `utm_content` | Creative/ad identity |
+| audience | `utm_term` | Audience/keyword identity |
+| click ID | `gclid`, `fbclid`, `msclkid`, `ttclid`, `dclid`, `gbraid`, `wbraid` | Platform click identifier |
+| landing variant | `landing_variant` | Landing-page variant |
+| onboarding variant | `onboarding_variant` | Onboarding experiment assignment (kept separate from acquisition) |
+| starter identity | `starter_prompt`, `starter_skill` | Starter prompt/skill **IDs only**, never prompt text |
+
+Before this change, the sanitizer deleted `utm_content`, `utm_term` and
+`gclid`/`fbclid`/`msclkid`, and the other click IDs were never captured, so no
+creative or click-level attribution survived. Now validated values are kept
+(including nested `$set`/`$set_once`/`$initial_*` forms); values that fail the
+format checks, unlisted `utm_*` fields and `search_keyword` are dropped.
+Credentials, OAuth codes, emails and prompt text are still removed by the
+URL/exception scrubbers — that protection is scoped to secret-bearing fields
+and is unchanged.
+
+Retention: the first eligible non-direct touch and the latest non-direct touch
+are stored with timestamps, first in consent-gated browser storage, then on
+`user_campaign_attribution` after authorized account linking
+(`POST /api/attribution/retain`, plus the signup request payload). First touch
+is never overwritten; a direct visit never replaces the last non-direct touch.
+The acquisition window is 90 days before signup. Reporting uses first touch
+for acquisition and last-non-direct for assist analysis; the two are never
+blended. Missing attribution is reported as `unknown` — identity is never
+inferred from IP addresses or fabricated across devices.
+
+Remaining gaps: pre-consent touches are not queued or backfilled (see Regional
+consent), anonymous pre-signup creation is stitched in PostHog by `identify`
+but has no server visitor-to-account claim, and cross-device journeys without
+sign-in stay unattributed.
+
+## Server conversion events
+
+Recorded in `campaign_conversion_events` by
+`packages/api/src/services/campaign-conversions.ts`, inside the mutation's
+transaction where the mutation owns one, with deterministic IDs so retries,
+switches, repeated requests and replays cannot duplicate a conversion.
+`distinct_id` is always the public account UUID, never the internal user ID.
+Attribution is the owner's retained first touch; channel is `web`, `mcp`
+(with the OAuth `clientId` from the MCP auth context, never tool arguments)
+or `api`.
+
+| Event | Fires when | Deduplication ID |
+| --- | --- | --- |
+| `signup_completed` | New account row committed (`created === true` only) | `signup:{userId}` |
+| `agent_creation_started` | First successful creation-assistant turn per account | `agent_creation_started:{userId}` |
+| `agent_created` | Agent profile created (each additional agent counted separately) | `agent_created:{agentId}` |
+| `agent_ready` | Agent published and eligible (immediate publish or screening publication) | `agent_ready:{agentId}:{revisionId}` |
+| `season_entry` | Enrolled in the intended season (queued or switched) | `season_entry:{userId}:{seasonId}` |
+| `game_placed` | Placed in a game (distinct from enrollment; not yet emitted) | reserved |
+| `mcp_linked` | MCP account linking (not yet emitted; MCP conversions already carry channel/client) | reserved |
+| `owner_returned` | Existing account signs in on a new UTC day (reactivation, never signup) | `owner_returned:{userId}:{date}` |
+
+Acquisition counts unique new accounts reaching each outcome. Enrollment
+(`season_entry`) is not placement (`game_placed`), and returning viewing is
+measured by identified `watch_*` events on days after signup together with
+`owner_returned`; no server watch event is claimed.
+
+Delivery: a worker delivers pending rows to PostHog capture and, when
+configured, to the advertising platform (next section), recording status,
+attempts and the last error on the row. Delivery failure never blocks or
+rolls back a product mutation.
+
+## Advertising-platform feedback
+
+No advertising platform is configured today: there is no pixel, tag or CAPI
+credential in the repository or Doppler inventory, and no platform SDK is
+installed. The prepared Meta Conversions API adapter in
+`campaign-conversions.ts` activates only when `META_PIXEL_ID` and
+`META_CAPI_ACCESS_TOKEN` are set; rows then record `platform_status =
+delivered`, otherwise `unconfigured` — unconfigured delivery is never
+reported as operational. Mapping: `signup_completed` → `CompleteRegistration`,
+`agent_ready` → `AgentReady`, `season_entry` → `SeasonEntry`, deduplicated by
+`event_id` = the deterministic conversion ID, with the retained `fbclid`
+sent as the click identifier when present. Intermediate steps are observed
+internally and are not sent as equal-value platform conversions. Free season
+enrollment is never labelled a purchase and no revenue value is invented;
+the bidding objective stays a business choice separate from these success
+metrics. Google/TikTok delivery is not implemented and needs a platform
+decision plus credentials before any launch. Required setup: choose the
+launch platform(s), create the pixel/dataset, set the two env vars in
+Doppler, and complete the privacy reassessment below. Do not launch
+advertisements or spend without separate authorization.
+
+## Campaign reporting
+
+Internal source of truth: `GET /api/admin/campaign-report` (admin permission)
+groups authoritative conversions by campaign, creative and landing variant:
+new accounts → ready agents → unique season entrants, with cost per signup,
+ready agent and season entrant when spend is supplied by the caller from the
+platform export (`?spend={"campaign":amount}`). Spend is never invented or
+stored as revenue; generation/service costs are tracked separately from
+advertising spend. PostHog dashboard 2224772 remains the interaction funnel
+(spend has no in-repo source and stays platform-side until supplied).
+Report platform-reported results separately from internal results: they
+differ by consent loss, attribution window (90 days, UTC), conversion delay
+(server events carry the mutation timestamp; platform delivery is async),
+duplicate handling (deterministic IDs internally; `event_id` on the
+platform), and internal/test-traffic exclusion (production hostname, staff
+and private-route exclusions, plus the admin-only internal report).
+Returning viewers are identified watchers on days after signup; timezone for
+daily returning counts is UTC.
 
 ## Watching semantics
 
@@ -196,8 +310,14 @@ data, minors, sale, advertising, and other restricted purposes. The US default-o
 This is a product choice, not a conclusion that every US state exempts session
 replay from consent; state interception laws and the actual data captured matter.
 Our scope is adult-facing, non-sensitive product
-analytics, with PostHog as a service provider, not sale or cross-site advertising.
-Reassess before adding sensitive properties, advertising, or serving children.
+analytics, with PostHog as a service provider. Paid acquisition measurement
+(campaign fields and click IDs above) is part of that scope as of this change:
+explicit opt-outs, DNT and Global Privacy Control still disable collection,
+and no pre-consent queue was added. Reassess before adding sensitive
+properties, serving children, or activating platform delivery (Advertising-
+platform feedback) — activation sends the mapped conversion events and the
+permitted click identifier to the chosen platform under its terms, which is
+a distinct sharing decision from first-party measurement.
 
 Sources and limits:
 - California AG: https://oag.ca.gov/privacy/ccpa

@@ -298,6 +298,24 @@ must not be reported as passed when skipped. See
 [`authentication/layered-identity-rollout.md`](authentication/layered-identity-rollout.md)
 for staging, cutover, rollback, support, and OpenAI reviewer acceptance.
 
+### Campaign conversion delivery (server)
+
+The game worker delivers `campaign_conversion_events` rows every minute.
+Configuration (Doppler `social-strategy-agent`, API/worker env):
+
+| Variable | Required | Effect |
+| --- | --- | --- |
+| `POSTHOG_PROJECT_TOKEN` | For PostHog delivery | Server-side PostHog capture token (not the public browser token). Without it rows stay `pending` with the reason recorded. |
+| `POSTHOG_HOST` | No | Defaults to `https://us.posthog.com`. |
+| `META_PIXEL_ID` + `META_CAPI_ACCESS_TOKEN` | No | Activates the prepared Meta Conversions API adapter. Until both are set, platform delivery reports `unconfigured`, never delivered. |
+
+Internal reporting: `GET /api/admin/campaign-report` (admin permission),
+optionally with caller-supplied spend (`?spend={"campaign":amount}`).
+Deployment: apply migration `0166_campaign_attribution_conversions`, deploy
+API/worker and web through the normal gates, then verify one tagged journey
+on production per [the analytics release verification](product-analytics.md).
+Do not launch advertisements or spend without separate authorization.
+
 ### 5. Close out code-backed work
 
 Before calling code-backed work done, open a reviewable PR and report the PR URL plus the real verification results. The canonical delivery sequence and closeout format live in [`DEVELOPMENT.md`](../DEVELOPMENT.md#definition-of-done).

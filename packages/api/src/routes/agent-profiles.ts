@@ -1,3 +1,4 @@
+import { recordAgentCreationStarted } from "../services/campaign-conversions.js";
 import { listAgentGenerations, cancelAgentGeneration } from "../services/agent-generations.js";
 import { AgentDraftImageUnavailable, readAgentDraftImage } from "../services/agent-draft-images.js";
 import { requestCharacterReference, readCharacterReference, retryCharacterReference, decideCharacterReference } from "../services/character-reference-jobs.js";
@@ -183,9 +184,13 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
     try {
       const stage = body.stage;
       const message = body.message;
-      return c.json(await runAccountText(db, { userId: c.get("user").id, requestKey: requestId,
+      const turn = await runAccountText(db, { userId: c.get("user").id, requestKey: requestId,
         kind: "creation_assistant", model: resolveAgentCreationLlm()?.modelId ?? "unavailable", payload: body },
-        record => selectCreationTurn(stage, message, body.history as string[], body.sections as string[], body.draft as Omit<CharacterDraftContext, "hasFullBody">, c.req.raw.signal, record)));
+        record => selectCreationTurn(stage, message, body.history as string[], body.sections as string[], body.draft as Omit<CharacterDraftContext, "hasFullBody">, c.req.raw.signal, record));
+      // Meaningful creation start: first successful assistant turn per
+      // account. The deterministic ID makes retries/replays count once.
+      await recordAgentCreationStarted(db, { userId: c.get("user").id, channel: "web" });
+      return c.json(turn);
     } catch (error) {
       if (error instanceof GenerationAdmissionError) return c.json({ error: error.message, code: error.code, contacts:generationContacts, requestId }, error.status);
       console.error("[creation-assistant] Turn failed", {requestId,error});

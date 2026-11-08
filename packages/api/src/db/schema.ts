@@ -266,6 +266,54 @@ export const users = pgTable("users", {
   ),
 ]);
 
+export const userCampaignAttribution = pgTable("user_campaign_attribution", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "restrict" }),
+  channel: text("channel").notNull().$type<"web" | "mcp" | "api">(),
+  // Validated campaign touches only (services/campaign-conversions.ts).
+  // Click IDs are retained here under the same access controls as the account
+  // record; they are never copied into model-visible prompts or credentials.
+  firstTouch: jsonb("first_touch").$type<Record<string, string>>(),
+  lastTouch: jsonb("last_touch").$type<Record<string, string>>(),
+  firstTouchAt: text("first_touch_at"),
+  lastTouchAt: text("last_touch_at"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  check("user_campaign_attribution_channel_check", sql`${table.channel} IN ('web', 'mcp', 'api')`),
+]);
+
+export const campaignConversionEvents = pgTable("campaign_conversion_events", {
+  // Deterministic ID (e.g. signup:{userId}) makes retries idempotent.
+  id: text("id").primaryKey(),
+  eventName: text("event_name").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  publicId: text("public_id").notNull(),
+  agentProfileId: text("agent_profile_id").references(() => agentProfiles.id),
+  seasonId: text("season_id").references(() => seasons.id),
+  channel: text("channel").notNull().$type<"web" | "mcp" | "api">(),
+  mcpClientId: text("mcp_client_id"),
+  attribution: jsonb("attribution").$type<Record<string, string>>(),
+  occurredAt: text("occurred_at").notNull().default(sql`now()::text`),
+  posthogStatus: text("posthog_status").notNull().default("pending"),
+  posthogAttempts: integer("posthog_attempts").notNull().default(0),
+  platformStatus: text("platform_status").notNull().default("pending"),
+  platformAttempts: integer("platform_attempts").notNull().default(0),
+  lastError: text("last_error"),
+  deliveredAt: text("delivered_at"),
+}, (table) => [
+  index("campaign_conversion_events_name_time_idx").on(table.eventName, table.occurredAt),
+  index("campaign_conversion_events_delivery_idx").on(table.posthogStatus, table.platformStatus),
+  check("campaign_conversion_events_channel_check", sql`${table.channel} IN ('web', 'mcp', 'api')`),
+  check(
+    "campaign_conversion_events_name_check",
+    sql`${table.eventName} IN ('signup_completed', 'agent_creation_started', 'agent_created', 'agent_ready', 'season_entry', 'game_placed', 'mcp_linked', 'owner_returned')`,
+  ),
+]);
+
 export const legalAcceptances = pgTable("legal_acceptances", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: text("user_id")

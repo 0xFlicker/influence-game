@@ -28,6 +28,13 @@ export function ProductAnalytics() {
     void initializeAnalytics(config.POSTHOG_PROJECT_TOKEN, "https://k.thehouse.game").then(() => {
       if (!active) return;
       setAnalyticsIdentity(account?.publicId ?? null, internal || privateRoute);
+      if (account?.publicId) {
+        // Authorized account linking: persist the browser-retained touches
+        // server-side so MCP/API conversions share the same attribution.
+        void import("@/lib/api")
+          .then(({ retainCampaignAttribution }) => retainCampaignAttribution())
+          .catch(() => undefined);
+      }
       capturePage(pathname);
       // Record onboarding only; all text and images are masked. Game playback is
       // measured with explicit events and doesn't need DOM recordings.

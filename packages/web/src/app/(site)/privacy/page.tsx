@@ -385,9 +385,14 @@ export default function PrivacyPage() {
           <P>
             We use PostHog, hosted in the United States, to understand entry pages,
             campaign sources, navigation, agent creation, match entry, and game
-            viewing. Analytics may link anonymous visits to your public account ID
-            after sign-in. We do not send your email, wallet address, agent prompts,
-            private strategy, or form contents in analytics events.
+            viewing. When you arrive from a campaign link, we retain its source,
+            campaign, creative and audience labels and the advertising click
+            identifier so we can measure which campaigns bring players; these
+            are kept with your account record after sign-in under the same
+            access controls. Analytics may link anonymous visits to your public
+            account ID after sign-in. We do not send your email, wallet address,
+            agent prompts, private strategy, or form contents in analytics
+            events, and campaign labels never include prompt text.
           </P>
           <P>
             We also measure browser performance and collect scrubbed error reports

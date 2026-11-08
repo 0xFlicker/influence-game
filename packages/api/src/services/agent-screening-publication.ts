@@ -1,3 +1,4 @@
+import { recordAgentReady } from "./campaign-conversions.js";
 import { recordAvatarChange } from "./avatar-generation.js";
 import type { AgentMutationWaitingSeatReference } from "./agent-mutation-receipt.js";
 import { abortActiveOwnerLearningReview } from "./owner-learning-worker.js";
@@ -208,6 +209,14 @@ async function publishScreenedAgentOnce(db: DrizzleDB, revisionId: string) {
       .where(eq(schema.agentProfiles.id, profile.id))
       .returning();
     await publishSubmittedVoice(tx, accepted!, revision.snapshot);
+    // Screening completes asynchronously; channel "api" marks system
+    // publication. Attribution is joined from the owner's retained touch.
+    await recordAgentReady(tx, {
+      userId: profile.userId,
+      agentProfileId: profile.id,
+      contentRevisionId: revisionId,
+      channel: "api",
+    });
     const activeRevision = await ensureActiveAgentRevisionInTransaction(tx, {
       profile: accepted!,
       effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(

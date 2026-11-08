@@ -1,6 +1,7 @@
 import type { EmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import type { ModelPreference, GameModelRouting } from "@influence/engine/game-model-routing";
 import { analyticsOperation, measureProductRequest } from "@/lib/product-analytics";
+import { getStoredCampaignAttribution } from "@/lib/campaign-attribution";
 import type { HouseParticipation } from "@influence/engine/house-participation";
 import type { AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
 /**
@@ -1799,6 +1800,11 @@ export async function loginWithPrivyToken(
         ? {
           ...(request.inviteCode ? { inviteCode: request.inviteCode } : {}),
           ...request.legalAcceptance,
+          // First-touch campaign attribution (identities only, never prompt
+          // text). The server re-validates every field; absent stays unknown.
+          ...(getStoredCampaignAttribution().firstTouch
+            ? { attribution: getStoredCampaignAttribution().firstTouch }
+            : {}),
         }
         : {}),
     }),
@@ -1849,6 +1855,22 @@ export async function createManagedAuthentication(
       token,
       ...(inviteCode ? { inviteCode } : {}),
       ...PRESENTED_LEGAL_ACCEPTANCE,
+      ...(getStoredCampaignAttribution().firstTouch
+        ? { attribution: getStoredCampaignAttribution().firstTouch }
+        : {}),
+    }),
+  });
+}
+
+/** Link the browser-retained touches to the signed-in account (idempotent). */
+export async function retainCampaignAttribution(): Promise<void> {
+  const stored = getStoredCampaignAttribution();
+  if (!stored.firstTouch && !stored.lastNonDirectTouch) return;
+  await apiFetch("/api/attribution/retain", {
+    method: "POST",
+    body: JSON.stringify({
+      firstTouch: stored.firstTouch,
+      lastTouch: stored.lastNonDirectTouch,
     }),
   });
 }

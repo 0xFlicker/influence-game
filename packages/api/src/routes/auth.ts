@@ -20,6 +20,10 @@ import { extractBearerToken } from "../game-mcp/auth.js";
 import { isInviteRequired, redeemInviteCode } from "../lib/invite-codes.js";
 import { projectAuthenticatedPublicIdentity } from "../services/authenticated-public-identity.js";
 import {
+  recordConversion,
+  recordSignupCompleted,
+} from "../services/campaign-conversions.js";
+import {
   createClerkAuthenticationVerifier,
   createClerkSdkDependencies,
   createDefaultFarcasterAuthenticationVerifier,
@@ -118,6 +122,7 @@ export function createAuthRoutes(
       "termsVersion",
       "privacyVersion",
       "deploymentSha",
+      "attribution",
     ]);
     if (!request.ok) return request.response;
     const { body } = request;
@@ -219,6 +224,25 @@ export function createAuthRoutes(
     }
     if (body.intent === "create_account" && !authentication.created) {
       return accountAlreadyExistsResponse(c);
+    }
+    if (authentication.created) {
+      // Authoritative signup conversion: new account row committed above.
+      // The browser attribution payload is re-validated server-side; absent
+      // attribution stays explicitly unknown.
+      await recordSignupCompleted(db, {
+        userId: authentication.user.id,
+        channel: "web",
+        attribution: (body as { attribution?: unknown }).attribution,
+      });
+    } else if (body.intent === "sign_in") {
+      // Existing-account return (reactivation), never a new signup.
+      await recordConversion(db, {
+        eventName: "owner_returned",
+        id: `owner_returned:${authentication.user.id}:${new Date().toISOString().slice(0, 10)}`,
+        userId: authentication.user.id,
+        publicId: authentication.user.publicId,
+        channel: "web",
+      });
     }
     return c.json(await issueInfluenceSession(db, authentication.user));
   });
@@ -340,6 +364,7 @@ export function createAuthRoutes(
         "termsVersion",
         "privacyVersion",
         "deploymentSha",
+        "attribution",
       ],
       "acceptTerms",
     );
@@ -377,6 +402,13 @@ export function createAuthRoutes(
     );
     if (outcome.status === "authenticated" && !outcome.created) {
       return accountAlreadyExistsResponse(c);
+    }
+    if (outcome.status === "authenticated" && outcome.created) {
+      await recordSignupCompleted(db, {
+        userId: outcome.user.id,
+        channel: "web",
+        attribution: (request.body as { attribution?: unknown }).attribution,
+      });
     }
     if (outcome.status === "invite_required") {
       return c.json({
@@ -632,6 +664,7 @@ type StrictAuthBody = {
   termsVersion?: string;
   privacyVersion?: string;
   deploymentSha?: string;
+  attribution?: unknown;
 };
 
 async function readStrictTokenRequest(
